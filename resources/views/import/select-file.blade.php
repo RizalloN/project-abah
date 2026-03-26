@@ -11,7 +11,8 @@
 
     <div class="card-body">
 
-        <form method="POST" action="#">
+        <!-- 🔥 PERBAIKAN: Ubah action="#" menjadi action="{{ route('import.preview') }}" -->
+        <form method="POST" action="{{ route('import.preview') }}">
             @csrf
 
             <div class="form-group">
@@ -27,7 +28,7 @@
                 </select>
             </div>
 
-            <button class="btn btn-success">
+            <button type="submit" class="btn btn-success">
                 Lanjut Preview
             </button>
 
