@@ -36,10 +36,15 @@
             </div>
         </div>
 
-        <form action="{{ route('import.process') }}" method="POST">
+        <form id="importForm" action="{{ route('import.process') }}" method="POST">
             @csrf
             <input type="hidden" name="file_path" value="{{ $filePath }}">
             <input type="hidden" name="delimiter" value="{{ $currentDelimiter }}">
+            <input type="hidden" name="active_filters_json" id="active_filters_json" value="{}">
+
+            @php 
+                $area6 = ['KC PONOROGO', 'KC NGAWI', 'KC MAGETAN', 'KC MADIUN']; 
+            @endphp
 
             <div class="card card-outline card-success">
                 <div class="card-header bg-light">
@@ -56,15 +61,19 @@
                 <div class="card-body p-0">
                     <div class="alert alert-info m-3 border-0 bg-light text-dark">
                         <i class="fas fa-info-circle text-info"></i> <strong>Petunjuk:</strong> 
-                        Klik ikon <i class="fas fa-filter text-muted mx-1"></i> di sebelah nama kolom untuk memfilter baris data layaknya Microsoft Excel. Tabel di bawah akan bereaksi secara realtime sesuai filtermu.
+                        Klik ikon <i class="fas fa-filter text-muted mx-1"></i> di sebelah nama kolom untuk memfilter baris data layaknya Microsoft Excel. Tabel akan bereaksi secara realtime dan menampilkan <strong>maksimal 10 baris teratas</strong> sesuai filtermu.
                     </div>
 
-                    <div class="table-responsive" style="max-height: 600px; overflow-y: auto;">
+                    <div class="table-responsive" style="min-height: 450px; max-height: 600px; overflow-y: auto; overflow-x: auto;">
                         <table class="table table-bordered table-hover m-0">
                             <thead class="thead-light sticky-top" style="z-index: 2;">
                                 <tr>
                                     <th class="text-center align-middle bg-light" style="width: 50px;">#</th>
                                     @foreach($headers as $index => $header)
+                                        @php
+                                            $isKancaCol = (stripos($header, 'NAMA_KANCA') !== false);
+                                        @endphp
+
                                         <th class="align-middle bg-light" style="min-width: 250px;">
                                             <div class="d-flex justify-content-between align-items-center">
                                                 
@@ -79,11 +88,10 @@
                                                 </div>
 
                                                 @if(isset($formattedUniqueValues[$index]) && count($formattedUniqueValues[$index]) > 0)
-                                                <!-- Penanda bahwa kolom ini memiliki UI Filter -->
                                                 <input type="hidden" name="has_filter[]" value="{{ $index }}">
 
                                                 <div class="dropdown">
-                                                    <button class="btn btn-xs btn-light border dropdown-toggle filter-btn" type="button" data-toggle="dropdown" aria-expanded="false">
+                                                    <button class="btn btn-xs btn-light border dropdown-toggle filter-btn" type="button" data-toggle="dropdown" aria-expanded="false" data-boundary="window">
                                                         <i class="fas fa-filter text-muted" id="icon_filter_{{ $index }}"></i>
                                                     </button>
                                                     
@@ -98,22 +106,24 @@
                                                         </div>
                                                         <div class="p-2 border-bottom bg-white">
                                                             <div class="custom-control custom-checkbox">
-                                                                <!-- Select All dicentang otomatis -->
-                                                                <input class="custom-control-input select-all-cb" type="checkbox" id="select_all_{{ $index }}" data-col="{{ $index }}" checked>
+                                                                <input class="custom-control-input select-all-cb" type="checkbox" id="select_all_{{ $index }}" data-col="{{ $index }}" {{ $isKancaCol ? '' : 'checked' }}>
                                                                 <label for="select_all_{{ $index }}" class="custom-control-label font-weight-bold text-dark">(Select All)</label>
                                                             </div>
                                                         </div>
                                                         <div class="p-2 bg-white" id="list_container_{{ $index }}" style="max-height: 250px; overflow-y: auto;">
                                                             @foreach($formattedUniqueValues[$index] as $val)
+                                                                @php
+                                                                    $cleanVal = trim($val);
+                                                                    $isArea6 = in_array(strtoupper($cleanVal), $area6);
+                                                                    $isChecked = $isKancaCol ? $isArea6 : true;
+                                                                @endphp
                                                                 <div class="custom-control custom-checkbox filter-item-container mb-1">
-                                                                    <!-- Diperbaiki: Hapus htmlspecialchars ganda karena Blade sudah mengatasinya -->
                                                                     <input class="custom-control-input filter-checkbox" type="checkbox" 
                                                                            id="filter_{{ $index }}_{{ $loop->index }}" 
-                                                                           name="filters[{{ $index }}][]" 
-                                                                           value="{{ trim($val) }}" 
-                                                                           data-col="{{ $index }}" checked>
+                                                                           value="{{ $cleanVal }}" 
+                                                                           data-col="{{ $index }}" {{ $isChecked ? 'checked' : '' }}>
                                                                     <label for="filter_{{ $index }}_{{ $loop->index }}" class="custom-control-label font-weight-normal filter-label">
-                                                                        {{ trim($val) === '' ? '(Blank)' : trim($val) }}
+                                                                        {{ $cleanVal === '' ? '(Blank)' : $cleanVal }}
                                                                     </label>
                                                                 </div>
                                                             @endforeach
@@ -129,11 +139,9 @@
                             </thead>
                             <tbody>
                                 @foreach($previewData as $rowIndex => $row)
-                                    <!-- Tambahkan class preview-row untuk target JavaScript -->
-                                    <tr class="preview-row">
+                                    <tr class="preview-row d-none"> 
                                         <td class="text-center text-muted">{{ $rowIndex + 1 }}</td>
                                         @foreach($headers as $colIndex => $header)
-                                            <!-- Diperbaiki: Hapus htmlspecialchars ganda agar identik dengan filter dropdown -->
                                             <td class="text-truncate col-data-{{ $colIndex }}" 
                                                 data-val="{{ trim($row[$colIndex] ?? '') }}"
                                                 style="max-width: 250px;" 
@@ -143,6 +151,17 @@
                                         @endforeach
                                     </tr>
                                 @endforeach
+                                
+                                <tr id="empty-state-row" class="d-none">
+                                    <td colspan="{{ count($headers) + 1 }}" class="text-center py-5 bg-white text-muted">
+                                        <i class="fas fa-search-minus fa-3x mb-3 text-secondary"></i><br>
+                                        <h5 class="font-weight-bold text-dark">Tidak ada kecocokan di 500 Baris Sampel Preview</h5>
+                                        <p class="mb-0">Cabang yang kamu centang berada di urutan bawah CSV dan tidak tertangkap di sampel visual ini.</p>
+                                        <p class="text-success font-weight-bold mt-2">
+                                            <i class="fas fa-info-circle"></i> Jangan khawatir, cukup klik tombol <b>"Jalankan Import"</b> dan sistem akan memproses seluruh CSV ke MySQL!
+                                        </p>
+                                    </td>
+                                </tr>
                             </tbody>
                         </table>
                     </div>
@@ -163,56 +182,98 @@
 @endsection
 
 @section('scripts')
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
 <script>
     document.addEventListener('DOMContentLoaded', function () {
         
-        // 1. Mencegah Dropdown tertutup saat diklik di dalamnya
         const dropdownMenus = document.querySelectorAll('.dropdown-menu');
         dropdownMenus.forEach(menu => {
             menu.addEventListener('click', function (e) { e.stopPropagation(); });
         });
 
-        // 2. Fungsi Update Tabel Preview secara REAL-TIME (Diperbaiki performanya)
         function updatePreviewTable() {
             let activeFilters = {};
             
-            // Kumpulkan hanya value dari checkbox yang aktif
             document.querySelectorAll('.filter-checkbox').forEach(cb => {
                 let col = cb.getAttribute('data-col');
                 if (!activeFilters[col]) activeFilters[col] = [];
                 if (cb.checked) {
-                    activeFilters[col].push(cb.value.trim()); // Tambahkan trim() untuk keamanan
+                    activeFilters[col].push(cb.value.trim()); 
                 }
             });
 
-            // Evaluasi baris per baris
+            let filterReqs = [];
+            for (let col in activeFilters) {
+                filterReqs.push({
+                    index: parseInt(col) + 1,
+                    allowed: activeFilters[col]
+                });
+            }
+
+            let matchingCount = 0; 
+            
             document.querySelectorAll('.preview-row').forEach(row => {
                 let pass = true;
                 
-                for (let col in activeFilters) {
-                    let cell = row.querySelector('.col-data-' + col);
+                for (let i = 0; i < filterReqs.length; i++) {
+                    let req = filterReqs[i];
+                    if (req.allowed.length === 0) { pass = false; break; }
+
+                    let cell = row.children[req.index];
                     if (cell) {
                         let cellVal = (cell.getAttribute('data-val') || '').trim();
-                        
-                        // Jika tidak ada filter yang dicentang di kolom ini, langsung sembunyikan baris
-                        if (activeFilters[col].length === 0) {
-                            pass = false;
-                            break;
-                        }
-                        
-                        // Cek apakah nilai cell (baris) ada di dalam array filter yang dicentang
-                        if (!activeFilters[col].includes(cellVal)) {
-                            pass = false;
-                            break;
-                        }
+                        if (!req.allowed.includes(cellVal)) { pass = false; break; }
                     }
                 }
                 
-                row.style.display = pass ? '' : 'none';
+                if (pass) {
+                    if (matchingCount < 10) {
+                        row.classList.remove('d-none');
+                    } else {
+                        row.classList.add('d-none');
+                    }
+                    matchingCount++;
+                } else {
+                    row.classList.add('d-none');
+                }
+            });
+
+            const emptyRow = document.getElementById('empty-state-row');
+            if (emptyRow) {
+                if (matchingCount === 0) {
+                    emptyRow.classList.remove('d-none');
+                } else {
+                    emptyRow.classList.add('d-none');
+                }
+            }
+            
+            updateIconsColor();
+        }
+
+        function updateIconsColor() {
+            const dropdowns = document.querySelectorAll('.dropdown');
+            dropdowns.forEach(dropdown => {
+                const container = dropdown.querySelector('[id^="list_container_"]');
+                if (container) {
+                    const colIndex = container.id.split('_')[2];
+                    const allChecked = container.querySelectorAll('.filter-checkbox:checked');
+                    const totalCbs = container.querySelectorAll('.filter-checkbox');
+                    const icon = document.getElementById('icon_filter_' + colIndex);
+                    
+                    if (icon) {
+                        if (allChecked.length < totalCbs.length && allChecked.length > 0) {
+                            icon.classList.remove('text-muted');
+                            icon.classList.add('text-primary');
+                        } else {
+                            icon.classList.remove('text-primary');
+                            icon.classList.add('text-muted');
+                        }
+                    }
+                }
             });
         }
 
-        // 3. Tambahkan event listener ke setiap checkbox
         const filterCheckboxes = document.querySelectorAll('.filter-checkbox');
         filterCheckboxes.forEach(cb => {
             cb.addEventListener('change', function () {
@@ -220,57 +281,34 @@
                 const container = document.getElementById('list_container_' + colIndex);
                 const allChecked = container.querySelectorAll('.filter-checkbox:checked');
                 const totalCbs = container.querySelectorAll('.filter-checkbox');
-                const icon = document.getElementById('icon_filter_' + colIndex);
                 const selectAll = document.getElementById('select_all_' + colIndex);
 
-                // Update warna ikon dan properti Select All (Tanpa Trigger Event!)
                 if (allChecked.length < totalCbs.length) {
-                    icon.classList.remove('text-muted');
-                    icon.classList.add('text-primary');
                     selectAll.checked = false; 
                 } else {
-                    icon.classList.remove('text-primary');
-                    icon.classList.add('text-muted');
                     selectAll.checked = true;
                 }
-
-                updatePreviewTable(); // Panggil fungsi realtime
+                updatePreviewTable(); 
             });
         });
 
-        // 4. Select All Logika (Diperbaiki agar tidak freeze browser)
         const selectAllCbs = document.querySelectorAll('.select-all-cb');
         selectAllCbs.forEach(cb => {
             cb.addEventListener('change', function () {
                 const isChecked = this.checked;
                 const colIndex = this.getAttribute('data-col');
                 const container = document.getElementById('list_container_' + colIndex);
-                const icon = document.getElementById('icon_filter_' + colIndex);
                 
                 const visibleCheckboxes = container.querySelectorAll('.filter-item-container[style*="block"] .filter-checkbox, .filter-item-container:not([style*="none"]) .filter-checkbox');
                 
-                // Ubah properti checked saja, jangan dispatch event agar tidak freeze
                 visibleCheckboxes.forEach(checkbox => {
                     checkbox.checked = isChecked;
                 });
 
-                // Cek ulang ikon setelah di-centang semua
-                const allChecked = container.querySelectorAll('.filter-checkbox:checked');
-                const totalCbs = container.querySelectorAll('.filter-checkbox');
-                if (allChecked.length < totalCbs.length) {
-                    icon.classList.remove('text-muted');
-                    icon.classList.add('text-primary');
-                } else {
-                    icon.classList.remove('text-primary');
-                    icon.classList.add('text-muted');
-                }
-
-                // Panggil proses render tabel hanya 1 kali setelah perulangan selesai
                 updatePreviewTable();
             });
         });
 
-        // 5. Search List Filter
         const searchInputs = document.querySelectorAll('.search-filter');
         searchInputs.forEach(input => {
             input.addEventListener('keyup', function () {
@@ -289,6 +327,40 @@
                 });
             });
         });
+
+        // 🔥 EVENT SUBMIT: Munculkan SweetAlert Loading!
+        document.getElementById('importForm').addEventListener('submit', function(e) {
+            
+            // Siapkan JSON
+            let activeFilters = {};
+            const dropdowns = document.querySelectorAll('.dropdown');
+            dropdowns.forEach(dropdown => {
+                const container = dropdown.querySelector('[id^="list_container_"]');
+                if (container) {
+                    const colIndex = container.id.split('_')[2];
+                    const allCbs = container.querySelectorAll('.filter-checkbox');
+                    const checkedCbs = container.querySelectorAll('.filter-checkbox:checked');
+
+                    if (checkedCbs.length < allCbs.length) {
+                        activeFilters[colIndex] = Array.from(checkedCbs).map(cb => cb.value.trim());
+                    }
+                }
+            });
+            document.getElementById('active_filters_json').value = JSON.stringify(activeFilters);
+
+            // Tampilkan Loading
+            Swal.fire({
+                title: 'Sedang Mengunggah...',
+                html: 'Tergantung ukuran CSV, ini mungkin memakan waktu beberapa menit. <br><br><b>Tolong jangan tutup atau *refresh* halaman ini!</b>',
+                allowOutsideClick: false,
+                allowEscapeKey: false,
+                didOpen: () => {
+                    Swal.showLoading()
+                }
+            });
+        });
+
+        updatePreviewTable();
     });
 </script>
 @endsection

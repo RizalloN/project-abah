@@ -7,6 +7,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
 use App\Models\NamaReport;
 
 class ImportFileController extends Controller
@@ -61,7 +62,6 @@ class ImportFileController extends Controller
 
     public function preview(Request $request)
     {
-        // Set ini agar PHP bisa mendeteksi baris (Enter) dari berbagai format OS
         ini_set('auto_detect_line_endings', true);
 
         $request->validate([
@@ -100,21 +100,23 @@ class ImportFileController extends Controller
                 rewind($handle); 
 
                 $rowCounter = 0;
+                $savedRows = 0;
+
                 while (($data = fgetcsv($handle, 10000, $delimiter)) !== FALSE) {
-                    if (empty($data) || implode('', $data) === '') continue; // Skip baris kosong
+                    if (empty($data) || implode('', $data) === '') continue;
 
                     if ($rowCounter == 0) {
-                        // Bersihkan Header dari BOM/Karakter Gaib sejak awal
                         $headers = array_map(function($val) {
-                            return trim($val, " \t\n\r\0\x0B\xEF\xBB\xBF\"");
+                            return trim(preg_replace('/[\xef\xbb\xbf]/', '', $val));
                         }, $data);
 
                         foreach ($headers as $i => $h) {
                             $uniqueValues[$i] = [];
                         }
                     } else {
-                        if ($rowCounter <= 10) {
+                        if ($savedRows <= 2500) {
                             $previewData[] = $data;
+                            $savedRows++;
                         }
                         
                         foreach ($data as $i => $val) {
@@ -128,6 +130,7 @@ class ImportFileController extends Controller
                         }
                     }
                     $rowCounter++;
+                    if ($rowCounter > 5000) break; 
                 }
                 fclose($handle);
             }
@@ -149,35 +152,25 @@ class ImportFileController extends Controller
 
     public function processImport(Request $request)
     {
+        ini_set('memory_limit', '-1');
         ini_set('auto_detect_line_endings', true);
-        ini_set('max_execution_time', 300); // Beri waktu ekstra untuk proses DB
+        ini_set('max_execution_time', 0); // Bebaskan waktu loading
 
         $request->validate([
             'file_path' => 'required|string',
             'selected_columns' => 'required|array|min:1',
-            'has_filter' => 'nullable|array',
-            'filters' => 'nullable|array',
+            'active_filters_json' => 'nullable|string',
             'delimiter' => 'required|string'
         ]);
 
         $filePath = $request->input('file_path');
         $selectedColumns = $request->input('selected_columns');
-        
-        $hasFilters = $request->input('has_filter', []); // Array penanda kolom mana saja yg pnya UI filter
-        $rawFilters = $request->input('filters', []);
-        
+        $activeFilters = json_decode($request->input('active_filters_json'), true) ?: [];
         $currentDelimiter = $request->input('delimiter', 'auto');
         $idReport = session('active_id_report', 1);
 
         if (!file_exists($filePath)) {
             return redirect()->route('import.select')->with('error', 'File tidak ditemukan.');
-        }
-
-        // 🔥 TANGKAP FILTER AKTIF
-        $activeFilters = [];
-        foreach ($hasFilters as $colIdx) {
-            // Jika kolom punya UI filter, tangkap apa yg dicentang. Jika tidak ada yg dicentang, jadikan array kosong.
-            $activeFilters[$colIdx] = isset($rawFilters[$colIdx]) ? $rawFilters[$colIdx] : [];
         }
 
         $dataToInsert = [];
@@ -203,7 +196,7 @@ class ImportFileController extends Controller
 
                 if ($rowCounter == 0) {
                     $csvHeaders = array_map(function($val) {
-                        return trim($val, " \t\n\r\0\x0B\xEF\xBB\xBF\"");
+                        return trim(preg_replace('/[\xef\xbb\xbf]/', '', $val));
                     }, $data);
                     $rowCounter++;
                     continue; 
@@ -212,7 +205,6 @@ class ImportFileController extends Controller
                 $passFilter = true;
                 foreach ($activeFilters as $colIdx => $allowedValues) {
                     $cellValue = isset($data[$colIdx]) ? trim($data[$colIdx]) : '';
-                    // Jika nilai cell tidak ada di dalam checkbox yang dicentang user, skip baris ini
                     if (!in_array($cellValue, $allowedValues)) {
                         $passFilter = false;
                         break;
@@ -224,21 +216,21 @@ class ImportFileController extends Controller
                     continue;
                 }
 
-                // 🔥 SUSUN DATA UNTUK INSERT
                 $rowData = [];
-                // 1. Tambahkan Format Unique ID
                 $rowData['uniqueid_namareport'] = uniqid() . '_MDT';
 
-                // 2. Map setiap kolom terpilih
                 foreach ($selectedColumns as $index) {
-                    $colName = $csvHeaders[$index];
+                    if (!isset($csvHeaders[$index])) continue;
                     
-                    // Kita tidak memasukkan `id` karena MySQL akan memberikan auto increment
+                    $colName = $csvHeaders[$index];
                     if (strtolower($colName) === 'id' || strtolower($colName) === 'uniqueid_namareport') {
                         continue;
                     }
 
-                    $rowData[$colName] = isset($data[$index]) ? trim($data[$index]) : null;
+                    // 🔥 PERBAIKAN UTAMA: Ubah string kosong ("") menjadi NULL
+                    // Ini mencegah MySQL menolak data jika kolom berupa DATETIME, DATE, atau INTEGER
+                    $cellValue = isset($data[$index]) ? trim($data[$index]) : '';
+                    $rowData[$colName] = ($cellValue === '') ? null : $cellValue;
                 }
                 
                 $dataToInsert[] = $rowData;
@@ -247,37 +239,26 @@ class ImportFileController extends Controller
             fclose($handle);
         }
 
-        // 🔥 INSERT DATABASE BERLAPIS 🔥
         $reportData = DB::table('nama_report')->where('id_report', $idReport)->first();
         $tableName = $reportData ? strtolower(str_replace(' ', '_', $reportData->nama_report)) : 'jumlah_merchant_detail';
         if (!DB::getSchemaBuilder()->hasTable($tableName)) {
-            $tableName = 'jumlah_merchant_detail'; // Fallback
+            $tableName = 'jumlah_merchant_detail';
         }
 
-        // 1. Buat Job
         $jobId = DB::table('import_jobs')->insertGetId([
             'id_report' => $idReport,
             'file_name' => basename($filePath),
             'folder_path' => dirname($filePath),
             'status' => 'processing',
-            'total_files' => count($dataToInsert), // Akan mencatat total baris ter-filter
+            'total_files' => count($dataToInsert),
             'created_by' => auth()->id() ?? 1,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
 
-        // 2. Buat Mapping
-        foreach ($selectedColumns as $index) {
-            DB::table('import_mappings')->insert([
-                'import_job_id' => $jobId,
-                'source_column' => $csvHeaders[$index],
-                'target_column' => $csvHeaders[$index],
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
-        }
+        \Illuminate\Support\Facades\Schema::dropIfExists('import_mappings');
 
-        // 3. Eksekusi Insert Table Utama
+        // Kembalikan ke 500 baris per eksekusi agar stabil
         $chunks = array_chunk($dataToInsert, 500);
         $totalSuccess = 0;
         $totalFailed = 0;
@@ -289,13 +270,13 @@ class ImportFileController extends Controller
                 $totalSuccess += count($chunk);
             } catch (\Exception $e) {
                 $totalFailed += count($chunk);
-                $lastErrorMsg = $e->getMessage();
+                $lastErrorMsg = substr($e->getMessage(), 0, 800) . '...';
                 
                 DB::table('failed_jobs')->insert([
                     'uuid' => (string) Str::uuid(),
                     'connection' => 'database',
                     'queue' => 'import_' . $tableName,
-                    'payload' => json_encode($chunk),
+                    'payload' => json_encode(['error' => 'Batch failed. Showing 1 sample:', 'sample' => $chunk[0] ?? []]),
                     'exception' => $lastErrorMsg,
                     'failed_at' => now(),
                 ]);
@@ -308,11 +289,16 @@ class ImportFileController extends Controller
             'updated_at' => now(),
         ]);
 
-        // 🔥 KEMBALI DENGAN PESAN SWEETALERT
+        // Auto Cleanup
+        $importDir = dirname(dirname($filePath));
+        if (strpos($importDir, 'imports') !== false && File::exists($importDir)) {
+            File::deleteDirectory($importDir);
+        }
+
         if ($totalFailed > 0) {
             return redirect()->route('import.index')->with('sweet_warning', [
                 'title' => 'Import Memiliki Kendala!',
-                'text' => "Berhasil: $totalSuccess baris.<br>Gagal: $totalFailed baris.<br><br><b>Penyebab:</b><br><small class='text-danger'>" . substr($lastErrorMsg, 0, 150) . "...</small>"
+                'text' => "Berhasil: $totalSuccess baris.<br>Gagal: $totalFailed baris.<br><br><b>Info MySQL:</b><br><small class='text-danger'>" . htmlspecialchars($lastErrorMsg, ENT_QUOTES) . "</small>"
             ]);
         }
 
