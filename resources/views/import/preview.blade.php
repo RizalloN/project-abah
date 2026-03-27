@@ -43,7 +43,8 @@
             <input type="hidden" name="active_filters_json" id="active_filters_json" value="{}">
 
             @php 
-                $area6 = ['KC PONOROGO', 'KC NGAWI', 'KC MAGETAN', 'KC MADIUN']; 
+                // 🔥 PERBAIKAN: Masukkan versi dengan awalan 'KC' dan tanpa awalan agar fleksibel
+                $area6 = ['KC PONOROGO', 'KC NGAWI', 'KC MAGETAN', 'KC MADIUN', 'PONOROGO', 'NGAWI', 'MAGETAN', 'MADIUN']; 
             @endphp
 
             <div class="card card-outline card-success">
@@ -52,7 +53,7 @@
                         <i class="fas fa-file-excel"></i> Table Data (Ala Excel Filter)
                     </h3>
                     <div class="card-tools">
-                        <button type="submit" class="btn btn-sm btn-success">
+                        <button type="submit" id="btnSubmitImport" class="btn btn-sm btn-success">
                             <i class="fas fa-database"></i> Jalankan Import ke MySQL
                         </button>
                     </div>
@@ -71,7 +72,8 @@
                                     <th class="text-center align-middle bg-light" style="width: 50px;">#</th>
                                     @foreach($headers as $index => $header)
                                         @php
-                                            $isKancaCol = (stripos($header, 'NAMA_KANCA') !== false);
+                                            // 🔥 PERBAIKAN Cerdas mencari KANCA atau KCI (Namun mengabaikan jika itu kolom KODE)
+                                            $isKancaCol = (stripos($header, 'KANCA') !== false || stripos($header, 'KCI') !== false) && stripos($header, 'KODE') === false;
                                         @endphp
 
                                         <th class="align-middle bg-light" style="min-width: 250px;">
@@ -328,10 +330,20 @@
             });
         });
 
-        // 🔥 EVENT SUBMIT: Munculkan SweetAlert Loading!
+        // 🔥 PERBAIKAN EVENT SUBMIT: Animasi Loading Sempurna & Anti-Glitch
         document.getElementById('importForm').addEventListener('submit', function(e) {
+            e.preventDefault(); 
             
-            // Siapkan JSON
+            let form = this;
+            let submitBtn = document.getElementById('btnSubmitImport');
+            
+            // Cegah double klik
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Memproses...';
+            }
+            
+            // Siapkan JSON Filter
             let activeFilters = {};
             const dropdowns = document.querySelectorAll('.dropdown');
             dropdowns.forEach(dropdown => {
@@ -348,14 +360,22 @@
             });
             document.getElementById('active_filters_json').value = JSON.stringify(activeFilters);
 
-            // Tampilkan Loading
+            // 🔥 PERBAIKAN: Gunakan didOpen agar animasi loading terbuka sempurna
+            // Sebelum terpotong oleh form.submit()
             Swal.fire({
-                title: 'Sedang Mengunggah...',
-                html: 'Tergantung ukuran CSV, ini mungkin memakan waktu beberapa menit. <br><br><b>Tolong jangan tutup atau *refresh* halaman ini!</b>',
+                title: 'Sedang Memproses Data...',
+                html: 'Sistem sedang memindahkan baris data ke MySQL.<br><br><b>Mohon tunggu dan jangan tutup halaman ini!</b>',
                 allowOutsideClick: false,
                 allowEscapeKey: false,
+                showConfirmButton: false,
                 didOpen: () => {
-                    Swal.showLoading()
+                    Swal.showLoading();
+                    
+                    // Jeda dieksekusi SETELAH SweetAlert benar-benar terbuka sempurna (didOpen)
+                    // Ini mencegah SweetAlert terasa 'ngebug' saat file kecil yang diproses dengan cepat.
+                    setTimeout(() => {
+                        form.submit();
+                    }, 500); 
                 }
             });
         });

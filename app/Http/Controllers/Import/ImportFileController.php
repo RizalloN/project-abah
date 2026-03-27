@@ -154,7 +154,7 @@ class ImportFileController extends Controller
     {
         ini_set('memory_limit', '-1');
         ini_set('auto_detect_line_endings', true);
-        ini_set('max_execution_time', 0); // Bebaskan waktu loading
+        ini_set('max_execution_time', 0); 
 
         $request->validate([
             'file_path' => 'required|string',
@@ -171,6 +171,19 @@ class ImportFileController extends Controller
 
         if (!file_exists($filePath)) {
             return redirect()->route('import.select')->with('error', 'File tidak ditemukan.');
+        }
+
+        // 🔥 DETEKSI NAMA TABEL BERDASARKAN MASTER DATA
+        $reportData = DB::table('nama_report')->where('id_report', $idReport)->first();
+        $tableName = $reportData ? strtolower(str_replace(' ', '_', $reportData->nama_report)) : 'jumlah_merchant_detail';
+        if (!DB::getSchemaBuilder()->hasTable($tableName)) {
+            $tableName = 'jumlah_merchant_detail'; // Fallback
+        }
+
+        // 🔥 LOGIKA KECERDASAN SUFFIX UNIQUE ID
+        $uniqueSuffix = '_MDT'; // Default
+        if ($tableName === 'sv_merchant') {
+            $uniqueSuffix = '_SVMer';
         }
 
         $dataToInsert = [];
@@ -217,18 +230,20 @@ class ImportFileController extends Controller
                 }
 
                 $rowData = [];
-                $rowData['uniqueid_namareport'] = uniqid() . '_MDT';
+                // Menggunakan ID Suffix yang cerdas sesuai nama tabel
+                $rowData['uniqueid_namareport'] = uniqid() . $uniqueSuffix;
 
                 foreach ($selectedColumns as $index) {
                     if (!isset($csvHeaders[$index])) continue;
                     
-                    $colName = $csvHeaders[$index];
+                    // 🔥 PERBAIKAN: Ubah spasi pada nama header CSV menjadi underscore agar cocok dengan MySQL
+                    // Contoh: "KODE KCI" menjadi "KODE_KCI"
+                    $colName = str_replace(' ', '_', $csvHeaders[$index]);
+
                     if (strtolower($colName) === 'id' || strtolower($colName) === 'uniqueid_namareport') {
                         continue;
                     }
 
-                    // 🔥 PERBAIKAN UTAMA: Ubah string kosong ("") menjadi NULL
-                    // Ini mencegah MySQL menolak data jika kolom berupa DATETIME, DATE, atau INTEGER
                     $cellValue = isset($data[$index]) ? trim($data[$index]) : '';
                     $rowData[$colName] = ($cellValue === '') ? null : $cellValue;
                 }
@@ -237,12 +252,6 @@ class ImportFileController extends Controller
                 $rowCounter++;
             }
             fclose($handle);
-        }
-
-        $reportData = DB::table('nama_report')->where('id_report', $idReport)->first();
-        $tableName = $reportData ? strtolower(str_replace(' ', '_', $reportData->nama_report)) : 'jumlah_merchant_detail';
-        if (!DB::getSchemaBuilder()->hasTable($tableName)) {
-            $tableName = 'jumlah_merchant_detail';
         }
 
         $jobId = DB::table('import_jobs')->insertGetId([
@@ -258,7 +267,6 @@ class ImportFileController extends Controller
 
         \Illuminate\Support\Facades\Schema::dropIfExists('import_mappings');
 
-        // Kembalikan ke 500 baris per eksekusi agar stabil
         $chunks = array_chunk($dataToInsert, 500);
         $totalSuccess = 0;
         $totalFailed = 0;
@@ -304,7 +312,7 @@ class ImportFileController extends Controller
 
         return redirect()->route('import.index')->with('sweet_success', [
             'title' => 'Berhasil!',
-            'text' => "Sebanyak $totalSuccess baris data telah sukses masuk ke tabel <b>$tableName</b>."
+            'text' => "Sebanyak $totalSuccess baris data telah sukses masuk ke tabel <b class='text-uppercase'>$tableName</b>."
         ]);
     }
 }
