@@ -12,120 +12,65 @@ use App\Models\NamaReport;
 
 class ImportFileController extends Controller
 {
+    // ... [BIARKAN METHOD UPLOAD DAN PREVIEW SAMA SEPERTI SEBELUMNYA] ...
     public function upload(Request $request)
     {
-        $request->validate([
-            'id_report' => 'required',
-            'file' => 'required|file|mimes:rar',
-        ]);
-
+        $request->validate(['id_report' => 'required', 'file' => 'required|file|mimes:rar']);
         $folderName = 'import_' . date('Ymd_His') . '_' . Str::random(5);
         $storagePath = storage_path('app/imports/' . $folderName);
-
-        if (!file_exists($storagePath)) {
-            mkdir($storagePath, 0777, true);
-        }
-
+        if (!file_exists($storagePath)) { mkdir($storagePath, 0777, true); }
         $file = $request->file('file');
         $fileName = $file->getClientOriginalName();
         $file->move($storagePath, $fileName);
         $fullPath = $storagePath . '/' . $fileName;
-
         $extractPath = $storagePath . '/extracted';
-
-        if (!file_exists($extractPath)) {
-            mkdir($extractPath, 0777, true);
-        }
-
+        if (!file_exists($extractPath)) { mkdir($extractPath, 0777, true); }
         $command = '"C:\Program Files\7-Zip\7z.exe" x "' . $fullPath . '" -o"' . $extractPath . '" -y';
         exec($command);
-
         $files = [];
         $rii = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($extractPath));
-
         foreach ($rii as $fileItem) {
             if ($fileItem->isDir()) continue;
-
-            $files[] = [
-                'name' => $fileItem->getFilename(),
-                'path' => $fileItem->getPathname(),
-            ];
+            $files[] = ['name' => $fileItem->getFilename(), 'path' => $fileItem->getPathname()];
         }
-
-        session([
-            'import_files' => $files,
-            'active_id_report' => $request->input('id_report')
-        ]);
-
+        session(['import_files' => $files, 'active_id_report' => $request->input('id_report')]);
         return redirect()->route('import.select');
     }
 
     public function preview(Request $request)
     {
         ini_set('auto_detect_line_endings', true);
-
-        $request->validate([
-            'file_path' => 'required|string',
-            'delimiter' => 'nullable|string'
-        ]);
-
+        $request->validate(['file_path' => 'required|string', 'delimiter' => 'nullable|string']);
         $filePath = $request->input('file_path');
         $currentDelimiter = $request->input('delimiter', 'auto');
-
-        if (!file_exists($filePath)) {
-            return back()->with('error', 'File tidak ditemukan di server.');
-        }
-
+        if (!file_exists($filePath)) { return back()->with('error', 'File tidak ditemukan di server.'); }
         $extension = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
-        $headers = [];
-        $previewData = [];
-        $uniqueValues = []; 
-
+        $headers = []; $previewData = []; $uniqueValues = []; 
         if (in_array($extension, ['csv', 'txt'])) {
             if (($handle = fopen($filePath, "r")) !== FALSE) {
-                
                 $firstLine = fgets($handle);
-                
                 if ($currentDelimiter === 'auto') {
                     $delimiters = [',' => 0, ';' => 0, '|' => 0, "\t" => 0, '.' => 0];
-                    foreach ($delimiters as $delim => &$count) {
-                        $count = substr_count($firstLine, $delim);
-                    }
-                    arsort($delimiters);
-                    $delimiter = key($delimiters); 
-                } else {
-                    $delimiter = $currentDelimiter;
-                }
-                
+                    foreach ($delimiters as $delim => &$count) { $count = substr_count($firstLine, $delim); }
+                    arsort($delimiters); $delimiter = key($delimiters); 
+                } else { $delimiter = $currentDelimiter; }
                 rewind($handle); 
-
-                $rowCounter = 0;
-                $savedRows = 0;
-
+                $rowCounter = 0; $savedRows = 0;
                 while (($data = fgetcsv($handle, 10000, $delimiter)) !== FALSE) {
                     if (empty($data) || implode('', $data) === '') continue;
-
                     if ($rowCounter == 0) {
                         $headers = array_map(function($val) {
-                            return trim(preg_replace('/[\xef\xbb\xbf]/', '', $val));
+                            $clean = trim(preg_replace('/[\xef\xbb\xbf]/', '', $val));
+                            return str_replace(' ', '_', $clean);
                         }, $data);
-
-                        foreach ($headers as $i => $h) {
-                            $uniqueValues[$i] = [];
-                        }
+                        foreach ($headers as $i => $h) { $uniqueValues[$i] = []; }
                     } else {
-                        if ($savedRows <= 2500) {
-                            $previewData[] = $data;
-                            $savedRows++;
-                        }
-                        
+                        if ($savedRows <= 2500) { $previewData[] = $data; $savedRows++; }
                         foreach ($data as $i => $val) {
                             if (isset($uniqueValues[$i])) {
                                 $cleanVal = trim($val);
                                 $uniqueValues[$i][$cleanVal] = true; 
-                                if (count($uniqueValues[$i]) > 300) {
-                                    unset($uniqueValues[$i]); 
-                                }
+                                if (count($uniqueValues[$i]) > 300) { unset($uniqueValues[$i]); }
                             }
                         }
                     }
@@ -134,19 +79,12 @@ class ImportFileController extends Controller
                 }
                 fclose($handle);
             }
-        } else {
-            return back()->with('error', 'Format file tidak didukung.');
-        }
-
+        } else { return back()->with('error', 'Format file tidak didukung.'); }
         $formattedUniqueValues = [];
         foreach ($uniqueValues as $index => $valuesMap) {
-            $keys = array_keys($valuesMap);
-            sort($keys);
-            $formattedUniqueValues[$index] = $keys;
+            $keys = array_keys($valuesMap); sort($keys); $formattedUniqueValues[$index] = $keys;
         }
-
         session(['final_import_path' => $filePath]);
-
         return view('import.preview', compact('headers', 'previewData', 'filePath', 'formattedUniqueValues', 'currentDelimiter'));
     }
 
@@ -173,15 +111,13 @@ class ImportFileController extends Controller
             return redirect()->route('import.select')->with('error', 'File tidak ditemukan.');
         }
 
-        // 🔥 DETEKSI NAMA TABEL BERDASARKAN MASTER DATA
         $reportData = DB::table('nama_report')->where('id_report', $idReport)->first();
         $tableName = $reportData ? strtolower(str_replace(' ', '_', $reportData->nama_report)) : 'jumlah_merchant_detail';
         if (!DB::getSchemaBuilder()->hasTable($tableName)) {
-            $tableName = 'jumlah_merchant_detail'; // Fallback
+            $tableName = 'jumlah_merchant_detail'; 
         }
 
-        // 🔥 LOGIKA KECERDASAN SUFFIX UNIQUE ID
-        $uniqueSuffix = '_MDT'; // Default
+        $uniqueSuffix = '_MDT'; 
         if ($tableName === 'sv_merchant') {
             $uniqueSuffix = '_SVMer';
         }
@@ -230,14 +166,11 @@ class ImportFileController extends Controller
                 }
 
                 $rowData = [];
-                // Menggunakan ID Suffix yang cerdas sesuai nama tabel
                 $rowData['uniqueid_namareport'] = uniqid() . $uniqueSuffix;
 
                 foreach ($selectedColumns as $index) {
                     if (!isset($csvHeaders[$index])) continue;
                     
-                    // 🔥 PERBAIKAN: Ubah spasi pada nama header CSV menjadi underscore agar cocok dengan MySQL
-                    // Contoh: "KODE KCI" menjadi "KODE_KCI"
                     $colName = str_replace(' ', '_', $csvHeaders[$index]);
 
                     if (strtolower($colName) === 'id' || strtolower($colName) === 'uniqueid_namareport') {
@@ -252,6 +185,30 @@ class ImportFileController extends Controller
                 $rowCounter++;
             }
             fclose($handle);
+        }
+
+        // 🔥 SATPAM ANTI-DUPLIKAT (Cek berdasarkan tanggal POSISI di tabel target)
+        $samplePosisi = null;
+        if (!empty($dataToInsert)) {
+            // Ambil tanggal POSISI dari baris pertama yang berhasil disaring
+            $samplePosisi = $dataToInsert[0]['POSISI'] ?? null;
+        }
+
+        if ($samplePosisi) {
+            $isDuplicate = DB::table($tableName)->where('POSISI', $samplePosisi)->exists();
+            if ($isDuplicate) {
+                // Bersihkan sampah CSV karena proses dibatalkan
+                $importDir = dirname(dirname($filePath));
+                if (strpos($importDir, 'imports') !== false && File::exists($importDir)) {
+                    File::deleteDirectory($importDir);
+                }
+                
+                // Lempar kembali dengan pesan SweetAlert Penolakan
+                return redirect()->route('import.index')->with('sweet_warning', [
+                    'title' => 'Data Ditolak (Duplikat)!',
+                    'text' => "Data untuk tanggal POSISI <b>$samplePosisi</b> sudah pernah diunggah sebelumnya ke tabel <b class='text-uppercase'>$tableName</b>.<br><br>Sistem membatalkan proses ini untuk mencegah data ganda."
+                ]);
+            }
         }
 
         $jobId = DB::table('import_jobs')->insertGetId([

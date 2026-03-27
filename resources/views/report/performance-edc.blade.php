@@ -5,32 +5,53 @@
 @section('content')
 
 <style>
-    .table-report { border-collapse: collapse; width: 100%; }
+    /* 🔥 PERBAIKAN UI: Tabel elastis dan cerdas menyesuaikan ukuran layar */
+    .table-container { width: 100%; overflow-x: hidden; }
+    .table-report { 
+        border-collapse: collapse; 
+        width: 100%; 
+        table-layout: auto; 
+    }
     .table-report th, .table-report td { 
         vertical-align: middle !important; 
-        white-space: nowrap; 
         border: 1px solid #dee2e6;
+        word-wrap: break-word;
+        white-space: normal; /* Mencabut aturan Anti-Wrap agar bisa menyusut */
     }
-    .table-report th { font-size: 0.80rem; padding: 10px 8px; text-align: center; }
-    .table-report td { font-size: 0.85rem; padding: 6px 10px; text-align: right; }
+    .table-report th { font-size: 0.65rem; padding: 10px 4px; text-align: center; }
+    .table-report td { font-size: 0.70rem; padding: 6px 4px; text-align: right; }
     .table-report td.text-left { text-align: left; }
     
-    /* Pewarnaan Header Sesuai SS3 */
+    /* Pewarnaan Header TAB 1 & 2 Sesuai Sebelumnya */
     .bg-mid-dark { background-color: #2b5cb5 !important; color: #ffffff !important; }
     .bg-prod-dark { background-color: #6c9ce8 !important; color: #ffffff !important; }
     .bg-sv-dark { background-color: #9baab8 !important; color: #ffffff !important; }
     .bg-header-sub { background-color: #f1f5fa !important; color: #333 !important; font-weight: bold; }
     
+    .bg-tab2-dark { background-color: #2b5cb5 !important; color: #ffffff !important; border-color: #214b99 !important; }
+    .bg-tab2-light { background-color: #92c0f0 !important; color: #000000 !important; border-color: #8eb7e3 !important; font-weight: bold; }
+    .bg-tab2-sublight { background-color: #dae8f9 !important; color: #000000 !important; border-color: #c8d9ea !important; font-weight: bold; }
+    
+    /* 🔥 Pewarnaan Header TAB 3 (Produktivitas MoM) */
+    .bg-mom-sv0 { background-color: #2956a8 !important; color: white !important; }
+    .bg-mom-sv1 { background-color: #4b7bc9 !important; color: white !important; }
+    .bg-mom-prod { background-color: #6c9ce8 !important; color: white !important; }
+    .bg-mom-tid { background-color: #3b6bbd !important; color: white !important; }
+    .bg-mom-svvol { background-color: #1f4282 !important; color: white !important; }
+
+    /* Conditional Formatting Latar Belakang Sel (%) */
+    .bg-good { background-color: #d4edda !important; color: #155724 !important; font-weight: bold;}
+    .bg-bad { background-color: #f8d7da !important; color: #721c24 !important; font-weight: bold;}
+
     .table-hover tbody tr:hover { background-color: #f1f7ff; }
     .row-total { background-color: #003366 !important; color: white !important; font-weight: bold; }
     .row-total td { color: white !important; }
-    .val-up { color: #28a745; font-weight: bold; margin-left: 4px; }
-    .val-down { color: #dc3545; font-weight: bold; margin-left: 4px; }
+    .val-up { color: #28a745; font-weight: bold; margin-left: 2px; }
+    .val-down { color: #dc3545; font-weight: bold; margin-left: 2px; }
     
-    .rka-col { background-color: #fff3cd !important; color: #856404 !important; font-weight: 600; }
+    .rka-col { background-color: #fff3cd !important; color: #856404 !important; font-weight: 600; border-color: #f6e3a6 !important; }
     .row-total .rka-col { background-color: #ffe8a1 !important; color: #856404 !important; }
     
-    /* Desain Nav Tabs Activity */
     .nav-tabs.report-tabs { border-bottom: 2px solid #dee2e6; }
     .nav-tabs.report-tabs .nav-link { border: none; font-weight: 600; color: #6c757d; padding: 12px 20px; }
     .nav-tabs.report-tabs .nav-link.active { border-bottom: 3px solid #007bff; color: #007bff; background: transparent; }
@@ -87,6 +108,12 @@
                     <i class="fas fa-credit-card mr-1"></i> MID & TID
                 </a>
             </li>
+            <li class="nav-item">
+                <a class="nav-link" data-toggle="tab" href="#tab-prod-mom" role="tab" data-tab="prod_mom">
+                    <i class="fas fa-chart-bar mr-1"></i> Produktivitas EDC MoM
+                </a>
+            </li>
+
             <li class="nav-item ml-auto d-flex align-items-center pr-2">
                 <span id="loadingIndicator" class="text-warning font-weight-bold" style="display: none; font-size: 0.9rem;">
                     <i class="fas fa-spinner fa-spin mr-1"></i> Memuat Data...
@@ -99,14 +126,14 @@
         <div class="tab-content">
             
             <div class="tab-pane fade show active" id="tab-edc" role="tabpanel">
-                <div class="table-responsive" style="max-height: 650px; overflow-y: auto; overflow-x: auto;">
+                <div class="table-container">
                     <table class="table table-hover table-report m-0">
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
-                                <th rowspan="2" class="bg-mid-dark align-middle" style="min-width: 160px; border-color: #1f4282;">BRANCH OFFICE</th>
-                                <th colspan="8" class="bg-mid-dark" style="border-color: #1f4282;">Jumlah MID</th>
-                                <th colspan="8" class="bg-prod-dark" style="border-color: #4b7bc9;">EDC Merchant Produktif <br><small>SV >= 15 Juta/Bulan</small></th>
-                                <th colspan="6" class="bg-sv-dark" style="border-color: #798691;">SV Merchant EDC Akumulasi <br><small>(Rp Milyar)</small></th>
+                                <th rowspan="2" class="bg-mid-dark align-middle">BRANCH OFFICE</th>
+                                <th colspan="8" class="bg-mid-dark">Jumlah MID</th>
+                                <th colspan="8" class="bg-prod-dark">EDC Merchant Produktif <br><small>SV >= 15 Juta/Bulan</small></th>
+                                <th colspan="6" class="bg-sv-dark">SV Merchant EDC Akumulasi <br><small>(Rp Milyar)</small></th>
                             </tr>
                             <tr class="bg-header-sub">
                                 <th class="lbl-yoy">YoY</th> <th class="lbl-ytd">YtD</th> <th class="lbl-mtd">MtD</th> <th class="lbl-curr">Curr</th>
@@ -122,23 +149,49 @@
             </div>
 
             <div class="tab-pane fade" id="tab-mid" role="tabpanel">
-                <div class="table-responsive" style="max-height: 650px; overflow-y: auto; overflow-x: auto;">
+                <div class="table-container">
                     <table class="table table-hover table-report m-0">
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
-                                <th rowspan="2" class="bg-mid-dark align-middle" style="min-width: 180px; border-color: #1f4282;">BRANCH OFFICE</th>
-                                <th colspan="8"  class="bg-mid-dark" style="border-color: #1f4282;">Jumlah MID</th>
-                                <th colspan="10" class="bg-sv-dark" style="border-color: #798691;">Jumlah TID</th>
+                                <th rowspan="2" class="bg-tab2-dark align-middle">REGIONAL / BRANCH OFFICE</th>
+                                <th colspan="8" class="bg-tab2-dark">Jumlah MID</th>
+                                <th colspan="10" class="bg-tab2-light">Jumlah TID</th>
                             </tr>
-                            <tr class="bg-header-sub">
-                                <th class="lbl-yoy">YoY</th> <th class="lbl-ytd">YtD</th> <th class="lbl-mtd">MtD</th> <th class="lbl-curr">Curr</th>
-                                <th>MtD</th> <th>MtD(%)</th> <th>YtD</th> <th>YoY</th>
+                            <tr>
+                                <th class="bg-tab2-light lbl-yoy">YoY</th> <th class="bg-tab2-light lbl-ytd">YtD</th> <th class="bg-tab2-light lbl-mtd">MtD</th> <th class="bg-tab2-light lbl-curr">Curr</th>
+                                <th class="bg-tab2-light">MtD</th> <th class="bg-tab2-light">MtD(%)</th> <th class="bg-tab2-light">YtD</th> <th class="bg-tab2-light">YoY</th>
                                 
-                                <th class="lbl-yoy">YoY</th> <th class="lbl-ytd">YtD</th> <th class="lbl-mtd">MtD</th> <th class="lbl-curr">Curr</th>
-                                <th>MtD</th> <th>MtD(%)</th> <th>YtD</th> <th>YoY</th> <th>RKA</th> <th>Penc(%)</th>
+                                <th class="bg-tab2-sublight lbl-yoy">YoY</th> <th class="bg-tab2-sublight lbl-ytd">YtD</th> <th class="bg-tab2-sublight lbl-mtd">MtD</th> <th class="bg-tab2-sublight lbl-curr">Curr</th>
+                                <th class="bg-tab2-sublight">MtD</th> <th class="bg-tab2-sublight">MtD(%)</th> <th class="bg-tab2-sublight">YtD</th> <th class="bg-tab2-sublight">YoY</th> 
+                                <th class="rka-col text-dark">RKA</th> <th class="rka-col text-dark">Penc (%)</th>
                             </tr>
                         </thead>
                         <tbody id="tbody-mid"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="tab-pane fade" id="tab-prod-mom" role="tabpanel">
+                <div class="table-container">
+                    <table class="table table-hover table-report m-0">
+                        <thead class="sticky-top" style="z-index: 2;">
+                            <tr>
+                                <th rowspan="2" class="bg-mom-sv0 align-middle">Regional Office</th>
+                                <th colspan="4" class="bg-mom-sv0">SV 0</th>
+                                <th colspan="4" class="bg-mom-sv1">SV 1 Juta - &lt;15 Juta</th>
+                                <th colspan="7" class="bg-mom-prod">Produktif (&gt;= 15 Juta)</th>
+                                <th colspan="4" class="bg-mom-tid">Total TID</th>
+                                <th colspan="4" class="bg-mom-svvol">SV Bulan Berjalan (Rp Milyar)</th>
+                            </tr>
+                            <tr class="bg-header-sub">
+                                <th class="lbl-mtd">MtD</th> <th class="lbl-curr">Curr</th> <th>MoM</th> <th>% MoM</th>
+                                <th class="lbl-mtd">MtD</th> <th class="lbl-curr">Curr</th> <th>MoM</th> <th>% MoM</th>
+                                <th class="lbl-mtd">MtD</th> <th class="lbl-curr">Curr</th> <th>MoM</th> <th>% MoM</th> <th class="rka-col">RKA</th> <th class="rka-col">Gap</th> <th class="rka-col">Penc(%)</th>
+                                <th class="lbl-mtd">MtD</th> <th class="lbl-curr">Curr</th> <th>MoM</th> <th>% MoM</th>
+                                <th class="lbl-mtd">MtD</th> <th class="lbl-curr">Curr</th> <th>MoM</th> <th>% MoM</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbody-prod-mom"></tbody>
                     </table>
                 </div>
             </div>
@@ -165,6 +218,19 @@ document.addEventListener('DOMContentLoaded', function () {
         return `${text} -`;
     }
 
+    // Fungsi Khusus Formatting Cell % MoM (Good = Hijau, Bad = Merah)
+    function formatCellPct(val, isInverse = false) {
+        let num = parseFloat(val);
+        let text = formatNum(num) + '%';
+        if (num === 0) return `<td>${text} -</td>`;
+
+        let isGood = isInverse ? (num < 0) : (num > 0); // Jika inverse, Minus itu Bagus
+        let bgClass = isGood ? 'bg-good' : 'bg-bad';
+        let arrow = num > 0 ? '<i class="fas fa-arrow-up"></i>' : '<i class="fas fa-arrow-down"></i>';
+
+        return `<td class="${bgClass}">${text} ${arrow}</td>`;
+    }
+
     function loadData() {
         $('#loadingIndicator').fadeIn('fast');
         
@@ -189,7 +255,6 @@ document.addEventListener('DOMContentLoaded', function () {
                     let html = '';
 
                     if (activeTab === 'edc') {
-                        // Render Table Tab 1 (EDC)
                         res.data.forEach((row) => {
                             html += `<tr>
                                 <td class="text-left font-weight-bold text-dark">${row.branch}</td>
@@ -222,8 +287,8 @@ document.addEventListener('DOMContentLoaded', function () {
                         </tr>`;
                         $('#tbody-edc').html(html);
 
-                    } else {
-                        // Render Table Tab 2 (MID_TID)
+                    } 
+                    else if (activeTab === 'mid_tid') {
                         res.data.forEach((row) => {
                             html += `<tr>
                                 <td class="text-left font-weight-bold text-dark">${row.branch}</td>
@@ -232,7 +297,7 @@ document.addEventListener('DOMContentLoaded', function () {
                                 
                                 <td>${formatNum(row.tid.yoy)}</td> <td>${formatNum(row.tid.ytd)}</td> <td>${formatNum(row.tid.mtd)}</td> <td class="font-weight-bold">${formatNum(row.tid.curr)}</td>
                                 <td>${formatGrowth(row.tid.mtd_val)}</td> <td>${formatGrowth(row.tid.mtd_pct, true)}</td> <td>${formatGrowth(row.tid.ytd_val)}</td> <td>${formatGrowth(row.tid.yoy_val)}</td>
-                                <td class="rka-col">${formatNum(row.tid.rka)}</td> <td class="rka-col">${formatNum(row.tid.penc_pct)}%</td>
+                                <td class="rka-col">${formatNum(row.tid.rka)}</td> <td class="rka-col font-weight-bold" style="color:#d99900;">${formatNum(row.tid.penc_pct)}%</td>
                             </tr>`;
                         });
                         
@@ -248,24 +313,62 @@ document.addEventListener('DOMContentLoaded', function () {
                         </tr>`;
                         $('#tbody-mid').html(html);
                     }
+                    
+                    // TAB 3: PRODUKTIVITAS MoM
+                    else if (activeTab === 'prod_mom') {
+                        res.data.forEach((row) => {
+                            html += `<tr>
+                                <td class="text-left font-weight-bold text-dark">${row.branch}</td>
+                                
+                                <td>${formatNum(row.sv0.mtd)}</td> <td>${formatNum(row.sv0.curr)}</td>
+                                <td>${formatGrowth(row.sv0.mom)}</td> ${formatCellPct(row.sv0.pct, true)} 
+                                
+                                <td>${formatNum(row.sv1_15.mtd)}</td> <td>${formatNum(row.sv1_15.curr)}</td>
+                                <td>${formatGrowth(row.sv1_15.mom)}</td> ${formatCellPct(row.sv1_15.pct, false)} 
+                                
+                                <td>${formatNum(row.prod.mtd)}</td> <td>${formatNum(row.prod.curr)}</td>
+                                <td>${formatGrowth(row.prod.mom)}</td> ${formatCellPct(row.prod.pct, false)} 
+                                <td class="rka-col">${formatNum(row.prod.rka)}</td> <td class="rka-col">${formatNum(row.prod.gap)}</td> <td class="rka-col">${formatNum(row.prod.penc)}%</td>
+                                
+                                <td>${formatNum(row.tid.mtd)}</td> <td>${formatNum(row.tid.curr)}</td>
+                                <td>${formatGrowth(row.tid.mom)}</td> ${formatCellPct(row.tid.pct, false)} 
+                                
+                                <td>${formatNum(row.sv_vol.mtd)}</td> <td>${formatNum(row.sv_vol.curr)}</td>
+                                <td>${formatGrowth(row.sv_vol.mom)}</td> ${formatCellPct(row.sv_vol.pct, false)} 
+                            </tr>`;
+                        });
+                        
+                        let total = res.total;
+                        html += `<tr class="row-total">
+                            <td class="text-left">${total.branch}</td>
+                            
+                            <td>${formatNum(total.sv0.mtd)}</td> <td>${formatNum(total.sv0.curr)}</td>
+                            <td>${formatGrowth(total.sv0.mom)}</td> <td class="text-white">${formatGrowth(total.sv0.pct, true)}</td>
+                            
+                            <td>${formatNum(total.sv1_15.mtd)}</td> <td>${formatNum(total.sv1_15.curr)}</td>
+                            <td>${formatGrowth(total.sv1_15.mom)}</td> <td class="text-white">${formatGrowth(total.sv1_15.pct, true)}</td>
+                            
+                            <td>${formatNum(total.prod.mtd)}</td> <td>${formatNum(total.prod.curr)}</td>
+                            <td>${formatGrowth(total.prod.mom)}</td> <td class="text-white">${formatGrowth(total.prod.pct, true)}</td>
+                            <td class="rka-col text-dark">${formatNum(total.prod.rka)}</td> <td class="rka-col text-dark">${formatNum(total.prod.gap)}</td> <td class="rka-col text-dark">${formatNum(total.prod.penc)}%</td>
+                            
+                            <td>${formatNum(total.tid.mtd)}</td> <td>${formatNum(total.tid.curr)}</td>
+                            <td>${formatGrowth(total.tid.mom)}</td> <td class="text-white">${formatGrowth(total.tid.pct, true)}</td>
+                            
+                            <td>${formatNum(total.sv_vol.mtd)}</td> <td>${formatNum(total.sv_vol.curr)}</td>
+                            <td>${formatGrowth(total.sv_vol.mom)}</td> <td class="text-white">${formatGrowth(total.sv_vol.pct, true)}</td>
+                        </tr>`;
+                        $('#tbody-prod-mom').html(html);
+                    }
                 }
                 $('#loadingIndicator').fadeOut('fast');
             }
         });
     }
 
-    // Trigger saat Tanggal Berubah
-    $('.filter-trigger').on('change', function() {
-        loadData();
-    });
+    $('.filter-trigger').on('change', function() { loadData(); });
+    $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) { activeTab = $(e.target).data('tab'); loadData(); });
 
-    // Trigger saat ganti Tab Navigasi
-    $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
-        activeTab = $(e.target).data('tab');
-        loadData();
-    });
-
-    // Initial Load
     loadData();
 });
 </script>
