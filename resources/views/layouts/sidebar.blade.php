@@ -74,8 +74,8 @@
                 <li class="nav-header">REPORT</li>
 
                 <li class="nav-item">
-                    <a href="#"
-                       class="nav-link {{ request()->is('reports*') ? 'active' : '' }}">
+                    <a href="{{ route('report.index') }}"
+                       class="nav-link {{ request()->routeIs('report.*') ? 'active' : '' }}">
                         <i class="nav-icon fas fa-chart-bar"></i>
                         <p>Data Report</p>
                     </a>

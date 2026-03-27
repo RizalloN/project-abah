@@ -12,7 +12,11 @@ Route::get('/dashboard', function () {
     return view('dashboard');
 })->middleware(['auth'])->name('dashboard');
 
-Route::middleware(['auth', 'role:admin'])->group(function () {
+    // Tambahkan baris ini di dalam Route::middleware(['auth', 'role:admin'])->group(...)
+    Route::get('/report', [App\Http\Controllers\DataReportController::class, 'index'])->name('report.index');
+    Route::post('/report/data', [App\Http\Controllers\DataReportController::class, 'fetchData'])->name('report.data');
+
+    Route::middleware(['auth', 'role:admin'])->group(function () {
     Route::get('/import', [ImportIndexController::class, 'index'])->name('import.index');
     Route::post('/import/upload', [ImportFileController::class, 'upload'])->name('import.upload');
     
