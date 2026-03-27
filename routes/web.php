@@ -13,7 +13,7 @@ Route::get('/dashboard', function () {
 })->middleware(['auth'])->name('dashboard');
 
     // Tambahkan baris ini di dalam Route::middleware(['auth', 'role:admin'])->group(...)
-    Route::get('/report', [App\Http\Controllers\DataReportController::class, 'index'])->name('report.index');
+    Route::get('/report/optimalisasi-digital/edc', [App\Http\Controllers\DataReportController::class, 'performanceEdc'])->name('report.edc');
     Route::post('/report/data', [App\Http\Controllers\DataReportController::class, 'fetchData'])->name('report.data');
 
     Route::middleware(['auth', 'role:admin'])->group(function () {

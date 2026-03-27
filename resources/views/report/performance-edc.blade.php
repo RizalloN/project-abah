@@ -1,6 +1,6 @@
 @extends('layouts.admin')
 
-@section('title', 'Data Report')
+@section('title', 'Performance EDC')
 
 @section('content')
 
@@ -8,15 +8,15 @@
 <link href="https://cdn.jsdelivr.net/npm/@ttskch/select2-bootstrap4-theme@1.5.2/dist/select2-bootstrap4.min.css" rel="stylesheet">
 
 <style>
-    /* 🔥 PERBAIKAN CSS: Menjinakkan Select2 agar rapi dan seragam tingginya */
     .select2-container { width: 100% !important; }
     .select2-container--bootstrap4 .select2-selection--multiple {
         min-height: 38px !important;
         border: 1px solid #ced4da !important;
         border-radius: 0.25rem !important;
+        background-color: #e9ecef !important; /* Warna abu-abu (disabled) */
     }
     .select2-container--bootstrap4 .select2-selection--multiple .select2-selection__choice {
-        background-color: #007bff;
+        background-color: #6c757d; /* Warna badge disabled */
         color: #fff;
         border: none;
         border-radius: 4px;
@@ -24,39 +24,27 @@
         margin-top: 5px;
     }
     
-    /* 🔥 PERBAIKAN CSS: Tabel Ala Excel Premium */
     .table-report { border-collapse: collapse; width: 100%; }
     .table-report th, .table-report td { 
         vertical-align: middle !important; 
         white-space: nowrap; 
         border: 1px solid #dee2e6;
     }
-    .table-report th { 
-        font-size: 0.85rem; 
-        padding: 12px 10px; 
-        text-align: center; /* Paksa semua header ke tengah */
-    }
-    .table-report td { 
-        font-size: 0.85rem; 
-        padding: 8px 10px; 
-        text-align: right; /* Angka di kanan */
-    }
+    .table-report th { font-size: 0.85rem; padding: 12px 10px; text-align: center; }
+    .table-report td { font-size: 0.85rem; padding: 8px 10px; text-align: right; }
     .table-report td.text-left { text-align: left; }
     
-    /* Gradasi Warna Header Biru Korporat */
     .bg-primary-dark { background-color: #003366 !important; color: #ffffff !important; }
     .bg-primary-mid { background-color: #00509E !important; color: #ffffff !important; }
     .bg-primary-light { background-color: #0073CF !important; color: #ffffff !important; }
     .bg-header-sub { background-color: #e9ecef !important; color: #495057 !important; font-weight: bold; }
     
-    /* Baris Tabel */
     .table-hover tbody tr:hover { background-color: #f1f7ff; }
     .row-total { background-color: #003366 !important; color: white !important; font-weight: bold; }
     .row-total td { color: white !important; }
     .val-up { color: #28a745; font-weight: bold; margin-left: 4px; }
     .val-down { color: #dc3545; font-weight: bold; margin-left: 4px; }
     
-    /* Highlight RKA (Kuning Lembut) */
     .rka-col { background-color: #fff3cd !important; color: #856404 !important; font-weight: 600; }
     .row-total .rka-col { background-color: #ffe8a1 !important; color: #856404 !important; }
 </style>
@@ -64,51 +52,54 @@
 <div class="card card-outline card-primary shadow-sm mb-4">
     <div class="card-header bg-white border-bottom-0 pt-4 pb-0">
         <h3 class="card-title font-weight-bold text-primary" id="judulReportLabel">
-            <i class="fas fa-filter mr-1"></i> Parameter Laporan
+            <i class="fas fa-chart-line mr-1"></i> Laporan: Performance EDC
         </h3>
     </div>
     <div class="card-body">
         <div class="row">
+            
+            <input type="hidden" id="filter_id_report" value="{{ $id_report }}">
+
             <div class="col-md-3">
                 <div class="form-group">
                     <label class="text-muted text-sm mb-1">Nama Report</label>
-                    <select id="filter_id_report" class="form-control select2 filter-trigger">
-                        @foreach($reports as $report)
-                            <option value="{{ $report->id_report }}">{{ $report->nama_report }}</option>
-                        @endforeach
-                    </select>
+                    <input type="text" class="form-control" value="Performance EDC" disabled>
                 </div>
             </div>
+            
             <div class="col-md-3">
                 <div class="form-group">
                     <label class="text-muted text-sm mb-1">Branch Office (Kanca)</label>
-                    <select id="filter_branch" class="form-control select2 filter-trigger" multiple="multiple" data-placeholder="Semua Cabang">
-                        @php $defaultArea6 = ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO']; @endphp
+                    <!-- Tampilan UI yang rapi untuk menggantikan Select2 yang berantakan -->
+                    <input type="text" class="form-control font-weight-bold" value="Area 6 - All" disabled>
+                    
+                    <!-- Form Select Asli disembunyikan (d-none) agar JS tetap bisa mengambil nilainya -->
+                    <select id="filter_branch" class="d-none" multiple="multiple">
                         @foreach($branches as $b)
-                            <option value="{{ $b }}" {{ in_array(strtoupper($b), $defaultArea6) ? 'selected' : '' }}>
-                                {{ strtoupper($b) }}
-                            </option>
+                            <option value="{{ $b }}" selected>{{ $b }}</option>
                         @endforeach
                     </select>
                 </div>
             </div>
+            
             <div class="col-md-2">
                 <div class="form-group">
                     <label class="text-muted text-sm mb-1">Nama Uker</label>
-                    <select id="filter_uker" class="form-control select2 filter-trigger" multiple="multiple" data-placeholder="ALL UKER">
-                        </select>
+                    <input type="text" class="form-control" value="---" disabled>
                 </div>
             </div>
+            
             <div class="col-md-2">
                 <div class="form-group">
-                    <label class="text-muted text-sm mb-1">Posisi Terakhir</label>
-                    <input type="date" id="filter_posisi" class="form-control filter-trigger" value="{{ date('Y-m-d') }}">
+                    <label class="text-dark text-sm font-weight-bold mb-1">Posisi Terakhir <i class="fas fa-edit text-primary ml-1"></i></label>
+                    <input type="date" id="filter_posisi" class="form-control border-primary shadow-sm filter-trigger" value="{{ date('Y-m-d') }}">
                 </div>
             </div>
+            
             <div class="col-md-2">
                 <div class="form-group">
                     <label class="text-muted text-sm mb-1">Posisi RKA</label>
-                    <input type="month" id="filter_rka" class="form-control" disabled title="Fitur RKA sementara dinonaktifkan" placeholder="--">
+                    <input type="text" id="filter_rka" class="form-control" disabled value="--------">
                 </div>
             </div>
         </div>
@@ -173,18 +164,13 @@
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     
-    // Inisialisasi Select2 dengan penyesuaian khusus Bootstrap 4
-    $('.select2').select2({ 
-        theme: 'bootstrap4',
-        width: '100%'
-    });
+    // Select2 hanya akan diaplikasikan ke class .select2 yang tidak d-none
+    $('.select2').select2({ theme: 'bootstrap4', width: '100%' });
 
-    // Fungsi Format Angka (1.000.000)
     function formatNum(num) {
         return new Intl.NumberFormat('id-ID').format(num);
     }
 
-    // Fungsi Format Tanda Panah (Growth)
     function formatGrowth(val, isPct = false) {
         let num = parseFloat(val);
         let text = isPct ? formatNum(num) + '%' : formatNum(num);
@@ -193,18 +179,17 @@ document.addEventListener('DOMContentLoaded', function () {
         return `${text} -`;
     }
 
-    // Fungsi Utama AJAX Load Data
     function loadData() {
         $('#loadingIndicator').fadeIn('fast');
         $('#reportTbody').html('<tr><td colspan="19" class="text-center py-5"><i class="fas fa-circle-notch fa-spin fa-3x text-info mb-3"></i><br><span class="text-muted">Mengalkulasi Data...</span></td></tr>');
 
-        let namaReport = $("#filter_id_report option:selected").text();
-        $("#judulReportLabel").html(`<i class="fas fa-chart-line mr-1 text-primary"></i> ${namaReport}`);
-
         let payload = {
             id_report: $('#filter_id_report').val(),
-            branches: $('#filter_branch').val(),
-            ukers: $('#filter_uker').val(),
+            
+            // Ambil array Cabang dari select box hidden
+            branches: Array.from(document.getElementById('filter_branch').options).map(opt => opt.value),
+            
+            ukers: [], // Kosong = ALL
             posisi: $('#filter_posisi').val(),
             _token: '{{ csrf_token() }}'
         };
@@ -223,9 +208,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
                     let html = '';
 
-                    // Jika tidak ada data cabang
                     if (res.data.length === 0) {
-                        html = '<tr><td colspan="19" class="text-center py-4 text-muted">Tidak ada data untuk filter yang dipilih.</td></tr>';
+                        html = '<tr><td colspan="19" class="text-center py-4 text-muted">Tidak ada data untuk tanggal yang dipilih.</td></tr>';
                     } else {
                         res.data.forEach((row) => {
                             html += `
@@ -249,8 +233,8 @@ document.addEventListener('DOMContentLoaded', function () {
                                     <td>${formatGrowth(row.tid.mtd_pct, true)}</td>
                                     <td>${formatGrowth(row.tid.ytd_val)}</td>
                                     <td>${formatGrowth(row.tid.yoy_val)}</td>
-                                    <td class="rka-col">${formatNum(row.tid.rka)}</td>
-                                    <td class="rka-col">${formatNum(row.tid.penc_pct)}%</td>
+                                    <td class="rka-col text-muted">${formatNum(row.tid.rka)}</td>
+                                    <td class="rka-col text-muted">${formatNum(row.tid.penc_pct)}%</td>
                                 </tr>
                             `;
                         });
@@ -277,8 +261,8 @@ document.addEventListener('DOMContentLoaded', function () {
                                 <td>${formatGrowth(total.tid.mtd_pct, true)}</td>
                                 <td>${formatGrowth(total.tid.ytd_val)}</td>
                                 <td>${formatGrowth(total.tid.yoy_val)}</td>
-                                <td class="rka-col">${formatNum(total.tid.rka)}</td>
-                                <td class="rka-col">${formatNum(total.tid.penc_pct)}%</td>
+                                <td class="rka-col text-dark">${formatNum(total.tid.rka)}</td>
+                                <td class="rka-col text-dark">${formatNum(total.tid.penc_pct)}%</td>
                             </tr>
                         `;
                     }
@@ -294,7 +278,7 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    // Trigger update data otomatis
+    // Trigger update data otomatis SAAT TANGGAL SAJA YANG BERUBAH
     $('.filter-trigger').on('change', function() {
         loadData();
     });

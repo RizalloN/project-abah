@@ -73,12 +73,53 @@
                 <!-- ===================== -->
                 <li class="nav-header">REPORT</li>
 
-                <li class="nav-item">
-                    <a href="{{ route('report.index') }}"
-                       class="nav-link {{ request()->routeIs('report.*') ? 'active' : '' }}">
-                        <i class="nav-icon fas fa-chart-bar"></i>
-                        <p>Data Report</p>
+                <li class="nav-item {{ request()->is('report/optimalisasi-digital*') ? 'menu-open' : '' }}">
+                    <a href="#" class="nav-link {{ request()->is('report/optimalisasi-digital*') ? 'active' : '' }}">
+                        <i class="nav-icon fas fa-chart-pie"></i>
+                        <p>
+                            1. Optimalisasi Digital
+                            <i class="right fas fa-angle-left"></i>
+                        </p>
                     </a>
+                    
+                    <ul class="nav nav-treeview">
+                        <li class="nav-item">
+                            <a href="{{ route('report.edc') }}" class="nav-link {{ request()->routeIs('report.edc') ? 'active' : '' }}">
+                                <i class="far fa-circle nav-icon text-info"></i>
+                                <p>Performance EDC</p>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="#" class="nav-link">
+                                <i class="far fa-circle nav-icon"></i>
+                                <p>Performance Jml QRIS</p>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="#" class="nav-link">
+                                <i class="far fa-circle nav-icon"></i>
+                                <p> CASA Merchant</p>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="#" class="nav-link">
+                                <i class="far fa-circle nav-icon"></i>
+                                <p>Performance BRImo</p>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="#" class="nav-link">
+                                <i class="far fa-circle nav-icon"></i>
+                                <p>Performance Brilink</p>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="#" class="nav-link">
+                                <i class="far fa-circle nav-icon"></i>
+                                <p>Performance Qlola</p>
+                            </a>
+                        </li>
+                    </ul>
                 </li>
 
             </ul>

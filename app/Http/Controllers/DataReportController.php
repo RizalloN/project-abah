@@ -10,23 +10,16 @@ use Carbon\Carbon;
 class DataReportController extends Controller
 {
     // 🔥 METHOD 1: Menampilkan Halaman View (UI)
-    public function index()
+    public function performanceEdc()
     {
-        // Ambil list Nama Report untuk dropdown
-        $reports = DB::table('nama_report')->where('active', 1)->get();
+        // Pakemkan Area 6
+        $branches = ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'];
+        
+        // Asumsi ID Report untuk Jumlah Merchant / EDC di database kamu adalah 1
+        $id_report = 1; 
 
-        // Ambil list Cabang (Kanca) unik dari database
-        $branches = DB::table('jumlah_merchant_detail')
-            ->select('NAMA_KANCA')
-            ->whereNotNull('NAMA_KANCA')
-            ->distinct()
-            ->orderBy('NAMA_KANCA')
-            ->pluck('NAMA_KANCA');
-
-        // Jika tabel terlalu besar dan query distinct bikin lambat, kamu bisa gunakan list manual ini:
-        // $branches = ['KC Banyuwangi', 'KC Batu', 'KC Jember', 'KC Kediri', 'KC Madiun', 'KC Magetan', 'KC Ngawi', 'KC Ponorogo'];
-
-        return view('report.index', compact('reports', 'branches'));
+        // Return ke view yang baru (performance-edc)
+        return view('report.performance-edc', compact('branches', 'id_report'));
     }
 
     // 🔥 METHOD 2: Mengambil Data (API / AJAX untuk Javascript)
