@@ -8,11 +8,11 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
+use Carbon\Carbon; // 🔥 Wajib ditambahkan untuk parsing tanggal
 use App\Models\NamaReport;
 
 class ImportFileController extends Controller
 {
-    // ... [BIARKAN METHOD UPLOAD DAN PREVIEW SAMA SEPERTI SEBELUMNYA] ...
     public function upload(Request $request)
     {
         $request->validate(['id_report' => 'required', 'file' => 'required|file|mimes:rar']);
@@ -65,6 +65,9 @@ class ImportFileController extends Controller
                         }, $data);
                         foreach ($headers as $i => $h) { $uniqueValues[$i] = []; }
                     } else {
+                        // Antisipasi jika baris kedua berisi header tambahan (Skip baris tersebut)
+                        if (trim($data[0]) === 'TAHUN') continue;
+
                         if ($savedRows <= 2500) { $previewData[] = $data; $savedRows++; }
                         foreach ($data as $i => $val) {
                             if (isset($uniqueValues[$i])) {
@@ -89,187 +92,196 @@ class ImportFileController extends Controller
     }
 
     public function processImport(Request $request)
-    {
-        ini_set('memory_limit', '-1');
-        ini_set('auto_detect_line_endings', true);
-        ini_set('max_execution_time', 0); 
+{
+    ini_set('memory_limit', '-1');
+    ini_set('auto_detect_line_endings', true);
+    ini_set('max_execution_time', 0); 
 
-        $request->validate([
-            'file_path' => 'required|string',
-            'selected_columns' => 'required|array|min:1',
-            'active_filters_json' => 'nullable|string',
-            'delimiter' => 'required|string'
-        ]);
+    $request->validate([
+        'file_path' => 'required|string',
+        'selected_columns' => 'required|array|min:1',
+        'active_filters_json' => 'nullable|string',
+        'delimiter' => 'required|string'
+    ]);
 
-        $filePath = $request->input('file_path');
-        $selectedColumns = $request->input('selected_columns');
-        $activeFilters = json_decode($request->input('active_filters_json'), true) ?: [];
-        $currentDelimiter = $request->input('delimiter', 'auto');
-        $idReport = session('active_id_report', 1);
+    $filePath = $request->input('file_path');
+    $selectedColumns = $request->input('selected_columns');
+    $activeFilters = json_decode($request->input('active_filters_json'), true) ?: [];
+    $currentDelimiter = $request->input('delimiter', 'auto');
+    $idReport = session('active_id_report', 1);
 
-        if (!file_exists($filePath)) {
-            return redirect()->route('import.select')->with('error', 'File tidak ditemukan.');
+    if (!file_exists($filePath)) {
+        return $request->expectsJson()
+            ? response()->json(['status' => 'error', 'title' => 'Error', 'text' => 'File tidak ditemukan.'])
+            : redirect()->route('import.select')->with('error', 'File tidak ditemukan.');
+    }
+
+    $reportData = DB::table('nama_report')->where('id_report', $idReport)->first();
+    $tableName = $reportData ? strtolower(str_replace(' ', '_', $reportData->nama_report)) : 'jumlah_merchant_detail';
+    if (!DB::getSchemaBuilder()->hasTable($tableName)) {
+        $tableName = 'jumlah_merchant_detail'; 
+    }
+
+    $uniqueSuffix = '_MDT'; 
+    if ($tableName === 'sv_merchant') {
+        $uniqueSuffix = '_SVMer';
+    } elseif ($tableName === 'merchant_qris') {
+        $uniqueSuffix = '_MQ';
+    }
+
+    $dataToInsert = [];
+    $csvHeaders = [];
+
+    if (($handle = fopen($filePath, "r")) !== FALSE) {
+        if ($currentDelimiter === 'auto') {
+            $firstLine = fgets($handle);
+            $delimiters = [',' => 0, ';' => 0, '|' => 0, "\t" => 0, '.' => 0];
+            foreach ($delimiters as $delim => &$count) {
+                $count = substr_count($firstLine, $delim);
+            }
+            arsort($delimiters);
+            $delimiter = key($delimiters);
+            rewind($handle);
+        } else {
+            $delimiter = $currentDelimiter;
         }
 
-        $reportData = DB::table('nama_report')->where('id_report', $idReport)->first();
-        $tableName = $reportData ? strtolower(str_replace(' ', '_', $reportData->nama_report)) : 'jumlah_merchant_detail';
-        if (!DB::getSchemaBuilder()->hasTable($tableName)) {
-            $tableName = 'jumlah_merchant_detail'; 
-        }
+        $rowCounter = 0;
+        while (($data = fgetcsv($handle, 10000, $delimiter)) !== FALSE) {
+            if (empty($data) || implode('', $data) === '') continue;
 
-        $uniqueSuffix = '_MDT'; 
-        if ($tableName === 'sv_merchant') {
-            $uniqueSuffix = '_SVMer';
-        }
-
-        $dataToInsert = [];
-        $csvHeaders = [];
-
-        if (($handle = fopen($filePath, "r")) !== FALSE) {
-            if ($currentDelimiter === 'auto') {
-                $firstLine = fgets($handle);
-                $delimiters = [',' => 0, ';' => 0, '|' => 0, "\t" => 0, '.' => 0];
-                foreach ($delimiters as $delim => &$count) {
-                    $count = substr_count($firstLine, $delim);
-                }
-                arsort($delimiters);
-                $delimiter = key($delimiters);
-                rewind($handle);
-            } else {
-                $delimiter = $currentDelimiter;
+            if ($rowCounter == 0) {
+                $csvHeaders = array_map(function($val) {
+                    return trim(preg_replace('/[\xef\xbb\xbf]/', '', $val));
+                }, $data);
+                $rowCounter++;
+                continue; 
             }
 
-            $rowCounter = 0;
-            while (($data = fgetcsv($handle, 10000, $delimiter)) !== FALSE) {
-                if (empty($data) || implode('', $data) === '') continue;
+            if (trim($data[0]) === 'TAHUN') continue;
 
-                if ($rowCounter == 0) {
-                    $csvHeaders = array_map(function($val) {
-                        return trim(preg_replace('/[\xef\xbb\xbf]/', '', $val));
-                    }, $data);
-                    $rowCounter++;
-                    continue; 
+            $passFilter = true;
+            foreach ($activeFilters as $colIdx => $allowedValues) {
+                $cellValue = isset($data[$colIdx]) ? trim($data[$colIdx]) : '';
+                if (!in_array($cellValue, $allowedValues)) {
+                    $passFilter = false;
+                    break;
                 }
+            }
 
-                $passFilter = true;
-                foreach ($activeFilters as $colIdx => $allowedValues) {
-                    $cellValue = isset($data[$colIdx]) ? trim($data[$colIdx]) : '';
-                    if (!in_array($cellValue, $allowedValues)) {
-                        $passFilter = false;
-                        break;
-                    }
-                }
+            if (!$passFilter) {
+                $rowCounter++;
+                continue;
+            }
 
-                if (!$passFilter) {
-                    $rowCounter++;
+            $rowData = [];
+            $rowData['uniqueid_namareport'] = uniqid() . $uniqueSuffix;
+
+            foreach ($selectedColumns as $index) {
+                if (!isset($csvHeaders[$index])) continue;
+                
+                $colName = str_replace(' ', '_', $csvHeaders[$index]);
+
+                if (strtolower($colName) === 'id' || strtolower($colName) === 'uniqueid_namareport') {
                     continue;
                 }
 
-                $rowData = [];
-                $rowData['uniqueid_namareport'] = uniqid() . $uniqueSuffix;
+                $cellValue = isset($data[$index]) ? trim($data[$index]) : '';
 
-                foreach ($selectedColumns as $index) {
-                    if (!isset($csvHeaders[$index])) continue;
-                    
-                    $colName = str_replace(' ', '_', $csvHeaders[$index]);
-
-                    if (strtolower($colName) === 'id' || strtolower($colName) === 'uniqueid_namareport') {
-                        continue;
-                    }
-
-                    $cellValue = isset($data[$index]) ? trim($data[$index]) : '';
-                    $rowData[$colName] = ($cellValue === '') ? null : $cellValue;
+                if (strtolower($colName) === 'posisi' && $cellValue !== '') {
+                    try {
+                        $cellValue = Carbon::parse($cellValue)->format('Y-m-d');
+                    } catch (\Exception $e) {}
                 }
-                
-                $dataToInsert[] = $rowData;
-                $rowCounter++;
+
+                $rowData[$colName] = ($cellValue === '') ? null : $cellValue;
             }
-            fclose($handle);
+            
+            $dataToInsert[] = $rowData;
+            $rowCounter++;
         }
-
-        // 🔥 SATPAM ANTI-DUPLIKAT (Cek berdasarkan tanggal POSISI di tabel target)
-        $samplePosisi = null;
-        if (!empty($dataToInsert)) {
-            // Ambil tanggal POSISI dari baris pertama yang berhasil disaring
-            $samplePosisi = $dataToInsert[0]['POSISI'] ?? null;
-        }
-
-        if ($samplePosisi) {
-            $isDuplicate = DB::table($tableName)->where('POSISI', $samplePosisi)->exists();
-            if ($isDuplicate) {
-                // Bersihkan sampah CSV karena proses dibatalkan
-                $importDir = dirname(dirname($filePath));
-                if (strpos($importDir, 'imports') !== false && File::exists($importDir)) {
-                    File::deleteDirectory($importDir);
-                }
-                
-                // Lempar kembali dengan pesan SweetAlert Penolakan
-                return redirect()->route('import.index')->with('sweet_warning', [
-                    'title' => 'Data Ditolak (Duplikat)!',
-                    'text' => "Data untuk tanggal POSISI <b>$samplePosisi</b> sudah pernah diunggah sebelumnya ke tabel <b class='text-uppercase'>$tableName</b>.<br><br>Sistem membatalkan proses ini untuk mencegah data ganda."
-                ]);
-            }
-        }
-
-        $jobId = DB::table('import_jobs')->insertGetId([
-            'id_report' => $idReport,
-            'file_name' => basename($filePath),
-            'folder_path' => dirname($filePath),
-            'status' => 'processing',
-            'total_files' => count($dataToInsert),
-            'created_by' => auth()->id() ?? 1,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-
-        \Illuminate\Support\Facades\Schema::dropIfExists('import_mappings');
-
-        $chunks = array_chunk($dataToInsert, 500);
-        $totalSuccess = 0;
-        $totalFailed = 0;
-        $lastErrorMsg = '';
-
-        foreach ($chunks as $chunk) {
-            try {
-                DB::table($tableName)->insert($chunk);
-                $totalSuccess += count($chunk);
-            } catch (\Exception $e) {
-                $totalFailed += count($chunk);
-                $lastErrorMsg = substr($e->getMessage(), 0, 800) . '...';
-                
-                DB::table('failed_jobs')->insert([
-                    'uuid' => (string) Str::uuid(),
-                    'connection' => 'database',
-                    'queue' => 'import_' . $tableName,
-                    'payload' => json_encode(['error' => 'Batch failed. Showing 1 sample:', 'sample' => $chunk[0] ?? []]),
-                    'exception' => $lastErrorMsg,
-                    'failed_at' => now(),
-                ]);
-            }
-        }
-
-        $finalStatus = $totalFailed > 0 ? ($totalSuccess > 0 ? 'failed_partial' : 'failed') : 'completed';
-        DB::table('import_jobs')->where('id', $jobId)->update([
-            'status' => $finalStatus,
-            'updated_at' => now(),
-        ]);
-
-        // Auto Cleanup
-        $importDir = dirname(dirname($filePath));
-        if (strpos($importDir, 'imports') !== false && File::exists($importDir)) {
-            File::deleteDirectory($importDir);
-        }
-
-        if ($totalFailed > 0) {
-            return redirect()->route('import.index')->with('sweet_warning', [
-                'title' => 'Import Memiliki Kendala!',
-                'text' => "Berhasil: $totalSuccess baris.<br>Gagal: $totalFailed baris.<br><br><b>Info MySQL:</b><br><small class='text-danger'>" . htmlspecialchars($lastErrorMsg, ENT_QUOTES) . "</small>"
-            ]);
-        }
-
-        return redirect()->route('import.index')->with('sweet_success', [
-            'title' => 'Berhasil!',
-            'text' => "Sebanyak $totalSuccess baris data telah sukses masuk ke tabel <b class='text-uppercase'>$tableName</b>."
-        ]);
+        fclose($handle);
     }
+
+    $samplePosisi = !empty($dataToInsert) ? ($dataToInsert[0]['POSISI'] ?? null) : null;
+
+    if ($samplePosisi) {
+        $isDuplicate = DB::table($tableName)->whereDate('POSISI', $samplePosisi)->exists();
+        if ($isDuplicate) {
+            $importDir = dirname(dirname($filePath));
+            if (strpos($importDir, 'imports') !== false && File::exists($importDir)) {
+                File::deleteDirectory($importDir);
+            }
+
+            $response = [
+                'status' => 'warning',
+                'title' => 'Data Ditolak (Duplikat)!',
+                'text' => "Data tanggal $samplePosisi sudah ada."
+            ];
+
+            return $request->expectsJson()
+                ? response()->json($response)
+                : redirect()->route('import.index')->with('sweet_warning', $response);
+        }
+    }
+
+    $jobId = DB::table('import_jobs')->insertGetId([
+        'id_report' => $idReport,
+        'file_name' => basename($filePath),
+        'folder_path' => dirname($filePath),
+        'status' => 'processing',
+        'total_files' => count($dataToInsert),
+        'created_by' => auth()->id() ?? 1,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    \Illuminate\Support\Facades\Schema::dropIfExists('import_mappings');
+
+    $chunks = array_chunk($dataToInsert, 500);
+    $totalSuccess = 0;
+    $totalFailed = 0;
+    $lastErrorMsg = '';
+
+    foreach ($chunks as $chunk) {
+        try {
+            DB::table($tableName)->insert($chunk);
+            $totalSuccess += count($chunk);
+        } catch (\Exception $e) {
+            $totalFailed += count($chunk);
+            $lastErrorMsg = substr($e->getMessage(), 0, 800) . '...';
+        }
+    }
+
+    $finalStatus = $totalFailed > 0 ? ($totalSuccess > 0 ? 'failed_partial' : 'failed') : 'completed';
+
+    DB::table('import_jobs')->where('id', $jobId)->update([
+        'status' => $finalStatus,
+        'updated_at' => now(),
+    ]);
+
+    $importDir = dirname(dirname($filePath));
+    if (strpos($importDir, 'imports') !== false && File::exists($importDir)) {
+        File::deleteDirectory($importDir);
+    }
+
+    $response = $totalFailed > 0
+        ? [
+            'status' => 'warning',
+            'title' => 'Import Parsial',
+            'text' => "Berhasil: $totalSuccess, Gagal: $totalFailed"
+        ]
+        : [
+            'status' => 'success',
+            'title' => 'Berhasil!',
+            'text' => "Sebanyak $totalSuccess baris data berhasil diimport ke $tableName"
+        ];
+
+    return $request->expectsJson()
+        ? response()->json($response)
+        : redirect()->route('import.index')->with(
+            $totalFailed > 0 ? 'sweet_warning' : 'sweet_success',
+            $response
+        );
+}
 }

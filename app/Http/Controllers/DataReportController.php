@@ -16,6 +16,16 @@ class DataReportController extends Controller
         return view('report.performance-edc', compact('branches', 'id_report'));
     }
 
+        // 🔥 METHOD BARU: Menampilkan Halaman View Performance QRIS
+    public function performanceQris()
+    {
+        $branches = ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'];
+        $id_report = 2; // Asumsi ID report untuk QRIS adalah 2 di master data kamu
+
+        return view('report.performance-qris', compact('branches', 'id_report'));
+    }
+
+
     public function fetchData(Request $request)
     {
         $id_report = $request->input('id_report', 1);

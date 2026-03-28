@@ -337,13 +337,13 @@
             let form = this;
             let submitBtn = document.getElementById('btnSubmitImport');
             
-            // Cegah double klik
+            // Disable tombol
             if (submitBtn) {
                 submitBtn.disabled = true;
                 submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Memproses...';
             }
             
-            // Siapkan JSON Filter
+            // Siapkan JSON Filter (TETAP SAMA)
             let activeFilters = {};
             const dropdowns = document.querySelectorAll('.dropdown');
             dropdowns.forEach(dropdown => {
@@ -360,8 +360,8 @@
             });
             document.getElementById('active_filters_json').value = JSON.stringify(activeFilters);
 
-            // 🔥 PERBAIKAN: Gunakan didOpen agar animasi loading terbuka sempurna
-            // Sebelum terpotong oleh form.submit()
+            let formData = new FormData(form);
+
             Swal.fire({
                 title: 'Sedang Memproses Data...',
                 html: 'Sistem sedang memindahkan baris data ke MySQL.<br><br><b>Mohon tunggu dan jangan tutup halaman ini!</b>',
@@ -370,16 +370,41 @@
                 showConfirmButton: false,
                 didOpen: () => {
                     Swal.showLoading();
-                    
-                    // Jeda dieksekusi SETELAH SweetAlert benar-benar terbuka sempurna (didOpen)
-                    // Ini mencegah SweetAlert terasa 'ngebug' saat file kecil yang diproses dengan cepat.
-                    setTimeout(() => {
-                        form.submit();
-                    }, 500); 
+                }
+            });
+
+            fetch(form.action, {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-CSRF-TOKEN': document.querySelector('input[name="_token"]').value,
+                    'Accept': 'application/json' // 🔥 penting supaya controller return JSON
+                }
+            })
+            .then(res => res.json())
+            .then(res => {
+                Swal.fire({
+                    icon: res.status || 'success',
+                    title: res.title || 'Selesai',
+                    html: res.text || ''
+                }).then(() => {
+                    window.location.href = "{{ route('import.index') }}";
+                });
+            })
+            .catch(err => {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Terjadi Kesalahan',
+                    text: 'Gagal memproses data!'
+                });
+
+                // enable tombol lagi kalau gagal
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = '<i class="fas fa-database"></i> Jalankan Import ke MySQL';
                 }
             });
         });
-
         updatePreviewTable();
     });
 </script>

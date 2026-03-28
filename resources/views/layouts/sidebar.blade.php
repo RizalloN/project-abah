@@ -90,15 +90,16 @@
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a href="#" class="nav-link">
-                                <i class="far fa-circle nav-icon"></i>
+                            <!-- 🔥 PERBAIKAN: Route diarahkan ke report.qris -->
+                            <a href="{{ route('report.qris') }}" class="nav-link {{ request()->routeIs('report.qris') ? 'active' : '' }}">
+                                <i class="far fa-circle nav-icon text-success"></i>
                                 <p>Performance QRIS</p>
                             </a>
                         </li>
                         <li class="nav-item">
                             <a href="#" class="nav-link">
                                 <i class="far fa-circle nav-icon"></i>
-                                <p> CASA Merchant</p>
+                                <p>Perform. CASA Merchant</p>
                             </a>
                         </li>
                         <li class="nav-item">
