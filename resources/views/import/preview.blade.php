@@ -43,7 +43,6 @@
             <input type="hidden" name="active_filters_json" id="active_filters_json" value="{}">
 
             @php 
-                // 🔥 PERBAIKAN: Masukkan versi dengan awalan 'KC' dan tanpa awalan agar fleksibel
                 $area6 = ['KC PONOROGO', 'KC NGAWI', 'KC MAGETAN', 'KC MADIUN', 'PONOROGO', 'NGAWI', 'MAGETAN', 'MADIUN']; 
             @endphp
 
@@ -62,7 +61,7 @@
                 <div class="card-body p-0">
                     <div class="alert alert-info m-3 border-0 bg-light text-dark">
                         <i class="fas fa-info-circle text-info"></i> <strong>Petunjuk:</strong> 
-                        Klik ikon <i class="fas fa-filter text-muted mx-1"></i> di sebelah nama kolom untuk memfilter baris data layaknya Microsoft Excel. Tabel akan bereaksi secara realtime dan menampilkan <strong>maksimal 10 baris teratas</strong> sesuai filtermu.
+                        Klik ikon <i class="fas fa-filter text-muted mx-1"></i> di sebelah nama kolom untuk memfilter baris data. Tabel akan bereaksi secara realtime dan menampilkan <strong>maksimal 100 baris teratas</strong> sebagai bahan evaluasi.
                     </div>
 
                     <div class="table-responsive" style="min-height: 450px; max-height: 600px; overflow-y: auto; overflow-x: auto;">
@@ -72,7 +71,6 @@
                                     <th class="text-center align-middle bg-light" style="width: 50px;">#</th>
                                     @foreach($headers as $index => $header)
                                         @php
-                                            // 🔥 PERBAIKAN Cerdas mencari KANCA atau KCI (Namun mengabaikan jika itu kolom KODE)
                                             $isKancaCol = (stripos($header, 'KANCA') !== false || stripos($header, 'KCI') !== false) && stripos($header, 'KODE') === false;
                                         @endphp
 
@@ -157,8 +155,8 @@
                                 <tr id="empty-state-row" class="d-none">
                                     <td colspan="{{ count($headers) + 1 }}" class="text-center py-5 bg-white text-muted">
                                         <i class="fas fa-search-minus fa-3x mb-3 text-secondary"></i><br>
-                                        <h5 class="font-weight-bold text-dark">Tidak ada kecocokan di 500 Baris Sampel Preview</h5>
-                                        <p class="mb-0">Cabang yang kamu centang berada di urutan bawah CSV dan tidak tertangkap di sampel visual ini.</p>
+                                        <h5 class="font-weight-bold text-dark">Tidak ada kecocokan di 2500 Baris Sampel Preview</h5>
+                                        <p class="mb-0">Cabang/Filter yang kamu centang berada di urutan bawah CSV dan tidak tertangkap di sampel visual ini.</p>
                                         <p class="text-success font-weight-bold mt-2">
                                             <i class="fas fa-info-circle"></i> Jangan khawatir, cukup klik tombol <b>"Jalankan Import"</b> dan sistem akan memproses seluruh CSV ke MySQL!
                                         </p>
@@ -230,7 +228,8 @@
                 }
                 
                 if (pass) {
-                    if (matchingCount < 10) {
+                    // 🔥 PERBAIKAN: Menampilkan 100 baris pertama untuk crosscheck visual
+                    if (matchingCount < 100) {
                         row.classList.remove('d-none');
                     } else {
                         row.classList.add('d-none');
@@ -330,20 +329,18 @@
             });
         });
 
-        // 🔥 PERBAIKAN EVENT SUBMIT: Animasi Loading Sempurna & Anti-Glitch
         document.getElementById('importForm').addEventListener('submit', function(e) {
             e.preventDefault(); 
             
             let form = this;
             let submitBtn = document.getElementById('btnSubmitImport');
             
-            // Disable tombol
             if (submitBtn) {
                 submitBtn.disabled = true;
                 submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Memproses...';
             }
             
-            // Siapkan JSON Filter (TETAP SAMA)
+            // 🔥 FILTER (TIDAK DIUBAH)
             let activeFilters = {};
             const dropdowns = document.querySelectorAll('.dropdown');
             dropdowns.forEach(dropdown => {
@@ -378,7 +375,7 @@
                 body: formData,
                 headers: {
                     'X-CSRF-TOKEN': document.querySelector('input[name="_token"]').value,
-                    'Accept': 'application/json' // 🔥 penting supaya controller return JSON
+                    'Accept': 'application/json' // 🔥 WAJIB MINTA JSON KE CONTROLLER
                 }
             })
             .then(res => res.json())
@@ -395,16 +392,16 @@
                 Swal.fire({
                     icon: 'error',
                     title: 'Terjadi Kesalahan',
-                    text: 'Gagal memproses data!'
+                    text: 'Import gagal dijalankan!'
                 });
 
-                // enable tombol lagi kalau gagal
                 if (submitBtn) {
                     submitBtn.disabled = false;
                     submitBtn.innerHTML = '<i class="fas fa-database"></i> Jalankan Import ke MySQL';
                 }
             });
         });
+
         updatePreviewTable();
     });
 </script>
