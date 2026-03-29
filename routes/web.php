@@ -15,6 +15,8 @@ Route::get('/dashboard', function () {
     // Tambahkan baris ini di dalam Route::middleware(['auth', 'role:admin'])->group(...)
     Route::get('/report/optimalisasi-digital/edc', [App\Http\Controllers\DataReportController::class, 'performanceEdc'])->name('report.edc');
     Route::get('/report/optimalisasi-digital/qris', [App\Http\Controllers\DataReportController::class, 'performanceQris'])->name('report.qris');
+    Route::get('/report/optimalisasi-digital/brilink', [App\Http\Controllers\DataReportController::class, 'performanceBrilink'])->name('report.brilink');
+    
     Route::post('/report/data', [App\Http\Controllers\DataReportController::class, 'fetchData'])->name('report.data');
 
     

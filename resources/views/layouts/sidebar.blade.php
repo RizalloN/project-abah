@@ -109,8 +109,9 @@
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a href="#" class="nav-link">
-                                <i class="far fa-circle nav-icon"></i>
+                            <!-- 🔥 MENU BRILINK DIAKTIFKAN -->
+                            <a href="{{ route('report.brilink') }}" class="nav-link {{ request()->routeIs('report.brilink') ? 'active' : '' }}">
+                                <i class="far fa-circle nav-icon text-warning"></i>
                                 <p>Performance Brilink</p>
                             </a>
                         </li>

@@ -26,7 +26,16 @@ class DataReportController extends Controller
         return view('report.performance-qris', compact('branches', 'id_report'));
     }
 
-    // 🔥 3. MESIN PENGOLAH DATA UTAMA (AJAX API)
+    // 🔥 3. VIEW PERFORMANCE BRILINK
+    public function performanceBrilink()
+    {
+        $branches = ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'];
+        $id_report = 3; 
+
+        return view('report.performance-brilink', compact('branches', 'id_report'));
+    }
+
+    // 🔥 4. MESIN PENGOLAH DATA UTAMA (AJAX API)
     public function fetchData(Request $request)
     {
         $id_report = $request->input('id_report', 1);
@@ -44,7 +53,7 @@ class DataReportController extends Controller
         $datePrevMoM = Carbon::parse($posisi)->subMonth()->endOfMonth()->toDateString();
 
         $labels = [
-            'curr' => Carbon::parse($dateCurr)->translatedFormat('d F Y'), // Format Dinamis: 28 Februari 2026
+            'curr' => Carbon::parse($dateCurr)->translatedFormat('d F Y'), 
             'mtd'  => Carbon::parse($dateMtD)->translatedFormat('M\'y'),
             'ytd'  => Carbon::parse($dateYtD)->translatedFormat('M\'y'),
             'yoy'  => Carbon::parse($dateYoY)->translatedFormat('M\'y'),
@@ -266,7 +275,7 @@ class DataReportController extends Controller
         }
 
         // =================================================================================
-        // LOGIKA TAB QRIS 1 (DIPERTAHANKAN UTUH)
+        // LOGIKA TAB QRIS: FORMAT MATRIKS
         // =================================================================================
         elseif ($tab === 'qris') {
             
@@ -362,7 +371,7 @@ class DataReportController extends Controller
         }
 
         // =================================================================================
-        // 🔥 LOGIKA TAB QRIS MoM (SOLUSI FINAL DARI ANDA, DITARUH PALING BAWAH)
+        // LOGIKA TAB QRIS MoM
         // =================================================================================
         elseif ($tab === 'qris_mom') {
 
@@ -390,7 +399,6 @@ class DataReportController extends Controller
 
             $data = [];
             
-            // Variabel penyimpan Total Area 6 untuk QRIS MoM
             $totals = [
                 'store_curr' => 0, 'store_prev' => 0,
                 'sv0_curr' => 0, 'sv0_prev' => 0,
@@ -413,7 +421,7 @@ class DataReportController extends Controller
                 $prod_curr = $rowV->prod_curr ?? 0;
                 $prod_prev = $rowV->prod_prev ?? 0;
 
-                $vol_curr = ($rowV->vol_curr ?? 0) / 1000000; // QRIS biasanya Juta, disesuaikan.
+                $vol_curr = ($rowV->vol_curr ?? 0) / 1000000; 
                 $vol_prev = ($rowV->vol_prev ?? 0) / 1000000;
 
                 $data[] = [
@@ -445,14 +453,12 @@ class DataReportController extends Controller
                     ]
                 ];
 
-                // Tambahkan ke Total Area 6
                 $totals['store_curr'] += $store_curr; $totals['store_prev'] += $store_prev;
                 $totals['sv0_curr'] += $sv0_curr;     $totals['sv0_prev'] += $sv0_prev;
                 $totals['prod_curr'] += $prod_curr;   $totals['prod_prev'] += $prod_prev;
                 $totals['vol_curr'] += $vol_curr;     $totals['vol_prev'] += $vol_prev;
             }
 
-            // Hitung persentase untuk baris Grand Total
             $t_sv0_mom = $totals['sv0_curr'] - $totals['sv0_prev']; 
             $t_sv0_pct = $totals['sv0_prev'] > 0 ? ($t_sv0_mom / $totals['sv0_prev']) * 100 : 0;
             
@@ -487,6 +493,156 @@ class DataReportController extends Controller
                 'labels' => $labels,
                 'data' => $data,
                 'total' => $grandTotal
+            ]);
+        }
+
+        // =================================================================================
+        // 🔥 LOGIKA TAB BRILINK (ENGINE BARU DENGAN FIX LOCALE BAHASA & EXACT MATCH)
+        // =================================================================================
+        elseif ($tab === 'brilink') {
+
+            $bulanInput = $request->input('periode_bulan');
+
+            if (!$bulanInput) {
+                return response()->json(['status' => 'error', 'msg' => 'Periode kosong']);
+            }
+
+            // Parser Flexible & Kunci Locale EN
+            if (preg_match('/^\d{4}-\d{2}$/', $bulanInput)) {
+                $current = Carbon::createFromFormat('Y-m', $bulanInput)->startOfMonth()->locale('en');
+            } else {
+                $current = Carbon::createFromFormat('F Y', $bulanInput)->startOfMonth()->locale('en');
+            }
+
+            $prevMonth = $current->copy()->subMonth()->locale('en');
+            $lastYearSameMonth = $current->copy()->subYear()->locale('en');
+            $lastYearEnd = Carbon::create($current->year - 1, 12, 1)->locale('en');
+
+            // Format ke String English Wajib (Tanpa translatedFormat)
+            $periodeCurr = $current->format('F Y');
+            $periodePrev = $prevMonth->format('F Y');
+            $periodeYoY  = $lastYearSameMonth->format('F Y');
+            $periodeYtD  = $lastYearEnd->format('F Y');
+
+            $data = [];
+            
+            $totals = [
+                'agen' => ['curr' => 0, 'mtd' => 0, 'ytd' => 0, 'yoy' => 0],
+                'juragan' => ['curr' => 0, 'mtd' => 0, 'ytd' => 0, 'yoy' => 0],
+                'bep' => ['curr' => 0, 'mtd' => 0, 'ytd' => 0, 'yoy' => 0],
+                'trx' => ['curr' => 0, 'mtd' => 0, 'yoy' => 0],
+                'volume' => ['curr' => 0, 'mtd' => 0, 'yoy' => 0]
+            ];
+
+            foreach ($branches as $branch) {
+
+                // STRICT MATCH (=) & UPPERCASE CABANG
+                $currData = DB::table('brilink_web_laporan_summary_transaksi_brilink_web')
+                    ->whereRaw('UPPER(cabang) = ?', [strtoupper($branch)])
+                    ->where('periode', $periodeCurr)
+                    ->get();
+
+                $prevData = DB::table('brilink_web_laporan_summary_transaksi_brilink_web')
+                    ->whereRaw('UPPER(cabang) = ?', [strtoupper($branch)])
+                    ->where('periode', $periodePrev)
+                    ->get();
+
+                $yoyData = DB::table('brilink_web_laporan_summary_transaksi_brilink_web')
+                    ->whereRaw('UPPER(cabang) = ?', [strtoupper($branch)])
+                    ->where('periode', $periodeYoY)
+                    ->get();
+
+                $ytdData = DB::table('brilink_web_laporan_summary_transaksi_brilink_web')
+                    ->whereRaw('UPPER(cabang) = ?', [strtoupper($branch)])
+                    ->where('periode', $periodeYtD)
+                    ->get();
+
+                // 🔥 VALIDASI SUPER AMAN: Cek apakah data bulan ini memang ada di DB
+                $hasCurrData = $currData->count() > 0;
+
+                // LOGIKA METRIK AMAN DENGAN VARIABEL TERPISAH
+                $agen_curr = $currData->count();
+                $agen_prev = $prevData->count();
+                $agen_yoy  = $yoyData->count();
+                $agen_ytd  = $ytdData->count();
+
+                $juragan_curr = $currData->filter(fn($x) => $x->total_fee >= 750000)->count();
+                $juragan_prev = $prevData->filter(fn($x) => $x->total_fee >= 750000)->count();
+                $juragan_yoy  = $yoyData->filter(fn($x) => $x->total_fee >= 750000)->count();
+                $juragan_ytd  = $ytdData->filter(fn($x) => $x->total_fee >= 750000)->count();
+
+                $bep_curr = $currData->filter(fn($x) => $x->total_fee >= 150000)->count();
+                $bep_prev = $prevData->filter(fn($x) => $x->total_fee >= 150000)->count();
+                $bep_yoy  = $yoyData->filter(fn($x) => $x->total_fee >= 150000)->count();
+                $bep_ytd  = $ytdData->filter(fn($x) => $x->total_fee >= 150000)->count();
+
+                $trx_curr = $currData->sum('total_transaksi');
+                $trx_prev = $prevData->sum('total_transaksi');
+                $trx_yoy  = $yoyData->sum('total_transaksi');
+
+                $vol_curr = $currData->sum('total_nominal');
+                $vol_prev = $prevData->sum('total_nominal');
+                $vol_yoy  = $yoyData->sum('total_nominal');
+
+                // 🔥 JANGAN HITUNG SELISIH JIKA BULAN INI BELUM DIUPLOAD
+                $agen_mtd = $hasCurrData ? ($agen_curr - $agen_prev) : 0;
+                $agen_ytd_val = $hasCurrData ? ($agen_curr - $agen_ytd) : 0;
+                $agen_yoy_val = $hasCurrData ? ($agen_curr - $agen_yoy) : 0;
+
+                $juragan_mtd = $hasCurrData ? ($juragan_curr - $juragan_prev) : 0;
+                $juragan_ytd_val = $hasCurrData ? ($juragan_curr - $juragan_ytd) : 0;
+                $juragan_yoy_val = $hasCurrData ? ($juragan_curr - $juragan_yoy) : 0;
+
+                $bep_mtd = $hasCurrData ? ($bep_curr - $bep_prev) : 0;
+                $bep_ytd_val = $hasCurrData ? ($bep_curr - $bep_ytd) : 0;
+                $bep_yoy_val = $hasCurrData ? ($bep_curr - $bep_yoy) : 0;
+
+                $trx_mtd = $hasCurrData ? ($trx_curr - $trx_prev) : 0;
+                $trx_yoy_val = $hasCurrData ? ($trx_curr - $trx_yoy) : 0;
+
+                $vol_mtd = $hasCurrData ? ($vol_curr - $vol_prev) : 0;
+                $vol_yoy_val = $hasCurrData ? ($vol_curr - $vol_yoy) : 0;
+
+                $data[] = [
+                    'branch' => $branch,
+                    'agen' => [
+                        'curr' => $agen_curr, 'mtd' => $agen_mtd, 'ytd' => $agen_ytd_val, 'yoy' => $agen_yoy_val,
+                    ],
+                    'juragan' => [
+                        'curr' => $juragan_curr, 'mtd' => $juragan_mtd, 'ytd' => $juragan_ytd_val, 'yoy' => $juragan_yoy_val,
+                    ],
+                    'bep' => [
+                        'curr' => $bep_curr, 'mtd' => $bep_mtd, 'ytd' => $bep_ytd_val, 'yoy' => $bep_yoy_val,
+                    ],
+                    'trx' => [
+                        'curr' => $trx_curr, 'mtd' => $trx_mtd, 'yoy' => $trx_yoy_val,
+                    ],
+                    'volume' => [
+                        'curr' => $vol_curr, 'mtd' => $vol_mtd, 'yoy' => $vol_yoy_val,
+                    ],
+                ];
+                
+                $totals['agen']['curr'] += $agen_curr; $totals['agen']['mtd'] += $agen_mtd; $totals['agen']['ytd'] += $agen_ytd_val; $totals['agen']['yoy'] += $agen_yoy_val;
+                $totals['juragan']['curr'] += $juragan_curr; $totals['juragan']['mtd'] += $juragan_mtd; $totals['juragan']['ytd'] += $juragan_ytd_val; $totals['juragan']['yoy'] += $juragan_yoy_val;
+                $totals['bep']['curr'] += $bep_curr; $totals['bep']['mtd'] += $bep_mtd; $totals['bep']['ytd'] += $bep_ytd_val; $totals['bep']['yoy'] += $bep_yoy_val;
+                $totals['trx']['curr'] += $trx_curr; $totals['trx']['mtd'] += $trx_mtd; $totals['trx']['yoy'] += $trx_yoy_val;
+                $totals['volume']['curr'] += $vol_curr; $totals['volume']['mtd'] += $vol_mtd; $totals['volume']['yoy'] += $vol_yoy_val;
+            }
+
+            return response()->json([
+                'status' => 'success',
+                'data' => $data,
+                'labels' => [
+                    'curr' => $periodeCurr,
+                ],
+                'total' => [
+                    'branch' => 'TOTAL AREA 6',
+                    'agen' => $totals['agen'],
+                    'juragan' => $totals['juragan'],
+                    'bep' => $totals['bep'],
+                    'trx' => $totals['trx'],
+                    'volume' => $totals['volume']
+                ]
             ]);
         }
     }
