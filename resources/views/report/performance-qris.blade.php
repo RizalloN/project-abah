@@ -118,7 +118,7 @@
                                 <th rowspan="2" class="bg-qris-jml align-middle" style="min-width: 140px;">BRANCH OFFICE</th>
                                 <th colspan="7" class="bg-qris-jml">Jumlah QRIS</th>
                                 <th colspan="8" class="bg-qris-prod">QRIS Produktif <br><small>(SV >= 50 Ribu/Bulan)</small></th>
-                                <th colspan="7" class="bg-qris-vol">Sales Volume QRIS Akumulasi <br><small>(Rp Milyar)</small></th>
+                                <th colspan="6" class="bg-qris-vol">Sales Volume QRIS Akumulasi <br><small>(Rp Milyar)</small></th>
                             </tr>
                             <tr class="bg-header-sub">
                                 <th class="lbl-curr">Hari Berjalan</th>
@@ -128,7 +128,7 @@
                                 <th>MtD</th> <th>MtD(%)</th> <th>YtD</th> <th>YoY</th> <th class="rka-col text-dark">RKA</th> <th class="rka-col text-dark">Penc(%)</th>
                                 
                                 <th class="lbl-curr">Hari Berjalan</th>
-                                <th>MtD</th> <th>MtD(%)</th> <th>YtD</th> <th>YoY</th> <th class="rka-col text-dark">RKA</th> <th class="rka-col text-dark">Penc(%)</th>
+                                <th>MtD</th> <th>MtD(%)</th> <th>YoY</th> <th class="rka-col text-dark">RKA</th> <th class="rka-col text-dark">Penc(%)</th>
                             </tr>
                         </thead>
                         <tbody id="tbody-qris"></tbody>
@@ -248,19 +248,19 @@ document.addEventListener('DOMContentLoaded', function () {
                             html += `<tr>
                                 <td class="text-left font-weight-bold text-dark">${row.branch}</td>
                                 
-                                <td>${formatNum(row.jml.curr)}</td>
+                                <td class="font-weight-bold">${formatNum(row.jml.curr)}</td>
                                 <td>${formatGrowth(row.jml.mtd_val)}</td> ${formatCellPct(row.jml.mtd_pct)} 
                                 <td>${formatGrowth(row.jml.ytd_val)}</td> <td>${formatGrowth(row.jml.yoy_val)}</td>
                                 <td class="rka-col">${formatNum(row.jml.rka)}</td> <td class="rka-col">${formatNum(row.jml.penc_pct)}%</td>
                                 
-                                <td>${formatNum(row.prod.curr)}</td> <td class="font-weight-bold text-dark">${formatNum(row.prod.pct_jml)}%</td>
+                                <td class="font-weight-bold">${formatNum(row.prod.curr)}</td> <td class="font-weight-bold text-dark">${formatNum(row.prod.pct_jml)}%</td>
                                 <td>${formatGrowth(row.prod.mtd_val)}</td> ${formatCellPct(row.prod.mtd_pct)} 
                                 <td>${formatGrowth(row.prod.ytd_val)}</td> <td>${formatGrowth(row.prod.yoy_val)}</td>
                                 <td class="rka-col">${formatNum(row.prod.rka)}</td> <td class="rka-col">${formatNum(row.prod.penc_pct)}%</td>
 
-                                <td>${formatMilyar(row.vol.curr)}</td>
+                                <td class="font-weight-bold">${formatMilyar(row.vol.curr)}</td>
                                 <td>${formatGrowth(row.vol.mtd_val, true)}</td> ${formatCellPct(row.vol.mtd_pct)} 
-                                <td>${formatGrowth(row.vol.ytd_val, true)}</td> <td>${formatGrowth(row.vol.yoy_val, true)}</td>
+                                <td>${formatGrowth(row.vol.yoy_val, true)}</td>
                                 <td class="rka-col">${formatMilyar(row.vol.rka)}</td> <td class="rka-col">${formatNum(row.vol.penc_pct)}%</td>
                             </tr>`;
                         });
@@ -281,7 +281,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
                             <td>${formatMilyar(total.vol.curr)}</td>
                             <td>${formatGrowth(total.vol.mtd_val, true)}</td> ${formatCellPct(total.vol.mtd_pct).replace(/bg-(good|bad)/, '')} 
-                            <td>${formatGrowth(total.vol.ytd_val, true)}</td> <td>${formatGrowth(total.vol.yoy_val, true)}</td>
+                            <td>${formatGrowth(total.vol.yoy_val, true)}</td>
                             <td class="rka-col text-dark">${formatMilyar(total.vol.rka)}</td> <td class="rka-col text-dark">${formatNum(total.vol.penc_pct)}%</td>
                         </tr>`;
 

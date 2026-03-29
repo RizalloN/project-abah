@@ -8,7 +8,8 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
-use Carbon\Carbon;
+use Illuminate\Support\Facades\Log; // 🔥 Wajib untuk mencatat log error
+use Carbon\Carbon; 
 use App\Models\NamaReport;
 
 class ImportFileController extends Controller
@@ -75,30 +76,36 @@ class ImportFileController extends Controller
                         
                         foreach ($headers as $i => $h) { 
                             $uniqueValues[$i] = []; 
-                            // Deteksi posisi indeks TAHUN dan POSISI
                             if (stripos($h, 'POSISI') !== false) { $posisiIndex = $i; }
                             if (stripos($h, 'TAHUN') !== false) { $tahunIndex = $i; }
                         }
                     } else {
                         if (trim($data[0]) === 'TAHUN') continue;
 
-                        // 🔥 LOGIKA PENAMBAL TANGGAL (DATE RECONSTRUCTOR)
+                        // 🔥 FIX 1 & 2: NORMALISASI ARRAY DI PREVIEW (Mencegah error saat preview)
+                        if (count($data) < count($headers)) {
+                            $data = array_pad($data, count($headers), null);
+                        }
+                        if (count($data) > count($headers)) continue; 
+
+                        // 🔥 LOGIKA SUPER DATE RECONSTRUCTOR (GABUNGAN EDC & QRIS)
                         if ($posisiIndex !== -1 && isset($data[$posisiIndex]) && trim($data[$posisiIndex]) !== '') {
                             $rawPosisi = trim($data[$posisiIndex]);
                             try {
-                                if ($tahunIndex !== -1 && isset($data[$tahunIndex]) && trim($data[$tahunIndex]) !== '') {
-                                    $rawTahun = trim($data[$tahunIndex]);
-                                    
-                                    // Deteksi jika format kepotong (contoh: Dec 31 202) -> Ambil "Dec 31" saja
-                                    if (preg_match('/^([a-zA-Z]+\s+\d+)/', $rawPosisi, $matches)) {
-                                        // Jahit bulan+hari dengan kolom TAHUN murni
-                                        $fixedDateStr = $matches[1] . ' ' . $rawTahun; // Hasil: Dec 31 2025
-                                        $data[$posisiIndex] = Carbon::parse($fixedDateStr)->format('Y-m-d');
+                                if (strpos($rawPosisi, '/') !== false) {
+                                    $data[$posisiIndex] = Carbon::parse(str_replace('/', '-', $rawPosisi))->format('Y-m-d');
+                                } else {
+                                    if ($tahunIndex !== -1 && isset($data[$tahunIndex]) && trim($data[$tahunIndex]) !== '') {
+                                        $rawTahun = trim($data[$tahunIndex]);
+                                        if (preg_match('/^([a-zA-Z]+\s+\d+)/', $rawPosisi, $matches)) {
+                                            $fixedDateStr = $matches[1] . ' ' . $rawTahun; 
+                                            $data[$posisiIndex] = Carbon::parse($fixedDateStr)->format('Y-m-d');
+                                        } else {
+                                            $data[$posisiIndex] = Carbon::parse($rawPosisi)->format('Y-m-d');
+                                        }
                                     } else {
                                         $data[$posisiIndex] = Carbon::parse($rawPosisi)->format('Y-m-d');
                                     }
-                                } else {
-                                    $data[$posisiIndex] = Carbon::parse($rawPosisi)->format('Y-m-d');
                                 }
                             } catch (\Exception $e) {}
                         }
@@ -150,23 +157,31 @@ class ImportFileController extends Controller
         $idReport = session('active_id_report', 1);
 
         if (!file_exists($filePath)) {
-            return redirect()->route('import.select')->with('error', 'File tidak ditemukan.');
+            $response = [
+                'status' => 'error',
+                'title' => 'Gagal!',
+                'text' => 'File tidak ditemukan di server.'
+            ];
+            return $request->expectsJson()
+                ? response()->json($response)
+                : redirect()->route('import.index')->with('error', 'File tidak ditemukan.');
         }
 
+        // Penentu Tabel MySQL berdasarkan ID Report
         $reportData = DB::table('nama_report')->where('id_report', $idReport)->first();
         $tableName = $reportData ? strtolower(str_replace(' ', '_', $reportData->nama_report)) : 'jumlah_merchant_detail';
         if (!DB::getSchemaBuilder()->hasTable($tableName)) {
             $tableName = 'jumlah_merchant_detail'; 
         }
 
-        // 🔥 KECERDASAN SUFFIX UNIQUE ID
+        // KECERDASAN SUFFIX UNIQUE ID
         $uniqueSuffix = '_MDT'; 
         if ($tableName === 'sv_merchant') {
             $uniqueSuffix = '_SVMer';
         } elseif ($tableName === 'merchant_qris') {
             $uniqueSuffix = '_MQ';
         } elseif ($tableName === 'merchant_qris_volume') {
-            $uniqueSuffix = '_MQV'; // Akhiran khusus QRIS Volume
+            $uniqueSuffix = '_MQV'; 
         }
 
         $dataToInsert = [];
@@ -209,20 +224,39 @@ class ImportFileController extends Controller
 
                 if (trim($data[0]) === 'TAHUN') continue;
 
-                // 🔥 LOGIKA PENAMBAL TANGGAL UNTUK INSERT DB
+                // 🔥 FIX 1 & 2: NORMALISASI ARRAY (MENCEGAH SHIFTING INDEX KARENA |||)
+                if (count($data) < count($csvHeaders)) {
+                    $data = array_pad($data, count($csvHeaders), null);
+                }
+
+                // 🔥 FIX 3: SKIP & DEBUG REAL JIKA BARIS RUSAK (MELEBIHI HEADER)
+                if (count($data) > count($csvHeaders)) {
+                    Log::warning('Kolom tidak sesuai', [
+                        'expected' => count($csvHeaders),
+                        'actual' => count($data),
+                        'row' => $data
+                    ]);
+                    continue; 
+                }
+
+                // 🔥 LOGIKA SUPER DATE RECONSTRUCTOR (UNTUK INSERT MYSQL)
                 if ($posisiIndex !== -1 && isset($data[$posisiIndex]) && trim($data[$posisiIndex]) !== '') {
                     $rawPosisi = trim($data[$posisiIndex]);
                     try {
-                        if ($tahunIndex !== -1 && isset($data[$tahunIndex]) && trim($data[$tahunIndex]) !== '') {
-                            $rawTahun = trim($data[$tahunIndex]);
-                            if (preg_match('/^([a-zA-Z]+\s+\d+)/', $rawPosisi, $matches)) {
-                                $fixedDateStr = $matches[1] . ' ' . $rawTahun;
-                                $data[$posisiIndex] = Carbon::parse($fixedDateStr)->format('Y-m-d');
+                        if (strpos($rawPosisi, '/') !== false) {
+                            $data[$posisiIndex] = Carbon::parse(str_replace('/', '-', $rawPosisi))->format('Y-m-d');
+                        } else {
+                            if ($tahunIndex !== -1 && isset($data[$tahunIndex]) && trim($data[$tahunIndex]) !== '') {
+                                $rawTahun = trim($data[$tahunIndex]);
+                                if (preg_match('/^([a-zA-Z]+\s+\d+)/', $rawPosisi, $matches)) {
+                                    $fixedDateStr = $matches[1] . ' ' . $rawTahun;
+                                    $data[$posisiIndex] = Carbon::parse($fixedDateStr)->format('Y-m-d');
+                                } else {
+                                    $data[$posisiIndex] = Carbon::parse($rawPosisi)->format('Y-m-d');
+                                }
                             } else {
                                 $data[$posisiIndex] = Carbon::parse($rawPosisi)->format('Y-m-d');
                             }
-                        } else {
-                            $data[$posisiIndex] = Carbon::parse($rawPosisi)->format('Y-m-d');
                         }
                     } catch (\Exception $e) {}
                 }
@@ -254,6 +288,33 @@ class ImportFileController extends Controller
                     }
 
                     $cellValue = isset($data[$index]) ? trim($data[$index]) : '';
+                    
+                    // 🔥 FIX 4: HARD GUARD NUMERIC (SUPER PENTING)
+                    $numericColumns = [
+                        'SALDO_POSISI',
+                        'RATAS_SALDO',
+                        'SALDO_POSISI_BY_CIF',
+                        'RATAS_SALDO_BY_CIF',
+                        'SALES_VOLUME',
+                        'AKUMULASI_SALES_VOLUME',
+                        'JML_TRANSAKSI',
+                        'AKUMULASI_TRANSAKSI',
+                        'NILAI',
+                        'MERCHANT_QRIS_VOLUME',
+                        'MERCHANT_QRIS'
+                    ];
+
+                    if (in_array(strtoupper($colName), $numericColumns)) {
+                        $clean = preg_replace('/[^0-9.-]/', '', $cellValue);
+                        
+                        // Validasi keras: Jika bukan numeric, paksa jadi NULL (menghindari error Truncated)
+                        if (!is_numeric($clean)) {
+                            $clean = null;
+                        }
+                        
+                        $cellValue = $clean;
+                    }
+
                     $rowData[$colName] = ($cellValue === '') ? null : $cellValue;
                 }
                 
@@ -277,6 +338,7 @@ class ImportFileController extends Controller
                     File::deleteDirectory($importDir);
                 }
                 
+                // 🔥 KEPATUHAN JSON RESPONSE (DUPLICATE)
                 $response = [
                     'status' => 'warning',
                     'title' => 'Data Ditolak (Duplikat)!',
@@ -338,6 +400,7 @@ class ImportFileController extends Controller
         }
 
         if ($totalFailed > 0) {
+            // 🔥 KEPATUHAN JSON RESPONSE (WARNING / PARTIAL)
             $response = [
                 'status' => 'warning',
                 'title' => 'Import Memiliki Kendala!',
@@ -349,6 +412,7 @@ class ImportFileController extends Controller
                 : redirect()->route('import.index')->with('sweet_warning', $response);
         }
 
+        // 🔥 KEPATUHAN JSON RESPONSE (SUCCESS)
         $response = [
             'status' => 'success',
             'title' => 'Berhasil!',
