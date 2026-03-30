@@ -16,20 +16,36 @@ use Illuminate\Support\Facades\Log;
 
 class ChunkReadFilter implements IReadFilter
 {
-    private int $startRow = 0;
-    private int $endRow = 0;
+    private int $startRow  = 0;
+    private int $endRow    = 0;
+    private int $headerRow = 1; // default: Excel row 1 (1-based)
 
+    /**
+     * Set the header row (1-based Excel row number).
+     * This row is ALWAYS read regardless of the chunk window.
+     */
+    public function setHeaderRow(int $headerRow): void
+    {
+        $this->headerRow = $headerRow;
+    }
+
+    /**
+     * Set the data chunk window.
+     * @param int $startRow  1-based Excel row number of first data row in chunk
+     * @param int $chunkSize number of rows to read
+     */
     public function setRows(int $startRow, int $chunkSize): void
     {
         $this->startRow = $startRow;
-        $this->endRow = $startRow + $chunkSize;
+        $this->endRow   = $startRow + $chunkSize;
     }
 
     public function readCell(string $columnAddress, int $row, string $worksheetName = ''): bool
     {
-        if (($row == 1) || ($row >= $this->startRow && $row < $this->endRow)) {
-            return true;
-        }
+        // Always read the designated header row
+        if ($row == $this->headerRow) return true;
+        // Read rows within the chunk window
+        if ($row >= $this->startRow && $row < $this->endRow) return true;
         return false;
     }
 }
@@ -93,7 +109,10 @@ class ImportExcelController extends Controller
         }
 
         $path = $file->store('excel_imports');
-        session(['excel_path' => $path]);
+        session([
+            'excel_path'       => $path,
+            'active_id_report' => $request->id_report, // simpan id_report agar initExcelImport tahu tabel tujuan
+        ]);
         return redirect()->route('import.excel.preview');
     }
 
@@ -120,15 +139,16 @@ class ImportExcelController extends Controller
         $spreadsheet = $reader->load($path);
         $sheet = $spreadsheet->getActiveSheet()->toArray(null, true, true, false);
 
+        // Detect header row: look for PERIODE (Daily Loan) or POSISI (Simpanan MultiPN)
         $headerIndex = null;
         foreach ($sheet as $i => $row) {
-            $rowUpper = array_map(function($v) { return strtoupper(trim((string)$v)); }, $row);
-            if (in_array('PERIODE', $rowUpper)) {
+            $rowUpper = array_map(fn($v) => strtoupper(trim((string) $v)), $row);
+            if (in_array('PERIODE', $rowUpper) || in_array('POSISI', $rowUpper)) {
                 $headerIndex = $i;
                 break;
             }
         }
-        if ($headerIndex === null) return back()->with('error', 'Header utama (PERIODE) tidak ditemukan.');
+        if ($headerIndex === null) return back()->with('error', 'Header utama (PERIODE / POSISI) tidak ditemukan dalam 200 baris pertama.');
 
         $rawHeaders = $sheet[$headerIndex];
         $normalizedHeaders = [];
@@ -223,15 +243,19 @@ class ImportExcelController extends Controller
         $path = Storage::path($relativePath);
         if (!file_exists($path)) return response()->json(['status' => 'error', 'text' => 'File tidak ditemukan.']);
 
-        $idReport = session('active_id_report', 1);
-        $reportData = DB::table('nama_report')->where('id_report', $idReport)->first();
-        
-        // Pilih tabel berdasarkan kategori report
-        $tableName = 'daily_loan_dinamis'; 
-        if ($reportData && !empty($reportData->table_name)) {
-            $tableName = $reportData->table_name;
+        // Ambil id_report dari session (disimpan saat uploadExcel).
+        // Default null agar tidak salah mapping ke id_report=1 (jumlah_merchant_detail).
+        $idReport  = session('active_id_report');
+        $tableName = 'daily_loan_dinamis'; // default fallback
+        if ($idReport) {
+            $reportData = DB::table('nama_report')->where('id_report', $idReport)->first();
+            if ($reportData && !empty($reportData->table_name)) {
+                $tableName = $reportData->table_name;
+            }
         }
 
+        // Gunakan setReadEmptyCells(false) agar konsisten dengan previewExcel()
+        // sehingga header yang disimpan ke session sama persis dengan yang ditampilkan di preview.
         $reader = IOFactory::createReaderForFile($path);
         $reader->setReadDataOnly(true);
         $reader->setReadEmptyCells(false);
@@ -242,13 +266,16 @@ class ImportExcelController extends Controller
         $spreadsheet = $reader->load($path);
         $sheet = $spreadsheet->getActiveSheet()->toArray(null, true, true, false);
 
+        // Detect header row: PERIODE (Daily Loan Dinamis) or POSISI (Simpanan MultiPN)
         $headerIndex = null;
         foreach ($sheet as $i => $row) {
-            if (in_array('PERIODE', array_map(function($v){return strtoupper(trim((string)$v));}, $row))) {
-                $headerIndex = $i; break;
+            $rowUpper = array_map(fn($v) => strtoupper(trim((string) $v)), $row);
+            if (in_array('PERIODE', $rowUpper) || in_array('POSISI', $rowUpper)) {
+                $headerIndex = $i;
+                break;
             }
         }
-        if ($headerIndex === null) return response()->json(['status'=>'error', 'text'=>'Header tidak ditemukan']);
+        if ($headerIndex === null) return response()->json(['status' => 'error', 'text' => 'Header tidak ditemukan (PERIODE / POSISI).']);
 
         $worksheetInfo = $reader->listWorksheetInfo($path);
         $totalRows = $worksheetInfo[0]['totalRows'];
@@ -267,6 +294,17 @@ class ImportExcelController extends Controller
             'updated_at'  => now(),
         ]);
 
+        // Ambil header dari spreadsheet dan simpan ke session agar chunk tidak perlu re-read header
+        $rawHeaders = $sheet[$headerIndex];
+        $normalizedHeadersForSession = [];
+        foreach ($rawHeaders as $i => $h) {
+            $normalizedHeadersForSession[$i] = !empty(trim((string)$h)) ? trim((string)$h) : 'COL_' . $i;
+        }
+        session(['excel_headers' => $normalizedHeadersForSession]);
+
+        $spreadsheet->disconnectWorksheets();
+        unset($spreadsheet);
+
         return response()->json([
             'status' => 'success',
             'job_id' => $jobId,
@@ -280,145 +318,167 @@ class ImportExcelController extends Controller
     public function processExcelChunk(Request $request)
     {
         ini_set('memory_limit', '1024M');
-        set_time_limit(0); 
+        set_time_limit(0);
 
         try {
-            $jobId = $request->job_id;
-            $startIndex = (int) $request->start_row; 
-            $chunkSize = (int) $request->chunk_size;
-            $headerIndex = (int) $request->header_index;
-            $tableName = $request->table_name;
+            $jobId       = (int) $request->job_id;
+            $headerIndex = (int) $request->header_index; // 0-based
+            $tableName   = $request->table_name;
+            $startRow    = max((int) $request->start_row, $headerIndex + 1); // 0-based data start
+            $chunkSize   = max((int) $request->chunk_size, 1);
             $activeFilters = json_decode($request->active_filters_json, true) ?: [];
-            $relativePath = urldecode($request->file_path);
+            $relativePath  = urldecode($request->file_path);
             $path = Storage::path($relativePath);
 
-            $reader = IOFactory::createReaderForFile($path);
-            $reader->setReadDataOnly(true);
-            $reader->setReadEmptyCells(false); 
-
-            // Ambil Header
-            $chunkFilter = new ChunkReadFilter();
-            $chunkFilter->setRows($headerIndex + 1, 1); 
-            $reader->setReadFilter($chunkFilter);
-            $spreadsheet = $reader->load($path);
-            $sheet = $spreadsheet->getActiveSheet()->toArray(null, true, true, false);
-            
-            $rawHeaders = $sheet[$headerIndex];
-            $normalizedHeaders = [];
-            foreach ($rawHeaders as $i => $h) {
-                $normalizedHeaders[$i] = !empty(trim((string)$h)) ? trim((string)$h) : 'COL_' . $i;
+            if (!file_exists($path)) {
+                return response()->json(['status' => 'error', 'text' => 'File Excel tidak ditemukan di server. Silakan upload ulang.'], 422);
             }
+
+            $normalizedHeaders = session('excel_headers', []);
+            if (empty($normalizedHeaders)) {
+                return response()->json([
+                    'status' => 'error',
+                    'text'   => 'Header session hilang. Silakan ulangi import dari awal.',
+                ], 422);
+            }
+
             $validIndexes = [];
             foreach ($normalizedHeaders as $i => $h) {
                 if (!str_starts_with($h, 'COL_')) $validIndexes[] = $i;
             }
             $headerCount = max(array_keys($normalizedHeaders)) + 1;
-            $spreadsheet->disconnectWorksheets(); unset($spreadsheet);
 
-            // Baca Data Chunk
-            $chunkFilter->setRows($startIndex + 1, $chunkSize);
+            $tableColumnsRaw = Schema::getColumnListing($tableName);
+            $tableColumns    = array_map('strtolower', $tableColumnsRaw);
+
+            $uniqueIdCol = str_contains($tableName, 'simpanan') ? 'uniqueid_SimoPN' : 'uniqueid_namareport';
+            $suffix      = str_contains($tableName, 'simpanan') ? '_SimoPN' : '_DLD';
+            $skipCols    = ['id', strtolower($uniqueIdCol)];
+
+            // 0-based requested window
+            $endExclusive = $startRow + $chunkSize;
+
+            // Convert to 1-based excel rows for read filter
+            $headerExcelRow = $headerIndex + 1;
+            $startExcelRow  = $startRow + 1;
+
+            $reader = IOFactory::createReaderForFile($path);
+            $reader->setReadDataOnly(true);
+            $reader->setReadEmptyCells(false);
+
+            $chunkFilter = new ChunkReadFilter();
+            $chunkFilter->setHeaderRow($headerExcelRow);
+            $chunkFilter->setRows($startExcelRow, $chunkSize);
             $reader->setReadFilter($chunkFilter);
+
             $spreadsheet = $reader->load($path);
-            $sheetData = $spreadsheet->getActiveSheet()->toArray(null, true, true, false);
+            $sheet = $spreadsheet->getActiveSheet()->toArray(null, true, true, false);
+            $spreadsheet->disconnectWorksheets();
+            unset($spreadsheet);
 
-            $chunkInsert = [];
-            $totalSuccess = 0; $totalFailed = 0;
+            $dataToInsert  = [];
+            $chunkInserted = 0;
+            $chunkFailed   = 0;
+            $debugRowsRead = 0;
+            $debugPassed   = 0;
+            $sampleMapped  = null;
 
-            foreach ($sheetData as $rowIndex => $row) {
-                if ($rowIndex < $startIndex || $rowIndex >= $startIndex + $chunkSize) continue;
-                if (empty(array_filter($row, fn($val) => trim((string)$val) !== ''))) continue;
+            foreach ($sheet as $rowIndex => $row) {
+                // rowIndex from toArray is 0-based
+                if ($rowIndex < $startRow || $rowIndex >= $endExclusive) continue;
+                if ($rowIndex <= $headerIndex) continue;
+                if (empty(array_filter((array) $row, fn($v) => trim((string) $v) !== ''))) continue;
 
                 $row = $this->padRow($row, $headerCount);
                 $mappedExcelData = [];
                 $passFilter = true;
+                $debugRowsRead++;
 
-                // Loop index Excel
                 foreach ($validIndexes as $filterIdx => $originalIndex) {
                     $hName = $normalizedHeaders[$originalIndex];
-                    $val = $this->normalizeExcelValue($hName, $row[$originalIndex] ?? '');
+                    $val   = $this->normalizeExcelValue($hName, $row[$originalIndex] ?? '');
 
-                    // Proteksi jika baris header terbaca lagi
-                    if (strtoupper((string)$val) === strtoupper($hName)) { $passFilter = false; break; }
-
-                    // Cek Filter UI
                     if (!empty($activeFilters) && isset($activeFilters[$filterIdx])) {
-                        $fVal = ($val === null) ? '(Blank)' : $val;
-                        if (!in_array($fVal, $activeFilters[$filterIdx])) { $passFilter = false; break; }
+                        $fVal = ($val === null) ? '(Blank)' : (string) $val;
+                        if (!in_array($fVal, (array) $activeFilters[$filterIdx])) {
+                            $passFilter = false;
+                            break;
+                        }
                     }
+
                     $mappedExcelData[strtoupper(str_replace(' ', '_', $hName))] = $val;
                 }
 
                 if (!$passFilter) continue;
+                $debugPassed++;
 
-                // =========================================================
-                // 🔥 MAPPING MANUAL EKSPLISIT (Sesuai Struktur Tabel Anda)
-                // =========================================================
-                $finalRow = [];
-                
-                if ($tableName === 'daily_loan_dinamis') {
-                    $finalRow = [
-                        'uniqueid_namareport' => uniqid('', true) . '_DLD',
-                        'periode'             => $mappedExcelData['PERIODE'] ?? null,
-                        'kode_kanwil'         => $mappedExcelData['KODE_KANWIL'] ?? null,
-                        'kanwil'              => $mappedExcelData['KANWIL'] ?? null,
-                        'kode_cabang'         => $mappedExcelData['KODE_CABANG'] ?? null,
-                        'cabang'              => $mappedExcelData['CABANG'] ?? null,
-                        'branch'              => $mappedExcelData['BRANCH'] ?? null,
-                        'unit'                => $mappedExcelData['UNIT'] ?? null,
-                        'ao_name'             => $mappedExcelData['AO_NAME'] ?? null,
-                        'cifno'               => $mappedExcelData['CIFNO'] ?? $mappedExcelData['CIF'] ?? null,
-                        'nomor_rekening'      => preg_replace('/[^0-9]/', '', $mappedExcelData['NOMOR_REKENING'] ?? $mappedExcelData['REKENING'] ?? ''),
-                        'segmen_dashboard'    => $mappedExcelData['SEGMEN_DASHBOARD'] ?? null,
-                        'produk_dashboard'    => $mappedExcelData['PRODUK_DASHBOARD'] ?? null,
-                        'created_at'          => now(),
-                        'updated_at'          => now()
-                    ];
-                } 
-                elseif ($tableName === 'simpanan_multipn') {
-                    $finalRow = [
-                        'uniqueid_namareport' => uniqid('', true) . '_SimoPN',
-                        'posisi'              => $mappedExcelData['POSISI'] ?? null,
-                        'regional_office'     => $mappedExcelData['REGIONAL_OFFICE'] ?? null,
-                        'kantor_cabang'       => $mappedExcelData['KANTOR_CABANG'] ?? null,
-                        'unit_kerja'          => $mappedExcelData['UNIT_KERJA'] ?? null,
-                        'CIFNO'               => $mappedExcelData['CIFNO'] ?? $mappedExcelData['CIF'] ?? null,
-                        'no_rekening'         => preg_replace('/[^0-9]/', '', $mappedExcelData['NO_REKENING'] ?? $mappedExcelData['REKENING'] ?? ''),
-                        'jenis_simpanan'      => $mappedExcelData['JENIS_SIMPANAN'] ?? null,
-                        'saldo_idr'           => $mappedExcelData['SALDO_IDR'] ?? $mappedExcelData['SALDO'] ?? 0,
-                        'created_at'          => now(),
-                        'updated_at'          => now()
-                    ];
+                $finalRow = [$uniqueIdCol => uniqid('', true) . $suffix];
+
+                foreach ($mappedExcelData as $excelKey => $val) {
+                    $dbCol = strtolower($excelKey);
+                    if (in_array($dbCol, $skipCols)) continue;
+                    if (!in_array($dbCol, $tableColumns)) continue;
+                    $finalRow[$dbCol] = $val;
                 }
 
-                if (!empty($finalRow)) $chunkInsert[] = $finalRow;
+                $finalRow['created_at'] = now();
+                $finalRow['updated_at'] = now();
+
+                if ($sampleMapped === null) $sampleMapped = $finalRow;
+
+                if (count($finalRow) > 3) $dataToInsert[] = $finalRow;
             }
 
-            // Safe Batch Insert
-            if (!empty($chunkInsert)) {
+            // Insert optimized per-request chunk (batches of 1000)
+            foreach (array_chunk($dataToInsert, 1000) as $batch) {
                 try {
-                    DB::table($tableName)->insert($chunkInsert);
-                    $totalSuccess += count($chunkInsert);
+                    DB::table($tableName)->insert($batch);
+                    $chunkInserted += count($batch);
                 } catch (\Exception $e) {
-                    // Fallback per baris jika batch gagal (misal karena constraint mysql)
-                    foreach ($chunkInsert as $single) {
-                        try { DB::table($tableName)->insert($single); $totalSuccess++; }
-                        catch (\Exception $e2) { $totalFailed++; }
+                    foreach ($batch as $single) {
+                        try {
+                            DB::table($tableName)->insert($single);
+                            $chunkInserted++;
+                        } catch (\Exception $e2) {
+                            $chunkFailed++;
+                        }
                     }
                 }
             }
 
+            // Incremental progress update to import_jobs for interactive progress
             DB::table('import_jobs')->where('id', $jobId)->update([
-                'total_success' => DB::raw("total_success + $totalSuccess"),
-                'total_failed'  => DB::raw("total_failed + $totalFailed"),
-                'updated_at'    => now()
+                'total_success' => DB::raw('total_success + ' . (int) $chunkInserted),
+                'total_failed'  => DB::raw('total_failed + ' . (int) $chunkFailed),
+                'updated_at'    => now(),
             ]);
 
-            $spreadsheet->disconnectWorksheets(); unset($spreadsheet);
-            return response()->json(['status' => 'success', 'inserted' => $totalSuccess, 'failed' => $totalFailed]);
+            return response()->json([
+                'status'          => 'success',
+                'inserted'        => $chunkInserted,
+                'failed'          => $chunkFailed,
+                'processed_until' => $endExclusive, // 0-based exclusive
+                'chunk_start'     => $startRow,
+                'chunk_size'      => $chunkSize,
+                'debug'           => [
+                    'table'          => $tableName,
+                    'table_columns'  => $tableColumnsRaw,
+                    'excel_headers'  => array_values($normalizedHeaders),
+                    'header_index'   => $headerIndex,
+                    'rows_read'      => $debugRowsRead,
+                    'rows_passed'    => $debugPassed,
+                    'rows_inserted'  => $chunkInserted,
+                    'active_filters' => $activeFilters,
+                    'sample_row'     => $sampleMapped,
+                ],
+            ]);
 
         } catch (\Throwable $e) {
-            Log::error('FATAL CHUNK ERROR: ' . $e->getMessage());
-            return response()->json(['status' => 'error', 'text' => 'Fatal Error System: ' . $e->getMessage()], 500);
+            Log::error('EXCEL CHUNK ERROR: ' . $e->getMessage() . ' | ' . $e->getFile() . ':' . $e->getLine());
+            return response()->json([
+                'status' => 'error',
+                'text'   => 'Fatal Error: ' . $e->getMessage() . ' (line ' . $e->getLine() . ')',
+            ], 500);
         }
     }
 
@@ -433,6 +493,7 @@ class ImportExcelController extends Controller
         if ($request->file_path) {
             @unlink(Storage::path(urldecode($request->file_path)));
             session()->forget('excel_path');
+            session()->forget('excel_headers');
         }
 
         return response()->json([

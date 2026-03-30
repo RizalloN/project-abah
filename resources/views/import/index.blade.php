@@ -96,6 +96,24 @@
                 // Sesuaikan Tombol
                 btnSubmit.className = "btn btn-success font-weight-bold";
                 btnSubmit.innerHTML = '<i class="fas fa-file-excel"></i> Upload Excel';
+
+            } else if (reportName.includes('brimo')) {
+                // 🔥 BRIMO: Tampilkan RAR, arahkan ke ImportFileBrimoController
+                formRAR.style.display = 'block';
+                formExcel.style.display = 'none';
+
+                inputExcel.disabled = true;
+                inputExcel.required = false;
+
+                inputRar.disabled = false;
+                inputRar.required = true;
+
+                // Arahkan submit ke Brimo Controller
+                formImport.action = "{{ route('import.brimo.upload') }}";
+
+                btnSubmit.className = "btn btn-primary font-weight-bold";
+                btnSubmit.innerHTML = '<i class="fas fa-file-archive"></i> Upload RAR';
+
             } else {
                 // Tampilkan RAR, Sembunyikan Excel
                 formRAR.style.display = 'block';

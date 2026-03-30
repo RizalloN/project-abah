@@ -12,7 +12,7 @@
     <div class="card-body">
 
         <!-- 🔥 PERBAIKAN: Ubah action="#" menjadi action="{{ route('import.preview') }}" -->
-        <form method="POST" action="{{ route('import.preview') }}">
+        <form method="POST" action="{{ session('import_type') === 'brimo' ? route('import.brimo.preview') : route('import.preview') }}">
             @csrf
 
             <div class="form-group">

@@ -387,49 +387,51 @@
                 let totalRows = resInit.total_rows;
                 let headerIndex = resInit.header_index;
                 let tableName = resInit.table_name;
-                let excelFilePath = resInit.file_path; 
-                let chunkSize = 500; 
-                let currentRow = headerIndex + 1;
+                let excelFilePath = resInit.file_path;
+                // Single-request full-run (sesuai kebutuhan: no frontend chunk loop)
+                document.getElementById('swal-progress-bar').style.width = '20%';
+                document.getElementById('swal-progress-bar').innerText = '20%';
+                document.getElementById('swal-status-text').innerText = 'Mempersiapkan mapping kolom dan filter...';
 
-                while(currentRow <= totalRows) {
-                    let pct = Math.min(100, Math.floor(((currentRow - headerIndex) / (totalRows - headerIndex)) * 100));
-                    
-                    document.getElementById('swal-progress-bar').style.width = pct + '%';
-                    document.getElementById('swal-progress-bar').innerText = pct + '%';
-                    document.getElementById('swal-status-text').innerText = `Menyuntikkan baris ${currentRow} s/d ${Math.min(currentRow + chunkSize - 1, totalRows)} ke tabel Database...`;
+                let chunkData = new FormData();
+                chunkData.append('job_id', jobId);
+                chunkData.append('start_row', headerIndex + 1);
+                chunkData.append('chunk_size', Math.max(1, totalRows - (headerIndex + 1)));
+                chunkData.append('header_index', headerIndex);
+                chunkData.append('table_name', tableName);
+                chunkData.append('active_filters_json', filtersJson);
+                chunkData.append('file_path', excelFilePath);
 
-                    let chunkData = new FormData();
-                    chunkData.append('job_id', jobId);
-                    chunkData.append('start_row', currentRow);
-                    chunkData.append('chunk_size', chunkSize);
-                    chunkData.append('header_index', headerIndex);
-                    chunkData.append('table_name', tableName);
-                    chunkData.append('active_filters_json', filtersJson);
-                    chunkData.append('file_path', excelFilePath); 
-
-                    let resChunkRaw = await fetch('{{ route("import.excel.chunk") }}', { method: 'POST', body: chunkData, headers: fetchHeaders });
-                    let textChunk = await resChunkRaw.text();
-                    let resChunk;
-
-                    try {
-                        resChunk = JSON.parse(textChunk);
-                    } catch (err) {
-                        console.error("RAW CHUNK HTML RESPONSE:", textChunk);
-                        let titleMatch = textChunk.match(/<title>(.*?)<\/title>/i);
-                        let errorTitle = titleMatch ? titleMatch[1] : 'Internal Server Error';
-                        throw new Error(`<b>Gagal Chunking Baris ${currentRow}!</b><br>Server Crash: <i>${errorTitle}</i>.<br><small>Cek Console (F12) untuk melacak exception.</small>`);
+                // Progress simulasi tahap proses agar loading lebih jelas
+                const stagedProgress = [
+                    { p: 35, text: 'Membaca file Excel...' },
+                    { p: 60, text: 'Menyimpan data ke MySQL (batch insert)...' },
+                    { p: 85, text: 'Finalisasi proses import...' },
+                ];
+                let stageIdx = 0;
+                const progressTimer = setInterval(() => {
+                    if (stageIdx < stagedProgress.length) {
+                        document.getElementById('swal-progress-bar').style.width = stagedProgress[stageIdx].p + '%';
+                        document.getElementById('swal-progress-bar').innerText = stagedProgress[stageIdx].p + '%';
+                        document.getElementById('swal-status-text').innerText = stagedProgress[stageIdx].text;
+                        stageIdx++;
                     }
+                }, 1200);
 
-                    if (!resChunkRaw.ok || resChunk.status === 'error' || resChunk.message) {
-                        throw new Error(resChunk.text || resChunk.message || 'Terjadi Exception saat Insert Database di Chunk Server.');
-                    }
+                let resChunkRaw = await fetch('{{ route("import.excel.chunk") }}', {
+                    method: 'POST',
+                    body: chunkData,
+                    headers: fetchHeaders
+                });
 
-                    currentRow += chunkSize;
-                }
+                clearInterval(progressTimer);
 
-                document.getElementById('swal-progress-bar').style.width = '100%';
-                document.getElementById('swal-progress-bar').innerText = '100%';
-                document.getElementById('swal-status-text').innerText = "Merapikan log dan menghapus file sementara...";
+                let textChunk = await resChunkRaw.text();
+                let resChunk;
+
+                try {
+                    resChunk = JSON.parse(textChunk);
+                } catch (err) {
                 
                 let finData = new FormData();
                 finData.append('job_id', jobId);
@@ -451,10 +453,28 @@
                 }
 
                 if (resFin.total_success === 0) {
-                     Swal.fire({
+                    // Ambil debug info dari chunk response terakhir jika ada
+                    let debugHtml = '';
+                    if (window._lastChunkDebug) {
+                        const d = window._lastChunkDebug;
+                        debugHtml = `
+                            <hr class="my-2">
+                            <div class="text-left" style="font-size:12px;">
+                                <b>🔍 Debug Info:</b><br>
+                                • Tabel tujuan: <code>${d.table || '-'}</code><br>
+                                • Baris terbaca: <b>${d.rows_read ?? 0}</b><br>
+                                • Baris lolos filter: <b>${d.rows_passed ?? 0}</b><br>
+                                • Kolom DB tersedia: <code>${(d.table_columns || []).slice(0,6).join(', ')}${(d.table_columns||[]).length > 6 ? '...' : ''}</code><br>
+                                • Header Excel: <code>${(d.excel_headers || []).slice(0,6).join(', ')}${(d.excel_headers||[]).length > 6 ? '...' : ''}</code><br>
+                                ${d.active_filters && Object.keys(d.active_filters).length > 0 ? `• Filter aktif: <code>${JSON.stringify(d.active_filters).substring(0,120)}</code><br>` : '• Tidak ada filter aktif<br>'}
+                                ${d.sample_row ? `• Sample row: <code>${JSON.stringify(d.sample_row).substring(0,150)}</code>` : '• Tidak ada baris yang lolos mapping'}
+                            </div>`;
+                    }
+                    Swal.fire({
                         icon: 'warning',
                         title: 'Tidak Ada Data Masuk',
-                        text: '0 baris terimport. Kemungkinan semua tersaring oleh filter atau struktur tabel Anda sama sekali tidak ada yang cocok dengan Excel.'
+                        html: `0 baris terimport. Kemungkinan semua data terfilter, baris kosong, atau kolom Excel tidak cocok dengan kolom tabel DB.${debugHtml}`,
+                        width: 650,
                     }).then(() => { window.location.href = "{{ route('import.index') }}"; });
                 } else if (resFin.total_failed > 0) {
                      Swal.fire({

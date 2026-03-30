@@ -3,6 +3,7 @@
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Import\ImportIndexController;
 use App\Http\Controllers\Import\ImportFileController;
+use App\Http\Controllers\Import\ImportFileBrimoController;
 
 Route::get('/', function () {
     return view('auth.login');
@@ -52,6 +53,13 @@ Route::get('/dashboard', function () {
     
     // 🔥 UPDATE TERBARU: Route untuk memproses insert ke database setelah user memilih/filter kolom
     Route::post('/import/process', [ImportFileController::class, 'processImport'])->name('import.process');
+
+    // =======================================================
+    // ROUTE IMPORT BRIMO (USER BRIMO RPT V2 & USER BRIMO FIN)
+    // =======================================================
+    Route::post('/import/brimo/upload',   [ImportFileBrimoController::class, 'upload'])->name('import.brimo.upload');
+    Route::post('/import/brimo/preview',  [ImportFileBrimoController::class, 'preview'])->name('import.brimo.preview');
+    Route::post('/import/brimo/process',  [ImportFileBrimoController::class, 'processImport'])->name('import.brimo.process');
 
     // =======================================================
     // ROUTE IMPORT EXCEL (DAILY LOAN / SIMPANAN MULTI PN)

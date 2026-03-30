@@ -12,8 +12,10 @@ use Illuminate\Support\Facades\Log;
 use Carbon\Carbon; 
 use App\Models\NamaReport;
 
-class ImportFileController extends Controller
+class ImportFileBrimoController extends Controller
 {
+    // Variabel hardcode dihapus agar bisa dinamis sesuai report yang dipilih
+
     public function upload(Request $request)
     {
         $request->validate(['id_report' => 'required', 'file' => 'required|file|mimes:rar']);
@@ -35,9 +37,9 @@ class ImportFileController extends Controller
             $files[] = ['name' => $fileItem->getFilename(), 'path' => $fileItem->getPathname()];
         }
         session([
-            'import_files'     => $files,
-            'active_id_report' => $request->input('id_report'),
-            'import_type'      => 'default',
+            'import_files'      => $files,
+            'active_id_report'  => $request->input('id_report'),
+            'import_type'       => 'brimo',
         ]);
         return redirect()->route('import.select');
     }
@@ -58,16 +60,8 @@ class ImportFileController extends Controller
         $posisiIndex = -1; 
         $tahunIndex = -1;
 
-        $idReport = session('active_id_report', 1);
-        $reportData = DB::table('nama_report')->where('id_report', $idReport)->first();
-        $isBrilinkSummary = false;
-
-        if ($reportData && (stripos($reportData->nama_report, 'BRILINK Web - Laporan Summary Transaksi') !== false || stripos($reportData->nama_report, 'brilink_web') !== false)) {
-            $isBrilinkSummary = true;
-        }
-
         if (in_array($extension, ['csv', 'txt'])) {
-            if (($handle = fopen($filePath, "r")) !== FALSE) {
+            if (($handle = fopen($filePath, 'r')) !== FALSE) {
                 $firstLine = fgets($handle);
                 if ($currentDelimiter === 'auto') {
                     $delimiters = [',' => 0, ';' => 0, '|' => 0, "\t" => 0, '.' => 0];
@@ -81,24 +75,14 @@ class ImportFileController extends Controller
                     if (empty($data) || implode('', $data) === '') continue;
                     
                     if ($rowCounter == 0) {
+                        $headers = array_map(function($val) {
+                            $clean = trim(preg_replace('/[\xef\xbb\xbf]/', '', $val));
+                            return str_replace(' ', '_', $clean);
+                        }, $data);
                         
-                        if ($isBrilinkSummary) {
-                            $headers = [
-                                'PERIODE', 'NO', 'FLAG', 'KANWIL', 'KODE_KANCA', 'CABANG',
-                                'KODE_UKER', 'UKER', 'MERCHANT_NAME', 'MERCHANT_CODE',
-                                'OUTLET_NAME', 'OUTLET_CODE', 'TOTAL_TRANSAKSI',
-                                'TOTAL_NOMINAL', 'TOTAL_FEE', 'TOTAL_FEE_BRI'
-                            ];
-                        } else {
-                            $headers = array_map(function($val) {
-                                $clean = trim(preg_replace('/[\xef\xbb\xbf]/', '', $val));
-                                return str_replace(' ', '_', $clean);
-                            }, $data);
-                            
-                            foreach ($headers as $i => $h) { 
-                                if (stripos($h, 'POSISI') !== false) { $posisiIndex = $i; }
-                                if (stripos($h, 'TAHUN') !== false) { $tahunIndex = $i; }
-                            }
+                        foreach ($headers as $i => $h) { 
+                            if (stripos($h, 'POSISI') !== false) { $posisiIndex = $i; }
+                            if (stripos($h, 'TAHUN') !== false) { $tahunIndex = $i; }
                         }
 
                         foreach ($headers as $i => $h) { 
@@ -108,61 +92,30 @@ class ImportFileController extends Controller
                     } else {
                         if (trim($data[0]) === 'TAHUN' || stripos(trim($data[0]), 'textbox') !== false) continue;
 
-                        if ($isBrilinkSummary) {
-                            $rawPeriode = $data[0] ?? '';
-                            $periode = null;
+                        if (count($data) < count($headers)) {
+                            $data = array_pad($data, count($headers), null);
+                        }
+                        if (count($data) > count($headers)) continue; 
 
-                            if (strpos($rawPeriode, ':') !== false) {
-                                $periode = trim(explode(':', $rawPeriode)[1]); 
-                            } else {
-                                $periode = trim($rawPeriode);
-                            }
-
-                            $data = [
-                                $periode,
-                                $data[1] ?? null,
-                                $data[2] ?? null,
-                                trim($data[3] ?? null),
-                                $data[4] ?? null,
-                                trim($data[5] ?? null),
-                                $data[6] ?? null,
-                                trim($data[7] ?? null),
-                                trim($data[8] ?? null),
-                                $data[9] ?? null,
-                                trim($data[10] ?? null),
-                                $data[11] ?? null,
-                                $data[12] ?? null,
-                                $data[13] ?? null,
-                                $data[14] ?? null,
-                                $data[15] ?? null,
-                            ];
-                        } 
-                        else {
-                            if (count($data) < count($headers)) {
-                                $data = array_pad($data, count($headers), null);
-                            }
-                            if (count($data) > count($headers)) continue; 
-
-                            if ($posisiIndex !== -1 && isset($data[$posisiIndex]) && trim($data[$posisiIndex]) !== '') {
-                                $rawPosisi = trim($data[$posisiIndex]);
-                                try {
-                                    if (strpos($rawPosisi, '/') !== false) {
-                                        $data[$posisiIndex] = Carbon::parse(str_replace('/', '-', $rawPosisi))->format('Y-m-d');
-                                    } else {
-                                        if ($tahunIndex !== -1 && isset($data[$tahunIndex]) && trim($data[$tahunIndex]) !== '') {
-                                            $rawTahun = trim($data[$tahunIndex]);
-                                            if (preg_match('/^([a-zA-Z]+\s+\d+)/', $rawPosisi, $matches)) {
-                                                $fixedDateStr = $matches[1] . ' ' . $rawTahun; 
-                                                $data[$posisiIndex] = Carbon::parse($fixedDateStr)->format('Y-m-d');
-                                            } else {
-                                                $data[$posisiIndex] = Carbon::parse($rawPosisi)->format('Y-m-d');
-                                            }
+                        if ($posisiIndex !== -1 && isset($data[$posisiIndex]) && trim($data[$posisiIndex]) !== '') {
+                            $rawPosisi = trim($data[$posisiIndex]);
+                            try {
+                                if (strpos($rawPosisi, '/') !== false) {
+                                    $data[$posisiIndex] = Carbon::parse(str_replace('/', '-', $rawPosisi))->format('Y-m-d');
+                                } else {
+                                    if ($tahunIndex !== -1 && isset($data[$tahunIndex]) && trim($data[$tahunIndex]) !== '') {
+                                        $rawTahun = trim($data[$tahunIndex]);
+                                        if (preg_match('/^([a-zA-Z]+\s+\d+)/', $rawPosisi, $matches)) {
+                                            $fixedDateStr = $matches[1] . ' ' . $rawTahun; 
+                                            $data[$posisiIndex] = Carbon::parse($fixedDateStr)->format('Y-m-d');
                                         } else {
                                             $data[$posisiIndex] = Carbon::parse($rawPosisi)->format('Y-m-d');
                                         }
+                                    } else {
+                                        $data[$posisiIndex] = Carbon::parse($rawPosisi)->format('Y-m-d');
                                     }
-                                } catch (\Exception $e) {}
-                            }
+                                }
+                            } catch (\Exception $e) {}
                         }
 
                         if ($savedRows < 2500) { 
@@ -191,7 +144,7 @@ class ImportFileController extends Controller
         
         session(['final_import_path' => $filePath]);
 
-        $processRoute = route('import.process');
+        $processRoute = route('import.brimo.process');
 
         return view('import.preview', compact(
             'headers',
@@ -199,7 +152,6 @@ class ImportFileController extends Controller
             'filePath',
             'formattedUniqueValues',
             'currentDelimiter',
-            'isBrilinkSummary',
             'processRoute'
         ));
     }
@@ -222,13 +174,36 @@ class ImportFileController extends Controller
         $activeFilters = json_decode($request->input('active_filters_json'), true) ?: [];
         $currentDelimiter = $request->input('delimiter', 'auto');
         
-        // 🔥 1. DETEKSI REPORT (WAJIB SAMA DENGAN PREVIEW)
+        // 1. DETEKSI NAMA REPORT DARI DATABASE
         $idReport = session('active_id_report', 1);
         $reportData = DB::table('nama_report')->where('id_report', $idReport)->first();
-        $isBrilinkSummary = false;
 
-        if ($reportData && (stripos($reportData->nama_report, 'BRILINK Web - Laporan Summary Transaksi') !== false || stripos($reportData->nama_report, 'brilink_web') !== false)) {
-            $isBrilinkSummary = true;
+        // 2. PENENTUAN TABEL & SUFFIX SECARA DINAMIS
+        // Selalu gunakan user_brimo_rpt_v2 atau user_brimo_fin.
+        // JANGAN gunakan $reportData->table_name karena bisa salah di DB.
+        $tableName    = 'user_brimo_rpt_v2'; // Default fallback
+        $uniqueSuffix = '_UBv2';             // Default fallback
+
+        if ($reportData) {
+            $namaReport = $reportData->nama_report ?? '';
+
+            // Cek apakah laporan ini adalah User Brimo FIN
+            if (stripos($namaReport, 'fin') !== false) {
+                $tableName    = 'user_brimo_fin';
+                $uniqueSuffix = '_UBFin';
+            } else {
+                // Semua laporan Brimo lainnya (RPT V2, dll) → user_brimo_rpt_v2
+                $tableName    = 'user_brimo_rpt_v2';
+                $uniqueSuffix = '_UBv2';
+            }
+        }
+
+        // Validasi keberadaan tabel di database untuk mencegah error query
+        if (!DB::getSchemaBuilder()->hasTable($tableName)) {
+            Log::error("Tabel tujuan import Brimo tidak ditemukan: " . $tableName);
+            return $request->expectsJson()
+                ? response()->json(['status' => 'error', 'title' => 'Gagal!', 'text' => "Tabel $tableName tidak ditemukan di database."])
+                : redirect()->route('import.index')->with('error', "Tabel $tableName tidak ditemukan di database.");
         }
 
         if (!file_exists($filePath)) {
@@ -242,37 +217,8 @@ class ImportFileController extends Controller
                 : redirect()->route('import.index')->with('error', 'File tidak ditemukan.');
         }
 
-        // 🔥 PERBAIKAN FINAL: PRIORITAS TABLE_NAME DARI DB
-        $tableName = 'jumlah_merchant_detail'; // default fallback
-
-        if ($reportData) {
-            if (!empty($reportData->table_name)) {
-                $tableName = $reportData->table_name;
-            } else {
-                // fallback lama (JANGAN DIHAPUS)
-                $tableName = strtolower(str_replace(' ', '_', $reportData->nama_report));
-            }
-        }
-
-        // 🔥 VALIDASI FINAL
-        if (!DB::getSchemaBuilder()->hasTable($tableName)) {
-            $tableName = 'jumlah_merchant_detail';
-        }
-
-        $uniqueSuffix = '_MDT'; 
-        if ($tableName === 'sv_merchant') {
-            $uniqueSuffix = '_SVMer';
-        } elseif ($tableName === 'merchant_qris') {
-            $uniqueSuffix = '_MQ';
-        } elseif ($tableName === 'merchant_qris_volume') {
-            $uniqueSuffix = '_MQV'; 
-        } elseif ($tableName === 'brilink_web_laporan_summary_transaksi_brilink_web') {
-            $uniqueSuffix = '_BST';
-        }
-
         $dataToInsert = [];
         $csvHeaders = [];
-
         $posisiIndex = -1;
         $tahunIndex = -1;
 
@@ -294,20 +240,14 @@ class ImportFileController extends Controller
             while (($data = fgetcsv($handle, 10000, $delimiter)) !== FALSE) {
                 if (empty($data) || implode('', $data) === '') continue;
 
-                // 🔥 2. SKIP HEADER DEFAULT (INI KRITIS)
                 if ($rowCounter == 0) {
-                    if ($isBrilinkSummary) {
-                        // ❌ JANGAN pakai header CSV (textboxXX)
-                        $csvHeaders = [];
-                    } else {
-                        $csvHeaders = array_map(function($val) {
-                            return trim(preg_replace('/[\xef\xbb\xbf]/', '', $val));
-                        }, $data);
-                        
-                        foreach ($csvHeaders as $idx => $hdr) {
-                            if (stripos($hdr, 'posisi') !== false) { $posisiIndex = $idx; }
-                            if (stripos($hdr, 'tahun') !== false) { $tahunIndex = $idx; }
-                        }
+                    $csvHeaders = array_map(function($val) {
+                        return trim(preg_replace('/[\xef\xbb\xbf]/', '', $val));
+                    }, $data);
+                    
+                    foreach ($csvHeaders as $idx => $hdr) {
+                        if (stripos($hdr, 'posisi') !== false) { $posisiIndex = $idx; }
+                        if (stripos($hdr, 'tahun') !== false) { $tahunIndex = $idx; }
                     }
                     
                     $rowCounter++;
@@ -316,42 +256,38 @@ class ImportFileController extends Controller
 
                 if (trim($data[0]) === 'TAHUN' || stripos(trim($data[0]), 'textbox') !== false) continue;
 
-                // 🔥 4. SKIP VALIDASI KOLOM HEADER SAAT BRILINK
-                if (!$isBrilinkSummary) {
-                    if (count($data) < count($csvHeaders)) {
-                        $data = array_pad($data, count($csvHeaders), null);
-                    }
+                if (count($data) < count($csvHeaders)) {
+                    $data = array_pad($data, count($csvHeaders), null);
+                }
 
-                    if (count($data) > count($csvHeaders)) {
-                        Log::warning('Kolom tidak sesuai', [
-                            'expected' => count($csvHeaders),
-                            'actual' => count($data),
-                            'row' => $data
-                        ]);
-                        continue; 
-                    }
+                if (count($data) > count($csvHeaders)) {
+                    Log::warning('Kolom tidak sesuai pada Import Brimo', [
+                        'expected' => count($csvHeaders),
+                        'actual' => count($data),
+                        'row' => $data
+                    ]);
+                    continue; 
+                }
 
-                    // DATE RECONSTRUCTOR HANYA JIKA BUKAN BRILINK
-                    if ($posisiIndex !== -1 && isset($data[$posisiIndex]) && trim($data[$posisiIndex]) !== '') {
-                        $rawPosisi = trim($data[$posisiIndex]);
-                        try {
-                            if (strpos($rawPosisi, '/') !== false) {
-                                $data[$posisiIndex] = Carbon::parse(str_replace('/', '-', $rawPosisi))->format('Y-m-d');
-                            } else {
-                                if ($tahunIndex !== -1 && isset($data[$tahunIndex]) && trim($data[$tahunIndex]) !== '') {
-                                    $rawTahun = trim($data[$tahunIndex]);
-                                    if (preg_match('/^([a-zA-Z]+\s+\d+)/', $rawPosisi, $matches)) {
-                                        $fixedDateStr = $matches[1] . ' ' . $rawTahun;
-                                        $data[$posisiIndex] = Carbon::parse($fixedDateStr)->format('Y-m-d');
-                                    } else {
-                                        $data[$posisiIndex] = Carbon::parse($rawPosisi)->format('Y-m-d');
-                                    }
+                if ($posisiIndex !== -1 && isset($data[$posisiIndex]) && trim($data[$posisiIndex]) !== '') {
+                    $rawPosisi = trim($data[$posisiIndex]);
+                    try {
+                        if (strpos($rawPosisi, '/') !== false) {
+                            $data[$posisiIndex] = Carbon::parse(str_replace('/', '-', $rawPosisi))->format('Y-m-d');
+                        } else {
+                            if ($tahunIndex !== -1 && isset($data[$tahunIndex]) && trim($data[$tahunIndex]) !== '') {
+                                $rawTahun = trim($data[$tahunIndex]);
+                                if (preg_match('/^([a-zA-Z]+\s+\d+)/', $rawPosisi, $matches)) {
+                                    $fixedDateStr = $matches[1] . ' ' . $rawTahun;
+                                    $data[$posisiIndex] = Carbon::parse($fixedDateStr)->format('Y-m-d');
                                 } else {
                                     $data[$posisiIndex] = Carbon::parse($rawPosisi)->format('Y-m-d');
                                 }
+                            } else {
+                                $data[$posisiIndex] = Carbon::parse($rawPosisi)->format('Y-m-d');
                             }
-                        } catch (\Exception $e) {}
-                    }
+                        }
+                    } catch (\Exception $e) {}
                 }
 
                 // FILTER AKTIF
@@ -369,70 +305,40 @@ class ImportFileController extends Controller
                     continue;
                 }
 
-                // 🔥 3. OVERRIDE TOTAL MAPPING (INI BAGIAN INTI)
-                if ($isBrilinkSummary) {
-                    // 🔥 PARSE PERIODE
-                    $rawPeriode = $data[0] ?? '';
-                    $periode = null;
+                // DYNAMIC MAPPING
+                $rowData = [];
+                $rowData['uniqueid_namareport'] = uniqid() . $uniqueSuffix;
 
-                    if (strpos($rawPeriode, ':') !== false) {
-                        $periode = trim(explode(':', $rawPeriode)[1]); // Output: "March 2026"
-                    } else {
-                        $periode = trim($rawPeriode);
+                foreach ($selectedColumns as $index) {
+                    if (!isset($csvHeaders[$index])) continue;
+                    
+                    $colName = str_replace(' ', '_', strtolower($csvHeaders[$index]));
+
+                    if (strtolower($colName) === 'id' || strtolower($colName) === 'uniqueid_namareport') {
+                        continue;
                     }
 
-                    $rowData = [
-                        'uniqueid_namareport' => uniqid() . '_BST',
-                        'periode' => $periode,
+                    $cellValue = isset($data[$index]) ? trim($data[$index]) : '';
 
-                        'no' => (int) ($data[1] ?? 0),
-                        'kanwil' => trim($data[3] ?? null),
-                        'cabang' => trim($data[5] ?? null),
-                        'uker' => trim($data[7] ?? null),
-
-                        'merchant_name' => trim($data[8] ?? null),
-                        'merchant_code' => trim($data[9] ?? null),
-                        'outlet_name' => trim($data[10] ?? null),
-                        'outlet_code' => trim($data[11] ?? null),
-
-                        'total_transaksi' => (int) preg_replace('/[^0-9]/', '', $data[12] ?? 0),
-
-                        'total_nominal' => (float) preg_replace('/[^0-9.]/', '', $data[13] ?? 0),
-                        'total_fee' => (float) preg_replace('/[^0-9.]/', '', $data[14] ?? 0),
-                        'total_fee_bri' => (float) preg_replace('/[^0-9.]/', '', $data[15] ?? 0),
-                    ];
-                } else {
-                    // 🔥 EXISTING LOGIC (JANGAN DIUBAH)
-                    $rowData = [];
-                    $rowData['uniqueid_namareport'] = uniqid() . $uniqueSuffix;
-
-                    foreach ($selectedColumns as $index) {
-                        if (!isset($csvHeaders[$index])) continue;
-                        
-                        $colName = str_replace(' ', '_', $csvHeaders[$index]);
-
-                        if (strtolower($colName) === 'id' || strtolower($colName) === 'uniqueid_namareport') {
-                            continue;
+                    // Membersihkan format angka seperti pada kolom jumlah/nominal/volume/fee
+                    $numericColumns = ['jumlah', 'nominal', 'fee', 'saldo', 'volume', 'transaksi'];
+                    $isNumericColumn = false;
+                    foreach ($numericColumns as $numCol) {
+                        if (stripos($colName, $numCol) !== false) {
+                            $isNumericColumn = true;
+                            break;
                         }
-
-                        $cellValue = isset($data[$index]) ? trim($data[$index]) : '';
-                        
-                        $numericColumns = [
-                            'SALDO_POSISI', 'RATAS_SALDO', 'SALDO_POSISI_BY_CIF', 'RATAS_SALDO_BY_CIF',
-                            'SALES_VOLUME', 'AKUMULASI_SALES_VOLUME', 'JML_TRANSAKSI', 'AKUMULASI_TRANSAKSI',
-                            'NILAI', 'MERCHANT_QRIS_VOLUME', 'MERCHANT_QRIS'
-                        ];
-
-                        if (in_array(strtoupper($colName), $numericColumns)) {
-                            $clean = preg_replace('/[^0-9.-]/', '', $cellValue);
-                            if (!is_numeric($clean)) {
-                                $clean = null;
-                            }
-                            $cellValue = $clean;
-                        }
-
-                        $rowData[$colName] = ($cellValue === '') ? null : $cellValue;
                     }
+
+                    if ($isNumericColumn) {
+                        $clean = preg_replace('/[^0-9.-]/', '', $cellValue);
+                        if (!is_numeric($clean)) {
+                            $clean = null;
+                        }
+                        $cellValue = $clean;
+                    }
+
+                    $rowData[$colName] = ($cellValue === '') ? null : $cellValue;
                 }
                 
                 $dataToInsert[] = $rowData;
@@ -441,24 +347,20 @@ class ImportFileController extends Controller
             fclose($handle);
         }
 
-        $samplePosisi = null;
-        $samplePeriode = null;
-
-        if (!empty($dataToInsert)) {
-            $samplePosisi = $dataToInsert[0]['POSISI'] ?? null;
-            $samplePeriode = $dataToInsert[0]['periode'] ?? null;
-        }
+        // PENGECEKAN DUPLIKAT DATA
+        $samplePeriode = $dataToInsert[0]['periode'] ?? null;
+        $samplePosisi = $dataToInsert[0]['posisi'] ?? null;
 
         $isDuplicate = false;
-        $duplicateText = "";
+        $duplicateText = '';
 
-        if ($isBrilinkSummary && $samplePeriode) {
+        if ($samplePeriode) {
             $isDuplicate = DB::table($tableName)->where('periode', $samplePeriode)->exists();
             if ($isDuplicate) {
                 $duplicateText = "Data untuk PERIODE <b>$samplePeriode</b> sudah pernah diunggah sebelumnya ke tabel <b class='text-uppercase'>$tableName</b>.<br><br>Sistem membatalkan proses ini.";
             }
         } elseif ($samplePosisi) {
-            $isDuplicate = DB::table($tableName)->whereDate('POSISI', $samplePosisi)->exists();
+            $isDuplicate = DB::table($tableName)->whereDate('posisi', $samplePosisi)->exists();
             if ($isDuplicate) {
                 $duplicateText = "Data untuk tanggal POSISI <b>$samplePosisi</b> sudah pernah diunggah sebelumnya ke tabel <b class='text-uppercase'>$tableName</b>.<br><br>Sistem membatalkan proses ini.";
             }
@@ -481,6 +383,7 @@ class ImportFileController extends Controller
                 : redirect()->route('import.index')->with('sweet_warning', $response);
         }
 
+        // CATAT KE IMPORT JOBS
         $jobId = DB::table('import_jobs')->insertGetId([
             'id_report' => $idReport,
             'file_name' => basename($filePath),
@@ -507,6 +410,7 @@ class ImportFileController extends Controller
                 $totalFailed += count($chunk);
                 $lastErrorMsg = substr($e->getMessage(), 0, 800) . '...';
                 
+                // Menyimpan kegagalan import seperti pada ImportFileController
                 DB::table('failed_jobs')->insert([
                     'uuid' => (string) Str::uuid(),
                     'connection' => 'database',

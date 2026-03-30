@@ -17,7 +17,7 @@
                 </h3>
             </div>
             <div class="card-body py-2">
-                <form action="{{ route('import.preview') }}" method="POST" class="form-inline">
+                <form action="{{ session('import_type') === 'brimo' ? route('import.brimo.preview') : route('import.preview') }}" method="POST" class="form-inline">
                     @csrf
                     <input type="hidden" name="file_path" value="{{ $filePath }}">
                     <label class="mr-3" for="delimiter">Jika tabel berantakan, ubah pemisah kolom di sini:</label>
@@ -36,7 +36,7 @@
             </div>
         </div>
 
-        <form id="importForm" action="{{ route('import.process') }}" method="POST">
+        <form id="importForm" action="{{ $processRoute ?? route('import.process') }}" method="POST">
             @csrf
             <input type="hidden" name="file_path" value="{{ $filePath }}">
             <input type="hidden" name="delimiter" value="{{ $currentDelimiter }}">
