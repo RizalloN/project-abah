@@ -1,6 +1,6 @@
 @extends('layouts.admin')
 
-@section('title', 'Preview & Filter Data Excel')
+@section('title', 'Preview & Filter Data - Daily Loan Dinamis')
 
 @section('content')
 <div class="row">
@@ -13,7 +13,7 @@
         <div class="card card-outline card-success shadow-sm mb-3">
             <div class="card-header bg-light">
                 <h3 class="card-title font-weight-bold text-success">
-                    <i class="fas fa-file-excel mr-1"></i> Preview Excel Data (Daily Loan / Simpanan dll)
+                    <i class="fas fa-file-excel mr-1"></i> Preview Excel Data (Daily Loan Dinamis / Simpanan MultiPN)
                 </h3>
             </div>
             <div class="card-body">
@@ -103,7 +103,8 @@
                                 </tr>
                             </thead>
                             <tbody>
-                                @foreach($preview as $rowIndex => $row)
+                                <!-- 🔥 Slicing di Server PHP (Beban Browser akan turun drastis) -->
+                                @foreach(array_slice($preview, 0, 100, true) as $rowIndex => $row)
                                     <tr class="preview-row d-none"> 
                                         <td class="text-center text-muted">{{ $rowIndex + 1 }}</td>
                                         
@@ -342,7 +343,6 @@
             const csrfToken = document.querySelector('input[name="_token"]').value;
             const pathValue = document.getElementById('file_path').value;
 
-            // 🔥 Headers dengan flag AJAX khusus untuk menghindari balasan HTML 500
             const fetchHeaders = {
                 'X-CSRF-TOKEN': csrfToken,
                 'Accept': 'application/json',
@@ -363,9 +363,6 @@
             });
 
             try {
-                // ==========================================
-                // 🔥 TAHAP 1: INISIALISASI (Aman dari Halaman HTML Error)
-                // ==========================================
                 let formData = new FormData();
                 formData.append('path', pathValue);
 
@@ -391,12 +388,9 @@
                 let headerIndex = resInit.header_index;
                 let tableName = resInit.table_name;
                 let excelFilePath = resInit.file_path; 
-                let chunkSize = 1000;
+                let chunkSize = 500; 
                 let currentRow = headerIndex + 1;
 
-                // ==========================================
-                // 🔥 TAHAP 2: CHUNKING (Loop Eksekusi Data)
-                // ==========================================
                 while(currentRow <= totalRows) {
                     let pct = Math.min(100, Math.floor(((currentRow - headerIndex) / (totalRows - headerIndex)) * 100));
                     
@@ -433,9 +427,6 @@
                     currentRow += chunkSize;
                 }
 
-                // ==========================================
-                // 🔥 TAHAP 3: FINISH & PEMBERSIHAN
-                // ==========================================
                 document.getElementById('swal-progress-bar').style.width = '100%';
                 document.getElementById('swal-progress-bar').innerText = '100%';
                 document.getElementById('swal-status-text').innerText = "Merapikan log dan menghapus file sementara...";
@@ -459,7 +450,6 @@
                     throw new Error(resFin.text || resFin.message || 'Terjadi kegagalan saat menutup Sesi Import.');
                 }
 
-                // Validas Hasil Sukses
                 if (resFin.total_success === 0) {
                      Swal.fire({
                         icon: 'warning',

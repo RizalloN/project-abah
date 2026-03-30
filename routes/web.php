@@ -8,6 +8,17 @@ Route::get('/', function () {
     return view('auth.login');
 });
 
+Route::get('/debug-upload-limits', function () {
+    return [
+        'sapi' => PHP_SAPI,
+        'loaded_ini' => php_ini_loaded_file(),
+        'post_max_size' => ini_get('post_max_size'),
+        'upload_max_filesize' => ini_get('upload_max_filesize'),
+        'memory_limit' => ini_get('memory_limit'),
+        'content_length' => request()->server('CONTENT_LENGTH'),
+    ];
+});
+
 Route::get('/dashboard', function () {
     return view('dashboard');
 })->middleware(['auth'])->name('dashboard');
