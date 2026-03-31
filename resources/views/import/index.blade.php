@@ -148,26 +148,82 @@
         });
 
         // ==========================================
-        // 🔥 LOGIKA SCRIPT LOADING UX 
+        // 🔥 LOGIKA SCRIPT LOADING UX (PROGRESS BAR)
         // ==========================================
         formImport.addEventListener('submit', function(e) {
             // Cek apakah target action mengandung kata 'excel'
             const isExcel = formImport.action.includes('excel');
+            const titleText = isExcel ? 'Uploading Excel...' : 'Uploading Report...';
+            const descText = isExcel 
+                ? 'File besar sedang diproses dengan chunking.<br><b>Mohon tunggu...</b>' 
+                : 'Sedang mengupload dan memproses file.<br><b>Mohon tunggu...</b>';
+
+            // HTML Custom untuk Progress Bar
+            const progressHtml = `
+                <div class="text-center mb-3">
+                    <span class="text-muted" style="font-size: 14px;">${descText}</span>
+                </div>
+                <div class="progress" style="height: 25px; border-radius: 10px; background-color: #e9ecef; overflow: hidden;">
+                    <div id="swal-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated bg-primary" 
+                         role="progressbar" style="width: 0%; font-weight: bold; font-size: 14px; line-height: 25px;" 
+                         aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+                </div>
+                <div class="text-center mt-2">
+                    <small id="swal-progress-text" class="text-primary font-weight-bold">Memulai proses...</small>
+                </div>
+            `;
 
             Swal.fire({
-                title: isExcel ? 'Uploading Excel...' : 'Uploading...',
-                html: isExcel 
-                    ? 'File besar sedang diproses dengan chunking.<br><b>Mohon tunggu...</b>' 
-                    : 'Sedang mengupload dan memproses file.<br><b>Mohon tunggu...</b>',
+                title: titleText,
+                html: progressHtml,
                 allowOutsideClick: false,
                 allowEscapeKey: false,
                 showConfirmButton: false,
                 didOpen: () => {
-                    Swal.showLoading();
+                    // Simulasi Progress Bar (Fake Progress)
+                    // Karena upload form biasa (bukan AJAX), kita buat animasi progress yang realistis
+                    const progressBar = document.getElementById('swal-progress-bar');
+                    const progressText = document.getElementById('swal-progress-text');
+                    let progress = 0;
+                    
+                    // Interval untuk update progress
+                    const interval = setInterval(() => {
+                        // Logika: Cepat di awal (sampai 80%), lalu melambat (sampai 95%), berhenti di 99%
+                        if (progress < 50) {
+                            progress += Math.floor(Math.random() * 10) + 5; // Naik 5-15%
+                        } else if (progress < 80) {
+                            progress += Math.floor(Math.random() * 5) + 2;  // Naik 2-7%
+                        } else if (progress < 95) {
+                            progress += Math.floor(Math.random() * 2) + 1;  // Naik 1-3%
+                        } else if (progress < 99) {
+                            progress += 0.5; // Naik sangat lambat
+                        }
+
+                        // Pastikan tidak melebihi 99% (100% saat response server selesai)
+                        if (progress > 99) progress = 99;
+
+                        // Update UI
+                        const currentProgress = Math.floor(progress);
+                        progressBar.style.width = currentProgress + '%';
+                        progressBar.setAttribute('aria-valuenow', currentProgress);
+                        progressBar.innerText = currentProgress + '%';
+
+                        // Update Teks Status
+                        if (currentProgress < 30) {
+                            progressText.innerText = "Mengunggah file ke server...";
+                        } else if (currentProgress < 60) {
+                            progressText.innerText = "Membaca data file...";
+                        } else if (currentProgress < 90) {
+                            progressText.innerText = "Memproses dan menyimpan data...";
+                        } else {
+                            progressText.innerText = "Menyelesaikan proses akhir...";
+                        }
+
+                    }, 600); // Update setiap 600ms
                 }
             });
 
-            // Bonus: Disable button agar lebih Pro Level!
+            // Disable button agar tidak double submit
             if (btnSubmit) {
                 btnSubmit.disabled = true;
                 btnSubmit.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
