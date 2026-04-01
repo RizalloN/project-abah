@@ -151,6 +151,8 @@
         // 🔥 LOGIKA SCRIPT LOADING UX (PROGRESS BAR)
         // ==========================================
         formImport.addEventListener('submit', function(e) {
+            e.preventDefault(); // Prevent default form submission for all cases to handle uniformly
+
             // Cek apakah target action mengandung kata 'excel'
             const isExcel = formImport.action.includes('excel');
             const titleText = isExcel ? 'Uploading Excel...' : 'Uploading Report...';
@@ -161,7 +163,7 @@
             // HTML Custom untuk Progress Bar
             const progressHtml = `
                 <div class="text-center mb-3">
-                    <span class="text-muted" style="font-size: 14px;">${descText}</span>
+                    <span class="text-muted" style="font-size: 14px;" id="swal-desc-text">${descText}</span>
                 </div>
                 <div class="progress" style="height: 25px; border-radius: 10px; background-color: #e9ecef; overflow: hidden;">
                     <div id="swal-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated bg-primary" 
@@ -180,54 +182,104 @@
                 allowEscapeKey: false,
                 showConfirmButton: false,
                 didOpen: () => {
-                    // Simulasi Progress Bar (Fake Progress)
-                    // Karena upload form biasa (bukan AJAX), kita buat animasi progress yang realistis
-                    const progressBar = document.getElementById('swal-progress-bar');
-                    const progressText = document.getElementById('swal-progress-text');
-                    let progress = 0;
-                    
-                    // Interval untuk update progress
-                    const interval = setInterval(() => {
-                        // Logika: Cepat di awal (sampai 80%), lalu melambat (sampai 95%), berhenti di 99%
-                        if (progress < 50) {
-                            progress += Math.floor(Math.random() * 10) + 5; // Naik 5-15%
-                        } else if (progress < 80) {
-                            progress += Math.floor(Math.random() * 5) + 2;  // Naik 2-7%
-                        } else if (progress < 95) {
-                            progress += Math.floor(Math.random() * 2) + 1;  // Naik 1-3%
-                        } else if (progress < 99) {
-                            progress += 0.5; // Naik sangat lambat
+                    // Disable button agar tidak double submit
+                    if (btnSubmit) {
+                        btnSubmit.disabled = true;
+                        btnSubmit.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
+                    }
+
+                    if (!isExcel) {
+                        // For non-Excel, submit synchronously as before
+                        formImport.submit();
+                        return;
+                    }
+
+                    // For Excel: AJAX upload
+                    const formData = new FormData(formImport);
+                    fetch(formImport.action, {
+                        method: 'POST',
+                        headers: {
+                            'Accept': 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest',
+                        },
+                        body: formData
+                    })
+                    .then(function(response) {
+                        if (!response.ok) throw new Error('Upload gagal: ' + response.statusText);
+                        return response.json();
+                    })
+                    .then(function(data) {
+                        if (data.status !== 'success') throw new Error('Upload error: ' + (data.message || 'Unknown'));
+
+                        // Connect to SSE for prepare-preview
+                        const eventSource = new EventSource("{{ route('import.excel.prepare-preview') }}");
+
+                        // ── progress event ──────────────────────────────────
+                        eventSource.addEventListener('progress', function(event) {
+                            var evtData = {};
+                            try { evtData = JSON.parse(event.data); } catch(_) {}
+                            var progressBar  = document.getElementById('swal-progress-bar');
+                            var progressText = document.getElementById('swal-progress-text');
+                            if (progressBar && evtData.percent != null) {
+                                progressBar.style.width = evtData.percent + '%';
+                                progressBar.innerText   = evtData.percent + '%';
+                            }
+                            if (progressText && evtData.message) {
+                                progressText.innerText = evtData.message;
+                            }
+                        });
+
+                        // ── ready event ─────────────────────────────────────
+                        eventSource.addEventListener('ready', function(event) {
+                            var evtData = {};
+                            try { evtData = JSON.parse(event.data); } catch(_) {}
+                            eventSource.close();
+                            if (evtData.redirect) {
+                                window.location.href = evtData.redirect;
+                            }
+                        });
+
+                        // ── error_msg event (server-sent named error) ───────
+                        eventSource.addEventListener('error_msg', function(event) {
+                            var evtData = {};
+                            try { evtData = JSON.parse(event.data); } catch(_) {}
+                            eventSource.close();
+                            Swal.fire({
+                                icon: 'error',
+                                title: 'Error',
+                                text: evtData.message || 'Terjadi kesalahan server.'
+                            });
+                            resetSubmitButton();
+                        });
+
+                        // ── onerror (network drop / connection closed) ───────
+                        eventSource.onerror = function() {
+                            eventSource.close();
+                            Swal.fire({
+                                icon: 'error',
+                                title: 'Koneksi Terputus',
+                                text: 'Gagal terhubung ke server untuk update progress.'
+                            });
+                            resetSubmitButton();
+                        };
+                    })
+                    .catch(function(error) {
+                        Swal.fire({
+                            icon: 'error',
+                            title: 'Upload Error',
+                            text: error.message
+                        });
+                        resetSubmitButton();
+                    });
+
+                    function resetSubmitButton() {
+                        if (btnSubmit) {
+                            btnSubmit.disabled = false;
+                            btnSubmit.innerHTML = '<i class="fas fa-file-excel"></i> Upload Excel';
                         }
-
-                        // Pastikan tidak melebihi 99% (100% saat response server selesai)
-                        if (progress > 99) progress = 99;
-
-                        // Update UI
-                        const currentProgress = Math.floor(progress);
-                        progressBar.style.width = currentProgress + '%';
-                        progressBar.setAttribute('aria-valuenow', currentProgress);
-                        progressBar.innerText = currentProgress + '%';
-
-                        // Update Teks Status
-                        if (currentProgress < 30) {
-                            progressText.innerText = "Mengunggah file ke server...";
-                        } else if (currentProgress < 60) {
-                            progressText.innerText = "Membaca data file...";
-                        } else if (currentProgress < 90) {
-                            progressText.innerText = "Memproses dan menyimpan data...";
-                        } else {
-                            progressText.innerText = "Menyelesaikan proses akhir...";
-                        }
-
-                    }, 600); // Update setiap 600ms
+                    }
                 }
             });
-
-            // Disable button agar tidak double submit
-            if (btnSubmit) {
-                btnSubmit.disabled = true;
-                btnSubmit.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
-            }
         });
     });
 

@@ -285,8 +285,10 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    // 🔥 Mencegah binding event ganda dan menggunakan event 'change input'
-    $('#filter_bulan').off('change input').on('change input', function () {
+    // 🔥 Stabilkan month picker: cukup trigger saat nilai final berubah
+    // Event "input" pada type="month" bisa menembak saat user sedang scroll/pindah nilai,
+    // terutama memicu perilaku tidak stabil di Feb/Mar pada beberapa browser.
+    $('#filter_bulan').off('change').on('change', function () {
         loadDataBrilink();
     });
 

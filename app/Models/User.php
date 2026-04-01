@@ -39,6 +39,26 @@ class User extends Authenticatable
         ];
     }
 
+    /**
+     * Get the name of the unique identifier / primary key field.
+     *
+     * @return string
+     */
+    public function getAuthIdentifierName(): string
+    {
+        return 'pn';
+    }
+
+    /**
+     * Get the name of the password field.
+     *
+     * @return string
+     */
+    public function getAuthPasswordName(): string
+    {
+        return 'password';
+    }
+
     // 🔥 HELPER ROLE
     public function isAdmin()
     {

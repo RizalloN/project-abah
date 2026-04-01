@@ -44,11 +44,6 @@ public function performanceBrilink()
         return view('report.performance-brimo', compact('branches', 'id_report'));
     }
 
-    // 🔥 6. VIEW RASIO CASA DEBITUR
-    public function rasioCasaDebitur()
-    {
-        return view('report.Rasiocasadebitur');
-    }
 
     // 🔥 4. MESIN PENGOLAH DATA UTAMA (AJAX API)
     public function fetchData(Request $request)
@@ -746,33 +741,47 @@ public function performanceBrilink()
                 $data[] = [
                     'branch' => $branchRaw,
                     'ureg_rekening' => [
-                        'curr'    => $rek->ureg_rek_curr,
-                        'mtd'     => $rek->ureg_rek_curr - $rek->ureg_rek_mtd,
-                        'ytd'     => $rek->ureg_rek_curr - $rek->ureg_rek_ytd,
-                        'yoy'     => $rek->ureg_rek_curr - $rek->ureg_rek_yoy,
-                        'yoy_pct' => round($ureg_rek_yoy_pct, 1),
+                        'curr'     => $rek->ureg_rek_curr,
+                        'yoy_prev' => $rek->ureg_rek_yoy,
+                        'dec'      => $rek->ureg_rek_ytd,
+                        'prev'     => $rek->ureg_rek_mtd,
+                        'mtd'      => $rek->ureg_rek_curr - $rek->ureg_rek_mtd,
+                        'ytd'      => $rek->ureg_rek_curr - $rek->ureg_rek_ytd,
+                        'yoy'      => $rek->ureg_rek_curr - $rek->ureg_rek_yoy,
+                        'yoy_pct'  => round($ureg_rek_yoy_pct, 1),
+                        'mtd_pct'  => $rek->ureg_rek_mtd > 0 ? (($rek->ureg_rek_curr - $rek->ureg_rek_mtd) / $rek->ureg_rek_mtd) * 100 : 0,
                     ],
                     'ureg_finansial' => [
-                        'curr'    => $fin->ureg_fin_curr,
-                        'mtd'     => $fin->ureg_fin_curr - $fin->ureg_fin_mtd,
-                        'ytd'     => $fin->ureg_fin_curr - $fin->ureg_fin_ytd,
-                        'yoy'     => $fin->ureg_fin_curr - $fin->ureg_fin_yoy,
-                        'yoy_pct' => round($ureg_fin_yoy_pct, 1),
+                        'curr'     => $fin->ureg_fin_curr,
+                        'yoy_prev' => $fin->ureg_fin_yoy,
+                        'dec'      => $fin->ureg_fin_ytd,
+                        'prev'     => $fin->ureg_fin_mtd,
+                        'mtd'      => $fin->ureg_fin_curr - $fin->ureg_fin_mtd,
+                        'ytd'      => $fin->ureg_fin_curr - $fin->ureg_fin_ytd,
+                        'yoy'      => $fin->ureg_fin_curr - $fin->ureg_fin_yoy,
+                        'yoy_pct'  => round($ureg_fin_yoy_pct, 1),
+                        'mtd_pct'  => $fin->ureg_fin_mtd > 0 ? (($fin->ureg_fin_curr - $fin->ureg_fin_mtd) / $fin->ureg_fin_mtd) * 100 : 0,
                     ],
                     'usak'       => ['curr' => '-', 'mtd' => '-', 'ytd' => '-', 'yoy' => '-', 'yoy_pct' => '-'],
                     'volume_trx' => ['curr' => '-', 'mtd' => '-', 'ytd' => '-', 'yoy' => '-', 'yoy_pct' => '-'],
                 ];
 
+
                 // 🔥 FIX: Akumulasi nilai RAW (bukan growth) agar total YoY% bisa dihitung benar
-                $raw_totals['ureg_rekening']['curr'] += $rek->ureg_rek_curr;
-                $raw_totals['ureg_rekening']['mtd']  += $rek->ureg_rek_mtd;
-                $raw_totals['ureg_rekening']['ytd']  += $rek->ureg_rek_ytd;
-                $raw_totals['ureg_rekening']['yoy']  += $rek->ureg_rek_yoy;
+            $raw_totals['ureg_rekening']['curr'] += $rek->ureg_rek_curr;
+                $raw_totals['ureg_rekening']['yoy_prev'] = $rek->ureg_rek_yoy;
+                $raw_totals['ureg_rekening']['dec']  += $rek->ureg_rek_ytd;
+                $raw_totals['ureg_rekening']['prev']  += $rek->ureg_rek_mtd;
+                $raw_totals['ureg_rekening']['mtd_raw']  += $rek->ureg_rek_mtd;
+                $raw_totals['ureg_rekening']['ytd_raw']  += $rek->ureg_rek_ytd;
+                $raw_totals['ureg_rekening']['yoy_raw']  += $rek->ureg_rek_yoy;
 
                 $raw_totals['ureg_finansial']['curr'] += $fin->ureg_fin_curr;
-                $raw_totals['ureg_finansial']['mtd']  += $fin->ureg_fin_mtd;
-                $raw_totals['ureg_finansial']['ytd']  += $fin->ureg_fin_ytd;
-                $raw_totals['ureg_finansial']['yoy']  += $fin->ureg_fin_yoy;
+                $raw_totals['ureg_finansial']['yoy_prev'] = $fin->ureg_fin_yoy;
+                $raw_totals['ureg_finansial']['dec']  += $fin->ureg_fin_ytd;
+                $raw_totals['ureg_finansial']['prev']  += $fin->ureg_fin_mtd;
+                $raw_totals['ureg_finansial']['mtd_raw']  += $fin->ureg_fin_mtd;
+                $raw_totals['ureg_finansial']['ytd_raw']  += $fin->ureg_fin_ytd;
             }
 
             // 🔥 FIX: Hitung total YoY% dari raw totals — aman dari division by zero

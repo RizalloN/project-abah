@@ -8,157 +8,162 @@ use Carbon\Carbon;
 
 class PerformanceBrimoController extends Controller
 {
-    // 🔥 1. VIEW PERFORMANCE BRIMO
+    // 1. VIEW PERFORMANCE BRIMO
     public function index()
     {
         $branches = ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'];
         $id_report = 4; 
-
+        
         return view('report.performance-brimo', compact('branches', 'id_report'));
     }
 
-    // 🔥 2. MESIN PENGOLAH DATA UTAMA (AJAX API)
+    // 2. MESIN PENGOLAH DATA UTAMA (AJAX API)
     public function fetchData(Request $request)
     {
-        $id_report = $request->input('id_report', 4);
-        $branches = $request->input('branches', ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO']); 
-        $posisi = $request->input('posisi'); 
+        $tanggal = $request->input('posisi', date('Y-m-d'));
+        $currDate = Carbon::parse($tanggal);
 
-        // Gunakan tanggal hari ini jika kosong
-        if (!$posisi) $posisi = date('Y-m-d');
+        // 🔥 STRICT REALTIME: Menghapus fallback. Murni mengambil berdasarkan tanggal yang dipilih di datepicker.
+        $prevDate = $currDate->copy()->subMonthNoOverflow()->endOfMonth();
+        $decDate  = $currDate->copy()->subYearNoOverflow()->endOfYear();
+        $yoyDate  = $currDate->copy()->subYearNoOverflow()->endOfMonth();
 
-        // Baseline MTD = posisi akhir bulan sebelumnya (bukan tanggal yang sama bulan lalu)
-        $baseDate = Carbon::parse($posisi);
-        $dateCurr = $baseDate->copy()->format('Y-m-d');
-        $dateMtD  = $baseDate->copy()->startOfMonth()->subDay()->format('Y-m-d');
-        $dateYtD  = $baseDate->copy()->subYearNoOverflow()->endOfYear()->format('Y-m-d');
-        $dateYoY  = $baseDate->copy()->subYearNoOverflow()->endOfMonth()->format('Y-m-d');
-
-        $labels = [
-            'curr' => Carbon::parse($dateCurr)->translatedFormat('d M Y'), 
-            'mtd'  => Carbon::parse($dateMtD)->translatedFormat('M y'),
-            'ytd'  => Carbon::parse($dateYtD)->translatedFormat('M y'),
-            'yoy'  => Carbon::parse($dateYoY)->translatedFormat('M y'),
-        ];
-
+        $branches = ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'];
         $data = [];
-        
-        // Simpan nilai riil untuk hitungan total
-        $raw_totals = [
-            'ureg_rekening' => ['curr' => 0, 'mtd' => 0, 'ytd' => 0, 'yoy' => 0],
-            'ureg_finansial' => ['curr' => 0, 'mtd' => 0, 'ytd' => 0, 'yoy' => 0]
+
+        $total = [
+            'branch' => 'TOTAL AREA 6',
+            'ureg_rekening'  => ['curr' => 0, 'prev' => 0, 'dec' => 0, 'yoy_prev' => 0],
+            'ureg_finansial' => ['curr' => 0, 'prev' => 0, 'dec' => 0, 'yoy_prev' => 0]
         ];
 
         foreach ($branches as $branch) {
-            // 🔥 UREG BRIMO (BY REKENING)
-            $ureg_rek_curr = DB::table('user_brimo_rpt_v2')
-                ->where(function($q) use ($branch) {
-                    $q->where(DB::raw('UPPER(brdesc)'), strtoupper($branch))->orWhere(DB::raw('UPPER(branch)'), strtoupper($branch));
-                })->where('tanggal', '<=', $dateCurr)->sum('jumlah');
+            $rek_curr = $this->getUregData('user_brimo_rpt_v2', $currDate->format('Y-m-d'), $branch);
+            $rek_prev = $this->getUregData('user_brimo_rpt_v2', $prevDate->format('Y-m-d'), $branch);
+            $rek_dec  = $this->getUregData('user_brimo_rpt_v2', $decDate->format('Y-m-d'), $branch);
+            $rek_yoy  = $this->getUregData('user_brimo_rpt_v2', $yoyDate->format('Y-m-d'), $branch);
 
-            $ureg_rek_mtd = DB::table('user_brimo_rpt_v2')
-                ->where(function($q) use ($branch) {
-                    $q->where(DB::raw('UPPER(brdesc)'), strtoupper($branch))->orWhere(DB::raw('UPPER(branch)'), strtoupper($branch));
-                })->where('tanggal', '<=', $dateMtD)->sum('jumlah');
+            $fin_curr = $this->getUregData('user_brimo_fin', $currDate->format('Y-m-d'), $branch);
+            $fin_prev = $this->getUregData('user_brimo_fin', $prevDate->format('Y-m-d'), $branch);
+            $fin_dec  = $this->getUregData('user_brimo_fin', $decDate->format('Y-m-d'), $branch);
+            $fin_yoy  = $this->getUregData('user_brimo_fin', $yoyDate->format('Y-m-d'), $branch);
 
-            $ureg_rek_ytd = DB::table('user_brimo_rpt_v2')
-                ->where(function($q) use ($branch) {
-                    $q->where(DB::raw('UPPER(brdesc)'), strtoupper($branch))->orWhere(DB::raw('UPPER(branch)'), strtoupper($branch));
-                })->where('tanggal', '<=', $dateYtD)->sum('jumlah');
+            $total['ureg_rekening']['curr'] += $rek_curr;
+            $total['ureg_rekening']['prev'] += $rek_prev;
+            $total['ureg_rekening']['dec']  += $rek_dec;
+            $total['ureg_rekening']['yoy_prev'] += $rek_yoy;
 
-            $ureg_rek_yoy = DB::table('user_brimo_rpt_v2')
-                ->where(function($q) use ($branch) {
-                    $q->where(DB::raw('UPPER(brdesc)'), strtoupper($branch))->orWhere(DB::raw('UPPER(branch)'), strtoupper($branch));
-                })->where('tanggal', '<=', $dateYoY)->sum('jumlah');
+            $total['ureg_finansial']['curr'] += $fin_curr;
+            $total['ureg_finansial']['prev'] += $fin_prev;
+            $total['ureg_finansial']['dec']  += $fin_dec;
+            $total['ureg_finansial']['yoy_prev'] += $fin_yoy;
 
-            $ureg_rek_yoy_pct = $ureg_rek_yoy > 0 ? (($ureg_rek_curr - $ureg_rek_yoy) / $ureg_rek_yoy) * 100 : 0;
-
-            // 🔥 UREG BRIMO (BY REKENING FINANSIAL)
-            $ureg_fin_curr = DB::table('user_brimo_fin')
-                ->where(function($q) use ($branch) {
-                    $q->where(DB::raw('UPPER(brdesc)'), strtoupper($branch))->orWhere(DB::raw('UPPER(branch)'), strtoupper($branch));
-                })->where('tanggal', '<=', $dateCurr)->sum('jumlah');
-
-            $ureg_fin_mtd = DB::table('user_brimo_fin')
-                ->where(function($q) use ($branch) {
-                    $q->where(DB::raw('UPPER(brdesc)'), strtoupper($branch))->orWhere(DB::raw('UPPER(branch)'), strtoupper($branch));
-                })->where('tanggal', '<=', $dateMtD)->sum('jumlah');
-
-            $ureg_fin_ytd = DB::table('user_brimo_fin')
-                ->where(function($q) use ($branch) {
-                    $q->where(DB::raw('UPPER(brdesc)'), strtoupper($branch))->orWhere(DB::raw('UPPER(branch)'), strtoupper($branch));
-                })->where('tanggal', '<=', $dateYtD)->sum('jumlah');
-
-            $ureg_fin_yoy = DB::table('user_brimo_fin')
-                ->where(function($q) use ($branch) {
-                    $q->where(DB::raw('UPPER(brdesc)'), strtoupper($branch))->orWhere(DB::raw('UPPER(branch)'), strtoupper($branch));
-                })->where('tanggal', '<=', $dateYoY)->sum('jumlah');
-
-            $ureg_fin_yoy_pct = $ureg_fin_yoy > 0 ? (($ureg_fin_curr - $ureg_fin_yoy) / $ureg_fin_yoy) * 100 : 0;
-
-            // PUSH TO DATA ARRAY (Kirim selisih/growth ke view)
             $data[] = [
                 'branch' => $branch,
-                'ureg_rekening' => [
-                    'curr' => $ureg_rek_curr, 
-                    'mtd' => $ureg_rek_curr - $ureg_rek_mtd,
-                    'ytd' => $ureg_rek_curr - $ureg_rek_ytd,
-                    'yoy' => $ureg_rek_curr - $ureg_rek_yoy,
-                    'yoy_pct' => $ureg_rek_yoy_pct
-                ],
-                'ureg_finansial' => [
-                    'curr' => $ureg_fin_curr, 
-                    'mtd' => $ureg_fin_curr - $ureg_fin_mtd,
-                    'ytd' => $ureg_fin_curr - $ureg_fin_ytd,
-                    'yoy' => $ureg_fin_curr - $ureg_fin_yoy,
-                    'yoy_pct' => $ureg_fin_yoy_pct
-                ],
-                'usak' => ['curr' => '-', 'mtd' => '-', 'ytd' => '-', 'yoy' => '-', 'yoy_pct' => '-'],
-                'volume_trx' => ['curr' => '-', 'mtd' => '-', 'ytd' => '-', 'yoy' => '-', 'yoy_pct' => '-']
+                'ureg_rekening'  => $this->calculateMetrics($rek_curr, $rek_prev, $rek_dec, $rek_yoy),
+                'ureg_finansial' => $this->calculateMetrics($fin_curr, $fin_prev, $fin_dec, $fin_yoy),
             ];
-
-            // AKUMULASI NILAI RIIL UNTUK TOTAL
-            $raw_totals['ureg_rekening']['curr'] += $ureg_rek_curr;
-            $raw_totals['ureg_rekening']['mtd'] += $ureg_rek_mtd;
-            $raw_totals['ureg_rekening']['ytd'] += $ureg_rek_ytd;
-            $raw_totals['ureg_rekening']['yoy'] += $ureg_rek_yoy;
-
-            $raw_totals['ureg_finansial']['curr'] += $ureg_fin_curr;
-            $raw_totals['ureg_finansial']['mtd'] += $ureg_fin_mtd;
-            $raw_totals['ureg_finansial']['ytd'] += $ureg_fin_ytd;
-            $raw_totals['ureg_finansial']['yoy'] += $ureg_fin_yoy;
         }
 
-        // 🔥 FIX: Perhitungan persentase TOTAL yang benar menggunakan raw data
-        $tot_ureg_pct = $raw_totals['ureg_rekening']['yoy'] > 0 
-            ? (($raw_totals['ureg_rekening']['curr'] - $raw_totals['ureg_rekening']['yoy']) / $raw_totals['ureg_rekening']['yoy']) * 100 : 0;
-            
-        $tot_fin_pct = $raw_totals['ureg_finansial']['yoy'] > 0 
-            ? (($raw_totals['ureg_finansial']['curr'] - $raw_totals['ureg_finansial']['yoy']) / $raw_totals['ureg_finansial']['yoy']) * 100 : 0;
+        $total['ureg_rekening'] = $this->calculateMetrics(
+            $total['ureg_rekening']['curr'],
+            $total['ureg_rekening']['prev'],
+            $total['ureg_rekening']['dec'],
+            $total['ureg_rekening']['yoy_prev']
+        );
+
+        $total['ureg_finansial'] = $this->calculateMetrics(
+            $total['ureg_finansial']['curr'],
+            $total['ureg_finansial']['prev'],
+            $total['ureg_finansial']['dec'],
+            $total['ureg_finansial']['yoy_prev']
+        );
+
+        $bulanIndo = [
+            1 => 'Jan', 2 => 'Feb', 3 => 'Mar', 4 => 'Apr', 5 => 'Mei', 6 => 'Jun',
+            7 => 'Jul', 8 => 'Agu', 9 => 'Sep', 10 => 'Okt', 11 => 'Nov', 12 => 'Des'
+        ];
 
         return response()->json([
             'status' => 'success',
-            'data' => $data,
-            'labels' => $labels,
-            'total' => [
-                'branch' => 'TOTAL AREA',
-                'ureg_rekening' => [
-                    'curr' => $raw_totals['ureg_rekening']['curr'],
-                    'mtd'  => $raw_totals['ureg_rekening']['curr'] - $raw_totals['ureg_rekening']['mtd'],
-                    'ytd'  => $raw_totals['ureg_rekening']['curr'] - $raw_totals['ureg_rekening']['ytd'],
-                    'yoy'  => $raw_totals['ureg_rekening']['curr'] - $raw_totals['ureg_rekening']['yoy'],
-                    'yoy_pct' => $tot_ureg_pct
-                ],
-                'ureg_finansial' => [
-                    'curr' => $raw_totals['ureg_finansial']['curr'],
-                    'mtd'  => $raw_totals['ureg_finansial']['curr'] - $raw_totals['ureg_finansial']['mtd'],
-                    'ytd'  => $raw_totals['ureg_finansial']['curr'] - $raw_totals['ureg_finansial']['ytd'],
-                    'yoy'  => $raw_totals['ureg_finansial']['curr'] - $raw_totals['ureg_finansial']['yoy'],
-                    'yoy_pct' => $tot_fin_pct
-                ],
-                'usak' => ['curr' => '-', 'mtd' => '-', 'ytd' => '-', 'yoy' => '-', 'yoy_pct' => '-'],
-                'volume_trx' => ['curr' => '-', 'mtd' => '-', 'ytd' => '-', 'yoy' => '-', 'yoy_pct' => '-']
-            ]
+            'labels' => [
+                'curr_date'  => $currDate->format('d') . ' ' . $bulanIndo[$currDate->month] . "'" . $currDate->format('y'),
+                'curr_month' => $bulanIndo[$currDate->month] . "'" . $currDate->format('y'),
+                'mtd'        => $bulanIndo[$prevDate->month] . "'" . $prevDate->format('y'),
+                'ytd'        => $bulanIndo[$decDate->month] . "'" . $decDate->format('y'),
+                'yoy'        => $bulanIndo[$yoyDate->month] . "'" . $yoyDate->format('y'),
+            ],
+            'data'  => $data,
+            'total' => $total
         ]);
+    }
+
+    /**
+     * Query Pembacaan Data Real-time (Strict)
+     */
+    private function getUregData($table, $date, $cabang)
+    {
+        $targetDate = Carbon::parse($date)->format('Y-m-d');
+        $branch = strtoupper(trim($cabang));
+
+        // 🔥 STRICT DATE BOOSTER: Mencari tanggal posisi presisi.
+        // Diperkuat dengan kombinasi whereDate dan kondisi grouping untuk brdesc/branch agar tidak mis-match.
+        $exact = DB::table($table)
+            ->whereDate('posisi', $targetDate)
+            ->where(function($query) use ($branch) {
+                $query->whereRaw('UPPER(brdesc) = ?', [$branch])
+                      ->orWhereRaw('UPPER(branch) = ?', [$branch]);
+            })
+            ->sum('jumlah');
+
+        return $exact ? (float)$exact : 0;
+    }
+
+    /**
+     * Mesin Perhitungan Growth & Persentase
+     */
+    private function calculateMetrics($curr, $prev, $dec, $yoy)
+    {
+        $curr = (float)($curr ?? 0);
+        $prev = (float)($prev ?? 0);
+        $dec  = (float)($dec  ?? 0);
+        $yoy  = (float)($yoy  ?? 0);
+
+        // 🔥 LOGIC DINAMIS: 
+        // JIKA data hari berjalan benar-benar 0 (kosong/belum masuk di DB pada tanggal spesifik tersebut),
+        // Maka kita Wajib membalikan nilai NULL. File JavaScript UI (Blade) kita 
+        // sudah diatur untuk otomatis merubah nilai NULL menjadi tanda strip ("-") yang rapi.
+        if ($curr == 0) {
+            return [
+                'curr'     => null,
+                'prev'     => null,
+                'dec'      => null,
+                'yoy_prev' => null,
+                'mtd'      => null,
+                'mtd_pct'  => null,
+                'ytd'      => null,
+                'yoy'      => null,
+                'yoy_pct'  => null
+            ];
+        }
+
+        $mtd = $curr - $prev;
+        $ytd = $curr - $dec;
+        $yoy_diff = $curr - $yoy;
+        
+        $yoy_pct = $yoy != 0 ? ($yoy_diff / $yoy) * 100 : 0;
+        $mtd_pct = $prev != 0 ? ($mtd / $prev) * 100 : 0;
+
+        return [
+            'curr'     => $curr,
+            'prev'     => $prev,
+            'dec'      => $dec,
+            'yoy_prev' => $yoy,
+            'mtd'      => $mtd,
+            'mtd_pct'  => $mtd_pct,
+            'ytd'      => $ytd,
+            'yoy'      => $yoy_diff,
+            'yoy_pct'  => $yoy_pct
+        ];
     }
 }

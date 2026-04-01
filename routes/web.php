@@ -4,11 +4,32 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Import\ImportIndexController;
 use App\Http\Controllers\Import\ImportFileController;
 use App\Http\Controllers\Import\ImportFileBrimoController;
+use App\Http\Controllers\RasioCasaDebiturController;
 
+/* * 1. HALAMAN UTAMA (/)
+ * Lebih baik di-redirect ke rute login. Jika user sudah login, 
+ * middleware bawaan Laravel akan otomatis melemparnya ke /dashboard.
+ */
 Route::get('/', function () {
-    return view('auth.login');
+    return redirect()->route('login');
 });
 
+/*
+ * 2. ROUTES LOGIN (PENTING!)
+ * Karena Anda memiliki "require __DIR__.'/auth.php';" di paling bawah,
+ * Laravel SUDAH memiliki rute GET /login dan POST /login bawaan.
+ * Agar tidak bentrok, rute manual AuthController di bawah ini SAYA MATIKAN (comment).
+ *
+ * NOTE: Jika Anda MEMANG membuat AuthController sendiri secara manual (tidak pakai bawaan),
+ * silakan hapus/comment "require __DIR__.'/auth.php';" di paling bawah, 
+ * tambahkan "use App\Http\Controllers\AuthController;" di atas, lalu hidupkan kode di bawah ini:
+ */
+// Route::get('/login', [AuthController::class, 'showLoginForm'])->name('login');
+// Route::post('/login', [AuthController::class, 'login']);
+
+
+/* * 3. ROUTE LAINNYA
+ */
 Route::get('/debug-upload-limits', function () {
     return [
         'sapi' => PHP_SAPI,
@@ -28,13 +49,14 @@ Route::get('/dashboard', function () {
 Route::get('/report/optimalisasi-digital/edc', [App\Http\Controllers\DataReportController::class, 'performanceEdc'])->name('report.edc');
 Route::get('/report/optimalisasi-digital/qris', [App\Http\Controllers\DataReportController::class, 'performanceQris'])->name('report.qris');
 Route::get('/report/optimalisasi-digital/brilink', [App\Http\Controllers\DataReportController::class, 'performanceBrilink'])->name('report.brilink');
-Route::get('/report/optimalisasi-digital/brimo', [App\Http\Controllers\DataReportController::class, 'performanceBrimo'])->name('report.brimo');
+Route::get('/report/optimalisasi-digital/brimo', [App\Http\Controllers\PerformanceBrimoController::class, 'index'])->name('report.brimo');
+Route::post('/report/data/brimo', [App\Http\Controllers\PerformanceBrimoController::class, 'fetchData'])->name('report.data.brimo');
 
 // 🔥 ROUTE REKENING TRANSAKSI DEBITUR
-Route::get('/report/rekening-transaksi-debitur', [App\Http\Controllers\DataReportController::class, 'rasioCasaDebitur'])->name('report.rasiocasa.debitur');
+Route::get('/report/rekening-transaksi-debitur', [RasioCasaDebiturController::class, 'index'])->name('report.rasiocasa.debitur');
+Route::post('/report/data/rasiocasa', [RasioCasaDebiturController::class, 'fetchData'])->name('report.data.rasiocasa');
 
 Route::post('/report/data', [App\Http\Controllers\DataReportController::class, 'fetchData'])->name('report.data');
-
 
 // 🔥 ADMIN ROUTES
 Route::middleware(['auth', 'role:admin'])->group(function () {
@@ -72,10 +94,11 @@ Route::middleware(['auth', 'role:admin'])->group(function () {
     Route::prefix('import-excel')->group(function () {
         Route::post('/upload', [App\Http\Controllers\Import\ImportExcelController::class, 'uploadExcel'])->name('import.excel.upload');
         Route::get('/preview', [App\Http\Controllers\Import\ImportExcelController::class, 'previewExcel'])->name('import.excel.preview');
+        Route::get('/prepare-preview', [App\Http\Controllers\Import\ImportExcelController::class, 'preparePreviewStream'])->name('import.excel.prepare-preview');
         Route::post('/dailyloan', [App\Http\Controllers\Import\ImportExcelController::class, 'importDailyLoan'])->name('import.excel.dailyloan');
         Route::post('/simpanan', [App\Http\Controllers\Import\ImportExcelController::class, 'importSimpanan'])->name('import.excel.simpanan');
     });
 });
 
+// Sistem auth bawaan Laravel diletakkan di akhir
 require __DIR__.'/auth.php';
-

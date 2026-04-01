@@ -267,6 +267,59 @@ class ImportExcelController extends Controller
                     $filterIndex++;
                 }
 
+                // Reorder headers, preview, and unique values to match DB column order
+                $tableName = 'daily_loan_dinamis'; // Default
+                $idReport = session('active_id_report');
+                if ($idReport) {
+                    $reportData = DB::table('nama_report')->where('id_report', $idReport)->first();
+                    if ($reportData && !empty($reportData->table_name)) {
+                        $tableName = $reportData->table_name;
+                    }
+                }
+                $dbColumns = Schema::getColumnListing($tableName);
+
+                $headerMap = []; // excelHeader => dbCol (lowercase)
+                foreach ($finalHeaders as $h) {
+                    $normalized = strtolower(str_replace(' ', '_', $h));
+                    if (in_array($normalized, $dbColumns)) {
+                        $headerMap[$h] = $normalized;
+                    }
+                }
+
+                $orderedHeaders = [];
+                $orderedUniqueValues = [];
+                foreach ($dbColumns as $dbCol) {
+                    foreach ($headerMap as $excelH => $mapCol) {
+                        if ($mapCol === $dbCol) {
+                            $orderedHeaders[] = $excelH;
+                            $originalIndex = array_search($excelH, $finalHeaders);
+                            $orderedUniqueValues[] = $formattedUniqueValues[$originalIndex];
+                            unset($headerMap[$excelH]);
+                            break;
+                        }
+                    }
+                }
+
+                // Append any remaining Excel headers not matching DB columns
+                foreach ($headerMap as $excelH => $mapCol) {
+                    $orderedHeaders[] = $excelH;
+                    $originalIndex = array_search($excelH, $finalHeaders);
+                    $orderedUniqueValues[] = $formattedUniqueValues[$originalIndex];
+                }
+
+                $finalHeaders = $orderedHeaders;
+                $formattedUniqueValues = $orderedUniqueValues;
+
+                // Reorder cleanPreview rows
+                foreach ($cleanPreview as &$row) {
+                    $newRow = [];
+                    foreach ($finalHeaders as $h) {
+                        $newRow[$h] = $row[$h] ?? null;
+                    }
+                    $row = $newRow;
+                }
+                unset($row);
+
                 $send('progress', ['percent' => 95, 'message' => 'Finalisasi preview...', 'step' => 4]);
 
                 $payload = [
@@ -416,6 +469,59 @@ class ImportExcelController extends Controller
             $formattedUniqueValues[$filterIndex] = $keys;
             $filterIndex++;
         }
+
+        // Reorder headers, preview, and unique values to match DB column order
+        $tableName = 'daily_loan_dinamis'; // Default
+        $idReport = session('active_id_report');
+        if ($idReport) {
+            $reportData = DB::table('nama_report')->where('id_report', $idReport)->first();
+            if ($reportData && !empty($reportData->table_name)) {
+                $tableName = $reportData->table_name;
+            }
+        }
+        $dbColumns = Schema::getColumnListing($tableName);
+
+        $headerMap = []; // excelHeader => dbCol (lowercase)
+        foreach ($finalHeaders as $h) {
+            $normalized = strtolower(str_replace(' ', '_', $h));
+            if (in_array($normalized, $dbColumns)) {
+                $headerMap[$h] = $normalized;
+            }
+        }
+
+        $orderedHeaders = [];
+        $orderedUniqueValues = [];
+        foreach ($dbColumns as $dbCol) {
+            foreach ($headerMap as $excelH => $mapCol) {
+                if ($mapCol === $dbCol) {
+                    $orderedHeaders[] = $excelH;
+                    $originalIndex = array_search($excelH, $finalHeaders);
+                    $orderedUniqueValues[] = $formattedUniqueValues[$originalIndex];
+                    unset($headerMap[$excelH]);
+                    break;
+                }
+            }
+        }
+
+        // Append any remaining Excel headers not matching DB columns
+        foreach ($headerMap as $excelH => $mapCol) {
+            $orderedHeaders[] = $excelH;
+            $originalIndex = array_search($excelH, $finalHeaders);
+            $orderedUniqueValues[] = $formattedUniqueValues[$originalIndex];
+        }
+
+        $finalHeaders = $orderedHeaders;
+        $formattedUniqueValues = $orderedUniqueValues;
+
+        // Reorder cleanPreview rows
+        foreach ($cleanPreview as &$row) {
+            $newRow = [];
+            foreach ($finalHeaders as $h) {
+                $newRow[$h] = $row[$h] ?? null;
+            }
+            $row = $newRow;
+        }
+        unset($row);
 
         return view('import.preview_excel', [
             'headers' => $finalHeaders,
