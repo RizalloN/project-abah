@@ -29,6 +29,20 @@
     .table-hover tbody tr:hover { background-color: #f1f7ff; }
     .row-total { background-color: #0056b3 !important; color: white !important; font-weight: bold; }
     .row-total td { color: white !important; }
+    .loading-row td { text-align: center !important; color: #6b7280; font-style: italic; padding: 18px 10px !important; }
+    .loading-shimmer {
+        display: inline-block;
+        width: 100%;
+        height: 14px;
+        border-radius: 999px;
+        background: linear-gradient(90deg, #e5e7eb 25%, #f8fafc 50%, #e5e7eb 75%);
+        background-size: 200% 100%;
+        animation: rasio-shimmer 1.25s linear infinite;
+    }
+    @keyframes rasio-shimmer {
+        0% { background-position: 200% 0; }
+        100% { background-position: -200% 0; }
+    }
     
     /* Warna teks khusus untuk Mtd */
     .val-up { color: #28a745; font-weight: bold; }
@@ -99,25 +113,14 @@
     
     <div class="card-body p-0">
         <div class="tab-content">
-            
-            <!-- 🔥 STRUKTUR LOOPING CERDAS UNTUK 3 TAB BERSUSUN -->
-            @php
-                $tabGroups = [
-                    'tab-total' => [['id' => 'total', 'title' => 'TOTAL']],
-                    'tab-briguna-kpr' => [['id' => 'briguna', 'title' => 'BRIGUNA'], ['id' => 'kpr', 'title' => 'KPR']],
-                    'tab-mikro-smc' => [['id' => 'mikro', 'title' => 'MIKRO'], ['id' => 'smc', 'title' => 'SMC']]
-                ];
-            @endphp
-
-            @foreach($tabGroups as $tabId => $tables)
-            <div class="tab-pane fade {{ $tabId === 'tab-total' ? 'show active' : '' }}" id="{{ $tabId }}" role="tabpanel">
-                @foreach($tables as $t)
-                <div class="table-container {{ count($tables) > 1 ? 'mb-4 border-bottom' : '' }}">
+            <!-- Tab 1: TOTAL -->
+            <div class="tab-pane fade show active" id="tab-total" role="tabpanel">
+                <div class="table-container">
                     <table class="table table-hover table-report m-0">
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
                                 <th rowspan="3" class="bg-header-main align-middle" style="min-width: 150px;">BRANCH OFFICE</th>
-                                <th colspan="7" class="bg-header-main">{{ strtoupper($t['title']) }}</th>
+                                <th colspan="7" class="bg-header-main">TOTAL</th>
                             </tr>
                             <tr class="bg-header-sub">
                                 <th colspan="2">Total OS</th>
@@ -134,13 +137,74 @@
                                 <th>MtD</th>
                             </tr>
                         </thead>
-                        <tbody id="tbody-{{ $t['id'] }}"></tbody>
+                        <tbody id="tbody-total"></tbody>
                     </table>
                 </div>
-                @endforeach
             </div>
-            @endforeach
 
+            <!-- Tab 2: BRIGUNA & KPR (Combined) -->
+            <div class="tab-pane fade" id="tab-briguna-kpr" role="tabpanel">
+                <div class="table-container">
+                    <table class="table table-hover table-report m-0">
+                        <thead class="sticky-top" style="z-index: 2;">
+                            <tr>
+                                <th rowspan="3" class="bg-header-main align-middle" style="min-width: 150px;">BRANCH OFFICE</th>
+                                <th colspan="7" class="bg-header-main">BRIGUNA</th>
+                                <th colspan="7" class="bg-header-main">KPR</th>
+                            </tr>
+                            <tr class="bg-header-sub">
+                                <th colspan="2">Total OS</th>
+                                <th colspan="2">Total CASA</th>
+                                <th colspan="3">Rasio CASA/OS</th>
+                                <th colspan="2">Total OS</th>
+                                <th colspan="2">Total CASA</th>
+                                <th colspan="3">Rasio CASA/OS</th>
+                            </tr>
+                            <tr class="bg-header-sub-light">
+                                <th class="lbl-prev-th">-</th><th class="lbl-curr-th">-</th>
+                                <th class="lbl-prev-th">-</th><th class="lbl-curr-th">-</th>
+                                <th class="lbl-prev-th">-</th><th class="lbl-curr-th">-</th><th>MtD</th>
+                                <th class="lbl-prev-th">-</th><th class="lbl-curr-th">-</th>
+                                <th class="lbl-prev-th">-</th><th class="lbl-curr-th">-</th>
+                                <th class="lbl-prev-th">-</th><th class="lbl-curr-th">-</th><th>MtD</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbody-briguna-kpr"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Tab 3: MIKRO & SMC (Combined) -->
+            <div class="tab-pane fade" id="tab-mikro-smc" role="tabpanel">
+                <div class="table-container">
+                    <table class="table table-hover table-report m-0">
+                        <thead class="sticky-top" style="z-index: 2;">
+                            <tr>
+                                <th rowspan="3" class="bg-header-main align-middle" style="min-width: 150px;">BRANCH OFFICE</th>
+                                <th colspan="7" class="bg-header-main">MIKRO</th>
+                                <th colspan="7" class="bg-header-main">SMC</th>
+                            </tr>
+                            <tr class="bg-header-sub">
+                                <th colspan="2">Total OS</th>
+                                <th colspan="2">Total CASA</th>
+                                <th colspan="3">Rasio CASA/OS</th>
+                                <th colspan="2">Total OS</th>
+                                <th colspan="2">Total CASA</th>
+                                <th colspan="3">Rasio CASA/OS</th>
+                            </tr>
+                            <tr class="bg-header-sub-light">
+                                <th class="lbl-prev-th">-</th><th class="lbl-curr-th">-</th>
+                                <th class="lbl-prev-th">-</th><th class="lbl-curr-th">-</th>
+                                <th class="lbl-prev-th">-</th><th class="lbl-curr-th">-</th><th>MtD</th>
+                                <th class="lbl-prev-th">-</th><th class="lbl-curr-th">-</th>
+                                <th class="lbl-prev-th">-</th><th class="lbl-curr-th">-</th>
+                                <th class="lbl-prev-th">-</th><th class="lbl-curr-th">-</th><th>MtD</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbody-mikro-smc"></tbody>
+                    </table>
+                </div>
+            </div>
         </div>
     </div>
 </div>
@@ -150,7 +214,6 @@
 @section('scripts')
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-
     // 🚀 FORMAT FUNCTIONS (Aman untuk Strict Mode/Null)
     function formatNum(num) { 
         if (num === null || num === undefined || isNaN(parseFloat(num))) return '-';
@@ -167,15 +230,49 @@ document.addEventListener('DOMContentLoaded', function () {
         let val = parseFloat(num);
         let text = new Intl.NumberFormat('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val) + '%';
         
-        // Memberi warna hijau jika naik, merah jika turun sesuai request visualisasi
         if (val > 0) return `<span class="val-up">+${text}</span>`;
         if (val < 0) return `<span class="val-down">${text}</span>`;
         return text;
+    }
+    
+    // Helper untuk membuat 1 baris data (7 sel)
+    function createDataCells(dt) {
+        dt = dt || {};
+        return `
+            <td>${formatNum(dt.os_prev)}</td>
+            <td style="background-color: #f6f9fc;">${formatNum(dt.os_curr)}</td>
+            <td>${formatNum(dt.casa_prev)}</td>
+            <td style="background-color: #f6f9fc;">${formatNum(dt.casa_curr)}</td>
+            <td>${formatPct(dt.rasio_prev)}</td>
+            <td class="font-weight-bold">${formatPct(dt.rasio_curr)}</td>
+            <td>${formatMtd(dt.mtd)}</td>
+        `;
+    }
+
+    function renderLoadingState(message) {
+        const loadingHtml = `
+            <tr class="loading-row">
+                <td colspan="15" class="text-center">${message || 'Mengambil data periode terakhir...'}</td>
+            </tr>`;
+        $('#tbody-total').html(loadingHtml.replace('15', '8'));
+        $('#tbody-briguna-kpr, #tbody-mikro-smc').html(loadingHtml);
+    }
+
+    function renderEmptyState(message) {
+        const emptyHtml = `
+            <tr class="table-warning">
+                <td colspan="15" class="text-center text-warning font-weight-bold">
+                    <i class="fas fa-exclamation-triangle"></i> ${message}
+                </td>
+            </tr>`;
+        $('#tbody-total').html(emptyHtml.replace('15', '8'));
+        $('#tbody-briguna-kpr, #tbody-mikro-smc').html(emptyHtml);
     }
 
     // 🚀 LOAD DATA FUNCTION - ULTRA DEBUG MODE
     window.loadData = function() {
         $('#loadingIndicator').fadeIn('fast');
+        renderLoadingState('Menghitung rasio CASA debitur berdasarkan periode yang dipilih...');
         
         let payload = {
             posisi: $('#filter_posisi').val(),
@@ -194,145 +291,65 @@ document.addEventListener('DOMContentLoaded', function () {
                 console.log('%c[RasioCasa] Response received:', 'color: green; font-weight: bold', res);
                 
                 if(res.status === 'success') {
-                    
-                    // Update Label Dinamis Header
-                    let prevLabel = res.labels.prev || '-';
-                    let currLabel = res.labels.curr || '-';
-                    $('.lbl-prev-th').text(prevLabel);
-                    $('.lbl-curr-th').text(currLabel);
-
-                    let dataList = res.data || [];
-                    let totalData = res.total || {};
-                    
-                    console.log('[RasioCasa] Data count:', dataList.length);
-                    console.log('[RasioCasa] Total data:', totalData);
-                    
-                    // Check if we have actual data
-                    let hasAnyData = false;
-                    dataList.forEach(row => {
-                        ['total', 'briguna', 'kpr', 'mikro', 'smc'].forEach(seg => {
-                            if (row[seg] && (row[seg].os_curr > 0 || row[seg].casa_curr > 0)) {
-                                hasAnyData = true;
-                            }
-                        });
-                    });
-
-                    // Logika rendering 5 data tabel
-                    let tablesTarget = ['total', 'briguna', 'kpr', 'mikro', 'smc'];
-
-                    tablesTarget.forEach(tableId => {
-                        let html = '';
-                        let tableHasData = false;
-                        
-                        // Render per Cabang
-                        dataList.forEach(row => {
-                            let dt = row[tableId] || {};
-                            // Check if has any meaningful data
-                            if (dt.os_curr > 0 || dt.casa_curr > 0 || dt.os_prev > 0 || dt.casa_prev > 0) {
-                                tableHasData = true;
-                                hasAnyData = true;
-                            }
-                            html += `<tr>
-                                <td class="text-left font-weight-bold">${row.branch || '-'}</td>
-                                <td>${formatNum(dt.os_prev)}</td>
-                                <td style="background-color: #f6f9fc;">${formatNum(dt.os_curr)}</td>
-                                <td>${formatNum(dt.casa_prev)}</td>
-                                <td style="background-color: #f6f9fc;">${formatNum(dt.casa_curr)}</td>
-                                <td>${formatPct(dt.rasio_prev)}</td>
-                                <td class="font-weight-bold">${formatPct(dt.rasio_curr)}</td>
-                                <td>${formatMtd(dt.mtd)}</td>
-                            </tr>`;
-                        });
-
-                        // Render Baris Total Area 6
-                        let t_dt = totalData[tableId] || {};
-                        html += `<tr class="row-total">
-                            <td class="text-left">TOTAL AREA 6</td>
-                            <td>${formatNum(t_dt.os_prev)}</td>
-                            <td>${formatNum(t_dt.os_curr)}</td>
-                            <td>${formatNum(t_dt.casa_prev)}</td>
-                            <td>${formatNum(t_dt.casa_curr)}</td>
-                            <td>${formatPct(t_dt.rasio_prev)}</td>
-                            <td>${formatPct(t_dt.rasio_curr)}</td>
-                            <td>${formatMtd(t_dt.mtd)}</td>
-                        </tr>`;
-
-                        // Tempel HTML ke tbody
-                        $(`#tbody-${tableId}`).html(html);
-                        
-                        console.log(`[RasioCasa] Table ${tableId} rendered, hasData: ${tableHasData}`);
-                    });
-                    
-                    // Show warning if no data found
-                    if (!hasAnyData) {
-                        console.warn('%c[RasioCasa] WARNING: No data found!', 'color: red; font-size: 16px; font-weight: bold');
-                        console.warn('Date:', payload.posisi);
-                        console.warn('Possible causes:');
-                        console.warn('1. No data in database for this date');
-                        console.warn('2. Branch names do not match (expected: MADIUN, MAGETAN, NGAWI, PONOROGO)');
-                        console.warn('3. Segment filters too restrictive');
-                        console.warn('4. Check Laravel logs: storage/logs/laravel.log');
-                        
-                        // Show visual warning
-                        tablesTarget.forEach(tableId => {
-                            $(`#tbody-${tableId}`).prepend(`
-                                <tr class="table-warning">
-                                    <td colspan="8" class="text-center text-warning font-weight-bold">
-                                        <i class="fas fa-exclamation-triangle"></i> 
-                                        Tidak ada data untuk tanggal ${payload.posisi}. 
-                                        Coba pilih tanggal lain atau cek logs.
-                                    </td>
-                                </tr>
-                            `);
-                        });
-                    } else {
-                        console.log('%c[RasioCasa] SUCCESS: Data loaded!', 'color: green; font-size: 16px; font-weight: bold');
+                    $('.lbl-prev-th').text(res.labels.prev || '-');
+                    $('.lbl-curr-th').text(res.labels.curr || '-');
+                    if (res.effective_dates && res.effective_dates.curr) {
+                        $('#filter_posisi').val(res.effective_dates.curr);
                     }
+
+                    const dataList = res.data || [];
+                    const totalData = res.total || {};
+                    const meta = res.meta || {};
+                    const hasAnyData = meta.has_rows === true || dataList.length > 0;
+
+                    if (!hasAnyData) {
+                        renderEmptyState(`Tidak ada data untuk tanggal ${res.effective_dates.curr}. Coba pilih tanggal lain.`);
+                        $('#loadingIndicator').fadeOut('fast');
+                        return;
+                    }
+
+                    // Render Table Bodys
+                    let htmlTotal = '', htmlBrigunaKpr = '', htmlMikroSmc = '';
+                    dataList.forEach(row => {
+                        const branchCell = `<td class="text-left font-weight-bold">${row.branch || '-'}</td>`;
+                        htmlTotal += `<tr>${branchCell}${createDataCells(row.total)}</tr>`;
+                        htmlBrigunaKpr += `<tr>${branchCell}${createDataCells(row.briguna)}${createDataCells(row.kpr)}</tr>`;
+                        htmlMikroSmc += `<tr>${branchCell}${createDataCells(row.mikro)}${createDataCells(row.smc)}</tr>`;
+                    });
+
+                    // Render Total Rows
+                    const totalBranchCell = `<td class="text-left">TOTAL AREA 6</td>`;
+                    htmlTotal += `<tr class="row-total">${totalBranchCell}${createDataCells(totalData.total)}</tr>`;
+                    htmlBrigunaKpr += `<tr class="row-total">${totalBranchCell}${createDataCells(totalData.briguna)}${createDataCells(totalData.kpr)}</tr>`;
+                    htmlMikroSmc += `<tr class="row-total">${totalBranchCell}${createDataCells(totalData.mikro)}${createDataCells(totalData.smc)}</tr>`;
+
+                    // Inject HTML
+                    $('#tbody-total').html(htmlTotal);
+                    $('#tbody-briguna-kpr').html(htmlBrigunaKpr);
+                    $('#tbody-mikro-smc').html(htmlMikroSmc);
+
                 } else {
-                    console.error('[RasioCasa] Response status not success:', res);
+                    renderEmptyState(res.message || 'Data tidak berhasil dimuat dari server.');
                     alert('Error loading data: ' + (res.message || 'Unknown error'));
                 }
                 $('#loadingIndicator').fadeOut('fast');
             },
             error: function(xhr, status, error) {
                 $('#loadingIndicator').fadeOut('fast');
-                console.error('%c[RasioCasa] AJAX Error:', 'color: red; font-weight: bold', status, error);
-                console.error('[RasioCasa] Response:', xhr.responseText);
-                
-                // Show user-friendly error
                 let errorMsg = 'Gagal memuat data. ';
-                if (xhr.status === 500) {
-                    errorMsg += 'Server error (500). Check logs di storage/logs/laravel.log';
-                } else if (xhr.status === 419) {
-                    errorMsg += 'Session expired. Please refresh page.';
-                } else if (xhr.status === 0) {
-                    errorMsg += 'Connection timeout. Query might be too slow for 2M+ rows.';
-                } else {
-                    errorMsg += 'Error: ' + error;
-                }
+                if (xhr.status === 500) errorMsg += 'Server error. Periksa `storage/logs/laravel.log`';
+                else if (status === 'timeout') errorMsg += 'Waktu tunggu habis. Kueri mungkin terlalu berat.';
+                else errorMsg += `Error: ${error}.`;
+                renderEmptyState(errorMsg);
                 alert(errorMsg);
             }
         });
     }
 
-    // 🔥 FIXED: Trigger update bila tanggal dirubah - dengan multiple event handlers
-    $('#filter_posisi').on('change', function() {
-        console.log('%c[RasioCasa] Date changed to:', 'color: orange; font-weight: bold', $(this).val());
-        loadData();
-    });
+    // Event listeners
+    $('#filter_posisi').on('change', loadData);
     
-    // Also bind to input event for immediate response
-    $('#filter_posisi').on('input', function() {
-        console.log('%c[RasioCasa] Date input changed:', 'color: orange', $(this).val());
-    });
-    
-    // Bind to class as well for compatibility
-    $('.filter-trigger').on('change', function() {
-        console.log('%c[RasioCasa] Filter trigger changed:', 'color: orange', $(this).val());
-        loadData();
-    });
-    
-    // Auto Load saat halaman pertama dibuka
+    // Auto Load
     console.log('%c[RasioCasa] Initial load starting...', 'color: blue; font-weight: bold');
     loadData();
 });

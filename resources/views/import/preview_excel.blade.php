@@ -152,6 +152,20 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', function () {
+    const swalTheme = {
+        customClass: {
+            popup: 'swal-modern-popup',
+            title: 'swal-modern-title',
+            htmlContainer: 'swal-modern-html',
+            confirmButton: 'swal-modern-confirm',
+        },
+        buttonsStyling: false,
+        background: '#ffffff',
+    };
+
+    function themedSwal(options) {
+        return Swal.fire(Object.assign({}, swalTheme, options));
+    }
 
     /* =========================================================
        DROPDOWN: klik di dalam menu tidak menutup dropdown
@@ -232,40 +246,6 @@ document.addEventListener('DOMContentLoaded', function () {
                 icon.classList.add('text-muted');
             }
         });
-    }
-
-    /* =========================================================
-       DEFAULT FILTER: Area 6 (KC Madiun, Magetan, Ngawi, Ponorogo)
-       Hanya aktif jika kolom CABANG/KANCA/KCI ditemukan
-    ========================================================= */
-    function applyDefaultArea6() {
-        var cabangColIndex = null;
-        document.querySelectorAll('thead th').forEach(function (th, i) {
-            var text = th.innerText.toUpperCase();
-            if (text.includes('CABANG') || text.includes('KANCA') || text.includes('KCI')) {
-                cabangColIndex = i - 1; // -1 karena kolom "#"
-            }
-        });
-
-        if (cabangColIndex === null) return;
-
-        var area6 = ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'];
-        var hasArea6Data = false;
-
-        // Cek apakah ada data area 6 di preview
-        document.querySelectorAll('.filter-checkbox[data-col="' + cabangColIndex + '"]').forEach(function (cb) {
-            if (area6.indexOf(cb.value.toUpperCase()) !== -1) hasArea6Data = true;
-        });
-
-        // Hanya terapkan filter default jika ada data area 6
-        if (!hasArea6Data) return;
-
-        document.querySelectorAll('.filter-checkbox[data-col="' + cabangColIndex + '"]').forEach(function (cb) {
-            cb.checked = area6.indexOf(cb.value.toUpperCase()) !== -1;
-        });
-
-        var selectAll = document.getElementById('select_all_' + cabangColIndex);
-        if (selectAll) selectAll.checked = false;
     }
 
     /* =========================================================
@@ -407,7 +387,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 </div>
             </div>`;
 
-        Swal.fire({
+        themedSwal({
             title: '<i class="fas fa-file-import text-success mr-1"></i> Import Data Excel',
             html: swalHtml,
             allowOutsideClick: false,
@@ -483,7 +463,7 @@ document.addEventListener('DOMContentLoaded', function () {
             setProgress(12, 'Inisialisasi selesai. Membuka koneksi stream...', 0, 0, 0);
 
         } catch (err) {
-            Swal.fire({ icon: 'error', title: 'Gagal Inisialisasi', html: err.message });
+            themedSwal({ icon: 'error', title: 'Gagal Inisialisasi', html: err.message, confirmButtonText: 'Tutup' });
             resetSubmitBtn();
             return;
         }
@@ -492,18 +472,7 @@ document.addEventListener('DOMContentLoaded', function () {
         var streamUrl  = '{{ route("import.excel.stream") }}?job_id=' + encodeURIComponent(jobId);
         var evtSource  = null;
         var streamDone = false;
-        var retryCount = 0;
-        var maxRetries = 7;
-        var maxBackoff = 15000; // 15 detik
         var lastProg   = { percent: 12, message: 'Menginisialisasi...', rows_done: 0, total: 0, speed: 0 };
-
-        function showReconnecting() {
-            setProgress(
-                lastProg.percent,
-                'Menghubungkan ulang... (percobaan ' + retryCount + '/' + maxRetries + ')',
-                lastProg.rows_done, lastProg.total, lastProg.speed
-            );
-        }
 
         function connectSSE() {
             if (streamDone) return;
@@ -514,8 +483,6 @@ document.addEventListener('DOMContentLoaded', function () {
                 var d = {};
                 try { d = JSON.parse(e.data); } catch (_) {}
                 if (!d) return;
-
-                retryCount = 0; // reset backoff setiap ada data masuk
 
                 lastProg = {
                     percent:  d.percent   != null ? d.percent   : lastProg.percent,
@@ -544,21 +511,21 @@ document.addEventListener('DOMContentLoaded', function () {
 
                 setTimeout(function () {
                     if (!d.total_success || d.total_success === 0) {
-                        Swal.fire({
+                        themedSwal({
                             icon: 'warning',
                             title: 'Tidak Ada Data Masuk',
                             html: '<p>✅ Total: <b>' + Number(d.total_rows || 0).toLocaleString('id-ID') + ' baris</b></p>' +
                                   '<p>❌ Gagal: <b>' + Number(d.total_failed || 0).toLocaleString('id-ID') + ' baris</b></p>' +
-                                  '<small class="text-muted">Kemungkinan data duplikat atau kolom tidak cocok.</small>',
-                            confirmButtonColor: '#ffc107',
+                                  '<small class="text-muted">Sebagian baris gagal diproses atau terbatasi oleh filter yang aktif.</small>',
+                            confirmButtonText: 'Kembali ke Import',
                         }).then(function () { window.location.href = '{{ route("import.index") }}'; });
                     } else {
-                        Swal.fire({
+                        themedSwal({
                             icon: 'success',
                             title: 'Import Sukses! 🎉',
                             html: 'Berhasil mengimport <b>' + Number(d.total_success).toLocaleString('id-ID') + ' baris</b> data ke database.' +
-                                  (d.total_failed > 0 ? '<br><small class="text-warning">⚠ ' + Number(d.total_failed).toLocaleString('id-ID') + ' baris gagal (duplikat/kolom tidak cocok).</small>' : ''),
-                            confirmButtonColor: '#28a745',
+                                  (d.total_failed > 0 ? '<br><small class="text-warning">⚠ ' + Number(d.total_failed).toLocaleString('id-ID') + ' baris gagal saat insert atau tidak lolos proses validasi.</small>' : ''),
+                            confirmButtonText: 'Lanjut',
                         }).then(function () { window.location.href = '{{ route("import.index") }}'; });
                     }
                 }, 600);
@@ -571,7 +538,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 try { var d = JSON.parse(e.data); if (d && d.message) msg = d.message; } catch (_) {}
                 evtSource.close();
                 streamDone = true;
-                Swal.fire({ icon: 'error', title: 'Proses Terhenti', html: msg });
+                themedSwal({ icon: 'error', title: 'Proses Terhenti', html: msg, confirmButtonText: 'Tutup' });
                 resetSubmitBtn();
             });
 
@@ -579,22 +546,15 @@ document.addEventListener('DOMContentLoaded', function () {
             evtSource.onerror = function () {
                 if (streamDone) return;
                 evtSource.close();
-
-                if (retryCount < maxRetries) {
-                    retryCount++;
-                    var delay = Math.min(maxBackoff, 1000 * Math.pow(2, retryCount - 1));
-                    showReconnecting();
-                    setTimeout(connectSSE, delay);
-                } else {
-                    streamDone = true;
-                    Swal.fire({
-                        icon: 'error',
-                        title: 'Koneksi Terputus',
-                        html: 'Stream SSE terputus setelah ' + maxRetries + ' percobaan.<br>' +
-                              '<small>Periksa koneksi internet atau coba import ulang.</small>',
-                    });
-                    resetSubmitBtn();
-                }
+                streamDone = true;
+                themedSwal({
+                    icon: 'error',
+                    title: 'Koneksi Stream Terputus',
+                    html: 'Koneksi import dihentikan untuk mencegah proses berjalan ganda dan data menjadi dobel.<br>' +
+                          '<small>Silakan cek hasil import terlebih dahulu sebelum menjalankan ulang.</small>',
+                    confirmButtonText: 'Tutup'
+                });
+                resetSubmitBtn();
             };
         }
 
@@ -604,8 +564,40 @@ document.addEventListener('DOMContentLoaded', function () {
     /* =========================================================
        INIT: terapkan filter default lalu tampilkan preview
     ========================================================= */
-    applyDefaultArea6();
     updatePreviewTable();
 });
 </script>
+<style>
+    .swal-modern-popup {
+        border: 1px solid rgba(226, 232, 240, 0.95);
+        border-radius: 28px;
+        padding: 1.4rem 1.4rem 1.2rem;
+        box-shadow: 0 30px 80px -35px rgba(15, 23, 42, 0.35);
+    }
+
+    .swal-modern-title {
+        color: #0f172a;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+    }
+
+    .swal-modern-html {
+        color: #475569;
+        font-size: 0.95rem;
+        line-height: 1.65;
+    }
+
+    .swal-modern-confirm {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: 0;
+        border-radius: 16px;
+        background: linear-gradient(135deg, #0f766e, #115e59);
+        color: #ffffff;
+        font-weight: 700;
+        padding: 0.8rem 1.3rem;
+        box-shadow: 0 16px 34px -22px rgba(15, 23, 42, 0.45);
+    }
+</style>
 @endsection

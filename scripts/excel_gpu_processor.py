@@ -55,12 +55,60 @@ def send_error(message):
 
 EXCEL_EPOCH  = date(1899, 12, 30)
 DATE_COLUMNS = {'PERIODE', 'POSISI', 'TGL_REALISASI', 'TGL_JATUH_TEMPO', 'TANGGAL'}
+DECIMAL_COLUMNS = {'BAKI_DEBET'}
 NULL_STRS    = {'', 'nan', 'none', 'nat', 'null', 'n/a', 'na'}
+
+
+def canonicalize_header(header_name):
+    import re
+    return re.sub(r'[^A-Z0-9]+', '_', str(header_name).upper().strip()).strip('_')
+
+
+def normalize_decimal_value(value):
+    if value is None:
+        return None
+
+    value_str = str(value).strip()
+    if value_str.lower() in NULL_STRS:
+        return None
+
+    value_str = ''.join(value_str.split())
+    filtered = ''.join(ch for ch in value_str if ch.isdigit() or ch in ',.-')
+
+    if filtered in ('', '-', None):
+        return None
+
+    has_comma = ',' in filtered
+    has_dot = '.' in filtered
+
+    if has_comma and has_dot:
+        if filtered.rfind(',') > filtered.rfind('.'):
+            filtered = filtered.replace('.', '')
+            filtered = filtered.replace(',', '.')
+        else:
+            filtered = filtered.replace(',', '')
+    elif has_comma:
+        parts = filtered.split(',')
+        last_part = parts[-1]
+        if len(parts) > 2 or len(last_part) == 3:
+            filtered = filtered.replace(',', '')
+        else:
+            filtered = filtered.replace(',', '.')
+    elif has_dot:
+        parts = filtered.split('.')
+        last_part = parts[-1]
+        if len(parts) > 2 or len(last_part) == 3:
+            filtered = filtered.replace('.', '')
+
+    try:
+        return '{:.2f}'.format(float(filtered))
+    except (ValueError, TypeError):
+        return None
 
 
 def normalize_value(header_name, value):
     import math
-    header = header_name.upper().strip()
+    header = canonicalize_header(header_name)
 
     if value is None:
         return None
@@ -90,6 +138,9 @@ def normalize_value(header_name, value):
             return dateutil_parser.parse(value_str.replace('/', '-')).strftime('%Y-%m-%d')
         except Exception:
             return None
+
+    if header in DECIMAL_COLUMNS:
+        return normalize_decimal_value(value)
 
     try:
         num = float(value_str)

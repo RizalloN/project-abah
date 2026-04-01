@@ -51,15 +51,195 @@ class ChunkReadFilter implements IReadFilter
 
 class ImportExcelController extends Controller
 {
+    private function cleanupImportedFile(string $relativePath = '', ?string $absolutePath = null): void
+    {
+        try {
+            if ($relativePath !== '' && Storage::exists($relativePath)) {
+                Storage::delete($relativePath);
+                return;
+            }
+
+            if ($absolutePath && file_exists($absolutePath)) {
+                @unlink($absolutePath);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Failed to cleanup imported file: ' . $e->getMessage(), [
+                'relative_path' => $relativePath,
+                'absolute_path' => $absolutePath,
+            ]);
+        }
+    }
+
+    private function buildImportContext(string $tableName, array $normalizedHeaders, array $activeFilters = []): array
+    {
+        $validIndexes = [];
+        foreach ($normalizedHeaders as $i => $h) {
+            if (!str_starts_with($h, 'COL_')) {
+                $validIndexes[] = $i;
+            }
+        }
+
+        $headerCount = empty($normalizedHeaders) ? 0 : (max(array_keys($normalizedHeaders)) + 1);
+        $tableColumns = array_map('strtolower', Schema::getColumnListing($tableName));
+        $tableColumnsLookup = array_fill_keys($tableColumns, true);
+
+        $uniqueIdCol = str_contains($tableName, 'simpanan') ? 'uniqueid_SimoPN' : 'uniqueid_namareport';
+        $suffix = str_contains($tableName, 'simpanan') ? '_SimoPN' : '_DLD';
+        $skipColumnsLookup = array_fill_keys(['id', strtolower($uniqueIdCol)], true);
+
+        $filterLookups = [];
+        foreach ($activeFilters as $filterIdx => $values) {
+            $filterLookups[(int) $filterIdx] = array_fill_keys(
+                array_map(fn ($v) => (string) $v, (array) $values),
+                true
+            );
+        }
+
+        return [
+            'valid_indexes' => $validIndexes,
+            'header_count' => $headerCount,
+            'table_columns_lookup' => $tableColumnsLookup,
+            'unique_id_col' => $uniqueIdCol,
+            'suffix' => $suffix,
+            'skip_columns_lookup' => $skipColumnsLookup,
+            'filter_lookups' => $filterLookups,
+        ];
+    }
+
+    private function mapExcelRowForInsert(array $row, array $normalizedHeaders, array $context, string $timestamp): ?array
+    {
+        $row = $this->padRow($row, $context['header_count']);
+        $mappedExcelData = [];
+
+        foreach ($context['valid_indexes'] as $filterIdx => $originalIndex) {
+            $headerName = $normalizedHeaders[$originalIndex];
+            $value = $this->normalizeExcelValue($headerName, $row[$originalIndex] ?? '');
+
+            if (!empty($context['filter_lookups']) && isset($context['filter_lookups'][$filterIdx])) {
+                $filterValue = ($value === null) ? '(Blank)' : (string) $value;
+                if (!isset($context['filter_lookups'][$filterIdx][$filterValue])) {
+                    return null;
+                }
+            }
+
+            $mappedExcelData[strtolower(str_replace(' ', '_', $headerName))] = $value;
+        }
+
+        $finalRow = [
+            $context['unique_id_col'] => uniqid('', true) . $context['suffix'],
+            'created_at' => $timestamp,
+            'updated_at' => $timestamp,
+        ];
+
+        foreach ($mappedExcelData as $dbCol => $value) {
+            if (isset($context['skip_columns_lookup'][$dbCol])) {
+                continue;
+            }
+            if (!isset($context['table_columns_lookup'][$dbCol])) {
+                continue;
+            }
+            $finalRow[$dbCol] = $value;
+        }
+
+        return count($finalRow) > 3 ? $finalRow : null;
+    }
+
+    private function flushInsertBuffer(array &$rows, string $tableName, int &$totalInserted, int &$totalFailed, ?callable $afterBatch = null): void
+    {
+        if (empty($rows)) {
+            return;
+        }
+
+        foreach (array_chunk($rows, 100) as $batch) {
+            try {
+                DB::table($tableName)->insert($batch);
+                $totalInserted += count($batch);
+            } catch (\Exception $e) {
+                foreach ($batch as $single) {
+                    try {
+                        DB::table($tableName)->insert($single);
+                        $totalInserted++;
+                    } catch (\Exception $e2) {
+                        $totalFailed++;
+                    }
+                }
+            }
+
+            if ($afterBatch) {
+                $afterBatch();
+            }
+        }
+
+        $rows = [];
+    }
+
+    private function normalizeDecimalValue($value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        if (is_int($value) || is_float($value)) {
+            return number_format((float) $value, 2, '.', '');
+        }
+
+        $value = trim((string) $value);
+        if ($value === '') {
+            return null;
+        }
+
+        $value = preg_replace('/\s+/', '', $value);
+        $value = preg_replace('/[^0-9,\.\-]/', '', $value);
+
+        if ($value === '' || $value === '-' || $value === null) {
+            return null;
+        }
+
+        $hasComma = str_contains($value, ',');
+        $hasDot = str_contains($value, '.');
+
+        if ($hasComma && $hasDot) {
+            if (strrpos($value, ',') > strrpos($value, '.')) {
+                $value = str_replace('.', '', $value);
+                $value = str_replace(',', '.', $value);
+            } else {
+                $value = str_replace(',', '', $value);
+            }
+        } elseif ($hasComma) {
+            $parts = explode(',', $value);
+            $lastPart = end($parts);
+
+            if (count($parts) > 2 || strlen((string) $lastPart) === 3) {
+                $value = str_replace(',', '', $value);
+            } else {
+                $value = str_replace(',', '.', $value);
+            }
+        } elseif ($hasDot) {
+            $parts = explode('.', $value);
+            $lastPart = end($parts);
+
+            if (count($parts) > 2 || strlen((string) $lastPart) === 3) {
+                $value = str_replace('.', '', $value);
+            }
+        }
+
+        if (!is_numeric($value)) {
+            return null;
+        }
+
+        return number_format((float) $value, 2, '.', '');
+    }
+
     private function normalizeExcelValue(string $headerName, $value)
     {
         $header = strtoupper(trim($headerName));
+        $normalizedHeader = preg_replace('/[^A-Z0-9]+/', '_', $header);
         $value = ($value === null) ? '' : trim((string) $value);
 
         if ($value === '') return null;
 
         $dateColumns = ['PERIODE', 'POSISI', 'TGL_REALISASI', 'TGL_JATUH_TEMPO', 'TANGGAL'];
-        if (in_array($header, $dateColumns)) {
+        if (in_array($normalizedHeader, $dateColumns, true)) {
             try {
                 if (is_numeric($value)) {
                     return Carbon::instance(ExcelDate::excelToDateTimeObject($value))->format('Y-m-d');
@@ -68,6 +248,11 @@ class ImportExcelController extends Controller
             } catch (\Throwable $e) {
                 return null;
             }
+        }
+
+        $decimalColumns = ['BAKI_DEBET'];
+        if (in_array($normalizedHeader, $decimalColumns, true)) {
+            return $this->normalizeDecimalValue($value);
         }
 
         if (is_numeric($value)) {
@@ -144,206 +329,201 @@ class ImportExcelController extends Controller
                     $send('error_msg', ['message' => 'Sesi upload tidak ditemukan. Silakan upload ulang.']);
                     return;
                 }
-
-                $relativePath = urldecode($sessionPath);
-                $path = Storage::path($relativePath);
-
+                $path = Storage::path(urldecode($sessionPath));
                 if (!file_exists($path)) {
                     $send('error_msg', ['message' => 'File tidak ditemukan di server. Silakan upload ulang.']);
                     return;
                 }
 
-                $send('progress', ['percent' => 10, 'message' => 'Membaca struktur file Excel...', 'step' => 2]);
+                $send('progress', ['percent' => 5, 'message' => 'Membaca file Excel (single-pass)...', 'step' => 1]);
 
                 $reader = IOFactory::createReaderForFile($path);
                 $reader->setReadDataOnly(true);
                 $reader->setReadEmptyCells(false);
 
+                $worksheetInfo = $reader->listWorksheetInfo($path);
+                $totalRows = $worksheetInfo[0]['totalRows'] ?? 0;
+                $send('progress', ['percent' => 10, 'message' => 'File terdeteksi: ' . $totalRows . ' baris.', 'step' => 2]);
+                
                 $chunkFilter = new ChunkReadFilter();
-                $chunkFilter->setRows(1, 200);
-                $reader->setReadFilter($chunkFilter);
-
-                $spreadsheet = $reader->load($path);
-                $sheet = $spreadsheet->getActiveSheet()->toArray(null, true, true, false);
+                $chunkSize = 2000;
+                $currentChunk = 1;
 
                 $headerIndex = null;
-                foreach ($sheet as $i => $row) {
-                    $rowUpper = array_map(fn($v) => strtoupper(trim((string) $v)), $row);
-                    if (in_array('PERIODE', $rowUpper) || in_array('POSISI', $rowUpper)) {
-                        $headerIndex = $i;
-                        break;
-                    }
-                }
+                $rawHeaders = [];
+                $normalizedHeaders = [];
+                $validIndexes = [];
+                $headerCount = 0;
 
+                $cleanPreview = [];
+                $uniqueValues = [];
+                $rowsProcessedForUniques = 0;
+                $uniqueLimit = 5000;
+                $previewLimit = 100;
+                
+                // Single-pass loop
+                while (true) {
+                    $startRow = (($currentChunk - 1) * $chunkSize) + 1;
+                    if ($startRow > $totalRows) break;
+
+                    $chunkFilter->setRows($startRow, $chunkSize);
+                    $reader->setReadFilter($chunkFilter);
+                    $spreadsheet = $reader->load($path);
+                    $sheet = $spreadsheet->getActiveSheet()->toArray(null, true, true, false);
+                    $spreadsheet->disconnectWorksheets();
+                    unset($spreadsheet);
+
+                    if (empty($sheet)) break;
+
+                    // Step 1: Find Header (only once, in first chunks)
+                    if ($headerIndex === null) {
+                        foreach ($sheet as $i => $row) {
+                            $rowUpper = array_map(fn($v) => strtoupper(trim((string) $v)), $row);
+                            if (in_array('PERIODE', $rowUpper) || in_array('POSISI', $rowUpper)) {
+                                $headerIndex = $i;
+                                $rawHeaders = $sheet[$headerIndex];
+
+                                foreach ($rawHeaders as $colIdx => $h) {
+                                    $normalizedHeaders[$colIdx] = !empty(trim((string)$h)) ? trim((string)$h) : 'COL_' . $colIdx;
+                                }
+                                foreach ($normalizedHeaders as $colIdx => $h) {
+                                    if (!str_starts_with($h, 'COL_')) $validIndexes[] = $colIdx;
+                                }
+                                foreach ($validIndexes as $colIdx) $finalHeaders[] = $normalizedHeaders[$colIdx];
+                                
+                                $headerCount = max(array_keys($normalizedHeaders)) + 1;
+                                foreach ($validIndexes as $colIdx) $uniqueValues[$colIdx] = [];
+
+                                $send('progress', ['percent' => 35, 'message' => 'Header ditemukan di baris ' . ($headerIndex + 1) . '. Memproses data...', 'step' => 3]);
+                                break;
+                            }
+                        }
+                        if ($headerIndex === null && $startRow + $chunkSize > 200) {
+                            $send('error_msg', ['message' => 'Header utama (PERIODE / POSISI) tidak ditemukan dalam 200 baris pertama.']);
+                            return;
+                        }
+                    }
+
+                    // Step 2 & 3: Collect Preview and Unique Values
+                    if ($headerIndex !== null) {
+                        foreach ($sheet as $rowIndex => $row) {
+                            if ($rowIndex <= $headerIndex) continue;
+                            if (empty(array_filter($row, fn($val) => trim((string) $val) !== ''))) continue;
+
+                            $row = $this->padRow($row, $headerCount);
+                            
+                            // Collect for preview
+                            if (count($cleanPreview) < $previewLimit) {
+                                $cleanRow = [];
+                                foreach ($validIndexes as $i) {
+                                    $cleanRow[$normalizedHeaders[$i]] = $this->normalizeExcelValue($normalizedHeaders[$i], $row[$i] ?? '');
+                                }
+                                $cleanPreview[] = $cleanRow;
+                            }
+
+                            // Collect for unique filters
+                            if ($rowsProcessedForUniques < $uniqueLimit) {
+                                foreach ($validIndexes as $i) {
+                                    $val = $this->normalizeExcelValue($normalizedHeaders[$i], $row[$i] ?? '');
+                                    if ($val === null) $val = '(Blank)';
+                                    $uniqueValues[$i][$val] = true;
+                                }
+                                $rowsProcessedForUniques++;
+                            }
+                        }
+                    }
+
+                    if ($headerIndex !== null && (count($cleanPreview) >= $previewLimit && $rowsProcessedForUniques >= $uniqueLimit)) {
+                        break; 
+                    }
+
+                    $currentChunk++;
+                }
+                
                 if ($headerIndex === null) {
-                    $send('error_msg', ['message' => 'Header utama (PERIODE / POSISI) tidak ditemukan dalam 200 baris pertama.']);
+                    $send('error_msg', ['message' => 'Header utama (PERIODE / POSISI) tidak bisa ditemukan di file.']);
                     return;
                 }
 
-                $rawHeaders = $sheet[$headerIndex];
-                $normalizedHeaders = [];
-                foreach ($rawHeaders as $i => $h) {
-                    $normalizedHeaders[$i] = !empty(trim((string)$h)) ? trim((string)$h) : 'COL_' . $i;
-                }
-
-                $validIndexes = [];
-                foreach ($normalizedHeaders as $i => $h) {
-                    if (!str_starts_with($h, 'COL_')) $validIndexes[] = $i;
-                }
-
-                $finalHeaders = [];
-                foreach ($validIndexes as $i) $finalHeaders[] = $normalizedHeaders[$i];
-
-                $spreadsheet->disconnectWorksheets();
-                unset($spreadsheet);
-
-                $headerCount = max(array_keys($normalizedHeaders)) + 1;
-                $send('progress', ['percent' => 35, 'message' => 'Header ditemukan, menyiapkan data preview...', 'step' => 3]);
-
-                $chunkFilter->setHeaderRow($headerIndex + 1);
-                $chunkFilter->setRows($headerIndex + 2, 100);
-                $reader->setReadFilter($chunkFilter);
-                $spreadsheetPreview = $reader->load($path);
-                $wsPreview   = $spreadsheetPreview->getActiveSheet();
-                $highestCol  = $wsPreview->getHighestColumn();
-                $lastDataRow = min($wsPreview->getHighestRow(), $headerIndex + 101);
-
-                $previewRange = 'A' . ($headerIndex + 1) . ':' . $highestCol . $lastDataRow;
-                $rangePreview = $wsPreview->rangeToArray($previewRange, null, true, true, false);
-
-                $cleanPreview = [];
-                foreach ($rangePreview as $relIdx => $row) {
-                    if ($relIdx === 0) continue;
-                    if (empty(array_filter($row, fn($val) => trim((string) $val) !== ''))) continue;
-
-                    $row = $this->padRow($row, $headerCount);
-                    $cleanRow = [];
-                    foreach ($validIndexes as $i) {
-                        $cleanRow[$normalizedHeaders[$i]] = $this->normalizeExcelValue($normalizedHeaders[$i], $row[$i] ?? '');
-                    }
-                    $cleanPreview[] = $cleanRow;
-                }
-
-                $spreadsheetPreview->disconnectWorksheets();
-                unset($spreadsheetPreview, $wsPreview, $rangePreview);
-
-                $send('progress', ['percent' => 70, 'message' => 'Membangun filter dropdown...', 'step' => 4]);
-
-                $uniqueValues = [];
-                foreach ($validIndexes as $i) $uniqueValues[$i] = [];
-
-                $chunkFilter->setHeaderRow($headerIndex + 1);
-                $chunkFilter->setRows($headerIndex + 2, 5000);
-                $reader->setReadFilter($chunkFilter);
-
-                $spreadsheetFull = $reader->load($path);
-                $wsFull          = $spreadsheetFull->getActiveSheet();
-                $highestColFull  = $wsFull->getHighestColumn();
-                $lastFullRow     = min($wsFull->getHighestRow(), $headerIndex + 5001);
-
-                $fullRange = 'A' . ($headerIndex + 2) . ':' . $highestColFull . $lastFullRow;
-                $rangeFull = $wsFull->rangeToArray($fullRange, null, true, true, false);
-
-                foreach ($rangeFull as $row) {
-                    if (empty(array_filter($row, fn($val) => trim((string) $val) !== ''))) continue;
-                    $row = $this->padRow($row, $headerCount);
-
-                    foreach ($validIndexes as $i) {
-                        $val = $this->normalizeExcelValue($normalizedHeaders[$i], $row[$i] ?? '');
-                        if ($val === null) $val = '(Blank)';
-                        $uniqueValues[$i][$val] = true;
-                    }
-                }
-
-                $spreadsheetFull->disconnectWorksheets();
-                unset($spreadsheetFull, $wsFull, $rangeFull);
+                $send('progress', ['percent' => 70, 'message' => 'Mengurutkan dan memformat hasil...', 'step' => 4]);
 
                 $formattedUniqueValues = [];
                 $filterIndex = 0;
                 foreach ($validIndexes as $i) {
-                    $keys = array_keys($uniqueValues[$i]);
-                    usort($keys, fn($a, $b) => strnatcmp($a, $b));
+                    $keys = isset($uniqueValues[$i]) ? array_keys($uniqueValues[$i]) : [];
+                    usort($keys, 'strnatcmp');
                     $formattedUniqueValues[$filterIndex] = $keys;
                     $filterIndex++;
                 }
 
-                // Reorder headers, preview, and unique values to match DB column order
-                $tableName = 'daily_loan_dinamis'; // Default
+                $tableName = 'daily_loan_dinamis';
                 $idReport = session('active_id_report');
-                if ($idReport) {
-                    $reportData = DB::table('nama_report')->where('id_report', $idReport)->first();
-                    if ($reportData && !empty($reportData->table_name)) {
-                        $tableName = $reportData->table_name;
-                    }
+                if ($idReport && ($reportData = DB::table('nama_report')->where('id_report', $idReport)->first())) {
+                    if(!empty($reportData->table_name)) $tableName = $reportData->table_name;
                 }
                 $dbColumns = Schema::getColumnListing($tableName);
 
-                $headerMap = []; // excelHeader => dbCol (lowercase)
+                $headerMap = [];
                 foreach ($finalHeaders as $h) {
                     $normalized = strtolower(str_replace(' ', '_', $h));
-                    if (in_array($normalized, $dbColumns)) {
-                        $headerMap[$h] = $normalized;
-                    }
+                    if (in_array($normalized, $dbColumns)) $headerMap[$h] = $normalized;
                 }
 
                 $orderedHeaders = [];
                 $orderedUniqueValues = [];
                 foreach ($dbColumns as $dbCol) {
-                    foreach ($headerMap as $excelH => $mapCol) {
-                        if ($mapCol === $dbCol) {
-                            $orderedHeaders[] = $excelH;
-                            $originalIndex = array_search($excelH, $finalHeaders);
+                    $excelHeader = array_search($dbCol, $headerMap);
+                    if ($excelHeader !== false) {
+                        $orderedHeaders[] = $excelHeader;
+                        $originalIndex = array_search($excelHeader, $finalHeaders);
+                        if(isset($formattedUniqueValues[$originalIndex])) {
                             $orderedUniqueValues[] = $formattedUniqueValues[$originalIndex];
-                            unset($headerMap[$excelH]);
-                            break;
                         }
+                        unset($headerMap[$excelHeader]);
                     }
                 }
-
-                // Append any remaining Excel headers not matching DB columns
                 foreach ($headerMap as $excelH => $mapCol) {
                     $orderedHeaders[] = $excelH;
                     $originalIndex = array_search($excelH, $finalHeaders);
-                    $orderedUniqueValues[] = $formattedUniqueValues[$originalIndex];
+                    if(isset($formattedUniqueValues[$originalIndex])) {
+                        $orderedUniqueValues[] = $formattedUniqueValues[$originalIndex];
+                    }
                 }
-
                 $finalHeaders = $orderedHeaders;
                 $formattedUniqueValues = $orderedUniqueValues;
 
-                // Reorder cleanPreview rows
                 foreach ($cleanPreview as &$row) {
                     $newRow = [];
-                    foreach ($finalHeaders as $h) {
-                        $newRow[$h] = $row[$h] ?? null;
-                    }
+                    foreach ($finalHeaders as $h) $newRow[$h] = $row[$h] ?? null;
                     $row = $newRow;
                 }
                 unset($row);
 
-                $send('progress', ['percent' => 95, 'message' => 'Finalisasi preview...', 'step' => 4]);
+                $send('progress', ['percent' => 95, 'message' => 'Finalisasi preview...', 'step' => 5]);
 
                 $payload = [
-                    'headers'               => $finalHeaders,
-                    'preview'               => $cleanPreview,
+                    'headers' => $finalHeaders,
+                    'preview' => $cleanPreview,
                     'formattedUniqueValues' => $formattedUniqueValues,
-                    'path'                  => $relativePath,
+                    'path' => urldecode($sessionPath),
                 ];
 
-                $useCacheKey = $cacheKey ?: ('excel_preview_' . md5($relativePath . '|' . microtime(true)));
+                $useCacheKey = $cacheKey ?: ('excel_preview_' . md5(urldecode($sessionPath) . '|' . microtime(true)));
                 Cache::put($useCacheKey, $payload, now()->addMinutes(10));
 
                 $send('ready', [
                     'redirect' => route('import.excel.preview', ['ck' => $useCacheKey]),
                 ]);
+
             } catch (\Throwable $e) {
                 Log::error('PREPARE PREVIEW SSE ERROR: ' . $e->getMessage() . ' | ' . $e->getFile() . ':' . $e->getLine());
                 $send('error_msg', ['message' => 'Gagal menyiapkan preview: ' . $e->getMessage()]);
             }
         }, 200, [
-            'Content-Type'      => 'text/event-stream',
-            'Cache-Control'     => 'no-cache, no-store',
+            'Content-Type' => 'text/event-stream',
+            'Cache-Control' => 'no-cache, no-store',
             'X-Accel-Buffering' => 'no',
-            'Connection'        => 'keep-alive',
+            'Connection' => 'keep-alive',
         ]);
     }
 
@@ -731,10 +911,7 @@ class ImportExcelController extends Controller
         }
 
         // ── Siapkan info tabel untuk Python (Python tidak perlu koneksi DB) ──
-        $tableColumnsRaw = Schema::getColumnListing($tableName);
-        $tableColumns    = array_map('strtolower', $tableColumnsRaw);
-        $uniqueIdCol     = str_contains($tableName, 'simpanan') ? 'uniqueid_SimoPN' : 'uniqueid_namareport';
-        $suffix          = str_contains($tableName, 'simpanan') ? '_SimoPN' : '_DLD';
+        $importContext   = $this->buildImportContext($tableName, $normalizedHeaders, $activeFilters);
 
         // Config untuk Python: tidak ada 'db' — Python hanya baca Excel & output JSON
         $configData = [
@@ -743,7 +920,7 @@ class ImportExcelController extends Controller
             'table_name'         => $tableName,
             'active_filters'     => $activeFilters,
             'normalized_headers' => $normalizedHeaders,
-            'table_columns'      => $tableColumns,  // PHP kirim daftar kolom valid ke Python
+            'table_columns'      => array_keys($importContext['table_columns_lookup']),  // PHP kirim daftar kolom valid ke Python
         ];
 
         $configFile = storage_path('app/excel_gpu_config_' . uniqid() . '.json');
@@ -791,52 +968,44 @@ class ImportExcelController extends Controller
         // ── Helper: insert satu batch rows ke DB ──────────────────────────
         // Gunakan sub-batch 100 baris agar tidak melebihi max_allowed_packet MySQL
         $insertBatch = function (array $rows) use (
-            $tableName, $tableColumns, $uniqueIdCol, $suffix,
-            &$totalInserted, &$totalFailed
+            $tableName, $importContext, &$totalInserted, &$totalFailed
         ) {
-            if (empty($rows)) return;
+            if (empty($rows)) {
+                return;
+            }
 
-            // Pastikan setiap baris hanya punya kolom yang valid di tabel
             $cleanRows = [];
+            $timestamp = now()->toDateTimeString();
+
             foreach ($rows as $row) {
                 $clean = [];
                 foreach ($row as $col => $val) {
                     $colLower = strtolower($col);
-                    // Kolom unique ID boleh mixed-case
-                    if (strtolower($col) === strtolower($uniqueIdCol)) {
-                        $clean[$uniqueIdCol] = $val;
+                    if ($colLower === strtolower($importContext['unique_id_col'])) {
+                        $clean[$importContext['unique_id_col']] = $val;
                         continue;
                     }
-                    if (!in_array($colLower, $tableColumns, true)) continue;
+                    if (!isset($importContext['table_columns_lookup'][$colLower])) {
+                        continue;
+                    }
                     $clean[$colLower] = $val;
                 }
-                if (!isset($clean[$uniqueIdCol])) {
-                    $clean[$uniqueIdCol] = uniqid('', true) . $suffix;
+
+                if (!isset($clean[$importContext['unique_id_col']])) {
+                    $clean[$importContext['unique_id_col']] = uniqid('', true) . $importContext['suffix'];
                 }
-                if (!isset($clean['created_at'])) $clean['created_at'] = now()->toDateTimeString();
-                if (!isset($clean['updated_at'])) $clean['updated_at'] = now()->toDateTimeString();
-                if (count($clean) > 3) $cleanRows[] = $clean;
-            }
-
-            if (empty($cleanRows)) return;
-
-            // Sub-batch 100 baris — aman untuk max_allowed_packet MySQL default (1-16MB)
-            foreach (array_chunk($cleanRows, 100) as $subBatch) {
-                try {
-                    DB::table($tableName)->insert($subBatch);
-                    $totalInserted += count($subBatch);
-                } catch (\Exception $e) {
-                    foreach ($subBatch as $single) {
-                        try {
-                            DB::table($tableName)->insert($single);
-                            $totalInserted++;
-                        } catch (\Exception $e2) {
-                            $totalFailed++;
-                            Log::warning('Row insert failed: ' . $e2->getMessage());
-                        }
-                    }
+                if (!isset($clean['created_at'])) {
+                    $clean['created_at'] = $timestamp;
+                }
+                if (!isset($clean['updated_at'])) {
+                    $clean['updated_at'] = $timestamp;
+                }
+                if (count($clean) > 3) {
+                    $cleanRows[] = $clean;
                 }
             }
+
+            $this->flushInsertBuffer($cleanRows, $tableName, $totalInserted, $totalFailed);
         };
 
         // ── Helper: proses satu baris JSON dari Python ────────────────────
@@ -994,6 +1163,7 @@ class ImportExcelController extends Controller
         return response()->stream(function () use (
             $jobId, $headerIndex, $tableName, $activeFilters, $relativePath, $normalizedHeaders
         ) {
+            $streamLock = null;
             $send = function (string $event, array $data) {
                 echo "event: {$event}\n";
                 echo 'data: ' . json_encode($data) . "\n\n";
@@ -1012,6 +1182,27 @@ class ImportExcelController extends Controller
             };
 
             try {
+                if ($jobId > 0) {
+                    $streamLock = Cache::lock('import_excel_stream_job_' . $jobId, 7200);
+
+                    if (!$streamLock->get()) {
+                        $job = DB::table('import_jobs')->where('id', $jobId)->first();
+
+                        if ($job && in_array($job->status, ['completed', 'failed', 'failed_partial'], true)) {
+                            $send('complete', [
+                                'total_success' => (int) ($job->total_success ?? 0),
+                                'total_failed'  => (int) ($job->total_failed ?? 0),
+                                'total_rows'    => (int) ($job->total_files ?? 0),
+                            ]);
+                        } else {
+                            $send('error', [
+                                'message' => 'Job import ini sudah sedang diproses pada koneksi lain. Proses kedua dibatalkan untuk mencegah data dobel.',
+                            ]);
+                        }
+                        return;
+                    }
+                }
+
                 $path = Storage::path($relativePath);
 
                 if (!file_exists($path)) {
@@ -1038,6 +1229,12 @@ class ImportExcelController extends Controller
                 );
 
                 if ($pythonHandled) {
+                    if ($jobId > 0) {
+                        $job = DB::table('import_jobs')->where('id', $jobId)->first();
+                        if ($job && $job->status === 'completed') {
+                            $this->cleanupImportedFile($relativePath, $path);
+                        }
+                    }
                     return; // Python GPU sudah menangani semuanya
                 }
 
@@ -1067,18 +1264,7 @@ class ImportExcelController extends Controller
                     'speed'     => 0,
                 ]);
 
-                $validIndexes = [];
-                foreach ($normalizedHeaders as $i => $h) {
-                    if (!str_starts_with($h, 'COL_')) $validIndexes[] = $i;
-                }
-                $headerCount = max(array_keys($normalizedHeaders)) + 1;
-
-                $tableColumnsRaw = Schema::getColumnListing($tableName);
-                $tableColumns    = array_map('strtolower', $tableColumnsRaw);
-
-                $uniqueIdCol = str_contains($tableName, 'simpanan') ? 'uniqueid_SimoPN' : 'uniqueid_namareport';
-                $suffix      = str_contains($tableName, 'simpanan') ? '_SimoPN' : '_DLD';
-                $skipCols    = ['id', strtolower($uniqueIdCol)];
+                $importContext = $this->buildImportContext($tableName, $normalizedHeaders, $activeFilters);
 
                 $send('progress', [
                     'percent'   => 15,
@@ -1154,6 +1340,7 @@ class ImportExcelController extends Controller
                     // Index array 0-based: Excel row N → array index N-1
                     $startArrayIdx = $startExcelRow - 1;
                     $endArrayIdx   = $startArrayIdx + $chunkSize;
+                    $timestamp = now()->toDateTimeString();
 
                     foreach ($sheet as $rowIndex => $row) {
                         // Lewati baris di luar window chunk ini
@@ -1163,40 +1350,11 @@ class ImportExcelController extends Controller
                         // Lewati baris kosong
                         if (empty(array_filter((array) $row, fn($v) => trim((string) $v) !== ''))) continue;
 
-                        $row             = $this->padRow($row, $headerCount);
-                        $mappedExcelData = [];
-                        $passFilter      = true;
+                        $finalRow = $this->mapExcelRowForInsert($row, $normalizedHeaders, $importContext, $timestamp);
+                        if ($finalRow === null) continue;
 
-                        foreach ($validIndexes as $filterIdx => $originalIndex) {
-                            $hName = $normalizedHeaders[$originalIndex];
-                            $val   = $this->normalizeExcelValue($hName, $row[$originalIndex] ?? '');
-
-                            if (!empty($activeFilters) && isset($activeFilters[$filterIdx])) {
-                                $fVal = ($val === null) ? '(Blank)' : (string) $val;
-                                if (!in_array($fVal, (array) $activeFilters[$filterIdx])) {
-                                    $passFilter = false;
-                                    break;
-                                }
-                            }
-                            $mappedExcelData[strtoupper(str_replace(' ', '_', $hName))] = $val;
-                        }
-
-                        if (!$passFilter) continue;
-
-                        $finalRow = [$uniqueIdCol => uniqid('', true) . $suffix];
-                        foreach ($mappedExcelData as $excelKey => $val) {
-                            $dbCol = strtolower($excelKey);
-                            if (in_array($dbCol, $skipCols)) continue;
-                            if (!in_array($dbCol, $tableColumns)) continue;
-                            $finalRow[$dbCol] = $val;
-                        }
-                        $finalRow['created_at'] = now();
-                        $finalRow['updated_at'] = now();
-
-                        if (count($finalRow) > 3) {
-                            $dataToInsert[] = $finalRow;
-                            $rowsDone++;
-                        }
+                        $dataToInsert[] = $finalRow;
+                        $rowsDone++;
 
                         if (count($dataToInsert) >= 500) {
                             $flushBatch();
@@ -1249,7 +1407,9 @@ class ImportExcelController extends Controller
                     ]);
                 }
 
-                @unlink($path);
+                if ($finalStatus === 'completed') {
+                    $this->cleanupImportedFile($relativePath, $path);
+                }
 
                 $send('complete', [
                     'total_success' => $totalInserted,
@@ -1262,6 +1422,14 @@ class ImportExcelController extends Controller
                 $send('error', [
                     'message' => 'Fatal Error: ' . $e->getMessage() . ' (line ' . $e->getLine() . ')',
                 ]);
+            } finally {
+                if ($streamLock) {
+                    try {
+                        $streamLock->release();
+                    } catch (\Throwable $e) {
+                        Log::warning('Failed to release import stream lock for job ' . $jobId . ': ' . $e->getMessage());
+                    }
+                }
             }
         }, 200, [
             'Content-Type'      => 'text/event-stream',
@@ -1299,18 +1467,7 @@ class ImportExcelController extends Controller
                 ], 422);
             }
 
-            $validIndexes = [];
-            foreach ($normalizedHeaders as $i => $h) {
-                if (!str_starts_with($h, 'COL_')) $validIndexes[] = $i;
-            }
-            $headerCount = max(array_keys($normalizedHeaders)) + 1;
-
-            $tableColumnsRaw = Schema::getColumnListing($tableName);
-            $tableColumns    = array_map('strtolower', $tableColumnsRaw);
-
-            $uniqueIdCol = str_contains($tableName, 'simpanan') ? 'uniqueid_SimoPN' : 'uniqueid_namareport';
-            $suffix      = str_contains($tableName, 'simpanan') ? '_SimoPN' : '_DLD';
-            $skipCols    = ['id', strtolower($uniqueIdCol)];
+            $importContext = $this->buildImportContext($tableName, $normalizedHeaders, $activeFilters);
 
             $endExclusive = $startRow + $chunkSize;
 
@@ -1337,46 +1494,18 @@ class ImportExcelController extends Controller
             $debugRowsRead = 0;
             $debugPassed   = 0;
             $sampleMapped  = null;
+            $timestamp     = now()->toDateTimeString();
 
             foreach ($sheet as $rowIndex => $row) {
                 if ($rowIndex < $startRow || $rowIndex >= $endExclusive) continue;
                 if ($rowIndex <= $headerIndex) continue;
                 if (empty(array_filter((array) $row, fn($v) => trim((string) $v) !== ''))) continue;
 
-                $row = $this->padRow($row, $headerCount);
-                $mappedExcelData = [];
-                $passFilter = true;
                 $debugRowsRead++;
 
-                foreach ($validIndexes as $filterIdx => $originalIndex) {
-                    $hName = $normalizedHeaders[$originalIndex];
-                    $val   = $this->normalizeExcelValue($hName, $row[$originalIndex] ?? '');
-
-                    if (!empty($activeFilters) && isset($activeFilters[$filterIdx])) {
-                        $fVal = ($val === null) ? '(Blank)' : (string) $val;
-                        if (!in_array($fVal, (array) $activeFilters[$filterIdx])) {
-                            $passFilter = false;
-                            break;
-                        }
-                    }
-
-                    $mappedExcelData[strtoupper(str_replace(' ', '_', $hName))] = $val;
-                }
-
-                if (!$passFilter) continue;
+                $finalRow = $this->mapExcelRowForInsert($row, $normalizedHeaders, $importContext, $timestamp);
+                if ($finalRow === null) continue;
                 $debugPassed++;
-
-                $finalRow = [$uniqueIdCol => uniqid('', true) . $suffix];
-
-                foreach ($mappedExcelData as $excelKey => $val) {
-                    $dbCol = strtolower($excelKey);
-                    if (in_array($dbCol, $skipCols)) continue;
-                    if (!in_array($dbCol, $tableColumns)) continue;
-                    $finalRow[$dbCol] = $val;
-                }
-
-                $finalRow['created_at'] = now();
-                $finalRow['updated_at'] = now();
 
                 if ($sampleMapped === null) $sampleMapped = $finalRow;
 
@@ -1384,21 +1513,7 @@ class ImportExcelController extends Controller
             }
 
             // Sub-batch 100 baris — aman untuk max_allowed_packet MySQL default
-            foreach (array_chunk($dataToInsert, 100) as $batch) {
-                try {
-                    DB::table($tableName)->insert($batch);
-                    $chunkInserted += count($batch);
-                } catch (\Exception $e) {
-                    foreach ($batch as $single) {
-                        try {
-                            DB::table($tableName)->insert($single);
-                            $chunkInserted++;
-                        } catch (\Exception $e2) {
-                            $chunkFailed++;
-                        }
-                    }
-                }
-            }
+            $this->flushInsertBuffer($dataToInsert, $tableName, $chunkInserted, $chunkFailed);
 
             if ($jobId > 0) {
                 DB::table('import_jobs')->where('id', $jobId)->update([

@@ -61,6 +61,20 @@
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
     document.addEventListener('DOMContentLoaded', function () {
+        const swalTheme = {
+            customClass: {
+                popup: 'swal-modern-popup',
+                title: 'swal-modern-title',
+                htmlContainer: 'swal-modern-html',
+                confirmButton: 'swal-modern-confirm',
+            },
+            buttonsStyling: false,
+            background: '#ffffff',
+        };
+
+        function themedSwal(options) {
+            return Swal.fire(Object.assign({}, swalTheme, options));
+        }
 
         // ==========================================
         // 🔥 LOGIKA FORM DINAMIS (RAR vs EXCEL)
@@ -163,24 +177,25 @@
             // HTML Custom untuk Progress Bar
             const progressHtml = `
                 <div class="text-center mb-3">
-                    <span class="text-muted" style="font-size: 14px;" id="swal-desc-text">${descText}</span>
+                    <span style="font-size: 14px; color: #64748b;" id="swal-desc-text">${descText}</span>
                 </div>
-                <div class="progress" style="height: 25px; border-radius: 10px; background-color: #e9ecef; overflow: hidden;">
-                    <div id="swal-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated bg-primary" 
-                         role="progressbar" style="width: 0%; font-weight: bold; font-size: 14px; line-height: 25px;" 
+                <div class="progress" style="height: 16px; border-radius: 999px; background-color: #e2e8f0; overflow: hidden; box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.08);">
+                    <div id="swal-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" 
+                         role="progressbar" style="width: 0%; font-weight: 700; font-size: 12px; line-height: 16px; background: linear-gradient(135deg, #0f766e, #115e59);" 
                          aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
                 </div>
-                <div class="text-center mt-2">
-                    <small id="swal-progress-text" class="text-primary font-weight-bold">Memulai proses...</small>
+                <div class="text-center mt-3">
+                    <small id="swal-progress-text" style="color: #0f766e; font-weight: 700; letter-spacing: 0.02em;">Memulai proses...</small>
                 </div>
             `;
 
-            Swal.fire({
+            themedSwal({
                 title: titleText,
                 html: progressHtml,
                 allowOutsideClick: false,
                 allowEscapeKey: false,
                 showConfirmButton: false,
+                width: 520,
                 didOpen: () => {
                     // Disable button agar tidak double submit
                     if (btnSubmit) {
@@ -244,7 +259,7 @@
                             var evtData = {};
                             try { evtData = JSON.parse(event.data); } catch(_) {}
                             eventSource.close();
-                            Swal.fire({
+                            themedSwal({
                                 icon: 'error',
                                 title: 'Error',
                                 text: evtData.message || 'Terjadi kesalahan server.'
@@ -255,7 +270,7 @@
                         // ── onerror (network drop / connection closed) ───────
                         eventSource.onerror = function() {
                             eventSource.close();
-                            Swal.fire({
+                            themedSwal({
                                 icon: 'error',
                                 title: 'Koneksi Terputus',
                                 text: 'Gagal terhubung ke server untuk update progress.'
@@ -264,7 +279,7 @@
                         };
                     })
                     .catch(function(error) {
-                        Swal.fire({
+                        themedSwal({
                             icon: 'error',
                             title: 'Upload Error',
                             text: error.message
@@ -287,30 +302,63 @@
     // NOTIFIKASI SWEETALERT EXISTING
     // ==========================================
     @if(session('sweet_success'))
-        Swal.fire({
+        themedSwal({
             icon: 'success',
             title: '{!! session('sweet_success')['title'] !!}',
             html: '{!! session('sweet_success')['text'] !!}',
-            confirmButtonColor: '#28a745'
+            confirmButtonText: 'Tutup'
         });
     @endif
 
     @if(session('sweet_warning'))
-        Swal.fire({
+        themedSwal({
             icon: 'warning',
             title: '{!! session('sweet_warning')['title'] !!}',
             html: '{!! session('sweet_warning')['text'] !!}',
-            confirmButtonColor: '#ffc107'
+            confirmButtonText: 'Mengerti'
         });
     @endif
 
     @if(session('error'))
-        Swal.fire({
+        themedSwal({
             icon: 'error',
             title: 'Gagal!',
             text: '{{ session('error') }}',
-            confirmButtonColor: '#dc3545'
+            confirmButtonText: 'Tutup'
         });
     @endif
 </script>
+<style>
+    .swal-modern-popup {
+        border: 1px solid rgba(226, 232, 240, 0.95);
+        border-radius: 28px;
+        padding: 1.4rem 1.4rem 1.2rem;
+        box-shadow: 0 30px 80px -35px rgba(15, 23, 42, 0.35);
+    }
+
+    .swal-modern-title {
+        color: #0f172a;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+    }
+
+    .swal-modern-html {
+        color: #475569;
+        font-size: 0.95rem;
+        line-height: 1.65;
+    }
+
+    .swal-modern-confirm {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: 0;
+        border-radius: 16px;
+        background: linear-gradient(135deg, #0f766e, #115e59);
+        color: #ffffff;
+        font-weight: 700;
+        padding: 0.8rem 1.3rem;
+        box-shadow: 0 16px 34px -22px rgba(15, 23, 42, 0.45);
+    }
+</style>
 @endsection
