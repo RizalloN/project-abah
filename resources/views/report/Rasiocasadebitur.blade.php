@@ -119,11 +119,87 @@
             <!-- 🔥 STRUKTUR LOOPING CERDAS UNTUK 3 TAB BERSUSUN -->
             @php
                 $tabGroups = [
-                    'tab-total' => [['id' => 'total', 'title' => 'TOTAL']],
-                    'tab-briguna-kpr' => [['id' => 'briguna', 'title' => 'BRIGUNA'], ['id' => 'kpr', 'title' => 'KPR']],
-                    'tab-mikro-smc' => [['id' => 'mikro', 'title' => 'MIKRO'], ['id' => 'smc', 'title' => 'SMC']]
+                    'tab-total' => [['id' => 'total', 'title' => 'TOTAL']]
                 ];
             @endphp
+
+            <div class="tab-pane fade" id="tab-briguna-kpr" role="tabpanel">
+                <div class="table-container">
+                    <table class="table table-hover table-report m-0">
+                        <thead class="sticky-top" style="z-index: 2;">
+                            <tr>
+                                <th rowspan="3" class="bg-header-main align-middle" style="min-width: 150px;">BRANCH OFFICE</th>
+                                <th colspan="7" class="bg-header-main">BRIGUNA</th>
+                                <th colspan="7" class="bg-header-main">KPR</th>
+                            </tr>
+                            <tr class="bg-header-sub">
+                                <th colspan="2">Total OS</th>
+                                <th colspan="2">Total CASA</th>
+                                <th colspan="3">Rasio CASA/OS</th>
+                                <th colspan="2">Total OS</th>
+                                <th colspan="2">Total CASA</th>
+                                <th colspan="3">Rasio CASA/OS</th>
+                            </tr>
+                            <tr class="bg-header-sub-light">
+                                <th class="lbl-prev-th">-</th>
+                                <th class="lbl-curr-th">-</th>
+                                <th class="lbl-prev-th">-</th>
+                                <th class="lbl-curr-th">-</th>
+                                <th class="lbl-prev-th">-</th>
+                                <th class="lbl-curr-th">-</th>
+                                <th>MtD</th>
+                                <th class="lbl-prev-th">-</th>
+                                <th class="lbl-curr-th">-</th>
+                                <th class="lbl-prev-th">-</th>
+                                <th class="lbl-curr-th">-</th>
+                                <th class="lbl-prev-th">-</th>
+                                <th class="lbl-curr-th">-</th>
+                                <th>MtD</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbody-briguna-kpr"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="tab-pane fade" id="tab-mikro-smc" role="tabpanel">
+                <div class="table-container">
+                    <table class="table table-hover table-report m-0">
+                        <thead class="sticky-top" style="z-index: 2;">
+                            <tr>
+                                <th rowspan="3" class="bg-header-main align-middle" style="min-width: 150px;">BRANCH OFFICE</th>
+                                <th colspan="7" class="bg-header-main">MIKRO</th>
+                                <th colspan="7" class="bg-header-main">SMC</th>
+                            </tr>
+                            <tr class="bg-header-sub">
+                                <th colspan="2">Total OS</th>
+                                <th colspan="2">Total CASA</th>
+                                <th colspan="3">Rasio CASA/OS</th>
+                                <th colspan="2">Total OS</th>
+                                <th colspan="2">Total CASA</th>
+                                <th colspan="3">Rasio CASA/OS</th>
+                            </tr>
+                            <tr class="bg-header-sub-light">
+                                <th class="lbl-prev-th">-</th>
+                                <th class="lbl-curr-th">-</th>
+                                <th class="lbl-prev-th">-</th>
+                                <th class="lbl-curr-th">-</th>
+                                <th class="lbl-prev-th">-</th>
+                                <th class="lbl-curr-th">-</th>
+                                <th>MtD</th>
+                                <th class="lbl-prev-th">-</th>
+                                <th class="lbl-curr-th">-</th>
+                                <th class="lbl-prev-th">-</th>
+                                <th class="lbl-curr-th">-</th>
+                                <th class="lbl-prev-th">-</th>
+                                <th class="lbl-curr-th">-</th>
+                                <th>MtD</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbody-mikro-smc"></tbody>
+                    </table>
+                </div>
+            </div>
 
             @foreach($tabGroups as $tabId => $tables)
             <div class="tab-pane fade {{ $tabId === 'tab-total' ? 'show active' : '' }}" id="{{ $tabId }}" role="tabpanel">
@@ -233,8 +309,34 @@ document.addEventListener('DOMContentLoaded', function () {
                         });
                     });
 
-                    // Logika rendering 5 data tabel
-                    let tablesTarget = ['total', 'briguna', 'kpr', 'mikro', 'smc'];
+                    function renderSegmentRow(branchLabel, dt) {
+                        return `<tr>
+                            <td class="text-left font-weight-bold">${branchLabel || '-'}</td>
+                            <td>${formatNum(dt.os_prev)}</td>
+                            <td style="background-color: #f6f9fc;">${formatNum(dt.os_curr)}</td>
+                            <td>${formatNum(dt.casa_prev)}</td>
+                            <td style="background-color: #f6f9fc;">${formatNum(dt.casa_curr)}</td>
+                            <td>${formatPct(dt.rasio_prev)}</td>
+                            <td class="font-weight-bold">${formatPct(dt.rasio_curr)}</td>
+                            <td>${formatMtd(dt.mtd)}</td>
+                        </tr>`;
+                    }
+
+                    function renderSegmentTotal(dt) {
+                        return `<tr class="row-total">
+                            <td class="text-left">TOTAL AREA 6</td>
+                            <td>${formatNum(dt.os_prev)}</td>
+                            <td>${formatNum(dt.os_curr)}</td>
+                            <td>${formatNum(dt.casa_prev)}</td>
+                            <td>${formatNum(dt.casa_curr)}</td>
+                            <td>${formatPct(dt.rasio_prev)}</td>
+                            <td>${formatPct(dt.rasio_curr)}</td>
+                            <td>${formatMtd(dt.mtd)}</td>
+                        </tr>`;
+                    }
+
+                    // Logika rendering tabel tunggal
+                    let tablesTarget = ['total'];
 
                     tablesTarget.forEach(tableId => {
                         let html = '';
@@ -248,36 +350,134 @@ document.addEventListener('DOMContentLoaded', function () {
                                 tableHasData = true;
                                 hasAnyData = true;
                             }
-                            html += `<tr>
-                                <td class="text-left font-weight-bold">${row.branch || '-'}</td>
-                                <td>${formatNum(dt.os_prev)}</td>
-                                <td style="background-color: #f6f9fc;">${formatNum(dt.os_curr)}</td>
-                                <td>${formatNum(dt.casa_prev)}</td>
-                                <td style="background-color: #f6f9fc;">${formatNum(dt.casa_curr)}</td>
-                                <td>${formatPct(dt.rasio_prev)}</td>
-                                <td class="font-weight-bold">${formatPct(dt.rasio_curr)}</td>
-                                <td>${formatMtd(dt.mtd)}</td>
-                            </tr>`;
+                            html += renderSegmentRow(row.branch, dt);
                         });
 
                         // Render Baris Total Area 6
                         let t_dt = totalData[tableId] || {};
-                        html += `<tr class="row-total">
-                            <td class="text-left">TOTAL AREA 6</td>
-                            <td>${formatNum(t_dt.os_prev)}</td>
-                            <td>${formatNum(t_dt.os_curr)}</td>
-                            <td>${formatNum(t_dt.casa_prev)}</td>
-                            <td>${formatNum(t_dt.casa_curr)}</td>
-                            <td>${formatPct(t_dt.rasio_prev)}</td>
-                            <td>${formatPct(t_dt.rasio_curr)}</td>
-                            <td>${formatMtd(t_dt.mtd)}</td>
-                        </tr>`;
+                        html += renderSegmentTotal(t_dt);
 
                         // Tempel HTML ke tbody
                         $(`#tbody-${tableId}`).html(html);
                         
                         console.log(`[RasioCasa] Table ${tableId} rendered, hasData: ${tableHasData}`);
                     });
+
+                    // Render tabel gabungan BRIGUNA + KPR
+                    let htmlBrigunaKpr = '';
+                    let brigunaKprHasData = false;
+
+                    dataList.forEach(row => {
+                        let briguna = row.briguna || {};
+                        let kpr = row.kpr || {};
+
+                        if (
+                            briguna.os_curr > 0 || briguna.casa_curr > 0 || briguna.os_prev > 0 || briguna.casa_prev > 0 ||
+                            kpr.os_curr > 0 || kpr.casa_curr > 0 || kpr.os_prev > 0 || kpr.casa_prev > 0
+                        ) {
+                            brigunaKprHasData = true;
+                            hasAnyData = true;
+                        }
+
+                        htmlBrigunaKpr += `<tr>
+                            <td class="text-left font-weight-bold">${row.branch || '-'}</td>
+                            <td>${formatNum(briguna.os_prev)}</td>
+                            <td style="background-color: #f6f9fc;">${formatNum(briguna.os_curr)}</td>
+                            <td>${formatNum(briguna.casa_prev)}</td>
+                            <td style="background-color: #f6f9fc;">${formatNum(briguna.casa_curr)}</td>
+                            <td>${formatPct(briguna.rasio_prev)}</td>
+                            <td class="font-weight-bold">${formatPct(briguna.rasio_curr)}</td>
+                            <td>${formatMtd(briguna.mtd)}</td>
+                            <td>${formatNum(kpr.os_prev)}</td>
+                            <td style="background-color: #f6f9fc;">${formatNum(kpr.os_curr)}</td>
+                            <td>${formatNum(kpr.casa_prev)}</td>
+                            <td style="background-color: #f6f9fc;">${formatNum(kpr.casa_curr)}</td>
+                            <td>${formatPct(kpr.rasio_prev)}</td>
+                            <td class="font-weight-bold">${formatPct(kpr.rasio_curr)}</td>
+                            <td>${formatMtd(kpr.mtd)}</td>
+                        </tr>`;
+                    });
+
+                    let totalBriguna = totalData.briguna || {};
+                    let totalKpr = totalData.kpr || {};
+                    htmlBrigunaKpr += `<tr class="row-total">
+                        <td class="text-left">TOTAL AREA 6</td>
+                        <td>${formatNum(totalBriguna.os_prev)}</td>
+                        <td>${formatNum(totalBriguna.os_curr)}</td>
+                        <td>${formatNum(totalBriguna.casa_prev)}</td>
+                        <td>${formatNum(totalBriguna.casa_curr)}</td>
+                        <td>${formatPct(totalBriguna.rasio_prev)}</td>
+                        <td>${formatPct(totalBriguna.rasio_curr)}</td>
+                        <td>${formatMtd(totalBriguna.mtd)}</td>
+                        <td>${formatNum(totalKpr.os_prev)}</td>
+                        <td>${formatNum(totalKpr.os_curr)}</td>
+                        <td>${formatNum(totalKpr.casa_prev)}</td>
+                        <td>${formatNum(totalKpr.casa_curr)}</td>
+                        <td>${formatPct(totalKpr.rasio_prev)}</td>
+                        <td>${formatPct(totalKpr.rasio_curr)}</td>
+                        <td>${formatMtd(totalKpr.mtd)}</td>
+                    </tr>`;
+
+                    $('#tbody-briguna-kpr').html(htmlBrigunaKpr);
+                    console.log(`[RasioCasa] Combined table briguna-kpr rendered, hasData: ${brigunaKprHasData}`);
+
+                    // Render tabel gabungan MIKRO + SMC
+                    let htmlMikroSmc = '';
+                    let mikroSmcHasData = false;
+
+                    dataList.forEach(row => {
+                        let mikro = row.mikro || {};
+                        let smc = row.smc || {};
+
+                        if (
+                            mikro.os_curr > 0 || mikro.casa_curr > 0 || mikro.os_prev > 0 || mikro.casa_prev > 0 ||
+                            smc.os_curr > 0 || smc.casa_curr > 0 || smc.os_prev > 0 || smc.casa_prev > 0
+                        ) {
+                            mikroSmcHasData = true;
+                            hasAnyData = true;
+                        }
+
+                        htmlMikroSmc += `<tr>
+                            <td class="text-left font-weight-bold">${row.branch || '-'}</td>
+                            <td>${formatNum(mikro.os_prev)}</td>
+                            <td style="background-color: #f6f9fc;">${formatNum(mikro.os_curr)}</td>
+                            <td>${formatNum(mikro.casa_prev)}</td>
+                            <td style="background-color: #f6f9fc;">${formatNum(mikro.casa_curr)}</td>
+                            <td>${formatPct(mikro.rasio_prev)}</td>
+                            <td class="font-weight-bold">${formatPct(mikro.rasio_curr)}</td>
+                            <td>${formatMtd(mikro.mtd)}</td>
+                            <td>${formatNum(smc.os_prev)}</td>
+                            <td style="background-color: #f6f9fc;">${formatNum(smc.os_curr)}</td>
+                            <td>${formatNum(smc.casa_prev)}</td>
+                            <td style="background-color: #f6f9fc;">${formatNum(smc.casa_curr)}</td>
+                            <td>${formatPct(smc.rasio_prev)}</td>
+                            <td class="font-weight-bold">${formatPct(smc.rasio_curr)}</td>
+                            <td>${formatMtd(smc.mtd)}</td>
+                        </tr>`;
+                    });
+
+                    let totalMikro = totalData.mikro || {};
+                    let totalSmc = totalData.smc || {};
+                    htmlMikroSmc += `<tr class="row-total">
+                        <td class="text-left">TOTAL AREA 6</td>
+                        <td>${formatNum(totalMikro.os_prev)}</td>
+                        <td>${formatNum(totalMikro.os_curr)}</td>
+                        <td>${formatNum(totalMikro.casa_prev)}</td>
+                        <td>${formatNum(totalMikro.casa_curr)}</td>
+                        <td>${formatPct(totalMikro.rasio_prev)}</td>
+                        <td>${formatPct(totalMikro.rasio_curr)}</td>
+                        <td>${formatMtd(totalMikro.mtd)}</td>
+                        <td>${formatNum(totalSmc.os_prev)}</td>
+                        <td>${formatNum(totalSmc.os_curr)}</td>
+                        <td>${formatNum(totalSmc.casa_prev)}</td>
+                        <td>${formatNum(totalSmc.casa_curr)}</td>
+                        <td>${formatPct(totalSmc.rasio_prev)}</td>
+                        <td>${formatPct(totalSmc.rasio_curr)}</td>
+                        <td>${formatMtd(totalSmc.mtd)}</td>
+                    </tr>`;
+
+                    $('#tbody-mikro-smc').html(htmlMikroSmc);
+                    console.log(`[RasioCasa] Combined table mikro-smc rendered, hasData: ${mikroSmcHasData}`);
                     
                     // Show warning if no data found
                     if (!hasAnyData) {
@@ -301,6 +501,24 @@ document.addEventListener('DOMContentLoaded', function () {
                                 </tr>
                             `);
                         });
+                        $('#tbody-briguna-kpr').prepend(`
+                            <tr class="table-warning">
+                                <td colspan="15" class="text-center text-warning font-weight-bold">
+                                    <i class="fas fa-exclamation-triangle"></i> 
+                                    Tidak ada data untuk tanggal ${payload.posisi}. 
+                                    Coba pilih tanggal lain atau cek logs.
+                                </td>
+                            </tr>
+                        `);
+                        $('#tbody-mikro-smc').prepend(`
+                            <tr class="table-warning">
+                                <td colspan="15" class="text-center text-warning font-weight-bold">
+                                    <i class="fas fa-exclamation-triangle"></i> 
+                                    Tidak ada data untuk tanggal ${payload.posisi}. 
+                                    Coba pilih tanggal lain atau cek logs.
+                                </td>
+                            </tr>
+                        `);
                     } else {
                         console.log('%c[RasioCasa] SUCCESS: Data loaded!', 'color: green; font-size: 16px; font-weight: bold');
                     }
