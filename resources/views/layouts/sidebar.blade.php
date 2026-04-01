@@ -144,8 +144,7 @@
                     </a>
                     <ul class="nav nav-treeview">
                         <li class="nav-item">
-                            <a href="#" class="nav-link" style="border-radius: 12px; color: rgba(226, 232, 240, 0.8);">
-                            <a href="#" class="nav-link" style="border-radius: 12px; color: rgba(226, 232, 240, 0.8);">
+                            <a href="{{ route('report.kinerja.newpayroll') }}" class="nav-link {{ request()->routeIs('report.kinerja.newpayroll') ? 'active' : '' }}" style="border-radius: 12px; color: rgba(226, 232, 240, 0.8);">
                                 <i class="far fa-circle nav-icon text-info"></i>
                                 <p>Kinerja New Payroll</p>
                             </a>

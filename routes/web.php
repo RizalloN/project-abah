@@ -55,6 +55,7 @@ Route::post('/report/data/brimo', [App\Http\Controllers\PerformanceBrimoControll
 // 🔥 ROUTE REKENING TRANSAKSI DEBITUR
 Route::get('/report/rekening-transaksi-debitur', [RasioCasaDebiturController::class, 'index'])->name('report.rasiocasa.debitur');
 Route::post('/report/data/rasiocasa', [RasioCasaDebiturController::class, 'fetchData'])->name('report.data.rasiocasa');
+Route::view('/report/peningkatan-payroll-berkualitas/kinerja-new-payroll', 'report.kinerja-new-payroll')->name('report.kinerja.newpayroll');
 
 Route::post('/report/data', [App\Http\Controllers\DataReportController::class, 'fetchData'])->name('report.data');
 
