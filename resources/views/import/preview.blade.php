@@ -186,6 +186,20 @@
 
 <script>
     document.addEventListener('DOMContentLoaded', function () {
+        const swalTheme = {
+            customClass: {
+                popup: 'swal-modern-popup',
+                title: 'swal-modern-title',
+                htmlContainer: 'swal-modern-html',
+                confirmButton: 'swal-modern-confirm',
+            },
+            buttonsStyling: false,
+            background: '#ffffff',
+        };
+
+        function themedSwal(options) {
+            return Swal.fire(Object.assign({}, swalTheme, options));
+        }
         
         const dropdownMenus = document.querySelectorAll('.dropdown-menu');
         dropdownMenus.forEach(menu => {
@@ -359,12 +373,13 @@
 
             let formData = new FormData(form);
 
-            Swal.fire({
+            themedSwal({
                 title: 'Sedang Memproses Data...',
                 html: 'Sistem sedang memindahkan baris data ke MySQL.<br><br><b>Mohon tunggu dan jangan tutup halaman ini!</b>',
                 allowOutsideClick: false,
                 allowEscapeKey: false,
                 showConfirmButton: false,
+                width: 520,
                 didOpen: () => {
                     Swal.showLoading();
                 }
@@ -380,19 +395,21 @@
             })
             .then(res => res.json())
             .then(res => {
-                Swal.fire({
+                themedSwal({
                     icon: res.status || 'success',
                     title: res.title || 'Selesai',
-                    html: res.text || ''
+                    html: res.text || '',
+                    confirmButtonText: 'Tutup'
                 }).then(() => {
                     window.location.href = "{{ route('import.index') }}";
                 });
             })
             .catch(err => {
-                Swal.fire({
+                themedSwal({
                     icon: 'error',
                     title: 'Terjadi Kesalahan',
-                    text: 'Import gagal dijalankan!'
+                    text: 'Import gagal dijalankan!',
+                    confirmButtonText: 'Tutup'
                 });
 
                 if (submitBtn) {
@@ -405,4 +422,37 @@
         updatePreviewTable();
     });
 </script>
+<style>
+    .swal-modern-popup {
+        border: 1px solid rgba(226, 232, 240, 0.95);
+        border-radius: 28px;
+        padding: 1.4rem 1.4rem 1.2rem;
+        box-shadow: 0 30px 80px -35px rgba(15, 23, 42, 0.35);
+    }
+
+    .swal-modern-title {
+        color: #0f172a;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+    }
+
+    .swal-modern-html {
+        color: #475569;
+        font-size: 0.95rem;
+        line-height: 1.65;
+    }
+
+    .swal-modern-confirm {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: 0;
+        border-radius: 16px;
+        background: linear-gradient(135deg, #0f766e, #115e59);
+        color: #ffffff;
+        font-weight: 700;
+        padding: 0.8rem 1.3rem;
+        box-shadow: 0 16px 34px -22px rgba(15, 23, 42, 0.45);
+    }
+</style>
 @endsection

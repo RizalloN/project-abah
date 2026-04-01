@@ -14,6 +14,63 @@ use App\Models\NamaReport;
 
 class ImportFileController extends Controller
 {
+    private function normalizeDecimalValue($value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        if (is_int($value) || is_float($value)) {
+            return number_format((float) $value, 2, '.', '');
+        }
+
+        $value = trim((string) $value);
+        if ($value === '') {
+            return null;
+        }
+
+        $value = preg_replace('/\s+/', '', $value);
+        $value = preg_replace('/[^0-9,\.\-]/', '', $value);
+
+        if ($value === '' || $value === '-' || $value === null) {
+            return null;
+        }
+
+        $hasComma = str_contains($value, ',');
+        $hasDot = str_contains($value, '.');
+
+        if ($hasComma && $hasDot) {
+            if (strrpos($value, ',') > strrpos($value, '.')) {
+                $value = str_replace('.', '', $value);
+                $value = str_replace(',', '.', $value);
+            } else {
+                $value = str_replace(',', '', $value);
+            }
+        } elseif ($hasComma) {
+            $parts = explode(',', $value);
+            $lastPart = end($parts);
+
+            if (count($parts) > 2 || strlen((string) $lastPart) === 3) {
+                $value = str_replace(',', '', $value);
+            } else {
+                $value = str_replace(',', '.', $value);
+            }
+        } elseif ($hasDot) {
+            $parts = explode('.', $value);
+            $lastPart = end($parts);
+
+            if (count($parts) > 2 || strlen((string) $lastPart) === 3) {
+                $value = str_replace('.', '', $value);
+            }
+        }
+
+        if (!is_numeric($value)) {
+            return null;
+        }
+
+        return number_format((float) $value, 2, '.', '');
+    }
+
     public function upload(Request $request)
     {
         $request->validate(['id_report' => 'required', 'file' => 'required|file|mimes:rar']);
@@ -420,15 +477,11 @@ class ImportFileController extends Controller
                         $numericColumns = [
                             'SALDO_POSISI', 'RATAS_SALDO', 'SALDO_POSISI_BY_CIF', 'RATAS_SALDO_BY_CIF',
                             'SALES_VOLUME', 'AKUMULASI_SALES_VOLUME', 'JML_TRANSAKSI', 'AKUMULASI_TRANSAKSI',
-                            'NILAI', 'MERCHANT_QRIS_VOLUME', 'MERCHANT_QRIS'
+                            'NILAI', 'MERCHANT_QRIS_VOLUME', 'MERCHANT_QRIS', 'BAKI_DEBET'
                         ];
 
                         if (in_array(strtoupper($colName), $numericColumns)) {
-                            $clean = preg_replace('/[^0-9.-]/', '', $cellValue);
-                            if (!is_numeric($clean)) {
-                                $clean = null;
-                            }
-                            $cellValue = $clean;
+                            $cellValue = $this->normalizeDecimalValue($cellValue);
                         }
 
                         $rowData[$colName] = ($cellValue === '') ? null : $cellValue;

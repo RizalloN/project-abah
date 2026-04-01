@@ -27,27 +27,21 @@ class RasioCasaDebiturController extends Controller
             }
 
             $tanggal = $request->input('posisi', date('Y-m-d'));
-            $currDateInput = Carbon::parse($tanggal);
+            $currDate = Carbon::parse($tanggal);
 
-            // 1. SMART FALLBACK DATE
-            $latestAvailableDate = DB::table('daily_loan_dinamis')
-                ->where('periode', '<=', $currDateInput->toDateString())
-                ->max('periode');
-
-            $currDate = $latestAvailableDate ? Carbon::parse($latestAvailableDate) : $currDateInput->copy();
-
-            // 2. FALLBACK POSISI PREV
+            $prevMonthStart = $currDate->copy()->subMonthNoOverflow()->startOfMonth();
             $prevMonthEnd = $currDate->copy()->subMonthNoOverflow()->endOfMonth();
+
             $latestPrevDate = DB::table('daily_loan_dinamis')
                 ->whereBetween('periode', [
-                    $prevMonthEnd->copy()->startOfMonth()->toDateString(),
+                    $prevMonthStart->toDateString(),
                     $prevMonthEnd->toDateString()
                 ])
                 ->max('periode');
 
+            // Jika tidak ada data sama sekali di bulan sebelumnya, fallback ke akhir bulan tersebut
             $prevDate = $latestPrevDate ? Carbon::parse($latestPrevDate) : $prevMonthEnd;
 
-            $branches = ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'];
             $segmenList = ['TOTAL', 'BRIGUNA', 'KPR', 'MIKRO', 'SMC'];
             $data = [];
 
@@ -63,10 +57,11 @@ class RasioCasaDebiturController extends Controller
             // 🔥 OPTIMASI BIG DATA: Tarik agregat melalui Application-Side Join
             $aggregatedPrevData = $this->getAggregatedDataFast($prevDate->format('Y-m-d'));
             $aggregatedCurrData = $this->getAggregatedDataFast($currDate->format('Y-m-d'));
+            $branches = $this->resolveDynamicBranches($aggregatedPrevData, $aggregatedCurrData);
 
             // Looping Pengisian Data ke Array Response
             foreach ($branches as $branch) {
-                $branchNameClean = trim(str_replace(['KC.', 'KC '], '', strtoupper($branch)));
+                $branchNameClean = $this->normalizeBranchKey($branch);
                 $rowData = ['branch' => $branch];
 
                 foreach ($segmenList as $seg) {
@@ -116,6 +111,16 @@ class RasioCasaDebiturController extends Controller
                     'prev' => $prevDate->format('d') . ' ' . $bulanIndo[$prevDate->month] . " '" . $prevDate->format('y'),
                     'curr' => $currDate->format('d') . ' ' . $bulanIndo[$currDate->month] . " '" . $currDate->format('y'),
                 ],
+                'effective_dates' => [
+                    'prev' => $prevDate->toDateString(),
+                    'curr' => $currDate->toDateString(),
+                ],
+                'meta' => [
+                    'has_rows' => (($aggregatedPrevData['row_count'] ?? 0) + ($aggregatedCurrData['row_count'] ?? 0)) > 0,
+                    'row_count_prev' => (int) ($aggregatedPrevData['row_count'] ?? 0),
+                    'row_count_curr' => (int) ($aggregatedCurrData['row_count'] ?? 0),
+                    'branch_count' => count($branches),
+                ],
                 'data'  => $data,
                 'total' => $total
             ]);
@@ -137,16 +142,9 @@ class RasioCasaDebiturController extends Controller
      */
     private function getAggregatedDataFast($targetDate)
     {
-        $result = ['os' => [], 'casa' => []];
+        $result = ['os' => [], 'casa' => [], 'branch_labels' => [], 'row_count' => 0];
         $cifList = [];
         $cifMapping = [];
-
-        // Inisialisasi kerangka data untuk semua cabang di awal
-        $branches = ['MADIUN', 'MAGETAN', 'NGAWI', 'PONOROGO'];
-        foreach ($branches as $branchName) {
-            $result['os'][$branchName] = ['total' => 0, 'briguna' => 0, 'kpr' => 0, 'mikro' => 0, 'smc' => 0];
-            $result['casa'][$branchName] = ['total' => 0, 'briguna' => 0, 'kpr' => 0, 'mikro' => 0, 'smc' => 0];
-        }
 
         DB::table('daily_loan_dinamis')
             ->where('periode', $targetDate)
@@ -160,10 +158,20 @@ class RasioCasaDebiturController extends Controller
             ->orderBy('id')
             ->chunkById(5000, function ($loans) use (&$result, &$cifList, &$cifMapping) {
                 foreach ($loans as $loan) {
-                    $branchName = str_replace(['KC.', 'KC '], '', trim(strtoupper($loan->cabang)));
-                    
-                    // Lewati jika nama cabang tidak terduga setelah dibersihkan
-                    if (!isset($result['os'][$branchName])) continue;
+                    $branchName = $this->normalizeBranchKey($loan->cabang);
+                    if ($branchName === '') {
+                        continue;
+                    }
+
+                    if (!isset($result['os'][$branchName])) {
+                        $result['os'][$branchName] = ['total' => 0, 'briguna' => 0, 'kpr' => 0, 'mikro' => 0, 'smc' => 0];
+                        $result['casa'][$branchName] = ['total' => 0, 'briguna' => 0, 'kpr' => 0, 'mikro' => 0, 'smc' => 0];
+                    }
+
+                    if (!isset($result['branch_labels'][$branchName])) {
+                        $result['branch_labels'][$branchName] = $this->formatBranchLabel($loan->cabang ?: $branchName);
+                    }
+                    $result['row_count']++;
 
                     $cif = strtoupper(trim($loan->cifno));
                     if (!empty($cif)) {
@@ -194,16 +202,30 @@ class RasioCasaDebiturController extends Controller
 
         $casaBalances = [];
         $chunks = array_chunk($uniqueCifs, 5000);
+        $applyJenisSimpananFilter = DB::table('simpanan_multipn')
+            ->where('posisi', $casaDate)
+            ->where(function ($query) {
+                $query->where('jenis_simpanan', 'like', 'GIRO%')
+                      ->orWhere('jenis_simpanan', 'like', 'TABUNGAN%');
+            })
+            ->exists();
         
         foreach ($chunks as $chunk) {
-            $casas = DB::table('simpanan_multipn')
+            $casaQuery = DB::table('simpanan_multipn')
                 ->where('posisi', $casaDate)
-                 // LOGIKA DIPERKETAT: Hanya GIRO dan TABUNGAN sesuai permintaan
-                ->where(function ($query) {
+                ->whereIn('cifno', $chunk);
+
+            // Pertahankan logic utama GIRO/TABUNGAN.
+            // Jika batch data tertentu belum mengisi jenis_simpanan dengan benar,
+            // fallback ke seluruh saldo tanggal tersebut agar laporan tetap terbaca.
+            if ($applyJenisSimpananFilter) {
+                $casaQuery->where(function ($query) {
                     $query->where('jenis_simpanan', 'like', 'GIRO%')
                           ->orWhere('jenis_simpanan', 'like', 'TABUNGAN%');
-                })
-                ->whereIn('cifno', $chunk)
+                });
+            }
+
+            $casas = $casaQuery
                 ->select('cifno', DB::raw('SUM(saldo_idr) as total_saldo'))
                 ->groupBy('cifno')
                 ->get();
@@ -226,6 +248,80 @@ class RasioCasaDebiturController extends Controller
 
         return $result;
     }
+
+    private function normalizeBranchKey(?string $branch): string
+    {
+        $value = strtoupper(trim((string) $branch));
+        if ($value === '') {
+            return '';
+        }
+
+        $value = preg_replace('/^KC[\.\s-]*/', '', $value);
+        $value = preg_replace('/\s+/', ' ', $value);
+
+        if (str_contains($value, 'MADIUN')) {
+            return 'MADIUN';
+        }
+        if (str_contains($value, 'MAGETAN')) {
+            return 'MAGETAN';
+        }
+        if (str_contains($value, 'NGAWI')) {
+            return 'NGAWI';
+        }
+        if (str_contains($value, 'PONOROGO')) {
+            return 'PONOROGO';
+        }
+
+        return $value;
+    }
+
+    private function formatBranchLabel(string $branchKey): string
+    {
+        $normalized = $this->normalizeBranchKey($branchKey);
+        if ($normalized === '') {
+            return 'UNKNOWN BRANCH';
+        }
+
+        return 'KC ' . $normalized;
+    }
+
+    private function resolveDynamicBranches(array $prevData, array $currData): array
+    {
+        $priority = ['MADIUN', 'MAGETAN', 'NGAWI', 'PONOROGO'];
+        $branchMap = [];
+
+        foreach ([$prevData, $currData] as $dataset) {
+            foreach (($dataset['branch_labels'] ?? []) as $branchKey => $label) {
+                $normalizedKey = $this->normalizeBranchKey($branchKey);
+                if ($normalizedKey === '') {
+                    continue;
+                }
+                $branchMap[$normalizedKey] = $this->formatBranchLabel($label);
+            }
+        }
+
+        if (empty($branchMap)) {
+            foreach ($priority as $branchKey) {
+                $branchMap[$branchKey] = $this->formatBranchLabel($branchKey);
+            }
+        }
+
+        uksort($branchMap, function ($a, $b) use ($priority) {
+            $indexA = array_search($a, $priority, true);
+            $indexB = array_search($b, $priority, true);
+
+            $indexA = $indexA === false ? 999 : $indexA;
+            $indexB = $indexB === false ? 999 : $indexB;
+
+            if ($indexA === $indexB) {
+                return strcmp($a, $b);
+            }
+
+            return $indexA <=> $indexB;
+        });
+
+        return array_values($branchMap);
+    }
     
     /**
      * 🔥 Engine Penentu Tabungan V2 - Sesuai Aturan Bisnis Yang Diberikan
@@ -237,23 +333,24 @@ class RasioCasaDebiturController extends Controller
         $segmen_norm = strtolower(trim($segmen));
         $produk_norm = strtolower(trim($produk));
 
-        // ATURAN BRIGUNA: segmen 'consumer' DAN produk mengandung 'briguna'
-        if (str_contains($segmen_norm, 'consumer') && str_contains($produk_norm, 'briguna')) {
-            $buckets[] = 'briguna';
-        }
-
-        // ATURAN KPR: segmen 'consumer' DAN produk 'kpr'
-        if (str_contains($segmen_norm, 'consumer') && $produk_norm === 'kpr') {
-            $buckets[] = 'kpr';
+        // ATURAN KONSUMER (BRIGUNA & KPR) - Sesuai permintaan user (Logika AND)
+        // Hanya jika segmen adalah 'consumer', baru cek produknya.
+        if (str_contains($segmen_norm, 'consumer')) {
+            if (str_contains($produk_norm, 'briguna')) {
+                $buckets[] = 'briguna';
+            }
+            if (str_contains($produk_norm, 'kpr')) {
+                $buckets[] = 'kpr';
+            }
         }
     
-        // ATURAN MIKRO: segmen 'micro'
-        if ($segmen_norm === 'micro') {
+        // ATURAN MIKRO - Mengembalikan fleksibilitas dari kode asli untuk variasi data
+        if (str_contains($segmen_norm, 'micro') || str_contains($segmen_norm, 'mikro') || str_contains($segmen_norm, 'umkm')) {
             $buckets[] = 'mikro';
-        }
+        } 
     
-        // ATURAN SMC: segmen 'small'
-        if ($segmen_norm === 'small') {
+        // ATURAN SMC - Mengembalikan fleksibilitas dari kode asli untuk variasi data
+        if (str_contains($segmen_norm, 'small') || str_contains($segmen_norm, 'smc') || str_contains($segmen_norm, 'menengah')) {
             $buckets[] = 'smc';
         }
         
