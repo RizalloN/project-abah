@@ -6,6 +6,22 @@
 
 <style>
     /* 🔥 PERBAIKAN UI: Tabel elastis dan cerdas menyesuaikan ukuran layar */
+    .report-filter-card,
+    .report-data-card {
+        border: 1px solid #e9ecef;
+        border-radius: 16px;
+        overflow: hidden;
+        box-shadow: 0 0.5rem 1rem rgba(15, 23, 42, 0.08) !important;
+    }
+    .report-filter-card .card-body,
+    .report-data-card .card-header,
+    .report-data-card .card-body {
+        background-color: #ffffff;
+    }
+    .report-filter-card .form-control {
+        border-radius: 10px;
+        min-height: 40px;
+    }
     .table-container { width: 100%; overflow-x: hidden; }
     .table-report { 
         border-collapse: collapse; 
@@ -52,13 +68,13 @@
     .rka-col { background-color: #fff3cd !important; color: #856404 !important; font-weight: 600; border-color: #f6e3a6 !important; }
     .row-total .rka-col { background-color: #ffe8a1 !important; color: #856404 !important; }
     
-    .nav-tabs.report-tabs { border-bottom: 2px solid #dee2e6; }
-    .nav-tabs.report-tabs .nav-link { border: none; font-weight: 600; color: #6c757d; padding: 12px 20px; }
+    .nav-tabs.report-tabs { border-bottom: 2px solid #dee2e6; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; white-space: nowrap; scrollbar-width: thin; }
+    .nav-tabs.report-tabs .nav-link { border: none; font-weight: 600; color: #6c757d; padding: 12px 18px; font-size: 0.95rem; background: transparent; }
     .nav-tabs.report-tabs .nav-link.active { border-bottom: 3px solid #007bff; color: #007bff; background: transparent; }
-    .nav-tabs.report-tabs .nav-link:hover { border-bottom: 3px solid #a6cbf3; }
+    .nav-tabs.report-tabs .nav-link:hover { border-bottom: 3px solid #9ec5fe; color: #007bff; background: transparent; }
 </style>
 
-<div class="card card-outline card-primary shadow-sm mb-3">
+<div class="card card-outline card-primary shadow-sm mb-3 report-filter-card">
     <div class="card-body py-3">
         <div class="row align-items-end">
             <div class="col-md-3">
@@ -95,7 +111,7 @@
     </div>
 </div>
 
-<div class="card shadow-sm border-0 mb-4">
+<div class="card shadow-sm border-0 mb-4 report-data-card">
     <div class="card-header bg-white p-0 border-bottom-0">
         <ul class="nav nav-tabs report-tabs px-3 pt-2" role="tablist">
             <li class="nav-item">

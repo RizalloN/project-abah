@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Carbon\Carbon;
 
 class RasioCasaDebiturController extends Controller
@@ -18,6 +19,13 @@ class RasioCasaDebiturController extends Controller
     public function fetchData(Request $request)
     {
         try {
+            if (!Schema::hasColumn('daily_loan_dinamis', 'baki_debet')) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Kolom wajib `baki_debet` belum tersedia di tabel daily_loan_dinamis. Jalankan migration dan upload ulang data Daily Loan Dinamis.',
+                ], 422);
+            }
+
             $tanggal = $request->input('posisi', date('Y-m-d'));
             $currDate = Carbon::parse($tanggal);
 

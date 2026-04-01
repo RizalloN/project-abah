@@ -5,22 +5,38 @@
 @section('content')
 
 <style>
-    /* 🔥 KONSISTENSI UI: Tabel elastis dan cerdas menyesuaikan ukuran layar */
+    /* KONSISTENSI UI: Tabel elastis dan cerdas menyesuaikan ukuran layar */
+    .report-filter-card,
+    .report-data-card {
+        border: 1px solid #e9ecef;
+        border-radius: 16px;
+        overflow: hidden;
+        box-shadow: 0 0.5rem 1rem rgba(15, 23, 42, 0.08) !important;
+    }
+    .report-filter-card .card-body,
+    .report-data-card .card-header,
+    .report-data-card .card-body {
+        background-color: #ffffff;
+    }
+    .report-filter-card .form-control {
+        border-radius: 10px;
+        min-height: 40px;
+    }
     .table-container { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
-    .table-report { 
-        border-collapse: collapse; 
-        width: 100%; 
-        table-layout: auto; 
+    .table-report {
+        border-collapse: collapse;
+        width: 100%;
+        table-layout: auto;
         white-space: nowrap;
     }
-    .table-report th, .table-report td { 
-        vertical-align: middle !important; 
+    .table-report th, .table-report td {
+        vertical-align: middle !important;
         border: 1px solid #dee2e6;
     }
     .table-report th { font-size: 0.65rem; padding: 10px 4px; text-align: center; }
     .table-report td { font-size: 0.70rem; padding: 6px 6px; text-align: right; }
     .table-report td.text-left { text-align: left; }
-    
+
     /* Pewarnaan Header Khas */
     .bg-header-main { background-color: #0056b3 !important; color: #ffffff !important; border-color: #004085 !important; }
     .bg-header-sub { background-color: #a6a6a6 !important; color: #ffffff !important; font-weight: bold; border-color: #808080 !important; }
@@ -43,36 +59,32 @@
         0% { background-position: 200% 0; }
         100% { background-position: -200% 0; }
     }
-    
+
     /* Warna teks khusus untuk Mtd */
     .val-up { color: #28a745; font-weight: bold; }
     .val-down { color: #dc3545; font-weight: bold; }
-    
-    .nav-tabs.report-tabs { border-bottom: 2px solid #dee2e6; }
-    .nav-tabs.report-tabs .nav-link { border: none; font-weight: 600; color: #6c757d; padding: 12px 20px; }
-    .nav-tabs.report-tabs .nav-link.active { border-bottom: 3px solid #0056b3; color: #0056b3; background: transparent; }
-    .nav-tabs.report-tabs .nav-link:hover { border-bottom: 3px solid #66a3ff; }
+
+    .nav-tabs.report-tabs { border-bottom: 2px solid #dee2e6; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; white-space: nowrap; scrollbar-width: thin; }
+    .nav-tabs.report-tabs .nav-link { border: none; font-weight: 600; color: #6c757d; padding: 12px 18px; font-size: 0.95rem; background: transparent; }
+    .nav-tabs.report-tabs .nav-link.active { border-bottom: 3px solid #007bff; color: #007bff; background: transparent; }
+    .nav-tabs.report-tabs .nav-link:hover { border-bottom: 3px solid #9ec5fe; color: #007bff; background: transparent; }
 </style>
 
-<!-- CARD HEADER FILTER -->
-<div class="card card-outline card-primary shadow-sm mb-3">
+<div class="card card-outline card-primary shadow-sm mb-3 report-filter-card">
     <div class="card-body py-3">
         <div class="row align-items-end">
-            <!-- Selector 1: Periode Akhir -->
             <div class="col-md-4">
                 <div class="form-group mb-0">
                     <label class="text-dark text-sm font-weight-bold mb-1">Periode Akhir <i class="fas fa-edit text-primary ml-1"></i></label>
                     <input type="date" id="filter_posisi" class="form-control border-primary shadow-sm filter-trigger" value="{{ date('Y-m-d') }}">
                 </div>
             </div>
-            <!-- Selector 2: Branch Office -->
             <div class="col-md-4">
                 <div class="form-group mb-0">
                     <label class="text-muted text-sm mb-1">Branch Office (Kanca)</label>
                     <input type="text" class="form-control font-weight-bold" value="Area 6 - All" disabled>
                 </div>
             </div>
-            <!-- Selector 3: Nama Uker -->
             <div class="col-md-4">
                 <div class="form-group mb-0">
                     <label class="text-muted text-sm mb-1">Nama Uker</label>
@@ -83,10 +95,8 @@
     </div>
 </div>
 
-<!-- TABEL DATA PERFORMANCE -->
-<div class="card shadow-sm border-0 mb-4">
+<div class="card shadow-sm border-0 mb-4 report-data-card">
     <div class="card-header bg-white p-0 border-bottom-0">
-        <!-- 🔥 3 TABS HEADER -->
         <ul class="nav nav-tabs report-tabs px-3 pt-2" role="tablist">
             <li class="nav-item">
                 <a class="nav-link active" data-toggle="tab" href="#tab-total" role="tab">
@@ -110,10 +120,9 @@
             </li>
         </ul>
     </div>
-    
+
     <div class="card-body p-0">
         <div class="tab-content">
-            <!-- Tab 1: TOTAL -->
             <div class="tab-pane fade show active" id="tab-total" role="tabpanel">
                 <div class="table-container">
                     <table class="table table-hover table-report m-0">
@@ -142,7 +151,6 @@
                 </div>
             </div>
 
-            <!-- Tab 2: BRIGUNA & KPR (Combined) -->
             <div class="tab-pane fade" id="tab-briguna-kpr" role="tabpanel">
                 <div class="table-container">
                     <table class="table table-hover table-report m-0">
@@ -161,12 +169,20 @@
                                 <th colspan="3">Rasio CASA/OS</th>
                             </tr>
                             <tr class="bg-header-sub-light">
-                                <th class="lbl-prev-th">-</th><th class="lbl-curr-th">-</th>
-                                <th class="lbl-prev-th">-</th><th class="lbl-curr-th">-</th>
-                                <th class="lbl-prev-th">-</th><th class="lbl-curr-th">-</th><th>MtD</th>
-                                <th class="lbl-prev-th">-</th><th class="lbl-curr-th">-</th>
-                                <th class="lbl-prev-th">-</th><th class="lbl-curr-th">-</th>
-                                <th class="lbl-prev-th">-</th><th class="lbl-curr-th">-</th><th>MtD</th>
+                                <th class="lbl-prev-th">-</th>
+                                <th class="lbl-curr-th">-</th>
+                                <th class="lbl-prev-th">-</th>
+                                <th class="lbl-curr-th">-</th>
+                                <th class="lbl-prev-th">-</th>
+                                <th class="lbl-curr-th">-</th>
+                                <th>MtD</th>
+                                <th class="lbl-prev-th">-</th>
+                                <th class="lbl-curr-th">-</th>
+                                <th class="lbl-prev-th">-</th>
+                                <th class="lbl-curr-th">-</th>
+                                <th class="lbl-prev-th">-</th>
+                                <th class="lbl-curr-th">-</th>
+                                <th>MtD</th>
                             </tr>
                         </thead>
                         <tbody id="tbody-briguna-kpr"></tbody>
@@ -174,7 +190,6 @@
                 </div>
             </div>
 
-            <!-- Tab 3: MIKRO & SMC (Combined) -->
             <div class="tab-pane fade" id="tab-mikro-smc" role="tabpanel">
                 <div class="table-container">
                     <table class="table table-hover table-report m-0">
@@ -193,12 +208,20 @@
                                 <th colspan="3">Rasio CASA/OS</th>
                             </tr>
                             <tr class="bg-header-sub-light">
-                                <th class="lbl-prev-th">-</th><th class="lbl-curr-th">-</th>
-                                <th class="lbl-prev-th">-</th><th class="lbl-curr-th">-</th>
-                                <th class="lbl-prev-th">-</th><th class="lbl-curr-th">-</th><th>MtD</th>
-                                <th class="lbl-prev-th">-</th><th class="lbl-curr-th">-</th>
-                                <th class="lbl-prev-th">-</th><th class="lbl-curr-th">-</th>
-                                <th class="lbl-prev-th">-</th><th class="lbl-curr-th">-</th><th>MtD</th>
+                                <th class="lbl-prev-th">-</th>
+                                <th class="lbl-curr-th">-</th>
+                                <th class="lbl-prev-th">-</th>
+                                <th class="lbl-curr-th">-</th>
+                                <th class="lbl-prev-th">-</th>
+                                <th class="lbl-curr-th">-</th>
+                                <th>MtD</th>
+                                <th class="lbl-prev-th">-</th>
+                                <th class="lbl-curr-th">-</th>
+                                <th class="lbl-prev-th">-</th>
+                                <th class="lbl-curr-th">-</th>
+                                <th class="lbl-prev-th">-</th>
+                                <th class="lbl-curr-th">-</th>
+                                <th>MtD</th>
                             </tr>
                         </thead>
                         <tbody id="tbody-mikro-smc"></tbody>
@@ -214,12 +237,11 @@
 @section('scripts')
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-    // 🚀 FORMAT FUNCTIONS (Aman untuk Strict Mode/Null)
-    function formatNum(num) { 
+    function formatNum(num) {
         if (num === null || num === undefined || isNaN(parseFloat(num))) return '-';
-        return new Intl.NumberFormat('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(parseFloat(num)); 
+        return new Intl.NumberFormat('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(parseFloat(num));
     }
-    
+
     function formatPct(num) {
         if (num === null || num === undefined || isNaN(parseFloat(num))) return '-';
         return new Intl.NumberFormat('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(parseFloat(num)) + '%';
@@ -227,15 +249,14 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function formatMtd(num) {
         if (num === null || num === undefined || isNaN(parseFloat(num))) return '-';
-        let val = parseFloat(num);
-        let text = new Intl.NumberFormat('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val) + '%';
-        
+        const val = parseFloat(num);
+        const text = new Intl.NumberFormat('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val) + '%';
+
         if (val > 0) return `<span class="val-up">+${text}</span>`;
         if (val < 0) return `<span class="val-down">${text}</span>`;
         return text;
     }
-    
-    // Helper untuk membuat 1 baris data (7 sel)
+
     function createDataCells(dt) {
         dt = dt || {};
         return `
@@ -269,69 +290,72 @@ document.addEventListener('DOMContentLoaded', function () {
         $('#tbody-briguna-kpr, #tbody-mikro-smc').html(emptyHtml);
     }
 
-    // 🚀 LOAD DATA FUNCTION - ULTRA DEBUG MODE
     window.loadData = function() {
         $('#loadingIndicator').fadeIn('fast');
         renderLoadingState('Menghitung rasio CASA debitur berdasarkan periode yang dipilih...');
-        
-        let payload = {
+
+        const payload = {
             posisi: $('#filter_posisi').val(),
-            _token: '{{ csrf_token() }}' 
+            _token: '{{ csrf_token() }}'
         };
 
         console.log('%c[RasioCasa] Sending request with date:', 'color: blue; font-weight: bold', payload.posisi);
 
         $.ajax({
             url: "{{ route('report.data.rasiocasa') }}",
-            type: "POST",
+            type: 'POST',
             data: payload,
             dataType: 'json',
-            timeout: 120000, // 2 minutes timeout for big data
+            timeout: 120000,
             success: function(res) {
                 console.log('%c[RasioCasa] Response received:', 'color: green; font-weight: bold', res);
-                
-                if(res.status === 'success') {
-                    $('.lbl-prev-th').text(res.labels.prev || '-');
-                    $('.lbl-curr-th').text(res.labels.curr || '-');
-                    if (res.effective_dates && res.effective_dates.curr) {
-                        $('#filter_posisi').val(res.effective_dates.curr);
-                    }
 
+                if (res.status === 'success') {
+                    const labels = res.labels || {};
+                    const effectiveDates = res.effective_dates || {};
                     const dataList = res.data || [];
                     const totalData = res.total || {};
                     const meta = res.meta || {};
+                    const currentDate = effectiveDates.curr || payload.posisi;
                     const hasAnyData = meta.has_rows === true || dataList.length > 0;
 
+                    $('.lbl-prev-th').text(labels.prev || '-');
+                    $('.lbl-curr-th').text(labels.curr || '-');
+
+                    if (currentDate) {
+                        $('#filter_posisi').val(currentDate);
+                    }
+
                     if (!hasAnyData) {
-                        renderEmptyState(`Tidak ada data untuk tanggal ${res.effective_dates.curr}. Coba pilih tanggal lain.`);
+                        renderEmptyState(`Tidak ada data untuk tanggal ${currentDate}. Coba pilih tanggal lain.`);
                         $('#loadingIndicator').fadeOut('fast');
                         return;
                     }
 
-                    // Render Table Bodys
-                    let htmlTotal = '', htmlBrigunaKpr = '', htmlMikroSmc = '';
-                    dataList.forEach(row => {
+                    let htmlTotal = '';
+                    let htmlBrigunaKpr = '';
+                    let htmlMikroSmc = '';
+
+                    dataList.forEach(function(row) {
                         const branchCell = `<td class="text-left font-weight-bold">${row.branch || '-'}</td>`;
                         htmlTotal += `<tr>${branchCell}${createDataCells(row.total)}</tr>`;
                         htmlBrigunaKpr += `<tr>${branchCell}${createDataCells(row.briguna)}${createDataCells(row.kpr)}</tr>`;
                         htmlMikroSmc += `<tr>${branchCell}${createDataCells(row.mikro)}${createDataCells(row.smc)}</tr>`;
                     });
 
-                    // Render Total Rows
-                    const totalBranchCell = `<td class="text-left">TOTAL AREA 6</td>`;
+                    const totalBranchCell = '<td class="text-left">TOTAL AREA 6</td>';
                     htmlTotal += `<tr class="row-total">${totalBranchCell}${createDataCells(totalData.total)}</tr>`;
                     htmlBrigunaKpr += `<tr class="row-total">${totalBranchCell}${createDataCells(totalData.briguna)}${createDataCells(totalData.kpr)}</tr>`;
                     htmlMikroSmc += `<tr class="row-total">${totalBranchCell}${createDataCells(totalData.mikro)}${createDataCells(totalData.smc)}</tr>`;
 
-                    // Inject HTML
                     $('#tbody-total').html(htmlTotal);
                     $('#tbody-briguna-kpr').html(htmlBrigunaKpr);
                     $('#tbody-mikro-smc').html(htmlMikroSmc);
-
                 } else {
                     renderEmptyState(res.message || 'Data tidak berhasil dimuat dari server.');
                     alert('Error loading data: ' + (res.message || 'Unknown error'));
                 }
+
                 $('#loadingIndicator').fadeOut('fast');
             },
             error: function(xhr, status, error) {
@@ -344,12 +368,10 @@ document.addEventListener('DOMContentLoaded', function () {
                 alert(errorMsg);
             }
         });
-    }
+    };
 
-    // Event listeners
     $('#filter_posisi').on('change', loadData);
-    
-    // Auto Load
+
     console.log('%c[RasioCasa] Initial load starting...', 'color: blue; font-weight: bold');
     loadData();
 });

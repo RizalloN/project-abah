@@ -6,54 +6,69 @@
 
 <style>
     /* 🔥 KONSISTENSI UI: Sesuai Gambar Report */
-    .table-container { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
-    .table-report { 
-        border-collapse: collapse; 
-        width: 100%; 
-        table-layout: auto; 
-        font-family: Arial, sans-serif;
+    .report-filter-card,
+    .report-data-card {
+        border: 1px solid #e9ecef;
+        border-radius: 16px;
+        overflow: hidden;
+        box-shadow: 0 0.5rem 1rem rgba(15, 23, 42, 0.08) !important;
     }
+    .report-filter-card .card-body,
+    .report-data-card .card-header,
+    .report-data-card .card-body {
+        background-color: #ffffff;
+    }
+    .report-filter-card .form-control {
+        border-radius: 10px;
+        min-height: 40px;
+    }
+    .table-container { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .table-report { border-collapse: collapse; width: 100%; table-layout: auto; }
     .table-report th, .table-report td { 
         vertical-align: middle !important; 
         border: 1px solid #dee2e6;
         word-wrap: break-word;
-        white-space: nowrap; 
+        white-space: normal;
     }
-    .table-report th { font-size: 0.70rem; padding: 10px 6px; text-align: center; }
-    .table-report td { font-size: 0.75rem; padding: 6px 8px; text-align: right; }
+    .table-report th { font-size: 0.65rem; padding: 10px 4px; text-align: center; }
+    .table-report td { font-size: 0.70rem; padding: 6px 4px; text-align: right; }
     .table-report td.text-left { text-align: left; }
     
     /* Pewarnaan Header Persis Gambar */
-    .bg-header-branch { background-color: #2b579a !important; color: #ffffff !important; font-weight: bold; }
-    .bg-brimo-rek { background-color: #3b63a8 !important; color: #ffffff !important; }
-    .bg-brimo-fin { background-color: #8fb6e6 !important; color: #000000 !important; }
-    .bg-brimo-usak { background-color: #6a96d1 !important; color: #ffffff !important; }
-    .bg-brimo-vol { background-color: #929292 !important; color: #ffffff !important; }
+    .bg-brimo-main,
+    .bg-header-branch { background-color: #003366 !important; color: #ffffff !important; font-weight: bold; }
+    .bg-brimo-rek { background-color: #2F5597 !important; color: #ffffff !important; border-color: #203b6b !important; }
+    .bg-brimo-fin { background-color: #5B9BD5 !important; color: #ffffff !important; border-color: #3f7bb5 !important; }
+    .bg-brimo-usak { background-color: #A5A5A5 !important; color: #ffffff !important; border-color: #7b7b7b !important; }
+    .bg-brimo-vol { background-color: #7030A0 !important; color: #ffffff !important; border-color: #5a2580 !important; }
     
-    .bg-header-sub { background-color: #f8f9fa !important; color: #333 !important; font-weight: 600; font-size: 0.65rem;}
-    
-    /* Warna Sub-header khusus Tab Detail (Sesuai Gambar 1) */
-    .bg-header-light-blue { background-color: #b4c6e7 !important; color: #000000 !important; font-weight: 700; font-size: 0.65rem;}
+    .bg-header-sub { background-color: #f1f5fa !important; color: #333 !important; font-weight: bold; }
+    .bg-header-light-blue { background-color: #f1f5fa !important; color: #333 !important; font-weight: bold; }
 
     .table-hover tbody tr:hover { background-color: #f1f7ff; }
     
     /* Baris Total */
-    .row-total { background-color: #e2e8f0 !important; font-weight: bold; }
-    .row-total-blue { background-color: #2b579a !important; font-weight: bold; color: #ffffff !important; }
+    .bg-good { background-color: #d4edda !important; color: #155724 !important; font-weight: bold; }
+    .bg-bad { background-color: #f8d7da !important; color: #721c24 !important; font-weight: bold; }
+    .row-total { background-color: #003366 !important; color: #ffffff !important; font-weight: bold; }
+    .row-total td { color: #ffffff !important; }
+    .row-total-blue { background-color: #003366 !important; font-weight: bold; color: #ffffff !important; }
     .row-total-blue td { color: #ffffff !important; }
     
     /* Indikator Panah */
-    .text-success { color: #28a745 !important; margin-left: 3px; }
-    .text-danger { color: #dc3545 !important; margin-left: 3px; }
+    .text-success,
+    .val-up { color: #28a745 !important; font-weight: bold; margin-left: 2px; }
+    .text-danger,
+    .val-down { color: #dc3545 !important; font-weight: bold; margin-left: 2px; }
     
     /* Style Tabs */
-    .nav-tabs.report-tabs { border-bottom: 2px solid #dee2e6; }
-    .nav-tabs.report-tabs .nav-link { border: none; font-weight: 600; color: #6c757d; padding: 12px 18px; font-size: 0.85rem; }
-    .nav-tabs.report-tabs .nav-link.active { border-bottom: 3px solid #2b579a; color: #2b579a; background: transparent; }
-    .nav-tabs.report-tabs .nav-link:hover { border-bottom: 3px solid #a6cbf3; }
+    .nav-tabs.report-tabs { border-bottom: 2px solid #dee2e6; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; white-space: nowrap; scrollbar-width: thin; }
+    .nav-tabs.report-tabs .nav-link { border: none; font-weight: 600; color: #6c757d; padding: 12px 18px; font-size: 0.95rem; background: transparent; }
+    .nav-tabs.report-tabs .nav-link.active { border-bottom: 3px solid #007bff; color: #007bff; background: transparent; }
+    .nav-tabs.report-tabs .nav-link:hover { border-bottom: 3px solid #9ec5fe; color: #007bff; background: transparent; }
 </style>
 
-<div class="card card-outline card-primary shadow-sm mb-3">
+<div class="card card-outline card-primary shadow-sm mb-3 report-filter-card">
     <div class="card-body py-3">
         <div class="row align-items-end">
             <div class="col-md-3">
@@ -80,13 +95,20 @@
                     <input type="date" id="filter_posisi" class="form-control border-primary shadow-sm filter-trigger" value="{{ date('Y-m-d') }}">
                 </div>
             </div>
+            <div class="col-md-2">
+                <div class="form-group mb-0">
+                    <label class="text-muted text-sm mb-1">Posisi RKA</label>
+                    <input type="text" class="form-control" disabled value="--------">
+                </div>
+            </div>
         </div>
     </div>
 </div>
 
-<div class="card shadow-sm border-0 mb-4">
+<div class="card shadow-sm border-0 mb-4 report-data-card">
     <div class="card-header bg-white p-0 border-bottom-0">
         <!-- 🔥 TABS HEADER -->
+        <!-- ðŸ”¥ TABS HEADER -->
         <ul class="nav nav-tabs report-tabs px-3 pt-2" role="tablist">
             <li class="nav-item">
                 <a class="nav-link active" data-toggle="tab" href="#tab-brimo" role="tab">
@@ -95,12 +117,22 @@
             </li>
             <li class="nav-item">
                 <a class="nav-link" data-toggle="tab" href="#tab-ureg-rek" role="tab">
-                    <i class="fas fa-user-plus mr-1"></i> Ureg BRImo Detail
+                    <i class="fas fa-user-plus mr-1"></i> Ureg BRImo
                 </a>
             </li>
             <li class="nav-item">
                 <a class="nav-link" data-toggle="tab" href="#tab-ureg-fin" role="tab">
-                    <i class="fas fa-university mr-1"></i> Ureg Finansial Detail
+                    <i class="fas fa-university mr-1"></i> Ureg Rek Finansial
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" data-toggle="tab" href="#tab-mau" role="tab">
+                    <i class="fas fa-users mr-1"></i> MAU Brimo
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" data-toggle="tab" href="#tab-trx" role="tab">
+                    <i class="fas fa-exchange-alt mr-1"></i> Transaksi Finansial
                 </a>
             </li>
             <li class="nav-item ml-auto d-flex align-items-center pr-2">
@@ -120,17 +152,17 @@
                     <table class="table table-hover table-report m-0">
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
-                                <th rowspan="2" class="bg-header-branch align-middle" style="min-width: 150px;">BRANCH OFFICE</th>
+                                <th rowspan="2" class="bg-brimo-main align-middle" style="min-width: 150px;">BRANCH OFFICE</th>
                                 <th colspan="5" class="bg-brimo-rek">Ureg BRImo (by Rekening)</th>
-                                <th colspan="5" class="bg-brimo-fin">Ureg BRImo (by Rekening Finansial)</th>
-                                <th colspan="7" class="bg-brimo-usak">Usak (User Aktif) BRImo<br><small>(by rek finansial) Trx Finansial > 3x / bulan</small></th>
-                                <th colspan="6" class="bg-brimo-vol">Volume Trx Fin BRImo Akumulasi<br><small>(Rp Milyar)</small></th>
+                                <th colspan="5" class="bg-brimo-fin">Ureg BRImo (by Rk. Finansial)</th>
+                                <th colspan="5" class="bg-brimo-usak">Usak (User Aktif) BRImo<br><small>Trx Finansial > 3x / bulan</small></th>
+                                <th colspan="5" class="bg-brimo-vol">Volume Trx Fin BRImo<br><small>Akumulasi (Rp Milyar)</small></th>
                             </tr>
                             <tr class="bg-header-sub">
                                 <th class="lbl-curr-th">-</th> <th>MtD</th> <th>YtD</th> <th>YoY</th> <th>YoY (%)</th>
                                 <th class="lbl-curr-th">-</th> <th>MtD</th> <th>YtD</th> <th>YoY</th> <th>YoY (%)</th>
-                                <th class="lbl-curr-th">-</th> <th>% Mau<br>BRImo</th> <th>MtD</th> <th>YoY</th> <th>YoY (%)</th> <th class="lbl-rka-th">RKA -</th> <th>Pencp (%)</th>
-                                <th class="lbl-curr-th">-</th> <th>MtD</th> <th>YoY</th> <th>YoY (%)</th> <th class="lbl-rka-th">RKA -</th> <th>Pencp (%)</th>
+                                <th class="lbl-curr-th">-</th> <th>MtD</th> <th>YtD</th> <th>YoY</th> <th>YoY (%)</th>
+                                <th class="lbl-curr-th">-</th> <th>MtD</th> <th>YtD</th> <th>YoY</th> <th>YoY (%)</th>
                             </tr>
                         </thead>
                         <tbody id="tbody-brimo"></tbody>
@@ -144,16 +176,16 @@
                     <table class="table table-hover table-report m-0">
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
-                                <th rowspan="2" class="bg-header-branch align-middle" style="min-width: 150px;">BRANCH OFFICE</th>
-                                <th colspan="8" class="bg-header-branch text-center" style="letter-spacing: 0.5px;">User Rek BRImo</th>
+                                <th rowspan="2" class="bg-brimo-rek align-middle" style="min-width:150px;">BRANCH OFFICE</th>
+                                <th colspan="8" class="bg-brimo-rek">User Reg BRImo (by Rekening)</th>
                             </tr>
-                            <tr class="bg-header-light-blue">
-                                <th class="lbl-yoy-th">-</th>
-                                <th class="lbl-dec-th">-</th>
-                                <th class="lbl-prev-th">-</th>
-                                <th class="lbl-curr-th">-</th>
+                            <tr class="bg-header-sub">
+                                <th class="lbl-yoy-th">YoY Prev</th>
+                                <th class="lbl-dec-th">Des</th>
+                                <th class="lbl-prev-th">Prev</th>
+                                <th class="lbl-curr-th text-primary">Hari Berjalan</th>
                                 <th>MtD</th>
-                                <th>MtD (%)</th>
+                                <th>MtD(%)</th>
                                 <th>YtD</th>
                                 <th>YoY</th>
                             </tr>
@@ -169,21 +201,45 @@
                     <table class="table table-hover table-report m-0">
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
-                                <th rowspan="2" class="bg-header-branch align-middle" style="min-width: 150px;">BRANCH OFFICE</th>
-                                <th colspan="8" class="bg-header-branch text-center" style="letter-spacing: 0.5px;">User Rek Finansial BRImo</th>
+                                <th rowspan="2" class="bg-brimo-fin align-middle" style="min-width:150px;">BRANCH OFFICE</th>
+                                <th colspan="8" class="bg-brimo-fin">User Rek Financial BRImo</th>
                             </tr>
-                            <tr class="bg-header-light-blue">
-                                <th class="lbl-yoy-th">-</th>
-                                <th class="lbl-dec-th">-</th>
-                                <th class="lbl-prev-th">-</th>
-                                <th class="lbl-curr-th">-</th>
+                            <tr class="bg-header-sub">
+                                <th class="lbl-yoy-th">YoY Prev</th>
+                                <th class="lbl-dec-th">Des</th>
+                                <th class="lbl-prev-th">Prev</th>
+                                <th class="lbl-curr-th text-primary">Hari Berjalan</th>
                                 <th>MtD</th>
-                                <th>MtD (%)</th>
+                                <th>MtD(%)</th>
                                 <th>YtD</th>
                                 <th>YoY</th>
                             </tr>
                         </thead>
                         <tbody id="tbody-ureg-fin"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="tab-pane fade" id="tab-mau" role="tabpanel">
+                <div class="table-container">
+                    <table class="table table-hover table-report m-0">
+                        <tbody id="tbody-mau">
+                            <tr>
+                                <td class="text-center py-5 text-muted"><strong>-</strong><br><small>Data MAU BRImo belum tersedia.</small></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="tab-pane fade" id="tab-trx" role="tabpanel">
+                <div class="table-container">
+                    <table class="table table-hover table-report m-0">
+                        <tbody id="tbody-trx">
+                            <tr>
+                                <td class="text-center py-5 text-muted"><strong>-</strong><br><small>Data Transaksi belum tersedia.</small></td>
+                            </tr>
+                        </tbody>
                     </table>
                 </div>
             </div>
@@ -280,8 +336,8 @@ document.addEventListener('DOMContentLoaded', function () {
                             <td>${formatGrowth(fin.ytd)}</td> 
                             <td>${formatGrowth(fin.yoy)}</td>
                             <td>${formatGrowth(fin.yoy_pct, true)}</td>
-                            <td class="text-center">-</td> <td class="text-center">-</td> <td class="text-center">-</td> <td class="text-center">-</td> <td class="text-center">-</td> <td class="text-center">-</td> <td class="text-center">-</td>
-                            <td class="text-center">-</td> <td class="text-center">-</td> <td class="text-center">-</td> <td class="text-center">-</td> <td class="text-center">-</td> <td class="text-center">-</td>
+                            <td class="text-center">-</td> <td class="text-center">-</td> <td class="text-center">-</td> <td class="text-center">-</td> <td class="text-center">-</td>
+                            <td class="text-center">-</td> <td class="text-center">-</td> <td class="text-center">-</td> <td class="text-center">-</td> <td class="text-center">-</td>
                         </tr>`;
 
                         // RENDER HTML TAB 2
@@ -328,8 +384,8 @@ document.addEventListener('DOMContentLoaded', function () {
                         <td>${formatGrowth(t_fin.ytd)}</td> 
                         <td>${formatGrowth(t_fin.yoy)}</td>
                         <td>${formatGrowth(t_fin.yoy_pct, true)}</td>
-                        <td class="text-center">-</td><td class="text-center">-</td><td class="text-center">-</td><td class="text-center">-</td><td class="text-center">-</td><td class="text-center">-</td><td class="text-center">-</td>
-                        <td class="text-center">-</td><td class="text-center">-</td><td class="text-center">-</td><td class="text-center">-</td><td class="text-center">-</td><td class="text-center">-</td>
+                        <td class="text-center">-</td><td class="text-center">-</td><td class="text-center">-</td><td class="text-center">-</td><td class="text-center">-</td>
+                        <td class="text-center">-</td><td class="text-center">-</td><td class="text-center">-</td><td class="text-center">-</td><td class="text-center">-</td>
                     </tr>`;
 
                     // TOTAL TAB 2

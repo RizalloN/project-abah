@@ -71,7 +71,7 @@
                     <a href="#" class="nav-link {{ request()->is('report/optimalisasi-digital*') ? 'active' : '' }}" style="border-radius: 14px; margin-bottom: 0.35rem; color: rgba(226, 232, 240, 0.88);">
                         <i class="nav-icon fas fa-chart-pie"></i>
                         <p>
-                            1. Optimalisasi Digital Channel
+                            Optimalisasi Digital Channel
                             <i class="right fas fa-angle-left"></i>
                         </p>
                     </a>
@@ -120,7 +120,7 @@
                     <a href="#" class="nav-link {{ request()->is('report/rekening-transaksi-debitur*') ? 'active' : '' }}" style="border-radius: 14px; margin-bottom: 0.35rem; color: rgba(226, 232, 240, 0.88);">
                         <i class="nav-icon fas fa-wallet"></i>
                         <p>
-                            2. Rekening Transaksi Debitur
+                            Rekening Transaksi Debitur
                             <i class="right fas fa-angle-left"></i>
                         </p>
                     </a>
@@ -134,6 +134,24 @@
                     </ul>
                 </li>
 
+                <li class="nav-item {{ request()->is('report/peningkatan-payroll-berkualitas*') ? 'menu-open' : '' }}">
+                    <a href="#" class="nav-link {{ request()->is('report/peningkatan-payroll-berkualitas*') ? 'active' : '' }}" style="border-radius: 14px; margin-bottom: 0.35rem; color: rgba(226, 232, 240, 0.88);">
+                        <i class="nav-icon fas fa-money-check-alt"></i>
+                        <p>
+                            Peningkatan Payroll Berkualitas
+                            <i class="right fas fa-angle-left"></i>
+                        </p>
+                    </a>
+                    <ul class="nav nav-treeview">
+                        <li class="nav-item">
+                            <a href="#" class="nav-link" style="border-radius: 12px; color: rgba(226, 232, 240, 0.8);">
+                            <a href="#" class="nav-link" style="border-radius: 12px; color: rgba(226, 232, 240, 0.8);">
+                                <i class="far fa-circle nav-icon text-info"></i>
+                                <p>Kinerja New Payroll</p>
+                            </a>
+                        </li>
+                    </ul>
+                </li>
             </ul>
         </nav>
 

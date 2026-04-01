@@ -775,6 +775,15 @@ class ImportExcelController extends Controller
             }
         }
 
+        // Pastikan schema minimum tersedia agar import tidak terlihat "sukses"
+        // padahal kolom penting untuk report belum ada di database.
+        if ($tableName === 'daily_loan_dinamis' && !Schema::hasColumn($tableName, 'baki_debet')) {
+            return response()->json([
+                'status' => 'error',
+                'text' => 'Kolom wajib `baki_debet` belum tersedia di tabel daily_loan_dinamis. Jalankan migration terlebih dahulu lalu upload ulang file Excel.',
+            ], 422);
+        }
+
         // ── Coba Python dulu (openpyxl read-only, jauh lebih cepat) ──────────
         $headerIndex = null;
         $totalRows   = 0;

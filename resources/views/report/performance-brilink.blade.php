@@ -6,6 +6,22 @@
 
 <style>
     /* 🔥 UI Seragam Elastis */
+    .report-filter-card,
+    .report-data-card {
+        border: 1px solid #e9ecef;
+        border-radius: 16px;
+        overflow: hidden;
+        box-shadow: 0 0.5rem 1rem rgba(15, 23, 42, 0.08) !important;
+    }
+    .report-filter-card .card-body,
+    .report-data-card .card-header,
+    .report-data-card .card-body {
+        background-color: #ffffff;
+    }
+    .report-filter-card .form-control {
+        border-radius: 10px;
+        min-height: 40px;
+    }
     .table-container { width: 100%; overflow-x: hidden; }
     .table-report { border-collapse: collapse; width: 100%; table-layout: auto; }
     .table-report th, .table-report td { 
@@ -34,12 +50,13 @@
     .rka-col { background-color: #fff3cd !important; color: #856404 !important; font-weight: 600; border-color: #f6e3a6 !important; }
     .row-total .rka-col { background-color: #ffe8a1 !important; color: #856404 !important; }
     
-    .nav-tabs.report-tabs { border-bottom: 2px solid #dee2e6; }
-    .nav-tabs.report-tabs .nav-link { border: none; font-weight: 600; color: #6c757d; padding: 12px 20px; }
-    .nav-tabs.report-tabs .nav-link.active { border-bottom: 3px solid #ffc107; color: #ffc107; background: transparent; }
+    .nav-tabs.report-tabs { border-bottom: 2px solid #dee2e6; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; white-space: nowrap; scrollbar-width: thin; }
+    .nav-tabs.report-tabs .nav-link { border: none; font-weight: 600; color: #6c757d; padding: 12px 18px; font-size: 0.95rem; background: transparent; }
+    .nav-tabs.report-tabs .nav-link.active { border-bottom: 3px solid #007bff; color: #007bff; background: transparent; }
+    .nav-tabs.report-tabs .nav-link:hover { border-bottom: 3px solid #9ec5fe; color: #007bff; background: transparent; }
 </style>
 
-<div class="card card-outline card-warning shadow-sm mb-4">
+<div class="card card-outline card-warning shadow-sm mb-4 report-filter-card">
     <div class="card-body py-3">
         <div class="row align-items-end">
             <div class="col-md-3">
@@ -77,12 +94,37 @@
     </div>
 </div>
 
-<div class="card shadow-sm border-0 mb-4">
+<div class="card shadow-sm border-0 mb-4 report-data-card">
     <div class="card-header bg-white p-0 border-bottom-0">
         <ul class="nav nav-tabs report-tabs px-3 pt-2" role="tablist">
             <li class="nav-item">
                 <a class="nav-link active" data-toggle="tab" href="#tab-brilink" role="tab">
-                    <i class="fas fa-store mr-1"></i> Laporan Transaksi Agen BRILink
+                    <i class="fas fa-store mr-1"></i> Performance Brilink
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" data-toggle="tab" href="#tab-agen-user" role="tab">
+                    <i class="fas fa-users mr-1"></i> Agen Brilink (User)
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" data-toggle="tab" href="#tab-juragan" role="tab">
+                    <i class="fas fa-user-tie mr-1"></i> Agen Juragan + Jawara
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" data-toggle="tab" href="#tab-bep" role="tab">
+                    <i class="fas fa-award mr-1"></i> Agen BEP
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" data-toggle="tab" href="#tab-transaksi" role="tab">
+                    <i class="fas fa-exchange-alt mr-1"></i> Transaksi Agen Brilink
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" data-toggle="tab" href="#tab-casa" role="tab">
+                    <i class="fas fa-wallet mr-1"></i> CASA Brilink
                 </a>
             </li>
             <li class="nav-item ml-auto d-flex align-items-center pr-2">
@@ -126,6 +168,133 @@
                     </table>
                 </div>
             </div>
+
+            <div class="tab-pane fade" id="tab-agen-user" role="tabpanel">
+                <div class="table-container">
+                    <table class="table table-hover table-report m-0">
+                        <thead class="sticky-top" style="z-index: 2;">
+                            <tr>
+                                <th rowspan="2" class="bg-brilink-dark align-middle">REGIONAL OFFICE</th>
+                                <th colspan="10" class="bg-brilink-mid">Jumlah Agen Brilink</th>
+                            </tr>
+                            <tr class="bg-header-sub">
+                                <th class="lbl-curr text-primary">Feb-26</th>
+                                <th>Des'25</th>
+                                <th>31-Jan</th>
+                                <th>28-Feb</th>
+                                <th>MtD</th>
+                                <th>MtD (%)</th>
+                                <th>YtD</th>
+                                <th>YtD (%)</th>
+                                <th>YoY</th>
+                                <th>YoY(%)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbody-agen-user"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="tab-pane fade" id="tab-juragan" role="tabpanel">
+                <div class="table-container">
+                    <table class="table table-hover table-report m-0">
+                        <thead class="sticky-top" style="z-index: 2;">
+                            <tr>
+                                <th rowspan="2" class="bg-brilink-dark align-middle">REGIONAL OFFICE</th>
+                                <th colspan="10" class="bg-brilink-mid">Agen Juragan+Jawara</th>
+                            </tr>
+                            <tr class="bg-header-sub">
+                                <th class="lbl-curr text-primary">Feb-26</th>
+                                <th>Des'25</th>
+                                <th>31-Jan</th>
+                                <th>28-Feb</th>
+                                <th>MtD</th>
+                                <th>MtD (%)</th>
+                                <th>YtD</th>
+                                <th>YtD (%)</th>
+                                <th>YoY</th>
+                                <th>YoY(%)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbody-juragan"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="tab-pane fade" id="tab-bep" role="tabpanel">
+                <div class="table-container">
+                    <table class="table table-hover table-report m-0">
+                        <thead class="sticky-top" style="z-index: 2;">
+                            <tr>
+                                <th rowspan="2" class="bg-brilink-dark align-middle">REGIONAL OFFICE</th>
+                                <th colspan="10" class="bg-brilink-mid">Agen BEP</th>
+                            </tr>
+                            <tr class="bg-header-sub">
+                                <th class="lbl-curr text-primary">Feb-26</th>
+                                <th>Des'25</th>
+                                <th>31-Jan</th>
+                                <th>28-Feb</th>
+                                <th>MtD</th>
+                                <th>MtD (%)</th>
+                                <th>YtD</th>
+                                <th>YtD (%)</th>
+                                <th>YoY</th>
+                                <th>YoY(%)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbody-bep-detail"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="tab-pane fade" id="tab-transaksi" role="tabpanel">
+                <div class="table-container">
+                    <table class="table table-hover table-report m-0">
+                        <thead class="sticky-top" style="z-index: 2;">
+                            <tr>
+                                <th rowspan="2" class="bg-brilink-dark align-middle">REGIONAL OFFICE</th>
+                                <th colspan="5" class="bg-brilink-mid">Transaksi Agen Brilink</th>
+                            </tr>
+                            <tr class="bg-header-sub">
+                                <th class="lbl-curr text-primary">Feb-26</th>
+                                <th>Des'25</th>
+                                <th>28-Feb</th>
+                                <th>YoY</th>
+                                <th>YoY(%)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbody-transaksi"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="tab-pane fade" id="tab-casa" role="tabpanel">
+                <div class="table-container">
+                    <table class="table table-hover table-report m-0">
+                        <thead class="sticky-top" style="z-index: 2;">
+                            <tr>
+                                <th rowspan="2" class="bg-brilink-dark align-middle">REGIONAL OFFICE</th>
+                                <th colspan="10" class="bg-brilink-mid">CASA Agen Brilink</th>
+                            </tr>
+                            <tr class="bg-header-sub">
+                                <th class="lbl-curr text-primary">Feb-26</th>
+                                <th>Des'25</th>
+                                <th>31-Jan</th>
+                                <th>28-Feb</th>
+                                <th>MtD</th>
+                                <th>MtD (%)</th>
+                                <th>YtD</th>
+                                <th>YtD (%)</th>
+                                <th>YoY</th>
+                                <th>YoY(%)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbody-casa">
+                            <tr><td colspan="11" class="text-center py-5 text-muted">Data CASA Brilink belum tersedia.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
     </div>
 </div>
@@ -154,6 +323,71 @@ document.addEventListener('DOMContentLoaded', function () {
         if (num > 0) return `${text} <i class="fas fa-arrow-up val-up"></i>`;
         if (num < 0) return `${text} <i class="fas fa-arrow-down val-down"></i>`;
         return `${text}`;
+    }
+
+    function safeNum(num) {
+        let val = parseFloat(num);
+        return isNaN(val) ? 0 : val;
+    }
+
+    function calcPrev(curr, diff) {
+        return safeNum(curr) - safeNum(diff);
+    }
+
+    function calcPct(diff, base) {
+        base = safeNum(base);
+        if (base === 0) return null;
+        return (safeNum(diff) / base) * 100;
+    }
+
+    function renderMetricRow(label, metric, isMilyar = false) {
+        const curr = safeNum(metric.curr);
+        const prev = calcPrev(metric.curr, metric.mtd);
+        const dec = calcPrev(metric.curr, metric.ytd);
+        const yoyPrev = calcPrev(metric.curr, metric.yoy);
+        const mtdPct = calcPct(metric.mtd, prev);
+        const ytdPct = calcPct(metric.ytd, dec);
+        const yoyPct = calcPct(metric.yoy, yoyPrev);
+        const formatter = isMilyar ? formatMilyar : formatNum;
+
+        return `<tr>
+            <td class="text-left font-weight-bold text-dark">${label}</td>
+            <td>${formatter(curr)}</td>
+            <td>${formatter(dec)}</td>
+            <td>${formatter(prev)}</td>
+            <td>${formatter(curr)}</td>
+            <td>${formatGrowth(metric.mtd, isMilyar)}</td>
+            <td>${mtdPct === null ? '-' : formatGrowth(mtdPct)}</td>
+            <td>${formatGrowth(metric.ytd, isMilyar)}</td>
+            <td>${ytdPct === null ? '-' : formatGrowth(ytdPct)}</td>
+            <td>${formatGrowth(metric.yoy, isMilyar)}</td>
+            <td>${yoyPct === null ? '-' : formatGrowth(yoyPct)}</td>
+        </tr>`;
+    }
+
+    function renderMetricTotalRow(label, metric, isMilyar = false) {
+        const curr = safeNum(metric.curr);
+        const prev = calcPrev(metric.curr, metric.mtd);
+        const dec = calcPrev(metric.curr, metric.ytd);
+        const mtdPct = calcPct(metric.mtd, prev);
+        const ytdPct = calcPct(metric.ytd, dec);
+        const yoyPrev = calcPrev(metric.curr, metric.yoy);
+        const yoyPct = calcPct(metric.yoy, yoyPrev);
+        const formatter = isMilyar ? formatMilyar : formatNum;
+
+        return `<tr class="row-total">
+            <td class="text-left">${label}</td>
+            <td>${formatter(curr)}</td>
+            <td>${formatter(dec)}</td>
+            <td>${formatter(prev)}</td>
+            <td>${formatter(curr)}</td>
+            <td>${formatGrowth(metric.mtd, isMilyar)}</td>
+            <td>${mtdPct === null ? '-' : formatGrowth(mtdPct)}</td>
+            <td>${formatGrowth(metric.ytd, isMilyar)}</td>
+            <td>${ytdPct === null ? '-' : formatGrowth(ytdPct)}</td>
+            <td>${formatGrowth(metric.yoy, isMilyar)}</td>
+            <td>${yoyPct === null ? '-' : formatGrowth(yoyPct)}</td>
+        </tr>`;
     }
 
     // 🔥 FIX FINAL: Variabel global untuk menampung request AJAX (Mencegah Race Condition)
@@ -191,8 +425,27 @@ document.addEventListener('DOMContentLoaded', function () {
                     }
 
                     let html = '';
+                    let htmlAgenUser = '';
+                    let htmlJuragan = '';
+                    let htmlBep = '';
+                    let htmlTrx = '';
 
                     res.data.forEach((row) => {
+                        htmlAgenUser += renderMetricRow(row.branch, row.agen);
+                        htmlJuragan += renderMetricRow(row.branch, row.juragan);
+                        htmlBep += renderMetricRow(row.branch, row.bep);
+
+                        const trxPrev = calcPrev(row.trx.curr, row.trx.yoy);
+                        const trxYoyPct = calcPct(row.trx.yoy, trxPrev);
+                        htmlTrx += `<tr>
+                            <td class="text-left font-weight-bold text-dark">${row.branch}</td>
+                            <td class="font-weight-bold">${formatNum(row.trx.curr)}</td>
+                            <td>-</td>
+                            <td>${formatNum(trxPrev)}</td>
+                            <td>${formatGrowth(row.trx.yoy)}</td>
+                            <td>${trxYoyPct === null ? '-' : formatGrowth(trxYoyPct)}</td>
+                        </tr>`;
+
                         html += `<tr>
                             <td class="text-left font-weight-bold text-dark">${row.branch}</td>
 
@@ -231,6 +484,21 @@ document.addEventListener('DOMContentLoaded', function () {
 
                     let total = res.total;
                     if (total) {
+                        htmlAgenUser += renderMetricTotalRow(total.branch, total.agen);
+                        htmlJuragan += renderMetricTotalRow(total.branch, total.juragan);
+                        htmlBep += renderMetricTotalRow(total.branch, total.bep);
+
+                        const totalTrxPrev = calcPrev(total.trx.curr, total.trx.yoy);
+                        const totalTrxYoyPct = calcPct(total.trx.yoy, totalTrxPrev);
+                        htmlTrx += `<tr class="row-total">
+                            <td class="text-left">${total.branch}</td>
+                            <td>${formatNum(total.trx.curr)}</td>
+                            <td>-</td>
+                            <td>${formatNum(totalTrxPrev)}</td>
+                            <td>${formatGrowth(total.trx.yoy)}</td>
+                            <td>${totalTrxYoyPct === null ? '-' : formatGrowth(totalTrxYoyPct)}</td>
+                        </tr>`;
+
                         html += `<tr class="row-total">
                             <td class="text-left">${total.branch}</td>
 
@@ -268,8 +536,16 @@ document.addEventListener('DOMContentLoaded', function () {
                     }
 
                     $('#tbody-brilink').html(html);
+                    $('#tbody-agen-user').html(htmlAgenUser);
+                    $('#tbody-juragan').html(htmlJuragan);
+                    $('#tbody-bep-detail').html(htmlBep);
+                    $('#tbody-transaksi').html(htmlTrx);
                 } else if(res.status === 'error') {
                     $('#tbody-brilink').html(`<tr><td colspan="27" class="text-center text-danger py-5"><i class="fas fa-exclamation-triangle fa-2x mb-2"></i><br>${res.msg}</td></tr>`);
+                    $('#tbody-agen-user').html(`<tr><td colspan="11" class="text-center text-danger py-5">${res.msg}</td></tr>`);
+                    $('#tbody-juragan').html(`<tr><td colspan="11" class="text-center text-danger py-5">${res.msg}</td></tr>`);
+                    $('#tbody-bep-detail').html(`<tr><td colspan="11" class="text-center text-danger py-5">${res.msg}</td></tr>`);
+                    $('#tbody-transaksi').html(`<tr><td colspan="6" class="text-center text-danger py-5">${res.msg}</td></tr>`);
                 }
             },
             error: function(err) {
@@ -277,6 +553,10 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (err.statusText === 'abort') return;
 
                 $('#tbody-brilink').html('<tr><td colspan="27" class="text-center text-danger py-5"><i class="fas fa-exclamation-triangle fa-2x mb-2"></i><br>Gagal memuat data dari server.</td></tr>');
+                $('#tbody-agen-user').html('<tr><td colspan="11" class="text-center text-danger py-5">Gagal memuat data dari server.</td></tr>');
+                $('#tbody-juragan').html('<tr><td colspan="11" class="text-center text-danger py-5">Gagal memuat data dari server.</td></tr>');
+                $('#tbody-bep-detail').html('<tr><td colspan="11" class="text-center text-danger py-5">Gagal memuat data dari server.</td></tr>');
+                $('#tbody-transaksi').html('<tr><td colspan="6" class="text-center text-danger py-5">Gagal memuat data dari server.</td></tr>');
             },
             complete: function() {
                 // Memindahkan fadeOut ke blok complete agar tetap tereksekusi baik sukses maupun gagal
