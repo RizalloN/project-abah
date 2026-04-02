@@ -143,8 +143,10 @@ class RasioCasaDebiturController extends Controller
     private function getAggregatedDataFast($targetDate)
     {
         $result = ['os' => [], 'casa' => [], 'branch_labels' => [], 'row_count' => 0];
-        $cifList = [];
-        $cifMapping = [];
+        $loanKeyColumn = $this->resolveLoanIdentityColumn();
+        $casaKeyColumn = $this->resolveCasaIdentityColumn();
+        $identityList = [];
+        $identityMapping = [];
 
         DB::table('daily_loan_dinamis')
             ->where('periode', $targetDate)
@@ -154,9 +156,9 @@ class RasioCasaDebiturController extends Controller
                   ->orWhere('cabang', 'LIKE', '%NGAWI%')
                   ->orWhere('cabang', 'LIKE', '%PONOROGO%');
             })
-            ->select('id', 'cifno', 'cabang', 'segmen_dashboard', 'produk_dashboard', 'baki_debet')
+            ->select('id', $loanKeyColumn . ' as identity_key', 'cabang', 'segmen_dashboard', 'produk_dashboard', 'baki_debet')
             ->orderBy('id')
-            ->chunkById(5000, function ($loans) use (&$result, &$cifList, &$cifMapping) {
+            ->chunkById(5000, function ($loans) use (&$result, &$identityList, &$identityMapping) {
                 foreach ($loans as $loan) {
                     $branchName = $this->normalizeBranchKey($loan->cabang);
                     if ($branchName === '') {
@@ -173,9 +175,9 @@ class RasioCasaDebiturController extends Controller
                     }
                     $result['row_count']++;
 
-                    $cif = strtoupper(trim($loan->cifno));
-                    if (!empty($cif)) {
-                        $cifList[$cif] = true;
+                    $identityKey = $this->normalizeIdentityKey($loan->identity_key ?? null);
+                    if ($identityKey !== '') {
+                        $identityList[$identityKey] = true;
                     }
 
                     $osVal = (float)$loan->baki_debet;
@@ -185,23 +187,23 @@ class RasioCasaDebiturController extends Controller
 
                     foreach ($buckets as $b) {
                         $result['os'][$branchName][$b] += $osVal;
-                        if (!empty($cif)) {
-                            $cifMapping[$cif][$branchName][$b] = true;
+                        if ($identityKey !== '') {
+                            $identityMapping[$identityKey][$branchName][$b] = true;
                         }
                     }
                 }
             });
 
-        if (empty($cifList)) {
+        if (empty($identityList)) {
             return $result;
         }
         
-        $uniqueCifs = array_keys($cifList);
+        $uniqueIdentities = array_keys($identityList);
         $latestCasaDate = DB::table('simpanan_multipn')->where('posisi', '<=', $targetDate)->max('posisi');
         $casaDate = $latestCasaDate ?: $targetDate;
 
         $casaBalances = [];
-        $chunks = array_chunk($uniqueCifs, 5000);
+        $chunks = array_chunk($uniqueIdentities, 5000);
         $applyJenisSimpananFilter = DB::table('simpanan_multipn')
             ->where('posisi', $casaDate)
             ->where(function ($query) {
@@ -213,7 +215,7 @@ class RasioCasaDebiturController extends Controller
         foreach ($chunks as $chunk) {
             $casaQuery = DB::table('simpanan_multipn')
                 ->where('posisi', $casaDate)
-                ->whereIn('cifno', $chunk);
+                ->whereIn($casaKeyColumn, $chunk);
 
             // Pertahankan logic utama GIRO/TABUNGAN.
             // Jika batch data tertentu belum mengisi jenis_simpanan dengan benar,
@@ -226,19 +228,22 @@ class RasioCasaDebiturController extends Controller
             }
 
             $casas = $casaQuery
-                ->select('cifno', DB::raw('SUM(saldo_idr) as total_saldo'))
-                ->groupBy('cifno')
+                ->selectRaw($casaKeyColumn . ' as identity_key, SUM(saldo_idr) as total_saldo')
+                ->groupBy($casaKeyColumn)
                 ->get();
             
             foreach ($casas as $casa) {
-                $cifKey = strtoupper(trim($casa->cifno));
-                $casaBalances[$cifKey] = (float)$casa->total_saldo;
+                $identityKey = $this->normalizeIdentityKey($casa->identity_key ?? null);
+                if ($identityKey === '') {
+                    continue;
+                }
+                $casaBalances[$identityKey] = (float)$casa->total_saldo;
             }
         }
 
-        foreach ($casaBalances as $cif => $saldo) {
-            if (isset($cifMapping[$cif])) {
-                foreach ($cifMapping[$cif] as $branchName => $buckets) {
+        foreach ($casaBalances as $identityKey => $saldo) {
+            if (isset($identityMapping[$identityKey])) {
+                foreach ($identityMapping[$identityKey] as $branchName => $buckets) {
                     foreach (array_keys($buckets) as $bucketName) {
                         $result['casa'][$branchName][$bucketName] += $saldo;
                     }
@@ -355,6 +360,33 @@ class RasioCasaDebiturController extends Controller
         }
         
         return array_unique($buckets); // Pastikan tidak ada duplikat bucket
+    }
+
+    private function resolveLoanIdentityColumn(): string
+    {
+        foreach (['nocif', 'cifno', 'CIFNO'] as $column) {
+            if (Schema::hasColumn('daily_loan_dinamis', $column)) {
+                return $column;
+            }
+        }
+
+        return 'cifno';
+    }
+
+    private function resolveCasaIdentityColumn(): string
+    {
+        foreach (['nocif', 'cifno', 'CIFNO'] as $column) {
+            if (Schema::hasColumn('simpanan_multipn', $column)) {
+                return $column;
+            }
+        }
+
+        return 'CIFNO';
+    }
+
+    private function normalizeIdentityKey($value): string
+    {
+        return strtoupper(trim((string) $value));
     }
 
     /**

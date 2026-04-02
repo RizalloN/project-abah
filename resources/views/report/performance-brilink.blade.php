@@ -175,7 +175,7 @@
                     <table class="table table-hover table-report m-0">
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
-                                <th rowspan="2" class="bg-brilink-dark align-middle">REGIONAL OFFICE</th>
+                                <th rowspan="2" class="bg-brilink-dark align-middle">BRANCH OFFICE</th>
                                 <th colspan="10" class="bg-brilink-mid">Jumlah Agen Brilink</th>
                             </tr>
                             <tr class="bg-header-sub">
@@ -201,7 +201,7 @@
                     <table class="table table-hover table-report m-0">
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
-                                <th rowspan="2" class="bg-brilink-dark align-middle">REGIONAL OFFICE</th>
+                                <th rowspan="2" class="bg-brilink-dark align-middle">BRANCH OFFICE</th>
                                 <th colspan="10" class="bg-brilink-mid">Agen Juragan+Jawara</th>
                             </tr>
                             <tr class="bg-header-sub">
@@ -227,7 +227,7 @@
                     <table class="table table-hover table-report m-0">
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
-                                <th rowspan="2" class="bg-brilink-dark align-middle">REGIONAL OFFICE</th>
+                                <th rowspan="2" class="bg-brilink-dark align-middle">BRANCH OFFICE</th>
                                 <th colspan="10" class="bg-brilink-mid">Agen BEP</th>
                             </tr>
                             <tr class="bg-header-sub">
@@ -253,7 +253,7 @@
                     <table class="table table-hover table-report m-0">
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
-                                <th rowspan="2" class="bg-brilink-dark align-middle">REGIONAL OFFICE</th>
+                                <th rowspan="2" class="bg-brilink-dark align-middle">BRANCH OFFICE</th>
                                 <th colspan="5" class="bg-brilink-mid">Transaksi Agen Brilink</th>
                             </tr>
                             <tr class="bg-header-sub">
@@ -274,7 +274,7 @@
                     <table class="table table-hover table-report m-0">
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
-                                <th rowspan="2" class="bg-brilink-dark align-middle">REGIONAL OFFICE</th>
+                                <th rowspan="2" class="bg-brilink-dark align-middle">BRANCH OFFICE</th>
                                 <th colspan="10" class="bg-brilink-mid">CASA Agen Brilink</th>
                             </tr>
                             <tr class="bg-header-sub">
@@ -436,12 +436,13 @@ document.addEventListener('DOMContentLoaded', function () {
                         htmlJuragan += renderMetricRow(row.branch, row.juragan);
                         htmlBep += renderMetricRow(row.branch, row.bep);
 
+                        const trxDec = calcPrev(row.trx.curr, row.trx.ytd);
                         const trxPrev = calcPrev(row.trx.curr, row.trx.yoy);
                         const trxYoyPct = calcPct(row.trx.yoy, trxPrev);
                         htmlTrx += `<tr>
                             <td class="text-left font-weight-bold text-dark">${row.branch}</td>
                             <td class="font-weight-bold">${formatNum(row.trx.curr)}</td>
-                            <td>-</td>
+                            <td>${formatNum(trxDec)}</td>
                             <td>${formatNum(trxPrev)}</td>
                             <td>${formatGrowth(row.trx.yoy)}</td>
                             <td>${trxYoyPct === null ? '-' : formatGrowth(trxYoyPct)}</td>
@@ -489,12 +490,13 @@ document.addEventListener('DOMContentLoaded', function () {
                         htmlJuragan += renderMetricTotalRow(total.branch, total.juragan);
                         htmlBep += renderMetricTotalRow(total.branch, total.bep);
 
+                        const totalTrxDec = calcPrev(total.trx.curr, total.trx.ytd);
                         const totalTrxPrev = calcPrev(total.trx.curr, total.trx.yoy);
                         const totalTrxYoyPct = calcPct(total.trx.yoy, totalTrxPrev);
                         htmlTrx += `<tr class="row-total">
                             <td class="text-left">${total.branch}</td>
                             <td>${formatNum(total.trx.curr)}</td>
-                            <td>-</td>
+                            <td>${formatNum(totalTrxDec)}</td>
                             <td>${formatNum(totalTrxPrev)}</td>
                             <td>${formatGrowth(total.trx.yoy)}</td>
                             <td>${totalTrxYoyPct === null ? '-' : formatGrowth(totalTrxYoyPct)}</td>

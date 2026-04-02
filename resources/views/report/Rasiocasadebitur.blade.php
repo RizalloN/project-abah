@@ -43,8 +43,23 @@
     .bg-header-sub-light { background-color: #d9d9d9 !important; color: #333 !important; font-weight: bold; border-color: #bfbfbf !important; }
 
     .table-hover tbody tr:hover { background-color: #f1f7ff; }
-    .row-total { --row-total-bg: #0056b3; --row-total-color: #ffffff; background-color: #0056b3 !important; color: white !important; font-weight: bold; }
-    .row-total td { color: white !important; }
+    .row-total {
+        --row-total-bg: #0056b3;
+        --row-total-color: #ffffff;
+        background-color: #0056b3 !important;
+        color: #ffffff !important;
+        font-weight: bold;
+    }
+    .row-total td {
+        background-color: #0056b3 !important;
+        color: #ffffff !important;
+    }
+    .row-total .ratio-negative,
+    .row-total .ratio-positive,
+    .row-total .ratio-neutral {
+        background-color: #0056b3 !important;
+        color: #ffffff !important;
+    }
     .loading-row td { text-align: center !important; color: #6b7280; font-style: italic; padding: 18px 10px !important; }
     .loading-shimmer {
         display: inline-block;
@@ -61,8 +76,23 @@
     }
 
     /* Warna teks khusus untuk Mtd */
-    .val-up { color: #28a745; font-weight: bold; }
-    .val-down { color: #dc3545; font-weight: bold; }
+    .val-up { color: #111111; font-weight: bold; }
+    .val-down { color: #198754; font-weight: bold; }
+    .ratio-positive {
+        background-color: #d4edda !important;
+        color: #111111 !important;
+        font-weight: bold;
+    }
+    .ratio-negative {
+        background-color: #f8d7da !important;
+        color: #198754 !important;
+        font-weight: bold;
+    }
+    .ratio-neutral {
+        background-color: #f8f9fa !important;
+        color: #111111 !important;
+        font-weight: bold;
+    }
 
     .nav-tabs.report-tabs { border-bottom: 2px solid #dee2e6; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; white-space: nowrap; scrollbar-width: thin; }
     .nav-tabs.report-tabs .nav-link { border: none; font-weight: 600; color: #6c757d; padding: 12px 18px; font-size: 0.95rem; background: transparent; }
@@ -247,6 +277,14 @@ document.addEventListener('DOMContentLoaded', function () {
         return new Intl.NumberFormat('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(parseFloat(num)) + '%';
     }
 
+    function getRatioClass(num) {
+        if (num === null || num === undefined || isNaN(parseFloat(num))) return '';
+        const val = parseFloat(num);
+        if (val < 0) return 'ratio-negative';
+        if (val > 0) return 'ratio-positive';
+        return 'ratio-neutral';
+    }
+
     function formatMtd(num) {
         if (num === null || num === undefined || isNaN(parseFloat(num))) return '-';
         const val = parseFloat(num);
@@ -259,14 +297,17 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function createDataCells(dt) {
         dt = dt || {};
+        const rasioPrevClass = getRatioClass(dt.rasio_prev);
+        const rasioCurrClass = getRatioClass(dt.rasio_curr);
+        const mtdClass = getRatioClass(dt.mtd);
         return `
             <td>${formatNum(dt.os_prev)}</td>
             <td style="background-color: #f6f9fc;">${formatNum(dt.os_curr)}</td>
             <td>${formatNum(dt.casa_prev)}</td>
             <td style="background-color: #f6f9fc;">${formatNum(dt.casa_curr)}</td>
-            <td>${formatPct(dt.rasio_prev)}</td>
-            <td class="font-weight-bold">${formatPct(dt.rasio_curr)}</td>
-            <td>${formatMtd(dt.mtd)}</td>
+            <td class="${rasioPrevClass}">${formatPct(dt.rasio_prev)}</td>
+            <td class="font-weight-bold ${rasioCurrClass}">${formatPct(dt.rasio_curr)}</td>
+            <td class="${mtdClass}">${formatMtd(dt.mtd)}</td>
         `;
     }
 

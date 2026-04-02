@@ -312,6 +312,91 @@
         .main-sidebar .nav-treeview > .nav-item > .nav-link.active {
             background: rgba(255, 255, 255, 0.12) !important;
         }
+
+        .sidebar-mini .main-sidebar .nav-link {
+            transition: padding 0.2s ease, margin 0.2s ease, background-color 0.2s ease;
+        }
+
+        .sidebar-mini.sidebar-collapse .main-sidebar .brand-link.sidebar-brand-link {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem 0.5rem !important;
+        }
+
+        .sidebar-mini.sidebar-collapse .main-sidebar .sidebar-brand-inner,
+        .sidebar-mini.sidebar-collapse .main-sidebar .sidebar-user-inner {
+            justify-content: center !important;
+            width: 100%;
+        }
+
+        .sidebar-mini.sidebar-collapse .main-sidebar .sidebar-brand-badge,
+        .sidebar-mini.sidebar-collapse .main-sidebar .sidebar-user-avatar {
+            margin-right: 0 !important;
+            flex-shrink: 0;
+        }
+
+        .sidebar-mini.sidebar-collapse .main-sidebar .sidebar-brand-text,
+        .sidebar-mini.sidebar-collapse .main-sidebar .sidebar-user-info,
+        .sidebar-mini.sidebar-collapse .main-sidebar .nav-sidebar .nav-header,
+        .sidebar-mini.sidebar-collapse .main-sidebar .nav-sidebar .nav-treeview,
+        .sidebar-mini.sidebar-collapse .main-sidebar .nav-sidebar .right {
+            display: none !important;
+        }
+
+        .sidebar-mini.sidebar-collapse .main-sidebar .sidebar {
+            padding-left: 0.45rem !important;
+            padding-right: 0.45rem !important;
+        }
+
+        .sidebar-mini.sidebar-collapse .main-sidebar .sidebar-user-panel {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0.65rem 0.35rem !important;
+            margin-top: 0.75rem !important;
+            margin-bottom: 1rem !important;
+            border-radius: 18px;
+        }
+
+        .sidebar-mini.sidebar-collapse .main-sidebar .sidebar-user-avatar {
+            width: 42px !important;
+            height: 42px !important;
+            border-radius: 14px !important;
+        }
+
+        .sidebar-mini.sidebar-collapse .main-sidebar .nav-sidebar {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .sidebar-mini.sidebar-collapse .main-sidebar .nav-sidebar > .nav-item {
+            width: 100%;
+            margin-bottom: 0 !important;
+        }
+
+        .sidebar-mini.sidebar-collapse .main-sidebar .nav-sidebar > .nav-item > .nav-link {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            min-height: 46px;
+            margin-bottom: 0 !important;
+            padding: 0.65rem 0.5rem !important;
+            border-radius: 16px !important;
+        }
+
+        .sidebar-mini.sidebar-collapse .main-sidebar .nav-sidebar .nav-icon {
+            width: auto !important;
+            margin: 0 !important;
+            font-size: 1.05rem;
+        }
+
+        .sidebar-mini.sidebar-collapse .main-sidebar .nav-sidebar > .nav-item > .nav-link p {
+            display: none !important;
+        }
     </style>
 </head>
 
