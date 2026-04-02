@@ -17,7 +17,7 @@
                 </h3>
             </div>
             <div class="card-body py-2">
-                <form action="{{ session('import_type') === 'brimo' ? route('import.brimo.preview') : route('import.preview') }}" method="POST" class="form-inline">
+                <form action="{{ $previewRoute ?? (session('import_type') === 'brimo' ? route('import.brimo.preview') : route('import.preview')) }}" method="POST" class="form-inline">
                     @csrf
                     <input type="hidden" name="file_path" value="{{ $filePath }}">
                     <label class="mr-3" for="delimiter">Jika tabel berantakan, ubah pemisah kolom di sini:</label>
@@ -71,7 +71,9 @@
                                     <th class="text-center align-middle bg-light" style="width: 50px;">#</th>
                                     @foreach($headers as $index => $header)
                                         @php
-                                            $isKancaCol = (stripos($header, 'KANCA') !== false || stripos($header, 'KCI') !== false) && stripos($header, 'KODE') === false;
+                                            $isKancaCol = empty($disableArea6AutoFilter)
+                                                && (stripos($header, 'KANCA') !== false || stripos($header, 'KCI') !== false)
+                                                && stripos($header, 'KODE') === false;
                                         @endphp
 
                                         <th class="align-middle bg-light" style="min-width: 250px;">
@@ -168,7 +170,7 @@
                 </div>
 
                 <div class="card-footer bg-light">
-                    <a href="{{ route('import.select') }}" class="btn btn-secondary">
+                    <a href="{{ $backRoute ?? route('import.select') }}" class="btn btn-secondary">
                         <i class="fas fa-arrow-left"></i> Kembali
                     </a>
                 </div>

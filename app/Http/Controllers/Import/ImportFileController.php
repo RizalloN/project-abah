@@ -4,13 +4,11 @@ namespace App\Http\Controllers\Import;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Carbon\Carbon; 
-use App\Models\NamaReport;
 
 class ImportFileController extends Controller
 {

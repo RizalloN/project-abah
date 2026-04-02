@@ -43,7 +43,7 @@
     .bg-header-sub-light { background-color: #d9d9d9 !important; color: #333 !important; font-weight: bold; border-color: #bfbfbf !important; }
 
     .table-hover tbody tr:hover { background-color: #f1f7ff; }
-    .row-total { background-color: #0056b3 !important; color: white !important; font-weight: bold; }
+    .row-total { --row-total-bg: #0056b3; --row-total-color: #ffffff; background-color: #0056b3 !important; color: white !important; font-weight: bold; }
     .row-total td { color: white !important; }
     .loading-row td { text-align: center !important; color: #6b7280; font-style: italic; padding: 18px 10px !important; }
     .loading-shimmer {

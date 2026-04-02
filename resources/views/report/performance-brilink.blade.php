@@ -42,6 +42,7 @@
     .table-report td.text-left { text-align: left; }
     
     .table-hover tbody tr:hover { background-color: #f8f9fa; }
+    .row-total { --row-total-bg: #003366; --row-total-color: #ffffff; }
     .row-total td { background-color: #003366 !important; color: white !important; font-weight: bold; }
     
     .val-up { color: #28a745; margin-left: 3px; font-weight: bold; }

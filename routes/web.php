@@ -4,32 +4,13 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Import\ImportIndexController;
 use App\Http\Controllers\Import\ImportFileController;
 use App\Http\Controllers\Import\ImportFileBrimoController;
+use App\Http\Controllers\Import\ImportPerformancePisPerProdukController;
 use App\Http\Controllers\RasioCasaDebiturController;
 
-/* * 1. HALAMAN UTAMA (/)
- * Lebih baik di-redirect ke rute login. Jika user sudah login, 
- * middleware bawaan Laravel akan otomatis melemparnya ke /dashboard.
- */
 Route::get('/', function () {
     return redirect()->route('login');
 });
 
-/*
- * 2. ROUTES LOGIN (PENTING!)
- * Karena Anda memiliki "require __DIR__.'/auth.php';" di paling bawah,
- * Laravel SUDAH memiliki rute GET /login dan POST /login bawaan.
- * Agar tidak bentrok, rute manual AuthController di bawah ini SAYA MATIKAN (comment).
- *
- * NOTE: Jika Anda MEMANG membuat AuthController sendiri secara manual (tidak pakai bawaan),
- * silakan hapus/comment "require __DIR__.'/auth.php';" di paling bawah, 
- * tambahkan "use App\Http\Controllers\AuthController;" di atas, lalu hidupkan kode di bawah ini:
- */
-// Route::get('/login', [AuthController::class, 'showLoginForm'])->name('login');
-// Route::post('/login', [AuthController::class, 'login']);
-
-
-/* * 3. ROUTE LAINNYA
- */
 Route::get('/debug-upload-limits', function () {
     return [
         'sapi' => PHP_SAPI,
@@ -72,12 +53,15 @@ Route::middleware(['auth', 'role:admin'])->group(function () {
 
     // Route POST untuk preview
     Route::post('/import/preview', [ImportFileController::class, 'preview'])->name('import.preview');
+    Route::post('/import/performance-pis/upload', [ImportPerformancePisPerProdukController::class, 'upload'])->name('import.performancepis.upload');
+    Route::get('/import/performance-pis/preview', [ImportPerformancePisPerProdukController::class, 'preview'])->name('import.performancepis.preview');
+    Route::post('/import/performance-pis/preview', [ImportPerformancePisPerProdukController::class, 'preview'])->name('import.performancepis.preview.refresh');
+    Route::post('/import/performance-pis/process', [ImportPerformancePisPerProdukController::class, 'processImport'])->name('import.performancepis.process');
 
     // ENGINE ANTRIAN EXCEL
     Route::post('/import-excel/init', [App\Http\Controllers\Import\ImportExcelController::class, 'initExcelImport'])->name('import.excel.init');
     Route::get('/import-excel/stream', [App\Http\Controllers\Import\ImportExcelController::class, 'processExcelStream'])->name('import.excel.stream');
     Route::post('/import-excel/chunk', [App\Http\Controllers\Import\ImportExcelController::class, 'processExcelChunk'])->name('import.excel.chunk');
-    Route::post('/import-excel/finish', [App\Http\Controllers\Import\ImportExcelController::class, 'finishExcelImport'])->name('import.excel.finish');
     
     // Process import
     Route::post('/import/process', [ImportFileController::class, 'processImport'])->name('import.process');
@@ -96,8 +80,15 @@ Route::middleware(['auth', 'role:admin'])->group(function () {
         Route::post('/upload', [App\Http\Controllers\Import\ImportExcelController::class, 'uploadExcel'])->name('import.excel.upload');
         Route::get('/preview', [App\Http\Controllers\Import\ImportExcelController::class, 'previewExcel'])->name('import.excel.preview');
         Route::get('/prepare-preview', [App\Http\Controllers\Import\ImportExcelController::class, 'preparePreviewStream'])->name('import.excel.prepare-preview');
-        Route::post('/dailyloan', [App\Http\Controllers\Import\ImportExcelController::class, 'importDailyLoan'])->name('import.excel.dailyloan');
-        Route::post('/simpanan', [App\Http\Controllers\Import\ImportExcelController::class, 'importSimpanan'])->name('import.excel.simpanan');
+    });
+
+    Route::prefix('import-excel/daily-loan-dinamis')->group(function () {
+        Route::post('/upload', [App\Http\Controllers\Import\ImportExcelController::class, 'uploadDailyLoanExcel'])->name('import.dailyloan.upload');
+        Route::get('/preview', [App\Http\Controllers\Import\ImportExcelController::class, 'previewDailyLoanExcel'])->name('import.dailyloan.preview');
+        Route::get('/prepare-preview', [App\Http\Controllers\Import\ImportExcelController::class, 'prepareDailyLoanPreview'])->name('import.dailyloan.prepare-preview');
+        Route::post('/init', [App\Http\Controllers\Import\ImportExcelController::class, 'initDailyLoanImport'])->name('import.dailyloan.init');
+        Route::get('/stream', [App\Http\Controllers\Import\ImportExcelController::class, 'streamDailyLoanImport'])->name('import.dailyloan.stream');
+        Route::post('/chunk', [App\Http\Controllers\Import\ImportExcelController::class, 'chunkDailyLoanImport'])->name('import.dailyloan.chunk');
     });
 });
 

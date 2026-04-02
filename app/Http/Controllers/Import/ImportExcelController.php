@@ -51,6 +51,46 @@ class ChunkReadFilter implements IReadFilter
 
 class ImportExcelController extends Controller
 {
+    private const DAILY_LOAN_REPORT_ID = 8;
+
+    private function useDailyLoanReport(Request $request): Request
+    {
+        $request->merge(['id_report' => self::DAILY_LOAN_REPORT_ID]);
+        session(['active_id_report' => self::DAILY_LOAN_REPORT_ID]);
+
+        return $request;
+    }
+
+    public function uploadDailyLoanExcel(Request $request)
+    {
+        return $this->uploadExcel($this->useDailyLoanReport($request));
+    }
+
+    public function previewDailyLoanExcel(Request $request)
+    {
+        return $this->previewExcel($this->useDailyLoanReport($request));
+    }
+
+    public function prepareDailyLoanPreview(Request $request)
+    {
+        return $this->preparePreviewStream($this->useDailyLoanReport($request));
+    }
+
+    public function initDailyLoanImport(Request $request)
+    {
+        return $this->initExcelImport($this->useDailyLoanReport($request));
+    }
+
+    public function streamDailyLoanImport(Request $request)
+    {
+        return $this->processExcelStream($this->useDailyLoanReport($request));
+    }
+
+    public function chunkDailyLoanImport(Request $request)
+    {
+        return $this->processExcelChunk($this->useDailyLoanReport($request));
+    }
+
     private function cleanupImportedFile(string $relativePath = '', ?string $absolutePath = null): void
     {
         try {
@@ -314,9 +354,10 @@ class ImportExcelController extends Controller
 
         $sessionPath = session('excel_path');
         $cacheKey    = session('excel_preview_key');
+        $activeIdReport = (int) session('active_id_report');
         request()->session()->save();
 
-        return response()->stream(function () use ($sessionPath, $cacheKey) {
+        return response()->stream(function () use ($sessionPath, $cacheKey, $activeIdReport) {
             $send = function (string $event, array $data) {
                 echo "event: {$event}\n";
                 echo 'data: ' . json_encode($data) . "\n\n";
@@ -512,7 +553,9 @@ class ImportExcelController extends Controller
                 Cache::put($useCacheKey, $payload, now()->addMinutes(10));
 
                 $send('ready', [
-                    'redirect' => route('import.excel.preview', ['ck' => $useCacheKey]),
+                    'redirect' => $activeIdReport === self::DAILY_LOAN_REPORT_ID
+                        ? route('import.dailyloan.preview', ['ck' => $useCacheKey])
+                        : route('import.excel.preview', ['ck' => $useCacheKey]),
                 ]);
 
             } catch (\Throwable $e) {
@@ -532,11 +575,21 @@ class ImportExcelController extends Controller
         ini_set('memory_limit', '1024M');
         set_time_limit(0);
 
+        $activeIdReport = (int) session('active_id_report');
+        $initRoute = $activeIdReport === self::DAILY_LOAN_REPORT_ID
+            ? route('import.dailyloan.init')
+            : route('import.excel.init');
+        $streamRoute = $activeIdReport === self::DAILY_LOAN_REPORT_ID
+            ? route('import.dailyloan.stream')
+            : route('import.excel.stream');
+
         $ck = $request->query('ck');
         if ($ck) {
             $cached = Cache::get($ck);
             if ($cached && is_array($cached)) {
                 Cache::forget($ck);
+                $cached['initRoute'] = $initRoute;
+                $cached['streamRoute'] = $streamRoute;
                 return view('import.preview_excel', $cached);
             }
         }
@@ -707,7 +760,9 @@ class ImportExcelController extends Controller
             'headers' => $finalHeaders,
             'preview' => $cleanPreview,
             'formattedUniqueValues' => $formattedUniqueValues,
-            'path' => $relativePath
+            'path' => $relativePath,
+            'initRoute' => $initRoute,
+            'streamRoute' => $streamRoute,
         ]);
     }
 
