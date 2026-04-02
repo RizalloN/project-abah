@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Input\InputRekananController;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Import\ImportIndexController;
 use App\Http\Controllers\Import\ImportFileController;
@@ -42,6 +43,8 @@ Route::post('/report/data', [App\Http\Controllers\DataReportController::class, '
 
 // 🔥 ADMIN ROUTES
 Route::middleware(['auth', 'role:admin'])->group(function () {
+    Route::get('/input-data', [InputRekananController::class, 'index'])->name('input.index');
+    Route::post('/input-data', [InputRekananController::class, 'store'])->name('input.store');
     Route::get('/import', [ImportIndexController::class, 'index'])->name('import.index');
     Route::post('/import/upload', [ImportFileController::class, 'upload'])->name('import.upload');
     
