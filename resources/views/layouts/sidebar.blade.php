@@ -1,11 +1,11 @@
 <aside class="main-sidebar elevation-4" style="background: linear-gradient(180deg, #020617 0%, #0f172a 32%, #134e4a 100%);">
 
-    <a href="{{ route('dashboard') }}" class="brand-link border-0 py-4 px-3" style="background: rgba(255, 255, 255, 0.04);">
-        <div class="d-flex align-items-center">
-            <span class="d-inline-flex align-items-center justify-content-center font-weight-bold text-white mr-3" style="width: 42px; height: 42px; border-radius: 14px; background: linear-gradient(135deg, rgba(45, 212, 191, 0.28), rgba(255, 255, 255, 0.14)); border: 1px solid rgba(255, 255, 255, 0.12);">
+    <a href="{{ route('dashboard') }}" class="brand-link border-0 py-4 px-3 sidebar-brand-link" style="background: rgba(255, 255, 255, 0.04);">
+        <div class="d-flex align-items-center justify-content-center sidebar-brand-inner">
+            <span class="d-inline-flex align-items-center justify-content-center font-weight-bold text-white mr-3 sidebar-brand-badge" style="width: 42px; height: 42px; border-radius: 14px; background: linear-gradient(135deg, rgba(45, 212, 191, 0.28), rgba(255, 255, 255, 0.14)); border: 1px solid rgba(255, 255, 255, 0.12);">
                 DB
             </span>
-            <div>
+            <div class="brand-text sidebar-brand-text">
                 <div class="text-white font-weight-bold" style="font-size: 1rem; letter-spacing: 0.03em;">DigiBranch</div>
                 <div class="text-uppercase" style="font-size: 0.68rem; letter-spacing: 0.18em; color: rgba(226, 232, 240, 0.72);">Area 6 Portal</div>
             </div>
@@ -14,12 +14,12 @@
 
     <div class="sidebar px-2 pb-3">
 
-        <div class="mt-3 mb-4 p-3" style="border-radius: 18px; background: rgba(255, 255, 255, 0.07); border: 1px solid rgba(255, 255, 255, 0.08);">
-            <div class="d-flex align-items-center">
-                <div class="mr-3 d-inline-flex align-items-center justify-content-center font-weight-bold text-white" style="width: 46px; height: 46px; border-radius: 16px; background: linear-gradient(135deg, rgba(45, 212, 191, 0.35), rgba(15, 23, 42, 0.35));">
+        <div class="user-panel mt-3 mb-4 p-3 sidebar-user-panel" style="border-radius: 18px; background: rgba(255, 255, 255, 0.07); border: 1px solid rgba(255, 255, 255, 0.08);">
+            <div class="d-flex align-items-center justify-content-center sidebar-user-inner">
+                <div class="image mr-3 d-inline-flex align-items-center justify-content-center font-weight-bold text-white sidebar-user-avatar" style="width: 46px; height: 46px; border-radius: 16px; background: linear-gradient(135deg, rgba(45, 212, 191, 0.35), rgba(15, 23, 42, 0.35));">
                     {{ strtoupper(substr(Auth::user()?->name ?? 'U', 0, 2)) }}
                 </div>
-                <div class="text-white">
+                <div class="info text-white sidebar-user-info">
                     <div class="font-weight-bold" style="font-size: 0.96rem;">{{ Auth::user()?->name }}</div>
                     <div style="font-size: 0.78rem; color: rgba(226, 232, 240, 0.72);">{{ Auth::user()?->pn }}</div>
                 </div>

@@ -192,7 +192,7 @@
                     <table class="table table-hover table-report m-0">
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
-                                <th rowspan="2" class="bg-mom-sv0 align-middle">Regional Office</th>
+                                <th rowspan="2" class="bg-mom-sv0 align-middle">Branch Office</th>
                                 <th colspan="4" class="bg-mom-sv0">SV 0</th>
                                 <th colspan="4" class="bg-mom-sv1">SV 1 Juta - &lt;15 Juta</th>
                                 <th colspan="7" class="bg-mom-prod">Produktif (&gt;= 15 Juta)</th>

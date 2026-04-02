@@ -540,7 +540,7 @@ public function performanceBrilink()
                 'agen' => ['curr' => 0, 'mtd' => 0, 'ytd' => 0, 'yoy' => 0],
                 'juragan' => ['curr' => 0, 'mtd' => 0, 'ytd' => 0, 'yoy' => 0],
                 'bep' => ['curr' => 0, 'mtd' => 0, 'ytd' => 0, 'yoy' => 0],
-                'trx' => ['curr' => 0, 'mtd' => 0, 'yoy' => 0],
+                'trx' => ['curr' => 0, 'mtd' => 0, 'ytd' => 0, 'yoy' => 0],
                 'volume' => ['curr' => 0, 'mtd' => 0, 'yoy' => 0]
             ];
 
@@ -589,6 +589,7 @@ public function performanceBrilink()
                 $trx_curr = $currData->sum('total_transaksi');
                 $trx_prev = $prevData->sum('total_transaksi');
                 $trx_yoy  = $yoyData->sum('total_transaksi');
+                $trx_ytd  = $ytdData->sum('total_transaksi');
 
                 $vol_curr = $currData->sum('total_nominal');
                 $vol_prev = $prevData->sum('total_nominal');
@@ -608,6 +609,7 @@ public function performanceBrilink()
                 $bep_yoy_val = $hasCurrData ? ($bep_curr - $bep_yoy) : 0;
 
                 $trx_mtd = $hasCurrData ? ($trx_curr - $trx_prev) : 0;
+                $trx_ytd_val = $hasCurrData ? ($trx_curr - $trx_ytd) : 0;
                 $trx_yoy_val = $hasCurrData ? ($trx_curr - $trx_yoy) : 0;
 
                 $vol_mtd = $hasCurrData ? ($vol_curr - $vol_prev) : 0;
@@ -625,7 +627,7 @@ public function performanceBrilink()
                         'curr' => $bep_curr, 'mtd' => $bep_mtd, 'ytd' => $bep_ytd_val, 'yoy' => $bep_yoy_val,
                     ],
                     'trx' => [
-                        'curr' => $trx_curr, 'mtd' => $trx_mtd, 'yoy' => $trx_yoy_val,
+                        'curr' => $trx_curr, 'mtd' => $trx_mtd, 'ytd' => $trx_ytd_val, 'yoy' => $trx_yoy_val,
                     ],
                     'volume' => [
                         'curr' => $vol_curr, 'mtd' => $vol_mtd, 'yoy' => $vol_yoy_val,
@@ -635,7 +637,7 @@ public function performanceBrilink()
                 $totals['agen']['curr'] += $agen_curr; $totals['agen']['mtd'] += $agen_mtd; $totals['agen']['ytd'] += $agen_ytd_val; $totals['agen']['yoy'] += $agen_yoy_val;
                 $totals['juragan']['curr'] += $juragan_curr; $totals['juragan']['mtd'] += $juragan_mtd; $totals['juragan']['ytd'] += $juragan_ytd_val; $totals['juragan']['yoy'] += $juragan_yoy_val;
                 $totals['bep']['curr'] += $bep_curr; $totals['bep']['mtd'] += $bep_mtd; $totals['bep']['ytd'] += $bep_ytd_val; $totals['bep']['yoy'] += $bep_yoy_val;
-                $totals['trx']['curr'] += $trx_curr; $totals['trx']['mtd'] += $trx_mtd; $totals['trx']['yoy'] += $trx_yoy_val;
+                $totals['trx']['curr'] += $trx_curr; $totals['trx']['mtd'] += $trx_mtd; $totals['trx']['ytd'] += $trx_ytd_val; $totals['trx']['yoy'] += $trx_yoy_val;
                 $totals['volume']['curr'] += $vol_curr; $totals['volume']['mtd'] += $vol_mtd; $totals['volume']['yoy'] += $vol_yoy_val;
             }
 
