@@ -60,7 +60,7 @@
     .bg-bad { background-color: #f8d7da !important; color: #721c24 !important; font-weight: bold;}
 
     .table-hover tbody tr:hover { background-color: #f1f7ff; }
-    .row-total { background-color: #003366 !important; color: white !important; font-weight: bold; }
+    .row-total { --row-total-bg: #003366; --row-total-color: #ffffff; background-color: #003366 !important; color: white !important; font-weight: bold; }
     .row-total td { color: white !important; }
     .val-up { color: #28a745; font-weight: bold; margin-left: 2px; }
     .val-down { color: #dc3545; font-weight: bold; margin-left: 2px; }

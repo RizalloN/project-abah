@@ -12,7 +12,7 @@
     </div>
 
     <!-- 🔥 FIX 1: UBAH ID FORM -->
-    <form id="form-import" method="POST" action="{{ route('import.upload') }}" enctype="multipart/form-data">
+    <form id="form-import" method="POST" action="{{ route('import.upload') }}" enctype="multipart/form-data" data-prepare-preview-url="{{ route('import.excel.prepare-preview') }}">
         @csrf
 
         <div class="card-body">
@@ -42,6 +42,12 @@
                 <label class="text-success font-weight-bold"><i class="fas fa-file-excel mr-1"></i> Upload File Excel (.xlsx, .xls)</label>
                 <input type="file" id="file_excel" name="file" class="form-control border-success shadow-sm" accept=".xlsx, .xls">
                 <small class="text-muted mt-2 d-block">Mendukung format .xlsx dan .xls hingga 200MB+ (Menggunakan Chunk Reading Mode).</small>
+            </div>
+
+            <div id="form-csv" class="form-group" style="display: none;">
+                <label class="text-info font-weight-bold"><i class="fas fa-file-csv mr-1"></i> Upload File CSV (.csv, .txt)</label>
+                <input type="file" id="file_csv" name="file" class="form-control border-info shadow-sm" accept=".csv,.txt">
+                <small class="text-muted mt-2 d-block">Gunakan file CSV Performance PIS Per Produk dengan metadata posisi di bagian atas file.</small>
             </div>
 
         </div>
@@ -86,16 +92,26 @@
         const btnSubmit = document.getElementById('btn-submit');
         const inputRar = document.getElementById('file_rar');
         const inputExcel = document.getElementById('file_excel');
+        const formCsv = document.getElementById('form-csv');
+        const inputCsv = document.getElementById('file_csv');
 
         function toggleForm() {
             const selectedOption = reportSelect.options[reportSelect.selectedIndex];
             const reportName = selectedOption.getAttribute('data-name') || '';
+            const isDailyLoan = reportName.includes('daily loan');
+            const isSimpanan = reportName.includes('simpanan multipn');
+            const isPerformancePis = reportName.includes('performance pis per produk');
+
+            formCsv.style.display = 'none';
+            inputCsv.disabled = true;
+            inputCsv.required = false;
 
             // CEK KEYWORD EXCEL KHUSUS
-            if (reportName.includes('daily loan') || reportName.includes('simpanan multipn')) {
+            if (isDailyLoan || isSimpanan) {
                 // Tampilkan Excel, Sembunyikan RAR
                 formRAR.style.display = 'none';
                 formExcel.style.display = 'block';
+                formCsv.style.display = 'none';
 
                 // 🔥 MATIKAN input RAR agar tidak bentrok 'name="file"' di Backend
                 inputRar.disabled = true;
@@ -103,27 +119,52 @@
 
                 inputExcel.disabled = false;
                 inputExcel.required = true;
+                inputCsv.disabled = true;
+                inputCsv.required = false;
 
-                // Arahkan submit ke Controller Excel
-                formImport.action = "{{ route('import.excel.upload') }}";
+                // Arahkan submit ke Controller Excel sesuai flow report
+                formImport.action = isDailyLoan ? "{{ route('import.dailyloan.upload') }}" : "{{ route('import.excel.upload') }}";
+                formImport.dataset.preparePreviewUrl = isDailyLoan ? "{{ route('import.dailyloan.prepare-preview') }}" : "{{ route('import.excel.prepare-preview') }}";
 
                 // Sesuaikan Tombol
                 btnSubmit.className = "btn btn-success font-weight-bold";
                 btnSubmit.innerHTML = '<i class="fas fa-file-excel"></i> Upload Excel';
 
+            } else if (isPerformancePis) {
+                formRAR.style.display = 'none';
+                formExcel.style.display = 'none';
+                formCsv.style.display = 'block';
+
+                inputRar.disabled = true;
+                inputRar.required = false;
+                inputExcel.disabled = true;
+                inputExcel.required = false;
+                inputCsv.disabled = false;
+                inputCsv.required = true;
+
+                formImport.action = "{{ route('import.performancepis.upload') }}";
+                formImport.dataset.preparePreviewUrl = '';
+
+                btnSubmit.className = "btn btn-info font-weight-bold";
+                btnSubmit.innerHTML = '<i class="fas fa-file-csv"></i> Upload CSV';
+
             } else if (reportName.includes('brimo')) {
                 // 🔥 BRIMO: Tampilkan RAR, arahkan ke ImportFileBrimoController
                 formRAR.style.display = 'block';
                 formExcel.style.display = 'none';
+                formCsv.style.display = 'none';
 
                 inputExcel.disabled = true;
                 inputExcel.required = false;
+                inputCsv.disabled = true;
+                inputCsv.required = false;
 
                 inputRar.disabled = false;
                 inputRar.required = true;
 
                 // Arahkan submit ke Brimo Controller
                 formImport.action = "{{ route('import.brimo.upload') }}";
+                formImport.dataset.preparePreviewUrl = '';
 
                 btnSubmit.className = "btn btn-primary font-weight-bold";
                 btnSubmit.innerHTML = '<i class="fas fa-file-archive"></i> Upload RAR';
@@ -132,6 +173,7 @@
                 // Tampilkan RAR, Sembunyikan Excel
                 formRAR.style.display = 'block';
                 formExcel.style.display = 'none';
+                formCsv.style.display = 'none';
 
                 // 🔥 MATIKAN input EXCEL agar tidak bentrok
                 inputExcel.disabled = true;
@@ -142,6 +184,7 @@
 
                 // Arahkan submit ke Controller CSV/Legacy
                 formImport.action = "{{ route('import.upload') }}";
+                formImport.dataset.preparePreviewUrl = '';
 
                 // Sesuaikan Tombol
                 btnSubmit.className = "btn btn-primary font-weight-bold";
@@ -227,7 +270,8 @@
                         if (data.status !== 'success') throw new Error('Upload error: ' + (data.message || 'Unknown'));
 
                         // Connect to SSE for prepare-preview
-                        const eventSource = new EventSource("{{ route('import.excel.prepare-preview') }}");
+                        const preparePreviewUrl = formImport.dataset.preparePreviewUrl || "{{ route('import.excel.prepare-preview') }}";
+                        const eventSource = new EventSource(preparePreviewUrl);
 
                         // ── progress event ──────────────────────────────────
                         eventSource.addEventListener('progress', function(event) {

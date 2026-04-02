@@ -442,7 +442,7 @@ document.addEventListener('DOMContentLoaded', function () {
             formData.append('path', pathValue);
             formData.append('active_filters_json', filtersJson);
 
-            var resRaw  = await fetch('{{ route("import.excel.init") }}', {
+            var resRaw  = await fetch('{{ $initRoute ?? route("import.excel.init") }}', {
                 method: 'POST', body: formData, headers: fetchHeaders,
             });
             var resText = await resRaw.text();
@@ -469,7 +469,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         // ── STEP 2 & 3: SSE Stream dengan auto-reconnect ───────────────────
-        var streamUrl  = '{{ route("import.excel.stream") }}?job_id=' + encodeURIComponent(jobId);
+        var streamUrl  = '{{ $streamRoute ?? route("import.excel.stream") }}?job_id=' + encodeURIComponent(jobId);
         var evtSource  = null;
         var streamDone = false;
         var lastProg   = { percent: 12, message: 'Menginisialisasi...', rows_done: 0, total: 0, speed: 0 };

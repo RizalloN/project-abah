@@ -39,7 +39,7 @@
     .bg-header-sub { background-color: #8fb5df !important; color: #102a43 !important; font-weight: bold; border-color: #7ea7d3 !important; }
     .col-block { background-color: #dbe9f8; }
     .table-hover tbody tr:hover { background-color: #f1f7ff; }
-    .row-total { background-color: #7ba7e6 !important; color: #102a43 !important; font-weight: bold; }
+    .row-total { --row-total-bg: #7ba7e6; --row-total-color: #102a43; background-color: #7ba7e6 !important; color: #102a43 !important; font-weight: bold; }
     .row-total td { font-weight: bold; }
     .val-up { color: #2e8b57; font-weight: bold; margin-right: 4px; }
     .text-negative { color: #ff0000; }
@@ -50,7 +50,7 @@
 </style>
 
 @php
-    $rows = [
+    $totalRows = [
         ['REGION 1 / MEDAN', '10,117', '15%', '1,343', '11,735', '86%', '7,033', '15%', '1,035', '1,170,945', '-10%', '(131,020)'],
         ['REGION 2 / PEKANBARU', '2,966', '-49%', '(2,813)', '7,026', '42%', '8,973', '-77%', '(6,884)', '199,802', '-69%', '(435,485)'],
         ['REGION 3 / PADANG', '2,906', '-7%', '(217)', '4,410', '66%', '21,308', '-65%', '(13,859)', '1,272,135', '-66%', '(2,503,926)'],
@@ -72,6 +72,52 @@
     ];
 
     $grandTotal = ['Grand Total', '155,332', '-19%', '(36,477)', '206,667', '75%', '231,573', '-27%', '(62,982)', '1,085,358', '-10%', '(121,954)'];
+
+    $rekeningRows = [
+        ['REGION 1 / MEDAN', '8.774', '4.752', '10.117', '1.343', '15,3%', '11.660', '87%'],
+        ['REGION 2 / PEKANBARU', '5.779', '1.271', '2.966', '(2.813)', '-48,7%', '12.931', '23%'],
+        ['REGION 3 / PADANG', '3.123', '1.698', '2.906', '(217)', '-6,9%', '10.688', '27%'],
+        ['REGION 4 / PALEMBANG', '5.520', '2.504', '5.483', '(37)', '-0,7%', '8.670', '63%'],
+        ['REGION 5 / BANDAR LAMPUNG', '6.402', '2.851', '5.058', '(1.344)', '-21,0%', '21.900', '23%'],
+        ['REGION 6 / JAKARTA 1', '12.926', '4.498', '7.775', '(5.151)', '-39,8%', '6.503', '120%'],
+        ['REGION 7 / JAKARTA 2', '17.826', '4.385', '7.361', '(10.465)', '-58,7%', '4.784', '154%'],
+        ['REGION 8 / JAKARTA 3', '11.597', '3.630', '6.805', '(4.792)', '-41,3%', '26.385', '26%'],
+        ['REGION 9 / BANDUNG', '17.519', '8.041', '13.697', '(3.822)', '-21,8%', '11.735', '117%'],
+        ['REGION 10 / SEMARANG', '17.741', '6.833', '17.804', '63', '0,4%', '10.240', '174%'],
+        ['REGION 11 / YOGYAKARTA', '12.163', '7.328', '12.335', '172', '1,4%', '2.990', '413%'],
+        ['REGION 12 / SURABAYA', '15.376', '7.127', '13.404', '(1.972)', '-12,8%', '11.361', '118%'],
+        ['REGION 13 / MALANG', '14.125', '6.443', '10.456', '(3.669)', '-26,0%', '13.828', '76%'],
+        ['REGION 14 / BANJARMASIN', '16.265', '6.526', '11.774', '(4.491)', '-27,6%', '7.026', '168%'],
+        ['REGION 15 / MAKASSAR', '9.564', '6.272', '9.217', '(347)', '-3,6%', '12.632', '73%'],
+        ['REGION 16 / MANADO', '5.402', '3.833', '6.890', '1.488', '27,5%', '13.454', '51%'],
+        ['REGION 17 / DENPASAR', '6.064', '3.855', '5.428', '(636)', '-10,5%', '4.410', '123%'],
+        ['REGION 18 / JAYAPURA', '5.643', '3.233', '5.856', '213', '3,8%', '15.472', '38%'],
+    ];
+
+    $rekeningGrandTotal = ['Grand Total', '191.809', '85.080', '155.332', '(36.477)', '-19,0%', '206.667', '75%'];
+
+    $saldoRows = [
+        ['REGION 1 / MEDAN', '7,033', '2,758', '8,068', '1,035', '15%', '5,310', '193%'],
+        ['REGION 2 / PEKANBARU', '8,973', '707', '2,089', '(6,884)', '-77%', '1,382', '196%'],
+        ['REGION 3 / PADANG', '21,308', '590', '7,450', '(13,859)', '-65%', '6,860', '1163%'],
+        ['REGION 4 / PALEMBANG', '10,029', '1,594', '9,896', '(133)', '-1%', '8,302', '521%'],
+        ['REGION 5 / BANDAR LAMPUNG', '2,748', '1,425', '2,649', '(98)', '-4%', '1,224', '86%'],
+        ['REGION 6 / JAKARTA 1', '17,552', '5,096', '7,975', '(9,577)', '-55%', '2,879', '56%'],
+        ['REGION 7 / JAKARTA 2', '18,773', '2,102', '5,880', '(12,893)', '-69%', '3,778', '180%'],
+        ['REGION 8 / JAKARTA 3', '10,039', '2,573', '6,150', '(3,889)', '-39%', '3,578', '139%'],
+        ['REGION 9 / BANDUNG', '13,466', '3,016', '12,152', '(1,314)', '-10%', '9,136', '303%'],
+        ['REGION 10 / SEMARANG', '19,785', '5,005', '29,824', '10,039', '51%', '24,818', '496%'],
+        ['REGION 11 / YOGYAKARTA', '26,868', '4,497', '9,249', '(17,618)', '-66%', '4,752', '106%'],
+        ['REGION 12 / SURABAYA', '15,258', '1,996', '11,503', '(3,754)', '-25%', '9,507', '476%'],
+        ['REGION 13 / MALANG', '17,265', '2,389', '11,980', '(5,285)', '-31%', '9,591', '401%'],
+        ['REGION 14 / BANJARMASIN', '10,300', '6,111', '11,552', '1,252', '12%', '5,441', '89%'],
+        ['REGION 15 / MAKASSAR', '8,721', '1,614', '7,869', '(852)', '-10%', '6,255', '387%'],
+        ['REGION 16 / MANADO', '12,530', '582', '5,596', '(6,934)', '-55%', '5,014', '862%'],
+        ['REGION 17 / DENPASAR', '8,045', '8,524', '15,035', '6,990', '87%', '6,511', '76%'],
+        ['REGION 18 / JAYAPURA', '2,880', '1,137', '3,674', '794', '28%', '2,537', '223%'],
+    ];
+
+    $saldoGrandTotal = ['Grand Total', '231,573', '51,716', '168,591', '(62,982)', '-27%', '116,874', '226%'];
 @endphp
 
 <div class="card card-outline card-primary shadow-sm mb-3 report-filter-card">
@@ -103,8 +149,18 @@
     <div class="card-header bg-white p-0 border-bottom-0">
         <ul class="nav nav-tabs report-tabs px-3 pt-2" role="tablist">
             <li class="nav-item">
-                <a class="nav-link active" data-toggle="tab" href="#tab-payroll" role="tab">
-                    <i class="fas fa-money-check-alt mr-1"></i> Kinerja New Payroll
+                <a class="nav-link active" data-toggle="tab" href="#tab-total" role="tab">
+                    <i class="fas fa-chart-pie mr-1"></i> Total
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" data-toggle="tab" href="#tab-rekening" role="tab">
+                    <i class="fas fa-university mr-1"></i> Rekening New Payroll
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" data-toggle="tab" href="#tab-saldo" role="tab">
+                    <i class="fas fa-wallet mr-1"></i> Saldo New Payroll
                 </a>
             </li>
         </ul>
@@ -112,7 +168,7 @@
 
     <div class="card-body p-0">
         <div class="tab-content">
-            <div class="tab-pane fade show active" id="tab-payroll" role="tabpanel">
+            <div class="tab-pane fade show active" id="tab-total" role="tabpanel">
                 <div class="table-container">
                     <table class="table table-hover table-report m-0">
                         <thead class="sticky-top" style="z-index: 2;">
@@ -137,7 +193,7 @@
                             </tr>
                         </thead>
                         <tbody>
-                            @foreach($rows as $row)
+                            @foreach($totalRows as $row)
                                 <tr>
                                     <td class="text-left font-weight-bold">{{ $row[0] }}</td>
                                     <td class="col-block">{{ $row[1] }}</td>
@@ -166,6 +222,98 @@
                                 <td>{{ $grandTotal[9] }}</td>
                                 <td>{{ $grandTotal[10] }}</td>
                                 <td>{{ $grandTotal[11] }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="tab-pane fade" id="tab-rekening" role="tabpanel">
+                <div class="table-container">
+                    <table class="table table-hover table-report m-0">
+                        <thead class="sticky-top" style="z-index: 2;">
+                            <tr>
+                                <th colspan="8" class="bg-header-main">New Payroll</th>
+                            </tr>
+                            <tr class="bg-header-sub">
+                                <th class="text-left" style="min-width: 210px;">Regional Office</th>
+                                <th>Feb-25</th>
+                                <th>Jan-26</th>
+                                <th>Feb-26</th>
+                                <th>YoY</th>
+                                <th>YoY (%)</th>
+                                <th>Target Feb-26</th>
+                                <th>Penc (%)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach($rekeningRows as $row)
+                                <tr>
+                                    <td class="text-left font-weight-bold">{{ $row[0] }}</td>
+                                    <td>{{ $row[1] }}</td>
+                                    <td>{{ $row[2] }}</td>
+                                    <td class="col-block">{{ $row[3] }}</td>
+                                    <td class="{{ str_contains($row[4], '(') ? 'text-negative' : '' }}">{{ $row[4] }}</td>
+                                    <td class="{{ str_contains($row[5], '-') ? 'text-negative' : '' }}">{{ $row[5] }}</td>
+                                    <td>{{ $row[6] }}</td>
+                                    <td>{{ $row[7] }}</td>
+                                </tr>
+                            @endforeach
+                            <tr class="row-total">
+                                <td class="text-left">{{ $rekeningGrandTotal[0] }}</td>
+                                <td>{{ $rekeningGrandTotal[1] }}</td>
+                                <td>{{ $rekeningGrandTotal[2] }}</td>
+                                <td>{{ $rekeningGrandTotal[3] }}</td>
+                                <td>{{ $rekeningGrandTotal[4] }}</td>
+                                <td>{{ $rekeningGrandTotal[5] }}</td>
+                                <td>{{ $rekeningGrandTotal[6] }}</td>
+                                <td>{{ $rekeningGrandTotal[7] }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="tab-pane fade" id="tab-saldo" role="tabpanel">
+                <div class="table-container">
+                    <table class="table table-hover table-report m-0">
+                        <thead class="sticky-top" style="z-index: 2;">
+                            <tr>
+                                <th colspan="8" class="bg-header-main">Akumulasi Saldo New Payroll</th>
+                            </tr>
+                            <tr class="bg-header-sub">
+                                <th class="text-left" style="min-width: 210px;">Regional Office</th>
+                                <th>Feb-25</th>
+                                <th>Jan-26</th>
+                                <th>Feb-26</th>
+                                <th>YoY</th>
+                                <th>YoY (%)</th>
+                                <th>Mtd</th>
+                                <th>Mtd (%)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach($saldoRows as $row)
+                                <tr>
+                                    <td class="text-left font-weight-bold">{{ $row[0] }}</td>
+                                    <td>{{ $row[1] }}</td>
+                                    <td>{{ $row[2] }}</td>
+                                    <td class="col-block">{{ $row[3] }}</td>
+                                    <td class="{{ str_contains($row[4], '(') ? 'text-negative' : '' }}">{{ $row[4] }}</td>
+                                    <td class="{{ str_contains($row[5], '-') ? 'text-negative' : '' }}">{{ $row[5] }}</td>
+                                    <td>{{ $row[6] }}</td>
+                                    <td>{{ $row[7] }}</td>
+                                </tr>
+                            @endforeach
+                            <tr class="row-total">
+                                <td class="text-left">{{ $saldoGrandTotal[0] }}</td>
+                                <td>{{ $saldoGrandTotal[1] }}</td>
+                                <td>{{ $saldoGrandTotal[2] }}</td>
+                                <td>{{ $saldoGrandTotal[3] }}</td>
+                                <td>{{ $saldoGrandTotal[4] }}</td>
+                                <td>{{ $saldoGrandTotal[5] }}</td>
+                                <td>{{ $saldoGrandTotal[6] }}</td>
+                                <td>{{ $saldoGrandTotal[7] }}</td>
                             </tr>
                         </tbody>
                     </table>

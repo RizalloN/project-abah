@@ -50,10 +50,10 @@
     /* Baris Total */
     .bg-good { background-color: #d4edda !important; color: #155724 !important; font-weight: bold; }
     .bg-bad { background-color: #f8d7da !important; color: #721c24 !important; font-weight: bold; }
-    .row-total { background-color: #003366 !important; color: #ffffff !important; font-weight: bold; }
+    .row-total { --row-total-bg: #003366; --row-total-color: #ffffff; background-color: #003366 !important; color: #ffffff !important; font-weight: bold; }
     .row-total td { color: #ffffff !important; }
-    .row-total-blue { background-color: #003366 !important; font-weight: bold; color: #ffffff !important; }
-    .row-total-blue td { color: #ffffff !important; }
+    .row-total-blue { --row-total-bg: #003366; --row-total-color: #ffffff; background-color: #003366 !important; font-weight: bold; color: #ffffff !important; }
+    .row-total-blue td { background-color: #003366 !important; color: #ffffff !important; }
     
     /* Indikator Panah */
     .text-success,
@@ -65,7 +65,8 @@
     .nav-tabs.report-tabs { border-bottom: 2px solid #dee2e6; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; white-space: nowrap; scrollbar-width: thin; }
     .nav-tabs.report-tabs .nav-link { border: none; font-weight: 600; color: #6c757d; padding: 12px 18px; font-size: 0.95rem; background: transparent; }
     .nav-tabs.report-tabs .nav-link.active { border-bottom: 3px solid #007bff; color: #007bff; background: transparent; }
-    .nav-tabs.report-tabs .nav-link:hover { border-bottom: 3px solid #9ec5fe; color: #007bff; background: transparent; }
+    .nav-tabs.report-tabs .nav-link.active:hover { border-bottom: 3px solid #007bff; color: #007bff; background: transparent; }
+    .nav-tabs.report-tabs .nav-link:not(.active):hover { border-bottom: 3px solid transparent; color: #6c757d; background: transparent; }
 </style>
 
 <div class="card card-outline card-primary shadow-sm mb-3 report-filter-card">

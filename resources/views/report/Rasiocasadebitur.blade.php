@@ -43,11 +43,16 @@
     .bg-header-sub-light { background-color: #d9d9d9 !important; color: #333 !important; font-weight: bold; border-color: #bfbfbf !important; }
 
     .table-hover tbody tr:hover { background-color: #f1f7ff; }
-    .row-total,
-    .row-total td {
+    .row-total {
+        --row-total-bg: #0056b3;
+        --row-total-color: #ffffff;
         background-color: #0056b3 !important;
         color: #ffffff !important;
         font-weight: bold;
+    }
+    .row-total td {
+        background-color: #0056b3 !important;
+        color: #ffffff !important;
     }
     .row-total .ratio-negative,
     .row-total .ratio-positive,
