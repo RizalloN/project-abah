@@ -10,6 +10,7 @@
             <div class="alert alert-danger">{{ session('error') }}</div>
         @endif
 
+        @if(empty($hideDelimiterCard))
         <div class="card card-outline card-primary mb-3">
             <div class="card-header bg-light">
                 <h3 class="card-title font-weight-bold">
@@ -54,6 +55,7 @@
                 </form>
             </div>
         </div>
+        @endif
 
         <form id="importForm" action="{{ $processRoute ?? route('import.process') }}" method="POST" data-init-url="{{ $initRoute ?? '' }}" data-stream-url="{{ $streamRoute ?? '' }}">
             @csrf

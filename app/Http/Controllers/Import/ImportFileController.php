@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Schema;
 use Carbon\Carbon; 
 
 class ImportFileController extends Controller
@@ -16,7 +17,29 @@ class ImportFileController extends Controller
     private const PREVIEW_SAMPLE_LIMIT = 1200;
     private const PREVIEW_UNIQUE_SCAN_LIMIT = 4000;
     private const PREVIEW_UNIQUE_LIMIT_PER_COLUMN = 400;
+    private const DAILY_LOAN_PREVIEW_SAMPLE_LIMIT = 150;
+    private const DAILY_LOAN_PREVIEW_UNIQUE_SCAN_LIMIT = 150;
+    private const DAILY_LOAN_PREVIEW_UNIQUE_LIMIT_PER_COLUMN = 40;
     private const IMPORT_BATCH_SIZE = 1000;
+    private const DAILY_LOAN_IMPORT_BATCH_SIZE = 250;
+
+    private function parseIniSizeToBytes(string $value): int
+    {
+        $value = trim($value);
+        if ($value === '') {
+            return 0;
+        }
+
+        $unit = strtolower(substr($value, -1));
+        $bytes = (int) $value;
+
+        return match ($unit) {
+            'g' => $bytes * 1024 * 1024 * 1024,
+            'm' => $bytes * 1024 * 1024,
+            'k' => $bytes * 1024,
+            default => (int) $value,
+        };
+    }
 
     private const BRILINK_SUMMARY_HEADERS = [
         'PERIODE', 'FLAG', 'KANWIL', 'KODE_KANCA', 'CABANG',
@@ -30,6 +53,262 @@ class ImportFileController extends Controller
         'SALES_VOLUME', 'AKUMULASI_SALES_VOLUME', 'JML_TRANSAKSI', 'AKUMULASI_TRANSAKSI',
         'NILAI', 'MERCHANT_QRIS_VOLUME', 'MERCHANT_QRIS', 'BAKI_DEBET',
     ];
+
+    private function isDailyLoanReport($reportData): bool
+    {
+        if (!$reportData) {
+            return false;
+        }
+
+        return strtolower((string) ($reportData->table_name ?? '')) === 'daily_loan_dinamis'
+            || str_contains(strtolower((string) ($reportData->nama_report ?? '')), 'daily loan');
+    }
+
+    private function readCsvRecord($handle, string $delimiter)
+    {
+        $row = fgetcsv($handle, 0, $delimiter);
+        if ($row === false) {
+            return false;
+        }
+
+        if (count($row) === 1) {
+            $single = (string) ($row[0] ?? '');
+            if ($single !== '' && str_contains($single, $delimiter)) {
+                $reparsed = str_getcsv($single, $delimiter);
+                if (count($reparsed) > 1) {
+                    $row = $reparsed;
+                }
+            }
+        }
+
+        if (!empty($row)) {
+            $row[0] = preg_replace('/^\xEF\xBB\xBF/', '', (string) ($row[0] ?? ''));
+        }
+
+        return $row;
+    }
+
+    private function normalizeDailyLoanHeader(string $header): string
+    {
+        $normalizedHeader = preg_replace('/[^A-Z0-9]+/', '_', strtoupper(trim($header)));
+
+        return match ($normalizedHeader) {
+            'TEXTBOX20', 'TOTAL_KEWAJIBAN' => 'total_kewajiban',
+            'TEXTBOX21', 'OS_IDR' => 'os_idr',
+            default => strtolower(str_replace(' ', '_', trim($header))),
+        };
+    }
+
+    private function resolveDailyLoanPreviewLabel(string $header): string
+    {
+        return match ($this->normalizeDailyLoanHeader($header)) {
+            'total_kewajiban' => 'Total Kewajiban',
+            'os_idr' => 'OS IDR',
+            default => str_replace('_', ' ', trim($header)) === trim($header) ? trim($header) : trim($header),
+        };
+    }
+
+    private function getDailyLoanPreviewOrder(): array
+    {
+        return [
+            'periode','kode_kanwil1','kanwil1','kode_cabang1','cabang1','branch1','unit1','curtyp','ao_name','cifno',
+            'nomor_rekening1','status_rekening1','ln_type','nama_debitur1','rate','jangka_waktu1','plafon','baki_debet1',
+            'ckpn','nilai_tercatat1','kol_adk1','kolek_detail','kolek','kolektabilitas_lancar','kolektabilitas_dpk',
+            'kolektabilitas_kuranglancar','kolektabilitas_diragukan','kolektabilitas_macet','total_kewajiban',
+            'tunggakan_pokok','tunggakan_bunga','tunggakan_penalti','umur_tunggakan','tgl_realisasi','tgl_jatuh_tempo',
+            'tanggal_menunggak','tgl_bayar_terakhir','tgl_terminate','last_date_maintenance_billing','next_pmt_date',
+            'next_pmt_int_date','advance_payment','bap','payment_amount','final_payment_amount','npb_pokok_la',
+            'npb_pokok_lf','npb_bunga_la','npb_bunga_lf','jml_angsuran1','jumlah_bayar','deffered_bunga',
+            'sai_tunggakan','sai_deffered','sai1','freq_payment','freq_int_payment','jadwal_gp_pokok','pn_pengelola1',
+            'pn_name1','pn_pemrakarsa1','pn_referral1','pn_restruk1','pn_pengelola2','pn_pemutus1','pn_crm1','pn_crr',
+            'pn_referral_naik_kelas1','jumlah_pn1','jumlah_pn_all1','code','description','kecamatan_t_tinggal',
+            'kelurahan_t_tinggal','kodepos_t_tinggal','kecamatan_t_usaha','kelurahan_t_usaha','kodepos_t_usaha',
+            'segmen_dashboard','produk_dashboard','divisi_segmen_dashboard','npl_method','restruk_ke1','jenis_restruk1',
+            'tgl_akad_restruk','flag_restruk','flag_restruk_covid1','flag_commodity_chain1','flag_briguna_digital1',
+            'flag_agf','flag_aft','pmtamt','pmtamt_base','offcr','lbdotu','keterangan_pn_pengelola','os_idr',
+            'flag_klaim','os_sebelum_klaim','os_penuh_berjalan','bilprn','bilint','billc',
+        ];
+    }
+
+    private function normalizeDailyLoanDate($value): ?string
+    {
+        $value = trim((string) $value);
+        if ($value === '') {
+            return null;
+        }
+
+        $value = str_replace('/', '-', $value);
+
+        if (preg_match('/^(\d{2})-(\d{2})-(\d{4})$/', $value, $matches) === 1) {
+            return $matches[3] . '-' . $matches[2] . '-' . $matches[1];
+        }
+
+        if (preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $value, $matches) === 1) {
+            return $matches[1] . '-' . $matches[2] . '-' . $matches[3];
+        }
+
+        if (preg_match('/^(\d{2})-(\d{2})-(\d{2})$/', $value, $matches) === 1) {
+            $year = (int) $matches[3];
+            $year += $year >= 70 ? 1900 : 2000;
+
+            return $year . '-' . $matches[2] . '-' . $matches[1];
+        }
+
+        try {
+            foreach (['d-m-Y', 'Y-m-d', 'd-m-y'] as $format) {
+                try {
+                    return Carbon::createFromFormat($format, $value)->format('Y-m-d');
+                } catch (\Throwable $e) {
+                }
+            }
+
+            return Carbon::parse($value)->format('Y-m-d');
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
+    private function isDailyLoanDateColumn(string $column): bool
+    {
+        return in_array($column, [
+            'periode','tgl_realisasi','tgl_jatuh_tempo','tanggal_menunggak','tgl_bayar_terakhir',
+            'tgl_terminate','last_date_maintenance_billing','next_pmt_date','next_pmt_int_date','tgl_akad_restruk',
+        ], true);
+    }
+
+    private function isDailyLoanNumericColumn(string $column): bool
+    {
+        return in_array($column, [
+            'rate','plafon','baki_debet1','ckpn','nilai_tercatat1','kolektabilitas_lancar','kolektabilitas_dpk',
+            'kolektabilitas_kuranglancar','kolektabilitas_diragukan','kolektabilitas_macet','total_kewajiban',
+            'tunggakan_pokok','tunggakan_bunga','tunggakan_penalti','umur_tunggakan','advance_payment','bap',
+            'payment_amount','final_payment_amount','npb_pokok_la','npb_pokok_lf','npb_bunga_la','npb_bunga_lf',
+            'jml_angsuran1','jumlah_bayar','deffered_bunga','sai_tunggakan','sai_deffered','sai1','freq_payment',
+            'freq_int_payment','jumlah_pn1','jumlah_pn_all1','restruk_ke1','pmtamt','pmtamt_base','os_idr',
+            'os_sebelum_klaim','os_penuh_berjalan','bilprn','bilint','billc',
+        ], true);
+    }
+
+    private function buildColumnImportBlueprint(array $selectedColumns, array $csvHeaders): array
+    {
+        $blueprint = [];
+
+        foreach ($selectedColumns as $index) {
+            if (!isset($csvHeaders[$index])) {
+                continue;
+            }
+
+            $colName = str_replace(' ', '_', $csvHeaders[$index]);
+            $normalizedColName = $this->normalizeDailyLoanHeader($colName);
+
+            if ($normalizedColName === 'id' || $normalizedColName === 'uniqueid_namareport') {
+                continue;
+            }
+
+            $type = 'string';
+            if ($this->isDailyLoanDateColumn($normalizedColName)) {
+                $type = 'date';
+            } elseif ($this->isDailyLoanNumericColumn($normalizedColName) || in_array(strtoupper($colName), self::NUMERIC_COLUMNS, true)) {
+                $type = 'numeric';
+            }
+
+            $blueprint[] = [
+                'index' => (int) $index,
+                'column' => $normalizedColName,
+                'type' => $type,
+            ];
+        }
+
+        return $blueprint;
+    }
+
+    private function applyDailyLoanCompatibilityColumns(array $rowData): array
+    {
+        static $dailyLoanColumns = null;
+
+        if ($dailyLoanColumns === null) {
+            $dailyLoanColumns = Schema::hasTable('daily_loan_dinamis')
+                ? array_fill_keys(Schema::getColumnListing('daily_loan_dinamis'), true)
+                : [];
+        }
+
+        $compatibilityMap = [
+            'kode_kanwil1' => 'kode_kanwil',
+            'kanwil1' => 'kanwil',
+            'kode_cabang1' => 'kode_cabang',
+            'cabang1' => 'cabang',
+            'branch1' => 'branch',
+            'unit1' => 'unit',
+            'nomor_rekening1' => 'nomor_rekening',
+            'baki_debet1' => 'baki_debet',
+            'total_kewajiban' => 'textbox20',
+            'os_idr' => 'textbox21',
+        ];
+
+        foreach ($compatibilityMap as $source => $target) {
+            if (!isset($dailyLoanColumns[$target])) {
+                continue;
+            }
+            if (!array_key_exists($source, $rowData)) {
+                continue;
+            }
+            if (!array_key_exists($target, $rowData) || $rowData[$target] === null || $rowData[$target] === '') {
+                $rowData[$target] = $rowData[$source];
+            }
+        }
+
+        return $rowData;
+    }
+
+    private function applyImportTimestamps(array $rowData, string $tableName): array
+    {
+        static $timestampSupport = [];
+
+        if (!isset($timestampSupport[$tableName])) {
+            $timestampSupport[$tableName] = [
+                'created_at' => Schema::hasColumn($tableName, 'created_at'),
+                'updated_at' => Schema::hasColumn($tableName, 'updated_at'),
+            ];
+        }
+
+        $now = now();
+
+        if (
+            $timestampSupport[$tableName]['created_at']
+            && (!array_key_exists('created_at', $rowData) || $rowData['created_at'] === null || $rowData['created_at'] === '')
+        ) {
+            $rowData['created_at'] = $now;
+        }
+
+        if (
+            $timestampSupport[$tableName]['updated_at']
+            && (!array_key_exists('updated_at', $rowData) || $rowData['updated_at'] === null || $rowData['updated_at'] === '')
+        ) {
+            $rowData['updated_at'] = $now;
+        }
+
+        return $rowData;
+    }
+
+    private function prepareDailyLoanPreview(array $headers, array $previewRows, array $uniqueValues): array
+    {
+        $displayMap = range(0, max(count($headers) - 1, 0));
+        $displayHeaders = array_map(function ($header) {
+            return $this->resolveDailyLoanPreviewLabel((string) $header);
+        }, $headers);
+
+        $orderedUniqueValues = [];
+        foreach ($displayMap as $displayIndex => $sourceIndex) {
+            $orderedUniqueValues[$displayIndex] = $uniqueValues[$sourceIndex] ?? [];
+        }
+
+        return [
+            'headers' => $displayHeaders,
+            'previewData' => $previewRows,
+            'formattedUniqueValues' => $orderedUniqueValues,
+            'displayToSourceMap' => $displayMap,
+        ];
+    }
 
     private function getActiveReportData()
     {
@@ -176,6 +455,13 @@ class ImportFileController extends Controller
         }
     }
 
+    private function resolveImportBatchSize(string $tableName): int
+    {
+        return strtolower($tableName) === 'daily_loan_dinamis'
+            ? self::DAILY_LOAN_IMPORT_BATCH_SIZE
+            : self::IMPORT_BATCH_SIZE;
+    }
+
     private function isJumlahMerchantDetailTable(string $tableName): bool
     {
         return strtolower($tableName) === 'jumlah_merchant_detail';
@@ -234,14 +520,40 @@ class ImportFileController extends Controller
         return $lookup;
     }
 
+    private function summarizeFailedRow(array $row): array
+    {
+        $summary = [];
+        $count = 0;
+
+        foreach ($row as $key => $value) {
+            if ($count >= 12) {
+                break;
+            }
+
+            $stringValue = is_scalar($value) || $value === null
+                ? (string) ($value ?? '')
+                : json_encode($value);
+
+            $summary[$key] = mb_substr($stringValue, 0, 120);
+            $count++;
+        }
+
+        $summary['__column_count'] = count($row);
+
+        return $summary;
+    }
+
     private function logFailedImportRow(string $tableName, array $row, string $errorMessage): void
     {
         DB::table('failed_jobs')->insert([
             'uuid' => (string) Str::uuid(),
             'connection' => 'database',
             'queue' => 'import_' . $tableName,
-            'payload' => json_encode(['error' => 'Single row failed.', 'sample' => $row]),
-            'exception' => $errorMessage,
+            'payload' => json_encode([
+                'error' => 'Single row failed.',
+                'sample' => $this->summarizeFailedRow($row),
+            ]),
+            'exception' => mb_substr($errorMessage, 0, 1000),
             'failed_at' => now(),
         ]);
     }
@@ -258,10 +570,15 @@ class ImportFileController extends Controller
         }
 
         try {
+            DB::beginTransaction();
             DB::table($tableName)->insert($chunk);
+            DB::commit();
             $totalSuccess += count($chunk);
             return;
         } catch (\Throwable $e) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
             $lastErrorMsg = substr($e->getMessage(), 0, 800) . '...';
         }
 
@@ -282,13 +599,16 @@ class ImportFileController extends Controller
         int &$totalSuccess,
         int &$totalFailed,
         string &$lastErrorMsg,
-        ?callable $beforeInsert = null
+        ?callable $beforeInsert = null,
+        ?int $batchSize = null
     ): void {
         if (empty($buffer)) {
             return;
         }
 
-        foreach (array_chunk($buffer, self::IMPORT_BATCH_SIZE) as $chunk) {
+        $batchSize ??= $this->resolveImportBatchSize($tableName);
+
+        foreach (array_chunk($buffer, $batchSize) as $chunk) {
             if ($beforeInsert) {
                 $chunk = array_values(array_filter($chunk, function (array $row) use ($beforeInsert) {
                     return $beforeInsert($row) !== false;
@@ -345,7 +665,8 @@ class ImportFileController extends Controller
         array $selectedColumns,
         array $csvHeaders,
         bool $isBrilinkSummary,
-        string $uniqueSuffix
+        string $uniqueSuffix,
+        ?array $columnBlueprint = null
     ): ?array {
         if ($isBrilinkSummary) {
             $rawPeriode = $sourceData[0] ?? '';
@@ -378,24 +699,22 @@ class ImportFileController extends Controller
             'uniqueid_namareport' => uniqid() . $uniqueSuffix,
         ];
 
-        foreach ($selectedColumns as $index) {
-            if (!isset($csvHeaders[$index])) {
-                continue;
-            }
+        $columnBlueprint ??= $this->buildColumnImportBlueprint($selectedColumns, $csvHeaders);
 
-            $colName = str_replace(' ', '_', $csvHeaders[$index]);
-
-            if (strtolower($colName) === 'id' || strtolower($colName) === 'uniqueid_namareport') {
-                continue;
-            }
-
+        foreach ($columnBlueprint as $columnMeta) {
+            $index = $columnMeta['index'];
             $cellValue = isset($sourceData[$index]) ? trim((string) $sourceData[$index]) : '';
-            if (in_array(strtoupper($colName), self::NUMERIC_COLUMNS, true)) {
+
+            if ($columnMeta['type'] === 'date') {
+                $cellValue = $this->normalizeDailyLoanDate($cellValue);
+            } elseif ($columnMeta['type'] === 'numeric') {
                 $cellValue = $this->normalizeDecimalValue($cellValue);
             }
 
-            $rowData[$colName] = ($cellValue === '') ? null : $cellValue;
+            $rowData[$columnMeta['column']] = ($cellValue === '') ? null : $cellValue;
         }
+
+        $rowData = $this->applyDailyLoanCompatibilityColumns($rowData);
 
         return $this->hasMeaningfulImportData($rowData, ['uniqueid_namareport', 'periode', 'posisi']) ? $rowData : null;
     }
@@ -428,7 +747,7 @@ class ImportFileController extends Controller
             rewind($handle);
 
             $rowCounter = 0;
-            while (($data = fgetcsv($handle, 10000, $delimiter)) !== false) {
+            while (($data = $this->readCsvRecord($handle, $delimiter)) !== false) {
                 if (empty($data) || implode('', $data) === '') {
                     continue;
                 }
@@ -553,6 +872,14 @@ class ImportFileController extends Controller
             return null;
         }
 
+        if (preg_match('/^-?\d+$/', $value) === 1) {
+            return $value . '.00';
+        }
+
+        if (preg_match('/^-?\d+\.\d+$/', $value) === 1) {
+            return number_format((float) $value, 2, '.', '');
+        }
+
         $value = preg_replace('/\s+/', '', $value);
         $value = preg_replace('/[^0-9,\.\-]/', '', $value);
 
@@ -597,7 +924,23 @@ class ImportFileController extends Controller
 
     public function upload(Request $request)
     {
-        $request->validate(['id_report' => 'required', 'file' => 'required|file|mimes:rar,csv']);
+        $contentLength = (int) ($request->server('CONTENT_LENGTH') ?? 0);
+        $postMaxSize = $this->parseIniSizeToBytes((string) ini_get('post_max_size'));
+
+        if ($contentLength > 0 && $postMaxSize > 0 && $contentLength > $postMaxSize && !$request->hasFile('file')) {
+            $message = 'Ukuran upload melebihi batas server (' . ini_get('post_max_size') . ').';
+
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => $message,
+                ], 413);
+            }
+
+            return back()->with('error', $message);
+        }
+
+        $request->validate(['id_report' => 'required', 'file' => 'required|file|mimes:rar,csv,txt']);
         $folderName = 'import_' . date('Ymd_His') . '_' . Str::random(5);
         $storagePath = storage_path('app/imports/' . $folderName);
         if (!file_exists($storagePath)) { mkdir($storagePath, 0777, true); }
@@ -636,12 +979,30 @@ class ImportFileController extends Controller
         ]);
 
         if ($extension !== 'rar' && count($files) === 1) {
-            return redirect()->route('import.preview.direct', [
+            $redirectUrl = route('import.preview.direct', [
                 'file_path' => $files[0]['path'],
+            ]);
+
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'status' => 'success',
+                    'redirect' => $redirectUrl,
+                ]);
+            }
+
+            return redirect()->to($redirectUrl);
+        }
+
+        $selectUrl = route('import.select');
+
+        if ($request->expectsJson() || $request->ajax()) {
+            return response()->json([
+                'status' => 'success',
+                'redirect' => $selectUrl,
             ]);
         }
 
-        return redirect()->route('import.select');
+        return redirect()->to($selectUrl);
     }
 
     public function preview(Request $request)
@@ -663,12 +1024,17 @@ class ImportFileController extends Controller
         $idReport = session('active_id_report', 1);
         $reportData = DB::table('nama_report')->where('id_report', $idReport)->first();
         $isBrilinkSummary = false;
+        $isDailyLoan = $this->isDailyLoanReport($reportData);
 
         if ($reportData && (stripos($reportData->nama_report, 'BRILINK Web - Laporan Summary Transaksi') !== false || stripos($reportData->nama_report, 'brilink_web') !== false)) {
             $isBrilinkSummary = true;
         }
 
-        if ($extension === 'csv') {
+        $previewSampleLimit = $isDailyLoan ? self::DAILY_LOAN_PREVIEW_SAMPLE_LIMIT : self::PREVIEW_SAMPLE_LIMIT;
+        $previewUniqueScanLimit = $isDailyLoan ? self::DAILY_LOAN_PREVIEW_UNIQUE_SCAN_LIMIT : self::PREVIEW_UNIQUE_SCAN_LIMIT;
+        $previewUniqueLimitPerColumn = $isDailyLoan ? self::DAILY_LOAN_PREVIEW_UNIQUE_LIMIT_PER_COLUMN : self::PREVIEW_UNIQUE_LIMIT_PER_COLUMN;
+
+        if (in_array($extension, ['csv', 'txt'], true)) {
             if (($handle = fopen($filePath, "r")) !== FALSE) {
                 $firstLine = fgets($handle);
                 if ($currentDelimiter === 'auto') {
@@ -682,13 +1048,11 @@ class ImportFileController extends Controller
                 $savedRows = 0;
                 $scannedRows = 0;
                 $collectUniqueValues = true;
-                while (($data = fgetcsv($handle, 10000, $delimiter)) !== FALSE) {
+                while (($data = $this->readCsvRecord($handle, $delimiter)) !== FALSE) {
                     if (empty($data) || implode('', $data) === '') continue;
                     
                     if ($rowCounter == 0) {
-                        $headers = array_map(function ($header) {
-                            return str_replace(' ', '_', $header);
-                        }, $this->formatCsvHeaders($data, $isBrilinkSummary));
+                        $headers = $this->formatCsvHeaders($data, $isBrilinkSummary);
 
                         if (!$isBrilinkSummary) {
                             foreach ($headers as $i => $h) { 
@@ -702,12 +1066,29 @@ class ImportFileController extends Controller
                         }
 
                     } else {
-                        if (trim($data[0]) === 'TAHUN' || stripos(trim($data[0]), 'textbox') !== false) continue;
+                        if (!$isDailyLoan && (trim((string) $data[0]) === 'TAHUN' || stripos(trim((string) $data[0]), 'textbox') !== false)) continue;
 
                         if ($isBrilinkSummary) {
                             $data = $this->transformBrilinkSummaryRow($data);
-                        } 
-                        else {
+                        } elseif ($isDailyLoan) {
+                            if (count($data) < count($headers)) {
+                                $data = array_pad($data, count($headers), null);
+                            }
+                            if (count($data) > count($headers)) continue;
+
+                            foreach ($headers as $i => $header) {
+                                $normalizedColumn = $this->normalizeDailyLoanHeader($header);
+                                $cellValue = isset($data[$i]) ? trim((string) $data[$i]) : '';
+
+                                if ($this->isDailyLoanDateColumn($normalizedColumn)) {
+                                    $data[$i] = $this->normalizeDailyLoanDate($cellValue);
+                                } elseif ($this->isDailyLoanNumericColumn($normalizedColumn)) {
+                                    $data[$i] = $this->normalizeDecimalValue($cellValue);
+                                } else {
+                                    $data[$i] = $cellValue === '' ? null : $cellValue;
+                                }
+                            }
+                        } else {
                             if (count($data) < count($headers)) {
                                 $data = array_pad($data, count($headers), null);
                             }
@@ -737,7 +1118,7 @@ class ImportFileController extends Controller
 
                         $scannedRows++;
 
-                        if ($savedRows < self::PREVIEW_SAMPLE_LIMIT) {
+                        if ($savedRows < $previewSampleLimit) {
                             $previewData[] = $data;
                             $savedRows++;
                         }
@@ -749,20 +1130,20 @@ class ImportFileController extends Controller
                                 }
 
                                 $cleanVal = trim((string) $val);
-                                if (count($uniqueValues[$i]) < self::PREVIEW_UNIQUE_LIMIT_PER_COLUMN || isset($uniqueValues[$i][$cleanVal])) {
+                                if (count($uniqueValues[$i]) < $previewUniqueLimitPerColumn || isset($uniqueValues[$i][$cleanVal])) {
                                     $uniqueValues[$i][$cleanVal] = true;
                                 }
                             }
 
                             $allColumnsFilled = !empty($uniqueValues);
                             foreach ($uniqueValues as $valuesMap) {
-                                if (count($valuesMap) < self::PREVIEW_UNIQUE_LIMIT_PER_COLUMN) {
+                                if (count($valuesMap) < $previewUniqueLimitPerColumn) {
                                     $allColumnsFilled = false;
                                     break;
                                 }
                             }
 
-                            if ($scannedRows >= self::PREVIEW_UNIQUE_SCAN_LIMIT || $allColumnsFilled) {
+                            if ($scannedRows >= $previewUniqueScanLimit || $allColumnsFilled) {
                                 $collectUniqueValues = false;
                             }
                         }
@@ -777,8 +1158,18 @@ class ImportFileController extends Controller
         foreach ($uniqueValues as $index => $valuesMap) {
             $keys = array_keys($valuesMap); sort($keys); $formattedUniqueValues[$index] = $keys;
         }
-        
+
+        $displayToSourceMap = range(0, max(count($headers) - 1, 0));
+        if ($isDailyLoan) {
+            $preparedPreview = $this->prepareDailyLoanPreview($headers, $previewData, $formattedUniqueValues);
+            $headers = $preparedPreview['headers'];
+            $previewData = $preparedPreview['previewData'];
+            $formattedUniqueValues = $preparedPreview['formattedUniqueValues'];
+            $displayToSourceMap = $preparedPreview['displayToSourceMap'];
+        }
+
         session(['final_import_path' => $filePath]);
+        session(['import_display_to_source_map' => $displayToSourceMap]);
 
         $processRoute = route('import.process');
         $initRoute = route('import.init');
@@ -794,7 +1185,13 @@ class ImportFileController extends Controller
             'processRoute',
             'initRoute',
             'streamRoute'
-        ));
+        ))->with([
+            'disableArea6AutoFilter' => $isDailyLoan,
+            'forceAllFiltersCheckedOnLoad' => $isDailyLoan,
+            'lockDelimiterSelector' => $isDailyLoan,
+            'fixedDelimiterLabel' => 'Koma ( , )',
+            'backRoute' => route('import.index'),
+        ]);
     }
 
     public function initImport(Request $request)
@@ -813,9 +1210,16 @@ class ImportFileController extends Controller
         $filePath = $request->input('file_path');
         $selectedColumns = array_map('intval', $request->input('selected_columns', []));
         $activeFilters = json_decode($request->input('active_filters_json'), true) ?: [];
+        $displayToSourceMap = session('import_display_to_source_map', []);
+        if (!empty($displayToSourceMap)) {
+            $selectedColumns = array_values(array_map(function ($displayIndex) use ($displayToSourceMap) {
+                return (int) ($displayToSourceMap[$displayIndex] ?? $displayIndex);
+            }, $selectedColumns));
+        }
         $normalizedFilters = [];
         foreach ($activeFilters as $columnIndex => $allowedValues) {
-            $normalizedFilters[(int) $columnIndex] = array_fill_keys(array_map(function ($value) {
+            $sourceIndex = !empty($displayToSourceMap) ? (int) ($displayToSourceMap[$columnIndex] ?? $columnIndex) : (int) $columnIndex;
+            $normalizedFilters[$sourceIndex] = array_fill_keys(array_map(function ($value) {
                 return trim((string) $value);
             }, (array) $allowedValues), true);
         }
@@ -979,6 +1383,9 @@ class ImportFileController extends Controller
                 $tahunIndex = (int) ($params['tahun_index'] ?? -1);
                 $totalRows = (int) ($params['total_rows'] ?? 0);
                 $duplicateLookup = $params['duplicate_lookup'] ?? [];
+                $columnBlueprint = $isBrilinkSummary ? [] : $this->buildColumnImportBlueprint($selectedColumns, $csvHeaders);
+                $batchSize = $this->resolveImportBatchSize($tableName);
+                $progressStep = strtolower($tableName) === 'daily_loan_dinamis' ? 200 : 500;
 
                 if ($filePath === '' || !file_exists($filePath)) {
                     $send('error', ['message' => 'File tidak ditemukan di server. Silakan upload ulang.']);
@@ -1042,11 +1449,11 @@ class ImportFileController extends Controller
                     return true;
                 };
 
-                $flushBuffer = function () use (&$buffer, &$totalSuccess, &$totalFailed, &$lastErrorMsg, $tableName, $shouldInsertRow) {
-                    $this->flushInsertBuffer($buffer, $tableName, $totalSuccess, $totalFailed, $lastErrorMsg, $shouldInsertRow);
+                $flushBuffer = function () use (&$buffer, &$totalSuccess, &$totalFailed, &$lastErrorMsg, $tableName, $shouldInsertRow, $batchSize) {
+                    $this->flushInsertBuffer($buffer, $tableName, $totalSuccess, $totalFailed, $lastErrorMsg, $shouldInsertRow, $batchSize);
                 };
 
-                while (($data = fgetcsv($handle, 10000, $resolvedDelimiter)) !== false) {
+                while (($data = $this->readCsvRecord($handle, $resolvedDelimiter)) !== false) {
                     if (empty($data) || implode('', $data) === '') {
                         continue;
                     }
@@ -1063,26 +1470,28 @@ class ImportFileController extends Controller
                     }
 
                     $mappedRow = $this->mapRowForInsert(
-                        $isBrilinkSummary ? $data : $parsedRow,
+                        $parsedRow,
                         $selectedColumns,
                         $csvHeaders,
                         $isBrilinkSummary,
-                        $uniqueSuffix
+                        $uniqueSuffix,
+                        $columnBlueprint
                     );
                     if ($mappedRow === null) {
                         $rowCounter++;
                         continue;
                     }
 
+                    $mappedRow = $this->applyImportTimestamps($mappedRow, $tableName);
                     $buffer[] = $mappedRow;
                     $rowsDone++;
                     $rowCounter++;
 
-                    if (count($buffer) >= self::IMPORT_BATCH_SIZE) {
+                    if (count($buffer) >= $batchSize) {
                         $flushBuffer();
                     }
 
-                    if ($rowsDone - $lastProgressAt >= 500) {
+                    if ($rowsDone - $lastProgressAt >= $progressStep) {
                         $lastProgressAt = $rowsDone;
                         $elapsed = max(microtime(true) - $startTime, 0.001);
                         $speed = (int) ($rowsDone / $elapsed);
@@ -1162,6 +1571,7 @@ class ImportFileController extends Controller
         ini_set('memory_limit', '-1');
         ini_set('auto_detect_line_endings', true);
         ini_set('max_execution_time', 0); 
+        DB::disableQueryLog();
 
         $request->validate([
             'file_path' => 'required|string',
@@ -1171,8 +1581,14 @@ class ImportFileController extends Controller
         ]);
 
         $filePath = $request->input('file_path');
-        $selectedColumns = $request->input('selected_columns');
+        $selectedColumns = array_map('intval', $request->input('selected_columns', []));
         $activeFilters = json_decode($request->input('active_filters_json'), true) ?: [];
+        $displayToSourceMap = session('import_display_to_source_map', []);
+        if (!empty($displayToSourceMap)) {
+            $selectedColumns = array_values(array_map(function ($displayIndex) use ($displayToSourceMap) {
+                return (int) ($displayToSourceMap[$displayIndex] ?? $displayIndex);
+            }, $selectedColumns));
+        }
         $currentDelimiter = $request->input('delimiter', 'auto');
         
         // 🔥 1. DETEKSI REPORT (WAJIB SAMA DENGAN PREVIEW)
@@ -1226,9 +1642,23 @@ class ImportFileController extends Controller
         $dataToInsert = [];
         $csvHeaders = [];
         $duplicateLookup = [];
+        $columnBlueprint = [];
+        $batchSize = $this->resolveImportBatchSize($tableName);
 
         $posisiIndex = -1;
         $tahunIndex = -1;
+
+        if (filesize($filePath) > (25 * 1024 * 1024)) {
+            $response = [
+                'status' => 'warning',
+                'title' => 'Gunakan Mode Streaming',
+                'text' => 'File terlalu besar untuk diproses lewat fallback import biasa. Silakan jalankan import melalui tombol preview yang memakai progress streaming.',
+            ];
+
+            return $request->expectsJson()
+                ? response()->json($response, 422)
+                : redirect()->route('import.index')->with('sweet_warning', $response);
+        }
 
         if (($handle = fopen($filePath, "r")) !== FALSE) {
             if ($currentDelimiter === 'auto') {
@@ -1245,7 +1675,7 @@ class ImportFileController extends Controller
             }
 
             $rowCounter = 0;
-            while (($data = fgetcsv($handle, 10000, $delimiter)) !== FALSE) {
+            while (($data = $this->readCsvRecord($handle, $delimiter)) !== FALSE) {
                 if (empty($data) || implode('', $data) === '') continue;
 
                 // 🔥 2. SKIP HEADER DEFAULT (INI KRITIS)
@@ -1256,13 +1686,15 @@ class ImportFileController extends Controller
                             if (stripos($hdr, 'posisi') !== false) { $posisiIndex = $idx; }
                             if (stripos($hdr, 'tahun') !== false) { $tahunIndex = $idx; }
                         }
+
+                        $columnBlueprint = $this->buildColumnImportBlueprint($selectedColumns, $csvHeaders);
                     }
                     
                     $rowCounter++;
                     continue; 
                 }
 
-                if (trim($data[0]) === 'TAHUN' || stripos(trim($data[0]), 'textbox') !== false) continue;
+                if (!$this->isDailyLoanReport($reportData) && (trim((string) $data[0]) === 'TAHUN' || stripos(trim((string) $data[0]), 'textbox') !== false)) continue;
 
                 // 🔥 4. SKIP VALIDASI KOLOM HEADER SAAT BRILINK
                 if (!$isBrilinkSummary) {
@@ -1309,7 +1741,8 @@ class ImportFileController extends Controller
                 // FILTER AKTIF
                 $passFilter = true;
                 foreach ($activeFilters as $colIdx => $allowedValues) {
-                    $cellValue = isset($filterData[$colIdx]) ? trim((string) $filterData[$colIdx]) : '';
+                    $sourceIndex = !empty($displayToSourceMap) ? (int) ($displayToSourceMap[$colIdx] ?? $colIdx) : (int) $colIdx;
+                    $cellValue = isset($filterData[$sourceIndex]) ? trim((string) $filterData[$sourceIndex]) : '';
                     if (!in_array($cellValue, $allowedValues)) {
                         $passFilter = false;
                         break;
@@ -1359,26 +1792,23 @@ class ImportFileController extends Controller
                     $rowData = [];
                     $rowData['uniqueid_namareport'] = uniqid() . $uniqueSuffix;
 
-                    foreach ($selectedColumns as $index) {
-                        if (!isset($csvHeaders[$index])) continue;
-                        
-                        $colName = str_replace(' ', '_', $csvHeaders[$index]);
+                    foreach ($columnBlueprint as $columnMeta) {
+                        $index = $columnMeta['index'];
+                        $cellValue = isset($data[$index]) ? trim((string) $data[$index]) : '';
 
-                        if (strtolower($colName) === 'id' || strtolower($colName) === 'uniqueid_namareport') {
-                            continue;
-                        }
-
-                        $cellValue = isset($data[$index]) ? trim($data[$index]) : '';
-                        
-                        if (in_array(strtoupper($colName), self::NUMERIC_COLUMNS, true)) {
+                        if ($columnMeta['type'] === 'date') {
+                            $cellValue = $this->normalizeDailyLoanDate($cellValue);
+                        } elseif ($columnMeta['type'] === 'numeric') {
                             $cellValue = $this->normalizeDecimalValue($cellValue);
                         }
 
-                        $rowData[$colName] = ($cellValue === '') ? null : $cellValue;
+                        $rowData[$columnMeta['column']] = ($cellValue === '') ? null : $cellValue;
                     }
+
+                    $rowData = $this->applyDailyLoanCompatibilityColumns($rowData);
                 }
                 
-                $dataToInsert[] = $rowData;
+                $dataToInsert[] = $this->applyImportTimestamps($rowData, $tableName);
                 $rowCounter++;
             }
             fclose($handle);
@@ -1480,7 +1910,7 @@ class ImportFileController extends Controller
             return true;
         };
 
-        $this->flushInsertBuffer($dataToInsert, $tableName, $totalSuccess, $totalFailed, $lastErrorMsg, $shouldInsertRow);
+        $this->flushInsertBuffer($dataToInsert, $tableName, $totalSuccess, $totalFailed, $lastErrorMsg, $shouldInsertRow, $batchSize);
 
         $finalStatus = $totalFailed > 0 ? ($totalSuccess > 0 ? 'failed_partial' : 'failed') : 'completed';
         DB::table('import_jobs')->where('id', $jobId)->update([

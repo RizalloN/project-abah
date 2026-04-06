@@ -3,6 +3,9 @@
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Database\QueryException;
+use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\Response;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -16,5 +19,37 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        //
+        $renderDatabaseUnavailable = function (Request $request): Response {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'message' => 'Koneksi database tidak tersedia. Pastikan MySQL sedang berjalan lalu coba lagi.',
+                ], 503);
+            }
+
+            return response()->view('errors.database-unavailable', [], 503);
+        };
+
+        $isConnectionRefused = static function (string $message): bool {
+            $message = strtolower($message);
+
+            return str_contains($message, 'sqlstate[hy000] [2002]')
+                || str_contains($message, 'connection refused')
+                || str_contains($message, 'actively refused');
+        };
+
+        $exceptions->render(function (QueryException $e, Request $request) use ($renderDatabaseUnavailable, $isConnectionRefused) {
+            if ($isConnectionRefused($e->getMessage())) {
+                return $renderDatabaseUnavailable($request);
+            }
+
+            return null;
+        });
+
+        $exceptions->render(function (\PDOException $e, Request $request) use ($renderDatabaseUnavailable, $isConnectionRefused) {
+            if ($isConnectionRefused($e->getMessage())) {
+                return $renderDatabaseUnavailable($request);
+            }
+
+            return null;
+        });
     })->create();

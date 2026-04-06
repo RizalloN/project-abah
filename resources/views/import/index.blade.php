@@ -147,6 +147,14 @@
             const isSimpanan = reportName.includes('simpanan multipn');
             const normalizedReportName = reportName.replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
             const isPerformancePis = normalizedReportName.includes('performance pis');
+            const isReportPh = tableName === 'lw325_ph'
+                || normalizedReportName === 'report ph'
+                || normalizedReportName.includes('report ph')
+                || normalizedReportName.includes('report pinjaman')
+                || normalizedReportName.includes('rekening pinjaman ph')
+                || normalizedReportName.includes('nomintaif per rekening')
+                || normalizedReportName.includes('nominatif rekening')
+                || normalizedReportName.includes('nominal per rekening');
             const isCasaBrilink = tableName === 'casa_brilink_web'
                 || tableName === 'casa_brilink_edc'
                 || reportName.includes('casa brilink web')
@@ -190,9 +198,9 @@
                     labelCsvHelp.textContent = 'Gunakan file CSV Daily Loan Dinamis terbaru sesuai struktur kolom baru.';
                 }
 
-                formImport.action = "{{ route('import.dailyloan.upload') }}";
-                formImport.dataset.preparePreviewUrl = "{{ route('import.dailyloan.prepare-preview') }}";
-                formImport.dataset.uploadFlow = 'excel-preview';
+                formImport.action = "{{ route('import.upload') }}";
+                formImport.dataset.preparePreviewUrl = '';
+                formImport.dataset.uploadFlow = 'direct-submit';
 
                 btnSubmit.className = "btn btn-success font-weight-bold";
                 btnSubmit.innerHTML = '<i class="fas fa-file-csv"></i> Upload CSV Daily Loan';
@@ -254,6 +262,34 @@
 
                 btnSubmit.className = "btn btn-info font-weight-bold";
                 btnSubmit.innerHTML = '<i class="fas fa-file-upload"></i> Upload File PIS';
+                btnSubmit.dataset.defaultLabel = btnSubmit.innerHTML;
+
+            } else if (isReportPh) {
+                formRAR.style.display = 'none';
+                formExcel.style.display = 'none';
+                formCsv.style.display = 'block';
+                formPeriod.style.display = 'none';
+
+                inputRar.disabled = true;
+                inputRar.required = false;
+                inputExcel.disabled = true;
+                inputExcel.required = false;
+                inputCsv.disabled = false;
+                inputCsv.required = true;
+                inputCsv.setAttribute('accept', '.csv,.txt');
+                inputPeriod.disabled = true;
+                inputPeriod.required = false;
+
+                if (labelCsvHelp) {
+                    labelCsvHelp.textContent = 'Upload file CSV/TXT Report Nominatif Rekening Pinjaman PH. Kolom nomor urut seperti Textbox3 tidak akan ikut diimport ke database.';
+                }
+
+                formImport.action = "{{ route('import.reportph.upload') }}";
+                formImport.dataset.preparePreviewUrl = '';
+                formImport.dataset.uploadFlow = 'direct-submit';
+
+                btnSubmit.className = "btn btn-info font-weight-bold";
+                btnSubmit.innerHTML = '<i class="fas fa-file-csv"></i> Upload CSV Nominatif PH';
                 btnSubmit.dataset.defaultLabel = btnSubmit.innerHTML;
 
             } else if (isCasaBrilink) {
@@ -424,34 +460,71 @@
 
                         xhr.open('POST', formImport.action, true);
                         xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
-                        xhr.setRequestHeader('Accept', 'text/html,application/xhtml+xml,application/json');
+                        xhr.setRequestHeader('Accept', isDailyLoanPreview ? 'application/json' : 'text/html,application/xhtml+xml,application/json');
 
                         xhr.upload.onprogress = function(event) {
                             if (!event.lengthComputable) {
-                                updateModalProgress(25, 'Mengupload file ke server...');
+                                updateModalProgress(isDailyLoanPreview ? 20 : 25, isDailyLoanPreview ? 'Mengupload file Daily Loan ke server...' : 'Mengupload file ke server...');
                                 return;
                             }
 
                             const percent = Math.min(90, Math.max(5, Math.round((event.loaded / event.total) * 90)));
-                            updateModalProgress(percent, `Mengupload file... ${percent}%`);
+                            updateModalProgress(percent, isDailyLoanPreview ? `Mengupload file Daily Loan... ${percent}%` : `Mengupload file... ${percent}%`);
                         };
 
                         xhr.onloadstart = function() {
-                            updateModalProgress(5, 'Memulai upload file...');
+                            updateModalProgress(5, isDailyLoanPreview ? 'Memulai upload Daily Loan...' : 'Memulai upload file...');
                         };
 
                         xhr.onload = function() {
                             if (xhr.status >= 200 && xhr.status < 400) {
+                                if (isDailyLoanPreview) {
+                                    let payload = {};
+                                    try {
+                                        payload = xhr.responseText ? JSON.parse(xhr.responseText) : {};
+                                    } catch (_) {
+                                        themedSwal({
+                                            icon: 'error',
+                                            title: 'Upload Error',
+                                            text: 'Server mengembalikan respons Daily Loan yang tidak valid.'
+                                        });
+                                        setSubmitButtonState(false);
+                                        return;
+                                    }
+
+                                    updateModalProgress(96, 'Upload selesai. Menyiapkan preview Daily Loan...');
+                                    const redirectUrl = payload.redirect || xhr.responseURL || formImport.action;
+                                    setTimeout(function () {
+                                        updateModalProgress(100, 'Membuka halaman preview...');
+                                        window.location.href = redirectUrl;
+                                    }, 120);
+                                    return;
+                                }
+
                                 updateModalProgress(100, 'Upload selesai. Membuka halaman preview...');
                                 const redirectUrl = xhr.responseURL || formImport.action;
                                 window.location.href = redirectUrl;
                                 return;
                             }
 
+                            let serverMessage = 'Upload gagal diproses oleh server.';
+                            try {
+                                const payload = xhr.responseText ? JSON.parse(xhr.responseText) : {};
+                                serverMessage = payload.message || payload.text || payload.error || serverMessage;
+                            } catch (_) {
+                                if (xhr.status === 413) {
+                                    serverMessage = 'Ukuran file melebihi batas upload server.';
+                                } else if (xhr.status === 422) {
+                                    serverMessage = 'Validasi upload gagal. Pastikan file CSV/TXT valid dan ukurannya tidak melebihi batas server.';
+                                } else if (xhr.status >= 500) {
+                                    serverMessage = 'Server mengalami error internal saat memproses upload.';
+                                }
+                            }
+
                             themedSwal({
                                 icon: 'error',
                                 title: 'Upload Error',
-                                text: 'Upload gagal diproses oleh server.'
+                                text: serverMessage + ' (HTTP ' + xhr.status + ')'
                             });
                             setSubmitButtonState(false);
                         };
@@ -467,7 +540,7 @@
 
                         xhr.onloadend = function() {
                             if (xhr.status >= 200 && xhr.status < 400) {
-                                updateModalProgress(95, 'Upload selesai. Menyiapkan preview...');
+                                updateModalProgress(95, isDailyLoanPreview ? 'Upload selesai. Menyiapkan preview Daily Loan...' : 'Upload selesai. Menyiapkan preview...');
                             }
                         };
 

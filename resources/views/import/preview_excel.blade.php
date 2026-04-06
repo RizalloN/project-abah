@@ -3,10 +3,6 @@
 @section('title', 'Preview & Filter Data - Daily Loan Dinamis')
 
 @section('content')
-@php
-    $isDailyLoan = (int) session('active_id_report') === 8;
-    $sourceLabel = $isDailyLoan ? 'CSV' : 'Excel';
-@endphp
 <div class="row">
     <div class="col-12">
 
@@ -17,13 +13,13 @@
         <div class="card card-outline card-success shadow-sm mb-3">
             <div class="card-header bg-light">
                 <h3 class="card-title font-weight-bold text-success">
-                    <i class="fas {{ $isDailyLoan ? 'fa-file-csv' : 'fa-file-excel' }} mr-1"></i> Preview {{ $sourceLabel }} Data (Daily Loan Dinamis / Simpanan MultiPN)
+                    <i class="fas fa-file-excel mr-1"></i> Preview Excel Data (Daily Loan Dinamis / Simpanan MultiPN)
                 </h3>
             </div>
             <div class="card-body">
                 <div class="alert alert-info border-0 bg-light text-dark">
                     <i class="fas fa-info-circle text-info"></i>
-                    <strong>Smart Parser Aktif:</strong> Struktur kolom {{ $sourceLabel }} telah dinormalisasi untuk preview dan filter.
+                    <strong>Smart Parser Aktif:</strong> Metadata pada Excel telah dihapus dan struktur kolom telah dinormalisasi.
                     Anda dapat memfilter tabel secara <i>realtime</i> (menampilkan maks 100 baris pertama).
                 </div>
             </div>
@@ -504,7 +500,7 @@ document.addEventListener('DOMContentLoaded', function () {
             </div>`;
 
         themedSwal({
-            title: '<i class="fas fa-file-import text-success mr-1"></i> Import Data {{ $sourceLabel }}',
+            title: '<i class="fas fa-file-import text-success mr-1"></i> Import Data Excel',
             html: swalHtml,
             allowOutsideClick: false,
             allowEscapeKey: false,
