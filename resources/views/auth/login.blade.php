@@ -4,34 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Login - DigiBranch Area 6</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: {
-                        sans: ['Plus Jakarta Sans', 'sans-serif'],
-                    },
-                    colors: {
-                        brand: {
-                            50: '#f3f8f7',
-                            100: '#dcecea',
-                            500: '#1f6f68',
-                            600: '#195952',
-                            700: '#12463f',
-                            900: '#0d2b2a',
-                        },
-                    },
-                    boxShadow: {
-                        soft: '0 30px 80px -32px rgba(15, 23, 42, 0.35)',
-                    },
-                },
-            },
-        };
-    </script>
+    @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
 <body class="min-h-screen bg-slate-950 font-sans text-slate-900 antialiased">
     <div class="relative isolate min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,_rgba(32,129,122,0.35),_transparent_32%),radial-gradient(circle_at_bottom_right,_rgba(245,158,11,0.18),_transparent_22%),linear-gradient(135deg,_#020617_0%,_#0f172a_55%,_#111827_100%)]">
@@ -88,6 +61,12 @@
                                 Gunakan personal number dan password untuk mengakses portal DigiBranch - Area 6.
                             </p>
                         </div>
+
+                        @if (session('status'))
+                            <div class="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">
+                                {{ session('status') }}
+                            </div>
+                        @endif
 
                         <form method="POST" action="{{ route('login') }}" class="mt-8 space-y-5">
                             @csrf

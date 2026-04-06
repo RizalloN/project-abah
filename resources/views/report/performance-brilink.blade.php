@@ -179,10 +179,10 @@
                                 <th colspan="10" class="bg-brilink-mid">Jumlah Agen Brilink</th>
                             </tr>
                             <tr class="bg-header-sub">
-                                <th class="lbl-curr text-primary">Feb-26</th>
-                                <th>Des'25</th>
-                                <th>31-Jan</th>
-                                <th>28-Feb</th>
+                                <th class="lbl-casa-curr text-primary">Feb-26</th>
+                                <th class="lbl-casa-dec">Des'25</th>
+                                <th class="lbl-casa-prev">31-Jan</th>
+                                <th class="lbl-casa-end">28-Feb</th>
                                 <th>MtD</th>
                                 <th>MtD (%)</th>
                                 <th>YtD</th>
@@ -275,7 +275,7 @@
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
                                 <th rowspan="2" class="bg-brilink-dark align-middle">BRANCH OFFICE</th>
-                                <th colspan="10" class="bg-brilink-mid">CASA Agen Brilink</th>
+                                <th colspan="10" class="bg-brilink-mid">CASA Agen Brilink <br><small>(Rp. Juta)</small></th>
                             </tr>
                             <tr class="bg-header-sub">
                                 <th class="lbl-curr text-primary">Feb-26</th>
@@ -314,6 +314,12 @@ document.addEventListener('DOMContentLoaded', function () {
         if(num === null || num === undefined || isNaN(num)) return '-';
         let val = num / 1000000000;
         return new Intl.NumberFormat('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val); 
+    }
+
+    function formatJuta(num) {
+        if(num === null || num === undefined || isNaN(num)) return '-';
+        let val = num / 1000000;
+        return new Intl.NumberFormat('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val);
     }
     
     function formatGrowth(val, isFloat = false) {
@@ -362,6 +368,54 @@ document.addEventListener('DOMContentLoaded', function () {
             <td>${formatGrowth(metric.ytd, isMilyar)}</td>
             <td>${ytdPct === null ? '-' : formatGrowth(ytdPct)}</td>
             <td>${formatGrowth(metric.yoy, isMilyar)}</td>
+            <td>${yoyPct === null ? '-' : formatGrowth(yoyPct)}</td>
+        </tr>`;
+    }
+
+    function renderCasaRow(label, metric) {
+        const curr = safeNum(metric.curr);
+        const prev = calcPrev(metric.curr, metric.mtd);
+        const dec = calcPrev(metric.curr, metric.ytd);
+        const yoyPrev = calcPrev(metric.curr, metric.yoy);
+        const mtdPct = calcPct(metric.mtd, prev);
+        const ytdPct = calcPct(metric.ytd, dec);
+        const yoyPct = calcPct(metric.yoy, yoyPrev);
+
+        return `<tr>
+            <td class="text-left font-weight-bold text-dark">${label}</td>
+            <td>${formatJuta(curr)}</td>
+            <td>${formatJuta(dec)}</td>
+            <td>${formatJuta(prev)}</td>
+            <td>${formatJuta(curr)}</td>
+            <td>${formatGrowth(safeNum(metric.mtd) / 1000000)}</td>
+            <td>${mtdPct === null ? '-' : formatGrowth(mtdPct)}</td>
+            <td>${formatGrowth(safeNum(metric.ytd) / 1000000)}</td>
+            <td>${ytdPct === null ? '-' : formatGrowth(ytdPct)}</td>
+            <td>${formatGrowth(safeNum(metric.yoy) / 1000000)}</td>
+            <td>${yoyPct === null ? '-' : formatGrowth(yoyPct)}</td>
+        </tr>`;
+    }
+
+    function renderCasaTotalRow(label, metric) {
+        const curr = safeNum(metric.curr);
+        const prev = calcPrev(metric.curr, metric.mtd);
+        const dec = calcPrev(metric.curr, metric.ytd);
+        const yoyPrev = calcPrev(metric.curr, metric.yoy);
+        const mtdPct = calcPct(metric.mtd, prev);
+        const ytdPct = calcPct(metric.ytd, dec);
+        const yoyPct = calcPct(metric.yoy, yoyPrev);
+
+        return `<tr class="row-total">
+            <td class="text-left">${label}</td>
+            <td>${formatJuta(curr)}</td>
+            <td>${formatJuta(dec)}</td>
+            <td>${formatJuta(prev)}</td>
+            <td>${formatJuta(curr)}</td>
+            <td>${formatGrowth(safeNum(metric.mtd) / 1000000)}</td>
+            <td>${mtdPct === null ? '-' : formatGrowth(mtdPct)}</td>
+            <td>${formatGrowth(safeNum(metric.ytd) / 1000000)}</td>
+            <td>${ytdPct === null ? '-' : formatGrowth(ytdPct)}</td>
+            <td>${formatGrowth(safeNum(metric.yoy) / 1000000)}</td>
             <td>${yoyPct === null ? '-' : formatGrowth(yoyPct)}</td>
         </tr>`;
     }
@@ -430,11 +484,13 @@ document.addEventListener('DOMContentLoaded', function () {
                     let htmlJuragan = '';
                     let htmlBep = '';
                     let htmlTrx = '';
+                    let htmlCasa = '';
 
                     res.data.forEach((row) => {
                         htmlAgenUser += renderMetricRow(row.branch, row.agen);
                         htmlJuragan += renderMetricRow(row.branch, row.juragan);
                         htmlBep += renderMetricRow(row.branch, row.bep);
+                        htmlCasa += renderCasaRow(row.branch, row.casa || { curr: 0, mtd: 0, ytd: 0, yoy: 0 });
 
                         const trxDec = calcPrev(row.trx.curr, row.trx.ytd);
                         const trxPrev = calcPrev(row.trx.curr, row.trx.yoy);
@@ -489,6 +545,7 @@ document.addEventListener('DOMContentLoaded', function () {
                         htmlAgenUser += renderMetricTotalRow(total.branch, total.agen);
                         htmlJuragan += renderMetricTotalRow(total.branch, total.juragan);
                         htmlBep += renderMetricTotalRow(total.branch, total.bep);
+                        htmlCasa += renderCasaTotalRow(total.branch, total.casa || { curr: 0, mtd: 0, ytd: 0, yoy: 0 });
 
                         const totalTrxDec = calcPrev(total.trx.curr, total.trx.ytd);
                         const totalTrxPrev = calcPrev(total.trx.curr, total.trx.yoy);
@@ -543,12 +600,18 @@ document.addEventListener('DOMContentLoaded', function () {
                     $('#tbody-juragan').html(htmlJuragan);
                     $('#tbody-bep-detail').html(htmlBep);
                     $('#tbody-transaksi').html(htmlTrx);
+                    $('#tbody-casa').html(htmlCasa);
+                    $('.lbl-casa-curr').text(res.labels?.casa_curr || res.labels?.curr || 'Curr');
+                    $('.lbl-casa-dec').text(res.labels?.casa_dec || "Des'25");
+                    $('.lbl-casa-prev').text(res.labels?.casa_prev || 'Prev');
+                    $('.lbl-casa-end').text(res.labels?.casa_end || 'Curr End');
                 } else if(res.status === 'error') {
                     $('#tbody-brilink').html(`<tr><td colspan="27" class="text-center text-danger py-5"><i class="fas fa-exclamation-triangle fa-2x mb-2"></i><br>${res.msg}</td></tr>`);
                     $('#tbody-agen-user').html(`<tr><td colspan="11" class="text-center text-danger py-5">${res.msg}</td></tr>`);
                     $('#tbody-juragan').html(`<tr><td colspan="11" class="text-center text-danger py-5">${res.msg}</td></tr>`);
                     $('#tbody-bep-detail').html(`<tr><td colspan="11" class="text-center text-danger py-5">${res.msg}</td></tr>`);
                     $('#tbody-transaksi').html(`<tr><td colspan="6" class="text-center text-danger py-5">${res.msg}</td></tr>`);
+                    $('#tbody-casa').html(`<tr><td colspan="11" class="text-center text-danger py-5">${res.msg}</td></tr>`);
                 }
             },
             error: function(err) {
@@ -560,6 +623,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 $('#tbody-juragan').html('<tr><td colspan="11" class="text-center text-danger py-5">Gagal memuat data dari server.</td></tr>');
                 $('#tbody-bep-detail').html('<tr><td colspan="11" class="text-center text-danger py-5">Gagal memuat data dari server.</td></tr>');
                 $('#tbody-transaksi').html('<tr><td colspan="6" class="text-center text-danger py-5">Gagal memuat data dari server.</td></tr>');
+                $('#tbody-casa').html('<tr><td colspan="11" class="text-center text-danger py-5">Gagal memuat data dari server.</td></tr>');
             },
             complete: function() {
                 // Memindahkan fadeOut ke blok complete agar tetap tereksekusi baik sukses maupun gagal
