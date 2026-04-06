@@ -7,6 +7,7 @@
     @include('input.partials.hero')
     @include('input.partials.form')
     @include('input.partials.preview')
+    @include('input.partials.history')
 @endsection
 
 @section('scripts')

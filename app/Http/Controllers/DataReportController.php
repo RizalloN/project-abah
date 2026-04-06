@@ -46,6 +46,152 @@ public function performanceBrilink()
 
 
     // 🔥 4. MESIN PENGOLAH DATA UTAMA (AJAX API)
+    public function programReferralPartnerPerusahaanAnak(Request $request)
+    {
+        $selectedDateInput = (string) $request->query('posisi_terakhir', '');
+        $selectedDate = $selectedDateInput !== ''
+            ? Carbon::parse($selectedDateInput)->endOfDay()
+            : now()->endOfDay();
+
+        $positions = collect([
+            $selectedDate->copy()->subMonthsNoOverflow(2)->endOfMonth()->toDateString(),
+            $selectedDate->copy()->subMonthNoOverflow()->endOfMonth()->toDateString(),
+            $selectedDate->copy()->toDateString(),
+        ])->unique()->values();
+
+        while ($positions->count() < 3) {
+            $seed = Carbon::parse($positions->first())->subMonthNoOverflow()->endOfMonth()->toDateString();
+            $positions->prepend($seed);
+            $positions = $positions->unique()->values();
+        }
+
+        $matchedRows = DB::table('input_rekanan as ir')
+            ->join('simpanan_multipn as sm', function ($join) {
+                $join->whereRaw('sm.CIFNO COLLATE utf8mb4_unicode_ci = ir.cif COLLATE utf8mb4_unicode_ci');
+            })
+            ->whereIn('sm.posisi', $positions->all())
+            ->select(
+                'ir.cif',
+                'sm.kantor_cabang',
+                'sm.posisi',
+                'sm.saldo_idr'
+            )
+            ->orderBy('sm.kantor_cabang')
+            ->orderBy('sm.posisi')
+            ->get();
+
+        $latestPosition = $positions->last();
+        $previousPosition = $positions->slice(-2, 1)->first();
+        $pipelineByRegional = [];
+        $stats = [];
+
+        foreach ($matchedRows as $row) {
+            $regional = trim((string) ($row->kantor_cabang ?: 'Branch Office Belum Terpetakan'));
+            $cif = trim((string) $row->cif);
+            $posisi = (string) $row->posisi;
+
+            $stats[$regional] ??= [];
+            $stats[$regional][$posisi] ??= [
+                'cifs' => [],
+                'saldo_cif' => 0,
+            ];
+
+            $stats[$regional][$posisi]['cifs'][$cif] = true;
+            $stats[$regional][$posisi]['saldo_cif'] += (float) ($row->saldo_idr ?? 0);
+
+            if ($latestPosition && $posisi === $latestPosition) {
+                $pipelineByRegional[$regional][$cif] = true;
+            }
+        }
+
+        $regionals = collect(array_unique(array_merge(
+            array_keys($pipelineByRegional),
+            array_keys($stats)
+        )))->sort()->values();
+
+        $tableRows = [];
+        $grandTotals = [
+            'total_pipeline' => 0,
+            'positions' => [],
+            'akuisisi_pct' => 0,
+            'growth_saldo_pct' => 0,
+        ];
+
+        foreach ($positions as $position) {
+            $grandTotals['positions'][$position] = [
+                'belum_terakuisisi' => 0,
+                'sudah_terakuisisi' => 0,
+                'saldo_cif' => 0,
+            ];
+        }
+
+        foreach ($regionals as $regional) {
+            $totalPipeline = isset($pipelineByRegional[$regional]) ? count($pipelineByRegional[$regional]) : 0;
+            $row = [
+                'regional' => $regional,
+                'total_pipeline' => $totalPipeline,
+                'positions' => [],
+                'akuisisi_pct' => 0,
+                'growth_saldo_pct' => 0,
+            ];
+
+            foreach ($positions as $position) {
+                $regionalStats = $stats[$regional][$position] ?? ['cifs' => [], 'saldo_cif' => 0];
+                $sudah = count($regionalStats['cifs']);
+                $belum = max($totalPipeline - $sudah, 0);
+
+                $row['positions'][$position] = [
+                    'belum_terakuisisi' => $belum,
+                    'sudah_terakuisisi' => $sudah,
+                    'saldo_cif' => (float) $regionalStats['saldo_cif'],
+                ];
+
+                $grandTotals['positions'][$position]['belum_terakuisisi'] += $belum;
+                $grandTotals['positions'][$position]['sudah_terakuisisi'] += $sudah;
+                $grandTotals['positions'][$position]['saldo_cif'] += (float) $regionalStats['saldo_cif'];
+            }
+
+            if ($latestPosition && isset($row['positions'][$latestPosition])) {
+                $latestSudah = $row['positions'][$latestPosition]['sudah_terakuisisi'];
+                $row['akuisisi_pct'] = $totalPipeline > 0 ? ($latestSudah / $totalPipeline) * 100 : 0;
+            }
+
+            if ($latestPosition && $previousPosition && isset($row['positions'][$previousPosition])) {
+                $latestSaldo = $row['positions'][$latestPosition]['saldo_cif'] ?? 0;
+                $previousSaldo = $row['positions'][$previousPosition]['saldo_cif'] ?? 0;
+                $row['growth_saldo_pct'] = $previousSaldo > 0
+                    ? (($latestSaldo - $previousSaldo) / $previousSaldo) * 100
+                    : 0;
+            }
+
+            $grandTotals['total_pipeline'] += $totalPipeline;
+            $tableRows[] = $row;
+        }
+
+        if ($latestPosition && isset($grandTotals['positions'][$latestPosition])) {
+            $grandLatestSudah = $grandTotals['positions'][$latestPosition]['sudah_terakuisisi'];
+            $grandTotals['akuisisi_pct'] = $grandTotals['total_pipeline'] > 0
+                ? ($grandLatestSudah / $grandTotals['total_pipeline']) * 100
+                : 0;
+        }
+
+        if ($latestPosition && $previousPosition && isset($grandTotals['positions'][$previousPosition])) {
+            $grandLatestSaldo = $grandTotals['positions'][$latestPosition]['saldo_cif'] ?? 0;
+            $grandPreviousSaldo = $grandTotals['positions'][$previousPosition]['saldo_cif'] ?? 0;
+            $grandTotals['growth_saldo_pct'] = $grandPreviousSaldo > 0
+                ? (($grandLatestSaldo - $grandPreviousSaldo) / $grandPreviousSaldo) * 100
+                : 0;
+        }
+
+        return view('report.program-referral-partner-perusahaan-anak', [
+            'positions' => $positions,
+            'tableRows' => $tableRows,
+            'grandTotals' => $grandTotals,
+            'matchedCount' => $matchedRows->count(),
+            'selectedDate' => $selectedDate->toDateString(),
+        ]);
+    }
+
     public function fetchData(Request $request)
     {
         $id_report = $request->input('id_report', 1);

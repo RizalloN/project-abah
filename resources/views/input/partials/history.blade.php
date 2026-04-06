@@ -22,6 +22,7 @@
                                 <th>Rekanan - Level 2</th>
                                 <th>Status Nasabah</th>
                                 <th>CIF</th>
+                                <th>Saldo IDR MultiPN</th>
                                 <th>Produk 1</th>
                                 <th>Produk 2</th>
                                 <th>Produk 3</th>
@@ -36,13 +37,16 @@
                                     <td>{{ $item->rekanan_level_2 }}</td>
                                     <td>{{ $item->status_nasabah }}</td>
                                     <td>{{ $item->cif }}</td>
+                                    <td>
+                                        {{ $item->saldo_idr_simpanan !== null ? number_format((float) $item->saldo_idr_simpanan, 2, ',', '.') : '-' }}
+                                    </td>
                                     <td>{{ $item->produk_1 }}</td>
                                     <td>{{ $item->produk_2 }}</td>
                                     <td>{{ $item->produk_3 }}</td>
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="9" class="text-center text-muted py-4">Belum ada data tersimpan.</td>
+                                    <td colspan="10" class="text-center text-muted py-4">Belum ada data tersimpan.</td>
                                 </tr>
                             @endforelse
                         </tbody>

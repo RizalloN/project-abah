@@ -16,9 +16,14 @@ Route::get('/debug-upload-limits', function () {
     return [
         'sapi' => PHP_SAPI,
         'loaded_ini' => php_ini_loaded_file(),
+        'scanned_ini' => php_ini_scanned_files(),
+        'user_ini_filename' => ini_get('user_ini.filename'),
+        'user_ini_cache_ttl' => ini_get('user_ini.cache_ttl'),
         'post_max_size' => ini_get('post_max_size'),
         'upload_max_filesize' => ini_get('upload_max_filesize'),
         'memory_limit' => ini_get('memory_limit'),
+        'max_execution_time' => ini_get('max_execution_time'),
+        'max_input_time' => ini_get('max_input_time'),
         'content_length' => request()->server('CONTENT_LENGTH'),
     ];
 });
@@ -33,6 +38,7 @@ Route::get('/report/optimalisasi-digital/qris', [App\Http\Controllers\DataReport
 Route::get('/report/optimalisasi-digital/brilink', [App\Http\Controllers\DataReportController::class, 'performanceBrilink'])->name('report.brilink');
 Route::get('/report/optimalisasi-digital/brimo', [App\Http\Controllers\PerformanceBrimoController::class, 'index'])->name('report.brimo');
 Route::post('/report/data/brimo', [App\Http\Controllers\PerformanceBrimoController::class, 'fetchData'])->name('report.data.brimo');
+Route::get('/report/kolaborasi-perusahaan-anak/program-referral-partner-perusahaan-anak', [App\Http\Controllers\DataReportController::class, 'programReferralPartnerPerusahaanAnak'])->name('report.kolaborasi.referral');
 
 // 🔥 ROUTE REKENING TRANSAKSI DEBITUR
 Route::get('/report/rekening-transaksi-debitur', [RasioCasaDebiturController::class, 'index'])->name('report.rasiocasa.debitur');
@@ -46,6 +52,7 @@ Route::middleware(['auth', 'role:admin'])->group(function () {
     Route::get('/input-data', [InputRekananController::class, 'index'])->name('input.index');
     Route::post('/input-data', [InputRekananController::class, 'store'])->name('input.store');
     Route::get('/import', [ImportIndexController::class, 'index'])->name('import.index');
+    Route::get('/import/template', [ImportIndexController::class, 'downloadTemplate'])->name('import.template');
     Route::post('/import/upload', [ImportFileController::class, 'upload'])->name('import.upload');
     
     // Route GET untuk menampilkan halaman pilih file

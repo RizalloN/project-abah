@@ -13,13 +13,13 @@
         <div class="card card-outline card-success shadow-sm mb-3">
             <div class="card-header bg-light">
                 <h3 class="card-title font-weight-bold text-success">
-                    <i class="fas fa-file-excel mr-1"></i> Preview Excel Data (Daily Loan Dinamis / Simpanan MultiPN)
+                    <i class="fas fa-file-import mr-1"></i> Preview Data Import (Daily Loan Dinamis / Simpanan MultiPN)
                 </h3>
             </div>
             <div class="card-body">
                 <div class="alert alert-info border-0 bg-light text-dark">
                     <i class="fas fa-info-circle text-info"></i>
-                    <strong>Smart Parser Aktif:</strong> Metadata pada Excel telah dihapus dan struktur kolom telah dinormalisasi.
+                    <strong>Smart Parser Aktif:</strong> Struktur kolom file import telah dinormalisasi dan siap difilter.
                     Anda dapat memfilter tabel secara <i>realtime</i> (menampilkan maks 100 baris pertama).
                 </div>
             </div>
@@ -110,11 +110,16 @@
                             </thead>
                             <tbody>
                                 @foreach(array_slice($preview, 0, 100, true) as $rowIndex => $row)
+                                    @php
+                                        $rowData = is_array($row) ? $row : (array) $row;
+                                    @endphp
                                     <tr class="preview-row d-none">
                                         <td class="text-center text-muted">{{ $rowIndex + 1 }}</td>
                                         @foreach($headers as $colIndex => $header)
                                             @php
-                                                $cellValue = trim($row[$header] ?? '');
+                                                $headerKey = trim((string) $header);
+                                                $rawValue = $rowData[$headerKey] ?? $rowData[$colIndex] ?? null;
+                                                $cellValue = trim((string) ($rawValue ?? ''));
                                                 $dataVal   = $cellValue === '' ? '(Blank)' : $cellValue;
                                             @endphp
                                             <td class="text-truncate col-data-{{ $colIndex }}"
@@ -388,7 +393,7 @@ document.addEventListener('DOMContentLoaded', function () {
             </div>`;
 
         themedSwal({
-            title: '<i class="fas fa-file-import text-success mr-1"></i> Import Data Excel',
+            title: '<i class="fas fa-file-import text-success mr-1"></i> Import Data File',
             html: swalHtml,
             allowOutsideClick: false,
             allowEscapeKey: false,

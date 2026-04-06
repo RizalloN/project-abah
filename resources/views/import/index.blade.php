@@ -4,25 +4,61 @@
 
 @section('content')
 
-<div class="card shadow-sm">
-    <div class="card-header bg-white">
-        <h5 class="card-title font-weight-bold text-dark">
-            <i class="fas fa-cloud-upload-alt text-primary mr-2"></i> Upload Data Report
-        </h5>
+<div class="import-template-banner mb-4">
+    <div class="import-template-banner__glow"></div>
+    <div class="d-flex align-items-center justify-content-between flex-wrap position-relative">
+        <div class="import-template-banner__content pr-3">
+            <span class="import-template-banner__eyebrow">Template Siap Pakai</span>
+            <div class="import-template-banner__title">
+                <i class="fas fa-download mr-2"></i> Download Template Import
+            </div>
+            <p class="import-template-banner__text mb-0">Pilih kategori report, unduh template yang sesuai, lalu isi datanya agar proses import lebih cepat dan rapi. File template fisik disimpan di <code>resources/templates/import</code>.</p>
+        </div>
+        <div class="import-template-banner__actions mt-3 mt-md-0">
+            <div class="import-template-banner__download-group">
+                <select id="download-template-select" class="form-control import-template-banner__select">
+                    <option value="">-- Pilih Template --</option>
+                    @foreach($downloadTemplates as $key => $template)
+                        <option value="{{ $key }}">{{ $template['label'] }}</option>
+                    @endforeach
+                </select>
+                <a href="#"
+                   id="btn-download-template"
+                   class="btn import-template-banner__button disabled"
+                   aria-disabled="true"
+                   data-route-template="{{ route('import.template') }}">
+                    <i class="fas fa-file-download mr-2"></i> Download Template
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm import-upload-card border-0">
+    <div class="card-header bg-white border-0 import-upload-card__header">
+        <div class="d-flex align-items-center justify-content-between flex-wrap">
+            <div>
+                <span class="import-upload-card__eyebrow">Import Data</span>
+                <h5 class="card-title font-weight-bold text-dark mb-1">
+                    <i class="fas fa-cloud-upload-alt text-primary mr-2"></i> Upload Data Report
+                </h5>
+                <p class="import-upload-card__subtitle mb-0">Unggah file sesuai format report yang dipilih. Sistem akan menyesuaikan jenis upload secara otomatis.</p>
+            </div>
+        </div>
     </div>
 
-    <!-- 🔥 FIX 1: UBAH ID FORM -->
-    <form id="form-import" method="POST" action="{{ route('import.upload') }}" enctype="multipart/form-data" data-prepare-preview-url="{{ route('import.excel.prepare-preview') }}">
+    <form id="form-import" method="POST" action="{{ route('import.upload') }}" enctype="multipart/form-data" data-prepare-preview-url="">
         @csrf
 
-        <div class="card-body">
-
+        <div class="card-body import-upload-card__body">
             <div class="form-group">
-                <label>Pilih Kategori Report</label>
+                <label class="font-weight-bold text-dark">Pilih Kategori Report</label>
                 <select name="id_report" class="form-control select2" required>
                     <option value="" data-name="">-- Pilih Report --</option>
                     @foreach($reports as $report)
-                        <option value="{{ $report->id_report }}" data-name="{{ strtolower($report->nama_report) }}">
+                        <option value="{{ $report->id_report }}"
+                                data-name="{{ strtolower($report->nama_report) }}"
+                                data-table="{{ strtolower($report->table_name) }}">
                             {{ $report->nama_report }}
                         </option>
                     @endforeach
@@ -30,7 +66,7 @@
             </div>
 
             <div id="form-rar" class="form-group">
-                <label>Upload File Extracted (.rar)</label>
+                <label class="font-weight-bold text-dark">Upload File Extracted (.rar)</label>
                 <div class="custom-file">
                     <input type="file" id="file_rar" name="file" class="custom-file-input" accept=".rar" required>
                     <label class="custom-file-label" for="file_rar">Pilih file .rar...</label>
@@ -40,24 +76,22 @@
 
             <div id="form-excel" class="form-group" style="display: none;">
                 <label class="text-success font-weight-bold"><i class="fas fa-file-excel mr-1"></i> Upload File Excel (.xlsx, .xls)</label>
-                <input type="file" id="file_excel" name="file" class="form-control border-success shadow-sm" accept=".xlsx, .xls">
-                <small class="text-muted mt-2 d-block">Mendukung format .xlsx dan .xls hingga 200MB+ (Menggunakan Chunk Reading Mode).</small>
+                <input type="file" id="file_excel" name="file" class="form-control border-success shadow-sm" accept=".xlsx,.xls">
+                <small class="text-muted mt-2 d-block">Mendukung format .xlsx dan .xls hingga 200MB+ dengan preview bertahap.</small>
             </div>
 
             <div id="form-csv" class="form-group" style="display: none;">
-                <label class="text-info font-weight-bold"><i class="fas fa-file-csv mr-1"></i> Upload File CSV (.csv, .txt)</label>
+                <label id="csv-label" class="text-info font-weight-bold"><i class="fas fa-file-csv mr-1"></i> Upload File CSV (.csv, .txt)</label>
                 <input type="file" id="file_csv" name="file" class="form-control border-info shadow-sm" accept=".csv,.txt">
-                <small class="text-muted mt-2 d-block">Gunakan file CSV Performance PIS Per Produk dengan metadata posisi di bagian atas file.</small>
+                <small id="csv-help" class="text-muted mt-2 d-block">Gunakan file CSV Performance PIS Per Produk dengan metadata posisi di bagian atas file.</small>
             </div>
-
         </div>
 
-        <div class="card-footer bg-light">
-            <button type="submit" id="btn-submit" class="btn btn-primary font-weight-bold">
-                <i class="fas fa-upload"></i> Process RAR
+        <div class="card-footer bg-light border-0 import-upload-card__footer">
+            <button type="submit" id="btn-submit" class="btn btn-primary font-weight-bold import-upload-card__submit">
+                <i class="fas fa-file-archive"></i> Upload RAR
             </button>
         </div>
-
     </form>
 </div>
 
@@ -82,149 +116,164 @@
             return Swal.fire(Object.assign({}, swalTheme, options));
         }
 
-        // ==========================================
-        // 🔥 LOGIKA FORM DINAMIS (RAR vs EXCEL)
-        // ==========================================
         const reportSelect = document.querySelector('select[name="id_report"]');
         const formRAR = document.getElementById('form-rar');
         const formExcel = document.getElementById('form-excel');
+        const formCsv = document.getElementById('form-csv');
         const formImport = document.getElementById('form-import');
         const btnSubmit = document.getElementById('btn-submit');
+        const btnDownloadTemplate = document.getElementById('btn-download-template');
+        const downloadTemplateSelect = document.getElementById('download-template-select');
         const inputRar = document.getElementById('file_rar');
         const inputExcel = document.getElementById('file_excel');
-        const formCsv = document.getElementById('form-csv');
         const inputCsv = document.getElementById('file_csv');
+        const csvLabel = document.getElementById('csv-label');
+        const csvHelp = document.getElementById('csv-help');
+
+        function syncDownloadButton() {
+            if (!btnDownloadTemplate || !downloadTemplateSelect) {
+                return;
+            }
+
+            const templateKey = downloadTemplateSelect.value || '';
+
+            if (templateKey) {
+                btnDownloadTemplate.href = `${btnDownloadTemplate.dataset.routeTemplate}?report=${encodeURIComponent(templateKey)}`;
+                btnDownloadTemplate.classList.remove('disabled');
+                btnDownloadTemplate.removeAttribute('aria-disabled');
+                return;
+            }
+
+            btnDownloadTemplate.href = '#';
+            btnDownloadTemplate.classList.add('disabled');
+            btnDownloadTemplate.setAttribute('aria-disabled', 'true');
+        }
+
+        function applyButtonState(kind, label) {
+            const buttonClasses = {
+                rar: 'btn btn-primary font-weight-bold import-upload-card__submit',
+                excel: 'btn btn-success font-weight-bold import-upload-card__submit',
+                csv: 'btn btn-info font-weight-bold import-upload-card__submit',
+            };
+
+            formImport.dataset.uploadKind = kind;
+            formImport.dataset.submitLabel = label;
+            btnSubmit.className = buttonClasses[kind] || buttonClasses.rar;
+            btnSubmit.innerHTML = label;
+        }
 
         function toggleForm() {
             const selectedOption = reportSelect.options[reportSelect.selectedIndex];
             const reportName = selectedOption.getAttribute('data-name') || '';
+            const tableName = selectedOption.getAttribute('data-table') || '';
             const isDailyLoan = reportName.includes('daily loan');
             const isSimpanan = reportName.includes('simpanan multipn');
             const isPerformancePis = reportName.includes('performance pis per produk');
+            const isInputRekanan = tableName === 'input_rekanan';
 
+            formRAR.style.display = 'none';
+            formExcel.style.display = 'none';
             formCsv.style.display = 'none';
+
+            inputRar.disabled = true;
+            inputRar.required = false;
+            inputExcel.disabled = true;
+            inputExcel.required = false;
             inputCsv.disabled = true;
             inputCsv.required = false;
 
-            // CEK KEYWORD EXCEL KHUSUS
-            if (isDailyLoan || isSimpanan) {
-                // Tampilkan Excel, Sembunyikan RAR
-                formRAR.style.display = 'none';
-                formExcel.style.display = 'block';
-                formCsv.style.display = 'none';
+            formImport.dataset.preparePreviewUrl = '';
 
-                // 🔥 MATIKAN input RAR agar tidak bentrok 'name="file"' di Backend
-                inputRar.disabled = true;
-                inputRar.required = false;
-
-                inputExcel.disabled = false;
-                inputExcel.required = true;
-                inputCsv.disabled = true;
-                inputCsv.required = false;
-
-                // Arahkan submit ke Controller Excel sesuai flow report
-                formImport.action = isDailyLoan ? "{{ route('import.dailyloan.upload') }}" : "{{ route('import.excel.upload') }}";
-                formImport.dataset.preparePreviewUrl = isDailyLoan ? "{{ route('import.dailyloan.prepare-preview') }}" : "{{ route('import.excel.prepare-preview') }}";
-
-                // Sesuaikan Tombol
-                btnSubmit.className = "btn btn-success font-weight-bold";
-                btnSubmit.innerHTML = '<i class="fas fa-file-excel"></i> Upload Excel';
-
-            } else if (isPerformancePis) {
-                formRAR.style.display = 'none';
-                formExcel.style.display = 'none';
+            if (isDailyLoan) {
                 formCsv.style.display = 'block';
-
-                inputRar.disabled = true;
-                inputRar.required = false;
-                inputExcel.disabled = true;
-                inputExcel.required = false;
                 inputCsv.disabled = false;
                 inputCsv.required = true;
-
-                formImport.action = "{{ route('import.performancepis.upload') }}";
-                formImport.dataset.preparePreviewUrl = '';
-
-                btnSubmit.className = "btn btn-info font-weight-bold";
-                btnSubmit.innerHTML = '<i class="fas fa-file-csv"></i> Upload CSV';
-
-            } else if (reportName.includes('brimo')) {
-                // 🔥 BRIMO: Tampilkan RAR, arahkan ke ImportFileBrimoController
-                formRAR.style.display = 'block';
-                formExcel.style.display = 'none';
-                formCsv.style.display = 'none';
-
-                inputExcel.disabled = true;
-                inputExcel.required = false;
-                inputCsv.disabled = true;
-                inputCsv.required = false;
-
-                inputRar.disabled = false;
-                inputRar.required = true;
-
-                // Arahkan submit ke Brimo Controller
-                formImport.action = "{{ route('import.brimo.upload') }}";
-                formImport.dataset.preparePreviewUrl = '';
-
-                btnSubmit.className = "btn btn-primary font-weight-bold";
-                btnSubmit.innerHTML = '<i class="fas fa-file-archive"></i> Upload RAR';
-
-            } else {
-                // Tampilkan RAR, Sembunyikan Excel
-                formRAR.style.display = 'block';
-                formExcel.style.display = 'none';
-                formCsv.style.display = 'none';
-
-                // 🔥 MATIKAN input EXCEL agar tidak bentrok
-                inputExcel.disabled = true;
-                inputExcel.required = false;
-
-                inputRar.disabled = false;
-                inputRar.required = true;
-
-                // Arahkan submit ke Controller CSV/Legacy
-                formImport.action = "{{ route('import.upload') }}";
-                formImport.dataset.preparePreviewUrl = '';
-
-                // Sesuaikan Tombol
-                btnSubmit.className = "btn btn-primary font-weight-bold";
-                btnSubmit.innerHTML = '<i class="fas fa-file-archive"></i> Upload RAR';
+                formImport.action = "{{ route('import.dailyloan.upload') }}";
+                formImport.dataset.preparePreviewUrl = "{{ route('import.dailyloan.prepare-preview') }}";
+                csvLabel.innerHTML = '<i class="fas fa-file-csv mr-1"></i> Upload File CSV Daily Loan Dinamis (.csv, .txt)';
+                csvHelp.textContent = 'Gunakan file CSV Daily Loan Dinamis yang sudah sesuai template untuk diproses ke database.';
+                applyButtonState('csv', '<i class="fas fa-file-csv"></i> Upload CSV');
+                return;
             }
+
+            if (isSimpanan) {
+                formExcel.style.display = 'block';
+                inputExcel.disabled = false;
+                inputExcel.required = true;
+                formImport.action = "{{ route('import.excel.upload') }}";
+                formImport.dataset.preparePreviewUrl = "{{ route('import.excel.prepare-preview') }}";
+                applyButtonState('excel', '<i class="fas fa-file-excel"></i> Upload Excel');
+                return;
+            }
+
+            if (isInputRekanan) {
+                formExcel.style.display = 'block';
+                inputExcel.disabled = false;
+                inputExcel.required = true;
+                formImport.action = "{{ route('import.excel.upload') }}";
+                formImport.dataset.preparePreviewUrl = "{{ route('import.excel.prepare-preview') }}";
+                applyButtonState('excel', '<i class="fas fa-file-excel"></i> Upload Excel');
+                return;
+            }
+
+            if (isPerformancePis) {
+                formCsv.style.display = 'block';
+                inputCsv.disabled = false;
+                inputCsv.required = true;
+                formImport.action = "{{ route('import.performancepis.upload') }}";
+                csvLabel.innerHTML = '<i class="fas fa-file-csv mr-1"></i> Upload File CSV (.csv, .txt)';
+                csvHelp.textContent = 'Gunakan file CSV Performance PIS Per Produk dengan metadata posisi di bagian atas file.';
+                applyButtonState('csv', '<i class="fas fa-file-csv"></i> Upload CSV');
+                return;
+            }
+
+            if (reportName.includes('brimo')) {
+                formRAR.style.display = 'block';
+                inputRar.disabled = false;
+                inputRar.required = true;
+                formImport.action = "{{ route('import.brimo.upload') }}";
+                applyButtonState('rar', '<i class="fas fa-file-archive"></i> Upload RAR');
+                return;
+            }
+
+            formRAR.style.display = 'block';
+            inputRar.disabled = false;
+            inputRar.required = true;
+            formImport.action = "{{ route('import.upload') }}";
+            applyButtonState('rar', '<i class="fas fa-file-archive"></i> Upload RAR');
         }
 
-        // Jalankan saat User mengganti pilihan dropdown
         reportSelect.addEventListener('change', toggleForm);
-        
-        // Jalankan pada muatan pertama untuk handle refresh/back browser
+        downloadTemplateSelect?.addEventListener('change', syncDownloadButton);
         toggleForm();
+        syncDownloadButton();
 
-        // Kosmetik nama file RAR Bootstrap
-        $('#file_rar').on('change',function(){
+        $('#file_rar').on('change', function () {
             var fileName = $(this).val().split('\\').pop();
             $(this).next('.custom-file-label').html(fileName);
         });
 
-        // ==========================================
-        // 🔥 LOGIKA SCRIPT LOADING UX (PROGRESS BAR)
-        // ==========================================
         formImport.addEventListener('submit', function(e) {
-            e.preventDefault(); // Prevent default form submission for all cases to handle uniformly
+            e.preventDefault();
 
-            // Cek apakah target action mengandung kata 'excel'
-            const isExcel = formImport.action.includes('excel');
-            const titleText = isExcel ? 'Uploading Excel...' : 'Uploading Report...';
-            const descText = isExcel 
-                ? 'File besar sedang diproses dengan chunking.<br><b>Mohon tunggu...</b>' 
+            const hasAsyncPreview = Boolean(formImport.dataset.preparePreviewUrl);
+            const uploadKind = formImport.dataset.uploadKind || 'rar';
+            const titleText = uploadKind === 'excel'
+                ? 'Uploading Excel...'
+                : uploadKind === 'csv'
+                    ? 'Uploading CSV...'
+                    : 'Uploading Report...';
+            const descText = hasAsyncPreview
+                ? 'File sedang diproses dan disiapkan untuk preview.<br><b>Mohon tunggu...</b>'
                 : 'Sedang mengupload dan memproses file.<br><b>Mohon tunggu...</b>';
 
-            // HTML Custom untuk Progress Bar
             const progressHtml = `
                 <div class="text-center mb-3">
                     <span style="font-size: 14px; color: #64748b;" id="swal-desc-text">${descText}</span>
                 </div>
                 <div class="progress" style="height: 16px; border-radius: 999px; background-color: #e2e8f0; overflow: hidden; box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.08);">
-                    <div id="swal-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" 
-                         role="progressbar" style="width: 0%; font-weight: 700; font-size: 12px; line-height: 16px; background: linear-gradient(135deg, #0f766e, #115e59);" 
+                    <div id="swal-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated"
+                         role="progressbar" style="width: 0%; font-weight: 700; font-size: 12px; line-height: 16px; background: linear-gradient(135deg, #0f766e, #115e59);"
                          aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
                 </div>
                 <div class="text-center mt-3">
@@ -240,68 +289,111 @@
                 showConfirmButton: false,
                 width: 520,
                 didOpen: () => {
-                    // Disable button agar tidak double submit
                     if (btnSubmit) {
                         btnSubmit.disabled = true;
                         btnSubmit.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
                     }
 
-                    if (!isExcel) {
-                        // For non-Excel, submit synchronously as before
+                    if (!hasAsyncPreview) {
                         formImport.submit();
                         return;
                     }
 
-                    // For Excel: AJAX upload
                     const formData = new FormData(formImport);
-                    fetch(formImport.action, {
-                        method: 'POST',
-                        headers: {
-                            'Accept': 'application/json',
-                            'X-Requested-With': 'XMLHttpRequest',
-                        },
-                        body: formData
-                    })
-                    .then(function(response) {
-                        if (!response.ok) throw new Error('Upload gagal: ' + response.statusText);
-                        return response.json();
-                    })
-                    .then(function(data) {
-                        if (data.status !== 'success') throw new Error('Upload error: ' + (data.message || 'Unknown'));
+                    const uploadProgressBar = document.getElementById('swal-progress-bar');
+                    const uploadProgressText = document.getElementById('swal-progress-text');
 
-                        // Connect to SSE for prepare-preview
-                        const preparePreviewUrl = formImport.dataset.preparePreviewUrl || "{{ route('import.excel.prepare-preview') }}";
-                        const eventSource = new EventSource(preparePreviewUrl);
+                    const uploadRequest = new XMLHttpRequest();
+                    uploadRequest.open('POST', formImport.action, true);
+                    uploadRequest.setRequestHeader('Accept', 'application/json');
+                    uploadRequest.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
 
-                        // ── progress event ──────────────────────────────────
+                    uploadRequest.upload.addEventListener('progress', function(event) {
+                        if (!event.lengthComputable) {
+                            return;
+                        }
+
+                        const percent = Math.min(85, Math.max(3, Math.round((event.loaded / event.total) * 85)));
+                        if (uploadProgressBar) {
+                            uploadProgressBar.style.width = percent + '%';
+                            uploadProgressBar.innerText = percent + '%';
+                        }
+                        if (uploadProgressText) {
+                            uploadProgressText.innerText = 'Mengunggah file ke server... ' + percent + '%';
+                        }
+                    });
+
+                    uploadRequest.addEventListener('load', function() {
+                        if (uploadRequest.status < 200 || uploadRequest.status >= 300) {
+                            themedSwal({
+                                icon: 'error',
+                                title: 'Upload Error',
+                                text: 'Upload gagal: ' + uploadRequest.statusText
+                            });
+                            resetSubmitButton();
+                            return;
+                        }
+
+                        let data = {};
+                        try {
+                            data = JSON.parse(uploadRequest.responseText || '{}');
+                        } catch (error) {
+                            themedSwal({
+                                icon: 'error',
+                                title: 'Upload Error',
+                                text: 'Server mengembalikan respons yang tidak valid.'
+                            });
+                            resetSubmitButton();
+                            return;
+                        }
+
+                        if (data.status !== 'success') {
+                            themedSwal({
+                                icon: 'error',
+                                title: 'Upload Error',
+                                text: data.message || 'Upload gagal diproses oleh server.'
+                            });
+                            resetSubmitButton();
+                            return;
+                        }
+
+                        if (uploadProgressBar) {
+                            uploadProgressBar.style.width = '88%';
+                            uploadProgressBar.innerText = '88%';
+                        }
+                        if (uploadProgressText) {
+                            uploadProgressText.innerText = 'Upload selesai. Menyiapkan preview cepat...';
+                        }
+
+                        const eventSource = new EventSource(formImport.dataset.preparePreviewUrl);
+
                         eventSource.addEventListener('progress', function(event) {
                             var evtData = {};
-                            try { evtData = JSON.parse(event.data); } catch(_) {}
+                            try { evtData = JSON.parse(event.data); } catch (_) {}
                             var progressBar  = document.getElementById('swal-progress-bar');
                             var progressText = document.getElementById('swal-progress-text');
                             if (progressBar && evtData.percent != null) {
-                                progressBar.style.width = evtData.percent + '%';
-                                progressBar.innerText   = evtData.percent + '%';
+                                var composedPercent = Math.max(88, Math.min(100, 88 + Math.round((evtData.percent / 100) * 12)));
+                                progressBar.style.width = composedPercent + '%';
+                                progressBar.innerText = composedPercent + '%';
                             }
                             if (progressText && evtData.message) {
                                 progressText.innerText = evtData.message;
                             }
                         });
 
-                        // ── ready event ─────────────────────────────────────
                         eventSource.addEventListener('ready', function(event) {
                             var evtData = {};
-                            try { evtData = JSON.parse(event.data); } catch(_) {}
+                            try { evtData = JSON.parse(event.data); } catch (_) {}
                             eventSource.close();
                             if (evtData.redirect) {
                                 window.location.href = evtData.redirect;
                             }
                         });
 
-                        // ── error_msg event (server-sent named error) ───────
                         eventSource.addEventListener('error_msg', function(event) {
                             var evtData = {};
-                            try { evtData = JSON.parse(event.data); } catch(_) {}
+                            try { evtData = JSON.parse(event.data); } catch (_) {}
                             eventSource.close();
                             themedSwal({
                                 icon: 'error',
@@ -311,7 +403,6 @@
                             resetSubmitButton();
                         });
 
-                        // ── onerror (network drop / connection closed) ───────
                         eventSource.onerror = function() {
                             eventSource.close();
                             themedSwal({
@@ -321,58 +412,230 @@
                             });
                             resetSubmitButton();
                         };
-                    })
-                    .catch(function(error) {
+                    });
+
+                    uploadRequest.addEventListener('error', function() {
                         themedSwal({
                             icon: 'error',
                             title: 'Upload Error',
-                            text: error.message
+                            text: 'Koneksi upload terputus sebelum file selesai dikirim.'
                         });
                         resetSubmitButton();
                     });
 
+                    uploadRequest.send(formData);
+
                     function resetSubmitButton() {
                         if (btnSubmit) {
                             btnSubmit.disabled = false;
-                            btnSubmit.innerHTML = '<i class="fas fa-file-excel"></i> Upload Excel';
+                            btnSubmit.innerHTML = formImport.dataset.submitLabel || '<i class="fas fa-upload"></i> Upload';
                         }
                     }
                 }
             });
         });
+
+        @if(session('sweet_success'))
+            themedSwal({
+                icon: 'success',
+                title: '{!! session('sweet_success')['title'] !!}',
+                html: '{!! session('sweet_success')['text'] !!}',
+                confirmButtonText: 'Tutup'
+            });
+        @endif
+
+        @if(session('sweet_warning'))
+            themedSwal({
+                icon: 'warning',
+                title: '{!! session('sweet_warning')['title'] !!}',
+                html: '{!! session('sweet_warning')['text'] !!}',
+                confirmButtonText: 'Mengerti'
+            });
+        @endif
+
+        @if(session('error'))
+            themedSwal({
+                icon: 'error',
+                title: 'Gagal!',
+                text: '{{ session('error') }}',
+                confirmButtonText: 'Tutup'
+            });
+        @endif
     });
-
-    // ==========================================
-    // NOTIFIKASI SWEETALERT EXISTING
-    // ==========================================
-    @if(session('sweet_success'))
-        themedSwal({
-            icon: 'success',
-            title: '{!! session('sweet_success')['title'] !!}',
-            html: '{!! session('sweet_success')['text'] !!}',
-            confirmButtonText: 'Tutup'
-        });
-    @endif
-
-    @if(session('sweet_warning'))
-        themedSwal({
-            icon: 'warning',
-            title: '{!! session('sweet_warning')['title'] !!}',
-            html: '{!! session('sweet_warning')['text'] !!}',
-            confirmButtonText: 'Mengerti'
-        });
-    @endif
-
-    @if(session('error'))
-        themedSwal({
-            icon: 'error',
-            title: 'Gagal!',
-            text: '{{ session('error') }}',
-            confirmButtonText: 'Tutup'
-        });
-    @endif
 </script>
 <style>
+    .import-template-banner {
+        position: relative;
+        overflow: hidden;
+        border-radius: 24px;
+        padding: 1.4rem 1.5rem;
+        background:
+            radial-gradient(circle at top right, rgba(16, 185, 129, 0.22), transparent 30%),
+            linear-gradient(135deg, #f8fffc 0%, #ecfdf5 45%, #d1fae5 100%);
+        border: 1px solid rgba(16, 185, 129, 0.18);
+        box-shadow: 0 22px 45px -32px rgba(5, 150, 105, 0.45);
+    }
+
+    .import-template-banner__glow {
+        position: absolute;
+        top: -42px;
+        right: -28px;
+        width: 160px;
+        height: 160px;
+        border-radius: 999px;
+        background: rgba(16, 185, 129, 0.14);
+        filter: blur(8px);
+    }
+
+    .import-template-banner__content {
+        max-width: 680px;
+    }
+
+    .import-template-banner__eyebrow,
+    .import-upload-card__eyebrow {
+        display: inline-block;
+        margin-bottom: 0.55rem;
+        padding: 0.35rem 0.7rem;
+        border-radius: 999px;
+        font-size: 0.72rem;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+    }
+
+    .import-template-banner__eyebrow {
+        color: #047857;
+        background: rgba(255, 255, 255, 0.72);
+        border: 1px solid rgba(16, 185, 129, 0.18);
+    }
+
+    .import-template-banner__title {
+        color: #064e3b;
+        font-size: 1.35rem;
+        font-weight: 800;
+        letter-spacing: -0.03em;
+        margin-bottom: 0.35rem;
+    }
+
+    .import-template-banner__text {
+        color: #166534;
+        line-height: 1.65;
+        max-width: 620px;
+    }
+
+    .import-template-banner__button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 48px;
+        padding: 0.8rem 1.25rem;
+        border-radius: 16px;
+        border: 0;
+        background: linear-gradient(135deg, #059669, #047857);
+        color: #ffffff;
+        font-weight: 700;
+        box-shadow: 0 18px 30px -20px rgba(6, 95, 70, 0.55);
+        transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+    }
+
+    .import-template-banner__download-group {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+    }
+
+    .import-template-banner__select {
+        min-width: 260px;
+        min-height: 48px;
+        border-radius: 16px;
+        border: 1px solid rgba(16, 185, 129, 0.18);
+        box-shadow: none;
+        background: rgba(255, 255, 255, 0.88);
+    }
+
+    .import-template-banner__button:hover {
+        color: #ffffff;
+        text-decoration: none;
+        transform: translateY(-1px);
+        box-shadow: 0 22px 34px -20px rgba(6, 95, 70, 0.6);
+    }
+
+    .import-template-banner__button.disabled,
+    .import-template-banner__button[aria-disabled="true"] {
+        pointer-events: none;
+        opacity: 0.6;
+        background: linear-gradient(135deg, #94a3b8, #64748b);
+        box-shadow: none;
+    }
+
+    .import-upload-card {
+        border-radius: 26px;
+        overflow: hidden;
+        box-shadow: 0 28px 60px -40px rgba(15, 23, 42, 0.32) !important;
+    }
+
+    .import-upload-card__header {
+        padding: 1.45rem 1.5rem 1rem;
+        background:
+            radial-gradient(circle at top left, rgba(59, 130, 246, 0.09), transparent 28%),
+            linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+    }
+
+    .import-upload-card__eyebrow {
+        color: #1d4ed8;
+        background: rgba(37, 99, 235, 0.08);
+    }
+
+    .import-upload-card__subtitle {
+        color: #64748b;
+        max-width: 620px;
+        line-height: 1.6;
+    }
+
+    .import-upload-card__body {
+        padding: 1.5rem;
+    }
+
+    .import-upload-card__body .form-group label {
+        margin-bottom: 0.7rem;
+    }
+
+    .import-upload-card__body .form-control,
+    .import-upload-card__body .custom-file-label,
+    .import-upload-card__body .select2-container--default .select2-selection--single {
+        border-radius: 16px;
+        min-height: 48px;
+        border-color: #dbe4f0;
+        box-shadow: none;
+    }
+
+    .import-upload-card__body .custom-file-label {
+        display: flex;
+        align-items: center;
+        padding-left: 1rem;
+    }
+
+    .import-upload-card__body .custom-file-label::after {
+        height: calc(100% - 8px);
+        margin: 4px;
+        border-radius: 12px;
+        background: #e2e8f0;
+    }
+
+    .import-upload-card__footer {
+        padding: 0 1.5rem 1.5rem;
+        background: linear-gradient(180deg, rgba(248, 250, 252, 0) 0%, #f8fafc 100%);
+    }
+
+    .import-upload-card__submit {
+        min-height: 50px;
+        padding: 0.85rem 1.4rem;
+        border-radius: 16px;
+        box-shadow: 0 18px 34px -22px rgba(37, 99, 235, 0.52);
+    }
+
     .swal-modern-popup {
         border: 1px solid rgba(226, 232, 240, 0.95);
         border-radius: 28px;
@@ -403,6 +666,28 @@
         font-weight: 700;
         padding: 0.8rem 1.3rem;
         box-shadow: 0 16px 34px -22px rgba(15, 23, 42, 0.45);
+    }
+
+    @media (max-width: 767.98px) {
+        .import-template-banner,
+        .import-upload-card__header,
+        .import-upload-card__body,
+        .import-upload-card__footer {
+            padding-left: 1rem;
+            padding-right: 1rem;
+        }
+
+        .import-template-banner__title {
+            font-size: 1.15rem;
+        }
+
+        .import-template-banner__actions,
+        .import-template-banner__download-group,
+        .import-template-banner__select,
+        .import-template-banner__button,
+        .import-upload-card__submit {
+            width: 100%;
+        }
     }
 </style>
 @endsection

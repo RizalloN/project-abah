@@ -12,9 +12,17 @@ class InputRekananController extends Controller
 {
     public function index()
     {
-        $recentInputs = Schema::hasTable('input_rekanan')
-            ? InputRekanan::latest()->take(10)->get()
-            : new Collection();
+        $recentInputs = new Collection();
+
+        if (Schema::hasTable('input_rekanan')) {
+            $query = InputRekanan::query();
+
+            if (Schema::hasTable('simpanan_multipn')) {
+                $query->withSaldoIdrSimpanan();
+            }
+
+            $recentInputs = $query->latest()->take(10)->get();
+        }
 
         return view('input.index', compact('recentInputs'));
     }

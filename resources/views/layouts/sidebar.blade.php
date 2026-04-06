@@ -1,3 +1,155 @@
+<style>
+    .main-sidebar .sidebar {
+        overflow-x: hidden;
+        padding-top: 0.1rem;
+    }
+
+    .main-sidebar .nav-sidebar {
+        gap: 0.2rem;
+    }
+
+    .main-sidebar .nav-sidebar > .nav-item {
+        margin-bottom: 0.15rem;
+    }
+
+    .main-sidebar .nav-sidebar > .nav-item > .nav-link {
+        display: flex;
+        align-items: flex-start;
+        width: 100%;
+        min-height: 46px;
+        padding: 0.72rem 0.85rem;
+    }
+
+    .main-sidebar .nav-sidebar > .nav-item > .nav-link p {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 0.75rem;
+        flex: 1 1 auto;
+        margin: 0;
+        line-height: 1.35;
+        white-space: normal;
+    }
+
+    .main-sidebar .nav-sidebar > .nav-item > .nav-link .nav-icon {
+        width: 1.35rem;
+        min-width: 1.35rem;
+        margin-right: 0.75rem;
+        font-size: 1rem;
+        text-align: center;
+    }
+
+    .main-sidebar .nav-sidebar > .nav-item > .nav-link p .right {
+        position: static;
+        margin-left: auto;
+        padding-top: 0.18rem;
+        flex-shrink: 0;
+    }
+
+    .main-sidebar .nav-sidebar > .nav-item.menu-open > .nav-link {
+        margin-bottom: 0.45rem !important;
+    }
+
+    .main-sidebar .nav-sidebar .nav-treeview {
+        margin: 0.2rem 0 0.65rem 0;
+        padding: 0 0 0 1.55rem;
+    }
+
+    .main-sidebar .nav-sidebar .nav-treeview > .nav-item > .nav-link {
+        display: flex;
+        align-items: center;
+        width: 100%;
+        min-height: 40px;
+        margin-bottom: 0.22rem;
+        padding: 0.52rem 0.9rem 0.52rem 0.65rem;
+    }
+
+    .main-sidebar .nav-sidebar .nav-treeview > .nav-item > .nav-link p {
+        display: block;
+        margin: 0;
+        line-height: 1.3;
+        white-space: normal;
+        word-break: keep-all;
+    }
+
+    .main-sidebar .nav-sidebar .nav-treeview > .nav-item > .nav-link .nav-icon {
+        width: 1rem;
+        min-width: 1rem;
+        margin-right: 0.85rem;
+        font-size: 0.95rem;
+    }
+
+    .main-sidebar .nav-sidebar .nav-treeview > .nav-item > .nav-link.active {
+        background: rgba(255, 255, 255, 0.14) !important;
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+    }
+
+    .main-sidebar .nav-sidebar .nav-header {
+        display: block !important;
+        width: 100%;
+        padding: 0.9rem 0.85rem 0.45rem !important;
+        margin: 0;
+        font-size: 0.68rem !important;
+        font-weight: 600;
+        line-height: 1;
+        letter-spacing: 0.16em !important;
+        text-align: left !important;
+        text-indent: 0 !important;
+        transform: none !important;
+    }
+
+    body.sidebar-hover-open.sidebar-mini.sidebar-collapse .main-sidebar .nav-sidebar .nav-treeview {
+        padding-left: 1.25rem;
+    }
+
+    body.sidebar-hover-open.sidebar-mini.sidebar-collapse .main-sidebar .nav-sidebar .nav-treeview > .nav-item > .nav-link {
+        min-height: 38px;
+        padding: 0.48rem 0.75rem 0.48rem 0.55rem;
+    }
+
+    body.sidebar-hover-open.sidebar-mini.sidebar-collapse .main-sidebar .nav-sidebar .nav-treeview > .nav-item > .nav-link p {
+        line-height: 1.15;
+    }
+
+    body.sidebar-hover-open.sidebar-mini.sidebar-collapse .main-sidebar .nav-sidebar .nav-treeview > .nav-item > .nav-link .nav-icon {
+        margin-right: 0.7rem;
+    }
+
+    .main-sidebar .nav-sidebar .report-digital-treeview {
+        padding-left: 1.2rem;
+    }
+
+    .main-sidebar .nav-sidebar .report-digital-treeview > .nav-item > .nav-link {
+        min-height: 38px;
+        padding: 0.48rem 0.8rem 0.48rem 0.55rem;
+    }
+
+    .main-sidebar .nav-sidebar .report-digital-treeview > .nav-item > .nav-link p {
+        line-height: 1.15;
+    }
+
+    .main-sidebar .nav-sidebar .report-digital-treeview > .nav-item > .nav-link .nav-icon {
+        margin-right: 0.7rem;
+    }
+
+    .main-sidebar .nav-sidebar .report-digital-treeview .submenu-single-line p {
+        white-space: nowrap;
+    }
+
+    body.sidebar-hover-open.sidebar-mini.sidebar-collapse .main-sidebar .nav-sidebar .report-digital-treeview {
+        padding-left: 1.05rem;
+    }
+
+    body.sidebar-hover-open.sidebar-mini.sidebar-collapse .main-sidebar .nav-sidebar .report-digital-treeview > .nav-item > .nav-link {
+        min-height: 36px;
+        padding: 0.44rem 0.72rem 0.44rem 0.5rem;
+    }
+
+    body.sidebar-hover-open.sidebar-mini.sidebar-collapse .main-sidebar .nav-sidebar .report-digital-treeview .submenu-single-line p {
+        white-space: nowrap;
+    }
+</style>
+
 <aside class="main-sidebar elevation-4" style="background: linear-gradient(180deg, #020617 0%, #0f172a 32%, #134e4a 100%);">
 
     <a href="{{ route('dashboard') }}" class="brand-link border-0 py-4 px-3 sidebar-brand-link" style="background: rgba(255, 255, 255, 0.04);">
@@ -53,17 +205,6 @@
                 @endif
 
                 @if(Auth::user()?->isAdmin())
-                <li class="nav-header text-uppercase" style="font-size: 0.68rem; letter-spacing: 0.16em; color: rgba(148, 163, 184, 0.78); padding-left: 0.75rem;">Input</li>
-                <li class="nav-header text-uppercase" style="font-size: 0.68rem; letter-spacing: 0.16em; color: rgba(148, 163, 184, 0.78); padding-left: 0.75rem;">Input</li>
-                <li class="nav-item">
-                    <a href="{{ route('input.index') }}"
-                       class="nav-link {{ request()->routeIs('input.*') ? 'active' : '' }}"
-                       style="border-radius: 14px; margin-bottom: 0.35rem; color: rgba(226, 232, 240, 0.88);">
-                        <i class="nav-icon fas fa-layer-group"></i>
-                        <p>Input Data</p>
-                    </a>
-                </li>
-
                 <li class="nav-header text-uppercase" style="font-size: 0.68rem; letter-spacing: 0.16em; color: rgba(148, 163, 184, 0.78); padding-left: 0.75rem;">Import</li>
 
                 <li class="nav-item">
@@ -87,15 +228,15 @@
                         </p>
                     </a>
                     
-                    <ul class="nav nav-treeview">
+                    <ul class="nav nav-treeview report-digital-treeview">
                         <li class="nav-item">
-                            <a href="{{ route('report.edc') }}" class="nav-link {{ request()->routeIs('report.edc') ? 'active' : '' }}" style="border-radius: 12px; color: rgba(226, 232, 240, 0.8);">
+                            <a href="{{ route('report.edc') }}" class="nav-link submenu-single-line {{ request()->routeIs('report.edc') ? 'active' : '' }}" style="border-radius: 12px; color: rgba(226, 232, 240, 0.8);">
                                 <i class="far fa-circle nav-icon text-info"></i>
                                 <p>Performance EDC</p>
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a href="{{ route('report.qris') }}" class="nav-link {{ request()->routeIs('report.qris') ? 'active' : '' }}" style="border-radius: 12px; color: rgba(226, 232, 240, 0.8);">
+                            <a href="{{ route('report.qris') }}" class="nav-link submenu-single-line {{ request()->routeIs('report.qris') ? 'active' : '' }}" style="border-radius: 12px; color: rgba(226, 232, 240, 0.8);">
                                 <i class="far fa-circle nav-icon text-success"></i>
                                 <p>Performance QRIS</p>
                             </a>
@@ -107,19 +248,19 @@
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a href="{{ route('report.brimo') }}" class="nav-link {{ request()->routeIs('report.brimo') ? 'active' : '' }}" style="border-radius: 12px; color: rgba(226, 232, 240, 0.8);">
+                            <a href="{{ route('report.brimo') }}" class="nav-link submenu-single-line {{ request()->routeIs('report.brimo') ? 'active' : '' }}" style="border-radius: 12px; color: rgba(226, 232, 240, 0.8);">
                                 <i class="far fa-circle nav-icon text-primary"></i>
                                 <p>Performance BRImo</p>
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a href="{{ route('report.brilink') }}" class="nav-link {{ request()->routeIs('report.brilink') ? 'active' : '' }}" style="border-radius: 12px; color: rgba(226, 232, 240, 0.8);">
+                            <a href="{{ route('report.brilink') }}" class="nav-link submenu-single-line {{ request()->routeIs('report.brilink') ? 'active' : '' }}" style="border-radius: 12px; color: rgba(226, 232, 240, 0.8);">
                                 <i class="far fa-circle nav-icon text-warning"></i>
                                 <p>Performance Brilink</p>
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a href="#" class="nav-link" style="border-radius: 12px; color: rgba(226, 232, 240, 0.8);">
+                            <a href="#" class="nav-link submenu-single-line" style="border-radius: 12px; color: rgba(226, 232, 240, 0.8);">
                                 <i class="far fa-circle nav-icon"></i>
                                 <p>Performance Qlola</p>
                             </a>
@@ -158,6 +299,24 @@
                             <a href="{{ route('report.kinerja.newpayroll') }}" class="nav-link {{ request()->routeIs('report.kinerja.newpayroll') ? 'active' : '' }}" style="border-radius: 12px; color: rgba(226, 232, 240, 0.8);">
                                 <i class="far fa-circle nav-icon text-info"></i>
                                 <p>Kinerja New Payroll</p>
+                            </a>
+                        </li>
+                    </ul>
+                </li>
+
+                <li class="nav-item {{ request()->is('report/kolaborasi-perusahaan-anak*') ? 'menu-open' : '' }}">
+                    <a href="#" class="nav-link {{ request()->is('report/kolaborasi-perusahaan-anak*') ? 'active' : '' }}" style="border-radius: 14px; margin-bottom: 0.35rem; color: rgba(226, 232, 240, 0.88);">
+                        <i class="nav-icon fas fa-handshake"></i>
+                        <p>
+                            Kolaborasi Perusahaan Anak
+                            <i class="right fas fa-angle-left"></i>
+                        </p>
+                    </a>
+                    <ul class="nav nav-treeview">
+                        <li class="nav-item">
+                            <a href="{{ route('report.kolaborasi.referral') }}" class="nav-link {{ request()->routeIs('report.kolaborasi.referral') ? 'active' : '' }}" style="border-radius: 12px; color: rgba(226, 232, 240, 0.8);">
+                                <i class="far fa-circle nav-icon text-info"></i>
+                                <p>Program Referral Partner Perusahaan Anak</p>
                             </a>
                         </li>
                     </ul>

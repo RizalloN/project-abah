@@ -317,16 +317,39 @@
             transition: padding 0.2s ease, margin 0.2s ease, background-color 0.2s ease;
         }
 
+        .sidebar-mini.sidebar-collapse .main-sidebar {
+            width: 4.9rem;
+            overflow: hidden;
+            transition: width 0.22s ease, box-shadow 0.22s ease;
+            z-index: 1040;
+        }
+
+        body.sidebar-hover-open.sidebar-mini.sidebar-collapse .main-sidebar {
+            width: 300px;
+            box-shadow: 18px 0 38px -24px rgba(15, 23, 42, 0.55);
+        }
+
         .sidebar-mini.sidebar-collapse .main-sidebar .brand-link.sidebar-brand-link {
             display: flex;
             align-items: center;
             justify-content: center;
-            padding: 1rem 0.5rem !important;
+            padding: 0.9rem 0.45rem !important;
+        }
+
+        body.sidebar-hover-open.sidebar-mini.sidebar-collapse .main-sidebar .brand-link.sidebar-brand-link {
+            justify-content: flex-start;
+            padding: 1rem 0.75rem !important;
         }
 
         .sidebar-mini.sidebar-collapse .main-sidebar .sidebar-brand-inner,
         .sidebar-mini.sidebar-collapse .main-sidebar .sidebar-user-inner {
             justify-content: center !important;
+            width: auto;
+        }
+
+        body.sidebar-hover-open.sidebar-mini.sidebar-collapse .main-sidebar .sidebar-brand-inner,
+        body.sidebar-hover-open.sidebar-mini.sidebar-collapse .main-sidebar .sidebar-user-inner {
+            justify-content: flex-start !important;
             width: 100%;
         }
 
@@ -336,27 +359,62 @@
             flex-shrink: 0;
         }
 
+        body.sidebar-hover-open.sidebar-mini.sidebar-collapse .main-sidebar .sidebar-brand-badge,
+        body.sidebar-hover-open.sidebar-mini.sidebar-collapse .main-sidebar .sidebar-user-avatar {
+            margin-right: 0.75rem !important;
+        }
+
         .sidebar-mini.sidebar-collapse .main-sidebar .sidebar-brand-text,
         .sidebar-mini.sidebar-collapse .main-sidebar .sidebar-user-info,
         .sidebar-mini.sidebar-collapse .main-sidebar .nav-sidebar .nav-header,
-        .sidebar-mini.sidebar-collapse .main-sidebar .nav-sidebar .nav-treeview,
         .sidebar-mini.sidebar-collapse .main-sidebar .nav-sidebar .right {
             display: none !important;
         }
 
+        .sidebar-mini.sidebar-collapse .main-sidebar .nav-sidebar .nav-treeview {
+            display: none !important;
+        }
+
+        body.sidebar-hover-open.sidebar-mini.sidebar-collapse .main-sidebar .sidebar-brand-text,
+        body.sidebar-hover-open.sidebar-mini.sidebar-collapse .main-sidebar .sidebar-user-info,
+        body.sidebar-hover-open.sidebar-mini.sidebar-collapse .main-sidebar .nav-sidebar .nav-header,
+        body.sidebar-hover-open.sidebar-mini.sidebar-collapse .main-sidebar .nav-sidebar .right {
+            display: block !important;
+        }
+
+        body.sidebar-hover-open.sidebar-mini.sidebar-collapse .main-sidebar .nav-sidebar .right {
+            display: inline-block !important;
+        }
+
+        body.sidebar-hover-open.sidebar-mini.sidebar-collapse .main-sidebar .nav-sidebar > .nav-item.menu-open > .nav-treeview {
+            display: block !important;
+        }
+
         .sidebar-mini.sidebar-collapse .main-sidebar .sidebar {
-            padding-left: 0.45rem !important;
-            padding-right: 0.45rem !important;
+            padding-left: 0.35rem !important;
+            padding-right: 0.35rem !important;
+        }
+
+        body.sidebar-hover-open.sidebar-mini.sidebar-collapse .main-sidebar .sidebar {
+            padding-left: 0.5rem !important;
+            padding-right: 0.5rem !important;
         }
 
         .sidebar-mini.sidebar-collapse .main-sidebar .sidebar-user-panel {
             display: flex;
             align-items: center;
             justify-content: center;
-            padding: 0.65rem 0.35rem !important;
+            width: calc(100% - 0.1rem);
+            padding: 0.5rem 0.25rem !important;
             margin-top: 0.75rem !important;
             margin-bottom: 1rem !important;
             border-radius: 18px;
+        }
+
+        body.sidebar-hover-open.sidebar-mini.sidebar-collapse .main-sidebar .sidebar-user-panel {
+            justify-content: flex-start;
+            width: 100%;
+            padding: 0.75rem !important;
         }
 
         .sidebar-mini.sidebar-collapse .main-sidebar .sidebar-user-avatar {
@@ -369,7 +427,7 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 0.4rem;
+            gap: 0.45rem;
         }
 
         .sidebar-mini.sidebar-collapse .main-sidebar .nav-sidebar > .nav-item {
@@ -381,21 +439,45 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            width: 100%;
-            min-height: 46px;
+            width: calc(100% - 0.1rem);
+            min-height: 44px;
             margin-bottom: 0 !important;
-            padding: 0.65rem 0.5rem !important;
-            border-radius: 16px !important;
+            padding: 0.55rem 0.4rem !important;
+            border-radius: 14px !important;
         }
 
         .sidebar-mini.sidebar-collapse .main-sidebar .nav-sidebar .nav-icon {
-            width: auto !important;
+            width: 1.2rem !important;
             margin: 0 !important;
             font-size: 1.05rem;
+            text-align: center;
         }
 
         .sidebar-mini.sidebar-collapse .main-sidebar .nav-sidebar > .nav-item > .nav-link p {
             display: none !important;
+        }
+
+        body.sidebar-hover-open.sidebar-mini.sidebar-collapse .main-sidebar .nav-sidebar > .nav-item > .nav-link {
+            justify-content: flex-start;
+            width: 100%;
+            min-height: 46px;
+            padding: 0.65rem 0.75rem !important;
+            border-radius: 14px !important;
+        }
+
+        body.sidebar-hover-open.sidebar-mini.sidebar-collapse .main-sidebar .nav-sidebar .nav-icon {
+            width: 1.6rem !important;
+            margin-right: 0.65rem !important;
+        }
+
+        body.sidebar-hover-open.sidebar-mini.sidebar-collapse .main-sidebar .nav-sidebar > .nav-item > .nav-link p {
+            display: flex !important;
+            flex: 1 1 auto;
+        }
+
+        .sidebar-mini.sidebar-collapse .main-sidebar .nav-sidebar > .nav-item.menu-open > .nav-link,
+        .sidebar-mini.sidebar-collapse .main-sidebar .nav-sidebar > .nav-item > .nav-link.active {
+            margin-bottom: 0 !important;
         }
     </style>
 </head>
@@ -474,6 +556,46 @@
 
 <!-- AdminLTE -->
 <script src="{{ asset('adminlte/dist/js/adminlte.min.js') }}"></script>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const body = document.body;
+        const sidebar = document.querySelector('.main-sidebar');
+
+        if (!sidebar) {
+            return;
+        }
+
+        const closeHoverSidebar = function () {
+            body.classList.remove('sidebar-hover-open');
+        };
+
+        sidebar.addEventListener('mouseenter', function () {
+            if (body.classList.contains('sidebar-collapse')) {
+                body.classList.add('sidebar-hover-open');
+            }
+        });
+
+        sidebar.addEventListener('mouseleave', closeHoverSidebar);
+
+        document.addEventListener('click', function (event) {
+            if (!body.classList.contains('sidebar-collapse')) {
+                closeHoverSidebar();
+                return;
+            }
+
+            if (!sidebar.contains(event.target)) {
+                closeHoverSidebar();
+            }
+        });
+
+        window.addEventListener('resize', closeHoverSidebar);
+
+        $(document).on('collapsed.lte.pushmenu shown.lte.pushmenu', function () {
+            closeHoverSidebar();
+        });
+    });
+</script>
 
 @yield('scripts')
 
