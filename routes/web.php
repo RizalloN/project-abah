@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Input\InputRekananController;
+use App\Http\Controllers\Input\BodBocController;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\DashboardPinjamanReportController;
 use App\Http\Controllers\Import\ImportIndexController;
@@ -54,6 +55,7 @@ Route::get('/report/optimalisasi-digital/brilink', [App\Http\Controllers\DataRep
 Route::get('/report/optimalisasi-digital/brimo', [App\Http\Controllers\PerformanceBrimoController::class, 'index'])->name('report.brimo');
 Route::post('/report/data/brimo', [App\Http\Controllers\PerformanceBrimoController::class, 'fetchData'])->name('report.data.brimo');
 Route::get('/report/kolaborasi-perusahaan-anak/program-referral-partner-perusahaan-anak', [App\Http\Controllers\DataReportController::class, 'programReferralPartnerPerusahaanAnak'])->name('report.kolaborasi.referral');
+Route::get('/report/kolaborasi-perusahaan-anak/nasabah-prioritas-bod-boc', [App\Http\Controllers\DataReportController::class, 'nasabahPrioritasBodBoc'])->name('report.kolaborasi.bodboc');
 
 // 🔥 ROUTE REKENING TRANSAKSI DEBITUR
 Route::get('/report/rekening-transaksi-debitur', [RasioCasaDebiturController::class, 'index'])->name('report.rasiocasa.debitur');
@@ -70,6 +72,11 @@ Route::post('/report/data', [App\Http\Controllers\DataReportController::class, '
 Route::middleware(['auth', 'role:admin'])->group(function () {
     Route::get('/input-data', [InputRekananController::class, 'index'])->name('input.index');
     Route::post('/input-data', [InputRekananController::class, 'store'])->name('input.store');
+    Route::post('/input-data/import-template', [InputRekananController::class, 'importTemplate'])->name('input.import-template');
+    Route::get('/input-data/import-preview', [InputRekananController::class, 'previewImport'])->name('input.import-preview');
+    Route::post('/bod-boc/import-template', [BodBocController::class, 'importTemplate'])->name('bod-boc.import-template');
+    Route::get('/bod-boc/import-preview', [BodBocController::class, 'previewImport'])->name('bod-boc.import-preview');
+    Route::post('/bod-boc/store', [BodBocController::class, 'store'])->name('bod-boc.store');
     Route::get('/import', [ImportIndexController::class, 'index'])->name('import.index');
     Route::get('/import/template', [ImportIndexController::class, 'downloadTemplate'])->name('import.template');
     Route::post('/import/upload', [ImportFileController::class, 'upload'])->name('import.upload');

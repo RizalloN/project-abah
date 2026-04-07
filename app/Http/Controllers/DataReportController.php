@@ -151,6 +151,33 @@ public function performanceBrilink()
     // 🔥 4. MESIN PENGOLAH DATA UTAMA (AJAX API)
     public function programReferralPartnerPerusahaanAnak(Request $request)
     {
+        return $this->buildKolaborasiSnapshotReport(
+            $request,
+            'input_rekanan',
+            'report.program-referral-partner-perusahaan-anak',
+            'input_rekanan + simpanan_multipn',
+            'Kolaborasi Perusahaan Anak'
+        );
+    }
+
+    public function nasabahPrioritasBodBoc(Request $request)
+    {
+        return $this->buildKolaborasiSnapshotReport(
+            $request,
+            'bod_boc',
+            'report.nasabah-prioritas-bod-boc',
+            'bod_boc + simpanan_multipn',
+            'Nasabah Prioritas BOD/BOC'
+        );
+    }
+
+    private function buildKolaborasiSnapshotReport(
+        Request $request,
+        string $sourceTable,
+        string $viewName,
+        string $sourceLabel,
+        string $pageTitle
+    ) {
         $selectedDateInput = (string) $request->query('posisi_terakhir', '');
         $selectedDate = $selectedDateInput !== ''
             ? Carbon::parse($selectedDateInput)->endOfDay()
@@ -168,17 +195,12 @@ public function performanceBrilink()
             $positions = $positions->unique()->values();
         }
 
-        $matchedRows = DB::table('input_rekanan as ir')
+        $matchedRows = DB::table($sourceTable . ' as src')
             ->join('simpanan_multipn as sm', function ($join) {
-                $join->whereRaw('sm.CIFNO COLLATE utf8mb4_unicode_ci = ir.cif COLLATE utf8mb4_unicode_ci');
+                $join->whereRaw('sm.CIFNO COLLATE utf8mb4_unicode_ci = src.cif COLLATE utf8mb4_unicode_ci');
             })
             ->whereIn('sm.posisi', $positions->all())
-            ->select(
-                'ir.cif',
-                'sm.kantor_cabang',
-                'sm.posisi',
-                'sm.saldo_idr'
-            )
+            ->select('src.cif', 'sm.kantor_cabang', 'sm.posisi', 'sm.saldo_idr')
             ->orderBy('sm.kantor_cabang')
             ->orderBy('sm.posisi')
             ->get();
@@ -286,12 +308,14 @@ public function performanceBrilink()
                 : 0;
         }
 
-        return view('report.program-referral-partner-perusahaan-anak', [
+        return view($viewName, [
             'positions' => $positions,
             'tableRows' => $tableRows,
             'grandTotals' => $grandTotals,
             'matchedCount' => $matchedRows->count(),
             'selectedDate' => $selectedDate->toDateString(),
+            'sourceLabel' => $sourceLabel,
+            'pageTitle' => $pageTitle,
         ]);
     }
 
