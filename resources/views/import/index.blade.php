@@ -12,7 +12,7 @@
             <div class="import-template-banner__title">
                 <i class="fas fa-download mr-2"></i> Download Template Import
             </div>
-            <p class="import-template-banner__text mb-0">Pilih kategori report, unduh template yang sesuai, lalu isi datanya agar proses import lebih cepat dan rapi. File template fisik disimpan di <code>resources/templates/import</code>.</p>
+            <p class="import-template-banner__text mb-0">Pilih kategori report, unduh template yang sesuai, lalu isi datanya agar proses import lebih cepat dan rapi.</p>
         </div>
         <div class="import-template-banner__actions mt-3 mt-md-0">
             <div class="import-template-banner__download-group">
