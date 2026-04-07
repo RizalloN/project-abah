@@ -9,3 +9,7 @@ Flow:
 File yang dipakai saat ini:
 - `template-input-rekanan.xlsx`
 - `template-nasabah-prioritas-bod-boc.xlsx`
+
+Mapping label download:
+- `Input Rekanan` -> `template-input-rekanan.xlsx`
+- `Nasabah Prioritas BOD BOC` -> `template-nasabah-prioritas-bod-boc.xlsx`
