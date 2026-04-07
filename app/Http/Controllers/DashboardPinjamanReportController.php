@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Database\Query\Builder;
+use Illuminate\Contracts\Cache\LockTimeoutException;
 use Throwable;
 
 class DashboardPinjamanReportController extends Controller
@@ -50,6 +51,8 @@ class DashboardPinjamanReportController extends Controller
 
     public function filters(Request $request)
     {
+        @set_time_limit(30);
+
         $selectedPeriod = $this->resolveEffectivePeriod($request->input('periode'));
         $comparisonPeriod = $this->resolveComparisonPeriod($selectedPeriod);
         $forceRefresh = $request->boolean('refresh');
@@ -108,6 +111,7 @@ class DashboardPinjamanReportController extends Controller
 
     public function data(Request $request)
     {
+        @set_time_limit(0);
         DB::connection()->disableQueryLog();
 
         $selectedPeriod = $this->resolveEffectivePeriod($request->input('periode'));
@@ -186,102 +190,55 @@ class DashboardPinjamanReportController extends Controller
         $phPeriod = $this->resolvePhPeriod($selectedPeriod);
         $bucketMap = [];
         $metricMap = [];
-
-        $currentSnapshot = $this->buildLoanSnapshotQuery($selectedPeriod, $filters, 'curr');
         $previousSnapshot = $comparisonPeriod
-            ? $this->buildLoanSnapshotQuery($comparisonPeriod, $filters, 'prev')
-            : null;
-        $phSnapshot = $this->buildPhSnapshotQuery($phPeriod);
+            ? $this->loadLoanSnapshotMap($comparisonPeriod, $filters, 'prev')
+            : [];
+        $phAccounts = $this->loadPhAccountSet($phPeriod);
 
-        $transitionRows = DB::query()
-            ->fromSub($currentSnapshot, 'curr')
-            ->leftJoinSub($previousSnapshot ?? $this->buildEmptyLoanSnapshotQuery(), 'prev', 'prev.account_number', '=', 'curr.account_number')
-            ->selectRaw("
-                COALESCE(prev.before_bucket, 'New Account') as before_bucket,
-                curr.after_bucket as after_bucket,
-                SUM(curr.current_balance) as current_total,
-                SUM(
-                    CASE
-                        WHEN prev.previous_balance > curr.current_balance
-                            AND prev.before_bucket <> 'New Account'
-                            AND (
-                                (prev.before_bucket IN ('L', 'LR') AND curr.after_bucket IN ('L', 'LR'))
-                                OR (
-                                    {$this->buildBucketRankExpression('curr.after_bucket')} IS NOT NULL
-                                    AND {$this->buildBucketRankExpression('prev.before_bucket')} IS NOT NULL
-                                    AND {$this->buildBucketRankExpression('curr.after_bucket')} < {$this->buildBucketRankExpression('prev.before_bucket')}
-                                )
-                            )
-                        THEN prev.previous_balance - curr.current_balance
-                        ELSE 0
-                    END
-                ) as principal_reduction_total,
-                SUM(
-                    CASE
-                        WHEN curr.current_balance > COALESCE(prev.previous_balance, 0)
-                            AND (
-                                prev.before_bucket IS NULL
-                                OR prev.before_bucket = 'New Account'
-                                OR (prev.before_bucket IN ('L', 'LR') AND curr.after_bucket IN ('L', 'LR'))
-                            )
-                        THEN curr.current_balance - COALESCE(prev.previous_balance, 0)
-                        ELSE 0
-                    END
-                ) as suplesi_total
-            ")
-            ->groupByRaw("COALESCE(prev.before_bucket, 'New Account'), curr.after_bucket")
-            ->get();
+        foreach ($this->buildLoanSnapshotQuery($selectedPeriod, $filters, 'curr')->orderBy('curr.id')->cursor() as $row) {
+            $accountNumber = (string) ($row->account_number ?? '');
+            $currentBalance = (float) ($row->current_balance ?? 0);
+            $after = (string) ($row->after_bucket ?? '');
 
-        foreach ($transitionRows as $row) {
-            $before = (string) $row->before_bucket;
-            $after = (string) $row->after_bucket;
-
-            if (!in_array($before, self::BEFORE_ROWS, true) || !in_array($after, self::RAW_QUALITY_BUCKETS, true)) {
+            if ($accountNumber === '' || !in_array($after, self::RAW_QUALITY_BUCKETS, true)) {
                 continue;
             }
 
+            $previous = $previousSnapshot[$accountNumber] ?? null;
+            $before = $previous['bucket'] ?? 'New Account';
+            $previousBalance = (float) ($previous['balance'] ?? 0);
+
+            if (!in_array($before, self::BEFORE_ROWS, true)) {
+                $before = 'New Account';
+            }
+
             if (in_array($after, self::QUALITY_BUCKETS, true)) {
-                $bucketMap[$before][$after] = (float) ($row->current_total ?? 0);
+                $bucketMap[$before][$after] = ($bucketMap[$before][$after] ?? 0) + $currentBalance;
             }
 
-            if ((float) ($row->principal_reduction_total ?? 0) > 0) {
-                $metricMap[$before]['principal_reduction'] = (float) ($row->principal_reduction_total ?? 0);
+            $principalReduction = $this->calculatePrincipalReduction($before, $after, $previousBalance, $currentBalance);
+            if ($principalReduction > 0) {
+                $metricMap[$before]['principal_reduction'] = ($metricMap[$before]['principal_reduction'] ?? 0) + $principalReduction;
             }
 
-            if ((float) ($row->suplesi_total ?? 0) > 0) {
-                $metricMap[$before]['suplesi'] = (float) ($row->suplesi_total ?? 0);
+            $suplesi = $this->calculateSuplesi($before, $after, $previousBalance, $currentBalance);
+            if ($suplesi > 0) {
+                $metricMap[$before]['suplesi'] = ($metricMap[$before]['suplesi'] ?? 0) + $suplesi;
             }
+
+            unset($previousSnapshot[$accountNumber]);
         }
 
-        if ($previousSnapshot) {
-            $vanishedRows = DB::query()
-                ->fromSub($previousSnapshot, 'prev')
-                ->leftJoinSub($currentSnapshot, 'curr', 'curr.account_number', '=', 'prev.account_number')
-                ->leftJoinSub($phSnapshot, 'ph', 'ph.account_number', '=', 'prev.account_number')
-                ->whereNull('curr.account_number')
-                ->selectRaw("
-                    prev.before_bucket as before_bucket,
-                    SUM(CASE WHEN ph.account_number IS NOT NULL THEN prev.previous_balance ELSE 0 END) as ph_total,
-                    SUM(CASE WHEN ph.account_number IS NULL THEN prev.previous_balance ELSE 0 END) as lunas_total
-                ")
-                ->groupBy('prev.before_bucket')
-                ->get();
+        foreach ($previousSnapshot as $accountNumber => $previous) {
+            $before = (string) ($previous['bucket'] ?? 'New Account');
+            $previousBalance = (float) ($previous['balance'] ?? 0);
 
-            foreach ($vanishedRows as $row) {
-                $before = (string) $row->before_bucket;
-
-                if (!in_array($before, self::BEFORE_ROWS, true)) {
-                    continue;
-                }
-
-                if ((float) ($row->ph_total ?? 0) > 0) {
-                    $metricMap[$before]['ph'] = (float) ($row->ph_total ?? 0);
-                }
-
-                if ((float) ($row->lunas_total ?? 0) > 0) {
-                    $metricMap[$before]['lunas'] = (float) ($row->lunas_total ?? 0);
-                }
+            if ($previousBalance <= 0 || !in_array($before, self::BEFORE_ROWS, true)) {
+                continue;
             }
+
+            $metricKey = isset($phAccounts[$accountNumber]) ? 'ph' : 'lunas';
+            $metricMap[$before][$metricKey] = ($metricMap[$before][$metricKey] ?? 0) + $previousBalance;
         }
 
         $matrixRows = [];
@@ -342,6 +299,56 @@ class DashboardPinjamanReportController extends Controller
             ->sum(fn (array $row) => (float) $row['total']);
 
         return [$matrixRows, $grandTotals, $grandTotalValue > 0 ? $grandTotalValue : null];
+    }
+
+    private function loadLoanSnapshotMap(string $period, array $filters, string $alias): array
+    {
+        $snapshot = [];
+
+        foreach ($this->buildLoanSnapshotQuery($period, $filters, $alias)->orderBy("{$alias}.id")->cursor() as $row) {
+            $accountNumber = (string) ($row->account_number ?? '');
+
+            if ($accountNumber === '') {
+                continue;
+            }
+
+            $balanceColumn = $alias === 'curr' ? 'current_balance' : 'previous_balance';
+            $bucketColumn = $alias === 'curr' ? 'after_bucket' : 'before_bucket';
+            $balance = (float) ($row->{$balanceColumn} ?? 0);
+            $bucket = (string) ($row->{$bucketColumn} ?? '');
+
+            if (isset($snapshot[$accountNumber])) {
+                $snapshot[$accountNumber]['balance'] += $balance;
+                $snapshot[$accountNumber]['bucket'] = $bucket;
+                continue;
+            }
+
+            $snapshot[$accountNumber] = [
+                'balance' => $balance,
+                'bucket' => $bucket,
+            ];
+        }
+
+        return $snapshot;
+    }
+
+    private function loadPhAccountSet(?string $period): array
+    {
+        if (!$period) {
+            return [];
+        }
+
+        $accounts = [];
+
+        foreach ($this->buildPhSnapshotQuery($period)->orderBy('ph.id')->cursor() as $row) {
+            $accountNumber = (string) ($row->account_number ?? '');
+
+            if ($accountNumber !== '') {
+                $accounts[$accountNumber] = true;
+            }
+        }
+
+        return $accounts;
     }
 
     private function buildLoanSnapshotQuery(string $period, array $filters, string $alias)
@@ -552,6 +559,8 @@ class DashboardPinjamanReportController extends Controller
 
     private function rememberPayload(string $cacheKey, $ttl, callable $callback, bool $forceRefresh = false)
     {
+        $latestKey = $cacheKey . ':latest';
+
         if (!$forceRefresh) {
             $cached = Cache::get($cacheKey);
             if ($cached !== null) {
@@ -562,7 +571,7 @@ class DashboardPinjamanReportController extends Controller
         $lock = Cache::lock($cacheKey . ':lock', 30);
 
         try {
-            return $lock->block(5, function () use ($cacheKey, $ttl, $callback, $forceRefresh) {
+            return $lock->block(15, function () use ($cacheKey, $latestKey, $ttl, $callback, $forceRefresh) {
                 if (!$forceRefresh) {
                     $cached = Cache::get($cacheKey);
                     if ($cached !== null) {
@@ -572,9 +581,21 @@ class DashboardPinjamanReportController extends Controller
 
                 $payload = $callback();
                 Cache::put($cacheKey, $payload, $ttl);
+                Cache::put($latestKey, $payload, now()->addMinutes(10));
 
                 return $payload;
             });
+        } catch (LockTimeoutException) {
+            $latest = Cache::get($latestKey);
+            if ($latest !== null) {
+                return $latest;
+            }
+
+            $payload = $callback();
+            Cache::put($cacheKey, $payload, $ttl);
+            Cache::put($latestKey, $payload, now()->addMinutes(10));
+
+            return $payload;
         } finally {
             optional($lock)->release();
         }

@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Contracts\Cache\LockTimeoutException;
 use Throwable;
 
 class RasioCasaDebiturController extends Controller
@@ -27,6 +28,7 @@ class RasioCasaDebiturController extends Controller
 
     public function fetchData(Request $request)
     {
+        @set_time_limit(0);
         DB::connection()->disableQueryLog();
 
         try {
@@ -120,6 +122,7 @@ class RasioCasaDebiturController extends Controller
             'casa_version' => $casaVersion,
         ]));
         $lockKey = $cacheKey . ':lock';
+        $latestKey = $cacheKey . ':latest';
 
         $cached = $forceRefresh ? null : Cache::get($cacheKey);
         if ($cached) {
@@ -129,7 +132,7 @@ class RasioCasaDebiturController extends Controller
         $lock = Cache::lock($lockKey, 30);
 
         try {
-            return $lock->block(5, function () use ($cacheKey, $loanPeriod, $forceRefresh, $cached) {
+            return $lock->block(15, function () use ($cacheKey, $latestKey, $loanPeriod, $forceRefresh, $cached) {
                 if (!$forceRefresh) {
                     $lockCached = Cache::get($cacheKey);
                     if ($lockCached) {
@@ -140,9 +143,21 @@ class RasioCasaDebiturController extends Controller
                 $payload = $this->computeSummarySnapshot($loanPeriod);
 
                 Cache::put($cacheKey, $payload, now()->addMinutes(3));
+                Cache::put($latestKey, $payload, now()->addMinutes(10));
 
                 return $payload;
             });
+        } catch (LockTimeoutException) {
+            $latest = Cache::get($latestKey);
+            if ($latest) {
+                return $latest;
+            }
+
+            $payload = $this->computeSummarySnapshot($loanPeriod);
+            Cache::put($cacheKey, $payload, now()->addMinutes(3));
+            Cache::put($latestKey, $payload, now()->addMinutes(10));
+
+            return $payload;
         } finally {
             optional($lock)->release();
         }

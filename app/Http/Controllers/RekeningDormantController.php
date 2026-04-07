@@ -8,6 +8,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Contracts\Cache\LockTimeoutException;
 use Throwable;
 
 class RekeningDormantController extends Controller
@@ -25,6 +26,7 @@ class RekeningDormantController extends Controller
 
     public function filters(Request $request)
     {
+        @set_time_limit(30);
         $requestedPeriod = $request->input('posisi');
         $forceRefresh = $request->boolean('refresh');
         $currentPeriod = $this->resolveAvailablePeriod($requestedPeriod);
@@ -79,6 +81,7 @@ class RekeningDormantController extends Controller
 
     public function fetchData(Request $request)
     {
+        @set_time_limit(0);
         $requestedPeriod = $request->input('posisi');
         $forceRefresh = $request->boolean('refresh');
         $currentPeriod = $this->resolveAvailablePeriod($requestedPeriod);
@@ -392,6 +395,8 @@ class RekeningDormantController extends Controller
 
     private function rememberPayload(string $cacheKey, $ttl, callable $callback, bool $forceRefresh = false)
     {
+        $latestKey = $cacheKey . ':latest';
+
         if (!$forceRefresh) {
             $cached = Cache::get($cacheKey);
             if ($cached !== null) {
@@ -402,7 +407,7 @@ class RekeningDormantController extends Controller
         $lock = Cache::lock($cacheKey . ':lock', 30);
 
         try {
-            return $lock->block(5, function () use ($cacheKey, $ttl, $callback, $forceRefresh) {
+            return $lock->block(15, function () use ($cacheKey, $latestKey, $ttl, $callback, $forceRefresh) {
                 if (!$forceRefresh) {
                     $cached = Cache::get($cacheKey);
                     if ($cached !== null) {
@@ -412,9 +417,21 @@ class RekeningDormantController extends Controller
 
                 $payload = $callback();
                 Cache::put($cacheKey, $payload, $ttl);
+                Cache::put($latestKey, $payload, now()->addMinutes(10));
 
                 return $payload;
             });
+        } catch (LockTimeoutException) {
+            $latest = Cache::get($latestKey);
+            if ($latest !== null) {
+                return $latest;
+            }
+
+            $payload = $callback();
+            Cache::put($cacheKey, $payload, $ttl);
+            Cache::put($latestKey, $payload, now()->addMinutes(10));
+
+            return $payload;
         } finally {
             optional($lock)->release();
         }

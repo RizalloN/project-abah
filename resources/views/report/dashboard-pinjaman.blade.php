@@ -631,6 +631,7 @@
         let activeController = null;
         let activeFilterController = null;
         let isRefreshingFilters = false;
+        let filterReloadTimer = null;
 
         const filterSelects = [
             { element: segmenSelect, placeholder: 'Semua Segmen' },
@@ -638,6 +639,10 @@
             { element: cabangSelect, placeholder: 'Semua Kantor Cabang' },
             { element: unitSelect, placeholder: 'Semua Unit Kerja' },
         ];
+
+        filterSelects.forEach(({ element }) => {
+            element.dataset.state = periodInput.value ? 'idle' : 'disabled';
+        });
 
         function parseSelectedDataset(select) {
             try {
@@ -690,6 +695,20 @@
                 placeholder,
                 closeOnSelect: false,
                 allowClear: true,
+                language: {
+                    noResults: function () {
+                        const state = select.dataset.state || 'ready';
+                        if (state === 'loading') {
+                            return 'Memuat opsi...';
+                        }
+
+                        if (state === 'empty') {
+                            return 'Tidak ada opsi';
+                        }
+
+                        return 'Tidak ada opsi';
+                    },
+                },
                 templateResult: buildOptionTemplate,
                 templateSelection: function (data) {
                     return data.text;
@@ -749,6 +768,7 @@
 
         function setSelectOptions(select, items, placeholder, selectedValues = []) {
             select.innerHTML = '';
+            select.dataset.state = items.length ? 'ready' : (periodInput.value ? 'empty' : 'disabled');
             const normalizedSelectedValues = Array.isArray(selectedValues)
                 ? selectedValues.map(String)
                 : [];
@@ -771,6 +791,7 @@
         function setFilterLoadingState(isLoading) {
             filterSelects.forEach(({ element, placeholder }) => {
                 element.disabled = isLoading || !periodInput.value;
+                element.dataset.state = isLoading ? 'loading' : (periodInput.value ? 'ready' : 'disabled');
 
                 if (isLoading) {
                     element.innerHTML = '';
@@ -782,6 +803,13 @@
 
                 refreshSelectUi(element);
             });
+        }
+
+        function scheduleFilterReload() {
+            window.clearTimeout(filterReloadTimer);
+            filterReloadTimer = window.setTimeout(function () {
+                loadFilterOptions();
+            }, 250);
         }
 
         function refreshSelectUi(select) {
@@ -919,6 +947,9 @@
             }
 
             activeFilterController = new AbortController();
+            const timeoutId = window.setTimeout(function () {
+                activeFilterController?.abort('timeout');
+            }, 15000);
             setFilterLoadingState(true);
 
             const params = new URLSearchParams();
@@ -957,8 +988,13 @@
                     setFilterLoadingState(false);
                     activePeriodMeta.textContent = '-';
                     comparisonPeriodMeta.textContent = '-';
+                    filterSelects.forEach(({ element }) => {
+                        element.dataset.state = 'empty';
+                        refreshSelectUi(element);
+                    });
                 }
             } finally {
+                window.clearTimeout(timeoutId);
                 isRefreshingFilters = false;
 
                 if (activeFilterController?.signal.aborted) {
@@ -1020,7 +1056,7 @@
                         <tr>
                             <td colspan="${qualityColumns.length + 6}" class="loan-empty-state">
                                 <strong>Gagal memuat dashboard</strong>
-                                Silakan coba lagi. Jika tetap lambat, kecilkan filter agar data yang diproses lebih spesifik.
+                                Silakan coba lagi.
                             </td>
                         </tr>
                     `;
@@ -1055,7 +1091,7 @@
                 updateSelectSummary(element);
 
                 if (!isRefreshingFilters && periodInput.value) {
-                    loadFilterOptions();
+                    scheduleFilterReload();
                 }
             });
         });

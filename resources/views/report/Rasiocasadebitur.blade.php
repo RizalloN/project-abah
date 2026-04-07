@@ -674,8 +674,8 @@ document.addEventListener('DOMContentLoaded', function () {
         updateTableLabels('-', '-');
         summaryBadge.textContent = 'Belum ada data';
         filterMetaPeriod.innerHTML = '<strong>Periode aktif:</strong> belum dijalankan';
-        renderMessage('Filter belum dijalankan. Klik <strong>Tampilkan</strong> untuk memproses report.');
-        setOverlay('Siap Memuat Data', 'Pilih periode akhir lalu klik <strong>Tampilkan</strong> untuk menjalankan query rasio CASA debitur.', true);
+        renderMessage('Belum ada data. Klik <strong>Tampilkan</strong>.');
+        setOverlay('Siap Memuat Data', 'Pilih filter lalu klik Tampilkan.', true);
     }
 
     async function loadData() {
@@ -685,8 +685,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
         loadingChip.classList.remove('d-none');
         submitButton.disabled = true;
-        renderMessage('Sistem sedang menghitung rasio CASA debitur untuk periode yang dipilih...');
-        setOverlay('Sedang Mengolah', 'Sistem sedang menarik agregasi pinjaman dan CASA. Query baru dijalankan setelah filter diklik.', true);
+        renderMessage('Memproses rasio CASA debitur...');
+        setOverlay('Sedang Mengolah', 'Memproses data rasio CASA debitur.', true);
 
         activeRequest = $.ajax({
             url: "{{ route('report.data.rasiocasa') }}",
@@ -696,7 +696,6 @@ document.addEventListener('DOMContentLoaded', function () {
                 _token: '{{ csrf_token() }}'
             },
             dataType: 'json',
-            timeout: 120000,
         });
 
         try {
@@ -728,13 +727,13 @@ document.addEventListener('DOMContentLoaded', function () {
             if (!hasAnyData) {
                 renderMessage(`Tidak ada data untuk tanggal ${currentDate}. Coba pilih tanggal lain.`);
                 summaryBadge.textContent = 'Data kosong';
-                setOverlay('Tidak Ada Data', `Tidak ada data untuk periode <strong>${currentDate}</strong>. Silakan pilih tanggal lain lalu klik <strong>Tampilkan</strong>.`, true);
+                setOverlay('Tidak Ada Data', `Tidak ada data untuk periode <strong>${currentDate}</strong>.`, true);
                 return;
             }
 
             renderRows(dataList, totalData);
             summaryBadge.textContent = `${dataList.length} branch | ${labels.curr || currentDate}`;
-            setOverlay('Data Siap Ditampilkan', 'Ringkasan rasio CASA debitur berhasil dimuat.', false);
+            setOverlay('Data Siap Ditampilkan', 'Data siap ditampilkan.', false);
         } catch (xhr) {
             if (xhr && xhr.statusText === 'abort') {
                 return;
@@ -742,7 +741,6 @@ document.addEventListener('DOMContentLoaded', function () {
 
             let errorMsg = 'Gagal memuat data. ';
             if (xhr && xhr.status === 500) errorMsg += 'Server error. Periksa `storage/logs/laravel.log`.';
-            else if (xhr && xhr.statusText === 'timeout') errorMsg += 'Waktu tunggu habis. Query mungkin masih terlalu berat.';
             else errorMsg += 'Silakan coba lagi.';
 
             renderMessage(errorMsg);
