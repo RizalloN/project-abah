@@ -15,6 +15,11 @@ use Throwable;
 class DashboardPinjamanReportController extends Controller
 {
     private const PH_TABLE = 'lw325_ph';
+    private const SNAPSHOT_TABLE = 'dashboard_pinjaman_snapshots';
+    private const LOAN_REKENING_INDEX = 'idx_dld_periode_rekening';
+    private const LOAN_FILTER_INDEX = 'idx_dld_periode_segmen_produk_cabang_unit';
+    private const LOAN_CABANG_UNIT_INDEX = 'idx_dld_periode_cabang_unit';
+    private const PH_LOOKUP_INDEX = 'idx_lw325ph_periode_acctno_pokok';
     private const RAW_QUALITY_BUCKETS = ['L', 'LR', 'SML1', 'SML2', 'SML3', 'NPL', 'PH', 'Pay'];
 
     private const QUALITY_BUCKETS = ['L', 'LR', 'SML1', 'SML2', 'SML3', 'NPL'];
@@ -78,7 +83,6 @@ class DashboardPinjamanReportController extends Controller
         $cacheKey = 'dashboard_pinjaman_filters:v2:' . md5(json_encode([
             'periode' => $selectedPeriod,
             'filters' => $filters,
-            'version' => $this->buildTableVersionSignature('daily_loan_dinamis', 'periode', $selectedPeriod),
         ]));
 
         $payload = $this->rememberPayload($cacheKey, now()->addMinutes(3), function () use ($selectedPeriod, $filters) {
@@ -132,11 +136,6 @@ class DashboardPinjamanReportController extends Controller
             'comparison' => $comparisonPeriod,
             'ph_period' => $phPeriod,
             'filters' => $filters,
-            'versions' => [
-                'current' => $selectedPeriod ? $this->buildTableVersionSignature('daily_loan_dinamis', 'periode', $selectedPeriod) : null,
-                'comparison' => $comparisonPeriod ? $this->buildTableVersionSignature('daily_loan_dinamis', 'periode', $comparisonPeriod) : null,
-                'ph' => $phPeriod ? $this->buildTableVersionSignature(self::PH_TABLE, 'periode', $phPeriod) : null,
-            ],
         ]));
 
         [$matrixRows, $grandTotals, $grandTotalValue] = $this->rememberPayload(
@@ -195,7 +194,7 @@ class DashboardPinjamanReportController extends Controller
             : [];
         $phAccounts = $this->loadPhAccountSet($phPeriod);
 
-        foreach ($this->buildLoanSnapshotQuery($selectedPeriod, $filters, 'curr')->orderBy('curr.id')->cursor() as $row) {
+        foreach ($this->buildLoanSnapshotQuery($selectedPeriod, $filters, 'curr')->cursor() as $row) {
             $accountNumber = (string) ($row->account_number ?? '');
             $currentBalance = (float) ($row->current_balance ?? 0);
             $after = (string) ($row->after_bucket ?? '');
@@ -305,7 +304,7 @@ class DashboardPinjamanReportController extends Controller
     {
         $snapshot = [];
 
-        foreach ($this->buildLoanSnapshotQuery($period, $filters, $alias)->orderBy("{$alias}.id")->cursor() as $row) {
+        foreach ($this->buildLoanSnapshotQuery($period, $filters, $alias)->cursor() as $row) {
             $accountNumber = (string) ($row->account_number ?? '');
 
             if ($accountNumber === '') {
@@ -340,7 +339,7 @@ class DashboardPinjamanReportController extends Controller
 
         $accounts = [];
 
-        foreach ($this->buildPhSnapshotQuery($period)->orderBy('ph.id')->cursor() as $row) {
+        foreach ($this->buildPhSnapshotQuery($period)->cursor() as $row) {
             $accountNumber = (string) ($row->account_number ?? '');
 
             if ($accountNumber !== '') {
@@ -353,12 +352,31 @@ class DashboardPinjamanReportController extends Controller
 
     private function buildLoanSnapshotQuery(string $period, array $filters, string $alias)
     {
+        if ($this->hasDashboardSnapshot($period)) {
+            $query = DB::table(self::SNAPSHOT_TABLE . " as {$alias}")
+                ->where("{$alias}.periode", $period)
+                ->whereNotNull("{$alias}.account_number")
+                ->where("{$alias}.account_number", '<>', '')
+                ->selectRaw("
+                    {$alias}.account_number as account_number,
+                    COALESCE({$alias}.loan_balance, 0) as " . ($alias === 'curr' ? 'current_balance' : 'previous_balance') . ",
+                    {$alias}.quality_bucket as " . ($alias === 'curr' ? 'after_bucket' : 'before_bucket')
+                );
+
+            $this->applyFilterConstraint($query, "{$alias}.segmen_dashboard", $filters['segmen']);
+            $this->applyFilterConstraint($query, "{$alias}.produk_dashboard", $filters['produk']);
+            $this->applyFilterConstraint($query, "{$alias}.cabang1", $filters['cabang']);
+            $this->applyFilterConstraint($query, "{$alias}.unit1", $filters['unit']);
+
+            return $query;
+        }
+
         $bucketExpression = $this->buildQualityBucketExpression($alias);
 
-        $query = DB::table("daily_loan_dinamis as {$alias}")
+        $query = DB::table(DB::raw($this->buildLoanSnapshotSource($alias, $filters)))
             ->where("{$alias}.periode", $period)
             ->whereNotNull("{$alias}.nomor_rekening1")
-            ->whereRaw("TRIM({$alias}.nomor_rekening1) <> ''")
+            ->where("{$alias}.nomor_rekening1", '<>', '')
             ->selectRaw("
                 TRIM({$alias}.nomor_rekening1) as account_number,
                 COALESCE({$alias}.baki_debet1, 0) as " . ($alias === 'curr' ? 'current_balance' : 'previous_balance') . ",
@@ -384,9 +402,10 @@ class DashboardPinjamanReportController extends Controller
 
     private function buildPhSnapshotQuery(?string $period)
     {
-        $query = DB::table(self::PH_TABLE . ' as ph')
+        $query = DB::table(DB::raw(self::PH_TABLE . ' as ph FORCE INDEX (' . self::PH_LOOKUP_INDEX . ')'))
             ->selectRaw('DISTINCT TRIM(ph.acctno) as account_number')
-            ->whereRaw("TRIM(COALESCE(ph.acctno, '')) <> ''")
+            ->whereNotNull('ph.acctno')
+            ->where('ph.acctno', '<>', '')
             ->where('ph.pokok', '>', 0);
 
         if ($period) {
@@ -396,6 +415,19 @@ class DashboardPinjamanReportController extends Controller
         }
 
         return $query;
+    }
+
+    private function buildLoanSnapshotSource(string $alias, array $filters): string
+    {
+        $indexName = self::LOAN_REKENING_INDEX;
+
+        if (!empty($filters['segmen']) || !empty($filters['produk'])) {
+            $indexName = self::LOAN_FILTER_INDEX;
+        } elseif (!empty($filters['cabang']) || !empty($filters['unit'])) {
+            $indexName = self::LOAN_CABANG_UNIT_INDEX;
+        }
+
+        return "daily_loan_dinamis as {$alias} FORCE INDEX ({$indexName})";
     }
 
     private function buildQualityBucketExpression(string $alias): string
@@ -453,7 +485,6 @@ class DashboardPinjamanReportController extends Controller
             $cacheKey = 'dashboard_pinjaman_distinct:v2:' . md5(json_encode([
                 'column' => $column,
                 'direction' => $desc ? 'desc' : 'asc',
-                'version' => $this->buildTableWideVersionSignature('daily_loan_dinamis'),
             ]));
 
             return $this->rememberPayload($cacheKey, now()->addMinutes(5), function () use ($column, $desc) {
@@ -475,7 +506,9 @@ class DashboardPinjamanReportController extends Controller
     private function fetchPeriodDistinctValues(string $column, string $period, ?callable $scope = null): Collection
     {
         try {
-            $query = DB::table('daily_loan_dinamis')
+            $table = $this->hasDashboardSnapshot($period) ? self::SNAPSHOT_TABLE : 'daily_loan_dinamis';
+
+            $query = DB::table($table)
                 ->where('periode', $period)
                 ->whereNotNull($column)
                 ->where($column, '<>', '')
@@ -495,15 +528,17 @@ class DashboardPinjamanReportController extends Controller
 
     private function fetchPeriods(): Collection
     {
-        return $this->fetchDistinctValues('periode', desc: true)
-            ->map(function ($periode) {
-                try {
-                    return Carbon::parse($periode)->format('Y-m-d');
-                } catch (Throwable) {
-                    return (string) $periode;
-                }
-            })
-            ->values();
+        return Cache::remember('dashboard_pinjaman_periods', now()->addMinutes(10), function () {
+            return $this->fetchDistinctValues('periode', desc: true)
+                ->map(function ($periode) {
+                    try {
+                        return Carbon::parse($periode)->format('Y-m-d');
+                    } catch (Throwable) {
+                        return (string) $periode;
+                    }
+                })
+                ->values();
+        });
     }
 
     private function resolveEffectivePeriod(?string $requestedPeriod): ?string
@@ -515,7 +550,9 @@ class DashboardPinjamanReportController extends Controller
                     ->max('periode');
             }
 
-            return DB::table('daily_loan_dinamis')->max('periode');
+            return Cache::remember('dashboard_pinjaman_latest_period', now()->addMinutes(10), function () {
+                return DB::table('daily_loan_dinamis')->max('periode');
+            });
         } catch (Throwable) {
             return null;
         }
@@ -599,6 +636,19 @@ class DashboardPinjamanReportController extends Controller
         } finally {
             optional($lock)->release();
         }
+    }
+
+    private function hasDashboardSnapshot(?string $period): bool
+    {
+        if (!$period || !Schema::hasTable(self::SNAPSHOT_TABLE)) {
+            return false;
+        }
+
+        return Cache::remember('dashboard_pinjaman_snapshot_exists:' . $period, now()->addMinutes(10), function () use ($period) {
+            return DB::table(self::SNAPSHOT_TABLE)
+                ->where('periode', $period)
+                ->exists();
+        });
     }
 
     private function buildTableWideVersionSignature(string $table): string
@@ -685,7 +735,23 @@ class DashboardPinjamanReportController extends Controller
         $values = is_array($value) ? $value : [$value];
 
         return collect($values)
-            ->map(fn ($item) => trim((string) $item))
+            ->flatMap(function ($item) {
+                $stringValue = trim((string) $item);
+
+                if ($stringValue === '') {
+                    return [];
+                }
+
+                if (str_contains($stringValue, ',')) {
+                    return collect(explode(',', $stringValue))
+                        ->map(fn ($part) => trim((string) $part))
+                        ->filter(fn (string $part) => $part !== '')
+                        ->values()
+                        ->all();
+                }
+
+                return [$stringValue];
+            })
             ->filter(fn (string $item) => $item !== '')
             ->values()
             ->all();

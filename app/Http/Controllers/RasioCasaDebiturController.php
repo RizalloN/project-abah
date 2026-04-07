@@ -15,6 +15,9 @@ class RasioCasaDebiturController extends Controller
 {
     private const PRIORITY_BRANCHES = ['MADIUN', 'MAGETAN', 'NGAWI', 'PONOROGO'];
     private const SEGMENTS = ['TOTAL', 'BRIGUNA', 'KPR', 'MIKRO', 'SMC'];
+    private const SNAPSHOT_TABLE = 'rasio_casa_debitur_snapshots';
+    private const LOAN_CIF_BRANCH_INDEX = 'idx_dld_periode_cif_cabang';
+    private const CASA_CIF_TYPE_INDEX = 'idx_smp_posisi_cif_jenis';
 
     public function index()
     {
@@ -107,19 +110,18 @@ class RasioCasaDebiturController extends Controller
 
     private function buildSummarySnapshot(string $loanPeriod, bool $forceRefresh = false): array
     {
-        $casaDate = $this->resolveAvailableCasaPeriod($loanPeriod);
-        $loanVersion = $this->buildTableVersionSignature('daily_loan_dinamis', 'periode', $loanPeriod);
-        $casaVersion = $casaDate
-            ? $this->buildTableVersionSignature('simpanan_multipn', 'posisi', $casaDate)
-            : 'no-casa-date';
+        $persisted = $this->loadPersistedSummarySnapshot($loanPeriod);
+        if ($persisted !== null) {
+            return $persisted;
+        }
 
-        $cacheKey = 'rasio_casa_debitur:v4:' . md5(json_encode([
+        $casaDate = $this->resolveAvailableCasaPeriod($loanPeriod);
+
+        $cacheKey = 'rasio_casa_debitur:v5:' . md5(json_encode([
             'loan_period' => $loanPeriod,
             'casa_date' => $casaDate,
             'loan_key' => $this->resolveLoanIdentityColumn(),
             'casa_key' => $this->resolveCasaIdentityColumn(),
-            'loan_version' => $loanVersion,
-            'casa_version' => $casaVersion,
         ]));
         $lockKey = $cacheKey . ':lock';
         $latestKey = $cacheKey . ':latest';
@@ -182,10 +184,10 @@ class RasioCasaDebiturController extends Controller
         $mikroFlagSql = $this->buildSegmentFlagExpression('d', $loanSegmentColumn, $loanProductColumn, 'mikro');
         $smcFlagSql = $this->buildSegmentFlagExpression('d', $loanSegmentColumn, $loanProductColumn, 'smc');
 
-        $loanBase = DB::table('daily_loan_dinamis as d')
+        $loanBase = DB::table(DB::raw('daily_loan_dinamis as d FORCE INDEX (' . self::LOAN_CIF_BRANCH_INDEX . ')'))
             ->where('d.periode', $loanPeriod)
             ->whereNotNull("d.{$loanKeyColumn}")
-            ->whereRaw("TRIM(COALESCE(d.{$loanKeyColumn}, '')) <> ''")
+            ->where("d.{$loanKeyColumn}", '<>', '')
             ->whereRaw("{$loanBranchSql} <> ''")
             ->selectRaw("
                 {$loanBranchSql} as branch_key,
@@ -264,7 +266,7 @@ class RasioCasaDebiturController extends Controller
             $casaBalances = [];
 
             foreach (array_chunk(array_keys($identityVariants), 2000) as $chunk) {
-                $casaQuery = DB::table('simpanan_multipn')
+                $casaQuery = DB::table(DB::raw('simpanan_multipn FORCE INDEX (' . self::CASA_CIF_TYPE_INDEX . ')'))
                     ->where('posisi', $casaDate)
                     ->whereIn($casaKeyColumn, $chunk);
 
@@ -298,6 +300,48 @@ class RasioCasaDebiturController extends Controller
                         }
                     }
                 }
+            }
+        }
+
+        return $snapshot;
+    }
+
+    private function loadPersistedSummarySnapshot(string $loanPeriod): ?array
+    {
+        if (!Schema::hasTable(self::SNAPSHOT_TABLE)) {
+            return null;
+        }
+
+        $rows = DB::table(self::SNAPSHOT_TABLE)
+            ->where('loan_period', $loanPeriod)
+            ->orderByRaw($this->buildBranchSortExpression('branch_key'))
+            ->orderBy('segment_key')
+            ->get();
+
+        if ($rows->isEmpty()) {
+            return null;
+        }
+
+        $snapshot = $this->emptySnapshot();
+        $snapshot['loan_date'] = $loanPeriod;
+        $snapshot['casa_date'] = $rows->first()->casa_period;
+        $snapshot['row_count'] = (int) $rows->max('source_row_count');
+
+        foreach ($rows as $row) {
+            $branchKey = $this->normalizeBranchKey($row->branch_key ?? null);
+            $segmentKey = strtolower(trim((string) ($row->segment_key ?? '')));
+
+            if ($branchKey === '' || $segmentKey === '') {
+                continue;
+            }
+
+            $snapshot['branch_labels'][$branchKey] = trim((string) ($row->branch_label ?? $this->formatBranchLabel($branchKey)));
+            $snapshot['os'][$branchKey] ??= ['total' => 0, 'briguna' => 0, 'kpr' => 0, 'mikro' => 0, 'smc' => 0];
+            $snapshot['casa'][$branchKey] ??= ['total' => 0, 'briguna' => 0, 'kpr' => 0, 'mikro' => 0, 'smc' => 0];
+
+            if (array_key_exists($segmentKey, $snapshot['os'][$branchKey])) {
+                $snapshot['os'][$branchKey][$segmentKey] = (float) ($row->os_amount ?? 0);
+                $snapshot['casa'][$branchKey][$segmentKey] = (float) ($row->casa_amount ?? 0);
             }
         }
 
@@ -404,6 +448,10 @@ class RasioCasaDebiturController extends Controller
 
             if ($targetDate) {
                 $query->where('periode', '<=', Carbon::parse($targetDate)->toDateString());
+            } else {
+                return Cache::remember('rasio_casa_latest_loan_period', now()->addMinutes(10), function () {
+                    return DB::table('daily_loan_dinamis')->max('periode');
+                });
             }
 
             return $query->max('periode');
@@ -472,17 +520,19 @@ class RasioCasaDebiturController extends Controller
 
     private function shouldApplyCasaTypeFilter(string $casaDate): bool
     {
-        try {
-            return DB::table('simpanan_multipn')
-                ->where('posisi', $casaDate)
-                ->where(function ($query) {
-                    $query->where('jenis_simpanan', 'like', 'GIRO%')
-                        ->orWhere('jenis_simpanan', 'like', 'TABUNGAN%');
-                })
-                ->exists();
-        } catch (Throwable) {
-            return false;
-        }
+        return Cache::remember('rasio_casa_apply_type_filter:' . $casaDate, now()->addMinutes(30), function () use ($casaDate) {
+            try {
+                return DB::table('simpanan_multipn')
+                    ->where('posisi', $casaDate)
+                    ->where(function ($query) {
+                        $query->where('jenis_simpanan', 'like', 'GIRO%')
+                            ->orWhere('jenis_simpanan', 'like', 'TABUNGAN%');
+                    })
+                    ->exists();
+            } catch (Throwable) {
+                return false;
+            }
+        });
     }
 
     private function buildLabels(?string $previousPeriod, ?string $currentPeriod): array

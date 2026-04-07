@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Import;
 
 use App\Http\Controllers\Controller;
+use App\Support\ReportDataSyncService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
@@ -1314,6 +1315,8 @@ class ImportFileController extends Controller
             'posisi_index' => $meta['posisi_index'],
             'tahun_index' => $meta['tahun_index'],
             'total_rows' => $meta['total_rows'],
+            'sample_posisi' => $meta['sample_posisi'] ?? null,
+            'sample_periode' => $meta['sample_periode'] ?? null,
             'duplicate_lookup' => $duplicateLookup,
         ];
         session(['csv_import_params' => $importParams]);
@@ -1377,6 +1380,7 @@ class ImportFileController extends Controller
                 $selectedColumns = array_map('intval', $params['selected_columns'] ?? []);
                 $activeFilters = $params['normalized_filters'] ?? [];
                 $tableName = $params['table_name'] ?? 'jumlah_merchant_detail';
+                $syncPeriod = $params['sample_posisi'] ?? $params['sample_periode'] ?? null;
                 $uniqueSuffix = $params['unique_suffix'] ?? '_MDT';
                 $isBrilinkSummary = (bool) ($params['is_brilink_summary'] ?? false);
                 $csvHeaders = $params['headers'] ?? [];
@@ -1521,6 +1525,10 @@ class ImportFileController extends Controller
                     'total_failed' => $totalFailed + $duplicateSkipped,
                     'updated_at' => now(),
                 ]);
+
+                if ($finalStatus === 'completed') {
+                    $this->syncReportArtifacts($tableName, $jobId, $syncPeriod);
+                }
 
                 $this->cleanupImportDirectory($filePath);
 
@@ -1921,6 +1929,10 @@ class ImportFileController extends Controller
             'updated_at' => now(),
         ]);
 
+        if ($finalStatus === 'completed') {
+            $this->syncReportArtifacts($tableName, $jobId, $samplePosisi ?: $samplePeriode);
+        }
+
         $this->cleanupImportDirectory($filePath);
 
         if ($totalFailed > 0) {
@@ -1944,5 +1956,18 @@ class ImportFileController extends Controller
         return $request->expectsJson()
             ? response()->json($response)
             : redirect()->route('import.index')->with('sweet_success', $response);
+    }
+
+    private function syncReportArtifacts(string $tableName, int $jobId, ?string $periodHint = null): void
+    {
+        try {
+            app(ReportDataSyncService::class)->syncImportedJob($jobId, $tableName, $periodHint, static::class);
+        } catch (\Throwable $e) {
+            Log::warning('Gagal sinkronisasi snapshot setelah import CSV: ' . $e->getMessage(), [
+                'job_id' => $jobId,
+                'table_name' => $tableName,
+                'period_hint' => $periodHint,
+            ]);
+        }
     }
 }

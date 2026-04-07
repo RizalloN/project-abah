@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Import;
 
 use App\Http\Controllers\Controller;
+use App\Support\ReportDataSyncService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -1049,6 +1050,7 @@ class ImportReportPhController extends Controller
     private function cleanupSuccessfulImportArtifacts(int $jobId, string $relativePath): void
     {
         try {
+            app(ReportDataSyncService::class)->syncImportedTable(self::TABLE_NAME, jobId: $jobId, source: static::class);
             app(ImportCleanupController::class)->cleanupSuccessfulJobArtifacts($jobId, [$relativePath]);
         } catch (\Throwable $e) {
             Log::warning('Gagal menjalankan cleanup terpusat ' . self::REPORT_LABEL . ': ' . $e->getMessage(), [

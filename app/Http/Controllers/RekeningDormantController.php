@@ -13,9 +13,26 @@ use Throwable;
 
 class RekeningDormantController extends Controller
 {
+    private const SNAPSHOT_TABLE = 'rekening_dormant_snapshots';
+    private const AREA_BRANCHES = [
+        'KC Madiun',
+        'KC Magetan',
+        'KC Ngawi',
+        'KC Ponorogo',
+    ];
+
+    private const BRANCH_PATTERNS = [
+        'KC Madiun' => '%KC MADIUN%',
+        'KC Magetan' => '%KC MAGETAN%',
+        'KC Ngawi' => '%KC NGAWI%',
+        'KC Ponorogo' => '%KC PONOROGO%',
+    ];
+    private const DORMANT_UNIT_INDEX = 'idx_smp_posisi_status_cabang_unit';
+    private const DORMANT_SUMMARY_INDEX = 'idx_smp_posisi_status_cabang_unit';
+
     public function index()
     {
-        $latestPeriod = DB::table('simpanan_multipn')->max('posisi');
+        $latestPeriod = $this->latestPeriod();
 
         return view('report.rekening-dormant', [
             'defaultPeriod' => $latestPeriod ?: now()->toDateString(),
@@ -29,9 +46,9 @@ class RekeningDormantController extends Controller
         @set_time_limit(30);
         $requestedPeriod = $request->input('posisi');
         $forceRefresh = $request->boolean('refresh');
-        $currentPeriod = $this->resolveAvailablePeriod($requestedPeriod);
+        $currentPeriod = $this->normalizeRequestedPeriod($requestedPeriod) ?? $this->latestPeriod();
         $comparisonPeriod = $currentPeriod
-            ? $this->resolveAvailablePeriod(Carbon::parse($currentPeriod)->subMonthNoOverflow()->endOfMonth()->toDateString())
+            ? Carbon::parse($currentPeriod)->subMonthNoOverflow()->endOfMonth()->toDateString()
             : null;
         $selectedBranches = $this->normalizeFilterValues($request->input('kantor_cabang'));
         $selectedUnits = $this->normalizeFilterValues($request->input('unit_kerja'));
@@ -40,7 +57,7 @@ class RekeningDormantController extends Controller
             ->filter(fn (string $branch) => in_array($branch, $selectedBranches, true))
             ->values();
         $availableUnits = $currentPeriod
-            ? $this->fetchAvailableUnits($currentPeriod, $validSelections->isNotEmpty() ? $validSelections : $availableBranches, $forceRefresh)
+            ? $this->fetchAvailableUnits($currentPeriod, $validSelections, $forceRefresh)
             : collect();
         $validUnitSelections = $availableUnits
             ->filter(fn (string $unit) => in_array($unit, $selectedUnits, true))
@@ -84,7 +101,7 @@ class RekeningDormantController extends Controller
         @set_time_limit(0);
         $requestedPeriod = $request->input('posisi');
         $forceRefresh = $request->boolean('refresh');
-        $currentPeriod = $this->resolveAvailablePeriod($requestedPeriod);
+        $currentPeriod = $this->normalizeRequestedPeriod($requestedPeriod) ?? $this->latestPeriod();
 
         if (!$currentPeriod) {
             return response()->json([
@@ -109,9 +126,9 @@ class RekeningDormantController extends Controller
         }
 
         $currDate = Carbon::parse($currentPeriod);
-        $mtdPeriod = $this->resolveAvailablePeriod($currDate->copy()->subMonthNoOverflow()->endOfMonth()->toDateString());
-        $ytdPeriod = $this->resolveAvailablePeriod($currDate->copy()->subYearNoOverflow()->endOfYear()->toDateString());
-        $yoyPeriod = $this->resolveAvailablePeriod($currDate->copy()->subYearNoOverflow()->endOfMonth()->toDateString());
+        $mtdPeriod = $currDate->copy()->subMonthNoOverflow()->endOfMonth()->toDateString();
+        $ytdPeriod = $currDate->copy()->subYearNoOverflow()->endOfYear()->toDateString();
+        $yoyPeriod = $currDate->copy()->subYearNoOverflow()->endOfMonth()->toDateString();
         $requestedBranches = $this->normalizeFilterValues($request->input('kantor_cabang'));
         $requestedUnits = $this->normalizeFilterValues($request->input('unit_kerja'));
         $availableBranches = $this->fetchAvailableBranches($currentPeriod, $forceRefresh);
@@ -123,10 +140,14 @@ class RekeningDormantController extends Controller
             $selectedBranches = $availableBranches;
         }
 
-        $availableUnits = $this->fetchAvailableUnits($currentPeriod, $selectedBranches, $forceRefresh);
-        $selectedUnits = $availableUnits
-            ->filter(fn (string $unit) => empty($requestedUnits) || in_array($unit, $requestedUnits, true))
-            ->values();
+        $selectedUnits = collect();
+
+        if (!empty($requestedUnits)) {
+            $availableUnits = $this->fetchAvailableUnits($currentPeriod, $selectedBranches, $forceRefresh);
+            $selectedUnits = $availableUnits
+                ->filter(fn (string $unit) => in_array($unit, $requestedUnits, true))
+                ->values();
+        }
 
         $periodCounts = $this->fetchDormantCountsSummary(
             $currentPeriod,
@@ -223,25 +244,29 @@ class RekeningDormantController extends Controller
         }
     }
 
+    private function latestPeriod(): ?string
+    {
+        return Cache::remember('rekening_dormant_latest_period', now()->addMinutes(10), function () {
+            return DB::table('simpanan_multipn')->max('posisi');
+        });
+    }
+
+    private function normalizeRequestedPeriod(?string $targetDate): ?string
+    {
+        if (!$targetDate) {
+            return null;
+        }
+
+        try {
+            return Carbon::parse($targetDate)->toDateString();
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
     private function fetchAvailableBranches(string $period, bool $forceRefresh = false): Collection
     {
-        $cacheKey = 'rekening_dormant_v3_branch_options:' . md5(json_encode([
-            'period' => $period,
-            'version' => $this->buildTableVersionSignature('simpanan_multipn', 'posisi', $period),
-        ]));
-
-        return $this->rememberPayload($cacheKey, now()->addMinutes(3), function () use ($period) {
-            return $this->baseDormantQuery($period)
-                ->whereNotNull('kantor_cabang')
-                ->where('kantor_cabang', '<>', '')
-                ->select('kantor_cabang')
-                ->distinct()
-                ->orderBy('kantor_cabang')
-                ->pluck('kantor_cabang')
-                ->map(fn ($value) => trim((string) $value))
-                ->filter()
-                ->values();
-        }, $forceRefresh);
+        return collect(self::AREA_BRANCHES);
     }
 
     private function fetchAvailableUnits(string $period, Collection $branches, bool $forceRefresh = false): Collection
@@ -250,15 +275,41 @@ class RekeningDormantController extends Controller
             return collect();
         }
 
-        $cacheKey = 'rekening_dormant_v3_unit_options:' . md5(json_encode([
+        if ($this->hasDormantSnapshots([$period])) {
+            $cacheKey = 'rekening_dormant_v7_snapshot_unit_options:' . md5(json_encode([
+                'period' => $period,
+                'branches' => $branches->values()->all(),
+            ]));
+
+            return $this->rememberPayload($cacheKey, now()->addMinutes(10), function () use ($period, $branches) {
+                return DB::table(self::SNAPSHOT_TABLE)
+                    ->where('posisi', $period)
+                    ->whereIn('branch_label', $branches->all())
+                    ->where('unit_kerja', '<>', '')
+                    ->select('unit_kerja')
+                    ->distinct()
+                    ->orderBy('unit_kerja')
+                    ->pluck('unit_kerja')
+                    ->map(fn ($value) => trim((string) $value))
+                    ->filter()
+                    ->values();
+            }, $forceRefresh);
+        }
+
+        $rawBranches = $this->resolveRawBranchesForLabels($period, $branches);
+
+        if ($rawBranches->isEmpty()) {
+            return collect();
+        }
+
+        $cacheKey = 'rekening_dormant_v5_unit_options:' . md5(json_encode([
             'period' => $period,
-            'branches' => $branches->values()->all(),
-            'version' => $this->buildTableVersionSignature('simpanan_multipn', 'posisi', $period),
+            'raw_branches' => $rawBranches->values()->all(),
         ]));
 
-        return $this->rememberPayload($cacheKey, now()->addMinutes(3), function () use ($period, $branches) {
-            return $this->baseDormantQuery($period)
-                ->whereIn('kantor_cabang', $branches->all())
+        return $this->rememberPayload($cacheKey, now()->addMinutes(10), function () use ($period, $rawBranches) {
+            return $this->baseDormantQuery($period, self::DORMANT_UNIT_INDEX)
+                ->whereIn('kantor_cabang', $rawBranches->all())
                 ->whereNotNull('unit_kerja')
                 ->where('unit_kerja', '<>', '')
                 ->select('unit_kerja')
@@ -286,35 +337,106 @@ class RekeningDormantController extends Controller
         }
 
         $periods = collect([$currentPeriod, $mtdPeriod, $ytdPeriod, $yoyPeriod])->filter()->values();
-        $periodVersions = $periods
-            ->mapWithKeys(fn (string $period) => [$period => $this->buildTableVersionSignature('simpanan_multipn', 'posisi', $period)])
-            ->all();
+        $branchMap = $this->resolveBranchMapForPeriod($currentPeriod);
+        $selectedBranchLabels = $branches->values()->all();
+        $selectedRawBranches = collect($selectedBranchLabels)
+            ->flatMap(fn (string $label) => $branchMap[$label] ?? [])
+            ->unique()
+            ->values();
 
-        $cacheKey = 'rekening_dormant_v3_counts_summary:' . md5(json_encode([
+        if ($selectedRawBranches->isEmpty()) {
+            return [];
+        }
+
+        $rawBranchLookup = [];
+        foreach ($branchMap as $label => $rawBranches) {
+            foreach ($rawBranches as $rawBranch) {
+                $rawBranchLookup[$rawBranch] = $label;
+            }
+        }
+
+        $cacheKey = 'rekening_dormant_v4_counts_summary:' . md5(json_encode([
             'periods' => $periods->all(),
-            'branches' => $branches->values()->all(),
+            'branches' => $selectedBranchLabels,
             'units' => $units->values()->all(),
-            'versions' => $periodVersions,
         ]));
+
+        if ($this->hasDormantSnapshots($periods->all())) {
+            return $this->rememberPayload($cacheKey, now()->addMinutes(3), function () use (
+                $periods,
+                $selectedBranchLabels,
+                $units,
+                $currentPeriod,
+                $mtdPeriod,
+                $ytdPeriod,
+                $yoyPeriod
+            ) {
+                $rows = DB::table(self::SNAPSHOT_TABLE)
+                    ->select('posisi', 'branch_label', DB::raw('SUM(dormant_count) as dormant_count'))
+                    ->whereIn('posisi', $periods->all())
+                    ->whereIn('branch_label', $selectedBranchLabels)
+                    ->when($units->isNotEmpty(), fn ($query) => $query->whereIn('unit_kerja', $units->all()))
+                    ->groupBy('posisi', 'branch_label')
+                    ->get();
+
+                $counts = [];
+
+                foreach ($rows as $row) {
+                    $branchLabel = trim((string) ($row->branch_label ?? ''));
+
+                    if ($branchLabel === '') {
+                        continue;
+                    }
+
+                    $counts[$branchLabel] ??= [
+                        'current' => 0,
+                        'mtd_base' => 0,
+                        'ytd_base' => 0,
+                        'yoy_base' => 0,
+                    ];
+
+                    $count = (int) ($row->dormant_count ?? 0);
+
+                    if ($row->posisi === $currentPeriod) {
+                        $counts[$branchLabel]['current'] += $count;
+                    }
+
+                    if ($mtdPeriod && $row->posisi === $mtdPeriod) {
+                        $counts[$branchLabel]['mtd_base'] += $count;
+                    }
+
+                    if ($ytdPeriod && $row->posisi === $ytdPeriod) {
+                        $counts[$branchLabel]['ytd_base'] += $count;
+                    }
+
+                    if ($yoyPeriod && $row->posisi === $yoyPeriod) {
+                        $counts[$branchLabel]['yoy_base'] += $count;
+                    }
+                }
+
+                return $counts;
+            }, $forceRefresh);
+        }
 
         return $this->rememberPayload($cacheKey, now()->addMinutes(3), function () use (
             $periods,
-            $branches,
+            $selectedRawBranches,
+            $rawBranchLookup,
             $units,
             $currentPeriod,
             $mtdPeriod,
             $ytdPeriod,
             $yoyPeriod
         ) {
-            $rows = DB::table('simpanan_multipn')
+            $rows = DB::table(DB::raw('simpanan_multipn FORCE INDEX (' . self::DORMANT_SUMMARY_INDEX . ')'))
                 ->select(
                     'posisi',
                     'kantor_cabang',
-                    DB::raw('COUNT(status) as dormant_count')
+                    DB::raw('COUNT(*) as dormant_count')
                 )
                 ->whereIn('posisi', $periods->all())
                 ->where('status', '9')
-                ->whereIn('kantor_cabang', $branches->all())
+                ->whereIn('kantor_cabang', $selectedRawBranches->all())
                 ->when($units->isNotEmpty(), fn ($query) => $query->whereIn('unit_kerja', $units->all()))
                 ->groupBy('posisi', 'kantor_cabang')
                 ->get();
@@ -322,7 +444,13 @@ class RekeningDormantController extends Controller
             $counts = [];
 
             foreach ($rows as $row) {
-                $counts[$row->kantor_cabang] ??= [
+                $branchLabel = $rawBranchLookup[$row->kantor_cabang] ?? null;
+
+                if (!$branchLabel) {
+                    continue;
+                }
+
+                $counts[$branchLabel] ??= [
                     'current' => 0,
                     'mtd_base' => 0,
                     'ytd_base' => 0,
@@ -332,19 +460,19 @@ class RekeningDormantController extends Controller
                 $count = (int) ($row->dormant_count ?? 0);
 
                 if ($row->posisi === $currentPeriod) {
-                    $counts[$row->kantor_cabang]['current'] = $count;
+                    $counts[$branchLabel]['current'] += $count;
                 }
 
                 if ($mtdPeriod && $row->posisi === $mtdPeriod) {
-                    $counts[$row->kantor_cabang]['mtd_base'] = $count;
+                    $counts[$branchLabel]['mtd_base'] += $count;
                 }
 
                 if ($ytdPeriod && $row->posisi === $ytdPeriod) {
-                    $counts[$row->kantor_cabang]['ytd_base'] = $count;
+                    $counts[$branchLabel]['ytd_base'] += $count;
                 }
 
                 if ($yoyPeriod && $row->posisi === $yoyPeriod) {
-                    $counts[$row->kantor_cabang]['yoy_base'] = $count;
+                    $counts[$branchLabel]['yoy_base'] += $count;
                 }
             }
 
@@ -352,11 +480,107 @@ class RekeningDormantController extends Controller
         }, $forceRefresh);
     }
 
-    private function baseDormantQuery(string $period)
+    private function baseDormantQuery(string $period, ?string $indexName = null)
     {
-        return DB::table('simpanan_multipn')
+        $source = $indexName
+            ? DB::raw("simpanan_multipn FORCE INDEX ({$indexName})")
+            : 'simpanan_multipn';
+
+        return DB::table($source)
             ->where('posisi', $period)
             ->where('status', '9');
+    }
+
+    private function resolveRawBranchesForLabels(string $period, Collection $labels): Collection
+    {
+        $branchMap = $this->resolveBranchMapForPeriod($period);
+
+        return $labels
+            ->flatMap(fn (string $label) => $branchMap[$label] ?? [])
+            ->unique()
+            ->values();
+    }
+
+    private function resolveBranchMapForPeriod(string $period): array
+    {
+        $cacheKey = 'rekening_dormant_v6_branch_map:' . $period;
+
+        return $this->rememberPayload($cacheKey, now()->addMinutes(30), function () use ($period) {
+            if ($this->hasDormantSnapshots([$period])) {
+                $map = collect(self::AREA_BRANCHES)
+                    ->mapWithKeys(fn (string $label) => [$label => []])
+                    ->all();
+
+                $rows = DB::table(self::SNAPSHOT_TABLE)
+                    ->where('posisi', $period)
+                    ->select('branch_label', 'raw_branch')
+                    ->distinct()
+                    ->orderBy('branch_label')
+                    ->orderBy('raw_branch')
+                    ->get();
+
+                foreach ($rows as $row) {
+                    $label = trim((string) ($row->branch_label ?? ''));
+                    $rawBranch = trim((string) ($row->raw_branch ?? ''));
+
+                    if ($label !== '' && $rawBranch !== '' && array_key_exists($label, $map)) {
+                        $map[$label][] = $rawBranch;
+                    }
+                }
+
+                return $map;
+            }
+
+            $map = collect(self::AREA_BRANCHES)
+                ->mapWithKeys(fn (string $label) => [$label => []])
+                ->all();
+
+            $rawBranches = DB::table(DB::raw('simpanan_multipn FORCE INDEX (' . self::DORMANT_SUMMARY_INDEX . ')'))
+                ->where('posisi', $period)
+                ->where('status', '9')
+                ->whereNotNull('kantor_cabang')
+                ->where('kantor_cabang', '<>', '')
+                ->select('kantor_cabang')
+                ->distinct()
+                ->orderBy('kantor_cabang')
+                ->pluck('kantor_cabang')
+                ->map(fn ($value) => trim((string) $value))
+                ->filter()
+                ->values();
+
+            foreach ($rawBranches as $rawBranch) {
+                $upperBranch = strtoupper($rawBranch);
+
+                foreach (self::BRANCH_PATTERNS as $label => $pattern) {
+                    $needle = str_replace('%', '', strtoupper($pattern));
+                    if ($needle !== '' && str_contains($upperBranch, $needle)) {
+                        $map[$label][] = $rawBranch;
+                        break;
+                    }
+                }
+            }
+
+            return $map;
+        });
+    }
+
+    private function hasDormantSnapshots(array $periods): bool
+    {
+        $periods = collect($periods)->filter()->values()->all();
+
+        if (empty($periods) || !Schema::hasTable(self::SNAPSHOT_TABLE)) {
+            return false;
+        }
+
+        sort($periods);
+        $cacheKey = 'rekening_dormant_snapshot_exists:' . md5(json_encode($periods));
+
+        return Cache::remember($cacheKey, now()->addMinutes(10), function () use ($periods) {
+            return DB::table(self::SNAPSHOT_TABLE)
+                ->whereIn('posisi', $periods)
+                ->distinct()
+                ->count('posisi') === count($periods);
+        });
     }
 
     private function buildLabels(?string $currentPeriod, ?string $mtdPeriod, ?string $ytdPeriod, ?string $yoyPeriod): array

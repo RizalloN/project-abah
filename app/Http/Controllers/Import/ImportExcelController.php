@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Import;
 
 use App\Http\Controllers\Controller;
+use App\Support\ReportDataSyncService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -52,8 +53,7 @@ class ChunkReadFilter implements IReadFilter
 class ImportExcelController extends Controller
 {
     private const DAILY_LOAN_REPORT_ID = 8;
-<<<<<<< HEAD
-<<<<<<< HEAD
+    private const SIMPANAN_MULTIPN_REPORT_ID = 9;
     private const DAILY_LOAN_SOURCE_HEADERS = [
         'PERIODE','KODE_KANWIL1','KANWIL1','KODE_CABANG1','CABANG1','BRANCH1','UNIT1','CURTYP','AO_NAME','CIFNO',
         'NOMOR_REKENING1','STATUS_REKENING1','LN_TYPE','NAMA_DEBITUR1','RATE','JANGKA_WAKTU1','PLAFON','BAKI_DEBET1',
@@ -156,10 +156,8 @@ class ImportExcelController extends Controller
         }
 
         return 'Header utama file tidak ditemukan.';
-=======
-=======
-    private const SIMPANAN_MULTIPN_REPORT_ID = 9;
->>>>>>> 7d9de73de61f625c5ab496dc859a4792870a4fe3
+    }
+
     private const DB_INSERT_BATCH_SIZE = 500;
     private const STREAM_PROGRESS_EVERY = 2000;
     private const FALLBACK_SPLIT_THRESHOLD = 25;
@@ -631,7 +629,6 @@ class ImportExcelController extends Controller
         } finally {
             fclose($handle);
         }
->>>>>>> aac03d27b5fc1ad77f8ac232b4475dcf80979149
     }
 
     private function useDailyLoanReport(Request $request): Request
@@ -772,6 +769,16 @@ class ImportExcelController extends Controller
 
     private function cleanupSuccessfulImportArtifacts(int $jobId = 0, string $relativePath = '', ?string $absolutePath = null, array $extraPaths = []): void
     {
+        if ($jobId > 0) {
+            try {
+                app(ReportDataSyncService::class)->syncImportedJob($jobId, source: static::class);
+            } catch (\Throwable $e) {
+                Log::warning('Failed to sync report snapshots after import: ' . $e->getMessage(), [
+                    'job_id' => $jobId,
+                ]);
+            }
+        }
+
         if ($jobId <= 0) {
             $this->cleanupImportedFile($relativePath, $absolutePath);
 
@@ -816,7 +823,6 @@ class ImportExcelController extends Controller
             $tableColumnsByLower[$lowerColumnName] = $columnName;
         }
 
-<<<<<<< HEAD
         $defaultUniqueIdCol = str_contains($tableName, 'simpanan') ? 'uniqueid_SimoPN' : 'uniqueid_namareport';
         $uniqueIdCol = in_array(strtolower($defaultUniqueIdCol), $tableColumns, true)
             ? $defaultUniqueIdCol
@@ -827,73 +833,6 @@ class ImportExcelController extends Controller
             $skipColumns[] = strtolower($uniqueIdCol);
         }
         $skipColumnsLookup = array_fill_keys($skipColumns, true);
-=======
-        $defaultUniqueIdCol = str_contains($tableName, 'simpanan') ? 'uniqueid_SMPN' : 'uniqueid_namareport';
-        $uniqueIdCol = $tableColumnsByLower[strtolower($defaultUniqueIdCol)] ?? $defaultUniqueIdCol;
-        $suffix = str_contains($tableName, 'simpanan') ? '_SMPN' : '_DLD';
-        $skipColumnsLookup = array_fill_keys(['id', strtolower($uniqueIdCol)], true);
-        $dateColumnsLookup = array_fill_keys([
-            'PERIODE',
-            'POSISI',
-            'TANGGAL',
-            'TGL_REALISASI',
-            'TGL_JATUH_TEMPO',
-            'TANGGAL_MENUNGGAK',
-            'TGL_BAYAR_TERAKHIR',
-            'TGL_TERMINATE',
-            'LAST_DATE_MAINTENANCE_BILLING',
-            'NEXT_PMT_DATE',
-            'NEXT_PMT_INT_DATE',
-            'TGL_AKAD_RESTRUK',
-        ], true);
-        $decimalColumnsLookup = array_fill_keys([
-            'RATE',
-            'PLAFON',
-            'BAKI_DEBET',
-            'BAKI_DEBET1',
-            'CKPN',
-            'NILAI_TERCATAT1',
-            'KOLEKTABILITAS_LANCAR',
-            'KOLEKTABILITAS_DPK',
-            'KOLEKTABILITAS_KURANGLANCAR',
-            'KOLEKTABILITAS_DIRAGUKAN',
-            'KOLEKTABILITAS_MACET',
-            'TEXTBOX20',
-            'TOTAL_KEWAJIBAN',
-            'TUNGGAKAN_POKOK',
-            'TUNGGAKAN_BUNGA',
-            'TUNGGAKAN_PENALTI',
-            'UMUR_TUNGGAKAN',
-            'ADVANCE_PAYMENT',
-            'BAP',
-            'PAYMENT_AMOUNT',
-            'FINAL_PAYMENT_AMOUNT',
-            'NPB_POKOK_LA',
-            'NPB_POKOK_LF',
-            'NPB_BUNGA_LA',
-            'NPB_BUNGA_LF',
-            'JML_ANGSURAN1',
-            'JUMLAH_BAYAR',
-            'DEFFERED_BUNGA',
-            'SAI_TUNGGAKAN',
-            'SAI_DEFFERED',
-            'SAI1',
-            'FREQ_PAYMENT',
-            'FREQ_INT_PAYMENT',
-            'JUMLAH_PN1',
-            'JUMLAH_PN_ALL1',
-            'RESTRUK_KE1',
-            'PMTAMT',
-            'PMTAMT_BASE',
-            'TEXTBOX21',
-            'OS_IDR',
-            'OS_SEBELUM_KLAIM',
-            'OS_PENUH_BERJALAN',
-            'BILPRN',
-            'BILINT',
-            'BILLC',
-        ], true);
->>>>>>> aac03d27b5fc1ad77f8ac232b4475dcf80979149
 
         $filterLookups = [];
         foreach ($activeFilters as $filterIdx => $values) {
@@ -941,35 +880,158 @@ class ImportExcelController extends Controller
         ];
     }
 
-<<<<<<< HEAD
-    private function detectCsvDelimiter(string $path): string
+    protected function putExcelPreviewState(string $key, array $payload): void
     {
-        $handle = @fopen($path, 'r');
-        if (!$handle) {
-            return ',';
+        Cache::put('excel_preview_state_' . $key, $payload, now()->addMinutes(30));
+    }
+
+    protected function getExcelPreviewState(?string $key): array
+    {
+        if (!$key) {
+            return [];
         }
 
-        $sampleLines = [];
-        for ($i = 0; $i < 5 && !feof($handle); $i++) {
-            $line = fgets($handle);
-            if ($line === false) {
-                break;
+        $cached = Cache::get('excel_preview_state_' . $key);
+        return is_array($cached) ? $cached : [];
+    }
+
+    protected function putExcelImportJobState(int $jobId, array $payload): void
+    {
+        if ($jobId <= 0) {
+            return;
+        }
+
+        Cache::put('excel_import_job_' . $jobId, $payload, now()->addHours(4));
+    }
+
+    protected function getExcelImportJobState(int $jobId): array
+    {
+        if ($jobId <= 0) {
+            return [];
+        }
+
+        $cached = Cache::get('excel_import_job_' . $jobId);
+        return is_array($cached) ? $cached : [];
+    }
+
+    private function supportsNativeBulkLoad(): bool
+    {
+        $driver = DB::connection()->getDriverName();
+        if (!in_array($driver, ['mysql', 'mariadb'], true)) {
+            return false;
+        }
+
+        try {
+            $row = DB::selectOne("SHOW VARIABLES LIKE 'local_infile'");
+            return strtoupper((string) ($row->Value ?? $row->value ?? 'OFF')) === 'ON';
+        } catch (\Throwable $e) {
+            Log::warning('Unable to verify local_infile support: ' . $e->getMessage());
+            return false;
+        }
+    }
+
+    private function buildBulkLoadColumns(string $tableName, array $normalizedHeaders, array $activeFilters = []): array
+    {
+        $context = $this->buildImportContext($tableName, $normalizedHeaders, $activeFilters);
+        $columns = [];
+
+        if (!empty($context['unique_id_col'])) {
+            $columns[] = $context['unique_id_col'];
+        }
+
+        $columns[] = 'created_at';
+        $columns[] = 'updated_at';
+
+        foreach ($context['valid_indexes'] as $originalIndex) {
+            $rule = $context['header_rules'][$originalIndex] ?? null;
+            if (!$rule) {
+                continue;
             }
-            $sampleLines[] = $line;
-        }
-        fclose($handle);
 
-        $delimiters = [',', ';', '|', "\t"];
-        $scores = [];
-        foreach ($delimiters as $delimiter) {
-            $scores[$delimiter] = 0;
-            foreach ($sampleLines as $line) {
-                $scores[$delimiter] += substr_count($line, $delimiter);
+            $dbColumn = strtolower((string) ($rule['db_column'] ?? ''));
+            if ($dbColumn === '' || isset($context['skip_columns_lookup'][$dbColumn])) {
+                continue;
             }
+
+            if (!isset($context['table_columns_lookup'][$dbColumn])) {
+                continue;
+            }
+
+            $columns[] = $context['table_columns_by_lower'][$dbColumn] ?? $dbColumn;
         }
 
-        arsort($scores);
-        return (string) array_key_first($scores);
+        return array_values(array_unique($columns));
+    }
+
+    private function createBulkLoadTempCsvPath(string $tableName, int $jobId): string
+    {
+        $directory = storage_path(self::BULK_LOAD_TEMP_DIR);
+        if (!is_dir($directory)) {
+            @mkdir($directory, 0777, true);
+        }
+
+        return $directory . DIRECTORY_SEPARATOR . $tableName . '_' . $jobId . '_' . Str::random(8) . '.csv';
+    }
+
+    private function createStagedCsvPath(string $tableName): string
+    {
+        $directory = storage_path(self::STAGED_CSV_TEMP_DIR);
+        if (!is_dir($directory)) {
+            @mkdir($directory, 0777, true);
+        }
+
+        return $directory . DIRECTORY_SEPARATOR . $tableName . '_stage_' . Str::random(10) . '.csv';
+    }
+
+    private function loadCsvIntoMysql(string $csvPath, string $tableName, array $columns): int
+    {
+        if (!file_exists($csvPath)) {
+            throw new \RuntimeException('File CSV sementara tidak ditemukan untuk bulk load.');
+        }
+
+        if (empty($columns)) {
+            throw new \RuntimeException('Kolom bulk load kosong.');
+        }
+
+        $connection = config('database.default', 'mysql');
+        $dbConfig = config("database.connections.{$connection}", []);
+        $charset = $dbConfig['charset'] ?? 'utf8mb4';
+        $host = $dbConfig['host'] ?? '127.0.0.1';
+        $port = $dbConfig['port'] ?? '3306';
+        $database = $dbConfig['database'] ?? '';
+        $username = $dbConfig['username'] ?? '';
+        $password = $dbConfig['password'] ?? '';
+        $unixSocket = $dbConfig['unix_socket'] ?? '';
+
+        $dsn = $unixSocket !== ''
+            ? "mysql:unix_socket={$unixSocket};dbname={$database};charset={$charset}"
+            : "mysql:host={$host};port={$port};dbname={$database};charset={$charset}";
+
+        $pdo = new \PDO($dsn, $username, $password, [
+            \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
+            \PDO::MYSQL_ATTR_LOCAL_INFILE => true,
+        ]);
+
+        $normalizedPath = str_replace('\\', '/', realpath($csvPath) ?: $csvPath);
+        $quotedPath = $pdo->quote($normalizedPath);
+        $quotedColumns = implode(', ', array_map(function (string $column) {
+            return '`' . str_replace('`', '``', $column) . '`';
+        }, $columns));
+
+        $sql = "LOAD DATA LOCAL INFILE {$quotedPath} INTO TABLE `{$tableName}` "
+            . "CHARACTER SET utf8mb4 "
+            . "FIELDS TERMINATED BY ',' ENCLOSED BY '\"' "
+            . "LINES TERMINATED BY '\\n' "
+            . "({$quotedColumns})";
+
+        $affected = $pdo->exec($sql);
+        $pdo = null;
+
+        if ($affected === false) {
+            throw new \RuntimeException('LOAD DATA LOCAL INFILE gagal dieksekusi.');
+        }
+
+        return (int) $affected;
     }
 
     private function normalizeCsvRow(array $row, string $delimiter, ?int $expectedColumns = null): array
@@ -1164,184 +1226,6 @@ class ImportExcelController extends Controller
             'textbox20' => 'total_kewajiban',
             'textbox21' => 'os_idr',
             'periode' => 'periode',
-=======
-    private function supportsNativeBulkLoad(): bool
-    {
-        $driver = DB::connection()->getDriverName();
-        if (!in_array($driver, ['mysql', 'mariadb'], true)) {
-            return false;
-        }
-
-        try {
-            $row = DB::selectOne("SHOW VARIABLES LIKE 'local_infile'");
-            return strtoupper((string) ($row->Value ?? $row->value ?? 'OFF')) === 'ON';
-        } catch (\Throwable $e) {
-            Log::warning('Unable to verify local_infile support: ' . $e->getMessage());
-            return false;
-        }
-    }
-
-    private function buildBulkLoadColumns(string $tableName, array $normalizedHeaders, array $activeFilters = []): array
-    {
-        $context = $this->buildImportContext($tableName, $normalizedHeaders, $activeFilters);
-        $columns = [$context['unique_id_col'], 'created_at', 'updated_at'];
-
-        foreach ($context['valid_indexes'] as $originalIndex) {
-            $rule = $context['header_rules'][$originalIndex] ?? null;
-            if (!$rule) {
-                continue;
-            }
-
-            $dbColumn = strtolower((string) ($rule['db_column'] ?? ''));
-            if ($dbColumn === '' || isset($context['skip_columns_lookup'][$dbColumn])) {
-                continue;
-            }
-            if (!isset($context['table_columns_lookup'][$dbColumn])) {
-                continue;
-            }
-
-            $columns[] = $context['table_columns_by_lower'][$dbColumn] ?? $dbColumn;
-        }
-
-        return array_values(array_unique($columns));
-    }
-
-    private function createBulkLoadTempCsvPath(string $tableName, int $jobId): string
-    {
-        $directory = storage_path(self::BULK_LOAD_TEMP_DIR);
-        if (!is_dir($directory)) {
-            @mkdir($directory, 0777, true);
-        }
-
-        return $directory . DIRECTORY_SEPARATOR . $tableName . '_' . $jobId . '_' . Str::random(8) . '.csv';
-    }
-
-    private function createStagedCsvPath(string $tableName): string
-    {
-        $directory = storage_path(self::STAGED_CSV_TEMP_DIR);
-        if (!is_dir($directory)) {
-            @mkdir($directory, 0777, true);
-        }
-
-        return $directory . DIRECTORY_SEPARATOR . $tableName . '_stage_' . Str::random(10) . '.csv';
-    }
-
-    protected function putExcelPreviewState(string $key, array $payload): void
-    {
-        Cache::put('excel_preview_state_' . $key, $payload, now()->addMinutes(30));
-    }
-
-    protected function getExcelPreviewState(?string $key): array
-    {
-        if (!$key) {
-            return [];
-        }
-
-        $cached = Cache::get('excel_preview_state_' . $key);
-        return is_array($cached) ? $cached : [];
-    }
-
-    protected function putExcelImportJobState(int $jobId, array $payload): void
-    {
-        if ($jobId <= 0) {
-            return;
-        }
-
-        Cache::put('excel_import_job_' . $jobId, $payload, now()->addHours(4));
-    }
-
-    protected function getExcelImportJobState(int $jobId): array
-    {
-        if ($jobId <= 0) {
-            return [];
-        }
-
-        $cached = Cache::get('excel_import_job_' . $jobId);
-        return is_array($cached) ? $cached : [];
-    }
-
-    private function loadCsvIntoMysql(string $csvPath, string $tableName, array $columns): int
-    {
-        if (!file_exists($csvPath)) {
-            throw new \RuntimeException('File CSV sementara tidak ditemukan untuk bulk load.');
-        }
-
-        if (empty($columns)) {
-            throw new \RuntimeException('Kolom bulk load kosong.');
-        }
-
-        $connection = config('database.default', 'mysql');
-        $dbConfig = config("database.connections.{$connection}", []);
-        $charset = $dbConfig['charset'] ?? 'utf8mb4';
-        $host = $dbConfig['host'] ?? '127.0.0.1';
-        $port = $dbConfig['port'] ?? '3306';
-        $database = $dbConfig['database'] ?? '';
-        $username = $dbConfig['username'] ?? '';
-        $password = $dbConfig['password'] ?? '';
-        $unixSocket = $dbConfig['unix_socket'] ?? '';
-
-        $dsn = $unixSocket !== ''
-            ? "mysql:unix_socket={$unixSocket};dbname={$database};charset={$charset}"
-            : "mysql:host={$host};port={$port};dbname={$database};charset={$charset}";
-
-        $pdo = new \PDO($dsn, $username, $password, [
-            \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
-            \PDO::MYSQL_ATTR_LOCAL_INFILE => true,
-        ]);
-
-        $normalizedPath = str_replace('\\', '/', realpath($csvPath) ?: $csvPath);
-        $quotedPath = $pdo->quote($normalizedPath);
-        $quotedColumns = implode(', ', array_map(function (string $column) {
-            return '`' . str_replace('`', '``', $column) . '`';
-        }, $columns));
-
-        $sql = "LOAD DATA LOCAL INFILE {$quotedPath} INTO TABLE `{$tableName}` "
-            . "CHARACTER SET utf8mb4 "
-            . "FIELDS TERMINATED BY ',' ENCLOSED BY '\"' "
-            . "LINES TERMINATED BY '\\n' "
-            . "({$quotedColumns})";
-
-        $affected = $pdo->exec($sql);
-        $pdo = null;
-        if ($affected === false) {
-            throw new \RuntimeException('LOAD DATA LOCAL INFILE gagal dieksekusi.');
-        }
-
-        return (int) $affected;
-    }
-
-    private function normalizeExcelValueByRule(array $rule, $value)
-    {
-        $value = ($value === null) ? '' : trim((string) $value);
-
-        if ($value === '') {
-            return null;
-        }
-
-        if (!empty($rule['is_date'])) {
-            return $this->normalizeDateValue($value);
-        }
-
-        if (!empty($rule['is_decimal'])) {
-            return $this->normalizeDecimalValue($value);
-        }
-
-        if (is_numeric($value)) {
-            $formatted = rtrim(rtrim(number_format((float) $value, 2, '.', ''), '0'), '.');
-            return $formatted === '' ? '0' : $formatted;
-        }
-
-        return $value;
-    }
-
-    private function applyDailyLoanCompatibilityColumns(array $row, array $context): array
-    {
-        if (!$this->isDailyLoanTable()) {
-            return $row;
-        }
-
-        $compatibilityMap = [
->>>>>>> aac03d27b5fc1ad77f8ac232b4475dcf80979149
             'kode_kanwil1' => 'kode_kanwil',
             'kanwil1' => 'kanwil',
             'kode_cabang1' => 'kode_cabang',
@@ -1350,7 +1234,6 @@ class ImportExcelController extends Controller
             'unit1' => 'unit',
             'nomor_rekening1' => 'nomor_rekening',
             'baki_debet1' => 'baki_debet',
-<<<<<<< HEAD
             'segmen_dashboard' => 'segmen_dashboard',
             'produk_dashboard' => 'produk_dashboard',
         ];
@@ -1460,39 +1343,6 @@ class ImportExcelController extends Controller
     }
 
     private function mapExcelRowForInsert(array $row, array $normalizedHeaders, array $context, string $timestamp): ?array
-=======
-            'total_kewajiban' => 'textbox20',
-            'os_idr' => 'textbox21',
-        ];
-
-        foreach ($compatibilityMap as $sourceColumn => $targetColumn) {
-            $sourceKey = $context['table_columns_by_lower'][$sourceColumn] ?? $sourceColumn;
-            $targetKey = $context['table_columns_by_lower'][$targetColumn] ?? $targetColumn;
-
-            if (!array_key_exists($sourceKey, $row)) {
-                continue;
-            }
-
-            if (!isset($context['table_columns_lookup'][$targetColumn])) {
-                continue;
-            }
-
-            $targetHasValue = array_key_exists($targetKey, $row)
-                && $row[$targetKey] !== null
-                && trim((string) $row[$targetKey]) !== '';
-
-            if ($targetHasValue) {
-                continue;
-            }
-
-            $row[$targetKey] = $row[$sourceKey];
-        }
-
-        return $row;
-    }
-
-    private function mapExcelRowForInsert(array $row, array $normalizedHeaders, array &$context, string $timestamp): ?array
->>>>>>> aac03d27b5fc1ad77f8ac232b4475dcf80979149
     {
         $row = $this->alignImportedRowWithNormalizedHeaders($row, $normalizedHeaders);
         $row = $this->padRow($row, $context['header_count']);
@@ -1513,21 +1363,13 @@ class ImportExcelController extends Controller
                 }
             }
 
-<<<<<<< HEAD
             foreach ($this->getHeaderDatabaseCandidates($headerName) as $candidateColumn) {
                 $mappedExcelData[$candidateColumn] = $value;
             }
-=======
-            $mappedExcelData[$rule['db_column']] = $value;
->>>>>>> aac03d27b5fc1ad77f8ac232b4475dcf80979149
         }
 
         $context['row_sequence']++;
         $finalRow = [
-<<<<<<< HEAD
-=======
-            $context['unique_id_col'] => $context['unique_id_prefix'] . '_' . $context['row_sequence'] . $context['suffix'],
->>>>>>> aac03d27b5fc1ad77f8ac232b4475dcf80979149
             'created_at' => $timestamp,
             'updated_at' => $timestamp,
         ];
@@ -1546,48 +1388,9 @@ class ImportExcelController extends Controller
             $finalRow[$context['table_columns_by_lower'][$dbCol] ?? $dbCol] = $value;
         }
 
-<<<<<<< HEAD
         $minimumColumns = !empty($context['unique_id_col']) ? 3 : 2;
 
         return count($finalRow) > $minimumColumns ? $finalRow : null;
-=======
-        $finalRow = $this->applyDailyLoanCompatibilityColumns($finalRow, $context);
-
-        if (!$this->hasRequiredSimpananMultiPnImportData($finalRow)) {
-            return null;
-        }
-
-        return $this->hasMeaningfulImportData($finalRow, [
-            $context['unique_id_col'],
-            'created_at',
-            'updated_at',
-            'periode',
-            'posisi',
-        ]) ? $finalRow : null;
-    }
-
-    private function hasMeaningfulImportData(array $row, array $ignoredKeys = []): bool
-    {
-        $ignoredLookup = array_fill_keys(array_map('strtolower', $ignoredKeys), true);
-
-        foreach ($row as $key => $value) {
-            if (isset($ignoredLookup[strtolower((string) $key)])) {
-                continue;
-            }
-
-            if ($value === null) {
-                continue;
-            }
-
-            if (is_string($value) && trim($value) === '') {
-                continue;
-            }
-
-            return true;
-        }
-
-        return false;
->>>>>>> aac03d27b5fc1ad77f8ac232b4475dcf80979149
     }
 
     private function flushInsertBuffer(array &$rows, string $tableName, int &$totalInserted, int &$totalFailed, ?callable $afterBatch = null): void
@@ -1696,7 +1499,6 @@ class ImportExcelController extends Controller
         return number_format((float) $value, 2, '.', '');
     }
 
-<<<<<<< HEAD
     private function normalizeIntegerValue($value): ?int
     {
         if ($value === null) {
@@ -1712,42 +1514,15 @@ class ImportExcelController extends Controller
         }
 
         $value = trim((string) $value);
-=======
-    private function normalizeDateValue($value): ?string
-    {
-        $value = ($value === null) ? '' : trim((string) $value);
-
->>>>>>> aac03d27b5fc1ad77f8ac232b4475dcf80979149
         if ($value === '') {
             return null;
         }
 
-<<<<<<< HEAD
         if (preg_match('/-?\d+/', $value, $matches)) {
             return (int) $matches[0];
         }
 
         return null;
-=======
-        try {
-            if (is_numeric($value)) {
-                return Carbon::instance(ExcelDate::excelToDateTimeObject($value))->format('Y-m-d');
-            }
-
-            $normalizedValue = str_replace('/', '-', $value);
-            foreach (['d-m-Y', 'Y-m-d', 'd-m-y', 'Ymd'] as $format) {
-                try {
-                    return Carbon::createFromFormat($format, $normalizedValue)->format('Y-m-d');
-                } catch (\Throwable $e) {
-                    // try next format
-                }
-            }
-
-            return Carbon::parse($normalizedValue)->format('Y-m-d');
-        } catch (\Throwable $e) {
-            return null;
-        }
->>>>>>> aac03d27b5fc1ad77f8ac232b4475dcf80979149
     }
 
     private function normalizeExcelValue(string $headerName, $value)
@@ -1761,15 +1536,9 @@ class ImportExcelController extends Controller
         $dateColumns = [
             'PERIODE',
             'POSISI',
-<<<<<<< HEAD
             'TGL_REALISASI',
             'TGL_JATUH_TEMPO',
             'TANGGAL',
-=======
-            'TANGGAL',
-            'TGL_REALISASI',
-            'TGL_JATUH_TEMPO',
->>>>>>> aac03d27b5fc1ad77f8ac232b4475dcf80979149
             'TANGGAL_MENUNGGAK',
             'TGL_BAYAR_TERAKHIR',
             'TGL_TERMINATE',
@@ -1779,7 +1548,6 @@ class ImportExcelController extends Controller
             'TGL_AKAD_RESTRUK',
         ];
         if (in_array($normalizedHeader, $dateColumns, true)) {
-<<<<<<< HEAD
             try {
                 if (is_numeric($value)) {
                     return Carbon::instance(ExcelDate::excelToDateTimeObject($value))->format('Y-m-d');
@@ -1794,9 +1562,6 @@ class ImportExcelController extends Controller
             } catch (\Throwable $e) {
                 return null;
             }
-=======
-            return $this->normalizeDateValue($value);
->>>>>>> aac03d27b5fc1ad77f8ac232b4475dcf80979149
         }
 
         $decimalColumns = [
@@ -1811,18 +1576,9 @@ class ImportExcelController extends Controller
             'KOLEKTABILITAS_KURANGLANCAR',
             'KOLEKTABILITAS_DIRAGUKAN',
             'KOLEKTABILITAS_MACET',
-<<<<<<< HEAD
             'TUNGGAKAN_POKOK',
             'TUNGGAKAN_BUNGA',
             'TUNGGAKAN_PENALTI',
-=======
-            'TEXTBOX20',
-            'TOTAL_KEWAJIBAN',
-            'TUNGGAKAN_POKOK',
-            'TUNGGAKAN_BUNGA',
-            'TUNGGAKAN_PENALTI',
-            'UMUR_TUNGGAKAN',
->>>>>>> aac03d27b5fc1ad77f8ac232b4475dcf80979149
             'ADVANCE_PAYMENT',
             'BAP',
             'PAYMENT_AMOUNT',
@@ -1837,20 +1593,8 @@ class ImportExcelController extends Controller
             'SAI_TUNGGAKAN',
             'SAI_DEFFERED',
             'SAI1',
-<<<<<<< HEAD
             'PMTAMT',
             'PMTAMT_BASE',
-=======
-            'FREQ_PAYMENT',
-            'FREQ_INT_PAYMENT',
-            'JUMLAH_PN1',
-            'JUMLAH_PN_ALL1',
-            'RESTRUK_KE1',
-            'PMTAMT',
-            'PMTAMT_BASE',
-            'TEXTBOX21',
-            'OS_IDR',
->>>>>>> aac03d27b5fc1ad77f8ac232b4475dcf80979149
             'OS_SEBELUM_KLAIM',
             'OS_PENUH_BERJALAN',
             'BILPRN',
@@ -1891,332 +1635,9 @@ class ImportExcelController extends Controller
         return $normalized;
     }
 
-<<<<<<< HEAD
     public function uploadExcel(Request $request, array $allowedExtensions = ['xlsx', 'xls'])
     {
         $request->validate(['file' => 'required|file|mimes:' . implode(',', $allowedExtensions)]);
-=======
-    private function resolveExcelTableName(): string
-    {
-        $tableName = 'daily_loan_dinamis';
-        $idReport = session('active_id_report');
-
-        if ($idReport) {
-            $reportData = DB::table('nama_report')->where('id_report', $idReport)->first();
-            if ($reportData && !empty($reportData->table_name)) {
-                $tableName = $reportData->table_name;
-            }
-        }
-
-        return $tableName;
-    }
-
-    private function orderPreviewColumns(array $headers, array $formattedUniqueValues, array $cleanPreview, string $tableName): array
-    {
-        $dbColumns = $tableName === 'daily_loan_dinamis'
-            ? $this->getDailyLoanPreviewOrder()
-            : Schema::getColumnListing($tableName);
-        $matchedColumns = [];
-        $unmatchedColumns = [];
-
-        foreach ($headers as $filterIndex => $header) {
-            $normalized = $this->normalizeImportColumnName($header);
-            $columnMeta = [
-                'display_header' => $this->resolvePreviewHeaderLabel($header, $tableName),
-                'source_header' => $header,
-                'filter_index' => $filterIndex,
-                'db_column' => $normalized,
-            ];
-
-            if (in_array($normalized, $dbColumns, true)) {
-                $matchedColumns[] = $columnMeta;
-            } else {
-                $unmatchedColumns[] = $columnMeta;
-            }
-        }
-
-        usort($matchedColumns, function (array $left, array $right) use ($dbColumns) {
-            return array_search($left['db_column'], $dbColumns, true) <=> array_search($right['db_column'], $dbColumns, true);
-        });
-
-        $orderedColumns = array_merge($matchedColumns, $unmatchedColumns);
-        $orderedHeaders = [];
-        $orderedUniqueValues = [];
-        $displayFilterMap = [];
-
-        foreach ($orderedColumns as $displayIndex => $columnMeta) {
-            $orderedHeaders[] = $columnMeta['display_header'];
-            $orderedUniqueValues[] = $formattedUniqueValues[$columnMeta['filter_index']] ?? [];
-            $displayFilterMap[$displayIndex] = $columnMeta['filter_index'];
-        }
-
-        foreach ($cleanPreview as &$row) {
-            $newRow = [];
-            foreach ($orderedColumns as $columnMeta) {
-                $displayHeader = $columnMeta['display_header'];
-                $sourceHeader = $columnMeta['source_header'];
-                $newRow[$displayHeader] = $row[$sourceHeader] ?? null;
-            }
-            $row = $newRow;
-        }
-        unset($row);
-
-        return [
-            'headers' => $orderedHeaders,
-            'formatted_unique_values' => $orderedUniqueValues,
-            'preview' => $cleanPreview,
-            'display_filter_map' => $displayFilterMap,
-        ];
-    }
-
-    private function buildExcelPreviewPayload(string $path): array
-    {
-        $reader = IOFactory::createReaderForFile($path);
-        $reader->setReadDataOnly(true);
-        $reader->setReadEmptyCells(false);
-
-        $headerSearchLimit = 200;
-        $previewLimit = 100;
-        $uniqueLimit = 5000;
-        $rowsToRead = $headerSearchLimit + $uniqueLimit + 100;
-
-        $chunkFilter = new ChunkReadFilter();
-        $chunkFilter->setRows(1, $rowsToRead);
-        $reader->setReadFilter($chunkFilter);
-
-        $spreadsheet = $reader->load($path);
-        $sheet = $spreadsheet->getActiveSheet()->toArray(null, true, true, false);
-        $spreadsheet->disconnectWorksheets();
-        unset($spreadsheet);
-
-        if (empty($sheet)) {
-            throw new \RuntimeException('Worksheet Excel kosong atau tidak dapat dibaca.');
-        }
-
-        $headerIndex = null;
-        foreach ($sheet as $i => $row) {
-            if ($i >= $headerSearchLimit) {
-                break;
-            }
-
-            $rowUpper = array_map(fn ($v) => strtoupper(trim((string) $v)), $row);
-            if (in_array('PERIODE', $rowUpper, true) || in_array('POSISI', $rowUpper, true)) {
-                $headerIndex = $i;
-                break;
-            }
-        }
-
-        if ($headerIndex === null) {
-            throw new \RuntimeException('Header utama (PERIODE / POSISI) tidak ditemukan dalam 200 baris pertama.');
-        }
-
-        $rawHeaders = $sheet[$headerIndex];
-        $normalizedHeaders = [];
-        foreach ($rawHeaders as $i => $header) {
-            $normalizedHeaders[$i] = !empty(trim((string) $header)) ? trim((string) $header) : 'COL_' . $i;
-        }
-
-        $validIndexes = [];
-        foreach ($normalizedHeaders as $i => $header) {
-            if (!str_starts_with($header, 'COL_')) {
-                $validIndexes[] = $i;
-            }
-        }
-
-        $finalHeaders = [];
-        foreach ($validIndexes as $i) {
-            $finalHeaders[] = $normalizedHeaders[$i];
-        }
-
-        $headerCount = empty($normalizedHeaders) ? 0 : (max(array_keys($normalizedHeaders)) + 1);
-        $cleanPreview = [];
-        $uniqueValues = [];
-        foreach ($validIndexes as $i) {
-            $uniqueValues[$i] = [];
-        }
-
-        $rowsProcessedForUniques = 0;
-        $totalAvailableRows = max(0, count($sheet) - ($headerIndex + 1));
-
-        foreach ($sheet as $rowIndex => $row) {
-            if ($rowIndex <= $headerIndex) {
-                continue;
-            }
-
-            if (empty(array_filter($row, fn ($val) => trim((string) $val) !== ''))) {
-                continue;
-            }
-
-            $row = $this->padRow($row, $headerCount);
-            $normalizedRow = [];
-
-            foreach ($validIndexes as $i) {
-                $normalizedRow[$i] = $this->normalizeExcelValue($normalizedHeaders[$i], $row[$i] ?? '');
-            }
-
-            if (count($cleanPreview) < $previewLimit) {
-                $cleanRow = [];
-                foreach ($validIndexes as $i) {
-                    $cleanRow[$normalizedHeaders[$i]] = $normalizedRow[$i];
-                }
-                $cleanPreview[] = $cleanRow;
-            }
-
-            if ($rowsProcessedForUniques < $uniqueLimit) {
-                foreach ($validIndexes as $i) {
-                    $val = $normalizedRow[$i];
-                    $uniqueValues[$i][$val === null ? '(Blank)' : $val] = true;
-                }
-                $rowsProcessedForUniques++;
-            }
-
-            if (count($cleanPreview) >= $previewLimit && $rowsProcessedForUniques >= $uniqueLimit) {
-                break;
-            }
-        }
-
-        $formattedUniqueValues = [];
-        $filterIndex = 0;
-        foreach ($validIndexes as $i) {
-            $keys = array_keys($uniqueValues[$i] ?? []);
-            usort($keys, 'strnatcmp');
-            $formattedUniqueValues[$filterIndex] = $keys;
-            $filterIndex++;
-        }
-
-        $filteredPreview = $this->stripIgnoredPreviewColumns(
-            $finalHeaders,
-            $cleanPreview,
-            $formattedUniqueValues,
-            $this->resolveExcelTableName()
-        );
-
-        $orderedPreview = $this->orderPreviewColumns(
-            $filteredPreview['headers'],
-            $filteredPreview['formatted_unique_values'],
-            $filteredPreview['rows'],
-            $this->resolveExcelTableName()
-        );
-
-        return [
-            'headers' => $orderedPreview['headers'],
-            'preview' => $orderedPreview['preview'],
-            'formattedUniqueValues' => $orderedPreview['formatted_unique_values'],
-            'displayFilterMap' => $orderedPreview['display_filter_map'],
-            'header_index' => $headerIndex,
-            'header_row' => $headerIndex + 1,
-            'normalized_headers' => $filteredPreview['headers'],
-            'rows_scanned' => min($rowsProcessedForUniques, $totalAvailableRows),
-            'total_sample_rows' => $totalAvailableRows,
-        ];
-    }
-
-    private function buildPreviewPayloadFromStagedCsv(string $csvPath): array
-    {
-        if (!file_exists($csvPath)) {
-            throw new \RuntimeException('File stage CSV tidak ditemukan.');
-        }
-
-        $handle = fopen($csvPath, 'r');
-        if ($handle === false) {
-            throw new \RuntimeException('Gagal membuka file stage CSV.');
-        }
-
-        try {
-            $headers = $this->readCsvRecord($handle);
-            if ($headers === false || empty($headers)) {
-                throw new \RuntimeException('Header stage CSV tidak ditemukan.');
-            }
-
-            $previewLimit = 100;
-            $uniqueLimit = 5000;
-            $cleanPreview = [];
-            $formattedUniqueValues = [];
-            $rowsProcessedForUniques = 0;
-            $totalAvailableRows = 0;
-
-            foreach (array_keys($headers) as $index) {
-                $formattedUniqueValues[$index] = [];
-            }
-
-            while (($row = $this->readCsvRecord($handle)) !== false) {
-                if (empty(array_filter($row, fn ($val) => trim((string) $val) !== ''))) {
-                    continue;
-                }
-
-                $totalAvailableRows++;
-                $row = $this->padRow($row, count($headers));
-                $displayRow = [];
-
-                foreach ($headers as $index => $header) {
-                    $value = $row[$index] ?? null;
-                    if ($value === '\N') {
-                        $value = null;
-                    }
-
-                    $displayRow[$header] = $value;
-
-                    if ($rowsProcessedForUniques < $uniqueLimit) {
-                        $formattedUniqueValues[$index][$value === null || $value === '' ? '(Blank)' : (string) $value] = true;
-                    }
-                }
-
-                if (count($cleanPreview) < $previewLimit) {
-                    $cleanPreview[] = $displayRow;
-                }
-
-                if ($rowsProcessedForUniques < $uniqueLimit) {
-                    $rowsProcessedForUniques++;
-                }
-            }
-
-            foreach ($formattedUniqueValues as $index => $valuesMap) {
-                $keys = array_keys($valuesMap);
-                usort($keys, 'strnatcmp');
-                $formattedUniqueValues[$index] = $keys;
-            }
-
-            $filteredPreview = $this->stripIgnoredPreviewColumns(
-                $headers,
-                $cleanPreview,
-                $formattedUniqueValues,
-                $this->resolveExcelTableName()
-            );
-
-            $orderedPreview = $this->orderPreviewColumns(
-                $filteredPreview['headers'],
-                $filteredPreview['formatted_unique_values'],
-                $filteredPreview['rows'],
-                $this->resolveExcelTableName()
-            );
-
-            return [
-                'headers' => $orderedPreview['headers'],
-                'preview' => $orderedPreview['preview'],
-                'formattedUniqueValues' => $orderedPreview['formatted_unique_values'],
-                'displayFilterMap' => $orderedPreview['display_filter_map'],
-                'header_index' => 0,
-                'header_row' => 1,
-                'normalized_headers' => $filteredPreview['headers'],
-                'rows_scanned' => min($rowsProcessedForUniques, $totalAvailableRows),
-                'total_sample_rows' => $totalAvailableRows,
-            ];
-        } finally {
-            fclose($handle);
-        }
-    }
-
-    public function uploadExcel(Request $request)
-    {
-        $tableName = $this->resolveExcelTableName();
-        $isDailyLoanCsv = $this->isDailyLoanTable($tableName);
-
-        $request->validate([
-            'file' => $isDailyLoanCsv
-                ? 'required|file|mimes:csv,txt'
-                : 'required|file|mimes:xlsx,xls',
-        ]);
->>>>>>> aac03d27b5fc1ad77f8ac232b4475dcf80979149
         $file = $request->file('file');
 
         if (!$file || !$file->isValid()) {
@@ -2255,7 +1676,7 @@ class ImportExcelController extends Controller
         set_time_limit(0);
 
         $sessionPath = session('excel_path');
-        $cacheKey    = session('excel_preview_key');
+        $cacheKey = session('excel_preview_key');
         $activeIdReport = (int) session('active_id_report');
         request()->session()->save();
 
@@ -2263,7 +1684,9 @@ class ImportExcelController extends Controller
             $send = function (string $event, array $data) {
                 echo "event: {$event}\n";
                 echo 'data: ' . json_encode($data) . "\n\n";
-                if (ob_get_level() > 0) ob_flush();
+                if (ob_get_level() > 0) {
+                    ob_flush();
+                }
                 flush();
             };
 
@@ -2272,249 +1695,23 @@ class ImportExcelController extends Controller
                     $send('error_msg', ['message' => 'Sesi upload tidak ditemukan. Silakan upload ulang.']);
                     return;
                 }
+
                 $path = Storage::path(urldecode($sessionPath));
                 if (!file_exists($path)) {
                     $send('error_msg', ['message' => 'File tidak ditemukan di server. Silakan upload ulang.']);
                     return;
                 }
 
-<<<<<<< HEAD
-                $fileLabel = $this->isCsvFile($path) ? 'CSV' : 'Excel';
-                $send('progress', ['percent' => 5, 'message' => 'Membaca file ' . $fileLabel . ' (single-pass)...', 'step' => 1]);
-
-                if ($this->isCsvFile($path)) {
-                    $send('progress', ['percent' => 15, 'message' => 'Menganalisis struktur CSV...', 'step' => 2]);
-                    $csvPayload = $this->prepareCsvPreviewPayload($path);
-                    $send('progress', ['percent' => 70, 'message' => 'Mengurutkan dan memformat hasil...', 'step' => 4]);
-
-                    $tableName = $this->resolveActiveTableName();
-
-                    $reorderedPayload = $this->reorderPreviewPayload(
-                        $csvPayload['headers'],
-                        $csvPayload['formattedUniqueValues'],
-                        $csvPayload['preview'],
-                        Schema::getColumnListing($tableName)
-                    );
-
-                    $finalHeaders = $reorderedPayload['headers'];
-                    $formattedUniqueValues = $reorderedPayload['formattedUniqueValues'];
-                    $cleanPreview = $reorderedPayload['preview'];
-
-                    $send('progress', ['percent' => 95, 'message' => 'Finalisasi preview...', 'step' => 5]);
-
-                    $payload = [
-                        'headers' => $finalHeaders,
-                        'preview' => $cleanPreview,
-                        'formattedUniqueValues' => $formattedUniqueValues,
-                        'path' => urldecode($sessionPath),
-                    ];
-
-                    $useCacheKey = $cacheKey ?: ('excel_preview_' . md5(urldecode($sessionPath) . '|' . microtime(true)));
-                    Cache::put($useCacheKey, $payload, now()->addMinutes(10));
-
-                    $send('ready', [
-                        'redirect' => $activeIdReport === self::DAILY_LOAN_REPORT_ID
-                            ? route('import.dailyloan.preview', ['ck' => $useCacheKey])
-                            : route('import.excel.preview', ['ck' => $useCacheKey]),
-                    ]);
-                    return;
-                }
-=======
-                $payload = null;
-                $stagedCsvPath = null;
-                $tableName = $this->resolveExcelTableName();
->>>>>>> aac03d27b5fc1ad77f8ac232b4475dcf80979149
-
-                if ($this->isDailyLoanTable($tableName)) {
-                    $send('progress', ['percent' => 5, 'message' => 'Membaca header CSV Daily Loan Dinamis...', 'step' => 1]);
-                    $payload = $this->buildPreviewPayloadFromCsvFile($path);
-                    $stagedCsvPath = $path;
-                    $send('progress', ['percent' => 70, 'message' => 'Header CSV ditemukan. Menyusun preview...', 'step' => 3]);
-                } else {
-                    $send('progress', ['percent' => 5, 'message' => 'Mendeteksi header Excel...', 'step' => 1]);
-                    $pythonResult = $this->detectHeaderViaPython($path);
-
-<<<<<<< HEAD
-                $tableName = $this->resolveActiveTableName();
-                $worksheetInfo = $reader->listWorksheetInfo($path);
-                $totalRows = $worksheetInfo[0]['totalRows'] ?? 0;
-                $send('progress', ['percent' => 10, 'message' => 'File terdeteksi: ' . $totalRows . ' baris.', 'step' => 2]);
-                
-                $chunkFilter = new ChunkReadFilter();
-                $chunkSize = 2000;
-                $currentChunk = 1;
-
-                $headerIndex = null;
-                $rawHeaders = [];
-                $normalizedHeaders = [];
-                $validIndexes = [];
-                $headerCount = 0;
-
-                $cleanPreview = [];
-                $uniqueValues = [];
-                $rowsProcessedForUniques = 0;
-                $uniqueLimit = 5000;
-                $previewLimit = 100;
-                
-                // Single-pass loop
-                while (true) {
-                    $startRow = (($currentChunk - 1) * $chunkSize) + 1;
-                    if ($startRow > $totalRows) break;
-
-                    $chunkFilter->setRows($startRow, $chunkSize);
-                    $reader->setReadFilter($chunkFilter);
-                    $spreadsheet = $reader->load($path);
-                    $sheet = $spreadsheet->getActiveSheet()->toArray(null, true, true, false);
-                    $spreadsheet->disconnectWorksheets();
-                    unset($spreadsheet);
-
-                    if (empty($sheet)) break;
-
-                    // Step 1: Find Header (only once, in first chunks)
-                    if ($headerIndex === null) {
-                        $detectedHeaderIndex = $this->detectHeaderIndex($sheet, $tableName);
-                        if ($detectedHeaderIndex !== null) {
-                            $headerIndex = $detectedHeaderIndex;
-                            $rawHeaders = $sheet[$headerIndex];
-
-                            foreach ($rawHeaders as $colIdx => $h) {
-                                $normalizedHeaders[$colIdx] = !empty(trim((string)$h)) ? trim((string)$h) : 'COL_' . $colIdx;
-                            }
-                            foreach ($normalizedHeaders as $colIdx => $h) {
-                                if (!str_starts_with($h, 'COL_')) $validIndexes[] = $colIdx;
-                            }
-                            $finalHeaders = [];
-                            foreach ($validIndexes as $colIdx) $finalHeaders[] = $normalizedHeaders[$colIdx];
-
-                            $headerCount = max(array_keys($normalizedHeaders)) + 1;
-                            foreach ($validIndexes as $colIdx) $uniqueValues[$colIdx] = [];
-
-                            $send('progress', ['percent' => 35, 'message' => 'Header ditemukan di baris ' . ($headerIndex + 1) . '. Memproses data...', 'step' => 3]);
-                        }
-                        if ($headerIndex === null && $startRow + $chunkSize > 200) {
-                            $send('error_msg', ['message' => $this->headerNotFoundMessage($tableName)]);
-                            return;
-                        }
-                    }
-
-                    // Step 2 & 3: Collect Preview and Unique Values
-                    if ($headerIndex !== null) {
-                        foreach ($sheet as $rowIndex => $row) {
-                            if ($rowIndex <= $headerIndex) continue;
-                            if (empty(array_filter($row, fn($val) => trim((string) $val) !== ''))) continue;
-
-                            $row = $this->padRow($row, $headerCount);
-                            
-                            // Collect for preview
-                            if (count($cleanPreview) < $previewLimit) {
-                                $cleanRow = [];
-                                foreach ($validIndexes as $i) {
-                                    $cleanRow[$normalizedHeaders[$i]] = $this->normalizeExcelValue($normalizedHeaders[$i], $row[$i] ?? '');
-                                }
-                                $cleanPreview[] = $cleanRow;
-                            }
-
-                            // Collect for unique filters
-                            if ($rowsProcessedForUniques < $uniqueLimit) {
-                                foreach ($validIndexes as $i) {
-                                    $val = $this->normalizeExcelValue($normalizedHeaders[$i], $row[$i] ?? '');
-                                    if ($val === null) $val = '(Blank)';
-                                    $uniqueValues[$i][$val] = true;
-                                }
-                                $rowsProcessedForUniques++;
-                            }
-                        }
-                    }
-
-                    if ($headerIndex !== null && (count($cleanPreview) >= $previewLimit && $rowsProcessedForUniques >= $uniqueLimit)) {
-                        break; 
-                    }
-
-                    $currentChunk++;
-                }
-                
-                if ($headerIndex === null) {
-                    $send('error_msg', ['message' => $this->headerNotFoundMessage($tableName)]);
-                    return;
-                }
-
-                $send('progress', ['percent' => 70, 'message' => 'Mengurutkan dan memformat hasil...', 'step' => 4]);
-
-                $formattedUniqueValues = [];
-                $filterIndex = 0;
-                foreach ($validIndexes as $i) {
-                    $keys = isset($uniqueValues[$i]) ? array_keys($uniqueValues[$i]) : [];
-                    usort($keys, 'strnatcmp');
-                    $formattedUniqueValues[$filterIndex] = $keys;
-                    $filterIndex++;
-                }
-
-                $dbColumns = Schema::getColumnListing($tableName);
-
-                $reorderedPayload = $this->reorderPreviewPayload(
-                    $finalHeaders,
-                    $formattedUniqueValues,
-                    $cleanPreview,
-                    $dbColumns
-                );
-                $finalHeaders = $reorderedPayload['headers'];
-                $formattedUniqueValues = $reorderedPayload['formattedUniqueValues'];
-                $cleanPreview = $reorderedPayload['preview'];
-=======
-                    if ($pythonResult !== null) {
-                        $normalizedHeaders = [];
-                        foreach ((array) ($pythonResult['header_values'] ?? []) as $i => $h) {
-                            $normalizedHeaders[$i] = !empty(trim((string) $h)) ? trim((string) $h) : 'COL_' . $i;
-                        }
-
-                        $send('progress', ['percent' => 20, 'message' => 'Mengonversi Excel ke CSV stage untuk preview/filter...', 'step' => 2]);
-                        $stageResult = $this->stageExcelToCsv(
-                            $send,
-                            $path,
-                            (int) $pythonResult['header_index'],
-                            $normalizedHeaders,
-                            $tableName
-                        );
-
-                        if ($stageResult !== null) {
-                            $stagedCsvPath = $stageResult['staged_csv_path'];
-                            $send('progress', ['percent' => 75, 'message' => 'CSV stage siap. Menyusun preview dari file perantara...', 'step' => 3]);
-                            $payload = $this->buildPreviewPayloadFromStagedCsv($stagedCsvPath);
-                        }
-                    }
-
-                    if ($payload === null) {
-                        $send('progress', ['percent' => 25, 'message' => 'Fallback: membangun preview langsung dari Excel...', 'step' => 2]);
-                        $payload = $this->buildExcelPreviewPayload($path);
-                        $send('progress', ['percent' => 70, 'message' => 'Header ditemukan di baris ' . $payload['header_row'] . '. Menyusun preview...', 'step' => 3]);
-                    }
-                }
->>>>>>> aac03d27b5fc1ad77f8ac232b4475dcf80979149
-
-                $send('progress', ['percent' => 95, 'message' => 'Finalisasi preview...', 'step' => 5]);
-
-                $cachePayload = [
-                    'headers' => $payload['headers'],
-                    'preview' => $payload['preview'],
-                    'formattedUniqueValues' => $payload['formattedUniqueValues'],
-                    'displayFilterMap' => $payload['displayFilterMap'],
-                    'headerIndex' => $payload['header_index'] ?? null,
-                    'normalizedHeaders' => $payload['normalized_headers'] ?? [],
-                    'path' => urldecode($sessionPath),
-                    'stagedCsvPath' => $stagedCsvPath,
-                ];
-
                 $useCacheKey = $cacheKey ?: ('excel_preview_' . md5(urldecode($sessionPath) . '|' . microtime(true)));
-                Cache::put($useCacheKey, $cachePayload, now()->addMinutes(10));
+                $redirect = $activeIdReport === self::DAILY_LOAN_REPORT_ID
+                    ? route('import.dailyloan.preview', ['ck' => $useCacheKey])
+                    : ($activeIdReport === self::SIMPANAN_MULTIPN_REPORT_ID
+                        ? route('import.simpanan.preview', ['ck' => $useCacheKey])
+                        : route('import.excel.preview', ['ck' => $useCacheKey]));
 
-                $send('ready', [
-                    'redirect' => $activeIdReport === self::DAILY_LOAN_REPORT_ID
-                        ? route('import.dailyloan.preview', ['ck' => $useCacheKey])
-                        : ($activeIdReport === self::SIMPANAN_MULTIPN_REPORT_ID
-                            ? route('import.simpanan.preview', ['ck' => $useCacheKey])
-                            : route('import.excel.preview', ['ck' => $useCacheKey])),
-                ]);
-
+                $send('progress', ['percent' => 35, 'message' => 'File ditemukan. Menyiapkan preview...', 'step' => 1]);
+                $send('progress', ['percent' => 85, 'message' => 'Mengalihkan ke halaman preview...', 'step' => 2]);
+                $send('ready', ['redirect' => $redirect]);
             } catch (\Throwable $e) {
                 Log::error('PREPARE PREVIEW SSE ERROR: ' . $e->getMessage() . ' | ' . $e->getFile() . ':' . $e->getLine());
                 $send('error_msg', ['message' => 'Gagal menyiapkan preview: ' . $e->getMessage()]);
@@ -2602,7 +1799,6 @@ class ImportExcelController extends Controller
         $path = Storage::path($relativePath);
         if (!file_exists($path)) return redirect()->route('import.index')->with('sweet_warning', ['title' => 'File Tidak Ditemukan', 'text' => 'File mungkin sudah terhapus.']);
 
-<<<<<<< HEAD
         if ($this->isCsvFile($path)) {
             $csvPayload = $this->prepareCsvPreviewPayload($path);
 
@@ -2640,41 +1836,6 @@ class ImportExcelController extends Controller
         $tableName = $this->resolveActiveTableName();
         $headerIndex = $this->detectHeaderIndex($sheet, $tableName);
         if ($headerIndex === null) return back()->with('error', $this->headerNotFoundMessage($tableName));
-=======
-        $previewMeta = session('excel_preview_meta', []);
-        $stagedCsvPath = (string) ($previewMeta['staged_csv_path'] ?? '');
-        if ($stagedCsvPath !== '' && file_exists($stagedCsvPath)) {
-            $payload = $this->isDailyLoanTable()
-                ? $this->buildPreviewPayloadFromCsvFile($stagedCsvPath)
-                : $this->buildPreviewPayloadFromStagedCsv($stagedCsvPath);
-        } else {
-            $payload = $this->isDailyLoanTable()
-                ? $this->buildPreviewPayloadFromCsvFile($path)
-                : $this->buildExcelPreviewPayload($path);
-        }
-        session([
-            'excel_display_filter_map' => $payload['displayFilterMap'],
-            'excel_preview_meta' => [
-                'path' => $relativePath,
-                'staged_csv_path' => $stagedCsvPath !== '' && file_exists($stagedCsvPath) ? $stagedCsvPath : null,
-                'header_index' => $payload['header_index'] ?? null,
-                'normalized_headers' => (array) ($payload['normalized_headers'] ?? []),
-            ],
-        ]);
-<<<<<<< HEAD
->>>>>>> aac03d27b5fc1ad77f8ac232b4475dcf80979149
-=======
-        $previewStateKey = Str::random(32);
-        $this->putExcelPreviewState($previewStateKey, [
-            'displayFilterMap' => $payload['displayFilterMap'],
-            'previewMeta' => [
-                'path' => $relativePath,
-                'staged_csv_path' => $stagedCsvPath !== '' && file_exists($stagedCsvPath) ? $stagedCsvPath : null,
-                'header_index' => $payload['header_index'] ?? null,
-                'normalized_headers' => (array) ($payload['normalized_headers'] ?? []),
-            ],
-        ]);
->>>>>>> 7d9de73de61f625c5ab496dc859a4792870a4fe3
 
         if ($this->isDailyLoanTable()) {
             return view('import.preview', [
@@ -2766,7 +1927,6 @@ class ImportExcelController extends Controller
         $path = Storage::path($relativePath);
         if (!file_exists($path)) return response()->json(['status' => 'error', 'text' => 'File tidak ditemukan.']);
 
-<<<<<<< HEAD
         $idReport = session('active_id_report');
         $tableName = $this->resolveActiveTableName();
 
@@ -2783,18 +1943,6 @@ class ImportExcelController extends Controller
                     'text' => 'Kolom Daily Loan untuk baki debet belum tersedia di tabel `daily_loan_dinamis`.',
                 ], 422);
             }
-=======
-        $idReport  = session('active_id_report');
-        $tableName = $this->resolveExcelTableName();
-
-        // Pastikan schema minimum tersedia agar import tidak terlihat "sukses"
-        // padahal kolom penting untuk report belum ada di database.
-        if ($tableName === 'daily_loan_dinamis' && !Schema::hasColumn($tableName, 'baki_debet1')) {
-            return response()->json([
-                'status' => 'error',
-                'text' => 'Kolom wajib `baki_debet1` belum tersedia di tabel daily_loan_dinamis. Jalankan migration terlebih dahulu lalu upload ulang file CSV.',
-            ], 422);
->>>>>>> aac03d27b5fc1ad77f8ac232b4475dcf80979149
         }
 
         $previewState = $this->getExcelPreviewState($request->input('preview_state_key'));
@@ -3840,7 +2988,6 @@ class ImportExcelController extends Controller
                     return;
                 }
 
-<<<<<<< HEAD
                 if ($this->isCsvFile($path)) {
                     $delimiter = $this->detectCsvDelimiter($path);
                     $countHandle = @fopen($path, 'r');
@@ -3981,26 +3128,6 @@ class ImportExcelController extends Controller
                         'total_rows'    => $totalDataRows,
                     ]);
                     return;
-=======
-                if ($stagedCsvPath !== '' && file_exists($stagedCsvPath)) {
-                    $send('progress', [
-                        'percent'   => 3,
-                        'message'   => 'Menggunakan CSV stage sebagai sumber preview/filter/import...',
-                        'rows_done' => 0,
-                        'total'     => 0,
-                        'speed'     => 0,
-                    ]);
-
-                    if ($this->processStagedCsvStream($send, $stagedCsvPath, $tableName, $activeFilters, $normalizedHeaders, $jobId)) {
-                        if ($jobId > 0) {
-                            $job = DB::table('import_jobs')->where('id', $jobId)->first();
-                            if ($job && $job->status === 'completed') {
-                                $this->cleanupSuccessfulImportArtifacts($jobId, $relativePath, $path, [$stagedCsvPath]);
-                            }
-                        }
-                        return;
-                    }
->>>>>>> aac03d27b5fc1ad77f8ac232b4475dcf80979149
                 }
 
                 // ── Coba Python CPU Processor terlebih dahulu ─────────────────

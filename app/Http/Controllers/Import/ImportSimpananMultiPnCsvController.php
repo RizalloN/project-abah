@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Import;
 
+use App\Support\ReportDataSyncService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -553,6 +554,7 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
     private function cleanupSuccessfulImportArtifacts(int $jobId, string $relativePath, ?string $absolutePath = null): void
     {
         try {
+            app(ReportDataSyncService::class)->syncImportedTable('simpanan_multipn', jobId: $jobId, source: static::class);
             app(ImportCleanupController::class)->cleanupSuccessfulJobArtifacts(
                 $jobId,
                 array_values(array_filter([$relativePath, $absolutePath]))
