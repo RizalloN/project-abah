@@ -30,7 +30,7 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
         $request = $this->useSimpananReport($request);
 
         $request->validate([
-            'file' => 'required|file|mimes:csv,txt',
+            'file' => 'required|file|mimes:csv',
         ]);
 
         $file = $request->file('file');
@@ -461,12 +461,24 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
             $tableColumnsByLower[strtolower($column)] = $column;
         }
 
+        $uniqueIdColumn = null;
+        foreach (['uniqueid_SMPN', 'uniqueid_SimoPN'] as $candidate) {
+            $lowerCandidate = strtolower($candidate);
+            if (isset($tableColumnsByLower[$lowerCandidate])) {
+                $uniqueIdColumn = $tableColumnsByLower[$lowerCandidate];
+                break;
+            }
+        }
+
         $fieldVariables = [];
         $setClauses = [
-            "`uniqueid_SMPN` = CONCAT(REPLACE(UUID(), '-', ''), '_SMPN')",
             "`created_at` = NOW()",
             "`updated_at` = NOW()",
         ];
+
+        if ($uniqueIdColumn !== null) {
+            $setClauses[] = "`{$uniqueIdColumn}` = CONCAT(REPLACE(UUID(), '-', ''), '_SMPN')";
+        }
 
         foreach ($sourceHeaders as $index => $header) {
             $header = trim((string) $header);
@@ -479,7 +491,11 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
             }
 
             $dbColumn = $tableColumnsByLower[$normalized] ?? null;
-            if ($dbColumn === null || in_array($dbColumn, ['id', 'uniqueid_SMPN', 'created_at', 'updated_at'], true)) {
+            if (
+                $dbColumn === null
+                || in_array($dbColumn, ['id', 'created_at', 'updated_at'], true)
+                || ($uniqueIdColumn !== null && strcasecmp($dbColumn, $uniqueIdColumn) === 0)
+            ) {
                 continue;
             }
 
@@ -495,7 +511,7 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
             };
         }
 
-        if (count($setClauses) <= 3) {
+        if (count($setClauses) <= ($uniqueIdColumn !== null ? 3 : 2)) {
             throw new \RuntimeException('Tidak ada mapping kolom yang bisa dipakai untuk fast import.');
         }
 

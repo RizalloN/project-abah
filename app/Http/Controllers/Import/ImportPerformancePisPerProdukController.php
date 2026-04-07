@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Import;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Import\Concerns\AllocatesGapIds;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -13,6 +14,8 @@ use Illuminate\Support\Str;
 
 class ImportPerformancePisPerProdukController extends Controller
 {
+    use AllocatesGapIds;
+
     private const TABLE_NAME = 'performance_pis_per_produk';
     private const UNIQUE_SUFFIX = '_PISPP';
     private const COLUMN_DELIMITER = ',';
@@ -1378,6 +1381,8 @@ class ImportPerformancePisPerProdukController extends Controller
     private function insertBatch(array $rows, int &$totalSuccess, int &$totalFailed, string &$lastErrorMsg): void
     {
         foreach (array_chunk($rows, 100) as $batch) {
+            $batch = $this->allocateGapIdsForRows(self::TABLE_NAME, $batch);
+
             try {
                 DB::table(self::TABLE_NAME)->insert($batch);
                 $totalSuccess += count($batch);

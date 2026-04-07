@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Import;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Import\Concerns\AllocatesGapIds;
 use App\Support\ReportDataSyncService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -14,6 +15,8 @@ use Illuminate\Support\Str;
 
 class ImportReportPhController extends Controller
 {
+    use AllocatesGapIds;
+
     private const TABLE_NAME = 'lw325_ph';
     private const UNIQUE_SUFFIX = '_RPH';
     private const REPORT_LABEL = 'Report Nominatif Rekening Pinjaman PH';
@@ -1018,6 +1021,8 @@ class ImportReportPhController extends Controller
     private function insertBatch(array $rows, int &$totalSuccess, int &$totalFailed, string &$lastErrorMsg): void
     {
         foreach (array_chunk($rows, 500) as $batch) {
+            $batch = $this->allocateGapIdsForRows(self::TABLE_NAME, $batch);
+
             try {
                 DB::table(self::TABLE_NAME)->insert($batch);
                 $totalSuccess += count($batch);

@@ -573,14 +573,11 @@ class RekeningDormantController extends Controller
         }
 
         sort($periods);
-        $cacheKey = 'rekening_dormant_snapshot_exists:' . md5(json_encode($periods));
 
-        return Cache::remember($cacheKey, now()->addMinutes(10), function () use ($periods) {
-            return DB::table(self::SNAPSHOT_TABLE)
-                ->whereIn('posisi', $periods)
-                ->distinct()
-                ->count('posisi') === count($periods);
-        });
+        return DB::table(self::SNAPSHOT_TABLE)
+            ->whereIn('posisi', $periods)
+            ->distinct()
+            ->count('posisi') === count($periods);
     }
 
     private function buildLabels(?string $currentPeriod, ?string $mtdPeriod, ?string $ytdPeriod, ?string $yoyPeriod): array

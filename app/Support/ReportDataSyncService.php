@@ -11,6 +11,9 @@ use Throwable;
 class ReportDataSyncService
 {
     private const AUDIT_TABLE = 'report_sync_audits';
+    private const DASHBOARD_SNAPSHOT_TABLE = 'dashboard_pinjaman_snapshots';
+    private const RASIO_SNAPSHOT_TABLE = 'rasio_casa_debitur_snapshots';
+    private const DORMANT_SNAPSHOT_TABLE = 'rekening_dormant_snapshots';
 
     public function __construct(
         private readonly ReportSnapshotBuilder $snapshotBuilder
@@ -96,10 +99,12 @@ class ReportDataSyncService
         $this->runSnapshotAudit('daily_loan_dinamis', $periodHint, $jobId, $source, 'snapshot_dashboard', function () use ($periodHint) {
             return $this->snapshotBuilder->rebuildDashboard($periodHint, true);
         });
+        $this->refreshTableStatistics(self::DASHBOARD_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
 
         $this->runSnapshotAudit('daily_loan_dinamis', $periodHint, $jobId, $source, 'snapshot_rasio_casa', function () use ($periodHint) {
             return $this->snapshotBuilder->rebuildRasioCasa($periodHint, true);
         });
+        $this->refreshTableStatistics(self::RASIO_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
     }
 
     private function syncSimpanan(?string $periodHint, ?int $jobId, ?string $source): void
@@ -107,10 +112,12 @@ class ReportDataSyncService
         $this->runSnapshotAudit('simpanan_multipn', $periodHint, $jobId, $source, 'snapshot_rekening_dormant', function () use ($periodHint) {
             return $this->snapshotBuilder->rebuildRekeningDormant($periodHint, true);
         });
+        $this->refreshTableStatistics(self::DORMANT_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
 
         $this->runSnapshotAudit('simpanan_multipn', $periodHint, $jobId, $source, 'snapshot_rasio_casa', function () {
             return $this->snapshotBuilder->rebuildRasioCasa(null, true);
         });
+        $this->refreshTableStatistics(self::RASIO_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
     }
 
     private function syncReportPh(?string $periodHint, ?int $jobId, ?string $source): void
@@ -120,6 +127,11 @@ class ReportDataSyncService
         $this->writeAudit('lw325_ph', $periodHint, $jobId, $source, 'snapshot_sync', 'success', [
             'message' => 'PH uses source table directly; only optimizer stats and cache refresh required.',
         ]);
+    }
+
+    public function syncAfterDelete(string $tableName, ?string $periodHint = null, ?string $source = null): void
+    {
+        $this->syncImportedTable($tableName, $periodHint, null, $source ?? static::class . '::syncAfterDelete');
     }
 
     private function refreshTableStatistics(string $tableName, ?string $periodHint, ?int $jobId, ?string $source): void

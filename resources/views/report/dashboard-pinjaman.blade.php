@@ -250,7 +250,7 @@
     .loan-skeleton-grid {
         width: min(780px, 100%);
         display: grid;
-        grid-template-columns: 220px repeat(6, 1fr);
+        grid-template-columns: 220px repeat(9, 1fr);
         gap: 0.75rem;
     }
 
@@ -278,14 +278,14 @@
 
     .loan-matrix {
         width: 100%;
-        min-width: 1120px;
+        min-width: 1580px;
         border-collapse: separate;
         border-spacing: 0;
     }
 
     .loan-matrix th,
     .loan-matrix td {
-        padding: 14px 12px;
+        padding: 12px 10px;
         border-right: 1px solid rgba(255, 255, 255, 0.3);
         border-bottom: 1px solid rgba(255, 255, 255, 0.3);
         text-align: right;
@@ -314,6 +314,9 @@
         background: #f59e0b;
         text-align: left;
         min-width: 180px;
+        position: sticky;
+        left: 0;
+        z-index: 3;
     }
 
     .loan-matrix .matrix-after-group,
@@ -331,6 +334,9 @@
         text-align: left;
         font-size: 0.9rem;
         font-weight: 800;
+        position: sticky;
+        left: 0;
+        z-index: 2;
     }
 
     .loan-matrix tbody td {

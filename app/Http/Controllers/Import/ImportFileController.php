@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Import;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Import\Concerns\AllocatesGapIds;
 use App\Support\ReportDataSyncService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -15,6 +16,8 @@ use Carbon\Carbon;
 
 class ImportFileController extends Controller
 {
+    use AllocatesGapIds;
+
     private const PREVIEW_SAMPLE_LIMIT = 1200;
     private const PREVIEW_UNIQUE_SCAN_LIMIT = 4000;
     private const PREVIEW_UNIQUE_LIMIT_PER_COLUMN = 400;
@@ -569,6 +572,8 @@ class ImportFileController extends Controller
         if (empty($chunk)) {
             return;
         }
+
+        $chunk = $this->allocateGapIdsForRows($tableName, $chunk);
 
         try {
             DB::beginTransaction();

@@ -78,7 +78,11 @@ Route::middleware(['auth', 'role:admin'])->group(function () {
     Route::get('/bod-boc/import-preview', [BodBocController::class, 'previewImport'])->name('bod-boc.import-preview');
     Route::post('/bod-boc/store', [BodBocController::class, 'store'])->name('bod-boc.store');
     Route::get('/import', [ImportIndexController::class, 'index'])->name('import.index');
+    Route::get('/report-management', [ImportIndexController::class, 'reportManagement'])->name('report-management.index');
+    Route::get('/import/upload-limits', [ImportIndexController::class, 'uploadLimits'])->name('import.upload-limits');
     Route::get('/import/template', [ImportIndexController::class, 'downloadTemplate'])->name('import.template');
+    Route::post('/import/report-management/data', [ImportIndexController::class, 'reportManagementData'])->name('import.report-management.data');
+    Route::post('/import/report-management/delete', [ImportIndexController::class, 'deleteManagedReportRows'])->name('import.report-management.delete');
     Route::post('/import/upload', [ImportFileController::class, 'upload'])->name('import.upload');
     
     // Route GET untuk menampilkan halaman pilih file

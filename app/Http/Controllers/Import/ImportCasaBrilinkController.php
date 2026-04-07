@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Import;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Import\Concerns\AllocatesGapIds;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -13,6 +14,8 @@ use Illuminate\Support\Str;
 
 class ImportCasaBrilinkController extends Controller
 {
+    use AllocatesGapIds;
+
     private const HEADER_MAP = [
         'row_num',
         'region',
@@ -795,6 +798,8 @@ class ImportCasaBrilinkController extends Controller
     private function insertBatch(string $tableName, array $rows, int &$totalSuccess, int &$totalFailed, string &$lastErrorMsg): void
     {
         foreach (array_chunk($rows, 100) as $batch) {
+            $batch = $this->allocateGapIdsForRows($tableName, $batch);
+
             try {
                 DB::table($tableName)->insert($batch);
                 $totalSuccess += count($batch);

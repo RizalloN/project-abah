@@ -5,6 +5,7 @@ use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
+use Illuminate\Http\Exceptions\PostTooLargeException;
 use Symfony\Component\HttpFoundation\Response;
 
 return Application::configure(basePath: dirname(__DIR__))
@@ -51,5 +52,19 @@ return Application::configure(basePath: dirname(__DIR__))
             }
 
             return null;
+        });
+
+        $exceptions->render(function (PostTooLargeException $e, Request $request) {
+            $maxSize = ini_get('post_max_size') ?: 'unknown';
+            $message = 'Ukuran upload melebihi batas server (' . $maxSize . ').';
+
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => $message,
+                ], 413);
+            }
+
+            return redirect()->back()->with('error', $message);
         });
     })->create();

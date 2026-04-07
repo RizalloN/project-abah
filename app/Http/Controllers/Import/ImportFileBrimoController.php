@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Import;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Import\Concerns\AllocatesGapIds;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
@@ -12,6 +13,8 @@ use Carbon\Carbon;
 
 class ImportFileBrimoController extends Controller
 {
+    use AllocatesGapIds;
+
     private function hasMeaningfulImportData(array $row, array $ignoredKeys = []): bool
     {
         $ignoredLookup = array_fill_keys(array_map('strtolower', $ignoredKeys), true);
@@ -447,6 +450,8 @@ class ImportFileBrimoController extends Controller
         $lastErrorMsg = '';
 
         foreach ($chunks as $chunk) {
+            $chunk = $this->allocateGapIdsForRows($tableName, $chunk);
+
             try {
                 DB::table($tableName)->insert($chunk);
                 $totalSuccess += count($chunk);

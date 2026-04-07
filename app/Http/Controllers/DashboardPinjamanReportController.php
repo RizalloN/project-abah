@@ -20,12 +20,12 @@ class DashboardPinjamanReportController extends Controller
     private const LOAN_FILTER_INDEX = 'idx_dld_periode_segmen_produk_cabang_unit';
     private const LOAN_CABANG_UNIT_INDEX = 'idx_dld_periode_cabang_unit';
     private const PH_LOOKUP_INDEX = 'idx_lw325ph_periode_acctno_pokok';
-    private const RAW_QUALITY_BUCKETS = ['L', 'LR', 'SML1', 'SML2', 'SML3', 'NPL', 'PH', 'Pay'];
+    private const RAW_QUALITY_BUCKETS = ['L', 'LR', 'DPK 1', 'DPK 2', 'DPK 3', 'KL', 'D1', 'D2', 'M', 'NPL', 'PH', 'Pay'];
 
-    private const QUALITY_BUCKETS = ['L', 'LR', 'SML1', 'SML2', 'SML3', 'NPL'];
+    private const QUALITY_BUCKETS = ['L', 'LR', 'DPK 1', 'DPK 2', 'DPK 3', 'KL', 'D1', 'D2', 'M'];
     private const HEALTHY_BUCKETS = ['L', 'LR'];
 
-    private const BEFORE_ROWS = ['New Account', 'L', 'LR', 'SML1', 'SML2', 'SML3', 'NPL'];
+    private const BEFORE_ROWS = ['New Account', 'L', 'LR', 'DPK 1', 'DPK 2', 'DPK 3', 'KL', 'D1', 'D2', 'M'];
 
     private const OUTPUT_COLUMNS = ['Turunan Pokok', 'Suplesi', 'PH', 'Lunas'];
 
@@ -131,7 +131,7 @@ class DashboardPinjamanReportController extends Controller
 
         $phPeriod = $this->resolvePhPeriod($selectedPeriod);
 
-        $cacheKey = 'dashboard_pinjaman_matrix:v5:' . md5(json_encode([
+        $cacheKey = 'dashboard_pinjaman_matrix:v6:' . md5(json_encode([
             'periode' => $selectedPeriod,
             'comparison' => $comparisonPeriod,
             'ph_period' => $phPeriod,
@@ -197,14 +197,14 @@ class DashboardPinjamanReportController extends Controller
         foreach ($this->buildLoanSnapshotQuery($selectedPeriod, $filters, 'curr')->cursor() as $row) {
             $accountNumber = (string) ($row->account_number ?? '');
             $currentBalance = (float) ($row->current_balance ?? 0);
-            $after = (string) ($row->after_bucket ?? '');
+            $after = $this->normalizeDashboardBucket((string) ($row->after_bucket ?? ''));
 
             if ($accountNumber === '' || !in_array($after, self::RAW_QUALITY_BUCKETS, true)) {
                 continue;
             }
 
             $previous = $previousSnapshot[$accountNumber] ?? null;
-            $before = $previous['bucket'] ?? 'New Account';
+            $before = $this->normalizeDashboardBucket((string) ($previous['bucket'] ?? 'New Account'));
             $previousBalance = (float) ($previous['balance'] ?? 0);
 
             if (!in_array($before, self::BEFORE_ROWS, true)) {
@@ -229,7 +229,7 @@ class DashboardPinjamanReportController extends Controller
         }
 
         foreach ($previousSnapshot as $accountNumber => $previous) {
-            $before = (string) ($previous['bucket'] ?? 'New Account');
+            $before = $this->normalizeDashboardBucket((string) ($previous['bucket'] ?? 'New Account'));
             $previousBalance = (float) ($previous['balance'] ?? 0);
 
             if ($previousBalance <= 0 || !in_array($before, self::BEFORE_ROWS, true)) {
@@ -314,7 +314,7 @@ class DashboardPinjamanReportController extends Controller
             $balanceColumn = $alias === 'curr' ? 'current_balance' : 'previous_balance';
             $bucketColumn = $alias === 'curr' ? 'after_bucket' : 'before_bucket';
             $balance = (float) ($row->{$balanceColumn} ?? 0);
-            $bucket = (string) ($row->{$bucketColumn} ?? '');
+            $bucket = $this->normalizeDashboardBucket((string) ($row->{$bucketColumn} ?? ''));
 
             if (isset($snapshot[$accountNumber])) {
                 $snapshot[$accountNumber]['balance'] += $balance;
@@ -453,10 +453,13 @@ class DashboardPinjamanReportController extends Controller
             CASE
                 WHEN ({$rawQualityExpression}) = 'L' AND UPPER(COALESCE({$alias}.flag_restruk, '')) = 'Y' THEN 'LR'
                 WHEN ({$rawQualityExpression}) = 'L' THEN 'L'
-                WHEN ({$rawQualityExpression}) IN ('DPK 1', 'SML1') THEN 'SML1'
-                WHEN ({$rawQualityExpression}) IN ('DPK 2', 'SML2') THEN 'SML2'
-                WHEN ({$rawQualityExpression}) IN ('DPK 3', 'SML3') THEN 'SML3'
-                WHEN ({$rawQualityExpression}) IN ('KL', 'D1', 'D2', 'M', 'NPL') THEN 'NPL'
+                WHEN ({$rawQualityExpression}) IN ('DPK 1', 'SML1') THEN 'DPK 1'
+                WHEN ({$rawQualityExpression}) IN ('DPK 2', 'SML2') THEN 'DPK 2'
+                WHEN ({$rawQualityExpression}) IN ('DPK 3', 'SML3') THEN 'DPK 3'
+                WHEN ({$rawQualityExpression}) = 'KL' THEN 'KL'
+                WHEN ({$rawQualityExpression}) = 'D1' THEN 'D1'
+                WHEN ({$rawQualityExpression}) = 'D2' THEN 'D2'
+                WHEN ({$rawQualityExpression}) IN ('M', 'NPL') THEN 'M'
                 WHEN ({$rawQualityExpression}) = 'PH' THEN 'PH'
                 WHEN ({$rawQualityExpression}) = 'PAY' THEN 'Pay'
                 ELSE 'L'
@@ -470,10 +473,13 @@ class DashboardPinjamanReportController extends Controller
             CASE {$column}
                 WHEN 'L' THEN 0
                 WHEN 'LR' THEN 1
-                WHEN 'SML1' THEN 2
-                WHEN 'SML2' THEN 3
-                WHEN 'SML3' THEN 4
-                WHEN 'NPL' THEN 5
+                WHEN 'DPK 1' THEN 2
+                WHEN 'DPK 2' THEN 3
+                WHEN 'DPK 3' THEN 4
+                WHEN 'KL' THEN 5
+                WHEN 'D1' THEN 6
+                WHEN 'D2' THEN 7
+                WHEN 'M' THEN 8
                 ELSE NULL
             END
         ";
@@ -797,13 +803,41 @@ class DashboardPinjamanReportController extends Controller
 
         return match ($rawQuality) {
             'L' => 'L',
-            'DPK 1', 'SML1' => 'SML1',
-            'DPK 2', 'SML2' => 'SML2',
-            'DPK 3', 'SML3' => 'SML3',
-            'KL', 'D1', 'D2', 'M', 'NPL' => 'NPL',
+            'DPK 1', 'SML1' => 'DPK 1',
+            'DPK 2', 'SML2' => 'DPK 2',
+            'DPK 3', 'SML3' => 'DPK 3',
+            'KL' => 'KL',
+            'D1' => 'D1',
+            'D2' => 'D2',
+            'M', 'NPL' => 'M',
             'PH' => 'PH',
             'PAY' => 'Pay',
             default => 'L',
+        };
+    }
+
+    private function normalizeDashboardBucket(string $bucket): string
+    {
+        $normalized = trim($bucket);
+        $value = strtoupper($normalized);
+
+        return match ($value) {
+            'L' => 'L',
+            'LR' => 'LR',
+            'DPK 1' => 'DPK 1',
+            'DPK 2' => 'DPK 2',
+            'DPK 3' => 'DPK 3',
+            'SML1' => 'DPK 1',
+            'SML2' => 'DPK 2',
+            'SML3' => 'DPK 3',
+            'KL' => 'KL',
+            'D1' => 'D1',
+            'D2' => 'D2',
+            'M' => 'M',
+            'NPL' => 'M',
+            'PH' => 'PH',
+            'PAY' => 'Pay',
+            default => $normalized,
         };
     }
 

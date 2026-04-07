@@ -215,6 +215,15 @@
                         <p>Import Data</p>
                     </a>
                 </li>
+
+                <li class="nav-item">
+                    <a href="{{ route('report-management.index') }}"
+                       class="nav-link {{ request()->routeIs('report-management.*') ? 'active' : '' }}"
+                       style="border-radius: 14px; margin-bottom: 0.35rem; color: rgba(226, 232, 240, 0.88);">
+                        <i class="nav-icon fas fa-database"></i>
+                        <p>Report Management</p>
+                    </a>
+                </li>
                 @endif
 
                 <li class="nav-header text-uppercase" style="font-size: 0.68rem; letter-spacing: 0.16em; color: rgba(148, 163, 184, 0.78); padding-left: 0.75rem;">Report</li>

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Import;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Import\Concerns\AllocatesGapIds;
 use App\Support\ReportDataSyncService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -52,6 +53,8 @@ class ChunkReadFilter implements IReadFilter
 
 class ImportExcelController extends Controller
 {
+    use AllocatesGapIds;
+
     private const DAILY_LOAN_REPORT_ID = 8;
     private const SIMPANAN_MULTIPN_REPORT_ID = 9;
     private const DAILY_LOAN_SOURCE_HEADERS = [
@@ -100,6 +103,11 @@ class ImportExcelController extends Controller
         return ($reportData && !empty($reportData->table_name))
             ? (string) $reportData->table_name
             : $default;
+    }
+
+    protected function resolveExcelTableName(): string
+    {
+        return $this->resolveActiveTableName();
     }
 
     private function detectHeaderIndex(array $rows, ?string $tableName = null): ?int
@@ -682,7 +690,7 @@ class ImportExcelController extends Controller
 
     public function uploadSimpananMultiPnExcel(Request $request)
     {
-        return $this->uploadExcel($this->useSimpananMultiPnReport($request));
+        return $this->uploadExcel($this->useSimpananMultiPnReport($request), ['xlsx', 'xls', 'csv']);
     }
 
     public function previewSimpananMultiPnExcel(Request $request)
@@ -823,16 +831,30 @@ class ImportExcelController extends Controller
             $tableColumnsByLower[$lowerColumnName] = $columnName;
         }
 
-        $defaultUniqueIdCol = str_contains($tableName, 'simpanan') ? 'uniqueid_SimoPN' : 'uniqueid_namareport';
-        $uniqueIdCol = in_array(strtolower($defaultUniqueIdCol), $tableColumns, true)
-            ? $defaultUniqueIdCol
-            : null;
-        $suffix = str_contains($tableName, 'simpanan') ? '_SimoPN' : '_DLD';
+        $uniqueIdCol = null;
+        $suffix = '_DLD';
+
+        if (str_contains($tableName, 'simpanan')) {
+            $simpananUniqueCandidates = ['uniqueid_SMPN', 'uniqueid_SimoPN'];
+            foreach ($simpananUniqueCandidates as $candidate) {
+                $lower = strtolower($candidate);
+                if (isset($tableColumnsLookup[$lower])) {
+                    $uniqueIdCol = $tableColumnsByLower[$lower] ?? $candidate;
+                    break;
+                }
+            }
+
+            $suffix = '_SMPN';
+        } elseif (isset($tableColumnsLookup['uniqueid_namareport'])) {
+            $uniqueIdCol = $tableColumnsByLower['uniqueid_namareport'] ?? 'uniqueid_namareport';
+        }
         $skipColumns = ['id'];
         if ($uniqueIdCol) {
             $skipColumns[] = strtolower($uniqueIdCol);
         }
         $skipColumnsLookup = array_fill_keys($skipColumns, true);
+        $dateColumnsLookup = $this->getExcelDateColumnsLookup();
+        $decimalColumnsLookup = $this->getExcelDecimalColumnsLookup();
 
         $filterLookups = [];
         foreach ($activeFilters as $filterIdx => $values) {
@@ -1363,6 +1385,7 @@ class ImportExcelController extends Controller
                 }
             }
 
+            $headerName = (string) ($rule['header_name'] ?? '');
             foreach ($this->getHeaderDatabaseCandidates($headerName) as $candidateColumn) {
                 $mappedExcelData[$candidateColumn] = $value;
             }
@@ -1393,6 +1416,18 @@ class ImportExcelController extends Controller
         return count($finalRow) > $minimumColumns ? $finalRow : null;
     }
 
+    private function normalizeExcelValueByRule(array $rule, $value)
+    {
+        $headerName = (string) ($rule['header_name'] ?? '');
+        $normalized = $this->normalizeExcelValue($headerName, $value);
+
+        if (!empty($rule['is_decimal'])) {
+            return $this->normalizeDecimalValue($value);
+        }
+
+        return $normalized;
+    }
+
     private function flushInsertBuffer(array &$rows, string $tableName, int &$totalInserted, int &$totalFailed, ?callable $afterBatch = null): void
     {
         if (empty($rows)) {
@@ -1415,6 +1450,8 @@ class ImportExcelController extends Controller
         if (empty($batch)) {
             return;
         }
+
+        $batch = $this->allocateGapIdsForRows($tableName, $batch);
 
         try {
             DB::table($tableName)->insert($batch);
@@ -1624,6 +1661,72 @@ class ImportExcelController extends Controller
         }
 
         return $value;
+    }
+
+    private function getExcelDateColumnsLookup(): array
+    {
+        $dateColumns = [
+            'PERIODE',
+            'POSISI',
+            'TGL_REALISASI',
+            'TGL_JATUH_TEMPO',
+            'TANGGAL',
+            'TANGGAL_MENUNGGAK',
+            'TGL_BAYAR_TERAKHIR',
+            'TGL_TERMINATE',
+            'LAST_DATE_MAINTENANCE_BILLING',
+            'NEXT_PMT_DATE',
+            'NEXT_PMT_INT_DATE',
+            'TGL_AKAD_RESTRUK',
+        ];
+
+        return array_fill_keys($dateColumns, true);
+    }
+
+    private function getExcelDecimalColumnsLookup(): array
+    {
+        $decimalColumns = [
+            'RATE',
+            'PLAFON',
+            'BAKI_DEBET',
+            'BAKI_DEBET1',
+            'CKPN',
+            'NILAI_TERCATAT1',
+            'KOLEKTABILITAS_LANCAR',
+            'KOLEKTABILITAS_DPK',
+            'KOLEKTABILITAS_KURANGLANCAR',
+            'KOLEKTABILITAS_DIRAGUKAN',
+            'KOLEKTABILITAS_MACET',
+            'TUNGGAKAN_POKOK',
+            'TUNGGAKAN_BUNGA',
+            'TUNGGAKAN_PENALTI',
+            'ADVANCE_PAYMENT',
+            'BAP',
+            'PAYMENT_AMOUNT',
+            'FINAL_PAYMENT_AMOUNT',
+            'NPB_POKOK_LA',
+            'NPB_POKOK_LF',
+            'NPB_BUNGA_LA',
+            'NPB_BUNGA_LF',
+            'JML_ANGSURAN1',
+            'JUMLAH_BAYAR',
+            'DEFFERED_BUNGA',
+            'SAI_TUNGGAKAN',
+            'SAI_DEFFERED',
+            'SAI1',
+            'PMTAMT',
+            'PMTAMT_BASE',
+            'TEXTBOX20',
+            'TEXTBOX21',
+            'OS_SEBELUM_KLAIM',
+            'OS_PENUH_BERJALAN',
+            'BILPRN',
+            'BILINT',
+            'BILLC',
+            'SALDO_IDR',
+        ];
+
+        return array_fill_keys($decimalColumns, true);
     }
 
     private function padRow(array $row, int $targetCount): array
@@ -1836,6 +1939,71 @@ class ImportExcelController extends Controller
         $tableName = $this->resolveActiveTableName();
         $headerIndex = $this->detectHeaderIndex($sheet, $tableName);
         if ($headerIndex === null) return back()->with('error', $this->headerNotFoundMessage($tableName));
+
+        $headerRow = (array) ($sheet[$headerIndex] ?? []);
+        $headers = [];
+        foreach ($headerRow as $index => $headerValue) {
+            $label = trim((string) $headerValue);
+            $headers[$index] = $label !== '' ? $label : ('COL_' . $index);
+        }
+
+        $previewRows = [];
+        $maxPreviewRows = 100;
+        foreach ($sheet as $rowIndex => $rowValues) {
+            if ($rowIndex <= $headerIndex) {
+                continue;
+            }
+
+            $rowValues = (array) $rowValues;
+            if (empty(array_filter($rowValues, fn ($value) => trim((string) $value) !== ''))) {
+                continue;
+            }
+
+            $mapped = [];
+            foreach ($headers as $index => $headerLabel) {
+                $mapped[$headerLabel] = $rowValues[$index] ?? null;
+            }
+            $previewRows[] = $mapped;
+
+            if (count($previewRows) >= $maxPreviewRows) {
+                break;
+            }
+        }
+
+        $formattedUniqueValues = [];
+        foreach ($headers as $headerLabel) {
+            $distinct = [];
+            foreach ($previewRows as $row) {
+                $raw = $row[$headerLabel] ?? null;
+                $key = ($raw === null || trim((string) $raw) === '') ? '(Blank)' : (string) $raw;
+                $distinct[$key] = true;
+            }
+            $formattedUniqueValues[$headerLabel] = array_keys($distinct);
+        }
+
+        $reorderedPayload = $this->reorderPreviewPayload(
+            array_values($headers),
+            $formattedUniqueValues,
+            $previewRows,
+            Schema::getColumnListing($tableName)
+        );
+
+        $previewStateKey = 'excel_preview_' . md5($relativePath . '|fallback|' . microtime(true));
+        $this->putExcelPreviewState($previewStateKey, [
+            'displayFilterMap' => $reorderedPayload['displayFilterMap'] ?? [],
+            'previewMeta' => [
+                'path' => $relativePath,
+                'staged_csv_path' => null,
+                'header_index' => $headerIndex,
+                'normalized_headers' => $reorderedPayload['headers'],
+            ],
+        ]);
+
+        $payload = [
+            'headers' => $reorderedPayload['headers'],
+            'preview' => $reorderedPayload['preview'],
+            'formattedUniqueValues' => $reorderedPayload['formattedUniqueValues'],
+        ];
 
         if ($this->isDailyLoanTable()) {
             return view('import.preview', [
@@ -3039,19 +3207,7 @@ class ImportExcelController extends Controller
                     $flushBatch = function () use (&$dataToInsert, &$totalInserted, &$totalFailed, $tableName, $ping) {
                         if (empty($dataToInsert)) return;
                         foreach (array_chunk($dataToInsert, 100) as $batch) {
-                            try {
-                                DB::table($tableName)->insert($batch);
-                                $totalInserted += count($batch);
-                            } catch (\Exception $e) {
-                                foreach ($batch as $single) {
-                                    try {
-                                        DB::table($tableName)->insert($single);
-                                        $totalInserted++;
-                                    } catch (\Exception $e2) {
-                                        $totalFailed++;
-                                    }
-                                }
-                            }
+                            $this->insertBatchWithFallback($batch, $tableName, $totalInserted, $totalFailed);
                             $ping();
                         }
                         $dataToInsert = [];
