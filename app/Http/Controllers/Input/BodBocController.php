@@ -3,24 +3,19 @@
 namespace App\Http\Controllers\Input;
 
 use App\Http\Controllers\Controller;
-use App\Models\InputRekanan;
+use App\Models\BodBoc;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 
-class InputRekananController extends Controller
+class BodBocController extends Controller
 {
-    public function index()
-    {
-        return redirect()->route('import.index');
-    }
-
     public function importTemplate(Request $request)
     {
         $validated = $request->validate([
             'file' => ['required', 'file', 'mimes:xlsx,xls', 'max:20480'],
         ], [
-            'file.required' => 'File template Input Rekanan wajib dipilih.',
+            'file.required' => 'File template Nasabah Prioritas BOD BOC wajib dipilih.',
             'file.mimes' => 'File harus berformat Excel (.xlsx atau .xls).',
             'file.max' => 'Ukuran file maksimal 20MB.',
         ]);
@@ -33,13 +28,13 @@ class InputRekananController extends Controller
         } catch (\Throwable $e) {
             return redirect()
                 ->route('import.index')
-                ->with('error', 'File Excel Input Rekanan gagal dibaca. Pastikan file sesuai template.');
+                ->with('error', 'File Excel Nasabah Prioritas BOD BOC gagal dibaca. Pastikan file sesuai template.');
         }
 
         if (empty($rows)) {
             return redirect()
                 ->route('import.index')
-                ->with('error', 'File Excel Input Rekanan kosong.');
+                ->with('error', 'File Excel Nasabah Prioritas BOD BOC kosong.');
         }
 
         $headers = collect(array_shift($rows))
@@ -48,31 +43,34 @@ class InputRekananController extends Controller
             ->all();
 
         $expectedHeaders = [
-            'perusahaan_anak',
-            'rekanan_level_1',
-            'rekanan_level_2',
-            'status_nasabah',
+            'instansi',
+            'bod/boc',
+            'nama_nasabah',
+            'ket_nasabah',
             'cif',
-            'produk_1',
-            'produk_2',
-            'produk_3',
+            'fasilitas_1',
+            'fasilitas_2',
+            'fasilitas_3',
         ];
 
         if ($headers !== $expectedHeaders) {
             return redirect()
                 ->route('import.index')
-                ->with('error', 'Format kolom Input Rekanan tidak sesuai template.');
+                ->with('error', 'Format kolom Nasabah Prioritas BOD BOC tidak sesuai template.');
         }
 
         $previewRows = collect($rows)
-            ->map(function ($row) use ($expectedHeaders) {
-                $mapped = [];
-
-                foreach ($expectedHeaders as $index => $header) {
-                    $mapped[$header] = trim((string) ($row[$index] ?? ''));
-                }
-
-                return $mapped;
+            ->map(function ($row) {
+                return [
+                    'instansi' => trim((string) ($row[0] ?? '')),
+                    'bod_boc' => trim((string) ($row[1] ?? '')),
+                    'nama_nasabah' => trim((string) ($row[2] ?? '')),
+                    'ket_nasabah' => trim((string) ($row[3] ?? '')),
+                    'cif' => trim((string) ($row[4] ?? '')),
+                    'fasilitas_1' => trim((string) ($row[5] ?? '')),
+                    'fasilitas_2' => trim((string) ($row[6] ?? '')),
+                    'fasilitas_3' => trim((string) ($row[7] ?? '')),
+                ];
             })
             ->filter(function ($row) {
                 return collect($row)->contains(fn ($value) => $value !== '');
@@ -83,20 +81,20 @@ class InputRekananController extends Controller
         if (empty($previewRows)) {
             return redirect()
                 ->route('import.index')
-                ->with('error', 'Tidak ada data yang bisa dipreview dari file Input Rekanan.');
+                ->with('error', 'Tidak ada data yang bisa dipreview dari file Nasabah Prioritas BOD BOC.');
         }
 
         session([
-            'input_rekanan_preview_rows' => $previewRows,
-            'input_rekanan_preview_source_name' => $file->getClientOriginalName(),
+            'bod_boc_preview_rows' => $previewRows,
+            'bod_boc_preview_source_name' => $file->getClientOriginalName(),
         ]);
 
-        return redirect()->route('input.import-preview');
+        return redirect()->route('bod-boc.import-preview');
     }
 
     public function previewImport()
     {
-        $previewRows = collect(session('input_rekanan_preview_rows', []))
+        $previewRows = collect(session('bod_boc_preview_rows', []))
             ->filter(fn ($row) => is_array($row))
             ->values()
             ->all();
@@ -104,12 +102,12 @@ class InputRekananController extends Controller
         if (empty($previewRows)) {
             return redirect()
                 ->route('import.index')
-                ->with('error', 'Preview Input Rekanan tidak ditemukan. Silakan upload ulang file template.');
+                ->with('error', 'Preview Nasabah Prioritas BOD BOC tidak ditemukan. Silakan upload ulang file template.');
         }
 
-        $sourceName = (string) session('input_rekanan_preview_source_name', 'template-input-rekanan.xlsx');
+        $sourceName = (string) session('bod_boc_preview_source_name', 'template-nasabah-prioritas-bod-boc.xlsx');
 
-        return view('input.import-preview', compact('previewRows', 'sourceName'));
+        return view('input.bod-boc-import-preview', compact('previewRows', 'sourceName'));
     }
 
     public function store(Request $request)
@@ -135,14 +133,14 @@ class InputRekananController extends Controller
 
         foreach ($rows as $row) {
             $normalized = [
-                'perusahaan_anak' => trim((string) ($row['perusahaan_anak'] ?? '')),
-                'rekanan_level_1' => trim((string) ($row['rekanan_level_1'] ?? '')),
-                'rekanan_level_2' => trim((string) ($row['rekanan_level_2'] ?? '')),
-                'status_nasabah' => trim((string) ($row['status_nasabah'] ?? '')),
+                'instansi' => trim((string) ($row['instansi'] ?? '')),
+                'bod_boc' => trim((string) ($row['bod_boc'] ?? '')),
+                'nama_nasabah' => trim((string) ($row['nama_nasabah'] ?? '')),
+                'ket_nasabah' => trim((string) ($row['ket_nasabah'] ?? '')),
                 'cif' => trim((string) ($row['cif'] ?? '')),
-                'produk_1' => trim((string) ($row['produk_1'] ?? '')),
-                'produk_2' => trim((string) ($row['produk_2'] ?? '')),
-                'produk_3' => trim((string) ($row['produk_3'] ?? '')),
+                'fasilitas_1' => trim((string) ($row['fasilitas_1'] ?? '')),
+                'fasilitas_2' => trim((string) ($row['fasilitas_2'] ?? '')),
+                'fasilitas_3' => trim((string) ($row['fasilitas_3'] ?? '')),
             ];
 
             if (collect($normalized)->filter(fn ($value) => $value !== '')->isEmpty()) {
@@ -161,27 +159,27 @@ class InputRekananController extends Controller
                 ]);
         }
 
-        if (!Schema::hasTable('input_rekanan')) {
+        if (!Schema::hasTable('bod_boc')) {
             return back()->with('sweet_warning', [
                 'title' => 'Tabel Belum Tersedia',
-                'text' => 'Tabel input_rekanan belum ada. Jalankan migration terlebih dahulu.',
+                'text' => 'Tabel bod_boc belum ada. Jalankan migration terlebih dahulu.',
             ]);
         }
 
-        InputRekanan::insert(array_map(function ($row) {
+        BodBoc::insert(array_map(function ($row) {
             return array_merge($row, [
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
         }, $payload));
 
-        session()->forget(['input_rekanan_preview_rows', 'input_rekanan_preview_source_name']);
+        session()->forget(['bod_boc_preview_rows', 'bod_boc_preview_source_name']);
 
         return redirect()
             ->route('import.index')
             ->with('sweet_success', [
                 'title' => 'Berhasil Disimpan',
-                'text' => count($payload) . ' baris data berhasil disimpan ke tabel input_rekanan.',
+                'text' => count($payload) . ' baris data berhasil disimpan ke tabel bod_boc.',
             ]);
     }
 }

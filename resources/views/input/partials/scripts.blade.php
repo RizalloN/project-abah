@@ -9,6 +9,7 @@
         const previewTableSection = document.getElementById('previewTableSection');
         const saveForm = document.getElementById('saveInputDataForm');
         const rowsPayload = document.getElementById('rowsPayload');
+        const initialPreviewRows = @json($previewRows ?? []);
 
         const perusahaanOptions = [
             '',
@@ -179,6 +180,14 @@
 
             rowsPayload.value = JSON.stringify(rows);
         });
+
+        if (Array.isArray(initialPreviewRows) && initialPreviewRows.length > 0) {
+            initialPreviewRows.forEach(function (row) {
+                appendRow(row);
+            });
+
+            previewCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
 
         togglePreviewState();
 

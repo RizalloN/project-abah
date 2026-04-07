@@ -75,15 +75,9 @@
             </div>
 
             <div id="form-excel" class="form-group" style="display: none;">
-<<<<<<< HEAD
                 <label class="text-success font-weight-bold"><i class="fas fa-file-excel mr-1"></i> Upload File Excel (.xlsx, .xls)</label>
                 <input type="file" id="file_excel" name="file" class="form-control border-success shadow-sm" accept=".xlsx,.xls">
                 <small class="text-muted mt-2 d-block">Mendukung format .xlsx dan .xls hingga 200MB+ dengan preview bertahap.</small>
-=======
-                <label id="label_excel_upload" class="text-success font-weight-bold"><i class="fas fa-file-excel mr-1"></i> Upload File Excel (.xlsx, .xls)</label>
-                <input type="file" id="file_excel" name="file" class="form-control border-success shadow-sm" accept=".xlsx, .xls">
-                <small id="label_excel_help" class="text-muted mt-2 d-block">Mendukung format .xlsx dan .xls hingga 200MB+ (Menggunakan Chunk Reading Mode).</small>
->>>>>>> 7d9de73de61f625c5ab496dc859a4792870a4fe3
             </div>
 
             <div id="form-csv" class="form-group" style="display: none;">
@@ -133,20 +127,8 @@
         const inputRar = document.getElementById('file_rar');
         const inputExcel = document.getElementById('file_excel');
         const inputCsv = document.getElementById('file_csv');
-<<<<<<< HEAD
         const csvLabel = document.getElementById('csv-label');
         const csvHelp = document.getElementById('csv-help');
-=======
-        const formPeriod = document.getElementById('form-period');
-        const inputPeriod = document.getElementById('periode_input');
-        const labelRarUpload = document.getElementById('label_rar_upload');
-        const labelRarHelp = document.getElementById('label_rar_help');
-        const labelExcelUpload = document.getElementById('label_excel_upload');
-        const labelExcelHelp = document.getElementById('label_excel_help');
-        const labelCsvHelp = document.getElementById('label_csv_help');
-        const labelPeriodTitle = document.getElementById('label_period_title');
-        const labelPeriodHelp = document.getElementById('label_period_help');
->>>>>>> 7d9de73de61f625c5ab496dc859a4792870a4fe3
 
         function syncDownloadButton() {
             if (!btnDownloadTemplate || !downloadTemplateSelect) {
@@ -158,15 +140,14 @@
             const filename = selectedOption ? (selectedOption.getAttribute('data-filename') || '') : '';
 
             if (templateKey) {
-                const query = new URLSearchParams({
-                    report: templateKey,
-                });
+                const params = new URLSearchParams();
+                params.set('report', templateKey);
 
                 if (filename) {
-                    query.set('file', filename);
+                    params.set('file', filename);
                 }
 
-                btnDownloadTemplate.href = `${btnDownloadTemplate.dataset.routeTemplate}?${query.toString()}`;
+                btnDownloadTemplate.href = `${btnDownloadTemplate.dataset.routeTemplate}?${params.toString()}`;
                 btnDownloadTemplate.classList.remove('disabled');
                 btnDownloadTemplate.removeAttribute('aria-disabled');
                 return;
@@ -196,34 +177,9 @@
             const tableName = selectedOption.getAttribute('data-table') || '';
             const isDailyLoan = reportName.includes('daily loan');
             const isSimpanan = reportName.includes('simpanan multipn');
-<<<<<<< HEAD
             const isPerformancePis = reportName.includes('performance pis per produk');
             const isInputRekanan = tableName === 'input_rekanan';
-=======
-            const normalizedReportName = reportName.replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
-            const isPerformancePis = normalizedReportName.includes('performance pis');
-            const isReportPh = tableName === 'lw325_ph'
-                || normalizedReportName === 'report ph'
-                || normalizedReportName.includes('report ph')
-                || normalizedReportName.includes('report pinjaman')
-                || normalizedReportName.includes('rekening pinjaman ph')
-                || normalizedReportName.includes('nomintaif per rekening')
-                || normalizedReportName.includes('nominatif rekening')
-                || normalizedReportName.includes('nominal per rekening');
-            const isCasaBrilink = tableName === 'casa_brilink_web'
-                || tableName === 'casa_brilink_edc'
-                || reportName.includes('casa brilink web')
-                || reportName.includes('casa_brilink_web')
-                || reportName.includes('casa brilink edc')
-                || reportName.includes('casa_brilink_edc');
-            const isBrimo = tableName === 'user_brimo_rpt_v2'
-                || tableName === 'user_brimo_fin'
-                || reportName.includes('brimo');
-            const simpananExcelUploadRoute = "{{ route('import.simpanan.upload') }}";
-            const simpananExcelPrepareRoute = "{{ route('import.simpanan.prepare-preview') }}";
-            const simpananCsvUploadRoute = "{{ route('import.simpanan.csv.upload') }}";
-            const simpananCsvPrepareRoute = "{{ route('import.simpanan.csv.prepare-preview') }}";
->>>>>>> 7d9de73de61f625c5ab496dc859a4792870a4fe3
+            const isBodBoc = tableName === 'bod_boc';
 
             formRAR.style.display = 'none';
             formExcel.style.display = 'none';
@@ -235,32 +191,6 @@
             inputExcel.required = false;
             inputCsv.disabled = true;
             inputCsv.required = false;
-<<<<<<< HEAD
-=======
-            inputCsv.value = '';
-            formPeriod.style.display = 'none';
-            inputPeriod.disabled = true;
-            inputPeriod.required = false;
-            inputPeriod.type = 'month';
-            inputPeriod.value = '';
-            formImport.dataset.simpananMode = '0';
-            formImport.dataset.simpananExcelUpload = simpananExcelUploadRoute;
-            formImport.dataset.simpananExcelPrepare = simpananExcelPrepareRoute;
-            formImport.dataset.simpananCsvUpload = simpananCsvUploadRoute;
-            formImport.dataset.simpananCsvPrepare = simpananCsvPrepareRoute;
-            if (labelExcelUpload) {
-                labelExcelUpload.innerHTML = '<i class="fas fa-file-excel mr-1"></i> Upload File Excel (.xlsx, .xls)';
-            }
-            if (labelExcelHelp) {
-                labelExcelHelp.textContent = 'Mendukung format .xlsx dan .xls hingga 200MB+ (Menggunakan Chunk Reading Mode).';
-            }
-            if (labelPeriodTitle) {
-                labelPeriodTitle.innerHTML = '<i class="fas fa-calendar-alt mr-1"></i> Periode Report';
-            }
-            if (labelPeriodHelp) {
-                labelPeriodHelp.textContent = 'Khusus CASA BRILINK WEB/EDC, isi periode manual karena file CSV tidak memuat kolom periode.';
-            }
->>>>>>> 7d9de73de61f625c5ab496dc859a4792870a4fe3
 
             formImport.dataset.preparePreviewUrl = '';
 
@@ -276,205 +206,20 @@
                 return;
             }
 
-<<<<<<< HEAD
-            if (isSimpanan || isInputRekanan) {
+            if (isSimpanan || isInputRekanan || isBodBoc) {
                 formExcel.style.display = 'block';
                 inputExcel.disabled = false;
                 inputExcel.required = true;
-                formImport.action = "{{ route('import.excel.upload') }}";
-                formImport.dataset.preparePreviewUrl = "{{ route('import.excel.prepare-preview') }}";
+                formImport.action = isInputRekanan
+                    ? "{{ route('input.import-template') }}"
+                    : (isBodBoc
+                        ? "{{ route('bod-boc.import-template') }}"
+                        : "{{ route('import.excel.upload') }}");
+                formImport.dataset.preparePreviewUrl = (isInputRekanan || isBodBoc)
+                    ? ''
+                    : "{{ route('import.excel.prepare-preview') }}";
                 applyButtonState('excel', '<i class="fas fa-file-excel"></i> Upload Excel');
                 return;
-=======
-                formImport.action = "{{ route('import.upload') }}";
-                formImport.dataset.preparePreviewUrl = '';
-                formImport.dataset.uploadFlow = 'direct-submit';
-
-                btnSubmit.className = "btn btn-success font-weight-bold";
-                btnSubmit.innerHTML = '<i class="fas fa-file-csv"></i> Upload CSV Daily Loan';
-                btnSubmit.dataset.defaultLabel = btnSubmit.innerHTML;
-
-            } else if (isSimpanan) {
-                // Simpanan MultiPN: satu jalur upload spreadsheet, route ditentukan dari ekstensi file
-                formRAR.style.display = 'none';
-                formExcel.style.display = 'block';
-                formCsv.style.display = 'none';
-
-                inputRar.disabled = true;
-                inputRar.required = false;
-
-                inputExcel.disabled = false;
-                inputExcel.required = true;
-                inputExcel.setAttribute('accept', '.xlsx,.xls,.csv,.txt');
-                if (labelExcelUpload) {
-                    labelExcelUpload.innerHTML = '<i class="fas fa-file-upload mr-1"></i> Upload File Simpanan MultiPN (.csv, .xlsx, .xls)';
-                }
-                if (labelExcelHelp) {
-                    labelExcelHelp.textContent = 'CSV akan diproses lewat jalur import khusus Simpanan MultiPN. Excel tetap memakai engine preview + stream agar insert ke database lebih stabil.';
-                }
-                inputCsv.disabled = true;
-                inputCsv.required = false;
-
-                formImport.action = simpananExcelUploadRoute;
-                formImport.dataset.preparePreviewUrl = simpananExcelPrepareRoute;
-                formImport.dataset.uploadFlow = 'excel-preview';
-                formImport.dataset.simpananMode = '1';
-
-                btnSubmit.className = "btn btn-success font-weight-bold";
-                btnSubmit.innerHTML = '<i class="fas fa-file-upload"></i> Upload CSV / Excel';
-                btnSubmit.dataset.defaultLabel = btnSubmit.innerHTML;
-
-            } else if (isPerformancePis) {
-                formRAR.style.display = 'block';
-                formExcel.style.display = 'none';
-                formCsv.style.display = 'none';
-                formPeriod.style.display = 'block';
-
-                inputRar.disabled = false;
-                inputRar.required = true;
-                inputRar.setAttribute('accept', '.rar,.csv');
-                labelRarUpload.textContent = 'Upload File (.rar / .csv)';
-                labelRarHelp.textContent = 'Bisa upload file .rar untuk diekstrak otomatis, atau langsung upload file .csv Performance PIS Per Produk.';
-                inputExcel.disabled = true;
-                inputExcel.required = false;
-                inputCsv.disabled = true;
-                inputCsv.required = false;
-                inputPeriod.disabled = false;
-                inputPeriod.required = true;
-                inputPeriod.type = 'date';
-                if (labelPeriodTitle) {
-                    labelPeriodTitle.innerHTML = '<i class="fas fa-calendar-alt mr-1"></i> Tanggal PIS Per Produk';
-                }
-                if (labelPeriodHelp) {
-                    labelPeriodHelp.textContent = 'Pilih tanggal posisi/report Performance PIS Per Produk sebelum masuk ke halaman preview.';
-                }
-
-                formImport.action = "{{ route('import.performancepis.upload') }}";
-                formImport.dataset.preparePreviewUrl = '';
-                formImport.dataset.uploadFlow = 'direct-submit';
-
-                btnSubmit.className = "btn btn-info font-weight-bold";
-                btnSubmit.innerHTML = '<i class="fas fa-file-upload"></i> Upload File PIS';
-                btnSubmit.dataset.defaultLabel = btnSubmit.innerHTML;
-
-            } else if (isReportPh) {
-                formRAR.style.display = 'none';
-                formExcel.style.display = 'none';
-                formCsv.style.display = 'block';
-                formPeriod.style.display = 'none';
-
-                inputRar.disabled = true;
-                inputRar.required = false;
-                inputExcel.disabled = true;
-                inputExcel.required = false;
-                inputCsv.disabled = false;
-                inputCsv.required = true;
-                inputCsv.setAttribute('accept', '.csv,.txt');
-                inputPeriod.disabled = true;
-                inputPeriod.required = false;
-
-                if (labelCsvHelp) {
-                    labelCsvHelp.textContent = 'Upload file CSV/TXT Report Nominatif Rekening Pinjaman PH. Kolom nomor urut seperti Textbox3 tidak akan ikut diimport ke database.';
-                }
-
-                formImport.action = "{{ route('import.reportph.upload') }}";
-                formImport.dataset.preparePreviewUrl = '';
-                formImport.dataset.uploadFlow = 'direct-submit';
-
-                btnSubmit.className = "btn btn-info font-weight-bold";
-                btnSubmit.innerHTML = '<i class="fas fa-file-csv"></i> Upload CSV Nominatif PH';
-                btnSubmit.dataset.defaultLabel = btnSubmit.innerHTML;
-
-            } else if (isCasaBrilink) {
-                formRAR.style.display = 'none';
-                formExcel.style.display = 'none';
-                formCsv.style.display = 'block';
-                formPeriod.style.display = 'block';
-
-                inputRar.disabled = true;
-                inputRar.required = false;
-                inputExcel.disabled = true;
-                inputExcel.required = false;
-                inputCsv.disabled = false;
-                inputCsv.required = true;
-                inputCsv.setAttribute('accept', '.csv');
-                inputPeriod.disabled = false;
-                inputPeriod.required = true;
-                inputPeriod.type = 'month';
-                if (labelPeriodTitle) {
-                    labelPeriodTitle.innerHTML = '<i class="fas fa-calendar-alt mr-1"></i> Periode CASA BRILINK (Bulan/Tahun)';
-                }
-                if (labelPeriodHelp) {
-                    labelPeriodHelp.textContent = 'Wajib pilih periode bulanan karena file CSV CASA BRILINK WEB/EDC tidak memiliki kolom periode.';
-                }
-                if (labelCsvHelp) {
-                    labelCsvHelp.textContent = 'Upload file CSV untuk CASA BRILINK WEB/EDC, lalu pilih periode bulanan secara manual.';
-                }
-
-                formImport.action = "{{ route('import.casabrilink.upload') }}";
-                formImport.dataset.preparePreviewUrl = '';
-                formImport.dataset.uploadFlow = 'direct-submit';
-
-                btnSubmit.className = "btn btn-warning font-weight-bold";
-                btnSubmit.innerHTML = '<i class="fas fa-file-csv"></i> Upload CSV CASA';
-                btnSubmit.dataset.defaultLabel = btnSubmit.innerHTML;
-
-            } else if (isBrimo) {
-                // 🔥 BRIMO: Tampilkan RAR, arahkan ke ImportFileBrimoController
-                formRAR.style.display = 'block';
-                formExcel.style.display = 'none';
-                formCsv.style.display = 'none';
-
-                inputExcel.disabled = true;
-                inputExcel.required = false;
-                inputCsv.disabled = true;
-                inputCsv.required = false;
-
-                inputRar.disabled = false;
-                inputRar.required = true;
-
-                // Arahkan submit ke Brimo Controller
-                formImport.action = "{{ route('import.brimo.upload') }}";
-                formImport.dataset.preparePreviewUrl = '';
-                formImport.dataset.uploadFlow = 'direct-submit';
-                labelRarUpload.textContent = 'Upload File Extracted (.rar)';
-                labelRarHelp.textContent = 'Sistem akan mengekstrak otomatis dan mendeteksi file CSV di dalamnya.';
-                inputRar.setAttribute('accept', '.rar');
-
-                btnSubmit.className = "btn btn-primary font-weight-bold";
-                btnSubmit.innerHTML = '<i class="fas fa-file-archive"></i> Upload RAR';
-                btnSubmit.dataset.defaultLabel = btnSubmit.innerHTML;
-
-            } else {
-                // Tampilkan RAR, Sembunyikan Excel
-                formRAR.style.display = 'block';
-                formExcel.style.display = 'none';
-                formCsv.style.display = 'none';
-
-                // 🔥 MATIKAN input EXCEL agar tidak bentrok
-                inputExcel.disabled = true;
-                inputExcel.required = false;
-
-                inputRar.disabled = false;
-                inputRar.required = true;
-
-                // Arahkan submit ke Controller CSV/Legacy
-                formImport.action = "{{ route('import.upload') }}";
-                formImport.dataset.preparePreviewUrl = '';
-                formImport.dataset.uploadFlow = 'direct-submit';
-                labelRarUpload.textContent = 'Upload File (.rar / .csv)';
-                labelRarHelp.textContent = 'Bisa upload file .rar untuk diekstrak otomatis, atau langsung upload file .csv tanpa dibungkus arsip.';
-                inputRar.setAttribute('accept', '.rar,.csv');
-                inputPeriod.value = '';
-                if (labelCsvHelp) {
-                    labelCsvHelp.textContent = 'Gunakan file CSV Performance PIS Per Produk dengan metadata posisi di bagian atas file.';
-                }
-
-                // Sesuaikan Tombol
-                btnSubmit.className = "btn btn-primary font-weight-bold";
-                btnSubmit.innerHTML = '<i class="fas fa-upload"></i> Upload File';
-                btnSubmit.dataset.defaultLabel = btnSubmit.innerHTML;
->>>>>>> 7d9de73de61f625c5ab496dc859a4792870a4fe3
             }
 
             if (isPerformancePis) {
@@ -504,9 +249,26 @@
             applyButtonState('rar', '<i class="fas fa-file-archive"></i> Upload RAR');
         }
 
-        reportSelect.addEventListener('change', toggleForm);
-        downloadTemplateSelect?.addEventListener('change', syncDownloadButton);
+        if (reportSelect) {
+            reportSelect.addEventListener('change', toggleForm);
+            if (window.jQuery && window.jQuery.fn) {
+                window.jQuery(reportSelect).on('change.select2 select2:select', toggleForm);
+            }
+        }
+
+        if (downloadTemplateSelect) {
+            downloadTemplateSelect.addEventListener('change', syncDownloadButton);
+            window.addEventListener('load', syncDownloadButton);
+            window.addEventListener('pageshow', syncDownloadButton);
+
+            if (window.jQuery && window.jQuery.fn) {
+                window.jQuery(downloadTemplateSelect).on('change select2:select', syncDownloadButton);
+            }
+        }
+
         btnDownloadTemplate?.addEventListener('click', function (event) {
+            syncDownloadButton();
+
             if (btnDownloadTemplate.classList.contains('disabled')) {
                 event.preventDefault();
             }
@@ -514,6 +276,8 @@
 
         toggleForm();
         syncDownloadButton();
+        setTimeout(syncDownloadButton, 0);
+        setTimeout(syncDownloadButton, 150);
 
         $('#file_rar').on('change', function () {
             var fileName = $(this).val().split('\\').pop();
@@ -523,7 +287,6 @@
         formImport.addEventListener('submit', function(e) {
             e.preventDefault();
 
-<<<<<<< HEAD
             const hasAsyncPreview = Boolean(formImport.dataset.preparePreviewUrl);
             const uploadKind = formImport.dataset.uploadKind || 'rar';
             const titleText = uploadKind === 'excel'
@@ -533,35 +296,6 @@
                     : 'Uploading Report...';
             const descText = hasAsyncPreview
                 ? 'File sedang diproses dan disiapkan untuk preview.<br><b>Mohon tunggu...</b>'
-=======
-            const usesPreviewStream = formImport.dataset.uploadFlow === 'excel-preview';
-            const selectedValue = reportSelect.value || '';
-            const selectedMeta = reportMetaMap[selectedValue] || {};
-            const selectedName = (selectedMeta.name || '').toLowerCase();
-            const isDailyLoanPreview = selectedName.includes('daily loan');
-            const isSimpananUpload = formImport.dataset.simpananMode === '1';
-            const simpananSelectedFile = inputExcel && inputExcel.files && inputExcel.files[0] ? inputExcel.files[0].name.toLowerCase() : '';
-            const simpananUsesCsv = isSimpananUpload && /\.(csv|txt)$/i.test(simpananSelectedFile);
-            if (isSimpananUpload) {
-                formImport.action = simpananUsesCsv
-                    ? (formImport.dataset.simpananCsvUpload || formImport.action)
-                    : (formImport.dataset.simpananExcelUpload || formImport.action);
-                formImport.dataset.preparePreviewUrl = simpananUsesCsv
-                    ? (formImport.dataset.simpananCsvPrepare || formImport.dataset.preparePreviewUrl)
-                    : (formImport.dataset.simpananExcelPrepare || formImport.dataset.preparePreviewUrl);
-            }
-            const titleText = usesPreviewStream
-                ? (isDailyLoanPreview
-                    ? 'Uploading CSV Daily Loan...'
-                    : (simpananUsesCsv ? 'Uploading CSV Simpanan MultiPN...' : 'Uploading Spreadsheet...'))
-                : 'Uploading Report...';
-            const descText = usesPreviewStream
-                ? (isDailyLoanPreview
-                    ? 'File CSV sedang dianalisis untuk preview dan filter.<br><b>Mohon tunggu...</b>'
-                    : (simpananUsesCsv
-                        ? 'File CSV Simpanan MultiPN sedang dianalisis untuk preview dan filter.<br><b>Mohon tunggu...</b>'
-                        : 'File besar sedang diproses dengan chunking.<br><b>Mohon tunggu...</b>'))
->>>>>>> 7d9de73de61f625c5ab496dc859a4792870a4fe3
                 : 'Sedang mengupload dan memproses file.<br><b>Mohon tunggu...</b>';
 
             const progressHtml = `

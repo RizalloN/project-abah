@@ -336,6 +336,24 @@
                         </li>
                     </ul>
                 </li>
+
+                <li class="nav-item {{ request()->routeIs('report.kolaborasi.bodboc') ? 'menu-open' : '' }}">
+                    <a href="#" class="nav-link {{ request()->routeIs('report.kolaborasi.bodboc') ? 'active' : '' }}" style="border-radius: 14px; margin-bottom: 0.35rem; color: rgba(226, 232, 240, 0.88);">
+                        <i class="nav-icon fas fa-user-tie"></i>
+                        <p>
+                            Optimalisasi Nasabah Prioritas BOD/BOC Nasabah Wholesale dan Komersial
+                            <i class="right fas fa-angle-left"></i>
+                        </p>
+                    </a>
+                    <ul class="nav nav-treeview">
+                        <li class="nav-item">
+                            <a href="{{ route('report.kolaborasi.bodboc') }}" class="nav-link {{ request()->routeIs('report.kolaborasi.bodboc') ? 'active' : '' }}" style="border-radius: 12px; color: rgba(226, 232, 240, 0.8);">
+                                <i class="far fa-circle nav-icon text-warning"></i>
+                                <p>Nasabah Prioritas BOD/BOC</p>
+                            </a>
+                        </li>
+                    </ul>
+                </li>
             </ul>
         </nav>
 
