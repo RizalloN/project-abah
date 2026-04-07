@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Support\ReportDataSyncService;
 use Illuminate\Http\Request;
 use App\Models\NamaReport;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
@@ -13,6 +14,10 @@ use Throwable;
 
 class ImportIndexController extends Controller
 {
+    private const MANAGEMENT_MAX_GROUP_ROWS = 5000;
+    private const DELETE_PRECHECK_LIMIT = 200000;
+    private const DELETE_CHUNK_SIZE = 5000;
+
     private const PERIOD_COLUMN_CANDIDATES = [
         'periode',
         'posisi',
@@ -92,6 +97,7 @@ class ImportIndexController extends Controller
     {
         $validated = $request->validate([
             'id_report' => 'required|integer',
+            'max_rows' => 'nullable|integer|min:100|max:20000',
         ]);
 
         $report = NamaReport::where('active', 1)
@@ -124,13 +130,16 @@ class ImportIndexController extends Controller
         $periodColumn = $this->resolveColumnName($tableColumns, self::PERIOD_COLUMN_CANDIDATES);
         $kancaColumn = $this->resolveColumnName($tableColumns, self::KANCA_COLUMN_CANDIDATES);
 
-        $rows = $this->buildManagementRows($tableName, $periodColumn, $kancaColumn);
+        $maxRows = (int) ($validated['max_rows'] ?? self::MANAGEMENT_MAX_GROUP_ROWS);
+        [$rows, $truncated] = $this->buildManagementRows($tableName, $periodColumn, $kancaColumn, $maxRows);
 
         return response()->json([
             'status' => 'success',
             'table_name' => $tableName,
             'period_column' => $periodColumn,
             'kanca_column' => $kancaColumn,
+            'max_rows' => $maxRows,
+            'truncated' => $truncated,
             'rows' => $rows,
         ]);
     }
@@ -143,6 +152,7 @@ class ImportIndexController extends Controller
             'kanca' => 'nullable|string|max:255',
             'period_is_null' => 'nullable|boolean',
             'kanca_is_null' => 'nullable|boolean',
+            'force' => 'nullable|boolean',
         ]);
 
         $report = NamaReport::where('active', 1)
@@ -172,6 +182,7 @@ class ImportIndexController extends Controller
         $kancaFilter = array_key_exists('kanca', $validated) ? (string) ($validated['kanca'] ?? '') : null;
         $periodIsNull = (bool) ($validated['period_is_null'] ?? false);
         $kancaIsNull = (bool) ($validated['kanca_is_null'] ?? false);
+        $force = (bool) ($validated['force'] ?? false);
 
         if ($periodColumn === null && $kancaColumn === null) {
             return response()->json([
@@ -180,45 +191,15 @@ class ImportIndexController extends Controller
             ], 422);
         }
 
-        $hasWhereClause = false;
-        $deletedRows = DB::transaction(function () use (
+        [$baseQuery, $hasWhereClause] = $this->buildDeleteScopeQuery(
             $tableName,
             $periodColumn,
             $kancaColumn,
             $periodFilter,
             $kancaFilter,
             $periodIsNull,
-            $kancaIsNull,
-            &$hasWhereClause
-        ) {
-            $query = DB::table($tableName);
-
-            if ($periodColumn !== null) {
-                if ($periodIsNull) {
-                    $this->applyBlankValueConstraint($query, $periodColumn);
-                    $hasWhereClause = true;
-                } elseif ($periodFilter !== null && $periodFilter !== '') {
-                    $query->where($periodColumn, $periodFilter);
-                    $hasWhereClause = true;
-                }
-            }
-
-            if ($kancaColumn !== null) {
-                if ($kancaIsNull) {
-                    $this->applyBlankValueConstraint($query, $kancaColumn);
-                    $hasWhereClause = true;
-                } elseif ($kancaFilter !== null && $kancaFilter !== '') {
-                    $query->where($kancaColumn, $kancaFilter);
-                    $hasWhereClause = true;
-                }
-            }
-
-            if (!$hasWhereClause) {
-                return 0;
-            }
-
-            return $query->delete();
-        });
+            $kancaIsNull
+        );
 
         if (!$hasWhereClause) {
             return response()->json([
@@ -226,6 +207,28 @@ class ImportIndexController extends Controller
                 'message' => 'Filter periode/kanca tidak valid. Tidak ada data yang dihapus.',
             ], 422);
         }
+
+        $candidateRows = (clone $baseQuery)->count();
+        if ($candidateRows <= 0) {
+            return response()->json([
+                'status' => 'success',
+                'deleted_rows' => 0,
+                'table_name' => $tableName,
+                'message' => 'Tidak ada baris yang cocok dengan filter.',
+            ]);
+        }
+
+        if ($candidateRows > self::DELETE_PRECHECK_LIMIT && !$force) {
+            return response()->json([
+                'status' => 'warning',
+                'table_name' => $tableName,
+                'candidate_rows' => (int) $candidateRows,
+                'message' => 'Data yang akan dihapus sangat besar. Ulangi request dengan `force=true` untuk melanjutkan.',
+            ], 422);
+        }
+
+        $identityColumn = $this->resolveIdentityColumn($tableColumns);
+        $deletedRows = $this->deleteScopedRows($tableName, $baseQuery, $identityColumn);
 
         $periodHint = null;
         if ($periodColumn !== null && !$periodIsNull && $periodFilter !== null && $periodFilter !== '') {
@@ -356,7 +359,7 @@ class ImportIndexController extends Controller
         return null;
     }
 
-    private function buildManagementRows(string $tableName, ?string $periodColumn, ?string $kancaColumn): array
+    private function buildManagementRows(string $tableName, ?string $periodColumn, ?string $kancaColumn, int $maxRows): array
     {
         if ($periodColumn === null && $kancaColumn === null) {
             $count = (int) DB::table($tableName)->count();
@@ -367,7 +370,7 @@ class ImportIndexController extends Controller
                 'row_count' => $count,
                 'period_is_null' => false,
                 'kanca_is_null' => false,
-            ]];
+            ], false];
         }
 
         $query = DB::table($tableName);
@@ -385,7 +388,15 @@ class ImportIndexController extends Controller
             $query->groupBy($kancaColumn)->orderBy($kancaColumn);
         }
 
-        $result = $query->selectRaw(implode(', ', $selects))->get();
+        $result = $query
+            ->selectRaw(implode(', ', $selects))
+            ->limit($maxRows + 1)
+            ->get();
+
+        $truncated = $result->count() > $maxRows;
+        if ($truncated) {
+            $result = $result->take($maxRows);
+        }
 
         $rows = [];
         foreach ($result as $item) {
@@ -401,7 +412,7 @@ class ImportIndexController extends Controller
             ];
         }
 
-        return $rows;
+        return [$rows, $truncated];
     }
 
     private function applyBlankValueConstraint($query, string $column): void
@@ -414,6 +425,78 @@ class ImportIndexController extends Controller
                 ->orWhere($column, '')
                 ->orWhereRaw("TRIM(`{$safeColumn}`) = ''");
         });
+    }
+
+    private function buildDeleteScopeQuery(
+        string $tableName,
+        ?string $periodColumn,
+        ?string $kancaColumn,
+        ?string $periodFilter,
+        ?string $kancaFilter,
+        bool $periodIsNull,
+        bool $kancaIsNull
+    ): array {
+        $query = DB::table($tableName);
+        $hasWhereClause = false;
+
+        if ($periodColumn !== null) {
+            if ($periodIsNull) {
+                $this->applyBlankValueConstraint($query, $periodColumn);
+                $hasWhereClause = true;
+            } elseif ($periodFilter !== null && $periodFilter !== '') {
+                $query->where($periodColumn, $periodFilter);
+                $hasWhereClause = true;
+            }
+        }
+
+        if ($kancaColumn !== null) {
+            if ($kancaIsNull) {
+                $this->applyBlankValueConstraint($query, $kancaColumn);
+                $hasWhereClause = true;
+            } elseif ($kancaFilter !== null && $kancaFilter !== '') {
+                $query->where($kancaColumn, $kancaFilter);
+                $hasWhereClause = true;
+            }
+        }
+
+        return [$query, $hasWhereClause];
+    }
+
+    private function resolveIdentityColumn(array $tableColumns): ?string
+    {
+        return $this->resolveColumnName($tableColumns, ['uniqueid_namareport', 'uniqueid_SMPN', 'id']);
+    }
+
+    private function deleteScopedRows(string $tableName, Builder $baseQuery, ?string $identityColumn): int
+    {
+        if ($identityColumn === null || !Schema::hasColumn($tableName, $identityColumn)) {
+            return (int) (clone $baseQuery)->delete();
+        }
+
+        $deletedRows = 0;
+
+        while (true) {
+            $ids = (clone $baseQuery)
+                ->select($identityColumn)
+                ->limit(self::DELETE_CHUNK_SIZE)
+                ->pluck($identityColumn)
+                ->filter(fn ($value) => $value !== null && trim((string) $value) !== '')
+                ->values()
+                ->all();
+
+            if (empty($ids)) {
+                break;
+            }
+
+            $affected = DB::table($tableName)->whereIn($identityColumn, $ids)->delete();
+            $deletedRows += (int) $affected;
+
+            if ($affected <= 0) {
+                break;
+            }
+        }
+
+        return $deletedRows;
     }
 
     private function parseIniSizeToBytes(string $value): int

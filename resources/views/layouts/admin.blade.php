@@ -479,12 +479,63 @@
         .sidebar-mini.sidebar-collapse .main-sidebar .nav-sidebar > .nav-item > .nav-link.active {
             margin-bottom: 0 !important;
         }
+
+        .content-wrapper,
+        .content-wrapper .content,
+        .content-wrapper .container-fluid {
+            transition: opacity 180ms ease, transform 220ms ease;
+            will-change: opacity, transform;
+        }
+
+        body.page-transition-leaving .content-wrapper,
+        body.page-transition-leaving .content-wrapper .content,
+        body.page-transition-leaving .content-wrapper .container-fluid {
+            opacity: 0;
+            transform: translateY(4px);
+            pointer-events: none;
+        }
+
+        .page-transition-bar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: 2000;
+            height: 3px;
+            width: 100%;
+            transform-origin: left;
+            transform: scaleX(0);
+            background: linear-gradient(90deg, #0f766e 0%, #14b8a6 100%);
+            box-shadow: 0 2px 10px rgba(15, 118, 110, 0.35);
+            opacity: 0;
+            transition: transform 320ms ease-out, opacity 180ms ease;
+            pointer-events: none;
+        }
+
+        body.page-transition-active .page-transition-bar {
+            opacity: 1;
+            transform: scaleX(0.82);
+        }
+
+        body.page-transition-finishing .page-transition-bar {
+            opacity: 0;
+            transform: scaleX(1);
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .content-wrapper,
+            .content-wrapper .content,
+            .content-wrapper .container-fluid,
+            .page-transition-bar {
+                transition: none !important;
+            }
+        }
     </style>
 </head>
 
 <body class="hold-transition sidebar-mini layout-fixed">
 
 <div class="wrapper">
+    <div class="page-transition-bar" aria-hidden="true"></div>
 
     <!-- 🔥 NAVBAR -->
     <nav class="main-header modern-navbar navbar navbar-expand navbar-white navbar-light">
@@ -603,6 +654,87 @@
 
         $(document).on('collapsed.lte.pushmenu shown.lte.pushmenu', function () {
             closeHoverSidebar();
+        });
+    });
+</script>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const body = document.body;
+        const prefetchCache = new Set();
+        const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+        const isInternalNavigableLink = function (link) {
+            if (!link || link.target === '_blank' || link.hasAttribute('download')) {
+                return false;
+            }
+
+            const href = link.getAttribute('href');
+            if (!href || href.startsWith('#') || href.startsWith('javascript:')) {
+                return false;
+            }
+
+            const url = new URL(link.href, window.location.origin);
+            if (url.origin !== window.location.origin) {
+                return false;
+            }
+
+            return url.pathname + url.search !== window.location.pathname + window.location.search;
+        };
+
+        const prefetchLink = function (link) {
+            if (!isInternalNavigableLink(link)) {
+                return;
+            }
+
+            const url = new URL(link.href, window.location.origin);
+            const key = url.pathname + url.search;
+            if (prefetchCache.has(key)) {
+                return;
+            }
+
+            prefetchCache.add(key);
+            const hint = document.createElement('link');
+            hint.rel = 'prefetch';
+            hint.href = url.href;
+            hint.as = 'document';
+            document.head.appendChild(hint);
+        };
+
+        document.addEventListener('mouseover', function (event) {
+            const link = event.target.closest('a[href]');
+            prefetchLink(link);
+        });
+
+        document.addEventListener('touchstart', function (event) {
+            const link = event.target.closest('a[href]');
+            prefetchLink(link);
+        }, { passive: true });
+
+        document.addEventListener('click', function (event) {
+            const link = event.target.closest('a[href]');
+            if (!isInternalNavigableLink(link)) {
+                return;
+            }
+
+            if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
+                return;
+            }
+
+            if (event.defaultPrevented) {
+                return;
+            }
+
+            if (!reducedMotion) {
+                body.classList.add('page-transition-active', 'page-transition-leaving');
+                window.setTimeout(function () {
+                    body.classList.add('page-transition-finishing');
+                }, 140);
+            }
+        }, true);
+
+        window.addEventListener('pageshow', function () {
+            body.classList.remove('page-transition-active', 'page-transition-leaving', 'page-transition-finishing');
         });
     });
 </script>

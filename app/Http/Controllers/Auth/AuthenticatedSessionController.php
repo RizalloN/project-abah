@@ -8,6 +8,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 use PDOException;
 
@@ -27,15 +28,10 @@ class AuthenticatedSessionController extends Controller
     public function store(LoginRequest $request): RedirectResponse
     {
         try {
+            $this->ensureDatabaseIsReachable();
             $request->authenticate();
         } catch (QueryException|PDOException $e) {
-            $message = strtolower($e->getMessage());
-
-            if (
-                str_contains($message, 'sqlstate[hy000] [2002]')
-                || str_contains($message, 'connection refused')
-                || str_contains($message, 'actively refused')
-            ) {
+            if ($this->isDatabaseConnectionError($e)) {
                 return back()
                     ->withInput($request->only('pn', 'remember'))
                     ->withErrors([
@@ -49,6 +45,22 @@ class AuthenticatedSessionController extends Controller
         $request->session()->regenerate();
 
         return redirect()->intended(route('dashboard', absolute: false));
+    }
+
+    private function ensureDatabaseIsReachable(): void
+    {
+        DB::connection()->getPdo();
+    }
+
+    private function isDatabaseConnectionError(QueryException|PDOException $e): bool
+    {
+        $message = strtolower($e->getMessage());
+
+        return str_contains($message, 'sqlstate[hy000] [2002]')
+            || str_contains($message, 'connection refused')
+            || str_contains($message, 'actively refused')
+            || str_contains($message, 'server has gone away')
+            || str_contains($message, 'php_network_getaddresses');
     }
 
     /**

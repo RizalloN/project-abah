@@ -1531,7 +1531,7 @@ class ImportFileController extends Controller
                     'updated_at' => now(),
                 ]);
 
-                if ($finalStatus === 'completed') {
+                if ($totalSuccess > 0) {
                     $this->syncReportArtifacts($tableName, $jobId, $syncPeriod);
                 }
 
@@ -1934,7 +1934,7 @@ class ImportFileController extends Controller
             'updated_at' => now(),
         ]);
 
-        if ($finalStatus === 'completed') {
+        if ($totalSuccess > 0) {
             $this->syncReportArtifacts($tableName, $jobId, $samplePosisi ?: $samplePeriode);
         }
 

@@ -17,6 +17,9 @@ class DataReportController extends Controller
 
     public function fetchNewPayrollData(Request $request)
     {
+        @set_time_limit(0);
+        DB::connection()->disableQueryLog();
+
         $selectedDate = Carbon::parse($request->input('posisi', date('Y-m-d')));
         $branches = ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'];
 
@@ -321,6 +324,9 @@ public function performanceBrilink()
 
     public function fetchData(Request $request)
     {
+        @set_time_limit(0);
+        DB::connection()->disableQueryLog();
+
         $id_report = $request->input('id_report', 1);
         $branches = $request->input('branches', ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO']); 
         $posisi = $request->input('posisi'); 
@@ -1131,21 +1137,16 @@ public function performanceBrilink()
                 ];
 
 
-                // 🔥 FIX: Akumulasi nilai RAW (bukan growth) agar total YoY% bisa dihitung benar
-            $raw_totals['ureg_rekening']['curr'] += $rek->ureg_rek_curr;
-                $raw_totals['ureg_rekening']['yoy_prev'] = $rek->ureg_rek_yoy;
-                $raw_totals['ureg_rekening']['dec']  += $rek->ureg_rek_ytd;
-                $raw_totals['ureg_rekening']['prev']  += $rek->ureg_rek_mtd;
-                $raw_totals['ureg_rekening']['mtd_raw']  += $rek->ureg_rek_mtd;
-                $raw_totals['ureg_rekening']['ytd_raw']  += $rek->ureg_rek_ytd;
-                $raw_totals['ureg_rekening']['yoy_raw']  += $rek->ureg_rek_yoy;
+                // Akumulasi nilai raw periode agar total growth dan yoy_pct konsisten.
+                $raw_totals['ureg_rekening']['curr'] += (float) $rek->ureg_rek_curr;
+                $raw_totals['ureg_rekening']['mtd'] += (float) $rek->ureg_rek_mtd;
+                $raw_totals['ureg_rekening']['ytd'] += (float) $rek->ureg_rek_ytd;
+                $raw_totals['ureg_rekening']['yoy'] += (float) $rek->ureg_rek_yoy;
 
-                $raw_totals['ureg_finansial']['curr'] += $fin->ureg_fin_curr;
-                $raw_totals['ureg_finansial']['yoy_prev'] = $fin->ureg_fin_yoy;
-                $raw_totals['ureg_finansial']['dec']  += $fin->ureg_fin_ytd;
-                $raw_totals['ureg_finansial']['prev']  += $fin->ureg_fin_mtd;
-                $raw_totals['ureg_finansial']['mtd_raw']  += $fin->ureg_fin_mtd;
-                $raw_totals['ureg_finansial']['ytd_raw']  += $fin->ureg_fin_ytd;
+                $raw_totals['ureg_finansial']['curr'] += (float) $fin->ureg_fin_curr;
+                $raw_totals['ureg_finansial']['mtd'] += (float) $fin->ureg_fin_mtd;
+                $raw_totals['ureg_finansial']['ytd'] += (float) $fin->ureg_fin_ytd;
+                $raw_totals['ureg_finansial']['yoy'] += (float) $fin->ureg_fin_yoy;
             }
 
             // 🔥 FIX: Hitung total YoY% dari raw totals — aman dari division by zero
@@ -1241,3 +1242,4 @@ public function performanceBrilink()
         ];
     }
 }
+

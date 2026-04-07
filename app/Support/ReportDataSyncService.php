@@ -14,6 +14,7 @@ class ReportDataSyncService
     private const DASHBOARD_SNAPSHOT_TABLE = 'dashboard_pinjaman_snapshots';
     private const RASIO_SNAPSHOT_TABLE = 'rasio_casa_debitur_snapshots';
     private const DORMANT_SNAPSHOT_TABLE = 'rekening_dormant_snapshots';
+    private const CACHE_VERSION_KEY = 'report_cache_version:global';
 
     public function __construct(
         private readonly ReportSnapshotBuilder $snapshotBuilder
@@ -65,13 +66,15 @@ class ReportDataSyncService
         $this->refreshTableStatistics($normalizedTable, $periodHint, $jobId, $source);
 
         try {
-            Cache::flush();
-            $this->writeAudit($normalizedTable, $periodHint, $jobId, $source, 'cache_flush', 'success');
+            $newVersion = $this->bumpReportCacheVersion();
+            $this->writeAudit($normalizedTable, $periodHint, $jobId, $source, 'cache_invalidate', 'success', [
+                'context' => ['cache_version' => $newVersion],
+            ]);
         } catch (Throwable $e) {
-            $this->writeAudit($normalizedTable, $periodHint, $jobId, $source, 'cache_flush', 'failed', [
+            $this->writeAudit($normalizedTable, $periodHint, $jobId, $source, 'cache_invalidate', 'failed', [
                 'message' => $e->getMessage(),
             ]);
-            Log::warning('Gagal flush cache setelah import: ' . $e->getMessage(), [
+            Log::warning('Gagal invalidasi cache report setelah import: ' . $e->getMessage(), [
                 'table' => $normalizedTable,
             ]);
         }
@@ -212,6 +215,13 @@ class ReportDataSyncService
     private function elapsedMs(float $startedAt): int
     {
         return (int) round((microtime(true) - $startedAt) * 1000);
+    }
+
+    private function bumpReportCacheVersion(): int
+    {
+        Cache::add(self::CACHE_VERSION_KEY, 1, now()->addDays(30));
+
+        return (int) Cache::increment(self::CACHE_VERSION_KEY);
     }
 
     private function writeAudit(string $tableName, ?string $periodHint, ?int $jobId, ?string $source, string $action, string $status, array $payload = []): void

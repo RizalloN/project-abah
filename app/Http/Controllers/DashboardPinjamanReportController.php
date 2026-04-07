@@ -81,6 +81,7 @@ class DashboardPinjamanReportController extends Controller
         }
 
         $cacheKey = 'dashboard_pinjaman_filters:v2:' . md5(json_encode([
+            'cache_version' => $this->reportCacheVersion(),
             'periode' => $selectedPeriod,
             'filters' => $filters,
         ]));
@@ -132,6 +133,7 @@ class DashboardPinjamanReportController extends Controller
         $phPeriod = $this->resolvePhPeriod($selectedPeriod);
 
         $cacheKey = 'dashboard_pinjaman_matrix:v6:' . md5(json_encode([
+            'cache_version' => $this->reportCacheVersion(),
             'periode' => $selectedPeriod,
             'comparison' => $comparisonPeriod,
             'ph_period' => $phPeriod,
@@ -489,6 +491,7 @@ class DashboardPinjamanReportController extends Controller
     {
         try {
             $cacheKey = 'dashboard_pinjaman_distinct:v2:' . md5(json_encode([
+                'cache_version' => $this->reportCacheVersion(),
                 'column' => $column,
                 'direction' => $desc ? 'desc' : 'asc',
             ]));
@@ -534,7 +537,9 @@ class DashboardPinjamanReportController extends Controller
 
     private function fetchPeriods(): Collection
     {
-        return Cache::remember('dashboard_pinjaman_periods', now()->addMinutes(10), function () {
+        $cacheKey = 'dashboard_pinjaman_periods:v' . $this->reportCacheVersion();
+
+        return Cache::remember($cacheKey, now()->addMinutes(10), function () {
             return $this->fetchDistinctValues('periode', desc: true)
                 ->map(function ($periode) {
                     try {
@@ -556,7 +561,9 @@ class DashboardPinjamanReportController extends Controller
                     ->max('periode');
             }
 
-            return Cache::remember('dashboard_pinjaman_latest_period', now()->addMinutes(10), function () {
+            $cacheKey = 'dashboard_pinjaman_latest_period:v' . $this->reportCacheVersion();
+
+            return Cache::remember($cacheKey, now()->addMinutes(10), function () {
                 return DB::table('daily_loan_dinamis')->max('periode');
             });
         } catch (Throwable) {
@@ -650,28 +657,36 @@ class DashboardPinjamanReportController extends Controller
             return false;
         }
 
-        return Cache::remember('dashboard_pinjaman_snapshot_exists:' . $period, now()->addMinutes(10), function () use ($period) {
+        $cacheKey = 'dashboard_pinjaman_snapshot_exists:v' . $this->reportCacheVersion() . ':' . $period;
+
+        return Cache::remember($cacheKey, now()->addMinutes(10), function () use ($period) {
             return DB::table(self::SNAPSHOT_TABLE)
                 ->where('periode', $period)
                 ->exists();
         });
     }
 
+    private function reportCacheVersion(): int
+    {
+        return (int) Cache::get('report_cache_version:global', 1);
+    }
+
     private function buildTableWideVersionSignature(string $table): string
     {
         try {
             $timestampExpression = $this->buildLatestTimestampExpression($table);
+            $identityColumn = $this->resolveIdentityColumn($table);
             $row = DB::table($table)
                 ->selectRaw("
                     COUNT(*) as total_rows,
-                    COALESCE(MAX(id), 0) as max_id,
+                    COALESCE(MAX({$identityColumn}), '') as max_identity,
                     COALESCE(MAX({$timestampExpression}), '1970-01-01 00:00:00') as latest_change
                 ")
                 ->first();
 
             return implode('|', [
                 (int) ($row->total_rows ?? 0),
-                (int) ($row->max_id ?? 0),
+                (string) ($row->max_identity ?? ''),
                 (string) ($row->latest_change ?? '1970-01-01 00:00:00'),
             ]);
         } catch (Throwable) {
@@ -687,11 +702,12 @@ class DashboardPinjamanReportController extends Controller
 
         try {
             $timestampExpression = $this->buildLatestTimestampExpression($table);
+            $identityColumn = $this->resolveIdentityColumn($table);
             $row = DB::table($table)
                 ->where($periodColumn, $periodValue)
                 ->selectRaw("
                     COUNT(*) as total_rows,
-                    COALESCE(MAX(id), 0) as max_id,
+                    COALESCE(MAX({$identityColumn}), '') as max_identity,
                     COALESCE(MAX({$timestampExpression}), '1970-01-01 00:00:00') as latest_change
                 ")
                 ->first();
@@ -699,7 +715,7 @@ class DashboardPinjamanReportController extends Controller
             return implode('|', [
                 $periodValue,
                 (int) ($row->total_rows ?? 0),
-                (int) ($row->max_id ?? 0),
+                (string) ($row->max_identity ?? ''),
                 (string) ($row->latest_change ?? '1970-01-01 00:00:00'),
             ]);
         } catch (Throwable) {
@@ -722,6 +738,40 @@ class DashboardPinjamanReportController extends Controller
 
         if ($hasCreated) {
             return 'created_at';
+        }
+
+        return $this->resolveIdentityColumn($table);
+    }
+
+    private function resolveIdentityColumn(string $table): string
+    {
+        if (Schema::hasColumn($table, 'uniqueid_dps')) {
+            return 'uniqueid_dps';
+        }
+
+        if (Schema::hasColumn($table, 'uniqueid_rcds')) {
+            return 'uniqueid_rcds';
+        }
+
+        if (Schema::hasColumn($table, 'uniqueid_rds')) {
+            return 'uniqueid_rds';
+        }
+
+        if (Schema::hasColumn($table, 'uniqueid_namareport')) {
+            return 'uniqueid_namareport';
+        }
+
+        if (Schema::hasColumn($table, 'uniqueid_SMPN')) {
+            return 'uniqueid_SMPN';
+        }
+
+        if (Schema::hasColumn($table, 'id')) {
+            return 'id';
+        }
+
+        $columns = Schema::getColumnListing($table);
+        if (!empty($columns)) {
+            return $columns[0];
         }
 
         return 'id';

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Import;
 
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Import\Concerns\AllocatesGapIds;
+use App\Support\ReportDataSyncService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -314,6 +315,17 @@ class ImportPerformancePisPerProdukController extends Controller
             'updated_at' => now(),
         ]);
 
+        if ($totalSuccess > 0) {
+            try {
+                app(ReportDataSyncService::class)->syncImportedTable(self::TABLE_NAME, $context['posisi'] ?? null, $jobId, static::class);
+            } catch (\Throwable $e) {
+                Log::warning('Sinkronisasi report Performance PIS gagal: ' . $e->getMessage(), [
+                    'job_id' => $jobId,
+                    'table' => self::TABLE_NAME,
+                ]);
+            }
+        }
+
         if ($finalStatus === 'completed' && $totalSuccess >= $totalRows) {
             $this->cleanupSuccessfulImportArtifacts($jobId, $relativePath);
         }
@@ -557,6 +569,17 @@ class ImportPerformancePisPerProdukController extends Controller
                     'total_failed' => $totalFailed,
                     'updated_at' => now(),
                 ]);
+
+                if ($totalSuccess > 0) {
+                    try {
+                        app(ReportDataSyncService::class)->syncImportedTable(self::TABLE_NAME, $context['posisi'] ?? null, $jobId, static::class);
+                    } catch (\Throwable $e) {
+                        Log::warning('Sinkronisasi report Performance PIS (stream) gagal: ' . $e->getMessage(), [
+                            'job_id' => $jobId,
+                            'table' => self::TABLE_NAME,
+                        ]);
+                    }
+                }
 
                 if ($totalFailed === 0 && $totalSuccess >= $totalPreparedRows) {
                     $this->cleanupSuccessfulImportArtifacts($jobId, $relativePath, [$stagingPath]);

@@ -29,6 +29,7 @@ class ReportSnapshotBuilder
         'KC Ngawi' => 'KC NGAWI',
         'KC Ponorogo' => 'KC PONOROGO',
     ];
+    private const LOAN_SOURCE_KEY_COLUMN = 'uniqueid_namareport';
 
     public function rebuild(string $report = 'all', ?string $period = null, bool $force = false): array
     {
@@ -101,18 +102,18 @@ class ReportSnapshotBuilder
             ->where('periode', $period)
             ->whereNotNull('nomor_rekening1')
             ->where('nomor_rekening1', '<>', '')
-            ->selectRaw("
-                id,
+            ->selectRaw(
+                self::LOAN_SOURCE_KEY_COLUMN . " as source_uniqueid,
                 TRIM(nomor_rekening1) as account_number,
                 COALESCE(baki_debet1, 0) as loan_balance,
                 {$bucketExpression} as quality_bucket,
                 COALESCE(segmen_dashboard, '') as segmen_dashboard,
                 COALESCE(produk_dashboard, '') as produk_dashboard,
                 COALESCE(cabang1, '') as cabang1,
-                COALESCE(unit1, '') as unit1
-            ")
-            ->orderBy('id')
-            ->chunkById(2000, function ($rows) use (&$buffer, &$inserted, $period) {
+                COALESCE(unit1, '') as unit1"
+            )
+            ->orderBy(self::LOAN_SOURCE_KEY_COLUMN)
+            ->chunk(2000, function ($rows) use (&$buffer, &$inserted, $period) {
                 foreach ($rows as $row) {
                     $accountNumber = trim((string) ($row->account_number ?? ''));
 
@@ -121,6 +122,11 @@ class ReportSnapshotBuilder
                     }
 
                     $buffer[] = [
+                        'uniqueid_dps' => $this->makeDashboardSnapshotId(
+                            $period,
+                            (string) ($row->source_uniqueid ?? ''),
+                            $accountNumber
+                        ),
                         'periode' => $period,
                         'account_number' => $accountNumber,
                         'loan_balance' => (float) ($row->loan_balance ?? 0),
@@ -163,6 +169,7 @@ class ReportSnapshotBuilder
         foreach (($snapshot['branch_labels'] ?? []) as $branchKey => $branchLabel) {
             foreach (self::SEGMENTS as $segmentKey) {
                 $rows[] = [
+                    'uniqueid_rcds' => $this->makeRasioSnapshotId($loanPeriod, $branchKey, $segmentKey),
                     'loan_period' => $loanPeriod,
                     'casa_period' => $snapshot['casa_date'],
                     'branch_key' => $branchKey,
@@ -222,6 +229,11 @@ class ReportSnapshotBuilder
             }
 
             $buffer[] = [
+                'uniqueid_rds' => $this->makeDormantSnapshotId(
+                    $period,
+                    $rawBranch,
+                    trim((string) ($row->unit_kerja ?? ''))
+                ),
                 'posisi' => $period,
                 'branch_label' => $branchLabel,
                 'raw_branch' => $rawBranch,
@@ -655,5 +667,35 @@ class ReportSnapshotBuilder
         }
 
         return null;
+    }
+
+    private function makeDashboardSnapshotId(string $period, string $sourceUniqueId, string $accountNumber): string
+    {
+        return hash('sha256', implode('|', [
+            'dps',
+            $period,
+            trim($sourceUniqueId),
+            trim($accountNumber),
+        ]));
+    }
+
+    private function makeRasioSnapshotId(string $loanPeriod, string $branchKey, string $segmentKey): string
+    {
+        return hash('sha256', implode('|', [
+            'rcds',
+            $loanPeriod,
+            trim($branchKey),
+            trim($segmentKey),
+        ]));
+    }
+
+    private function makeDormantSnapshotId(string $period, string $rawBranch, string $unitKerja): string
+    {
+        return hash('sha256', implode('|', [
+            'rds',
+            $period,
+            trim($rawBranch),
+            trim($unitKerja),
+        ]));
     }
 }

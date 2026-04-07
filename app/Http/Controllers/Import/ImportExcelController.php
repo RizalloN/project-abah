@@ -2987,6 +2987,17 @@ class ImportExcelController extends Controller
                     ]);
                 }
 
+                if ($jobId > 0 && $totalInserted > 0) {
+                    try {
+                        app(ReportDataSyncService::class)->syncImportedJob($jobId, source: static::class);
+                    } catch (\Throwable $e) {
+                        Log::warning('Failed to sync report snapshots after import stream completion: ' . $e->getMessage(), [
+                            'job_id' => $jobId,
+                            'status' => $finalStatus,
+                        ]);
+                    }
+                }
+
                 $send('complete', [
                     'total_success' => $totalInserted,
                     'total_failed'  => $totalFailed,
@@ -3265,18 +3276,29 @@ class ImportExcelController extends Controller
                         ? ($totalInserted > 0 ? 'failed_partial' : 'failed')
                         : 'completed';
 
-                    if ($jobId > 0) {
-                        DB::table('import_jobs')->where('id', $jobId)->update([
-                            'total_success' => $totalInserted,
-                            'total_failed'  => $totalFailed,
-                            'status'        => $finalStatus,
-                            'updated_at'    => now(),
+                if ($jobId > 0) {
+                    DB::table('import_jobs')->where('id', $jobId)->update([
+                        'total_success' => $totalInserted,
+                        'total_failed'  => $totalFailed,
+                        'status'        => $finalStatus,
+                        'updated_at'    => now(),
+                    ]);
+                }
+
+                if ($jobId > 0 && $totalInserted > 0) {
+                    try {
+                        app(ReportDataSyncService::class)->syncImportedJob($jobId, source: static::class);
+                    } catch (\Throwable $e) {
+                        Log::warning('Failed to sync report snapshots after native CSV import stream: ' . $e->getMessage(), [
+                            'job_id' => $jobId,
+                            'status' => $finalStatus,
                         ]);
                     }
+                }
 
-                    if ($finalStatus === 'completed') {
-                        $this->cleanupImportedFile($relativePath, $path);
-                    }
+                if ($finalStatus === 'completed') {
+                    $this->cleanupImportedFile($relativePath, $path);
+                }
 
                     $send('complete', [
                         'total_success' => $totalInserted,
@@ -3497,6 +3519,17 @@ class ImportExcelController extends Controller
                         'status'        => $finalStatus,
                         'updated_at'    => now(),
                     ]);
+                }
+
+                if ($jobId > 0 && $totalInserted > 0 && $finalStatus !== 'completed') {
+                    try {
+                        app(ReportDataSyncService::class)->syncImportedJob($jobId, source: static::class);
+                    } catch (\Throwable $e) {
+                        Log::warning('Failed to sync report snapshots after chunk import stream: ' . $e->getMessage(), [
+                            'job_id' => $jobId,
+                            'status' => $finalStatus,
+                        ]);
+                    }
                 }
 
                 if ($finalStatus === 'completed') {

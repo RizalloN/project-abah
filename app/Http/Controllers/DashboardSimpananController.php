@@ -5,11 +5,18 @@ namespace App\Http\Controllers;
 use Carbon\Carbon;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Throwable;
 
 class DashboardSimpananController extends Controller
 {
+    private const SUMMARY_CACHE_MINUTES = 5;
+    private const SUMMARY_LATEST_CACHE_MINUTES = 30;
+    private const TOP_BRANCH_CACHE_MINUTES = 5;
+    private const CACHE_LOCK_SECONDS = 20;
+
     public function index(): View
     {
         $dashboard = $this->buildDashboardPayload();
@@ -213,7 +220,39 @@ class DashboardSimpananController extends Controller
 
     private function buildPeriodSummary(string $period): array
     {
+        $cacheKey = 'dashboard_simpanan:summary:v' . $this->reportCacheVersion() . ':' . $period;
+        $latestKey = $cacheKey . ':latest';
+        $ttl = now()->addMinutes(self::SUMMARY_CACHE_MINUTES);
+        $latestTtl = now()->addMinutes(self::SUMMARY_LATEST_CACHE_MINUTES);
+        $lock = Cache::lock($cacheKey . ':lock', self::CACHE_LOCK_SECONDS);
+
+        try {
+            return $lock->block(5, function () use ($cacheKey, $latestKey, $ttl, $latestTtl, $period) {
+                $cached = Cache::get($cacheKey);
+                if (is_array($cached)) {
+                    return $cached;
+                }
+
+                $summary = $this->queryPeriodSummary($period);
+                Cache::put($cacheKey, $summary, $ttl);
+                Cache::put($latestKey, $summary, $latestTtl);
+
+                return $summary;
+            });
+        } catch (Throwable) {
+            $latest = Cache::get($latestKey);
+            if (is_array($latest)) {
+                return $latest;
+            }
+
+            return $this->queryPeriodSummary($period);
+        }
+    }
+
+    private function queryPeriodSummary(string $period): array
+    {
         $summary = DB::table('simpanan_multipn')
+            ->from(DB::raw('simpanan_multipn FORCE INDEX (idx_smp_posisi_cif_jenis)'))
             ->where('posisi', $period)
             ->selectRaw('COALESCE(SUM(COALESCE(saldo_idr, 0)), 0) as total_balance')
             ->selectRaw('COUNT(DISTINCT no_rekening) as account_count')
@@ -242,25 +281,31 @@ class DashboardSimpananController extends Controller
 
     private function fetchTopBranches(string $period): Collection
     {
-        return DB::table('simpanan_multipn')
-            ->where('posisi', $period)
-            ->whereNotNull('kantor_cabang')
-            ->where('kantor_cabang', '<>', '')
-            ->selectRaw('kantor_cabang, COALESCE(SUM(COALESCE(saldo_idr, 0)), 0) as total_balance')
-            ->groupBy('kantor_cabang')
-            ->orderByDesc('total_balance')
-            ->limit(5)
-            ->get()
-            ->map(function ($row) {
-                $balance = (float) ($row->total_balance ?? 0);
+        $cacheKey = 'dashboard_simpanan:top_branches:v' . $this->reportCacheVersion() . ':' . $period;
 
-                return [
-                    'label' => $this->simplifyBranchLabel((string) ($row->kantor_cabang ?? '-')),
-                    'full_label' => (string) ($row->kantor_cabang ?? '-'),
-                    'balance' => $balance,
-                    'display' => $this->formatCurrencyCompact($balance),
-                ];
-            });
+        $rows = Cache::remember($cacheKey, now()->addMinutes(self::TOP_BRANCH_CACHE_MINUTES), function () use ($period) {
+            return DB::table('simpanan_multipn')
+                ->from(DB::raw('simpanan_multipn FORCE INDEX (idx_smp_posisi_status_cabang_unit)'))
+                ->where('posisi', $period)
+                ->whereNotNull('kantor_cabang')
+                ->where('kantor_cabang', '<>', '')
+                ->selectRaw('kantor_cabang, COALESCE(SUM(COALESCE(saldo_idr, 0)), 0) as total_balance')
+                ->groupBy('kantor_cabang')
+                ->orderByDesc('total_balance')
+                ->limit(5)
+                ->get();
+        });
+
+        return collect($rows)->map(function ($row) {
+            $balance = (float) ($row->total_balance ?? 0);
+
+            return [
+                'label' => $this->simplifyBranchLabel((string) ($row->kantor_cabang ?? '-')),
+                'full_label' => (string) ($row->kantor_cabang ?? '-'),
+                'balance' => $balance,
+                'display' => $this->formatCurrencyCompact($balance),
+            ];
+        });
     }
 
     private function buildComposition(array $summary): array
@@ -476,5 +521,10 @@ class DashboardSimpananController extends Controller
         }
 
         return $badgeCompatible ? 'badge-secondary' : 'text-muted';
+    }
+
+    private function reportCacheVersion(): int
+    {
+        return (int) Cache::get('report_cache_version:global', 1);
     }
 }

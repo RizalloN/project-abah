@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Import;
 
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Import\Concerns\AllocatesGapIds;
+use App\Support\ReportDataSyncService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -386,6 +387,17 @@ class ImportCasaBrilinkController extends Controller
                     'updated_at' => now(),
                 ]);
 
+                if ($totalSuccess > 0) {
+                    try {
+                        app(ReportDataSyncService::class)->syncImportedTable($tableName, $context['periode'] ?? null, $jobId, static::class);
+                    } catch (\Throwable $e) {
+                        Log::warning('Sinkronisasi report CASA BRILINK (stream) gagal: ' . $e->getMessage(), [
+                            'job_id' => $jobId,
+                            'table' => $tableName,
+                        ]);
+                    }
+                }
+
                 $this->cleanupSuccessfulImportArtifacts($jobId, $relativePath);
 
                 $send('progress', [
@@ -558,6 +570,17 @@ class ImportCasaBrilinkController extends Controller
             'total_failed' => $totalFailed,
             'updated_at' => now(),
         ]);
+
+        if ($totalSuccess > 0) {
+            try {
+                app(ReportDataSyncService::class)->syncImportedTable($tableName, $context['periode'] ?? null, $jobId, static::class);
+            } catch (\Throwable $e) {
+                Log::warning('Sinkronisasi report CASA BRILINK gagal: ' . $e->getMessage(), [
+                    'job_id' => $jobId,
+                    'table' => $tableName,
+                ]);
+            }
+        }
 
         if ($totalFailed === 0 && $totalSuccess >= $totalRows) {
             $this->cleanupSuccessfulImportArtifacts($jobId, $relativePath);
