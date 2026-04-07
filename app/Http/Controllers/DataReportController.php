@@ -8,6 +8,109 @@ use Carbon\Carbon;
 
 class DataReportController extends Controller
 {
+    public function performanceNewPayroll()
+    {
+        $branches = ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'];
+
+        return view('report.kinerja-new-payroll', compact('branches'));
+    }
+
+    public function fetchNewPayrollData(Request $request)
+    {
+        $selectedDate = Carbon::parse($request->input('posisi', date('Y-m-d')));
+        $branches = ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'];
+
+        $effectiveSnapshot = DB::table('performance_pis_per_produk')
+            ->whereDate('posisi', '<=', $selectedDate->toDateString())
+            ->max('posisi');
+
+        if (!$effectiveSnapshot) {
+            return response()->json([
+                'status' => 'success',
+                'labels' => $this->buildNewPayrollLabels($selectedDate),
+                'effective_snapshot' => null,
+                'data' => [],
+                'total' => $this->buildEmptyNewPayrollTotal(),
+            ]);
+        }
+
+        $currStart = $selectedDate->copy()->startOfMonth()->toDateString();
+        $currEnd = $selectedDate->copy()->endOfMonth()->toDateString();
+        $prevStart = $selectedDate->copy()->subMonthNoOverflow()->startOfMonth()->toDateString();
+        $prevEnd = Carbon::parse($prevStart)->endOfMonth()->toDateString();
+        $yoyStart = $selectedDate->copy()->subYearNoOverflow()->startOfMonth()->toDateString();
+        $yoyEnd = Carbon::parse($yoyStart)->endOfMonth()->toDateString();
+
+        $rows = DB::table('performance_pis_per_produk')
+            ->selectRaw('UPPER(kanca) as branch')
+            ->selectRaw('COUNT(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN 1 END) as rekening_curr', [$currStart, $currEnd])
+            ->selectRaw('COUNT(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN 1 END) as rekening_prev', [$prevStart, $prevEnd])
+            ->selectRaw('COUNT(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN 1 END) as rekening_yoy_prev', [$yoyStart, $yoyEnd])
+            ->selectRaw('SUM(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN saldo_britama_kerjasama ELSE 0 END) as saldo_curr', [$currStart, $currEnd])
+            ->selectRaw('SUM(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN saldo_britama_kerjasama ELSE 0 END) as saldo_prev', [$prevStart, $prevEnd])
+            ->selectRaw('SUM(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN saldo_britama_kerjasama ELSE 0 END) as saldo_yoy_prev', [$yoyStart, $yoyEnd])
+            ->whereDate('posisi', $effectiveSnapshot)
+            ->whereIn(DB::raw('UPPER(kanca)'), array_map('strtoupper', $branches))
+            ->groupBy(DB::raw('UPPER(kanca)'))
+            ->get()
+            ->keyBy('branch');
+
+        $data = [];
+        $total = [
+            'branch' => 'TOTAL AREA 6',
+            'rekening' => ['curr' => 0, 'prev' => 0, 'yoy_prev' => 0, 'rka' => null],
+            'saldo' => ['curr' => 0, 'prev' => 0, 'yoy_prev' => 0, 'rka' => null],
+            'kualitas' => ['curr' => null, 'prev' => null, 'yoy_prev' => null, 'rka' => null],
+        ];
+
+        foreach ($branches as $branch) {
+            $row = $rows->get(strtoupper($branch));
+
+            $rekeningCurr = (int) ($row->rekening_curr ?? 0);
+            $rekeningPrev = (int) ($row->rekening_prev ?? 0);
+            $rekeningYoyPrev = (int) ($row->rekening_yoy_prev ?? 0);
+
+            $saldoCurr = (float) ($row->saldo_curr ?? 0);
+            $saldoPrev = (float) ($row->saldo_prev ?? 0);
+            $saldoYoyPrev = (float) ($row->saldo_yoy_prev ?? 0);
+
+            $data[] = [
+                'branch' => $branch,
+                'rekening' => $this->calculateNewPayrollMetrics($rekeningCurr, $rekeningPrev, $rekeningYoyPrev),
+                'saldo' => $this->calculateNewPayrollMetrics($saldoCurr, $saldoPrev, $saldoYoyPrev),
+                'kualitas' => $this->emptyNewPayrollMetric(),
+            ];
+
+            $total['rekening']['curr'] += $rekeningCurr;
+            $total['rekening']['prev'] += $rekeningPrev;
+            $total['rekening']['yoy_prev'] += $rekeningYoyPrev;
+
+            $total['saldo']['curr'] += $saldoCurr;
+            $total['saldo']['prev'] += $saldoPrev;
+            $total['saldo']['yoy_prev'] += $saldoYoyPrev;
+        }
+
+        $total['rekening'] = $this->calculateNewPayrollMetrics(
+            $total['rekening']['curr'],
+            $total['rekening']['prev'],
+            $total['rekening']['yoy_prev']
+        );
+
+        $total['saldo'] = $this->calculateNewPayrollMetrics(
+            $total['saldo']['curr'],
+            $total['saldo']['prev'],
+            $total['saldo']['yoy_prev']
+        );
+
+        return response()->json([
+            'status' => 'success',
+            'labels' => $this->buildNewPayrollLabels($selectedDate),
+            'effective_snapshot' => Carbon::parse($effectiveSnapshot)->toDateString(),
+            'data' => $data,
+            'total' => $total,
+        ]);
+    }
+
     // 🔥 1. VIEW PERFORMANCE EDC
     public function performanceEdc()
     {
@@ -479,6 +582,7 @@ public function performanceBrilink()
                 $vol_yoy = ($rowV->vol_yoy ?? 0) / 1000000;
 
                 $jml_mtd_val = $jml_curr - $jml_mtd; $jml_mtd_pct = $jml_mtd > 0 ? ($jml_mtd_val / $jml_mtd) * 100 : 0;
+                $prod_pct_jml = $jml_curr > 0 ? ($prod_curr / $jml_curr) * 100 : 0;
                 $prod_mtd_val = $prod_curr - $prod_mtd; $prod_mtd_pct = $prod_mtd > 0 ? ($prod_mtd_val / $prod_mtd) * 100 : 0;
                 $vol_mtd_val = $vol_curr - $vol_mtd; $vol_mtd_pct = $vol_mtd > 0 ? ($vol_mtd_val / $vol_mtd) * 100 : 0;
 
@@ -489,8 +593,10 @@ public function performanceBrilink()
                         'ytd_val' => $jml_curr - $jml_ytd, 'yoy_val' => $jml_curr - $jml_yoy
                     ],
                     'prod' => [
-                        'curr' => $prod_curr, 'mtd_val' => $prod_mtd_val, 'mtd_pct' => round($prod_mtd_pct, 1),
-                        'ytd_val' => $prod_curr - $prod_ytd, 'yoy_val' => $prod_curr - $prod_yoy
+                        'curr' => $prod_curr, 'pct_jml' => round($prod_pct_jml, 1),
+                        'mtd_val' => $prod_mtd_val, 'mtd_pct' => round($prod_mtd_pct, 1),
+                        'ytd_val' => $prod_curr - $prod_ytd, 'yoy_val' => $prod_curr - $prod_yoy,
+                        'rka' => 0, 'penc_pct' => 0
                     ],
                     'vol' => [
                         'curr' => round($vol_curr, 2), 'mtd_val' => round($vol_mtd_val, 2), 'mtd_pct' => round($vol_mtd_pct, 1),
@@ -504,6 +610,7 @@ public function performanceBrilink()
             }
 
             $t_jml_mtd_val = $totals['jml_curr'] - $totals['jml_mtd']; $t_jml_mtd_pct = $totals['jml_mtd'] > 0 ? ($t_jml_mtd_val / $totals['jml_mtd']) * 100 : 0;
+            $t_prod_pct_jml = $totals['jml_curr'] > 0 ? ($totals['prod_curr'] / $totals['jml_curr']) * 100 : 0;
             $t_prod_mtd_val = $totals['prod_curr'] - $totals['prod_mtd']; $t_prod_mtd_pct = $totals['prod_mtd'] > 0 ? ($t_prod_mtd_val / $totals['prod_mtd']) * 100 : 0;
             $t_vol_mtd_val = $totals['vol_curr'] - $totals['vol_mtd']; $t_vol_mtd_pct = $totals['vol_mtd'] > 0 ? ($t_vol_mtd_val / $totals['vol_mtd']) * 100 : 0;
 
@@ -514,8 +621,10 @@ public function performanceBrilink()
                     'ytd_val' => $totals['jml_curr'] - $totals['jml_ytd'], 'yoy_val' => $totals['jml_curr'] - $totals['jml_yoy']
                 ],
                 'prod' => [
-                    'curr' => $totals['prod_curr'], 'mtd_val' => $t_prod_mtd_val, 'mtd_pct' => round($t_prod_mtd_pct, 1),
-                    'ytd_val' => $totals['prod_curr'] - $totals['prod_ytd'], 'yoy_val' => $totals['prod_curr'] - $totals['prod_yoy']
+                    'curr' => $totals['prod_curr'], 'pct_jml' => round($t_prod_pct_jml, 1),
+                    'mtd_val' => $t_prod_mtd_val, 'mtd_pct' => round($t_prod_mtd_pct, 1),
+                    'ytd_val' => $totals['prod_curr'] - $totals['prod_ytd'], 'yoy_val' => $totals['prod_curr'] - $totals['prod_yoy'],
+                    'rka' => 0, 'penc_pct' => 0
                 ],
                 'vol' => [
                     'curr' => round($totals['vol_curr'], 2), 'mtd_val' => round($t_vol_mtd_val, 2), 'mtd_pct' => round($t_vol_mtd_pct, 1),
@@ -687,8 +796,65 @@ public function performanceBrilink()
                 'juragan' => ['curr' => 0, 'mtd' => 0, 'ytd' => 0, 'yoy' => 0],
                 'bep' => ['curr' => 0, 'mtd' => 0, 'ytd' => 0, 'yoy' => 0],
                 'trx' => ['curr' => 0, 'mtd' => 0, 'ytd' => 0, 'yoy' => 0],
-                'volume' => ['curr' => 0, 'mtd' => 0, 'yoy' => 0]
+                'volume' => ['curr' => 0, 'mtd' => 0, 'yoy' => 0],
+                'casa' => ['curr' => 0, 'mtd' => 0, 'ytd' => 0, 'yoy' => 0]
             ];
+
+            $selectedCasaDate = $current->copy()->endOfMonth();
+            $latestCasaWeb = DB::table('casa_brilink_web')
+                ->whereDate('periode', '<=', $selectedCasaDate->toDateString())
+                ->max('periode');
+            $latestCasaEdc = DB::table('casa_brilink_edc')
+                ->whereDate('periode', '<=', $selectedCasaDate->toDateString())
+                ->max('periode');
+
+            $latestCasaCandidates = array_filter([$latestCasaWeb, $latestCasaEdc]);
+            $effectiveCasaDate = !empty($latestCasaCandidates)
+                ? Carbon::parse(max($latestCasaCandidates))
+                : $selectedCasaDate->copy();
+
+            $casaPrevDate = $effectiveCasaDate->copy()->subMonthNoOverflow()->endOfMonth();
+            $casaYoyDate = $effectiveCasaDate->copy()->subYearNoOverflow()->endOfMonth();
+            $casaYtdDate = Carbon::create($effectiveCasaDate->year - 1, 12, 1)->endOfMonth();
+
+            $fetchCasaByPeriod = function (Carbon $period) use ($branches) {
+                $branchKeys = array_map('strtoupper', $branches);
+
+                $webRows = DB::table('casa_brilink_web')
+                    ->selectRaw('UPPER(TRIM(mbdesc)) as branch')
+                    ->selectRaw('SUM(COALESCE(jml_nominal_casa, 0)) as total_nominal')
+                    ->whereDate('periode', $period->toDateString())
+                    ->whereIn(DB::raw('UPPER(TRIM(mbdesc))'), $branchKeys)
+                    ->groupBy(DB::raw('UPPER(TRIM(mbdesc))'))
+                    ->get();
+
+                $edcRows = DB::table('casa_brilink_edc')
+                    ->selectRaw('UPPER(TRIM(mbdesc)) as branch')
+                    ->selectRaw('SUM(COALESCE(jml_nominal_casa, 0)) as total_nominal')
+                    ->whereDate('periode', $period->toDateString())
+                    ->whereIn(DB::raw('UPPER(TRIM(mbdesc))'), $branchKeys)
+                    ->groupBy(DB::raw('UPPER(TRIM(mbdesc))'))
+                    ->get();
+
+                $merged = [];
+
+                foreach ($webRows as $row) {
+                    $branch = strtoupper(trim((string) $row->branch));
+                    $merged[$branch] = ($merged[$branch] ?? 0) + (float) $row->total_nominal;
+                }
+
+                foreach ($edcRows as $row) {
+                    $branch = strtoupper(trim((string) $row->branch));
+                    $merged[$branch] = ($merged[$branch] ?? 0) + (float) $row->total_nominal;
+                }
+
+                return $merged;
+            };
+
+            $casaCurrMap = $fetchCasaByPeriod($effectiveCasaDate);
+            $casaPrevMap = $fetchCasaByPeriod($casaPrevDate);
+            $casaYtdMap = $fetchCasaByPeriod($casaYtdDate);
+            $casaYoyMap = $fetchCasaByPeriod($casaYoyDate);
 
             foreach ($branches as $branch) {
 
@@ -761,6 +927,17 @@ public function performanceBrilink()
                 $vol_mtd = $hasCurrData ? ($vol_curr - $vol_prev) : 0;
                 $vol_yoy_val = $hasCurrData ? ($vol_curr - $vol_yoy) : 0;
 
+                $branchKey = strtoupper(trim($branch));
+                $casa_curr = (float) ($casaCurrMap[$branchKey] ?? 0);
+                $casa_prev = (float) ($casaPrevMap[$branchKey] ?? 0);
+                $casa_ytd = (float) ($casaYtdMap[$branchKey] ?? 0);
+                $casa_yoy = (float) ($casaYoyMap[$branchKey] ?? 0);
+
+                $casa_has_curr = $casa_curr > 0 || $casa_prev > 0 || $casa_ytd > 0 || $casa_yoy > 0;
+                $casa_mtd = $casa_has_curr ? ($casa_curr - $casa_prev) : 0;
+                $casa_ytd_val = $casa_has_curr ? ($casa_curr - $casa_ytd) : 0;
+                $casa_yoy_val = $casa_has_curr ? ($casa_curr - $casa_yoy) : 0;
+
                 $data[] = [
                     'branch' => $branch,
                     'agen' => [
@@ -778,6 +955,10 @@ public function performanceBrilink()
                     'volume' => [
                         'curr' => $vol_curr, 'mtd' => $vol_mtd, 'yoy' => $vol_yoy_val,
                     ],
+                    'casa' => [
+                        'curr' => round($casa_curr, 2), 'mtd' => round($casa_mtd, 2),
+                        'ytd' => round($casa_ytd_val, 2), 'yoy' => round($casa_yoy_val, 2),
+                    ],
                 ];
                 
                 $totals['agen']['curr'] += $agen_curr; $totals['agen']['mtd'] += $agen_mtd; $totals['agen']['ytd'] += $agen_ytd_val; $totals['agen']['yoy'] += $agen_yoy_val;
@@ -785,6 +966,7 @@ public function performanceBrilink()
                 $totals['bep']['curr'] += $bep_curr; $totals['bep']['mtd'] += $bep_mtd; $totals['bep']['ytd'] += $bep_ytd_val; $totals['bep']['yoy'] += $bep_yoy_val;
                 $totals['trx']['curr'] += $trx_curr; $totals['trx']['mtd'] += $trx_mtd; $totals['trx']['ytd'] += $trx_ytd_val; $totals['trx']['yoy'] += $trx_yoy_val;
                 $totals['volume']['curr'] += $vol_curr; $totals['volume']['mtd'] += $vol_mtd; $totals['volume']['yoy'] += $vol_yoy_val;
+                $totals['casa']['curr'] += $casa_curr; $totals['casa']['mtd'] += $casa_mtd; $totals['casa']['ytd'] += $casa_ytd_val; $totals['casa']['yoy'] += $casa_yoy_val;
             }
 
             return response()->json([
@@ -792,6 +974,10 @@ public function performanceBrilink()
                 'data' => $data,
                 'labels' => [
                     'curr' => $periodeCurr,
+                    'casa_curr' => $effectiveCasaDate->translatedFormat("M'y"),
+                    'casa_dec' => $casaYtdDate->translatedFormat("M'y"),
+                    'casa_prev' => $casaPrevDate->translatedFormat('d-M'),
+                    'casa_end' => $effectiveCasaDate->translatedFormat('d-M'),
                 ],
                 'total' => [
                     'branch' => 'TOTAL AREA 6',
@@ -799,7 +985,13 @@ public function performanceBrilink()
                     'juragan' => $totals['juragan'],
                     'bep' => $totals['bep'],
                     'trx' => $totals['trx'],
-                    'volume' => $totals['volume']
+                    'volume' => $totals['volume'],
+                    'casa' => [
+                        'curr' => round($totals['casa']['curr'], 2),
+                        'mtd' => round($totals['casa']['mtd'], 2),
+                        'ytd' => round($totals['casa']['ytd'], 2),
+                        'yoy' => round($totals['casa']['yoy'], 2),
+                    ]
                 ]
             ]);
         }
@@ -965,5 +1157,63 @@ public function performanceBrilink()
                 ]
             ]);
         }
+    }
+
+    private function calculateNewPayrollMetrics($curr, $prev, $yoyPrev): array
+    {
+        $curr = (float) ($curr ?? 0);
+        $prev = (float) ($prev ?? 0);
+        $yoyPrev = (float) ($yoyPrev ?? 0);
+
+        $yoy = $curr - $yoyPrev;
+        $yoyPct = $yoyPrev != 0.0 ? ($yoy / $yoyPrev) * 100 : null;
+        $pencPct = null;
+
+        return [
+            'curr' => $curr,
+            'prev' => $prev,
+            'yoy_prev' => $yoyPrev,
+            'yoy' => $yoy,
+            'yoy_pct' => $yoyPct,
+            'rka' => null,
+            'penc_pct' => $pencPct,
+        ];
+    }
+
+    private function emptyNewPayrollMetric(): array
+    {
+        return [
+            'curr' => null,
+            'prev' => null,
+            'yoy_prev' => null,
+            'yoy' => null,
+            'yoy_pct' => null,
+            'rka' => null,
+            'penc_pct' => null,
+        ];
+    }
+
+    private function buildEmptyNewPayrollTotal(): array
+    {
+        return [
+            'branch' => 'TOTAL AREA 6',
+            'rekening' => $this->calculateNewPayrollMetrics(0, 0, 0),
+            'saldo' => $this->calculateNewPayrollMetrics(0, 0, 0),
+            'kualitas' => $this->emptyNewPayrollMetric(),
+        ];
+    }
+
+    private function buildNewPayrollLabels(Carbon $selectedDate): array
+    {
+        $curr = $selectedDate->copy();
+        $prev = $selectedDate->copy()->subMonthNoOverflow();
+        $yoy = $selectedDate->copy()->subYearNoOverflow();
+
+        return [
+            'curr' => $curr->format('M-y'),
+            'prev' => $prev->format('M-y'),
+            'yoy_prev' => $yoy->format('M-y'),
+            'rka' => 'RKA ' . $curr->format('M') . ' - ' . $curr->format('y'),
+        ];
     }
 }

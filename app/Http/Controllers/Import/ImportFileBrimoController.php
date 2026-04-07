@@ -12,7 +12,52 @@ use Carbon\Carbon;
 
 class ImportFileBrimoController extends Controller
 {
-    // Variabel hardcode dihapus agar bisa dinamis sesuai report yang dipilih
+    private function hasMeaningfulImportData(array $row, array $ignoredKeys = []): bool
+    {
+        $ignoredLookup = array_fill_keys(array_map('strtolower', $ignoredKeys), true);
+
+        foreach ($row as $key => $value) {
+            if (isset($ignoredLookup[strtolower((string) $key)])) {
+                continue;
+            }
+
+            if ($value === null) {
+                continue;
+            }
+
+            if (is_string($value) && trim($value) === '') {
+                continue;
+            }
+
+            return true;
+        }
+
+        return false;
+    }
+
+    private function resolveTableName($reportData): string
+    {
+        $tableName = 'user_brimo_rpt_v2';
+
+        if ($reportData) {
+            if (!empty($reportData->table_name)) {
+                $tableName = $reportData->table_name;
+            } elseif (!empty($reportData->nama_report) && stripos($reportData->nama_report, 'fin') !== false) {
+                $tableName = 'user_brimo_fin';
+            }
+        }
+
+        if (!DB::getSchemaBuilder()->hasTable($tableName)) {
+            return 'user_brimo_rpt_v2';
+        }
+
+        return $tableName;
+    }
+
+    private function resolveUniqueSuffix(string $tableName): string
+    {
+        return $tableName === 'user_brimo_fin' ? '_UBFin' : '_UBv2';
+    }
 
     public function upload(Request $request)
     {
@@ -177,22 +222,21 @@ class ImportFileBrimoController extends Controller
         $reportData = DB::table('nama_report')->where('id_report', $idReport)->first();
 
         // 2. PENENTUAN TABEL & SUFFIX SECARA DINAMIS
-        // Selalu gunakan user_brimo_rpt_v2 atau user_brimo_fin.
-        // JANGAN gunakan $reportData->table_name karena bisa salah di DB.
-        $tableName    = 'user_brimo_rpt_v2'; // Default fallback
-        $uniqueSuffix = '_UBv2';             // Default fallback
+        // Prioritaskan nama_report.table_name agar target import mengikuti report yang dipilih.
+        $tableName = $this->resolveTableName($reportData);
+        $uniqueSuffix = $this->resolveUniqueSuffix($tableName);
 
         if ($reportData) {
             $namaReport = $reportData->nama_report ?? '';
 
             // Cek apakah laporan ini adalah User Brimo FIN
             if (stripos($namaReport, 'fin') !== false) {
-                $tableName    = 'user_brimo_fin';
-                $uniqueSuffix = '_UBFin';
+                $tableName = $this->resolveTableName($reportData);
+                $uniqueSuffix = $this->resolveUniqueSuffix($tableName);
             } else {
                 // Semua laporan Brimo lainnya (RPT V2, dll) → user_brimo_rpt_v2
-                $tableName    = 'user_brimo_rpt_v2';
-                $uniqueSuffix = '_UBv2';
+                $tableName = $this->resolveTableName($reportData);
+                $uniqueSuffix = $this->resolveUniqueSuffix($tableName);
             }
         }
 
@@ -339,7 +383,9 @@ class ImportFileBrimoController extends Controller
                     $rowData[$colName] = ($cellValue === '') ? null : $cellValue;
                 }
                 
-                $dataToInsert[] = $rowData;
+                if ($this->hasMeaningfulImportData($rowData, ['uniqueid_namareport', 'periode', 'posisi'])) {
+                    $dataToInsert[] = $rowData;
+                }
                 $rowCounter++;
             }
             fclose($handle);

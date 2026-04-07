@@ -219,6 +219,15 @@
 
                 <li class="nav-header text-uppercase" style="font-size: 0.68rem; letter-spacing: 0.16em; color: rgba(148, 163, 184, 0.78); padding-left: 0.75rem;">Report</li>
 
+                <li class="nav-item">
+                    <a href="{{ route('report.dashboard-pinjaman') }}"
+                       class="nav-link {{ request()->routeIs('report.dashboard-pinjaman') ? 'active' : '' }}"
+                       style="border-radius: 14px; margin-bottom: 0.35rem; color: rgba(226, 232, 240, 0.88);">
+                        <i class="nav-icon fas fa-chart-line"></i>
+                        <p>Dashboard Pinjaman</p>
+                    </a>
+                </li>
+
                 <li class="nav-item {{ request()->is('report/optimalisasi-digital*') ? 'menu-open' : '' }}">
                     <a href="#" class="nav-link {{ request()->is('report/optimalisasi-digital*') ? 'active' : '' }}" style="border-radius: 14px; margin-bottom: 0.35rem; color: rgba(226, 232, 240, 0.88);">
                         <i class="nav-icon fas fa-chart-pie"></i>

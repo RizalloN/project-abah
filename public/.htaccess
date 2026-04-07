@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 <IfModule mod_php.c>
     php_value upload_max_filesize 512M
     php_value post_max_size 512M
@@ -9,6 +10,13 @@
 <IfModule mod_core.c>
     LimitRequestBody 0
 </IfModule>
+=======
+php_value upload_max_filesize 768M
+php_value post_max_size 768M
+php_value memory_limit 1536M
+php_value max_execution_time 0
+php_value max_input_time -1
+>>>>>>> aac03d27b5fc1ad77f8ac232b4475dcf80979149
 
 <IfModule mod_rewrite.c>
     <IfModule mod_negotiation.c>

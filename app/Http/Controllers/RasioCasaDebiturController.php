@@ -19,10 +19,10 @@ class RasioCasaDebiturController extends Controller
     public function fetchData(Request $request)
     {
         try {
-            if (!Schema::hasColumn('daily_loan_dinamis', 'baki_debet')) {
+            if (!$this->hasAnyColumn('daily_loan_dinamis', ['baki_debet1', 'baki_debet'])) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Kolom wajib `baki_debet` belum tersedia di tabel daily_loan_dinamis. Jalankan migration dan upload ulang data Daily Loan Dinamis.',
+                    'message' => 'Kolom wajib `baki_debet1` belum tersedia di tabel daily_loan_dinamis. Jalankan migration dan upload ulang data Daily Loan Dinamis.',
                 ], 422);
             }
 
@@ -145,22 +145,33 @@ class RasioCasaDebiturController extends Controller
         $result = ['os' => [], 'casa' => [], 'branch_labels' => [], 'row_count' => 0];
         $loanKeyColumn = $this->resolveLoanIdentityColumn();
         $casaKeyColumn = $this->resolveCasaIdentityColumn();
+        $loanBranchColumn = $this->resolveExistingColumn('daily_loan_dinamis', ['cabang1', 'cabang'], 'cabang1');
+        $loanSegmentColumn = $this->resolveExistingColumn('daily_loan_dinamis', ['segmen_dashboard'], 'segmen_dashboard');
+        $loanProductColumn = $this->resolveExistingColumn('daily_loan_dinamis', ['produk_dashboard'], 'produk_dashboard');
+        $loanBalanceColumn = $this->resolveExistingColumn('daily_loan_dinamis', ['baki_debet1', 'baki_debet'], 'baki_debet1');
         $identityList = [];
         $identityMapping = [];
 
         DB::table('daily_loan_dinamis')
             ->where('periode', $targetDate)
             ->where(function($q) {
-                $q->where('cabang', 'LIKE', '%MADIUN%')
-                  ->orWhere('cabang', 'LIKE', '%MAGETAN%')
-                  ->orWhere('cabang', 'LIKE', '%NGAWI%')
-                  ->orWhere('cabang', 'LIKE', '%PONOROGO%');
+                $q->where($loanBranchColumn, 'LIKE', '%MADIUN%')
+                  ->orWhere($loanBranchColumn, 'LIKE', '%MAGETAN%')
+                  ->orWhere($loanBranchColumn, 'LIKE', '%NGAWI%')
+                  ->orWhere($loanBranchColumn, 'LIKE', '%PONOROGO%');
             })
-            ->select('id', $loanKeyColumn . ' as identity_key', 'cabang', 'segmen_dashboard', 'produk_dashboard', 'baki_debet')
+            ->select(
+                'id',
+                DB::raw('`' . $loanKeyColumn . '` as identity_key'),
+                DB::raw('`' . $loanBranchColumn . '` as cabang_value'),
+                DB::raw('`' . $loanSegmentColumn . '` as segmen_dashboard_value'),
+                DB::raw('`' . $loanProductColumn . '` as produk_dashboard_value'),
+                DB::raw('`' . $loanBalanceColumn . '` as baki_debet_value')
+            )
             ->orderBy('id')
             ->chunkById(5000, function ($loans) use (&$result, &$identityList, &$identityMapping) {
                 foreach ($loans as $loan) {
-                    $branchName = $this->normalizeBranchKey($loan->cabang);
+                    $branchName = $this->normalizeBranchKey($loan->cabang_value);
                     if ($branchName === '') {
                         continue;
                     }
@@ -171,7 +182,7 @@ class RasioCasaDebiturController extends Controller
                     }
 
                     if (!isset($result['branch_labels'][$branchName])) {
-                        $result['branch_labels'][$branchName] = $this->formatBranchLabel($loan->cabang ?: $branchName);
+                        $result['branch_labels'][$branchName] = $this->formatBranchLabel($loan->cabang_value ?: $branchName);
                     }
                     $result['row_count']++;
 
@@ -180,10 +191,10 @@ class RasioCasaDebiturController extends Controller
                         $identityList[$identityKey] = true;
                     }
 
-                    $osVal = (float)$loan->baki_debet;
+                    $osVal = (float) $loan->baki_debet_value;
                     
                     // Gunakan engine penentu bucket yang sudah diperbaiki
-                    $buckets = $this->determineBuckets($loan->segmen_dashboard, $loan->produk_dashboard);
+                    $buckets = $this->determineBuckets($loan->segmen_dashboard_value, $loan->produk_dashboard_value);
 
                     foreach ($buckets as $b) {
                         $result['os'][$branchName][$b] += $osVal;
@@ -382,6 +393,28 @@ class RasioCasaDebiturController extends Controller
         }
 
         return 'CIFNO';
+    }
+
+    private function hasAnyColumn(string $table, array $columns): bool
+    {
+        foreach ($columns as $column) {
+            if (Schema::hasColumn($table, $column)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function resolveExistingColumn(string $table, array $candidates, string $fallback): string
+    {
+        foreach ($candidates as $column) {
+            if (Schema::hasColumn($table, $column)) {
+                return $column;
+            }
+        }
+
+        return $fallback;
     }
 
     private function normalizeIdentityKey($value): string

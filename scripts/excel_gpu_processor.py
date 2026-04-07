@@ -16,6 +16,7 @@ import os
 import argparse
 import time
 import uuid
+import csv
 from datetime import datetime, date, timedelta
 
 # ── Force CPU: matikan semua GPU device sebelum import apapun ────────────────
@@ -254,6 +255,8 @@ def _run_process_inner(config):
 
     unique_id_col = 'uniqueid_SimoPN' if 'simpanan' in table_name else 'uniqueid_namareport'
     suffix        = '_SimoPN'         if 'simpanan' in table_name else '_DLD'
+    table_columns_map = {str(col).lower(): str(col) for col in table_columns}
+    unique_id_col = table_columns_map.get(unique_id_col.lower(), unique_id_col)
     skip_cols     = set(['id', unique_id_col.lower()])
 
     # Build valid headers list: [(original_col_index, header_name), ...]
@@ -263,7 +266,14 @@ def _run_process_inner(config):
         if not h.startswith('COL_'):
             valid_headers.append((int(idx_str), h))
 
-    send_progress(25, 'Mapping kolom selesai. Mulai kirim batch ke PHP untuk insert...', 0, total_rows)
+    output_csv_path = config.get('output_csv_path')
+    load_columns = [str(col).strip() for col in config.get('load_columns', []) if str(col).strip() != '']
+
+    if output_csv_path and not load_columns:
+        send_error('Kolom bulk load tidak tersedia untuk export CSV.')
+        sys.exit(1)
+
+    send_progress(25, 'Mapping kolom selesai. Menyiapkan output import...', 0, total_rows)
 
     now_str    = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     batch      = []
@@ -272,6 +282,20 @@ def _run_process_inner(config):
     start_time = time.time()
 
     row_values = df.values.tolist()
+
+    csv_file = None
+    csv_writer = None
+    if output_csv_path:
+        os.makedirs(os.path.dirname(output_csv_path), exist_ok=True)
+        csv_file = open(output_csv_path, 'w', encoding='utf-8', newline='')
+        csv_writer = csv.writer(
+            csv_file,
+            delimiter=',',
+            quotechar='"',
+            quoting=csv.QUOTE_MINIMAL,
+            lineterminator='\n',
+            doublequote=True,
+        )
 
     for row_list in row_values:
         mapped_data = {}
@@ -303,16 +327,22 @@ def _run_process_inner(config):
             db_col = excel_key.lower()
             if db_col in skip_cols:
                 continue
-            if table_columns and db_col not in table_columns:
+            if table_columns and db_col not in table_columns_map:
                 continue
-            final_row[db_col] = val
+            final_row[table_columns_map.get(db_col, db_col)] = val
 
         if len(final_row) > 3:
-            batch.append(final_row)
             rows_done += 1
 
-        # Kirim batch ke PHP via stdout
-        if len(batch) >= batch_size:
+            if csv_writer is not None:
+                csv_writer.writerow([
+                    r'\N' if final_row.get(column) is None else final_row.get(column)
+                    for column in load_columns
+                ])
+            else:
+                batch.append(final_row)
+
+        if csv_writer is None and len(batch) >= batch_size:
             print(json.dumps({'type': 'batch', 'rows': batch}, ensure_ascii=False, default=str), flush=True)
             batch = []
 
@@ -323,14 +353,98 @@ def _run_process_inner(config):
             pct     = min(90, 25 + int((rows_done / total_rows) * 65)) if total_rows > 0 else 50
             send_progress(pct, 'Memproses... (' + str(speed) + ' baris/detik)', rows_done, total_rows, speed)
 
-    # Flush sisa batch terakhir
+    if csv_file is not None:
+        csv_file.close()
+        send_progress(95, 'CSV sementara selesai dibuat. Menunggu MySQL bulk load...', rows_done, total_rows)
+        send_event('done', {'total_rows': rows_done, 'csv_path': output_csv_path})
+        return
+
     if batch:
         print(json.dumps({'type': 'batch', 'rows': batch}, ensure_ascii=False, default=str), flush=True)
 
     send_progress(95, 'File selesai diproses. Menunggu PHP selesai insert ke database...', rows_done, total_rows)
-
-    # Kirim event 'done' — PHP akan finalisasi job status dan kirim 'complete' ke browser
     send_event('done', {'total_rows': rows_done})
+
+
+def run_stage(config):
+    try:
+        import pandas as pd
+    except Exception as e:
+        send_error('Pandas tidak tersedia: ' + str(e))
+        sys.exit(1)
+
+    file_path = config['file_path']
+    header_index = int(config['header_index'])
+    normalized_headers = config['normalized_headers']
+    output_csv_path = config['output_csv_path']
+
+    if isinstance(normalized_headers, list):
+        normalized_headers = {str(i): v for i, v in enumerate(normalized_headers)}
+
+    try:
+        df = pd.read_excel(
+            file_path,
+            header=header_index,
+            engine='openpyxl',
+            dtype=object,
+        )
+        df = df.dropna(how='all').reset_index(drop=True)
+    except Exception as e:
+        send_error('Gagal membaca file Excel untuk staging: ' + str(e))
+        sys.exit(1)
+
+    valid_headers = []
+    for idx_str in sorted(normalized_headers.keys(), key=lambda x: int(x)):
+        h = normalized_headers[idx_str]
+        if not str(h).startswith('COL_'):
+            valid_headers.append((int(idx_str), str(h)))
+
+    total_rows = len(df)
+    send_progress(10, 'Memulai konversi Excel ke CSV stage...', 0, total_rows, 0)
+
+    os.makedirs(os.path.dirname(output_csv_path), exist_ok=True)
+
+    rows_done = 0
+    start_time = time.time()
+
+    with open(output_csv_path, 'w', encoding='utf-8', newline='') as csv_file:
+        writer = csv.writer(
+            csv_file,
+            delimiter=',',
+            quotechar='"',
+            quoting=csv.QUOTE_MINIMAL,
+            lineterminator='\n',
+            doublequote=True,
+        )
+
+        writer.writerow([header_name for _, header_name in valid_headers])
+
+        row_values = df.values.tolist()
+        for row_list in row_values:
+            output_row = []
+            has_value = False
+
+            for original_index, header_name in valid_headers:
+                val = row_list[original_index] if original_index < len(row_list) else None
+                val = normalize_value(header_name, val)
+                if val is not None and str(val).strip() != '':
+                    has_value = True
+                output_row.append(r'\N' if val is None else val)
+
+            if not has_value:
+                continue
+
+            writer.writerow(output_row)
+            rows_done += 1
+
+            if rows_done > 0 and rows_done % 5000 == 0:
+                elapsed = max(time.time() - start_time, 0.001)
+                speed = int(rows_done / elapsed)
+                pct = min(95, 10 + int((rows_done / max(total_rows, 1)) * 80))
+                send_progress(pct, 'Mengonversi ke CSV stage... (' + str(speed) + ' baris/detik)', rows_done, total_rows, speed)
+
+    send_progress(98, 'CSV stage selesai dibuat.', rows_done, total_rows, 0)
+    send_event('done', {'total_rows': rows_done, 'csv_path': output_csv_path})
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -340,8 +454,8 @@ def _run_process_inner(config):
 def main():
     parser = argparse.ArgumentParser(description='Excel CPU Processor untuk Laravel Import')
     parser.add_argument('--config', required=True, help='Path ke file config JSON')
-    parser.add_argument('--mode',   default='process', choices=['init', 'process'],
-                        help='Mode: init (deteksi header) | process (output batch ke PHP)')
+    parser.add_argument('--mode',   default='process', choices=['init', 'process', 'stage'],
+                        help='Mode: init | process | stage')
     args = parser.parse_args()
 
     try:
@@ -356,6 +470,8 @@ def main():
 
     if args.mode == 'init':
         run_init(config)
+    elif args.mode == 'stage':
+        run_stage(config)
     else:
         run_process(config)
 

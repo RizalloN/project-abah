@@ -85,19 +85,9 @@
                                                             </div>
                                                         </div>
                                                         <div class="p-2 bg-white" id="list_container_{{ $index }}"
-                                                             style="max-height: 250px; overflow-y: auto;">
-                                                            @foreach($formattedUniqueValues[$index] as $cleanVal)
-                                                                <div class="custom-control custom-checkbox filter-item-container mb-1">
-                                                                    <input class="custom-control-input filter-checkbox" type="checkbox"
-                                                                           id="filter_{{ $index }}_{{ $loop->index }}"
-                                                                           value="{{ $cleanVal }}"
-                                                                           data-col="{{ $index }}" checked>
-                                                                    <label for="filter_{{ $index }}_{{ $loop->index }}"
-                                                                           class="custom-control-label font-weight-normal filter-label">
-                                                                        {{ $cleanVal }}
-                                                                    </label>
-                                                                </div>
-                                                            @endforeach
+                                                             style="max-height: 250px; overflow-y: auto;"
+                                                             data-col="{{ $index }}">
+                                                            <div class="text-center text-muted py-2 small">Memuat opsi filter...</div>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -153,10 +143,13 @@
 @endsection
 
 @section('scripts')
-<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-
 <script>
 document.addEventListener('DOMContentLoaded', function () {
+    const filterOptionsMap = @json($formattedUniqueValues);
+    const filterState = {};
+    const searchTerms = {};
+    const filterRenderLimit = 200;
+
     const swalTheme = {
         customClass: {
             popup: 'swal-modern-popup',
@@ -179,16 +172,114 @@ document.addEventListener('DOMContentLoaded', function () {
         menu.addEventListener('click', function (e) { e.stopPropagation(); });
     });
 
+    Object.keys(filterOptionsMap).forEach(function (col) {
+        const values = Array.isArray(filterOptionsMap[col]) ? filterOptionsMap[col].map(function (value) {
+            return String(value);
+        }) : [];
+
+        filterState[col] = {
+            allValues: values,
+            selectedValues: new Set(values),
+        };
+        searchTerms[col] = '';
+    });
+
+    function escapeHtml(value) {
+        return String(value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
+    function getFilteredValues(col) {
+        const state = filterState[col];
+        if (!state) {
+            return [];
+        }
+
+        const term = (searchTerms[col] || '').toLowerCase();
+        if (!term) {
+            return state.allValues.slice();
+        }
+
+        return state.allValues.filter(function (value) {
+            return value.toLowerCase().includes(term);
+        });
+    }
+
+    function syncSelectAllCheckbox(col, filteredValues) {
+        const selectAll = document.getElementById('select_all_' + col);
+        const state = filterState[col];
+
+        if (!selectAll || !state) {
+            return;
+        }
+
+        if (!filteredValues.length) {
+            selectAll.checked = false;
+            selectAll.indeterminate = false;
+            return;
+        }
+
+        let checkedCount = 0;
+        filteredValues.forEach(function (value) {
+            if (state.selectedValues.has(value)) {
+                checkedCount++;
+            }
+        });
+
+        selectAll.checked = checkedCount === filteredValues.length;
+        selectAll.indeterminate = checkedCount > 0 && checkedCount < filteredValues.length;
+    }
+
+    function renderFilterList(col) {
+        const container = document.getElementById('list_container_' + col);
+        const state = filterState[col];
+
+        if (!container || !state) {
+            return;
+        }
+
+        const filteredValues = getFilteredValues(col);
+        const visibleValues = filteredValues.slice(0, filterRenderLimit);
+        let html = '';
+
+        if (!filteredValues.length) {
+            html = '<div class="text-center text-muted py-2 small">Tidak ada opsi yang cocok.</div>';
+        } else {
+            if (filteredValues.length > filterRenderLimit) {
+                html += '<div class="small text-muted mb-2">Menampilkan ' + filterRenderLimit + ' dari ' + filteredValues.length + ' opsi. Gunakan pencarian untuk mempersempit.</div>';
+            }
+
+            visibleValues.forEach(function (value, index) {
+                const safeValue = escapeHtml(value);
+                const inputId = 'filter_' + col + '_' + index;
+                html += '<div class="custom-control custom-checkbox filter-item-container mb-1">';
+                html += '<input class="custom-control-input filter-checkbox" type="checkbox" id="' + inputId + '" value="' + safeValue + '" data-col="' + col + '"' + (state.selectedValues.has(value) ? ' checked' : '') + '>';
+                html += '<label for="' + inputId + '" class="custom-control-label font-weight-normal filter-label">' + safeValue + '</label>';
+                html += '</div>';
+            });
+        }
+
+        container.innerHTML = html;
+        syncSelectAllCheckbox(col, filteredValues);
+    }
+
     /* =========================================================
        PREVIEW TABLE FILTER
     ========================================================= */
     function updatePreviewTable() {
         // Kumpulkan filter aktif: { colIndex: [allowedValues...] }
         var activeFilters = {};
-        document.querySelectorAll('.filter-checkbox').forEach(function (cb) {
-            var col = cb.getAttribute('data-col');
-            if (!activeFilters[col]) activeFilters[col] = [];
-            if (cb.checked) activeFilters[col].push(cb.value.trim());
+        Object.keys(filterState).forEach(function (col) {
+            var state = filterState[col];
+            if (!state) return;
+
+            if (state.selectedValues.size < state.allValues.length) {
+                activeFilters[col] = Array.from(state.selectedValues);
+            }
         });
 
         // Bangun array requirement filter
@@ -239,11 +330,10 @@ document.addEventListener('DOMContentLoaded', function () {
             var container = dropdown.querySelector('[id^="list_container_"]');
             if (!container) return;
             var colIndex  = container.id.split('_')[2];
-            var checked   = container.querySelectorAll('.filter-checkbox:checked').length;
-            var total     = container.querySelectorAll('.filter-checkbox').length;
+            var state     = filterState[colIndex];
             var icon      = document.getElementById('icon_filter_' + colIndex);
             if (!icon) return;
-            if (checked < total && checked > 0) {
+            if (state && state.selectedValues.size < state.allValues.length && state.selectedValues.size > 0) {
                 icon.classList.remove('text-muted');
                 icon.classList.add('text-primary');
             } else {
@@ -256,16 +346,25 @@ document.addEventListener('DOMContentLoaded', function () {
     /* =========================================================
        EVENT: Filter checkbox change
     ========================================================= */
-    document.querySelectorAll('.filter-checkbox').forEach(function (cb) {
-        cb.addEventListener('change', function () {
-            var colIndex  = this.getAttribute('data-col');
-            var container = document.getElementById('list_container_' + colIndex);
-            var checked   = container.querySelectorAll('.filter-checkbox:checked').length;
-            var total     = container.querySelectorAll('.filter-checkbox').length;
-            var selectAll = document.getElementById('select_all_' + colIndex);
-            if (selectAll) selectAll.checked = (checked === total);
-            updatePreviewTable();
-        });
+    document.addEventListener('change', function (e) {
+        if (!e.target.classList.contains('filter-checkbox')) {
+            return;
+        }
+
+        var colIndex = e.target.getAttribute('data-col');
+        var state = filterState[colIndex];
+        if (!state) {
+            return;
+        }
+
+        if (e.target.checked) {
+            state.selectedValues.add(e.target.value.trim());
+        } else {
+            state.selectedValues.delete(e.target.value.trim());
+        }
+
+        syncSelectAllCheckbox(colIndex, getFilteredValues(colIndex));
+        updatePreviewTable();
     });
 
     /* =========================================================
@@ -275,14 +374,20 @@ document.addEventListener('DOMContentLoaded', function () {
         cb.addEventListener('change', function () {
             var isChecked = this.checked;
             var colIndex  = this.getAttribute('data-col');
-            var container = document.getElementById('list_container_' + colIndex);
-            // Hanya toggle checkbox yang sedang terlihat (tidak di-hide oleh search)
-            container.querySelectorAll('.filter-item-container').forEach(function (item) {
-                if (item.style.display !== 'none') {
-                    var checkbox = item.querySelector('.filter-checkbox');
-                    if (checkbox) checkbox.checked = isChecked;
+            var state = filterState[colIndex];
+            if (!state) {
+                return;
+            }
+
+            getFilteredValues(colIndex).forEach(function (value) {
+                if (isChecked) {
+                    state.selectedValues.add(value);
+                } else {
+                    state.selectedValues.delete(value);
                 }
             });
+
+            renderFilterList(colIndex);
             updatePreviewTable();
         });
     });
@@ -292,13 +397,20 @@ document.addEventListener('DOMContentLoaded', function () {
     ========================================================= */
     document.querySelectorAll('.search-filter').forEach(function (input) {
         input.addEventListener('keyup', function () {
-            var term      = this.value.toLowerCase();
             var colIndex  = this.getAttribute('data-col');
-            var container = document.getElementById('list_container_' + colIndex);
-            container.querySelectorAll('.filter-item-container').forEach(function (item) {
-                var label = item.querySelector('.filter-label');
-                item.style.display = (label && label.innerText.toLowerCase().includes(term)) ? 'block' : 'none';
-            });
+            searchTerms[colIndex] = this.value || '';
+            renderFilterList(colIndex);
+        });
+    });
+
+    document.querySelectorAll('.dropdown').forEach(function (dropdown) {
+        dropdown.addEventListener('shown.bs.dropdown', function () {
+            var container = dropdown.querySelector('[id^="list_container_"]');
+            if (!container) {
+                return;
+            }
+
+            renderFilterList(container.getAttribute('data-col'));
         });
     });
 
@@ -319,14 +431,14 @@ document.addEventListener('DOMContentLoaded', function () {
 
         // ── Kumpulkan filter aktif ──────────────────────────────────────────
         var activeFilters = {};
-        document.querySelectorAll('.dropdown').forEach(function (dropdown) {
-            var container = dropdown.querySelector('[id^="list_container_"]');
-            if (!container) return;
-            var colIndex  = container.id.split('_')[2];
-            var allCbs    = container.querySelectorAll('.filter-checkbox');
-            var checked   = container.querySelectorAll('.filter-checkbox:checked');
-            if (checked.length < allCbs.length) {
-                activeFilters[colIndex] = Array.from(checked).map(function (cb) { return cb.value.trim(); });
+        Object.keys(filterState).forEach(function (colIndex) {
+            var state = filterState[colIndex];
+            if (!state) {
+                return;
+            }
+
+            if (state.selectedValues.size < state.allValues.length) {
+                activeFilters[colIndex] = Array.from(state.selectedValues);
             }
         });
         var filtersJson = JSON.stringify(activeFilters);
@@ -569,6 +681,9 @@ document.addEventListener('DOMContentLoaded', function () {
     /* =========================================================
        INIT: terapkan filter default lalu tampilkan preview
     ========================================================= */
+    Object.keys(filterState).forEach(function (col) {
+        renderFilterList(col);
+    });
     updatePreviewTable();
 });
 </script>

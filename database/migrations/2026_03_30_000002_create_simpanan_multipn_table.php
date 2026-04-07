@@ -10,7 +10,7 @@ return new class extends Migration
     {
         Schema::create('simpanan_multipn', function (Blueprint $table) {
             $table->id();
-            $table->string('uniqueid_SimoPN')->unique();
+            $table->string('uniqueid_SMPN')->unique();
             $table->date('posisi')->nullable();
             $table->string('regional_office', 150)->nullable();
             $table->string('kantor_cabang', 150)->nullable();

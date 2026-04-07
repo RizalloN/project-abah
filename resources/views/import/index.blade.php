@@ -19,7 +19,7 @@
                 <select id="download-template-select" class="form-control import-template-banner__select">
                     <option value="">-- Pilih Template --</option>
                     @foreach($downloadTemplates as $key => $template)
-                        <option value="{{ $key }}">{{ $template['label'] }}</option>
+                        <option value="{{ $key }}" data-filename="{{ $template['filename'] }}">{{ $template['label'] }}</option>
                     @endforeach
                 </select>
                 <a href="#"
@@ -54,11 +54,11 @@
             <div class="form-group">
                 <label class="font-weight-bold text-dark">Pilih Kategori Report</label>
                 <select name="id_report" class="form-control select2" required>
-                    <option value="" data-name="">-- Pilih Report --</option>
+                    <option value="" data-name="" data-table="">-- Pilih Report --</option>
                     @foreach($reports as $report)
                         <option value="{{ $report->id_report }}"
-                                data-name="{{ strtolower($report->nama_report) }}"
-                                data-table="{{ strtolower($report->table_name) }}">
+                                data-name="{{ strtolower($report->nama_report ?? '') }}"
+                                data-table="{{ strtolower($report->table_name ?? '') }}">
                             {{ $report->nama_report }}
                         </option>
                     @endforeach
@@ -136,9 +136,19 @@
             }
 
             const templateKey = downloadTemplateSelect.value || '';
+            const selectedOption = downloadTemplateSelect.options[downloadTemplateSelect.selectedIndex];
+            const filename = selectedOption ? (selectedOption.getAttribute('data-filename') || '') : '';
 
             if (templateKey) {
-                btnDownloadTemplate.href = `${btnDownloadTemplate.dataset.routeTemplate}?report=${encodeURIComponent(templateKey)}`;
+                const query = new URLSearchParams({
+                    report: templateKey,
+                });
+
+                if (filename) {
+                    query.set('file', filename);
+                }
+
+                btnDownloadTemplate.href = `${btnDownloadTemplate.dataset.routeTemplate}?${query.toString()}`;
                 btnDownloadTemplate.classList.remove('disabled');
                 btnDownloadTemplate.removeAttribute('aria-disabled');
                 return;
@@ -196,17 +206,7 @@
                 return;
             }
 
-            if (isSimpanan) {
-                formExcel.style.display = 'block';
-                inputExcel.disabled = false;
-                inputExcel.required = true;
-                formImport.action = "{{ route('import.excel.upload') }}";
-                formImport.dataset.preparePreviewUrl = "{{ route('import.excel.prepare-preview') }}";
-                applyButtonState('excel', '<i class="fas fa-file-excel"></i> Upload Excel');
-                return;
-            }
-
-            if (isInputRekanan) {
+            if (isSimpanan || isInputRekanan) {
                 formExcel.style.display = 'block';
                 inputExcel.disabled = false;
                 inputExcel.required = true;
@@ -245,6 +245,12 @@
 
         reportSelect.addEventListener('change', toggleForm);
         downloadTemplateSelect?.addEventListener('change', syncDownloadButton);
+        btnDownloadTemplate?.addEventListener('click', function (event) {
+            if (btnDownloadTemplate.classList.contains('disabled')) {
+                event.preventDefault();
+            }
+        });
+
         toggleForm();
         syncDownloadButton();
 

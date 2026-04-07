@@ -195,14 +195,26 @@ document.addEventListener('DOMContentLoaded', function () {
     
     let activeTab = 'qris';
 
-    function formatNum(num) { return new Intl.NumberFormat('id-ID').format(num); }
+    function safeNumber(num, fallback = 0) {
+        const parsed = Number(num);
+        return Number.isFinite(parsed) ? parsed : fallback;
+    }
+
+    function formatNum(num) { return new Intl.NumberFormat('id-ID').format(safeNumber(num)); }
+
+    function formatPercent(num, digits = 1) {
+        return new Intl.NumberFormat('id-ID', {
+            minimumFractionDigits: digits,
+            maximumFractionDigits: digits
+        }).format(safeNumber(num)) + '%';
+    }
     
     function formatMilyar(num) {
         return new Intl.NumberFormat('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(num);
     }
     
     function formatGrowth(val, isMilyar = false) {
-        let num = parseFloat(val);
+        let num = safeNumber(val);
         let text = isMilyar ? formatMilyar(num) : formatNum(num);
         // Tanda panah warna netral (merah/hijau ada di angka)
         let colorClass = num > 0 ? 'text-success' : (num < 0 ? 'text-danger' : '');
@@ -211,8 +223,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Conditional Formatting Normal (Bagus = Plus = Hijau, Jelek = Minus = Merah)
     function formatCellPct(val) {
-        let num = parseFloat(val);
-        let text = new Intl.NumberFormat('id-ID', { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(num) + '%';
+        let num = safeNumber(val);
+        let text = formatPercent(num, 1);
         if (num === 0) return `<td class="text-center">-</td>`;
 
         let isGood = (num > 0); 
@@ -224,8 +236,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Conditional Formatting INVERSE KHUSUS SV 0 (Bagus = Minus = Hijau, Jelek = Plus = Merah)
     function formatCellPctInverse(val) {
-        let num = parseFloat(val);
-        let text = new Intl.NumberFormat('id-ID', { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(num) + '%';
+        let num = safeNumber(val);
+        let text = formatPercent(num, 1);
         if (num === 0) return `<td class="text-center">-</td>`;
 
         let isGood = (num < 0); // Minus itu berarti SV 0 berkurang, jadi Bagus (Hijau)
@@ -269,10 +281,10 @@ document.addEventListener('DOMContentLoaded', function () {
                                 <td>${formatGrowth(row.jml.ytd_val)}</td> <td>${formatGrowth(row.jml.yoy_val)}</td>
                                 <td class="rka-col">${formatNum(row.jml.rka)}</td> <td class="rka-col">${formatNum(row.jml.penc_pct)}%</td>
                                 
-                                <td class="font-weight-bold">${formatNum(row.prod.curr)}</td> <td class="font-weight-bold text-dark">${formatNum(row.prod.pct_jml)}%</td>
+                                <td class="font-weight-bold">${formatNum(row.prod.curr)}</td> <td class="font-weight-bold text-dark">${formatPercent(row.prod.pct_jml, 1)}</td>
                                 <td>${formatGrowth(row.prod.mtd_val)}</td> ${formatCellPct(row.prod.mtd_pct)} 
                                 <td>${formatGrowth(row.prod.ytd_val)}</td> <td>${formatGrowth(row.prod.yoy_val)}</td>
-                                <td class="rka-col">${formatNum(row.prod.rka)}</td> <td class="rka-col">${formatNum(row.prod.penc_pct)}%</td>
+                                <td class="rka-col">${formatNum(row.prod.rka)}</td> <td class="rka-col">${formatPercent(row.prod.penc_pct, 1)}</td>
 
                                 <td class="font-weight-bold">${formatMilyar(row.vol.curr)}</td>
                                 <td>${formatGrowth(row.vol.mtd_val, true)}</td> ${formatCellPct(row.vol.mtd_pct)} 
@@ -290,10 +302,10 @@ document.addEventListener('DOMContentLoaded', function () {
                             <td>${formatGrowth(total.jml.ytd_val)}</td> <td>${formatGrowth(total.jml.yoy_val)}</td>
                             <td class="rka-col text-dark">${formatNum(total.jml.rka)}</td> <td class="rka-col text-dark">${formatNum(total.jml.penc_pct)}%</td>
                             
-                            <td>${formatNum(total.prod.curr)}</td> <td>${formatNum(total.prod.pct_jml)}%</td>
+                            <td>${formatNum(total.prod.curr)}</td> <td>${formatPercent(total.prod.pct_jml, 1)}</td>
                             <td>${formatGrowth(total.prod.mtd_val)}</td> ${formatCellPct(total.prod.mtd_pct).replace(/bg-(good|bad)/, '')} 
                             <td>${formatGrowth(total.prod.ytd_val)}</td> <td>${formatGrowth(total.prod.yoy_val)}</td>
-                            <td class="rka-col text-dark">${formatNum(total.prod.rka)}</td> <td class="rka-col text-dark">${formatNum(total.prod.penc_pct)}%</td>
+                            <td class="rka-col text-dark">${formatNum(total.prod.rka)}</td> <td class="rka-col text-dark">${formatPercent(total.prod.penc_pct, 1)}</td>
 
                             <td>${formatMilyar(total.vol.curr)}</td>
                             <td>${formatGrowth(total.vol.mtd_val, true)}</td> ${formatCellPct(total.vol.mtd_pct).replace(/bg-(good|bad)/, '')} 

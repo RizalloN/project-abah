@@ -2,10 +2,13 @@
 
 use App\Http\Controllers\Input\InputRekananController;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\DashboardPinjamanReportController;
 use App\Http\Controllers\Import\ImportIndexController;
 use App\Http\Controllers\Import\ImportFileController;
 use App\Http\Controllers\Import\ImportFileBrimoController;
+use App\Http\Controllers\Import\ImportCasaBrilinkController;
 use App\Http\Controllers\Import\ImportPerformancePisPerProdukController;
+use App\Http\Controllers\Import\ImportReportPhController;
 use App\Http\Controllers\RasioCasaDebiturController;
 
 Route::get('/', function () {
@@ -33,6 +36,15 @@ Route::get('/dashboard', function () {
 })->middleware(['auth'])->name('dashboard');
 
 // 🔥 ROUTES FOR PERFORMANCE REPORTS
+Route::get('/report/dashboard-pinjaman', [DashboardPinjamanReportController::class, 'index'])
+    ->middleware('auth')
+    ->name('report.dashboard-pinjaman');
+Route::get('/report/dashboard-pinjaman/filters', [DashboardPinjamanReportController::class, 'filters'])
+    ->middleware('auth')
+    ->name('report.dashboard-pinjaman.filters');
+Route::get('/report/dashboard-pinjaman/data', [DashboardPinjamanReportController::class, 'data'])
+    ->middleware('auth')
+    ->name('report.dashboard-pinjaman.data');
 Route::get('/report/optimalisasi-digital/edc', [App\Http\Controllers\DataReportController::class, 'performanceEdc'])->name('report.edc');
 Route::get('/report/optimalisasi-digital/qris', [App\Http\Controllers\DataReportController::class, 'performanceQris'])->name('report.qris');
 Route::get('/report/optimalisasi-digital/brilink', [App\Http\Controllers\DataReportController::class, 'performanceBrilink'])->name('report.brilink');
@@ -43,7 +55,8 @@ Route::get('/report/kolaborasi-perusahaan-anak/program-referral-partner-perusaha
 // 🔥 ROUTE REKENING TRANSAKSI DEBITUR
 Route::get('/report/rekening-transaksi-debitur', [RasioCasaDebiturController::class, 'index'])->name('report.rasiocasa.debitur');
 Route::post('/report/data/rasiocasa', [RasioCasaDebiturController::class, 'fetchData'])->name('report.data.rasiocasa');
-Route::view('/report/peningkatan-payroll-berkualitas/kinerja-new-payroll', 'report.kinerja-new-payroll')->name('report.kinerja.newpayroll');
+Route::get('/report/peningkatan-payroll-berkualitas/kinerja-new-payroll', [App\Http\Controllers\DataReportController::class, 'performanceNewPayroll'])->name('report.kinerja.newpayroll');
+Route::post('/report/data/newpayroll', [App\Http\Controllers\DataReportController::class, 'fetchNewPayrollData'])->name('report.data.newpayroll');
 
 Route::post('/report/data', [App\Http\Controllers\DataReportController::class, 'fetchData'])->name('report.data');
 
@@ -63,16 +76,33 @@ Route::middleware(['auth', 'role:admin'])->group(function () {
 
     // Route POST untuk preview
     Route::post('/import/preview', [ImportFileController::class, 'preview'])->name('import.preview');
+    Route::get('/import/preview/direct', [ImportFileController::class, 'preview'])->name('import.preview.direct');
+    Route::post('/import/casa-brilink/upload', [ImportCasaBrilinkController::class, 'upload'])->name('import.casabrilink.upload');
+    Route::get('/import/casa-brilink/preview', [ImportCasaBrilinkController::class, 'preview'])->name('import.casabrilink.preview');
+    Route::post('/import/casa-brilink/preview', [ImportCasaBrilinkController::class, 'preview'])->name('import.casabrilink.preview.refresh');
+    Route::post('/import/casa-brilink/init', [ImportCasaBrilinkController::class, 'initImport'])->name('import.casabrilink.init');
+    Route::get('/import/casa-brilink/stream', [ImportCasaBrilinkController::class, 'processImportStream'])->name('import.casabrilink.stream');
+    Route::post('/import/casa-brilink/process', [ImportCasaBrilinkController::class, 'processImport'])->name('import.casabrilink.process');
     Route::post('/import/performance-pis/upload', [ImportPerformancePisPerProdukController::class, 'upload'])->name('import.performancepis.upload');
     Route::get('/import/performance-pis/preview', [ImportPerformancePisPerProdukController::class, 'preview'])->name('import.performancepis.preview');
     Route::post('/import/performance-pis/preview', [ImportPerformancePisPerProdukController::class, 'preview'])->name('import.performancepis.preview.refresh');
     Route::post('/import/performance-pis/process', [ImportPerformancePisPerProdukController::class, 'processImport'])->name('import.performancepis.process');
+    Route::post('/import/report-ph/upload', [ImportReportPhController::class, 'upload'])->name('import.reportph.upload');
+    Route::get('/import/report-ph/preview', [ImportReportPhController::class, 'preview'])->name('import.reportph.preview');
+    Route::post('/import/report-ph/preview', [ImportReportPhController::class, 'preview'])->name('import.reportph.preview.refresh');
+    Route::post('/import/report-ph/init', [ImportReportPhController::class, 'initImport'])->name('import.reportph.init');
+    Route::get('/import/report-ph/stream', [ImportReportPhController::class, 'processImportStream'])->name('import.reportph.stream');
+    Route::post('/import/report-ph/process', [ImportReportPhController::class, 'processImport'])->name('import.reportph.process');
 
     // ENGINE ANTRIAN EXCEL
     Route::post('/import-excel/init', [App\Http\Controllers\Import\ImportExcelController::class, 'initExcelImport'])->name('import.excel.init');
     Route::get('/import-excel/stream', [App\Http\Controllers\Import\ImportExcelController::class, 'processExcelStream'])->name('import.excel.stream');
     Route::post('/import-excel/chunk', [App\Http\Controllers\Import\ImportExcelController::class, 'processExcelChunk'])->name('import.excel.chunk');
     
+    // ENGINE ANTRIAN CSV / TXT
+    Route::post('/import/init', [ImportFileController::class, 'initImport'])->name('import.init');
+    Route::get('/import/stream', [ImportFileController::class, 'processImportStream'])->name('import.stream');
+
     // Process import
     Route::post('/import/process', [ImportFileController::class, 'processImport'])->name('import.process');
 
