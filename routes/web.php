@@ -3,6 +3,7 @@
 use App\Http\Controllers\Input\InputRekananController;
 use App\Http\Controllers\Input\BodBocController;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\DashboardSimpananController;
 use App\Http\Controllers\DashboardPinjamanReportController;
 use App\Http\Controllers\Import\ImportIndexController;
 use App\Http\Controllers\Import\ImportFileController;
@@ -35,9 +36,9 @@ Route::get('/debug-upload-limits', function () {
     ];
 });
 
-Route::get('/dashboard', function () {
-    return view('dashboard');
-})->middleware(['auth'])->name('dashboard');
+Route::get('/dashboard', [DashboardSimpananController::class, 'index'])
+    ->middleware(['auth'])
+    ->name('dashboard');
 
 // 🔥 ROUTES FOR PERFORMANCE REPORTS
 Route::get('/report/dashboard-pinjaman', [DashboardPinjamanReportController::class, 'index'])

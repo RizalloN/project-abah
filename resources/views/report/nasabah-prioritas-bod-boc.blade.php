@@ -89,18 +89,26 @@
     }
 
     .bg-header-main {
-        background: #c8d7f0 !important;
-        color: #111827 !important;
+        background: #355fb3 !important;
+        color: #ffffff !important;
+        border-color: #27498a !important;
     }
 
     .bg-header-sub {
-        background: #dbe6f7 !important;
-        color: #111827 !important;
+        background: #edf2fb !important;
+        color: #334155 !important;
+        border-color: #cbd5e1 !important;
     }
 
     .row-total {
-        background: #c8d7f0 !important;
+        background: #123f73 !important;
+        color: #ffffff !important;
         font-weight: 700;
+    }
+
+    .row-total td {
+        color: #ffffff !important;
+        border-color: #27498a !important;
     }
 
     .metric-positive {
