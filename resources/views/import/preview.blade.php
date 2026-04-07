@@ -62,6 +62,9 @@
             <input type="hidden" name="file_path" value="{{ $filePath }}">
             <input type="hidden" name="delimiter" value="{{ $currentDelimiter }}">
             <input type="hidden" name="active_filters_json" id="active_filters_json" value="{}">
+            @if(!empty($previewStateKey))
+                <input type="hidden" name="preview_state_key" value="{{ $previewStateKey }}">
+            @endif
             @if(!empty($manualPeriode))
                 <input type="hidden" name="periode" value="{{ $manualPeriodeValue }}">
             @endif

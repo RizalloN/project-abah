@@ -1300,24 +1300,24 @@ class ImportFileController extends Controller
             'updated_at' => now(),
         ]);
 
-        session([
-            'csv_import_params' => [
-                'job_id' => $jobId,
-                'file_path' => $filePath,
-                'delimiter' => $meta['delimiter'],
-                'selected_columns' => $selectedColumns,
-                'active_filters' => $activeFilters,
-                'normalized_filters' => $normalizedFilters,
-                'table_name' => $tableName,
-                'unique_suffix' => $uniqueSuffix,
-                'is_brilink_summary' => $isBrilinkSummary,
-                'headers' => $meta['headers'],
-                'posisi_index' => $meta['posisi_index'],
-                'tahun_index' => $meta['tahun_index'],
-                'total_rows' => $meta['total_rows'],
-                'duplicate_lookup' => $duplicateLookup,
-            ],
-        ]);
+        $importParams = [
+            'job_id' => $jobId,
+            'file_path' => $filePath,
+            'delimiter' => $meta['delimiter'],
+            'selected_columns' => $selectedColumns,
+            'active_filters' => $activeFilters,
+            'normalized_filters' => $normalizedFilters,
+            'table_name' => $tableName,
+            'unique_suffix' => $uniqueSuffix,
+            'is_brilink_summary' => $isBrilinkSummary,
+            'headers' => $meta['headers'],
+            'posisi_index' => $meta['posisi_index'],
+            'tahun_index' => $meta['tahun_index'],
+            'total_rows' => $meta['total_rows'],
+            'duplicate_lookup' => $duplicateLookup,
+        ];
+        session(['csv_import_params' => $importParams]);
+        Cache::put('csv_import_params_' . $jobId, $importParams, now()->addHours(4));
 
         return response()->json([
             'status' => 'success',
@@ -1333,8 +1333,9 @@ class ImportFileController extends Controller
         ini_set('max_execution_time', 0);
         DB::disableQueryLog();
 
-        $params = session('csv_import_params', []);
-        $jobId = (int) ($params['job_id'] ?? $request->query('job_id', 0));
+        $sessionParams = session('csv_import_params', []);
+        $jobId = (int) ($sessionParams['job_id'] ?? $request->query('job_id', 0));
+        $params = Cache::get('csv_import_params_' . $jobId, $sessionParams);
 
         request()->session()->save();
 

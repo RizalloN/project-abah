@@ -151,6 +151,12 @@
                                 <p>Rasio CASA Debitur</p>
                             </a>
                         </li>
+                        <li class="nav-item">
+                            <a href="{{ route('report.rekening-dormant') }}" class="nav-link {{ request()->routeIs('report.rekening-dormant') ? 'active' : '' }}" style="border-radius: 12px; color: rgba(226, 232, 240, 0.8);">
+                                <i class="far fa-circle nav-icon text-warning"></i>
+                                <p>Rekening Dormant</p>
+                            </a>
+                        </li>
                     </ul>
                 </li>
 

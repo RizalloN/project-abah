@@ -39,9 +39,9 @@
             </div>
 
             <div id="form-excel" class="form-group" style="display: none;">
-                <label class="text-success font-weight-bold"><i class="fas fa-file-excel mr-1"></i> Upload File Excel (.xlsx, .xls)</label>
+                <label id="label_excel_upload" class="text-success font-weight-bold"><i class="fas fa-file-excel mr-1"></i> Upload File Excel (.xlsx, .xls)</label>
                 <input type="file" id="file_excel" name="file" class="form-control border-success shadow-sm" accept=".xlsx, .xls">
-                <small class="text-muted mt-2 d-block">Mendukung format .xlsx dan .xls hingga 200MB+ (Menggunakan Chunk Reading Mode).</small>
+                <small id="label_excel_help" class="text-muted mt-2 d-block">Mendukung format .xlsx dan .xls hingga 200MB+ (Menggunakan Chunk Reading Mode).</small>
             </div>
 
             <div id="form-csv" class="form-group" style="display: none;">
@@ -110,6 +110,8 @@
         const inputPeriod = document.getElementById('periode_input');
         const labelRarUpload = document.getElementById('label_rar_upload');
         const labelRarHelp = document.getElementById('label_rar_help');
+        const labelExcelUpload = document.getElementById('label_excel_upload');
+        const labelExcelHelp = document.getElementById('label_excel_help');
         const labelCsvHelp = document.getElementById('label_csv_help');
         const labelPeriodTitle = document.getElementById('label_period_title');
         const labelPeriodHelp = document.getElementById('label_period_help');
@@ -164,6 +166,10 @@
             const isBrimo = tableName === 'user_brimo_rpt_v2'
                 || tableName === 'user_brimo_fin'
                 || reportName.includes('brimo');
+            const simpananExcelUploadRoute = "{{ route('import.simpanan.upload') }}";
+            const simpananExcelPrepareRoute = "{{ route('import.simpanan.prepare-preview') }}";
+            const simpananCsvUploadRoute = "{{ route('import.simpanan.csv.upload') }}";
+            const simpananCsvPrepareRoute = "{{ route('import.simpanan.csv.prepare-preview') }}";
 
             formCsv.style.display = 'none';
             inputCsv.disabled = true;
@@ -174,6 +180,17 @@
             inputPeriod.required = false;
             inputPeriod.type = 'month';
             inputPeriod.value = '';
+            formImport.dataset.simpananMode = '0';
+            formImport.dataset.simpananExcelUpload = simpananExcelUploadRoute;
+            formImport.dataset.simpananExcelPrepare = simpananExcelPrepareRoute;
+            formImport.dataset.simpananCsvUpload = simpananCsvUploadRoute;
+            formImport.dataset.simpananCsvPrepare = simpananCsvPrepareRoute;
+            if (labelExcelUpload) {
+                labelExcelUpload.innerHTML = '<i class="fas fa-file-excel mr-1"></i> Upload File Excel (.xlsx, .xls)';
+            }
+            if (labelExcelHelp) {
+                labelExcelHelp.textContent = 'Mendukung format .xlsx dan .xls hingga 200MB+ (Menggunakan Chunk Reading Mode).';
+            }
             if (labelPeriodTitle) {
                 labelPeriodTitle.innerHTML = '<i class="fas fa-calendar-alt mr-1"></i> Periode Report';
             }
@@ -207,28 +224,33 @@
                 btnSubmit.dataset.defaultLabel = btnSubmit.innerHTML;
 
             } else if (isSimpanan) {
-                // Tampilkan Excel, Sembunyikan RAR
+                // Simpanan MultiPN: satu jalur upload spreadsheet, route ditentukan dari ekstensi file
                 formRAR.style.display = 'none';
                 formExcel.style.display = 'block';
                 formCsv.style.display = 'none';
 
-                // 🔥 MATIKAN input RAR agar tidak bentrok 'name="file"' di Backend
                 inputRar.disabled = true;
                 inputRar.required = false;
 
                 inputExcel.disabled = false;
                 inputExcel.required = true;
+                inputExcel.setAttribute('accept', '.xlsx,.xls,.csv,.txt');
+                if (labelExcelUpload) {
+                    labelExcelUpload.innerHTML = '<i class="fas fa-file-upload mr-1"></i> Upload File Simpanan MultiPN (.csv, .xlsx, .xls)';
+                }
+                if (labelExcelHelp) {
+                    labelExcelHelp.textContent = 'CSV akan diproses lewat jalur import khusus Simpanan MultiPN. Excel tetap memakai engine preview + stream agar insert ke database lebih stabil.';
+                }
                 inputCsv.disabled = true;
                 inputCsv.required = false;
 
-                // Arahkan submit ke Controller Excel sesuai flow report
-                formImport.action = "{{ route('import.excel.upload') }}";
-                formImport.dataset.preparePreviewUrl = "{{ route('import.excel.prepare-preview') }}";
+                formImport.action = simpananExcelUploadRoute;
+                formImport.dataset.preparePreviewUrl = simpananExcelPrepareRoute;
                 formImport.dataset.uploadFlow = 'excel-preview';
+                formImport.dataset.simpananMode = '1';
 
-                // Sesuaikan Tombol
                 btnSubmit.className = "btn btn-success font-weight-bold";
-                btnSubmit.innerHTML = '<i class="fas fa-file-excel"></i> Upload Excel';
+                btnSubmit.innerHTML = '<i class="fas fa-file-upload"></i> Upload CSV / Excel';
                 btnSubmit.dataset.defaultLabel = btnSubmit.innerHTML;
 
             } else if (isPerformancePis) {
@@ -419,13 +441,28 @@
             const selectedMeta = reportMetaMap[selectedValue] || {};
             const selectedName = (selectedMeta.name || '').toLowerCase();
             const isDailyLoanPreview = selectedName.includes('daily loan');
+            const isSimpananUpload = formImport.dataset.simpananMode === '1';
+            const simpananSelectedFile = inputExcel && inputExcel.files && inputExcel.files[0] ? inputExcel.files[0].name.toLowerCase() : '';
+            const simpananUsesCsv = isSimpananUpload && /\.(csv|txt)$/i.test(simpananSelectedFile);
+            if (isSimpananUpload) {
+                formImport.action = simpananUsesCsv
+                    ? (formImport.dataset.simpananCsvUpload || formImport.action)
+                    : (formImport.dataset.simpananExcelUpload || formImport.action);
+                formImport.dataset.preparePreviewUrl = simpananUsesCsv
+                    ? (formImport.dataset.simpananCsvPrepare || formImport.dataset.preparePreviewUrl)
+                    : (formImport.dataset.simpananExcelPrepare || formImport.dataset.preparePreviewUrl);
+            }
             const titleText = usesPreviewStream
-                ? (isDailyLoanPreview ? 'Uploading CSV Daily Loan...' : 'Uploading Excel...')
+                ? (isDailyLoanPreview
+                    ? 'Uploading CSV Daily Loan...'
+                    : (simpananUsesCsv ? 'Uploading CSV Simpanan MultiPN...' : 'Uploading Spreadsheet...'))
                 : 'Uploading Report...';
             const descText = usesPreviewStream
                 ? (isDailyLoanPreview
                     ? 'File CSV sedang dianalisis untuk preview dan filter.<br><b>Mohon tunggu...</b>'
-                    : 'File besar sedang diproses dengan chunking.<br><b>Mohon tunggu...</b>')
+                    : (simpananUsesCsv
+                        ? 'File CSV Simpanan MultiPN sedang dianalisis untuk preview dan filter.<br><b>Mohon tunggu...</b>'
+                        : 'File besar sedang diproses dengan chunking.<br><b>Mohon tunggu...</b>'))
                 : 'Sedang mengupload dan memproses file.<br><b>Mohon tunggu...</b>';
 
             // HTML Custom untuk Progress Bar

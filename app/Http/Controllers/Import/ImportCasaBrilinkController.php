@@ -219,19 +219,19 @@ class ImportCasaBrilinkController extends Controller
             'updated_at' => now(),
         ]);
 
-        session([
-            'casa_import_params' => [
-                'job_id' => $jobId,
-                'file_path' => $relativePath,
-                'delimiter' => $request->input('delimiter', 'auto'),
-                'selected_columns' => $selectedColumns,
-                'active_filters' => $activeFilters,
-                'table_name' => $tableName,
-                'unique_suffix' => $uniqueSuffix,
-                'periode' => $request->input('periode'),
-                'total_rows' => $totalRows,
-            ],
-        ]);
+        $importParams = [
+            'job_id' => $jobId,
+            'file_path' => $relativePath,
+            'delimiter' => $request->input('delimiter', 'auto'),
+            'selected_columns' => $selectedColumns,
+            'active_filters' => $activeFilters,
+            'table_name' => $tableName,
+            'unique_suffix' => $uniqueSuffix,
+            'periode' => $request->input('periode'),
+            'total_rows' => $totalRows,
+        ];
+        session(['casa_import_params' => $importParams]);
+        Cache::put('casa_import_params_' . $jobId, $importParams, now()->addHours(4));
 
         return response()->json([
             'status' => 'success',
@@ -246,8 +246,9 @@ class ImportCasaBrilinkController extends Controller
         set_time_limit(0);
         DB::disableQueryLog();
 
-        $params = session('casa_import_params', []);
-        $jobId = (int) ($params['job_id'] ?? $request->query('job_id', 0));
+        $sessionParams = session('casa_import_params', []);
+        $jobId = (int) ($sessionParams['job_id'] ?? $request->query('job_id', 0));
+        $params = Cache::get('casa_import_params_' . $jobId, $sessionParams);
 
         request()->session()->save();
 
@@ -382,7 +383,7 @@ class ImportCasaBrilinkController extends Controller
                     'updated_at' => now(),
                 ]);
 
-                $this->cleanupUploadedFile($relativePath);
+                $this->cleanupSuccessfulImportArtifacts($jobId, $relativePath);
 
                 $send('progress', [
                     'percent' => 98,
@@ -555,7 +556,9 @@ class ImportCasaBrilinkController extends Controller
             'updated_at' => now(),
         ]);
 
-        $this->cleanupUploadedFile($relativePath);
+        if ($totalFailed === 0 && $totalSuccess >= $totalRows) {
+            $this->cleanupSuccessfulImportArtifacts($jobId, $relativePath);
+        }
 
         if ($totalFailed > 0) {
             return response()->json([
@@ -818,6 +821,18 @@ class ImportCasaBrilinkController extends Controller
             Storage::delete($relativePath);
         } catch (\Throwable $e) {
             Log::warning('Gagal menghapus file CASA BRILINK sementara: ' . $e->getMessage());
+        }
+    }
+
+    private function cleanupSuccessfulImportArtifacts(int $jobId, string $relativePath): void
+    {
+        try {
+            app(ImportCleanupController::class)->cleanupSuccessfulJobArtifacts($jobId, [$relativePath]);
+        } catch (\Throwable $e) {
+            Log::warning('Gagal menjalankan cleanup terpusat CASA BRILINK: ' . $e->getMessage(), [
+                'job_id' => $jobId,
+                'relative_path' => $relativePath,
+            ]);
         }
     }
 
