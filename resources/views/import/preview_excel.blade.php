@@ -29,6 +29,9 @@
             @csrf
             <input type="hidden" name="path"                id="file_path"           value="{{ $path }}">
             <input type="hidden" name="active_filters_json" id="active_filters_json" value="{}">
+            @if(!empty($previewStateKey))
+                <input type="hidden" name="preview_state_key" value="{{ $previewStateKey }}">
+            @endif
 
             <div class="card shadow-sm">
                 <div class="card-header bg-white">

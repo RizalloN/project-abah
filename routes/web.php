@@ -7,8 +7,11 @@ use App\Http\Controllers\Import\ImportIndexController;
 use App\Http\Controllers\Import\ImportFileController;
 use App\Http\Controllers\Import\ImportFileBrimoController;
 use App\Http\Controllers\Import\ImportCasaBrilinkController;
+use App\Http\Controllers\Import\ImportCleanupController;
 use App\Http\Controllers\Import\ImportPerformancePisPerProdukController;
 use App\Http\Controllers\Import\ImportReportPhController;
+use App\Http\Controllers\Import\ImportSimpananMultiPnCsvController;
+use App\Http\Controllers\RekeningDormantController;
 use App\Http\Controllers\RasioCasaDebiturController;
 
 Route::get('/', function () {
@@ -55,6 +58,9 @@ Route::get('/report/kolaborasi-perusahaan-anak/program-referral-partner-perusaha
 // 🔥 ROUTE REKENING TRANSAKSI DEBITUR
 Route::get('/report/rekening-transaksi-debitur', [RasioCasaDebiturController::class, 'index'])->name('report.rasiocasa.debitur');
 Route::post('/report/data/rasiocasa', [RasioCasaDebiturController::class, 'fetchData'])->name('report.data.rasiocasa');
+Route::get('/report/rekening-transaksi-debitur/rekening-dormant', [RekeningDormantController::class, 'index'])->name('report.rekening-dormant');
+Route::get('/report/rekening-transaksi-debitur/rekening-dormant/filters', [RekeningDormantController::class, 'filters'])->name('report.rekening-dormant.filters');
+Route::post('/report/data/rekening-dormant', [RekeningDormantController::class, 'fetchData'])->name('report.data.rekening-dormant');
 Route::get('/report/peningkatan-payroll-berkualitas/kinerja-new-payroll', [App\Http\Controllers\DataReportController::class, 'performanceNewPayroll'])->name('report.kinerja.newpayroll');
 Route::post('/report/data/newpayroll', [App\Http\Controllers\DataReportController::class, 'fetchNewPayrollData'])->name('report.data.newpayroll');
 
@@ -86,6 +92,8 @@ Route::middleware(['auth', 'role:admin'])->group(function () {
     Route::post('/import/performance-pis/upload', [ImportPerformancePisPerProdukController::class, 'upload'])->name('import.performancepis.upload');
     Route::get('/import/performance-pis/preview', [ImportPerformancePisPerProdukController::class, 'preview'])->name('import.performancepis.preview');
     Route::post('/import/performance-pis/preview', [ImportPerformancePisPerProdukController::class, 'preview'])->name('import.performancepis.preview.refresh');
+    Route::post('/import/performance-pis/init', [ImportPerformancePisPerProdukController::class, 'initImport'])->name('import.performancepis.init');
+    Route::get('/import/performance-pis/stream', [ImportPerformancePisPerProdukController::class, 'processImportStream'])->name('import.performancepis.stream');
     Route::post('/import/performance-pis/process', [ImportPerformancePisPerProdukController::class, 'processImport'])->name('import.performancepis.process');
     Route::post('/import/report-ph/upload', [ImportReportPhController::class, 'upload'])->name('import.reportph.upload');
     Route::get('/import/report-ph/preview', [ImportReportPhController::class, 'preview'])->name('import.reportph.preview');
@@ -105,6 +113,7 @@ Route::middleware(['auth', 'role:admin'])->group(function () {
 
     // Process import
     Route::post('/import/process', [ImportFileController::class, 'processImport'])->name('import.process');
+    Route::post('/import/cleanup-artifacts', [ImportCleanupController::class, 'cleanupStaleArtifacts'])->name('import.cleanup-artifacts');
 
     // =======================================================
     // ROUTE IMPORT BRIMO (USER BRIMO RPT V2 & USER BRIMO FIN)
@@ -129,6 +138,23 @@ Route::middleware(['auth', 'role:admin'])->group(function () {
         Route::post('/init', [App\Http\Controllers\Import\ImportExcelController::class, 'initDailyLoanImport'])->name('import.dailyloan.init');
         Route::get('/stream', [App\Http\Controllers\Import\ImportExcelController::class, 'streamDailyLoanImport'])->name('import.dailyloan.stream');
         Route::post('/chunk', [App\Http\Controllers\Import\ImportExcelController::class, 'chunkDailyLoanImport'])->name('import.dailyloan.chunk');
+    });
+
+    Route::prefix('import-excel/simpanan-multipn')->group(function () {
+        Route::post('/upload', [App\Http\Controllers\Import\ImportExcelController::class, 'uploadSimpananMultiPnExcel'])->name('import.simpanan.upload');
+        Route::get('/preview', [App\Http\Controllers\Import\ImportExcelController::class, 'previewSimpananMultiPnExcel'])->name('import.simpanan.preview');
+        Route::get('/prepare-preview', [App\Http\Controllers\Import\ImportExcelController::class, 'prepareSimpananMultiPnPreview'])->name('import.simpanan.prepare-preview');
+        Route::post('/init', [App\Http\Controllers\Import\ImportExcelController::class, 'initSimpananMultiPnImport'])->name('import.simpanan.init');
+        Route::get('/stream', [App\Http\Controllers\Import\ImportExcelController::class, 'streamSimpananMultiPnImport'])->name('import.simpanan.stream');
+        Route::post('/chunk', [App\Http\Controllers\Import\ImportExcelController::class, 'chunkSimpananMultiPnImport'])->name('import.simpanan.chunk');
+    });
+
+    Route::prefix('import-csv/simpanan-multipn')->group(function () {
+        Route::post('/upload', [ImportSimpananMultiPnCsvController::class, 'upload'])->name('import.simpanan.csv.upload');
+        Route::get('/preview', [ImportSimpananMultiPnCsvController::class, 'preview'])->name('import.simpanan.csv.preview');
+        Route::get('/prepare-preview', [ImportSimpananMultiPnCsvController::class, 'preparePreviewStream'])->name('import.simpanan.csv.prepare-preview');
+        Route::post('/init', [ImportSimpananMultiPnCsvController::class, 'initImport'])->name('import.simpanan.csv.init');
+        Route::get('/stream', [ImportSimpananMultiPnCsvController::class, 'processImportStream'])->name('import.simpanan.csv.stream');
     });
 });
 

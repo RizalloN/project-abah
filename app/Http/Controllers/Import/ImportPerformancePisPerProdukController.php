@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Import;
 use App\Http\Controllers\Controller;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -15,6 +16,9 @@ class ImportPerformancePisPerProdukController extends Controller
     private const TABLE_NAME = 'performance_pis_per_produk';
     private const UNIQUE_SUFFIX = '_PISPP';
     private const COLUMN_DELIMITER = ',';
+    private const STREAM_PROGRESS_EVERY = 500;
+    private const INSERT_BATCH_SIZE = 1000;
+    private const BULK_LOAD_TEMP_DIR = 'app/import_bulk';
     private const EXPECTED_HEADERS = [
         'no',
         'kode_kanwil',
@@ -175,6 +179,8 @@ class ImportPerformancePisPerProdukController extends Controller
             'currentDelimiter' => $context['delimiter'],
             'processRoute' => route('import.performancepis.process'),
             'previewRoute' => route('import.performancepis.preview.refresh'),
+            'initRoute' => route('import.performancepis.init'),
+            'streamRoute' => route('import.performancepis.stream'),
             'backRoute' => route('import.index'),
             'disableArea6AutoFilter' => true,
             'detectedPosisi' => $context['posisi'],
@@ -305,7 +311,9 @@ class ImportPerformancePisPerProdukController extends Controller
             'updated_at' => now(),
         ]);
 
-        $this->cleanupUploadedFile($relativePath);
+        if ($finalStatus === 'completed' && $totalSuccess >= $totalRows) {
+            $this->cleanupSuccessfulImportArtifacts($jobId, $relativePath);
+        }
 
         if ($totalFailed > 0) {
             return response()->json([
@@ -320,6 +328,268 @@ class ImportPerformancePisPerProdukController extends Controller
             'status' => 'success',
             'title' => 'Berhasil!',
             'text' => "Sebanyak {$totalSuccess} baris data telah sukses masuk ke tabel <b class='text-uppercase'>" . self::TABLE_NAME . '</b>.',
+        ]);
+    }
+
+    public function initImport(Request $request)
+    {
+        ini_set('memory_limit', '1024M');
+        set_time_limit(0);
+
+        $request->validate([
+            'file_path' => 'required|string',
+            'selected_columns' => 'required|array|min:1',
+            'active_filters_json' => 'nullable|string',
+            'delimiter' => 'required|string',
+            'periode' => 'required|date_format:Y-m-d',
+        ]);
+
+        $relativePath = $request->input('file_path');
+        $absolutePath = Storage::path($relativePath);
+        if (!file_exists($absolutePath)) {
+            return response()->json([
+                'status' => 'error',
+                'title' => 'Gagal!',
+                'text' => 'File CSV tidak ditemukan di server.',
+            ], 422);
+        }
+
+        $selectedColumns = array_map('intval', $request->input('selected_columns', []));
+        $activeFilters = json_decode($request->input('active_filters_json', '{}'), true) ?: [];
+
+        try {
+            $context = $this->buildCsvContext($absolutePath, $request->input('periode'));
+            $totalRows = $this->countFilteredRows($absolutePath, $context, $activeFilters, $selectedColumns);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'status' => 'error',
+                'title' => 'Gagal!',
+                'text' => 'Struktur CSV tidak dikenali: ' . $e->getMessage(),
+            ], 422);
+        }
+
+        if (empty($context['posisi'])) {
+            return response()->json([
+                'status' => 'error',
+                'title' => 'Gagal!',
+                'text' => 'Tanggal posisi Performance PIS tidak berhasil dideteksi.',
+            ], 422);
+        }
+
+        if ($totalRows === 0) {
+            return response()->json([
+                'status' => 'warning',
+                'title' => 'Tidak Ada Data',
+                'text' => 'Tidak ada baris yang lolos filter untuk diimport.',
+            ], 422);
+        }
+
+        if (DB::table(self::TABLE_NAME)->whereDate('posisi', $context['posisi'])->exists()) {
+            $this->cleanupUploadedFile($relativePath);
+
+            return response()->json([
+                'status' => 'warning',
+                'title' => 'Data Ditolak (Duplikat)!',
+                'text' => "Data untuk tanggal POSISI <b>{$context['posisi']}</b> sudah ada di tabel <b class='text-uppercase'>" . self::TABLE_NAME . '</b>.',
+            ], 422);
+        }
+
+        $jobId = DB::table('import_jobs')->insertGetId([
+            'id_report' => session('active_id_report'),
+            'file_name' => basename($absolutePath),
+            'folder_path' => dirname($absolutePath),
+            'status' => 'processing',
+            'total_files' => $totalRows,
+            'total_success' => 0,
+            'total_failed' => 0,
+            'created_by' => auth()->id() ?? 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $importParams = [
+            'job_id' => $jobId,
+            'file_path' => $relativePath,
+            'selected_columns' => $selectedColumns,
+            'active_filters' => $activeFilters,
+            'periode' => $request->input('periode'),
+            'total_rows' => $totalRows,
+        ];
+        session(['performance_pis_import_params' => $importParams]);
+        Cache::put('performance_pis_import_params_' . $jobId, $importParams, now()->addHours(4));
+
+        return response()->json([
+            'status' => 'success',
+            'job_id' => $jobId,
+            'total_rows' => $totalRows,
+        ]);
+    }
+
+    public function processImportStream(Request $request)
+    {
+        ini_set('memory_limit', '1024M');
+        set_time_limit(0);
+        DB::disableQueryLog();
+
+        $sessionParams = session('performance_pis_import_params', []);
+        $jobId = (int) ($sessionParams['job_id'] ?? $request->query('job_id', 0));
+        $params = Cache::get('performance_pis_import_params_' . $jobId, $sessionParams);
+
+        request()->session()->save();
+
+        return response()->stream(function () use ($params, $jobId) {
+            $streamLock = null;
+            $send = function (string $event, array $data) {
+                echo "event: {$event}\n";
+                echo 'data: ' . json_encode($data) . "\n\n";
+                if (ob_get_level() > 0) {
+                    ob_flush();
+                }
+                flush();
+            };
+
+            try {
+                if ($jobId > 0) {
+                    $streamLock = Cache::lock('import_performance_pis_stream_job_' . $jobId, 7200);
+
+                    if (!$streamLock->get()) {
+                        $job = DB::table('import_jobs')->where('id', $jobId)->first();
+
+                        if ($job && in_array($job->status, ['completed', 'failed', 'failed_partial'], true)) {
+                            $send('complete', [
+                                'total_success' => (int) ($job->total_success ?? 0),
+                                'total_failed' => (int) ($job->total_failed ?? 0),
+                                'total_rows' => (int) ($job->total_files ?? 0),
+                            ]);
+                        } else {
+                            $send('error', ['message' => 'Job import Performance PIS ini sudah sedang diproses pada koneksi lain.']);
+                        }
+                        return;
+                    }
+                }
+
+                $relativePath = $params['file_path'] ?? '';
+                $absolutePath = Storage::path($relativePath);
+                $selectedColumns = array_map('intval', $params['selected_columns'] ?? []);
+                $activeFilters = $params['active_filters'] ?? [];
+                $periode = $params['periode'] ?? null;
+                $totalRows = (int) ($params['total_rows'] ?? 0);
+
+                if ($relativePath === '' || !file_exists($absolutePath)) {
+                    $send('error', ['message' => 'File CSV Performance PIS tidak ditemukan di server.']);
+                    return;
+                }
+
+                $context = $this->buildCsvContext($absolutePath, $periode);
+
+                if ($totalRows <= 0) {
+                    $totalRows = $this->countFilteredRows($absolutePath, $context, $activeFilters, $selectedColumns);
+                }
+
+                $send('progress', [
+                    'percent' => 5,
+                    'message' => 'Menyiapkan CSV staging Performance PIS...',
+                    'rows_done' => 0,
+                    'total' => $totalRows,
+                    'speed' => 0,
+                ]);
+
+                $stagingResult = $this->createFilteredCsvStage($absolutePath, $context, $activeFilters, $selectedColumns, $totalRows, $send);
+                $totalPreparedRows = $stagingResult['rows_done'];
+                $stagingPath = $stagingResult['path'];
+                $loadColumns = $stagingResult['columns'];
+
+                if ($jobId > 0) {
+                    DB::table('import_jobs')->where('id', $jobId)->update([
+                        'total_files' => $totalPreparedRows,
+                        'updated_at' => now(),
+                    ]);
+                }
+
+                $send('progress', [
+                    'percent' => 96,
+                    'message' => 'CSV staging siap. Memuat data ke MySQL...',
+                    'rows_done' => $totalPreparedRows,
+                    'total' => $totalPreparedRows,
+                    'speed' => 0,
+                ]);
+
+                $totalSuccess = 0;
+                $totalFailed = 0;
+                $lastErrorMsg = '';
+
+                try {
+                    if ($this->supportsNativeBulkLoad()) {
+                        $totalSuccess = $this->loadCsvIntoMysql($stagingPath, self::TABLE_NAME, $loadColumns);
+                        $totalFailed = max(0, $totalPreparedRows - $totalSuccess);
+                    } else {
+                        throw new \RuntimeException('LOAD DATA LOCAL INFILE tidak tersedia pada koneksi aktif.');
+                    }
+                } catch (\Throwable $e) {
+                    $lastErrorMsg = Str::limit($e->getMessage(), 800, '...');
+                    Log::warning('Performance PIS bulk load fallback: ' . $e->getMessage());
+
+                    $send('progress', [
+                        'percent' => 97,
+                        'message' => 'Bulk load tidak tersedia. Fallback ke batch insert...',
+                        'rows_done' => $totalPreparedRows,
+                        'total' => $totalPreparedRows,
+                        'speed' => 0,
+                    ]);
+
+                    $fallbackResult = $this->insertStagedCsvInBatches($stagingPath, $loadColumns);
+                    $totalSuccess = $fallbackResult['total_success'];
+                    $totalFailed = $fallbackResult['total_failed'];
+                    if ($fallbackResult['last_error'] !== '') {
+                        $lastErrorMsg = $fallbackResult['last_error'];
+                    }
+                } finally {
+                    @unlink($stagingPath);
+                }
+
+                DB::table('import_jobs')->where('id', $jobId)->update([
+                    'status' => $totalFailed > 0 ? ($totalSuccess > 0 ? 'failed_partial' : 'failed') : 'completed',
+                    'total_files' => $totalPreparedRows,
+                    'total_success' => $totalSuccess,
+                    'total_failed' => $totalFailed,
+                    'updated_at' => now(),
+                ]);
+
+                if ($totalFailed === 0 && $totalSuccess >= $totalPreparedRows) {
+                    $this->cleanupSuccessfulImportArtifacts($jobId, $relativePath, [$stagingPath]);
+                }
+
+                $send('complete', [
+                    'total_success' => $totalSuccess,
+                    'total_failed' => $totalFailed,
+                    'total_rows' => $totalPreparedRows,
+                    'error_message' => $lastErrorMsg,
+                ]);
+            } catch (\Throwable $e) {
+                Log::error('PERFORMANCE PIS STREAM ERROR: ' . $e->getMessage() . ' | ' . $e->getFile() . ':' . $e->getLine());
+                if ($jobId > 0) {
+                    DB::table('import_jobs')->where('id', $jobId)->update([
+                        'status' => 'failed',
+                        'updated_at' => now(),
+                    ]);
+                }
+                $send('error', [
+                    'message' => 'Fatal Error: ' . $e->getMessage(),
+                ]);
+            } finally {
+                if ($streamLock) {
+                    try {
+                        $streamLock->release();
+                    } catch (\Throwable $e) {
+                        Log::warning('Failed to release Performance PIS import stream lock for job ' . $jobId . ': ' . $e->getMessage());
+                    }
+                }
+            }
+        }, 200, [
+            'Content-Type' => 'text/event-stream',
+            'Cache-Control' => 'no-cache, no-store',
+            'X-Accel-Buffering' => 'no',
+            'Connection' => 'keep-alive',
         ]);
     }
 
@@ -826,12 +1096,14 @@ class ImportPerformancePisPerProdukController extends Controller
         return true;
     }
 
-    private function buildInsertRow(array $headers, array $row, array $selectedColumns): ?array
+    private function buildInsertRow(array $headers, array $row, array $selectedColumns, ?string $timestamp = null): ?array
     {
+        $timestamp = $timestamp ?? now()->toDateTimeString();
+
         $insertRow = [
             'uniqueid_namareport' => uniqid('', true) . self::UNIQUE_SUFFIX,
-            'created_at' => now(),
-            'updated_at' => now(),
+            'created_at' => $timestamp,
+            'updated_at' => $timestamp,
         ];
 
         foreach ($selectedColumns as $index) {
@@ -850,6 +1122,257 @@ class ImportPerformancePisPerProdukController extends Controller
         return $this->hasMeaningfulImportData($insertRow, ['uniqueid_namareport', 'created_at', 'updated_at', 'periode', 'posisi'])
             ? $insertRow
             : null;
+    }
+
+    private function countFilteredRows(string $absolutePath, array $context, array $activeFilters, array $selectedColumns): int
+    {
+        $handle = fopen($absolutePath, 'r');
+        if ($handle === false) {
+            throw new \RuntimeException('Gagal membuka file CSV.');
+        }
+
+        $totalRows = 0;
+        $lineNumber = 0;
+
+        try {
+            while (($line = fgets($handle)) !== false) {
+                $lineNumber++;
+                if ($lineNumber <= $context['header_line']) {
+                    continue;
+                }
+
+                $row = $this->mapCsvRow($context, $this->parseCsvLine($line));
+                if ($row === null || !$this->passesFilters($row, $activeFilters)) {
+                    continue;
+                }
+
+                if ($this->buildInsertRow($context['headers'], $row, $selectedColumns) === null) {
+                    continue;
+                }
+
+                $totalRows++;
+            }
+        } finally {
+            fclose($handle);
+        }
+
+        return $totalRows;
+    }
+
+    private function createBulkLoadTempCsvPath(int $jobId): string
+    {
+        $directory = storage_path(self::BULK_LOAD_TEMP_DIR);
+        if (!is_dir($directory)) {
+            @mkdir($directory, 0777, true);
+        }
+
+        return $directory . DIRECTORY_SEPARATOR . self::TABLE_NAME . '_' . $jobId . '_' . Str::random(8) . '.csv';
+    }
+
+    private function createFilteredCsvStage(
+        string $absolutePath,
+        array $context,
+        array $activeFilters,
+        array $selectedColumns,
+        int $totalRows,
+        callable $send
+    ): array {
+        $handle = fopen($absolutePath, 'r');
+        if ($handle === false) {
+            throw new \RuntimeException('Gagal membuka file CSV Performance PIS.');
+        }
+
+        $stagingPath = $this->createBulkLoadTempCsvPath((int) (microtime(true) * 1000));
+        $outputHandle = fopen($stagingPath, 'w');
+        if ($outputHandle === false) {
+            fclose($handle);
+            throw new \RuntimeException('Gagal membuat file staging Performance PIS.');
+        }
+
+        $loadColumns = ['uniqueid_namareport', 'created_at', 'updated_at'];
+        foreach ($selectedColumns as $index) {
+            $column = $context['headers'][$index] ?? null;
+            if (!$column || in_array($column, ['id', 'uniqueid_namareport'], true)) {
+                continue;
+            }
+
+            $loadColumns[] = $column;
+        }
+        $loadColumns = array_values(array_unique($loadColumns));
+
+        $rowsDone = 0;
+        $lineNumber = 0;
+        $lastProgressAt = 0;
+        $startTime = microtime(true);
+        $timestamp = now()->toDateTimeString();
+
+        try {
+            while (($line = fgets($handle)) !== false) {
+                $lineNumber++;
+                if ($lineNumber <= $context['header_line']) {
+                    continue;
+                }
+
+                $row = $this->mapCsvRow($context, $this->parseCsvLine($line));
+                if ($row === null || !$this->passesFilters($row, $activeFilters)) {
+                    continue;
+                }
+
+                $insertRow = $this->buildInsertRow($context['headers'], $row, $selectedColumns, $timestamp);
+                if ($insertRow === null) {
+                    continue;
+                }
+
+                $stagedRow = [];
+                foreach ($loadColumns as $column) {
+                    $value = $insertRow[$column] ?? null;
+                    $stagedRow[] = $value === null ? '\N' : (string) $value;
+                }
+
+                fputcsv($outputHandle, $stagedRow);
+                $rowsDone++;
+
+                if ($rowsDone - $lastProgressAt >= self::STREAM_PROGRESS_EVERY) {
+                    $lastProgressAt = $rowsDone;
+                    $elapsed = max(microtime(true) - $startTime, 0.001);
+                    $speed = (int) ($rowsDone / $elapsed);
+                    $percent = $totalRows > 0
+                        ? min(92, 10 + (int) (($rowsDone / $totalRows) * 82))
+                        : 80;
+
+                    $send('progress', [
+                        'percent' => $percent,
+                        'message' => "Menyusun CSV staging Performance PIS... ({$speed} baris/detik)",
+                        'rows_done' => $rowsDone,
+                        'total' => $totalRows,
+                        'speed' => $speed,
+                    ]);
+                }
+            }
+        } finally {
+            fclose($handle);
+            fclose($outputHandle);
+        }
+
+        return [
+            'path' => $stagingPath,
+            'rows_done' => $rowsDone,
+            'columns' => $loadColumns,
+            'timestamp' => $timestamp,
+        ];
+    }
+
+    private function supportsNativeBulkLoad(): bool
+    {
+        $driver = DB::connection()->getDriverName();
+        if (!in_array($driver, ['mysql', 'mariadb'], true)) {
+            return false;
+        }
+
+        try {
+            $row = DB::selectOne("SHOW VARIABLES LIKE 'local_infile'");
+            return strtoupper((string) ($row->Value ?? $row->value ?? 'OFF')) === 'ON';
+        } catch (\Throwable $e) {
+            Log::warning('Unable to verify local_infile support for Performance PIS: ' . $e->getMessage());
+            return false;
+        }
+    }
+
+    private function loadCsvIntoMysql(string $csvPath, string $tableName, array $columns): int
+    {
+        if (!file_exists($csvPath)) {
+            throw new \RuntimeException('File staging CSV tidak ditemukan untuk bulk load.');
+        }
+
+        if (empty($columns)) {
+            throw new \RuntimeException('Kolom bulk load kosong.');
+        }
+
+        $connection = config('database.default', 'mysql');
+        $dbConfig = config("database.connections.{$connection}", []);
+        $charset = $dbConfig['charset'] ?? 'utf8mb4';
+        $host = $dbConfig['host'] ?? '127.0.0.1';
+        $port = $dbConfig['port'] ?? '3306';
+        $database = $dbConfig['database'] ?? '';
+        $username = $dbConfig['username'] ?? '';
+        $password = $dbConfig['password'] ?? '';
+        $unixSocket = $dbConfig['unix_socket'] ?? '';
+
+        $dsn = $unixSocket !== ''
+            ? "mysql:unix_socket={$unixSocket};dbname={$database};charset={$charset}"
+            : "mysql:host={$host};port={$port};dbname={$database};charset={$charset}";
+
+        $pdo = new \PDO($dsn, $username, $password, [
+            \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
+            \PDO::MYSQL_ATTR_LOCAL_INFILE => true,
+        ]);
+
+        $normalizedPath = str_replace('\\', '/', realpath($csvPath) ?: $csvPath);
+        $quotedPath = $pdo->quote($normalizedPath);
+        $quotedColumns = implode(', ', array_map(function (string $column) {
+            return '`' . str_replace('`', '``', $column) . '`';
+        }, $columns));
+
+        $sql = "LOAD DATA LOCAL INFILE {$quotedPath} INTO TABLE `{$tableName}` "
+            . "CHARACTER SET utf8mb4 "
+            . "FIELDS TERMINATED BY ',' ENCLOSED BY '\"' "
+            . "LINES TERMINATED BY '\\n' "
+            . "({$quotedColumns})";
+
+        $affected = $pdo->exec($sql);
+        $pdo = null;
+
+        if ($affected === false) {
+            throw new \RuntimeException('LOAD DATA LOCAL INFILE gagal dieksekusi.');
+        }
+
+        return (int) $affected;
+    }
+
+    private function insertStagedCsvInBatches(string $csvPath, array $columns): array
+    {
+        $handle = fopen($csvPath, 'r');
+        if ($handle === false) {
+            throw new \RuntimeException('Gagal membuka file staging CSV untuk fallback insert.');
+        }
+
+        $rows = [];
+        $totalSuccess = 0;
+        $totalFailed = 0;
+        $lastError = '';
+
+        try {
+            while (($data = fgetcsv($handle, 0, self::COLUMN_DELIMITER)) !== false) {
+                if (empty($data)) {
+                    continue;
+                }
+
+                $row = [];
+                foreach ($columns as $index => $column) {
+                    $value = $data[$index] ?? null;
+                    $row[$column] = $value === '\N' ? null : $value;
+                }
+
+                $rows[] = $row;
+
+                if (count($rows) >= self::INSERT_BATCH_SIZE) {
+                    $this->insertBatch($rows, $totalSuccess, $totalFailed, $lastError);
+                    $rows = [];
+                }
+            }
+        } finally {
+            fclose($handle);
+        }
+
+        if (!empty($rows)) {
+            $this->insertBatch($rows, $totalSuccess, $totalFailed, $lastError);
+        }
+
+        return [
+            'total_success' => $totalSuccess,
+            'total_failed' => $totalFailed,
+            'last_error' => $lastError,
+        ];
     }
 
     private function insertBatch(array $rows, int &$totalSuccess, int &$totalFailed, string &$lastErrorMsg): void
@@ -881,6 +1404,21 @@ class ImportPerformancePisPerProdukController extends Controller
             Storage::delete($relativePath);
         } catch (\Throwable $e) {
             Log::warning('Gagal menghapus file Performance PIS sementara: ' . $e->getMessage());
+        }
+    }
+
+    private function cleanupSuccessfulImportArtifacts(int $jobId, string $relativePath, array $extraPaths = []): void
+    {
+        try {
+            app(ImportCleanupController::class)->cleanupSuccessfulJobArtifacts(
+                $jobId,
+                array_values(array_filter(array_merge([$relativePath], $extraPaths)))
+            );
+        } catch (\Throwable $e) {
+            Log::warning('Gagal menjalankan cleanup terpusat Performance PIS: ' . $e->getMessage(), [
+                'job_id' => $jobId,
+                'relative_path' => $relativePath,
+            ]);
         }
     }
 

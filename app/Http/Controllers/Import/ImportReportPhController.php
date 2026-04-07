@@ -244,15 +244,15 @@ class ImportReportPhController extends Controller
             'updated_at' => now(),
         ]);
 
-        session([
-            'report_ph_import_params' => [
-                'job_id' => $jobId,
-                'file_path' => $relativePath,
-                'selected_columns' => $selectedColumns,
-                'active_filters' => $activeFilters,
-                'total_rows' => $totalRows,
-            ],
-        ]);
+        $importParams = [
+            'job_id' => $jobId,
+            'file_path' => $relativePath,
+            'selected_columns' => $selectedColumns,
+            'active_filters' => $activeFilters,
+            'total_rows' => $totalRows,
+        ];
+        session(['report_ph_import_params' => $importParams]);
+        Cache::put('report_ph_import_params_' . $jobId, $importParams, now()->addHours(4));
 
         return response()->json([
             'status' => 'success',
@@ -267,8 +267,9 @@ class ImportReportPhController extends Controller
         set_time_limit(0);
         DB::disableQueryLog();
 
-        $params = session('report_ph_import_params', []);
-        $jobId = (int) ($params['job_id'] ?? $request->query('job_id', 0));
+        $sessionParams = session('report_ph_import_params', []);
+        $jobId = (int) ($sessionParams['job_id'] ?? $request->query('job_id', 0));
+        $params = Cache::get('report_ph_import_params_' . $jobId, $sessionParams);
 
         request()->session()->save();
 
@@ -394,7 +395,7 @@ class ImportReportPhController extends Controller
                     'updated_at' => now(),
                 ]);
 
-                $this->cleanupUploadedFile($relativePath);
+                $this->cleanupSuccessfulImportArtifacts($jobId, $relativePath);
 
                 $send('progress', [
                     'percent' => 98,
@@ -544,7 +545,9 @@ class ImportReportPhController extends Controller
             $this->insertBatch($rows, $totalSuccess, $totalFailed, $lastErrorMsg);
         }
 
-        $this->cleanupUploadedFile($relativePath);
+        if ($totalFailed === 0) {
+            $this->cleanupUploadedFile($relativePath);
+        }
 
         return response()->json([
             'status' => $totalFailed > 0 ? 'warning' : 'success',
@@ -1040,6 +1043,18 @@ class ImportReportPhController extends Controller
             Storage::delete($relativePath);
         } catch (\Throwable $e) {
             Log::warning('Gagal menghapus file sementara ' . self::REPORT_LABEL . ': ' . $e->getMessage());
+        }
+    }
+
+    private function cleanupSuccessfulImportArtifacts(int $jobId, string $relativePath): void
+    {
+        try {
+            app(ImportCleanupController::class)->cleanupSuccessfulJobArtifacts($jobId, [$relativePath]);
+        } catch (\Throwable $e) {
+            Log::warning('Gagal menjalankan cleanup terpusat ' . self::REPORT_LABEL . ': ' . $e->getMessage(), [
+                'job_id' => $jobId,
+                'relative_path' => $relativePath,
+            ]);
         }
     }
 
