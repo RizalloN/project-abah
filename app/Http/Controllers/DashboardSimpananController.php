@@ -5,21 +5,23 @@ namespace App\Http\Controllers;
 use App\Support\ReportDataSyncService;
 use Carbon\Carbon;
 use Illuminate\Contracts\View\View;
-use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Throwable;
 
 class DashboardSimpananController extends Controller
 {
+    private const PAYLOAD_CACHE_MINUTES = 2;
     private const SUMMARY_CACHE_MINUTES = 5;
     private const SUMMARY_LATEST_CACHE_MINUTES = 30;
     private const TOP_BRANCH_CACHE_MINUTES = 5;
     private const CACHE_LOCK_SECONDS = 20;
     private const SNAPSHOT_SUMMARY_TABLE = 'dashboard_simpanan_snapshots';
     private const SNAPSHOT_BRANCH_TABLE = 'dashboard_simpanan_branch_snapshots';
+    private array $snapshotExistsMemo = [];
 
     public function index(): View
     {
@@ -32,26 +34,24 @@ class DashboardSimpananController extends Controller
 
     private function buildDashboardPayload(): array
     {
+        $payloadCacheKey = 'dashboard_simpanan:payload:v' . $this->reportCacheVersion();
+
+        return Cache::remember($payloadCacheKey, now()->addMinutes(self::PAYLOAD_CACHE_MINUTES), function () {
+            return $this->buildDashboardPayloadFresh();
+        });
+    }
+
+    private function buildDashboardPayloadFresh(): array
+    {
         if (!Schema::hasTable('simpanan_multipn')) {
             return $this->emptyDashboard();
         }
 
-        $latestPeriod = DB::table('simpanan_multipn')->max('posisi');
+        [$currentPeriod, $previousPeriod, $yoyPeriod] = $this->resolveDashboardPeriods();
 
-        if (!$latestPeriod) {
+        if (!$currentPeriod) {
             return $this->emptyDashboard();
         }
-
-        $currentPeriod = Carbon::parse($latestPeriod)->toDateString();
-        $previousCandidate = Carbon::parse($currentPeriod)->subMonthNoOverflow()->endOfMonth()->toDateString();
-        $yoyCandidate = Carbon::parse($currentPeriod)->subYearNoOverflow()->endOfMonth()->toDateString();
-
-        $previousPeriod = DB::table('simpanan_multipn')
-            ->where('posisi', '<=', $previousCandidate)
-            ->max('posisi');
-        $yoyPeriod = DB::table('simpanan_multipn')
-            ->where('posisi', '<=', $yoyCandidate)
-            ->max('posisi');
 
         $currentSummary = $this->buildPeriodSummary($currentPeriod);
         $previousSummary = $previousPeriod ? $this->buildPeriodSummary($previousPeriod) : $this->emptySummary();
@@ -226,6 +226,11 @@ class DashboardSimpananController extends Controller
         $latestKey = $cacheKey . ':latest';
         $ttl = now()->addMinutes(self::SUMMARY_CACHE_MINUTES);
         $latestTtl = now()->addMinutes(self::SUMMARY_LATEST_CACHE_MINUTES);
+        $cached = Cache::get($cacheKey);
+        if (is_array($cached)) {
+            return $cached;
+        }
+
         $lock = Cache::lock($cacheKey . ':lock', self::CACHE_LOCK_SECONDS);
 
         try {
@@ -508,9 +513,13 @@ class DashboardSimpananController extends Controller
             return false;
         }
 
+        if (array_key_exists($period, $this->snapshotExistsMemo)) {
+            return $this->snapshotExistsMemo[$period];
+        }
+
         $cacheKey = 'dashboard_simpanan:snapshot_exists:v' . $this->reportCacheVersion() . ':' . $period;
 
-        return Cache::remember($cacheKey, now()->addMinutes(10), function () use ($period) {
+        $exists = Cache::remember($cacheKey, now()->addMinutes(10), function () use ($period) {
             $exists = DB::table(self::SNAPSHOT_SUMMARY_TABLE)
                 ->where('snapshot_period', $period)
                 ->exists();
@@ -529,25 +538,57 @@ class DashboardSimpananController extends Controller
 
             $lock = Cache::lock('snapshot:dashboard_simpanan:auto-rebuild:' . $period, 60);
 
-            try {
-                $lock->block(5, function () use ($period) {
-                    app(ReportDataSyncService::class)->syncImportedTable(
-                        'simpanan_multipn',
-                        $period,
-                        source: static::class . '::hasSimpananSnapshot'
-                    );
+            if ($lock->get()) {
+                defer(function () use ($period, $lock) {
+                    try {
+                        app(ReportDataSyncService::class)->syncImportedTable(
+                            'simpanan_multipn',
+                            $period,
+                            source: static::class . '::hasSimpananSnapshot'
+                        );
+                    } catch (Throwable $e) {
+                        Log::warning('Auto rebuild dashboard simpanan snapshot gagal: ' . $e->getMessage(), [
+                            'period' => $period,
+                        ]);
+                    } finally {
+                        $lock->release();
+                    }
                 });
-            } catch (LockTimeoutException) {
-                return false;
-            } catch (Throwable) {
-                return false;
-            } finally {
-                optional($lock)->release();
             }
 
             return DB::table(self::SNAPSHOT_SUMMARY_TABLE)
                 ->where('snapshot_period', $period)
                 ->exists();
+        });
+
+        $this->snapshotExistsMemo[$period] = $exists;
+
+        return $exists;
+    }
+
+    private function resolveDashboardPeriods(): array
+    {
+        $cacheKey = 'dashboard_simpanan:periods:v' . $this->reportCacheVersion();
+
+        return Cache::remember($cacheKey, now()->addMinutes(10), function () {
+            $latestPeriod = DB::table('simpanan_multipn')->max('posisi');
+            if (!$latestPeriod) {
+                return [null, null, null];
+            }
+
+            $currentPeriod = Carbon::parse($latestPeriod)->toDateString();
+            $previousCandidate = Carbon::parse($currentPeriod)->subMonthNoOverflow()->endOfMonth()->toDateString();
+            $yoyCandidate = Carbon::parse($currentPeriod)->subYearNoOverflow()->endOfMonth()->toDateString();
+
+            $previousPeriod = DB::table('simpanan_multipn')
+                ->where('posisi', '<=', $previousCandidate)
+                ->max('posisi');
+
+            $yoyPeriod = DB::table('simpanan_multipn')
+                ->where('posisi', '<=', $yoyCandidate)
+                ->max('posisi');
+
+            return [$currentPeriod, $previousPeriod, $yoyPeriod];
         });
     }
 

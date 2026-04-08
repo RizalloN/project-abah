@@ -204,6 +204,7 @@ class ImportIndexController extends Controller
             'id_report' => $prepared['id_report'],
             'period_column' => $prepared['period_column'],
             'kanca_column' => $prepared['kanca_column'],
+            'scopes' => $prepared['scopes'],
             'period_filter' => $prepared['period_filter'],
             'kanca_filter' => $prepared['kanca_filter'],
             'period_is_null' => $prepared['period_is_null'],
@@ -338,6 +339,11 @@ class ImportIndexController extends Controller
             'kanca' => 'nullable|string|max:255',
             'period_is_null' => 'nullable|boolean',
             'kanca_is_null' => 'nullable|boolean',
+            'scopes' => 'nullable|array|max:5000',
+            'scopes.*.period' => 'nullable|string|max:100',
+            'scopes.*.kanca' => 'nullable|string|max:255',
+            'scopes.*.period_is_null' => 'nullable|boolean',
+            'scopes.*.kanca_is_null' => 'nullable|boolean',
             'force' => 'nullable|boolean',
         ]);
 
@@ -363,10 +369,17 @@ class ImportIndexController extends Controller
         $tableColumns = Schema::getColumnListing($tableName);
         [$periodColumn, $kancaColumn] = $this->resolveManagementScopeColumns($tableName, $tableColumns);
 
-        $periodFilter = array_key_exists('period', $validated) ? (string) ($validated['period'] ?? '') : null;
-        $kancaFilter = array_key_exists('kanca', $validated) ? (string) ($validated['kanca'] ?? '') : null;
-        $periodIsNull = (bool) ($validated['period_is_null'] ?? false);
-        $kancaIsNull = (bool) ($validated['kanca_is_null'] ?? false);
+        $scopes = $this->normalizeDeleteScopes($validated);
+        $firstScope = $scopes[0] ?? [
+            'period_filter' => null,
+            'kanca_filter' => null,
+            'period_is_null' => false,
+            'kanca_is_null' => false,
+        ];
+        $periodFilter = $firstScope['period_filter'];
+        $kancaFilter = $firstScope['kanca_filter'];
+        $periodIsNull = (bool) $firstScope['period_is_null'];
+        $kancaIsNull = (bool) $firstScope['kanca_is_null'];
         $force = (bool) ($validated['force'] ?? false);
 
         if ($periodColumn === null && $kancaColumn === null) {
@@ -376,14 +389,11 @@ class ImportIndexController extends Controller
             ], 422)];
         }
 
-        [$baseQuery, $hasWhereClause] = $this->buildDeleteScopeQuery(
+        [$baseQuery, $hasWhereClause] = $this->buildDeleteScopeQueryFromScopes(
             $tableName,
             $periodColumn,
             $kancaColumn,
-            $periodFilter,
-            $kancaFilter,
-            $periodIsNull,
-            $kancaIsNull
+            $scopes
         );
 
         if (!$hasWhereClause) {
@@ -394,8 +404,25 @@ class ImportIndexController extends Controller
         }
 
         $periodHint = null;
-        if ($periodColumn !== null && !$periodIsNull && $periodFilter !== null && $periodFilter !== '') {
-            $periodHint = $periodFilter;
+        if ($periodColumn !== null) {
+            $periodCandidates = [];
+            $hasNullPeriodScope = false;
+
+            foreach ($scopes as $scope) {
+                if ((bool) ($scope['period_is_null'] ?? false)) {
+                    $hasNullPeriodScope = true;
+                    continue;
+                }
+
+                $scopePeriod = $scope['period_filter'] ?? null;
+                if ($scopePeriod !== null && $scopePeriod !== '') {
+                    $periodCandidates[(string) $scopePeriod] = true;
+                }
+            }
+
+            if (!$hasNullPeriodScope && count($periodCandidates) === 1) {
+                $periodHint = (string) array_key_first($periodCandidates);
+            }
         }
 
         return [[
@@ -403,6 +430,7 @@ class ImportIndexController extends Controller
             'table_name' => $tableName,
             'period_column' => $periodColumn,
             'kanca_column' => $kancaColumn,
+            'scopes' => $scopes,
             'period_filter' => $periodFilter,
             'kanca_filter' => $kancaFilter,
             'period_is_null' => $periodIsNull,
@@ -416,14 +444,45 @@ class ImportIndexController extends Controller
 
     private function processDeleteChunk(array $state): array
     {
-        [$baseQuery, $hasWhereClause] = $this->buildDeleteScopeQuery(
+        $rawScopes = $state['scopes'] ?? null;
+        $scopes = [];
+        if (is_array($rawScopes) && !empty($rawScopes)) {
+            foreach ($rawScopes as $scope) {
+                if (!is_array($scope)) {
+                    continue;
+                }
+
+                $scopes[] = [
+                    'period_filter' => array_key_exists('period_filter', $scope)
+                        ? (($scope['period_filter'] ?? '') !== '' ? (string) $scope['period_filter'] : null)
+                        : null,
+                    'kanca_filter' => array_key_exists('kanca_filter', $scope)
+                        ? (($scope['kanca_filter'] ?? '') !== '' ? (string) $scope['kanca_filter'] : null)
+                        : null,
+                    'period_is_null' => (bool) ($scope['period_is_null'] ?? false),
+                    'kanca_is_null' => (bool) ($scope['kanca_is_null'] ?? false),
+                ];
+            }
+        }
+
+        if (empty($scopes)) {
+            $scopes[] = [
+                'period_filter' => array_key_exists('period_filter', $state)
+                    ? (($state['period_filter'] ?? '') !== '' ? (string) $state['period_filter'] : null)
+                    : null,
+                'kanca_filter' => array_key_exists('kanca_filter', $state)
+                    ? (($state['kanca_filter'] ?? '') !== '' ? (string) $state['kanca_filter'] : null)
+                    : null,
+                'period_is_null' => (bool) ($state['period_is_null'] ?? false),
+                'kanca_is_null' => (bool) ($state['kanca_is_null'] ?? false),
+            ];
+        }
+
+        [$baseQuery, $hasWhereClause] = $this->buildDeleteScopeQueryFromScopes(
             (string) $state['table_name'],
             $state['period_column'] ?? null,
             $state['kanca_column'] ?? null,
-            $state['period_filter'] ?? null,
-            $state['kanca_filter'] ?? null,
-            (bool) ($state['period_is_null'] ?? false),
-            (bool) ($state['kanca_is_null'] ?? false)
+            $scopes
         );
 
         if (!$hasWhereClause) {
@@ -738,6 +797,137 @@ class ImportIndexController extends Controller
         }
 
         return [$query, $hasWhereClause];
+    }
+
+    private function buildDeleteScopeQueryFromScopes(
+        string $tableName,
+        ?string $periodColumn,
+        ?string $kancaColumn,
+        array $scopes
+    ): array {
+        $query = DB::table($tableName);
+        $validScopes = [];
+
+        foreach ($scopes as $scope) {
+            if (!is_array($scope)) {
+                continue;
+            }
+
+            $periodFilter = array_key_exists('period_filter', $scope)
+                ? (($scope['period_filter'] ?? '') !== '' ? (string) $scope['period_filter'] : null)
+                : null;
+            $kancaFilter = array_key_exists('kanca_filter', $scope)
+                ? (($scope['kanca_filter'] ?? '') !== '' ? (string) $scope['kanca_filter'] : null)
+                : null;
+            $periodIsNull = (bool) ($scope['period_is_null'] ?? false);
+            $kancaIsNull = (bool) ($scope['kanca_is_null'] ?? false);
+
+            $hasPeriodConstraint = $periodColumn !== null && ($periodIsNull || ($periodFilter !== null && $periodFilter !== ''));
+            $hasKancaConstraint = $kancaColumn !== null && ($kancaIsNull || ($kancaFilter !== null && $kancaFilter !== ''));
+
+            if (!$hasPeriodConstraint && !$hasKancaConstraint) {
+                continue;
+            }
+
+            $validScopes[] = [
+                'period_filter' => $periodFilter,
+                'kanca_filter' => $kancaFilter,
+                'period_is_null' => $periodIsNull,
+                'kanca_is_null' => $kancaIsNull,
+            ];
+        }
+
+        if (empty($validScopes)) {
+            return [$query, false];
+        }
+
+        $query->where(function ($outerQuery) use ($validScopes, $periodColumn, $kancaColumn) {
+            foreach ($validScopes as $scope) {
+                $outerQuery->orWhere(function ($innerQuery) use ($scope, $periodColumn, $kancaColumn) {
+                    $applied = false;
+
+                    if ($periodColumn !== null) {
+                        if ((bool) ($scope['period_is_null'] ?? false)) {
+                            $this->applyBlankValueConstraint($innerQuery, $periodColumn);
+                            $applied = true;
+                        } elseif (($scope['period_filter'] ?? null) !== null && $scope['period_filter'] !== '') {
+                            $innerQuery->where($periodColumn, (string) $scope['period_filter']);
+                            $applied = true;
+                        }
+                    }
+
+                    if ($kancaColumn !== null) {
+                        if ((bool) ($scope['kanca_is_null'] ?? false)) {
+                            $this->applyBlankValueConstraint($innerQuery, $kancaColumn);
+                            $applied = true;
+                        } elseif (($scope['kanca_filter'] ?? null) !== null && $scope['kanca_filter'] !== '') {
+                            $innerQuery->where($kancaColumn, (string) $scope['kanca_filter']);
+                            $applied = true;
+                        }
+                    }
+
+                    if (!$applied) {
+                        $innerQuery->whereRaw('1 = 0');
+                    }
+                });
+            }
+        });
+
+        return [$query, true];
+    }
+
+    private function normalizeDeleteScopes(array $validated): array
+    {
+        $rawScopes = [];
+        if (isset($validated['scopes']) && is_array($validated['scopes']) && !empty($validated['scopes'])) {
+            $rawScopes = $validated['scopes'];
+        } else {
+            $rawScopes = [[
+                'period' => $validated['period'] ?? null,
+                'kanca' => $validated['kanca'] ?? null,
+                'period_is_null' => (bool) ($validated['period_is_null'] ?? false),
+                'kanca_is_null' => (bool) ($validated['kanca_is_null'] ?? false),
+            ]];
+        }
+
+        $normalized = [];
+        $seen = [];
+
+        foreach ($rawScopes as $scope) {
+            if (!is_array($scope)) {
+                continue;
+            }
+
+            $periodFilter = array_key_exists('period', $scope)
+                ? (($scope['period'] ?? '') !== '' ? (string) $scope['period'] : null)
+                : null;
+            $kancaFilter = array_key_exists('kanca', $scope)
+                ? (($scope['kanca'] ?? '') !== '' ? (string) $scope['kanca'] : null)
+                : null;
+            $periodIsNull = (bool) ($scope['period_is_null'] ?? false);
+            $kancaIsNull = (bool) ($scope['kanca_is_null'] ?? false);
+
+            $scopeKey = json_encode([
+                $periodFilter,
+                $kancaFilter,
+                $periodIsNull,
+                $kancaIsNull,
+            ]);
+
+            if ($scopeKey === false || isset($seen[$scopeKey])) {
+                continue;
+            }
+
+            $seen[$scopeKey] = true;
+            $normalized[] = [
+                'period_filter' => $periodFilter,
+                'kanca_filter' => $kancaFilter,
+                'period_is_null' => $periodIsNull,
+                'kanca_is_null' => $kancaIsNull,
+            ];
+        }
+
+        return $normalized;
     }
 
     private function resolveIdentityColumn(array $tableColumns): ?string

@@ -53,11 +53,25 @@
 
         <div id="management-notice" class="report-management-notice d-none"></div>
 
+        <div class="report-management-bulkbar mt-3">
+            <div class="form-check m-0">
+                <input class="form-check-input" type="checkbox" id="management-select-all" disabled>
+                <label class="form-check-label font-weight-bold" for="management-select-all">Pilih Semua Grup</label>
+            </div>
+            <div class="report-management-bulkbar__actions">
+                <span id="management-selected-count" class="report-management-bulkbar__count">0 dipilih</span>
+                <button type="button" id="btn-management-delete-selected" class="btn btn-sm btn-danger" disabled>
+                    <i class="fas fa-trash-alt mr-1"></i> Hapus Terpilih
+                </button>
+            </div>
+        </div>
+
         <div class="report-management-table-wrap mt-3">
             <div class="table-responsive">
                 <table class="table table-hover mb-0 report-management-table">
                     <thead>
                         <tr>
+                            <th class="text-center report-management-col-check"><i class="far fa-check-square"></i></th>
                             <th>Periode</th>
                             <th>Kanca</th>
                             <th class="text-right">Jumlah Baris</th>
@@ -65,7 +79,7 @@
                         </tr>
                     </thead>
                     <tbody id="management-table-body">
-                        <tr><td colspan="4" class="text-center text-muted py-4">Pilih report lalu klik "Tampilkan Data".</td></tr>
+                        <tr><td colspan="5" class="text-center text-muted py-4">Pilih report lalu klik "Tampilkan Data".</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -86,6 +100,9 @@
         const summaryReport = document.getElementById('management-summary-report');
         const summaryGroups = document.getElementById('management-summary-groups');
         const summaryRows = document.getElementById('management-summary-rows');
+        const managementSelectAll = document.getElementById('management-select-all');
+        const managementSelectedCount = document.getElementById('management-selected-count');
+        const btnDeleteSelected = document.getElementById('btn-management-delete-selected');
         const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
             || '{{ csrf_token() }}';
 
@@ -200,6 +217,51 @@
             if (summaryRows) summaryRows.textContent = formatNumber(rowsCount);
         }
 
+        function decodeScopeDataset(element) {
+            if (!element) {
+                return null;
+            }
+
+            const period = decodeURIComponent(element.getAttribute('data-period') || '');
+            const kanca = decodeURIComponent(element.getAttribute('data-kanca') || '');
+            const periodIsNull = element.getAttribute('data-period-is-null') === '1';
+            const kancaIsNull = element.getAttribute('data-kanca-is-null') === '1';
+
+            return {
+                period: periodIsNull ? '' : period,
+                kanca: kancaIsNull ? '' : kanca,
+                period_is_null: periodIsNull,
+                kanca_is_null: kancaIsNull,
+                period_label: period || '(Blank)',
+                kanca_label: kanca || '(Blank)',
+            };
+        }
+
+        function getSelectedScopeCheckboxes() {
+            return Array.from(managementTableBody?.querySelectorAll('.management-row-checkbox:checked') || []);
+        }
+
+        function syncBulkSelectionUi() {
+            const allCheckboxes = Array.from(managementTableBody?.querySelectorAll('.management-row-checkbox') || []);
+            const selectedCheckboxes = getSelectedScopeCheckboxes();
+            const selectedCount = selectedCheckboxes.length;
+            const totalCount = allCheckboxes.length;
+
+            if (managementSelectedCount) {
+                managementSelectedCount.textContent = `${formatNumber(selectedCount)} dipilih`;
+            }
+
+            if (btnDeleteSelected) {
+                btnDeleteSelected.disabled = selectedCount === 0;
+            }
+
+            if (managementSelectAll) {
+                managementSelectAll.disabled = totalCount === 0;
+                managementSelectAll.checked = totalCount > 0 && selectedCount === totalCount;
+                managementSelectAll.indeterminate = selectedCount > 0 && selectedCount < totalCount;
+            }
+        }
+
         function renderManagementRows(rows) {
             if (!managementTableBody) {
                 return;
@@ -210,9 +272,10 @@
             if (!Array.isArray(rows) || rows.length === 0) {
                 managementTableBody.innerHTML = `
                     <tr>
-                        <td colspan="4" class="text-center text-muted py-4">Tidak ada data untuk kriteria ini.</td>
+                        <td colspan="5" class="text-center text-muted py-4">Tidak ada data untuk kriteria ini.</td>
                     </tr>
                 `;
+                syncBulkSelectionUi();
                 return;
             }
 
@@ -227,6 +290,14 @@
 
                 return `
                     <tr>
+                        <td class="text-center report-management-col-check">
+                            <input type="checkbox"
+                                   class="management-row-checkbox"
+                                   data-period="${periodEncoded}"
+                                   data-kanca="${kancaEncoded}"
+                                   data-period-is-null="${periodIsNull}"
+                                   data-kanca-is-null="${kancaIsNull}">
+                        </td>
                         <td><span class="report-management-primary">${escapeHtml(period)}</span></td>
                         <td><span class="report-management-primary">${escapeHtml(kanca)}</span></td>
                         <td class="text-right"><span class="report-management-count">${total}</span></td>
@@ -243,6 +314,8 @@
                     </tr>
                 `;
             }).join('');
+
+            syncBulkSelectionUi();
         }
 
         async function postJson(url, payload) {
@@ -288,7 +361,7 @@
             setNotice('', '');
             managementTableBody.innerHTML = `
                 <tr>
-                    <td colspan="4" class="text-center text-muted py-4">Memuat data...</td>
+                    <td colspan="5" class="text-center text-muted py-4">Memuat data...</td>
                 </tr>
             `;
 
@@ -301,27 +374,36 @@
                 payload.truncated ? 'warning' : 'info',
                 payload.truncated
                     ? 'Daftar grup dibatasi oleh server untuk menjaga performa. Data yang tampil merupakan potongan awal hasil grouping.'
-                    : 'Data sudah siap dikelola. Penghapusan per grup akan memicu sinkronisasi snapshot terkait.'
+                    : 'Data sudah siap dikelola. Anda dapat menghapus per grup atau sekaligus beberapa grup terpilih.'
             );
             renderManagementRows(payload.rows || []);
         }
 
-        async function deleteManagedRow(button) {
+        async function deleteManagedScopes(scopes) {
             const deleteUrl = reportManagementCard?.dataset.deleteUrl;
             const processUrlTemplate = reportManagementCard?.dataset.deleteProcessUrlTemplate;
             if (!deleteUrl || !managementReportSelect || !managementReportSelect.value) {
                 return;
             }
 
-            const period = decodeURIComponent(button.getAttribute('data-period') || '');
-            const kanca = decodeURIComponent(button.getAttribute('data-kanca') || '');
-            const periodIsNull = button.getAttribute('data-period-is-null') === '1';
-            const kancaIsNull = button.getAttribute('data-kanca-is-null') === '1';
+            if (!Array.isArray(scopes) || scopes.length === 0) {
+                themedSwal({
+                    icon: 'warning',
+                    title: 'Pilih Data',
+                    text: 'Pilih minimal satu grup yang ingin dihapus.'
+                });
+                return;
+            }
+
+            const previewItems = scopes.slice(0, 5).map(function (scope) {
+                return `<li><b>${escapeHtml(scope.period_label || '(Blank)')}</b> | ${escapeHtml(scope.kanca_label || '(Blank)')}</li>`;
+            }).join('');
+            const extraInfo = scopes.length > 5 ? `<div class="mt-2 text-muted">+${formatNumber(scopes.length - 5)} grup lainnya</div>` : '';
 
             const confirm = await themedSwal({
                 icon: 'warning',
                 title: 'Hapus Data?',
-                html: `Data akan dihapus untuk <b>Periode:</b> ${escapeHtml(period)}<br><b>Kanca:</b> ${escapeHtml(kanca)}`,
+                html: `Data akan dihapus untuk <b>${formatNumber(scopes.length)}</b> grup:<ul class="text-left mb-0 pl-4">${previewItems}</ul>${extraInfo}`,
                 showCancelButton: true,
                 confirmButtonText: 'Ya, Hapus',
                 cancelButtonText: 'Batal'
@@ -333,10 +415,14 @@
 
             const deletePayload = {
                 id_report: managementReportSelect.value,
-                period: periodIsNull ? '' : period,
-                kanca: kancaIsNull ? '' : kanca,
-                period_is_null: periodIsNull,
-                kanca_is_null: kancaIsNull
+                scopes: scopes.map(function (scope) {
+                    return {
+                        period: scope.period || '',
+                        kanca: scope.kanca || '',
+                        period_is_null: !!scope.period_is_null,
+                        kanca_is_null: !!scope.kanca_is_null,
+                    };
+                })
             };
 
             let payload = await postJson(deleteUrl, deletePayload);
@@ -399,6 +485,15 @@
             await fetchManagementData();
         }
 
+        async function deleteManagedRow(button) {
+            const scope = decodeScopeDataset(button);
+            if (!scope) {
+                return;
+            }
+
+            await deleteManagedScopes([scope]);
+        }
+
         btnManagementFilter?.addEventListener('click', async function () {
             try {
                 btnManagementFilter.disabled = true;
@@ -433,6 +528,41 @@
                 button.disabled = false;
             }
         });
+
+        managementSelectAll?.addEventListener('change', function () {
+            const allCheckboxes = managementTableBody?.querySelectorAll('.management-row-checkbox') || [];
+            allCheckboxes.forEach(function (checkbox) {
+                checkbox.checked = !!managementSelectAll.checked;
+            });
+            syncBulkSelectionUi();
+        });
+
+        managementTableBody?.addEventListener('change', function (event) {
+            if (!event.target.closest('.management-row-checkbox')) {
+                return;
+            }
+
+            syncBulkSelectionUi();
+        });
+
+        btnDeleteSelected?.addEventListener('click', async function () {
+            const selectedScopes = getSelectedScopeCheckboxes()
+                .map(checkbox => decodeScopeDataset(checkbox))
+                .filter(Boolean);
+
+            btnDeleteSelected.disabled = true;
+            try {
+                await deleteManagedScopes(selectedScopes);
+            } catch (error) {
+                themedSwal({
+                    icon: 'error',
+                    title: 'Delete Gagal',
+                    text: error.message || 'Terjadi kesalahan saat menghapus data.'
+                });
+            } finally {
+                syncBulkSelectionUi();
+            }
+        });
     });
 </script>
 <style>
@@ -455,9 +585,13 @@
     .report-management-notice{margin-top:.25rem;padding:.95rem 1rem;border-radius:18px;font-size:.92rem;line-height:1.65}
     .report-management-notice--info{color:#0f3f8c;background:rgba(219,234,254,.72);border:1px solid rgba(96,165,250,.2)}
     .report-management-notice--warning{color:#92400e;background:rgba(254,243,199,.78);border:1px solid rgba(251,191,36,.25)}
+    .report-management-bulkbar{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;padding:.8rem 1rem;border-radius:16px;background:linear-gradient(180deg,#f8fafc 0%,#f1f5f9 100%);border:1px solid rgba(148,163,184,.2)}
+    .report-management-bulkbar__actions{display:flex;align-items:center;gap:.75rem}
+    .report-management-bulkbar__count{font-size:.85rem;font-weight:700;color:#334155}
     .report-management-table-wrap{border:1px solid rgba(148,163,184,.18);border-radius:22px;overflow:hidden;background:#fff}
     .report-management-table thead th{background:linear-gradient(180deg,#f8fafc 0%,#eef4ff 100%);border-bottom:1px solid rgba(148,163,184,.18);color:#334155;font-size:.8rem;font-weight:800;letter-spacing:.04em;text-transform:uppercase;padding:1rem}
     .report-management-table tbody td{padding:1rem;border-top:1px solid rgba(226,232,240,.8);vertical-align:middle}
+    .report-management-col-check{width:52px}
     .report-management-primary{color:#0f172a;font-weight:700}
     .report-management-count{display:inline-flex;align-items:center;justify-content:flex-end;min-width:72px;padding:.4rem .7rem;border-radius:999px;background:rgba(37,99,235,.08);color:#1d4ed8;font-weight:800}
     .report-management-delete-btn{min-width:118px;border-radius:14px;font-weight:700}
@@ -470,6 +604,6 @@
     .swal-modern-confirm,.swal-modern-cancel{display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:16px;font-weight:700;padding:.8rem 1.3rem}
     .swal-modern-confirm{background:linear-gradient(135deg,#0f766e,#115e59);color:#fff;box-shadow:0 16px 34px -22px rgba(15,23,42,.45)}
     .swal-modern-cancel{background:#e2e8f0;color:#334155;margin-left:.5rem}
-    @media (max-width:767.98px){.report-management-hero,.import-upload-card__header,.import-upload-card__body{padding-left:1rem;padding-right:1rem}.report-management-hero__title{font-size:1.15rem}.report-management-hero__badge,.report-management-filter-btn{width:100%}.report-management-table thead th,.report-management-table tbody td{padding:.8rem}}
+    @media (max-width:767.98px){.report-management-hero,.import-upload-card__header,.import-upload-card__body{padding-left:1rem;padding-right:1rem}.report-management-hero__title{font-size:1.15rem}.report-management-hero__badge,.report-management-filter-btn{width:100%}.report-management-table thead th,.report-management-table tbody td{padding:.8rem}.report-management-bulkbar{align-items:flex-start}.report-management-bulkbar__actions{width:100%;justify-content:space-between}}
 </style>
 @endsection

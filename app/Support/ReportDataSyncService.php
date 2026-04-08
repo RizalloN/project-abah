@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -90,6 +91,16 @@ class ReportDataSyncService
                 'performance_pis_per_produk' => $this->syncPerformanceNewPayroll($periodHint, $jobId, $source),
                 default => null,
             };
+
+            // Trigger otomatisasi cache warming di latar belakang setelah sinkronisasi selesai
+            defer(function () {
+                try {
+                    Artisan::call('report:warm-cache');
+                } catch (Throwable $e) {
+                    Log::warning('Gagal menjalankan otomatisasi pemanasan cache: ' . $e->getMessage());
+                }
+            });
+
         } catch (Throwable $e) {
             $this->writeAudit($normalizedTable, $periodHint, $jobId, $source, 'snapshot_sync', 'failed', [
                 'message' => $e->getMessage(),

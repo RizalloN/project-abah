@@ -218,19 +218,26 @@ class ImportExcelController extends Controller
     private function normalizeImportColumnName(string $headerName): string
     {
         $normalizedHeader = preg_replace('/[^A-Z0-9]+/', '_', strtoupper(trim($headerName)));
+        $normalizedHeader = trim((string) $normalizedHeader, '_');
 
         $aliases = [
             'TEXTBOX20' => 'total_kewajiban',
             'TOTAL_KEWAJIBAN' => 'total_kewajiban',
             'TEXTBOX21' => 'os_idr',
             'OS_IDR' => 'os_idr',
+            'NOREKENING' => 'no_rekening',
+            'NOMORREKENING' => 'no_rekening',
+            'NOMOR_REKENING' => 'no_rekening',
+            'NO_REKENING' => 'no_rekening',
+            'CIF_NO' => 'cifno',
+            'CIF_NUMBER' => 'cifno',
         ];
 
         if (isset($aliases[$normalizedHeader])) {
             return $aliases[$normalizedHeader];
         }
 
-        return strtolower(str_replace(' ', '_', trim($headerName)));
+        return strtolower($normalizedHeader);
     }
 
     private function resolvePreviewHeaderLabel(string $headerName, string $tableName): string
@@ -479,11 +486,15 @@ class ImportExcelController extends Controller
             return false;
         }
 
-        if (!preg_match('/^[A-Z0-9]+$/i', $noRekening) || strlen($noRekening) < 6) {
+        if (!preg_match('/^[A-Z0-9.,+_\\/\'-]+$/i', $noRekening) || strlen($noRekening) < 6) {
             return false;
         }
 
-        if (!in_array($jenis, ['TABUNGAN', 'GIRO', 'DEPOSITO'], true)) {
+        if (
+            !str_starts_with($jenis, 'TABUNGAN')
+            && !str_starts_with($jenis, 'GIRO')
+            && !str_starts_with($jenis, 'DEPOSITO')
+        ) {
             return false;
         }
 
@@ -500,6 +511,22 @@ class ImportExcelController extends Controller
         // Angka pendek biasanya nomor urut baris yang geser ke kolom posisi.
         if (preg_match('/^\d{1,5}$/', $value) === 1) {
             return false;
+        }
+
+        if (preg_match('/^\d{8}$/', $value) === 1) {
+            foreach (['Ymd', 'dmY', 'mdY'] as $format) {
+                try {
+                    $date = Carbon::createFromFormat($format, $value);
+                    if ($date !== false) {
+                        $year = (int) $date->format('Y');
+                        if ($year >= 2000 && $year <= 2100) {
+                            return true;
+                        }
+                    }
+                } catch (\Throwable) {
+                    // lanjut cek format berikutnya
+                }
+            }
         }
 
         if (is_numeric($value)) {
@@ -1737,6 +1764,22 @@ class ImportExcelController extends Controller
         ];
         if (in_array($normalizedHeader, $dateColumns, true)) {
             try {
+                if (preg_match('/^\d{8}$/', $value)) {
+                    foreach (['Ymd', 'dmY', 'mdY'] as $format) {
+                        try {
+                            $date = Carbon::createFromFormat($format, $value);
+                            if ($date !== false) {
+                                $year = (int) $date->format('Y');
+                                if ($year >= 2000 && $year <= 2100) {
+                                    return $date->format('Y-m-d');
+                                }
+                            }
+                        } catch (\Throwable) {
+                            // lanjut cek format berikutnya
+                        }
+                    }
+                }
+
                 if (is_numeric($value)) {
                     return Carbon::instance(ExcelDate::excelToDateTimeObject($value))->format('Y-m-d');
                 }

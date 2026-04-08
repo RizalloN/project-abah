@@ -13,6 +13,8 @@ use Illuminate\Support\Facades\Storage;
 class ImportSimpananMultiPnCsvController extends ImportExcelController
 {
     private const REPORT_ID = 9;
+    private const DIRECT_LOAD_MAX_ROWS = 300000;
+    private const DIRECT_LOAD_VALIDATION_SAMPLE_ROWS = 5000;
 
     private function useSimpananReport(Request $request): Request
     {
@@ -173,6 +175,7 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
     public function processImportStream(Request $request)
     {
         $request = $this->useSimpananReport($request);
+        $this->configureLongRunningImportRuntime();
 
         $sessionParams = session('excel_import_params', []);
         $jobId = (int) ($sessionParams['job_id'] ?? $request->query('job_id', 0));
@@ -189,6 +192,10 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
         $selectedColumns = $this->resolveSelectedColumns($params, $normalizedHeaders);
         $totalRows = (int) ($params['total_rows'] ?? 0);
 
+        if ($totalRows > self::DIRECT_LOAD_MAX_ROWS) {
+            return parent::processExcelStream($request);
+        }
+
         if ($relativePath === '') {
             return parent::processExcelStream($request);
         }
@@ -198,16 +205,9 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
             return parent::processExcelStream($request);
         }
 
-        try {
-            $loadPlan = $this->buildDirectCsvLoadPlan($absolutePath, $normalizedHeaders, $selectedColumns);
-        } catch (\Throwable $e) {
-            Log::warning('Fast-path Simpanan MultiPN CSV unavailable, fallback to staged import: ' . $e->getMessage());
-            return parent::processExcelStream($request);
-        }
-
         request()->session()->save();
 
-        return response()->stream(function () use ($jobId, $relativePath, $absolutePath, $totalRows, $loadPlan) {
+        return response()->stream(function () use ($jobId, $relativePath, $absolutePath, $totalRows, $normalizedHeaders, $selectedColumns) {
             $streamLock = null;
             $send = function (string $event, array $data) {
                 echo "event: {$event}\n";
@@ -242,6 +242,24 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
 
                 if (!file_exists($absolutePath)) {
                     $send('error', ['message' => 'File CSV Simpanan MultiPN tidak ditemukan di server.']);
+                    return;
+                }
+
+                $send('progress', [
+                    'percent' => 3,
+                    'message' => 'Membuka koneksi stream import...',
+                    'rows_done' => 0,
+                    'total' => $totalRows,
+                    'speed' => 0,
+                ]);
+
+                try {
+                    $loadPlan = $this->buildDirectCsvLoadPlan($absolutePath, $normalizedHeaders, $selectedColumns);
+                } catch (\Throwable $e) {
+                    Log::warning('Fast-path Simpanan MultiPN CSV unavailable in stream: ' . $e->getMessage());
+                    $send('error', [
+                        'message' => 'Fast import CSV tidak bisa dilanjutkan: ' . $e->getMessage(),
+                    ]);
                     return;
                 }
 
@@ -397,7 +415,23 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
 
     private function normalizeHeaderName(string $header): string
     {
-        return strtolower(str_replace(' ', '_', trim($header)));
+        $normalized = preg_replace('/[^A-Z0-9]+/', '_', strtoupper(trim($header)));
+        $normalized = trim((string) $normalized, '_');
+
+        $aliases = [
+            'NOREKENING' => 'no_rekening',
+            'NOMORREKENING' => 'no_rekening',
+            'NOMOR_REKENING' => 'no_rekening',
+            'NO_REKENING' => 'no_rekening',
+            'CIF_NO' => 'cifno',
+            'CIF_NUMBER' => 'cifno',
+        ];
+
+        if (isset($aliases[$normalized])) {
+            return $aliases[$normalized];
+        }
+
+        return strtolower($normalized);
     }
 
     private function isRowNumberHeader(string $header): bool
@@ -411,7 +445,7 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
         ], true);
     }
 
-    private function hasMalformedRowsForDirectLoad(string $absolutePath, string $delimiter, array $sourceHeaders): bool
+    private function hasMalformedRowsForDirectLoad(string $absolutePath, string $delimiter, array $sourceHeaders, int $maxDataRowsToScan = 0): bool
     {
         $handle = fopen($absolutePath, 'r');
         if ($handle === false) {
@@ -420,6 +454,7 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
 
         try {
             $headerSkipped = false;
+            $scannedRows = 0;
 
             while (($row = $this->readCsvRecord($handle, $delimiter)) !== false) {
                 if (!$headerSkipped) {
@@ -437,6 +472,11 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
 
                 if (!$this->isCompleteSimpananMultiPnSourceRow($sourceHeaders, (array) $row)) {
                     return true;
+                }
+
+                $scannedRows++;
+                if ($maxDataRowsToScan > 0 && $scannedRows >= $maxDataRowsToScan) {
+                    break;
                 }
             }
         } finally {
@@ -464,7 +504,7 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
             throw new \RuntimeException('Header CSV Simpanan MultiPN tidak ditemukan.');
         }
 
-        if ($this->hasMalformedRowsForDirectLoad($absolutePath, $delimiter, $sourceHeaders)) {
+        if ($this->hasMalformedRowsForDirectLoad($absolutePath, $delimiter, $sourceHeaders, self::DIRECT_LOAD_VALIDATION_SAMPLE_ROWS)) {
             throw new \RuntimeException('CSV mengandung baris tidak lengkap, fast import dialihkan ke mode aman.');
         }
 
@@ -550,6 +590,8 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
 
     private function executeDirectCsvLoad(string $absolutePath, array $loadPlan): int
     {
+        $this->configureLongRunningImportRuntime();
+
         $connection = config('database.default', 'mysql');
         $dbConfig = config("database.connections.{$connection}", []);
         $charset = $dbConfig['charset'] ?? 'utf8mb4';
@@ -591,6 +633,13 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
         }
 
         return (int) $affected;
+    }
+
+    private function configureLongRunningImportRuntime(): void
+    {
+        @ini_set('memory_limit', '1024M');
+        @ini_set('max_execution_time', '0');
+        @set_time_limit(0);
     }
 
     private function cleanupSuccessfulImportArtifacts(int $jobId, string $relativePath, ?string $absolutePath = null): void
