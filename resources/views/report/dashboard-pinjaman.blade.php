@@ -167,6 +167,13 @@
         font-weight: 700;
     }
 
+    .loan-table-note {
+        margin-top: 0.6rem;
+        color: #475569;
+        font-size: 0.82rem;
+        line-height: 1.5;
+    }
+
     .loan-loading-chip {
         display: inline-flex;
         align-items: center;
@@ -245,6 +252,43 @@
         color: #64748b;
         font-size: 0.9rem;
         margin: 0;
+    }
+
+    .loan-loading-progress {
+        width: min(420px, 100%);
+        display: grid;
+        gap: 0.5rem;
+    }
+
+    .loan-loading-progress-meta {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        font-size: 0.82rem;
+        font-weight: 700;
+        color: #475569;
+    }
+
+    .loan-loading-progress-track {
+        width: 100%;
+        height: 12px;
+        border-radius: 999px;
+        overflow: hidden;
+        background: #dbe5ef;
+        box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.08);
+    }
+
+    .loan-loading-progress-bar {
+        width: 0%;
+        height: 100%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, #0f766e, #14b8a6);
+        transition: width 0.18s ease;
+    }
+
+    .loan-loading-phase {
+        color: #0f172a;
     }
 
     .loan-skeleton-grid {
@@ -518,7 +562,11 @@
             <div class="loan-table-heading">
                 <div>
                     <h5>Matriks Pergerakan Kualitas Pinjaman</h5>
-                    <div class="loan-table-unit">Satuan: Rp Juta</div>
+                    <div class="loan-table-unit">Satuan: Rp</div>
+                    <div class="loan-table-note">
+                        Kolom <strong>Kualitas After</strong> pada footer adalah snapshot query periode aktif dari <strong>daily_loan_dinamis</strong>.
+                        Kolom kanan adalah <strong>total movement per baris before</strong>, jadi nilainya memang tidak sama dengan snapshot query per bucket.
+                    </div>
                 </div>
                 <div class="loan-table-badge">
                     <i class="fas fa-table"></i>
@@ -531,7 +579,16 @@
             <div class="loan-table-stage">
                 <div id="loanLoadingOverlay" class="loan-loading-overlay">
                     <div class="loan-loading-title">Sedang Mengolah</div>
-                    <p class="loan-loading-copy">Loading...</p>
+                    <p id="loanLoadingCopy" class="loan-loading-copy">Menyiapkan data dashboard...</p>
+                    <div class="loan-loading-progress" aria-live="polite">
+                        <div class="loan-loading-progress-meta">
+                            <span id="loanLoadingPhase" class="loan-loading-phase">Inisialisasi</span>
+                            <span id="loanLoadingPercent">0%</span>
+                        </div>
+                        <div class="loan-loading-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                            <div id="loanLoadingProgressBar" class="loan-loading-progress-bar"></div>
+                        </div>
+                    </div>
                     <div class="loan-skeleton-grid" aria-hidden="true">
                         @for ($row = 0; $row < 7; $row++)
                             <div class="loan-skeleton-cell is-wide"></div>
@@ -550,7 +607,7 @@
                                 <th colspan="{{ count($matrixColumns) }}" class="matrix-after-group">Kualitas After</th>
                                 <th rowspan="2" class="matrix-total-head matrix-wrap-head">
                                     <span id="loanTotalValueHeader" class="matrix-head-copy">
-                                        Total Nilai<br>({{ $selectedPeriod ? \Carbon\Carbon::parse($selectedPeriod)->format('d/m/Y') : 'Periode Terakhir' }})
+                                        Total Movement<br>per Baris
                                     </span>
                                 </th>
                                 <th rowspan="2" class="matrix-subhead">Turunan Pokok</th>
@@ -588,7 +645,6 @@
                     </table>
                 </div>
             </div>
-
             <div class="loan-legend">
                 <span class="loan-legend-item">
                     <span class="loan-legend-swatch" style="background:#22c55e;"></span>
@@ -615,6 +671,10 @@
         const body = document.getElementById('loanMatrixBody');
         const foot = document.getElementById('loanMatrixFoot');
         const overlay = document.getElementById('loanLoadingOverlay');
+        const loadingCopy = document.getElementById('loanLoadingCopy');
+        const loadingPhase = document.getElementById('loanLoadingPhase');
+        const loadingPercent = document.getElementById('loanLoadingPercent');
+        const loadingProgressBar = document.getElementById('loanLoadingProgressBar');
         const chip = document.getElementById('loanLoadingChip');
         const periodBadge = document.getElementById('loanPeriodBadge');
         const submitButton = document.getElementById('loanSubmitButton');
@@ -638,6 +698,7 @@
         let activeFilterController = null;
         let isRefreshingFilters = false;
         let filterReloadTimer = null;
+        let loadingProgressValue = 0;
 
         const filterSelects = [
             { element: segmenSelect, placeholder: 'Semua Segmen' },
@@ -730,15 +791,15 @@
                 return '-';
             }
 
-            const number = Number(value) / 1000000;
+            const number = Number(value);
 
             if (Number.isNaN(number)) {
                 return '-';
             }
 
             return new Intl.NumberFormat('id-ID', {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0,
             }).format(number);
         }
 
@@ -769,7 +830,183 @@
                 return;
             }
 
-            totalValueHeader.innerHTML = `Total Nilai<br>(${formatHeaderDate(period)})`;
+            totalValueHeader.innerHTML = 'Total Movement<br>per Baris';
+        }
+
+        function nextFrame() {
+            return new Promise((resolve) => {
+                window.requestAnimationFrame(() => resolve());
+            });
+        }
+
+        function updateLoadingProgress(value, phase, copy) {
+            loadingProgressValue = Math.max(0, Math.min(100, Math.round(value)));
+
+            if (loadingPhase && phase) {
+                loadingPhase.textContent = phase;
+            }
+
+            if (loadingCopy && copy) {
+                loadingCopy.textContent = copy;
+            }
+
+            if (loadingPercent) {
+                loadingPercent.textContent = `${loadingProgressValue}%`;
+            }
+
+            if (loadingProgressBar) {
+                loadingProgressBar.style.width = `${loadingProgressValue}%`;
+                loadingProgressBar.parentElement?.setAttribute('aria-valuenow', String(loadingProgressValue));
+            }
+        }
+
+        function startLoadingProgress() {
+            updateLoadingProgress(8, 'Mengambil Data', 'Menghubungi server dan menyiapkan data dashboard...');
+            overlay.classList.remove('is-hidden');
+            chip.classList.remove('d-none');
+            submitButton.disabled = true;
+        }
+
+        async function finishLoadingProgress() {
+            updateLoadingProgress(100, 'Selesai', 'Tabel selesai dirender.');
+            await nextFrame();
+            await nextFrame();
+            overlay.classList.add('is-hidden');
+            chip.classList.add('d-none');
+            submitButton.disabled = false;
+        }
+
+        function renderRows(rows) {
+            if (!rows || rows.length === 0) {
+                body.innerHTML = `
+                    <tr>
+                        <td colspan="${qualityColumns.length + 6}" class="loan-empty-state">
+                            <strong>Data tidak ditemukan</strong>
+                            Coba ubah periode atau filter agar hasil pivot tersedia.
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            body.innerHTML = rows.map((row) => {
+                const cells = row.values.map((value, index) => {
+                    let extraClass = '';
+
+                    if (value === null || value === undefined || value === '') {
+                        extraClass = 'matrix-empty';
+                    } else if (row.label === 'New Account') {
+                        extraClass = 'matrix-new-account';
+                    } else {
+                        const rowRank = qualityRanks[row.label];
+                        if (rowRank === index) {
+                            extraClass = 'matrix-stagnant';
+                        } else if (rowRank > index) {
+                            extraClass = 'matrix-up';
+                        } else {
+                            extraClass = 'matrix-down';
+                        }
+                    }
+
+                    return `<td class="${extraClass}">${formatNumber(value)}</td>`;
+                }).join('');
+
+                const metricCells = outputColumns.map((key) => {
+                    return `<td>${formatNumber(row.metrics?.[key] ?? null)}</td>`;
+                }).join('');
+
+                return `
+                    <tr>
+                        <th>${row.label}</th>
+                        ${cells}
+                        <td class="matrix-total-col">${formatNumber(row.total)}</td>
+                        ${metricCells}
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        async function renderRowsProgressively(rows) {
+            if (!rows || rows.length === 0) {
+                renderRows(rows);
+                updateLoadingProgress(88, 'Render Tabel', 'Tidak ada data yang perlu dirender.');
+                return;
+            }
+
+            const fragments = [];
+
+            for (let index = 0; index < rows.length; index += 1) {
+                const row = rows[index];
+                const cells = row.values.map((value, columnIndex) => {
+                    let extraClass = '';
+
+                    if (value === null || value === undefined || value === '') {
+                        extraClass = 'matrix-empty';
+                    } else if (row.label === 'New Account') {
+                        extraClass = 'matrix-new-account';
+                    } else {
+                        const rowRank = qualityRanks[row.label];
+                        if (rowRank === columnIndex) {
+                            extraClass = 'matrix-stagnant';
+                        } else if (rowRank > columnIndex) {
+                            extraClass = 'matrix-up';
+                        } else {
+                            extraClass = 'matrix-down';
+                        }
+                    }
+
+                    return `<td class="${extraClass}">${formatNumber(value)}</td>`;
+                }).join('');
+
+                const metricCells = outputColumns.map((key) => {
+                    return `<td>${formatNumber(row.metrics?.[key] ?? null)}</td>`;
+                }).join('');
+
+                fragments.push(`
+                    <tr>
+                        <th>${row.label}</th>
+                        ${cells}
+                        <td class="matrix-total-col">${formatNumber(row.total)}</td>
+                        ${metricCells}
+                    </tr>
+                `);
+
+                body.innerHTML = fragments.join('');
+
+                const progress = 55 + Math.round(((index + 1) / rows.length) * 35);
+                updateLoadingProgress(progress, 'Render Tabel', `Merender baris ${index + 1} dari ${rows.length}...`);
+                await nextFrame();
+            }
+        }
+
+        function renderFoot(grandTotals, grandTotalValue) {
+            const totalCells = qualityColumns.map((column, index) => {
+                return `<td>${formatNumber(grandTotals?.matrix?.[index] ?? null)}</td>`;
+            }).join('');
+
+            const metricTotals = outputColumns.map((key) => {
+                return `<td>${formatNumber(grandTotals?.metrics?.[key] ?? null)}</td>`;
+            }).join('');
+
+            foot.innerHTML = `
+                <th>Grand Total</th>
+                ${totalCells}
+                <td class="matrix-total-col">${formatNumber(grandTotalValue)}</td>
+                ${metricTotals}
+            `;
+        }
+
+        function resetMatrixState() {
+            body.innerHTML = `
+                <tr>
+                    <td colspan="${qualityColumns.length + 6}" class="loan-empty-state">
+                        <strong>Filter belum dijalankan</strong>
+                        Pilih periode atau filter lain lalu klik <strong>Tampilkan</strong>.
+                    </td>
+                </tr>
+            `;
+            renderFoot([], null);
+            periodBadge.textContent = '- vs -';
         }
 
         function setSelectOptions(select, items, placeholder, selectedValues = []) {
@@ -795,15 +1032,11 @@
         }
 
         function setFilterLoadingState(isLoading) {
-            filterSelects.forEach(({ element, placeholder }) => {
+            filterSelects.forEach(({ element }) => {
                 element.disabled = isLoading || !periodInput.value;
                 element.dataset.state = isLoading ? 'loading' : (periodInput.value ? 'ready' : 'disabled');
 
-                if (isLoading) {
-                    element.innerHTML = '';
-                } else if (!periodInput.value) {
-                    element.innerHTML = '';
-                } else if (!element.options.length) {
+                if (isLoading || !periodInput.value || !element.options.length) {
                     element.innerHTML = '';
                 }
 
@@ -870,76 +1103,6 @@
             return (window.jQuery(select).val() || []).filter(Boolean);
         }
 
-        function getCellClass(rowLabel, columnIndex, value) {
-            if (value === null || value === undefined || value === '') {
-                return 'matrix-empty';
-            }
-
-            if (rowLabel === 'New Account') {
-                return 'matrix-new-account';
-            }
-
-            const rowRank = qualityRanks[rowLabel];
-            if (rowRank === undefined) {
-                return '';
-            }
-
-            if (rowRank === columnIndex) {
-                return 'matrix-stagnant';
-            }
-
-            return rowRank > columnIndex ? 'matrix-up' : 'matrix-down';
-        }
-
-        function renderRows(rows) {
-            if (!rows || rows.length === 0) {
-                body.innerHTML = `
-                    <tr>
-                        <td colspan="${qualityColumns.length + 6}" class="loan-empty-state">
-                            <strong>Data tidak ditemukan</strong>
-                            Coba ubah periode atau filter agar hasil pivot tersedia.
-                        </td>
-                    </tr>
-                `;
-                return;
-            }
-
-            body.innerHTML = rows.map((row) => {
-                const cells = row.values.map((value, index) => {
-                    const extraClass = getCellClass(row.label, index, value);
-                    return `<td class="${extraClass}">${formatNumber(value)}</td>`;
-                }).join('');
-                const metricCells = outputColumns.map((key) => {
-                    return `<td>${formatNumber(row.metrics?.[key] ?? null)}</td>`;
-                }).join('');
-
-                return `
-                    <tr>
-                        <th>${row.label}</th>
-                        ${cells}
-                        <td class="matrix-total-col">${formatNumber(row.total)}</td>
-                        ${metricCells}
-                    </tr>
-                `;
-            }).join('');
-        }
-
-        function renderFoot(grandTotals, grandTotalValue) {
-            const totalCells = qualityColumns.map((column, index) => {
-                return `<td>${formatNumber(grandTotals?.matrix?.[index] ?? null)}</td>`;
-            }).join('');
-            const metricTotals = outputColumns.map((key) => {
-                return `<td>${formatNumber(grandTotals?.metrics?.[key] ?? null)}</td>`;
-            }).join('');
-
-            foot.innerHTML = `
-                <th>Grand Total</th>
-                ${totalCells}
-                <td class="matrix-total-col">${formatNumber(grandTotalValue)}</td>
-                ${metricTotals}
-            `;
-        }
-
         async function loadFilterOptions() {
             if (activeFilterController) {
                 activeFilterController.abort();
@@ -964,12 +1127,16 @@
             appendParams(params, 'produk_dashboard', collectSelectedValues(produkSelect));
             appendParams(params, 'cabang1', collectSelectedValues(cabangSelect));
             appendParams(params, 'unit1', collectSelectedValues(unitSelect));
+            params.set('_ts', String(Date.now()));
 
             try {
                 const response = await fetch(`${filtersUrl}?${params.toString()}`, {
+                    cache: 'no-store',
                     headers: {
                         'X-Requested-With': 'XMLHttpRequest',
                         'Accept': 'application/json',
+                        'Cache-Control': 'no-cache',
+                        'Pragma': 'no-cache',
                     },
                     signal: activeFilterController.signal,
                 });
@@ -1027,16 +1194,19 @@
                     params.append(key, value);
                 }
             }
+            params.set('refresh', '1');
+            params.set('_ts', String(Date.now()));
 
-            overlay.classList.remove('is-hidden');
-            chip.classList.remove('d-none');
-            submitButton.disabled = true;
+            startLoadingProgress();
 
             try {
                 const response = await fetch(`${dataUrl}?${params.toString()}`, {
+                    cache: 'no-store',
                     headers: {
                         'X-Requested-With': 'XMLHttpRequest',
                         'Accept': 'application/json',
+                        'Cache-Control': 'no-cache',
+                        'Pragma': 'no-cache',
                     },
                     signal: activeController.signal,
                 });
@@ -1045,19 +1215,33 @@
                     throw new Error('Gagal memuat data dashboard.');
                 }
 
+                updateLoadingProgress(42, 'Memproses Respons', 'Data diterima, menyiapkan render tabel...');
                 const payload = await response.json();
-                renderRows(payload.matrix_rows);
+                updateLoadingProgress(52, 'Sinkronisasi Header', 'Memperbarui header dan metadata periode...');
+                await nextFrame();
+                await renderRowsProgressively(payload.matrix_rows);
+                updateLoadingProgress(92, 'Menghitung Total', 'Menyusun grand total dan ringkasan...');
                 renderFoot(payload.grand_totals, payload.grand_total_value);
                 periodBadge.textContent = `${formatDate(payload.selected_period)} vs ${formatDate(payload.comparison_period)}`;
                 updateTotalValueHeader(payload.selected_period);
+                await nextFrame();
 
                 if (pushHistory) {
                     const pageUrl = new URL(@json(route('report.dashboard-pinjaman')), window.location.origin);
-                    params.forEach((value, key) => pageUrl.searchParams.append(key, value));
+                    params.forEach((value, key) => {
+                        if (key === 'refresh' || key === '_ts') {
+                            return;
+                        }
+
+                        pageUrl.searchParams.append(key, value);
+                    });
                     window.history.replaceState({}, '', pageUrl.toString());
                 }
+
+                await finishLoadingProgress();
             } catch (error) {
                 if (error.name !== 'AbortError') {
+                    updateLoadingProgress(100, 'Gagal', 'Proses render gagal. Silakan coba lagi.');
                     body.innerHTML = `
                         <tr>
                             <td colspan="${qualityColumns.length + 6}" class="loan-empty-state">
@@ -1069,7 +1253,8 @@
                     renderFoot([], null);
                     periodBadge.textContent = '- vs -';
                 }
-            } finally {
+
+                await nextFrame();
                 overlay.classList.add('is-hidden');
                 chip.classList.add('d-none');
                 submitButton.disabled = false;
@@ -1086,6 +1271,7 @@
                 element.dataset.selected = '[]';
             });
 
+            resetMatrixState();
             loadFilterOptions();
         });
 
@@ -1095,6 +1281,7 @@
             window.jQuery(element).on('change', function () {
                 syncSelectedDataset(element);
                 updateSelectSummary(element);
+                resetMatrixState();
 
                 if (!isRefreshingFilters && periodInput.value) {
                     scheduleFilterReload();

@@ -7,7 +7,7 @@ Arsitektur:
   - PHP     : terima batch JSON dari stdout, insert ke database (tidak perlu pymysql)
 
 Dependencies:
-  pip install pandas openpyxl python-dateutil
+  pip install polars pandas openpyxl python-dateutil
 """
 
 import sys
@@ -48,6 +48,104 @@ def send_progress(percent, message, rows_done=0, total=0, speed=0):
 
 def send_error(message):
     send_event('error', {'message': message})
+
+
+def _is_empty_row(values):
+    for value in values:
+        if value is None:
+            continue
+        if str(value).strip() != '':
+            return False
+    return True
+
+
+def _read_excel_with_openpyxl(file_path, header_index):
+    from openpyxl import load_workbook
+
+    wb = load_workbook(file_path, read_only=True, data_only=True)
+    try:
+        ws = wb.active
+        header_row_excel = header_index + 1
+        headers = []
+        row_values = []
+
+        for idx, row in enumerate(ws.iter_rows(values_only=True), start=1):
+            row_list = list(row)
+
+            if idx == header_row_excel:
+                headers = [str(v).strip() if v is not None and str(v).strip() != '' else 'COL_' + str(i) for i, v in enumerate(row_list)]
+                continue
+
+            if idx <= header_row_excel:
+                continue
+
+            if _is_empty_row(row_list):
+                continue
+
+            row_values.append(row_list)
+
+        return headers, row_values
+    finally:
+        wb.close()
+
+
+def read_excel_table(file_path, header_index):
+    """
+    Try Polars first for lower memory + multithreaded parse.
+    Fallback to pandas to keep compatibility on older environments.
+    Returns: (headers, row_values, backend_name)
+    """
+    polars_errors = []
+
+    try:
+        import polars as pl
+        read_excel = getattr(pl, 'read_excel', None)
+        if callable(read_excel):
+            # Kombinasi opsi untuk kompatibilitas lintas versi Polars.
+            read_attempts = [
+                lambda: read_excel(source=file_path, sheet_id=1, engine='calamine', read_options={'header_row': header_index}),
+                lambda: read_excel(source=file_path, sheet_id=1, read_options={'header_row': header_index}),
+                lambda: read_excel(file_path, sheet_id=1, engine='calamine', read_options={'header_row': header_index}),
+                lambda: read_excel(file_path, sheet_id=1, read_options={'header_row': header_index}),
+                lambda: read_excel(source=file_path, sheet_id=1, engine='calamine', read_options={'has_header': True, 'skip_rows': header_index}),
+                lambda: read_excel(file_path, sheet_id=1, engine='calamine', read_options={'has_header': True, 'skip_rows': header_index}),
+            ]
+
+            for attempt in read_attempts:
+                try:
+                    df_pl = attempt()
+                    headers = [str(col) for col in df_pl.columns]
+                    row_values = [list(row) for row in df_pl.rows() if not _is_empty_row(row)]
+                    return headers, row_values, 'polars'
+                except Exception as e:
+                    polars_errors.append(type(e).__name__ + ': ' + str(e))
+                    continue
+    except Exception as e:
+        polars_errors.append(type(e).__name__ + ': ' + str(e))
+
+    try:
+        import pandas as pd
+        df_pd = pd.read_excel(
+            file_path,
+            header=header_index,
+            engine='openpyxl',
+            dtype=object,
+        )
+        df_pd = df_pd.dropna(how='all').reset_index(drop=True)
+        headers = [str(col) for col in list(df_pd.columns)]
+        row_values = df_pd.values.tolist()
+
+        if polars_errors:
+            return headers, row_values, 'pandas-fallback'
+
+        return headers, row_values, 'pandas'
+    except Exception:
+        pass
+
+    headers, row_values = _read_excel_with_openpyxl(file_path, header_index)
+    if polars_errors:
+        return headers, row_values, 'openpyxl-fallback'
+    return headers, row_values, 'openpyxl'
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -161,17 +259,26 @@ def run_init(config):
     file_path = config['file_path']
 
     try:
-        import pandas as pd
-        df_scan = pd.read_excel(file_path, header=None, nrows=200, engine='openpyxl')
+        from openpyxl import load_workbook
+        wb = load_workbook(file_path, read_only=True, data_only=True)
+        ws = wb.active
+        scan_rows = []
+        for row in ws.iter_rows(min_row=1, max_row=200, values_only=True):
+            scan_rows.append(list(row))
     except Exception as e:
         print(json.dumps({'status': 'error', 'message': 'Gagal membuka file: ' + str(e)}), flush=True)
         sys.exit(1)
+    finally:
+        try:
+            wb.close()
+        except Exception:
+            pass
 
     header_index  = None
     header_values = []
 
-    for i in range(len(df_scan)):
-        row       = df_scan.iloc[i]
+    for i in range(len(scan_rows)):
+        row       = scan_rows[i]
         row_upper = [str(v).upper().strip() if str(v).lower() not in ('nan', 'none', '') else '' for v in row]
         if 'PERIODE' in row_upper or 'POSISI' in row_upper:
             header_index  = i
@@ -236,19 +343,12 @@ def _run_process_inner(config):
         normalized_headers = {str(i): v for i, v in enumerate(normalized_headers)}
 
     # ── Baca seluruh file dengan pandas (CPU, satu kali load) ────────────────
-    send_progress(5, 'Membaca file Excel dengan pandas CPU...')
+    send_progress(5, 'Membaca file Excel (Polars preferred, pandas fallback)...')
 
     try:
-        import pandas as pd
-        df = pd.read_excel(
-            file_path,
-            header=header_index,
-            engine='openpyxl',
-            dtype=object,
-        )
-        df = df.dropna(how='all').reset_index(drop=True)
-        total_rows = len(df)
-        send_progress(20, 'File dibaca: ' + str(total_rows) + ' baris. Memproses kolom...')
+        _headers, row_values, backend = read_excel_table(file_path, header_index)
+        total_rows = len(row_values)
+        send_progress(20, 'File dibaca via ' + backend + ': ' + str(total_rows) + ' baris. Memproses kolom...')
     except Exception as e:
         send_error('Gagal membaca file Excel: ' + str(e))
         sys.exit(1)
@@ -280,8 +380,6 @@ def _run_process_inner(config):
     batch_size = 200    # 200 baris per batch JSON line (aman untuk max_allowed_packet)
     rows_done  = 0
     start_time = time.time()
-
-    row_values = df.values.tolist()
 
     csv_file = None
     csv_writer = None
@@ -367,12 +465,6 @@ def _run_process_inner(config):
 
 
 def run_stage(config):
-    try:
-        import pandas as pd
-    except Exception as e:
-        send_error('Pandas tidak tersedia: ' + str(e))
-        sys.exit(1)
-
     file_path = config['file_path']
     header_index = int(config['header_index'])
     normalized_headers = config['normalized_headers']
@@ -382,13 +474,7 @@ def run_stage(config):
         normalized_headers = {str(i): v for i, v in enumerate(normalized_headers)}
 
     try:
-        df = pd.read_excel(
-            file_path,
-            header=header_index,
-            engine='openpyxl',
-            dtype=object,
-        )
-        df = df.dropna(how='all').reset_index(drop=True)
+        _headers, row_values, backend = read_excel_table(file_path, header_index)
     except Exception as e:
         send_error('Gagal membaca file Excel untuk staging: ' + str(e))
         sys.exit(1)
@@ -399,8 +485,8 @@ def run_stage(config):
         if not str(h).startswith('COL_'):
             valid_headers.append((int(idx_str), str(h)))
 
-    total_rows = len(df)
-    send_progress(10, 'Memulai konversi Excel ke CSV stage...', 0, total_rows, 0)
+    total_rows = len(row_values)
+    send_progress(10, 'Memulai konversi Excel ke CSV stage via ' + backend + '...', 0, total_rows, 0)
 
     os.makedirs(os.path.dirname(output_csv_path), exist_ok=True)
 
@@ -419,7 +505,6 @@ def run_stage(config):
 
         writer.writerow([header_name for _, header_name in valid_headers])
 
-        row_values = df.values.tolist()
         for row_list in row_values:
             output_row = []
             has_value = False

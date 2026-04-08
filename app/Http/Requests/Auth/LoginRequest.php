@@ -12,6 +12,10 @@ use Illuminate\Validation\ValidationException;
 
 class LoginRequest extends FormRequest
 {
+    private const MAX_ATTEMPTS_PER_IDENTITY = 5;
+    private const MAX_ATTEMPTS_PER_IP = 30;
+    private const DECAY_SECONDS = 900;
+
     /**
      * Determine if the user is authorized to make this request.
      */
@@ -28,8 +32,9 @@ class LoginRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'pn' => ['required', 'string'],
+            'pn' => ['required', 'string', 'min:4', 'max:32', 'regex:/^[A-Za-z0-9._-]+$/'],
             'password' => ['required', 'string'],
+            'remember' => ['nullable', 'boolean'],
         ];
     }
 
@@ -42,15 +47,30 @@ class LoginRequest extends FormRequest
     {
         $this->ensureIsNotRateLimited();
 
-        if (! Auth::attempt($this->only('pn', 'password'), $this->boolean('remember'))) {
-            RateLimiter::hit($this->throttleKey());
+        $credentials = [
+            'pn' => $this->normalizedPn(),
+            'password' => (string) $this->input('password'),
+        ];
+
+        if (! Auth::attempt($credentials, $this->boolean('remember'))) {
+            $this->hitRateLimiters();
 
             throw ValidationException::withMessages([
                 'pn' => trans('auth.failed'),
             ]);
         }
 
-        RateLimiter::clear($this->throttleKey());
+        $user = Auth::user();
+        if (!$user || !in_array((string) ($user->role ?? ''), ['admin', 'user'], true)) {
+            Auth::logout();
+            $this->hitRateLimiters();
+
+            throw ValidationException::withMessages([
+                'pn' => trans('auth.failed'),
+            ]);
+        }
+
+        $this->clearRateLimiters();
     }
 
     /**
@@ -60,13 +80,19 @@ class LoginRequest extends FormRequest
      */
     public function ensureIsNotRateLimited(): void
     {
-        if (! RateLimiter::tooManyAttempts($this->throttleKey(), 5)) {
+        if (
+            !RateLimiter::tooManyAttempts($this->throttleKey(), self::MAX_ATTEMPTS_PER_IDENTITY)
+            && !RateLimiter::tooManyAttempts($this->ipThrottleKey(), self::MAX_ATTEMPTS_PER_IP)
+        ) {
             return;
         }
 
         event(new Lockout($this));
 
-        $seconds = RateLimiter::availableIn($this->throttleKey());
+        $seconds = max(
+            RateLimiter::availableIn($this->throttleKey()),
+            RateLimiter::availableIn($this->ipThrottleKey())
+        );
 
         throw ValidationException::withMessages([
             'pn' => trans('auth.throttle', [
@@ -81,6 +107,28 @@ class LoginRequest extends FormRequest
      */
     public function throttleKey(): string
     {
-        return Str::transliterate(Str::lower($this->string('pn')).'|'.$this->ip());
+        return 'login:identity:' . Str::transliterate(Str::lower($this->normalizedPn()) . '|' . $this->ip());
+    }
+
+    public function ipThrottleKey(): string
+    {
+        return 'login:ip:' . Str::transliterate((string) $this->ip());
+    }
+
+    private function normalizedPn(): string
+    {
+        return trim((string) $this->input('pn'));
+    }
+
+    private function hitRateLimiters(): void
+    {
+        RateLimiter::hit($this->throttleKey(), self::DECAY_SECONDS);
+        RateLimiter::hit($this->ipThrottleKey(), self::DECAY_SECONDS);
+    }
+
+    private function clearRateLimiters(): void
+    {
+        RateLimiter::clear($this->throttleKey());
+        RateLimiter::clear($this->ipThrottleKey());
     }
 }

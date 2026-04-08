@@ -18,6 +18,7 @@ class ImportFileController extends Controller
 {
     use AllocatesGapIds;
 
+    private const SAFE_MEMORY_LIMIT = '512M';
     private const PREVIEW_SAMPLE_LIMIT = 1200;
     private const PREVIEW_UNIQUE_SCAN_LIMIT = 4000;
     private const PREVIEW_UNIQUE_LIMIT_PER_COLUMN = 400;
@@ -43,6 +44,13 @@ class ImportFileController extends Controller
             'k' => $bytes * 1024,
             default => (int) $value,
         };
+    }
+
+    private function applySafeRuntimeLimits(bool $streaming = false): void
+    {
+        ini_set('memory_limit', self::SAFE_MEMORY_LIMIT);
+        ini_set('auto_detect_line_endings', '1');
+        ini_set('max_execution_time', $streaming ? '0' : '300');
     }
 
     private const BRILINK_SUMMARY_HEADERS = [
@@ -237,14 +245,6 @@ class ImportFileController extends Controller
         }
 
         $compatibilityMap = [
-            'kode_kanwil1' => 'kode_kanwil',
-            'kanwil1' => 'kanwil',
-            'kode_cabang1' => 'kode_cabang',
-            'cabang1' => 'cabang',
-            'branch1' => 'branch',
-            'unit1' => 'unit',
-            'nomor_rekening1' => 'nomor_rekening',
-            'baki_debet1' => 'baki_debet',
             'total_kewajiban' => 'textbox20',
             'os_idr' => 'textbox21',
         ];
@@ -576,27 +576,25 @@ class ImportFileController extends Controller
         $chunk = $this->allocateGapIdsForRows($tableName, $chunk);
 
         try {
-            DB::beginTransaction();
             DB::table($tableName)->insert($chunk);
-            DB::commit();
             $totalSuccess += count($chunk);
             return;
         } catch (\Throwable $e) {
-            if (DB::transactionLevel() > 0) {
-                DB::rollBack();
-            }
             $lastErrorMsg = substr($e->getMessage(), 0, 800) . '...';
         }
 
-        if (count($chunk) === 1) {
-            $totalFailed++;
-            $this->logFailedImportRow($tableName, $chunk[0], $lastErrorMsg);
-            return;
+        // Non-recursive fallback: insert per row to isolate bad records
+        // without generating recursive transaction storms.
+        foreach ($chunk as $row) {
+            try {
+                DB::table($tableName)->insert([$row]);
+                $totalSuccess++;
+            } catch (\Throwable $singleError) {
+                $totalFailed++;
+                $lastErrorMsg = substr($singleError->getMessage(), 0, 800) . '...';
+                $this->logFailedImportRow($tableName, $row, $lastErrorMsg);
+            }
         }
-
-        $midpoint = (int) ceil(count($chunk) / 2);
-        $this->insertBufferedChunk(array_slice($chunk, 0, $midpoint), $tableName, $totalSuccess, $totalFailed, $lastErrorMsg);
-        $this->insertBufferedChunk(array_slice($chunk, $midpoint), $tableName, $totalSuccess, $totalFailed, $lastErrorMsg);
     }
 
     private function flushInsertBuffer(
@@ -1013,9 +1011,7 @@ class ImportFileController extends Controller
 
     public function preview(Request $request)
     {
-        ini_set('memory_limit', '-1');
-        ini_set('auto_detect_line_endings', true);
-        ini_set('max_execution_time', 0); 
+        $this->applySafeRuntimeLimits();
 
         $request->validate(['file_path' => 'required|string', 'delimiter' => 'nullable|string']);
         $filePath = $request->input('file_path');
@@ -1202,9 +1198,7 @@ class ImportFileController extends Controller
 
     public function initImport(Request $request)
     {
-        ini_set('memory_limit', '-1');
-        ini_set('auto_detect_line_endings', true);
-        ini_set('max_execution_time', 0);
+        $this->applySafeRuntimeLimits();
 
         $request->validate([
             'file_path' => 'required|string',
@@ -1336,9 +1330,7 @@ class ImportFileController extends Controller
 
     public function processImportStream(Request $request)
     {
-        ini_set('memory_limit', '-1');
-        ini_set('auto_detect_line_endings', true);
-        ini_set('max_execution_time', 0);
+        $this->applySafeRuntimeLimits(streaming: true);
         DB::disableQueryLog();
 
         $sessionParams = session('csv_import_params', []);
@@ -1582,9 +1574,7 @@ class ImportFileController extends Controller
 
     public function processImport(Request $request)
     {
-        ini_set('memory_limit', '-1');
-        ini_set('auto_detect_line_endings', true);
-        ini_set('max_execution_time', 0); 
+        $this->applySafeRuntimeLimits(streaming: true);
         DB::disableQueryLog();
 
         $request->validate([

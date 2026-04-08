@@ -2,12 +2,18 @@
 
 namespace App\Http\Controllers;
 
+use App\Support\ReportDataSyncService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
 
 class DataReportController extends Controller
 {
+    private const NEW_PAYROLL_SNAPSHOT_TABLE = 'performance_new_payroll_snapshots';
+
     public function performanceNewPayroll()
     {
         $branches = ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'];
@@ -22,10 +28,48 @@ class DataReportController extends Controller
 
         $selectedDate = Carbon::parse($request->input('posisi', date('Y-m-d')));
         $branches = ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'];
+        $useSnapshot = Schema::hasTable(self::NEW_PAYROLL_SNAPSHOT_TABLE);
 
-        $effectiveSnapshot = DB::table('performance_pis_per_produk')
-            ->whereDate('posisi', '<=', $selectedDate->toDateString())
-            ->max('posisi');
+        if ($useSnapshot) {
+            $sourceSnapshotDate = DB::table('performance_pis_per_produk')
+                ->whereDate('posisi', '<=', $selectedDate->toDateString())
+                ->max('posisi');
+
+            if ($sourceSnapshotDate) {
+                $snapshotExists = DB::table(self::NEW_PAYROLL_SNAPSHOT_TABLE)
+                    ->whereDate('snapshot_posisi', $sourceSnapshotDate)
+                    ->exists();
+
+                if (!$snapshotExists) {
+                    $lockKey = 'snapshot:new_payroll:rebuild:' . $sourceSnapshotDate;
+                    $lock = Cache::lock($lockKey, 60);
+
+                    try {
+                        $lock->block(5, function () use ($sourceSnapshotDate) {
+                            app(ReportDataSyncService::class)->syncImportedTable(
+                                'performance_pis_per_produk',
+                                $sourceSnapshotDate,
+                                source: static::class . '::fetchNewPayrollData'
+                            );
+                        });
+                    } catch (\Throwable $e) {
+                        Log::warning('Auto rebuild new payroll snapshot gagal: ' . $e->getMessage(), [
+                            'source_snapshot_date' => $sourceSnapshotDate,
+                        ]);
+                    } finally {
+                        optional($lock)->release();
+                    }
+                }
+            }
+
+            $effectiveSnapshot = DB::table(self::NEW_PAYROLL_SNAPSHOT_TABLE)
+                ->whereDate('snapshot_posisi', '<=', $selectedDate->toDateString())
+                ->max('snapshot_posisi');
+        } else {
+            $effectiveSnapshot = DB::table('performance_pis_per_produk')
+                ->whereDate('posisi', '<=', $selectedDate->toDateString())
+                ->max('posisi');
+        }
 
         if (!$effectiveSnapshot) {
             return response()->json([
@@ -37,26 +81,43 @@ class DataReportController extends Controller
             ]);
         }
 
-        $currStart = $selectedDate->copy()->startOfMonth()->toDateString();
-        $currEnd = $selectedDate->copy()->endOfMonth()->toDateString();
-        $prevStart = $selectedDate->copy()->subMonthNoOverflow()->startOfMonth()->toDateString();
-        $prevEnd = Carbon::parse($prevStart)->endOfMonth()->toDateString();
-        $yoyStart = $selectedDate->copy()->subYearNoOverflow()->startOfMonth()->toDateString();
-        $yoyEnd = Carbon::parse($yoyStart)->endOfMonth()->toDateString();
+        if ($useSnapshot) {
+            $rows = DB::table(self::NEW_PAYROLL_SNAPSHOT_TABLE)
+                ->select(
+                    'branch',
+                    'rekening_curr',
+                    'rekening_prev',
+                    'rekening_yoy_prev',
+                    'saldo_curr',
+                    'saldo_prev',
+                    'saldo_yoy_prev'
+                )
+                ->whereDate('snapshot_posisi', $effectiveSnapshot)
+                ->whereIn('branch', array_map('strtoupper', $branches))
+                ->get()
+                ->keyBy('branch');
+        } else {
+            $currStart = $selectedDate->copy()->startOfMonth()->toDateString();
+            $currEnd = $selectedDate->copy()->endOfMonth()->toDateString();
+            $prevStart = $selectedDate->copy()->subMonthNoOverflow()->startOfMonth()->toDateString();
+            $prevEnd = Carbon::parse($prevStart)->endOfMonth()->toDateString();
+            $yoyStart = $selectedDate->copy()->subYearNoOverflow()->startOfMonth()->toDateString();
+            $yoyEnd = Carbon::parse($yoyStart)->endOfMonth()->toDateString();
 
-        $rows = DB::table('performance_pis_per_produk')
-            ->selectRaw('UPPER(kanca) as branch')
-            ->selectRaw('COUNT(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN 1 END) as rekening_curr', [$currStart, $currEnd])
-            ->selectRaw('COUNT(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN 1 END) as rekening_prev', [$prevStart, $prevEnd])
-            ->selectRaw('COUNT(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN 1 END) as rekening_yoy_prev', [$yoyStart, $yoyEnd])
-            ->selectRaw('SUM(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN saldo_britama_kerjasama ELSE 0 END) as saldo_curr', [$currStart, $currEnd])
-            ->selectRaw('SUM(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN saldo_britama_kerjasama ELSE 0 END) as saldo_prev', [$prevStart, $prevEnd])
-            ->selectRaw('SUM(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN saldo_britama_kerjasama ELSE 0 END) as saldo_yoy_prev', [$yoyStart, $yoyEnd])
-            ->whereDate('posisi', $effectiveSnapshot)
-            ->whereIn(DB::raw('UPPER(kanca)'), array_map('strtoupper', $branches))
-            ->groupBy(DB::raw('UPPER(kanca)'))
-            ->get()
-            ->keyBy('branch');
+            $rows = DB::table('performance_pis_per_produk')
+                ->selectRaw('UPPER(kanca) as branch')
+                ->selectRaw('COUNT(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN 1 END) as rekening_curr', [$currStart, $currEnd])
+                ->selectRaw('COUNT(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN 1 END) as rekening_prev', [$prevStart, $prevEnd])
+                ->selectRaw('COUNT(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN 1 END) as rekening_yoy_prev', [$yoyStart, $yoyEnd])
+                ->selectRaw('SUM(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN saldo_britama_kerjasama ELSE 0 END) as saldo_curr', [$currStart, $currEnd])
+                ->selectRaw('SUM(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN saldo_britama_kerjasama ELSE 0 END) as saldo_prev', [$prevStart, $prevEnd])
+                ->selectRaw('SUM(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN saldo_britama_kerjasama ELSE 0 END) as saldo_yoy_prev', [$yoyStart, $yoyEnd])
+                ->whereDate('posisi', $effectiveSnapshot)
+                ->whereIn(DB::raw('UPPER(kanca)'), array_map('strtoupper', $branches))
+                ->groupBy(DB::raw('UPPER(kanca)'))
+                ->get()
+                ->keyBy('branch');
+        }
 
         $data = [];
         $total = [

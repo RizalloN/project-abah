@@ -12,8 +12,11 @@ class ReportDataSyncService
 {
     private const AUDIT_TABLE = 'report_sync_audits';
     private const DASHBOARD_SNAPSHOT_TABLE = 'dashboard_pinjaman_snapshots';
+    private const DASHBOARD_SIMPANAN_SNAPSHOT_TABLE = 'dashboard_simpanan_snapshots';
+    private const DASHBOARD_SIMPANAN_BRANCH_SNAPSHOT_TABLE = 'dashboard_simpanan_branch_snapshots';
     private const RASIO_SNAPSHOT_TABLE = 'rasio_casa_debitur_snapshots';
     private const DORMANT_SNAPSHOT_TABLE = 'rekening_dormant_snapshots';
+    private const NEW_PAYROLL_SNAPSHOT_TABLE = 'performance_new_payroll_snapshots';
     private const CACHE_VERSION_KEY = 'report_cache_version:global';
 
     public function __construct(
@@ -84,6 +87,7 @@ class ReportDataSyncService
                 'daily_loan_dinamis' => $this->syncDailyLoan($periodHint, $jobId, $source),
                 'simpanan_multipn' => $this->syncSimpanan($periodHint, $jobId, $source),
                 'lw325_ph' => $this->syncReportPh($periodHint, $jobId, $source),
+                'performance_pis_per_produk' => $this->syncPerformanceNewPayroll($periodHint, $jobId, $source),
                 default => null,
             };
         } catch (Throwable $e) {
@@ -112,6 +116,12 @@ class ReportDataSyncService
 
     private function syncSimpanan(?string $periodHint, ?int $jobId, ?string $source): void
     {
+        $this->runSnapshotAudit('simpanan_multipn', $periodHint, $jobId, $source, 'snapshot_dashboard_simpanan', function () use ($periodHint) {
+            return $this->snapshotBuilder->rebuildDashboardSimpanan($periodHint, true);
+        });
+        $this->refreshTableStatistics(self::DASHBOARD_SIMPANAN_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
+        $this->refreshTableStatistics(self::DASHBOARD_SIMPANAN_BRANCH_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
+
         $this->runSnapshotAudit('simpanan_multipn', $periodHint, $jobId, $source, 'snapshot_rekening_dormant', function () use ($periodHint) {
             return $this->snapshotBuilder->rebuildRekeningDormant($periodHint, true);
         });
@@ -132,9 +142,80 @@ class ReportDataSyncService
         ]);
     }
 
+    private function syncPerformanceNewPayroll(?string $periodHint, ?int $jobId, ?string $source): void
+    {
+        $this->runSnapshotAudit('performance_pis_per_produk', $periodHint, $jobId, $source, 'snapshot_new_payroll', function () use ($periodHint) {
+            return $this->snapshotBuilder->rebuildPerformanceNewPayroll($periodHint, true);
+        });
+        $this->refreshTableStatistics(self::NEW_PAYROLL_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
+    }
+
     public function syncAfterDelete(string $tableName, ?string $periodHint = null, ?string $source = null): void
     {
         $this->syncImportedTable($tableName, $periodHint, null, $source ?? static::class . '::syncAfterDelete');
+    }
+
+    public function cleanupDerivedArtifactsAfterDelete(string $tableName, ?string $periodHint = null, ?string $source = null): array
+    {
+        $normalizedTable = strtolower(trim($tableName));
+        if ($normalizedTable === '') {
+            return [];
+        }
+
+        $cleanupMap = match ($normalizedTable) {
+            'daily_loan_dinamis' => [
+                self::DASHBOARD_SNAPSHOT_TABLE => 'periode',
+                self::RASIO_SNAPSHOT_TABLE => 'loan_period',
+            ],
+            'simpanan_multipn' => [
+                self::DASHBOARD_SIMPANAN_SNAPSHOT_TABLE => 'snapshot_period',
+                self::DASHBOARD_SIMPANAN_BRANCH_SNAPSHOT_TABLE => 'snapshot_period',
+                self::DORMANT_SNAPSHOT_TABLE => 'posisi',
+                self::RASIO_SNAPSHOT_TABLE => 'casa_period',
+            ],
+            'performance_pis_per_produk' => [
+                self::NEW_PAYROLL_SNAPSHOT_TABLE => 'snapshot_posisi',
+            ],
+            default => [],
+        };
+
+        $deleted = [];
+
+        foreach ($cleanupMap as $snapshotTable => $periodColumn) {
+            if (!Schema::hasTable($snapshotTable)) {
+                continue;
+            }
+
+            $startedAt = microtime(true);
+
+            try {
+                $query = DB::table($snapshotTable);
+                if ($periodHint !== null && $periodHint !== '' && Schema::hasColumn($snapshotTable, $periodColumn)) {
+                    $query->where($periodColumn, $periodHint);
+                }
+
+                $affected = (int) $query->delete();
+                $deleted[$snapshotTable] = $affected;
+
+                $this->writeAudit($normalizedTable, $periodHint, null, $source, 'cleanup_snapshot_rows', 'success', [
+                    'duration_ms' => $this->elapsedMs($startedAt),
+                    'affected_rows' => $affected,
+                    'context' => ['snapshot_table' => $snapshotTable],
+                ]);
+            } catch (Throwable $e) {
+                $this->writeAudit($normalizedTable, $periodHint, null, $source, 'cleanup_snapshot_rows', 'failed', [
+                    'duration_ms' => $this->elapsedMs($startedAt),
+                    'message' => $e->getMessage(),
+                    'context' => ['snapshot_table' => $snapshotTable],
+                ]);
+
+                throw $e;
+            }
+        }
+
+        $this->bumpReportCacheVersion();
+
+        return $deleted;
     }
 
     private function refreshTableStatistics(string $tableName, ?string $periodHint, ?int $jobId, ?string $source): void

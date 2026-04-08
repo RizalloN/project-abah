@@ -30,7 +30,33 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
         $request = $this->useSimpananReport($request);
 
         $request->validate([
-            'file' => 'required|file|mimes:csv',
+            'file' => [
+                'required',
+                'file',
+                function (string $attribute, $file, \Closure $fail) {
+                    $originalExtension = $file ? strtolower((string) $file->getClientOriginalExtension()) : '';
+                    $detectedMimeType = $file ? strtolower((string) ($file->getMimeType() ?: $file->getClientMimeType())) : '';
+
+                    $allowedExtensions = ['csv', 'txt'];
+                    $allowedMimeTypes = [
+                        'text/plain',
+                        'text/csv',
+                        'application/csv',
+                        'text/comma-separated-values',
+                        'text/x-csv',
+                    ];
+
+                    if (
+                        !in_array($originalExtension, $allowedExtensions, true)
+                        && !in_array($detectedMimeType, $allowedMimeTypes, true)
+                    ) {
+                        $fail('File harus berformat CSV (.csv atau .txt).');
+                    }
+                },
+            ],
+        ], [
+            'file.required' => 'File CSV wajib dipilih.',
+            'file.file' => 'Upload gagal, file CSV tidak valid.',
         ]);
 
         $file = $request->file('file');

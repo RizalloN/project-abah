@@ -32,8 +32,8 @@ python -m pip install --upgrade pip
 echo.
 
 :: Install dependencies utama
-echo [2/4] Install pandas + openpyxl (baca Excel)...
-pip install pandas openpyxl python-dateutil
+echo [2/4] Install pandas, polars, fastexcel + openpyxl (baca Excel)...
+pip install pandas polars fastexcel openpyxl python-dateutil
 echo.
 
 echo [3/4] Install pymysql (koneksi MySQL)...

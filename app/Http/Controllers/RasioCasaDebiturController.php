@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Support\ReportDataSyncService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -110,6 +111,8 @@ class RasioCasaDebiturController extends Controller
 
     private function buildSummarySnapshot(string $loanPeriod, bool $forceRefresh = false): array
     {
+        $this->ensureRasioSnapshot($loanPeriod);
+
         $persisted = $this->loadPersistedSummarySnapshot($loanPeriod);
         if ($persisted !== null) {
             return $persisted;
@@ -347,6 +350,47 @@ class RasioCasaDebiturController extends Controller
         }
 
         return $snapshot;
+    }
+
+    private function ensureRasioSnapshot(string $loanPeriod): void
+    {
+        if (!Schema::hasTable(self::SNAPSHOT_TABLE)) {
+            return;
+        }
+
+        $exists = DB::table(self::SNAPSHOT_TABLE)
+            ->where('loan_period', $loanPeriod)
+            ->exists();
+
+        if ($exists) {
+            return;
+        }
+
+        $hasSourceRows = DB::table('daily_loan_dinamis')
+            ->where('periode', $loanPeriod)
+            ->exists();
+
+        if (!$hasSourceRows) {
+            return;
+        }
+
+        $lock = Cache::lock('snapshot:rasio:auto-rebuild:' . $loanPeriod, 60);
+
+        try {
+            $lock->block(5, function () use ($loanPeriod) {
+                app(ReportDataSyncService::class)->syncImportedTable(
+                    'daily_loan_dinamis',
+                    $loanPeriod,
+                    source: static::class . '::ensureRasioSnapshot'
+                );
+            });
+        } catch (Throwable $e) {
+            Log::warning('Auto rebuild rasio snapshot gagal: ' . $e->getMessage(), [
+                'loan_period' => $loanPeriod,
+            ]);
+        } finally {
+            optional($lock)->release();
+        }
     }
 
     private function assembleRows(array $branches, array $previousSummary, array $currentSummary): array

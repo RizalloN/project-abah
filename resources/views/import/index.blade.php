@@ -98,7 +98,9 @@
 @if(!empty($showReportManagementPanel))
 <div class="card shadow-sm border-0 mt-4" id="report-management-card"
      data-fetch-url="{{ route('import.report-management.data') }}"
-     data-delete-url="{{ route('import.report-management.delete') }}">
+     data-delete-url="{{ route('import.report-management.delete') }}"
+     data-delete-process-url-template="{{ route('import.report-management.delete.process', ['deleteId' => '__DELETE_ID__']) }}"
+     data-delete-status-url-template="{{ route('import.report-management.delete.status', ['deleteId' => '__DELETE_ID__']) }}">
     <div class="card-header bg-white border-0">
         <span class="import-upload-card__eyebrow">Report Management</span>
         <h5 class="card-title font-weight-bold text-dark mb-1">
@@ -157,6 +159,7 @@
                 title: 'swal-modern-title',
                 htmlContainer: 'swal-modern-html',
                 confirmButton: 'swal-modern-confirm',
+                cancelButton: 'swal-modern-cancel',
             },
             buttonsStyling: false,
             background: '#ffffff',
@@ -177,6 +180,8 @@
         const inputRar = document.getElementById('file_rar');
         const inputExcel = document.getElementById('file_excel');
         const inputCsv = document.getElementById('file_csv');
+        const excelLabel = formExcel?.querySelector('label');
+        const excelHelp = formExcel?.querySelector('small');
         const csvLabel = document.getElementById('csv-label');
         const csvHelp = document.getElementById('csv-help');
         const csrfTokenInput = formImport?.querySelector('input[name="_token"]');
@@ -260,6 +265,99 @@
                 .replace(/'/g, '&#39;');
         }
 
+        function formatManagementNumber(value) {
+            return Number(value || 0).toLocaleString('id-ID');
+        }
+
+        function buildManagementDeleteUrl(template, deleteId) {
+            return String(template || '').replace('__DELETE_ID__', encodeURIComponent(deleteId));
+        }
+
+        function updateManagementDeleteProgressUi(payload) {
+            const progressBar = document.getElementById('delete-progress-bar');
+            const progressText = document.getElementById('delete-progress-text');
+            const progressDesc = document.getElementById('delete-progress-desc');
+            const percent = Math.max(0, Math.min(100, Number(payload?.progress_percent || 0)));
+
+            if (progressBar) {
+                progressBar.style.width = percent + '%';
+                progressBar.innerText = percent + '%';
+            }
+            if (progressText) {
+                progressText.innerText = payload?.message || 'Memproses delete...';
+            }
+            if (progressDesc) {
+                progressDesc.innerHTML = `Terhapus <b>${formatManagementNumber(payload?.deleted_rows || 0)}</b> dari <b>${formatManagementNumber(payload?.total_rows || 0)}</b> baris.`;
+            }
+        }
+
+        async function runManagementDeleteProgress(processUrl, initialPayload, token) {
+            themedSwal({
+                title: 'Memproses Delete',
+                html: `
+                    <div class="text-center mb-3">
+                        <span style="font-size: 14px; color: #64748b;" id="delete-progress-desc">Menginisialisasi delete bertahap...</span>
+                    </div>
+                    <div class="progress report-management-progress">
+                        <div id="delete-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated report-management-progress__bar" role="progressbar" style="width: 0%;">0%</div>
+                    </div>
+                    <div class="text-center mt-3">
+                        <small id="delete-progress-text" class="report-management-progress__text">Menyiapkan chunk pertama...</small>
+                    </div>
+                `,
+                allowOutsideClick: false,
+                allowEscapeKey: false,
+                showConfirmButton: false,
+                width: 520,
+            });
+            await new Promise(resolve => setTimeout(resolve, 30));
+
+            let finalPayload = initialPayload;
+            updateManagementDeleteProgressUi(finalPayload);
+
+            try {
+                while (true) {
+                    finalPayload = await postManagementJson(processUrl, {}, token);
+                    updateManagementDeleteProgressUi(finalPayload);
+
+                    if (['completed', 'warning', 'failed'].includes(finalPayload.status)) {
+                        Swal.close();
+                        return finalPayload;
+                    }
+
+                    await new Promise(resolve => setTimeout(resolve, 350));
+                }
+            } catch (error) {
+                Swal.close();
+                throw error;
+            }
+        }
+
+        async function postManagementJson(url, payload, token) {
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': token
+                },
+                body: JSON.stringify(payload)
+            });
+
+            let data = {};
+            try {
+                data = await response.json();
+            } catch (_) {
+                data = {};
+            }
+
+            if (!response.ok && data.status !== 'warning') {
+                throw new Error(data.message || 'Terjadi kesalahan pada server.');
+            }
+
+            return data;
+        }
+
         function renderManagementRows(rows) {
             if (!managementTableBody) {
                 return;
@@ -277,7 +375,7 @@
             managementTableBody.innerHTML = rows.map(function(row) {
                 const period = row.period ?? '(Blank)';
                 const kanca = row.kanca ?? '(Blank)';
-                const total = Number(row.row_count || 0).toLocaleString('id-ID');
+                const total = formatManagementNumber(row.row_count || 0);
                 const periodIsNull = row.period_is_null ? '1' : '0';
                 const kancaIsNull = row.kanca_is_null ? '1' : '0';
                 const periodEncoded = encodeURIComponent(String(period));
@@ -326,20 +424,10 @@
                 </tr>
             `;
 
-            const response = await fetch(fetchUrl, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json',
-                    'X-CSRF-TOKEN': token
-                },
-                body: JSON.stringify({
-                    id_report: managementReportSelect.value
-                })
-            });
-
-            const payload = await response.json();
-            if (!response.ok || payload.status !== 'success') {
+            const payload = await postManagementJson(fetchUrl, {
+                id_report: managementReportSelect.value
+            }, token);
+            if (payload.status !== 'success') {
                 throw new Error(payload.message || 'Gagal memuat data report management.');
             }
 
@@ -352,6 +440,7 @@
             }
 
             const deleteUrl = reportManagementCard.dataset.deleteUrl;
+            const processUrlTemplate = reportManagementCard.dataset.deleteProcessUrlTemplate;
             const token = csrfTokenInput ? csrfTokenInput.value : '';
             const period = decodeURIComponent(button.getAttribute('data-period') || '');
             const kanca = decodeURIComponent(button.getAttribute('data-kanca') || '');
@@ -371,34 +460,69 @@
                 return;
             }
 
-            const response = await fetch(deleteUrl, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json',
-                    'X-CSRF-TOKEN': token
-                },
-                body: JSON.stringify({
-                    id_report: managementReportSelect.value,
-                    period: periodIsNull ? '' : period,
-                    kanca: kancaIsNull ? '' : kanca,
-                    period_is_null: periodIsNull,
-                    kanca_is_null: kancaIsNull
-                })
-            });
+            const deletePayload = {
+                id_report: managementReportSelect.value,
+                period: periodIsNull ? '' : period,
+                kanca: kancaIsNull ? '' : kanca,
+                period_is_null: periodIsNull,
+                kanca_is_null: kancaIsNull
+            };
 
-            const payload = await response.json();
-            if (!response.ok || (payload.status !== 'success' && payload.status !== 'warning')) {
+            let payload = await postManagementJson(deleteUrl, deletePayload, token);
+            if (payload.status === 'error') {
                 throw new Error(payload.message || 'Gagal menghapus data report.');
             }
 
-            const isWarning = payload.status === 'warning';
+            if (payload.status === 'completed') {
+                await themedSwal({
+                    icon: 'success',
+                    title: 'Selesai',
+                    text: payload.message || 'Tidak ada data yang perlu dihapus.'
+                });
+                await fetchManagementData();
+                return;
+            }
+
+            if (payload.status === 'warning' && payload.requires_force) {
+                const forceConfirm = await themedSwal({
+                    icon: 'warning',
+                    title: 'Data Sangat Besar',
+                    html: `Penghapusan ini akan menghapus sekitar <b>${formatManagementNumber(payload.candidate_rows || 0)}</b> baris.<br>Lanjutkan hanya jika Anda yakin ingin menghapus seluruh grup tersebut.`,
+                    showCancelButton: true,
+                    confirmButtonText: 'Lanjutkan Delete',
+                    cancelButtonText: 'Batal'
+                });
+
+                if (!forceConfirm.isConfirmed) {
+                    return;
+                }
+
+                payload = await postManagementJson(deleteUrl, Object.assign({}, deletePayload, { force: true }), token);
+                if (payload.status === 'error') {
+                    throw new Error(payload.message || 'Gagal menghapus data report.');
+                }
+            }
+
+            if (!payload.delete_id || !processUrlTemplate) {
+                throw new Error(payload.message || 'Delete progress tidak dapat dimulai.');
+            }
+
+            const finalPayload = await runManagementDeleteProgress(
+                buildManagementDeleteUrl(processUrlTemplate, payload.delete_id),
+                payload,
+                token
+            );
+
+            if (finalPayload.status === 'failed') {
+                throw new Error(finalPayload.error || finalPayload.message || 'Terjadi kesalahan saat menghapus data.');
+            }
+
             await themedSwal({
-                icon: isWarning ? 'warning' : 'success',
-                title: isWarning ? 'Selesai dengan Catatan' : 'Berhasil',
-                text: isWarning
-                    ? (payload.message || 'Data sumber terhapus tetapi sinkronisasi snapshot bermasalah.')
-                    : `Data terhapus ${Number(payload.deleted_rows || 0).toLocaleString('id-ID')} baris.`
+                icon: finalPayload.status === 'warning' ? 'warning' : 'success',
+                title: finalPayload.status === 'warning' ? 'Selesai dengan Catatan' : 'Berhasil',
+                text: finalPayload.status === 'warning'
+                    ? (finalPayload.error || finalPayload.message || 'Delete selesai dengan catatan.')
+                    : `Data terhapus ${formatManagementNumber(finalPayload.deleted_rows || 0)} baris. Snapshot, cache index, dan statistik optimizer sudah diperbarui.`
             });
 
             await fetchManagementData();
@@ -445,10 +569,62 @@
             btnSubmit.innerHTML = label;
         }
 
+        function getSelectedReportMeta() {
+            const selectedOption = reportSelect?.options?.[reportSelect.selectedIndex];
+
+            return {
+                reportName: selectedOption?.getAttribute('data-name') || '',
+                tableName: selectedOption?.getAttribute('data-table') || '',
+            };
+        }
+
+        function getFileExtension(fileName) {
+            const parts = String(fileName || '').toLowerCase().split('.');
+            return parts.length > 1 ? parts.pop() : '';
+        }
+
+        function isSimpananReportSelected() {
+            return getSelectedReportMeta().reportName.includes('simpanan multipn');
+        }
+
+        function applySimpananUploadMode() {
+            if (!isSimpananReportSelected()) {
+                return;
+            }
+
+            const selectedFile = inputExcel?.files?.[0] || null;
+            const extension = getFileExtension(selectedFile?.name || '');
+            const isCsvLike = ['csv', 'txt'].includes(extension);
+
+            inputExcel.setAttribute('accept', '.xlsx,.xls,.csv,.txt');
+
+            if (excelLabel) {
+                excelLabel.innerHTML = '<i class="fas fa-file-upload mr-1"></i> Upload File Simpanan MultiPN (.xlsx, .xls, .csv, .txt)';
+            }
+
+            if (excelHelp) {
+                excelHelp.textContent = isCsvLike
+                    ? 'File CSV/TXT akan diproses lewat jalur import CSV Simpanan MultiPN.'
+                    : 'File Excel akan diproses lewat jalur import Excel Simpanan MultiPN.';
+            }
+
+            formImport.action = isCsvLike
+                ? "{{ route('import.simpanan.csv.upload') }}"
+                : "{{ route('import.simpanan.upload') }}";
+            formImport.dataset.preparePreviewUrl = isCsvLike
+                ? "{{ route('import.simpanan.csv.prepare-preview') }}"
+                : "{{ route('import.simpanan.prepare-preview') }}";
+
+            applyButtonState(
+                isCsvLike ? 'csv' : 'excel',
+                isCsvLike
+                    ? '<i class="fas fa-file-csv"></i> Upload CSV'
+                    : '<i class="fas fa-file-excel"></i> Upload Excel'
+            );
+        }
+
         function toggleForm() {
-            const selectedOption = reportSelect.options[reportSelect.selectedIndex];
-            const reportName = selectedOption.getAttribute('data-name') || '';
-            const tableName = selectedOption.getAttribute('data-table') || '';
+            const { reportName, tableName } = getSelectedReportMeta();
             const isDailyLoan = reportName.includes('daily loan');
             const isSimpanan = reportName.includes('simpanan multipn');
             const isPerformancePis = reportName.includes('performance pis per produk');
@@ -484,10 +660,7 @@
                 formExcel.style.display = 'block';
                 inputExcel.disabled = false;
                 inputExcel.required = true;
-                inputExcel.setAttribute('accept', '.xlsx,.xls,.csv');
-                formImport.action = "{{ route('import.simpanan.upload') }}";
-                formImport.dataset.preparePreviewUrl = "{{ route('import.simpanan.prepare-preview') }}";
-                applyButtonState('excel', '<i class="fas fa-file-upload"></i> Upload Excel/CSV');
+                applySimpananUploadMode();
                 return;
             }
 
@@ -496,6 +669,12 @@
                 inputExcel.disabled = false;
                 inputExcel.required = true;
                 inputExcel.setAttribute('accept', '.xlsx,.xls');
+                if (excelLabel) {
+                    excelLabel.innerHTML = '<i class="fas fa-file-excel mr-1"></i> Upload File Excel (.xlsx, .xls)';
+                }
+                if (excelHelp) {
+                    excelHelp.textContent = 'Mendukung format .xlsx dan .xls hingga 200MB+ dengan preview bertahap.';
+                }
                 formImport.action = isInputRekanan
                     ? "{{ route('input.import-template') }}"
                     : (isBodBoc
@@ -532,6 +711,12 @@
             inputRar.disabled = false;
             inputRar.required = true;
             inputExcel.setAttribute('accept', '.xlsx,.xls');
+            if (excelLabel) {
+                excelLabel.innerHTML = '<i class="fas fa-file-excel mr-1"></i> Upload File Excel (.xlsx, .xls)';
+            }
+            if (excelHelp) {
+                excelHelp.textContent = 'Mendukung format .xlsx dan .xls hingga 200MB+ dengan preview bertahap.';
+            }
             formImport.action = "{{ route('import.upload') }}";
             applyButtonState('rar', '<i class="fas fa-file-archive"></i> Upload RAR');
         }
@@ -603,8 +788,14 @@
             $(this).next('.custom-file-label').html(fileName);
         });
 
+        inputExcel?.addEventListener('change', function () {
+            applySimpananUploadMode();
+        });
+
         formImport.addEventListener('submit', async function(e) {
             e.preventDefault();
+
+            applySimpananUploadMode();
 
             const sizeAllowed = await validateFileSizeBeforeUpload();
             if (!sizeAllowed) {
@@ -1002,6 +1193,27 @@
         box-shadow: 0 18px 34px -22px rgba(37, 99, 235, 0.52);
     }
 
+    .report-management-progress {
+        height: 16px;
+        border-radius: 999px;
+        background-color: #e2e8f0;
+        overflow: hidden;
+        box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.08);
+    }
+
+    .report-management-progress__bar {
+        font-weight: 700;
+        font-size: 12px;
+        line-height: 16px;
+        background: linear-gradient(135deg, #0f766e, #115e59);
+    }
+
+    .report-management-progress__text {
+        color: #0f766e;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+    }
+
     .swal-modern-popup {
         border: 1px solid rgba(226, 232, 240, 0.95);
         border-radius: 28px;
@@ -1021,17 +1233,27 @@
         line-height: 1.65;
     }
 
-    .swal-modern-confirm {
+    .swal-modern-confirm,
+    .swal-modern-cancel {
         display: inline-flex;
         align-items: center;
         justify-content: center;
         border: 0;
         border-radius: 16px;
-        background: linear-gradient(135deg, #0f766e, #115e59);
-        color: #ffffff;
         font-weight: 700;
         padding: 0.8rem 1.3rem;
+    }
+
+    .swal-modern-confirm {
+        background: linear-gradient(135deg, #0f766e, #115e59);
+        color: #ffffff;
         box-shadow: 0 16px 34px -22px rgba(15, 23, 42, 0.45);
+    }
+
+    .swal-modern-cancel {
+        background: #e2e8f0;
+        color: #334155;
+        margin-left: 0.5rem;
     }
 
     @media (max-width: 767.98px) {

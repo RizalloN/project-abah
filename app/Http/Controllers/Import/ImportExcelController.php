@@ -430,7 +430,7 @@ class ImportExcelController extends Controller
             }
         }
 
-        return true;
+        return $this->isValidSimpananMultiPnRowValues($valuesByHeader);
     }
 
     private function hasRequiredSimpananMultiPnImportData(array $row): bool
@@ -455,7 +455,91 @@ class ImportExcelController extends Controller
             }
         }
 
-        return true;
+        $normalized = [];
+        foreach ($valuesByLowerKey as $key => $value) {
+            $normalized[strtolower(trim((string) $key))] = trim((string) ($value ?? ''));
+        }
+
+        return $this->isValidSimpananMultiPnRowValues($normalized);
+    }
+
+    private function isValidSimpananMultiPnRowValues(array $valuesByHeader): bool
+    {
+        $posisi = trim((string) ($valuesByHeader['posisi'] ?? ''));
+        $cifno = trim((string) ($valuesByHeader['cifno'] ?? ''));
+        $noRekening = trim((string) ($valuesByHeader['no_rekening'] ?? ''));
+        $jenis = strtoupper(trim((string) ($valuesByHeader['jenis_simpanan'] ?? '')));
+        $saldo = trim((string) ($valuesByHeader['saldo_idr'] ?? ''));
+
+        if ($posisi === '' || $cifno === '' || $noRekening === '' || $jenis === '' || $saldo === '') {
+            return false;
+        }
+
+        if (!$this->isValidSimpananPosisi($posisi)) {
+            return false;
+        }
+
+        if (!preg_match('/^[A-Z0-9]+$/i', $noRekening) || strlen($noRekening) < 6) {
+            return false;
+        }
+
+        if (!in_array($jenis, ['TABUNGAN', 'GIRO', 'DEPOSITO'], true)) {
+            return false;
+        }
+
+        return $this->normalizeDecimalValue($saldo) !== null;
+    }
+
+    private function isValidSimpananPosisi(string $value): bool
+    {
+        $value = trim($value);
+        if ($value === '') {
+            return false;
+        }
+
+        // Angka pendek biasanya nomor urut baris yang geser ke kolom posisi.
+        if (preg_match('/^\d{1,5}$/', $value) === 1) {
+            return false;
+        }
+
+        if (is_numeric($value)) {
+            $serial = (float) $value;
+            if ($serial < 20000 || $serial > 80000) {
+                return false;
+            }
+
+            try {
+                $date = Carbon::instance(ExcelDate::excelToDateTimeObject($serial));
+                $year = (int) $date->format('Y');
+
+                return $year >= 2000 && $year <= 2100;
+            } catch (\Throwable) {
+                return false;
+            }
+        }
+
+        foreach (['Y-m-d', 'd/m/Y', 'm/d/Y', 'd-m-Y', 'm-d-Y'] as $format) {
+            try {
+                $date = Carbon::createFromFormat($format, $value);
+                if ($date !== false) {
+                    $year = (int) $date->format('Y');
+                    if ($year >= 2000 && $year <= 2100) {
+                        return true;
+                    }
+                }
+            } catch (\Throwable) {
+                // lanjut cek format berikutnya
+            }
+        }
+
+        try {
+            $date = Carbon::parse($value);
+            $year = (int) $date->format('Y');
+
+            return $year >= 2000 && $year <= 2100;
+        } catch (\Throwable) {
+            return false;
+        }
     }
 
     private function alignImportedRowWithNormalizedHeaders(array $row, array $normalizedHeaders): array
@@ -481,7 +565,7 @@ class ImportExcelController extends Controller
         return $row;
     }
 
-    private function stripIgnoredPreviewColumns(array $headers, array $rows, array $formattedUniqueValues, string $tableName): array
+    protected function stripIgnoredPreviewColumns(array $headers, array $rows, array $formattedUniqueValues, string $tableName): array
     {
         if (!$this->isSimpananMultiPnTable($tableName)) {
             return [
@@ -531,6 +615,65 @@ class ImportExcelController extends Controller
             'rows' => $filteredRows,
             'formatted_unique_values' => $filteredUniqueValues,
         ];
+    }
+
+    protected function orderPreviewColumns(array $headers, array $formattedUniqueValues, array $preview, string $tableName): array
+    {
+        $dbColumns = Schema::hasTable($tableName)
+            ? Schema::getColumnListing($tableName)
+            : [];
+
+        $reorderedPayload = $this->reorderPreviewPayload($headers, $formattedUniqueValues, $preview, $dbColumns);
+        $displayFilterMap = [];
+        $usedSourceIndexes = [];
+
+        foreach ($reorderedPayload['headers'] as $displayIndex => $header) {
+            foreach ($headers as $sourceIndex => $sourceHeader) {
+                if (isset($usedSourceIndexes[$sourceIndex])) {
+                    continue;
+                }
+
+                if ($this->normalizeHeaderForDatabase((string) $sourceHeader) === $this->normalizeHeaderForDatabase((string) $header)) {
+                    $displayFilterMap[$displayIndex] = $sourceIndex;
+                    $usedSourceIndexes[$sourceIndex] = true;
+                    break;
+                }
+            }
+
+            if (!array_key_exists($displayIndex, $displayFilterMap)) {
+                $displayFilterMap[$displayIndex] = $displayIndex;
+            }
+        }
+
+        return [
+            'headers' => $reorderedPayload['headers'],
+            'formatted_unique_values' => $reorderedPayload['formattedUniqueValues'],
+            'preview' => $reorderedPayload['preview'],
+            'display_filter_map' => $displayFilterMap,
+        ];
+    }
+
+    protected function hasMeaningfulImportData(array $row, array $ignoredKeys = []): bool
+    {
+        $ignoredLookup = array_fill_keys(array_map('strtolower', $ignoredKeys), true);
+
+        foreach ($row as $key => $value) {
+            if (isset($ignoredLookup[strtolower((string) $key)])) {
+                continue;
+            }
+
+            if ($value === null) {
+                continue;
+            }
+
+            if (is_string($value) && trim($value) === '') {
+                continue;
+            }
+
+            return true;
+        }
+
+        return false;
     }
 
     protected function buildPreviewPayloadFromCsvFile(string $csvPath): array
@@ -599,6 +742,10 @@ class ImportExcelController extends Controller
 
                 if ($rowsProcessedForUniques < $uniqueLimit) {
                     $rowsProcessedForUniques++;
+                }
+
+                if (count($cleanPreview) >= $previewLimit && $rowsProcessedForUniques >= $uniqueLimit) {
+                    break;
                 }
             }
 
@@ -690,7 +837,14 @@ class ImportExcelController extends Controller
 
     public function uploadSimpananMultiPnExcel(Request $request)
     {
-        return $this->uploadExcel($this->useSimpananMultiPnReport($request), ['xlsx', 'xls', 'csv']);
+        $file = $request->file('file');
+        $originalExtension = $file ? strtolower((string) $file->getClientOriginalExtension()) : '';
+
+        if (in_array($originalExtension, ['csv', 'txt'], true)) {
+            return app(ImportSimpananMultiPnCsvController::class)->upload($request);
+        }
+
+        return $this->uploadExcel($this->useSimpananMultiPnReport($request), ['xlsx', 'xls']);
     }
 
     public function previewSimpananMultiPnExcel(Request $request)
@@ -888,6 +1042,7 @@ class ImportExcelController extends Controller
         }
 
         return [
+            'table_name' => $tableName,
             'valid_indexes' => $validIndexes,
             'header_count' => $headerCount,
             'table_columns_lookup' => $tableColumnsLookup,
@@ -1248,14 +1403,6 @@ class ImportExcelController extends Controller
             'textbox20' => 'total_kewajiban',
             'textbox21' => 'os_idr',
             'periode' => 'periode',
-            'kode_kanwil1' => 'kode_kanwil',
-            'kanwil1' => 'kanwil',
-            'kode_cabang1' => 'kode_cabang',
-            'cabang1' => 'cabang',
-            'branch1' => 'branch',
-            'unit1' => 'unit',
-            'nomor_rekening1' => 'nomor_rekening',
-            'baki_debet1' => 'baki_debet',
             'segmen_dashboard' => 'segmen_dashboard',
             'produk_dashboard' => 'produk_dashboard',
         ];
@@ -1267,7 +1414,7 @@ class ImportExcelController extends Controller
         return array_values(array_unique($candidates));
     }
 
-    private function reorderPreviewPayload(array $headers, array $formattedUniqueValues, array $preview, array $dbColumns): array
+    protected function reorderPreviewPayload(array $headers, array $formattedUniqueValues, array $preview, array $dbColumns): array
     {
         $preview = $this->rebuildPreviewRowsForHeaders($headers, $preview);
 
@@ -1332,7 +1479,7 @@ class ImportExcelController extends Controller
         ];
     }
 
-    private function rebuildPreviewRowsForHeaders(array $headers, array $preview): array
+    protected function rebuildPreviewRowsForHeaders(array $headers, array $preview): array
     {
         $rebuilt = [];
 
@@ -1412,6 +1559,10 @@ class ImportExcelController extends Controller
         }
 
         $minimumColumns = !empty($context['unique_id_col']) ? 3 : 2;
+
+        if (($context['table_name'] ?? '') === 'simpanan_multipn' && !$this->hasRequiredSimpananMultiPnImportData($finalRow)) {
+            return null;
+        }
 
         return count($finalRow) > $minimumColumns ? $finalRow : null;
     }

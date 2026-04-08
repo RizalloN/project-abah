@@ -2,11 +2,13 @@
 
 namespace App\Http\Controllers;
 
+use App\Support\ReportDataSyncService;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Contracts\Cache\LockTimeoutException;
 use Throwable;
@@ -578,6 +580,43 @@ class RekeningDormantController extends Controller
         }
 
         sort($periods);
+
+        $missingPeriods = collect($periods)
+            ->filter(function (string $period) {
+                return !DB::table(self::SNAPSHOT_TABLE)
+                    ->where('posisi', $period)
+                    ->exists();
+            })
+            ->values();
+
+        foreach ($missingPeriods as $missingPeriod) {
+            $hasSourceRows = DB::table('simpanan_multipn')
+                ->where('posisi', $missingPeriod)
+                ->where('status', '9')
+                ->exists();
+
+            if (!$hasSourceRows) {
+                continue;
+            }
+
+            $lock = Cache::lock('snapshot:dormant:auto-rebuild:' . $missingPeriod, 60);
+
+            try {
+                $lock->block(5, function () use ($missingPeriod) {
+                    app(ReportDataSyncService::class)->syncImportedTable(
+                        'simpanan_multipn',
+                        $missingPeriod,
+                        source: static::class . '::hasDormantSnapshots'
+                    );
+                });
+            } catch (Throwable $e) {
+                Log::warning('Auto rebuild rekening dormant snapshot gagal: ' . $e->getMessage(), [
+                    'period' => $missingPeriod,
+                ]);
+            } finally {
+                optional($lock)->release();
+            }
+        }
 
         return DB::table(self::SNAPSHOT_TABLE)
             ->whereIn('posisi', $periods)
