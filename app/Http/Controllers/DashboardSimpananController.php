@@ -264,7 +264,6 @@ class DashboardSimpananController extends Controller
         }
 
         $summary = DB::table('simpanan_multipn')
-            ->from(DB::raw('simpanan_multipn FORCE INDEX (idx_smp_posisi_cif_jenis)'))
             ->where('posisi', $period)
             ->selectRaw('COALESCE(SUM(COALESCE(saldo_idr, 0)), 0) as total_balance')
             ->selectRaw('COUNT(DISTINCT no_rekening) as account_count')
@@ -304,7 +303,6 @@ class DashboardSimpananController extends Controller
             }
 
             return DB::table('simpanan_multipn')
-                ->from(DB::raw('simpanan_multipn FORCE INDEX (idx_smp_posisi_status_cabang_unit)'))
                 ->where('posisi', $period)
                 ->whereNotNull('kantor_cabang')
                 ->where('kantor_cabang', '<>', '')

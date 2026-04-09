@@ -113,7 +113,9 @@ class ImportIndexController extends Controller
             'upload_max_bytes' => $uploadMaxBytes > 0 ? $uploadMaxBytes : null,
             'memory_limit_bytes' => $memoryLimitBytes > 0 ? $memoryLimitBytes : null,
             'effective_max_upload_bytes' => $effectiveMaxBytes,
-        ]);
+        ])->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+            ->header('Pragma', 'no-cache')
+            ->header('Expires', '0');
     }
 
     public function reportManagementData(Request $request)

@@ -191,13 +191,13 @@ public function performanceBrilink()
         }
 
         $positions = collect([
-            $selectedDate->copy()->subMonthsNoOverflow(2)->endOfMonth()->toDateString(),
+            $selectedDate->copy()->subYearNoOverflow()->endOfYear()->toDateString(),
             $selectedDate->copy()->subMonthNoOverflow()->endOfMonth()->toDateString(),
             $selectedDate->copy()->toDateString(),
         ])->unique()->values();
 
         while ($positions->count() < 3) {
-            $seed = Carbon::parse($positions->first())->subMonthNoOverflow()->endOfMonth()->toDateString();
+            $seed = Carbon::parse($positions->first())->subYearNoOverflow()->endOfYear()->toDateString();
             $positions->prepend($seed);
             $positions = $positions->unique()->values();
         }
@@ -295,30 +295,12 @@ public function performanceBrilink()
         $stats = [];
         $matchedCount = 0;
 
-<<<<<<< HEAD
         foreach ($sourceRows as $row) {
             $regional = trim((string) ($row->kantor_cabang ?: 'Branch Office Belum Terpetakan'));
             $cif = trim((string) $row->cif);
             $posisi = (string) $row->bucket_periode;
             $isMatched = (int) ($row->is_matched ?? 0) === 1;
             $statusNasabah = strtolower(trim((string) ($row->status_nasabah ?? '')));
-
-=======
-        $statsRows = (clone $matchedBaseQuery)
-            ->addSelect('sm.kantor_cabang')
-            ->addSelect('sm.posisi')
-            ->selectRaw('COUNT(DISTINCT TRIM(src.cif)) as sudah_terakuisisi')
-            ->selectRaw('COALESCE(SUM(COALESCE(sm.saldo_idr, 0)), 0) as saldo_cif')
-            ->groupBy('sm.kantor_cabang', 'sm.posisi')
-            ->get();
-
-        foreach ($statsRows as $row) {
-            $regional = trim((string) ($row->kantor_cabang ?? ''));
-            if ($regional === '') {
-                $regional = 'Branch Office Belum Terpetakan';
-            }
-            $posisi = (string) ($row->posisi ?? '');
->>>>>>> 386611b5aaed4adafacab7c7e784dff2a4ba209a
             $stats[$regional] ??= [];
             $stats[$regional][$posisi] ??= [
                 'pipeline_cifs' => [],
@@ -326,8 +308,6 @@ public function performanceBrilink()
                 'belum_cifs' => [],
                 'saldo_cif' => 0,
             ];
-
-<<<<<<< HEAD
             $stats[$regional][$posisi]['pipeline_cifs'][$cif] = true;
             $pipelineByRegional[$regional][$cif] = true;
 
@@ -341,24 +321,6 @@ public function performanceBrilink()
                 $stats[$regional][$posisi]['saldo_cif'] += (float) ($row->saldo_idr ?? 0);
                 $matchedCount++;
             }
-=======
-        if ($latestPosition) {
-            $pipelineRows = (clone $matchedBaseQuery)
-                ->where('sm.posisi', $latestPosition)
-                ->addSelect('sm.kantor_cabang')
-                ->selectRaw('COUNT(DISTINCT TRIM(src.cif)) as total_pipeline')
-                ->groupBy('sm.kantor_cabang')
-                ->get();
-
-            $pipelineByRegional = $pipelineRows->mapWithKeys(function ($row) {
-                $regional = trim((string) ($row->kantor_cabang ?? ''));
-                if ($regional === '') {
-                    $regional = 'Branch Office Belum Terpetakan';
-                }
-
-                return [$regional => (int) ($row->total_pipeline ?? 0)];
-            });
->>>>>>> 386611b5aaed4adafacab7c7e784dff2a4ba209a
         }
 
         $regionals = collect(array_unique(array_merge(
@@ -391,8 +353,20 @@ public function performanceBrilink()
                 'akuisisi_pct' => 0,
                 'growth_saldo_pct' => 0,
             ];
+            $runningBelum = 0;
+            $runningSudah = 0;
+            $runningSaldo = 0;
+            $runningYear = null;
 
             foreach ($positions as $position) {
+                $positionYear = Carbon::parse($position)->year;
+                if ($runningYear !== null && $runningYear !== $positionYear) {
+                    $runningBelum = 0;
+                    $runningSudah = 0;
+                    $runningSaldo = 0;
+                }
+                $runningYear = $positionYear;
+
                 $regionalStats = $stats[$regional][$position] ?? [
                     'pipeline_cifs' => [],
                     'sudah_cifs' => [],
@@ -401,16 +375,19 @@ public function performanceBrilink()
                 ];
                 $sudah = count($regionalStats['sudah_cifs']);
                 $belum = count($regionalStats['belum_cifs']);
+                $runningBelum += $belum;
+                $runningSudah += $sudah;
+                $runningSaldo += (float) $regionalStats['saldo_cif'];
 
                 $row['positions'][$position] = [
-                    'belum_terakuisisi' => $belum,
-                    'sudah_terakuisisi' => $sudah,
-                    'saldo_cif' => (float) $regionalStats['saldo_cif'],
+                    'belum_terakuisisi' => $runningBelum,
+                    'sudah_terakuisisi' => $runningSudah,
+                    'saldo_cif' => $runningSaldo,
                 ];
 
-                $grandTotals['positions'][$position]['belum_terakuisisi'] += $belum;
-                $grandTotals['positions'][$position]['sudah_terakuisisi'] += $sudah;
-                $grandTotals['positions'][$position]['saldo_cif'] += (float) $regionalStats['saldo_cif'];
+                $grandTotals['positions'][$position]['belum_terakuisisi'] += $runningBelum;
+                $grandTotals['positions'][$position]['sudah_terakuisisi'] += $runningSudah;
+                $grandTotals['positions'][$position]['saldo_cif'] += $runningSaldo;
             }
 
             if ($latestPosition && isset($row['positions'][$latestPosition])) {

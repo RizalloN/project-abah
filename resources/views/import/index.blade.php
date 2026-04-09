@@ -47,7 +47,7 @@
         </div>
     </div>
 
-    <form id="form-import" method="POST" action="{{ route('import.upload') }}" enctype="multipart/form-data" data-prepare-preview-url="" data-upload-limits-url="{{ route('import.upload-limits') }}">
+    <form id="form-import" method="POST" action="{{ route('import.upload') }}" enctype="multipart/form-data" data-prepare-preview-url="" data-upload-limits-url="{{ route('import.upload-limits') }}" data-chunked-upload="" data-chunk-init-url="" data-chunk-upload-url="" data-chunk-finalize-url="">
         @csrf
 
         <div class="card-body import-upload-card__body">
@@ -213,17 +213,21 @@
         }
 
         async function getUploadLimits() {
-            if (uploadLimitsPromise) {
-                return uploadLimitsPromise;
-            }
-
             const limitsUrl = formImport?.dataset.uploadLimitsUrl;
             if (!limitsUrl) {
                 return null;
             }
 
-            uploadLimitsPromise = fetch(limitsUrl, {
-                headers: { 'Accept': 'application/json' }
+            const cacheBuster = limitsUrl.includes('?')
+                ? `${limitsUrl}&_=${Date.now()}`
+                : `${limitsUrl}?_=${Date.now()}`;
+
+            uploadLimitsPromise = fetch(cacheBuster, {
+                headers: {
+                    'Accept': 'application/json',
+                    'Cache-Control': 'no-cache'
+                },
+                cache: 'no-store'
             })
             .then(async (response) => {
                 const payload = await response.json().catch(() => ({}));
@@ -250,15 +254,130 @@
             const limits = await getUploadLimits();
             const maxBytes = Number(limits?.effective_max_upload_bytes || 0);
             if (maxBytes > 0 && file.size > maxBytes) {
+                const limitLabel = formatBytes(maxBytes);
+                const shouldWarnOnly = maxBytes <= (128 * 1024 * 1024);
+
+                if (shouldWarnOnly) {
+                    console.warn('Upload limit endpoint masih mengembalikan nilai kecil:', limits);
+                    return true;
+                }
+
                 themedSwal({
                     icon: 'error',
                     title: 'Ukuran File Terlalu Besar',
-                    html: `Ukuran file <b>${escapeHtml(file.name)}</b> adalah <b>${formatBytes(file.size)}</b>.<br>Batas upload server saat ini <b>${formatBytes(maxBytes)}</b>.`
+                    html: `Ukuran file <b>${escapeHtml(file.name)}</b> adalah <b>${formatBytes(file.size)}</b>.<br>Batas upload server saat ini <b>${limitLabel}</b>.`
                 });
                 return false;
             }
 
             return true;
+        }
+
+        async function uploadDailyLoanChunked(file, uploadProgressBar, uploadProgressText) {
+            const csrfToken = formImport.querySelector('input[name="_token"]')?.value || '';
+            const initUrl = formImport.dataset.chunkInitUrl;
+            const chunkUrl = formImport.dataset.chunkUploadUrl;
+            const finalizeUrl = formImport.dataset.chunkFinalizeUrl;
+            const chunkSize = 8 * 1024 * 1024;
+            const totalChunks = Math.max(1, Math.ceil(file.size / chunkSize));
+
+            const initForm = new FormData();
+            initForm.append('_token', csrfToken);
+            initForm.append('original_name', file.name);
+            initForm.append('total_size', String(file.size));
+
+            const initResponse = await fetch(initUrl, {
+                method: 'POST',
+                headers: {
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                body: initForm,
+            });
+
+            const initPayload = await initResponse.json().catch(() => ({}));
+            if (!initResponse.ok || initPayload.status !== 'success' || !initPayload.upload_id) {
+                throw new Error(initPayload.message || 'Gagal memulai upload bertahap.');
+            }
+
+            for (let index = 0; index < totalChunks; index++) {
+                const start = index * chunkSize;
+                const end = Math.min(file.size, start + chunkSize);
+                const chunk = file.slice(start, end);
+                const chunkForm = new FormData();
+                chunkForm.append('_token', csrfToken);
+                chunkForm.append('upload_id', initPayload.upload_id);
+                chunkForm.append('chunk_index', String(index));
+                chunkForm.append('total_chunks', String(totalChunks));
+                chunkForm.append('file', chunk, `${file.name}.part${index}`);
+
+                const chunkResponse = await fetch(chunkUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                    body: chunkForm,
+                });
+
+                const chunkPayload = await chunkResponse.json().catch(() => ({}));
+                if (!chunkResponse.ok || chunkPayload.status !== 'success') {
+                    throw new Error(chunkPayload.message || ('Gagal upload potongan file ke-' + (index + 1) + '.'));
+                }
+
+                const uploadedBytes = end;
+                const percent = Math.min(94, Math.max(3, Math.round((uploadedBytes / file.size) * 94)));
+                if (uploadProgressBar) {
+                    uploadProgressBar.style.width = percent + '%';
+                    uploadProgressBar.innerText = percent + '%';
+                }
+                if (uploadProgressText) {
+                    uploadProgressText.innerText = `Mengunggah file ke server... ${percent}%`;
+                }
+            }
+
+            if (uploadProgressBar) {
+                uploadProgressBar.style.width = '96%';
+                uploadProgressBar.innerText = '96%';
+            }
+            if (uploadProgressText) {
+                uploadProgressText.innerText = 'Upload selesai. Menggabungkan file di server...';
+            }
+
+            const finalizeForm = new FormData();
+            finalizeForm.append('_token', csrfToken);
+            finalizeForm.append('upload_id', initPayload.upload_id);
+            finalizeForm.append('total_chunks', String(totalChunks));
+            finalizeForm.append('original_name', file.name);
+
+            const finalizeResponse = await fetch(finalizeUrl, {
+                method: 'POST',
+                headers: {
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                body: finalizeForm,
+            });
+
+            const finalizePayload = await finalizeResponse.json().catch(() => ({}));
+            if (!finalizeResponse.ok || finalizePayload.status !== 'success') {
+                throw new Error(finalizePayload.message || 'Gagal menyusun file final di server.');
+            }
+
+            if (uploadProgressBar) {
+                uploadProgressBar.style.width = '100%';
+                uploadProgressBar.innerText = '100%';
+            }
+            if (uploadProgressText) {
+                uploadProgressText.innerText = 'Upload selesai. Membuka halaman preview...';
+            }
+
+            if (finalizePayload.redirect) {
+                window.location.href = finalizePayload.redirect;
+                return;
+            }
+
+            throw new Error('Server tidak mengembalikan alamat preview setelah upload chunk.');
         }
 
         function escapeHtml(value) {
@@ -482,6 +601,10 @@
 
             formImport.dataset.preparePreviewUrl = '';
             formImport.dataset.directRedirect = '';
+            formImport.dataset.chunkedUpload = '';
+            formImport.dataset.chunkInitUrl = '';
+            formImport.dataset.chunkUploadUrl = '';
+            formImport.dataset.chunkFinalizeUrl = '';
 
             if (isDailyLoan) {
                 formCsv.style.display = 'block';
@@ -489,6 +612,10 @@
                 inputCsv.required = true;
                 formImport.action = "{{ route('import.dailyloan.upload') }}";
                 formImport.dataset.preparePreviewUrl = "{{ route('import.dailyloan.prepare-preview') }}";
+                formImport.dataset.chunkedUpload = '1';
+                formImport.dataset.chunkInitUrl = "{{ route('import.dailyloan.upload-chunk.init') }}";
+                formImport.dataset.chunkUploadUrl = "{{ route('import.dailyloan.upload-chunk') }}";
+                formImport.dataset.chunkFinalizeUrl = "{{ route('import.dailyloan.upload-chunk.finalize') }}";
                 csvLabel.innerHTML = '<i class="fas fa-file-csv mr-1"></i> Upload File CSV Daily Loan Dinamis (.csv, .txt)';
                 csvHelp.textContent = 'Gunakan file CSV Daily Loan Dinamis yang sudah sesuai template untuk diproses ke database.';
                 applyButtonState('csv', '<i class="fas fa-file-csv"></i> Upload CSV');
@@ -680,6 +807,23 @@
                     const formData = new FormData(formImport);
                     const uploadProgressBar = document.getElementById('swal-progress-bar');
                     const uploadProgressText = document.getElementById('swal-progress-text');
+                    const chunkedUpload = formImport.dataset.chunkedUpload === '1';
+                    const selectedFile = !inputRar.disabled
+                        ? inputRar?.files?.[0]
+                        : (!inputExcel.disabled ? inputExcel?.files?.[0] : inputCsv?.files?.[0]);
+
+                    if (chunkedUpload && selectedFile) {
+                        uploadDailyLoanChunked(selectedFile, uploadProgressBar, uploadProgressText)
+                            .catch((error) => {
+                                themedSwal({
+                                    icon: 'error',
+                                    title: 'Upload Error',
+                                    text: error.message || 'Upload bertahap gagal diproses.'
+                                });
+                                resetSubmitButton();
+                            });
+                        return;
+                    }
 
                     const uploadRequest = new XMLHttpRequest();
                     uploadRequest.open('POST', formImport.action, true);
@@ -743,6 +887,19 @@
                                 text: data.message || 'Upload gagal diproses oleh server.'
                             });
                             resetSubmitButton();
+                            return;
+                        }
+
+                        if (data.redirect) {
+                            if (uploadProgressBar) {
+                                uploadProgressBar.style.width = '100%';
+                                uploadProgressBar.innerText = '100%';
+                            }
+                            if (uploadProgressText) {
+                                uploadProgressText.innerText = 'Upload selesai. Membuka halaman preview...';
+                            }
+
+                            window.location.href = data.redirect;
                             return;
                         }
 

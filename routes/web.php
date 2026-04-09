@@ -139,6 +139,9 @@ Route::middleware(['auth', 'role:admin', 'release.session.lock'])->group(functio
 
     Route::prefix('import-excel/daily-loan-dinamis')->group(function () {
         Route::post('/upload', [App\Http\Controllers\Import\ImportExcelController::class, 'uploadDailyLoanExcel'])->name('import.dailyloan.upload');
+        Route::post('/upload-chunk/init', [App\Http\Controllers\Import\ImportExcelController::class, 'initDailyLoanChunkUpload'])->name('import.dailyloan.upload-chunk.init');
+        Route::post('/upload-chunk', [App\Http\Controllers\Import\ImportExcelController::class, 'uploadDailyLoanChunk'])->name('import.dailyloan.upload-chunk');
+        Route::post('/upload-chunk/finalize', [App\Http\Controllers\Import\ImportExcelController::class, 'finalizeDailyLoanChunkUpload'])->name('import.dailyloan.upload-chunk.finalize');
         Route::get('/preview', [App\Http\Controllers\Import\ImportExcelController::class, 'previewDailyLoanExcel'])->name('import.dailyloan.preview');
         Route::get('/prepare-preview', [App\Http\Controllers\Import\ImportExcelController::class, 'prepareDailyLoanPreview'])->name('import.dailyloan.prepare-preview');
         Route::post('/init', [App\Http\Controllers\Import\ImportExcelController::class, 'initDailyLoanImport'])->name('import.dailyloan.init');
