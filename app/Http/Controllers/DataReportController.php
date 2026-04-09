@@ -949,14 +949,16 @@ public function performanceBrilink()
             $casaYoyDate = $effectiveCasaDate->copy()->subYearNoOverflow()->endOfMonth();
             $casaYtdDate = Carbon::create($effectiveCasaDate->year - 1, 12, 1)->endOfMonth();
 
-            $fetchCasaByPeriod = function (Carbon $period) use ($branches) {
-                $branchKeys = array_map('strtoupper', $branches);
+            $branchAliasMap = $this->buildBranchAliasMap($branches);
+            $branchLookupKeys = array_values(array_unique(array_merge(...array_values($branchAliasMap))));
+
+            $fetchCasaByPeriod = function (Carbon $period) use ($branchLookupKeys, $branchAliasMap) {
 
                 $webRows = DB::table('casa_brilink_web')
                     ->selectRaw('UPPER(TRIM(mbdesc)) as branch')
                     ->selectRaw('SUM(COALESCE(jml_nominal_casa, 0)) as total_nominal')
                     ->where('periode', $period->toDateString())
-                    ->whereIn(DB::raw('UPPER(TRIM(mbdesc))'), $branchKeys)
+                    ->whereIn(DB::raw('UPPER(TRIM(mbdesc))'), $branchLookupKeys)
                     ->groupBy(DB::raw('UPPER(TRIM(mbdesc))'))
                     ->get();
 
@@ -964,7 +966,7 @@ public function performanceBrilink()
                     ->selectRaw('UPPER(TRIM(mbdesc)) as branch')
                     ->selectRaw('SUM(COALESCE(jml_nominal_casa, 0)) as total_nominal')
                     ->where('periode', $period->toDateString())
-                    ->whereIn(DB::raw('UPPER(TRIM(mbdesc))'), $branchKeys)
+                    ->whereIn(DB::raw('UPPER(TRIM(mbdesc))'), $branchLookupKeys)
                     ->groupBy(DB::raw('UPPER(TRIM(mbdesc))'))
                     ->get();
 
@@ -972,12 +974,14 @@ public function performanceBrilink()
 
                 foreach ($webRows as $row) {
                     $branch = strtoupper(trim((string) $row->branch));
-                    $merged[$branch] = ($merged[$branch] ?? 0) + (float) $row->total_nominal;
+                    $canonicalBranch = $this->resolveCanonicalBranchKey($branchAliasMap, $branch);
+                    $merged[$canonicalBranch] = ($merged[$canonicalBranch] ?? 0) + (float) $row->total_nominal;
                 }
 
                 foreach ($edcRows as $row) {
                     $branch = strtoupper(trim((string) $row->branch));
-                    $merged[$branch] = ($merged[$branch] ?? 0) + (float) $row->total_nominal;
+                    $canonicalBranch = $this->resolveCanonicalBranchKey($branchAliasMap, $branch);
+                    $merged[$canonicalBranch] = ($merged[$canonicalBranch] ?? 0) + (float) $row->total_nominal;
                 }
 
                 return $merged;
@@ -987,8 +991,6 @@ public function performanceBrilink()
             $casaPrevMap = $fetchCasaByPeriod($casaPrevDate);
             $casaYtdMap = $fetchCasaByPeriod($casaYtdDate);
             $casaYoyMap = $fetchCasaByPeriod($casaYoyDate);
-            $branchKeys = array_map('strtoupper', $branches);
-
             $brilinkRows = DB::table('brilink_web_laporan_summary_transaksi_brilink_web')
                 ->selectRaw('UPPER(TRIM(cabang)) as branch')
                 ->select('periode')
@@ -998,14 +1000,15 @@ public function performanceBrilink()
                 ->selectRaw('COALESCE(SUM(COALESCE(total_transaksi, 0)), 0) as trx')
                 ->selectRaw('COALESCE(SUM(COALESCE(total_nominal, 0)), 0) as volume')
                 ->whereIn('periode', array_values(array_unique([$periodeCurr, $periodePrev, $periodeYoY, $periodeYtD])))
-                ->whereIn(DB::raw('UPPER(TRIM(cabang))'), $branchKeys)
+                ->whereIn(DB::raw('UPPER(TRIM(cabang))'), $branchLookupKeys)
                 ->groupBy('periode', DB::raw('UPPER(TRIM(cabang))'))
                 ->get();
 
             $brilinkMap = [];
             foreach ($brilinkRows as $row) {
                 $period = (string) ($row->periode ?? '');
-                $branchKey = strtoupper(trim((string) ($row->branch ?? '')));
+                $rawBranchKey = strtoupper(trim((string) ($row->branch ?? '')));
+                $branchKey = $this->resolveCanonicalBranchKey($branchAliasMap, $rawBranchKey);
                 $brilinkMap[$period][$branchKey] = [
                     'agen' => (int) ($row->agen ?? 0),
                     'juragan' => (int) ($row->juragan ?? 0),
@@ -1016,7 +1019,7 @@ public function performanceBrilink()
             }
 
             foreach ($branches as $branch) {
-                $branchKey = strtoupper(trim($branch));
+                $branchKey = $this->resolveCanonicalBranchKey($branchAliasMap, strtoupper(trim((string) $branch)));
                 $currData = $brilinkMap[$periodeCurr][$branchKey] ?? null;
                 $prevData = $brilinkMap[$periodePrev][$branchKey] ?? null;
                 $yoyData = $brilinkMap[$periodeYoY][$branchKey] ?? null;
@@ -1294,6 +1297,61 @@ public function performanceBrilink()
                 ]
             ]);
         }
+    }
+
+    private function buildBranchAliasMap(array $branches): array
+    {
+        $map = [];
+
+        foreach ($branches as $branch) {
+            $label = strtoupper(trim((string) $branch));
+            if ($label === '') {
+                continue;
+            }
+
+            $label = preg_replace('/\s+/', ' ', $label) ?? $label;
+            $base = preg_replace('/^(KC|KCP)\s+/i', '', $label) ?? $label;
+            $base = trim($base);
+
+            $aliases = [$label, $base];
+            if ($base !== '') {
+                $aliases[] = 'KC ' . $base;
+                $aliases[] = 'KCP ' . $base;
+            }
+
+            $aliases = array_values(array_unique(array_filter(array_map(function ($item) {
+                $normalized = strtoupper(trim((string) $item));
+                return preg_replace('/\s+/', ' ', $normalized) ?? $normalized;
+            }, $aliases))));
+
+            $canonical = in_array($label, ['KC ' . $base, 'KCP ' . $base], true) ? $label : ('KC ' . $base);
+            $map[$canonical] = $aliases;
+        }
+
+        if (empty($map)) {
+            $defaults = ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'];
+            foreach ($defaults as $branch) {
+                $base = preg_replace('/^(KC|KCP)\s+/i', '', $branch) ?? $branch;
+                $base = trim($base);
+                $map[$branch] = array_values(array_unique([$branch, $base, 'KCP ' . $base]));
+            }
+        }
+
+        return $map;
+    }
+
+    private function resolveCanonicalBranchKey(array $branchAliasMap, string $rawBranchKey): string
+    {
+        $candidate = strtoupper(trim($rawBranchKey));
+        $candidate = preg_replace('/\s+/', ' ', $candidate) ?? $candidate;
+
+        foreach ($branchAliasMap as $canonical => $aliases) {
+            if (in_array($candidate, $aliases, true)) {
+                return $canonical;
+            }
+        }
+
+        return $candidate;
     }
 
     private function calculateNewPayrollMetrics($curr, $prev, $yoyPrev): array

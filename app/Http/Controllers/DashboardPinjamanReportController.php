@@ -91,15 +91,15 @@ class DashboardPinjamanReportController extends Controller
 
         $payload = $this->rememberPayload($cacheKey, now()->addMinutes(3), function () use ($selectedPeriod, $filters) {
             return [
-                'segments' => $this->fetchPeriodDistinctValues('segmen_dashboard', $selectedPeriod),
-                'products' => $this->fetchPeriodDistinctValues('produk_dashboard', $selectedPeriod, function (Builder $query) use ($filters) {
+                'segments' => $this->fetchPeriodDistinctValues('segmen_dashboard', $selectedPeriod, $filters),
+                'products' => $this->fetchPeriodDistinctValues('produk_dashboard', $selectedPeriod, $filters, function (Builder $query) use ($filters) {
                     $this->applyFilterConstraint($query, 'segmen_dashboard', $filters['segmen']);
                 }),
-                'branches' => $this->fetchPeriodDistinctValues('cabang1', $selectedPeriod, function (Builder $query) use ($filters) {
+                'branches' => $this->fetchPeriodDistinctValues('cabang1', $selectedPeriod, $filters, function (Builder $query) use ($filters) {
                     $this->applyFilterConstraint($query, 'segmen_dashboard', $filters['segmen']);
                     $this->applyFilterConstraint($query, 'produk_dashboard', $filters['produk']);
                 }),
-                'units' => $this->fetchPeriodDistinctValues('unit1', $selectedPeriod, function (Builder $query) use ($filters) {
+                'units' => $this->fetchPeriodDistinctValues('unit1', $selectedPeriod, $filters, function (Builder $query) use ($filters) {
                     $this->applyFilterConstraint($query, 'segmen_dashboard', $filters['segmen']);
                     $this->applyFilterConstraint($query, 'produk_dashboard', $filters['produk']);
                     $this->applyFilterConstraint($query, 'cabang1', $filters['cabang']);
@@ -151,8 +151,8 @@ class DashboardPinjamanReportController extends Controller
             $forceRefresh
         );
 
-        $usesSnapshot = $this->hasDashboardSnapshot($selectedPeriod)
-            && (!$comparisonPeriod || $this->hasDashboardSnapshot($comparisonPeriod));
+        $usesSnapshot = $this->shouldUseSnapshot($selectedPeriod, $filters)
+            && (!$comparisonPeriod || $this->shouldUseSnapshot($comparisonPeriod, $filters));
 
         return response()->json([
             'selected_period' => $selectedPeriod,
@@ -542,7 +542,7 @@ class DashboardPinjamanReportController extends Controller
 
     private function buildLoanSnapshotQuery(string $period, array $filters, string $alias)
     {
-        if ($this->hasDashboardSnapshot($period)) {
+        if ($this->shouldUseSnapshot($period, $filters)) {
             $query = DB::table(self::SNAPSHOT_TABLE . " as {$alias}")
                 ->where("{$alias}.periode", $period)
                 ->whereNotNull("{$alias}.account_number")
@@ -729,10 +729,10 @@ class DashboardPinjamanReportController extends Controller
         }
     }
 
-    private function fetchPeriodDistinctValues(string $column, string $period, ?callable $scope = null): Collection
+    private function fetchPeriodDistinctValues(string $column, string $period, array $filters = [], ?callable $scope = null): Collection
     {
         try {
-            $table = $this->hasDashboardSnapshot($period) ? self::SNAPSHOT_TABLE : 'daily_loan_dinamis';
+            $table = $this->shouldUseSnapshot($period, $filters) ? self::SNAPSHOT_TABLE : 'daily_loan_dinamis';
 
             $query = DB::table($table)
                 ->where('periode', $period)
@@ -922,6 +922,15 @@ class DashboardPinjamanReportController extends Controller
                 ->where('periode', $period)
                 ->exists();
         });
+    }
+
+    private function shouldUseSnapshot(?string $period, array $filters): bool
+    {
+        if (!$period) {
+            return false;
+        }
+
+        return $this->hasDashboardSnapshot($period);
     }
 
     private function reportCacheVersion(): int

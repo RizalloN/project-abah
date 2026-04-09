@@ -48,7 +48,7 @@
         <div class="row">
             <div class="col-md-4 mb-3"><div class="report-management-stat"><small>Report Aktif</small><strong id="management-summary-report">Belum dipilih</strong></div></div>
             <div class="col-md-4 mb-3"><div class="report-management-stat"><small>Jumlah Grup</small><strong id="management-summary-groups">0</strong></div></div>
-            <div class="col-md-4 mb-3"><div class="report-management-stat"><small>Total Baris</small><strong id="management-summary-rows">0</strong></div></div>
+            <div class="col-md-4 mb-3"><div class="report-management-stat"><small>Grand Total Baris</small><strong id="management-summary-rows">0</strong></div></div>
         </div>
 
         <div id="management-notice" class="report-management-notice d-none"></div>
@@ -208,10 +208,13 @@
             managementNotice.innerHTML = message;
         }
 
-        function updateSummary(rows) {
+        function updateSummary(rows, meta = {}) {
             const label = managementReportSelect?.options?.[managementReportSelect.selectedIndex]?.text || 'Belum dipilih';
             const groups = Array.isArray(rows) ? rows.length : 0;
-            const rowsCount = Array.isArray(rows) ? rows.reduce((sum, row) => sum + Number(row.row_count || 0), 0) : 0;
+            const displayedRowsCount = Array.isArray(rows)
+                ? rows.reduce((sum, row) => sum + Number(row.row_count || 0), 0)
+                : 0;
+            const rowsCount = Number(meta.grand_total_rows ?? displayedRowsCount);
             if (summaryReport) summaryReport.textContent = label;
             if (summaryGroups) summaryGroups.textContent = formatNumber(groups);
             if (summaryRows) summaryRows.textContent = formatNumber(rowsCount);
@@ -262,12 +265,12 @@
             }
         }
 
-        function renderManagementRows(rows) {
+        function renderManagementRows(rows, meta = {}) {
             if (!managementTableBody) {
                 return;
             }
 
-            updateSummary(rows);
+            updateSummary(rows, meta);
 
             if (!Array.isArray(rows) || rows.length === 0) {
                 managementTableBody.innerHTML = `
@@ -376,7 +379,7 @@
                     ? 'Daftar grup dibatasi oleh server untuk menjaga performa. Data yang tampil merupakan potongan awal hasil grouping.'
                     : 'Data sudah siap dikelola. Anda dapat menghapus per grup atau sekaligus beberapa grup terpilih.'
             );
-            renderManagementRows(payload.rows || []);
+            renderManagementRows(payload.rows || [], payload);
         }
 
         async function deleteManagedScopes(scopes) {
@@ -456,6 +459,34 @@
                 }
 
                 payload = await postJson(deleteUrl, Object.assign({}, deletePayload, { force: true }));
+                if (payload.status === 'error') {
+                    throw new Error(payload.message || 'Gagal menghapus data report.');
+                }
+            }
+
+            if (payload.status === 'warning' && payload.requires_hard_force) {
+                const candidateRows = formatNumber(payload.candidate_rows || 0);
+                const tableTotalRows = formatNumber(payload.table_total_rows || 0);
+                const ratioText = Number(payload.delete_ratio_percent || 0) + '%';
+
+                const hardForceConfirm = await themedSwal({
+                    icon: 'warning',
+                    title: 'Konfirmasi Final Diperlukan',
+                    html: `Delete ini mencakup <b>${candidateRows}</b> dari <b>${tableTotalRows}</b> baris (≈ <b>${ratioText}</b>).<br>Guard keamanan aktif untuk mencegah tabel kosong saat proses terhenti.<br><br>Lanjutkan hanya jika benar-benar yakin.`,
+                    showCancelButton: true,
+                    confirmButtonText: 'Ya, Hapus Besar',
+                    cancelButtonText: 'Batal'
+                });
+
+                if (!hardForceConfirm.isConfirmed) {
+                    return;
+                }
+
+                payload = await postJson(deleteUrl, Object.assign({}, deletePayload, {
+                    force: true,
+                    hard_force: true
+                }));
+
                 if (payload.status === 'error') {
                     throw new Error(payload.message || 'Gagal menghapus data report.');
                 }

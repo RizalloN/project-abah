@@ -2,15 +2,24 @@
     .main-sidebar {
         background: linear-gradient(180deg, #f8fbff 0%, #eef5ff 100%);
         border-right: 1px solid rgba(8, 87, 195, 0.14);
+        overflow-x: hidden !important;
     }
 
     .main-sidebar .sidebar {
-        overflow-x: hidden;
-        overflow-y: auto;
+        overflow-x: hidden !important;
+        overflow-y: auto !important;
         -ms-overflow-style: none;
         scrollbar-width: none;
         scrollbar-gutter: stable;
         padding-top: 0.1rem;
+    }
+
+    .main-sidebar .os-host,
+    .main-sidebar .os-padding,
+    .main-sidebar .os-viewport,
+    .main-sidebar nav,
+    .main-sidebar .nav-sidebar {
+        overflow-x: hidden !important;
     }
 
     .main-sidebar .sidebar::-webkit-scrollbar {

@@ -14,6 +14,11 @@ class NamaReport extends Model
         'nama_report',
         'table_name',
         'active',
+        'import_controller',
+        'requires_manual_periode',
+        'manual_periode_type',
+        'manual_periode_label',
+        'manual_periode_help',
     ];
 
     public $timestamps = true;

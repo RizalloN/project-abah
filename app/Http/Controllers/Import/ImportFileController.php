@@ -22,11 +22,21 @@ class ImportFileController extends Controller
     private const PREVIEW_SAMPLE_LIMIT = 1200;
     private const PREVIEW_UNIQUE_SCAN_LIMIT = 4000;
     private const PREVIEW_UNIQUE_LIMIT_PER_COLUMN = 400;
+    private const LARGE_FILE_THRESHOLD_BYTES = 150 * 1024 * 1024;
+    private const LARGE_FILE_PREVIEW_SAMPLE_LIMIT = 400;
+    private const LARGE_FILE_PREVIEW_UNIQUE_SCAN_LIMIT = 1200;
+    private const LARGE_FILE_PREVIEW_UNIQUE_LIMIT_PER_COLUMN = 160;
     private const DAILY_LOAN_PREVIEW_SAMPLE_LIMIT = 150;
     private const DAILY_LOAN_PREVIEW_UNIQUE_SCAN_LIMIT = 150;
     private const DAILY_LOAN_PREVIEW_UNIQUE_LIMIT_PER_COLUMN = 40;
     private const IMPORT_BATCH_SIZE = 1000;
     private const DAILY_LOAN_IMPORT_BATCH_SIZE = 250;
+    private const BULK_LOAD_TEMP_DIR = 'app/import_bulk';
+
+    private function shouldUseDbStagingFastPath(): bool
+    {
+        return (bool) config('import.use_db_staging_fast_path', false);
+    }
 
     private function parseIniSizeToBytes(string $value): int
     {
@@ -466,6 +476,907 @@ class ImportFileController extends Controller
             : self::IMPORT_BATCH_SIZE;
     }
 
+    private function supportsNativeBulkLoad(): bool
+    {
+        $driver = DB::connection()->getDriverName();
+        if (!in_array($driver, ['mysql', 'mariadb'], true)) {
+            return false;
+        }
+
+        try {
+            $row = DB::selectOne("SHOW VARIABLES LIKE 'local_infile'");
+            return strtoupper((string) ($row->Value ?? $row->value ?? 'OFF')) === 'ON';
+        } catch (\Throwable $e) {
+            Log::warning('Unable to verify local_infile support: ' . $e->getMessage());
+            return false;
+        }
+    }
+
+    private function createBulkLoadTempCsvPath(string $tableName, int $jobId): string
+    {
+        $directory = storage_path(self::BULK_LOAD_TEMP_DIR);
+        if (!is_dir($directory)) {
+            @mkdir($directory, 0777, true);
+        }
+
+        return $directory . DIRECTORY_SEPARATOR . $tableName . '_' . $jobId . '_' . Str::random(8) . '.csv';
+    }
+
+    private function loadCsvIntoMysql(string $csvPath, string $tableName, array $columns): int
+    {
+        if (!file_exists($csvPath)) {
+            throw new \RuntimeException('File CSV sementara tidak ditemukan untuk bulk load.');
+        }
+
+        if (empty($columns)) {
+            throw new \RuntimeException('Kolom bulk load kosong.');
+        }
+
+        $connection = config('database.default', 'mysql');
+        $dbConfig = config("database.connections.{$connection}", []);
+        $charset = $dbConfig['charset'] ?? 'utf8mb4';
+        $host = $dbConfig['host'] ?? '127.0.0.1';
+        $port = $dbConfig['port'] ?? '3306';
+        $database = $dbConfig['database'] ?? '';
+        $username = $dbConfig['username'] ?? '';
+        $password = $dbConfig['password'] ?? '';
+        $unixSocket = $dbConfig['unix_socket'] ?? '';
+
+        $dsn = $unixSocket !== ''
+            ? "mysql:unix_socket={$unixSocket};dbname={$database};charset={$charset}"
+            : "mysql:host={$host};port={$port};dbname={$database};charset={$charset}";
+
+        $quotedColumns = implode(', ', array_map(function (string $column) {
+            return '`' . str_replace('`', '``', $column) . '`';
+        }, $columns));
+
+        $lastException = null;
+        $maxAttempts = 3;
+        for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
+            $pdo = null;
+            try {
+                $pdo = new \PDO($dsn, $username, $password, [
+                    \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
+                    \PDO::MYSQL_ATTR_LOCAL_INFILE => true,
+                    \PDO::ATTR_TIMEOUT => 120,
+                ]);
+
+                $normalizedPath = str_replace('\\', '/', realpath($csvPath) ?: $csvPath);
+                $quotedPath = $pdo->quote($normalizedPath);
+                $sql = "LOAD DATA LOCAL INFILE {$quotedPath} INTO TABLE `{$tableName}` "
+                    . "CHARACTER SET utf8mb4 "
+                    . "FIELDS TERMINATED BY ',' ENCLOSED BY '\"' "
+                    . "LINES TERMINATED BY '\\n' "
+                    . "({$quotedColumns})";
+
+                $pdo->exec('SET @skip_snapshot_invalidation = 1');
+                $affected = $pdo->exec($sql);
+                $pdo->exec('SET @skip_snapshot_invalidation = NULL');
+
+                if ($affected === false) {
+                    throw new \RuntimeException('LOAD DATA LOCAL INFILE gagal dieksekusi.');
+                }
+
+                return (int) $affected;
+            } catch (\Throwable $e) {
+                $lastException = $e;
+                try {
+                    if ($pdo !== null) {
+                        $pdo->exec('SET @skip_snapshot_invalidation = NULL');
+                    }
+                } catch (\Throwable $ignored) {
+                }
+
+                if (!$this->isTransientMysqlLoadError($e) || $attempt === $maxAttempts) {
+                    break;
+                }
+
+                usleep(300000 * $attempt);
+            } finally {
+                $pdo = null;
+            }
+        }
+
+        if ($lastException instanceof \Throwable) {
+            throw $lastException;
+        }
+
+        throw new \RuntimeException('LOAD DATA LOCAL INFILE gagal dieksekusi.');
+    }
+
+    private function isTransientMysqlLoadError(\Throwable $e): bool
+    {
+        $message = strtolower($e->getMessage());
+        return str_contains($message, "error while reading query's response packet")
+            || str_contains($message, 'server has gone away')
+            || str_contains($message, 'lost connection')
+            || str_contains($message, 'error writing communication packets')
+            || str_contains($message, 'packets out of order');
+    }
+
+    private function countFileLines(string $path): int
+    {
+        $handle = @fopen($path, 'r');
+        if ($handle === false) {
+            return 0;
+        }
+
+        $lines = 0;
+        try {
+            while (!feof($handle)) {
+                $line = fgets($handle);
+                if ($line !== false) {
+                    $lines++;
+                }
+            }
+        } finally {
+            fclose($handle);
+        }
+
+        return $lines;
+    }
+
+    private function loadCsvIntoMysqlChunked(
+        string $csvPath,
+        string $tableName,
+        array $columns,
+        ?callable $onProgress = null,
+        int $chunkLines = 8000
+    ): int {
+        $totalLines = $this->countFileLines($csvPath);
+        if ($totalLines <= 0) {
+            return 0;
+        }
+
+        if ($totalLines <= $chunkLines) {
+            $inserted = $this->loadCsvIntoMysql($csvPath, $tableName, $columns);
+            if ($onProgress) {
+                $onProgress($totalLines, $totalLines, $inserted);
+            }
+            return $inserted;
+        }
+
+        $source = @fopen($csvPath, 'r');
+        if ($source === false) {
+            throw new \RuntimeException('Gagal membuka file CSV untuk chunked LOAD DATA.');
+        }
+
+        $insertedTotal = 0;
+        $processedLines = 0;
+        $chunkIndex = 0;
+        $chunkDir = dirname($csvPath);
+
+        try {
+            while (!feof($source)) {
+                $chunkPath = $chunkDir . DIRECTORY_SEPARATOR . 'chunk_' . $chunkIndex . '_' . Str::random(6) . '.csv';
+                $chunkHandle = @fopen($chunkPath, 'w');
+                if ($chunkHandle === false) {
+                    throw new \RuntimeException('Gagal membuat file chunk untuk LOAD DATA.');
+                }
+
+                $currentChunkLines = 0;
+                try {
+                    while ($currentChunkLines < $chunkLines && !feof($source)) {
+                        $line = fgets($source);
+                        if ($line === false) {
+                            break;
+                        }
+                        fwrite($chunkHandle, $line);
+                        $currentChunkLines++;
+                        $processedLines++;
+                    }
+                } finally {
+                    fclose($chunkHandle);
+                }
+
+                if ($currentChunkLines > 0) {
+                    try {
+                        $insertedTotal += $this->loadCsvIntoMysql($chunkPath, $tableName, $columns);
+                    } catch (\Throwable $e) {
+                        if ($this->isTransientMysqlLoadError($e) && $chunkLines > 1000) {
+                            $insertedTotal += $this->loadCsvIntoMysqlChunked(
+                                $chunkPath,
+                                $tableName,
+                                $columns,
+                                null,
+                                max(1000, (int) floor($chunkLines / 2))
+                            );
+                        } else {
+                            throw $e;
+                        }
+                    }
+
+                    if ($onProgress) {
+                        $onProgress($processedLines, $totalLines, $insertedTotal);
+                    }
+                }
+
+                if (file_exists($chunkPath)) {
+                    @unlink($chunkPath);
+                }
+
+                $chunkIndex++;
+            }
+        } finally {
+            fclose($source);
+        }
+
+        return $insertedTotal;
+    }
+
+    private function buildBulkLoadColumnsForMappedRows(string $tableName, bool $isBrilinkSummary, array $columnBlueprint): array
+    {
+        if (!Schema::hasTable($tableName)) {
+            return [];
+        }
+
+        $tableColumns = Schema::getColumnListing($tableName);
+        $lookupByLower = [];
+        foreach ($tableColumns as $column) {
+            $lookupByLower[strtolower((string) $column)] = (string) $column;
+        }
+
+        $requested = ['uniqueid_namareport'];
+
+        if ($isBrilinkSummary) {
+            $requested = array_merge($requested, [
+                'periode',
+                'kanwil',
+                'cabang',
+                'uker',
+                'merchant_name',
+                'merchant_code',
+                'outlet_name',
+                'outlet_code',
+                'total_transaksi',
+                'total_nominal',
+                'total_fee',
+                'total_fee_bri',
+            ]);
+        } else {
+            foreach ($columnBlueprint as $columnMeta) {
+                $columnName = strtolower((string) ($columnMeta['column'] ?? ''));
+                if ($columnName !== '') {
+                    $requested[] = $columnName;
+                }
+            }
+            $requested[] = 'textbox20';
+            $requested[] = 'textbox21';
+        }
+
+        $requested[] = 'created_at';
+        $requested[] = 'updated_at';
+
+        $columns = [];
+        foreach (array_values(array_unique($requested)) as $column) {
+            $lower = strtolower((string) $column);
+            if (isset($lookupByLower[$lower])) {
+                $columns[] = $lookupByLower[$lower];
+            }
+        }
+
+        return $columns;
+    }
+
+    private function mapRowValuesForBulkLoad(array $row, array $columns): array
+    {
+        $lowerRow = [];
+        foreach ($row as $key => $value) {
+            $lowerRow[strtolower((string) $key)] = $value;
+        }
+
+        $result = [];
+        foreach ($columns as $column) {
+            $result[] = $lowerRow[strtolower((string) $column)] ?? null;
+        }
+
+        return $result;
+    }
+
+    private function fallbackInsertFromBulkCsv(
+        string $csvPath,
+        array $columns,
+        string $tableName,
+        int &$totalSuccess,
+        int &$totalFailed,
+        string &$lastErrorMsg,
+        ?int $batchSize = null
+    ): void {
+        $handle = @fopen($csvPath, 'r');
+        if ($handle === false) {
+            throw new \RuntimeException('Gagal membuka CSV temp untuk fallback insert.');
+        }
+
+        $buffer = [];
+
+        try {
+            while (($csvRow = fgetcsv($handle, 0, ',')) !== false) {
+                $assoc = [];
+                foreach ($columns as $index => $columnName) {
+                    $value = $csvRow[$index] ?? null;
+                    $assoc[$columnName] = ($value === '\\N') ? null : $value;
+                }
+
+                $buffer[] = $assoc;
+                if ($batchSize !== null && count($buffer) >= $batchSize) {
+                    $this->flushInsertBuffer($buffer, $tableName, $totalSuccess, $totalFailed, $lastErrorMsg, null, $batchSize);
+                }
+            }
+
+            if (!empty($buffer)) {
+                $this->flushInsertBuffer($buffer, $tableName, $totalSuccess, $totalFailed, $lastErrorMsg, null, $batchSize);
+            }
+        } finally {
+            fclose($handle);
+        }
+    }
+
+    private function createCsvStagingTable(string $prefix, int $jobId, int $columnCount): string
+    {
+        $columnCount = max(1, $columnCount);
+        $tableName = strtolower(preg_replace('/[^a-zA-Z0-9_]/', '', $prefix . '_' . $jobId . '_' . Str::random(8)));
+        $tableName = substr($tableName, 0, 60);
+
+        $columnsSql = ['`id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY'];
+        for ($i = 0; $i < $columnCount; $i++) {
+            $columnsSql[] = "`c{$i}` LONGTEXT NULL";
+        }
+
+        DB::statement("CREATE TABLE `{$tableName}` (" . implode(', ', $columnsSql) . ') ENGINE=InnoDB');
+
+        return $tableName;
+    }
+
+    private function dropCsvStagingTable(?string $tableName): void
+    {
+        if (!$tableName) {
+            return;
+        }
+
+        try {
+            DB::statement("DROP TABLE IF EXISTS `{$tableName}`");
+        } catch (\Throwable $e) {
+            Log::warning('Failed to drop CSV staging table: ' . $e->getMessage(), [
+                'table' => $tableName,
+            ]);
+        }
+    }
+
+    private function loadCsvIntoStagingTable(
+        string $csvPath,
+        string $stagingTable,
+        int $columnCount,
+        string $delimiter,
+        int $ignoreLines = 1
+    ): int {
+        if (!file_exists($csvPath)) {
+            throw new \RuntimeException('File CSV sumber tidak ditemukan untuk staging.');
+        }
+
+        $connection = config('database.default', 'mysql');
+        $dbConfig = config("database.connections.{$connection}", []);
+        $charset = $dbConfig['charset'] ?? 'utf8mb4';
+        $host = $dbConfig['host'] ?? '127.0.0.1';
+        $port = $dbConfig['port'] ?? '3306';
+        $database = $dbConfig['database'] ?? '';
+        $username = $dbConfig['username'] ?? '';
+        $password = $dbConfig['password'] ?? '';
+        $unixSocket = $dbConfig['unix_socket'] ?? '';
+
+        $dsn = $unixSocket !== ''
+            ? "mysql:unix_socket={$unixSocket};dbname={$database};charset={$charset}"
+            : "mysql:host={$host};port={$port};dbname={$database};charset={$charset}";
+
+        $pdo = new \PDO($dsn, $username, $password, [
+            \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
+            \PDO::MYSQL_ATTR_LOCAL_INFILE => true,
+        ]);
+
+        $normalizedPath = str_replace('\\', '/', realpath($csvPath) ?: $csvPath);
+        $quotedPath = $pdo->quote($normalizedPath);
+        $quotedDelimiter = $pdo->quote($delimiter);
+        $quotedColumns = implode(', ', array_map(static function (int $index): string {
+            return "`c{$index}`";
+        }, range(0, max(0, $columnCount - 1))));
+
+        $sql = "LOAD DATA LOCAL INFILE {$quotedPath} INTO TABLE `{$stagingTable}` "
+            . "CHARACTER SET utf8mb4 "
+            . "FIELDS TERMINATED BY {$quotedDelimiter} ENCLOSED BY '\"' "
+            . "LINES TERMINATED BY '\\n' "
+            . 'IGNORE ' . max(0, $ignoreLines) . " LINES "
+            . "({$quotedColumns})";
+
+        $affected = $pdo->exec($sql);
+        $pdo = null;
+
+        if ($affected === false) {
+            throw new \RuntimeException('LOAD DATA LOCAL INFILE ke staging table gagal.');
+        }
+
+        return (int) $affected;
+    }
+
+    private function processImportStreamViaStagingTable(
+        callable $send,
+        string $filePath,
+        string $resolvedDelimiter,
+        array $selectedColumns,
+        array $activeFilters,
+        string $tableName,
+        string $uniqueSuffix,
+        bool $isBrilinkSummary,
+        array $csvHeaders,
+        int $posisiIndex,
+        int $tahunIndex,
+        int $totalRows,
+        array &$duplicateLookup,
+        int &$duplicateSkipped,
+        int &$totalSuccess,
+        int &$totalFailed,
+        string &$lastErrorMsg,
+        int $jobId,
+        array $columnBlueprint,
+        int $batchSize
+    ): bool {
+        if (!$this->supportsNativeBulkLoad()) {
+            return false;
+        }
+
+        $headerCount = max(1, count($csvHeaders));
+        $bulkColumns = $this->buildBulkLoadColumnsForMappedRows($tableName, $isBrilinkSummary, $columnBlueprint);
+        if (empty($bulkColumns)) {
+            return false;
+        }
+
+        $stagingTable = null;
+        $bulkCsvPath = '';
+        $bulkHandle = null;
+        $rowsDone = 0;
+        $lastProgressAt = 0;
+        $startTime = microtime(true);
+
+        $shouldInsertRow = function (array $row) use ($tableName, &$duplicateLookup, &$duplicateSkipped) {
+            if (!$this->isJumlahMerchantDetailTable($tableName)) {
+                return true;
+            }
+
+            $duplicateKey = $this->extractJumlahMerchantDuplicateKey($row);
+            if ($duplicateKey === null) {
+                return true;
+            }
+
+            [$periode, $tid] = $duplicateKey;
+            $lookupKey = $periode . '|' . $tid;
+
+            if (isset($duplicateLookup[$lookupKey])) {
+                $duplicateSkipped++;
+                return false;
+            }
+
+            $duplicateLookup[$lookupKey] = true;
+            return true;
+        };
+
+        try {
+            $send('progress', [
+                'percent' => 14,
+                'message' => 'Mode cepat aktif: direct load ke staging table...',
+                'rows_done' => 0,
+                'total' => $totalRows,
+                'speed' => 0,
+            ]);
+
+            $stagingTable = $this->createCsvStagingTable('tmp_file_csv_stage', $jobId, $headerCount);
+            $this->loadCsvIntoStagingTable($filePath, $stagingTable, $headerCount, $resolvedDelimiter, 1);
+
+            $bulkCsvPath = $this->createBulkLoadTempCsvPath($tableName, $jobId > 0 ? $jobId : 0);
+            $bulkHandle = @fopen($bulkCsvPath, 'w');
+            if ($bulkHandle === false) {
+                return false;
+            }
+
+            $lastId = 0;
+            $chunkSize = 8000;
+            $requiredIndexes = [];
+            if ($isBrilinkSummary) {
+                $requiredIndexes = range(0, 14);
+            } else {
+                $requiredIndexes = array_values(array_unique(array_map('intval', array_merge(
+                    $selectedColumns,
+                    array_map('intval', array_keys($activeFilters)),
+                    [$posisiIndex, $tahunIndex]
+                ))));
+                $requiredIndexes = array_values(array_filter($requiredIndexes, static fn (int $idx): bool => $idx >= 0 && $idx < $headerCount));
+            }
+
+            if (empty($requiredIndexes)) {
+                $requiredIndexes = range(0, max(0, $headerCount - 1));
+            }
+
+            $stagingSelectColumns = array_merge(
+                ['id'],
+                array_map(static fn (int $idx): string => 'c' . $idx, $requiredIndexes)
+            );
+
+            $sqlSafeFilterRules = [];
+            foreach ($activeFilters as $filterIdx => $allowedValuesLookup) {
+                $filterIndex = (int) $filterIdx;
+                if ($filterIndex < 0 || $filterIndex >= $headerCount) {
+                    continue;
+                }
+
+                $header = strtolower(trim((string) ($csvHeaders[$filterIndex] ?? '')));
+                if (
+                    str_contains($header, 'posisi')
+                    || str_contains($header, 'tanggal')
+                    || str_contains($header, 'tgl')
+                    || str_contains($header, 'date')
+                    || str_contains($header, 'periode')
+                    || str_contains($header, 'tahun')
+                ) {
+                    continue;
+                }
+
+                $values = array_map(static fn ($v) => trim((string) $v), array_keys((array) $allowedValuesLookup));
+                $includeBlank = in_array('(Blank)', $values, true) || in_array('', $values, true);
+                $values = array_values(array_filter($values, static function (string $value): bool {
+                    if ($value === '' || $value === '(Blank)') {
+                        return false;
+                    }
+
+                    return preg_match('/^[\pL\pN\s\.\,\-\/_]+$/u', $value) === 1;
+                }));
+
+                if (empty($values) && !$includeBlank) {
+                    continue;
+                }
+
+                $sqlSafeFilterRules[] = [
+                    'column' => 'c' . $filterIndex,
+                    'values' => $values,
+                    'include_blank' => $includeBlank,
+                ];
+            }
+
+            while (true) {
+                $query = DB::table($stagingTable)
+                    ->where('id', '>', $lastId)
+                    ->orderBy('id')
+                    ->select($stagingSelectColumns);
+
+                foreach ($sqlSafeFilterRules as $filterRule) {
+                    $query->where(function ($where) use ($filterRule) {
+                        $hasBaseCondition = false;
+
+                        if (!empty($filterRule['values'])) {
+                            $where->whereIn($filterRule['column'], $filterRule['values']);
+                            $hasBaseCondition = true;
+                        }
+
+                        if (!empty($filterRule['include_blank'])) {
+                            if ($hasBaseCondition) {
+                                $where->orWhereNull($filterRule['column'])
+                                    ->orWhere($filterRule['column'], '');
+                            } else {
+                                $where->whereNull($filterRule['column'])
+                                    ->orWhere($filterRule['column'], '');
+                            }
+                        }
+                    });
+                }
+
+                $chunk = $query->limit($chunkSize)->get();
+
+                if ($chunk->isEmpty()) {
+                    break;
+                }
+
+                foreach ($chunk as $record) {
+                    $lastId = (int) $record->id;
+                    $row = [];
+                    for ($i = 0; $i < $headerCount; $i++) {
+                        $value = $record->{'c' . $i} ?? null;
+                        $row[] = is_string($value) ? rtrim($value, "\r") : $value;
+                    }
+
+                    $parsedRow = $this->parseCsvRow($row, $isBrilinkSummary, $csvHeaders, $posisiIndex, $tahunIndex);
+                    if ($parsedRow === null || !$this->passesActiveFilters($parsedRow, $activeFilters)) {
+                        continue;
+                    }
+
+                    $mappedRow = $this->mapRowForInsert(
+                        $parsedRow,
+                        $selectedColumns,
+                        $csvHeaders,
+                        $isBrilinkSummary,
+                        $uniqueSuffix,
+                        $columnBlueprint
+                    );
+                    if ($mappedRow === null) {
+                        continue;
+                    }
+
+                    $mappedRow = $this->applyImportTimestamps($mappedRow, $tableName);
+                    if (!$shouldInsertRow($mappedRow)) {
+                        continue;
+                    }
+
+                    $bulkValues = $this->mapRowValuesForBulkLoad($mappedRow, $bulkColumns);
+                    fputcsv($bulkHandle, array_map(static function ($value) {
+                        return $value === null ? '\N' : $value;
+                    }, $bulkValues));
+
+                    $rowsDone++;
+                }
+
+                if ($rowsDone - $lastProgressAt >= 500) {
+                    $lastProgressAt = $rowsDone;
+                    $elapsed = max(microtime(true) - $startTime, 0.001);
+                    $speed = (int) ($rowsDone / $elapsed);
+                    $percent = $totalRows > 0
+                        ? min(95, 12 + (int) (($rowsDone / $totalRows) * 83))
+                        : 80;
+
+                    $send('progress', [
+                        'percent' => $percent,
+                        'message' => "Memfilter data dari staging table... ({$speed} baris/detik)",
+                        'rows_done' => $rowsDone,
+                        'total' => $totalRows,
+                        'speed' => $speed,
+                    ]);
+                }
+            }
+
+            fclose($bulkHandle);
+            $bulkHandle = null;
+
+            $send('progress', [
+                'percent' => 96,
+                'message' => 'Staging selesai. Memuat data ke MySQL...',
+                'rows_done' => $rowsDone,
+                'total' => $totalRows > 0 ? $totalRows : $rowsDone,
+                'speed' => 0,
+            ]);
+
+            try {
+                $inserted = $this->loadCsvIntoMysqlChunked(
+                    $bulkCsvPath,
+                    $tableName,
+                    $bulkColumns,
+                    function (int $processedLines, int $totalLines) use ($send, $rowsDone, $totalRows): void {
+                        $ratio = $totalLines > 0 ? min(1, $processedLines / $totalLines) : 1;
+                        $percent = 96 + (int) floor($ratio * 3);
+                        $send('progress', [
+                            'percent' => min(99, $percent),
+                            'message' => 'Memuat data ke MySQL (chunked)...',
+                            'rows_done' => $rowsDone,
+                            'total' => $totalRows > 0 ? $totalRows : $rowsDone,
+                            'speed' => 0,
+                        ]);
+                    }
+                );
+                $totalSuccess = $inserted;
+                $totalFailed = max(0, $rowsDone - $inserted);
+            } catch (\Throwable $e) {
+                Log::warning('LOAD DATA LOCAL INFILE gagal setelah staging table, fallback ke insert batch: ' . $e->getMessage(), [
+                    'table' => $tableName,
+                    'job_id' => $jobId,
+                ]);
+                $lastErrorMsg = mb_substr($e->getMessage(), 0, 800) . '...';
+                $this->fallbackInsertFromBulkCsv(
+                    $bulkCsvPath,
+                    $bulkColumns,
+                    $tableName,
+                    $totalSuccess,
+                    $totalFailed,
+                    $lastErrorMsg,
+                    $batchSize
+                );
+            }
+
+            return true;
+        } catch (\Throwable $e) {
+            Log::warning('CSV staging-table fast path failed in ImportFileController; fallback to legacy path. Error: ' . $e->getMessage(), [
+                'table' => $tableName,
+                'job_id' => $jobId,
+            ]);
+            return false;
+        } finally {
+            if (is_resource($bulkHandle)) {
+                fclose($bulkHandle);
+            }
+            if ($bulkCsvPath !== '' && file_exists($bulkCsvPath)) {
+                @unlink($bulkCsvPath);
+            }
+            $this->dropCsvStagingTable($stagingTable);
+        }
+    }
+
+    private function processImportStreamViaStrictLocalInfile(
+        callable $send,
+        string $filePath,
+        string $resolvedDelimiter,
+        array $selectedColumns,
+        array $activeFilters,
+        string $tableName,
+        string $uniqueSuffix,
+        bool $isBrilinkSummary,
+        array $csvHeaders,
+        int $posisiIndex,
+        int $tahunIndex,
+        int $totalRows,
+        array &$duplicateLookup,
+        int &$duplicateSkipped,
+        int &$totalSuccess,
+        int &$totalFailed,
+        string &$lastErrorMsg,
+        int $jobId,
+        array $columnBlueprint
+    ): bool {
+        $bulkColumns = $this->buildBulkLoadColumnsForMappedRows($tableName, $isBrilinkSummary, $columnBlueprint);
+        if (empty($bulkColumns)) {
+            $lastErrorMsg = 'Kolom bulk load kosong untuk tabel tujuan.';
+            return false;
+        }
+
+        $handle = @fopen($filePath, 'r');
+        if ($handle === false) {
+            $lastErrorMsg = 'File CSV tidak dapat dibaca.';
+            return false;
+        }
+
+        $bulkCsvPath = $this->createBulkLoadTempCsvPath($tableName, $jobId > 0 ? $jobId : 0);
+        $bulkHandle = @fopen($bulkCsvPath, 'w');
+        if ($bulkHandle === false) {
+            fclose($handle);
+            $lastErrorMsg = 'Gagal membuat file staging CSV sementara.';
+            return false;
+        }
+
+        $rowCounter = 0;
+        $rowsDone = 0;
+        $lastProgressAt = 0;
+        $startTime = microtime(true);
+        $progressStep = strtolower($tableName) === 'daily_loan_dinamis' ? 1000 : 2000;
+
+        $shouldInsertRow = function (array $row) use ($tableName, &$duplicateLookup, &$duplicateSkipped) {
+            if (!$this->isJumlahMerchantDetailTable($tableName)) {
+                return true;
+            }
+
+            $duplicateKey = $this->extractJumlahMerchantDuplicateKey($row);
+            if ($duplicateKey === null) {
+                return true;
+            }
+
+            [$periode, $tid] = $duplicateKey;
+            $lookupKey = $periode . '|' . $tid;
+
+            if (isset($duplicateLookup[$lookupKey])) {
+                $duplicateSkipped++;
+                return false;
+            }
+
+            $duplicateLookup[$lookupKey] = true;
+            return true;
+        };
+
+        try {
+            while (($data = $this->readCsvRecord($handle, $resolvedDelimiter)) !== false) {
+                if (empty($data) || implode('', $data) === '') {
+                    continue;
+                }
+
+                if ($rowCounter === 0) {
+                    $rowCounter++;
+                    continue;
+                }
+
+                $parsedRow = $this->parseCsvRow($data, $isBrilinkSummary, $csvHeaders, $posisiIndex, $tahunIndex);
+                if ($parsedRow === null || !$this->passesActiveFilters($parsedRow, $activeFilters)) {
+                    $rowCounter++;
+                    continue;
+                }
+
+                $mappedRow = $this->mapRowForInsert(
+                    $parsedRow,
+                    $selectedColumns,
+                    $csvHeaders,
+                    $isBrilinkSummary,
+                    $uniqueSuffix,
+                    $columnBlueprint
+                );
+                if ($mappedRow === null) {
+                    $rowCounter++;
+                    continue;
+                }
+
+                $mappedRow = $this->applyImportTimestamps($mappedRow, $tableName);
+                if (!$shouldInsertRow($mappedRow)) {
+                    $rowCounter++;
+                    continue;
+                }
+
+                $bulkValues = $this->mapRowValuesForBulkLoad($mappedRow, $bulkColumns);
+                fputcsv($bulkHandle, array_map(static function ($value) {
+                    return $value === null ? '\N' : $value;
+                }, $bulkValues));
+
+                $rowsDone++;
+                $rowCounter++;
+
+                if ($rowsDone - $lastProgressAt >= $progressStep) {
+                    $lastProgressAt = $rowsDone;
+                    $elapsed = max(microtime(true) - $startTime, 0.001);
+                    $speed = (int) ($rowsDone / $elapsed);
+                    $percent = $totalRows > 0
+                        ? min(95, 12 + (int) (($rowsDone / $totalRows) * 83))
+                        : 80;
+
+                    $send('progress', [
+                        'percent' => $percent,
+                        'message' => "Menyiapkan CSV untuk LOAD DATA LOCAL INFILE... ({$speed} baris/detik)",
+                        'rows_done' => $rowsDone,
+                        'total' => $totalRows,
+                        'speed' => $speed,
+                    ]);
+                }
+            }
+
+            fclose($bulkHandle);
+            $bulkHandle = null;
+            fclose($handle);
+            $handle = null;
+
+            $send('progress', [
+                'percent' => 96,
+                'message' => 'CSV hasil filter siap. Memuat data ke MySQL via LOCAL INFILE...',
+                'rows_done' => $rowsDone,
+                'total' => $totalRows > 0 ? $totalRows : $rowsDone,
+                'speed' => 0,
+            ]);
+
+            $inserted = $this->loadCsvIntoMysqlChunked(
+                $bulkCsvPath,
+                $tableName,
+                $bulkColumns,
+                function (int $processedLines, int $totalLines) use ($send, $rowsDone, $totalRows): void {
+                    $ratio = $totalLines > 0 ? min(1, $processedLines / $totalLines) : 1;
+                    $percent = 96 + (int) floor($ratio * 3);
+                    $send('progress', [
+                        'percent' => min(99, $percent),
+                        'message' => 'Memuat data ke MySQL (LOCAL INFILE chunked)...',
+                        'rows_done' => $rowsDone,
+                        'total' => $totalRows > 0 ? $totalRows : $rowsDone,
+                        'speed' => 0,
+                    ]);
+                }
+            );
+
+            $totalSuccess = $inserted;
+            $totalFailed = max(0, $rowsDone - $inserted);
+
+            return true;
+        } catch (\Throwable $e) {
+            $lastErrorMsg = mb_substr($e->getMessage(), 0, 800) . '...';
+            Log::warning('Strict LOCAL INFILE stream failed: ' . $e->getMessage(), [
+                'table' => $tableName,
+                'job_id' => $jobId,
+            ]);
+            return false;
+        } finally {
+            if (is_resource($handle)) {
+                fclose($handle);
+            }
+            if (is_resource($bulkHandle)) {
+                fclose($bulkHandle);
+            }
+            if (file_exists($bulkCsvPath)) {
+                @unlink($bulkCsvPath);
+            }
+        }
+    }
+
     private function isJumlahMerchantDetailTable(string $tableName): bool
     {
         return strtolower($tableName) === 'jumlah_merchant_detail';
@@ -876,11 +1787,29 @@ class ImportFileController extends Controller
             return null;
         }
 
+        $isNegative = false;
+
+        if (preg_match('/^\((.*)\)$/', $value, $matches) === 1) {
+            $value = trim((string) ($matches[1] ?? ''));
+            $isNegative = true;
+        }
+
+        if (str_ends_with($value, '-')) {
+            $value = rtrim(substr($value, 0, -1));
+            $isNegative = true;
+        }
+
         if (preg_match('/^-?\d+$/', $value) === 1) {
+            if ($isNegative && str_starts_with($value, '-') === false) {
+                $value = '-' . $value;
+            }
             return $value . '.00';
         }
 
         if (preg_match('/^-?\d+\.\d+$/', $value) === 1) {
+            if ($isNegative && str_starts_with($value, '-') === false) {
+                $value = '-' . $value;
+            }
             return number_format((float) $value, 2, '.', '');
         }
 
@@ -921,6 +1850,10 @@ class ImportFileController extends Controller
 
         if (!is_numeric($value)) {
             return null;
+        }
+
+        if ($isNegative && (float) $value > 0) {
+            $value = '-' . ltrim((string) $value, '+');
         }
 
         return number_format((float) $value, 2, '.', '');
@@ -1036,6 +1969,13 @@ class ImportFileController extends Controller
         $previewSampleLimit = $isDailyLoan ? self::DAILY_LOAN_PREVIEW_SAMPLE_LIMIT : self::PREVIEW_SAMPLE_LIMIT;
         $previewUniqueScanLimit = $isDailyLoan ? self::DAILY_LOAN_PREVIEW_UNIQUE_SCAN_LIMIT : self::PREVIEW_UNIQUE_SCAN_LIMIT;
         $previewUniqueLimitPerColumn = $isDailyLoan ? self::DAILY_LOAN_PREVIEW_UNIQUE_LIMIT_PER_COLUMN : self::PREVIEW_UNIQUE_LIMIT_PER_COLUMN;
+        $fileSizeBytes = (int) @filesize($filePath);
+
+        if (!$isDailyLoan && $fileSizeBytes > self::LARGE_FILE_THRESHOLD_BYTES) {
+            $previewSampleLimit = min($previewSampleLimit, self::LARGE_FILE_PREVIEW_SAMPLE_LIMIT);
+            $previewUniqueScanLimit = min($previewUniqueScanLimit, self::LARGE_FILE_PREVIEW_UNIQUE_SCAN_LIMIT);
+            $previewUniqueLimitPerColumn = min($previewUniqueLimitPerColumn, self::LARGE_FILE_PREVIEW_UNIQUE_LIMIT_PER_COLUMN);
+        }
 
         if (in_array($extension, ['csv', 'txt'], true)) {
             if (($handle = fopen($filePath, "r")) !== FALSE) {
@@ -1452,9 +2392,126 @@ class ImportFileController extends Controller
                     return true;
                 };
 
-                $flushBuffer = function () use (&$buffer, &$totalSuccess, &$totalFailed, &$lastErrorMsg, $tableName, $shouldInsertRow, $batchSize) {
-                    $this->flushInsertBuffer($buffer, $tableName, $totalSuccess, $totalFailed, $lastErrorMsg, $shouldInsertRow, $batchSize);
+                $flushBuffer = function () use (&$buffer, &$totalSuccess, &$totalFailed, &$lastErrorMsg, $tableName, $batchSize) {
+                    $this->flushInsertBuffer($buffer, $tableName, $totalSuccess, $totalFailed, $lastErrorMsg, null, $batchSize);
                 };
+
+                $stagingHandled = false;
+                if ($this->shouldUseDbStagingFastPath()) {
+                    $stagingHandled = $this->processImportStreamViaStagingTable(
+                        $send,
+                        $filePath,
+                        $resolvedDelimiter,
+                        $selectedColumns,
+                        $activeFilters,
+                        $tableName,
+                        $uniqueSuffix,
+                        $isBrilinkSummary,
+                        $csvHeaders,
+                        $posisiIndex,
+                        $tahunIndex,
+                        $totalRows,
+                        $duplicateLookup,
+                        $duplicateSkipped,
+                        $totalSuccess,
+                        $totalFailed,
+                        $lastErrorMsg,
+                        $jobId,
+                        $columnBlueprint,
+                        $batchSize
+                    );
+                }
+
+                if ($stagingHandled) {
+                    $finalStatus = $totalFailed > 0 ? ($totalSuccess > 0 ? 'failed_partial' : 'failed') : 'completed';
+
+                    DB::table('import_jobs')->where('id', $jobId)->update([
+                        'status' => $finalStatus,
+                        'total_success' => $totalSuccess,
+                        'total_failed' => $totalFailed + $duplicateSkipped,
+                        'updated_at' => now(),
+                    ]);
+
+                    if ($totalSuccess > 0) {
+                        $this->syncReportArtifacts($tableName, $jobId, $syncPeriod);
+                    }
+
+                    $this->cleanupImportDirectory($filePath);
+
+                    $send('complete', [
+                        'total_success' => $totalSuccess,
+                        'total_failed' => $totalFailed + $duplicateSkipped,
+                        'total_rows' => $totalRows,
+                        'error_message' => $lastErrorMsg,
+                        'duplicates_skipped' => $duplicateSkipped,
+                    ]);
+                    return;
+                }
+
+                if (is_resource($handle)) {
+                    fclose($handle);
+                    $handle = null;
+                }
+
+                if (!$this->supportsNativeBulkLoad()) {
+                    $send('error', [
+                        'message' => 'LOCAL INFILE tidak aktif di MySQL/PDO. Import dibatalkan karena mode strict LOCAL INFILE.',
+                    ]);
+                    return;
+                }
+
+                $strictHandled = $this->processImportStreamViaStrictLocalInfile(
+                    $send,
+                    $filePath,
+                    $resolvedDelimiter,
+                    $selectedColumns,
+                    $activeFilters,
+                    $tableName,
+                    $uniqueSuffix,
+                    $isBrilinkSummary,
+                    $csvHeaders,
+                    $posisiIndex,
+                    $tahunIndex,
+                    $totalRows,
+                    $duplicateLookup,
+                    $duplicateSkipped,
+                    $totalSuccess,
+                    $totalFailed,
+                    $lastErrorMsg,
+                    $jobId,
+                    $columnBlueprint
+                );
+
+                if ($strictHandled) {
+                    $finalStatus = $totalFailed > 0 ? ($totalSuccess > 0 ? 'failed_partial' : 'failed') : 'completed';
+
+                    DB::table('import_jobs')->where('id', $jobId)->update([
+                        'status' => $finalStatus,
+                        'total_success' => $totalSuccess,
+                        'total_failed' => $totalFailed + $duplicateSkipped,
+                        'updated_at' => now(),
+                    ]);
+
+                    if ($totalSuccess > 0) {
+                        $this->syncReportArtifacts($tableName, $jobId, $syncPeriod);
+                    }
+
+                    $this->cleanupImportDirectory($filePath);
+
+                    $send('complete', [
+                        'total_success' => $totalSuccess,
+                        'total_failed' => $totalFailed + $duplicateSkipped,
+                        'total_rows' => $totalRows,
+                        'error_message' => $lastErrorMsg,
+                        'duplicates_skipped' => $duplicateSkipped,
+                    ]);
+                    return;
+                }
+
+                $send('error', [
+                    'message' => 'Gagal memproses CSV via LOCAL INFILE (mode strict, tanpa fallback). ' . $lastErrorMsg,
+                ]);
+                return;
 
                 while (($data = $this->readCsvRecord($handle, $resolvedDelimiter)) !== false) {
                     if (empty($data) || implode('', $data) === '') {
@@ -1486,13 +2543,19 @@ class ImportFileController extends Controller
                     }
 
                     $mappedRow = $this->applyImportTimestamps($mappedRow, $tableName);
-                    $buffer[] = $mappedRow;
-                    $rowsDone++;
-                    $rowCounter++;
 
+                    if (!$shouldInsertRow($mappedRow)) {
+                        $rowCounter++;
+                        continue;
+                    }
+
+                    $buffer[] = $mappedRow;
                     if (count($buffer) >= $batchSize) {
                         $flushBuffer();
                     }
+
+                    $rowsDone++;
+                    $rowCounter++;
 
                     if ($rowsDone - $lastProgressAt >= $progressStep) {
                         $lastProgressAt = $rowsDone;
@@ -1513,6 +2576,7 @@ class ImportFileController extends Controller
                 }
 
                 fclose($handle);
+
                 $flushBuffer();
 
                 $finalStatus = $totalFailed > 0 ? ($totalSuccess > 0 ? 'failed_partial' : 'failed') : 'completed';
@@ -1916,7 +2980,52 @@ class ImportFileController extends Controller
             return true;
         };
 
-        $this->flushInsertBuffer($dataToInsert, $tableName, $totalSuccess, $totalFailed, $lastErrorMsg, $shouldInsertRow, $batchSize);
+        $bulkLoadHandled = false;
+        if ($this->supportsNativeBulkLoad()) {
+            $filteredRows = array_values(array_filter($dataToInsert, static function (array $row) use ($shouldInsertRow) {
+                return $shouldInsertRow($row) !== false;
+            }));
+
+            $bulkColumns = $this->buildBulkLoadColumnsForMappedRows($tableName, $isBrilinkSummary, $columnBlueprint);
+            if (!empty($bulkColumns)) {
+                $bulkCsvPath = $this->createBulkLoadTempCsvPath($tableName, $jobId);
+                $bulkHandle = @fopen($bulkCsvPath, 'w');
+
+                if ($bulkHandle !== false) {
+                    try {
+                        foreach ($filteredRows as $rowData) {
+                            $bulkValues = $this->mapRowValuesForBulkLoad($rowData, $bulkColumns);
+                            fputcsv($bulkHandle, array_map(static function ($value) {
+                                return $value === null ? '\N' : $value;
+                            }, $bulkValues));
+                        }
+                    } finally {
+                        fclose($bulkHandle);
+                    }
+
+                    try {
+                        $inserted = $this->loadCsvIntoMysqlChunked($bulkCsvPath, $tableName, $bulkColumns);
+                        $totalSuccess = $inserted;
+                        $totalFailed = max(0, count($filteredRows) - $inserted);
+                        $bulkLoadHandled = true;
+                    } catch (\Throwable $e) {
+                        $lastErrorMsg = mb_substr($e->getMessage(), 0, 800) . '...';
+                        Log::warning('LOAD DATA LOCAL INFILE gagal di processImport, fallback ke insert batch: ' . $e->getMessage(), [
+                            'table' => $tableName,
+                            'job_id' => $jobId,
+                        ]);
+                    } finally {
+                        if (file_exists($bulkCsvPath)) {
+                            @unlink($bulkCsvPath);
+                        }
+                    }
+                }
+            }
+        }
+
+        if (!$bulkLoadHandled) {
+            $this->flushInsertBuffer($dataToInsert, $tableName, $totalSuccess, $totalFailed, $lastErrorMsg, $shouldInsertRow, $batchSize);
+        }
 
         $finalStatus = $totalFailed > 0 ? ($totalSuccess > 0 ? 'failed_partial' : 'failed') : 'completed';
         DB::table('import_jobs')->where('id', $jobId)->update([

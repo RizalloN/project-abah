@@ -191,7 +191,10 @@ class BodBocController extends Controller
         session()->forget(['bod_boc_preview_rows', 'bod_boc_preview_source_name', 'bod_boc_preview_periode']);
 
         return redirect()
-            ->route('import.index')
+            ->route('import.index', [
+                'import_notice' => 'bod_boc_success',
+                'import_rows' => count($payload),
+            ])
             ->with('sweet_success', [
                 'title' => 'Berhasil Disimpan',
                 'text' => count($payload) . ' baris data berhasil disimpan ke tabel bod_boc.',

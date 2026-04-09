@@ -58,7 +58,11 @@
                     @foreach($reports as $report)
                         <option value="{{ $report->id_report }}"
                                 data-name="{{ strtolower($report->nama_report ?? '') }}"
-                                data-table="{{ strtolower($report->table_name ?? '') }}">
+                                data-table="{{ strtolower($report->table_name ?? '') }}"
+                                data-manual-periode="{{ (int) ($report->requires_manual_periode ?? 0) }}"
+                                data-manual-periode-type="{{ $report->manual_periode_type ?? '' }}"
+                                data-manual-periode-label="{{ $report->manual_periode_label ?? '' }}"
+                                data-manual-periode-help="{{ $report->manual_periode_help ?? '' }}">
                             {{ $report->nama_report }}
                         </option>
                     @endforeach
@@ -77,7 +81,7 @@
             <div id="form-excel" class="form-group" style="display: none;">
                 <label class="text-success font-weight-bold"><i class="fas fa-file-excel mr-1"></i> Upload File Excel (.xlsx, .xls)</label>
                 <input type="file" id="file_excel" name="file" class="form-control border-success shadow-sm" accept=".xlsx,.xls">
-                <small class="text-muted mt-2 d-block">Mendukung format .xlsx dan .xls hingga 200MB+ dengan preview bertahap.</small>
+                <small class="text-muted mt-2 d-block" id="upload-limit-hint">Mendukung format .xlsx dan .xls sesuai batas upload server aktif, dengan preview bertahap.</small>
             </div>
 
             <div id="form-csv" class="form-group" style="display: none;">
@@ -217,6 +221,31 @@
             return `${value.toFixed(idx === 0 ? 0 : 2)} ${units[idx]}`;
         }
 
+        function describeUploadLimitMessage(limits) {
+            const maxBytes = Number(limits?.effective_max_upload_bytes || 0);
+            if (maxBytes > 0) {
+                return `Mendukung format .xlsx dan .xls hingga ${formatBytes(maxBytes)} dengan preview bertahap.`;
+            }
+
+            return 'Mendukung format .xlsx dan .xls sesuai batas upload server aktif, dengan preview bertahap.';
+        }
+
+        function applyUploadLimitHints(limits) {
+            const message = describeUploadLimitMessage(limits);
+            const hintBanner = document.getElementById('upload-limit-hint');
+
+            if (hintBanner) {
+                hintBanner.textContent = message;
+            }
+
+            if (excelHelp) {
+                const current = String(excelHelp.textContent || '').toLowerCase();
+                if (current.includes('mendukung format .xlsx dan .xls')) {
+                    excelHelp.textContent = message;
+                }
+            }
+        }
+
         async function getUploadLimits() {
             if (uploadLimitsPromise) {
                 return uploadLimitsPromise;
@@ -233,11 +262,16 @@
             .then(async (response) => {
                 const payload = await response.json().catch(() => ({}));
                 if (!response.ok || payload.status !== 'success') {
+                    applyUploadLimitHints(null);
                     return null;
                 }
+                applyUploadLimitHints(payload);
                 return payload;
             })
-            .catch(() => null);
+            .catch(() => {
+                applyUploadLimitHints(null);
+                return null;
+            });
 
             return uploadLimitsPromise;
         }
@@ -585,7 +619,23 @@
             return {
                 reportName: selectedOption?.getAttribute('data-name') || '',
                 tableName: selectedOption?.getAttribute('data-table') || '',
+                requiresManualPeriode: selectedOption?.getAttribute('data-manual-periode') === '1',
+                manualPeriodeType: selectedOption?.getAttribute('data-manual-periode-type') || '',
+                manualPeriodeLabel: selectedOption?.getAttribute('data-manual-periode-label') || '',
+                manualPeriodeHelp: selectedOption?.getAttribute('data-manual-periode-help') || '',
             };
+        }
+
+        function buildManualPeriodeOptions(defaults = {}) {
+            const meta = getSelectedReportMeta();
+
+            return Object.assign({}, defaults, {
+                visible: meta.requiresManualPeriode || Boolean(defaults.visible),
+                required: meta.requiresManualPeriode || Boolean(defaults.required),
+                type: meta.manualPeriodeType || defaults.type || 'date',
+                label: meta.manualPeriodeLabel || defaults.label || 'Periode',
+                help: meta.manualPeriodeHelp || defaults.help || 'Pilih periode manual sesuai file report.',
+            });
         }
 
         function configurePeriodeInput(options = {}) {
@@ -715,7 +765,7 @@
                     excelLabel.innerHTML = '<i class="fas fa-file-excel mr-1"></i> Upload File Excel (.xlsx, .xls)';
                 }
                 if (excelHelp) {
-                    excelHelp.textContent = 'Mendukung format .xlsx dan .xls hingga 200MB+ dengan preview bertahap.';
+                    excelHelp.textContent = describeUploadLimitMessage(null);
                 }
                 formImport.action = isInputRekanan
                     ? "{{ route('input.import-template') }}"
@@ -726,13 +776,13 @@
                     ? ''
                     : "{{ route('import.excel.prepare-preview') }}";
                 applyButtonState('excel', '<i class="fas fa-file-excel"></i> Upload Excel');
-                configurePeriodeInput({
+                configurePeriodeInput(buildManualPeriodeOptions({
                     visible: true,
                     required: true,
                     type: 'date',
                     label: 'Tanggal Periode',
                     help: 'Input Rekanan dan Nasabah Prioritas BOD/BOC wajib diisi tanggal periode manual (YYYY-MM-DD).',
-                });
+                }));
                 return;
             }
 
@@ -746,13 +796,13 @@
                 csvLabel.innerHTML = '<i class="fas fa-file-csv mr-1"></i> Upload File CASA BRILINK (.csv, .txt)';
                 csvHelp.textContent = 'Gunakan file CSV CASA BRILINK WEB/EDC tanpa kolom periode. Periode diisi manual.';
                 applyButtonState('csv', '<i class="fas fa-file-csv"></i> Upload CSV');
-                configurePeriodeInput({
+                configurePeriodeInput(buildManualPeriodeOptions({
                     visible: true,
                     required: true,
                     type: 'month',
                     label: 'Periode Bulan',
                     help: 'Wajib isi periode manual dalam format bulan (YYYY-MM) untuk CASA BRILINK WEB/EDC.',
-                });
+                }));
                 return;
             }
 
@@ -780,13 +830,13 @@
                 csvLabel.innerHTML = '<i class="fas fa-file-upload mr-1"></i> Upload File Performance PIS (.xlsx, .xls, .csv, .txt)';
                 csvHelp.textContent = 'Tanggal periode diisi manual pada form import. Jika upload Excel, sistem akan konversi otomatis ke CSV saat diproses.';
                 applyButtonState('csv', '<i class="fas fa-file-upload"></i> Upload File');
-                configurePeriodeInput({
+                configurePeriodeInput(buildManualPeriodeOptions({
                     visible: true,
                     required: true,
                     type: 'date',
                     label: 'Tanggal Periode',
                     help: 'Wajib isi tanggal periode manual (YYYY-MM-DD) untuk Performance PIS per Produk.',
-                });
+                }));
                 return;
             }
 
@@ -807,7 +857,7 @@
                 excelLabel.innerHTML = '<i class="fas fa-file-excel mr-1"></i> Upload File Excel (.xlsx, .xls)';
             }
             if (excelHelp) {
-                excelHelp.textContent = 'Mendukung format .xlsx dan .xls hingga 200MB+ dengan preview bertahap.';
+                excelHelp.textContent = describeUploadLimitMessage(null);
             }
             formImport.action = "{{ route('import.upload') }}";
             applyButtonState('rar', '<i class="fas fa-file-archive"></i> Upload RAR');
@@ -842,6 +892,7 @@
         syncDownloadButton();
         setTimeout(syncDownloadButton, 0);
         setTimeout(syncDownloadButton, 150);
+        getUploadLimits();
 
         btnManagementFilter?.addEventListener('click', async function () {
             try {
@@ -1090,13 +1141,36 @@
             });
         });
 
-        @if(session('sweet_success'))
+        let handledNoticeFromQuery = false;
+        const currentUrl = new URL(window.location.href);
+        const importNotice = currentUrl.searchParams.get('import_notice');
+        const importRowsRaw = currentUrl.searchParams.get('import_rows');
+        const importRows = Number.isFinite(Number(importRowsRaw)) ? Number(importRowsRaw) : 0;
+
+        if (importNotice === 'input_rekanan_success' || importNotice === 'bod_boc_success') {
+            handledNoticeFromQuery = true;
+            const tableName = importNotice === 'input_rekanan_success' ? 'input_rekanan' : 'bod_boc';
             themedSwal({
                 icon: 'success',
-                title: '{!! session('sweet_success')['title'] !!}',
-                html: '{!! session('sweet_success')['text'] !!}',
+                title: 'Berhasil Disimpan',
+                html: `${importRows.toLocaleString('id-ID')} baris data berhasil disimpan ke tabel ${tableName}.`,
                 confirmButtonText: 'Tutup'
             });
+
+            currentUrl.searchParams.delete('import_notice');
+            currentUrl.searchParams.delete('import_rows');
+            window.history.replaceState({}, document.title, currentUrl.pathname + currentUrl.search + currentUrl.hash);
+        }
+
+        @if(session('sweet_success'))
+            if (!handledNoticeFromQuery) {
+                themedSwal({
+                    icon: 'success',
+                    title: '{!! session('sweet_success')['title'] !!}',
+                    html: '{!! session('sweet_success')['text'] !!}',
+                    confirmButtonText: 'Tutup'
+                });
+            }
         @endif
 
         @if(session('sweet_warning'))

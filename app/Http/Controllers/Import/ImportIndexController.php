@@ -21,6 +21,7 @@ class ImportIndexController extends Controller
     private const DELETE_CHUNK_SIZE = 5000;
     private const DELETE_PROGRESS_TTL_MINUTES = 60;
     private const DELETE_PROGRESS_CACHE_PREFIX = 'report_management_delete:';
+    private const DELETE_HARD_GUARD_RATIO = 0.85;
 
     private const PERIOD_COLUMN_CANDIDATES = [
         'periode',
@@ -59,6 +60,12 @@ class ImportIndexController extends Controller
             'period' => ['created_at', 'updated_at'],
             'kanca' => ['instansi', 'bod_boc', 'nama_nasabah'],
         ],
+        'user_brimo_fin' => [
+            'kanca_priority' => ['mbdesc'],
+        ],
+        'user_brimo_rpt_v2' => [
+            'kanca_priority' => ['mbdesc'],
+        ],
     ];
 
     private const TEMPLATE_DEFINITIONS = [
@@ -80,7 +87,9 @@ class ImportIndexController extends Controller
 
     public function index()
     {
-        $reports = NamaReport::where('active', 1)->get();
+        $reports = NamaReport::where('active', 1)
+            ->orderBy('id_report')
+            ->get();
         $downloadTemplates = $this->downloadTemplateOptions();
 
         return view('import.index', compact('reports', 'downloadTemplates'));
@@ -88,7 +97,9 @@ class ImportIndexController extends Controller
 
     public function reportManagement()
     {
-        $reports = NamaReport::where('active', 1)->get();
+        $reports = NamaReport::where('active', 1)
+            ->orderBy('id_report')
+            ->get();
 
         return view('import.report-management', compact('reports'));
     }
@@ -154,6 +165,10 @@ class ImportIndexController extends Controller
 
         $maxRows = (int) ($validated['max_rows'] ?? self::MANAGEMENT_MAX_GROUP_ROWS);
         [$rows, $truncated] = $this->buildManagementRows($tableName, $periodColumn, $kancaColumn, $maxRows);
+        $displayedRowsTotal = array_reduce($rows, static function (int $carry, array $row): int {
+            return $carry + (int) ($row['row_count'] ?? 0);
+        }, 0);
+        $grandTotalRows = (int) DB::table($tableName)->count();
 
         return response()->json([
             'status' => 'success',
@@ -162,6 +177,8 @@ class ImportIndexController extends Controller
             'kanca_column' => $kancaColumn,
             'max_rows' => $maxRows,
             'truncated' => $truncated,
+            'displayed_rows_total' => $displayedRowsTotal,
+            'grand_total_rows' => $grandTotalRows,
             'rows' => $rows,
         ]);
     }
@@ -194,12 +211,33 @@ class ImportIndexController extends Controller
             ]);
         }
 
+        $tableTotalRows = max(0, (int) ($prepared['table_total_rows'] ?? 0));
+        $candidateRows = max(0, (int) ($prepared['candidate_rows'] ?? 0));
+        $deleteRatio = $tableTotalRows > 0 ? ($candidateRows / $tableTotalRows) : 0.0;
+        $isHighImpactDelete = $tableTotalRows > 0 && $deleteRatio >= self::DELETE_HARD_GUARD_RATIO;
+        $isPotentialFullDelete = $tableTotalRows > 0 && $candidateRows >= $tableTotalRows;
+
+        if (($isHighImpactDelete || $isPotentialFullDelete) && !$prepared['hard_force']) {
+            $ratioPercent = (int) round($deleteRatio * 100);
+            return response()->json([
+                'status' => 'warning',
+                'requires_hard_force' => true,
+                'table_name' => $prepared['table_name'],
+                'candidate_rows' => $candidateRows,
+                'table_total_rows' => $tableTotalRows,
+                'delete_ratio_percent' => $ratioPercent,
+                'message' => $isPotentialFullDelete
+                    ? 'Guard keamanan aktif: scope delete menyentuh seluruh tabel. Kirim `hard_force=true` untuk konfirmasi final.'
+                    : 'Guard keamanan aktif: scope delete berdampak sangat besar pada tabel. Kirim `hard_force=true` untuk konfirmasi final.',
+            ], 409);
+        }
+
         $deleteId = (string) Str::uuid();
         $state = [
             'delete_id' => $deleteId,
             'status' => 'running',
             'stage' => 'deleting',
-            'message' => 'Delete dimulai.',
+            'message' => 'Delete dimulai. Menyiapkan grup pertama...',
             'table_name' => $prepared['table_name'],
             'id_report' => $prepared['id_report'],
             'period_column' => $prepared['period_column'],
@@ -213,7 +251,9 @@ class ImportIndexController extends Controller
             'identity_column' => $prepared['identity_column'],
             'total_rows' => (int) $prepared['candidate_rows'],
             'deleted_rows' => 0,
+            'remaining_rows' => (int) $prepared['candidate_rows'],
             'chunk_size' => self::DELETE_CHUNK_SIZE,
+            'current_scope_index' => 0,
             'cleanup' => null,
             'created_at' => now()->toIso8601String(),
             'updated_at' => now()->toIso8601String(),
@@ -345,6 +385,7 @@ class ImportIndexController extends Controller
             'scopes.*.period_is_null' => 'nullable|boolean',
             'scopes.*.kanca_is_null' => 'nullable|boolean',
             'force' => 'nullable|boolean',
+            'hard_force' => 'nullable|boolean',
         ]);
 
         $report = NamaReport::where('active', 1)
@@ -381,6 +422,7 @@ class ImportIndexController extends Controller
         $periodIsNull = (bool) $firstScope['period_is_null'];
         $kancaIsNull = (bool) $firstScope['kanca_is_null'];
         $force = (bool) ($validated['force'] ?? false);
+        $hardForce = (bool) ($validated['hard_force'] ?? false);
 
         if ($periodColumn === null && $kancaColumn === null) {
             return [null, response()->json([
@@ -436,7 +478,9 @@ class ImportIndexController extends Controller
             'period_is_null' => $periodIsNull,
             'kanca_is_null' => $kancaIsNull,
             'force' => $force,
+            'hard_force' => $hardForce,
             'candidate_rows' => (int) (clone $baseQuery)->count(),
+            'table_total_rows' => (int) DB::table($tableName)->count(),
             'identity_column' => $this->resolveIdentityColumn($tableColumns),
             'period_hint' => $periodHint,
         ], null];
@@ -444,97 +488,78 @@ class ImportIndexController extends Controller
 
     private function processDeleteChunk(array $state): array
     {
-        $rawScopes = $state['scopes'] ?? null;
-        $scopes = [];
-        if (is_array($rawScopes) && !empty($rawScopes)) {
-            foreach ($rawScopes as $scope) {
-                if (!is_array($scope)) {
-                    continue;
-                }
-
-                $scopes[] = [
-                    'period_filter' => array_key_exists('period_filter', $scope)
-                        ? (($scope['period_filter'] ?? '') !== '' ? (string) $scope['period_filter'] : null)
-                        : null,
-                    'kanca_filter' => array_key_exists('kanca_filter', $scope)
-                        ? (($scope['kanca_filter'] ?? '') !== '' ? (string) $scope['kanca_filter'] : null)
-                        : null,
-                    'period_is_null' => (bool) ($scope['period_is_null'] ?? false),
-                    'kanca_is_null' => (bool) ($scope['kanca_is_null'] ?? false),
-                ];
-            }
-        }
-
+        $scopes = $this->extractDeleteScopesFromState($state);
         if (empty($scopes)) {
-            $scopes[] = [
-                'period_filter' => array_key_exists('period_filter', $state)
-                    ? (($state['period_filter'] ?? '') !== '' ? (string) $state['period_filter'] : null)
-                    : null,
-                'kanca_filter' => array_key_exists('kanca_filter', $state)
-                    ? (($state['kanca_filter'] ?? '') !== '' ? (string) $state['kanca_filter'] : null)
-                    : null,
-                'period_is_null' => (bool) ($state['period_is_null'] ?? false),
-                'kanca_is_null' => (bool) ($state['kanca_is_null'] ?? false),
-            ];
-        }
-
-        [$baseQuery, $hasWhereClause] = $this->buildDeleteScopeQueryFromScopes(
-            (string) $state['table_name'],
-            $state['period_column'] ?? null,
-            $state['kanca_column'] ?? null,
-            $scopes
-        );
-
-        if (!$hasWhereClause) {
             throw new \RuntimeException('Scope delete tidak lagi valid.');
         }
 
+        $tableName = (string) $state['table_name'];
+        $periodColumn = $state['period_column'] ?? null;
+        $kancaColumn = $state['kanca_column'] ?? null;
         $identityColumn = $state['identity_column'] ?? null;
         $chunkSize = (int) ($state['chunk_size'] ?? self::DELETE_CHUNK_SIZE);
+        $currentScopeIndex = max(0, (int) ($state['current_scope_index'] ?? 0));
+        $totalScopes = count($scopes);
 
-        if ($identityColumn !== null && Schema::hasColumn((string) $state['table_name'], (string) $identityColumn)) {
-            $ids = (clone $baseQuery)
-                ->select($identityColumn)
-                ->limit($chunkSize)
-                ->pluck($identityColumn)
-                ->filter(fn ($value) => $value !== null && trim((string) $value) !== '')
-                ->values()
-                ->all();
+        while ($currentScopeIndex < $totalScopes) {
+            $scope = $scopes[$currentScopeIndex];
 
-            if (!empty($ids)) {
-                $affected = DB::table((string) $state['table_name'])
-                    ->whereIn((string) $identityColumn, $ids)
-                    ->delete();
-                $state['deleted_rows'] = (int) ($state['deleted_rows'] ?? 0) + (int) $affected;
+            [$scopeQuery, $hasWhereClause] = $this->buildDeleteScopeQueryFromScopes(
+                $tableName,
+                $periodColumn,
+                $kancaColumn,
+                [$scope]
+            );
+
+            if (!$hasWhereClause) {
+                $currentScopeIndex++;
+                continue;
             }
-        } else {
-            $rows = (clone $baseQuery)->limit($chunkSize)->get();
-            if ($rows->isNotEmpty()) {
-                $uniqueKeys = array_keys(get_object_vars((object) $rows->first()));
-                foreach ($rows as $row) {
-                    $deleteQuery = DB::table((string) $state['table_name']);
-                    foreach ($uniqueKeys as $column) {
-                        $value = $row->{$column};
-                        if ($value === null) {
-                            $deleteQuery->whereNull($column);
-                        } else {
-                            $deleteQuery->where($column, $value);
-                        }
-                    }
-                    $state['deleted_rows'] = (int) ($state['deleted_rows'] ?? 0) + (int) $deleteQuery->limit(1)->delete();
+
+            $affected = $this->deleteScopedRows($tableName, $scopeQuery, $identityColumn, $chunkSize);
+            if ($affected > 0) {
+                $state['deleted_rows'] = (int) ($state['deleted_rows'] ?? 0) + $affected;
+                $state['remaining_rows'] = max(0, (int) ($state['total_rows'] ?? 0) - (int) ($state['deleted_rows'] ?? 0));
+                $state['current_scope_index'] = $currentScopeIndex;
+                $state['updated_at'] = now()->toIso8601String();
+
+                if (($state['remaining_rows'] ?? 0) <= 0) {
+                    $state['stage'] = 'cleanup';
+                    $state['message'] = 'Delete sumber selesai. Membersihkan snapshot dan artefak turunan...';
+                } else {
+                    $state['message'] = sprintf(
+                        'Menghapus data sumber secara bertahap... Grup %d/%d (%s).',
+                        $currentScopeIndex + 1,
+                        $totalScopes,
+                        $this->describeDeleteScope($scope)
+                    );
                 }
+
+                $this->putDeleteState((string) $state['delete_id'], $state);
+
+                return $state;
             }
+
+            $currentScopeIndex++;
         }
 
-        $remainingRows = (int) (clone $baseQuery)->count();
+        [$verificationQuery, $hasWhereClause] = $this->buildDeleteScopeQueryFromScopes(
+            $tableName,
+            $periodColumn,
+            $kancaColumn,
+            $scopes
+        );
+
+        $remainingRows = $hasWhereClause ? (int) (clone $verificationQuery)->count() : 0;
         $state['remaining_rows'] = $remainingRows;
+        $state['current_scope_index'] = $remainingRows > 0 ? 0 : $totalScopes;
         $state['updated_at'] = now()->toIso8601String();
 
         if ($remainingRows <= 0) {
             $state['stage'] = 'cleanup';
             $state['message'] = 'Delete sumber selesai. Membersihkan snapshot dan artefak turunan...';
         } else {
-            $state['message'] = 'Menghapus data sumber secara bertahap...';
+            $state['message'] = 'Melanjutkan verifikasi data yang masih tersisa sebelum cleanup...';
         }
 
         $this->putDeleteState((string) $state['delete_id'], $state);
@@ -571,7 +596,7 @@ class ImportIndexController extends Controller
             'table_name' => $state['table_name'] ?? null,
             'total_rows' => $totalRows,
             'deleted_rows' => $deletedRows,
-            'remaining_rows' => max(0, $totalRows - $deletedRows),
+            'remaining_rows' => max(0, (int) ($state['remaining_rows'] ?? ($totalRows - $deletedRows))),
             'progress_percent' => $percent,
             'message' => $state['message'] ?? 'Memproses delete...',
             'error' => $state['error'] ?? null,
@@ -681,6 +706,13 @@ class ImportIndexController extends Controller
         $override = self::MANAGEMENT_SCOPE_COLUMN_OVERRIDES[$tableName] ?? null;
         if (!is_array($override)) {
             return [$periodColumn, $kancaColumn];
+        }
+
+        // Some reports (e.g. BRIMO) have explicit branch-name source and should
+        // not be grouped by code-like fallback columns.
+        $priorityKancaColumn = $this->resolveColumnName($tableColumns, (array) ($override['kanca_priority'] ?? []));
+        if ($priorityKancaColumn !== null) {
+            $kancaColumn = $priorityKancaColumn;
         }
 
         if ($periodColumn === null) {
@@ -930,41 +962,112 @@ class ImportIndexController extends Controller
         return $normalized;
     }
 
+    private function extractDeleteScopesFromState(array $state): array
+    {
+        $rawScopes = $state['scopes'] ?? null;
+        $scopes = [];
+
+        if (is_array($rawScopes) && !empty($rawScopes)) {
+            foreach ($rawScopes as $scope) {
+                if (!is_array($scope)) {
+                    continue;
+                }
+
+                $scopes[] = [
+                    'period_filter' => array_key_exists('period_filter', $scope)
+                        ? (($scope['period_filter'] ?? '') !== '' ? (string) $scope['period_filter'] : null)
+                        : null,
+                    'kanca_filter' => array_key_exists('kanca_filter', $scope)
+                        ? (($scope['kanca_filter'] ?? '') !== '' ? (string) $scope['kanca_filter'] : null)
+                        : null,
+                    'period_is_null' => (bool) ($scope['period_is_null'] ?? false),
+                    'kanca_is_null' => (bool) ($scope['kanca_is_null'] ?? false),
+                ];
+            }
+        }
+
+        if (!empty($scopes)) {
+            return $scopes;
+        }
+
+        return [[
+            'period_filter' => array_key_exists('period_filter', $state)
+                ? (($state['period_filter'] ?? '') !== '' ? (string) $state['period_filter'] : null)
+                : null,
+            'kanca_filter' => array_key_exists('kanca_filter', $state)
+                ? (($state['kanca_filter'] ?? '') !== '' ? (string) $state['kanca_filter'] : null)
+                : null,
+            'period_is_null' => (bool) ($state['period_is_null'] ?? false),
+            'kanca_is_null' => (bool) ($state['kanca_is_null'] ?? false),
+        ]];
+    }
+
     private function resolveIdentityColumn(array $tableColumns): ?string
     {
         return $this->resolveColumnName($tableColumns, ['uniqueid_namareport', 'uniqueid_SMPN', 'id']);
     }
 
-    private function deleteScopedRows(string $tableName, Builder $baseQuery, ?string $identityColumn): int
+    private function deleteScopedRows(string $tableName, Builder $baseQuery, ?string $identityColumn, ?int $chunkSize = null): int
     {
-        if ($identityColumn === null || !Schema::hasColumn($tableName, $identityColumn)) {
-            return (int) (clone $baseQuery)->delete();
-        }
+        $limit = max(1, (int) ($chunkSize ?? self::DELETE_CHUNK_SIZE));
 
-        $deletedRows = 0;
-
-        while (true) {
+        if ($identityColumn !== null && Schema::hasColumn($tableName, $identityColumn)) {
             $ids = (clone $baseQuery)
                 ->select($identityColumn)
-                ->limit(self::DELETE_CHUNK_SIZE)
+                ->orderBy($identityColumn)
+                ->limit($limit)
                 ->pluck($identityColumn)
                 ->filter(fn ($value) => $value !== null && trim((string) $value) !== '')
                 ->values()
                 ->all();
 
             if (empty($ids)) {
-                break;
+                return 0;
             }
 
-            $affected = DB::table($tableName)->whereIn($identityColumn, $ids)->delete();
-            $deletedRows += (int) $affected;
+            return (int) DB::table($tableName)->whereIn($identityColumn, $ids)->delete();
+        }
 
-            if ($affected <= 0) {
-                break;
+        $deletedRows = 0;
+        $rows = (clone $baseQuery)->limit($limit)->get();
+        if ($rows->isEmpty()) {
+            return 0;
+        }
+
+        $uniqueKeys = array_keys(get_object_vars((object) $rows->first()));
+        foreach ($rows as $row) {
+            $deleteQuery = DB::table($tableName);
+            foreach ($uniqueKeys as $column) {
+                $value = $row->{$column};
+                if ($value === null) {
+                    $deleteQuery->whereNull($column);
+                } else {
+                    $deleteQuery->where($column, $value);
+                }
             }
+            $deletedRows += (int) $deleteQuery->limit(1)->delete();
         }
 
         return $deletedRows;
+    }
+
+    private function describeDeleteScope(array $scope): string
+    {
+        $parts = [];
+
+        if ((bool) ($scope['period_is_null'] ?? false)) {
+            $parts[] = 'Periode kosong';
+        } elseif (($scope['period_filter'] ?? null) !== null && $scope['period_filter'] !== '') {
+            $parts[] = 'Periode ' . (string) $scope['period_filter'];
+        }
+
+        if ((bool) ($scope['kanca_is_null'] ?? false)) {
+            $parts[] = 'Kanca kosong';
+        } elseif (($scope['kanca_filter'] ?? null) !== null && $scope['kanca_filter'] !== '') {
+            $parts[] = 'Kanca ' . (string) $scope['kanca_filter'];
+        }
+
+        return !empty($parts) ? implode(' | ', $parts) : 'scope aktif';
     }
 
     private function parseIniSizeToBytes(string $value): int
