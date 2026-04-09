@@ -296,15 +296,18 @@ public function performanceBrilink()
         $stats = [];
 
         $statsRows = (clone $matchedBaseQuery)
-            ->selectRaw("COALESCE(NULLIF(TRIM(sm.kantor_cabang), ''), 'Branch Office Belum Terpetakan') as regional")
+            ->addSelect('sm.kantor_cabang')
             ->addSelect('sm.posisi')
             ->selectRaw('COUNT(DISTINCT TRIM(src.cif)) as sudah_terakuisisi')
             ->selectRaw('COALESCE(SUM(COALESCE(sm.saldo_idr, 0)), 0) as saldo_cif')
-            ->groupByRaw("COALESCE(NULLIF(TRIM(sm.kantor_cabang), ''), 'Branch Office Belum Terpetakan'), sm.posisi")
+            ->groupBy('sm.kantor_cabang', 'sm.posisi')
             ->get();
 
         foreach ($statsRows as $row) {
-            $regional = trim((string) ($row->regional ?? 'Branch Office Belum Terpetakan'));
+            $regional = trim((string) ($row->kantor_cabang ?? ''));
+            if ($regional === '') {
+                $regional = 'Branch Office Belum Terpetakan';
+            }
             $posisi = (string) ($row->posisi ?? '');
             $stats[$regional] ??= [];
             $stats[$regional][$posisi] = [
@@ -314,12 +317,21 @@ public function performanceBrilink()
         }
 
         if ($latestPosition) {
-            $pipelineByRegional = (clone $matchedBaseQuery)
+            $pipelineRows = (clone $matchedBaseQuery)
                 ->where('sm.posisi', $latestPosition)
-                ->selectRaw("COALESCE(NULLIF(TRIM(sm.kantor_cabang), ''), 'Branch Office Belum Terpetakan') as regional")
+                ->addSelect('sm.kantor_cabang')
                 ->selectRaw('COUNT(DISTINCT TRIM(src.cif)) as total_pipeline')
-                ->groupByRaw("COALESCE(NULLIF(TRIM(sm.kantor_cabang), ''), 'Branch Office Belum Terpetakan')")
-                ->pluck('total_pipeline', 'regional');
+                ->groupBy('sm.kantor_cabang')
+                ->get();
+
+            $pipelineByRegional = $pipelineRows->mapWithKeys(function ($row) {
+                $regional = trim((string) ($row->kantor_cabang ?? ''));
+                if ($regional === '') {
+                    $regional = 'Branch Office Belum Terpetakan';
+                }
+
+                return [$regional => (int) ($row->total_pipeline ?? 0)];
+            });
         }
 
         $regionals = collect(array_unique(array_merge(
