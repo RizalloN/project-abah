@@ -295,6 +295,7 @@ public function performanceBrilink()
         $stats = [];
         $matchedCount = 0;
 
+<<<<<<< HEAD
         foreach ($sourceRows as $row) {
             $regional = trim((string) ($row->kantor_cabang ?: 'Branch Office Belum Terpetakan'));
             $cif = trim((string) $row->cif);
@@ -302,6 +303,22 @@ public function performanceBrilink()
             $isMatched = (int) ($row->is_matched ?? 0) === 1;
             $statusNasabah = strtolower(trim((string) ($row->status_nasabah ?? '')));
 
+=======
+        $statsRows = (clone $matchedBaseQuery)
+            ->addSelect('sm.kantor_cabang')
+            ->addSelect('sm.posisi')
+            ->selectRaw('COUNT(DISTINCT TRIM(src.cif)) as sudah_terakuisisi')
+            ->selectRaw('COALESCE(SUM(COALESCE(sm.saldo_idr, 0)), 0) as saldo_cif')
+            ->groupBy('sm.kantor_cabang', 'sm.posisi')
+            ->get();
+
+        foreach ($statsRows as $row) {
+            $regional = trim((string) ($row->kantor_cabang ?? ''));
+            if ($regional === '') {
+                $regional = 'Branch Office Belum Terpetakan';
+            }
+            $posisi = (string) ($row->posisi ?? '');
+>>>>>>> 386611b5aaed4adafacab7c7e784dff2a4ba209a
             $stats[$regional] ??= [];
             $stats[$regional][$posisi] ??= [
                 'pipeline_cifs' => [],
@@ -310,6 +327,7 @@ public function performanceBrilink()
                 'saldo_cif' => 0,
             ];
 
+<<<<<<< HEAD
             $stats[$regional][$posisi]['pipeline_cifs'][$cif] = true;
             $pipelineByRegional[$regional][$cif] = true;
 
@@ -323,6 +341,24 @@ public function performanceBrilink()
                 $stats[$regional][$posisi]['saldo_cif'] += (float) ($row->saldo_idr ?? 0);
                 $matchedCount++;
             }
+=======
+        if ($latestPosition) {
+            $pipelineRows = (clone $matchedBaseQuery)
+                ->where('sm.posisi', $latestPosition)
+                ->addSelect('sm.kantor_cabang')
+                ->selectRaw('COUNT(DISTINCT TRIM(src.cif)) as total_pipeline')
+                ->groupBy('sm.kantor_cabang')
+                ->get();
+
+            $pipelineByRegional = $pipelineRows->mapWithKeys(function ($row) {
+                $regional = trim((string) ($row->kantor_cabang ?? ''));
+                if ($regional === '') {
+                    $regional = 'Branch Office Belum Terpetakan';
+                }
+
+                return [$regional => (int) ($row->total_pipeline ?? 0)];
+            });
+>>>>>>> 386611b5aaed4adafacab7c7e784dff2a4ba209a
         }
 
         $regionals = collect(array_unique(array_merge(
