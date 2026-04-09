@@ -57,6 +57,7 @@ class ImportExcelController extends Controller
 
     private const DAILY_LOAN_REPORT_ID = 8;
     private const SIMPANAN_MULTIPN_REPORT_ID = 9;
+    private const CHUNK_UPLOAD_TEMP_DIR = 'app/chunk_uploads';
     private const DAILY_LOAN_SOURCE_HEADERS = [
         'PERIODE','KODE_KANWIL1','KANWIL1','KODE_CABANG1','CABANG1','BRANCH1','UNIT1','CURTYP','AO_NAME','CIFNO',
         'NOMOR_REKENING1','STATUS_REKENING1','LN_TYPE','NAMA_DEBITUR1','RATE','JANGKA_WAKTU1','PLAFON','BAKI_DEBET1',
@@ -909,6 +910,169 @@ class ImportExcelController extends Controller
         return $this->uploadExcel($this->useDailyLoanReport($request), ['csv', 'txt']);
     }
 
+    public function initDailyLoanChunkUpload(Request $request)
+    {
+        $request->validate([
+            'original_name' => 'required|string',
+            'total_size' => 'nullable|integer|min:1',
+        ]);
+
+        $originalName = trim((string) $request->input('original_name'));
+        $extension = strtolower((string) pathinfo($originalName, PATHINFO_EXTENSION));
+        if (!in_array($extension, ['csv', 'txt'], true)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Format file Daily Loan harus CSV atau TXT.',
+            ], 422);
+        }
+
+        $uploadId = 'dailyloan_' . Str::uuid()->toString();
+        $directory = $this->ensureChunkUploadDirectory($uploadId);
+
+        file_put_contents($directory . DIRECTORY_SEPARATOR . 'meta.json', json_encode([
+            'original_name' => $originalName,
+            'total_size' => (int) ($request->input('total_size') ?? 0),
+            'created_at' => now()->toIso8601String(),
+            'user_id' => auth()->id(),
+        ], JSON_PRETTY_PRINT));
+
+        return response()->json([
+            'status' => 'success',
+            'upload_id' => $uploadId,
+        ]);
+    }
+
+    public function uploadDailyLoanChunk(Request $request)
+    {
+        $request->validate([
+            'upload_id' => 'required|string',
+            'chunk_index' => 'required|integer|min:0',
+            'total_chunks' => 'required|integer|min:1',
+            'file' => 'required|file',
+        ]);
+
+        $uploadId = trim((string) $request->input('upload_id'));
+        $directory = $this->chunkUploadDirectory($uploadId);
+
+        if (!is_dir($directory)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Sesi upload chunk tidak ditemukan. Silakan upload ulang.',
+            ], 404);
+        }
+
+        $chunkFile = $request->file('file');
+        if (!$chunkFile || !$chunkFile->isValid()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Chunk upload tidak valid.',
+            ], 422);
+        }
+
+        $chunkIndex = (int) $request->input('chunk_index');
+        $targetPath = $directory . DIRECTORY_SEPARATOR . sprintf('part_%06d.bin', $chunkIndex);
+        $chunkFile->move($directory, basename($targetPath));
+
+        return response()->json([
+            'status' => 'success',
+            'chunk_index' => $chunkIndex,
+        ]);
+    }
+
+    public function finalizeDailyLoanChunkUpload(Request $request)
+    {
+        $request->validate([
+            'upload_id' => 'required|string',
+            'total_chunks' => 'required|integer|min:1',
+            'original_name' => 'required|string',
+        ]);
+
+        $uploadId = trim((string) $request->input('upload_id'));
+        $totalChunks = (int) $request->input('total_chunks');
+        $originalName = trim((string) $request->input('original_name'));
+        $directory = $this->chunkUploadDirectory($uploadId);
+
+        if (!is_dir($directory)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Folder upload chunk tidak ditemukan.',
+            ], 404);
+        }
+
+        $extension = strtolower((string) pathinfo($originalName, PATHINFO_EXTENSION));
+        if (!in_array($extension, ['csv', 'txt'], true)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Format file Daily Loan harus CSV atau TXT.',
+            ], 422);
+        }
+
+        if (!file_exists(Storage::path('excel_imports'))) {
+            Storage::makeDirectory('excel_imports');
+        }
+
+        $safeOriginalName = Str::slug(pathinfo($originalName, PATHINFO_FILENAME));
+        $relativePath = 'excel_imports/' . date('Ymd_His') . '_' . Str::random(6) . '_' . ($safeOriginalName ?: 'daily-loan') . '.' . $extension;
+        $absolutePath = Storage::path($relativePath);
+
+        $outputHandle = fopen($absolutePath, 'wb');
+        if ($outputHandle === false) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Gagal menyiapkan file upload final.',
+            ], 500);
+        }
+
+        try {
+            for ($index = 0; $index < $totalChunks; $index++) {
+                $partPath = $directory . DIRECTORY_SEPARATOR . sprintf('part_%06d.bin', $index);
+                if (!file_exists($partPath)) {
+                    throw new \RuntimeException('Chunk ke-' . ($index + 1) . ' belum lengkap.');
+                }
+
+                $inputHandle = fopen($partPath, 'rb');
+                if ($inputHandle === false) {
+                    throw new \RuntimeException('Gagal membaca chunk ke-' . ($index + 1) . '.');
+                }
+
+                while (!feof($inputHandle)) {
+                    $buffer = fread($inputHandle, 1024 * 1024);
+                    if ($buffer === false) {
+                        fclose($inputHandle);
+                        throw new \RuntimeException('Gagal membaca isi chunk ke-' . ($index + 1) . '.');
+                    }
+                    fwrite($outputHandle, $buffer);
+                }
+
+                fclose($inputHandle);
+            }
+        } catch (\Throwable $e) {
+            fclose($outputHandle);
+            @unlink($absolutePath);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], 422);
+        }
+
+        fclose($outputHandle);
+        $this->cleanupChunkUploadDirectory($directory);
+
+        $cacheKey = 'excel_preview_' . md5($relativePath . '|' . (auth()->id() ?? 'guest') . '|' . microtime(true));
+        session([
+            'excel_path' => $relativePath,
+            'active_id_report' => self::DAILY_LOAN_REPORT_ID,
+            'excel_preview_key' => $cacheKey,
+        ]);
+
+        return response()->json([
+            'status' => 'success',
+            'cache_key' => $cacheKey,
+            'redirect' => route('import.dailyloan.preview', ['ck' => $cacheKey]),
+        ]);
+    }
+
     public function previewDailyLoanExcel(Request $request)
     {
         return $this->previewExcel($this->useDailyLoanReport($request));
@@ -1011,6 +1175,42 @@ class ImportExcelController extends Controller
         }
 
         return $rows;
+    }
+
+    private function chunkUploadDirectory(string $uploadId): string
+    {
+        return storage_path(self::CHUNK_UPLOAD_TEMP_DIR . DIRECTORY_SEPARATOR . $uploadId);
+    }
+
+    private function ensureChunkUploadDirectory(string $uploadId): string
+    {
+        $directory = $this->chunkUploadDirectory($uploadId);
+        if (!is_dir($directory)) {
+            @mkdir($directory, 0777, true);
+        }
+
+        return $directory;
+    }
+
+    private function cleanupChunkUploadDirectory(string $directory): void
+    {
+        if (!is_dir($directory)) {
+            return;
+        }
+
+        $items = scandir($directory) ?: [];
+        foreach ($items as $item) {
+            if ($item === '.' || $item === '..') {
+                continue;
+            }
+
+            $path = $directory . DIRECTORY_SEPARATOR . $item;
+            if (is_file($path)) {
+                @unlink($path);
+            }
+        }
+
+        @rmdir($directory);
     }
 
     private function cleanupImportedFile(string $relativePath = '', ?string $absolutePath = null): void
@@ -2791,14 +2991,22 @@ class ImportExcelController extends Controller
             'excel_preview_key' => $cacheKey,
         ]);
 
+        $activeIdReport = (int) $request->id_report;
+        $redirect = $activeIdReport === self::DAILY_LOAN_REPORT_ID
+            ? route('import.dailyloan.preview', ['ck' => $cacheKey])
+            : ($activeIdReport === self::SIMPANAN_MULTIPN_REPORT_ID
+                ? route('import.simpanan.preview', ['ck' => $cacheKey])
+                : route('import.excel.preview', ['ck' => $cacheKey]));
+
         if ($request->ajax() || $request->wantsJson()) {
             return response()->json([
                 'status'    => 'success',
                 'cache_key' => $cacheKey,
+                'redirect'  => $redirect,
             ]);
         }
 
-        return redirect()->route('import.excel.preview');
+        return redirect($redirect);
     }
 
     public function preparePreviewStream(Request $request)
@@ -4226,6 +4434,53 @@ class ImportExcelController extends Controller
                 }
 
                 if ($this->isCsvFile($path)) {
+                    if ($this->supportsNativeBulkLoad()) {
+                        $send('progress', [
+                            'percent'   => 8,
+                            'message'   => 'Mode cepat aktif: menyiapkan CSV staging untuk bulk load MySQL...',
+                            'rows_done' => 0,
+                            'total'     => 0,
+                            'speed'     => 0,
+                        ]);
+
+                        $bulkHandled = $this->processStagedCsvStream(
+                            $send,
+                            $path,
+                            $tableName,
+                            $activeFilters,
+                            $normalizedHeaders,
+                            $jobId
+                        );
+
+                        if ($bulkHandled) {
+                            if ($jobId > 0) {
+                                $job = DB::table('import_jobs')->where('id', $jobId)->first();
+                                if ($job && $job->status === 'completed') {
+                                    try {
+                                        app(ReportDataSyncService::class)->syncImportedJob($jobId, source: static::class);
+                                    } catch (\Throwable $e) {
+                                        Log::warning('Failed to sync report snapshots after staged CSV bulk load: ' . $e->getMessage(), [
+                                            'job_id' => $jobId,
+                                            'status' => $job->status,
+                                        ]);
+                                    }
+
+                                    $this->cleanupSuccessfulImportArtifacts($jobId, $relativePath, $path, $stagedCsvPath !== '' ? [$stagedCsvPath] : []);
+                                }
+                            }
+
+                            return;
+                        }
+
+                        $send('progress', [
+                            'percent'   => 9,
+                            'message'   => 'Bulk load native tidak tersedia untuk file ini. Fallback ke insert bertahap...',
+                            'rows_done' => 0,
+                            'total'     => 0,
+                            'speed'     => 0,
+                        ]);
+                    }
+
                     $delimiter = $this->detectCsvDelimiter($path);
                     $countHandle = @fopen($path, 'r');
                     if (!$countHandle) {

@@ -34,6 +34,11 @@
                         Periode: <strong>{{ \Carbon\Carbon::parse($periode)->translatedFormat('d F Y') }}</strong>
                     </div>
 
+                    <div class="alert alert-light m-3 mb-0 border border-info text-dark">
+                        <i class="fas fa-calendar-alt text-info"></i>
+                        Periode import: <strong>{{ $periode }}</strong>
+                    </div>
+
                     <div class="table-responsive" style="min-height: 450px; max-height: 600px; overflow-y: auto; overflow-x: auto;">
                         <table class="table table-bordered table-hover m-0">
                             <thead class="thead-light sticky-top" style="z-index: 2;">
@@ -375,6 +380,35 @@
         });
 
         updatePreviewTable();
+
+        @if(session('sweet_success'))
+        Swal.fire({
+            icon: 'success',
+            title: @json(session('sweet_success.title')),
+            text: @json(session('sweet_success.text')),
+            confirmButtonText: 'OK'
+        });
+        @endif
+
+        @if(session('sweet_warning'))
+        Swal.fire({
+            icon: 'warning',
+            title: @json(session('sweet_warning.title')),
+            text: @json(session('sweet_warning.text')),
+            confirmButtonText: 'OK'
+        }).then(() => {
+            window.location.href = @json(route('import.index'));
+        });
+        @endif
+
+        @if(session('error'))
+        Swal.fire({
+            icon: 'error',
+            title: 'Terjadi Kesalahan',
+            text: @json(session('error')),
+            confirmButtonText: 'OK'
+        });
+        @endif
     });
 </script>
 <style>

@@ -47,7 +47,7 @@
         </div>
     </div>
 
-    <form id="form-import" method="POST" action="{{ route('import.upload') }}" enctype="multipart/form-data" data-prepare-preview-url="" data-upload-limits-url="{{ route('import.upload-limits') }}">
+    <form id="form-import" method="POST" action="{{ route('import.upload') }}" enctype="multipart/form-data" data-prepare-preview-url="" data-upload-limits-url="{{ route('import.upload-limits') }}" data-chunked-upload="" data-chunk-init-url="" data-chunk-upload-url="" data-chunk-finalize-url="">
         @csrf
 
         <div class="card-body import-upload-card__body">
@@ -69,6 +69,14 @@
                 </select>
             </div>
 
+            <div id="form-periode" class="form-group" style="display: none;">
+                <label id="periode-label" class="font-weight-bold text-dark">
+                    <i class="fas fa-calendar-alt text-primary mr-1"></i> Periode
+                </label>
+                <input type="date" id="periode_input" name="periode" class="form-control">
+                <small id="periode-help" class="text-muted mt-2 d-block">Wajib diisi untuk import Performance PIS Per Produk, Input Rekanan, dan Nasabah Prioritas BOD BOC.</small>
+            </div>
+
             <div id="form-rar" class="form-group">
                 <label class="font-weight-bold text-dark">Upload File Extracted (.rar)</label>
                 <div class="custom-file">
@@ -79,21 +87,16 @@
             </div>
 
             <div id="form-excel" class="form-group" style="display: none;">
-                <label class="text-success font-weight-bold"><i class="fas fa-file-excel mr-1"></i> Upload File Excel (.xlsx, .xls)</label>
+                <label id="excel-label" class="text-success font-weight-bold"><i class="fas fa-file-excel mr-1"></i> Upload File Excel (.xlsx, .xls)</label>
                 <input type="file" id="file_excel" name="file" class="form-control border-success shadow-sm" accept=".xlsx,.xls">
+                <small class="text-muted mt-2 d-block" id="excel-help">Mendukung format .xlsx dan .xls sesuai batas upload server aktif, dengan preview bertahap.</small>
                 <small class="text-muted mt-2 d-block" id="upload-limit-hint">Mendukung format .xlsx dan .xls sesuai batas upload server aktif, dengan preview bertahap.</small>
             </div>
 
             <div id="form-csv" class="form-group" style="display: none;">
                 <label id="csv-label" class="text-info font-weight-bold"><i class="fas fa-file-csv mr-1"></i> Upload File CSV (.csv, .txt)</label>
                 <input type="file" id="file_csv" name="file" class="form-control border-info shadow-sm" accept=".csv,.txt">
-                <small id="csv-help" class="text-muted mt-2 d-block">Gunakan file CSV Performance PIS Per Produk dengan metadata posisi di bagian atas file.</small>
-            </div>
-
-            <div id="form-periode" class="form-group" style="display: none;">
-                <label id="periode-label" class="font-weight-bold text-dark">Periode</label>
-                <input type="date" id="input_periode" name="periode" class="form-control border-primary shadow-sm" disabled>
-                <small id="periode-help" class="text-muted mt-2 d-block">Pilih periode manual sesuai file report.</small>
+                <small id="csv-help" class="text-muted mt-2 d-block">Gunakan file CSV sesuai kebutuhan report yang dipilih.</small>
             </div>
         </div>
 
@@ -108,9 +111,7 @@
 @if(!empty($showReportManagementPanel))
 <div class="card shadow-sm border-0 mt-4" id="report-management-card"
      data-fetch-url="{{ route('import.report-management.data') }}"
-     data-delete-url="{{ route('import.report-management.delete') }}"
-     data-delete-process-url-template="{{ route('import.report-management.delete.process', ['deleteId' => '__DELETE_ID__']) }}"
-     data-delete-status-url-template="{{ route('import.report-management.delete.status', ['deleteId' => '__DELETE_ID__']) }}">
+     data-delete-url="{{ route('import.report-management.delete') }}">
     <div class="card-header bg-white border-0">
         <span class="import-upload-card__eyebrow">Report Management</span>
         <h5 class="card-title font-weight-bold text-dark mb-1">
@@ -169,7 +170,6 @@
                 title: 'swal-modern-title',
                 htmlContainer: 'swal-modern-html',
                 confirmButton: 'swal-modern-confirm',
-                cancelButton: 'swal-modern-cancel',
             },
             buttonsStyling: false,
             background: '#ffffff',
@@ -183,6 +183,7 @@
         const formRAR = document.getElementById('form-rar');
         const formExcel = document.getElementById('form-excel');
         const formCsv = document.getElementById('form-csv');
+        const formPeriode = document.getElementById('form-periode');
         const formImport = document.getElementById('form-import');
         const btnSubmit = document.getElementById('btn-submit');
         const btnDownloadTemplate = document.getElementById('btn-download-template');
@@ -190,14 +191,13 @@
         const inputRar = document.getElementById('file_rar');
         const inputExcel = document.getElementById('file_excel');
         const inputCsv = document.getElementById('file_csv');
-        const excelLabel = formExcel?.querySelector('label');
-        const excelHelp = formExcel?.querySelector('small');
-        const csvLabel = document.getElementById('csv-label');
-        const csvHelp = document.getElementById('csv-help');
-        const formPeriode = document.getElementById('form-periode');
-        const inputPeriode = document.getElementById('input_periode');
+        const periodeInput = document.getElementById('periode_input');
         const periodeLabel = document.getElementById('periode-label');
         const periodeHelp = document.getElementById('periode-help');
+        const excelLabel = document.getElementById('excel-label');
+        const excelHelp = document.getElementById('excel-help');
+        const csvLabel = document.getElementById('csv-label');
+        const csvHelp = document.getElementById('csv-help');
         const csrfTokenInput = formImport?.querySelector('input[name="_token"]');
         const reportManagementCard = document.getElementById('report-management-card');
         const managementReportSelect = document.getElementById('management-report-select');
@@ -256,8 +256,16 @@
                 return null;
             }
 
-            uploadLimitsPromise = fetch(limitsUrl, {
-                headers: { 'Accept': 'application/json' }
+            const cacheBuster = limitsUrl.includes('?')
+                ? `${limitsUrl}&_=${Date.now()}`
+                : `${limitsUrl}?_=${Date.now()}`;
+
+            uploadLimitsPromise = fetch(cacheBuster, {
+                headers: {
+                    'Accept': 'application/json',
+                    'Cache-Control': 'no-cache'
+                },
+                cache: 'no-store'
             })
             .then(async (response) => {
                 const payload = await response.json().catch(() => ({}));
@@ -289,15 +297,130 @@
             const limits = await getUploadLimits();
             const maxBytes = Number(limits?.effective_max_upload_bytes || 0);
             if (maxBytes > 0 && file.size > maxBytes) {
+                const limitLabel = formatBytes(maxBytes);
+                const shouldWarnOnly = maxBytes <= (128 * 1024 * 1024);
+
+                if (shouldWarnOnly) {
+                    console.warn('Upload limit endpoint masih mengembalikan nilai kecil:', limits);
+                    return true;
+                }
+
                 themedSwal({
                     icon: 'error',
                     title: 'Ukuran File Terlalu Besar',
-                    html: `Ukuran file <b>${escapeHtml(file.name)}</b> adalah <b>${formatBytes(file.size)}</b>.<br>Batas upload server saat ini <b>${formatBytes(maxBytes)}</b>.`
+                    html: `Ukuran file <b>${escapeHtml(file.name)}</b> adalah <b>${formatBytes(file.size)}</b>.<br>Batas upload server saat ini <b>${limitLabel}</b>.`
                 });
                 return false;
             }
 
             return true;
+        }
+
+        async function uploadDailyLoanChunked(file, uploadProgressBar, uploadProgressText) {
+            const csrfToken = formImport.querySelector('input[name="_token"]')?.value || '';
+            const initUrl = formImport.dataset.chunkInitUrl;
+            const chunkUrl = formImport.dataset.chunkUploadUrl;
+            const finalizeUrl = formImport.dataset.chunkFinalizeUrl;
+            const chunkSize = 8 * 1024 * 1024;
+            const totalChunks = Math.max(1, Math.ceil(file.size / chunkSize));
+
+            const initForm = new FormData();
+            initForm.append('_token', csrfToken);
+            initForm.append('original_name', file.name);
+            initForm.append('total_size', String(file.size));
+
+            const initResponse = await fetch(initUrl, {
+                method: 'POST',
+                headers: {
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                body: initForm,
+            });
+
+            const initPayload = await initResponse.json().catch(() => ({}));
+            if (!initResponse.ok || initPayload.status !== 'success' || !initPayload.upload_id) {
+                throw new Error(initPayload.message || 'Gagal memulai upload bertahap.');
+            }
+
+            for (let index = 0; index < totalChunks; index++) {
+                const start = index * chunkSize;
+                const end = Math.min(file.size, start + chunkSize);
+                const chunk = file.slice(start, end);
+                const chunkForm = new FormData();
+                chunkForm.append('_token', csrfToken);
+                chunkForm.append('upload_id', initPayload.upload_id);
+                chunkForm.append('chunk_index', String(index));
+                chunkForm.append('total_chunks', String(totalChunks));
+                chunkForm.append('file', chunk, `${file.name}.part${index}`);
+
+                const chunkResponse = await fetch(chunkUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                    body: chunkForm,
+                });
+
+                const chunkPayload = await chunkResponse.json().catch(() => ({}));
+                if (!chunkResponse.ok || chunkPayload.status !== 'success') {
+                    throw new Error(chunkPayload.message || ('Gagal upload potongan file ke-' + (index + 1) + '.'));
+                }
+
+                const uploadedBytes = end;
+                const percent = Math.min(94, Math.max(3, Math.round((uploadedBytes / file.size) * 94)));
+                if (uploadProgressBar) {
+                    uploadProgressBar.style.width = percent + '%';
+                    uploadProgressBar.innerText = percent + '%';
+                }
+                if (uploadProgressText) {
+                    uploadProgressText.innerText = `Mengunggah file ke server... ${percent}%`;
+                }
+            }
+
+            if (uploadProgressBar) {
+                uploadProgressBar.style.width = '96%';
+                uploadProgressBar.innerText = '96%';
+            }
+            if (uploadProgressText) {
+                uploadProgressText.innerText = 'Upload selesai. Menggabungkan file di server...';
+            }
+
+            const finalizeForm = new FormData();
+            finalizeForm.append('_token', csrfToken);
+            finalizeForm.append('upload_id', initPayload.upload_id);
+            finalizeForm.append('total_chunks', String(totalChunks));
+            finalizeForm.append('original_name', file.name);
+
+            const finalizeResponse = await fetch(finalizeUrl, {
+                method: 'POST',
+                headers: {
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                body: finalizeForm,
+            });
+
+            const finalizePayload = await finalizeResponse.json().catch(() => ({}));
+            if (!finalizeResponse.ok || finalizePayload.status !== 'success') {
+                throw new Error(finalizePayload.message || 'Gagal menyusun file final di server.');
+            }
+
+            if (uploadProgressBar) {
+                uploadProgressBar.style.width = '100%';
+                uploadProgressBar.innerText = '100%';
+            }
+            if (uploadProgressText) {
+                uploadProgressText.innerText = 'Upload selesai. Membuka halaman preview...';
+            }
+
+            if (finalizePayload.redirect) {
+                window.location.href = finalizePayload.redirect;
+                return;
+            }
+
+            throw new Error('Server tidak mengembalikan alamat preview setelah upload chunk.');
         }
 
         function escapeHtml(value) {
@@ -307,99 +430,6 @@
                 .replace(/>/g, '&gt;')
                 .replace(/"/g, '&quot;')
                 .replace(/'/g, '&#39;');
-        }
-
-        function formatManagementNumber(value) {
-            return Number(value || 0).toLocaleString('id-ID');
-        }
-
-        function buildManagementDeleteUrl(template, deleteId) {
-            return String(template || '').replace('__DELETE_ID__', encodeURIComponent(deleteId));
-        }
-
-        function updateManagementDeleteProgressUi(payload) {
-            const progressBar = document.getElementById('delete-progress-bar');
-            const progressText = document.getElementById('delete-progress-text');
-            const progressDesc = document.getElementById('delete-progress-desc');
-            const percent = Math.max(0, Math.min(100, Number(payload?.progress_percent || 0)));
-
-            if (progressBar) {
-                progressBar.style.width = percent + '%';
-                progressBar.innerText = percent + '%';
-            }
-            if (progressText) {
-                progressText.innerText = payload?.message || 'Memproses delete...';
-            }
-            if (progressDesc) {
-                progressDesc.innerHTML = `Terhapus <b>${formatManagementNumber(payload?.deleted_rows || 0)}</b> dari <b>${formatManagementNumber(payload?.total_rows || 0)}</b> baris.`;
-            }
-        }
-
-        async function runManagementDeleteProgress(processUrl, initialPayload, token) {
-            themedSwal({
-                title: 'Memproses Delete',
-                html: `
-                    <div class="text-center mb-3">
-                        <span style="font-size: 14px; color: #64748b;" id="delete-progress-desc">Menginisialisasi delete bertahap...</span>
-                    </div>
-                    <div class="progress report-management-progress">
-                        <div id="delete-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated report-management-progress__bar" role="progressbar" style="width: 0%;">0%</div>
-                    </div>
-                    <div class="text-center mt-3">
-                        <small id="delete-progress-text" class="report-management-progress__text">Menyiapkan chunk pertama...</small>
-                    </div>
-                `,
-                allowOutsideClick: false,
-                allowEscapeKey: false,
-                showConfirmButton: false,
-                width: 520,
-            });
-            await new Promise(resolve => setTimeout(resolve, 30));
-
-            let finalPayload = initialPayload;
-            updateManagementDeleteProgressUi(finalPayload);
-
-            try {
-                while (true) {
-                    finalPayload = await postManagementJson(processUrl, {}, token);
-                    updateManagementDeleteProgressUi(finalPayload);
-
-                    if (['completed', 'warning', 'failed'].includes(finalPayload.status)) {
-                        Swal.close();
-                        return finalPayload;
-                    }
-
-                    await new Promise(resolve => setTimeout(resolve, 350));
-                }
-            } catch (error) {
-                Swal.close();
-                throw error;
-            }
-        }
-
-        async function postManagementJson(url, payload, token) {
-            const response = await fetch(url, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json',
-                    'X-CSRF-TOKEN': token
-                },
-                body: JSON.stringify(payload)
-            });
-
-            let data = {};
-            try {
-                data = await response.json();
-            } catch (_) {
-                data = {};
-            }
-
-            if (!response.ok && data.status !== 'warning') {
-                throw new Error(data.message || 'Terjadi kesalahan pada server.');
-            }
-
-            return data;
         }
 
         function renderManagementRows(rows) {
@@ -419,7 +449,7 @@
             managementTableBody.innerHTML = rows.map(function(row) {
                 const period = row.period ?? '(Blank)';
                 const kanca = row.kanca ?? '(Blank)';
-                const total = formatManagementNumber(row.row_count || 0);
+                const total = Number(row.row_count || 0).toLocaleString('id-ID');
                 const periodIsNull = row.period_is_null ? '1' : '0';
                 const kancaIsNull = row.kanca_is_null ? '1' : '0';
                 const periodEncoded = encodeURIComponent(String(period));
@@ -468,10 +498,20 @@
                 </tr>
             `;
 
-            const payload = await postManagementJson(fetchUrl, {
-                id_report: managementReportSelect.value
-            }, token);
-            if (payload.status !== 'success') {
+            const response = await fetch(fetchUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': token
+                },
+                body: JSON.stringify({
+                    id_report: managementReportSelect.value
+                })
+            });
+
+            const payload = await response.json();
+            if (!response.ok || payload.status !== 'success') {
                 throw new Error(payload.message || 'Gagal memuat data report management.');
             }
 
@@ -484,7 +524,6 @@
             }
 
             const deleteUrl = reportManagementCard.dataset.deleteUrl;
-            const processUrlTemplate = reportManagementCard.dataset.deleteProcessUrlTemplate;
             const token = csrfTokenInput ? csrfTokenInput.value : '';
             const period = decodeURIComponent(button.getAttribute('data-period') || '');
             const kanca = decodeURIComponent(button.getAttribute('data-kanca') || '');
@@ -504,69 +543,34 @@
                 return;
             }
 
-            const deletePayload = {
-                id_report: managementReportSelect.value,
-                period: periodIsNull ? '' : period,
-                kanca: kancaIsNull ? '' : kanca,
-                period_is_null: periodIsNull,
-                kanca_is_null: kancaIsNull
-            };
+            const response = await fetch(deleteUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': token
+                },
+                body: JSON.stringify({
+                    id_report: managementReportSelect.value,
+                    period: periodIsNull ? '' : period,
+                    kanca: kancaIsNull ? '' : kanca,
+                    period_is_null: periodIsNull,
+                    kanca_is_null: kancaIsNull
+                })
+            });
 
-            let payload = await postManagementJson(deleteUrl, deletePayload, token);
-            if (payload.status === 'error') {
+            const payload = await response.json();
+            if (!response.ok || (payload.status !== 'success' && payload.status !== 'warning')) {
                 throw new Error(payload.message || 'Gagal menghapus data report.');
             }
 
-            if (payload.status === 'completed') {
-                await themedSwal({
-                    icon: 'success',
-                    title: 'Selesai',
-                    text: payload.message || 'Tidak ada data yang perlu dihapus.'
-                });
-                await fetchManagementData();
-                return;
-            }
-
-            if (payload.status === 'warning' && payload.requires_force) {
-                const forceConfirm = await themedSwal({
-                    icon: 'warning',
-                    title: 'Data Sangat Besar',
-                    html: `Penghapusan ini akan menghapus sekitar <b>${formatManagementNumber(payload.candidate_rows || 0)}</b> baris.<br>Lanjutkan hanya jika Anda yakin ingin menghapus seluruh grup tersebut.`,
-                    showCancelButton: true,
-                    confirmButtonText: 'Lanjutkan Delete',
-                    cancelButtonText: 'Batal'
-                });
-
-                if (!forceConfirm.isConfirmed) {
-                    return;
-                }
-
-                payload = await postManagementJson(deleteUrl, Object.assign({}, deletePayload, { force: true }), token);
-                if (payload.status === 'error') {
-                    throw new Error(payload.message || 'Gagal menghapus data report.');
-                }
-            }
-
-            if (!payload.delete_id || !processUrlTemplate) {
-                throw new Error(payload.message || 'Delete progress tidak dapat dimulai.');
-            }
-
-            const finalPayload = await runManagementDeleteProgress(
-                buildManagementDeleteUrl(processUrlTemplate, payload.delete_id),
-                payload,
-                token
-            );
-
-            if (finalPayload.status === 'failed') {
-                throw new Error(finalPayload.error || finalPayload.message || 'Terjadi kesalahan saat menghapus data.');
-            }
-
+            const isWarning = payload.status === 'warning';
             await themedSwal({
-                icon: finalPayload.status === 'warning' ? 'warning' : 'success',
-                title: finalPayload.status === 'warning' ? 'Selesai dengan Catatan' : 'Berhasil',
-                text: finalPayload.status === 'warning'
-                    ? (finalPayload.error || finalPayload.message || 'Delete selesai dengan catatan.')
-                    : `Data terhapus ${formatManagementNumber(finalPayload.deleted_rows || 0)} baris. Snapshot, cache index, dan statistik optimizer sudah diperbarui.`
+                icon: isWarning ? 'warning' : 'success',
+                title: isWarning ? 'Selesai dengan Catatan' : 'Berhasil',
+                text: isWarning
+                    ? (payload.message || 'Data sumber terhapus tetapi sinkronisasi snapshot bermasalah.')
+                    : `Data terhapus ${Number(payload.deleted_rows || 0).toLocaleString('id-ID')} baris.`
             });
 
             await fetchManagementData();
@@ -648,15 +652,15 @@
                 value = '',
             } = options;
 
-            if (!formPeriode || !inputPeriode) {
+            if (!formPeriode || !periodeInput) {
                 return;
             }
 
             formPeriode.style.display = visible ? 'block' : 'none';
-            inputPeriode.disabled = !visible;
-            inputPeriode.required = Boolean(visible && required);
-            inputPeriode.type = type;
-            inputPeriode.value = value;
+            periodeInput.disabled = !visible;
+            periodeInput.required = Boolean(visible && required);
+            periodeInput.type = type;
+            periodeInput.value = value;
 
             if (periodeLabel) {
                 periodeLabel.textContent = label;
@@ -711,14 +715,13 @@
                     : '<i class="fas fa-file-excel"></i> Upload Excel'
             );
         }
-
         function toggleForm() {
             const { reportName, tableName } = getSelectedReportMeta();
             const isDailyLoan = reportName.includes('daily loan');
             const isSimpanan = reportName.includes('simpanan multipn');
             const isPerformancePis = reportName.includes('performance pis per produk');
-            const isCasaBrilink = tableName === 'casa_brilink_web' || tableName === 'casa_brilink_edc';
-            const isReportPh = tableName === 'lw325_ph';
+            const isCasaBrilink = reportName.includes('casa brilink');
+            const isReportPh = reportName.includes('report nominatif rekening pinjaman ph');
             const isInputRekanan = tableName === 'input_rekanan';
             const isBodBoc = tableName === 'bod_boc';
 
@@ -732,9 +735,15 @@
             inputExcel.required = false;
             inputCsv.disabled = true;
             inputCsv.required = false;
-            configurePeriodeInput({ visible: false });
+            periodeInput.disabled = true;
+            periodeInput.required = false;
 
             formImport.dataset.preparePreviewUrl = '';
+            formImport.dataset.directRedirect = '';
+            formImport.dataset.chunkedUpload = '';
+            formImport.dataset.chunkInitUrl = '';
+            formImport.dataset.chunkUploadUrl = '';
+            formImport.dataset.chunkFinalizeUrl = '';
 
             if (isDailyLoan) {
                 formCsv.style.display = 'block';
@@ -742,6 +751,10 @@
                 inputCsv.required = true;
                 formImport.action = "{{ route('import.dailyloan.upload') }}";
                 formImport.dataset.preparePreviewUrl = "{{ route('import.dailyloan.prepare-preview') }}";
+                formImport.dataset.chunkedUpload = '1';
+                formImport.dataset.chunkInitUrl = "{{ route('import.dailyloan.upload-chunk.init') }}";
+                formImport.dataset.chunkUploadUrl = "{{ route('import.dailyloan.upload-chunk') }}";
+                formImport.dataset.chunkFinalizeUrl = "{{ route('import.dailyloan.upload-chunk.finalize') }}";
                 csvLabel.innerHTML = '<i class="fas fa-file-csv mr-1"></i> Upload File CSV Daily Loan Dinamis (.csv, .txt)';
                 csvHelp.textContent = 'Gunakan file CSV Daily Loan Dinamis yang sudah sesuai template untuk diproses ke database.';
                 applyButtonState('csv', '<i class="fas fa-file-csv"></i> Upload CSV');
@@ -752,6 +765,8 @@
                 formExcel.style.display = 'block';
                 inputExcel.disabled = false;
                 inputExcel.required = true;
+                inputExcel.setAttribute('accept', '.xlsx,.xls,.csv');
+                configurePeriodeInput({ visible: false });
                 applySimpananUploadMode();
                 return;
             }
@@ -821,15 +836,19 @@
             }
 
             if (isPerformancePis) {
-                formCsv.style.display = 'block';
-                inputCsv.disabled = false;
-                inputCsv.required = true;
-                inputCsv.setAttribute('accept', '.xlsx,.xls,.csv,.txt');
+                formExcel.style.display = 'block';
+                inputExcel.disabled = false;
+                inputExcel.required = true;
+                inputExcel.setAttribute('accept', '.xlsx,.xls');
                 formImport.action = "{{ route('import.performancepis.upload') }}";
                 formImport.dataset.preparePreviewUrl = "{{ route('import.performancepis.prepare-preview') }}";
-                csvLabel.innerHTML = '<i class="fas fa-file-upload mr-1"></i> Upload File Performance PIS (.xlsx, .xls, .csv, .txt)';
-                csvHelp.textContent = 'Tanggal periode diisi manual pada form import. Jika upload Excel, sistem akan konversi otomatis ke CSV saat diproses.';
-                applyButtonState('csv', '<i class="fas fa-file-upload"></i> Upload File');
+                if (excelLabel) {
+                    excelLabel.innerHTML = '<i class="fas fa-file-upload mr-1"></i> Upload File Performance PIS (.xlsx, .xls)';
+                }
+                if (excelHelp) {
+                    excelHelp.textContent = 'Tanggal periode diisi manual pada form import Performance PIS per Produk.';
+                }
+                applyButtonState('excel', '<i class="fas fa-file-upload"></i> Upload File');
                 configurePeriodeInput(buildManualPeriodeOptions({
                     visible: true,
                     required: true,
@@ -859,6 +878,7 @@
             if (excelHelp) {
                 excelHelp.textContent = describeUploadLimitMessage(null);
             }
+            configurePeriodeInput({ visible: false });
             formImport.action = "{{ route('import.upload') }}";
             applyButtonState('rar', '<i class="fas fa-file-archive"></i> Upload RAR');
         }
@@ -869,6 +889,12 @@
                 window.jQuery(reportSelect).on('change.select2 select2:select', toggleForm);
             }
         }
+
+        inputExcel?.addEventListener('change', function () {
+            if (isSimpananReportSelected()) {
+                applySimpananUploadMode();
+            }
+        });
 
         if (downloadTemplateSelect) {
             downloadTemplateSelect.addEventListener('change', syncDownloadButton);
@@ -931,14 +957,8 @@
             $(this).next('.custom-file-label').html(fileName);
         });
 
-        inputExcel?.addEventListener('change', function () {
-            applySimpananUploadMode();
-        });
-
         formImport.addEventListener('submit', async function(e) {
             e.preventDefault();
-
-            applySimpananUploadMode();
 
             const sizeAllowed = await validateFileSizeBeforeUpload();
             if (!sizeAllowed) {
@@ -946,6 +966,7 @@
             }
 
             const hasAsyncPreview = Boolean(formImport.dataset.preparePreviewUrl);
+            const directRedirect = formImport.dataset.directRedirect === '1';
             const uploadKind = formImport.dataset.uploadKind || 'rar';
             const titleText = uploadKind === 'excel'
                 ? 'Uploading Excel...'
@@ -983,7 +1004,7 @@
                         btnSubmit.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
                     }
 
-                    if (!hasAsyncPreview) {
+                    if (!hasAsyncPreview && !directRedirect) {
                         formImport.submit();
                         return;
                     }
@@ -991,6 +1012,23 @@
                     const formData = new FormData(formImport);
                     const uploadProgressBar = document.getElementById('swal-progress-bar');
                     const uploadProgressText = document.getElementById('swal-progress-text');
+                    const chunkedUpload = formImport.dataset.chunkedUpload === '1';
+                    const selectedFile = !inputRar.disabled
+                        ? inputRar?.files?.[0]
+                        : (!inputExcel.disabled ? inputExcel?.files?.[0] : inputCsv?.files?.[0]);
+
+                    if (chunkedUpload && selectedFile) {
+                        uploadDailyLoanChunked(selectedFile, uploadProgressBar, uploadProgressText)
+                            .catch((error) => {
+                                themedSwal({
+                                    icon: 'error',
+                                    title: 'Upload Error',
+                                    text: error.message || 'Upload bertahap gagal diproses.'
+                                });
+                                resetSubmitButton();
+                            });
+                        return;
+                    }
 
                     const uploadRequest = new XMLHttpRequest();
                     uploadRequest.open('POST', formImport.action, true);
@@ -1018,12 +1056,6 @@
                             try {
                                 const errorPayload = JSON.parse(uploadRequest.responseText || '{}');
                                 serverMessage = errorPayload.message || '';
-                                if (!serverMessage && errorPayload.errors && typeof errorPayload.errors === 'object') {
-                                    const firstField = Object.keys(errorPayload.errors)[0];
-                                    if (firstField && Array.isArray(errorPayload.errors[firstField]) && errorPayload.errors[firstField][0]) {
-                                        serverMessage = errorPayload.errors[firstField][0];
-                                    }
-                                }
                             } catch (_) {
                             }
 
@@ -1058,6 +1090,34 @@
                                 icon: 'error',
                                 title: 'Upload Error',
                                 text: data.message || 'Upload gagal diproses oleh server.'
+                            });
+                            resetSubmitButton();
+                            return;
+                        }
+
+                        if (data.redirect) {
+                            if (uploadProgressBar) {
+                                uploadProgressBar.style.width = '100%';
+                                uploadProgressBar.innerText = '100%';
+                            }
+                            if (uploadProgressText) {
+                                uploadProgressText.innerText = 'Upload selesai. Membuka halaman preview...';
+                            }
+
+                            window.location.href = data.redirect;
+                            return;
+                        }
+
+                        if (directRedirect) {
+                            if (data.redirect) {
+                                window.location.href = data.redirect;
+                                return;
+                            }
+
+                            themedSwal({
+                                icon: 'error',
+                                title: 'Upload Error',
+                                text: 'Server tidak mengembalikan alamat preview.'
                             });
                             resetSubmitButton();
                             return;
@@ -1187,15 +1247,6 @@
                 icon: 'error',
                 title: 'Gagal!',
                 text: '{{ session('error') }}',
-                confirmButtonText: 'Tutup'
-            });
-        @endif
-
-        @if($errors->any())
-            themedSwal({
-                icon: 'error',
-                title: 'Validasi Gagal',
-                html: `{!! collect($errors->all())->map(fn($msg) => '<div class="text-left">- ' . e($msg) . '</div>')->implode('') !!}`,
                 confirmButtonText: 'Tutup'
             });
         @endif
@@ -1374,27 +1425,6 @@
         box-shadow: 0 18px 34px -22px rgba(37, 99, 235, 0.52);
     }
 
-    .report-management-progress {
-        height: 16px;
-        border-radius: 999px;
-        background-color: #e2e8f0;
-        overflow: hidden;
-        box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.08);
-    }
-
-    .report-management-progress__bar {
-        font-weight: 700;
-        font-size: 12px;
-        line-height: 16px;
-        background: linear-gradient(135deg, #0f766e, #115e59);
-    }
-
-    .report-management-progress__text {
-        color: #0f766e;
-        font-weight: 700;
-        letter-spacing: 0.02em;
-    }
-
     .swal-modern-popup {
         border: 1px solid rgba(226, 232, 240, 0.95);
         border-radius: 28px;
@@ -1414,27 +1444,17 @@
         line-height: 1.65;
     }
 
-    .swal-modern-confirm,
-    .swal-modern-cancel {
+    .swal-modern-confirm {
         display: inline-flex;
         align-items: center;
         justify-content: center;
         border: 0;
         border-radius: 16px;
-        font-weight: 700;
-        padding: 0.8rem 1.3rem;
-    }
-
-    .swal-modern-confirm {
         background: linear-gradient(135deg, #0f766e, #115e59);
         color: #ffffff;
+        font-weight: 700;
+        padding: 0.8rem 1.3rem;
         box-shadow: 0 16px 34px -22px rgba(15, 23, 42, 0.45);
-    }
-
-    .swal-modern-cancel {
-        background: #e2e8f0;
-        color: #334155;
-        margin-left: 0.5rem;
     }
 
     @media (max-width: 767.98px) {

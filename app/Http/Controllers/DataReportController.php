@@ -2,18 +2,12 @@
 
 namespace App\Http\Controllers;
 
-use App\Support\ReportDataSyncService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
-use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
 
 class DataReportController extends Controller
 {
-    private const NEW_PAYROLL_SNAPSHOT_TABLE = 'performance_new_payroll_snapshots';
-
     public function performanceNewPayroll()
     {
         $branches = ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'];
@@ -23,64 +17,12 @@ class DataReportController extends Controller
 
     public function fetchNewPayrollData(Request $request)
     {
-        @set_time_limit(0);
-        DB::connection()->disableQueryLog();
-
         $selectedDate = Carbon::parse($request->input('posisi', date('Y-m-d')));
         $branches = ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'];
-        $useSnapshot = Schema::hasTable(self::NEW_PAYROLL_SNAPSHOT_TABLE);
 
-        if ($useSnapshot) {
-            $sourceSnapshotDate = DB::table('performance_pis_per_produk')
-                ->whereDate('posisi', '<=', $selectedDate->toDateString())
-                ->max('posisi');
-
-            if ($sourceSnapshotDate) {
-                $snapshotExists = DB::table(self::NEW_PAYROLL_SNAPSHOT_TABLE)
-                    ->whereDate('snapshot_posisi', $sourceSnapshotDate)
-                    ->exists();
-
-                if (!$snapshotExists) {
-                    $lockKey = 'snapshot:new_payroll:rebuild:' . $sourceSnapshotDate;
-                    $lock = Cache::lock($lockKey, 60);
-
-                    try {
-                        if ($lock->get()) {
-                            defer(function () use ($sourceSnapshotDate, $lock) {
-                                try {
-                                    app(ReportDataSyncService::class)->syncImportedTable(
-                                        'performance_pis_per_produk',
-                                        $sourceSnapshotDate,
-                                        source: static::class . '::fetchNewPayrollData'
-                                    );
-                                } finally {
-                                    $lock->release();
-                                }
-                            });
-                        }
-                    } catch (\Throwable $e) {
-                        Log::warning('Auto rebuild new payroll snapshot gagal: ' . $e->getMessage(), [
-                            'source_snapshot_date' => $sourceSnapshotDate,
-                        ]);
-                    }
-                }
-            }
-
-            $effectiveSnapshot = DB::table(self::NEW_PAYROLL_SNAPSHOT_TABLE)
-                ->whereDate('snapshot_posisi', '<=', $selectedDate->toDateString())
-                ->max('snapshot_posisi');
-
-            if (!$effectiveSnapshot) {
-                $effectiveSnapshot = DB::table('performance_pis_per_produk')
-                    ->whereDate('posisi', '<=', $selectedDate->toDateString())
-                    ->max('posisi');
-                $useSnapshot = false;
-            }
-        } else {
-            $effectiveSnapshot = DB::table('performance_pis_per_produk')
-                ->whereDate('posisi', '<=', $selectedDate->toDateString())
-                ->max('posisi');
-        }
+        $effectiveSnapshot = DB::table('performance_pis_per_produk')
+            ->whereDate('posisi', '<=', $selectedDate->toDateString())
+            ->max('posisi');
 
         if (!$effectiveSnapshot) {
             return response()->json([
@@ -92,43 +34,26 @@ class DataReportController extends Controller
             ]);
         }
 
-        if ($useSnapshot) {
-            $rows = DB::table(self::NEW_PAYROLL_SNAPSHOT_TABLE)
-                ->select(
-                    'branch',
-                    'rekening_curr',
-                    'rekening_prev',
-                    'rekening_yoy_prev',
-                    'saldo_curr',
-                    'saldo_prev',
-                    'saldo_yoy_prev'
-                )
-                ->whereDate('snapshot_posisi', $effectiveSnapshot)
-                ->whereIn('branch', array_map('strtoupper', $branches))
-                ->get()
-                ->keyBy('branch');
-        } else {
-            $currStart = $selectedDate->copy()->startOfMonth()->toDateString();
-            $currEnd = $selectedDate->copy()->endOfMonth()->toDateString();
-            $prevStart = $selectedDate->copy()->subMonthNoOverflow()->startOfMonth()->toDateString();
-            $prevEnd = Carbon::parse($prevStart)->endOfMonth()->toDateString();
-            $yoyStart = $selectedDate->copy()->subYearNoOverflow()->startOfMonth()->toDateString();
-            $yoyEnd = Carbon::parse($yoyStart)->endOfMonth()->toDateString();
+        $currStart = $selectedDate->copy()->startOfMonth()->toDateString();
+        $currEnd = $selectedDate->copy()->endOfMonth()->toDateString();
+        $prevStart = $selectedDate->copy()->subMonthNoOverflow()->startOfMonth()->toDateString();
+        $prevEnd = Carbon::parse($prevStart)->endOfMonth()->toDateString();
+        $yoyStart = $selectedDate->copy()->subYearNoOverflow()->startOfMonth()->toDateString();
+        $yoyEnd = Carbon::parse($yoyStart)->endOfMonth()->toDateString();
 
-            $rows = DB::table('performance_pis_per_produk')
-                ->selectRaw('UPPER(kanca) as branch')
-                ->selectRaw('COUNT(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN 1 END) as rekening_curr', [$currStart, $currEnd])
-                ->selectRaw('COUNT(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN 1 END) as rekening_prev', [$prevStart, $prevEnd])
-                ->selectRaw('COUNT(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN 1 END) as rekening_yoy_prev', [$yoyStart, $yoyEnd])
-                ->selectRaw('SUM(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN saldo_britama_kerjasama ELSE 0 END) as saldo_curr', [$currStart, $currEnd])
-                ->selectRaw('SUM(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN saldo_britama_kerjasama ELSE 0 END) as saldo_prev', [$prevStart, $prevEnd])
-                ->selectRaw('SUM(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN saldo_britama_kerjasama ELSE 0 END) as saldo_yoy_prev', [$yoyStart, $yoyEnd])
-                ->whereDate('posisi', $effectiveSnapshot)
-                ->whereIn(DB::raw('UPPER(kanca)'), array_map('strtoupper', $branches))
-                ->groupBy(DB::raw('UPPER(kanca)'))
-                ->get()
-                ->keyBy('branch');
-        }
+        $rows = DB::table('performance_pis_per_produk')
+            ->selectRaw('UPPER(kanca) as branch')
+            ->selectRaw('COUNT(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN 1 END) as rekening_curr', [$currStart, $currEnd])
+            ->selectRaw('COUNT(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN 1 END) as rekening_prev', [$prevStart, $prevEnd])
+            ->selectRaw('COUNT(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN 1 END) as rekening_yoy_prev', [$yoyStart, $yoyEnd])
+            ->selectRaw('SUM(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN saldo_britama_kerjasama ELSE 0 END) as saldo_curr', [$currStart, $currEnd])
+            ->selectRaw('SUM(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN saldo_britama_kerjasama ELSE 0 END) as saldo_prev', [$prevStart, $prevEnd])
+            ->selectRaw('SUM(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN saldo_britama_kerjasama ELSE 0 END) as saldo_yoy_prev', [$yoyStart, $yoyEnd])
+            ->whereDate('posisi', $effectiveSnapshot)
+            ->whereIn(DB::raw('UPPER(kanca)'), array_map('strtoupper', $branches))
+            ->groupBy(DB::raw('UPPER(kanca)'))
+            ->get()
+            ->keyBy('branch');
 
         $data = [];
         $total = [
@@ -253,89 +178,153 @@ public function performanceBrilink()
         string $sourceLabel,
         string $pageTitle
     ) {
+        $statusColumn = $sourceTable === 'bod_boc' ? 'ket_nasabah' : 'status_nasabah';
+
         $selectedDateInput = (string) $request->query('posisi_terakhir', '');
+        $today = now()->endOfDay();
         $selectedDate = $selectedDateInput !== ''
             ? Carbon::parse($selectedDateInput)->endOfDay()
-            : now()->endOfDay();
+            : $today->copy();
+
+        if ($selectedDate->greaterThan($today)) {
+            $selectedDate = $today->copy();
+        }
 
         $positions = collect([
-            $selectedDate->copy()->subMonthsNoOverflow(2)->endOfMonth()->toDateString(),
+            $selectedDate->copy()->subYearNoOverflow()->endOfYear()->toDateString(),
             $selectedDate->copy()->subMonthNoOverflow()->endOfMonth()->toDateString(),
             $selectedDate->copy()->toDateString(),
         ])->unique()->values();
 
         while ($positions->count() < 3) {
-            $seed = Carbon::parse($positions->first())->subMonthNoOverflow()->endOfMonth()->toDateString();
+            $seed = Carbon::parse($positions->first())->subYearNoOverflow()->endOfYear()->toDateString();
             $positions->prepend($seed);
             $positions = $positions->unique()->values();
         }
 
-        $sourcePeriod = null;
-        if (Schema::hasColumn($sourceTable, 'periode')) {
-            $sourcePeriod = DB::table($sourceTable)
-                ->whereNotNull('periode')
-                ->where('periode', '<=', $selectedDate->toDateString())
-                ->max('periode');
+        $positionBuckets = $positions
+            ->mapWithKeys(function ($position) {
+                $date = Carbon::parse($position);
+                return [$date->format('Y-m') => $position];
+            });
+
+        $windowStart = Carbon::parse($positions->first())->startOfMonth()->toDateString();
+
+        $sourceRows = DB::table($sourceTable . ' as src')
+            ->whereNotNull('src.periode')
+            ->whereBetween(DB::raw('DATE(src.periode)'), [$windowStart, $selectedDate->toDateString()])
+            ->selectRaw('DATE(src.periode) as periode')
+            ->selectRaw('TRIM(src.cif) as cif')
+            ->selectRaw('TRIM(COALESCE(src.' . $statusColumn . ', "")) as status_nasabah')
+            ->orderBy('periode')
+            ->get();
+
+        $cifList = $sourceRows
+            ->pluck('cif')
+            ->map(fn ($cif) => trim((string) $cif))
+            ->filter(fn ($cif) => $cif !== '')
+            ->unique()
+            ->values();
+
+        $simpananRows = collect();
+        if ($cifList->isNotEmpty()) {
+            $simpananRows = DB::table('simpanan_multipn')
+                ->whereNotNull('CIFNO')
+                ->whereDate('posisi', '<=', $selectedDate->toDateString())
+                ->whereIn(DB::raw('TRIM(CIFNO)'), $cifList->all())
+                ->selectRaw('TRIM(CIFNO) as cif')
+                ->selectRaw('DATE(posisi) as posisi')
+                ->selectRaw("COALESCE(NULLIF(TRIM(kantor_cabang), ''), 'Branch Office Belum Terpetakan') as kantor_cabang")
+                ->selectRaw('COALESCE(saldo_idr, 0) as saldo_idr')
+                ->orderByDesc('posisi')
+                ->get();
         }
 
-        $matchedBaseQuery = DB::table($sourceTable . ' as src')
-            ->join('simpanan_multipn as sm', function ($join) {
-                $join->whereRaw('sm.CIFNO COLLATE utf8mb4_unicode_ci = src.cif COLLATE utf8mb4_unicode_ci');
+        $latestSaldoByCif = [];
+        foreach ($simpananRows as $simpananRow) {
+            $cif = trim((string) ($simpananRow->cif ?? ''));
+            if ($cif === '') {
+                continue;
+            }
+
+            $posisi = (string) ($simpananRow->posisi ?? '');
+            $regional = trim((string) ($simpananRow->kantor_cabang ?: 'Branch Office Belum Terpetakan'));
+            $saldo = (float) ($simpananRow->saldo_idr ?? 0);
+
+            if (!isset($latestSaldoByCif[$cif])) {
+                $latestSaldoByCif[$cif] = [
+                    'posisi' => $posisi,
+                    'kantor_cabang' => $regional,
+                    'saldo_idr' => $saldo,
+                ];
+                continue;
+            }
+
+            if ($latestSaldoByCif[$cif]['posisi'] === $posisi) {
+                $latestSaldoByCif[$cif]['saldo_idr'] += $saldo;
+            }
+        }
+
+        $sourceRows = $sourceRows
+            ->map(function ($row) use ($latestSaldoByCif, $positionBuckets) {
+                $cif = trim((string) ($row->cif ?? ''));
+                $simpanan = $latestSaldoByCif[$cif] ?? null;
+                $periode = trim((string) ($row->periode ?? ''));
+                $bucketKey = $periode !== '' ? Carbon::parse($periode)->format('Y-m') : null;
+
+                $row->kantor_cabang = $simpanan['kantor_cabang'] ?? 'Branch Office Belum Terpetakan';
+                $row->saldo_idr = $simpanan['saldo_idr'] ?? 0;
+                $row->is_matched = $simpanan ? 1 : 0;
+                $row->bucket_periode = $bucketKey && $positionBuckets->has($bucketKey)
+                    ? $positionBuckets->get($bucketKey)
+                    : null;
+                $row->status_nasabah = trim((string) ($row->status_nasabah ?? ''));
+
+                return $row;
             })
-            ->whereIn('sm.posisi', $positions->all());
-
-        if ($sourcePeriod) {
-            $matchedBaseQuery->where('src.periode', $sourcePeriod);
-        }
-
-        $matchedCount = (clone $matchedBaseQuery)->count();
+            ->filter(fn ($row) => !empty($row->bucket_periode))
+            ->sortBy([
+                ['kantor_cabang', 'asc'],
+                ['bucket_periode', 'asc'],
+            ])
+            ->values();
 
         $latestPosition = $positions->last();
         $previousPosition = $positions->slice(-2, 1)->first();
-        $pipelineByRegional = collect();
+        $pipelineByRegional = [];
         $stats = [];
+        $matchedCount = 0;
 
-        $statsRows = (clone $matchedBaseQuery)
-            ->addSelect('sm.kantor_cabang')
-            ->addSelect('sm.posisi')
-            ->selectRaw('COUNT(DISTINCT TRIM(src.cif)) as sudah_terakuisisi')
-            ->selectRaw('COALESCE(SUM(COALESCE(sm.saldo_idr, 0)), 0) as saldo_cif')
-            ->groupBy('sm.kantor_cabang', 'sm.posisi')
-            ->get();
-
-        foreach ($statsRows as $row) {
-            $regional = trim((string) ($row->kantor_cabang ?? ''));
-            if ($regional === '') {
-                $regional = 'Branch Office Belum Terpetakan';
-            }
-            $posisi = (string) ($row->posisi ?? '');
+        foreach ($sourceRows as $row) {
+            $regional = trim((string) ($row->kantor_cabang ?: 'Branch Office Belum Terpetakan'));
+            $cif = trim((string) $row->cif);
+            $posisi = (string) $row->bucket_periode;
+            $isMatched = (int) ($row->is_matched ?? 0) === 1;
+            $statusNasabah = strtolower(trim((string) ($row->status_nasabah ?? '')));
             $stats[$regional] ??= [];
-            $stats[$regional][$posisi] = [
-                'sudah_terakuisisi' => (int) ($row->sudah_terakuisisi ?? 0),
-                'saldo_cif' => (float) ($row->saldo_cif ?? 0),
+            $stats[$regional][$posisi] ??= [
+                'pipeline_cifs' => [],
+                'sudah_cifs' => [],
+                'belum_cifs' => [],
+                'saldo_cif' => 0,
             ];
-        }
+            $stats[$regional][$posisi]['pipeline_cifs'][$cif] = true;
+            $pipelineByRegional[$regional][$cif] = true;
 
-        if ($latestPosition) {
-            $pipelineRows = (clone $matchedBaseQuery)
-                ->where('sm.posisi', $latestPosition)
-                ->addSelect('sm.kantor_cabang')
-                ->selectRaw('COUNT(DISTINCT TRIM(src.cif)) as total_pipeline')
-                ->groupBy('sm.kantor_cabang')
-                ->get();
+            if (str_contains($statusNasabah, 'belum')) {
+                $stats[$regional][$posisi]['belum_cifs'][$cif] = true;
+            } elseif (str_contains($statusNasabah, 'sudah')) {
+                $stats[$regional][$posisi]['sudah_cifs'][$cif] = true;
+            }
 
-            $pipelineByRegional = $pipelineRows->mapWithKeys(function ($row) {
-                $regional = trim((string) ($row->kantor_cabang ?? ''));
-                if ($regional === '') {
-                    $regional = 'Branch Office Belum Terpetakan';
-                }
-
-                return [$regional => (int) ($row->total_pipeline ?? 0)];
-            });
+            if ($isMatched && isset($stats[$regional][$posisi]['sudah_cifs'][$cif])) {
+                $stats[$regional][$posisi]['saldo_cif'] += (float) ($row->saldo_idr ?? 0);
+                $matchedCount++;
+            }
         }
 
         $regionals = collect(array_unique(array_merge(
-            $pipelineByRegional->keys()->all(),
+            array_keys($pipelineByRegional),
             array_keys($stats)
         )))->sort()->values();
 
@@ -356,7 +345,7 @@ public function performanceBrilink()
         }
 
         foreach ($regionals as $regional) {
-            $totalPipeline = (int) ($pipelineByRegional->get($regional, 0));
+            $totalPipeline = isset($pipelineByRegional[$regional]) ? count($pipelineByRegional[$regional]) : 0;
             $row = [
                 'regional' => $regional,
                 'total_pipeline' => $totalPipeline,
@@ -364,21 +353,41 @@ public function performanceBrilink()
                 'akuisisi_pct' => 0,
                 'growth_saldo_pct' => 0,
             ];
+            $runningBelum = 0;
+            $runningSudah = 0;
+            $runningSaldo = 0;
+            $runningYear = null;
 
             foreach ($positions as $position) {
-                $regionalStats = $stats[$regional][$position] ?? ['sudah_terakuisisi' => 0, 'saldo_cif' => 0];
-                $sudah = (int) ($regionalStats['sudah_terakuisisi'] ?? 0);
-                $belum = max($totalPipeline - $sudah, 0);
+                $positionYear = Carbon::parse($position)->year;
+                if ($runningYear !== null && $runningYear !== $positionYear) {
+                    $runningBelum = 0;
+                    $runningSudah = 0;
+                    $runningSaldo = 0;
+                }
+                $runningYear = $positionYear;
+
+                $regionalStats = $stats[$regional][$position] ?? [
+                    'pipeline_cifs' => [],
+                    'sudah_cifs' => [],
+                    'belum_cifs' => [],
+                    'saldo_cif' => 0,
+                ];
+                $sudah = count($regionalStats['sudah_cifs']);
+                $belum = count($regionalStats['belum_cifs']);
+                $runningBelum += $belum;
+                $runningSudah += $sudah;
+                $runningSaldo += (float) $regionalStats['saldo_cif'];
 
                 $row['positions'][$position] = [
-                    'belum_terakuisisi' => $belum,
-                    'sudah_terakuisisi' => $sudah,
-                    'saldo_cif' => (float) $regionalStats['saldo_cif'],
+                    'belum_terakuisisi' => $runningBelum,
+                    'sudah_terakuisisi' => $runningSudah,
+                    'saldo_cif' => $runningSaldo,
                 ];
 
-                $grandTotals['positions'][$position]['belum_terakuisisi'] += $belum;
-                $grandTotals['positions'][$position]['sudah_terakuisisi'] += $sudah;
-                $grandTotals['positions'][$position]['saldo_cif'] += (float) $regionalStats['saldo_cif'];
+                $grandTotals['positions'][$position]['belum_terakuisisi'] += $runningBelum;
+                $grandTotals['positions'][$position]['sudah_terakuisisi'] += $runningSudah;
+                $grandTotals['positions'][$position]['saldo_cif'] += $runningSaldo;
             }
 
             if ($latestPosition && isset($row['positions'][$latestPosition])) {
@@ -426,9 +435,6 @@ public function performanceBrilink()
 
     public function fetchData(Request $request)
     {
-        @set_time_limit(0);
-        DB::connection()->disableQueryLog();
-
         $id_report = $request->input('id_report', 1);
         $branches = $request->input('branches', ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO']); 
         $posisi = $request->input('posisi'); 
@@ -934,10 +940,10 @@ public function performanceBrilink()
 
             $selectedCasaDate = $current->copy()->endOfMonth();
             $latestCasaWeb = DB::table('casa_brilink_web')
-                ->where('periode', '<=', $selectedCasaDate->toDateString())
+                ->whereDate('periode', '<=', $selectedCasaDate->toDateString())
                 ->max('periode');
             $latestCasaEdc = DB::table('casa_brilink_edc')
-                ->where('periode', '<=', $selectedCasaDate->toDateString())
+                ->whereDate('periode', '<=', $selectedCasaDate->toDateString())
                 ->max('periode');
 
             $latestCasaCandidates = array_filter([$latestCasaWeb, $latestCasaEdc]);
@@ -957,7 +963,7 @@ public function performanceBrilink()
                 $webRows = DB::table('casa_brilink_web')
                     ->selectRaw('UPPER(TRIM(mbdesc)) as branch')
                     ->selectRaw('SUM(COALESCE(jml_nominal_casa, 0)) as total_nominal')
-                    ->where('periode', $period->toDateString())
+                    ->whereDate('periode', $period->toDateString())
                     ->whereIn(DB::raw('UPPER(TRIM(mbdesc))'), $branchLookupKeys)
                     ->groupBy(DB::raw('UPPER(TRIM(mbdesc))'))
                     ->get();
@@ -965,7 +971,7 @@ public function performanceBrilink()
                 $edcRows = DB::table('casa_brilink_edc')
                     ->selectRaw('UPPER(TRIM(mbdesc)) as branch')
                     ->selectRaw('SUM(COALESCE(jml_nominal_casa, 0)) as total_nominal')
-                    ->where('periode', $period->toDateString())
+                    ->whereDate('periode', $period->toDateString())
                     ->whereIn(DB::raw('UPPER(TRIM(mbdesc))'), $branchLookupKeys)
                     ->groupBy(DB::raw('UPPER(TRIM(mbdesc))'))
                     ->get();
@@ -1073,6 +1079,7 @@ public function performanceBrilink()
                 $vol_mtd = $hasCurrData ? ($vol_curr - $vol_prev) : 0;
                 $vol_yoy_val = $hasCurrData ? ($vol_curr - $vol_yoy) : 0;
 
+                $branchKey = strtoupper(trim($branch));
                 $casa_curr = (float) ($casaCurrMap[$branchKey] ?? 0);
                 $casa_prev = (float) ($casaPrevMap[$branchKey] ?? 0);
                 $casa_ytd = (float) ($casaYtdMap[$branchKey] ?? 0);
@@ -1252,16 +1259,21 @@ public function performanceBrilink()
                 ];
 
 
-                // Akumulasi nilai raw periode agar total growth dan yoy_pct konsisten.
-                $raw_totals['ureg_rekening']['curr'] += (float) $rek->ureg_rek_curr;
-                $raw_totals['ureg_rekening']['mtd'] += (float) $rek->ureg_rek_mtd;
-                $raw_totals['ureg_rekening']['ytd'] += (float) $rek->ureg_rek_ytd;
-                $raw_totals['ureg_rekening']['yoy'] += (float) $rek->ureg_rek_yoy;
+                // 🔥 FIX: Akumulasi nilai RAW (bukan growth) agar total YoY% bisa dihitung benar
+            $raw_totals['ureg_rekening']['curr'] += $rek->ureg_rek_curr;
+                $raw_totals['ureg_rekening']['yoy_prev'] = $rek->ureg_rek_yoy;
+                $raw_totals['ureg_rekening']['dec']  += $rek->ureg_rek_ytd;
+                $raw_totals['ureg_rekening']['prev']  += $rek->ureg_rek_mtd;
+                $raw_totals['ureg_rekening']['mtd_raw']  += $rek->ureg_rek_mtd;
+                $raw_totals['ureg_rekening']['ytd_raw']  += $rek->ureg_rek_ytd;
+                $raw_totals['ureg_rekening']['yoy_raw']  += $rek->ureg_rek_yoy;
 
-                $raw_totals['ureg_finansial']['curr'] += (float) $fin->ureg_fin_curr;
-                $raw_totals['ureg_finansial']['mtd'] += (float) $fin->ureg_fin_mtd;
-                $raw_totals['ureg_finansial']['ytd'] += (float) $fin->ureg_fin_ytd;
-                $raw_totals['ureg_finansial']['yoy'] += (float) $fin->ureg_fin_yoy;
+                $raw_totals['ureg_finansial']['curr'] += $fin->ureg_fin_curr;
+                $raw_totals['ureg_finansial']['yoy_prev'] = $fin->ureg_fin_yoy;
+                $raw_totals['ureg_finansial']['dec']  += $fin->ureg_fin_ytd;
+                $raw_totals['ureg_finansial']['prev']  += $fin->ureg_fin_mtd;
+                $raw_totals['ureg_finansial']['mtd_raw']  += $fin->ureg_fin_mtd;
+                $raw_totals['ureg_finansial']['ytd_raw']  += $fin->ureg_fin_ytd;
             }
 
             // 🔥 FIX: Hitung total YoY% dari raw totals — aman dari division by zero
@@ -1412,4 +1424,3 @@ public function performanceBrilink()
         ];
     }
 }
-
