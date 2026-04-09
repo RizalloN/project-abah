@@ -3,19 +3,33 @@
 @section('title', 'Report Management')
 
 @section('content')
-<div class="card shadow-sm border-0" id="report-management-card"
-     data-fetch-url="{{ route('import.report-management.data') }}"
-     data-delete-url="{{ route('import.report-management.delete') }}">
-    <div class="card-header bg-white border-0">
-        <span class="import-upload-card__eyebrow">Report Management</span>
-        <h5 class="card-title font-weight-bold text-dark mb-1">
-            <i class="fas fa-database text-danger mr-2"></i> Kelola Data Report
-        </h5>
-        <p class="text-muted mb-0">Filter data berdasarkan report lalu hapus per kombinasi periode dan kanca. Snapshot terkait akan ikut disinkronkan.</p>
+<div class="report-management-hero mb-4">
+    <div class="report-management-hero__glow"></div>
+    <div class="d-flex align-items-center justify-content-between flex-wrap position-relative">
+        <div class="pr-3">
+            <span class="report-management-hero__eyebrow">Report Management</span>
+            <div class="report-management-hero__title"><i class="fas fa-layer-group mr-2"></i> Kontrol Data Report</div>
+            <p class="report-management-hero__text mb-0">Tampilan diselaraskan dengan template import utama. Pilih report, lihat grouping periode dan kanca, lalu hapus dengan alur konfirmasi yang aman.</p>
+        </div>
+        <div class="report-management-hero__badge mt-3 mt-md-0"><i class="fas fa-shield-alt mr-2"></i> Delete Guard Aktif</div>
     </div>
-    <div class="card-body">
-        <div class="row">
-            <div class="col-md-8 mb-2">
+</div>
+
+<div class="card shadow-sm border-0 import-upload-card" id="report-management-card"
+     data-fetch-url="{{ route('import.report-management.data') }}"
+     data-delete-url="{{ route('import.report-management.delete') }}"
+     data-delete-process-url-template="{{ route('import.report-management.delete.process', ['deleteId' => '__DELETE_ID__']) }}"
+     data-delete-status-url-template="{{ route('import.report-management.delete.status', ['deleteId' => '__DELETE_ID__']) }}">
+    <div class="card-header bg-white border-0 import-upload-card__header">
+        <span class="import-upload-card__eyebrow">Scope & Preview</span>
+        <h5 class="card-title font-weight-bold text-dark mb-1">
+            <i class="fas fa-database text-primary mr-2"></i> Kelola Data per Grup
+        </h5>
+        <p class="import-upload-card__subtitle mb-0">Filter, ringkasan, dan tabel aksi dibuat lebih rapi agar selaras dengan halaman import lain.</p>
+    </div>
+    <div class="card-body import-upload-card__body">
+        <div class="row align-items-end">
+            <div class="col-lg-8 mb-3">
                 <label class="font-weight-bold text-dark">Pilih Report</label>
                 <select id="management-report-select" class="form-control select2">
                     <option value="">-- Pilih Report --</option>
@@ -24,41 +38,71 @@
                     @endforeach
                 </select>
             </div>
-            <div class="col-md-4 mb-2 d-flex align-items-end">
-                <button type="button" id="btn-management-filter" class="btn btn-outline-primary btn-block">
-                    <i class="fas fa-filter mr-1"></i> Filter
+            <div class="col-lg-4 mb-3">
+                <button type="button" id="btn-management-filter" class="btn btn-primary btn-block report-management-filter-btn">
+                    <i class="fas fa-filter mr-2"></i> Tampilkan Data
                 </button>
             </div>
         </div>
 
-        <div class="table-responsive mt-3">
-            <table class="table table-sm table-bordered mb-0">
-                <thead class="thead-light">
-                    <tr>
-                        <th style="width: 25%;">Periode</th>
-                        <th style="width: 35%;">Kanca</th>
-                        <th style="width: 20%;" class="text-right">Jumlah Baris</th>
-                        <th style="width: 20%;" class="text-center">Aksi</th>
-                    </tr>
-                </thead>
-                <tbody id="management-table-body">
-                    <tr>
-                        <td colspan="4" class="text-center text-muted">Pilih report lalu klik Filter.</td>
-                    </tr>
-                </tbody>
-            </table>
+        <div class="row">
+            <div class="col-md-4 mb-3"><div class="report-management-stat"><small>Report Aktif</small><strong id="management-summary-report">Belum dipilih</strong></div></div>
+            <div class="col-md-4 mb-3"><div class="report-management-stat"><small>Jumlah Grup</small><strong id="management-summary-groups">0</strong></div></div>
+            <div class="col-md-4 mb-3"><div class="report-management-stat"><small>Total Baris</small><strong id="management-summary-rows">0</strong></div></div>
+        </div>
+
+        <div id="management-notice" class="report-management-notice d-none"></div>
+
+        <div class="report-management-bulkbar mt-3">
+            <div class="form-check m-0">
+                <input class="form-check-input" type="checkbox" id="management-select-all" disabled>
+                <label class="form-check-label font-weight-bold" for="management-select-all">Pilih Semua Grup</label>
+            </div>
+            <div class="report-management-bulkbar__actions">
+                <span id="management-selected-count" class="report-management-bulkbar__count">0 dipilih</span>
+                <button type="button" id="btn-management-delete-selected" class="btn btn-sm btn-danger" disabled>
+                    <i class="fas fa-trash-alt mr-1"></i> Hapus Terpilih
+                </button>
+            </div>
+        </div>
+
+        <div class="report-management-table-wrap mt-3">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0 report-management-table">
+                    <thead>
+                        <tr>
+                            <th class="text-center report-management-col-check"><i class="far fa-check-square"></i></th>
+                            <th>Periode</th>
+                            <th>Kanca</th>
+                            <th class="text-right">Jumlah Baris</th>
+                            <th class="text-center">Aksi</th>
+                        </tr>
+                    </thead>
+                    <tbody id="management-table-body">
+                        <tr><td colspan="5" class="text-center text-muted py-4">Pilih report lalu klik "Tampilkan Data".</td></tr>
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 </div>
 @endsection
 
 @section('scripts')
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
     document.addEventListener('DOMContentLoaded', function () {
         const reportManagementCard = document.getElementById('report-management-card');
         const managementReportSelect = document.getElementById('management-report-select');
         const btnManagementFilter = document.getElementById('btn-management-filter');
         const managementTableBody = document.getElementById('management-table-body');
+        const managementNotice = document.getElementById('management-notice');
+        const summaryReport = document.getElementById('management-summary-report');
+        const summaryGroups = document.getElementById('management-summary-groups');
+        const summaryRows = document.getElementById('management-summary-rows');
+        const managementSelectAll = document.getElementById('management-select-all');
+        const managementSelectedCount = document.getElementById('management-selected-count');
+        const btnDeleteSelected = document.getElementById('btn-management-delete-selected');
         const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
             || '{{ csrf_token() }}';
 
@@ -69,6 +113,7 @@
                     title: 'swal-modern-title',
                     htmlContainer: 'swal-modern-html',
                     confirmButton: 'swal-modern-confirm',
+                    cancelButton: 'swal-modern-cancel',
                 },
                 buttonsStyling: false,
                 background: '#ffffff',
@@ -84,24 +129,160 @@
                 .replace(/'/g, '&#39;');
         }
 
+        function formatNumber(value) {
+            return Number(value || 0).toLocaleString('id-ID');
+        }
+
+        function buildDeleteUrl(template, deleteId) {
+            return String(template || '').replace('__DELETE_ID__', encodeURIComponent(deleteId));
+        }
+
+        function updateDeleteProgressUi(payload) {
+            const progressBar = document.getElementById('delete-progress-bar');
+            const progressText = document.getElementById('delete-progress-text');
+            const progressDesc = document.getElementById('delete-progress-desc');
+            const percent = Math.max(0, Math.min(100, Number(payload?.progress_percent || 0)));
+
+            if (progressBar) {
+                progressBar.style.width = percent + '%';
+                progressBar.innerText = percent + '%';
+            }
+            if (progressText) {
+                progressText.innerText = payload?.message || 'Memproses delete...';
+            }
+            if (progressDesc) {
+                progressDesc.innerHTML = `Terhapus <b>${formatNumber(payload?.deleted_rows || 0)}</b> dari <b>${formatNumber(payload?.total_rows || 0)}</b> baris.`;
+            }
+        }
+
+        async function runDeleteProgress(processUrl, initialPayload) {
+            themedSwal({
+                title: 'Memproses Delete',
+                html: `
+                    <div class="text-center mb-3">
+                        <span style="font-size: 14px; color: #64748b;" id="delete-progress-desc">Menginisialisasi delete bertahap...</span>
+                    </div>
+                    <div class="progress report-management-progress">
+                        <div id="delete-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated report-management-progress__bar" role="progressbar" style="width: 0%;">0%</div>
+                    </div>
+                    <div class="text-center mt-3">
+                        <small id="delete-progress-text" class="report-management-progress__text">Menyiapkan chunk pertama...</small>
+                    </div>
+                `,
+                allowOutsideClick: false,
+                allowEscapeKey: false,
+                showConfirmButton: false,
+                width: 520,
+            });
+            await new Promise(resolve => setTimeout(resolve, 30));
+
+            let finalPayload = initialPayload;
+            updateDeleteProgressUi(finalPayload);
+
+            try {
+                while (true) {
+                    finalPayload = await postJson(processUrl, {});
+                    updateDeleteProgressUi(finalPayload);
+
+                    if (['completed', 'warning', 'failed'].includes(finalPayload.status)) {
+                        Swal.close();
+                        return finalPayload;
+                    }
+
+                    await new Promise(resolve => setTimeout(resolve, 350));
+                }
+            } catch (error) {
+                Swal.close();
+                throw error;
+            }
+        }
+
+        function setNotice(type, message) {
+            if (!managementNotice) return;
+            if (!message) {
+                managementNotice.className = 'report-management-notice d-none';
+                managementNotice.innerHTML = '';
+                return;
+            }
+            managementNotice.className = 'report-management-notice report-management-notice--' + type;
+            managementNotice.innerHTML = message;
+        }
+
+        function updateSummary(rows) {
+            const label = managementReportSelect?.options?.[managementReportSelect.selectedIndex]?.text || 'Belum dipilih';
+            const groups = Array.isArray(rows) ? rows.length : 0;
+            const rowsCount = Array.isArray(rows) ? rows.reduce((sum, row) => sum + Number(row.row_count || 0), 0) : 0;
+            if (summaryReport) summaryReport.textContent = label;
+            if (summaryGroups) summaryGroups.textContent = formatNumber(groups);
+            if (summaryRows) summaryRows.textContent = formatNumber(rowsCount);
+        }
+
+        function decodeScopeDataset(element) {
+            if (!element) {
+                return null;
+            }
+
+            const period = decodeURIComponent(element.getAttribute('data-period') || '');
+            const kanca = decodeURIComponent(element.getAttribute('data-kanca') || '');
+            const periodIsNull = element.getAttribute('data-period-is-null') === '1';
+            const kancaIsNull = element.getAttribute('data-kanca-is-null') === '1';
+
+            return {
+                period: periodIsNull ? '' : period,
+                kanca: kancaIsNull ? '' : kanca,
+                period_is_null: periodIsNull,
+                kanca_is_null: kancaIsNull,
+                period_label: period || '(Blank)',
+                kanca_label: kanca || '(Blank)',
+            };
+        }
+
+        function getSelectedScopeCheckboxes() {
+            return Array.from(managementTableBody?.querySelectorAll('.management-row-checkbox:checked') || []);
+        }
+
+        function syncBulkSelectionUi() {
+            const allCheckboxes = Array.from(managementTableBody?.querySelectorAll('.management-row-checkbox') || []);
+            const selectedCheckboxes = getSelectedScopeCheckboxes();
+            const selectedCount = selectedCheckboxes.length;
+            const totalCount = allCheckboxes.length;
+
+            if (managementSelectedCount) {
+                managementSelectedCount.textContent = `${formatNumber(selectedCount)} dipilih`;
+            }
+
+            if (btnDeleteSelected) {
+                btnDeleteSelected.disabled = selectedCount === 0;
+            }
+
+            if (managementSelectAll) {
+                managementSelectAll.disabled = totalCount === 0;
+                managementSelectAll.checked = totalCount > 0 && selectedCount === totalCount;
+                managementSelectAll.indeterminate = selectedCount > 0 && selectedCount < totalCount;
+            }
+        }
+
         function renderManagementRows(rows) {
             if (!managementTableBody) {
                 return;
             }
 
+            updateSummary(rows);
+
             if (!Array.isArray(rows) || rows.length === 0) {
                 managementTableBody.innerHTML = `
                     <tr>
-                        <td colspan="4" class="text-center text-muted">Tidak ada data untuk kriteria ini.</td>
+                        <td colspan="5" class="text-center text-muted py-4">Tidak ada data untuk kriteria ini.</td>
                     </tr>
                 `;
+                syncBulkSelectionUi();
                 return;
             }
 
             managementTableBody.innerHTML = rows.map(function(row) {
                 const period = row.period ?? '(Blank)';
                 const kanca = row.kanca ?? '(Blank)';
-                const total = Number(row.row_count || 0).toLocaleString('id-ID');
+                const total = formatNumber(row.row_count || 0);
                 const periodIsNull = row.period_is_null ? '1' : '0';
                 const kancaIsNull = row.kanca_is_null ? '1' : '0';
                 const periodEncoded = encodeURIComponent(String(period));
@@ -109,12 +290,20 @@
 
                 return `
                     <tr>
-                        <td>${escapeHtml(period)}</td>
-                        <td>${escapeHtml(kanca)}</td>
-                        <td class="text-right">${total}</td>
+                        <td class="text-center report-management-col-check">
+                            <input type="checkbox"
+                                   class="management-row-checkbox"
+                                   data-period="${periodEncoded}"
+                                   data-kanca="${kancaEncoded}"
+                                   data-period-is-null="${periodIsNull}"
+                                   data-kanca-is-null="${kancaIsNull}">
+                        </td>
+                        <td><span class="report-management-primary">${escapeHtml(period)}</span></td>
+                        <td><span class="report-management-primary">${escapeHtml(kanca)}</span></td>
+                        <td class="text-right"><span class="report-management-count">${total}</span></td>
                         <td class="text-center">
                             <button type="button"
-                                    class="btn btn-sm btn-outline-danger btn-management-delete"
+                                    class="btn btn-sm btn-outline-danger btn-management-delete report-management-delete-btn"
                                     data-period="${periodEncoded}"
                                     data-kanca="${kancaEncoded}"
                                     data-period-is-null="${periodIsNull}"
@@ -125,6 +314,33 @@
                     </tr>
                 `;
             }).join('');
+
+            syncBulkSelectionUi();
+        }
+
+        async function postJson(url, payload) {
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': csrfToken
+                },
+                body: JSON.stringify(payload)
+            });
+
+            let data = {};
+            try {
+                data = await response.json();
+            } catch (_) {
+                data = {};
+            }
+
+            if (!response.ok && data.status !== 'warning') {
+                throw new Error(data.message || 'Terjadi kesalahan pada server.');
+            }
+
+            return data;
         }
 
         async function fetchManagementData() {
@@ -142,47 +358,52 @@
                 return;
             }
 
+            setNotice('', '');
             managementTableBody.innerHTML = `
                 <tr>
-                    <td colspan="4" class="text-center text-muted">Memuat data...</td>
+                    <td colspan="5" class="text-center text-muted py-4">Memuat data...</td>
                 </tr>
             `;
 
-            const response = await fetch(fetchUrl, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json',
-                    'X-CSRF-TOKEN': csrfToken
-                },
-                body: JSON.stringify({
-                    id_report: managementReportSelect.value
-                })
-            });
-
-            const payload = await response.json();
-            if (!response.ok || payload.status !== 'success') {
+            const payload = await postJson(fetchUrl, { id_report: managementReportSelect.value });
+            if (payload.status !== 'success') {
                 throw new Error(payload.message || 'Gagal memuat data report management.');
             }
 
+            setNotice(
+                payload.truncated ? 'warning' : 'info',
+                payload.truncated
+                    ? 'Daftar grup dibatasi oleh server untuk menjaga performa. Data yang tampil merupakan potongan awal hasil grouping.'
+                    : 'Data sudah siap dikelola. Anda dapat menghapus per grup atau sekaligus beberapa grup terpilih.'
+            );
             renderManagementRows(payload.rows || []);
         }
 
-        async function deleteManagedRow(button) {
+        async function deleteManagedScopes(scopes) {
             const deleteUrl = reportManagementCard?.dataset.deleteUrl;
+            const processUrlTemplate = reportManagementCard?.dataset.deleteProcessUrlTemplate;
             if (!deleteUrl || !managementReportSelect || !managementReportSelect.value) {
                 return;
             }
 
-            const period = decodeURIComponent(button.getAttribute('data-period') || '');
-            const kanca = decodeURIComponent(button.getAttribute('data-kanca') || '');
-            const periodIsNull = button.getAttribute('data-period-is-null') === '1';
-            const kancaIsNull = button.getAttribute('data-kanca-is-null') === '1';
+            if (!Array.isArray(scopes) || scopes.length === 0) {
+                themedSwal({
+                    icon: 'warning',
+                    title: 'Pilih Data',
+                    text: 'Pilih minimal satu grup yang ingin dihapus.'
+                });
+                return;
+            }
+
+            const previewItems = scopes.slice(0, 5).map(function (scope) {
+                return `<li><b>${escapeHtml(scope.period_label || '(Blank)')}</b> | ${escapeHtml(scope.kanca_label || '(Blank)')}</li>`;
+            }).join('');
+            const extraInfo = scopes.length > 5 ? `<div class="mt-2 text-muted">+${formatNumber(scopes.length - 5)} grup lainnya</div>` : '';
 
             const confirm = await themedSwal({
                 icon: 'warning',
                 title: 'Hapus Data?',
-                html: `Data akan dihapus untuk <b>Periode:</b> ${escapeHtml(period)}<br><b>Kanca:</b> ${escapeHtml(kanca)}`,
+                html: `Data akan dihapus untuk <b>${formatNumber(scopes.length)}</b> grup:<ul class="text-left mb-0 pl-4">${previewItems}</ul>${extraInfo}`,
                 showCancelButton: true,
                 confirmButtonText: 'Ya, Hapus',
                 cancelButtonText: 'Batal'
@@ -192,41 +413,90 @@
                 return;
             }
 
-            const response = await fetch(deleteUrl, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json',
-                    'X-CSRF-TOKEN': csrfToken
-                },
-                body: JSON.stringify({
-                    id_report: managementReportSelect.value,
-                    period: periodIsNull ? '' : period,
-                    kanca: kancaIsNull ? '' : kanca,
-                    period_is_null: periodIsNull,
-                    kanca_is_null: kancaIsNull
+            const deletePayload = {
+                id_report: managementReportSelect.value,
+                scopes: scopes.map(function (scope) {
+                    return {
+                        period: scope.period || '',
+                        kanca: scope.kanca || '',
+                        period_is_null: !!scope.period_is_null,
+                        kanca_is_null: !!scope.kanca_is_null,
+                    };
                 })
-            });
+            };
 
-            const payload = await response.json();
-            if (!response.ok || (payload.status !== 'success' && payload.status !== 'warning')) {
+            let payload = await postJson(deleteUrl, deletePayload);
+            if (payload.status === 'error') {
                 throw new Error(payload.message || 'Gagal menghapus data report.');
             }
 
-            const isWarning = payload.status === 'warning';
+            if (payload.status === 'completed') {
+                await themedSwal({
+                    icon: 'success',
+                    title: 'Selesai',
+                    text: payload.message || 'Tidak ada data yang perlu dihapus.'
+                });
+                await fetchManagementData();
+                return;
+            }
+
+            if (payload.status === 'warning' && payload.requires_force) {
+                const candidateRows = formatNumber(payload.candidate_rows || 0);
+                const forceConfirm = await themedSwal({
+                    icon: 'warning',
+                    title: 'Data Sangat Besar',
+                    html: `Penghapusan ini akan menghapus sekitar <b>${candidateRows}</b> baris.<br>Lanjutkan hanya jika Anda yakin ingin menghapus seluruh grup tersebut.`,
+                    showCancelButton: true,
+                    confirmButtonText: 'Lanjutkan Delete',
+                    cancelButtonText: 'Batal'
+                });
+
+                if (!forceConfirm.isConfirmed) {
+                    return;
+                }
+
+                payload = await postJson(deleteUrl, Object.assign({}, deletePayload, { force: true }));
+                if (payload.status === 'error') {
+                    throw new Error(payload.message || 'Gagal menghapus data report.');
+                }
+            }
+
+            if (!payload.delete_id || !processUrlTemplate) {
+                throw new Error(payload.message || 'Delete progress tidak dapat dimulai.');
+            }
+
+            const finalPayload = await runDeleteProgress(
+                buildDeleteUrl(processUrlTemplate, payload.delete_id),
+                payload
+            );
+
+            if (finalPayload.status === 'failed') {
+                throw new Error(finalPayload.error || finalPayload.message || 'Terjadi kesalahan saat menghapus data.');
+            }
+
             await themedSwal({
-                icon: isWarning ? 'warning' : 'success',
-                title: isWarning ? 'Selesai dengan Catatan' : 'Berhasil',
-                text: isWarning
-                    ? (payload.message || 'Data sumber terhapus tetapi sinkronisasi snapshot bermasalah.')
-                    : `Data terhapus ${Number(payload.deleted_rows || 0).toLocaleString('id-ID')} baris.`
+                icon: finalPayload.status === 'warning' ? 'warning' : 'success',
+                title: finalPayload.status === 'warning' ? 'Selesai dengan Catatan' : 'Berhasil',
+                text: finalPayload.status === 'warning'
+                    ? (finalPayload.error || finalPayload.message || 'Delete selesai dengan catatan.')
+                    : `Data terhapus ${formatNumber(finalPayload.deleted_rows || 0)} baris. Snapshot, cache index, dan statistik optimizer sudah diperbarui.`
             });
 
             await fetchManagementData();
         }
 
+        async function deleteManagedRow(button) {
+            const scope = decodeScopeDataset(button);
+            if (!scope) {
+                return;
+            }
+
+            await deleteManagedScopes([scope]);
+        }
+
         btnManagementFilter?.addEventListener('click', async function () {
             try {
+                btnManagementFilter.disabled = true;
                 await fetchManagementData();
             } catch (error) {
                 themedSwal({
@@ -234,6 +504,8 @@
                     title: 'Gagal Memuat Data',
                     text: error.message || 'Terjadi kesalahan saat memuat data.'
                 });
+            } finally {
+                btnManagementFilter.disabled = false;
             }
         });
 
@@ -256,6 +528,82 @@
                 button.disabled = false;
             }
         });
+
+        managementSelectAll?.addEventListener('change', function () {
+            const allCheckboxes = managementTableBody?.querySelectorAll('.management-row-checkbox') || [];
+            allCheckboxes.forEach(function (checkbox) {
+                checkbox.checked = !!managementSelectAll.checked;
+            });
+            syncBulkSelectionUi();
+        });
+
+        managementTableBody?.addEventListener('change', function (event) {
+            if (!event.target.closest('.management-row-checkbox')) {
+                return;
+            }
+
+            syncBulkSelectionUi();
+        });
+
+        btnDeleteSelected?.addEventListener('click', async function () {
+            const selectedScopes = getSelectedScopeCheckboxes()
+                .map(checkbox => decodeScopeDataset(checkbox))
+                .filter(Boolean);
+
+            btnDeleteSelected.disabled = true;
+            try {
+                await deleteManagedScopes(selectedScopes);
+            } catch (error) {
+                themedSwal({
+                    icon: 'error',
+                    title: 'Delete Gagal',
+                    text: error.message || 'Terjadi kesalahan saat menghapus data.'
+                });
+            } finally {
+                syncBulkSelectionUi();
+            }
+        });
     });
 </script>
+<style>
+    .report-management-hero{position:relative;overflow:hidden;border-radius:24px;padding:1.45rem 1.5rem;background:radial-gradient(circle at top right,rgba(37,99,235,.22),transparent 30%),linear-gradient(135deg,#f8fbff 0%,#eef4ff 46%,#dbeafe 100%);border:1px solid rgba(37,99,235,.16);box-shadow:0 22px 45px -32px rgba(29,78,216,.4)}
+    .report-management-hero__glow{position:absolute;top:-48px;right:-30px;width:170px;height:170px;border-radius:999px;background:rgba(14,165,233,.16);filter:blur(10px)}
+    .report-management-hero__eyebrow,.import-upload-card__eyebrow{display:inline-block;margin-bottom:.55rem;padding:.35rem .7rem;border-radius:999px;font-size:.72rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
+    .report-management-hero__eyebrow{color:#1d4ed8;background:rgba(255,255,255,.72);border:1px solid rgba(37,99,235,.16)}
+    .report-management-hero__title{color:#0f3f8c;font-size:1.4rem;font-weight:800;letter-spacing:-.03em;margin-bottom:.35rem}
+    .report-management-hero__text{color:#31527c;line-height:1.7;max-width:700px}
+    .report-management-hero__badge{display:inline-flex;align-items:center;min-height:48px;padding:.8rem 1rem;border-radius:18px;background:rgba(255,255,255,.84);border:1px solid rgba(37,99,235,.14);color:#0f3f8c;font-weight:700;box-shadow:0 18px 32px -24px rgba(29,78,216,.3)}
+    .import-upload-card{border-radius:26px;overflow:hidden;box-shadow:0 28px 60px -40px rgba(15,23,42,.32)!important}
+    .import-upload-card__header{padding:1.45rem 1.5rem 1rem;background:radial-gradient(circle at top left,rgba(59,130,246,.09),transparent 28%),linear-gradient(180deg,#fff 0%,#f8fafc 100%)}
+    .import-upload-card__eyebrow{color:#1d4ed8;background:rgba(37,99,235,.08)}
+    .import-upload-card__subtitle{color:#64748b;max-width:700px;line-height:1.6}
+    .import-upload-card__body{padding:1.5rem}
+    .report-management-filter-btn{min-height:48px;border-radius:16px}
+    .report-management-stat{height:100%;padding:1rem 1.05rem;border-radius:20px;background:linear-gradient(180deg,#fff 0%,#f8fbff 100%);border:1px solid rgba(148,163,184,.22)}
+    .report-management-stat small{display:block;color:#64748b;font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;margin-bottom:.45rem}
+    .report-management-stat strong{display:block;color:#0f172a;font-size:1.05rem;font-weight:800;line-height:1.45;word-break:break-word}
+    .report-management-notice{margin-top:.25rem;padding:.95rem 1rem;border-radius:18px;font-size:.92rem;line-height:1.65}
+    .report-management-notice--info{color:#0f3f8c;background:rgba(219,234,254,.72);border:1px solid rgba(96,165,250,.2)}
+    .report-management-notice--warning{color:#92400e;background:rgba(254,243,199,.78);border:1px solid rgba(251,191,36,.25)}
+    .report-management-bulkbar{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;padding:.8rem 1rem;border-radius:16px;background:linear-gradient(180deg,#f8fafc 0%,#f1f5f9 100%);border:1px solid rgba(148,163,184,.2)}
+    .report-management-bulkbar__actions{display:flex;align-items:center;gap:.75rem}
+    .report-management-bulkbar__count{font-size:.85rem;font-weight:700;color:#334155}
+    .report-management-table-wrap{border:1px solid rgba(148,163,184,.18);border-radius:22px;overflow:hidden;background:#fff}
+    .report-management-table thead th{background:linear-gradient(180deg,#f8fafc 0%,#eef4ff 100%);border-bottom:1px solid rgba(148,163,184,.18);color:#334155;font-size:.8rem;font-weight:800;letter-spacing:.04em;text-transform:uppercase;padding:1rem}
+    .report-management-table tbody td{padding:1rem;border-top:1px solid rgba(226,232,240,.8);vertical-align:middle}
+    .report-management-col-check{width:52px}
+    .report-management-primary{color:#0f172a;font-weight:700}
+    .report-management-count{display:inline-flex;align-items:center;justify-content:flex-end;min-width:72px;padding:.4rem .7rem;border-radius:999px;background:rgba(37,99,235,.08);color:#1d4ed8;font-weight:800}
+    .report-management-delete-btn{min-width:118px;border-radius:14px;font-weight:700}
+    .report-management-progress{height:16px;border-radius:999px;background-color:#e2e8f0;overflow:hidden;box-shadow:inset 0 1px 2px rgba(15,23,42,.08)}
+    .report-management-progress__bar{font-weight:700;font-size:12px;line-height:16px;background:linear-gradient(135deg,#0f766e,#115e59)}
+    .report-management-progress__text{color:#0f766e;font-weight:700;letter-spacing:.02em}
+    .swal-modern-popup{border:1px solid rgba(226,232,240,.95);border-radius:28px;padding:1.4rem 1.4rem 1.2rem;box-shadow:0 30px 80px -35px rgba(15,23,42,.35)}
+    .swal-modern-title{color:#0f172a;font-weight:800;letter-spacing:-.02em}
+    .swal-modern-html{color:#475569;font-size:.95rem;line-height:1.65}
+    .swal-modern-confirm,.swal-modern-cancel{display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:16px;font-weight:700;padding:.8rem 1.3rem}
+    .swal-modern-confirm{background:linear-gradient(135deg,#0f766e,#115e59);color:#fff;box-shadow:0 16px 34px -22px rgba(15,23,42,.45)}
+    .swal-modern-cancel{background:#e2e8f0;color:#334155;margin-left:.5rem}
+    @media (max-width:767.98px){.report-management-hero,.import-upload-card__header,.import-upload-card__body{padding-left:1rem;padding-right:1rem}.report-management-hero__title{font-size:1.15rem}.report-management-hero__badge,.report-management-filter-btn{width:100%}.report-management-table thead th,.report-management-table tbody td{padding:.8rem}.report-management-bulkbar{align-items:flex-start}.report-management-bulkbar__actions{width:100%;justify-content:space-between}}
+</style>
 @endsection

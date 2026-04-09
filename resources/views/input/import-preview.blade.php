@@ -30,7 +30,8 @@
 
                     <div class="alert alert-secondary m-3 mb-0 border-0">
                         <i class="fas fa-file-import text-primary"></i>
-                        Sumber file: <strong>{{ $sourceName }}</strong>
+                        Sumber file: <strong>{{ $sourceName }}</strong><br>
+                        Periode: <strong>{{ \Carbon\Carbon::parse($periode)->translatedFormat('d F Y') }}</strong>
                     </div>
 
                     <div class="alert alert-light m-3 mb-0 border border-info text-dark">

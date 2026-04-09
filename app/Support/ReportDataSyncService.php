@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -12,8 +13,12 @@ class ReportDataSyncService
 {
     private const AUDIT_TABLE = 'report_sync_audits';
     private const DASHBOARD_SNAPSHOT_TABLE = 'dashboard_pinjaman_snapshots';
+    private const DASHBOARD_SIMPANAN_SNAPSHOT_TABLE = 'dashboard_simpanan_snapshots';
+    private const DASHBOARD_SIMPANAN_BRANCH_SNAPSHOT_TABLE = 'dashboard_simpanan_branch_snapshots';
     private const RASIO_SNAPSHOT_TABLE = 'rasio_casa_debitur_snapshots';
     private const DORMANT_SNAPSHOT_TABLE = 'rekening_dormant_snapshots';
+    private const NEW_PAYROLL_SNAPSHOT_TABLE = 'performance_new_payroll_snapshots';
+    private const CACHE_VERSION_KEY = 'report_cache_version:global';
 
     public function __construct(
         private readonly ReportSnapshotBuilder $snapshotBuilder
@@ -65,13 +70,15 @@ class ReportDataSyncService
         $this->refreshTableStatistics($normalizedTable, $periodHint, $jobId, $source);
 
         try {
-            Cache::flush();
-            $this->writeAudit($normalizedTable, $periodHint, $jobId, $source, 'cache_flush', 'success');
+            $newVersion = $this->bumpReportCacheVersion();
+            $this->writeAudit($normalizedTable, $periodHint, $jobId, $source, 'cache_invalidate', 'success', [
+                'context' => ['cache_version' => $newVersion],
+            ]);
         } catch (Throwable $e) {
-            $this->writeAudit($normalizedTable, $periodHint, $jobId, $source, 'cache_flush', 'failed', [
+            $this->writeAudit($normalizedTable, $periodHint, $jobId, $source, 'cache_invalidate', 'failed', [
                 'message' => $e->getMessage(),
             ]);
-            Log::warning('Gagal flush cache setelah import: ' . $e->getMessage(), [
+            Log::warning('Gagal invalidasi cache report setelah import: ' . $e->getMessage(), [
                 'table' => $normalizedTable,
             ]);
         }
@@ -81,8 +88,19 @@ class ReportDataSyncService
                 'daily_loan_dinamis' => $this->syncDailyLoan($periodHint, $jobId, $source),
                 'simpanan_multipn' => $this->syncSimpanan($periodHint, $jobId, $source),
                 'lw325_ph' => $this->syncReportPh($periodHint, $jobId, $source),
+                'performance_pis_per_produk' => $this->syncPerformanceNewPayroll($periodHint, $jobId, $source),
                 default => null,
             };
+
+            // Trigger otomatisasi cache warming di latar belakang setelah sinkronisasi selesai
+            defer(function () {
+                try {
+                    Artisan::call('report:warm-cache');
+                } catch (Throwable $e) {
+                    Log::warning('Gagal menjalankan otomatisasi pemanasan cache: ' . $e->getMessage());
+                }
+            });
+
         } catch (Throwable $e) {
             $this->writeAudit($normalizedTable, $periodHint, $jobId, $source, 'snapshot_sync', 'failed', [
                 'message' => $e->getMessage(),
@@ -109,6 +127,12 @@ class ReportDataSyncService
 
     private function syncSimpanan(?string $periodHint, ?int $jobId, ?string $source): void
     {
+        $this->runSnapshotAudit('simpanan_multipn', $periodHint, $jobId, $source, 'snapshot_dashboard_simpanan', function () use ($periodHint) {
+            return $this->snapshotBuilder->rebuildDashboardSimpanan($periodHint, true);
+        });
+        $this->refreshTableStatistics(self::DASHBOARD_SIMPANAN_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
+        $this->refreshTableStatistics(self::DASHBOARD_SIMPANAN_BRANCH_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
+
         $this->runSnapshotAudit('simpanan_multipn', $periodHint, $jobId, $source, 'snapshot_rekening_dormant', function () use ($periodHint) {
             return $this->snapshotBuilder->rebuildRekeningDormant($periodHint, true);
         });
@@ -129,9 +153,80 @@ class ReportDataSyncService
         ]);
     }
 
+    private function syncPerformanceNewPayroll(?string $periodHint, ?int $jobId, ?string $source): void
+    {
+        $this->runSnapshotAudit('performance_pis_per_produk', $periodHint, $jobId, $source, 'snapshot_new_payroll', function () use ($periodHint) {
+            return $this->snapshotBuilder->rebuildPerformanceNewPayroll($periodHint, true);
+        });
+        $this->refreshTableStatistics(self::NEW_PAYROLL_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
+    }
+
     public function syncAfterDelete(string $tableName, ?string $periodHint = null, ?string $source = null): void
     {
         $this->syncImportedTable($tableName, $periodHint, null, $source ?? static::class . '::syncAfterDelete');
+    }
+
+    public function cleanupDerivedArtifactsAfterDelete(string $tableName, ?string $periodHint = null, ?string $source = null): array
+    {
+        $normalizedTable = strtolower(trim($tableName));
+        if ($normalizedTable === '') {
+            return [];
+        }
+
+        $cleanupMap = match ($normalizedTable) {
+            'daily_loan_dinamis' => [
+                self::DASHBOARD_SNAPSHOT_TABLE => 'periode',
+                self::RASIO_SNAPSHOT_TABLE => 'loan_period',
+            ],
+            'simpanan_multipn' => [
+                self::DASHBOARD_SIMPANAN_SNAPSHOT_TABLE => 'snapshot_period',
+                self::DASHBOARD_SIMPANAN_BRANCH_SNAPSHOT_TABLE => 'snapshot_period',
+                self::DORMANT_SNAPSHOT_TABLE => 'posisi',
+                self::RASIO_SNAPSHOT_TABLE => 'casa_period',
+            ],
+            'performance_pis_per_produk' => [
+                self::NEW_PAYROLL_SNAPSHOT_TABLE => 'snapshot_posisi',
+            ],
+            default => [],
+        };
+
+        $deleted = [];
+
+        foreach ($cleanupMap as $snapshotTable => $periodColumn) {
+            if (!Schema::hasTable($snapshotTable)) {
+                continue;
+            }
+
+            $startedAt = microtime(true);
+
+            try {
+                $query = DB::table($snapshotTable);
+                if ($periodHint !== null && $periodHint !== '' && Schema::hasColumn($snapshotTable, $periodColumn)) {
+                    $query->where($periodColumn, $periodHint);
+                }
+
+                $affected = (int) $query->delete();
+                $deleted[$snapshotTable] = $affected;
+
+                $this->writeAudit($normalizedTable, $periodHint, null, $source, 'cleanup_snapshot_rows', 'success', [
+                    'duration_ms' => $this->elapsedMs($startedAt),
+                    'affected_rows' => $affected,
+                    'context' => ['snapshot_table' => $snapshotTable],
+                ]);
+            } catch (Throwable $e) {
+                $this->writeAudit($normalizedTable, $periodHint, null, $source, 'cleanup_snapshot_rows', 'failed', [
+                    'duration_ms' => $this->elapsedMs($startedAt),
+                    'message' => $e->getMessage(),
+                    'context' => ['snapshot_table' => $snapshotTable],
+                ]);
+
+                throw $e;
+            }
+        }
+
+        $this->bumpReportCacheVersion();
+
+        return $deleted;
     }
 
     private function refreshTableStatistics(string $tableName, ?string $periodHint, ?int $jobId, ?string $source): void
@@ -212,6 +307,13 @@ class ReportDataSyncService
     private function elapsedMs(float $startedAt): int
     {
         return (int) round((microtime(true) - $startedAt) * 1000);
+    }
+
+    private function bumpReportCacheVersion(): int
+    {
+        Cache::add(self::CACHE_VERSION_KEY, 1, now()->addDays(30));
+
+        return (int) Cache::increment(self::CACHE_VERSION_KEY);
     }
 
     private function writeAudit(string $tableName, ?string $periodHint, ?int $jobId, ?string $source, string $action, string $status, array $payload = []): void

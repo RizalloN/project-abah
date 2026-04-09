@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Import;
 
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Import\Concerns\AllocatesGapIds;
+use App\Support\ReportDataSyncService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -52,7 +53,68 @@ class ImportCasaBrilinkController extends Controller
             'casa_brilink_periode' => $request->input('periode'),
         ]);
 
+        if ($request->ajax() || $request->wantsJson()) {
+            return response()->json([
+                'status' => 'success',
+                'path' => $path,
+            ]);
+        }
+
         return redirect()->route('import.casabrilink.preview');
+    }
+
+    public function preparePreviewStream(Request $request)
+    {
+        ini_set('memory_limit', '512M');
+        set_time_limit(0);
+
+        $relativePath = session('casa_brilink_file');
+        $periodeInput = session('casa_brilink_periode');
+        request()->session()->save();
+
+        return response()->stream(function () use ($relativePath, $periodeInput) {
+            $send = function (string $event, array $data) {
+                echo "event: {$event}\n";
+                echo 'data: ' . json_encode($data) . "\n\n";
+                if (ob_get_level() > 0) {
+                    ob_flush();
+                }
+                flush();
+            };
+
+            try {
+                if (!$relativePath || !$periodeInput) {
+                    $send('error_msg', ['message' => 'Sesi upload CASA BRILINK tidak lengkap.']);
+                    return;
+                }
+
+                $absolutePath = Storage::path($relativePath);
+                if (!file_exists($absolutePath)) {
+                    $send('error_msg', ['message' => 'File CSV CASA BRILINK tidak ditemukan di server.']);
+                    return;
+                }
+
+                $send('progress', ['percent' => 20, 'message' => 'Memvalidasi struktur CSV CASA BRILINK...']);
+                $context = $this->buildCsvContext($absolutePath, $periodeInput, 'auto');
+
+                $send('progress', ['percent' => 75, 'message' => 'Struktur valid. Menyiapkan halaman preview...']);
+                $send('ready', [
+                    'redirect' => route('import.casabrilink.preview', [
+                        'file_path' => $relativePath,
+                        'periode' => $periodeInput,
+                        'delimiter' => $context['delimiter'] ?? 'auto',
+                    ]),
+                ]);
+            } catch (\Throwable $e) {
+                Log::error('CASA BRILINK PREPARE PREVIEW ERROR: ' . $e->getMessage() . ' | ' . $e->getFile() . ':' . $e->getLine());
+                $send('error_msg', ['message' => 'Gagal menyiapkan preview CASA BRILINK: ' . $e->getMessage()]);
+            }
+        }, 200, [
+            'Content-Type' => 'text/event-stream',
+            'Cache-Control' => 'no-cache, no-store',
+            'X-Accel-Buffering' => 'no',
+            'Connection' => 'keep-alive',
+        ]);
     }
 
     public function preview(Request $request)
@@ -173,9 +235,11 @@ class ImportCasaBrilinkController extends Controller
             ], 422);
         }
 
-        $reportData = DB::table('nama_report')->where('id_report', session('active_id_report'))->first();
+        $activeReportId = (int) session('active_id_report', 0);
+        $reportData = DB::table('nama_report')->where('id_report', $activeReportId)->first();
         $tableName = $reportData->table_name ?? '';
         $uniqueSuffix = $tableName === 'casa_brilink_edc' ? '_CBE' : '_CBW';
+        $this->releaseSessionLockIfNeeded();
 
         if (!in_array($tableName, ['casa_brilink_web', 'casa_brilink_edc'], true)) {
             return response()->json([
@@ -210,7 +274,7 @@ class ImportCasaBrilinkController extends Controller
         }
 
         $jobId = DB::table('import_jobs')->insertGetId([
-            'id_report' => session('active_id_report'),
+            'id_report' => $activeReportId,
             'file_name' => basename($absolutePath),
             'folder_path' => dirname($absolutePath),
             'status' => 'processing',
@@ -386,6 +450,17 @@ class ImportCasaBrilinkController extends Controller
                     'updated_at' => now(),
                 ]);
 
+                if ($totalSuccess > 0) {
+                    try {
+                        app(ReportDataSyncService::class)->syncImportedTable($tableName, $context['periode'] ?? null, $jobId, static::class);
+                    } catch (\Throwable $e) {
+                        Log::warning('Sinkronisasi report CASA BRILINK (stream) gagal: ' . $e->getMessage(), [
+                            'job_id' => $jobId,
+                            'table' => $tableName,
+                        ]);
+                    }
+                }
+
                 $this->cleanupSuccessfulImportArtifacts($jobId, $relativePath);
 
                 $send('progress', [
@@ -453,9 +528,11 @@ class ImportCasaBrilinkController extends Controller
             ], 422);
         }
 
-        $reportData = DB::table('nama_report')->where('id_report', session('active_id_report'))->first();
+        $activeReportId = (int) session('active_id_report', 0);
+        $reportData = DB::table('nama_report')->where('id_report', $activeReportId)->first();
         $tableName = $reportData->table_name ?? '';
         $uniqueSuffix = $tableName === 'casa_brilink_edc' ? '_CBE' : '_CBW';
+        $this->releaseSessionLockIfNeeded();
 
         if (!in_array($tableName, ['casa_brilink_web', 'casa_brilink_edc'], true)) {
             return response()->json([
@@ -489,7 +566,7 @@ class ImportCasaBrilinkController extends Controller
         }
 
         $jobId = DB::table('import_jobs')->insertGetId([
-            'id_report' => session('active_id_report'),
+            'id_report' => $activeReportId,
             'file_name' => basename($absolutePath),
             'folder_path' => dirname($absolutePath),
             'status' => 'processing',
@@ -558,6 +635,17 @@ class ImportCasaBrilinkController extends Controller
             'total_failed' => $totalFailed,
             'updated_at' => now(),
         ]);
+
+        if ($totalSuccess > 0) {
+            try {
+                app(ReportDataSyncService::class)->syncImportedTable($tableName, $context['periode'] ?? null, $jobId, static::class);
+            } catch (\Throwable $e) {
+                Log::warning('Sinkronisasi report CASA BRILINK gagal: ' . $e->getMessage(), [
+                    'job_id' => $jobId,
+                    'table' => $tableName,
+                ]);
+            }
+        }
 
         if ($totalFailed === 0 && $totalSuccess >= $totalRows) {
             $this->cleanupSuccessfulImportArtifacts($jobId, $relativePath);

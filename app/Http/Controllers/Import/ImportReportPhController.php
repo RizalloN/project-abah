@@ -77,7 +77,66 @@ class ImportReportPhController extends Controller
             'report_ph_file' => $path,
         ]);
 
+        if ($request->ajax() || $request->wantsJson()) {
+            return response()->json([
+                'status' => 'success',
+                'path' => $path,
+            ]);
+        }
+
         return redirect()->route('import.reportph.preview');
+    }
+
+    public function preparePreviewStream(Request $request)
+    {
+        ini_set('memory_limit', '512M');
+        set_time_limit(0);
+
+        $relativePath = session('report_ph_file');
+        request()->session()->save();
+
+        return response()->stream(function () use ($relativePath) {
+            $send = function (string $event, array $data) {
+                echo "event: {$event}\n";
+                echo 'data: ' . json_encode($data) . "\n\n";
+                if (ob_get_level() > 0) {
+                    ob_flush();
+                }
+                flush();
+            };
+
+            try {
+                if (!$relativePath) {
+                    $send('error_msg', ['message' => 'Sesi upload ' . self::REPORT_LABEL . ' tidak ditemukan.']);
+                    return;
+                }
+
+                $absolutePath = Storage::path($relativePath);
+                if (!file_exists($absolutePath)) {
+                    $send('error_msg', ['message' => 'File CSV ' . self::REPORT_LABEL . ' tidak ditemukan di server.']);
+                    return;
+                }
+
+                $send('progress', ['percent' => 20, 'message' => 'Memvalidasi struktur CSV ' . self::REPORT_LABEL . '...']);
+                $context = $this->buildCsvContext($absolutePath);
+
+                $send('progress', ['percent' => 75, 'message' => 'Struktur valid. Menyiapkan halaman preview...']);
+                $send('ready', [
+                    'redirect' => route('import.reportph.preview', [
+                        'file_path' => $relativePath,
+                    ]),
+                    'detected_periode' => $context['periode'] ?? null,
+                ]);
+            } catch (\Throwable $e) {
+                Log::error('REPORT PH PREPARE PREVIEW ERROR: ' . $e->getMessage() . ' | ' . $e->getFile() . ':' . $e->getLine());
+                $send('error_msg', ['message' => 'Gagal menyiapkan preview ' . self::REPORT_LABEL . ': ' . $e->getMessage()]);
+            }
+        }, 200, [
+            'Content-Type' => 'text/event-stream',
+            'Cache-Control' => 'no-cache, no-store',
+            'X-Accel-Buffering' => 'no',
+            'Connection' => 'keep-alive',
+        ]);
     }
 
     public function preview(Request $request)
@@ -194,6 +253,8 @@ class ImportReportPhController extends Controller
                 'text' => 'Report yang dipilih tidak mengarah ke tabel ' . self::TABLE_NAME . '.',
             ], 422);
         }
+
+        $this->releaseSessionLockIfNeeded();
 
         $selectedColumns = array_map('intval', $request->input('selected_columns', []));
         $activeFilters = json_decode($request->input('active_filters_json', '{}'), true) ?: [];
@@ -483,6 +544,8 @@ class ImportReportPhController extends Controller
                 'text' => 'Report yang dipilih tidak mengarah ke tabel ' . self::TABLE_NAME . '.',
             ], 422);
         }
+
+        $this->releaseSessionLockIfNeeded();
 
         if (!$context['periode']) {
             return response()->json([

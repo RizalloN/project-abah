@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Import;
 
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Import\Concerns\AllocatesGapIds;
+use App\Support\ReportDataSyncService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
@@ -223,6 +224,7 @@ class ImportFileBrimoController extends Controller
         // 1. DETEKSI NAMA REPORT DARI DATABASE
         $idReport = session('active_id_report', 1);
         $reportData = DB::table('nama_report')->where('id_report', $idReport)->first();
+        $this->releaseSessionLockIfNeeded();
 
         // 2. PENENTUAN TABEL & SUFFIX SECARA DINAMIS
         // Prioritaskan nama_report.table_name agar target import mengikuti report yang dipilih.
@@ -476,6 +478,18 @@ class ImportFileBrimoController extends Controller
             'status' => $finalStatus,
             'updated_at' => now(),
         ]);
+
+        if ($totalSuccess > 0) {
+            try {
+                $periodHint = $samplePeriode ?: $samplePosisi;
+                app(ReportDataSyncService::class)->syncImportedTable($tableName, $periodHint, $jobId, static::class);
+            } catch (\Throwable $e) {
+                Log::warning('Gagal sinkronisasi data report setelah import Brimo: ' . $e->getMessage(), [
+                    'job_id' => $jobId,
+                    'table' => $tableName,
+                ]);
+            }
+        }
 
         $importDir = dirname(dirname($filePath));
         if (strpos($importDir, 'imports') !== false && File::exists($importDir)) {

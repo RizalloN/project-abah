@@ -2,6 +2,7 @@
 -- 1. Dashboard Pinjaman
 -- 2. Rasio CASA Debitur
 -- 3. Rekening Dormant
+-- 4. Performance New Payroll
 --
 -- Run these statements one-by-one in MySQL during a maintenance window.
 -- On very large tables, ALTER TABLE may take a long time.
@@ -14,6 +15,7 @@ USE `project_abah`;
 SHOW INDEX FROM `daily_loan_dinamis`;
 SHOW INDEX FROM `simpanan_multipn`;
 SHOW INDEX FROM `lw325_ph`;
+SHOW INDEX FROM `performance_pis_per_produk`;
 
 -- Based on current index inventory:
 -- daily_loan_dinamis already has:
@@ -143,6 +145,12 @@ ALTER TABLE `simpanan_multipn`
 ALTER TABLE `lw325_ph`
   ADD INDEX `idx_lw325ph_periode_acctno_pokok`
   (`periode`, `acctno`, `pokok`);
+
+-- 4) Performance New Payroll (on-the-fly fallback path)
+-- Speeds up date-range aggregation by branch and account-open date.
+ALTER TABLE `performance_pis_per_produk`
+  ADD INDEX `idx_perf_posisi_kanca_tgl_buat`
+  (`posisi`, `kanca`, `tanggal_pembuatan_rekening`);
 
 -- =========================================================
 -- 2. EXPLAIN AFTER

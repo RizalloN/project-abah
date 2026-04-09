@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Support\ReportDataSyncService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -110,6 +111,8 @@ class RasioCasaDebiturController extends Controller
 
     private function buildSummarySnapshot(string $loanPeriod, bool $forceRefresh = false): array
     {
+        $this->ensureRasioSnapshot($loanPeriod);
+
         $persisted = $this->loadPersistedSummarySnapshot($loanPeriod);
         if ($persisted !== null) {
             return $persisted;
@@ -118,6 +121,7 @@ class RasioCasaDebiturController extends Controller
         $casaDate = $this->resolveAvailableCasaPeriod($loanPeriod);
 
         $cacheKey = 'rasio_casa_debitur:v5:' . md5(json_encode([
+            'cache_version' => $this->reportCacheVersion(),
             'loan_period' => $loanPeriod,
             'casa_date' => $casaDate,
             'loan_key' => $this->resolveLoanIdentityColumn(),
@@ -134,7 +138,7 @@ class RasioCasaDebiturController extends Controller
         $lock = Cache::lock($lockKey, 30);
 
         try {
-            return $lock->block(15, function () use ($cacheKey, $latestKey, $loanPeriod, $forceRefresh, $cached) {
+            return $lock->block(2, function () use ($cacheKey, $latestKey, $loanPeriod, $forceRefresh, $cached) {
                 if (!$forceRefresh) {
                     $lockCached = Cache::get($cacheKey);
                     if ($lockCached) {
@@ -153,6 +157,11 @@ class RasioCasaDebiturController extends Controller
             $latest = Cache::get($latestKey);
             if ($latest) {
                 return $latest;
+            }
+
+            $cached = Cache::get($cacheKey);
+            if ($cached) {
+                return $cached;
             }
 
             $payload = $this->computeSummarySnapshot($loanPeriod);
@@ -348,6 +357,51 @@ class RasioCasaDebiturController extends Controller
         return $snapshot;
     }
 
+    private function ensureRasioSnapshot(string $loanPeriod): void
+    {
+        if (!Schema::hasTable(self::SNAPSHOT_TABLE)) {
+            return;
+        }
+
+        $exists = DB::table(self::SNAPSHOT_TABLE)
+            ->where('loan_period', $loanPeriod)
+            ->exists();
+
+        if ($exists) {
+            return;
+        }
+
+        $hasSourceRows = DB::table('daily_loan_dinamis')
+            ->where('periode', $loanPeriod)
+            ->exists();
+
+        if (!$hasSourceRows) {
+            return;
+        }
+
+        $lock = Cache::lock('snapshot:rasio:auto-rebuild:' . $loanPeriod, 60);
+
+        try {
+            if ($lock->get()) {
+                defer(function () use ($loanPeriod, $lock) {
+                    try {
+                        app(ReportDataSyncService::class)->syncImportedTable(
+                            'daily_loan_dinamis',
+                            $loanPeriod,
+                            source: static::class . '::ensureRasioSnapshot'
+                        );
+                    } finally {
+                        $lock->release();
+                    }
+                });
+            }
+        } catch (Throwable $e) {
+            Log::warning('Auto rebuild rasio snapshot gagal: ' . $e->getMessage(), [
+                'loan_period' => $loanPeriod,
+            ]);
+        }
+    }
+
     private function assembleRows(array $branches, array $previousSummary, array $currentSummary): array
     {
         $rows = [];
@@ -449,7 +503,9 @@ class RasioCasaDebiturController extends Controller
             if ($targetDate) {
                 $query->where('periode', '<=', Carbon::parse($targetDate)->toDateString());
             } else {
-                return Cache::remember('rasio_casa_latest_loan_period', now()->addMinutes(10), function () {
+                $cacheKey = 'rasio_casa_latest_loan_period:v' . $this->reportCacheVersion();
+
+                return Cache::remember($cacheKey, now()->addMinutes(10), function () {
                     return DB::table('daily_loan_dinamis')->max('periode');
                 });
             }
@@ -475,11 +531,12 @@ class RasioCasaDebiturController extends Controller
     {
         try {
             $timestampExpression = $this->buildLatestTimestampExpression($table);
+            $identityColumn = $this->resolveIdentityColumn($table);
             $row = DB::table($table)
                 ->where($periodColumn, $periodValue)
                 ->selectRaw("
                     COUNT(*) as total_rows,
-                    COALESCE(MAX(id), 0) as max_id,
+                    COALESCE(MAX({$identityColumn}), '') as max_identity,
                     COALESCE(MAX({$timestampExpression}), '1970-01-01 00:00:00') as latest_change
                 ")
                 ->first();
@@ -487,7 +544,7 @@ class RasioCasaDebiturController extends Controller
             return implode('|', [
                 $periodValue,
                 (int) ($row->total_rows ?? 0),
-                (int) ($row->max_id ?? 0),
+                (string) ($row->max_identity ?? ''),
                 (string) ($row->latest_change ?? '1970-01-01 00:00:00'),
             ]);
         } catch (Throwable) {
@@ -515,12 +572,32 @@ class RasioCasaDebiturController extends Controller
             return $createdColumn;
         }
 
-        return 'id';
+        return $this->resolveIdentityColumn($table);
+    }
+
+    private function resolveIdentityColumn(string $table): string
+    {
+        $columns = Schema::getColumnListing($table);
+        $map = [];
+
+        foreach ($columns as $column) {
+            $map[strtolower($column)] = $column;
+        }
+
+        return $map['uniqueid_namareport']
+            ?? $map['uniqueid_dps']
+            ?? $map['uniqueid_rcds']
+            ?? $map['uniqueid_rds']
+            ?? $map['uniqueid_smpn']
+            ?? $map['id']
+            ?? ($columns[0] ?? 'id');
     }
 
     private function shouldApplyCasaTypeFilter(string $casaDate): bool
     {
-        return Cache::remember('rasio_casa_apply_type_filter:' . $casaDate, now()->addMinutes(30), function () use ($casaDate) {
+        $cacheKey = 'rasio_casa_apply_type_filter:v' . $this->reportCacheVersion() . ':' . $casaDate;
+
+        return Cache::remember($cacheKey, now()->addMinutes(30), function () use ($casaDate) {
             try {
                 return DB::table('simpanan_multipn')
                     ->where('posisi', $casaDate)
@@ -782,5 +859,10 @@ class RasioCasaDebiturController extends Controller
             'rasio_curr' => $osCurr > 0 ? $ratioCurr : null,
             'mtd' => ($osPrev > 0 || $osCurr > 0) ? ($ratioCurr - $ratioPrev) : null,
         ];
+    }
+
+    private function reportCacheVersion(): int
+    {
+        return (int) Cache::get('report_cache_version:global', 1);
     }
 }

@@ -2,14 +2,27 @@
 
 namespace App\Http\Controllers;
 
+use App\Support\ReportDataSyncService;
 use Carbon\Carbon;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
+use Throwable;
 
 class DashboardSimpananController extends Controller
 {
+    private const PAYLOAD_CACHE_MINUTES = 2;
+    private const SUMMARY_CACHE_MINUTES = 5;
+    private const SUMMARY_LATEST_CACHE_MINUTES = 30;
+    private const TOP_BRANCH_CACHE_MINUTES = 5;
+    private const CACHE_LOCK_SECONDS = 20;
+    private const SNAPSHOT_SUMMARY_TABLE = 'dashboard_simpanan_snapshots';
+    private const SNAPSHOT_BRANCH_TABLE = 'dashboard_simpanan_branch_snapshots';
+    private array $snapshotExistsMemo = [];
+
     public function index(): View
     {
         $dashboard = $this->buildDashboardPayload();
@@ -21,26 +34,24 @@ class DashboardSimpananController extends Controller
 
     private function buildDashboardPayload(): array
     {
+        $payloadCacheKey = 'dashboard_simpanan:payload:v' . $this->reportCacheVersion();
+
+        return Cache::remember($payloadCacheKey, now()->addMinutes(self::PAYLOAD_CACHE_MINUTES), function () {
+            return $this->buildDashboardPayloadFresh();
+        });
+    }
+
+    private function buildDashboardPayloadFresh(): array
+    {
         if (!Schema::hasTable('simpanan_multipn')) {
             return $this->emptyDashboard();
         }
 
-        $latestPeriod = DB::table('simpanan_multipn')->max('posisi');
+        [$currentPeriod, $previousPeriod, $yoyPeriod] = $this->resolveDashboardPeriods();
 
-        if (!$latestPeriod) {
+        if (!$currentPeriod) {
             return $this->emptyDashboard();
         }
-
-        $currentPeriod = Carbon::parse($latestPeriod)->toDateString();
-        $previousCandidate = Carbon::parse($currentPeriod)->subMonthNoOverflow()->endOfMonth()->toDateString();
-        $yoyCandidate = Carbon::parse($currentPeriod)->subYearNoOverflow()->endOfMonth()->toDateString();
-
-        $previousPeriod = DB::table('simpanan_multipn')
-            ->where('posisi', '<=', $previousCandidate)
-            ->max('posisi');
-        $yoyPeriod = DB::table('simpanan_multipn')
-            ->where('posisi', '<=', $yoyCandidate)
-            ->max('posisi');
 
         $currentSummary = $this->buildPeriodSummary($currentPeriod);
         $previousSummary = $previousPeriod ? $this->buildPeriodSummary($previousPeriod) : $this->emptySummary();
@@ -48,9 +59,7 @@ class DashboardSimpananController extends Controller
 
         $topBranches = $this->fetchTopBranches($currentPeriod);
         $composition = $this->buildComposition($currentSummary);
-        $latestUpdatedAt = DB::table('simpanan_multipn')
-            ->where('posisi', $currentPeriod)
-            ->max('updated_at');
+        $latestUpdatedAt = $currentSummary['source_updated_at'] ?? null;
         $topBranchLabel = data_get($topBranches->first(), 'label', 'Cabang belum tersedia');
         $topBranchDisplay = data_get($topBranches->first(), 'display', '-');
 
@@ -213,7 +222,49 @@ class DashboardSimpananController extends Controller
 
     private function buildPeriodSummary(string $period): array
     {
+        $cacheKey = 'dashboard_simpanan:summary:v' . $this->reportCacheVersion() . ':' . $period;
+        $latestKey = $cacheKey . ':latest';
+        $ttl = now()->addMinutes(self::SUMMARY_CACHE_MINUTES);
+        $latestTtl = now()->addMinutes(self::SUMMARY_LATEST_CACHE_MINUTES);
+        $cached = Cache::get($cacheKey);
+        if (is_array($cached)) {
+            return $cached;
+        }
+
+        $lock = Cache::lock($cacheKey . ':lock', self::CACHE_LOCK_SECONDS);
+
+        try {
+            return $lock->block(2, function () use ($cacheKey, $latestKey, $ttl, $latestTtl, $period) {
+                $cached = Cache::get($cacheKey);
+                if (is_array($cached)) {
+                    return $cached;
+                }
+
+                $summary = $this->queryPeriodSummary($period);
+                Cache::put($cacheKey, $summary, $ttl);
+                Cache::put($latestKey, $summary, $latestTtl);
+
+                return $summary;
+            });
+        } catch (Throwable) {
+            $latest = Cache::get($latestKey);
+            if (is_array($latest)) {
+                return $latest;
+            }
+
+            return $this->queryPeriodSummary($period);
+        }
+    }
+
+    private function queryPeriodSummary(string $period): array
+    {
+        $snapshotSummary = $this->queryPeriodSummaryFromSnapshot($period);
+        if ($snapshotSummary !== null) {
+            return $snapshotSummary;
+        }
+
         $summary = DB::table('simpanan_multipn')
+            ->from(DB::raw('simpanan_multipn FORCE INDEX (idx_smp_posisi_cif_jenis)'))
             ->where('posisi', $period)
             ->selectRaw('COALESCE(SUM(COALESCE(saldo_idr, 0)), 0) as total_balance')
             ->selectRaw('COUNT(DISTINCT no_rekening) as account_count')
@@ -222,6 +273,7 @@ class DashboardSimpananController extends Controller
             ->selectRaw('COUNT(DISTINCT unit_kerja) as unit_count')
             ->selectRaw("COALESCE(SUM(CASE WHEN UPPER(COALESCE(jenis_simpanan, '')) LIKE 'TABUNGAN%' THEN COALESCE(saldo_idr, 0) ELSE 0 END), 0) as tabungan_balance")
             ->selectRaw("COALESCE(SUM(CASE WHEN UPPER(COALESCE(jenis_simpanan, '')) LIKE 'GIRO%' THEN COALESCE(saldo_idr, 0) ELSE 0 END), 0) as giro_balance")
+            ->selectRaw('MAX(updated_at) as source_updated_at')
             ->first();
 
         $totalBalance = (float) ($summary->total_balance ?? 0);
@@ -237,30 +289,42 @@ class DashboardSimpananController extends Controller
             'giro_balance' => (float) ($summary->giro_balance ?? 0),
             'other_balance' => max(0, $totalBalance - (float) ($summary->tabungan_balance ?? 0) - (float) ($summary->giro_balance ?? 0)),
             'avg_balance_per_cif' => $cifCount > 0 ? $totalBalance / $cifCount : 0,
+            'source_updated_at' => $summary->source_updated_at ?? null,
         ];
     }
 
     private function fetchTopBranches(string $period): Collection
     {
-        return DB::table('simpanan_multipn')
-            ->where('posisi', $period)
-            ->whereNotNull('kantor_cabang')
-            ->where('kantor_cabang', '<>', '')
-            ->selectRaw('kantor_cabang, COALESCE(SUM(COALESCE(saldo_idr, 0)), 0) as total_balance')
-            ->groupBy('kantor_cabang')
-            ->orderByDesc('total_balance')
-            ->limit(5)
-            ->get()
-            ->map(function ($row) {
-                $balance = (float) ($row->total_balance ?? 0);
+        $cacheKey = 'dashboard_simpanan:top_branches:v' . $this->reportCacheVersion() . ':' . $period;
 
-                return [
-                    'label' => $this->simplifyBranchLabel((string) ($row->kantor_cabang ?? '-')),
-                    'full_label' => (string) ($row->kantor_cabang ?? '-'),
-                    'balance' => $balance,
-                    'display' => $this->formatCurrencyCompact($balance),
-                ];
-            });
+        $rows = Cache::remember($cacheKey, now()->addMinutes(self::TOP_BRANCH_CACHE_MINUTES), function () use ($period) {
+            $snapshotRows = $this->queryTopBranchesFromSnapshot($period);
+            if ($snapshotRows !== null) {
+                return $snapshotRows;
+            }
+
+            return DB::table('simpanan_multipn')
+                ->from(DB::raw('simpanan_multipn FORCE INDEX (idx_smp_posisi_status_cabang_unit)'))
+                ->where('posisi', $period)
+                ->whereNotNull('kantor_cabang')
+                ->where('kantor_cabang', '<>', '')
+                ->selectRaw('kantor_cabang, COALESCE(SUM(COALESCE(saldo_idr, 0)), 0) as total_balance')
+                ->groupBy('kantor_cabang')
+                ->orderByDesc('total_balance')
+                ->limit(5)
+                ->get();
+        });
+
+        return collect($rows)->map(function ($row) {
+            $balance = (float) ($row->total_balance ?? 0);
+
+            return [
+                'label' => $this->simplifyBranchLabel((string) ($row->kantor_cabang ?? '-')),
+                'full_label' => (string) ($row->kantor_cabang ?? '-'),
+                'balance' => $balance,
+                'display' => $this->formatCurrencyCompact($balance),
+            ];
+        });
     }
 
     private function buildComposition(array $summary): array
@@ -386,7 +450,146 @@ class DashboardSimpananController extends Controller
             'giro_balance' => 0,
             'other_balance' => 0,
             'avg_balance_per_cif' => 0,
+            'source_updated_at' => null,
         ];
+    }
+
+    private function queryPeriodSummaryFromSnapshot(string $period): ?array
+    {
+        if (!$this->hasSimpananSnapshot($period)) {
+            return null;
+        }
+
+        $row = DB::table(self::SNAPSHOT_SUMMARY_TABLE)
+            ->where('snapshot_period', $period)
+            ->first();
+
+        if (!$row) {
+            return null;
+        }
+
+        $totalBalance = (float) ($row->total_balance ?? 0);
+        $cifCount = (int) ($row->cif_count ?? 0);
+        $tabunganBalance = (float) ($row->tabungan_balance ?? 0);
+        $giroBalance = (float) ($row->giro_balance ?? 0);
+        $otherBalance = (float) ($row->other_balance ?? max(0, $totalBalance - $tabunganBalance - $giroBalance));
+
+        return [
+            'total_balance' => $totalBalance,
+            'account_count' => (int) ($row->account_count ?? 0),
+            'cif_count' => $cifCount,
+            'branch_count' => (int) ($row->branch_count ?? 0),
+            'unit_count' => (int) ($row->unit_count ?? 0),
+            'tabungan_balance' => $tabunganBalance,
+            'giro_balance' => $giroBalance,
+            'other_balance' => $otherBalance,
+            'avg_balance_per_cif' => $cifCount > 0 ? $totalBalance / $cifCount : 0,
+            'source_updated_at' => $row->source_updated_at ?? null,
+        ];
+    }
+
+    private function queryTopBranchesFromSnapshot(string $period): ?Collection
+    {
+        if (!$this->hasSimpananSnapshot($period)) {
+            return null;
+        }
+
+        if (!Schema::hasTable(self::SNAPSHOT_BRANCH_TABLE)) {
+            return null;
+        }
+
+        $rows = DB::table(self::SNAPSHOT_BRANCH_TABLE)
+            ->where('snapshot_period', $period)
+            ->orderBy('rank_order')
+            ->limit(5)
+            ->get();
+
+        return $rows->isNotEmpty() ? $rows : collect();
+    }
+
+    private function hasSimpananSnapshot(string $period): bool
+    {
+        if (!Schema::hasTable(self::SNAPSHOT_SUMMARY_TABLE) || !Schema::hasTable('simpanan_multipn')) {
+            return false;
+        }
+
+        if (array_key_exists($period, $this->snapshotExistsMemo)) {
+            return $this->snapshotExistsMemo[$period];
+        }
+
+        $cacheKey = 'dashboard_simpanan:snapshot_exists:v' . $this->reportCacheVersion() . ':' . $period;
+
+        $exists = Cache::remember($cacheKey, now()->addMinutes(10), function () use ($period) {
+            $exists = DB::table(self::SNAPSHOT_SUMMARY_TABLE)
+                ->where('snapshot_period', $period)
+                ->exists();
+
+            if ($exists) {
+                return true;
+            }
+
+            $hasSourceRows = DB::table('simpanan_multipn')
+                ->where('posisi', $period)
+                ->exists();
+
+            if (!$hasSourceRows) {
+                return false;
+            }
+
+            $lock = Cache::lock('snapshot:dashboard_simpanan:auto-rebuild:' . $period, 60);
+
+            if ($lock->get()) {
+                defer(function () use ($period, $lock) {
+                    try {
+                        app(ReportDataSyncService::class)->syncImportedTable(
+                            'simpanan_multipn',
+                            $period,
+                            source: static::class . '::hasSimpananSnapshot'
+                        );
+                    } catch (Throwable $e) {
+                        Log::warning('Auto rebuild dashboard simpanan snapshot gagal: ' . $e->getMessage(), [
+                            'period' => $period,
+                        ]);
+                    } finally {
+                        $lock->release();
+                    }
+                });
+            }
+
+            return DB::table(self::SNAPSHOT_SUMMARY_TABLE)
+                ->where('snapshot_period', $period)
+                ->exists();
+        });
+
+        $this->snapshotExistsMemo[$period] = $exists;
+
+        return $exists;
+    }
+
+    private function resolveDashboardPeriods(): array
+    {
+        $cacheKey = 'dashboard_simpanan:periods:v' . $this->reportCacheVersion();
+
+        return Cache::remember($cacheKey, now()->addMinutes(10), function () {
+            $latestPeriod = DB::table('simpanan_multipn')->max('posisi');
+            if (!$latestPeriod) {
+                return [null, null, null];
+            }
+
+            $currentPeriod = Carbon::parse($latestPeriod)->toDateString();
+            $previousCandidate = Carbon::parse($currentPeriod)->subMonthNoOverflow()->endOfMonth()->toDateString();
+            $yoyCandidate = Carbon::parse($currentPeriod)->subYearNoOverflow()->endOfMonth()->toDateString();
+
+            $previousPeriod = DB::table('simpanan_multipn')
+                ->where('posisi', '<=', $previousCandidate)
+                ->max('posisi');
+
+            $yoyPeriod = DB::table('simpanan_multipn')
+                ->where('posisi', '<=', $yoyCandidate)
+                ->max('posisi');
+
+            return [$currentPeriod, $previousPeriod, $yoyPeriod];
+        });
     }
 
     private function percentChange(float|int $current, float|int $previous): float
@@ -476,5 +679,10 @@ class DashboardSimpananController extends Controller
         }
 
         return $badgeCompatible ? 'badge-secondary' : 'text-muted';
+    }
+
+    private function reportCacheVersion(): int
+    {
+        return (int) Cache::get('report_cache_version:global', 1);
     }
 }

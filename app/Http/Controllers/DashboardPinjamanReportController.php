@@ -2,11 +2,13 @@
 
 namespace App\Http\Controllers;
 
+use App\Support\ReportDataSyncService;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Contracts\Cache\LockTimeoutException;
@@ -57,6 +59,7 @@ class DashboardPinjamanReportController extends Controller
     public function filters(Request $request)
     {
         @set_time_limit(30);
+        $this->releaseSessionLockIfNeeded();
 
         $selectedPeriod = $this->resolveEffectivePeriod($request->input('periode'));
         $comparisonPeriod = $this->resolveComparisonPeriod($selectedPeriod);
@@ -81,6 +84,7 @@ class DashboardPinjamanReportController extends Controller
         }
 
         $cacheKey = 'dashboard_pinjaman_filters:v2:' . md5(json_encode([
+            'cache_version' => $this->reportCacheVersion(),
             'periode' => $selectedPeriod,
             'filters' => $filters,
         ]));
@@ -117,6 +121,7 @@ class DashboardPinjamanReportController extends Controller
     {
         @set_time_limit(0);
         DB::connection()->disableQueryLog();
+        $this->releaseSessionLockIfNeeded();
 
         $selectedPeriod = $this->resolveEffectivePeriod($request->input('periode'));
         $comparisonPeriod = $this->resolveComparisonPeriod($selectedPeriod);
@@ -131,7 +136,8 @@ class DashboardPinjamanReportController extends Controller
 
         $phPeriod = $this->resolvePhPeriod($selectedPeriod);
 
-        $cacheKey = 'dashboard_pinjaman_matrix:v6:' . md5(json_encode([
+        $cacheKey = 'dashboard_pinjaman_matrix_direct:v1:' . md5(json_encode([
+            'cache_version' => $this->reportCacheVersion(),
             'periode' => $selectedPeriod,
             'comparison' => $comparisonPeriod,
             'ph_period' => $phPeriod,
@@ -145,6 +151,9 @@ class DashboardPinjamanReportController extends Controller
             $forceRefresh
         );
 
+        $usesSnapshot = $this->hasDashboardSnapshot($selectedPeriod)
+            && (!$comparisonPeriod || $this->hasDashboardSnapshot($comparisonPeriod));
+
         return response()->json([
             'selected_period' => $selectedPeriod,
             'comparison_period' => $comparisonPeriod,
@@ -153,7 +162,111 @@ class DashboardPinjamanReportController extends Controller
             'matrix_rows' => $matrixRows,
             'grand_totals' => $grandTotals,
             'grand_total_value' => $grandTotalValue,
+            'data_source' => $usesSnapshot ? self::SNAPSHOT_TABLE : 'daily_loan_dinamis',
         ]);
+    }
+
+    private function buildPureQuerySnapshotData(?string $selectedPeriod, array $filters): array
+    {
+        if (!$selectedPeriod) {
+            return [[], null];
+        }
+
+        $alias = 'dld';
+        $bucketExpression = $this->buildQualityBucketExpression($alias);
+        $rowsByBucket = [];
+
+        $baseQuery = DB::table(DB::raw($this->buildLoanSnapshotSource($alias, $filters)))
+            ->where("{$alias}.periode", $selectedPeriod)
+            ->selectRaw("
+                {$bucketExpression} as bucket,
+                COALESCE({$alias}.baki_debet1, 0) as loan_balance
+            ");
+
+        $this->applyFilterConstraint($baseQuery, "{$alias}.segmen_dashboard", $filters['segmen']);
+        $this->applyFilterConstraint($baseQuery, "{$alias}.produk_dashboard", $filters['produk']);
+        $this->applyFilterConstraint($baseQuery, "{$alias}.cabang1", $filters['cabang']);
+        $this->applyFilterConstraint($baseQuery, "{$alias}.unit1", $filters['unit']);
+
+        $query = DB::query()
+            ->fromSub($baseQuery, 'snapshot_query')
+            ->selectRaw('bucket, SUM(loan_balance) as total_balance')
+            ->groupBy('bucket');
+
+        foreach ($query->get() as $row) {
+            $bucket = $this->normalizeDashboardBucket((string) ($row->bucket ?? ''));
+
+            if (!in_array($bucket, self::QUALITY_BUCKETS, true)) {
+                continue;
+            }
+
+            $rowsByBucket[$bucket] = (float) ($row->total_balance ?? 0);
+        }
+
+        $snapshotRows = collect(self::QUALITY_BUCKETS)
+            ->map(function (string $bucket) use ($rowsByBucket) {
+                return [
+                    'bucket' => $bucket,
+                    'total_balance' => array_key_exists($bucket, $rowsByBucket)
+                        ? (float) $rowsByBucket[$bucket]
+                        : null,
+                ];
+            })
+            ->all();
+
+        $grandTotalValue = collect($snapshotRows)
+            ->sum(fn (array $row) => (float) ($row['total_balance'] ?? 0));
+
+        return [$snapshotRows, $grandTotalValue > 0 ? $grandTotalValue : null];
+    }
+
+    private function buildMatrixPayloadFromSnapshotRows(array $snapshotRows): array
+    {
+        $totalsByBucket = collect($snapshotRows)
+            ->mapWithKeys(fn (array $row) => [
+                (string) ($row['bucket'] ?? '') => (float) ($row['total_balance'] ?? 0),
+            ])
+            ->all();
+
+        $matrixRows = collect(self::BEFORE_ROWS)
+            ->map(function (string $label) use ($totalsByBucket) {
+                $values = array_fill(0, count(self::QUALITY_BUCKETS), null);
+
+                if (in_array($label, self::QUALITY_BUCKETS, true)) {
+                    $index = array_search($label, self::QUALITY_BUCKETS, true);
+                    $bucketTotal = $totalsByBucket[$label] ?? 0;
+                    $values[$index] = $bucketTotal > 0 ? $bucketTotal : null;
+                }
+
+                return [
+                    'label' => $label,
+                    'values' => $values,
+                    'metrics' => [
+                        'principal_reduction' => null,
+                        'suplesi' => null,
+                        'ph' => null,
+                        'lunas' => null,
+                    ],
+                    'total' => in_array($label, self::QUALITY_BUCKETS, true)
+                        ? (($totalsByBucket[$label] ?? 0) > 0 ? (float) $totalsByBucket[$label] : null)
+                        : null,
+                ];
+            })
+            ->all();
+
+        $grandTotals = [
+            'matrix' => collect(self::QUALITY_BUCKETS)
+                ->map(fn (string $bucket) => (($totalsByBucket[$bucket] ?? 0) > 0 ? (float) $totalsByBucket[$bucket] : null))
+                ->all(),
+            'metrics' => [
+                'principal_reduction' => null,
+                'suplesi' => null,
+                'ph' => null,
+                'lunas' => null,
+            ],
+        ];
+
+        return [$matrixRows, $grandTotals];
     }
 
     private function buildMatrixData(?string $selectedPeriod, ?string $comparisonPeriod, array $filters): array
@@ -189,14 +302,16 @@ class DashboardPinjamanReportController extends Controller
         $phPeriod = $this->resolvePhPeriod($selectedPeriod);
         $bucketMap = [];
         $metricMap = [];
+        $currentSnapshot = $this->loadLoanSnapshotMap($selectedPeriod, $filters, 'curr');
         $previousSnapshot = $comparisonPeriod
             ? $this->loadLoanSnapshotMap($comparisonPeriod, $filters, 'prev')
             : [];
-        $phAccounts = $this->loadPhAccountSet($phPeriod);
+        $previousMetricSnapshot = $previousSnapshot;
+        $phAccounts = $this->loadPhAccountAmountMap($phPeriod);
 
         foreach ($this->buildLoanSnapshotQuery($selectedPeriod, $filters, 'curr')->cursor() as $row) {
             $accountNumber = (string) ($row->account_number ?? '');
-            $currentBalance = (float) ($row->current_balance ?? 0);
+            $currentBalanceCents = $this->amountToCents($row->current_balance ?? 0);
             $after = $this->normalizeDashboardBucket((string) ($row->after_bucket ?? ''));
 
             if ($accountNumber === '' || !in_array($after, self::RAW_QUALITY_BUCKETS, true)) {
@@ -205,99 +320,173 @@ class DashboardPinjamanReportController extends Controller
 
             $previous = $previousSnapshot[$accountNumber] ?? null;
             $before = $this->normalizeDashboardBucket((string) ($previous['bucket'] ?? 'New Account'));
-            $previousBalance = (float) ($previous['balance'] ?? 0);
 
             if (!in_array($before, self::BEFORE_ROWS, true)) {
                 $before = 'New Account';
             }
 
             if (in_array($after, self::QUALITY_BUCKETS, true)) {
-                $bucketMap[$before][$after] = ($bucketMap[$before][$after] ?? 0) + $currentBalance;
+                $bucketMap[$before][$after] = ($bucketMap[$before][$after] ?? 0) + $currentBalanceCents;
+            }
+        }
+
+        foreach ($currentSnapshot as $accountNumber => $current) {
+            $currentBalanceCents = (int) ($current['balance_cents'] ?? 0);
+            $after = $this->normalizeDashboardBucket((string) ($current['bucket'] ?? ''));
+
+            if ($accountNumber === '' || $currentBalanceCents <= 0 || !in_array($after, self::RAW_QUALITY_BUCKETS, true)) {
+                continue;
             }
 
-            $principalReduction = $this->calculatePrincipalReduction($before, $after, $previousBalance, $currentBalance);
+            $previous = $previousMetricSnapshot[$accountNumber] ?? null;
+            $before = $this->normalizeDashboardBucket((string) ($previous['bucket'] ?? 'New Account'));
+            $previousBalanceCents = (int) ($previous['balance_cents'] ?? 0);
+
+            $principalReduction = $this->calculatePrincipalReduction($before, $after, $previousBalanceCents, $currentBalanceCents);
             if ($principalReduction > 0) {
                 $metricMap[$before]['principal_reduction'] = ($metricMap[$before]['principal_reduction'] ?? 0) + $principalReduction;
             }
 
-            $suplesi = $this->calculateSuplesi($before, $after, $previousBalance, $currentBalance);
+            $suplesi = $this->calculateSuplesi($before, $after, $previousBalanceCents, $currentBalanceCents);
             if ($suplesi > 0) {
                 $metricMap[$before]['suplesi'] = ($metricMap[$before]['suplesi'] ?? 0) + $suplesi;
             }
 
-            unset($previousSnapshot[$accountNumber]);
+            unset($previousMetricSnapshot[$accountNumber]);
         }
 
-        foreach ($previousSnapshot as $accountNumber => $previous) {
-            $before = $this->normalizeDashboardBucket((string) ($previous['bucket'] ?? 'New Account'));
-            $previousBalance = (float) ($previous['balance'] ?? 0);
+        foreach ($this->loadAnonymousCurrentBucketTotals($selectedPeriod, $filters) as $after => $amount) {
+            $amountCents = $this->amountToCents($amount);
 
-            if ($previousBalance <= 0 || !in_array($before, self::BEFORE_ROWS, true)) {
+            if ($amountCents <= 0 || !in_array($after, self::QUALITY_BUCKETS, true)) {
                 continue;
             }
 
-            $metricKey = isset($phAccounts[$accountNumber]) ? 'ph' : 'lunas';
-            $metricMap[$before][$metricKey] = ($metricMap[$before][$metricKey] ?? 0) + $previousBalance;
+            $bucketMap['New Account'][$after] = ($bucketMap['New Account'][$after] ?? 0) + $amountCents;
+            $metricMap['New Account']['suplesi'] = ($metricMap['New Account']['suplesi'] ?? 0) + $amountCents;
+        }
+
+        foreach ($previousMetricSnapshot as $accountNumber => $previous) {
+            $before = $this->normalizeDashboardBucket((string) ($previous['bucket'] ?? 'New Account'));
+            $previousBalanceCents = (int) ($previous['balance_cents'] ?? 0);
+
+            if ($previousBalanceCents <= 0 || !in_array($before, self::BEFORE_ROWS, true)) {
+                continue;
+            }
+
+            $phBalanceCents = (int) ($phAccounts[$accountNumber] ?? 0);
+
+            if ($phBalanceCents > 0) {
+                $metricMap[$before]['ph'] = ($metricMap[$before]['ph'] ?? 0) + $phBalanceCents;
+                continue;
+            }
+
+            $metricMap[$before]['lunas'] = ($metricMap[$before]['lunas'] ?? 0) + $previousBalanceCents;
         }
 
         $matrixRows = [];
         foreach (self::BEFORE_ROWS as $beforeLabel) {
             $values = [];
             foreach (self::QUALITY_BUCKETS as $afterLabel) {
-                $values[] = $bucketMap[$beforeLabel][$afterLabel] ?? null;
+                $valueCents = $bucketMap[$beforeLabel][$afterLabel] ?? null;
+                $values[] = $valueCents !== null ? $this->centsToAmount($valueCents) : null;
             }
 
-            $rowTotal = collect($values)->filter(fn ($value) => $value !== null)->sum();
+            $rowTotalCents = collect(self::QUALITY_BUCKETS)
+                ->sum(fn (string $afterLabel) => (int) ($bucketMap[$beforeLabel][$afterLabel] ?? 0));
 
             $matrixRows[] = [
                 'label' => $beforeLabel,
                 'values' => $values,
                 'metrics' => [
                     'principal_reduction' => (($metricMap[$beforeLabel]['principal_reduction'] ?? 0) > 0)
-                        ? (float) $metricMap[$beforeLabel]['principal_reduction']
+                        ? $this->centsToAmount((int) $metricMap[$beforeLabel]['principal_reduction'])
                         : null,
                     'suplesi' => (($metricMap[$beforeLabel]['suplesi'] ?? 0) > 0)
-                        ? (float) $metricMap[$beforeLabel]['suplesi']
+                        ? $this->centsToAmount((int) $metricMap[$beforeLabel]['suplesi'])
                         : null,
                     'ph' => (($metricMap[$beforeLabel]['ph'] ?? 0) > 0)
-                        ? (float) $metricMap[$beforeLabel]['ph']
+                        ? $this->centsToAmount((int) $metricMap[$beforeLabel]['ph'])
                         : null,
                     'lunas' => (($metricMap[$beforeLabel]['lunas'] ?? 0) > 0)
-                        ? (float) $metricMap[$beforeLabel]['lunas']
+                        ? $this->centsToAmount((int) $metricMap[$beforeLabel]['lunas'])
                         : null,
                 ],
-                'total' => $rowTotal > 0 ? $rowTotal : null,
+                'total' => $rowTotalCents > 0 ? $this->centsToAmount($rowTotalCents) : null,
             ];
         }
 
         $matrixGrandTotals = [];
         foreach (self::QUALITY_BUCKETS as $index => $unusedBucket) {
-            $columnTotal = collect($matrixRows)
-                ->filter(fn (array $row) => $row['values'][$index] !== null)
-                ->sum(fn (array $row) => (float) $row['values'][$index]);
+            $columnTotalCents = collect(self::BEFORE_ROWS)
+                ->sum(fn (string $beforeLabel) => (int) ($bucketMap[$beforeLabel][self::QUALITY_BUCKETS[$index]] ?? 0));
 
-            $matrixGrandTotals[] = $columnTotal > 0 ? $columnTotal : null;
+            $matrixGrandTotals[] = $columnTotalCents > 0 ? $this->centsToAmount($columnTotalCents) : null;
         }
 
         $grandTotals = [
             'matrix' => $matrixGrandTotals,
             'metrics' => [
-                'principal_reduction' => collect($matrixRows)
-                    ->sum(fn (array $row) => (float) ($row['metrics']['principal_reduction'] ?? 0)) ?: null,
-                'suplesi' => collect($matrixRows)
-                    ->sum(fn (array $row) => (float) ($row['metrics']['suplesi'] ?? 0)) ?: null,
-                'ph' => collect($matrixRows)
-                    ->sum(fn (array $row) => (float) ($row['metrics']['ph'] ?? 0)) ?: null,
-                'lunas' => collect($matrixRows)
-                    ->sum(fn (array $row) => (float) ($row['metrics']['lunas'] ?? 0)) ?: null,
+                'principal_reduction' => ($this->sumMetricCents($metricMap, 'principal_reduction') > 0)
+                    ? $this->centsToAmount($this->sumMetricCents($metricMap, 'principal_reduction'))
+                    : null,
+                'suplesi' => ($this->sumMetricCents($metricMap, 'suplesi') > 0)
+                    ? $this->centsToAmount($this->sumMetricCents($metricMap, 'suplesi'))
+                    : null,
+                'ph' => ($this->sumMetricCents($metricMap, 'ph') > 0)
+                    ? $this->centsToAmount($this->sumMetricCents($metricMap, 'ph'))
+                    : null,
+                'lunas' => ($this->sumMetricCents($metricMap, 'lunas') > 0)
+                    ? $this->centsToAmount($this->sumMetricCents($metricMap, 'lunas'))
+                    : null,
             ],
         ];
 
-        $grandTotalValue = collect($matrixRows)
-            ->filter(fn (array $row) => $row['total'] !== null)
-            ->sum(fn (array $row) => (float) $row['total']);
+        $grandTotalCents = collect(self::BEFORE_ROWS)
+            ->sum(fn (string $beforeLabel) => collect(self::QUALITY_BUCKETS)
+                ->sum(fn (string $afterLabel) => (int) ($bucketMap[$beforeLabel][$afterLabel] ?? 0)));
 
-        return [$matrixRows, $grandTotals, $grandTotalValue > 0 ? $grandTotalValue : null];
+        return [$matrixRows, $grandTotals, $grandTotalCents > 0 ? $this->centsToAmount($grandTotalCents) : null];
+    }
+
+    private function loadAnonymousCurrentBucketTotals(string $period, array $filters): array
+    {
+        $alias = 'anon';
+        $bucketExpression = $this->buildQualityBucketExpression($alias);
+        $rowsByBucket = [];
+
+        $baseQuery = DB::table(DB::raw($this->buildLoanSnapshotSource($alias, $filters)))
+            ->where("{$alias}.periode", $period)
+            ->where(function (Builder $query) use ($alias) {
+                $query->whereNull("{$alias}.nomor_rekening1")
+                    ->orWhereRaw("TRIM({$alias}.nomor_rekening1) = ''");
+            })
+            ->selectRaw("
+                {$bucketExpression} as bucket,
+                COALESCE({$alias}.baki_debet1, 0) as loan_balance
+            ");
+
+        $this->applyFilterConstraint($baseQuery, "{$alias}.segmen_dashboard", $filters['segmen']);
+        $this->applyFilterConstraint($baseQuery, "{$alias}.produk_dashboard", $filters['produk']);
+        $this->applyFilterConstraint($baseQuery, "{$alias}.cabang1", $filters['cabang']);
+        $this->applyFilterConstraint($baseQuery, "{$alias}.unit1", $filters['unit']);
+
+        $query = DB::query()
+            ->fromSub($baseQuery, 'anonymous_snapshot_query')
+            ->selectRaw('bucket, SUM(loan_balance) as total_balance')
+            ->groupBy('bucket');
+
+        foreach ($query->get() as $row) {
+            $bucket = $this->normalizeDashboardBucket((string) ($row->bucket ?? ''));
+
+            if (!in_array($bucket, self::QUALITY_BUCKETS, true)) {
+                continue;
+            }
+
+            $rowsByBucket[$bucket] = (float) ($row->total_balance ?? 0);
+        }
+
+        return $rowsByBucket;
     }
 
     private function loadLoanSnapshotMap(string $period, array $filters, string $alias): array
@@ -313,17 +502,17 @@ class DashboardPinjamanReportController extends Controller
 
             $balanceColumn = $alias === 'curr' ? 'current_balance' : 'previous_balance';
             $bucketColumn = $alias === 'curr' ? 'after_bucket' : 'before_bucket';
-            $balance = (float) ($row->{$balanceColumn} ?? 0);
+            $balanceCents = $this->amountToCents($row->{$balanceColumn} ?? 0);
             $bucket = $this->normalizeDashboardBucket((string) ($row->{$bucketColumn} ?? ''));
 
             if (isset($snapshot[$accountNumber])) {
-                $snapshot[$accountNumber]['balance'] += $balance;
+                $snapshot[$accountNumber]['balance_cents'] += $balanceCents;
                 $snapshot[$accountNumber]['bucket'] = $bucket;
                 continue;
             }
 
             $snapshot[$accountNumber] = [
-                'balance' => $balance,
+                'balance_cents' => $balanceCents,
                 'bucket' => $bucket,
             ];
         }
@@ -331,7 +520,7 @@ class DashboardPinjamanReportController extends Controller
         return $snapshot;
     }
 
-    private function loadPhAccountSet(?string $period): array
+    private function loadPhAccountAmountMap(?string $period): array
     {
         if (!$period) {
             return [];
@@ -339,11 +528,12 @@ class DashboardPinjamanReportController extends Controller
 
         $accounts = [];
 
-        foreach ($this->buildPhSnapshotQuery($period)->cursor() as $row) {
+        foreach ($this->buildPhSnapshotAmountQuery($period)->cursor() as $row) {
             $accountNumber = (string) ($row->account_number ?? '');
+            $balanceCents = $this->amountToCents($row->ph_balance ?? 0);
 
-            if ($accountNumber !== '') {
-                $accounts[$accountNumber] = true;
+            if ($accountNumber !== '' && $balanceCents > 0) {
+                $accounts[$accountNumber] = (int) (($accounts[$accountNumber] ?? 0) + $balanceCents);
             }
         }
 
@@ -356,9 +546,9 @@ class DashboardPinjamanReportController extends Controller
             $query = DB::table(self::SNAPSHOT_TABLE . " as {$alias}")
                 ->where("{$alias}.periode", $period)
                 ->whereNotNull("{$alias}.account_number")
-                ->where("{$alias}.account_number", '<>', '')
+                ->whereRaw("TRIM({$alias}.account_number) <> ''")
                 ->selectRaw("
-                    {$alias}.account_number as account_number,
+                    TRIM({$alias}.account_number) as account_number,
                     COALESCE({$alias}.loan_balance, 0) as " . ($alias === 'curr' ? 'current_balance' : 'previous_balance') . ",
                     {$alias}.quality_bucket as " . ($alias === 'curr' ? 'after_bucket' : 'before_bucket')
                 );
@@ -376,7 +566,7 @@ class DashboardPinjamanReportController extends Controller
         $query = DB::table(DB::raw($this->buildLoanSnapshotSource($alias, $filters)))
             ->where("{$alias}.periode", $period)
             ->whereNotNull("{$alias}.nomor_rekening1")
-            ->where("{$alias}.nomor_rekening1", '<>', '')
+            ->whereRaw("TRIM({$alias}.nomor_rekening1) <> ''")
             ->selectRaw("
                 TRIM({$alias}.nomor_rekening1) as account_number,
                 COALESCE({$alias}.baki_debet1, 0) as " . ($alias === 'curr' ? 'current_balance' : 'previous_balance') . ",
@@ -389,6 +579,24 @@ class DashboardPinjamanReportController extends Controller
         $this->applyFilterConstraint($query, "{$alias}.unit1", $filters['unit']);
 
         return $query;
+    }
+
+    private function buildNormalizedLoanBalanceExpression(string $column): string
+    {
+        $base = $this->loanBalanceRoundingBase();
+
+        if ($base <= 1) {
+            return "COALESCE({$column}, 0)";
+        }
+
+        return "FLOOR(COALESCE({$column}, 0) / {$base}) * {$base}";
+    }
+
+    private function loanBalanceRoundingBase(): int
+    {
+        $configured = (int) config('reports.dashboard_pinjaman.row_rounding_base', 1);
+
+        return $configured > 0 ? $configured : 1;
     }
 
     private function buildEmptyLoanSnapshotQuery()
@@ -417,6 +625,24 @@ class DashboardPinjamanReportController extends Controller
         return $query;
     }
 
+    private function buildPhSnapshotAmountQuery(?string $period)
+    {
+        $query = DB::table(DB::raw(self::PH_TABLE . ' as ph FORCE INDEX (' . self::PH_LOOKUP_INDEX . ')'))
+            ->selectRaw('TRIM(ph.acctno) as account_number, SUM(COALESCE(ph.pokok, 0)) as ph_balance')
+            ->whereNotNull('ph.acctno')
+            ->where('ph.acctno', '<>', '')
+            ->where('ph.pokok', '>', 0)
+            ->groupByRaw('TRIM(ph.acctno)');
+
+        if ($period) {
+            $query->where('ph.periode', $period);
+        } else {
+            $query->whereRaw('1 = 0');
+        }
+
+        return $query;
+    }
+
     private function buildLoanSnapshotSource(string $alias, array $filters): string
     {
         $indexName = self::LOAN_REKENING_INDEX;
@@ -432,37 +658,30 @@ class DashboardPinjamanReportController extends Controller
 
     private function buildQualityBucketExpression(string $alias): string
     {
-        $rawQualityExpression = "
+        $normalizedKolekDetail = "UPPER(TRIM(COALESCE({$alias}.kolek_detail, '')))";
+
+        $kolekFixExpression = "
             CASE
-                WHEN TRIM(COALESCE({$alias}.kolek_detail, '')) = '' OR TRIM(COALESCE({$alias}.kolek_detail, '')) = '0' THEN
-                    CASE
-                        WHEN COALESCE({$alias}.umur_tunggakan, 0) <= 0 THEN 'L'
-                        WHEN COALESCE({$alias}.umur_tunggakan, 0) <= 30 THEN 'DPK 1'
-                        WHEN COALESCE({$alias}.umur_tunggakan, 0) <= 60 THEN 'DPK 2'
-                        WHEN COALESCE({$alias}.umur_tunggakan, 0) <= 90 THEN 'DPK 3'
-                        WHEN COALESCE({$alias}.umur_tunggakan, 0) <= 120 THEN 'KL'
-                        WHEN COALESCE({$alias}.umur_tunggakan, 0) <= 150 THEN 'D1'
-                        WHEN COALESCE({$alias}.umur_tunggakan, 0) <= 180 THEN 'D2'
-                        ELSE 'M'
-                    END
-                ELSE UPPER(TRIM(COALESCE({$alias}.kolek_detail, '')))
+                WHEN {$normalizedKolekDetail} NOT IN ('', '0', '-') THEN {$normalizedKolekDetail}
+                WHEN {$alias}.umur_tunggakan <= 0 THEN 'L'
+                WHEN {$alias}.umur_tunggakan <= 30 THEN 'DPK 1'
+                WHEN {$alias}.umur_tunggakan <= 60 THEN 'DPK 2'
+                WHEN {$alias}.umur_tunggakan <= 90 THEN 'DPK 3'
+                WHEN {$alias}.umur_tunggakan <= 120 THEN 'KL'
+                WHEN {$alias}.umur_tunggakan <= 180 THEN 'D1'
+                ELSE 'M'
             END
         ";
 
         return "
             CASE
-                WHEN ({$rawQualityExpression}) = 'L' AND UPPER(COALESCE({$alias}.flag_restruk, '')) = 'Y' THEN 'LR'
-                WHEN ({$rawQualityExpression}) = 'L' THEN 'L'
-                WHEN ({$rawQualityExpression}) IN ('DPK 1', 'SML1') THEN 'DPK 1'
-                WHEN ({$rawQualityExpression}) IN ('DPK 2', 'SML2') THEN 'DPK 2'
-                WHEN ({$rawQualityExpression}) IN ('DPK 3', 'SML3') THEN 'DPK 3'
-                WHEN ({$rawQualityExpression}) = 'KL' THEN 'KL'
-                WHEN ({$rawQualityExpression}) = 'D1' THEN 'D1'
-                WHEN ({$rawQualityExpression}) = 'D2' THEN 'D2'
-                WHEN ({$rawQualityExpression}) IN ('M', 'NPL') THEN 'M'
-                WHEN ({$rawQualityExpression}) = 'PH' THEN 'PH'
-                WHEN ({$rawQualityExpression}) = 'PAY' THEN 'Pay'
-                ELSE 'L'
+                WHEN ({$kolekFixExpression}) = 'L' AND UPPER(COALESCE({$alias}.flag_restruk, '')) = 'Y' THEN 'LR'
+                WHEN ({$kolekFixExpression}) IN ('DPK1', 'SML1') THEN 'DPK 1'
+                WHEN ({$kolekFixExpression}) IN ('DPK2', 'SML2') THEN 'DPK 2'
+                WHEN ({$kolekFixExpression}) IN ('DPK3', 'SML3') THEN 'DPK 3'
+                WHEN ({$kolekFixExpression}) = 'NPL' THEN 'M'
+                WHEN ({$kolekFixExpression}) IN ('PAY', 'LUNAS') THEN 'Pay'
+                ELSE ({$kolekFixExpression})
             END
         ";
     }
@@ -489,6 +708,7 @@ class DashboardPinjamanReportController extends Controller
     {
         try {
             $cacheKey = 'dashboard_pinjaman_distinct:v2:' . md5(json_encode([
+                'cache_version' => $this->reportCacheVersion(),
                 'column' => $column,
                 'direction' => $desc ? 'desc' : 'asc',
             ]));
@@ -534,7 +754,9 @@ class DashboardPinjamanReportController extends Controller
 
     private function fetchPeriods(): Collection
     {
-        return Cache::remember('dashboard_pinjaman_periods', now()->addMinutes(10), function () {
+        $cacheKey = 'dashboard_pinjaman_periods:v' . $this->reportCacheVersion();
+
+        return Cache::remember($cacheKey, now()->addMinutes(10), function () {
             return $this->fetchDistinctValues('periode', desc: true)
                 ->map(function ($periode) {
                     try {
@@ -556,7 +778,9 @@ class DashboardPinjamanReportController extends Controller
                     ->max('periode');
             }
 
-            return Cache::remember('dashboard_pinjaman_latest_period', now()->addMinutes(10), function () {
+            $cacheKey = 'dashboard_pinjaman_latest_period:v' . $this->reportCacheVersion();
+
+            return Cache::remember($cacheKey, now()->addMinutes(10), function () {
                 return DB::table('daily_loan_dinamis')->max('periode');
             });
         } catch (Throwable) {
@@ -614,7 +838,7 @@ class DashboardPinjamanReportController extends Controller
         $lock = Cache::lock($cacheKey . ':lock', 30);
 
         try {
-            return $lock->block(15, function () use ($cacheKey, $latestKey, $ttl, $callback, $forceRefresh) {
+            return $lock->block(2, function () use ($cacheKey, $latestKey, $ttl, $callback, $forceRefresh) {
                 if (!$forceRefresh) {
                     $cached = Cache::get($cacheKey);
                     if ($cached !== null) {
@@ -634,6 +858,11 @@ class DashboardPinjamanReportController extends Controller
                 return $latest;
             }
 
+            $cached = Cache::get($cacheKey);
+            if ($cached !== null) {
+                return $cached;
+            }
+
             $payload = $callback();
             Cache::put($cacheKey, $payload, $ttl);
             Cache::put($latestKey, $payload, now()->addMinutes(10));
@@ -650,28 +879,72 @@ class DashboardPinjamanReportController extends Controller
             return false;
         }
 
-        return Cache::remember('dashboard_pinjaman_snapshot_exists:' . $period, now()->addMinutes(10), function () use ($period) {
+        $cacheKey = 'dashboard_pinjaman_snapshot_exists:v' . $this->reportCacheVersion() . ':' . $period;
+
+        return Cache::remember($cacheKey, now()->addMinutes(10), function () use ($period) {
+            $exists = DB::table(self::SNAPSHOT_TABLE)
+                ->where('periode', $period)
+                ->exists();
+
+            if ($exists) {
+                return true;
+            }
+
+            $hasSourceRows = DB::table('daily_loan_dinamis')
+                ->where('periode', $period)
+                ->exists();
+
+            if (!$hasSourceRows) {
+                return false;
+            }
+
+            $lock = Cache::lock('snapshot:dashboard:auto-rebuild:' . $period, 60);
+
+            if ($lock->get()) {
+                defer(function () use ($period, $lock) {
+                    try {
+                        app(ReportDataSyncService::class)->syncImportedTable(
+                            'daily_loan_dinamis',
+                            $period,
+                            source: static::class . '::hasDashboardSnapshot'
+                        );
+                    } catch (Throwable $e) {
+                        Log::warning('Auto rebuild dashboard snapshot gagal: ' . $e->getMessage(), [
+                            'period' => $period,
+                        ]);
+                    } finally {
+                        $lock->release();
+                    }
+                });
+            }
+
             return DB::table(self::SNAPSHOT_TABLE)
                 ->where('periode', $period)
                 ->exists();
         });
     }
 
+    private function reportCacheVersion(): int
+    {
+        return (int) Cache::get('report_cache_version:global', 1);
+    }
+
     private function buildTableWideVersionSignature(string $table): string
     {
         try {
             $timestampExpression = $this->buildLatestTimestampExpression($table);
+            $identityColumn = $this->resolveIdentityColumn($table);
             $row = DB::table($table)
                 ->selectRaw("
                     COUNT(*) as total_rows,
-                    COALESCE(MAX(id), 0) as max_id,
+                    COALESCE(MAX({$identityColumn}), '') as max_identity,
                     COALESCE(MAX({$timestampExpression}), '1970-01-01 00:00:00') as latest_change
                 ")
                 ->first();
 
             return implode('|', [
                 (int) ($row->total_rows ?? 0),
-                (int) ($row->max_id ?? 0),
+                (string) ($row->max_identity ?? ''),
                 (string) ($row->latest_change ?? '1970-01-01 00:00:00'),
             ]);
         } catch (Throwable) {
@@ -687,11 +960,12 @@ class DashboardPinjamanReportController extends Controller
 
         try {
             $timestampExpression = $this->buildLatestTimestampExpression($table);
+            $identityColumn = $this->resolveIdentityColumn($table);
             $row = DB::table($table)
                 ->where($periodColumn, $periodValue)
                 ->selectRaw("
                     COUNT(*) as total_rows,
-                    COALESCE(MAX(id), 0) as max_id,
+                    COALESCE(MAX({$identityColumn}), '') as max_identity,
                     COALESCE(MAX({$timestampExpression}), '1970-01-01 00:00:00') as latest_change
                 ")
                 ->first();
@@ -699,7 +973,7 @@ class DashboardPinjamanReportController extends Controller
             return implode('|', [
                 $periodValue,
                 (int) ($row->total_rows ?? 0),
-                (int) ($row->max_id ?? 0),
+                (string) ($row->max_identity ?? ''),
                 (string) ($row->latest_change ?? '1970-01-01 00:00:00'),
             ]);
         } catch (Throwable) {
@@ -722,6 +996,40 @@ class DashboardPinjamanReportController extends Controller
 
         if ($hasCreated) {
             return 'created_at';
+        }
+
+        return $this->resolveIdentityColumn($table);
+    }
+
+    private function resolveIdentityColumn(string $table): string
+    {
+        if (Schema::hasColumn($table, 'uniqueid_dps')) {
+            return 'uniqueid_dps';
+        }
+
+        if (Schema::hasColumn($table, 'uniqueid_rcds')) {
+            return 'uniqueid_rcds';
+        }
+
+        if (Schema::hasColumn($table, 'uniqueid_rds')) {
+            return 'uniqueid_rds';
+        }
+
+        if (Schema::hasColumn($table, 'uniqueid_namareport')) {
+            return 'uniqueid_namareport';
+        }
+
+        if (Schema::hasColumn($table, 'uniqueid_SMPN')) {
+            return 'uniqueid_SMPN';
+        }
+
+        if (Schema::hasColumn($table, 'id')) {
+            return 'id';
+        }
+
+        $columns = Schema::getColumnListing($table);
+        if (!empty($columns)) {
+            return $columns[0];
         }
 
         return 'id';
@@ -770,49 +1078,41 @@ class DashboardPinjamanReportController extends Controller
         }
     }
 
-    private function mapQualityBucket($kolekDetail, $umurTunggakan, $flagRestruk): string
+    private function mapQualityBucket($kolekDetail, $umurTunggakan, $flagRestruk, $kolek = null): string
     {
         $normalizedKolekDetail = trim((string) ($kolekDetail ?? ''));
-        $rawQuality = strtoupper($normalizedKolekDetail);
-
-        if ($normalizedKolekDetail === '' || $normalizedKolekDetail === '0') {
+        $kolekFix = strtoupper($normalizedKolekDetail);
+        if ($kolekFix === '' || $kolekFix === '0' || $kolekFix === '-') {
             $days = (int) ($umurTunggakan ?? 0);
 
             if ($days <= 0) {
-                $rawQuality = 'L';
+                $kolekFix = 'L';
             } elseif ($days <= 30) {
-                $rawQuality = 'DPK 1';
+                $kolekFix = 'DPK 1';
             } elseif ($days <= 60) {
-                $rawQuality = 'DPK 2';
+                $kolekFix = 'DPK 2';
             } elseif ($days <= 90) {
-                $rawQuality = 'DPK 3';
+                $kolekFix = 'DPK 3';
             } elseif ($days <= 120) {
-                $rawQuality = 'KL';
-            } elseif ($days <= 150) {
-                $rawQuality = 'D1';
+                $kolekFix = 'KL';
             } elseif ($days <= 180) {
-                $rawQuality = 'D2';
+                $kolekFix = 'D1';
             } else {
-                $rawQuality = 'M';
+                $kolekFix = 'M';
             }
         }
 
-        if ($rawQuality === 'L' && strtoupper((string) ($flagRestruk ?? '')) === 'Y') {
+        if ($kolekFix === 'L' && strtoupper((string) ($flagRestruk ?? '')) === 'Y') {
             return 'LR';
         }
 
-        return match ($rawQuality) {
-            'L' => 'L',
-            'DPK 1', 'SML1' => 'DPK 1',
-            'DPK 2', 'SML2' => 'DPK 2',
-            'DPK 3', 'SML3' => 'DPK 3',
-            'KL' => 'KL',
-            'D1' => 'D1',
-            'D2' => 'D2',
-            'M', 'NPL' => 'M',
-            'PH' => 'PH',
-            'PAY' => 'Pay',
-            default => 'L',
+        return match ($kolekFix) {
+            'DPK1', 'SML1' => 'DPK 1',
+            'DPK2', 'SML2' => 'DPK 2',
+            'DPK3', 'SML3' => 'DPK 3',
+            'NPL' => 'M',
+            'PAY', 'LUNAS' => 'Pay',
+            default => $kolekFix,
         };
     }
 
@@ -843,39 +1143,78 @@ class DashboardPinjamanReportController extends Controller
 
     private function calculatePrincipalReduction(string $before, string $after, float $previousBalance, float $currentBalance): float
     {
-        if ($previousBalance <= $currentBalance || $before === 'New Account') {
+        if ($before === 'New Account' || $previousBalance <= 0 || $currentBalance <= 0) {
             return 0.0;
         }
 
-        if ($this->isHealthyBucket($before) && $this->isHealthyBucket($after)) {
-            return $previousBalance - $currentBalance;
-        }
+        $difference = $previousBalance - $currentBalance;
 
-        $beforeRank = $this->qualityRank($before);
-        $afterRank = $this->qualityRank($after);
-
-        if ($beforeRank === null || $afterRank === null || $afterRank >= $beforeRank) {
+        if ($difference <= 0) {
             return 0.0;
         }
 
-        return $previousBalance - $currentBalance;
+        return $difference;
     }
 
     private function calculateSuplesi(string $before, string $after, float $previousBalance, float $currentBalance): float
     {
-        if ($currentBalance <= $previousBalance) {
+        if ($currentBalance <= 0) {
             return 0.0;
         }
 
         if ($before === 'New Account') {
-            return $currentBalance - $previousBalance;
+            return $currentBalance;
         }
 
-        if (!$this->isHealthyBucket($before) || !$this->isHealthyBucket($after)) {
+        $difference = $currentBalance - $previousBalance;
+
+        if ($difference <= 0) {
             return 0.0;
         }
 
-        return $currentBalance - $previousBalance;
+        return $difference;
+    }
+
+    private function amountToCents($amount): int
+    {
+        $normalized = trim((string) $amount);
+
+        if ($normalized === '') {
+            return 0;
+        }
+
+        $sign = 1;
+        if (str_starts_with($normalized, '-')) {
+            $sign = -1;
+            $normalized = substr($normalized, 1);
+        } elseif (str_starts_with($normalized, '+')) {
+            $normalized = substr($normalized, 1);
+        }
+
+        if ($normalized === '') {
+            return 0;
+        }
+
+        if (!str_contains($normalized, '.')) {
+            return $sign * ((int) $normalized * 100);
+        }
+
+        [$whole, $decimal] = array_pad(explode('.', $normalized, 2), 2, '0');
+        $whole = $whole === '' ? '0' : $whole;
+        $decimal = str_pad(substr($decimal, 0, 2), 2, '0');
+
+        return $sign * (((int) $whole * 100) + (int) $decimal);
+    }
+
+    private function centsToAmount(int $cents): float
+    {
+        return $cents / 100;
+    }
+
+    private function sumMetricCents(array $metricMap, string $metric): int
+    {
+        return (int) collect($metricMap)
+            ->sum(fn (array $metrics) => (int) ($metrics[$metric] ?? 0));
     }
 
     private function isHealthyBucket(string $bucket): bool

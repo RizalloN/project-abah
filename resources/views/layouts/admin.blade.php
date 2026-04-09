@@ -1,33 +1,46 @@
 <!DOCTYPE html>
-<html>
+<html lang="id">
 <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Project ABAH</title>
 
-    <!-- Responsive -->
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
-    <!-- Font Awesome -->
     <link rel="stylesheet" href="{{ asset('adminlte/plugins/fontawesome-free/css/all.min.css') }}">
-
-    <!-- AdminLTE -->
     <link rel="stylesheet" href="{{ asset('adminlte/dist/css/adminlte.min.css') }}">
     <link rel="stylesheet" href="{{ asset('adminlte/plugins/select2/css/select2.min.css') }}">
     <link rel="stylesheet" href="{{ asset('adminlte/plugins/select2-bootstrap4-theme/select2-bootstrap4.min.css') }}">
     <link rel="stylesheet" href="{{ asset('adminlte/plugins/sweetalert2-theme-bootstrap-4/bootstrap-4.min.css') }}">
+
     <style>
+        :root {
+            --bri-nusantara: #0857c3;
+            --bri-cakrawala: #307fe2;
+            --bri-mentari: #71c5e8;
+            --bri-ink: #053b82;
+            --bri-night: #042a5f;
+            --bri-mist: #f2f7ff;
+            --bri-white: #ffffff;
+        }
+
         body {
-            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+            font-family: "Inter", "Segoe UI", sans-serif;
+            color: #0f172a;
+            background: var(--bri-mist);
         }
 
         .main-header.modern-navbar {
-            background: rgba(255, 255, 255, 0.92);
-            backdrop-filter: blur(16px);
-            border-bottom: 1px solid rgba(148, 163, 184, 0.18);
-            box-shadow: 0 10px 35px -24px rgba(15, 23, 42, 0.28);
+            background: rgba(255, 255, 255, 0.94);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid rgba(8, 87, 195, 0.14);
+            box-shadow: 0 10px 28px -24px rgba(8, 87, 195, 0.45);
         }
 
         .modern-navbar .nav-link {
-            color: #334155;
+            color: var(--bri-ink);
         }
 
         .modern-navbar .menu-toggle {
@@ -41,21 +54,21 @@
         }
 
         .modern-navbar .menu-toggle:hover {
-            background: #f1f5f9;
-            color: #0f172a;
+            background: rgba(48, 127, 226, 0.12);
+            color: var(--bri-nusantara);
         }
 
         .modern-user-trigger {
             border-radius: 18px;
             padding: 0.4rem 0.75rem;
-            border: 1px solid #e2e8f0;
-            background: #ffffff;
-            box-shadow: 0 10px 24px -20px rgba(15, 23, 42, 0.5);
+            border: 1px solid rgba(8, 87, 195, 0.16);
+            background: var(--bri-white);
+            box-shadow: 0 12px 28px -24px rgba(8, 87, 195, 0.45);
         }
 
         .modern-user-trigger:hover {
-            background: #f8fafc;
-            color: #0f172a;
+            background: #f7fbff;
+            color: #082f66;
         }
 
         .modern-user-badge {
@@ -65,18 +78,18 @@
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            background: linear-gradient(135deg, #dcfce7, #ccfbf1);
-            color: #0f766e;
-            font-weight: 700;
+            background: linear-gradient(140deg, var(--bri-nusantara), var(--bri-cakrawala));
+            color: #ffffff;
+            font-weight: 800;
             text-transform: uppercase;
         }
 
         .modern-user-menu {
             min-width: 220px;
-            border: 1px solid rgba(226, 232, 240, 0.9);
-            border-radius: 18px;
+            border: 1px solid rgba(8, 87, 195, 0.16);
+            border-radius: 16px;
             padding: 0.5rem;
-            box-shadow: 0 20px 45px -25px rgba(15, 23, 42, 0.35);
+            box-shadow: 0 18px 38px -24px rgba(8, 87, 195, 0.32);
         }
 
         .modern-user-menu .dropdown-item {
@@ -93,7 +106,16 @@
         }
 
         .content-wrapper {
-            background: linear-gradient(180deg, #f8fafc 0%, #eef4f7 100%);
+            background:
+                radial-gradient(circle at 10% 4%, rgba(113, 197, 232, 0.18), transparent 32%),
+                radial-gradient(circle at 95% 6%, rgba(48, 127, 226, 0.2), transparent 28%),
+                linear-gradient(180deg, #f7fbff 0%, #eef5ff 100%);
+            --report-first-col-width: 240px;
+            --report-data-col-width: 96px;
+            --report-th-font-size: 0.65rem;
+            --report-td-font-size: 0.70rem;
+            --report-th-padding: 10px 6px;
+            --report-td-padding: 6px 8px;
         }
 
         .content-header {
@@ -103,101 +125,102 @@
 
         .content-header h3 {
             font-size: 1.65rem;
-            font-weight: 700;
-            color: #0f172a;
+            font-weight: 800;
+            color: var(--bri-ink);
             margin-bottom: 0;
         }
 
         .card {
-            border: 1px solid rgba(226, 232, 240, 0.9);
-            border-radius: 1.15rem;
-            box-shadow: 0 18px 40px -30px rgba(15, 23, 42, 0.28);
+            border: 1px solid rgba(8, 87, 195, 0.12);
+            border-radius: 1rem;
+            box-shadow: 0 18px 34px -28px rgba(4, 42, 95, 0.28);
             overflow: hidden;
         }
 
         .card-header {
-            border-bottom: 1px solid rgba(226, 232, 240, 0.75);
+            border-bottom: 1px solid rgba(8, 87, 195, 0.1);
         }
 
         .card-title {
             font-weight: 700;
         }
 
-        .card-outline.card-primary,
-        .card-outline.card-success,
-        .card-outline.card-warning {
-            border-top-width: 0;
-        }
-
         .btn {
-            border-radius: 0.9rem;
+            border-radius: 0.8rem;
             font-weight: 700;
-            padding: 0.7rem 1rem;
-            box-shadow: 0 14px 26px -20px rgba(15, 23, 42, 0.45);
+            padding: 0.64rem 1rem;
+            box-shadow: 0 14px 24px -20px rgba(4, 42, 95, 0.45);
         }
 
-        .btn-primary {
-            background: linear-gradient(135deg, #0f766e, #115e59);
-            border-color: #0f766e;
+        .btn-primary,
+        .bg-primary {
+            background: linear-gradient(135deg, var(--bri-nusantara), var(--bri-cakrawala));
+            border-color: var(--bri-nusantara);
         }
 
         .btn-primary:hover,
         .btn-primary:focus {
-            background: linear-gradient(135deg, #0d5f59, #134e4a);
-            border-color: #0d5f59;
+            background: linear-gradient(135deg, #0749a5, #236bcc);
+            border-color: #0749a5;
         }
 
         .btn-success {
-            background: linear-gradient(135deg, #15803d, #166534);
-            border-color: #15803d;
+            background: linear-gradient(135deg, #0b4fba, #0857c3);
+            border-color: #0857c3;
         }
 
         .btn-light,
         .badge-light {
-            background: #f8fafc !important;
-            color: #475569 !important;
-            border: 1px solid #e2e8f0;
+            background: #f7fbff !important;
+            color: #33547a !important;
+            border: 1px solid rgba(8, 87, 195, 0.16);
+        }
+
+        .badge {
+            font-weight: 600;
+            letter-spacing: 0.01em;
         }
 
         .form-control,
         .custom-file-label,
         .select2-container--default .select2-selection--single {
             min-height: calc(2.4rem + 2px);
-            border-radius: 0.95rem !important;
-            border-color: #dbe4ee !important;
+            border-radius: 0.8rem !important;
+            border-color: #cfddf5 !important;
             box-shadow: none !important;
         }
 
         .form-control:focus,
         .custom-file-input:focus ~ .custom-file-label,
         .select2-container--default.select2-container--focus .select2-selection--single {
-            border-color: #0f766e !important;
-            box-shadow: 0 0 0 0.2rem rgba(15, 118, 110, 0.14) !important;
+            border-color: var(--bri-cakrawala) !important;
+            box-shadow: 0 0 0 0.2rem rgba(48, 127, 226, 0.16) !important;
         }
 
         .custom-file-label {
             padding-top: 0.72rem;
-            color: #64748b;
+            color: #56708f;
         }
 
         .custom-file-label::after {
             height: calc(2.4rem + 0px);
-            border-radius: 0 0.95rem 0.95rem 0;
-            background: #f8fafc;
-            color: #0f172a;
+            border-radius: 0 0.8rem 0.8rem 0;
+            background: #f4f8ff;
+            color: #0b3b80;
             padding-top: 0.72rem;
         }
 
         .table {
-            color: #1e293b;
+            color: #153256;
         }
 
         .table thead th {
             border-bottom-width: 1px;
+            border-bottom-color: rgba(8, 87, 195, 0.2);
         }
 
         .table-hover tbody tr:hover {
-            background-color: rgba(15, 118, 110, 0.06) !important;
+            background-color: rgba(113, 197, 232, 0.16) !important;
         }
 
         .table.table-hover tbody tr.row-total > td,
@@ -208,19 +231,9 @@
         .table.table-hover tbody tr.row-total-blue > th,
         .table.table-hover tbody tr.row-total-blue:hover > td,
         .table.table-hover tbody tr.row-total-blue:hover > th {
-            background-color: var(--row-total-bg, #003366) !important;
+            background-color: var(--row-total-bg, #0857c3) !important;
             color: var(--row-total-color, #ffffff) !important;
             border-color: var(--row-total-border, inherit) !important;
-        }
-
-        /* Report tables: responsive sizing for mobile, tablet, and desktop */
-        .content-wrapper {
-            --report-first-col-width: 240px;
-            --report-data-col-width: 96px;
-            --report-th-font-size: 0.65rem;
-            --report-td-font-size: 0.70rem;
-            --report-th-padding: 10px 6px;
-            --report-td-padding: 6px 8px;
         }
 
         .content-wrapper .table-container {
@@ -299,18 +312,18 @@
         }
 
         .main-sidebar .nav-link.active {
-            background: linear-gradient(135deg, rgba(45, 212, 191, 0.28), rgba(15, 23, 42, 0.18)) !important;
+            background: linear-gradient(120deg, rgba(113, 197, 232, 0.36), rgba(48, 127, 226, 0.5)) !important;
             color: #ffffff !important;
-            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2);
         }
 
         .main-sidebar .nav-link:hover {
-            background: rgba(255, 255, 255, 0.08);
+            background: rgba(255, 255, 255, 0.1);
             color: #ffffff !important;
         }
 
         .main-sidebar .nav-treeview > .nav-item > .nav-link.active {
-            background: rgba(255, 255, 255, 0.12) !important;
+            background: rgba(113, 197, 232, 0.2) !important;
         }
 
         .sidebar-mini .main-sidebar .nav-link {
@@ -326,7 +339,7 @@
 
         body.sidebar-hover-open.sidebar-mini.sidebar-collapse .main-sidebar {
             width: 300px;
-            box-shadow: 18px 0 38px -24px rgba(15, 23, 42, 0.55);
+            box-shadow: 18px 0 38px -24px rgba(4, 42, 95, 0.56);
         }
 
         .sidebar-mini.sidebar-collapse .main-sidebar .brand-link.sidebar-brand-link {
@@ -408,7 +421,7 @@
             padding: 0.5rem 0.25rem !important;
             margin-top: 0.75rem !important;
             margin-bottom: 1rem !important;
-            border-radius: 18px;
+            border-radius: 16px;
         }
 
         body.sidebar-hover-open.sidebar-mini.sidebar-collapse .main-sidebar .sidebar-user-panel {
@@ -420,7 +433,7 @@
         .sidebar-mini.sidebar-collapse .main-sidebar .sidebar-user-avatar {
             width: 42px !important;
             height: 42px !important;
-            border-radius: 14px !important;
+            border-radius: 13px !important;
         }
 
         .sidebar-mini.sidebar-collapse .main-sidebar .nav-sidebar {
@@ -443,7 +456,7 @@
             min-height: 44px;
             margin-bottom: 0 !important;
             padding: 0.55rem 0.4rem !important;
-            border-radius: 14px !important;
+            border-radius: 13px !important;
         }
 
         .sidebar-mini.sidebar-collapse .main-sidebar .nav-sidebar .nav-icon {
@@ -462,7 +475,7 @@
             width: 100%;
             min-height: 46px;
             padding: 0.65rem 0.75rem !important;
-            border-radius: 14px !important;
+            border-radius: 13px !important;
         }
 
         body.sidebar-hover-open.sidebar-mini.sidebar-collapse .main-sidebar .nav-sidebar .nav-icon {
@@ -479,35 +492,81 @@
         .sidebar-mini.sidebar-collapse .main-sidebar .nav-sidebar > .nav-item > .nav-link.active {
             margin-bottom: 0 !important;
         }
+
+        .content-wrapper,
+        .content-wrapper .content,
+        .content-wrapper .container-fluid {
+            transition: opacity 180ms ease, transform 220ms ease;
+            will-change: opacity, transform;
+        }
+
+        body.page-transition-leaving .content-wrapper,
+        body.page-transition-leaving .content-wrapper .content,
+        body.page-transition-leaving .content-wrapper .container-fluid {
+            opacity: 0;
+            transform: translateY(4px);
+            pointer-events: none;
+        }
+
+        .page-transition-bar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: 2000;
+            height: 3px;
+            width: 100%;
+            transform-origin: left;
+            transform: scaleX(0);
+            background: linear-gradient(90deg, var(--bri-nusantara) 0%, var(--bri-mentari) 100%);
+            box-shadow: 0 2px 10px rgba(8, 87, 195, 0.35);
+            opacity: 0;
+            transition: transform 320ms ease-out, opacity 180ms ease;
+            pointer-events: none;
+        }
+
+        body.page-transition-active .page-transition-bar {
+            opacity: 1;
+            transform: scaleX(0.82);
+        }
+
+        body.page-transition-finishing .page-transition-bar {
+            opacity: 0;
+            transform: scaleX(1);
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .content-wrapper,
+            .content-wrapper .content,
+            .content-wrapper .container-fluid,
+            .page-transition-bar {
+                transition: none !important;
+            }
+        }
     </style>
 </head>
 
 <body class="hold-transition sidebar-mini layout-fixed">
-
 <div class="wrapper">
+    <div class="page-transition-bar" aria-hidden="true"></div>
 
-    <!-- 🔥 NAVBAR -->
     <nav class="main-header modern-navbar navbar navbar-expand navbar-white navbar-light">
-
-        <!-- Hamburger -->
         <ul class="navbar-nav">
             <li class="nav-item">
-                <a class="nav-link menu-toggle" data-widget="pushmenu" href="#">
+                <a class="nav-link menu-toggle" data-widget="pushmenu" href="#" role="button" aria-label="Toggle sidebar">
                     <i class="fas fa-bars"></i>
                 </a>
             </li>
         </ul>
 
-        <!-- Right -->
         <ul class="navbar-nav ml-auto">
             <li class="nav-item dropdown">
                 <a class="nav-link modern-user-trigger d-flex align-items-center" data-toggle="dropdown" href="#" role="button" aria-haspopup="true" aria-expanded="false">
                     <span class="modern-user-badge mr-3">{{ strtoupper(substr(Auth::user()->name, 0, 2)) }}</span>
                     <span class="d-none d-sm-block">
-                        <span class="d-block font-weight-bold" style="font-size: 0.92rem; line-height: 1.05;">{{ Auth::user()->pn }} - {{ Auth::user()->name }}</span>
-                        <span class="d-block text-uppercase" style="font-size: 0.62rem; letter-spacing: 0.16em; color: #94a3b8;">Account Center</span>
+                        <span class="d-block font-weight-bold" style="font-size: 0.92rem; line-height: 1.05; color: #0b3b80;">{{ Auth::user()->pn }} - {{ Auth::user()->name }}</span>
+                        <span class="d-block text-uppercase" style="font-size: 0.62rem; letter-spacing: 0.16em; color: #5b7da7;">BRI Account</span>
                     </span>
-                    <i class="fas fa-chevron-down ml-3" style="font-size: 0.75rem; color: #64748b;"></i>
+                    <i class="fas fa-chevron-down ml-3" style="font-size: 0.75rem; color: #4f72a0;"></i>
                 </a>
 
                 <div class="dropdown-menu dropdown-menu-right modern-user-menu">
@@ -521,40 +580,27 @@
                 </div>
             </li>
         </ul>
-
     </nav>
 
-    <!-- 🔥 SIDEBAR -->
     @include('layouts.sidebar')
 
-    <!-- 🔥 CONTENT WRAPPER -->
     <div class="content-wrapper">
-
-        <!-- HEADER -->
         <div class="content-header">
             <div class="container-fluid">
                 <h3>@yield('title')</h3>
             </div>
         </div>
 
-        <!-- MAIN CONTENT -->
         <section class="content">
             <div class="container-fluid">
                 @yield('content')
             </div>
         </section>
-
     </div>
-
 </div>
 
-<!-- jQuery -->
 <script src="{{ asset('adminlte/plugins/jquery/jquery.min.js') }}"></script>
-
-<!-- Bootstrap -->
 <script src="{{ asset('adminlte/plugins/bootstrap/js/bootstrap.bundle.min.js') }}"></script>
-
-<!-- AdminLTE -->
 <script src="{{ asset('adminlte/dist/js/adminlte.min.js') }}"></script>
 <script src="{{ asset('adminlte/plugins/select2/js/select2.full.min.js') }}"></script>
 <script src="{{ asset('adminlte/plugins/sweetalert2/sweetalert2.all.min.js') }}"></script>
@@ -603,6 +649,87 @@
 
         $(document).on('collapsed.lte.pushmenu shown.lte.pushmenu', function () {
             closeHoverSidebar();
+        });
+    });
+</script>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const body = document.body;
+        const prefetchCache = new Set();
+        const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+        const isInternalNavigableLink = function (link) {
+            if (!link || link.target === '_blank' || link.hasAttribute('download')) {
+                return false;
+            }
+
+            const href = link.getAttribute('href');
+            if (!href || href.startsWith('#') || href.startsWith('javascript:')) {
+                return false;
+            }
+
+            const url = new URL(link.href, window.location.origin);
+            if (url.origin !== window.location.origin) {
+                return false;
+            }
+
+            return url.pathname + url.search !== window.location.pathname + window.location.search;
+        };
+
+        const prefetchLink = function (link) {
+            if (!isInternalNavigableLink(link)) {
+                return;
+            }
+
+            const url = new URL(link.href, window.location.origin);
+            const key = url.pathname + url.search;
+            if (prefetchCache.has(key)) {
+                return;
+            }
+
+            prefetchCache.add(key);
+            const hint = document.createElement('link');
+            hint.rel = 'prefetch';
+            hint.href = url.href;
+            hint.as = 'document';
+            document.head.appendChild(hint);
+        };
+
+        document.addEventListener('mouseover', function (event) {
+            const link = event.target.closest('a[href]');
+            prefetchLink(link);
+        });
+
+        document.addEventListener('touchstart', function (event) {
+            const link = event.target.closest('a[href]');
+            prefetchLink(link);
+        }, { passive: true });
+
+        document.addEventListener('click', function (event) {
+            const link = event.target.closest('a[href]');
+            if (!isInternalNavigableLink(link)) {
+                return;
+            }
+
+            if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
+                return;
+            }
+
+            if (event.defaultPrevented) {
+                return;
+            }
+
+            if (!reducedMotion) {
+                body.classList.add('page-transition-active', 'page-transition-leaving');
+                window.setTimeout(function () {
+                    body.classList.add('page-transition-finishing');
+                }, 140);
+            }
+        }, true);
+
+        window.addEventListener('pageshow', function () {
+            body.classList.remove('page-transition-active', 'page-transition-leaving', 'page-transition-finishing');
         });
     });
 </script>

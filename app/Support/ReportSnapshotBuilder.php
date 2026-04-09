@@ -10,11 +10,15 @@ use Throwable;
 class ReportSnapshotBuilder
 {
     private const DASHBOARD_SNAPSHOT_TABLE = 'dashboard_pinjaman_snapshots';
+    private const DASHBOARD_SIMPANAN_SNAPSHOT_TABLE = 'dashboard_simpanan_snapshots';
+    private const DASHBOARD_SIMPANAN_BRANCH_SNAPSHOT_TABLE = 'dashboard_simpanan_branch_snapshots';
     private const RASIO_SNAPSHOT_TABLE = 'rasio_casa_debitur_snapshots';
     private const DORMANT_SNAPSHOT_TABLE = 'rekening_dormant_snapshots';
+    private const NEW_PAYROLL_SNAPSHOT_TABLE = 'performance_new_payroll_snapshots';
 
     private const PRIORITY_BRANCHES = ['MADIUN', 'MAGETAN', 'NGAWI', 'PONOROGO'];
     private const SEGMENTS = ['total', 'briguna', 'kpr', 'mikro', 'smc'];
+    private const NEW_PAYROLL_BRANCHES = ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'];
 
     private const AREA_BRANCHES = [
         'KC Madiun',
@@ -29,6 +33,7 @@ class ReportSnapshotBuilder
         'KC Ngawi' => 'KC NGAWI',
         'KC Ponorogo' => 'KC PONOROGO',
     ];
+    private const LOAN_SOURCE_KEY_COLUMN = 'uniqueid_namareport';
 
     public function rebuild(string $report = 'all', ?string $period = null, bool $force = false): array
     {
@@ -38,16 +43,24 @@ class ReportSnapshotBuilder
             'dashboard', 'dashboard-pinjaman', 'pinjaman' => [
                 'dashboard' => $this->rebuildDashboard($period, $force),
             ],
+            'dashboard-simpanan', 'simpanan-dashboard', 'simpanan' => [
+                'dashboard_simpanan' => $this->rebuildDashboardSimpanan($period, $force),
+            ],
             'rasio', 'rasio-casa', 'rasio-casa-debitur' => [
                 'rasio' => $this->rebuildRasioCasa($period, $force),
             ],
             'dormant', 'rekening-dormant' => [
                 'dormant' => $this->rebuildRekeningDormant($period, $force),
             ],
+            'new-payroll', 'performance-new-payroll', 'payroll' => [
+                'new_payroll' => $this->rebuildPerformanceNewPayroll($period, $force),
+            ],
             default => [
                 'dashboard' => $this->rebuildDashboard($period, $force),
+                'dashboard_simpanan' => $this->rebuildDashboardSimpanan($period, $force),
                 'rasio' => $this->rebuildRasioCasa($period, $force),
                 'dormant' => $this->rebuildRekeningDormant($period, $force),
+                'new_payroll' => $this->rebuildPerformanceNewPayroll($period, $force),
             ],
         };
     }
@@ -58,6 +71,22 @@ class ReportSnapshotBuilder
 
         foreach ($this->resolveDashboardPeriods($period) as $snapshotPeriod) {
             $results[$snapshotPeriod] = $this->buildDashboardPeriodSnapshot($snapshotPeriod, $force);
+        }
+
+        return $results;
+    }
+
+    public function rebuildDashboardSimpanan(?string $period = null, bool $force = false): array
+    {
+        $results = [];
+        $periods = $this->resolveSimpananDashboardPeriods($period);
+
+        foreach ($periods as $snapshotPeriod) {
+            $results[$snapshotPeriod] = $this->buildDashboardSimpananPeriodSnapshot($snapshotPeriod, $force);
+        }
+
+        if ($period === null) {
+            $this->cleanupSimpananDashboardSnapshotOrphans($periods);
         }
 
         return $results;
@@ -85,68 +114,94 @@ class ReportSnapshotBuilder
         return $results;
     }
 
+    public function rebuildPerformanceNewPayroll(?string $period = null, bool $force = false): array
+    {
+        $results = [];
+
+        foreach ($this->resolveNewPayrollPeriods($period) as $snapshotPeriod) {
+            $results[$snapshotPeriod] = $this->buildNewPayrollPeriodSnapshot($snapshotPeriod, $force);
+        }
+
+        return $results;
+    }
+
     private function buildDashboardPeriodSnapshot(string $period, bool $force): int
     {
         if (!$force && DB::table(self::DASHBOARD_SNAPSHOT_TABLE)->where('periode', $period)->exists()) {
             return (int) DB::table(self::DASHBOARD_SNAPSHOT_TABLE)->where('periode', $period)->count();
         }
 
-        DB::table(self::DASHBOARD_SNAPSHOT_TABLE)->where('periode', $period)->delete();
-
-        $buffer = [];
-        $inserted = 0;
         $bucketExpression = $this->buildDashboardBucketExpression();
+        $normalizedLoanBalanceExpression = $this->buildNormalizedLoanBalanceExpression('baki_debet1');
+        $snapshotTable = self::DASHBOARD_SNAPSHOT_TABLE;
+        $sourceKey = self::LOAN_SOURCE_KEY_COLUMN;
 
-        DB::table('daily_loan_dinamis')
-            ->where('periode', $period)
-            ->whereNotNull('nomor_rekening1')
-            ->where('nomor_rekening1', '<>', '')
-            ->selectRaw("
-                id,
+        DB::statement("
+            INSERT INTO {$snapshotTable}
+            (
+                uniqueid_dps, periode, account_number, loan_balance, quality_bucket,
+                segmen_dashboard, produk_dashboard, cabang1, unit1, created_at, updated_at
+            )
+            SELECT
+                MD5(CONCAT_WS('|', 'dps', ?, TRIM(COALESCE({$sourceKey}, '')), TRIM(nomor_rekening1))) as uniqueid_dps,
+                ? as periode,
                 TRIM(nomor_rekening1) as account_number,
-                COALESCE(baki_debet1, 0) as loan_balance,
+                {$normalizedLoanBalanceExpression} as loan_balance,
                 {$bucketExpression} as quality_bucket,
-                COALESCE(segmen_dashboard, '') as segmen_dashboard,
-                COALESCE(produk_dashboard, '') as produk_dashboard,
-                COALESCE(cabang1, '') as cabang1,
-                COALESCE(unit1, '') as unit1
-            ")
-            ->orderBy('id')
-            ->chunkById(2000, function ($rows) use (&$buffer, &$inserted, $period) {
-                foreach ($rows as $row) {
-                    $accountNumber = trim((string) ($row->account_number ?? ''));
+                TRIM(COALESCE(segmen_dashboard, '')) as segmen_dashboard,
+                TRIM(COALESCE(produk_dashboard, '')) as produk_dashboard,
+                TRIM(COALESCE(cabang1, '')) as cabang1,
+                TRIM(COALESCE(unit1, '')) as unit1,
+                NOW() as created_at,
+                NOW() as updated_at
+            FROM daily_loan_dinamis
+            WHERE periode = ?
+                AND nomor_rekening1 IS NOT NULL
+                AND TRIM(nomor_rekening1) <> ''
+            ON DUPLICATE KEY UPDATE
+                loan_balance = VALUES(loan_balance),
+                quality_bucket = VALUES(quality_bucket),
+                segmen_dashboard = VALUES(segmen_dashboard),
+                produk_dashboard = VALUES(produk_dashboard),
+                cabang1 = VALUES(cabang1),
+                unit1 = VALUES(unit1),
+                updated_at = VALUES(updated_at)
+        ", [$period, $period, $period]);
 
-                    if ($accountNumber === '') {
-                        continue;
-                    }
+        DB::statement("
+            DELETE snap
+            FROM {$snapshotTable} snap
+            LEFT JOIN (
+                SELECT
+                    MD5(CONCAT_WS('|', 'dps', ?, TRIM(COALESCE({$sourceKey}, '')), TRIM(nomor_rekening1))) as uniqueid_dps
+                FROM daily_loan_dinamis
+                WHERE periode = ?
+                    AND nomor_rekening1 IS NOT NULL
+                    AND TRIM(nomor_rekening1) <> ''
+            ) src ON src.uniqueid_dps = snap.uniqueid_dps
+            WHERE snap.periode = ?
+                AND src.uniqueid_dps IS NULL
+        ", [$period, $period, $period]);
 
-                    $buffer[] = [
-                        'periode' => $period,
-                        'account_number' => $accountNumber,
-                        'loan_balance' => (float) ($row->loan_balance ?? 0),
-                        'quality_bucket' => trim((string) ($row->quality_bucket ?? 'L')) ?: 'L',
-                        'segmen_dashboard' => trim((string) ($row->segmen_dashboard ?? '')),
-                        'produk_dashboard' => trim((string) ($row->produk_dashboard ?? '')),
-                        'cabang1' => trim((string) ($row->cabang1 ?? '')),
-                        'unit1' => trim((string) ($row->unit1 ?? '')),
-                        'created_at' => now(),
-                        'updated_at' => now(),
-                    ];
+        return (int) DB::table(self::DASHBOARD_SNAPSHOT_TABLE)->where('periode', $period)->count();
+    }
 
-                    if (count($buffer) >= 1000) {
-                        DB::table(self::DASHBOARD_SNAPSHOT_TABLE)->insert($buffer);
-                        $inserted += count($buffer);
-                        $buffer = [];
-                    }
-                }
-            });
+    private function buildNormalizedLoanBalanceExpression(string $column): string
+    {
+        $base = $this->loanBalanceRoundingBase();
 
-        if (!empty($buffer)) {
-            DB::table(self::DASHBOARD_SNAPSHOT_TABLE)->insert($buffer);
-            $inserted += count($buffer);
+        if ($base <= 1) {
+            return "COALESCE({$column}, 0)";
         }
 
-        return $inserted;
+        return "FLOOR(COALESCE({$column}, 0) / {$base}) * {$base}";
+    }
+
+    private function loanBalanceRoundingBase(): int
+    {
+        $configured = (int) config('reports.dashboard_pinjaman.row_rounding_base', 1);
+
+        return $configured > 0 ? $configured : 1;
     }
 
     private function buildRasioPeriodSnapshot(string $loanPeriod, bool $force): int
@@ -157,12 +212,11 @@ class ReportSnapshotBuilder
 
         $snapshot = $this->computeRasioSummary($loanPeriod);
 
-        DB::table(self::RASIO_SNAPSHOT_TABLE)->where('loan_period', $loanPeriod)->delete();
-
         $rows = [];
         foreach (($snapshot['branch_labels'] ?? []) as $branchKey => $branchLabel) {
             foreach (self::SEGMENTS as $segmentKey) {
                 $rows[] = [
+                    'uniqueid_rcds' => $this->makeRasioSnapshotId($loanPeriod, $branchKey, $segmentKey),
                     'loan_period' => $loanPeriod,
                     'casa_period' => $snapshot['casa_date'],
                     'branch_key' => $branchKey,
@@ -179,11 +233,138 @@ class ReportSnapshotBuilder
 
         if (!empty($rows)) {
             foreach (array_chunk($rows, 500) as $chunk) {
-                DB::table(self::RASIO_SNAPSHOT_TABLE)->insert($chunk);
+                DB::table(self::RASIO_SNAPSHOT_TABLE)->upsert(
+                    $chunk,
+                    ['loan_period', 'branch_key', 'segment_key'],
+                    ['casa_period', 'branch_label', 'os_amount', 'casa_amount', 'source_row_count', 'updated_at']
+                );
             }
         }
 
         return count($rows);
+    }
+
+    private function buildDashboardSimpananPeriodSnapshot(string $period, bool $force): int
+    {
+        if (!Schema::hasTable(self::DASHBOARD_SIMPANAN_SNAPSHOT_TABLE) || !Schema::hasTable('simpanan_multipn')) {
+            return 0;
+        }
+
+        if (!$force && DB::table(self::DASHBOARD_SIMPANAN_SNAPSHOT_TABLE)->where('snapshot_period', $period)->exists()) {
+            return (int) DB::table(self::DASHBOARD_SIMPANAN_SNAPSHOT_TABLE)
+                ->where('snapshot_period', $period)
+                ->value('source_row_count');
+        }
+
+        $summary = DB::table('simpanan_multipn')
+            ->where('posisi', $period)
+            ->selectRaw('COUNT(*) as source_row_count')
+            ->selectRaw('COALESCE(SUM(COALESCE(saldo_idr, 0)), 0) as total_balance')
+            ->selectRaw('COUNT(DISTINCT no_rekening) as account_count')
+            ->selectRaw('COUNT(DISTINCT CIFNO) as cif_count')
+            ->selectRaw('COUNT(DISTINCT kantor_cabang) as branch_count')
+            ->selectRaw('COUNT(DISTINCT unit_kerja) as unit_count')
+            ->selectRaw("COALESCE(SUM(CASE WHEN UPPER(COALESCE(jenis_simpanan, '')) LIKE 'TABUNGAN%' THEN COALESCE(saldo_idr, 0) ELSE 0 END), 0) as tabungan_balance")
+            ->selectRaw("COALESCE(SUM(CASE WHEN UPPER(COALESCE(jenis_simpanan, '')) LIKE 'GIRO%' THEN COALESCE(saldo_idr, 0) ELSE 0 END), 0) as giro_balance")
+            ->selectRaw('MAX(updated_at) as source_updated_at')
+            ->first();
+
+        $sourceRowCount = (int) ($summary->source_row_count ?? 0);
+        if ($sourceRowCount <= 0) {
+            DB::table(self::DASHBOARD_SIMPANAN_SNAPSHOT_TABLE)->where('snapshot_period', $period)->delete();
+            DB::table(self::DASHBOARD_SIMPANAN_BRANCH_SNAPSHOT_TABLE)->where('snapshot_period', $period)->delete();
+
+            return 0;
+        }
+
+        $totalBalance = (float) ($summary->total_balance ?? 0);
+        $tabunganBalance = (float) ($summary->tabungan_balance ?? 0);
+        $giroBalance = (float) ($summary->giro_balance ?? 0);
+        $otherBalance = max(0, $totalBalance - $tabunganBalance - $giroBalance);
+
+        $topBranches = DB::table('simpanan_multipn')
+            ->where('posisi', $period)
+            ->whereNotNull('kantor_cabang')
+            ->where('kantor_cabang', '<>', '')
+            ->selectRaw('TRIM(kantor_cabang) as kantor_cabang')
+            ->selectRaw('COALESCE(SUM(COALESCE(saldo_idr, 0)), 0) as total_balance')
+            ->groupBy('kantor_cabang')
+            ->orderByDesc('total_balance')
+            ->limit(5)
+            ->get();
+
+        $topBranch = $topBranches->first();
+
+        DB::table(self::DASHBOARD_SIMPANAN_SNAPSHOT_TABLE)->upsert([
+            [
+                'snapshot_period' => $period,
+                'total_balance' => $totalBalance,
+                'account_count' => (int) ($summary->account_count ?? 0),
+                'cif_count' => (int) ($summary->cif_count ?? 0),
+                'branch_count' => (int) ($summary->branch_count ?? 0),
+                'unit_count' => (int) ($summary->unit_count ?? 0),
+                'tabungan_balance' => $tabunganBalance,
+                'giro_balance' => $giroBalance,
+                'other_balance' => $otherBalance,
+                'top_branch_label' => trim((string) ($topBranch->kantor_cabang ?? '')),
+                'top_branch_balance' => (float) ($topBranch->total_balance ?? 0),
+                'source_row_count' => $sourceRowCount,
+                'source_updated_at' => $summary->source_updated_at,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ], ['snapshot_period'], [
+            'total_balance',
+            'account_count',
+            'cif_count',
+            'branch_count',
+            'unit_count',
+            'tabungan_balance',
+            'giro_balance',
+            'other_balance',
+            'top_branch_label',
+            'top_branch_balance',
+            'source_row_count',
+            'source_updated_at',
+            'updated_at',
+        ]);
+
+        $branchPayload = [];
+        $branchKeys = [];
+        foreach ($topBranches->values() as $index => $row) {
+            $branchLabel = trim((string) ($row->kantor_cabang ?? ''));
+            if ($branchLabel === '') {
+                continue;
+            }
+
+            $branchKeys[] = $branchLabel;
+            $branchPayload[] = [
+                'uniqueid_dsbs' => md5(implode('|', ['dsbs', $period, $branchLabel])),
+                'snapshot_period' => $period,
+                'kantor_cabang' => $branchLabel,
+                'total_balance' => (float) ($row->total_balance ?? 0),
+                'rank_order' => $index + 1,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ];
+        }
+
+        if (!empty($branchPayload)) {
+            DB::table(self::DASHBOARD_SIMPANAN_BRANCH_SNAPSHOT_TABLE)->upsert(
+                $branchPayload,
+                ['snapshot_period', 'kantor_cabang'],
+                ['total_balance', 'rank_order', 'updated_at']
+            );
+        }
+
+        $branchCleanup = DB::table(self::DASHBOARD_SIMPANAN_BRANCH_SNAPSHOT_TABLE)->where('snapshot_period', $period);
+        if (!empty($branchKeys)) {
+            $branchCleanup->whereNotIn('kantor_cabang', $branchKeys)->delete();
+        } else {
+            $branchCleanup->delete();
+        }
+
+        return $sourceRowCount;
     }
 
     private function buildDormantPeriodSnapshot(string $period, bool $force): int
@@ -192,53 +373,131 @@ class ReportSnapshotBuilder
             return (int) DB::table(self::DORMANT_SNAPSHOT_TABLE)->where('posisi', $period)->count();
         }
 
-        DB::table(self::DORMANT_SNAPSHOT_TABLE)->where('posisi', $period)->delete();
+        $snapshotTable = self::DORMANT_SNAPSHOT_TABLE;
+        $branchLabelExpression = $this->buildDormantBranchLabelSqlExpression('base.raw_branch');
 
-        $baseQuery = DB::table('simpanan_multipn')
-            ->where('posisi', $period)
-            ->where('status', '9')
-            ->whereNotNull('kantor_cabang')
-            ->where('kantor_cabang', '<>', '')
-            ->selectRaw("
-                kantor_cabang as raw_branch,
-                COALESCE(NULLIF(TRIM(unit_kerja), ''), '') as normalized_unit
-            ");
+        DB::statement("
+            INSERT INTO {$snapshotTable}
+            (
+                uniqueid_rds, posisi, branch_label, raw_branch, unit_kerja, dormant_count, created_at, updated_at
+            )
+            SELECT
+                MD5(CONCAT_WS('|', 'rds', ?, TRIM(base.raw_branch), TRIM(base.unit_kerja))) as uniqueid_rds,
+                ? as posisi,
+                {$branchLabelExpression} as branch_label,
+                TRIM(base.raw_branch) as raw_branch,
+                TRIM(base.unit_kerja) as unit_kerja,
+                base.dormant_count as dormant_count,
+                NOW() as created_at,
+                NOW() as updated_at
+            FROM (
+                SELECT
+                    kantor_cabang as raw_branch,
+                    COALESCE(NULLIF(TRIM(unit_kerja), ''), '') as unit_kerja,
+                    COUNT(*) as dormant_count
+                FROM simpanan_multipn
+                WHERE posisi = ?
+                    AND status = '9'
+                    AND kantor_cabang IS NOT NULL
+                    AND TRIM(kantor_cabang) <> ''
+                GROUP BY kantor_cabang, COALESCE(NULLIF(TRIM(unit_kerja), ''), '')
+            ) base
+            WHERE {$branchLabelExpression} IS NOT NULL
+            ON DUPLICATE KEY UPDATE
+                branch_label = VALUES(branch_label),
+                dormant_count = VALUES(dormant_count),
+                updated_at = VALUES(updated_at)
+        ", [$period, $period, $period]);
 
-        $rows = DB::query()
-            ->fromSub($baseQuery, 'dormant_base')
-            ->selectRaw('raw_branch')
-            ->selectRaw('normalized_unit as unit_kerja')
-            ->selectRaw('COUNT(*) as dormant_count')
-            ->groupBy('raw_branch', 'normalized_unit')
-            ->get();
+        DB::statement("
+            DELETE snap
+            FROM {$snapshotTable} snap
+            LEFT JOIN (
+                SELECT
+                    MD5(CONCAT_WS('|', 'rds', ?, TRIM(base.raw_branch), TRIM(base.unit_kerja))) as uniqueid_rds
+                FROM (
+                    SELECT
+                        kantor_cabang as raw_branch,
+                        COALESCE(NULLIF(TRIM(unit_kerja), ''), '') as unit_kerja
+                    FROM simpanan_multipn
+                    WHERE posisi = ?
+                        AND status = '9'
+                        AND kantor_cabang IS NOT NULL
+                        AND TRIM(kantor_cabang) <> ''
+                    GROUP BY kantor_cabang, COALESCE(NULLIF(TRIM(unit_kerja), ''), '')
+                ) base
+                WHERE {$branchLabelExpression} IS NOT NULL
+            ) src ON src.uniqueid_rds = snap.uniqueid_rds
+            WHERE snap.posisi = ?
+                AND src.uniqueid_rds IS NULL
+        ", [$period, $period, $period]);
 
-        $buffer = [];
-        foreach ($rows as $row) {
-            $rawBranch = trim((string) ($row->raw_branch ?? ''));
-            $branchLabel = $this->mapDormantBranchLabel($rawBranch);
+        return (int) DB::table(self::DORMANT_SNAPSHOT_TABLE)->where('posisi', $period)->count();
+    }
 
-            if ($rawBranch === '' || $branchLabel === null) {
-                continue;
-            }
+    private function buildNewPayrollPeriodSnapshot(string $snapshotPosisi, bool $force): int
+    {
+        if (!Schema::hasTable(self::NEW_PAYROLL_SNAPSHOT_TABLE) || !Schema::hasTable('performance_pis_per_produk')) {
+            return 0;
+        }
 
-            $buffer[] = [
-                'posisi' => $period,
-                'branch_label' => $branchLabel,
-                'raw_branch' => $rawBranch,
-                'unit_kerja' => trim((string) ($row->unit_kerja ?? '')),
-                'dormant_count' => (int) ($row->dormant_count ?? 0),
+        if (!$force && DB::table(self::NEW_PAYROLL_SNAPSHOT_TABLE)->where('snapshot_posisi', $snapshotPosisi)->exists()) {
+            return (int) DB::table(self::NEW_PAYROLL_SNAPSHOT_TABLE)->where('snapshot_posisi', $snapshotPosisi)->count();
+        }
+
+        $snapshotDate = Carbon::parse($snapshotPosisi);
+        $currStart = $snapshotDate->copy()->startOfMonth()->toDateString();
+        $currEnd = $snapshotDate->copy()->endOfMonth()->toDateString();
+        $prevStart = $snapshotDate->copy()->subMonthNoOverflow()->startOfMonth()->toDateString();
+        $prevEnd = Carbon::parse($prevStart)->endOfMonth()->toDateString();
+        $yoyStart = $snapshotDate->copy()->subYearNoOverflow()->startOfMonth()->toDateString();
+        $yoyEnd = Carbon::parse($yoyStart)->endOfMonth()->toDateString();
+
+        $rows = DB::table('performance_pis_per_produk')
+            ->selectRaw('UPPER(kanca) as branch')
+            ->selectRaw('COUNT(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN 1 END) as rekening_curr', [$currStart, $currEnd])
+            ->selectRaw('COUNT(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN 1 END) as rekening_prev', [$prevStart, $prevEnd])
+            ->selectRaw('COUNT(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN 1 END) as rekening_yoy_prev', [$yoyStart, $yoyEnd])
+            ->selectRaw('SUM(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN saldo_britama_kerjasama ELSE 0 END) as saldo_curr', [$currStart, $currEnd])
+            ->selectRaw('SUM(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN saldo_britama_kerjasama ELSE 0 END) as saldo_prev', [$prevStart, $prevEnd])
+            ->selectRaw('SUM(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN saldo_britama_kerjasama ELSE 0 END) as saldo_yoy_prev', [$yoyStart, $yoyEnd])
+            ->whereDate('posisi', $snapshotPosisi)
+            ->whereIn(DB::raw('UPPER(kanca)'), self::NEW_PAYROLL_BRANCHES)
+            ->groupBy(DB::raw('UPPER(kanca)'))
+            ->get()
+            ->keyBy('branch');
+
+        $payload = [];
+        foreach (self::NEW_PAYROLL_BRANCHES as $branch) {
+            $row = $rows->get($branch);
+
+            $payload[] = [
+                'uniqueid_pnps' => $this->makeNewPayrollSnapshotId($snapshotPosisi, $branch),
+                'snapshot_posisi' => $snapshotPosisi,
+                'branch' => $branch,
+                'rekening_curr' => (int) ($row->rekening_curr ?? 0),
+                'rekening_prev' => (int) ($row->rekening_prev ?? 0),
+                'rekening_yoy_prev' => (int) ($row->rekening_yoy_prev ?? 0),
+                'saldo_curr' => (float) ($row->saldo_curr ?? 0),
+                'saldo_prev' => (float) ($row->saldo_prev ?? 0),
+                'saldo_yoy_prev' => (float) ($row->saldo_yoy_prev ?? 0),
                 'created_at' => now(),
                 'updated_at' => now(),
             ];
         }
 
-        if (!empty($buffer)) {
-            foreach (array_chunk($buffer, 500) as $chunk) {
-                DB::table(self::DORMANT_SNAPSHOT_TABLE)->insert($chunk);
-            }
-        }
+        DB::table(self::NEW_PAYROLL_SNAPSHOT_TABLE)
+            ->where('snapshot_posisi', $snapshotPosisi)
+            ->whereNotIn('branch', self::NEW_PAYROLL_BRANCHES)
+            ->delete();
 
-        return count($buffer);
+        DB::table(self::NEW_PAYROLL_SNAPSHOT_TABLE)->upsert(
+            $payload,
+            ['snapshot_posisi', 'branch'],
+            ['rekening_curr', 'rekening_prev', 'rekening_yoy_prev', 'saldo_curr', 'saldo_prev', 'saldo_yoy_prev', 'updated_at']
+        );
+
+        return count($payload);
     }
 
     private function computeRasioSummary(string $loanPeriod): array
@@ -445,6 +704,54 @@ class ReportSnapshotBuilder
         return array_values(array_unique(array_filter([$selected, $mtd, $ytd, $yoy])));
     }
 
+    private function resolveSimpananDashboardPeriods(?string $period): array
+    {
+        $selected = $this->resolveAvailablePeriod('simpanan_multipn', 'posisi', $period);
+
+        if (!$selected) {
+            return [];
+        }
+
+        if ($period) {
+            return [$selected];
+        }
+
+        try {
+            return DB::table('simpanan_multipn')
+                ->select('posisi')
+                ->whereNotNull('posisi')
+                ->distinct()
+                ->orderByDesc('posisi')
+                ->pluck('posisi')
+                ->map(fn ($value) => Carbon::parse($value)->toDateString())
+                ->values()
+                ->all();
+        } catch (Throwable) {
+            return [$selected];
+        }
+    }
+
+    private function resolveNewPayrollPeriods(?string $period): array
+    {
+        $selected = $this->resolveAvailablePeriod('performance_pis_per_produk', 'posisi', $period);
+
+        if (!$selected) {
+            return [];
+        }
+
+        if ($period) {
+            return [$selected];
+        }
+
+        $comparison = $this->resolveAvailablePeriod(
+            'performance_pis_per_produk',
+            'posisi',
+            Carbon::parse($selected)->subMonthNoOverflow()->endOfMonth()->toDateString()
+        );
+
+        return array_values(array_unique(array_filter([$selected, $comparison])));
+    }
+
     private function resolveAvailablePeriod(string $table, string $column, ?string $targetDate): ?string
     {
         try {
@@ -471,6 +778,25 @@ class ReportSnapshotBuilder
         }
     }
 
+    private function cleanupSimpananDashboardSnapshotOrphans(array $validPeriods): void
+    {
+        if (!Schema::hasTable(self::DASHBOARD_SIMPANAN_SNAPSHOT_TABLE) || !Schema::hasTable(self::DASHBOARD_SIMPANAN_BRANCH_SNAPSHOT_TABLE)) {
+            return;
+        }
+
+        $summaryCleanup = DB::table(self::DASHBOARD_SIMPANAN_SNAPSHOT_TABLE);
+        $branchCleanup = DB::table(self::DASHBOARD_SIMPANAN_BRANCH_SNAPSHOT_TABLE);
+
+        if (!empty($validPeriods)) {
+            $summaryCleanup->whereNotIn('snapshot_period', $validPeriods)->delete();
+            $branchCleanup->whereNotIn('snapshot_period', $validPeriods)->delete();
+            return;
+        }
+
+        $summaryCleanup->delete();
+        $branchCleanup->delete();
+    }
+
     private function shouldApplyCasaTypeFilter(string $casaDate): bool
     {
         try {
@@ -488,37 +814,30 @@ class ReportSnapshotBuilder
 
     private function buildDashboardBucketExpression(): string
     {
-        $rawQualityExpression = "
+        $normalizedKolekDetail = "UPPER(TRIM(COALESCE(kolek_detail, '')))";
+
+        $kolekFixExpression = "
             CASE
-                WHEN TRIM(COALESCE(kolek_detail, '')) = '' OR TRIM(COALESCE(kolek_detail, '')) = '0' THEN
-                    CASE
-                        WHEN COALESCE(umur_tunggakan, 0) <= 0 THEN 'L'
-                        WHEN COALESCE(umur_tunggakan, 0) <= 30 THEN 'DPK 1'
-                        WHEN COALESCE(umur_tunggakan, 0) <= 60 THEN 'DPK 2'
-                        WHEN COALESCE(umur_tunggakan, 0) <= 90 THEN 'DPK 3'
-                        WHEN COALESCE(umur_tunggakan, 0) <= 120 THEN 'KL'
-                        WHEN COALESCE(umur_tunggakan, 0) <= 150 THEN 'D1'
-                        WHEN COALESCE(umur_tunggakan, 0) <= 180 THEN 'D2'
-                        ELSE 'M'
-                    END
-                ELSE UPPER(TRIM(COALESCE(kolek_detail, '')))
+                WHEN {$normalizedKolekDetail} NOT IN ('', '0', '-') THEN {$normalizedKolekDetail}
+                WHEN umur_tunggakan <= 0 THEN 'L'
+                WHEN umur_tunggakan <= 30 THEN 'DPK 1'
+                WHEN umur_tunggakan <= 60 THEN 'DPK 2'
+                WHEN umur_tunggakan <= 90 THEN 'DPK 3'
+                WHEN umur_tunggakan <= 120 THEN 'KL'
+                WHEN umur_tunggakan <= 180 THEN 'D1'
+                ELSE 'M'
             END
         ";
 
         return "
             CASE
-                WHEN ({$rawQualityExpression}) = 'L' AND UPPER(COALESCE(flag_restruk, '')) = 'Y' THEN 'LR'
-                WHEN ({$rawQualityExpression}) = 'L' THEN 'L'
-                WHEN ({$rawQualityExpression}) IN ('DPK 1', 'SML1') THEN 'DPK 1'
-                WHEN ({$rawQualityExpression}) IN ('DPK 2', 'SML2') THEN 'DPK 2'
-                WHEN ({$rawQualityExpression}) IN ('DPK 3', 'SML3') THEN 'DPK 3'
-                WHEN ({$rawQualityExpression}) = 'KL' THEN 'KL'
-                WHEN ({$rawQualityExpression}) = 'D1' THEN 'D1'
-                WHEN ({$rawQualityExpression}) = 'D2' THEN 'D2'
-                WHEN ({$rawQualityExpression}) IN ('M', 'NPL') THEN 'M'
-                WHEN ({$rawQualityExpression}) = 'PH' THEN 'PH'
-                WHEN ({$rawQualityExpression}) = 'PAY' THEN 'Pay'
-                ELSE 'L'
+                WHEN ({$kolekFixExpression}) = 'L' AND UPPER(COALESCE(flag_restruk, '')) = 'Y' THEN 'LR'
+                WHEN ({$kolekFixExpression}) IN ('DPK1', 'SML1') THEN 'DPK 1'
+                WHEN ({$kolekFixExpression}) IN ('DPK2', 'SML2') THEN 'DPK 2'
+                WHEN ({$kolekFixExpression}) IN ('DPK3', 'SML3') THEN 'DPK 3'
+                WHEN ({$kolekFixExpression}) = 'NPL' THEN 'M'
+                WHEN ({$kolekFixExpression}) IN ('PAY', 'LUNAS') THEN 'Pay'
+                ELSE ({$kolekFixExpression})
             END
         ";
     }
@@ -545,6 +864,19 @@ class ReportSnapshotBuilder
                 WHEN 'NGAWI' THEN 3
                 WHEN 'PONOROGO' THEN 4
                 ELSE 99
+            END
+        ";
+    }
+
+    private function buildDormantBranchLabelSqlExpression(string $column): string
+    {
+        return "
+            CASE
+                WHEN UPPER(TRIM(COALESCE({$column}, ''))) LIKE '%KC MADIUN%' THEN 'KC Madiun'
+                WHEN UPPER(TRIM(COALESCE({$column}, ''))) LIKE '%KC MAGETAN%' THEN 'KC Magetan'
+                WHEN UPPER(TRIM(COALESCE({$column}, ''))) LIKE '%KC NGAWI%' THEN 'KC Ngawi'
+                WHEN UPPER(TRIM(COALESCE({$column}, ''))) LIKE '%KC PONOROGO%' THEN 'KC Ponorogo'
+                ELSE NULL
             END
         ";
     }
@@ -655,5 +987,44 @@ class ReportSnapshotBuilder
         }
 
         return null;
+    }
+
+    private function makeDashboardSnapshotId(string $period, string $sourceUniqueId, string $accountNumber): string
+    {
+        return md5(implode('|', [
+            'dps',
+            $period,
+            trim($sourceUniqueId),
+            trim($accountNumber),
+        ]));
+    }
+
+    private function makeRasioSnapshotId(string $loanPeriod, string $branchKey, string $segmentKey): string
+    {
+        return md5(implode('|', [
+            'rcds',
+            $loanPeriod,
+            trim($branchKey),
+            trim($segmentKey),
+        ]));
+    }
+
+    private function makeDormantSnapshotId(string $period, string $rawBranch, string $unitKerja): string
+    {
+        return md5(implode('|', [
+            'rds',
+            $period,
+            trim($rawBranch),
+            trim($unitKerja),
+        ]));
+    }
+
+    private function makeNewPayrollSnapshotId(string $snapshotPosisi, string $branch): string
+    {
+        return md5(implode('|', [
+            'pnps',
+            $snapshotPosisi,
+            trim($branch),
+        ]));
     }
 }

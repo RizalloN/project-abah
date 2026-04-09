@@ -2,11 +2,13 @@
 
 namespace App\Http\Controllers;
 
+use App\Support\ReportDataSyncService;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Contracts\Cache\LockTimeoutException;
 use Throwable;
@@ -246,7 +248,9 @@ class RekeningDormantController extends Controller
 
     private function latestPeriod(): ?string
     {
-        return Cache::remember('rekening_dormant_latest_period', now()->addMinutes(10), function () {
+        $cacheKey = 'rekening_dormant_latest_period:v' . $this->reportCacheVersion();
+
+        return Cache::remember($cacheKey, now()->addMinutes(10), function () {
             return DB::table('simpanan_multipn')->max('posisi');
         });
     }
@@ -277,6 +281,7 @@ class RekeningDormantController extends Controller
 
         if ($this->hasDormantSnapshots([$period])) {
             $cacheKey = 'rekening_dormant_v7_snapshot_unit_options:' . md5(json_encode([
+                'cache_version' => $this->reportCacheVersion(),
                 'period' => $period,
                 'branches' => $branches->values()->all(),
             ]));
@@ -303,6 +308,7 @@ class RekeningDormantController extends Controller
         }
 
         $cacheKey = 'rekening_dormant_v5_unit_options:' . md5(json_encode([
+            'cache_version' => $this->reportCacheVersion(),
             'period' => $period,
             'raw_branches' => $rawBranches->values()->all(),
         ]));
@@ -356,6 +362,7 @@ class RekeningDormantController extends Controller
         }
 
         $cacheKey = 'rekening_dormant_v4_counts_summary:' . md5(json_encode([
+            'cache_version' => $this->reportCacheVersion(),
             'periods' => $periods->all(),
             'branches' => $selectedBranchLabels,
             'units' => $units->values()->all(),
@@ -503,7 +510,7 @@ class RekeningDormantController extends Controller
 
     private function resolveBranchMapForPeriod(string $period): array
     {
-        $cacheKey = 'rekening_dormant_v6_branch_map:' . $period;
+        $cacheKey = 'rekening_dormant_v6_branch_map:v' . $this->reportCacheVersion() . ':' . $period;
 
         return $this->rememberPayload($cacheKey, now()->addMinutes(30), function () use ($period) {
             if ($this->hasDormantSnapshots([$period])) {
@@ -574,6 +581,47 @@ class RekeningDormantController extends Controller
 
         sort($periods);
 
+        $missingPeriods = collect($periods)
+            ->filter(function (string $period) {
+                return !DB::table(self::SNAPSHOT_TABLE)
+                    ->where('posisi', $period)
+                    ->exists();
+            })
+            ->values();
+
+        foreach ($missingPeriods as $missingPeriod) {
+            $hasSourceRows = DB::table('simpanan_multipn')
+                ->where('posisi', $missingPeriod)
+                ->where('status', '9')
+                ->exists();
+
+            if (!$hasSourceRows) {
+                continue;
+            }
+
+            $lock = Cache::lock('snapshot:dormant:auto-rebuild:' . $missingPeriod, 60);
+
+            try {
+                if ($lock->get()) {
+                    defer(function () use ($missingPeriod, $lock) {
+                        try {
+                            app(ReportDataSyncService::class)->syncImportedTable(
+                                'simpanan_multipn',
+                                $missingPeriod,
+                                source: static::class . '::hasDormantSnapshots'
+                            );
+                        } finally {
+                            $lock->release();
+                        }
+                    });
+                }
+            } catch (Throwable $e) {
+                Log::warning('Auto rebuild rekening dormant snapshot gagal: ' . $e->getMessage(), [
+                    'period' => $missingPeriod,
+                ]);
+            }
+        }
+
         return DB::table(self::SNAPSHOT_TABLE)
             ->whereIn('posisi', $periods)
             ->distinct()
@@ -628,7 +676,7 @@ class RekeningDormantController extends Controller
         $lock = Cache::lock($cacheKey . ':lock', 30);
 
         try {
-            return $lock->block(15, function () use ($cacheKey, $latestKey, $ttl, $callback, $forceRefresh) {
+            return $lock->block(2, function () use ($cacheKey, $latestKey, $ttl, $callback, $forceRefresh) {
                 if (!$forceRefresh) {
                     $cached = Cache::get($cacheKey);
                     if ($cached !== null) {
@@ -646,6 +694,11 @@ class RekeningDormantController extends Controller
             $latest = Cache::get($latestKey);
             if ($latest !== null) {
                 return $latest;
+            }
+
+            $cached = Cache::get($cacheKey);
+            if ($cached !== null) {
+                return $cached;
             }
 
             $payload = $callback();
@@ -666,11 +719,12 @@ class RekeningDormantController extends Controller
 
         try {
             $timestampExpression = $this->buildLatestTimestampExpression($table);
+            $identityColumn = $this->resolveIdentityColumn($table);
             $row = DB::table($table)
                 ->where($periodColumn, $periodValue)
                 ->selectRaw("
                     COUNT(*) as total_rows,
-                    COALESCE(MAX(id), 0) as max_id,
+                    COALESCE(MAX({$identityColumn}), '') as max_identity,
                     COALESCE(MAX({$timestampExpression}), '1970-01-01 00:00:00') as latest_change
                 ")
                 ->first();
@@ -678,7 +732,7 @@ class RekeningDormantController extends Controller
             return implode('|', [
                 $periodValue,
                 (int) ($row->total_rows ?? 0),
-                (int) ($row->max_id ?? 0),
+                (string) ($row->max_identity ?? ''),
                 (string) ($row->latest_change ?? '1970-01-01 00:00:00'),
             ]);
         } catch (Throwable) {
@@ -703,6 +757,45 @@ class RekeningDormantController extends Controller
             return 'created_at';
         }
 
+        return $this->resolveIdentityColumn($table);
+    }
+
+    private function resolveIdentityColumn(string $table): string
+    {
+        if (Schema::hasColumn($table, 'uniqueid_rds')) {
+            return 'uniqueid_rds';
+        }
+
+        if (Schema::hasColumn($table, 'uniqueid_rcds')) {
+            return 'uniqueid_rcds';
+        }
+
+        if (Schema::hasColumn($table, 'uniqueid_dps')) {
+            return 'uniqueid_dps';
+        }
+
+        if (Schema::hasColumn($table, 'uniqueid_namareport')) {
+            return 'uniqueid_namareport';
+        }
+
+        if (Schema::hasColumn($table, 'uniqueid_SMPN')) {
+            return 'uniqueid_SMPN';
+        }
+
+        if (Schema::hasColumn($table, 'id')) {
+            return 'id';
+        }
+
+        $columns = Schema::getColumnListing($table);
+        if (!empty($columns)) {
+            return $columns[0];
+        }
+
         return 'id';
+    }
+
+    private function reportCacheVersion(): int
+    {
+        return (int) Cache::get('report_cache_version:global', 1);
     }
 }
