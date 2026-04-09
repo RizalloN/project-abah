@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use PhpOffice\PhpSpreadsheet\IOFactory;
 
 class ImportPerformancePisPerProdukController extends Controller
 {
@@ -71,12 +72,30 @@ class ImportPerformancePisPerProdukController extends Controller
         'flag_briguna',
         'flag_cc',
     ];
+    private const HEADER_ALIASES = [
+        'product_type' => 'tipe_produk',
+        'alamat_email' => 'email',
+        'email_address' => 'email',
+        'no_hp' => 'nomor_hp',
+        'no_handphone' => 'nomor_hp',
+        'nomor_handphone' => 'nomor_hp',
+        'tgl_pembuatan_rekening' => 'tanggal_pembuatan_rekening',
+        'tanggal_buka_rekening' => 'tanggal_pembuatan_rekening',
+        'saldo_britama_kerjasama_rp' => 'saldo_britama_kerjasama',
+        'saldo_britama_kerjasama_idr' => 'saldo_britama_kerjasama',
+        'corporatecode' => 'corporate_code',
+        'pn_rm_dana_pis_2' => 'pn_rm_dana_pis2',
+        'pn_rm_dana_pis_ii' => 'pn_rm_dana_pis2',
+        'relasi_briguna_yes_no' => 'flag_briguna',
+        'relasi_kartu_kredit_yes_no' => 'flag_cc',
+        'relasi_cc_yes_no' => 'flag_cc',
+    ];
 
     public function upload(Request $request)
     {
         $request->validate([
             'id_report' => 'required',
-            'file' => 'required|file|mimes:rar,csv,txt',
+            'file' => 'required|file|mimes:rar,csv,txt,xls,xlsx',
             'periode' => 'required|date_format:Y-m-d',
         ]);
 
@@ -91,10 +110,83 @@ class ImportPerformancePisPerProdukController extends Controller
                 'performance_pis_periode' => $request->input('periode'),
             ]);
 
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json([
+                    'status' => 'success',
+                    'path' => $path,
+                ]);
+            }
+
             return redirect()->route('import.performancepis.preview');
         } catch (\Throwable $e) {
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Upload Performance PIS gagal: ' . $e->getMessage(),
+                ], 422);
+            }
+
             return redirect()->route('import.index')->with('error', 'Upload Performance PIS gagal: ' . $e->getMessage());
         }
+    }
+
+    public function preparePreviewStream(Request $request)
+    {
+        ini_set('memory_limit', '512M');
+        set_time_limit(0);
+
+        $relativePath = session('performance_pis_file');
+        $periodeInput = session('performance_pis_periode');
+        request()->session()->save();
+
+        return response()->stream(function () use ($relativePath, $periodeInput) {
+            $send = function (string $event, array $data) {
+                echo "event: {$event}\n";
+                echo 'data: ' . json_encode($data) . "\n\n";
+                if (ob_get_level() > 0) {
+                    ob_flush();
+                }
+                flush();
+            };
+
+            try {
+                if (!$relativePath) {
+                    $send('error_msg', ['message' => 'Sesi upload Performance PIS tidak ditemukan.']);
+                    return;
+                }
+
+                $absolutePath = Storage::path($relativePath);
+                if (!file_exists($absolutePath)) {
+                    $send('error_msg', ['message' => 'File Performance PIS tidak ditemukan di server.']);
+                    return;
+                }
+
+                if (!$periodeInput) {
+                    $send('error_msg', ['message' => 'Periode Performance PIS tidak ditemukan.']);
+                    return;
+                }
+
+                $send('progress', ['percent' => 20, 'message' => 'Memvalidasi struktur file Performance PIS...']);
+                $context = $this->buildCsvContext($absolutePath, $periodeInput);
+
+                $send('progress', ['percent' => 75, 'message' => 'Struktur file valid. Menyiapkan halaman preview...']);
+                $send('ready', [
+                    'redirect' => route('import.performancepis.preview', [
+                        'file_path' => $relativePath,
+                        'periode' => $periodeInput,
+                    ]),
+                    'detected_posisi' => $context['posisi'] ?? null,
+                ]);
+            } catch (\Throwable $e) {
+                Log::error('PERFORMANCE PIS PREPARE PREVIEW ERROR: ' . $e->getMessage() . ' | ' . $e->getFile() . ':' . $e->getLine());
+                $send('error_msg', ['message' => 'Gagal menyiapkan preview Performance PIS: ' . $e->getMessage()]);
+            }
+        }, 200, [
+            'Content-Type' => 'text/event-stream',
+            'Cache-Control' => 'no-cache, no-store',
+            'X-Accel-Buffering' => 'no',
+            'Connection' => 'keep-alive',
+        ]);
     }
 
     public function preview(Request $request)
@@ -110,7 +202,7 @@ class ImportPerformancePisPerProdukController extends Controller
 
         $absolutePath = Storage::path($relativePath);
         if (!file_exists($absolutePath)) {
-            return redirect()->route('import.index')->with('error', 'File CSV tidak ditemukan di server.');
+            return redirect()->route('import.index')->with('error', 'File import tidak ditemukan di server.');
         }
         if (!$periodeInput) {
             return redirect()->route('import.index')->with('error', 'Periode Performance PIS tidak ditemukan. Silakan upload ulang.');
@@ -135,17 +227,16 @@ class ImportPerformancePisPerProdukController extends Controller
             return redirect()->route('import.index')->with('error', 'Gagal membuka file CSV.');
         }
 
-        $lineNumber = 0;
+        $recordNumber = 0;
         $savedRows = 0;
         try {
-            while (($line = fgets($handle)) !== false) {
-                $lineNumber++;
-
-                if ($lineNumber <= $context['header_line']) {
+            while (($record = $this->readCsvRecord($handle, $context['delimiter'])) !== false) {
+                $recordNumber++;
+                if ($recordNumber <= $context['header_record']) {
                     continue;
                 }
 
-                $row = $this->mapCsvRow($context, $this->parseCsvLine($line));
+                $row = $this->mapCsvRow($context, $record);
                 if ($row === null) {
                     continue;
                 }
@@ -218,6 +309,8 @@ class ImportPerformancePisPerProdukController extends Controller
 
         $selectedColumns = array_map('intval', $request->input('selected_columns', []));
         $activeFilters = json_decode($request->input('active_filters_json', '{}'), true) ?: [];
+        $activeReportId = (int) session('active_id_report', 0);
+        $this->releaseSessionLockIfNeeded();
 
         try {
             $context = $this->buildCsvContext($absolutePath, $request->input('periode'));
@@ -240,7 +333,7 @@ class ImportPerformancePisPerProdukController extends Controller
         }
 
         $jobId = DB::table('import_jobs')->insertGetId([
-            'id_report' => session('active_id_report'),
+            'id_report' => $activeReportId,
             'file_name' => basename($absolutePath),
             'folder_path' => dirname($absolutePath),
             'status' => 'processing',
@@ -267,16 +360,15 @@ class ImportPerformancePisPerProdukController extends Controller
             ], 422);
         }
 
-        $lineNumber = 0;
+        $recordNumber = 0;
         try {
-            while (($line = fgets($handle)) !== false) {
-                $lineNumber++;
-
-                if ($lineNumber <= $context['header_line']) {
+            while (($record = $this->readCsvRecord($handle, $context['delimiter'])) !== false) {
+                $recordNumber++;
+                if ($recordNumber <= $context['header_record']) {
                     continue;
                 }
 
-                $row = $this->mapCsvRow($context, $this->parseCsvLine($line));
+                $row = $this->mapCsvRow($context, $record);
                 if ($row === null) {
                     continue;
                 }
@@ -622,23 +714,23 @@ class ImportPerformancePisPerProdukController extends Controller
     private function buildCsvContext(string $path, ?string $manualPosisi = null): array
     {
         $sampleRows = [];
+        $delimiter = $this->detectCsvDelimiter($path);
         $handle = fopen($path, 'r');
         if ($handle === false) {
             throw new \RuntimeException('Gagal membuka file CSV.');
         }
 
         try {
-            $lineNumber = 0;
-            while (($line = fgets($handle)) !== false && $lineNumber < 20) {
-                $lineNumber++;
-                $trimmed = trim(preg_replace('/^\xEF\xBB\xBF/', '', $line));
-                if ($trimmed === '') {
+            $recordNumber = 0;
+            while (($cells = $this->readCsvRecord($handle, $delimiter)) !== false && $recordNumber < 40) {
+                $recordNumber++;
+                if ($this->isEmptyCsvRow($cells)) {
                     continue;
                 }
 
                 $sampleRows[] = [
-                    'line' => $trimmed,
-                    'line_number' => $lineNumber,
+                    'cells' => array_values($cells),
+                    'record_number' => $recordNumber,
                 ];
             }
         } finally {
@@ -655,21 +747,34 @@ class ImportPerformancePisPerProdukController extends Controller
         }
 
         $posisiRaw = $structure['posisi_raw']
-            ?? $this->findPosisiValue($sampleRows, $structure['header_row']['line_number']);
+            ?? $this->findPosisiValue($sampleRows, $structure['header_row']['record_number']);
 
         return [
-            'delimiter' => self::COLUMN_DELIMITER,
-            'header_line' => $structure['header_row']['line_number'],
+            'delimiter' => $delimiter,
+            'header_record' => $structure['header_row']['record_number'],
             'source_headers' => $structure['parsed_headers'],
             'source_indexes' => $this->buildSourceIndexes($structure['parsed_headers']),
             'headers' => self::TARGET_COLUMNS,
-            'posisi' => $this->normalizeDateValue($posisiRaw) ?? $this->normalizeDateValue($manualPosisi),
+            'posisi' => $this->normalizeDateValue($manualPosisi) ?? $this->normalizeDateValue($posisiRaw),
         ];
     }
 
     private function storePerformancePisUpload($file): string
     {
         $extension = strtolower($file->getClientOriginalExtension());
+
+        if (in_array($extension, ['xls', 'xlsx'], true)) {
+            $originalPath = $file->store('performance_pis_imports');
+            $sourcePath = Storage::path($originalPath);
+
+            $targetRelativePath = 'performance_pis_imports/' . pathinfo($originalPath, PATHINFO_FILENAME) . '_converted_' . Str::random(6) . '.csv';
+            $targetPath = Storage::path($targetRelativePath);
+
+            $this->convertExcelToCsv($sourcePath, $targetPath);
+            $this->cleanupUploadedFile($originalPath);
+
+            return $targetRelativePath;
+        }
 
         if ($extension !== 'rar') {
             return $file->store('performance_pis_imports');
@@ -704,9 +809,45 @@ class ImportPerformancePisPerProdukController extends Controller
             if (in_array($candidateExtension, ['csv', 'txt'], true)) {
                 return str_replace('\\', '/', str_replace(storage_path('app') . DIRECTORY_SEPARATOR, '', $candidatePath));
             }
+
+            if (in_array($candidateExtension, ['xls', 'xlsx'], true)) {
+                $convertedPath = dirname($candidatePath) . DIRECTORY_SEPARATOR . pathinfo($candidatePath, PATHINFO_FILENAME) . '_converted.csv';
+                $this->convertExcelToCsv($candidatePath, $convertedPath);
+
+                return str_replace('\\', '/', str_replace(storage_path('app') . DIRECTORY_SEPARATOR, '', $convertedPath));
+            }
         }
 
-        throw new \RuntimeException('File RAR tidak berisi CSV/TXT yang bisa diimport.');
+        throw new \RuntimeException('File RAR tidak berisi file CSV/TXT/Excel yang bisa diimport.');
+    }
+
+    private function convertExcelToCsv(string $sourcePath, string $targetPath): void
+    {
+        $directory = dirname($targetPath);
+        if (!is_dir($directory)) {
+            @mkdir($directory, 0777, true);
+        }
+
+        try {
+            $reader = IOFactory::createReaderForFile($sourcePath);
+            if (method_exists($reader, 'setReadDataOnly')) {
+                $reader->setReadDataOnly(false);
+            }
+
+            $spreadsheet = $reader->load($sourcePath);
+            $writer = IOFactory::createWriter($spreadsheet, 'Csv');
+            $writer->setDelimiter(self::COLUMN_DELIMITER);
+            $writer->setEnclosure('"');
+            $writer->setLineEnding("\n");
+            $writer->setUseBOM(false);
+            if (method_exists($writer, 'setSheetIndex')) {
+                $writer->setSheetIndex(0);
+            }
+            $writer->save($targetPath);
+            $spreadsheet->disconnectWorksheets();
+        } catch (\Throwable $e) {
+            throw new \RuntimeException('Gagal mengonversi file Excel Performance PIS ke CSV: ' . $e->getMessage());
+        }
     }
 
     private function detectCsvStructure(array $sampleRows): ?array
@@ -715,31 +856,31 @@ class ImportPerformancePisPerProdukController extends Controller
 
         foreach ($sampleRows as $row) {
             $parsedHeaders = array_map(
-                fn ($value) => $this->normalizeHeader($value),
-                $this->parseCsvLine($row['line'])
+                fn ($value) => $this->normalizeSourceHeader((string) $value),
+                (array) ($row['cells'] ?? [])
             );
 
-            $parsedHeaders = array_values(array_filter(
+            $headersForScore = array_values(array_filter(
                 $parsedHeaders,
                 fn ($value) => $value !== ''
             ));
 
-            if (empty($parsedHeaders)) {
+            if (empty($headersForScore)) {
                 continue;
             }
 
-            $score = $this->scoreHeaderCandidate($parsedHeaders);
+            $score = $this->scoreHeaderCandidate($headersForScore);
             if ($score <= 0) {
                 continue;
             }
 
-            $posisiRaw = $this->findPosisiValue($sampleRows, $row['line_number']);
+            $posisiRaw = $this->findPosisiValue($sampleRows, $row['record_number']);
             if ($this->normalizeDateValue($posisiRaw) !== null) {
                 $score += 200;
             }
 
             $candidate = [
-                'delimiter' => self::COLUMN_DELIMITER,
+                'delimiter' => null,
                 'header_row' => $row,
                 'parsed_headers' => $parsedHeaders,
                 'posisi_raw' => $posisiRaw,
@@ -795,24 +936,24 @@ class ImportPerformancePisPerProdukController extends Controller
         return $indexes;
     }
 
-    private function findPosisiValue(array $sampleRows, int $headerLineNumber): ?string
+    private function findPosisiValue(array $sampleRows, int $headerRecordNumber): ?string
     {
         $pendingPosisiMarker = false;
 
         foreach ($sampleRows as $row) {
-            if ($row['line_number'] >= $headerLineNumber) {
+            if (($row['record_number'] ?? 0) >= $headerRecordNumber) {
                 break;
-            }
-
-            $line = trim($row['line']);
-            if ($line === '') {
-                continue;
             }
 
             $cells = array_map(
                 fn ($value) => trim((string) $value),
-                $this->parseCsvLine($line)
+                (array) ($row['cells'] ?? [])
             );
+            if ($this->isEmptyCsvRow($cells)) {
+                continue;
+            }
+
+            $line = implode(' ', $cells);
 
             $normalizedCells = array_map(
                 fn ($value) => $this->normalizeHeader($value),
@@ -851,6 +992,52 @@ class ImportPerformancePisPerProdukController extends Controller
         return null;
     }
 
+    private function detectCsvDelimiter(string $path): string
+    {
+        $handle = fopen($path, 'r');
+        if ($handle === false) {
+            return self::COLUMN_DELIMITER;
+        }
+
+        try {
+            $sampleLine = fgets($handle);
+            if ($sampleLine === false) {
+                return self::COLUMN_DELIMITER;
+            }
+
+            $sampleLine = preg_replace('/^\xEF\xBB\xBF/', '', (string) $sampleLine);
+            $delimiters = [',', ';', "\t", '|'];
+            $bestDelimiter = self::COLUMN_DELIMITER;
+            $bestCount = -1;
+
+            foreach ($delimiters as $delimiter) {
+                $count = count(str_getcsv((string) $sampleLine, $delimiter));
+                if ($count > $bestCount) {
+                    $bestCount = $count;
+                    $bestDelimiter = $delimiter;
+                }
+            }
+
+            return $bestDelimiter;
+        } finally {
+            fclose($handle);
+        }
+    }
+
+    private function readCsvRecord($handle, string $delimiter = ',')
+    {
+        $row = fgetcsv($handle, 0, $delimiter);
+        if ($row === false) {
+            return false;
+        }
+
+        if (!empty($row)) {
+            $row[0] = preg_replace('/^\xEF\xBB\xBF/', '', (string) ($row[0] ?? ''));
+        }
+
+        return $this->trimTrailingEmptyCells(array_values($row));
+    }
+
     private function parseCsvLine(string $line): array
     {
         $line = preg_replace('/^\xEF\xBB\xBF/', '', rtrim($line, "\r\n"));
@@ -886,6 +1073,12 @@ class ImportPerformancePisPerProdukController extends Controller
         }
 
         return $parsed;
+    }
+
+    private function normalizeSourceHeader(string $header): string
+    {
+        $normalized = $this->normalizeHeader($header);
+        return self::HEADER_ALIASES[$normalized] ?? $normalized;
     }
 
     private function trimTrailingEmptyCells(array $cells): array
@@ -1158,16 +1351,16 @@ class ImportPerformancePisPerProdukController extends Controller
         }
 
         $totalRows = 0;
-        $lineNumber = 0;
+        $recordNumber = 0;
 
         try {
-            while (($line = fgets($handle)) !== false) {
-                $lineNumber++;
-                if ($lineNumber <= $context['header_line']) {
+            while (($record = $this->readCsvRecord($handle, $context['delimiter'])) !== false) {
+                $recordNumber++;
+                if ($recordNumber <= $context['header_record']) {
                     continue;
                 }
 
-                $row = $this->mapCsvRow($context, $this->parseCsvLine($line));
+                $row = $this->mapCsvRow($context, $record);
                 if ($row === null || !$this->passesFilters($row, $activeFilters)) {
                     continue;
                 }
@@ -1227,19 +1420,19 @@ class ImportPerformancePisPerProdukController extends Controller
         $loadColumns = array_values(array_unique($loadColumns));
 
         $rowsDone = 0;
-        $lineNumber = 0;
+        $recordNumber = 0;
         $lastProgressAt = 0;
         $startTime = microtime(true);
         $timestamp = now()->toDateTimeString();
 
         try {
-            while (($line = fgets($handle)) !== false) {
-                $lineNumber++;
-                if ($lineNumber <= $context['header_line']) {
+            while (($record = $this->readCsvRecord($handle, $context['delimiter'])) !== false) {
+                $recordNumber++;
+                if ($recordNumber <= $context['header_record']) {
                     continue;
                 }
 
-                $row = $this->mapCsvRow($context, $this->parseCsvLine($line));
+                $row = $this->mapCsvRow($context, $record);
                 if ($row === null || !$this->passesFilters($row, $activeFilters)) {
                     continue;
                 }

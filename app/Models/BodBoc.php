@@ -11,6 +11,7 @@ class BodBoc extends Model
     protected $table = 'bod_boc';
 
     protected $fillable = [
+        'periode',
         'instansi',
         'bod_boc',
         'nama_nasabah',

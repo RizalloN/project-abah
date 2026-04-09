@@ -19,10 +19,13 @@ class InputRekananController extends Controller
     {
         $validated = $request->validate([
             'file' => ['required', 'file', 'mimes:xlsx,xls', 'max:20480'],
+            'periode' => ['required', 'date_format:Y-m-d'],
         ], [
             'file.required' => 'File template Input Rekanan wajib dipilih.',
             'file.mimes' => 'File harus berformat Excel (.xlsx atau .xls).',
             'file.max' => 'Ukuran file maksimal 20MB.',
+            'periode.required' => 'Periode wajib diisi.',
+            'periode.date_format' => 'Format periode harus YYYY-MM-DD.',
         ]);
 
         $file = $validated['file'];
@@ -89,6 +92,7 @@ class InputRekananController extends Controller
         session([
             'input_rekanan_preview_rows' => $previewRows,
             'input_rekanan_preview_source_name' => $file->getClientOriginalName(),
+            'input_rekanan_preview_periode' => $validated['periode'],
         ]);
 
         return redirect()->route('input.import-preview');
@@ -108,16 +112,26 @@ class InputRekananController extends Controller
         }
 
         $sourceName = (string) session('input_rekanan_preview_source_name', 'template-input-rekanan.xlsx');
+        $periode = (string) session('input_rekanan_preview_periode', '');
 
-        return view('input.import-preview', compact('previewRows', 'sourceName'));
+        if ($periode === '') {
+            return redirect()
+                ->route('import.index')
+                ->with('error', 'Periode Input Rekanan tidak ditemukan. Silakan upload ulang file template.');
+        }
+
+        return view('input.import-preview', compact('previewRows', 'sourceName', 'periode'));
     }
 
     public function store(Request $request)
     {
         $validated = $request->validate([
             'rows_payload' => ['required', 'string'],
+            'periode' => ['required', 'date_format:Y-m-d'],
         ], [
             'rows_payload.required' => 'Data preview belum tersedia untuk disimpan.',
+            'periode.required' => 'Periode wajib diisi.',
+            'periode.date_format' => 'Format periode harus YYYY-MM-DD.',
         ]);
 
         $rows = json_decode($validated['rows_payload'], true);
@@ -135,6 +149,7 @@ class InputRekananController extends Controller
 
         foreach ($rows as $row) {
             $normalized = [
+                'periode' => $validated['periode'],
                 'perusahaan_anak' => trim((string) ($row['perusahaan_anak'] ?? '')),
                 'rekanan_level_1' => trim((string) ($row['rekanan_level_1'] ?? '')),
                 'rekanan_level_2' => trim((string) ($row['rekanan_level_2'] ?? '')),
@@ -175,7 +190,7 @@ class InputRekananController extends Controller
             ]);
         }, $payload));
 
-        session()->forget(['input_rekanan_preview_rows', 'input_rekanan_preview_source_name']);
+        session()->forget(['input_rekanan_preview_rows', 'input_rekanan_preview_source_name', 'input_rekanan_preview_periode']);
 
         return redirect()
             ->route('import.index')

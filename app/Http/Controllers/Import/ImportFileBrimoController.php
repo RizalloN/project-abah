@@ -224,6 +224,7 @@ class ImportFileBrimoController extends Controller
         // 1. DETEKSI NAMA REPORT DARI DATABASE
         $idReport = session('active_id_report', 1);
         $reportData = DB::table('nama_report')->where('id_report', $idReport)->first();
+        $this->releaseSessionLockIfNeeded();
 
         // 2. PENENTUAN TABEL & SUFFIX SECARA DINAMIS
         // Prioritaskan nama_report.table_name agar target import mengikuti report yang dipilih.

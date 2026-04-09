@@ -138,7 +138,7 @@ class RasioCasaDebiturController extends Controller
         $lock = Cache::lock($lockKey, 30);
 
         try {
-            return $lock->block(15, function () use ($cacheKey, $latestKey, $loanPeriod, $forceRefresh, $cached) {
+            return $lock->block(2, function () use ($cacheKey, $latestKey, $loanPeriod, $forceRefresh, $cached) {
                 if (!$forceRefresh) {
                     $lockCached = Cache::get($cacheKey);
                     if ($lockCached) {
@@ -157,6 +157,11 @@ class RasioCasaDebiturController extends Controller
             $latest = Cache::get($latestKey);
             if ($latest) {
                 return $latest;
+            }
+
+            $cached = Cache::get($cacheKey);
+            if ($cached) {
+                return $cached;
             }
 
             $payload = $this->computeSummarySnapshot($loanPeriod);
@@ -377,19 +382,23 @@ class RasioCasaDebiturController extends Controller
         $lock = Cache::lock('snapshot:rasio:auto-rebuild:' . $loanPeriod, 60);
 
         try {
-            $lock->block(5, function () use ($loanPeriod) {
-                app(ReportDataSyncService::class)->syncImportedTable(
-                    'daily_loan_dinamis',
-                    $loanPeriod,
-                    source: static::class . '::ensureRasioSnapshot'
-                );
-            });
+            if ($lock->get()) {
+                defer(function () use ($loanPeriod, $lock) {
+                    try {
+                        app(ReportDataSyncService::class)->syncImportedTable(
+                            'daily_loan_dinamis',
+                            $loanPeriod,
+                            source: static::class . '::ensureRasioSnapshot'
+                        );
+                    } finally {
+                        $lock->release();
+                    }
+                });
+            }
         } catch (Throwable $e) {
             Log::warning('Auto rebuild rasio snapshot gagal: ' . $e->getMessage(), [
                 'loan_period' => $loanPeriod,
             ]);
-        } finally {
-            optional($lock)->release();
         }
     }
 

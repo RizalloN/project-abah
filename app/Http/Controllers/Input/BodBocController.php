@@ -14,10 +14,13 @@ class BodBocController extends Controller
     {
         $validated = $request->validate([
             'file' => ['required', 'file', 'mimes:xlsx,xls', 'max:20480'],
+            'periode' => ['required', 'date_format:Y-m-d'],
         ], [
             'file.required' => 'File template Nasabah Prioritas BOD BOC wajib dipilih.',
             'file.mimes' => 'File harus berformat Excel (.xlsx atau .xls).',
             'file.max' => 'Ukuran file maksimal 20MB.',
+            'periode.required' => 'Periode wajib diisi.',
+            'periode.date_format' => 'Format periode harus YYYY-MM-DD.',
         ]);
 
         $file = $validated['file'];
@@ -87,6 +90,7 @@ class BodBocController extends Controller
         session([
             'bod_boc_preview_rows' => $previewRows,
             'bod_boc_preview_source_name' => $file->getClientOriginalName(),
+            'bod_boc_preview_periode' => $validated['periode'],
         ]);
 
         return redirect()->route('bod-boc.import-preview');
@@ -106,16 +110,26 @@ class BodBocController extends Controller
         }
 
         $sourceName = (string) session('bod_boc_preview_source_name', 'template-nasabah-prioritas-bod-boc.xlsx');
+        $periode = (string) session('bod_boc_preview_periode', '');
 
-        return view('input.bod-boc-import-preview', compact('previewRows', 'sourceName'));
+        if ($periode === '') {
+            return redirect()
+                ->route('import.index')
+                ->with('error', 'Periode Nasabah Prioritas BOD BOC tidak ditemukan. Silakan upload ulang file template.');
+        }
+
+        return view('input.bod-boc-import-preview', compact('previewRows', 'sourceName', 'periode'));
     }
 
     public function store(Request $request)
     {
         $validated = $request->validate([
             'rows_payload' => ['required', 'string'],
+            'periode' => ['required', 'date_format:Y-m-d'],
         ], [
             'rows_payload.required' => 'Data preview belum tersedia untuk disimpan.',
+            'periode.required' => 'Periode wajib diisi.',
+            'periode.date_format' => 'Format periode harus YYYY-MM-DD.',
         ]);
 
         $rows = json_decode($validated['rows_payload'], true);
@@ -133,6 +147,7 @@ class BodBocController extends Controller
 
         foreach ($rows as $row) {
             $normalized = [
+                'periode' => $validated['periode'],
                 'instansi' => trim((string) ($row['instansi'] ?? '')),
                 'bod_boc' => trim((string) ($row['bod_boc'] ?? '')),
                 'nama_nasabah' => trim((string) ($row['nama_nasabah'] ?? '')),
@@ -173,7 +188,7 @@ class BodBocController extends Controller
             ]);
         }, $payload));
 
-        session()->forget(['bod_boc_preview_rows', 'bod_boc_preview_source_name']);
+        session()->forget(['bod_boc_preview_rows', 'bod_boc_preview_source_name', 'bod_boc_preview_periode']);
 
         return redirect()
             ->route('import.index')

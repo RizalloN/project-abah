@@ -3785,6 +3785,7 @@ class ImportExcelController extends Controller
                     'text'   => 'Header session hilang. Silakan ulangi import dari awal.',
                 ], 422);
             }
+            $this->releaseSessionLockIfNeeded();
 
             $importContext = $this->buildImportContext($tableName, $normalizedHeaders, $activeFilters);
 

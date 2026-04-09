@@ -234,7 +234,7 @@ class DashboardSimpananController extends Controller
         $lock = Cache::lock($cacheKey . ':lock', self::CACHE_LOCK_SECONDS);
 
         try {
-            return $lock->block(5, function () use ($cacheKey, $latestKey, $ttl, $latestTtl, $period) {
+            return $lock->block(2, function () use ($cacheKey, $latestKey, $ttl, $latestTtl, $period) {
                 $cached = Cache::get($cacheKey);
                 if (is_array($cached)) {
                     return $cached;

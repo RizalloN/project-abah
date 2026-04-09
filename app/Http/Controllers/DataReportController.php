@@ -45,19 +45,23 @@ class DataReportController extends Controller
                     $lock = Cache::lock($lockKey, 60);
 
                     try {
-                        $lock->block(5, function () use ($sourceSnapshotDate) {
-                            app(ReportDataSyncService::class)->syncImportedTable(
-                                'performance_pis_per_produk',
-                                $sourceSnapshotDate,
-                                source: static::class . '::fetchNewPayrollData'
-                            );
-                        });
+                        if ($lock->get()) {
+                            defer(function () use ($sourceSnapshotDate, $lock) {
+                                try {
+                                    app(ReportDataSyncService::class)->syncImportedTable(
+                                        'performance_pis_per_produk',
+                                        $sourceSnapshotDate,
+                                        source: static::class . '::fetchNewPayrollData'
+                                    );
+                                } finally {
+                                    $lock->release();
+                                }
+                            });
+                        }
                     } catch (\Throwable $e) {
                         Log::warning('Auto rebuild new payroll snapshot gagal: ' . $e->getMessage(), [
                             'source_snapshot_date' => $sourceSnapshotDate,
                         ]);
-                    } finally {
-                        optional($lock)->release();
                     }
                 }
             }
@@ -65,6 +69,13 @@ class DataReportController extends Controller
             $effectiveSnapshot = DB::table(self::NEW_PAYROLL_SNAPSHOT_TABLE)
                 ->whereDate('snapshot_posisi', '<=', $selectedDate->toDateString())
                 ->max('snapshot_posisi');
+
+            if (!$effectiveSnapshot) {
+                $effectiveSnapshot = DB::table('performance_pis_per_produk')
+                    ->whereDate('posisi', '<=', $selectedDate->toDateString())
+                    ->max('posisi');
+                $useSnapshot = false;
+            }
         } else {
             $effectiveSnapshot = DB::table('performance_pis_per_produk')
                 ->whereDate('posisi', '<=', $selectedDate->toDateString())
@@ -259,42 +270,60 @@ public function performanceBrilink()
             $positions = $positions->unique()->values();
         }
 
-        $matchedRows = DB::table($sourceTable . ' as src')
+        $sourcePeriod = null;
+        if (Schema::hasColumn($sourceTable, 'periode')) {
+            $sourcePeriod = DB::table($sourceTable)
+                ->whereNotNull('periode')
+                ->where('periode', '<=', $selectedDate->toDateString())
+                ->max('periode');
+        }
+
+        $matchedBaseQuery = DB::table($sourceTable . ' as src')
             ->join('simpanan_multipn as sm', function ($join) {
                 $join->whereRaw('sm.CIFNO COLLATE utf8mb4_unicode_ci = src.cif COLLATE utf8mb4_unicode_ci');
             })
-            ->whereIn('sm.posisi', $positions->all())
-            ->select('src.cif', 'sm.kantor_cabang', 'sm.posisi', 'sm.saldo_idr')
-            ->orderBy('sm.kantor_cabang')
-            ->orderBy('sm.posisi')
-            ->get();
+            ->whereIn('sm.posisi', $positions->all());
+
+        if ($sourcePeriod) {
+            $matchedBaseQuery->where('src.periode', $sourcePeriod);
+        }
+
+        $matchedCount = (clone $matchedBaseQuery)->count();
 
         $latestPosition = $positions->last();
         $previousPosition = $positions->slice(-2, 1)->first();
-        $pipelineByRegional = [];
+        $pipelineByRegional = collect();
         $stats = [];
 
-        foreach ($matchedRows as $row) {
-            $regional = trim((string) ($row->kantor_cabang ?: 'Branch Office Belum Terpetakan'));
-            $cif = trim((string) $row->cif);
-            $posisi = (string) $row->posisi;
+        $statsRows = (clone $matchedBaseQuery)
+            ->selectRaw("COALESCE(NULLIF(TRIM(sm.kantor_cabang), ''), 'Branch Office Belum Terpetakan') as regional")
+            ->addSelect('sm.posisi')
+            ->selectRaw('COUNT(DISTINCT TRIM(src.cif)) as sudah_terakuisisi')
+            ->selectRaw('COALESCE(SUM(COALESCE(sm.saldo_idr, 0)), 0) as saldo_cif')
+            ->groupByRaw("COALESCE(NULLIF(TRIM(sm.kantor_cabang), ''), 'Branch Office Belum Terpetakan'), sm.posisi")
+            ->get();
 
+        foreach ($statsRows as $row) {
+            $regional = trim((string) ($row->regional ?? 'Branch Office Belum Terpetakan'));
+            $posisi = (string) ($row->posisi ?? '');
             $stats[$regional] ??= [];
-            $stats[$regional][$posisi] ??= [
-                'cifs' => [],
-                'saldo_cif' => 0,
+            $stats[$regional][$posisi] = [
+                'sudah_terakuisisi' => (int) ($row->sudah_terakuisisi ?? 0),
+                'saldo_cif' => (float) ($row->saldo_cif ?? 0),
             ];
+        }
 
-            $stats[$regional][$posisi]['cifs'][$cif] = true;
-            $stats[$regional][$posisi]['saldo_cif'] += (float) ($row->saldo_idr ?? 0);
-
-            if ($latestPosition && $posisi === $latestPosition) {
-                $pipelineByRegional[$regional][$cif] = true;
-            }
+        if ($latestPosition) {
+            $pipelineByRegional = (clone $matchedBaseQuery)
+                ->where('sm.posisi', $latestPosition)
+                ->selectRaw("COALESCE(NULLIF(TRIM(sm.kantor_cabang), ''), 'Branch Office Belum Terpetakan') as regional")
+                ->selectRaw('COUNT(DISTINCT TRIM(src.cif)) as total_pipeline')
+                ->groupByRaw("COALESCE(NULLIF(TRIM(sm.kantor_cabang), ''), 'Branch Office Belum Terpetakan')")
+                ->pluck('total_pipeline', 'regional');
         }
 
         $regionals = collect(array_unique(array_merge(
-            array_keys($pipelineByRegional),
+            $pipelineByRegional->keys()->all(),
             array_keys($stats)
         )))->sort()->values();
 
@@ -315,7 +344,7 @@ public function performanceBrilink()
         }
 
         foreach ($regionals as $regional) {
-            $totalPipeline = isset($pipelineByRegional[$regional]) ? count($pipelineByRegional[$regional]) : 0;
+            $totalPipeline = (int) ($pipelineByRegional->get($regional, 0));
             $row = [
                 'regional' => $regional,
                 'total_pipeline' => $totalPipeline,
@@ -325,8 +354,8 @@ public function performanceBrilink()
             ];
 
             foreach ($positions as $position) {
-                $regionalStats = $stats[$regional][$position] ?? ['cifs' => [], 'saldo_cif' => 0];
-                $sudah = count($regionalStats['cifs']);
+                $regionalStats = $stats[$regional][$position] ?? ['sudah_terakuisisi' => 0, 'saldo_cif' => 0];
+                $sudah = (int) ($regionalStats['sudah_terakuisisi'] ?? 0);
                 $belum = max($totalPipeline - $sudah, 0);
 
                 $row['positions'][$position] = [
@@ -376,7 +405,7 @@ public function performanceBrilink()
             'positions' => $positions,
             'tableRows' => $tableRows,
             'grandTotals' => $grandTotals,
-            'matchedCount' => $matchedRows->count(),
+            'matchedCount' => $matchedCount,
             'selectedDate' => $selectedDate->toDateString(),
             'sourceLabel' => $sourceLabel,
             'pageTitle' => $pageTitle,
@@ -893,10 +922,10 @@ public function performanceBrilink()
 
             $selectedCasaDate = $current->copy()->endOfMonth();
             $latestCasaWeb = DB::table('casa_brilink_web')
-                ->whereDate('periode', '<=', $selectedCasaDate->toDateString())
+                ->where('periode', '<=', $selectedCasaDate->toDateString())
                 ->max('periode');
             $latestCasaEdc = DB::table('casa_brilink_edc')
-                ->whereDate('periode', '<=', $selectedCasaDate->toDateString())
+                ->where('periode', '<=', $selectedCasaDate->toDateString())
                 ->max('periode');
 
             $latestCasaCandidates = array_filter([$latestCasaWeb, $latestCasaEdc]);
@@ -914,7 +943,7 @@ public function performanceBrilink()
                 $webRows = DB::table('casa_brilink_web')
                     ->selectRaw('UPPER(TRIM(mbdesc)) as branch')
                     ->selectRaw('SUM(COALESCE(jml_nominal_casa, 0)) as total_nominal')
-                    ->whereDate('periode', $period->toDateString())
+                    ->where('periode', $period->toDateString())
                     ->whereIn(DB::raw('UPPER(TRIM(mbdesc))'), $branchKeys)
                     ->groupBy(DB::raw('UPPER(TRIM(mbdesc))'))
                     ->get();
@@ -922,7 +951,7 @@ public function performanceBrilink()
                 $edcRows = DB::table('casa_brilink_edc')
                     ->selectRaw('UPPER(TRIM(mbdesc)) as branch')
                     ->selectRaw('SUM(COALESCE(jml_nominal_casa, 0)) as total_nominal')
-                    ->whereDate('periode', $period->toDateString())
+                    ->where('periode', $period->toDateString())
                     ->whereIn(DB::raw('UPPER(TRIM(mbdesc))'), $branchKeys)
                     ->groupBy(DB::raw('UPPER(TRIM(mbdesc))'))
                     ->get();
@@ -946,57 +975,68 @@ public function performanceBrilink()
             $casaPrevMap = $fetchCasaByPeriod($casaPrevDate);
             $casaYtdMap = $fetchCasaByPeriod($casaYtdDate);
             $casaYoyMap = $fetchCasaByPeriod($casaYoyDate);
+            $branchKeys = array_map('strtoupper', $branches);
+
+            $brilinkRows = DB::table('brilink_web_laporan_summary_transaksi_brilink_web')
+                ->selectRaw('UPPER(TRIM(cabang)) as branch')
+                ->select('periode')
+                ->selectRaw('COUNT(*) as agen')
+                ->selectRaw('SUM(CASE WHEN COALESCE(total_fee, 0) >= 750000 THEN 1 ELSE 0 END) as juragan')
+                ->selectRaw('SUM(CASE WHEN COALESCE(total_fee, 0) >= 150000 THEN 1 ELSE 0 END) as bep')
+                ->selectRaw('COALESCE(SUM(COALESCE(total_transaksi, 0)), 0) as trx')
+                ->selectRaw('COALESCE(SUM(COALESCE(total_nominal, 0)), 0) as volume')
+                ->whereIn('periode', array_values(array_unique([$periodeCurr, $periodePrev, $periodeYoY, $periodeYtD])))
+                ->whereIn(DB::raw('UPPER(TRIM(cabang))'), $branchKeys)
+                ->groupBy('periode', DB::raw('UPPER(TRIM(cabang))'))
+                ->get();
+
+            $brilinkMap = [];
+            foreach ($brilinkRows as $row) {
+                $period = (string) ($row->periode ?? '');
+                $branchKey = strtoupper(trim((string) ($row->branch ?? '')));
+                $brilinkMap[$period][$branchKey] = [
+                    'agen' => (int) ($row->agen ?? 0),
+                    'juragan' => (int) ($row->juragan ?? 0),
+                    'bep' => (int) ($row->bep ?? 0),
+                    'trx' => (float) ($row->trx ?? 0),
+                    'volume' => (float) ($row->volume ?? 0),
+                ];
+            }
 
             foreach ($branches as $branch) {
-
-                // STRICT MATCH (=) & UPPERCASE CABANG
-                $currData = DB::table('brilink_web_laporan_summary_transaksi_brilink_web')
-                    ->whereRaw('UPPER(cabang) = ?', [strtoupper($branch)])
-                    ->where('periode', $periodeCurr)
-                    ->get();
-
-                $prevData = DB::table('brilink_web_laporan_summary_transaksi_brilink_web')
-                    ->whereRaw('UPPER(cabang) = ?', [strtoupper($branch)])
-                    ->where('periode', $periodePrev)
-                    ->get();
-
-                $yoyData = DB::table('brilink_web_laporan_summary_transaksi_brilink_web')
-                    ->whereRaw('UPPER(cabang) = ?', [strtoupper($branch)])
-                    ->where('periode', $periodeYoY)
-                    ->get();
-
-                $ytdData = DB::table('brilink_web_laporan_summary_transaksi_brilink_web')
-                    ->whereRaw('UPPER(cabang) = ?', [strtoupper($branch)])
-                    ->where('periode', $periodeYtD)
-                    ->get();
+                $branchKey = strtoupper(trim($branch));
+                $currData = $brilinkMap[$periodeCurr][$branchKey] ?? null;
+                $prevData = $brilinkMap[$periodePrev][$branchKey] ?? null;
+                $yoyData = $brilinkMap[$periodeYoY][$branchKey] ?? null;
+                $ytdData = $brilinkMap[$periodeYtD][$branchKey] ?? null;
 
                 // 🔥 VALIDASI SUPER AMAN: Cek apakah data bulan ini memang ada di DB
-                $hasCurrData = $currData->count() > 0;
+                $hasCurrData = $currData !== null;
 
                 // LOGIKA METRIK AMAN DENGAN VARIABEL TERPISAH
-                $agen_curr = $currData->count();
-                $agen_prev = $prevData->count();
-                $agen_yoy  = $yoyData->count();
-                $agen_ytd  = $ytdData->count();
+                $agen_curr = (int) ($currData['agen'] ?? 0);
+                $agen_prev = (int) ($prevData['agen'] ?? 0);
+                $agen_yoy  = (int) ($yoyData['agen'] ?? 0);
+                $agen_ytd  = (int) ($ytdData['agen'] ?? 0);
 
-                $juragan_curr = $currData->filter(fn($x) => $x->total_fee >= 750000)->count();
-                $juragan_prev = $prevData->filter(fn($x) => $x->total_fee >= 750000)->count();
-                $juragan_yoy  = $yoyData->filter(fn($x) => $x->total_fee >= 750000)->count();
-                $juragan_ytd  = $ytdData->filter(fn($x) => $x->total_fee >= 750000)->count();
+                $juragan_curr = (int) ($currData['juragan'] ?? 0);
+                $juragan_prev = (int) ($prevData['juragan'] ?? 0);
+                $juragan_yoy  = (int) ($yoyData['juragan'] ?? 0);
+                $juragan_ytd  = (int) ($ytdData['juragan'] ?? 0);
 
-                $bep_curr = $currData->filter(fn($x) => $x->total_fee >= 150000)->count();
-                $bep_prev = $prevData->filter(fn($x) => $x->total_fee >= 150000)->count();
-                $bep_yoy  = $yoyData->filter(fn($x) => $x->total_fee >= 150000)->count();
-                $bep_ytd  = $ytdData->filter(fn($x) => $x->total_fee >= 150000)->count();
+                $bep_curr = (int) ($currData['bep'] ?? 0);
+                $bep_prev = (int) ($prevData['bep'] ?? 0);
+                $bep_yoy  = (int) ($yoyData['bep'] ?? 0);
+                $bep_ytd  = (int) ($ytdData['bep'] ?? 0);
 
-                $trx_curr = $currData->sum('total_transaksi');
-                $trx_prev = $prevData->sum('total_transaksi');
-                $trx_yoy  = $yoyData->sum('total_transaksi');
-                $trx_ytd  = $ytdData->sum('total_transaksi');
+                $trx_curr = (float) ($currData['trx'] ?? 0);
+                $trx_prev = (float) ($prevData['trx'] ?? 0);
+                $trx_yoy  = (float) ($yoyData['trx'] ?? 0);
+                $trx_ytd  = (float) ($ytdData['trx'] ?? 0);
 
-                $vol_curr = $currData->sum('total_nominal');
-                $vol_prev = $prevData->sum('total_nominal');
-                $vol_yoy  = $yoyData->sum('total_nominal');
+                $vol_curr = (float) ($currData['volume'] ?? 0);
+                $vol_prev = (float) ($prevData['volume'] ?? 0);
+                $vol_yoy  = (float) ($yoyData['volume'] ?? 0);
 
                 // 🔥 JANGAN HITUNG SELISIH JIKA BULAN INI BELUM DIUPLOAD
                 $agen_mtd = $hasCurrData ? ($agen_curr - $agen_prev) : 0;
@@ -1018,7 +1058,6 @@ public function performanceBrilink()
                 $vol_mtd = $hasCurrData ? ($vol_curr - $vol_prev) : 0;
                 $vol_yoy_val = $hasCurrData ? ($vol_curr - $vol_yoy) : 0;
 
-                $branchKey = strtoupper(trim($branch));
                 $casa_curr = (float) ($casaCurrMap[$branchKey] ?? 0);
                 $casa_prev = (float) ($casaPrevMap[$branchKey] ?? 0);
                 $casa_ytd = (float) ($casaYtdMap[$branchKey] ?? 0);

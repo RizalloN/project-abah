@@ -1026,6 +1026,7 @@ class ImportFileController extends Controller
         $idReport = session('active_id_report', 1);
         $reportData = DB::table('nama_report')->where('id_report', $idReport)->first();
         $isBrilinkSummary = false;
+        $this->releaseSessionLockIfNeeded();
         $isDailyLoan = $this->isDailyLoanReport($reportData);
 
         if ($reportData && (stripos($reportData->nama_report, 'BRILINK Web - Laporan Summary Transaksi') !== false || stripos($reportData->nama_report, 'brilink_web') !== false)) {
@@ -1599,6 +1600,7 @@ class ImportFileController extends Controller
         $idReport = session('active_id_report', 1);
         $reportData = DB::table('nama_report')->where('id_report', $idReport)->first();
         $isBrilinkSummary = false;
+        $this->releaseSessionLockIfNeeded();
 
         if ($reportData && (stripos($reportData->nama_report, 'BRILINK Web - Laporan Summary Transaksi') !== false || stripos($reportData->nama_report, 'brilink_web') !== false)) {
             $isBrilinkSummary = true;

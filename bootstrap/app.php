@@ -21,6 +21,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->alias([
             'role' => \App\Http\Middleware\RoleMiddleware::class,
+            'release.session.lock' => \App\Http\Middleware\ReleaseSessionLockMiddleware::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

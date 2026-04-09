@@ -8,6 +8,7 @@
         <form id="inputRekananImportForm" method="POST" action="{{ route('input.store') }}">
             @csrf
             <input type="hidden" name="rows_payload" id="rowsPayload">
+            <input type="hidden" name="periode" value="{{ $periode }}">
 
             <div class="card card-outline card-success">
                 <div class="card-header bg-light">
@@ -29,7 +30,8 @@
 
                     <div class="alert alert-secondary m-3 mb-0 border-0">
                         <i class="fas fa-file-import text-primary"></i>
-                        Sumber file: <strong>{{ $sourceName }}</strong>
+                        Sumber file: <strong>{{ $sourceName }}</strong><br>
+                        Periode: <strong>{{ \Carbon\Carbon::parse($periode)->translatedFormat('d F Y') }}</strong>
                     </div>
 
                     <div class="table-responsive" style="min-height: 450px; max-height: 600px; overflow-y: auto; overflow-x: auto;">

@@ -85,6 +85,12 @@
                 <input type="file" id="file_csv" name="file" class="form-control border-info shadow-sm" accept=".csv,.txt">
                 <small id="csv-help" class="text-muted mt-2 d-block">Gunakan file CSV Performance PIS Per Produk dengan metadata posisi di bagian atas file.</small>
             </div>
+
+            <div id="form-periode" class="form-group" style="display: none;">
+                <label id="periode-label" class="font-weight-bold text-dark">Periode</label>
+                <input type="date" id="input_periode" name="periode" class="form-control border-primary shadow-sm" disabled>
+                <small id="periode-help" class="text-muted mt-2 d-block">Pilih periode manual sesuai file report.</small>
+            </div>
         </div>
 
         <div class="card-footer bg-light border-0 import-upload-card__footer">
@@ -184,6 +190,10 @@
         const excelHelp = formExcel?.querySelector('small');
         const csvLabel = document.getElementById('csv-label');
         const csvHelp = document.getElementById('csv-help');
+        const formPeriode = document.getElementById('form-periode');
+        const inputPeriode = document.getElementById('input_periode');
+        const periodeLabel = document.getElementById('periode-label');
+        const periodeHelp = document.getElementById('periode-help');
         const csrfTokenInput = formImport?.querySelector('input[name="_token"]');
         const reportManagementCard = document.getElementById('report-management-card');
         const managementReportSelect = document.getElementById('management-report-select');
@@ -578,6 +588,35 @@
             };
         }
 
+        function configurePeriodeInput(options = {}) {
+            const {
+                visible = false,
+                required = false,
+                type = 'date',
+                label = 'Periode',
+                help = 'Pilih periode manual sesuai file report.',
+                value = '',
+            } = options;
+
+            if (!formPeriode || !inputPeriode) {
+                return;
+            }
+
+            formPeriode.style.display = visible ? 'block' : 'none';
+            inputPeriode.disabled = !visible;
+            inputPeriode.required = Boolean(visible && required);
+            inputPeriode.type = type;
+            inputPeriode.value = value;
+
+            if (periodeLabel) {
+                periodeLabel.textContent = label;
+            }
+
+            if (periodeHelp) {
+                periodeHelp.textContent = help;
+            }
+        }
+
         function getFileExtension(fileName) {
             const parts = String(fileName || '').toLowerCase().split('.');
             return parts.length > 1 ? parts.pop() : '';
@@ -628,6 +667,8 @@
             const isDailyLoan = reportName.includes('daily loan');
             const isSimpanan = reportName.includes('simpanan multipn');
             const isPerformancePis = reportName.includes('performance pis per produk');
+            const isCasaBrilink = tableName === 'casa_brilink_web' || tableName === 'casa_brilink_edc';
+            const isReportPh = tableName === 'lw325_ph';
             const isInputRekanan = tableName === 'input_rekanan';
             const isBodBoc = tableName === 'bod_boc';
 
@@ -641,6 +682,7 @@
             inputExcel.required = false;
             inputCsv.disabled = true;
             inputCsv.required = false;
+            configurePeriodeInput({ visible: false });
 
             formImport.dataset.preparePreviewUrl = '';
 
@@ -684,6 +726,47 @@
                     ? ''
                     : "{{ route('import.excel.prepare-preview') }}";
                 applyButtonState('excel', '<i class="fas fa-file-excel"></i> Upload Excel');
+                configurePeriodeInput({
+                    visible: true,
+                    required: true,
+                    type: 'date',
+                    label: 'Tanggal Periode',
+                    help: 'Input Rekanan dan Nasabah Prioritas BOD/BOC wajib diisi tanggal periode manual (YYYY-MM-DD).',
+                });
+                return;
+            }
+
+            if (isCasaBrilink) {
+                formCsv.style.display = 'block';
+                inputCsv.disabled = false;
+                inputCsv.required = true;
+                inputCsv.setAttribute('accept', '.csv,.txt');
+                formImport.action = "{{ route('import.casabrilink.upload') }}";
+                formImport.dataset.preparePreviewUrl = "{{ route('import.casabrilink.prepare-preview') }}";
+                csvLabel.innerHTML = '<i class="fas fa-file-csv mr-1"></i> Upload File CASA BRILINK (.csv, .txt)';
+                csvHelp.textContent = 'Gunakan file CSV CASA BRILINK WEB/EDC tanpa kolom periode. Periode diisi manual.';
+                applyButtonState('csv', '<i class="fas fa-file-csv"></i> Upload CSV');
+                configurePeriodeInput({
+                    visible: true,
+                    required: true,
+                    type: 'month',
+                    label: 'Periode Bulan',
+                    help: 'Wajib isi periode manual dalam format bulan (YYYY-MM) untuk CASA BRILINK WEB/EDC.',
+                });
+                return;
+            }
+
+            if (isReportPh) {
+                formCsv.style.display = 'block';
+                inputCsv.disabled = false;
+                inputCsv.required = true;
+                inputCsv.setAttribute('accept', '.csv,.txt');
+                formImport.action = "{{ route('import.reportph.upload') }}";
+                formImport.dataset.preparePreviewUrl = "{{ route('import.reportph.prepare-preview') }}";
+                csvLabel.innerHTML = '<i class="fas fa-file-csv mr-1"></i> Upload File Report PH (.csv, .txt)';
+                csvHelp.textContent = 'Gunakan file CSV Report Nominatif Rekening Pinjaman PH sesuai template.';
+                applyButtonState('csv', '<i class="fas fa-file-csv"></i> Upload CSV');
+                configurePeriodeInput({ visible: false });
                 return;
             }
 
@@ -691,10 +774,19 @@
                 formCsv.style.display = 'block';
                 inputCsv.disabled = false;
                 inputCsv.required = true;
+                inputCsv.setAttribute('accept', '.xlsx,.xls,.csv,.txt');
                 formImport.action = "{{ route('import.performancepis.upload') }}";
-                csvLabel.innerHTML = '<i class="fas fa-file-csv mr-1"></i> Upload File CSV (.csv, .txt)';
-                csvHelp.textContent = 'Gunakan file CSV Performance PIS Per Produk dengan metadata posisi di bagian atas file.';
-                applyButtonState('csv', '<i class="fas fa-file-csv"></i> Upload CSV');
+                formImport.dataset.preparePreviewUrl = "{{ route('import.performancepis.prepare-preview') }}";
+                csvLabel.innerHTML = '<i class="fas fa-file-upload mr-1"></i> Upload File Performance PIS (.xlsx, .xls, .csv, .txt)';
+                csvHelp.textContent = 'Tanggal periode diisi manual pada form import. Jika upload Excel, sistem akan konversi otomatis ke CSV saat diproses.';
+                applyButtonState('csv', '<i class="fas fa-file-upload"></i> Upload File');
+                configurePeriodeInput({
+                    visible: true,
+                    required: true,
+                    type: 'date',
+                    label: 'Tanggal Periode',
+                    help: 'Wajib isi tanggal periode manual (YYYY-MM-DD) untuk Performance PIS per Produk.',
+                });
                 return;
             }
 
@@ -875,6 +967,12 @@
                             try {
                                 const errorPayload = JSON.parse(uploadRequest.responseText || '{}');
                                 serverMessage = errorPayload.message || '';
+                                if (!serverMessage && errorPayload.errors && typeof errorPayload.errors === 'object') {
+                                    const firstField = Object.keys(errorPayload.errors)[0];
+                                    if (firstField && Array.isArray(errorPayload.errors[firstField]) && errorPayload.errors[firstField][0]) {
+                                        serverMessage = errorPayload.errors[firstField][0];
+                                    }
+                                }
                             } catch (_) {
                             }
 
@@ -1015,6 +1113,15 @@
                 icon: 'error',
                 title: 'Gagal!',
                 text: '{{ session('error') }}',
+                confirmButtonText: 'Tutup'
+            });
+        @endif
+
+        @if($errors->any())
+            themedSwal({
+                icon: 'error',
+                title: 'Validasi Gagal',
+                html: `{!! collect($errors->all())->map(fn($msg) => '<div class="text-left">- ' . e($msg) . '</div>')->implode('') !!}`,
                 confirmButtonText: 'Tutup'
             });
         @endif

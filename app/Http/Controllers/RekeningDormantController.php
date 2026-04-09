@@ -602,19 +602,23 @@ class RekeningDormantController extends Controller
             $lock = Cache::lock('snapshot:dormant:auto-rebuild:' . $missingPeriod, 60);
 
             try {
-                $lock->block(5, function () use ($missingPeriod) {
-                    app(ReportDataSyncService::class)->syncImportedTable(
-                        'simpanan_multipn',
-                        $missingPeriod,
-                        source: static::class . '::hasDormantSnapshots'
-                    );
-                });
+                if ($lock->get()) {
+                    defer(function () use ($missingPeriod, $lock) {
+                        try {
+                            app(ReportDataSyncService::class)->syncImportedTable(
+                                'simpanan_multipn',
+                                $missingPeriod,
+                                source: static::class . '::hasDormantSnapshots'
+                            );
+                        } finally {
+                            $lock->release();
+                        }
+                    });
+                }
             } catch (Throwable $e) {
                 Log::warning('Auto rebuild rekening dormant snapshot gagal: ' . $e->getMessage(), [
                     'period' => $missingPeriod,
                 ]);
-            } finally {
-                optional($lock)->release();
             }
         }
 
@@ -672,7 +676,7 @@ class RekeningDormantController extends Controller
         $lock = Cache::lock($cacheKey . ':lock', 30);
 
         try {
-            return $lock->block(15, function () use ($cacheKey, $latestKey, $ttl, $callback, $forceRefresh) {
+            return $lock->block(2, function () use ($cacheKey, $latestKey, $ttl, $callback, $forceRefresh) {
                 if (!$forceRefresh) {
                     $cached = Cache::get($cacheKey);
                     if ($cached !== null) {
@@ -690,6 +694,11 @@ class RekeningDormantController extends Controller
             $latest = Cache::get($latestKey);
             if ($latest !== null) {
                 return $latest;
+            }
+
+            $cached = Cache::get($cacheKey);
+            if ($cached !== null) {
+                return $cached;
             }
 
             $payload = $callback();

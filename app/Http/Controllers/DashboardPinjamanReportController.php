@@ -59,6 +59,7 @@ class DashboardPinjamanReportController extends Controller
     public function filters(Request $request)
     {
         @set_time_limit(30);
+        $this->releaseSessionLockIfNeeded();
 
         $selectedPeriod = $this->resolveEffectivePeriod($request->input('periode'));
         $comparisonPeriod = $this->resolveComparisonPeriod($selectedPeriod);
@@ -120,6 +121,7 @@ class DashboardPinjamanReportController extends Controller
     {
         @set_time_limit(0);
         DB::connection()->disableQueryLog();
+        $this->releaseSessionLockIfNeeded();
 
         $selectedPeriod = $this->resolveEffectivePeriod($request->input('periode'));
         $comparisonPeriod = $this->resolveComparisonPeriod($selectedPeriod);
@@ -836,7 +838,7 @@ class DashboardPinjamanReportController extends Controller
         $lock = Cache::lock($cacheKey . ':lock', 30);
 
         try {
-            return $lock->block(15, function () use ($cacheKey, $latestKey, $ttl, $callback, $forceRefresh) {
+            return $lock->block(2, function () use ($cacheKey, $latestKey, $ttl, $callback, $forceRefresh) {
                 if (!$forceRefresh) {
                     $cached = Cache::get($cacheKey);
                     if ($cached !== null) {
@@ -854,6 +856,11 @@ class DashboardPinjamanReportController extends Controller
             $latest = Cache::get($latestKey);
             if ($latest !== null) {
                 return $latest;
+            }
+
+            $cached = Cache::get($cacheKey);
+            if ($cached !== null) {
+                return $cached;
             }
 
             $payload = $callback();

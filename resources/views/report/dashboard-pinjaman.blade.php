@@ -700,6 +700,20 @@
         let filterReloadTimer = null;
         let loadingProgressValue = 0;
 
+        function abortInFlightRequests() {
+            if (activeController) {
+                activeController.abort();
+                activeController = null;
+            }
+
+            if (activeFilterController) {
+                activeFilterController.abort();
+                activeFilterController = null;
+            }
+
+            window.clearTimeout(filterReloadTimer);
+        }
+
         const filterSelects = [
             { element: segmenSelect, placeholder: 'Semua Segmen' },
             { element: produkSelect, placeholder: 'Semua Produk' },
@@ -1194,7 +1208,6 @@
                     params.append(key, value);
                 }
             }
-            params.set('refresh', '1');
             params.set('_ts', String(Date.now()));
 
             startLoadingProgress();
@@ -1229,7 +1242,7 @@
                 if (pushHistory) {
                     const pageUrl = new URL(@json(route('report.dashboard-pinjaman')), window.location.origin);
                     params.forEach((value, key) => {
-                        if (key === 'refresh' || key === '_ts') {
+                        if (key === '_ts') {
                             return;
                         }
 
@@ -1290,6 +1303,7 @@
         });
 
         overlay.classList.add('is-hidden');
+        window.addEventListener('pagehide', abortInFlightRequests);
         setFilterLoadingState(!periodInput.value);
         updateTotalValueHeader(periodInput.value || @json($selectedPeriod));
 
