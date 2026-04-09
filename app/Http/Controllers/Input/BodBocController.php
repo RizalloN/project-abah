@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Input;
 use App\Http\Controllers\Controller;
 use App\Models\BodBoc;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 
@@ -14,13 +15,17 @@ class BodBocController extends Controller
     {
         $validated = $request->validate([
             'file' => ['required', 'file', 'mimes:xlsx,xls', 'max:20480'],
+            'periode' => ['required', 'date_format:Y-m-d'],
         ], [
             'file.required' => 'File template Nasabah Prioritas BOD BOC wajib dipilih.',
             'file.mimes' => 'File harus berformat Excel (.xlsx atau .xls).',
             'file.max' => 'Ukuran file maksimal 20MB.',
+            'periode.required' => 'Periode BOD BOC wajib diisi.',
+            'periode.date_format' => 'Format periode BOD BOC harus YYYY-MM-DD.',
         ]);
 
         $file = $validated['file'];
+        $periode = $validated['periode'];
 
         try {
             $spreadsheet = IOFactory::load($file->getRealPath());
@@ -87,6 +92,7 @@ class BodBocController extends Controller
         session([
             'bod_boc_preview_rows' => $previewRows,
             'bod_boc_preview_source_name' => $file->getClientOriginalName(),
+            'bod_boc_preview_periode' => $periode,
         ]);
 
         return redirect()->route('bod-boc.import-preview');
@@ -106,19 +112,24 @@ class BodBocController extends Controller
         }
 
         $sourceName = (string) session('bod_boc_preview_source_name', 'template-nasabah-prioritas-bod-boc.xlsx');
+        $periode = (string) session('bod_boc_preview_periode', '');
 
-        return view('input.bod-boc-import-preview', compact('previewRows', 'sourceName'));
+        return view('input.bod-boc-import-preview', compact('previewRows', 'sourceName', 'periode'));
     }
 
     public function store(Request $request)
     {
         $validated = $request->validate([
             'rows_payload' => ['required', 'string'],
+            'periode' => ['required', 'date_format:Y-m-d'],
         ], [
             'rows_payload.required' => 'Data preview belum tersedia untuk disimpan.',
+            'periode.required' => 'Periode BOD BOC wajib diisi.',
+            'periode.date_format' => 'Format periode BOD BOC harus YYYY-MM-DD.',
         ]);
 
         $rows = json_decode($validated['rows_payload'], true);
+        $periode = $validated['periode'];
 
         if (!is_array($rows) || empty($rows)) {
             return back()
@@ -133,6 +144,7 @@ class BodBocController extends Controller
 
         foreach ($rows as $row) {
             $normalized = [
+                'periode' => $periode,
                 'instansi' => trim((string) ($row['instansi'] ?? '')),
                 'bod_boc' => trim((string) ($row['bod_boc'] ?? '')),
                 'nama_nasabah' => trim((string) ($row['nama_nasabah'] ?? '')),
@@ -166,6 +178,58 @@ class BodBocController extends Controller
             ]);
         }
 
+        $cifValues = collect($payload)
+            ->pluck('cif')
+            ->map(fn ($cif) => trim((string) $cif))
+            ->filter(fn ($cif) => $cif !== '')
+            ->values();
+
+        $duplicateCifInPayload = $cifValues
+            ->countBy()
+            ->filter(fn ($count) => $count > 1)
+            ->keys()
+            ->values();
+
+        if ($duplicateCifInPayload->isNotEmpty()) {
+            return back()
+                ->withInput()
+                ->with('sweet_warning', [
+                    'title' => 'CIF Duplikat di File',
+                    'text' => 'Data ditolak karena CIF berikut muncul lebih dari satu kali pada file import: ' . $duplicateCifInPayload->join(', ') . '.',
+                ]);
+        }
+
+        $hasSamePeriode = DB::table('bod_boc')
+            ->whereDate('periode', $periode)
+            ->exists();
+
+        $existingCif = DB::table('bod_boc')
+            ->whereIn('cif', $cifValues->unique()->all())
+            ->pluck('cif')
+            ->map(fn ($cif) => trim((string) $cif))
+            ->filter(fn ($cif) => $cif !== '')
+            ->unique()
+            ->values();
+
+        if ($hasSamePeriode || $existingCif->isNotEmpty()) {
+            $reasons = [];
+
+            if ($hasSamePeriode) {
+                $reasons[] = 'periode ' . $periode . ' sudah ada di database';
+            }
+
+            if ($existingCif->isNotEmpty()) {
+                $reasons[] = 'CIF berikut sudah ada di database: ' . $existingCif->join(', ');
+            }
+
+            return back()
+                ->withInput()
+                ->with('sweet_warning', [
+                    'title' => 'Data Duplikat',
+                    'text' => 'Data ditolak karena ' . implode('; ', $reasons) . '.',
+                ]);
+        }
+
         BodBoc::insert(array_map(function ($row) {
             return array_merge($row, [
                 'created_at' => now(),
@@ -173,13 +237,13 @@ class BodBocController extends Controller
             ]);
         }, $payload));
 
-        session()->forget(['bod_boc_preview_rows', 'bod_boc_preview_source_name']);
+        session()->forget(['bod_boc_preview_rows', 'bod_boc_preview_source_name', 'bod_boc_preview_periode']);
 
         return redirect()
             ->route('import.index')
             ->with('sweet_success', [
                 'title' => 'Berhasil Disimpan',
-                'text' => count($payload) . ' baris data berhasil disimpan ke tabel bod_boc.',
+                'text' => count($payload) . ' baris data periode ' . $periode . ' berhasil disimpan ke tabel bod_boc.',
             ]);
     }
 }

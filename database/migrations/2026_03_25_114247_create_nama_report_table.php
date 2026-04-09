@@ -11,13 +11,17 @@ return new class extends Migration
      */
     public function up(): void
     {
-    Schema::create('nama_report', function (Blueprint $table) {
-        $table->id('id_report');
-        $table->string('nama_report');
-        $table->string('table_name'); // nama tabel tujuan
-        $table->boolean('active')->default(true);
-        $table->timestamps();
-    });
+        if (Schema::hasTable('nama_report')) {
+            return;
+        }
+
+        Schema::create('nama_report', function (Blueprint $table) {
+            $table->id('id_report');
+            $table->string('nama_report');
+            $table->string('table_name');
+            $table->boolean('active')->default(true);
+            $table->timestamps();
+        });
     }
 
     /**

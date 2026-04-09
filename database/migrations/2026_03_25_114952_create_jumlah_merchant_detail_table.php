@@ -11,8 +11,11 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('jumlah_merchant_detail', function (Blueprint $table) {
+        if (Schema::hasTable('jumlah_merchant_detail')) {
+            return;
+        }
 
+        Schema::create('jumlah_merchant_detail', function (Blueprint $table) {
             $table->id(); // PK utama
 
             // 🔥 UNIQUE IMPORT ID

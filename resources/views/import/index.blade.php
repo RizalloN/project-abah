@@ -65,6 +65,14 @@
                 </select>
             </div>
 
+            <div id="form-periode" class="form-group" style="display: none;">
+                <label class="font-weight-bold text-dark">
+                    <i class="fas fa-calendar-alt text-primary mr-1"></i> Periode
+                </label>
+                <input type="date" id="periode_input" name="periode" class="form-control">
+                <small class="text-muted mt-2 d-block">Wajib diisi untuk import Performance PIS Per Produk, Input Rekanan, dan Nasabah Prioritas BOD BOC.</small>
+            </div>
+
             <div id="form-rar" class="form-group">
                 <label class="font-weight-bold text-dark">Upload File Extracted (.rar)</label>
                 <div class="custom-file">
@@ -83,7 +91,7 @@
             <div id="form-csv" class="form-group" style="display: none;">
                 <label id="csv-label" class="text-info font-weight-bold"><i class="fas fa-file-csv mr-1"></i> Upload File CSV (.csv, .txt)</label>
                 <input type="file" id="file_csv" name="file" class="form-control border-info shadow-sm" accept=".csv,.txt">
-                <small id="csv-help" class="text-muted mt-2 d-block">Gunakan file CSV Performance PIS Per Produk dengan metadata posisi di bagian atas file.</small>
+                <small id="csv-help" class="text-muted mt-2 d-block">Gunakan file CSV sesuai kebutuhan report yang dipilih.</small>
             </div>
         </div>
 
@@ -170,6 +178,7 @@
         const formRAR = document.getElementById('form-rar');
         const formExcel = document.getElementById('form-excel');
         const formCsv = document.getElementById('form-csv');
+        const formPeriode = document.getElementById('form-periode');
         const formImport = document.getElementById('form-import');
         const btnSubmit = document.getElementById('btn-submit');
         const btnDownloadTemplate = document.getElementById('btn-download-template');
@@ -177,6 +186,7 @@
         const inputRar = document.getElementById('file_rar');
         const inputExcel = document.getElementById('file_excel');
         const inputCsv = document.getElementById('file_csv');
+        const periodeInput = document.getElementById('periode_input');
         const csvLabel = document.getElementById('csv-label');
         const csvHelp = document.getElementById('csv-help');
         const csrfTokenInput = formImport?.querySelector('input[name="_token"]');
@@ -454,10 +464,12 @@
             const isPerformancePis = reportName.includes('performance pis per produk');
             const isInputRekanan = tableName === 'input_rekanan';
             const isBodBoc = tableName === 'bod_boc';
+            const needsManualPeriode = isPerformancePis || isInputRekanan || isBodBoc;
 
             formRAR.style.display = 'none';
             formExcel.style.display = 'none';
             formCsv.style.display = 'none';
+            formPeriode.style.display = 'none';
 
             inputRar.disabled = true;
             inputRar.required = false;
@@ -465,8 +477,11 @@
             inputExcel.required = false;
             inputCsv.disabled = true;
             inputCsv.required = false;
+            periodeInput.disabled = true;
+            periodeInput.required = false;
 
             formImport.dataset.preparePreviewUrl = '';
+            formImport.dataset.directRedirect = '';
 
             if (isDailyLoan) {
                 formCsv.style.display = 'block';
@@ -491,11 +506,17 @@
                 return;
             }
 
+            if (needsManualPeriode) {
+                formPeriode.style.display = 'block';
+                periodeInput.disabled = false;
+                periodeInput.required = true;
+            }
+
             if (isInputRekanan || isBodBoc) {
                 formExcel.style.display = 'block';
                 inputExcel.disabled = false;
                 inputExcel.required = true;
-                inputExcel.setAttribute('accept', '.xlsx,.xls');
+                inputExcel.setAttribute('accept', '.xlsx');
                 formImport.action = isInputRekanan
                     ? "{{ route('input.import-template') }}"
                     : (isBodBoc
@@ -509,13 +530,14 @@
             }
 
             if (isPerformancePis) {
-                formCsv.style.display = 'block';
-                inputCsv.disabled = false;
-                inputCsv.required = true;
+                formExcel.style.display = 'block';
+                inputExcel.disabled = false;
+                inputExcel.required = true;
+                inputExcel.setAttribute('accept', '.xlsx,.xls');
                 formImport.action = "{{ route('import.performancepis.upload') }}";
-                csvLabel.innerHTML = '<i class="fas fa-file-csv mr-1"></i> Upload File CSV (.csv, .txt)';
-                csvHelp.textContent = 'Gunakan file CSV Performance PIS Per Produk dengan metadata posisi di bagian atas file.';
-                applyButtonState('csv', '<i class="fas fa-file-csv"></i> Upload CSV');
+                formImport.dataset.preparePreviewUrl = '';
+                formImport.dataset.directRedirect = '1';
+                applyButtonState('excel', '<i class="fas fa-file-excel"></i> Upload Excel');
                 return;
             }
 
@@ -612,6 +634,7 @@
             }
 
             const hasAsyncPreview = Boolean(formImport.dataset.preparePreviewUrl);
+            const directRedirect = formImport.dataset.directRedirect === '1';
             const uploadKind = formImport.dataset.uploadKind || 'rar';
             const titleText = uploadKind === 'excel'
                 ? 'Uploading Excel...'
@@ -649,7 +672,7 @@
                         btnSubmit.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
                     }
 
-                    if (!hasAsyncPreview) {
+                    if (!hasAsyncPreview && !directRedirect) {
                         formImport.submit();
                         return;
                     }
@@ -718,6 +741,21 @@
                                 icon: 'error',
                                 title: 'Upload Error',
                                 text: data.message || 'Upload gagal diproses oleh server.'
+                            });
+                            resetSubmitButton();
+                            return;
+                        }
+
+                        if (directRedirect) {
+                            if (data.redirect) {
+                                window.location.href = data.redirect;
+                                return;
+                            }
+
+                            themedSwal({
+                                icon: 'error',
+                                title: 'Upload Error',
+                                text: 'Server tidak mengembalikan alamat preview.'
                             });
                             resetSubmitButton();
                             return;

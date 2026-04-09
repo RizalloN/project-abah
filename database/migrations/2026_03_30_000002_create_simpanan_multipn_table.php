@@ -8,6 +8,10 @@ return new class extends Migration
 {
     public function up(): void
     {
+        if (Schema::hasTable('simpanan_multipn')) {
+            return;
+        }
+
         Schema::create('simpanan_multipn', function (Blueprint $table) {
             $table->id();
             $table->string('uniqueid_SMPN')->unique();

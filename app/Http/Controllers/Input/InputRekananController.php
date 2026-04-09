@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Input;
 use App\Http\Controllers\Controller;
 use App\Models\InputRekanan;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 
@@ -19,13 +20,17 @@ class InputRekananController extends Controller
     {
         $validated = $request->validate([
             'file' => ['required', 'file', 'mimes:xlsx,xls', 'max:20480'],
+            'periode' => ['required', 'date_format:Y-m-d'],
         ], [
             'file.required' => 'File template Input Rekanan wajib dipilih.',
             'file.mimes' => 'File harus berformat Excel (.xlsx atau .xls).',
             'file.max' => 'Ukuran file maksimal 20MB.',
+            'periode.required' => 'Periode Input Rekanan wajib diisi.',
+            'periode.date_format' => 'Format periode Input Rekanan harus YYYY-MM-DD.',
         ]);
 
         $file = $validated['file'];
+        $periode = $validated['periode'];
 
         try {
             $spreadsheet = IOFactory::load($file->getRealPath());
@@ -89,6 +94,7 @@ class InputRekananController extends Controller
         session([
             'input_rekanan_preview_rows' => $previewRows,
             'input_rekanan_preview_source_name' => $file->getClientOriginalName(),
+            'input_rekanan_preview_periode' => $periode,
         ]);
 
         return redirect()->route('input.import-preview');
@@ -108,19 +114,24 @@ class InputRekananController extends Controller
         }
 
         $sourceName = (string) session('input_rekanan_preview_source_name', 'template-input-rekanan.xlsx');
+        $periode = (string) session('input_rekanan_preview_periode', '');
 
-        return view('input.import-preview', compact('previewRows', 'sourceName'));
+        return view('input.import-preview', compact('previewRows', 'sourceName', 'periode'));
     }
 
     public function store(Request $request)
     {
         $validated = $request->validate([
             'rows_payload' => ['required', 'string'],
+            'periode' => ['required', 'date_format:Y-m-d'],
         ], [
             'rows_payload.required' => 'Data preview belum tersedia untuk disimpan.',
+            'periode.required' => 'Periode Input Rekanan wajib diisi.',
+            'periode.date_format' => 'Format periode Input Rekanan harus YYYY-MM-DD.',
         ]);
 
         $rows = json_decode($validated['rows_payload'], true);
+        $periode = $validated['periode'];
 
         if (!is_array($rows) || empty($rows)) {
             return back()
@@ -135,6 +146,7 @@ class InputRekananController extends Controller
 
         foreach ($rows as $row) {
             $normalized = [
+                'periode' => $periode,
                 'perusahaan_anak' => trim((string) ($row['perusahaan_anak'] ?? '')),
                 'rekanan_level_1' => trim((string) ($row['rekanan_level_1'] ?? '')),
                 'rekanan_level_2' => trim((string) ($row['rekanan_level_2'] ?? '')),
@@ -168,6 +180,58 @@ class InputRekananController extends Controller
             ]);
         }
 
+        $cifValues = collect($payload)
+            ->pluck('cif')
+            ->map(fn ($cif) => trim((string) $cif))
+            ->filter(fn ($cif) => $cif !== '')
+            ->values();
+
+        $duplicateCifInPayload = $cifValues
+            ->countBy()
+            ->filter(fn ($count) => $count > 1)
+            ->keys()
+            ->values();
+
+        if ($duplicateCifInPayload->isNotEmpty()) {
+            return back()
+                ->withInput()
+                ->with('sweet_warning', [
+                    'title' => 'CIF Duplikat di File',
+                    'text' => 'Data ditolak karena CIF berikut muncul lebih dari satu kali pada file import: ' . $duplicateCifInPayload->join(', ') . '.',
+                ]);
+        }
+
+        $hasSamePeriode = DB::table('input_rekanan')
+            ->whereDate('periode', $periode)
+            ->exists();
+
+        $existingCif = DB::table('input_rekanan')
+            ->whereIn('cif', $cifValues->unique()->all())
+            ->pluck('cif')
+            ->map(fn ($cif) => trim((string) $cif))
+            ->filter(fn ($cif) => $cif !== '')
+            ->unique()
+            ->values();
+
+        if ($hasSamePeriode || $existingCif->isNotEmpty()) {
+            $reasons = [];
+
+            if ($hasSamePeriode) {
+                $reasons[] = 'periode ' . $periode . ' sudah ada di database';
+            }
+
+            if ($existingCif->isNotEmpty()) {
+                $reasons[] = 'CIF berikut sudah ada di database: ' . $existingCif->join(', ');
+            }
+
+            return back()
+                ->withInput()
+                ->with('sweet_warning', [
+                    'title' => 'Data Duplikat',
+                    'text' => 'Data ditolak karena ' . implode('; ', $reasons) . '.',
+                ]);
+        }
+
         InputRekanan::insert(array_map(function ($row) {
             return array_merge($row, [
                 'created_at' => now(),
@@ -175,13 +239,13 @@ class InputRekananController extends Controller
             ]);
         }, $payload));
 
-        session()->forget(['input_rekanan_preview_rows', 'input_rekanan_preview_source_name']);
+        session()->forget(['input_rekanan_preview_rows', 'input_rekanan_preview_source_name', 'input_rekanan_preview_periode']);
 
         return redirect()
             ->route('import.index')
             ->with('sweet_success', [
                 'title' => 'Berhasil Disimpan',
-                'text' => count($payload) . ' baris data berhasil disimpan ke tabel input_rekanan.',
+                'text' => count($payload) . ' baris data periode ' . $periode . ' berhasil disimpan ke tabel input_rekanan.',
             ]);
     }
 }

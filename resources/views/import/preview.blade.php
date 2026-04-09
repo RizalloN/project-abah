@@ -515,11 +515,87 @@
             });
         });
 
+        let importProgressStartedAt = null;
+        let importProgressTicker = null;
+        let importProgressSnapshot = {
+            percent: 0,
+            message: '',
+            rowsDone: 0,
+            totalRows: 0,
+            speed: 0
+        };
+
+        function formatDuration(totalSeconds) {
+            const seconds = Math.max(0, Math.round(totalSeconds || 0));
+            const hours = Math.floor(seconds / 3600);
+            const minutes = Math.floor((seconds % 3600) / 60);
+            const secs = seconds % 60;
+
+            if (hours > 0) {
+                return hours + 'j ' + minutes + 'm ' + secs + 'd';
+            }
+
+            if (minutes > 0) {
+                return minutes + 'm ' + secs + 'd';
+            }
+
+            return secs + 'd';
+        }
+
+        function refreshImportTimeInfo() {
+            const elapsedInfo = document.getElementById('swal-elapsed-info');
+            const etaInfo = document.getElementById('swal-eta-info');
+
+            if (elapsedInfo && importProgressStartedAt) {
+                const elapsedSeconds = (Date.now() - importProgressStartedAt) / 1000;
+                elapsedInfo.innerText = 'Durasi: ' + formatDuration(elapsedSeconds);
+            }
+
+            if (etaInfo) {
+                const rowsDone = Number(importProgressSnapshot.rowsDone || 0);
+                const totalRows = Number(importProgressSnapshot.totalRows || 0);
+                const speed = Number(importProgressSnapshot.speed || 0);
+                const percent = Number(importProgressSnapshot.percent || 0);
+
+                if (speed > 0 && totalRows > rowsDone) {
+                    const remainingRows = totalRows - rowsDone;
+                    etaInfo.innerText = 'Estimasi sisa: ' + formatDuration(remainingRows / speed);
+                } else if (percent >= 96 && percent < 100) {
+                    etaInfo.innerText = 'Estimasi sisa: menunggu proses MySQL menyelesaikan tahap akhir...';
+                } else {
+                    etaInfo.innerText = '';
+                }
+            }
+        }
+
+        function startImportProgressTicker() {
+            importProgressStartedAt = Date.now();
+            if (importProgressTicker) {
+                clearInterval(importProgressTicker);
+            }
+            importProgressTicker = setInterval(refreshImportTimeInfo, 1000);
+            refreshImportTimeInfo();
+        }
+
+        function stopImportProgressTicker() {
+            if (importProgressTicker) {
+                clearInterval(importProgressTicker);
+                importProgressTicker = null;
+            }
+        }
+
         function setImportProgress(percent, message, rowsDone, totalRows, speed) {
             const progressBar = document.getElementById('swal-progress-bar');
             const progressText = document.getElementById('swal-progress-text');
             const rowsInfo = document.getElementById('swal-rows-info');
             const speedInfo = document.getElementById('swal-speed-info');
+            importProgressSnapshot = {
+                percent: Number(percent || 0),
+                message: message || '',
+                rowsDone: Number(rowsDone || 0),
+                totalRows: Number(totalRows || 0),
+                speed: Number(speed || 0)
+            };
 
             if (progressBar) {
                 progressBar.style.width = percent + '%';
@@ -538,6 +614,8 @@
             if (speedInfo) {
                 speedInfo.innerText = speed > 0 ? Number(speed).toLocaleString('id-ID') + ' baris/detik' : '';
             }
+
+            refreshImportTimeInfo();
         }
 
         function resetImportButton() {
@@ -644,6 +722,8 @@
                 <div class="text-center mt-2">
                     <small id="swal-rows-info" class="d-block text-muted"></small>
                     <small id="swal-speed-info" class="d-block text-muted"></small>
+                    <small id="swal-elapsed-info" class="d-block text-muted"></small>
+                    <small id="swal-eta-info" class="d-block text-muted"></small>
                 </div>
             `;
 
@@ -656,6 +736,7 @@
                 width: 520,
             });
 
+            startImportProgressTicker();
             setImportProgress(5, 'Menginisialisasi import...', 0, 0, 0);
 
             try {
@@ -702,6 +783,7 @@
                     let data = {};
                     try { data = JSON.parse(event.data); } catch (_) {}
 
+                    stopImportProgressTicker();
                     setImportProgress(100, 'Import selesai!', data.total_rows || 0, data.total_rows || 0, 0);
 
                     setTimeout(() => {
@@ -742,6 +824,7 @@
                     let data = {};
                     try { data = JSON.parse(event.data); } catch (_) {}
 
+                    stopImportProgressTicker();
                     themedSwal({
                         icon: 'error',
                         title: 'Proses Terhenti',
@@ -757,6 +840,7 @@
                     }
 
                     evtSource.close();
+                    stopImportProgressTicker();
                     themedSwal({
                         icon: 'error',
                         title: 'Koneksi Stream Terputus',
@@ -766,6 +850,7 @@
                     resetImportButton();
                 };
             } catch (err) {
+                stopImportProgressTicker();
                 themedSwal({
                     icon: 'error',
                     title: 'Terjadi Kesalahan',

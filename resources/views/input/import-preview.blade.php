@@ -8,6 +8,7 @@
         <form id="inputRekananImportForm" method="POST" action="{{ route('input.store') }}">
             @csrf
             <input type="hidden" name="rows_payload" id="rowsPayload">
+            <input type="hidden" name="periode" value="{{ $periode }}">
 
             <div class="card card-outline card-success">
                 <div class="card-header bg-light">
@@ -30,6 +31,11 @@
                     <div class="alert alert-secondary m-3 mb-0 border-0">
                         <i class="fas fa-file-import text-primary"></i>
                         Sumber file: <strong>{{ $sourceName }}</strong>
+                    </div>
+
+                    <div class="alert alert-light m-3 mb-0 border border-info text-dark">
+                        <i class="fas fa-calendar-alt text-info"></i>
+                        Periode import: <strong>{{ $periode }}</strong>
                     </div>
 
                     <div class="table-responsive" style="min-height: 450px; max-height: 600px; overflow-y: auto; overflow-x: auto;">
@@ -373,6 +379,35 @@
         });
 
         updatePreviewTable();
+
+        @if(session('sweet_success'))
+        Swal.fire({
+            icon: 'success',
+            title: @json(session('sweet_success.title')),
+            text: @json(session('sweet_success.text')),
+            confirmButtonText: 'OK'
+        });
+        @endif
+
+        @if(session('sweet_warning'))
+        Swal.fire({
+            icon: 'warning',
+            title: @json(session('sweet_warning.title')),
+            text: @json(session('sweet_warning.text')),
+            confirmButtonText: 'OK'
+        }).then(() => {
+            window.location.href = @json(route('import.index'));
+        });
+        @endif
+
+        @if(session('error'))
+        Swal.fire({
+            icon: 'error',
+            title: 'Terjadi Kesalahan',
+            text: @json(session('error')),
+            confirmButtonText: 'OK'
+        });
+        @endif
     });
 </script>
 <style>

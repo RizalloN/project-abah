@@ -178,10 +178,17 @@ public function performanceBrilink()
         string $sourceLabel,
         string $pageTitle
     ) {
+        $statusColumn = $sourceTable === 'bod_boc' ? 'ket_nasabah' : 'status_nasabah';
+
         $selectedDateInput = (string) $request->query('posisi_terakhir', '');
+        $today = now()->endOfDay();
         $selectedDate = $selectedDateInput !== ''
             ? Carbon::parse($selectedDateInput)->endOfDay()
-            : now()->endOfDay();
+            : $today->copy();
+
+        if ($selectedDate->greaterThan($today)) {
+            $selectedDate = $today->copy();
+        }
 
         $positions = collect([
             $selectedDate->copy()->subMonthsNoOverflow(2)->endOfMonth()->toDateString(),
@@ -195,37 +202,126 @@ public function performanceBrilink()
             $positions = $positions->unique()->values();
         }
 
-        $matchedRows = DB::table($sourceTable . ' as src')
-            ->join('simpanan_multipn as sm', function ($join) {
-                $join->whereRaw('sm.CIFNO COLLATE utf8mb4_unicode_ci = src.cif COLLATE utf8mb4_unicode_ci');
-            })
-            ->whereIn('sm.posisi', $positions->all())
-            ->select('src.cif', 'sm.kantor_cabang', 'sm.posisi', 'sm.saldo_idr')
-            ->orderBy('sm.kantor_cabang')
-            ->orderBy('sm.posisi')
+        $positionBuckets = $positions
+            ->mapWithKeys(function ($position) {
+                $date = Carbon::parse($position);
+                return [$date->format('Y-m') => $position];
+            });
+
+        $windowStart = Carbon::parse($positions->first())->startOfMonth()->toDateString();
+
+        $sourceRows = DB::table($sourceTable . ' as src')
+            ->whereNotNull('src.periode')
+            ->whereBetween(DB::raw('DATE(src.periode)'), [$windowStart, $selectedDate->toDateString()])
+            ->selectRaw('DATE(src.periode) as periode')
+            ->selectRaw('TRIM(src.cif) as cif')
+            ->selectRaw('TRIM(COALESCE(src.' . $statusColumn . ', "")) as status_nasabah')
+            ->orderBy('periode')
             ->get();
+
+        $cifList = $sourceRows
+            ->pluck('cif')
+            ->map(fn ($cif) => trim((string) $cif))
+            ->filter(fn ($cif) => $cif !== '')
+            ->unique()
+            ->values();
+
+        $simpananRows = collect();
+        if ($cifList->isNotEmpty()) {
+            $simpananRows = DB::table('simpanan_multipn')
+                ->whereNotNull('CIFNO')
+                ->whereDate('posisi', '<=', $selectedDate->toDateString())
+                ->whereIn(DB::raw('TRIM(CIFNO)'), $cifList->all())
+                ->selectRaw('TRIM(CIFNO) as cif')
+                ->selectRaw('DATE(posisi) as posisi')
+                ->selectRaw("COALESCE(NULLIF(TRIM(kantor_cabang), ''), 'Branch Office Belum Terpetakan') as kantor_cabang")
+                ->selectRaw('COALESCE(saldo_idr, 0) as saldo_idr')
+                ->orderByDesc('posisi')
+                ->get();
+        }
+
+        $latestSaldoByCif = [];
+        foreach ($simpananRows as $simpananRow) {
+            $cif = trim((string) ($simpananRow->cif ?? ''));
+            if ($cif === '') {
+                continue;
+            }
+
+            $posisi = (string) ($simpananRow->posisi ?? '');
+            $regional = trim((string) ($simpananRow->kantor_cabang ?: 'Branch Office Belum Terpetakan'));
+            $saldo = (float) ($simpananRow->saldo_idr ?? 0);
+
+            if (!isset($latestSaldoByCif[$cif])) {
+                $latestSaldoByCif[$cif] = [
+                    'posisi' => $posisi,
+                    'kantor_cabang' => $regional,
+                    'saldo_idr' => $saldo,
+                ];
+                continue;
+            }
+
+            if ($latestSaldoByCif[$cif]['posisi'] === $posisi) {
+                $latestSaldoByCif[$cif]['saldo_idr'] += $saldo;
+            }
+        }
+
+        $sourceRows = $sourceRows
+            ->map(function ($row) use ($latestSaldoByCif, $positionBuckets) {
+                $cif = trim((string) ($row->cif ?? ''));
+                $simpanan = $latestSaldoByCif[$cif] ?? null;
+                $periode = trim((string) ($row->periode ?? ''));
+                $bucketKey = $periode !== '' ? Carbon::parse($periode)->format('Y-m') : null;
+
+                $row->kantor_cabang = $simpanan['kantor_cabang'] ?? 'Branch Office Belum Terpetakan';
+                $row->saldo_idr = $simpanan['saldo_idr'] ?? 0;
+                $row->is_matched = $simpanan ? 1 : 0;
+                $row->bucket_periode = $bucketKey && $positionBuckets->has($bucketKey)
+                    ? $positionBuckets->get($bucketKey)
+                    : null;
+                $row->status_nasabah = trim((string) ($row->status_nasabah ?? ''));
+
+                return $row;
+            })
+            ->filter(fn ($row) => !empty($row->bucket_periode))
+            ->sortBy([
+                ['kantor_cabang', 'asc'],
+                ['bucket_periode', 'asc'],
+            ])
+            ->values();
 
         $latestPosition = $positions->last();
         $previousPosition = $positions->slice(-2, 1)->first();
         $pipelineByRegional = [];
         $stats = [];
+        $matchedCount = 0;
 
-        foreach ($matchedRows as $row) {
+        foreach ($sourceRows as $row) {
             $regional = trim((string) ($row->kantor_cabang ?: 'Branch Office Belum Terpetakan'));
             $cif = trim((string) $row->cif);
-            $posisi = (string) $row->posisi;
+            $posisi = (string) $row->bucket_periode;
+            $isMatched = (int) ($row->is_matched ?? 0) === 1;
+            $statusNasabah = strtolower(trim((string) ($row->status_nasabah ?? '')));
 
             $stats[$regional] ??= [];
             $stats[$regional][$posisi] ??= [
-                'cifs' => [],
+                'pipeline_cifs' => [],
+                'sudah_cifs' => [],
+                'belum_cifs' => [],
                 'saldo_cif' => 0,
             ];
 
-            $stats[$regional][$posisi]['cifs'][$cif] = true;
-            $stats[$regional][$posisi]['saldo_cif'] += (float) ($row->saldo_idr ?? 0);
+            $stats[$regional][$posisi]['pipeline_cifs'][$cif] = true;
+            $pipelineByRegional[$regional][$cif] = true;
 
-            if ($latestPosition && $posisi === $latestPosition) {
-                $pipelineByRegional[$regional][$cif] = true;
+            if (str_contains($statusNasabah, 'belum')) {
+                $stats[$regional][$posisi]['belum_cifs'][$cif] = true;
+            } elseif (str_contains($statusNasabah, 'sudah')) {
+                $stats[$regional][$posisi]['sudah_cifs'][$cif] = true;
+            }
+
+            if ($isMatched && isset($stats[$regional][$posisi]['sudah_cifs'][$cif])) {
+                $stats[$regional][$posisi]['saldo_cif'] += (float) ($row->saldo_idr ?? 0);
+                $matchedCount++;
             }
         }
 
@@ -261,9 +357,14 @@ public function performanceBrilink()
             ];
 
             foreach ($positions as $position) {
-                $regionalStats = $stats[$regional][$position] ?? ['cifs' => [], 'saldo_cif' => 0];
-                $sudah = count($regionalStats['cifs']);
-                $belum = max($totalPipeline - $sudah, 0);
+                $regionalStats = $stats[$regional][$position] ?? [
+                    'pipeline_cifs' => [],
+                    'sudah_cifs' => [],
+                    'belum_cifs' => [],
+                    'saldo_cif' => 0,
+                ];
+                $sudah = count($regionalStats['sudah_cifs']);
+                $belum = count($regionalStats['belum_cifs']);
 
                 $row['positions'][$position] = [
                     'belum_terakuisisi' => $belum,
@@ -312,7 +413,7 @@ public function performanceBrilink()
             'positions' => $positions,
             'tableRows' => $tableRows,
             'grandTotals' => $grandTotals,
-            'matchedCount' => $matchedRows->count(),
+            'matchedCount' => $matchedCount,
             'selectedDate' => $selectedDate->toDateString(),
             'sourceLabel' => $sourceLabel,
             'pageTitle' => $pageTitle,

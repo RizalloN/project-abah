@@ -11,16 +11,20 @@ return new class extends Migration
      */
     public function up(): void
     {
-    Schema::create('import_jobs', function (Blueprint $table) {
-        $table->id();
-        $table->unsignedBigInteger('id_report');
-        $table->string('file_name');
-        $table->text('folder_path');
-        $table->string('status')->default('uploaded');
-        $table->integer('total_files')->nullable();
-        $table->unsignedBigInteger('created_by');
-        $table->timestamps();
-    });
+        if (Schema::hasTable('import_jobs')) {
+            return;
+        }
+
+        Schema::create('import_jobs', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('id_report');
+            $table->string('file_name');
+            $table->text('folder_path');
+            $table->string('status')->default('uploaded');
+            $table->integer('total_files')->nullable();
+            $table->unsignedBigInteger('created_by');
+            $table->timestamps();
+        });
     }
 
     /**

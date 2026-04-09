@@ -11,6 +11,7 @@ class InputRekanan extends Model
     protected $table = 'input_rekanan';
 
     protected $fillable = [
+        'periode',
         'perusahaan_anak',
         'rekanan_level_1',
         'rekanan_level_2',
