@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Support\ReportDataSyncService;
+use App\Support\LoanQualityBucketMapper;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Http\Request;
@@ -307,7 +308,7 @@ class DashboardPinjamanReportController extends Controller
             ? $this->loadLoanSnapshotMap($comparisonPeriod, $filters, 'prev')
             : [];
         $previousMetricSnapshot = $previousSnapshot;
-        $phAccounts = $this->loadPhAccountAmountMap($phPeriod);
+        $phAccounts = $this->loadPhAccountLookupMap($phPeriod);
 
         foreach ($this->buildLoanSnapshotQuery($selectedPeriod, $filters, 'curr')->cursor() as $row) {
             $accountNumber = (string) ($row->account_number ?? '');
@@ -374,10 +375,9 @@ class DashboardPinjamanReportController extends Controller
                 continue;
             }
 
-            $phBalanceCents = (int) ($phAccounts[$accountNumber] ?? 0);
-
-            if ($phBalanceCents > 0) {
-                $metricMap[$before]['ph'] = ($metricMap[$before]['ph'] ?? 0) + $phBalanceCents;
+            // PH is an exit state in the movement table, so the amount must remain the previous loan balance.
+            if (isset($phAccounts[$accountNumber])) {
+                $metricMap[$before]['ph'] = ($metricMap[$before]['ph'] ?? 0) + $previousBalanceCents;
                 continue;
             }
 
@@ -520,7 +520,7 @@ class DashboardPinjamanReportController extends Controller
         return $snapshot;
     }
 
-    private function loadPhAccountAmountMap(?string $period): array
+    private function loadPhAccountLookupMap(?string $period): array
     {
         if (!$period) {
             return [];
@@ -528,12 +528,11 @@ class DashboardPinjamanReportController extends Controller
 
         $accounts = [];
 
-        foreach ($this->buildPhSnapshotAmountQuery($period)->cursor() as $row) {
+        foreach ($this->buildPhSnapshotQuery($period)->cursor() as $row) {
             $accountNumber = (string) ($row->account_number ?? '');
-            $balanceCents = $this->amountToCents($row->ph_balance ?? 0);
 
-            if ($accountNumber !== '' && $balanceCents > 0) {
-                $accounts[$accountNumber] = (int) (($accounts[$accountNumber] ?? 0) + $balanceCents);
+            if ($accountNumber !== '') {
+                $accounts[$accountNumber] = true;
             }
         }
 
@@ -625,24 +624,6 @@ class DashboardPinjamanReportController extends Controller
         return $query;
     }
 
-    private function buildPhSnapshotAmountQuery(?string $period)
-    {
-        $query = DB::table(DB::raw(self::PH_TABLE . ' as ph FORCE INDEX (' . self::PH_LOOKUP_INDEX . ')'))
-            ->selectRaw('TRIM(ph.acctno) as account_number, SUM(COALESCE(ph.pokok, 0)) as ph_balance')
-            ->whereNotNull('ph.acctno')
-            ->where('ph.acctno', '<>', '')
-            ->where('ph.pokok', '>', 0)
-            ->groupByRaw('TRIM(ph.acctno)');
-
-        if ($period) {
-            $query->where('ph.periode', $period);
-        } else {
-            $query->whereRaw('1 = 0');
-        }
-
-        return $query;
-    }
-
     private function buildLoanSnapshotSource(string $alias, array $filters): string
     {
         $indexName = self::LOAN_REKENING_INDEX;
@@ -658,32 +639,7 @@ class DashboardPinjamanReportController extends Controller
 
     private function buildQualityBucketExpression(string $alias): string
     {
-        $normalizedKolekDetail = "UPPER(TRIM(COALESCE({$alias}.kolek_detail, '')))";
-
-        $kolekFixExpression = "
-            CASE
-                WHEN {$normalizedKolekDetail} NOT IN ('', '0', '-') THEN {$normalizedKolekDetail}
-                WHEN {$alias}.umur_tunggakan <= 0 THEN 'L'
-                WHEN {$alias}.umur_tunggakan <= 30 THEN 'DPK 1'
-                WHEN {$alias}.umur_tunggakan <= 60 THEN 'DPK 2'
-                WHEN {$alias}.umur_tunggakan <= 90 THEN 'DPK 3'
-                WHEN {$alias}.umur_tunggakan <= 120 THEN 'KL'
-                WHEN {$alias}.umur_tunggakan <= 180 THEN 'D1'
-                ELSE 'M'
-            END
-        ";
-
-        return "
-            CASE
-                WHEN ({$kolekFixExpression}) = 'L' AND UPPER(COALESCE({$alias}.flag_restruk, '')) = 'Y' THEN 'LR'
-                WHEN ({$kolekFixExpression}) IN ('DPK1', 'SML1') THEN 'DPK 1'
-                WHEN ({$kolekFixExpression}) IN ('DPK2', 'SML2') THEN 'DPK 2'
-                WHEN ({$kolekFixExpression}) IN ('DPK3', 'SML3') THEN 'DPK 3'
-                WHEN ({$kolekFixExpression}) = 'NPL' THEN 'M'
-                WHEN ({$kolekFixExpression}) IN ('PAY', 'LUNAS') THEN 'Pay'
-                ELSE ({$kolekFixExpression})
-            END
-        ";
+        return LoanQualityBucketMapper::buildSqlExpression($alias);
     }
 
     private function buildBucketRankExpression(string $column): string
@@ -1087,42 +1043,9 @@ class DashboardPinjamanReportController extends Controller
         }
     }
 
-    private function mapQualityBucket($kolekDetail, $umurTunggakan, $flagRestruk, $kolek = null): string
+    private function mapQualityBucket($kolekDetail, $umurTunggakan, $flagRestruk, $kolAdk1 = null, $kolek = null): string
     {
-        $normalizedKolekDetail = trim((string) ($kolekDetail ?? ''));
-        $kolekFix = strtoupper($normalizedKolekDetail);
-        if ($kolekFix === '' || $kolekFix === '0' || $kolekFix === '-') {
-            $days = (int) ($umurTunggakan ?? 0);
-
-            if ($days <= 0) {
-                $kolekFix = 'L';
-            } elseif ($days <= 30) {
-                $kolekFix = 'DPK 1';
-            } elseif ($days <= 60) {
-                $kolekFix = 'DPK 2';
-            } elseif ($days <= 90) {
-                $kolekFix = 'DPK 3';
-            } elseif ($days <= 120) {
-                $kolekFix = 'KL';
-            } elseif ($days <= 180) {
-                $kolekFix = 'D1';
-            } else {
-                $kolekFix = 'M';
-            }
-        }
-
-        if ($kolekFix === 'L' && strtoupper((string) ($flagRestruk ?? '')) === 'Y') {
-            return 'LR';
-        }
-
-        return match ($kolekFix) {
-            'DPK1', 'SML1' => 'DPK 1',
-            'DPK2', 'SML2' => 'DPK 2',
-            'DPK3', 'SML3' => 'DPK 3',
-            'NPL' => 'M',
-            'PAY', 'LUNAS' => 'Pay',
-            default => $kolekFix,
-        };
+        return LoanQualityBucketMapper::map($kolekDetail, $umurTunggakan, $flagRestruk, $kolAdk1, $kolek);
     }
 
     private function normalizeDashboardBucket(string $bucket): string

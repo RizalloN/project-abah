@@ -1,0 +1,21 @@
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Biarkan file yang memang ada di root project.
+    RewriteCond %{REQUEST_FILENAME} -f
+    RewriteRule ^ - [L]
+
+    # Biarkan direct access ke folder public bila memang dipanggil eksplisit.
+    RewriteRule ^public/ - [L]
+
+    # Sajikan asset/file dari folder public tanpa perlu /public di URL.
+    RewriteCond $1 !^$
+    RewriteCond %{DOCUMENT_ROOT}/project-ABAH/public/$1 -f [OR]
+    RewriteCond %{DOCUMENT_ROOT}/project-ABAH/public/$1 -d
+    RewriteRule ^(.*)$ public/$1 [L]
+
+    # Selain itu, arahkan semua route ke front controller Laravel di root project.
+    RewriteRule ^ index.php [L]
+</IfModule>
+
+Options -Indexes

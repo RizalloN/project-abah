@@ -347,7 +347,7 @@
     <div class="login-card">
         <section class="left-panel">
             <div>
-                <a href="/" class="left-brand">
+            <a href="{{ url('/') }}" class="left-brand">
                     <span class="left-brand-badge">BR</span>
                     BRI DigiBranch
                 </a>
@@ -370,7 +370,7 @@
         </section>
 
         <section class="right-panel">
-            <a href="/" class="mobile-brand">
+                <a href="{{ url('/') }}" class="mobile-brand">
                 <span class="mobile-brand-badge">BR</span>
                 BRI DigiBranch
             </a>

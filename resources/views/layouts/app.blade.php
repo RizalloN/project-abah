@@ -83,6 +83,8 @@
                 const body = document.body;
                 const prefetchCache = new Set();
                 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+                const isLoopbackHost = ['127.0.0.1', 'localhost'].includes(window.location.hostname);
+                const shouldPrefetch = !isLoopbackHost;
 
                 const isInternalNavigableLink = function (link) {
                     if (!link || link.target === '_blank' || link.hasAttribute('download')) {
@@ -103,6 +105,10 @@
                 };
 
                 const prefetchLink = function (link) {
+                    if (!shouldPrefetch) {
+                        return;
+                    }
+
                     if (!isInternalNavigableLink(link)) {
                         return;
                     }

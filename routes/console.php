@@ -4,6 +4,7 @@ use App\Support\ReportDataSyncService;
 use App\Support\ReportSnapshotBuilder;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
@@ -49,3 +50,93 @@ Artisan::command('reports:sync-source {table} {--period=}', function () {
     $this->info("Sinkronisasi selesai untuk {$table}.");
     $this->info('Durasi: ' . number_format(microtime(true) - $startedAt, 2) . ' detik.');
 })->purpose('Refresh optimizer stats + snapshots setelah perubahan/hapus data sumber');
+
+Artisan::command('daily-loan:audit-shifted-plafon {--period=*} {--account=*} {--limit=200}', function () {
+    $periods = array_values(array_filter(array_map(
+        static fn ($value) => trim((string) $value),
+        (array) $this->option('period')
+    )));
+    $accounts = array_values(array_filter(array_map(
+        static fn ($value) => trim((string) $value),
+        (array) $this->option('account')
+    )));
+    $limit = max(1, (int) $this->option('limit'));
+
+    $query = DB::table('daily_loan_dinamis')
+        ->select([
+            'periode',
+            'nomor_rekening1',
+            'nama_debitur1',
+            'jangka_waktu1',
+            'plafon',
+            'baki_debet1',
+            'os_idr',
+        ])
+        ->where(function ($builder) {
+            $builder
+                ->where('nama_debitur1', 'like', '%,%')
+                ->orWhere(function ($numeric) {
+                    $numeric
+                        ->whereNotNull('plafon')
+                        ->whereBetween('plafon', [1, 600])
+                        ->where(function ($balance) {
+                            $balance
+                                ->where('baki_debet1', '>=', 1000000)
+                                ->orWhere('os_idr', '>=', 1000000);
+                        });
+                });
+        });
+
+    if ($periods !== []) {
+        $query->whereIn('periode', $periods);
+    }
+
+    if ($accounts !== []) {
+        $query->whereIn('nomor_rekening1', $accounts);
+    }
+
+    $rows = $query
+        ->orderByDesc('periode')
+        ->orderBy('nomor_rekening1')
+        ->limit($limit)
+        ->get();
+
+    if ($rows->isEmpty()) {
+        $this->info('Tidak ada row mencurigakan yang cocok dengan filter.');
+        return;
+    }
+
+    $tableRows = $rows->map(function ($row) {
+        $flags = [];
+
+        if (str_contains((string) ($row->nama_debitur1 ?? ''), ',')) {
+            $flags[] = 'name_has_comma';
+        }
+
+        if ($row->plafon !== null && (float) $row->plafon >= 1 && (float) $row->plafon <= 600) {
+            $flags[] = 'plafon_looks_like_term';
+        }
+
+        if ($row->baki_debet1 !== null && $row->os_idr !== null && abs((float) $row->baki_debet1 - (float) $row->os_idr) < 0.01) {
+            $flags[] = 'baki_matches_os';
+        }
+
+        return [
+            'periode' => (string) $row->periode,
+            'rekening' => (string) $row->nomor_rekening1,
+            'debitur' => (string) $row->nama_debitur1,
+            'jangka_waktu1' => $row->jangka_waktu1,
+            'plafon' => $row->plafon,
+            'baki_debet1' => $row->baki_debet1,
+            'os_idr' => $row->os_idr,
+            'flags' => implode(',', $flags),
+        ];
+    })->all();
+
+    $this->table(
+        ['periode', 'rekening', 'debitur', 'jangka_waktu1', 'plafon', 'baki_debet1', 'os_idr', 'flags'],
+        $tableRows
+    );
+
+    $this->info('Total row audit: ' . count($tableRows));
+})->purpose('Audit row Daily Loan yang dicurigai mengalami pergeseran kolom akibat nama debitur berkoma');

@@ -814,32 +814,7 @@ class ReportSnapshotBuilder
 
     private function buildDashboardBucketExpression(): string
     {
-        $normalizedKolekDetail = "UPPER(TRIM(COALESCE(kolek_detail, '')))";
-
-        $kolekFixExpression = "
-            CASE
-                WHEN {$normalizedKolekDetail} NOT IN ('', '0', '-') THEN {$normalizedKolekDetail}
-                WHEN umur_tunggakan <= 0 THEN 'L'
-                WHEN umur_tunggakan <= 30 THEN 'DPK 1'
-                WHEN umur_tunggakan <= 60 THEN 'DPK 2'
-                WHEN umur_tunggakan <= 90 THEN 'DPK 3'
-                WHEN umur_tunggakan <= 120 THEN 'KL'
-                WHEN umur_tunggakan <= 180 THEN 'D1'
-                ELSE 'M'
-            END
-        ";
-
-        return "
-            CASE
-                WHEN ({$kolekFixExpression}) = 'L' AND UPPER(COALESCE(flag_restruk, '')) = 'Y' THEN 'LR'
-                WHEN ({$kolekFixExpression}) IN ('DPK1', 'SML1') THEN 'DPK 1'
-                WHEN ({$kolekFixExpression}) IN ('DPK2', 'SML2') THEN 'DPK 2'
-                WHEN ({$kolekFixExpression}) IN ('DPK3', 'SML3') THEN 'DPK 3'
-                WHEN ({$kolekFixExpression}) = 'NPL' THEN 'M'
-                WHEN ({$kolekFixExpression}) IN ('PAY', 'LUNAS') THEN 'Pay'
-                ELSE ({$kolekFixExpression})
-            END
-        ";
+        return LoanQualityBucketMapper::buildSqlExpression();
     }
 
     private function buildLoanBranchExpression(string $loanBranchColumn): string

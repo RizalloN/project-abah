@@ -12,14 +12,19 @@ use App\Http\Controllers\Import\ImportReportPhController;
 use App\Http\Controllers\Import\ImportSimpananMultiPnCsvController;
 use App\Http\Controllers\Input\BodBocController;
 use App\Http\Controllers\Input\InputRekananController;
+use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\RasioCasaDebiturController;
 use App\Http\Controllers\RekeningDormantController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
-    return redirect()->route('login');
-});
+    if (auth()->check()) {
+        return redirect()->route('dashboard');
+    }
+
+    return app(AuthenticatedSessionController::class)->create();
+})->name('home');
 
 Route::middleware(['auth', 'release.session.lock', 'throttle:240,1'])->group(function () {
     Route::get('/dashboard', [DashboardSimpananController::class, 'index'])

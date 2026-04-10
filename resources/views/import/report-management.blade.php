@@ -59,7 +59,7 @@
                 <label class="form-check-label font-weight-bold" for="management-select-all">Pilih Semua Grup</label>
             </div>
             <div class="report-management-bulkbar__actions">
-                <span id="management-selected-count" class="report-management-bulkbar__count">0 dipilih</span>
+                <span id="management-selected-count" class="report-management-bulkbar__count">0 grup dipilih • 0 baris ter-check</span>
                 <button type="button" id="btn-management-delete-selected" class="btn btn-sm btn-danger" disabled>
                     <i class="fas fa-trash-alt mr-1"></i> Hapus Terpilih
                 </button>
@@ -139,13 +139,35 @@
 
         function updateDeleteProgressUi(payload) {
             const progressBar = document.getElementById('delete-progress-bar');
+            const progressValue = document.getElementById('delete-progress-value');
             const progressText = document.getElementById('delete-progress-text');
             const progressDesc = document.getElementById('delete-progress-desc');
+            const progressMeta = document.getElementById('delete-progress-meta');
             const percent = Math.max(0, Math.min(100, Number(payload?.progress_percent || 0)));
+            const waitingOnBatch = !!payload?.is_waiting_on_batch;
+            const currentScope = Math.min(
+                Math.max(1, Number(payload?.scope_count || 1)),
+                Math.max(1, Number(payload?.current_scope_index || 0) + 1)
+            );
+            const activeBatchSize = Math.max(0, Number(payload?.active_batch_size || payload?.chunk_size || 0));
+            const lastBatchDeletedRows = Math.max(0, Number(payload?.last_batch_deleted_rows || 0));
+            const errorCode = payload?.error_code ? `Kode ${escapeHtml(payload.error_code)}` : '';
 
             if (progressBar) {
+                progressBar.classList.remove('report-management-progress__bar--indeterminate');
+                progressBar.classList.remove('progress-bar-animated');
+                progressBar.classList.remove('progress-bar-striped');
                 progressBar.style.width = percent + '%';
-                progressBar.innerText = percent + '%';
+                progressBar.innerText = '';
+                progressBar.setAttribute(
+                    'aria-valuetext',
+                    waitingOnBatch
+                        ? `Progress riil ${percent}% - batch sedang diproses`
+                        : `${percent}%`
+                );
+            }
+            if (progressValue) {
+                progressValue.innerText = `${percent}%`;
             }
             if (progressText) {
                 progressText.innerText = payload?.message || 'Memproses delete...';
@@ -153,9 +175,48 @@
             if (progressDesc) {
                 progressDesc.innerHTML = `Terhapus <b>${formatNumber(payload?.deleted_rows || 0)}</b> dari <b>${formatNumber(payload?.total_rows || 0)}</b> baris.`;
             }
+            if (progressMeta) {
+                if (payload?.status === 'failed') {
+                    progressMeta.innerText = [errorCode, payload?.error || 'Delete gagal diproses.']
+                        .filter(Boolean)
+                        .join(' • ');
+                } else if (waitingOnBatch) {
+                    progressMeta.innerText = `Memproses batch ${formatNumber(activeBatchSize)} baris • Grup ${formatNumber(currentScope)}/${formatNumber(payload?.scope_count || 1)}`;
+                } else if ((payload?.stage || '') === 'cleanup') {
+                    progressMeta.innerText = 'Delete sumber selesai, membersihkan snapshot...';
+                } else if ((payload?.stage || '') === 'syncing') {
+                    progressMeta.innerText = 'Menyegarkan statistik dan cache...';
+                } else if (lastBatchDeletedRows > 0) {
+                    progressMeta.innerText = `Batch terakhir menghapus ${formatNumber(lastBatchDeletedRows)} baris.`;
+                } else {
+                    progressMeta.innerText = '';
+                }
+            }
         }
 
-        async function runDeleteProgress(processUrl, initialPayload) {
+        async function getJson(url) {
+            const response = await fetch(url, {
+                headers: {
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            });
+
+            let data = {};
+            try {
+                data = await response.json();
+            } catch (_) {
+                data = {};
+            }
+
+            if (!response.ok && data.status !== 'warning') {
+                throw new Error(data.message || 'Gagal mengambil status delete.');
+            }
+
+            return data;
+        }
+
+        async function runDeleteProgress(processUrl, statusUrl, initialPayload) {
             themedSwal({
                 title: 'Memproses Delete',
                 html: `
@@ -163,10 +224,16 @@
                         <span style="font-size: 14px; color: #64748b;" id="delete-progress-desc">Menginisialisasi delete bertahap...</span>
                     </div>
                     <div class="progress report-management-progress">
-                        <div id="delete-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated report-management-progress__bar" role="progressbar" style="width: 0%;">0%</div>
+                        <div id="delete-progress-bar" class="progress-bar report-management-progress__bar" role="progressbar" style="width: 0%;"></div>
+                    </div>
+                    <div class="text-center mt-2">
+                        <small id="delete-progress-value" class="report-management-progress__value">0%</small>
                     </div>
                     <div class="text-center mt-3">
                         <small id="delete-progress-text" class="report-management-progress__text">Menyiapkan chunk pertama...</small>
+                    </div>
+                    <div class="text-center mt-2">
+                        <small id="delete-progress-meta" class="report-management-progress__meta"></small>
                     </div>
                 `,
                 allowOutsideClick: false,
@@ -181,7 +248,43 @@
 
             try {
                 while (true) {
-                    finalPayload = await postJson(processUrl, {});
+                    let requestResolved = false;
+                    let requestError = null;
+                    let latestPayload = finalPayload;
+
+                    const requestPromise = postJson(processUrl, {})
+                        .then(function (payload) {
+                            requestResolved = true;
+                            latestPayload = payload;
+                            return payload;
+                        })
+                        .catch(function (error) {
+                            requestResolved = true;
+                            requestError = error;
+                            throw error;
+                        });
+
+                    while (!requestResolved) {
+                        if (statusUrl) {
+                            try {
+                                const statusPayload = await getJson(statusUrl);
+                                if (statusPayload && statusPayload.delete_id) {
+                                    latestPayload = statusPayload;
+                                }
+                            } catch (_) {
+                                // ignore transient status polling failures
+                            }
+                        }
+
+                        updateDeleteProgressUi(latestPayload);
+                        await new Promise(resolve => setTimeout(resolve, 700));
+                    }
+
+                    if (requestError) {
+                        throw requestError;
+                    }
+
+                    finalPayload = await requestPromise;
                     updateDeleteProgressUi(finalPayload);
 
                     if (['completed', 'warning', 'failed'].includes(finalPayload.status)) {
@@ -233,6 +336,7 @@
             return {
                 period: periodIsNull ? '' : period,
                 kanca: kancaIsNull ? '' : kanca,
+                row_count: Number(element.getAttribute('data-row-count') || 0),
                 period_is_null: periodIsNull,
                 kanca_is_null: kancaIsNull,
                 period_label: period || '(Blank)',
@@ -248,10 +352,13 @@
             const allCheckboxes = Array.from(managementTableBody?.querySelectorAll('.management-row-checkbox') || []);
             const selectedCheckboxes = getSelectedScopeCheckboxes();
             const selectedCount = selectedCheckboxes.length;
+            const selectedRows = selectedCheckboxes.reduce((sum, checkbox) => {
+                return sum + Number(checkbox.getAttribute('data-row-count') || 0);
+            }, 0);
             const totalCount = allCheckboxes.length;
 
             if (managementSelectedCount) {
-                managementSelectedCount.textContent = `${formatNumber(selectedCount)} dipilih`;
+                managementSelectedCount.textContent = `${formatNumber(selectedCount)} grup dipilih • ${formatNumber(selectedRows)} baris ter-check`;
             }
 
             if (btnDeleteSelected) {
@@ -290,16 +397,18 @@
                 const kancaIsNull = row.kanca_is_null ? '1' : '0';
                 const periodEncoded = encodeURIComponent(String(period));
                 const kancaEncoded = encodeURIComponent(String(kanca));
+                const rowCount = Number(row.row_count || 0);
 
                 return `
                     <tr>
                         <td class="text-center report-management-col-check">
                             <input type="checkbox"
-                                   class="management-row-checkbox"
-                                   data-period="${periodEncoded}"
-                                   data-kanca="${kancaEncoded}"
-                                   data-period-is-null="${periodIsNull}"
-                                   data-kanca-is-null="${kancaIsNull}">
+                                    class="management-row-checkbox"
+                                    data-period="${periodEncoded}"
+                                    data-kanca="${kancaEncoded}"
+                                    data-row-count="${rowCount}"
+                                    data-period-is-null="${periodIsNull}"
+                                    data-kanca-is-null="${kancaIsNull}">
                         </td>
                         <td><span class="report-management-primary">${escapeHtml(period)}</span></td>
                         <td><span class="report-management-primary">${escapeHtml(kanca)}</span></td>
@@ -309,6 +418,7 @@
                                     class="btn btn-sm btn-outline-danger btn-management-delete report-management-delete-btn"
                                     data-period="${periodEncoded}"
                                     data-kanca="${kancaEncoded}"
+                                    data-row-count="${rowCount}"
                                     data-period-is-null="${periodIsNull}"
                                     data-kanca-is-null="${kancaIsNull}">
                                 <i class="fas fa-trash-alt mr-1"></i> Delete
@@ -385,6 +495,7 @@
         async function deleteManagedScopes(scopes) {
             const deleteUrl = reportManagementCard?.dataset.deleteUrl;
             const processUrlTemplate = reportManagementCard?.dataset.deleteProcessUrlTemplate;
+            const statusUrlTemplate = reportManagementCard?.dataset.deleteStatusUrlTemplate;
             if (!deleteUrl || !managementReportSelect || !managementReportSelect.value) {
                 return;
             }
@@ -399,14 +510,16 @@
             }
 
             const previewItems = scopes.slice(0, 5).map(function (scope) {
-                return `<li><b>${escapeHtml(scope.period_label || '(Blank)')}</b> | ${escapeHtml(scope.kanca_label || '(Blank)')}</li>`;
+                const rowCount = formatNumber(scope.row_count || 0);
+                return `<li><b>${escapeHtml(scope.period_label || '(Blank)')}</b> | ${escapeHtml(scope.kanca_label || '(Blank)')} <span class="text-muted">(${rowCount} baris)</span></li>`;
             }).join('');
             const extraInfo = scopes.length > 5 ? `<div class="mt-2 text-muted">+${formatNumber(scopes.length - 5)} grup lainnya</div>` : '';
+            const selectedRows = scopes.reduce((sum, scope) => sum + Number(scope.row_count || 0), 0);
 
             const confirm = await themedSwal({
                 icon: 'warning',
                 title: 'Hapus Data?',
-                html: `Data akan dihapus untuk <b>${formatNumber(scopes.length)}</b> grup:<ul class="text-left mb-0 pl-4">${previewItems}</ul>${extraInfo}`,
+                html: `Data akan dihapus untuk <b>${formatNumber(scopes.length)}</b> grup dengan total <b>${formatNumber(selectedRows)}</b> baris ter-check:<ul class="text-left mb-0 pl-4">${previewItems}</ul>${extraInfo}`,
                 showCancelButton: true,
                 confirmButtonText: 'Ya, Hapus',
                 cancelButtonText: 'Batal'
@@ -498,11 +611,13 @@
 
             const finalPayload = await runDeleteProgress(
                 buildDeleteUrl(processUrlTemplate, payload.delete_id),
+                statusUrlTemplate ? buildDeleteUrl(statusUrlTemplate, payload.delete_id) : null,
                 payload
             );
 
             if (finalPayload.status === 'failed') {
-                throw new Error(finalPayload.error || finalPayload.message || 'Terjadi kesalahan saat menghapus data.');
+                const errorCode = finalPayload.error_code ? ` (${finalPayload.error_code})` : '';
+                throw new Error((finalPayload.error || finalPayload.message || 'Terjadi kesalahan saat menghapus data.') + errorCode);
             }
 
             await themedSwal({
@@ -626,9 +741,11 @@
     .report-management-primary{color:#0f172a;font-weight:700}
     .report-management-count{display:inline-flex;align-items:center;justify-content:flex-end;min-width:72px;padding:.4rem .7rem;border-radius:999px;background:rgba(37,99,235,.08);color:#1d4ed8;font-weight:800}
     .report-management-delete-btn{min-width:118px;border-radius:14px;font-weight:700}
-    .report-management-progress{height:16px;border-radius:999px;background-color:#e2e8f0;overflow:hidden;box-shadow:inset 0 1px 2px rgba(15,23,42,.08)}
-    .report-management-progress__bar{font-weight:700;font-size:12px;line-height:16px;background:linear-gradient(135deg,#0f766e,#115e59)}
+    .report-management-progress{height:14px;border-radius:999px;background:linear-gradient(180deg,#dbe7ef 0%,#cfe0ea 100%);overflow:hidden;box-shadow:inset 0 1px 2px rgba(15,23,42,.08)}
+    .report-management-progress__bar{height:100%;font-weight:700;font-size:12px;line-height:14px;background:linear-gradient(90deg,#0f766e 0%,#147a72 55%,#1a8b80 100%);box-shadow:0 0 0 1px rgba(15,118,110,.05) inset;transition:width .45s cubic-bezier(.22,1,.36,1)}
+    .report-management-progress__value{display:inline-block;color:#0f172a;font-weight:800;letter-spacing:.04em}
     .report-management-progress__text{color:#0f766e;font-weight:700;letter-spacing:.02em}
+    .report-management-progress__meta{display:block;color:#64748b;font-weight:600;letter-spacing:.01em;min-height:1.2rem}
     .swal-modern-popup{border:1px solid rgba(226,232,240,.95);border-radius:28px;padding:1.4rem 1.4rem 1.2rem;box-shadow:0 30px 80px -35px rgba(15,23,42,.35)}
     .swal-modern-title{color:#0f172a;font-weight:800;letter-spacing:-.02em}
     .swal-modern-html{color:#475569;font-size:.95rem;line-height:1.65}

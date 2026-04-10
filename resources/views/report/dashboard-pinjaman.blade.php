@@ -699,6 +699,9 @@
         let isRefreshingFilters = false;
         let filterReloadTimer = null;
         let loadingProgressValue = 0;
+        let activeMatrixRequestId = 0;
+        let activeFilterRequestId = 0;
+        let isNavigatingAway = false;
 
         function abortInFlightRequests() {
             if (activeController) {
@@ -712,6 +715,12 @@
             }
 
             window.clearTimeout(filterReloadTimer);
+        }
+
+        function releaseLoadingUi() {
+            overlay.classList.add('is-hidden');
+            chip.classList.add('d-none');
+            submitButton.disabled = false;
         }
 
         const filterSelects = [
@@ -853,6 +862,12 @@
             });
         }
 
+        function idlePause(timeout = 0) {
+            return new Promise((resolve) => {
+                window.setTimeout(resolve, timeout);
+            });
+        }
+
         function updateLoadingProgress(value, phase, copy) {
             loadingProgressValue = Math.max(0, Math.min(100, Math.round(value)));
 
@@ -885,9 +900,7 @@
             updateLoadingProgress(100, 'Selesai', 'Tabel selesai dirender.');
             await nextFrame();
             await nextFrame();
-            overlay.classList.add('is-hidden');
-            chip.classList.add('d-none');
-            submitButton.disabled = false;
+            releaseLoadingUi();
         }
 
         function renderRows(rows) {
@@ -940,7 +953,7 @@
             }).join('');
         }
 
-        async function renderRowsProgressively(rows) {
+        async function renderRowsProgressively(rows, requestId) {
             if (!rows || rows.length === 0) {
                 renderRows(rows);
                 updateLoadingProgress(88, 'Render Tabel', 'Tidak ada data yang perlu dirender.');
@@ -948,8 +961,13 @@
             }
 
             const fragments = [];
+            const chunkSize = 2;
 
             for (let index = 0; index < rows.length; index += 1) {
+                if (requestId !== activeMatrixRequestId || isNavigatingAway) {
+                    return;
+                }
+
                 const row = rows[index];
                 const cells = row.values.map((value, columnIndex) => {
                     let extraClass = '';
@@ -985,11 +1003,15 @@
                     </tr>
                 `);
 
-                body.innerHTML = fragments.join('');
-
                 const progress = 55 + Math.round(((index + 1) / rows.length) * 35);
                 updateLoadingProgress(progress, 'Render Tabel', `Merender baris ${index + 1} dari ${rows.length}...`);
-                await nextFrame();
+
+                const isChunkBoundary = ((index + 1) % chunkSize === 0) || index === rows.length - 1;
+                if (isChunkBoundary) {
+                    body.innerHTML = fragments.join('');
+                    await nextFrame();
+                    await idlePause();
+                }
             }
         }
 
@@ -1122,6 +1144,8 @@
                 activeFilterController.abort();
             }
 
+            const requestId = ++activeFilterRequestId;
+
             if (!periodInput.value) {
                 setFilterLoadingState(false);
                 activePeriodMeta.textContent = '-';
@@ -1160,6 +1184,10 @@
                 }
 
                 const payload = await response.json();
+                if (requestId !== activeFilterRequestId || isNavigatingAway) {
+                    return;
+                }
+
                 activePeriodMeta.textContent = formatDate(payload.selected_period);
                 comparisonPeriodMeta.textContent = formatDate(payload.comparison_period);
                 updateTotalValueHeader(payload.selected_period);
@@ -1184,10 +1212,11 @@
                 window.clearTimeout(timeoutId);
                 isRefreshingFilters = false;
 
-                if (activeFilterController?.signal.aborted) {
+                if (requestId !== activeFilterRequestId || activeFilterController?.signal.aborted) {
                     return;
                 }
 
+                activeFilterController = null;
                 filterSelects.forEach(({ element }) => {
                     element.disabled = !periodInput.value;
                 });
@@ -1200,6 +1229,7 @@
             }
 
             activeController = new AbortController();
+            const requestId = ++activeMatrixRequestId;
 
             const formData = new FormData(form);
             const params = new URLSearchParams();
@@ -1230,9 +1260,17 @@
 
                 updateLoadingProgress(42, 'Memproses Respons', 'Data diterima, menyiapkan render tabel...');
                 const payload = await response.json();
+                if (requestId !== activeMatrixRequestId || isNavigatingAway) {
+                    return;
+                }
+
                 updateLoadingProgress(52, 'Sinkronisasi Header', 'Memperbarui header dan metadata periode...');
                 await nextFrame();
-                await renderRowsProgressively(payload.matrix_rows);
+                await renderRowsProgressively(payload.matrix_rows, requestId);
+                if (requestId !== activeMatrixRequestId || isNavigatingAway) {
+                    return;
+                }
+
                 updateLoadingProgress(92, 'Menghitung Total', 'Menyusun grand total dan ringkasan...');
                 renderFoot(payload.grand_totals, payload.grand_total_value);
                 periodBadge.textContent = `${formatDate(payload.selected_period)} vs ${formatDate(payload.comparison_period)}`;
@@ -1268,9 +1306,11 @@
                 }
 
                 await nextFrame();
-                overlay.classList.add('is-hidden');
-                chip.classList.add('d-none');
-                submitButton.disabled = false;
+                releaseLoadingUi();
+            } finally {
+                if (requestId === activeMatrixRequestId) {
+                    activeController = null;
+                }
             }
         }
 
@@ -1303,6 +1343,31 @@
         });
 
         overlay.classList.add('is-hidden');
+        document.addEventListener('click', function (event) {
+            const link = event.target.closest('a[href]');
+            if (!link) {
+                return;
+            }
+
+            const href = link.getAttribute('href') || '';
+            if (!href || href.startsWith('#') || href.startsWith('javascript:')) {
+                return;
+            }
+
+            if (link.target === '_blank' || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+                return;
+            }
+
+            isNavigatingAway = true;
+            abortInFlightRequests();
+            releaseLoadingUi();
+        });
+
+        window.addEventListener('beforeunload', function () {
+            isNavigatingAway = true;
+            abortInFlightRequests();
+            releaseLoadingUi();
+        });
         window.addEventListener('pagehide', abortInFlightRequests);
         setFilterLoadingState(!periodInput.value);
         updateTotalValueHeader(periodInput.value || @json($selectedPeriod));

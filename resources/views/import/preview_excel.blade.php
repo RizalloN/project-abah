@@ -558,9 +558,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
         var jobId;
         try {
-            var formData = new FormData();
-            formData.append('path', pathValue);
-            formData.append('active_filters_json', filtersJson);
+            var formData = new FormData(importForm);
+            formData.set('path', pathValue);
+            formData.set('active_filters_json', filtersJson);
 
             var resRaw  = await fetch('{{ $initRoute ?? route("import.excel.init") }}', {
                 method: 'POST', body: formData, headers: fetchHeaders,

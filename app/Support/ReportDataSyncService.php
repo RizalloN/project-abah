@@ -21,7 +21,8 @@ class ReportDataSyncService
     private const CACHE_VERSION_KEY = 'report_cache_version:global';
 
     public function __construct(
-        private readonly ReportSnapshotBuilder $snapshotBuilder
+        private readonly ReportSnapshotBuilder $snapshotBuilder,
+        private readonly PartitionMaintenanceService $partitionMaintenanceService
     ) {
     }
 
@@ -202,6 +203,36 @@ class ReportDataSyncService
             try {
                 $query = DB::table($snapshotTable);
                 if ($periodHint !== null && $periodHint !== '' && Schema::hasColumn($snapshotTable, $periodColumn)) {
+                    $partitionName = $this->partitionMaintenanceService->resolveSinglePartitionForValue(
+                        $snapshotTable,
+                        $periodColumn,
+                        $periodHint
+                    );
+
+                    if ($partitionName !== null) {
+                        $affected = (int) DB::table($snapshotTable)
+                            ->where($periodColumn, $periodHint)
+                            ->count();
+
+                        if ($affected > 0) {
+                            $this->partitionMaintenanceService->truncatePartition($snapshotTable, $partitionName);
+                        }
+
+                        $deleted[$snapshotTable] = $affected;
+
+                        $this->writeAudit($normalizedTable, $periodHint, null, $source, 'cleanup_snapshot_rows', 'success', [
+                            'duration_ms' => $this->elapsedMs($startedAt),
+                            'affected_rows' => $affected,
+                            'context' => [
+                                'snapshot_table' => $snapshotTable,
+                                'cleanup_strategy' => 'partition_truncate',
+                                'partition_name' => $partitionName,
+                            ],
+                        ]);
+
+                        continue;
+                    }
+
                     $query->where($periodColumn, $periodHint);
                 }
 
@@ -211,7 +242,10 @@ class ReportDataSyncService
                 $this->writeAudit($normalizedTable, $periodHint, null, $source, 'cleanup_snapshot_rows', 'success', [
                     'duration_ms' => $this->elapsedMs($startedAt),
                     'affected_rows' => $affected,
-                    'context' => ['snapshot_table' => $snapshotTable],
+                    'context' => [
+                        'snapshot_table' => $snapshotTable,
+                        'cleanup_strategy' => 'delete',
+                    ],
                 ]);
             } catch (Throwable $e) {
                 $this->writeAudit($normalizedTable, $periodHint, null, $source, 'cleanup_snapshot_rows', 'failed', [

@@ -391,21 +391,139 @@ class ImportExcelController extends Controller
             return false;
         }
 
-        if (count($row) === 1) {
-            $single = (string) ($row[0] ?? '');
-            if ($single !== '' && str_contains($single, $delimiter)) {
-                $reparsed = str_getcsv($single, $delimiter);
-                if (count($reparsed) > 1) {
-                    $row = $reparsed;
+        return $this->normalizeCsvRow($row, $delimiter);
+    }
+
+    private function reparseSerializedDailyLoanCsvRow(array $row, string $delimiter, ?int $expectedColumns = null): array
+    {
+        if (!$this->isDailyLoanTable() || count($row) !== 1 || !isset($row[0]) || !is_string($row[0])) {
+            return $row;
+        }
+
+        $rawValue = trim($row[0]);
+        if ($rawValue === '' || !str_contains($rawValue, $delimiter)) {
+            return $row;
+        }
+
+        $candidates = [];
+        $directParsed = str_getcsv($rawValue, $delimiter, '"', '\\');
+        if (count($directParsed) > 1) {
+            $candidates[] = $directParsed;
+        }
+
+        if (strlen($rawValue) >= 2 && str_starts_with($rawValue, '"') && str_ends_with($rawValue, '"')) {
+            $inner = substr($rawValue, 1, -1);
+            $inner = str_replace('""', '"', $inner);
+            $innerParsed = str_getcsv($inner, $delimiter, '"', '\\');
+            if (count($innerParsed) > 1) {
+                $candidates[] = $innerParsed;
+            }
+        }
+
+        if ($candidates === []) {
+            return $row;
+        }
+
+        if ($expectedColumns !== null) {
+            foreach ($candidates as $candidate) {
+                if (count($candidate) === $expectedColumns) {
+                    return $candidate;
                 }
             }
         }
 
-        if (!empty($row)) {
-            $row[0] = preg_replace('/^\xEF\xBB\xBF/', '', (string) ($row[0] ?? ''));
+        usort($candidates, static fn (array $left, array $right) => count($right) <=> count($left));
+
+        return $candidates[0];
+    }
+
+    private function normalizeQuotedCsvCellValue($value): string
+    {
+        $normalized = (string) ($value ?? '');
+        if ($normalized === '') {
+            return '';
         }
 
-        return $row;
+        $previous = null;
+        while ($normalized !== $previous) {
+            $previous = $normalized;
+            $normalized = str_replace('""', '"', $normalized);
+
+            $trimmed = trim($normalized);
+            if (strlen($trimmed) >= 2 && str_starts_with($trimmed, '"') && str_ends_with($trimmed, '"')) {
+                $normalized = substr($trimmed, 1, -1);
+            }
+        }
+
+        return $normalized;
+    }
+
+    private function resolveCsvRowValueByHeader(array $headers, array $row, string $targetHeader): ?string
+    {
+        $target = $this->normalizeImportColumnName($targetHeader);
+
+        foreach ($headers as $index => $header) {
+            if ($this->normalizeImportColumnName((string) $header) !== $target) {
+                continue;
+            }
+
+            $value = $row[$index] ?? null;
+            if ($value === null) {
+                return null;
+            }
+
+            $normalized = trim((string) $value);
+
+            return $normalized === '' ? null : $normalized;
+        }
+
+        return null;
+    }
+
+    private function buildCsvRowPreview(array $row, string $delimiter): string
+    {
+        if (count($row) === 1 && isset($row[0]) && is_string($row[0])) {
+            return Str::limit(trim($row[0]), 500);
+        }
+
+        $previewRow = array_slice($row, 0, 12);
+        $encoded = json_encode($previewRow, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+        if ($encoded !== false) {
+            return Str::limit($encoded, 500);
+        }
+
+        return Str::limit(implode($delimiter, array_map(static fn ($value) => (string) $value, $previewRow)), 500);
+    }
+
+    private function hasDailyLoanFieldCountMismatch(
+        array $headers,
+        array $row,
+        int $lineNumber,
+        string $source,
+        string $delimiter = ','
+    ): bool {
+        if (!$this->isDailyLoanTable()) {
+            return false;
+        }
+
+        $expectedColumns = count($headers);
+        if ($expectedColumns === 0 || count($row) === $expectedColumns) {
+            return false;
+        }
+
+        Log::warning('Daily Loan CSV field count mismatch; row skipped.', [
+            'table_name' => 'daily_loan_dinamis',
+            'source' => $source,
+            'line_number' => $lineNumber,
+            'expected_columns' => $expectedColumns,
+            'actual_columns' => count($row),
+            'nomor_rekening1' => $this->resolveCsvRowValueByHeader($headers, $row, 'nomor_rekening1'),
+            'nama_debitur1' => $this->resolveCsvRowValueByHeader($headers, $row, 'nama_debitur1'),
+            'row_preview' => $this->buildCsvRowPreview($row, $delimiter),
+        ]);
+
+        return true;
     }
 
     private function isRowNumberLikeHeader(string $headerName): bool
@@ -545,29 +663,10 @@ class ImportExcelController extends Controller
     private function isValidDailyLoanRowValues(array $valuesByHeader): bool
     {
         $periode = $this->normalizeExcelValue('PERIODE', $valuesByHeader['periode'] ?? null);
-        $nomorRekening = strtoupper(trim((string) ($valuesByHeader['nomor_rekening1'] ?? '')));
+        $nomorRekening = trim((string) ($valuesByHeader['nomor_rekening1'] ?? ''));
         $bakiDebet = $this->normalizeDecimalValue($valuesByHeader['baki_debet1'] ?? null);
-        $statusRekening = trim((string) ($valuesByHeader['status_rekening1'] ?? ''));
-        $cifno = trim((string) ($valuesByHeader['cifno'] ?? ''));
-        $namaDebitur = trim((string) ($valuesByHeader['nama_debitur1'] ?? ''));
 
-        if ($periode === null || $nomorRekening === '' || $bakiDebet === null) {
-            return false;
-        }
-
-        if (!preg_match('/^[A-Z0-9.,+_\\/\'-]+$/i', $nomorRekening) || strlen($nomorRekening) < 6) {
-            return false;
-        }
-
-        if ($statusRekening === '') {
-            return false;
-        }
-
-        if ($cifno === '' && $namaDebitur === '') {
-            return false;
-        }
-
-        return true;
+        return $periode !== null && $nomorRekening !== '' && $bakiDebet !== null;
     }
 
     private function isValidSimpananPosisi(string $value): bool
@@ -806,8 +905,14 @@ class ImportExcelController extends Controller
                 $formattedUniqueValues[$index] = [];
             }
 
+            $lineNumber = 1;
             while (($row = $this->readCsvRecord($handle, $delimiter)) !== false) {
+                $lineNumber++;
                 if (empty(array_filter($row, fn ($val) => trim((string) $val) !== ''))) {
+                    continue;
+                }
+
+                if ($this->hasDailyLoanFieldCountMismatch($headers, $row, $lineNumber, 'build_preview_payload_from_csv', $delimiter)) {
                     continue;
                 }
 
@@ -1148,8 +1253,10 @@ class ImportExcelController extends Controller
         try {
             $headerRead = false;
             $headers = [];
+            $lineNumber = 0;
 
             while (($row = $this->readCsvRecord($handle, $delimiter)) !== false) {
+                $lineNumber++;
                 if (!$headerRead) {
                     $headers = (array) $row;
                     $headerRead = true;
@@ -1157,6 +1264,10 @@ class ImportExcelController extends Controller
                 }
 
                 if (empty(array_filter((array) $row, fn ($val) => trim((string) $val) !== ''))) {
+                    continue;
+                }
+
+                if ($this->hasDailyLoanFieldCountMismatch($headers, (array) $row, $lineNumber, 'count_csv_data_rows', $delimiter)) {
                     continue;
                 }
 
@@ -1424,6 +1535,11 @@ class ImportExcelController extends Controller
 
         $cached = Cache::get('excel_import_job_' . $jobId);
         return is_array($cached) ? $cached : [];
+    }
+
+    private function resolveCsvDataRowEstimate(?int $totalRows, int $headerIndex): int
+    {
+        return max(0, max(0, (int) $totalRows) - ($headerIndex + 1));
     }
 
     private function supportsNativeBulkLoad(): bool
@@ -1955,13 +2071,18 @@ class ImportExcelController extends Controller
                     ]);
                 }
             );
-            $failed = max(0, $rowsDone - $inserted);
+            $baseTotal = $estimatedTotalRows > 0 ? $estimatedTotalRows : $rowsDone;
+            $failed = max(0, $baseTotal - $inserted);
+            $status = $failed > 0
+                ? ($inserted > 0 ? 'failed_partial' : 'failed')
+                : 'completed';
 
             if ($jobId > 0) {
                 DB::table('import_jobs')->where('id', $jobId)->update([
+                    'total_files' => $baseTotal,
                     'total_success' => $inserted,
                     'total_failed' => $failed,
-                    'status' => ($inserted > 0 || $rowsDone === 0) ? 'completed' : 'failed',
+                    'status' => $status,
                     'updated_at' => now(),
                 ]);
             }
@@ -1969,7 +2090,7 @@ class ImportExcelController extends Controller
             $send('complete', [
                 'total_success' => $inserted,
                 'total_failed' => $failed,
-                'total_rows' => $rowsDone,
+                'total_rows' => $baseTotal,
             ]);
 
             return true;
@@ -1990,6 +2111,141 @@ class ImportExcelController extends Controller
     private function quoteSqlIdentifier(string $identifier): string
     {
         return '`' . str_replace('`', '``', $identifier) . '`';
+    }
+
+    private function quoteSqlStringLiteral(string $value): string
+    {
+        try {
+            return DB::connection()->getPdo()->quote($value);
+        } catch (\Throwable) {
+            return "'" . str_replace("'", "''", $value) . "'";
+        }
+    }
+
+    private function supportsDirectDailyLoanCsvBulkLoad(): bool
+    {
+        return $this->supportsNativeBulkLoad();
+    }
+
+    private function requiresDailyLoanDirectLoadNormalization(string $csvPath, ?string $delimiter = null, int $sampleRows = 5): bool
+    {
+        $delimiter = ($delimiter !== null && $delimiter !== '')
+            ? $delimiter
+            : $this->detectCsvDelimiter($csvPath);
+        $handle = @fopen($csvPath, 'rb');
+
+        if ($handle === false) {
+            throw new \RuntimeException('Gagal membuka file CSV Daily Loan untuk inspeksi direct load.');
+        }
+
+        try {
+            $isFirstLine = true;
+            $scanned = 0;
+
+            while (($line = fgets($handle)) !== false) {
+                if ($isFirstLine) {
+                    $isFirstLine = false;
+                    continue;
+                }
+
+                $trimmed = trim((string) $line);
+                if ($trimmed === '') {
+                    continue;
+                }
+
+                $scanned++;
+                if (
+                    str_starts_with($trimmed, '"')
+                    && str_ends_with($trimmed, '"')
+                    && count(str_getcsv($trimmed, $delimiter, '"', '\\')) === 1
+                ) {
+                    return true;
+                }
+
+                if ($sampleRows > 0 && $scanned >= $sampleRows) {
+                    break;
+                }
+            }
+        } finally {
+            fclose($handle);
+        }
+
+        return false;
+    }
+
+    private function createNormalizedDailyLoanDirectLoadCsv(string $csvPath, ?string $delimiter = null): string
+    {
+        $delimiter = ($delimiter !== null && $delimiter !== '')
+            ? $delimiter
+            : $this->detectCsvDelimiter($csvPath);
+        $tempDirectory = storage_path('app/temp');
+        if (!is_dir($tempDirectory)) {
+            @mkdir($tempDirectory, 0777, true);
+        }
+
+        $tempPath = $tempDirectory . DIRECTORY_SEPARATOR . 'daily_loan_direct_' . Str::uuid()->toString() . '.csv';
+        $inputHandle = @fopen($csvPath, 'rb');
+        if ($inputHandle === false) {
+            throw new \RuntimeException('Gagal membuka file sumber Daily Loan untuk normalisasi direct load.');
+        }
+
+        $outputHandle = @fopen($tempPath, 'wb');
+        if ($outputHandle === false) {
+            fclose($inputHandle);
+            throw new \RuntimeException('Gagal membuat file sementara Daily Loan untuk direct load.');
+        }
+
+        try {
+            $header = fgetcsv($inputHandle, 0, $delimiter);
+            if ($header === false || empty($header)) {
+                throw new \RuntimeException('Header CSV Daily Loan tidak ditemukan saat normalisasi direct load.');
+            }
+
+            if (!empty($header) && isset($header[0]) && is_string($header[0])) {
+                $header[0] = preg_replace('/^\xEF\xBB\xBF/', '', $header[0]);
+            }
+
+            $expectedColumns = count($header);
+            fputcsv($outputHandle, $header, $delimiter, '"', '\\');
+
+            while (($row = fgetcsv($inputHandle, 0, $delimiter)) !== false) {
+                $row = $this->normalizeCsvRow((array) $row, $delimiter, $expectedColumns);
+                $row = $this->padRow($row, $expectedColumns);
+
+                if (count($row) > $expectedColumns) {
+                    $row = array_slice($row, 0, $expectedColumns);
+                }
+
+                fputcsv($outputHandle, $row, $delimiter, '"', '\\');
+            }
+        } catch (\Throwable $e) {
+            fclose($inputHandle);
+            fclose($outputHandle);
+            @unlink($tempPath);
+            throw $e;
+        }
+
+        fclose($inputHandle);
+        fclose($outputHandle);
+
+        return $tempPath;
+    }
+
+    private function prepareDailyLoanDirectLoadSource(string $csvPath, ?string $delimiter = null): array
+    {
+        if (!$this->requiresDailyLoanDirectLoadNormalization($csvPath, $delimiter)) {
+            return [
+                'path' => $csvPath,
+                'cleanup' => false,
+                'normalized' => false,
+            ];
+        }
+
+        return [
+            'path' => $this->createNormalizedDailyLoanDirectLoadCsv($csvPath, $delimiter),
+            'cleanup' => true,
+            'normalized' => true,
+        ];
     }
 
     private function buildDirectLoadTextExpression(string $columnExpression): string
@@ -2073,9 +2329,47 @@ class ImportExcelController extends Controller
         return $this->buildDirectLoadTextExpression($columnExpression);
     }
 
-    private function hasMalformedRowsForDirectDailyLoanLoad(string $csvPath, array $normalizedHeaders, int $maxDataRowsToScan = 5000): bool
+    private function resolveDailyLoanRequiredSourceIndexes(array $normalizedHeaders): array
     {
-        $delimiter = $this->detectCsvDelimiter($csvPath);
+        $required = [];
+
+        foreach ($normalizedHeaders as $index => $header) {
+            $normalized = $this->normalizeImportColumnName((string) $header);
+            if (in_array($normalized, ['periode', 'nomor_rekening1', 'baki_debet1'], true)) {
+                $required[$normalized] = (int) $index;
+            }
+        }
+
+        return $required;
+    }
+
+    private function hasMinimumDailyLoanSourceValues(array $row, array $requiredIndexes): bool
+    {
+        foreach (['periode', 'nomor_rekening1', 'baki_debet1'] as $requiredKey) {
+            $index = $requiredIndexes[$requiredKey] ?? null;
+            if ($index === null) {
+                return false;
+            }
+
+            $value = trim((string) ($row[$index] ?? ''));
+            if ($value === '') {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private function hasMalformedRowsForDirectDailyLoanLoad(
+        string $csvPath,
+        array $normalizedHeaders,
+        int $maxDataRowsToScan = 5000,
+        ?string $delimiter = null
+    ): bool
+    {
+        $delimiter = ($delimiter !== null && $delimiter !== '')
+            ? $delimiter
+            : $this->detectCsvDelimiter($csvPath);
         $handle = @fopen($csvPath, 'r');
 
         if ($handle === false) {
@@ -2086,6 +2380,7 @@ class ImportExcelController extends Controller
             $headerSkipped = false;
             $scannedRows = 0;
             $headerCount = count($normalizedHeaders);
+            $requiredIndexes = $this->resolveDailyLoanRequiredSourceIndexes($normalizedHeaders);
 
             while (($row = $this->readCsvRecord($handle, $delimiter)) !== false) {
                 if (!$headerSkipped) {
@@ -2097,15 +2392,17 @@ class ImportExcelController extends Controller
                     continue;
                 }
 
-                if (count($row) !== $headerCount) {
-                    return true;
-                }
-
-                if (!$this->isCompleteDailyLoanSourceRow($normalizedHeaders, (array) $row)) {
-                    return true;
-                }
-
                 $scannedRows++;
+                $lineNumber = $scannedRows + 1;
+
+                if ($this->hasDailyLoanFieldCountMismatch($normalizedHeaders, (array) $row, $lineNumber, 'direct_daily_loan_fast_path_scan', $delimiter)) {
+                    return true;
+                }
+
+                if (!$this->hasMinimumDailyLoanSourceValues((array) $row, $requiredIndexes)) {
+                    return true;
+                }
+
                 if ($maxDataRowsToScan > 0 && $scannedRows >= $maxDataRowsToScan) {
                     break;
                 }
@@ -2117,13 +2414,245 @@ class ImportExcelController extends Controller
         return false;
     }
 
-    private function processDailyLoanDirectCsvStream(
+    private function buildDirectDailyLoanCsvLoadPlan(string $absolutePath, array $normalizedHeaders): array
+    {
+        $delimiter = $this->detectCsvDelimiter($absolutePath);
+        $handle = fopen($absolutePath, 'r');
+        if ($handle === false) {
+            throw new \RuntimeException('Gagal membuka file CSV Daily Loan.');
+        }
+
+        try {
+            $sourceHeaders = $this->readCsvRecord($handle, $delimiter);
+        } finally {
+            fclose($handle);
+        }
+
+        if ($sourceHeaders === false || empty($sourceHeaders)) {
+            throw new \RuntimeException('Header CSV Daily Loan tidak ditemukan.');
+        }
+
+        if ($this->hasMalformedRowsForDirectDailyLoanLoad($absolutePath, $normalizedHeaders, 5000, $delimiter)) {
+            throw new \RuntimeException('CSV Daily Loan mengandung struktur kolom tidak konsisten atau field minimum kosong.');
+        }
+
+        $context = $this->buildImportContext('daily_loan_dinamis', $normalizedHeaders, []);
+        $fieldVariables = [];
+        $setClauses = [
+            "`created_at` = NOW()",
+            "`updated_at` = NOW()",
+        ];
+
+        if (!empty($context['unique_id_col'])) {
+            $uniquePadLength = max(12, strlen((string) max(1, count($normalizedHeaders))) + 8);
+            $setClauses[] = "`{$context['unique_id_col']}` = CONCAT(@daily_loan_unique_prefix, LPAD((@daily_loan_rownum := @daily_loan_rownum + 1), {$uniquePadLength}, '0'), '{$context['suffix']}')";
+        }
+
+        foreach ($normalizedHeaders as $index => $header) {
+            $variable = '@csv_col_' . $index;
+            $fieldVariables[] = $variable;
+
+            $rule = $context['header_rules'][$index] ?? null;
+            if (!$rule) {
+                continue;
+            }
+
+            $dbColumn = '';
+            foreach ((array) ($rule['db_candidates'] ?? []) as $candidateColumn) {
+                $candidateLower = strtolower((string) $candidateColumn);
+                if (!isset($context['skip_columns_lookup'][$candidateLower])) {
+                    $dbColumn = (string) $candidateColumn;
+                    break;
+                }
+            }
+
+            if ($dbColumn === '') {
+                continue;
+            }
+
+            if (
+                in_array(strtolower($dbColumn), ['id', 'created_at', 'updated_at'], true)
+                || (!empty($context['unique_id_col']) && strcasecmp($dbColumn, (string) $context['unique_id_col']) === 0)
+            ) {
+                continue;
+            }
+
+            $expression = $this->buildDirectLoadSqlExpression($rule, $variable);
+            $setClauses[] = $this->quoteSqlIdentifier($dbColumn) . " = {$expression}";
+        }
+
+        if (count($setClauses) <= (!empty($context['unique_id_col']) ? 3 : 2)) {
+            throw new \RuntimeException('Tidak ada mapping kolom Daily Loan yang bisa dipakai untuk direct import.');
+        }
+
+        return [
+            'delimiter' => $delimiter,
+            'field_variables' => $fieldVariables,
+            'set_clauses' => $setClauses,
+            'unique_id_prefix' => (string) ($context['unique_id_prefix'] ?? 'imp'),
+        ];
+    }
+
+    private function executeDirectDailyLoanCsvLoad(string $absolutePath, array $loadPlan): int
+    {
+        $connection = config('database.default', 'mysql');
+        $dbConfig = config("database.connections.{$connection}", []);
+        $charset = $dbConfig['charset'] ?? 'utf8mb4';
+        $host = $dbConfig['host'] ?? '127.0.0.1';
+        $port = $dbConfig['port'] ?? '3306';
+        $database = $dbConfig['database'] ?? '';
+        $username = $dbConfig['username'] ?? '';
+        $password = $dbConfig['password'] ?? '';
+        $unixSocket = $dbConfig['unix_socket'] ?? '';
+
+        $dsn = $unixSocket !== ''
+            ? "mysql:unix_socket={$unixSocket};dbname={$database};charset={$charset}"
+            : "mysql:host={$host};port={$port};dbname={$database};charset={$charset}";
+
+        $pdo = new \PDO($dsn, $username, $password, [
+            \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
+            \PDO::MYSQL_ATTR_LOCAL_INFILE => true,
+        ]);
+
+        $normalizedPath = str_replace('\\', '/', realpath($absolutePath) ?: $absolutePath);
+        $quotedPath = $pdo->quote($normalizedPath);
+        $quotedFields = implode(', ', $loadPlan['field_variables']);
+        $quotedDelimiter = addslashes($loadPlan['delimiter']);
+        $setClause = implode(",\n", $loadPlan['set_clauses']);
+        $uniquePrefix = (string) ($loadPlan['unique_id_prefix'] ?? 'imp');
+
+        $pdo->exec('SET @daily_loan_rownum = 0');
+        $pdo->exec('SET @daily_loan_unique_prefix = ' . $pdo->quote($uniquePrefix . '_'));
+
+        $sql = "LOAD DATA LOCAL INFILE {$quotedPath} INTO TABLE `daily_loan_dinamis` "
+            . "CHARACTER SET utf8mb4 "
+            . "FIELDS TERMINATED BY '{$quotedDelimiter}' OPTIONALLY ENCLOSED BY '\"' "
+            . "LINES TERMINATED BY '\\n' "
+            . "IGNORE 1 LINES "
+            . "({$quotedFields}) "
+            . "SET {$setClause}";
+
+        $affected = $pdo->exec($sql);
+        $pdo = null;
+
+        if ($affected === false) {
+            throw new \RuntimeException('LOAD DATA LOCAL INFILE gagal dieksekusi untuk Daily Loan.');
+        }
+
+        return (int) $affected;
+    }
+
+    private function buildDailyLoanBulkImportSqlParts(array $context, string $stagingTable): array
+    {
+        $insertColumns = [];
+        $selectClauses = [];
+        $selectedColumnsLookup = [];
+        $filterAliases = [];
+
+        if (!empty($context['unique_id_col'])) {
+            $insertColumns[] = $context['unique_id_col'];
+            $uniquePrefix = addslashes((string) ($context['unique_id_prefix'] ?? 'imp'));
+            $selectClauses[] = "CONCAT('{$uniquePrefix}_', CAST(`id` AS CHAR), '{$context['suffix']}') AS " . $this->quoteSqlIdentifier($context['unique_id_col']);
+            $selectedColumnsLookup[strtolower($context['unique_id_col'])] = true;
+        }
+
+        $insertColumns[] = 'created_at';
+        $selectClauses[] = 'NOW() AS `created_at`';
+        $selectedColumnsLookup['created_at'] = true;
+
+        $insertColumns[] = 'updated_at';
+        $selectClauses[] = 'NOW() AS `updated_at`';
+        $selectedColumnsLookup['updated_at'] = true;
+
+        foreach ($context['valid_indexes'] as $originalIndex) {
+            $rule = $context['header_rules'][$originalIndex] ?? null;
+            if (!$rule) {
+                continue;
+            }
+
+            $expression = $this->buildDirectLoadSqlExpression($rule, $this->quoteSqlIdentifier('c' . $originalIndex));
+
+            if (!empty($rule['filter_lookup'])) {
+                $filterAlias = '__flt_' . $originalIndex;
+                $selectClauses[] = "{$expression} AS " . $this->quoteSqlIdentifier($filterAlias);
+                $filterAliases[$originalIndex] = $filterAlias;
+            }
+
+            $dbColumn = '';
+            foreach ((array) ($rule['db_candidates'] ?? []) as $candidateColumn) {
+                $candidateLower = strtolower((string) $candidateColumn);
+                if (!isset($context['skip_columns_lookup'][$candidateLower])) {
+                    $dbColumn = (string) $candidateColumn;
+                    break;
+                }
+            }
+
+            if ($dbColumn === '') {
+                continue;
+            }
+
+            $dbColumnLower = strtolower($dbColumn);
+            if (isset($selectedColumnsLookup[$dbColumnLower])) {
+                continue;
+            }
+
+            $insertColumns[] = $dbColumn;
+            $selectClauses[] = "{$expression} AS " . $this->quoteSqlIdentifier($dbColumn);
+            $selectedColumnsLookup[$dbColumnLower] = true;
+        }
+
+        return [
+            'insert_columns' => array_values(array_unique($insertColumns)),
+            'select_clauses' => $selectClauses,
+            'filter_aliases' => $filterAliases,
+        ];
+    }
+
+    private function buildDailyLoanBulkWhereClauses(array $context, array $filterAliases): array
+    {
+        $whereClauses = [
+            'src.`periode` IS NOT NULL',
+            'src.`baki_debet1` IS NOT NULL',
+            'src.`nomor_rekening1` IS NOT NULL',
+        ];
+
+        foreach ($filterAliases as $originalIndex => $filterAlias) {
+            $rule = $context['header_rules'][$originalIndex] ?? null;
+            if (!$rule || empty($rule['filter_lookup'])) {
+                continue;
+            }
+
+            $filterValues = array_map(static fn ($v) => (string) $v, array_keys((array) $rule['filter_lookup']));
+            $includeBlank = in_array('(Blank)', $filterValues, true);
+            $filterValues = array_values(array_filter($filterValues, static fn (string $v): bool => $v !== '(Blank)'));
+
+            $conditions = [];
+            if (!empty($filterValues)) {
+                $quotedValues = implode(', ', array_map(fn (string $value): string => $this->quoteSqlStringLiteral($value), $filterValues));
+                $conditions[] = 'src.' . $this->quoteSqlIdentifier($filterAlias) . " IN ({$quotedValues})";
+            }
+
+            if ($includeBlank) {
+                $conditions[] = 'src.' . $this->quoteSqlIdentifier($filterAlias) . ' IS NULL';
+            }
+
+            if (!empty($conditions)) {
+                $whereClauses[] = '(' . implode(' OR ', $conditions) . ')';
+            }
+        }
+
+        return $whereClauses;
+    }
+
+    private function processDailyLoanBulkCsvStream(
         callable $send,
         string $csvPath,
         string $tableName,
         array $normalizedHeaders,
+        array $activeFilters,
         int $jobId,
-        int $estimatedTotalRows
+        int $estimatedTotalRows,
+        ?string $delimiter = null
     ): bool {
         if ($csvPath === '' || !file_exists($csvPath) || !$this->isDailyLoanTable($tableName)) {
             return false;
@@ -2133,19 +2662,24 @@ class ImportExcelController extends Controller
             return false;
         }
 
-        if ($this->hasMalformedRowsForDirectDailyLoanLoad($csvPath, $normalizedHeaders)) {
-            throw new \RuntimeException('CSV Daily Loan mengandung baris tidak lengkap atau tidak valid, fast import dialihkan ke mode aman.');
+        $delimiter = ($delimiter !== null && $delimiter !== '')
+            ? $delimiter
+            : $this->detectCsvDelimiter($csvPath);
+
+        if ($this->hasMalformedRowsForDirectDailyLoanLoad($csvPath, $normalizedHeaders, 5000, $delimiter)) {
+            throw new \RuntimeException('CSV Daily Loan mengandung struktur kolom tidak konsisten, fast import dialihkan ke mode aman.');
         }
 
-        $context = $this->buildImportContext($tableName, $normalizedHeaders, []);
+        $context = $this->buildImportContext($tableName, $normalizedHeaders, $activeFilters);
         $headerCount = max(1, count($normalizedHeaders));
-        $delimiter = $this->detectCsvDelimiter($csvPath);
         $stagingTable = null;
 
         try {
             $send('progress', [
                 'percent' => 18,
-                'message' => 'Fast-path Daily Loan aktif. Memuat CSV ke staging table...',
+                'message' => empty($activeFilters)
+                    ? 'Fast-path Daily Loan aktif. Memuat CSV ke staging table...'
+                    : 'Fast-path Daily Loan + filter aktif. Memuat CSV ke staging table...',
                 'rows_done' => 0,
                 'total' => $estimatedTotalRows,
                 'speed' => 0,
@@ -2154,61 +2688,11 @@ class ImportExcelController extends Controller
             $stagingTable = $this->createCsvStagingTable('tmp_daily_loan_csv_stage', $jobId, $headerCount);
             $loadedRows = $this->loadCsvIntoStagingTable($csvPath, $stagingTable, $headerCount, $delimiter, 1);
 
-            if ($jobId > 0) {
-                DB::table('import_jobs')->where('id', $jobId)->update([
-                    'total_files' => $loadedRows > 0 ? $loadedRows : $estimatedTotalRows,
-                    'updated_at' => now(),
-                ]);
-            }
+            $sqlParts = $this->buildDailyLoanBulkImportSqlParts($context, $stagingTable);
+            $insertColumns = $sqlParts['insert_columns'];
+            $selectClauses = $sqlParts['select_clauses'];
+            $filterAliases = $sqlParts['filter_aliases'];
 
-            $insertColumns = [];
-            $selectClauses = [];
-            $selectedColumnsLookup = [];
-
-            if (!empty($context['unique_id_col'])) {
-                $insertColumns[] = $context['unique_id_col'];
-                $selectClauses[] = "CONCAT(REPLACE(UUID(), '-', ''), '{$context['suffix']}') AS " . $this->quoteSqlIdentifier($context['unique_id_col']);
-                $selectedColumnsLookup[strtolower($context['unique_id_col'])] = true;
-            }
-
-            $insertColumns[] = 'created_at';
-            $selectClauses[] = 'NOW() AS `created_at`';
-            $selectedColumnsLookup['created_at'] = true;
-            $insertColumns[] = 'updated_at';
-            $selectClauses[] = 'NOW() AS `updated_at`';
-            $selectedColumnsLookup['updated_at'] = true;
-
-            foreach ($context['valid_indexes'] as $originalIndex) {
-                $rule = $context['header_rules'][$originalIndex] ?? null;
-                if (!$rule) {
-                    continue;
-                }
-
-                $dbColumn = '';
-                foreach ((array) ($rule['db_candidates'] ?? []) as $candidateColumn) {
-                    $candidateLower = strtolower((string) $candidateColumn);
-                    if (!isset($context['skip_columns_lookup'][$candidateLower])) {
-                        $dbColumn = (string) $candidateColumn;
-                        break;
-                    }
-                }
-
-                if ($dbColumn === '') {
-                    continue;
-                }
-
-                $dbColumnLower = strtolower($dbColumn);
-                if (isset($selectedColumnsLookup[$dbColumnLower])) {
-                    continue;
-                }
-
-                $expression = $this->buildDirectLoadSqlExpression($rule, $this->quoteSqlIdentifier('c' . $originalIndex));
-                $insertColumns[] = $dbColumn;
-                $selectClauses[] = "{$expression} AS " . $this->quoteSqlIdentifier($dbColumn);
-                $selectedColumnsLookup[$dbColumnLower] = true;
-            }
-
-            $insertColumns = array_values(array_unique($insertColumns));
             if (count($insertColumns) <= (!empty($context['unique_id_col']) ? 3 : 2)) {
                 throw new \RuntimeException('Mapping kolom Daily Loan untuk fast import tidak valid.');
             }
@@ -2216,22 +2700,24 @@ class ImportExcelController extends Controller
             $quotedInsertColumns = implode(', ', array_map(fn (string $column): string => $this->quoteSqlIdentifier($column), $insertColumns));
             $outerSelectColumns = implode(', ', array_map(fn (string $column): string => 'src.' . $this->quoteSqlIdentifier($column), $insertColumns));
             $innerSelectSql = implode(",\n", $selectClauses);
+            $whereClauses = $this->buildDailyLoanBulkWhereClauses($context, $filterAliases);
 
-            $whereClauses = [
-                'src.`periode` IS NOT NULL',
-                'src.`baki_debet1` IS NOT NULL',
-                'src.`nomor_rekening1` IS NOT NULL',
-                'CHAR_LENGTH(TRIM(src.`nomor_rekening1`)) >= 6',
-                "UPPER(TRIM(src.`nomor_rekening1`)) REGEXP '^[A-Z0-9.,+_/''\\\\-]+$'",
-                "NULLIF(TRIM(COALESCE(src.`status_rekening1`, '')), '') IS NOT NULL",
-                "(NULLIF(TRIM(COALESCE(src.`cifno`, '')), '') IS NOT NULL OR NULLIF(TRIM(COALESCE(src.`nama_debitur1`, '')), '') IS NOT NULL)",
-            ];
+            $baseTotal = $loadedRows > 0 ? $loadedRows : $estimatedTotalRows;
+
+            if ($jobId > 0) {
+                DB::table('import_jobs')->where('id', $jobId)->update([
+                    'total_files' => $baseTotal,
+                    'updated_at' => now(),
+                ]);
+            }
 
             $send('progress', [
                 'percent' => 56,
-                'message' => 'Staging selesai. Menjalankan INSERT SELECT langsung ke Daily Loan...',
+                'message' => empty($activeFilters)
+                    ? 'Staging selesai. Menjalankan INSERT SELECT langsung ke Daily Loan...'
+                    : 'Staging selesai. Menjalankan INSERT SELECT terfilter langsung ke Daily Loan...',
                 'rows_done' => 0,
-                'total' => $loadedRows > 0 ? $loadedRows : $estimatedTotalRows,
+                'total' => $baseTotal,
                 'speed' => 0,
             ]);
 
@@ -2248,7 +2734,6 @@ class ImportExcelController extends Controller
                 DB::statement('SET @skip_snapshot_invalidation = NULL');
             }
 
-            $baseTotal = $loadedRows > 0 ? $loadedRows : $estimatedTotalRows;
             $failed = max(0, $baseTotal - $inserted);
             $status = $failed > 0
                 ? ($inserted > 0 ? 'failed_partial' : 'failed')
@@ -2266,7 +2751,9 @@ class ImportExcelController extends Controller
 
             $send('progress', [
                 'percent' => 98,
-                'message' => 'Fast import Daily Loan selesai diproses.',
+                'message' => empty($activeFilters)
+                    ? 'Fast import Daily Loan selesai diproses.'
+                    : 'Fast import Daily Loan terfilter selesai diproses.',
                 'rows_done' => $inserted,
                 'total' => $baseTotal,
                 'speed' => 0,
@@ -2284,9 +2771,109 @@ class ImportExcelController extends Controller
         }
     }
 
+    private function processDailyLoanDirectCsvStream(
+        callable $send,
+        string $csvPath,
+        string $tableName,
+        array $normalizedHeaders,
+        int $jobId,
+        int $estimatedTotalRows,
+        ?string $delimiter = null
+    ): bool {
+        if ($csvPath === '' || !file_exists($csvPath) || !$this->isDailyLoanTable($tableName)) {
+            return false;
+        }
+
+        if (!$this->supportsDirectDailyLoanCsvBulkLoad()) {
+            return false;
+        }
+
+        $delimiter = ($delimiter !== null && $delimiter !== '')
+            ? $delimiter
+            : $this->detectCsvDelimiter($csvPath);
+        $loadSource = null;
+
+        try {
+            $send('progress', [
+                'percent' => 18,
+                'message' => 'Menyiapkan direct LOAD DATA untuk Daily Loan...',
+                'rows_done' => 0,
+                'total' => $estimatedTotalRows,
+                'speed' => 0,
+            ]);
+
+            $loadSource = $this->prepareDailyLoanDirectLoadSource($csvPath, $delimiter);
+            $sourcePath = (string) ($loadSource['path'] ?? $csvPath);
+            $sourceWasNormalized = !empty($loadSource['normalized']);
+            $loadPlan = $this->buildDirectDailyLoanCsvLoadPlan($sourcePath, $normalizedHeaders);
+            $baseTotal = max(0, $estimatedTotalRows);
+
+            if ($jobId > 0) {
+                DB::table('import_jobs')->where('id', $jobId)->update([
+                    'total_files' => $baseTotal,
+                    'updated_at' => now(),
+                ]);
+            }
+
+            $send('progress', [
+                'percent' => 56,
+                'message' => $sourceWasNormalized
+                    ? 'CSV Daily Loan dinormalisasi. Menjalankan direct LOAD DATA ke tabel final...'
+                    : 'Direct LOAD DATA aktif. Memuat CSV langsung ke Daily Loan...',
+                'rows_done' => 0,
+                'total' => $baseTotal,
+                'speed' => 0,
+            ]);
+
+            DB::statement('SET @skip_snapshot_invalidation = 1');
+            try {
+                $inserted = $this->executeDirectDailyLoanCsvLoad($sourcePath, $loadPlan);
+            } finally {
+                DB::statement('SET @skip_snapshot_invalidation = NULL');
+            }
+
+            $failed = max(0, $baseTotal - $inserted);
+            $status = $failed > 0
+                ? ($inserted > 0 ? 'failed_partial' : 'failed')
+                : 'completed';
+
+            if ($jobId > 0) {
+                DB::table('import_jobs')->where('id', $jobId)->update([
+                    'total_files' => $baseTotal,
+                    'total_success' => $inserted,
+                    'total_failed' => $failed,
+                    'status' => $status,
+                    'updated_at' => now(),
+                ]);
+            }
+
+            $send('progress', [
+                'percent' => 98,
+                'message' => 'Direct LOAD DATA Daily Loan selesai diproses.',
+                'rows_done' => $inserted,
+                'total' => $baseTotal,
+                'speed' => 0,
+            ]);
+
+            $send('complete', [
+                'total_success' => $inserted,
+                'total_failed' => $failed,
+                'total_rows' => $baseTotal,
+            ]);
+
+            return true;
+        } finally {
+            if (!empty($loadSource['cleanup']) && !empty($loadSource['path']) && file_exists((string) $loadSource['path'])) {
+                @unlink((string) $loadSource['path']);
+            }
+        }
+    }
+
     private function normalizeCsvRow(array $row, string $delimiter, ?int $expectedColumns = null): array
     {
-        if (count($row) === 1 && isset($row[0]) && is_string($row[0])) {
+        $row = $this->reparseSerializedDailyLoanCsvRow($row, $delimiter, $expectedColumns);
+
+        if (!$this->isDailyLoanTable() && count($row) === 1 && isset($row[0]) && is_string($row[0])) {
             $rawValue = trim($row[0]);
             if ($rawValue !== '' && str_contains($rawValue, $delimiter)) {
                 $expandedRow = str_getcsv($rawValue, $delimiter, '"', '\\');
@@ -2298,6 +2885,14 @@ class ImportExcelController extends Controller
 
         if (!empty($row) && isset($row[0]) && is_string($row[0])) {
             $row[0] = preg_replace('/^\xEF\xBB\xBF/', '', $row[0]);
+        }
+
+        foreach ($row as $index => $value) {
+            if (!is_string($value)) {
+                continue;
+            }
+
+            $row[$index] = $this->normalizeQuotedCsvCellValue($value);
         }
 
         if ($expectedColumns !== null && count($row) < $expectedColumns) {
@@ -2380,6 +2975,10 @@ class ImportExcelController extends Controller
             }
 
             if (empty(array_filter($row, fn ($value) => trim((string) $value) !== ''))) {
+                continue;
+            }
+
+            if ($this->hasDailyLoanFieldCountMismatch($normalizedHeaders, $row, $lineNumber, 'preview_scan_csv', $delimiter)) {
                 continue;
             }
 
@@ -2721,7 +3320,7 @@ class ImportExcelController extends Controller
             return number_format((float) $value, 2, '.', '');
         }
 
-        $value = trim((string) $value);
+        $value = trim($this->normalizeQuotedCsvCellValue($value));
         if ($value === '') {
             return null;
         }
@@ -2838,7 +3437,7 @@ class ImportExcelController extends Controller
 
         $header = strtoupper(trim($headerName));
         $normalizedHeader = preg_replace('/[^A-Z0-9]+/', '_', $header);
-        $value = ($value === null) ? '' : trim((string) $value);
+        $value = ($value === null) ? '' : trim($this->normalizeQuotedCsvCellValue($value));
 
         if ($value === '') return null;
 
@@ -3090,6 +3689,8 @@ class ImportExcelController extends Controller
                     'staged_csv_path' => $cached['stagedCsvPath'] ?? null,
                     'header_index' => isset($cached['headerIndex']) ? (int) $cached['headerIndex'] : null,
                     'normalized_headers' => (array) ($cached['normalizedHeaders'] ?? []),
+                    'total_rows' => isset($cached['total_rows']) ? (int) $cached['total_rows'] : null,
+                    'delimiter' => isset($cached['delimiter']) ? (string) $cached['delimiter'] : null,
                 ];
                 $previewStateKey = (string) $ck;
                 $this->putExcelPreviewState($previewStateKey, [
@@ -3232,6 +3833,8 @@ class ImportExcelController extends Controller
                 'staged_csv_path' => null,
                 'header_index' => $headerIndex,
                 'normalized_headers' => $reorderedPayload['headers'],
+                'total_rows' => $csvPayload['total_rows'] ?? null,
+                'delimiter' => $csvPayload['delimiter'] ?? null,
             ],
         ]);
 
@@ -3322,7 +3925,7 @@ class ImportExcelController extends Controller
     public function initExcelImport(Request $request)
     {
         ini_set('memory_limit', '512M');
-        set_time_limit(120);
+        set_time_limit(0);
 
         $sessionPath = session('excel_path', $request->path);
         if (!$sessionPath) return response()->json(['status' => 'error', 'text' => 'Sesi berakhir.']);
@@ -3356,6 +3959,8 @@ class ImportExcelController extends Controller
         $previewPath = urldecode((string) ($previewMeta['path'] ?? ''));
         $stagedCsvPath = (string) ($previewMeta['staged_csv_path'] ?? '');
         $previewHeaders = (array) ($previewMeta['normalized_headers'] ?? []);
+        $previewTotalRows = isset($previewMeta['total_rows']) ? (int) $previewMeta['total_rows'] : null;
+        $previewDelimiter = isset($previewMeta['delimiter']) ? (string) $previewMeta['delimiter'] : null;
 
         if ($previewPath === $relativePath && !empty($previewHeaders) && array_key_exists('header_index', $previewMeta)) {
             $headerIndex = (int) $previewMeta['header_index'];
@@ -3392,6 +3997,8 @@ class ImportExcelController extends Controller
                     'staged_csv_path' => $stagedCsvPath !== '' && file_exists($stagedCsvPath) ? $stagedCsvPath : null,
                     'header_index' => $headerIndex,
                     'normalized_headers' => $previewHeaders,
+                    'total_rows' => $previewTotalRows,
+                    'delimiter' => $previewDelimiter,
                 ],
                 'excel_import_params'  => [
                     'header_index'   => $headerIndex,
@@ -3399,6 +4006,8 @@ class ImportExcelController extends Controller
                     'file_path'      => $relativePath,
                     'staged_csv_path' => $stagedCsvPath !== '' && file_exists($stagedCsvPath) ? $stagedCsvPath : null,
                     'active_filters' => $normalizedActiveFilters,
+                    'total_rows'     => $previewTotalRows,
+                    'delimiter'      => $previewDelimiter,
                     'job_id'         => $jobId,
                 ],
             ]);
@@ -3409,6 +4018,8 @@ class ImportExcelController extends Controller
                     'file_path'      => $relativePath,
                     'staged_csv_path' => $stagedCsvPath !== '' && file_exists($stagedCsvPath) ? $stagedCsvPath : null,
                     'active_filters' => $normalizedActiveFilters,
+                    'total_rows'     => $previewTotalRows,
+                    'delimiter'      => $previewDelimiter,
                     'job_id'         => $jobId,
                 ],
                 'headers' => $previewHeaders,
@@ -3430,7 +4041,9 @@ class ImportExcelController extends Controller
         $sheet       = null;
 
         if ($this->isCsvFile($path)) {
-            $delimiter = $this->detectCsvDelimiter($path);
+            $delimiter = $previewDelimiter !== null && $previewDelimiter !== ''
+                ? $previewDelimiter
+                : $this->detectCsvDelimiter($path);
             $handle = @fopen($path, 'r');
 
             if (!$handle) {
@@ -3542,6 +4155,8 @@ class ImportExcelController extends Controller
                 'staged_csv_path' => $stagedCsvPath !== '' && file_exists($stagedCsvPath) ? $stagedCsvPath : null,
                 'header_index' => $headerIndex,
                 'normalized_headers' => $normalizedHeadersForSession,
+                'total_rows' => $totalRows,
+                'delimiter' => $delimiter ?? null,
             ],
             'excel_import_params'  => [
                 'header_index'   => $headerIndex,
@@ -3549,6 +4164,8 @@ class ImportExcelController extends Controller
                 'file_path'      => $relativePath,
                 'staged_csv_path' => $stagedCsvPath !== '' && file_exists($stagedCsvPath) ? $stagedCsvPath : null,
                 'active_filters' => $normalizedActiveFilters,
+                'total_rows'     => $totalRows,
+                'delimiter'      => $delimiter ?? null,
                 'job_id'         => $jobId,
             ],
         ]);
@@ -3559,6 +4176,8 @@ class ImportExcelController extends Controller
                 'file_path'      => $relativePath,
                 'staged_csv_path' => $stagedCsvPath !== '' && file_exists($stagedCsvPath) ? $stagedCsvPath : null,
                 'active_filters' => $normalizedActiveFilters,
+                'total_rows'     => $totalRows,
+                'delimiter'      => $delimiter ?? null,
                 'job_id'         => $jobId,
             ],
             'headers' => $normalizedHeadersForSession,
@@ -3958,7 +4577,9 @@ class ImportExcelController extends Controller
         string $tableName,
         array $activeFilters,
         array $normalizedHeaders,
-        int $jobId
+        int $jobId,
+        ?int $estimatedTotalRows = null,
+        ?string $delimiter = null
     ): bool {
         if ($csvPath === '' || !file_exists($csvPath)) {
             return false;
@@ -3968,8 +4589,12 @@ class ImportExcelController extends Controller
         if ($handle === false) {
             return false;
         }
-        $delimiter = $this->detectCsvDelimiter($csvPath);
-        $estimatedTotalRows = $this->countCsvDataRows($csvPath);
+        $delimiter = ($delimiter !== null && $delimiter !== '')
+            ? $delimiter
+            : $this->detectCsvDelimiter($csvPath);
+        $estimatedTotalRows = $estimatedTotalRows !== null
+            ? max(0, $estimatedTotalRows)
+            : $this->countCsvDataRows($csvPath);
 
         $bulkLoadColumns = $this->buildBulkLoadColumns($tableName, $normalizedHeaders, $activeFilters);
         $outputCsvPath = $this->createBulkLoadTempCsvPath($tableName, $jobId);
@@ -3991,6 +4616,7 @@ class ImportExcelController extends Controller
             $startTime = microtime(true);
             $lastProgressAt = 0;
             $timestamp = now()->toDateTimeString();
+            $lineNumber = 1;
 
             if ($jobId > 0) {
                 DB::table('import_jobs')->where('id', $jobId)->update([
@@ -4000,6 +4626,12 @@ class ImportExcelController extends Controller
             }
 
             while (($row = $this->readCsvRecord($handle, $delimiter)) !== false) {
+                $lineNumber++;
+
+                if ($this->hasDailyLoanFieldCountMismatch($normalizedHeaders, $row, $lineNumber, 'stream_staged_csv_export', $delimiter)) {
+                    continue;
+                }
+
                 $row = $this->padRow($row, $context['header_count']);
                 foreach ($row as $index => $value) {
                     if ($value === '\N') {
@@ -4376,11 +5008,13 @@ class ImportExcelController extends Controller
         $activeFilters = $params['active_filters'] ?? [];
         $relativePath  = $params['file_path']      ?? '';
         $stagedCsvPath = $params['staged_csv_path'] ?? '';
+        $estimatedTotalRows = isset($params['total_rows']) ? (int) $params['total_rows'] : null;
+        $csvDelimiter = isset($params['delimiter']) ? (string) $params['delimiter'] : null;
 
         request()->session()->save();
 
         return response()->stream(function () use (
-            $jobId, $headerIndex, $tableName, $activeFilters, $relativePath, $normalizedHeaders, $stagedCsvPath
+            $jobId, $headerIndex, $tableName, $activeFilters, $relativePath, $normalizedHeaders, $stagedCsvPath, $estimatedTotalRows, $csvDelimiter
         ) {
             $streamLock = null;
             $send = function (string $event, array $data) {
@@ -4434,67 +5068,16 @@ class ImportExcelController extends Controller
                 }
 
                 if ($this->isCsvFile($path)) {
-                    if ($this->supportsNativeBulkLoad()) {
-                        $send('progress', [
-                            'percent'   => 8,
-                            'message'   => 'Mode cepat aktif: menyiapkan CSV staging untuk bulk load MySQL...',
-                            'rows_done' => 0,
-                            'total'     => 0,
-                            'speed'     => 0,
-                        ]);
-
-                        $bulkHandled = $this->processStagedCsvStream(
-                            $send,
-                            $path,
-                            $tableName,
-                            $activeFilters,
-                            $normalizedHeaders,
-                            $jobId
-                        );
-
-                        if ($bulkHandled) {
-                            if ($jobId > 0) {
-                                $job = DB::table('import_jobs')->where('id', $jobId)->first();
-                                if ($job && $job->status === 'completed') {
-                                    try {
-                                        app(ReportDataSyncService::class)->syncImportedJob($jobId, source: static::class);
-                                    } catch (\Throwable $e) {
-                                        Log::warning('Failed to sync report snapshots after staged CSV bulk load: ' . $e->getMessage(), [
-                                            'job_id' => $jobId,
-                                            'status' => $job->status,
-                                        ]);
-                                    }
-
-                                    $this->cleanupSuccessfulImportArtifacts($jobId, $relativePath, $path, $stagedCsvPath !== '' ? [$stagedCsvPath] : []);
-                                }
-                            }
-
-                            return;
-                        }
-
-                        $send('progress', [
-                            'percent'   => 9,
-                            'message'   => 'Bulk load native tidak tersedia untuk file ini. Fallback ke insert bertahap...',
-                            'rows_done' => 0,
-                            'total'     => 0,
-                            'speed'     => 0,
-                        ]);
+                    $delimiter = $csvDelimiter !== null && $csvDelimiter !== ''
+                        ? $csvDelimiter
+                        : $this->detectCsvDelimiter($path);
+                    $resolvedTotalRows = $estimatedTotalRows;
+                    if ($resolvedTotalRows === null || $resolvedTotalRows <= 0) {
+                        $resolvedTotalRows = $this->countCsvDataRows($path) + ($headerIndex + 1);
                     }
 
-                    $delimiter = $this->detectCsvDelimiter($path);
-                    $countHandle = @fopen($path, 'r');
-                    if (!$countHandle) {
-                        $send('error', ['message' => 'Gagal membuka file CSV di server.']);
-                        return;
-                    }
+                    $totalDataRows = $this->resolveCsvDataRowEstimate($resolvedTotalRows, $headerIndex);
 
-                    $totalRows = 0;
-                    while (fgetcsv($countHandle, 0, $delimiter) !== false) {
-                        $totalRows++;
-                    }
-                    fclose($countHandle);
-
-                    $totalDataRows = max(0, $totalRows - ($headerIndex + 1));
                     $send('progress', [
                         'percent'   => 10,
                         'message'   => "File CSV terdeteksi: {$totalDataRows} baris data. Memulai processing...",
@@ -4526,7 +5109,8 @@ class ImportExcelController extends Controller
                                 $tableName,
                                 $normalizedHeaders,
                                 $jobId,
-                                $totalDataRows
+                                $totalDataRows,
+                                $delimiter
                             );
 
                             if ($fastHandled) {
@@ -4546,19 +5130,79 @@ class ImportExcelController extends Controller
                         }
                     }
 
+                    if ($this->isDailyLoanTable($tableName) && !empty($activeFilters)) {
+                        try {
+                            $fastHandled = $this->processDailyLoanBulkCsvStream(
+                                $send,
+                                $path,
+                                $tableName,
+                                $normalizedHeaders,
+                                $activeFilters,
+                                $jobId,
+                                max(0, $totalDataRows),
+                                $delimiter
+                            );
+
+                            if ($fastHandled) {
+                                if ($jobId > 0) {
+                                    $job = DB::table('import_jobs')->where('id', $jobId)->first();
+                                    if ($job && $job->status === 'completed') {
+                                        try {
+                                            app(ReportDataSyncService::class)->syncImportedJob($jobId, source: static::class);
+                                        } catch (\Throwable $e) {
+                                            Log::warning('Failed to sync report snapshots after filtered Daily Loan bulk load: ' . $e->getMessage(), [
+                                                'job_id' => $jobId,
+                                                'status' => $job->status,
+                                            ]);
+                                        }
+
+                                        $this->cleanupImportedFile($relativePath, $path);
+                                    }
+                                }
+                                return;
+                            }
+                        } catch (\Throwable $e) {
+                            Log::warning('Filtered fast-path Daily Loan CSV unavailable, fallback ke mode lama: ' . $e->getMessage(), [
+                                'job_id' => $jobId,
+                                'table_name' => $tableName,
+                            ]);
+                        }
+                    }
+
+                    $send('progress', [
+                        'percent'   => 14,
+                        'message'   => empty($activeFilters)
+                            ? 'Fast-path native tidak dipakai. Menyiapkan CSV staging untuk bulk load MySQL...'
+                            : 'Menyiapkan CSV staging terfilter untuk bulk load MySQL...',
+                        'rows_done' => 0,
+                        'total'     => $totalDataRows,
+                        'speed'     => 0,
+                    ]);
+
                     $bulkHandled = $this->processStagedCsvStream(
                         $send,
                         $path,
                         $tableName,
                         $activeFilters,
                         $normalizedHeaders,
-                        $jobId
+                        $jobId,
+                        $resolvedTotalRows !== null ? $totalDataRows : null,
+                        $delimiter
                     );
 
                     if ($bulkHandled) {
                         if ($jobId > 0) {
                             $job = DB::table('import_jobs')->where('id', $jobId)->first();
                             if ($job && $job->status === 'completed') {
+                                try {
+                                    app(ReportDataSyncService::class)->syncImportedJob($jobId, source: static::class);
+                                } catch (\Throwable $e) {
+                                    Log::warning('Failed to sync report snapshots after staged CSV bulk load: ' . $e->getMessage(), [
+                                        'job_id' => $jobId,
+                                        'status' => $job->status,
+                                    ]);
+                                }
+
                                 $this->cleanupImportedFile($relativePath, $path);
                             }
                         }
@@ -4879,8 +5523,14 @@ class ImportExcelController extends Controller
                     if ($rowIndex < $startRow || $rowIndex >= $endExclusive) continue;
                     if ($rowIndex <= $headerIndex) continue;
 
-                    $row = $this->normalizeCsvRow($row, $delimiter, count($normalizedHeaders));
+                    $row = $this->normalizeCsvRow($row, $delimiter);
                     if (empty(array_filter((array) $row, fn($v) => trim((string) $v) !== ''))) continue;
+
+                    if ($this->hasDailyLoanFieldCountMismatch($normalizedHeaders, $row, $rowIndex + 1, 'process_excel_chunk_csv', $delimiter)) {
+                        continue;
+                    }
+
+                    $row = $this->normalizeCsvRow($row, $delimiter, count($normalizedHeaders));
 
                     $debugRowsRead++;
 
