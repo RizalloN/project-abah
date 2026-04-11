@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Import;
 
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Import\Concerns\AllocatesGapIds;
+use App\Http\Controllers\Import\Concerns\SmartCsvImportSupport;
 use App\Support\ReportDataSyncService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -17,6 +18,7 @@ use Carbon\Carbon;
 class ImportFileController extends Controller
 {
     use AllocatesGapIds;
+    use SmartCsvImportSupport;
 
     private const SAFE_MEMORY_LIMIT = '512M';
     private const PREVIEW_SAMPLE_LIMIT = 1200;
@@ -93,13 +95,14 @@ class ImportFileController extends Controller
             return false;
         }
 
-        if (count($row) === 1) {
-            $single = (string) ($row[0] ?? '');
-            if ($single !== '' && str_contains($single, $delimiter)) {
-                $reparsed = str_getcsv($single, $delimiter);
-                if (count($reparsed) > 1) {
-                    $row = $reparsed;
-                }
+        foreach ($row as $index => $value) {
+            $row[$index] = is_string($value) ? $this->smartNormalizeQuotedCsvCellValue($value) : $value;
+        }
+
+        if (count($row) === 1 && isset($row[0]) && is_string($row[0])) {
+            $parsed = $this->smartParseCsvLine((string) $row[0], $delimiter, true);
+            if (count($parsed) > 1) {
+                return $parsed;
             }
         }
 
@@ -387,16 +390,28 @@ class ImportFileController extends Controller
             return $currentDelimiter;
         }
 
-        $firstLine = fgets($handle);
-        $delimiters = [',' => 0, ';' => 0, '|' => 0, "\t" => 0, '.' => 0];
-
-        foreach ($delimiters as $delim => &$count) {
-            $count = substr_count((string) $firstLine, $delim);
+        $meta = stream_get_meta_data($handle);
+        $path = $meta['uri'] ?? null;
+        if (is_string($path) && $path !== '' && is_file($path)) {
+            return $this->smartDetectCsvDelimiter($path, [',', ';', "\t", '|', '.']);
         }
 
-        arsort($delimiters);
+        $firstLine = fgets($handle);
+        if ($firstLine === false) {
+            return ',';
+        }
 
-        return key($delimiters);
+        $bestDelimiter = ',';
+        $bestCount = -1;
+        foreach ([',', ';', '|', "\t", '.'] as $delimiter) {
+            $count = count($this->smartParseCsvLine((string) $firstLine, $delimiter, true));
+            if ($count > $bestCount) {
+                $bestCount = $count;
+                $bestDelimiter = $delimiter;
+            }
+        }
+
+        return $bestDelimiter;
     }
 
     private function parseCsvRow(
@@ -2303,6 +2318,9 @@ class ImportFileController extends Controller
                                 'total_success' => (int) ($job->total_success ?? 0),
                                 'total_failed' => (int) ($job->total_failed ?? 0),
                                 'total_rows' => (int) ($job->total_files ?? 0),
+                                'skipped_count' => 0,
+                                'skipped_rows' => [],
+                                'skip_reasons_summary' => [],
                             ]);
                         } else {
                             $send('error', [
@@ -2444,6 +2462,9 @@ class ImportFileController extends Controller
                         'total_rows' => $totalRows,
                         'error_message' => $lastErrorMsg,
                         'duplicates_skipped' => $duplicateSkipped,
+                        'skipped_count' => 0,
+                        'skipped_rows' => [],
+                        'skip_reasons_summary' => [],
                     ]);
                     return;
                 }
@@ -2504,6 +2525,9 @@ class ImportFileController extends Controller
                         'total_rows' => $totalRows,
                         'error_message' => $lastErrorMsg,
                         'duplicates_skipped' => $duplicateSkipped,
+                        'skipped_count' => 0,
+                        'skipped_rows' => [],
+                        'skip_reasons_summary' => [],
                     ]);
                     return;
                 }
@@ -2608,6 +2632,9 @@ class ImportFileController extends Controller
                     'total_rows' => $totalRows,
                     'error_message' => $lastErrorMsg,
                     'duplicates_skipped' => $duplicateSkipped,
+                    'skipped_count' => 0,
+                    'skipped_rows' => [],
+                    'skip_reasons_summary' => [],
                 ]);
             } catch (\Throwable $e) {
                 Log::error('CSV STREAM ERROR: ' . $e->getMessage() . ' | ' . $e->getFile() . ':' . $e->getLine());

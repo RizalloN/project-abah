@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Import;
 
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Import\Concerns\AllocatesGapIds;
+use App\Http\Controllers\Import\Concerns\SmartCsvImportSupport;
 use App\Support\ReportDataSyncService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -16,6 +17,7 @@ use Illuminate\Support\Str;
 class ImportReportPhController extends Controller
 {
     use AllocatesGapIds;
+    use SmartCsvImportSupport;
 
     private const TABLE_NAME = 'lw325_ph';
     private const UNIQUE_SUFFIX = '_RPH';
@@ -179,7 +181,7 @@ class ImportReportPhController extends Controller
                     continue;
                 }
 
-                $row = $this->mapCsvRow($context, $this->parseCsvLine($line));
+                $row = $this->mapCsvRow($context, $this->parseCsvLine($line, $context['delimiter']));
                 if ($row === null) {
                     continue;
                 }
@@ -212,14 +214,14 @@ class ImportReportPhController extends Controller
             'previewData' => $previewData,
             'filePath' => $relativePath,
             'formattedUniqueValues' => $formattedUniqueValues,
-            'currentDelimiter' => self::COLUMN_DELIMITER,
+            'currentDelimiter' => $context['delimiter'],
             'processRoute' => route('import.reportph.process'),
             'previewRoute' => route('import.reportph.preview.refresh'),
             'initRoute' => route('import.reportph.init'),
             'streamRoute' => route('import.reportph.stream'),
             'backRoute' => route('import.index'),
             'lockDelimiterSelector' => true,
-            'fixedDelimiterLabel' => 'Koma ( , )',
+            'fixedDelimiterLabel' => 'Delimiter terdeteksi otomatis',
             'disableArea6AutoFilter' => true,
         ]);
     }
@@ -361,6 +363,9 @@ class ImportReportPhController extends Controller
                                 'total_success' => (int) ($job->total_success ?? 0),
                                 'total_failed' => (int) ($job->total_failed ?? 0),
                                 'total_rows' => (int) ($job->total_files ?? 0),
+                                'skipped_count' => 0,
+                                'skipped_rows' => [],
+                                'skip_reasons_summary' => [],
                             ]);
                         } else {
                             $send('error', ['message' => 'Job import ' . self::REPORT_LABEL . ' ini sudah sedang diproses pada koneksi lain.']);
@@ -411,7 +416,7 @@ class ImportReportPhController extends Controller
                             continue;
                         }
 
-                        $row = $this->mapCsvRow($context, $this->parseCsvLine($line));
+                        $row = $this->mapCsvRow($context, $this->parseCsvLine($line, $context['delimiter']));
                         if ($row === null || !$this->passesFilters($row, $activeFilters)) {
                             continue;
                         }
@@ -475,6 +480,9 @@ class ImportReportPhController extends Controller
                     'total_failed' => $totalFailed,
                     'total_rows' => $rowsDone,
                     'error_message' => $lastErrorMsg,
+                    'skipped_count' => 0,
+                    'skipped_rows' => [],
+                    'skip_reasons_summary' => [],
                 ]);
             } catch (\Throwable $e) {
                 Log::error(self::REPORT_LABEL . ' STREAM ERROR: ' . $e->getMessage() . ' | ' . $e->getFile() . ':' . $e->getLine());
@@ -587,7 +595,7 @@ class ImportReportPhController extends Controller
                     continue;
                 }
 
-                $row = $this->mapCsvRow($context, $this->parseCsvLine($line));
+                $row = $this->mapCsvRow($context, $this->parseCsvLine($line, $context['delimiter']));
                 if ($row === null || !$this->passesFilters($row, $activeFilters)) {
                     continue;
                 }
@@ -627,6 +635,8 @@ class ImportReportPhController extends Controller
 
     private function buildCsvContext(string $path): array
     {
+        $profile = $this->smartProfileCsvSource($path, ['periode', 'acctno', 'tgl_ph']);
+        $delimiter = (string) ($profile['delimiter'] ?? self::COLUMN_DELIMITER);
         $sampleRows = [];
         $handle = fopen($path, 'r');
         if ($handle === false) {
@@ -655,31 +665,37 @@ class ImportReportPhController extends Controller
             throw new \RuntimeException('Isi file CSV kosong.');
         }
 
-        $structure = $this->detectCsvStructure($sampleRows);
+        $structure = $this->detectCsvStructure($sampleRows, $delimiter);
         if (!$structure) {
             throw new \RuntimeException('Baris header CSV ' . self::REPORT_LABEL . ' tidak ditemukan.');
         }
 
-        $periode = $this->findPeriodeValue($path, $structure['header_row']['line_number'], $structure['parsed_headers']);
+        $periode = $this->findPeriodeValue($path, $structure['header_row']['line_number'], $structure['parsed_headers'], $delimiter);
 
         return [
-            'delimiter' => self::COLUMN_DELIMITER,
+            'delimiter' => $delimiter,
             'header_line' => $structure['header_row']['line_number'],
             'source_headers' => $structure['parsed_headers'],
             'source_indexes' => $this->buildSourceIndexes($structure['parsed_headers']),
             'headers' => self::TARGET_COLUMNS,
             'periode' => $periode,
+            'detected_profile_summary' => [
+                'delimiter' => $delimiter,
+                'serialized_rows' => (bool) ($profile['serialized_rows'] ?? false),
+                'field_count_consistent' => (bool) ($profile['field_count_consistent'] ?? true),
+                'sample_bad_rows' => array_values((array) ($profile['sample_bad_rows'] ?? [])),
+            ],
         ];
     }
 
-    private function detectCsvStructure(array $sampleRows): ?array
+    private function detectCsvStructure(array $sampleRows, string $delimiter): ?array
     {
         $bestCandidate = null;
 
         foreach ($sampleRows as $row) {
             $parsedHeaders = array_map(
                 fn ($value) => $this->normalizeHeader($value),
-                $this->parseCsvLine($row['line'])
+                $this->parseCsvLine($row['line'], $delimiter)
             );
 
             $parsedHeaders = array_values(array_filter($parsedHeaders, fn ($value) => $value !== ''));
@@ -747,7 +763,7 @@ class ImportReportPhController extends Controller
         return $indexes;
     }
 
-    private function findPeriodeValue(string $path, int $headerLineNumber, array $sourceHeaders): ?string
+    private function findPeriodeValue(string $path, int $headerLineNumber, array $sourceHeaders, string $delimiter): ?string
     {
         $periodeIndex = array_search('periode', $sourceHeaders, true);
         if ($periodeIndex === false) {
@@ -767,7 +783,7 @@ class ImportReportPhController extends Controller
                     continue;
                 }
 
-                $row = $this->parseCsvLine($line);
+                $row = $this->parseCsvLine($line, $delimiter);
                 if ($this->isEmptyCsvRow($row)) {
                     continue;
                 }
@@ -803,7 +819,7 @@ class ImportReportPhController extends Controller
                     continue;
                 }
 
-                $row = $this->mapCsvRow($context, $this->parseCsvLine($line));
+                $row = $this->mapCsvRow($context, $this->parseCsvLine($line, $context['delimiter']));
                 if ($row === null || !$this->passesFilters($row, $activeFilters)) {
                     continue;
                 }
@@ -819,47 +835,14 @@ class ImportReportPhController extends Controller
         return $count;
     }
 
-    private function parseCsvLine(string $line): array
+    private function parseCsvLine(string $line, ?string $delimiter = null): array
     {
-        $line = preg_replace('/^\xEF\xBB\xBF/', '', rtrim($line, "\r\n"));
-
-        if ($line === null || trim($line) === '') {
-            return [];
-        }
-
-        $parsed = $this->trimTrailingEmptyCells(str_getcsv($line, self::COLUMN_DELIMITER));
-
-        if (count($parsed) === 1) {
-            $single = trim((string) ($parsed[0] ?? ''));
-
-            if (
-                strlen($single) >= 2
-                && str_starts_with($single, '"')
-                && str_ends_with($single, '"')
-            ) {
-                $single = substr($single, 1, -1);
-                $single = str_replace('""', '"', $single);
-            }
-
-            if ($single !== '' && substr_count($single, self::COLUMN_DELIMITER) >= 3) {
-                $innerParsed = $this->trimTrailingEmptyCells(str_getcsv($single, self::COLUMN_DELIMITER));
-
-                if (count($innerParsed) > 1) {
-                    return $innerParsed;
-                }
-            }
-        }
-
-        return $parsed;
+        return $this->smartParseCsvLine($line, $delimiter ?? self::COLUMN_DELIMITER, true);
     }
 
     private function trimTrailingEmptyCells(array $cells): array
     {
-        while (!empty($cells) && trim((string) end($cells)) === '') {
-            array_pop($cells);
-        }
-
-        return $cells;
+        return $this->smartTrimTrailingEmptyCsvCells($cells);
     }
 
     private function normalizeHeader(?string $header): string
@@ -928,7 +911,7 @@ class ImportReportPhController extends Controller
 
     private function normalizeCellValue(string $column, $value)
     {
-        $value = trim((string) ($value ?? ''));
+        $value = trim($this->smartNormalizeQuotedCsvCellValue($value));
         if ($value === '') {
             return null;
         }
@@ -950,7 +933,7 @@ class ImportReportPhController extends Controller
 
     private function normalizeDateValue(?string $value): ?string
     {
-        $value = trim((string) $value);
+        $value = trim($this->smartNormalizeQuotedCsvCellValue($value));
         if ($value === '') {
             return null;
         }
@@ -996,7 +979,7 @@ class ImportReportPhController extends Controller
             return number_format((float) $value, 2, '.', '');
         }
 
-        $value = trim((string) $value);
+        $value = trim($this->smartNormalizeQuotedCsvCellValue($value));
         if ($value === '') {
             return null;
         }

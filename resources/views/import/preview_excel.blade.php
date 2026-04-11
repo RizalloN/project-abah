@@ -625,6 +625,14 @@ document.addEventListener('DOMContentLoaded', function () {
 
                 var d = {};
                 try { d = JSON.parse(e.data); } catch (_) {}
+                var skippedCount = Number(d.skipped_count || 0);
+                var skippedRows = Array.isArray(d.skipped_rows) ? d.skipped_rows : [];
+                var skippedRowsText = skippedRows.length ? skippedRows.join(', ') : '';
+                var skippedHtml = skippedCount > 0
+                    ? '<br><small class="text-warning">Baris rusak di-skip: <b>' + skippedCount.toLocaleString('id-ID') + '</b>' +
+                      (skippedRowsText ? '<br>Contoh baris: ' + skippedRowsText : '') +
+                      '</small>'
+                    : '';
 
                 activateStep('step-done', 'line-3');
                 setProgress(100, 'Import selesai!', d.total_rows || 0, d.total_rows || 0, 0);
@@ -636,7 +644,8 @@ document.addEventListener('DOMContentLoaded', function () {
                             title: 'Tidak Ada Data Masuk',
                             html: '<p>✅ Total: <b>' + Number(d.total_rows || 0).toLocaleString('id-ID') + ' baris</b></p>' +
                                   '<p>❌ Gagal: <b>' + Number(d.total_failed || 0).toLocaleString('id-ID') + ' baris</b></p>' +
-                                  '<small class="text-muted">Sebagian baris gagal diproses atau terbatasi oleh filter yang aktif.</small>',
+                                  '<small class="text-muted">Sebagian baris gagal diproses atau terbatasi oleh filter yang aktif.</small>' +
+                                  skippedHtml,
                             confirmButtonText: 'Kembali ke Import',
                         }).then(function () { window.location.href = '{{ route("import.index") }}'; });
                     } else {
@@ -644,7 +653,8 @@ document.addEventListener('DOMContentLoaded', function () {
                             icon: 'success',
                             title: 'Import Sukses! 🎉',
                             html: 'Berhasil mengimport <b>' + Number(d.total_success).toLocaleString('id-ID') + ' baris</b> data ke database.' +
-                                  (d.total_failed > 0 ? '<br><small class="text-warning">⚠ ' + Number(d.total_failed).toLocaleString('id-ID') + ' baris gagal saat insert atau tidak lolos proses validasi.</small>' : ''),
+                                  (d.total_failed > 0 ? '<br><small class="text-warning">⚠ ' + Number(d.total_failed).toLocaleString('id-ID') + ' baris gagal saat insert atau tidak lolos proses validasi.</small>' : '') +
+                                  skippedHtml,
                             confirmButtonText: 'Lanjut',
                         }).then(function () { window.location.href = '{{ route("import.index") }}'; });
                     }

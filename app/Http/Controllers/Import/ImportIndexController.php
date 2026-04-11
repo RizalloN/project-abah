@@ -19,6 +19,7 @@ use Throwable;
 class ImportIndexController extends Controller
 {
     private const MANAGEMENT_MAX_GROUP_ROWS = 5000;
+    private const MANAGEMENT_PERIODS_PER_PAGE = 8;
     private const DELETE_PRECHECK_LIMIT = 200000;
     private const DELETE_CHUNK_SIZE = 5000;
     private const DELETE_CHUNK_SIZE_WITH_IDENTITY = 10000;
@@ -142,6 +143,8 @@ class ImportIndexController extends Controller
         $validated = $request->validate([
             'id_report' => 'required|integer',
             'max_rows' => 'nullable|integer|min:100|max:20000',
+            'page' => 'nullable|integer|min:1',
+            'per_page' => 'nullable|integer|min:1|max:24',
         ]);
 
         $report = NamaReport::where('active', 1)
@@ -174,9 +177,12 @@ class ImportIndexController extends Controller
         [$periodColumn, $kancaColumn] = $this->resolveManagementScopeColumns($tableName, $tableColumns);
 
         $maxRows = (int) ($validated['max_rows'] ?? self::MANAGEMENT_MAX_GROUP_ROWS);
+        $page = (int) ($validated['page'] ?? 1);
+        $perPage = (int) ($validated['per_page'] ?? self::MANAGEMENT_PERIODS_PER_PAGE);
         [$rows, $truncated] = $this->buildManagementRows($tableName, $periodColumn, $kancaColumn, $maxRows);
-        $displayedRowsTotal = array_reduce($rows, static function (int $carry, array $row): int {
-            return $carry + (int) ($row['row_count'] ?? 0);
+        $paginatedPeriods = $this->paginateManagementPeriods($rows, $page, $perPage, $periodColumn !== null);
+        $displayedRowsTotal = array_reduce($paginatedPeriods['periods'], static function (int $carry, array $period): int {
+            return $carry + (int) ($period['total_rows'] ?? 0);
         }, 0);
         $grandTotalRows = (int) DB::table($tableName)->count();
 
@@ -189,7 +195,10 @@ class ImportIndexController extends Controller
             'truncated' => $truncated,
             'displayed_rows_total' => $displayedRowsTotal,
             'grand_total_rows' => $grandTotalRows,
-            'rows' => $rows,
+            'total_groups' => count($rows),
+            'rows' => $paginatedPeriods['rows'],
+            'periods' => $paginatedPeriods['periods'],
+            'pagination' => $paginatedPeriods['pagination'],
         ]);
     }
 
@@ -259,6 +268,7 @@ class ImportIndexController extends Controller
             'period_is_null' => $prepared['period_is_null'],
             'kanca_is_null' => $prepared['kanca_is_null'],
             'period_hint' => $prepared['period_hint'],
+            'skip_derived_sync' => (bool) ($prepared['skip_derived_sync'] ?? false),
             'identity_column' => $prepared['identity_column'],
             'total_rows' => (int) $prepared['candidate_rows'],
             'deleted_rows' => 0,
@@ -322,32 +332,51 @@ class ImportIndexController extends Controller
             }
 
             if (($state['stage'] ?? null) === 'cleanup') {
-                $cleanup = $syncService->cleanupDerivedArtifactsAfterDelete(
-                    (string) $state['table_name'],
-                    $state['period_hint'] ?? null,
-                    static::class . '::processManagedReportDelete'
-                );
-                $state['cleanup'] = $cleanup;
+                if (!empty($state['skip_derived_sync'])) {
+                    $state['cleanup'] = [
+                        'mode' => 'skipped',
+                        'reason' => 'period_null_only_delete',
+                    ];
+                } else {
+                    $cleanup = $syncService->cleanupDerivedArtifactsAfterDelete(
+                        (string) $state['table_name'],
+                        $state['period_hint'] ?? null,
+                        static::class . '::processManagedReportDelete'
+                    );
+                    $state['cleanup'] = $cleanup;
+                }
                 $state['stage'] = 'syncing';
                 $state['batch_state'] = 'cleanup';
                 $state['is_waiting_on_batch'] = false;
                 $state['active_batch_size'] = 0;
-                $state['message'] = 'Delete sumber selesai, membersihkan snapshot dan artefak turunan...';
+                $state['message'] = !empty($state['skip_derived_sync'])
+                    ? 'Delete sumber selesai. Null-only delete terdeteksi, melewati rebuild snapshot penuh...'
+                    : 'Delete sumber selesai, membersihkan snapshot dan artefak turunan...';
                 $this->putDeleteState($deleteId, $state);
             }
 
             if (($state['stage'] ?? null) === 'syncing') {
-                $syncService->syncAfterDelete(
-                    (string) $state['table_name'],
-                    $state['period_hint'] ?? null,
-                    static::class . '::processManagedReportDelete'
-                );
+                if (!empty($state['skip_derived_sync'])) {
+                    $syncService->syncAfterDeleteLightweight(
+                        (string) $state['table_name'],
+                        $state['period_hint'] ?? null,
+                        static::class . '::processManagedReportDelete'
+                    );
+                } else {
+                    $syncService->syncAfterDelete(
+                        (string) $state['table_name'],
+                        $state['period_hint'] ?? null,
+                        static::class . '::processManagedReportDelete'
+                    );
+                }
                 $state['status'] = 'completed';
                 $state['stage'] = 'completed';
                 $state['batch_state'] = 'completed';
                 $state['is_waiting_on_batch'] = false;
                 $state['active_batch_size'] = 0;
-                $state['message'] = 'Delete selesai. Snapshot, cache, dan statistik optimizer sudah disegarkan.';
+                $state['message'] = !empty($state['skip_derived_sync'])
+                    ? 'Delete selesai. Statistik tabel sumber dan cache disegarkan tanpa rebuild snapshot penuh.'
+                    : 'Delete selesai. Snapshot, cache, dan statistik optimizer sudah disegarkan.';
                 $state['updated_at'] = now()->toIso8601String();
                 $this->putDeleteState($deleteId, $state);
             }
@@ -490,6 +519,7 @@ class ImportIndexController extends Controller
         }
 
         $periodHint = null;
+        $skipDerivedSync = false;
         if ($periodColumn !== null) {
             $periodCandidates = [];
             $hasNullPeriodScope = false;
@@ -509,6 +539,10 @@ class ImportIndexController extends Controller
             if (!$hasNullPeriodScope && count($periodCandidates) === 1) {
                 $periodHint = (string) array_key_first($periodCandidates);
             }
+
+            if ($hasNullPeriodScope && count($periodCandidates) === 0) {
+                $skipDerivedSync = true;
+            }
         }
 
         return [[
@@ -527,6 +561,7 @@ class ImportIndexController extends Controller
             'table_total_rows' => (int) DB::table($tableName)->count(),
             'identity_column' => $this->resolveIdentityColumn($tableColumns),
             'period_hint' => $periodHint,
+            'skip_derived_sync' => $skipDerivedSync,
         ], null];
     }
 
@@ -826,8 +861,8 @@ class ImportIndexController extends Controller
 
             return [[
                 [
-                    'period' => '-',
-                    'kanca' => '-',
+                    'period' => '(Tanpa Periode)',
+                    'kanca' => '(Semua)',
                     'row_count' => $count,
                     'period_is_null' => false,
                     'kanca_is_null' => false,
@@ -866,8 +901,12 @@ class ImportIndexController extends Controller
             $kancaRaw = $kancaColumn !== null ? ($item->kanca_value ?? null) : null;
 
             $rows[] = [
-                'period' => $periodRaw === null || trim((string) $periodRaw) === '' ? '(Blank)' : (string) $periodRaw,
-                'kanca' => $kancaRaw === null || trim((string) $kancaRaw) === '' ? '(Blank)' : (string) $kancaRaw,
+                'period' => $periodRaw === null || trim((string) $periodRaw) === ''
+                    ? ($periodColumn !== null ? '(Blank)' : '(Tanpa Periode)')
+                    : (string) $periodRaw,
+                'kanca' => $kancaRaw === null || trim((string) $kancaRaw) === ''
+                    ? ($kancaColumn !== null ? '(Blank)' : '(Semua)')
+                    : (string) $kancaRaw,
                 'row_count' => (int) ($item->row_count ?? 0),
                 'period_is_null' => $periodRaw === null || trim((string) $periodRaw) === '',
                 'kanca_is_null' => $kancaRaw === null || trim((string) $kancaRaw) === '',
@@ -875,6 +914,73 @@ class ImportIndexController extends Controller
         }
 
         return [$rows, $truncated];
+    }
+
+    private function paginateManagementPeriods(array $rows, int $page, int $perPage, bool $hasPeriodColumn): array
+    {
+        $periods = [];
+        $periodOrder = [];
+
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $periodLabel = (string) ($row['period'] ?? ($hasPeriodColumn ? '(Blank)' : '(Tanpa Periode)'));
+            $periodIsNull = (bool) ($row['period_is_null'] ?? false);
+            $bucketKey = $hasPeriodColumn
+                ? ($periodIsNull ? '__blank__' : 'value:' . $periodLabel)
+                : '__single_period__';
+
+            if (!isset($periods[$bucketKey])) {
+                $periodOrder[] = $bucketKey;
+                $periods[$bucketKey] = [
+                    'period' => $periodLabel,
+                    'period_is_null' => $periodIsNull,
+                    'group_count' => 0,
+                    'total_rows' => 0,
+                    'rows' => [],
+                ];
+            }
+
+            $periods[$bucketKey]['rows'][] = $row;
+            $periods[$bucketKey]['group_count']++;
+            $periods[$bucketKey]['total_rows'] += (int) ($row['row_count'] ?? 0);
+        }
+
+        $orderedPeriods = array_values(array_map(
+            static fn (string $bucketKey): array => $periods[$bucketKey],
+            $periodOrder
+        ));
+
+        $totalPeriods = count($orderedPeriods);
+        $perPage = max(1, $perPage);
+        $totalPages = max(1, (int) ceil($totalPeriods / $perPage));
+        $currentPage = min(max(1, $page), $totalPages);
+        $offset = ($currentPage - 1) * $perPage;
+        $currentPeriods = array_slice($orderedPeriods, $offset, $perPage);
+
+        $currentRows = [];
+        foreach ($currentPeriods as $period) {
+            foreach ($period['rows'] as $row) {
+                $currentRows[] = $row;
+            }
+        }
+
+        return [
+            'rows' => $currentRows,
+            'periods' => $currentPeriods,
+            'pagination' => [
+                'current_page' => $currentPage,
+                'per_page' => $perPage,
+                'total_pages' => $totalPages,
+                'total_periods' => $totalPeriods,
+                'has_prev' => $currentPage > 1,
+                'has_next' => $currentPage < $totalPages,
+                'from_period' => $totalPeriods === 0 ? 0 : ($offset + 1),
+                'to_period' => min($offset + $perPage, $totalPeriods),
+            ],
+        ];
     }
 
     private function applyBlankValueConstraint($query, string $column): void

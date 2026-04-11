@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Import;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Import\Concerns\SmartCsvImportSupport;
 use App\Http\Controllers\Import\Concerns\AllocatesGapIds;
 use App\Support\ReportDataSyncService;
 use Illuminate\Http\Request;
@@ -53,6 +54,8 @@ class ChunkReadFilter implements IReadFilter
 
 class ImportExcelController extends Controller
 {
+    use SmartCsvImportSupport;
+
     use AllocatesGapIds;
 
     private const DAILY_LOAN_REPORT_ID = 8;
@@ -191,34 +194,7 @@ class ImportExcelController extends Controller
 
     private function detectCsvDelimiter(string $path): string
     {
-        $handle = fopen($path, 'r');
-        if ($handle === false) {
-            return ',';
-        }
-
-        try {
-            $sampleLine = fgets($handle);
-            if ($sampleLine === false) {
-                return ',';
-            }
-
-            $sampleLine = preg_replace('/^\xEF\xBB\xBF/', '', $sampleLine);
-            $delimiters = [',', ';', "\t", '|'];
-            $bestDelimiter = ',';
-            $bestCount = -1;
-
-            foreach ($delimiters as $delimiter) {
-                $count = count(str_getcsv($sampleLine, $delimiter));
-                if ($count > $bestCount) {
-                    $bestCount = $count;
-                    $bestDelimiter = $delimiter;
-                }
-            }
-
-            return $bestDelimiter;
-        } finally {
-            fclose($handle);
-        }
+        return $this->smartDetectCsvDelimiter($path);
     }
 
     private function normalizeImportColumnName(string $headerName): string
@@ -439,23 +415,7 @@ class ImportExcelController extends Controller
 
     private function normalizeQuotedCsvCellValue($value): string
     {
-        $normalized = (string) ($value ?? '');
-        if ($normalized === '') {
-            return '';
-        }
-
-        $previous = null;
-        while ($normalized !== $previous) {
-            $previous = $normalized;
-            $normalized = str_replace('""', '"', $normalized);
-
-            $trimmed = trim($normalized);
-            if (strlen($trimmed) >= 2 && str_starts_with($trimmed, '"') && str_ends_with($trimmed, '"')) {
-                $normalized = substr($trimmed, 1, -1);
-            }
-        }
-
-        return $normalized;
+        return $this->smartNormalizeQuotedCsvCellValue($value);
     }
 
     private function resolveCsvRowValueByHeader(array $headers, array $row, string $targetHeader): ?string
@@ -2173,7 +2133,7 @@ class ImportExcelController extends Controller
         return false;
     }
 
-    private function createNormalizedDailyLoanDirectLoadCsv(string $csvPath, ?string $delimiter = null): string
+    private function createNormalizedDailyLoanDirectLoadCsv(string $csvPath, ?string $delimiter = null): array
     {
         $delimiter = ($delimiter !== null && $delimiter !== '')
             ? $delimiter
@@ -2206,17 +2166,51 @@ class ImportExcelController extends Controller
             }
 
             $expectedColumns = count($header);
+            $requiredIndexes = $this->resolveDailyLoanRequiredSourceIndexes($header);
+            $lineNumber = 1;
+            $skippedRows = [];
+            $skippedCount = 0;
+            $writtenRows = 0;
             fputcsv($outputHandle, $header, $delimiter, '"', '\\');
 
-            while (($row = fgetcsv($inputHandle, 0, $delimiter)) !== false) {
-                $row = $this->normalizeCsvRow((array) $row, $delimiter, $expectedColumns);
+            while (($rawRow = fgetcsv($inputHandle, 0, $delimiter)) !== false) {
+                $lineNumber++;
+                $row = $this->normalizeCsvRow((array) $rawRow, $delimiter);
+
+                if (empty(array_filter((array) $row, fn ($value) => trim((string) $value) !== ''))) {
+                    continue;
+                }
+
+                if ($this->hasDailyLoanFieldCountMismatch($header, $row, $lineNumber, 'direct_daily_loan_normalize', $delimiter)) {
+                    $skippedCount++;
+                    if (count($skippedRows) < 50) {
+                        $skippedRows[] = $lineNumber;
+                    }
+                    continue;
+                }
+
                 $row = $this->padRow($row, $expectedColumns);
+
+                if (!$this->hasMinimumDailyLoanSourceValues($row, $requiredIndexes)) {
+                    Log::warning('Daily Loan direct load skipped row because required fields are empty.', [
+                        'table_name' => 'daily_loan_dinamis',
+                        'source' => 'direct_daily_loan_normalize',
+                        'line_number' => $lineNumber,
+                        'required_headers' => ['periode', 'nomor_rekening1', 'baki_debet1'],
+                    ]);
+                    $skippedCount++;
+                    if (count($skippedRows) < 50) {
+                        $skippedRows[] = $lineNumber;
+                    }
+                    continue;
+                }
 
                 if (count($row) > $expectedColumns) {
                     $row = array_slice($row, 0, $expectedColumns);
                 }
 
                 fputcsv($outputHandle, $row, $delimiter, '"', '\\');
+                $writtenRows++;
             }
         } catch (\Throwable $e) {
             fclose($inputHandle);
@@ -2228,23 +2222,37 @@ class ImportExcelController extends Controller
         fclose($inputHandle);
         fclose($outputHandle);
 
-        return $tempPath;
+        return [
+            'path' => $tempPath,
+            'skipped_rows' => $skippedRows,
+            'skipped_count' => $skippedCount,
+            'written_rows' => $writtenRows,
+        ];
     }
 
     private function prepareDailyLoanDirectLoadSource(string $csvPath, ?string $delimiter = null): array
     {
-        if (!$this->requiresDailyLoanDirectLoadNormalization($csvPath, $delimiter)) {
+        $requiresNormalization = $this->requiresDailyLoanDirectLoadNormalization($csvPath, $delimiter);
+        $hasMalformedRows = $this->hasMalformedRowsForDirectDailyLoanLoad($csvPath, self::DAILY_LOAN_SOURCE_HEADERS, 5000, $delimiter);
+
+        if (!$requiresNormalization && !$hasMalformedRows) {
             return [
                 'path' => $csvPath,
                 'cleanup' => false,
                 'normalized' => false,
+                'skipped_rows' => [],
+                'skipped_count' => 0,
             ];
         }
 
+        $normalized = $this->createNormalizedDailyLoanDirectLoadCsv($csvPath, $delimiter);
+
         return [
-            'path' => $this->createNormalizedDailyLoanDirectLoadCsv($csvPath, $delimiter),
+            'path' => $normalized['path'],
             'cleanup' => true,
             'normalized' => true,
+            'skipped_rows' => $normalized['skipped_rows'] ?? [],
+            'skipped_count' => (int) ($normalized['skipped_count'] ?? 0),
         ];
     }
 
@@ -2430,10 +2438,6 @@ class ImportExcelController extends Controller
 
         if ($sourceHeaders === false || empty($sourceHeaders)) {
             throw new \RuntimeException('Header CSV Daily Loan tidak ditemukan.');
-        }
-
-        if ($this->hasMalformedRowsForDirectDailyLoanLoad($absolutePath, $normalizedHeaders, 5000, $delimiter)) {
-            throw new \RuntimeException('CSV Daily Loan mengandung struktur kolom tidak konsisten atau field minimum kosong.');
         }
 
         $context = $this->buildImportContext('daily_loan_dinamis', $normalizedHeaders, []);
@@ -2805,6 +2809,8 @@ class ImportExcelController extends Controller
             $loadSource = $this->prepareDailyLoanDirectLoadSource($csvPath, $delimiter);
             $sourcePath = (string) ($loadSource['path'] ?? $csvPath);
             $sourceWasNormalized = !empty($loadSource['normalized']);
+            $skippedRows = array_values(array_unique(array_map('intval', (array) ($loadSource['skipped_rows'] ?? []))));
+            $skippedCount = (int) ($loadSource['skipped_count'] ?? count($skippedRows));
             $loadPlan = $this->buildDirectDailyLoanCsvLoadPlan($sourcePath, $normalizedHeaders);
             $baseTotal = max(0, $estimatedTotalRows);
 
@@ -2818,7 +2824,11 @@ class ImportExcelController extends Controller
             $send('progress', [
                 'percent' => 56,
                 'message' => $sourceWasNormalized
-                    ? 'CSV Daily Loan dinormalisasi. Menjalankan direct LOAD DATA ke tabel final...'
+                    ? (
+                        $skippedCount > 0
+                            ? 'CSV Daily Loan dinormalisasi. ' . $skippedCount . ' baris rusak di-skip, lalu direct LOAD DATA dijalankan...'
+                            : 'CSV Daily Loan dinormalisasi. Menjalankan direct LOAD DATA ke tabel final...'
+                    )
                     : 'Direct LOAD DATA aktif. Memuat CSV langsung ke Daily Loan...',
                 'rows_done' => 0,
                 'total' => $baseTotal,
@@ -2859,6 +2869,8 @@ class ImportExcelController extends Controller
                 'total_success' => $inserted,
                 'total_failed' => $failed,
                 'total_rows' => $baseTotal,
+                'skipped_rows' => $skippedRows,
+                'skipped_count' => $skippedCount,
             ]);
 
             return true;

@@ -782,6 +782,13 @@
 
                     let data = {};
                     try { data = JSON.parse(event.data); } catch (_) {}
+                    const skippedCount = Number(data.skipped_count || 0);
+                    const skippedRows = Array.isArray(data.skipped_rows) ? data.skipped_rows : [];
+                    const skippedHtml = skippedCount > 0
+                        ? '<br><small class="text-warning">Baris di-skip: <b>' + skippedCount.toLocaleString('id-ID') + '</b>' +
+                          (skippedRows.length ? '<br>Contoh baris: ' + skippedRows.join(', ') : '') +
+                          '</small>'
+                        : '';
 
                     stopImportProgressTicker();
                     setImportProgress(100, 'Import selesai!', data.total_rows || 0, data.total_rows || 0, 0);
@@ -793,7 +800,8 @@
                                 title: 'Import Selesai',
                                 html: '<p>Berhasil: <b>' + Number(data.total_success || 0).toLocaleString('id-ID') + ' baris</b></p>' +
                                       '<p>Gagal: <b>' + Number(data.total_failed || 0).toLocaleString('id-ID') + ' baris</b></p>' +
-                                      (data.error_message ? '<small class="text-danger">' + data.error_message + '</small>' : ''),
+                                      (data.error_message ? '<small class="text-danger">' + data.error_message + '</small>' : '') +
+                                      skippedHtml,
                                 confirmButtonText: 'Tutup'
                             }).then(() => {
                                 window.location.href = "{{ route('import.index') }}";
@@ -807,7 +815,8 @@
                             html: 'Sebanyak <b>' + Number(data.total_success).toLocaleString('id-ID') + ' baris</b> data berhasil diimport.' +
                                   (data.total_failed > 0
                                     ? '<br><small class="text-warning">' + Number(data.total_failed).toLocaleString('id-ID') + ' baris gagal diproses.</small>'
-                                    : ''),
+                                    : '') +
+                                  skippedHtml,
                             confirmButtonText: 'Tutup'
                         }).then(() => {
                             window.location.href = "{{ route('import.index') }}";

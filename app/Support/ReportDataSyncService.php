@@ -167,6 +167,30 @@ class ReportDataSyncService
         $this->syncImportedTable($tableName, $periodHint, null, $source ?? static::class . '::syncAfterDelete');
     }
 
+    public function syncAfterDeleteLightweight(string $tableName, ?string $periodHint = null, ?string $source = null): void
+    {
+        $normalizedTable = strtolower(trim($tableName));
+        if ($normalizedTable === '') {
+            return;
+        }
+
+        $this->refreshTableStatistics($normalizedTable, $periodHint, null, $source ?? static::class . '::syncAfterDeleteLightweight');
+
+        try {
+            $newVersion = $this->bumpReportCacheVersion();
+            $this->writeAudit($normalizedTable, $periodHint, null, $source, 'cache_invalidate_lightweight', 'success', [
+                'context' => ['cache_version' => $newVersion],
+            ]);
+        } catch (Throwable $e) {
+            $this->writeAudit($normalizedTable, $periodHint, null, $source, 'cache_invalidate_lightweight', 'failed', [
+                'message' => $e->getMessage(),
+            ]);
+            Log::warning('Gagal invalidasi cache lightweight setelah delete: ' . $e->getMessage(), [
+                'table' => $normalizedTable,
+            ]);
+        }
+    }
+
     public function cleanupDerivedArtifactsAfterDelete(string $tableName, ?string $periodHint = null, ?string $source = null): array
     {
         $normalizedTable = strtolower(trim($tableName));

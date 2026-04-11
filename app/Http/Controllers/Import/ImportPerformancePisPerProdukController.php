@@ -463,6 +463,9 @@ class ImportPerformancePisPerProdukController extends Controller
                                 'total_success' => (int) ($job->total_success ?? 0),
                                 'total_failed' => (int) ($job->total_failed ?? 0),
                                 'total_rows' => (int) ($job->total_files ?? 0),
+                                'skipped_count' => 0,
+                                'skipped_rows' => [],
+                                'skip_reasons_summary' => [],
                             ]);
                         } else {
                             $send('error', ['message' => 'Job import Performance PIS ini sudah sedang diproses pada koneksi lain.']);
@@ -586,6 +589,9 @@ class ImportPerformancePisPerProdukController extends Controller
                     'total_failed' => $totalFailed,
                     'total_rows' => $totalPreparedRows,
                     'error_message' => $lastErrorMsg,
+                    'skipped_count' => 0,
+                    'skipped_rows' => [],
+                    'skip_reasons_summary' => [],
                 ]);
             } catch (\Throwable $e) {
                 Log::error('PERFORMANCE PIS STREAM ERROR: ' . $e->getMessage() . ' | ' . $e->getFile() . ':' . $e->getLine());
