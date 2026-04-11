@@ -825,12 +825,12 @@
                 formCsv.style.display = 'block';
                 inputCsv.disabled = false;
                 inputCsv.required = true;
-                inputCsv.setAttribute('accept', '.csv,.txt');
+                inputCsv.setAttribute('accept', '.csv,.txt,.xlsx,.xls');
                 formImport.action = "{{ route('import.reportph.upload') }}";
                 formImport.dataset.preparePreviewUrl = "{{ route('import.reportph.prepare-preview') }}";
-                csvLabel.innerHTML = '<i class="fas fa-file-csv mr-1"></i> Upload File Report PH (.csv, .txt)';
-                csvHelp.textContent = 'Gunakan file CSV Report Nominatif Rekening Pinjaman PH sesuai template.';
-                applyButtonState('csv', '<i class="fas fa-file-csv"></i> Upload CSV');
+                csvLabel.innerHTML = '<i class="fas fa-file-upload mr-1"></i> Upload File Report PH (.csv, .txt, .xlsx, .xls)';
+                csvHelp.textContent = 'CSV tetap didukung. File Excel akan distage dulu ke CSV lalu masuk ke jalur bulk import yang sama.';
+                applyButtonState('csv', '<i class="fas fa-file-upload"></i> Upload File');
                 configurePeriodeInput({ visible: false });
                 return;
             }

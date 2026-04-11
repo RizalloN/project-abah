@@ -2,7 +2,7 @@
 
 namespace App\Support;
 
-use Illuminate\Support\Facades\Artisan;
+use App\Jobs\WarmReportCacheJob;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -93,14 +93,7 @@ class ReportDataSyncService
                 default => null,
             };
 
-            // Trigger otomatisasi cache warming di latar belakang setelah sinkronisasi selesai
-            defer(function () {
-                try {
-                    Artisan::call('report:warm-cache');
-                } catch (Throwable $e) {
-                    Log::warning('Gagal menjalankan otomatisasi pemanasan cache: ' . $e->getMessage());
-                }
-            });
+            WarmReportCacheJob::dispatch()->onQueue('reports-low');
 
         } catch (Throwable $e) {
             $this->writeAudit($normalizedTable, $periodHint, $jobId, $source, 'snapshot_sync', 'failed', [

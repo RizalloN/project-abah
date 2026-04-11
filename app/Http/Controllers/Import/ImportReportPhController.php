@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Controllers\Import\Concerns\AllocatesGapIds;
 use App\Http\Controllers\Import\Concerns\SmartCsvImportSupport;
 use App\Support\ReportDataSyncService;
+use App\Support\StrictDateParser;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -63,12 +64,13 @@ class ImportReportPhController extends Controller
         'sai_deffered_ph', 'wcbal', 'waccint', 'wadvpmt', 'wpenint', 'wmisc', 'wothchg',
         'wpmtamt', 'wamount', 'clmamt', 'clmapr',
     ];
+    private const STAGED_CSV_TEMP_DIR = 'app/report_ph_stage';
 
     public function upload(Request $request)
     {
         $request->validate([
             'id_report' => 'required',
-            'file' => 'required|file|mimes:csv,txt',
+            'file' => 'required|file|mimes:csv,txt,xlsx,xls',
         ]);
 
         $path = $request->file('file')->store('report_ph_imports');
@@ -87,6 +89,234 @@ class ImportReportPhController extends Controller
         }
 
         return redirect()->route('import.reportph.preview');
+    }
+
+    private function isExcelFile(string $path): bool
+    {
+        return in_array(strtolower(pathinfo($path, PATHINFO_EXTENSION)), ['xlsx', 'xls'], true);
+    }
+
+    private function findPython(): ?string
+    {
+        foreach (['python', 'python3', 'py'] as $cmd) {
+            $output = @shell_exec(escapeshellcmd($cmd) . ' --version 2>&1');
+            if ($output && str_contains($output, 'Python 3')) {
+                return $cmd;
+            }
+        }
+
+        return null;
+    }
+
+    private function reportPhStageCacheKey(string $relativePath): string
+    {
+        return 'report_ph_excel_stage_' . md5($relativePath);
+    }
+
+    private function getStagedExcelState(string $relativePath): array
+    {
+        $cached = Cache::get($this->reportPhStageCacheKey($relativePath));
+        return is_array($cached) ? $cached : [];
+    }
+
+    private function putStagedExcelState(string $relativePath, array $payload): void
+    {
+        Cache::put($this->reportPhStageCacheKey($relativePath), $payload, now()->addHours(4));
+    }
+
+    private function clearStagedExcelState(string $relativePath): void
+    {
+        Cache::forget($this->reportPhStageCacheKey($relativePath));
+    }
+
+    private function createStagedCsvPath(): string
+    {
+        $directory = storage_path(self::STAGED_CSV_TEMP_DIR);
+        if (!is_dir($directory)) {
+            @mkdir($directory, 0777, true);
+        }
+
+        return $directory . DIRECTORY_SEPARATOR . 'lw325_ph_' . Str::random(12) . '.csv';
+    }
+
+    private function detectExcelHeaderViaPython(string $path): ?array
+    {
+        $pythonExe = $this->findPython();
+        $scriptPath = base_path('scripts/excel_gpu_processor.py');
+
+        if (!$pythonExe || !file_exists($scriptPath)) {
+            return null;
+        }
+
+        $configFile = storage_path('app/report_ph_excel_init_' . uniqid() . '.json');
+        file_put_contents($configFile, json_encode(['file_path' => $path], JSON_UNESCAPED_UNICODE));
+
+        $nullDevice = PHP_OS_FAMILY === 'Windows' ? 'NUL' : '/dev/null';
+        $cmd = escapeshellarg($pythonExe)
+            . ' ' . escapeshellarg($scriptPath)
+            . ' --config ' . escapeshellarg($configFile)
+            . ' --mode init'
+            . ' 2>' . $nullDevice;
+
+        $output = @shell_exec($cmd);
+        @unlink($configFile);
+
+        if (!$output) {
+            return null;
+        }
+
+        $result = json_decode(trim($output), true);
+        if (!$result || ($result['status'] ?? '') !== 'ok') {
+            return null;
+        }
+
+        return [
+            'header_index' => (int) ($result['header_index'] ?? 0),
+            'total_rows' => (int) ($result['total_rows'] ?? 0),
+            'header_values' => (array) ($result['header_values'] ?? []),
+        ];
+    }
+
+    private function stageExcelToCsv(callable $send, string $sourcePath, int $headerIndex, array $normalizedHeaders): ?array
+    {
+        $pythonExe = $this->findPython();
+        $scriptPath = base_path('scripts/excel_gpu_processor.py');
+
+        if (!$pythonExe || !file_exists($scriptPath)) {
+            return null;
+        }
+
+        $stagedCsvPath = $this->createStagedCsvPath();
+        $configFile = storage_path('app/report_ph_excel_stage_' . uniqid() . '.json');
+        file_put_contents($configFile, json_encode([
+            'file_path' => $sourcePath,
+            'header_index' => $headerIndex,
+            'normalized_headers' => $normalizedHeaders,
+            'output_csv_path' => $stagedCsvPath,
+        ], JSON_UNESCAPED_UNICODE));
+
+        $cmd = escapeshellarg($pythonExe)
+            . ' ' . escapeshellarg($scriptPath)
+            . ' --config ' . escapeshellarg($configFile)
+            . ' --mode stage';
+
+        $descriptors = [
+            0 => ['pipe', 'r'],
+            1 => ['pipe', 'w'],
+            2 => ['pipe', 'w'],
+        ];
+
+        $process = proc_open($cmd, $descriptors, $pipes);
+        if (!is_resource($process)) {
+            @unlink($configFile);
+            @unlink($stagedCsvPath);
+            return null;
+        }
+
+        fclose($pipes[0]);
+        stream_set_blocking($pipes[1], false);
+        stream_set_blocking($pipes[2], false);
+
+        $buffer = '';
+        $donePayload = null;
+        $pythonError = null;
+
+        $processLine = function (string $line) use ($send, &$donePayload, &$pythonError): void {
+            $line = trim($line);
+            if ($line === '') {
+                return;
+            }
+
+            $data = json_decode($line, true);
+            if (!is_array($data)) {
+                return;
+            }
+
+            $type = $data['type'] ?? 'progress';
+            unset($data['type']);
+
+            if ($type === 'progress') {
+                $send('progress', $data);
+                return;
+            }
+
+            if ($type === 'done') {
+                $donePayload = $data;
+                return;
+            }
+
+            if ($type === 'error') {
+                $pythonError = $data['message'] ?? 'Python staging error tidak diketahui';
+            }
+        };
+
+        while (true) {
+            $status = proc_get_status($process);
+            $chunk = fread($pipes[1], 65536);
+            if ($chunk !== false && $chunk !== '') {
+                $buffer .= $chunk;
+                while (($pos = strpos($buffer, "\n")) !== false) {
+                    $line = substr($buffer, 0, $pos);
+                    $buffer = substr($buffer, $pos + 1);
+                    $processLine($line);
+                }
+            }
+
+            if (!$status['running']) {
+                break;
+            }
+
+            usleep(50000);
+        }
+
+        $remaining = stream_get_contents($pipes[1]);
+        if ($remaining) {
+            $buffer .= $remaining;
+            foreach (explode("\n", $buffer) as $line) {
+                $processLine($line);
+            }
+        }
+
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+        proc_close($process);
+        @unlink($configFile);
+
+        if ($pythonError !== null || !$donePayload || !file_exists($stagedCsvPath)) {
+            @unlink($stagedCsvPath);
+            return null;
+        }
+
+        return [
+            'staged_csv_path' => $stagedCsvPath,
+            'total_rows' => (int) ($donePayload['total_rows'] ?? 0),
+            'header_index' => 0,
+            'headers' => array_values($normalizedHeaders),
+        ];
+    }
+
+    private function normalizeExcelHeaders(array $headerValues): array
+    {
+        $headers = [];
+        foreach ($headerValues as $index => $value) {
+            $label = trim((string) $value);
+            $headers[$index] = $label !== '' ? $label : ('COL_' . $index);
+        }
+
+        return $headers;
+    }
+
+    private function resolveWorkingImportPath(string $relativePath): string
+    {
+        $absolutePath = Storage::path($relativePath);
+        if (!$this->isExcelFile($absolutePath)) {
+            return $absolutePath;
+        }
+
+        $stageState = $this->getStagedExcelState($relativePath);
+        $stagedCsvPath = (string) ($stageState['staged_csv_path'] ?? '');
+
+        return ($stagedCsvPath !== '' && file_exists($stagedCsvPath)) ? $stagedCsvPath : $absolutePath;
     }
 
     public function preparePreviewStream(Request $request)
@@ -119,8 +349,42 @@ class ImportReportPhController extends Controller
                     return;
                 }
 
+                $workingPath = $absolutePath;
+
+                if ($this->isExcelFile($absolutePath)) {
+                    $stageState = $this->getStagedExcelState($relativePath);
+                    $stagedCsvPath = (string) ($stageState['staged_csv_path'] ?? '');
+
+                    if ($stagedCsvPath !== '' && file_exists($stagedCsvPath)) {
+                        $workingPath = $stagedCsvPath;
+                    } else {
+                        $send('progress', ['percent' => 20, 'message' => 'Mendeteksi header Excel ' . self::REPORT_LABEL . '...']);
+                        $excelMeta = $this->detectExcelHeaderViaPython($absolutePath);
+                        if ($excelMeta === null) {
+                            $send('error_msg', ['message' => 'Excel ' . self::REPORT_LABEL . ' membutuhkan Python staging agar bisa dipreview.']);
+                            return;
+                        }
+
+                        $send('progress', ['percent' => 45, 'message' => 'Mengonversi Excel ke CSV staging ' . self::REPORT_LABEL . '...']);
+                        $stageResult = $this->stageExcelToCsv(
+                            $send,
+                            $absolutePath,
+                            (int) $excelMeta['header_index'],
+                            $this->normalizeExcelHeaders((array) $excelMeta['header_values'])
+                        );
+
+                        if ($stageResult === null) {
+                            $send('error_msg', ['message' => 'Gagal membuat CSV staging dari Excel ' . self::REPORT_LABEL . '.']);
+                            return;
+                        }
+
+                        $this->putStagedExcelState($relativePath, $stageResult);
+                        $workingPath = (string) $stageResult['staged_csv_path'];
+                    }
+                }
+
                 $send('progress', ['percent' => 20, 'message' => 'Memvalidasi struktur CSV ' . self::REPORT_LABEL . '...']);
-                $context = $this->buildCsvContext($absolutePath);
+                $context = $this->buildCsvContext($workingPath);
 
                 $send('progress', ['percent' => 75, 'message' => 'Struktur valid. Menyiapkan halaman preview...']);
                 $send('ready', [
@@ -156,8 +420,13 @@ class ImportReportPhController extends Controller
             return redirect()->route('import.index')->with('error', 'File CSV ' . self::REPORT_LABEL . ' tidak ditemukan di server.');
         }
 
+        $workingPath = $this->resolveWorkingImportPath($relativePath);
+        if (!file_exists($workingPath)) {
+            return redirect()->route('import.index')->with('error', 'File staging ' . self::REPORT_LABEL . ' tidak ditemukan. Silakan upload ulang.');
+        }
+
         try {
-            $context = $this->buildCsvContext($absolutePath);
+            $context = $this->buildCsvContext($workingPath);
         } catch (\Throwable $e) {
             return redirect()->route('import.index')->with('error', 'Struktur CSV ' . self::REPORT_LABEL . ' tidak dikenali: ' . $e->getMessage());
         }
@@ -168,7 +437,7 @@ class ImportReportPhController extends Controller
             $uniqueValues[$index] = [];
         }
 
-        $handle = fopen($absolutePath, 'r');
+        $handle = fopen($workingPath, 'r');
         if ($handle === false) {
             return redirect()->route('import.index')->with('error', 'Gagal membuka file CSV ' . self::REPORT_LABEL . '.');
         }
@@ -248,6 +517,15 @@ class ImportReportPhController extends Controller
             ], 422);
         }
 
+        $workingPath = $this->resolveWorkingImportPath($relativePath);
+        if (!file_exists($workingPath)) {
+            return response()->json([
+                'status' => 'error',
+                'title' => 'Gagal!',
+                'text' => 'File staging Excel ' . self::REPORT_LABEL . ' tidak ditemukan.',
+            ], 422);
+        }
+
         if (!$this->isValidReportSelection()) {
             return response()->json([
                 'status' => 'error',
@@ -262,8 +540,8 @@ class ImportReportPhController extends Controller
         $activeFilters = json_decode($request->input('active_filters_json', '{}'), true) ?: [];
 
         try {
-            $context = $this->buildCsvContext($absolutePath);
-            $totalRows = $this->countFilteredRows($absolutePath, $context, $activeFilters, $selectedColumns);
+            $context = $this->buildCsvContext($workingPath);
+            $totalRows = $this->countFilteredRows($workingPath, $context, $activeFilters, $selectedColumns);
         } catch (\Throwable $e) {
             return response()->json([
                 'status' => 'error',
@@ -376,6 +654,7 @@ class ImportReportPhController extends Controller
 
                 $relativePath = $params['file_path'] ?? '';
                 $absolutePath = Storage::path($relativePath);
+                $workingPath = $this->resolveWorkingImportPath($relativePath);
                 $selectedColumns = array_map('intval', $params['selected_columns'] ?? []);
                 $activeFilters = $params['active_filters'] ?? [];
                 $totalRows = (int) ($params['total_rows'] ?? 0);
@@ -385,8 +664,13 @@ class ImportReportPhController extends Controller
                     return;
                 }
 
-                $context = $this->buildCsvContext($absolutePath);
-                $handle = fopen($absolutePath, 'r');
+                if (!file_exists($workingPath)) {
+                    $send('error', ['message' => 'File staging Excel ' . self::REPORT_LABEL . ' tidak ditemukan di server.']);
+                    return;
+                }
+
+                $context = $this->buildCsvContext($workingPath);
+                $handle = fopen($workingPath, 'r');
                 if ($handle === false) {
                     $send('error', ['message' => 'Gagal membuka file CSV ' . self::REPORT_LABEL . '.']);
                     return;
@@ -465,7 +749,8 @@ class ImportReportPhController extends Controller
                     'updated_at' => now(),
                 ]);
 
-                $this->cleanupSuccessfulImportArtifacts($jobId, $relativePath);
+                $extraPaths = $workingPath !== $absolutePath ? [$workingPath] : [];
+                $this->cleanupSuccessfulImportArtifacts($jobId, $relativePath, $extraPaths);
 
                 $send('progress', [
                     'percent' => 98,
@@ -532,11 +817,20 @@ class ImportReportPhController extends Controller
             ], 422);
         }
 
+        $workingPath = $this->resolveWorkingImportPath($relativePath);
+        if (!file_exists($workingPath)) {
+            return response()->json([
+                'status' => 'error',
+                'title' => 'Gagal!',
+                'text' => 'File staging Excel ' . self::REPORT_LABEL . ' tidak ditemukan.',
+            ], 422);
+        }
+
         $selectedColumns = array_map('intval', $request->input('selected_columns', []));
         $activeFilters = json_decode($request->input('active_filters_json', '{}'), true) ?: [];
 
         try {
-            $context = $this->buildCsvContext($absolutePath);
+            $context = $this->buildCsvContext($workingPath);
         } catch (\Throwable $e) {
             return response()->json([
                 'status' => 'error',
@@ -573,7 +867,7 @@ class ImportReportPhController extends Controller
             ], 422);
         }
 
-        $handle = fopen($absolutePath, 'r');
+        $handle = fopen($workingPath, 'r');
         if ($handle === false) {
             return response()->json([
                 'status' => 'error',
@@ -938,25 +1232,10 @@ class ImportReportPhController extends Controller
             return null;
         }
 
-        if (is_numeric($value)) {
-            try {
-                return Carbon::create(1899, 12, 30)->addDays((int) floor((float) $value))->format('Y-m-d');
-            } catch (\Throwable $e) {
-            }
-        }
-
-        foreach (['n/j/Y g:i:s A', 'm/d/Y g:i:s A', 'd/m/Y H:i:s', 'd/m/Y', 'Y-m-d H:i:s', 'Y-m-d'] as $format) {
-            try {
-                return Carbon::createFromFormat($format, $value)->format('Y-m-d');
-            } catch (\Throwable $e) {
-            }
-        }
-
-        try {
-            return Carbon::parse($value)->format('Y-m-d');
-        } catch (\Throwable $e) {
-            return null;
-        }
+        return StrictDateParser::normalize($value, [
+            'n/j/Y g:i:s A',
+            'm/d/Y g:i:s A',
+        ]);
     }
 
     private function normalizeIntegerValue($value): ?int
@@ -1093,16 +1372,26 @@ class ImportReportPhController extends Controller
     {
         try {
             Storage::delete($relativePath);
+            $stageState = $this->getStagedExcelState($relativePath);
+            $stagedCsvPath = (string) ($stageState['staged_csv_path'] ?? '');
+            if ($stagedCsvPath !== '' && file_exists($stagedCsvPath)) {
+                @unlink($stagedCsvPath);
+            }
+            $this->clearStagedExcelState($relativePath);
         } catch (\Throwable $e) {
             Log::warning('Gagal menghapus file sementara ' . self::REPORT_LABEL . ': ' . $e->getMessage());
         }
     }
 
-    private function cleanupSuccessfulImportArtifacts(int $jobId, string $relativePath): void
+    private function cleanupSuccessfulImportArtifacts(int $jobId, string $relativePath, array $extraPaths = []): void
     {
         try {
             app(ReportDataSyncService::class)->syncImportedTable(self::TABLE_NAME, jobId: $jobId, source: static::class);
-            app(ImportCleanupController::class)->cleanupSuccessfulJobArtifacts($jobId, [$relativePath]);
+            app(ImportCleanupController::class)->cleanupSuccessfulJobArtifacts(
+                $jobId,
+                array_values(array_filter(array_merge([$relativePath], $extraPaths)))
+            );
+            $this->clearStagedExcelState($relativePath);
         } catch (\Throwable $e) {
             Log::warning('Gagal menjalankan cleanup terpusat ' . self::REPORT_LABEL . ': ' . $e->getMessage(), [
                 'job_id' => $jobId,

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Import;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\RunManagedReportDeleteJob;
 use App\Support\PartitionMaintenanceService;
 use App\Support\ReportDataSyncService;
 use Illuminate\Database\QueryException;
@@ -256,8 +257,8 @@ class ImportIndexController extends Controller
             'delete_id' => $deleteId,
             'status' => 'running',
             'stage' => 'deleting',
-            'batch_state' => 'idle',
-            'message' => 'Delete dimulai. Menyiapkan grup pertama...',
+            'batch_state' => 'queued',
+            'message' => 'Delete dimulai. Menunggu worker queue memproses job...',
             'table_name' => $prepared['table_name'],
             'id_report' => $prepared['id_report'],
             'period_column' => $prepared['period_column'],
@@ -287,121 +288,37 @@ class ImportIndexController extends Controller
 
         $this->putDeleteState($deleteId, $state);
 
+        try {
+            RunManagedReportDeleteJob::dispatch($deleteId);
+        } catch (Throwable $e) {
+            Log::warning('Gagal dispatch managed report delete job: ' . $e->getMessage(), [
+                'delete_id' => $deleteId,
+                'table_name' => $prepared['table_name'],
+                'exception_class' => $e::class,
+            ]);
+
+            $state['status'] = 'failed';
+            $state['stage'] = 'failed';
+            $state['batch_state'] = 'failed';
+            $state['message'] = 'Delete tidak dapat dimulai karena job queue gagal didaftarkan.';
+            $state['error'] = 'Queue worker gagal menerima job delete. Detail teknis sudah dicatat di log server.';
+            $state['error_code'] = $this->resolveManagedDeleteErrorCode($e);
+            $state['updated_at'] = now()->toIso8601String();
+            $this->putDeleteState($deleteId, $state);
+
+            return response()->json($this->formatDeleteStateResponse($state), 500);
+        }
+
         return response()->json($this->formatDeleteStateResponse($state, [
-            'message' => 'Delete dimulai. Progress akan diperbarui otomatis.',
+            'message' => 'Delete dimulai. Worker queue akan memproses penghapusan di background.',
         ]));
     }
 
     public function processManagedReportDelete(string $deleteId, ReportDataSyncService $syncService)
     {
-        $state = $this->getDeleteState($deleteId);
-        if ($state === null) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Progress delete tidak ditemukan atau sudah kedaluwarsa.',
-            ], 404);
-        }
+        unset($syncService);
 
-        if (in_array($state['status'] ?? '', ['completed', 'warning', 'failed'], true)) {
-            return response()->json($this->formatDeleteStateResponse($state));
-        }
-
-        try {
-            $stage = (string) ($state['stage'] ?? 'deleting');
-
-            if ($stage === 'deleting') {
-                $state = $this->markDeleteBatchPending($state);
-                $this->putDeleteState($deleteId, $state);
-
-                $state = $this->processDeleteChunk($state);
-
-                if (($state['stage'] ?? null) === 'deleting') {
-                    $state['batch_state'] = 'deleting_committed';
-                    $state['message'] = sprintf(
-                        'Batch selesai, menghapus %s baris. Grup %d/%d (%s).',
-                        number_format((int) ($state['last_batch_deleted_rows'] ?? 0), 0, ',', '.'),
-                        max(1, ((int) ($state['current_scope_index'] ?? 0)) + 1),
-                        max(1, count($this->extractDeleteScopesFromState($state))),
-                        $this->describeDeleteScope(
-                            $this->extractDeleteScopesFromState($state)[max(0, (int) ($state['current_scope_index'] ?? 0))] ?? []
-                        )
-                    );
-                    $state['updated_at'] = now()->toIso8601String();
-                    $this->putDeleteState($deleteId, $state);
-                }
-            }
-
-            if (($state['stage'] ?? null) === 'cleanup') {
-                if (!empty($state['skip_derived_sync'])) {
-                    $state['cleanup'] = [
-                        'mode' => 'skipped',
-                        'reason' => 'period_null_only_delete',
-                    ];
-                } else {
-                    $cleanup = $syncService->cleanupDerivedArtifactsAfterDelete(
-                        (string) $state['table_name'],
-                        $state['period_hint'] ?? null,
-                        static::class . '::processManagedReportDelete'
-                    );
-                    $state['cleanup'] = $cleanup;
-                }
-                $state['stage'] = 'syncing';
-                $state['batch_state'] = 'cleanup';
-                $state['is_waiting_on_batch'] = false;
-                $state['active_batch_size'] = 0;
-                $state['message'] = !empty($state['skip_derived_sync'])
-                    ? 'Delete sumber selesai. Null-only delete terdeteksi, melewati rebuild snapshot penuh...'
-                    : 'Delete sumber selesai, membersihkan snapshot dan artefak turunan...';
-                $this->putDeleteState($deleteId, $state);
-            }
-
-            if (($state['stage'] ?? null) === 'syncing') {
-                if (!empty($state['skip_derived_sync'])) {
-                    $syncService->syncAfterDeleteLightweight(
-                        (string) $state['table_name'],
-                        $state['period_hint'] ?? null,
-                        static::class . '::processManagedReportDelete'
-                    );
-                } else {
-                    $syncService->syncAfterDelete(
-                        (string) $state['table_name'],
-                        $state['period_hint'] ?? null,
-                        static::class . '::processManagedReportDelete'
-                    );
-                }
-                $state['status'] = 'completed';
-                $state['stage'] = 'completed';
-                $state['batch_state'] = 'completed';
-                $state['is_waiting_on_batch'] = false;
-                $state['active_batch_size'] = 0;
-                $state['message'] = !empty($state['skip_derived_sync'])
-                    ? 'Delete selesai. Statistik tabel sumber dan cache disegarkan tanpa rebuild snapshot penuh.'
-                    : 'Delete selesai. Snapshot, cache, dan statistik optimizer sudah disegarkan.';
-                $state['updated_at'] = now()->toIso8601String();
-                $this->putDeleteState($deleteId, $state);
-            }
-        } catch (Throwable $e) {
-            Log::warning('Delete report bertahap gagal: ' . $e->getMessage(), [
-                'delete_id' => $deleteId,
-                'table_name' => $state['table_name'] ?? null,
-                'stage' => $state['stage'] ?? null,
-                'exception_class' => $e::class,
-            ]);
-
-            $failure = $this->buildManagedDeleteFailure($state, $e);
-            $state['status'] = ($state['deleted_rows'] ?? 0) > 0 ? 'warning' : 'failed';
-            $state['stage'] = 'failed';
-            $state['batch_state'] = 'failed';
-            $state['is_waiting_on_batch'] = false;
-            $state['active_batch_size'] = 0;
-            $state['message'] = $failure['message'];
-            $state['error'] = $failure['error'];
-            $state['error_code'] = $failure['error_code'];
-            $state['updated_at'] = now()->toIso8601String();
-            $this->putDeleteState($deleteId, $state);
-        }
-
-        return response()->json($this->formatDeleteStateResponse($state));
+        return $this->managedReportDeleteStatus($deleteId);
     }
 
     public function managedReportDeleteStatus(string $deleteId)
@@ -518,6 +435,14 @@ class ImportIndexController extends Controller
             ], 422)];
         }
 
+        $identityColumn = $this->resolveIdentityColumn($tableColumns);
+        if ($identityColumn === null && !$this->canDeleteScopesWithoutIdentity($tableName, $periodColumn, $kancaColumn, $scopes)) {
+            return [null, response()->json([
+                'status' => 'error',
+                'message' => "Delete parsial untuk tabel `{$tableName}` membutuhkan kolom identity/unique yang stabil. Tambahkan kolom seperti `id`/`row_id` atau gunakan scope yang bisa dipangkas per partisi.",
+            ], 422)];
+        }
+
         $periodHint = null;
         $skipDerivedSync = false;
         if ($periodColumn !== null) {
@@ -559,10 +484,125 @@ class ImportIndexController extends Controller
             'hard_force' => $hardForce,
             'candidate_rows' => (int) (clone $baseQuery)->count(),
             'table_total_rows' => (int) DB::table($tableName)->count(),
-            'identity_column' => $this->resolveIdentityColumn($tableColumns),
+            'identity_column' => $identityColumn,
             'period_hint' => $periodHint,
             'skip_derived_sync' => $skipDerivedSync,
         ], null];
+    }
+
+    public function runManagedReportDelete(string $deleteId, ReportDataSyncService $syncService): void
+    {
+        $state = $this->getDeleteState($deleteId);
+        if ($state === null || in_array($state['status'] ?? '', ['completed', 'warning', 'failed'], true)) {
+            return;
+        }
+
+        try {
+            while (!in_array($state['status'] ?? '', ['completed', 'warning', 'failed'], true)) {
+                $stage = (string) ($state['stage'] ?? 'deleting');
+
+                if ($stage === 'deleting') {
+                    $state = $this->markDeleteBatchPending($state);
+                    $this->putDeleteState($deleteId, $state);
+
+                    $state = $this->processDeleteChunk($state);
+
+                    if (($state['stage'] ?? null) === 'deleting') {
+                        $state['batch_state'] = 'deleting_committed';
+                        $state['message'] = sprintf(
+                            'Batch selesai, menghapus %s baris. Grup %d/%d (%s).',
+                            number_format((int) ($state['last_batch_deleted_rows'] ?? 0), 0, ',', '.'),
+                            max(1, ((int) ($state['current_scope_index'] ?? 0)) + 1),
+                            max(1, count($this->extractDeleteScopesFromState($state))),
+                            $this->describeDeleteScope(
+                                $this->extractDeleteScopesFromState($state)[max(0, (int) ($state['current_scope_index'] ?? 0))] ?? []
+                            )
+                        );
+                        $state['updated_at'] = now()->toIso8601String();
+                        $this->putDeleteState($deleteId, $state);
+                    }
+
+                    continue;
+                }
+
+                if ($stage === 'cleanup') {
+                    if (!empty($state['skip_derived_sync'])) {
+                        $state['cleanup'] = [
+                            'mode' => 'skipped',
+                            'reason' => 'period_null_only_delete',
+                        ];
+                    } else {
+                        $state['cleanup'] = $syncService->cleanupDerivedArtifactsAfterDelete(
+                            (string) $state['table_name'],
+                            $state['period_hint'] ?? null,
+                            static::class . '::runManagedReportDelete'
+                        );
+                    }
+                    $state['stage'] = 'syncing';
+                    $state['batch_state'] = 'cleanup';
+                    $state['is_waiting_on_batch'] = false;
+                    $state['active_batch_size'] = 0;
+                    $state['message'] = !empty($state['skip_derived_sync'])
+                        ? 'Delete sumber selesai. Null-only delete terdeteksi, melewati rebuild snapshot penuh...'
+                        : 'Delete sumber selesai, membersihkan snapshot dan artefak turunan...';
+                    $state['updated_at'] = now()->toIso8601String();
+                    $this->putDeleteState($deleteId, $state);
+
+                    continue;
+                }
+
+                if ($stage === 'syncing') {
+                    if (!empty($state['skip_derived_sync'])) {
+                        $syncService->syncAfterDeleteLightweight(
+                            (string) $state['table_name'],
+                            $state['period_hint'] ?? null,
+                            static::class . '::runManagedReportDelete'
+                        );
+                    } else {
+                        $syncService->syncAfterDelete(
+                            (string) $state['table_name'],
+                            $state['period_hint'] ?? null,
+                            static::class . '::runManagedReportDelete'
+                        );
+                    }
+                    $state['status'] = 'completed';
+                    $state['stage'] = 'completed';
+                    $state['batch_state'] = 'completed';
+                    $state['is_waiting_on_batch'] = false;
+                    $state['active_batch_size'] = 0;
+                    $state['message'] = !empty($state['skip_derived_sync'])
+                        ? 'Delete selesai. Statistik tabel sumber dan cache disegarkan tanpa rebuild snapshot penuh.'
+                        : 'Delete selesai. Snapshot, cache, dan statistik optimizer sudah disegarkan.';
+                    $state['updated_at'] = now()->toIso8601String();
+                    $this->putDeleteState($deleteId, $state);
+
+                    continue;
+                }
+
+                throw new \RuntimeException('Stage delete tidak dikenali.');
+            }
+        } catch (Throwable $e) {
+            Log::warning('Delete report bertahap gagal: ' . $e->getMessage(), [
+                'delete_id' => $deleteId,
+                'table_name' => $state['table_name'] ?? null,
+                'stage' => $state['stage'] ?? null,
+                'exception_class' => $e::class,
+            ]);
+
+            $failure = $this->buildManagedDeleteFailure($state, $e);
+            $state['status'] = ($state['deleted_rows'] ?? 0) > 0 ? 'warning' : 'failed';
+            $state['stage'] = 'failed';
+            $state['batch_state'] = 'failed';
+            $state['is_waiting_on_batch'] = false;
+            $state['active_batch_size'] = 0;
+            $state['message'] = $failure['message'];
+            $state['error'] = $failure['error'];
+            $state['error_code'] = $failure['error_code'];
+            $state['updated_at'] = now()->toIso8601String();
+            $this->putDeleteState($deleteId, $state);
+
+            throw $e;
+        }
     }
 
     private function processDeleteChunk(array $state): array
@@ -1224,7 +1264,7 @@ class ImportIndexController extends Controller
     ): int
     {
         $limit = max(1, (int) ($chunkSize ?? self::DELETE_CHUNK_SIZE));
-        $connection = DB::connection();
+        $connection = $baseQuery->getConnection();
         $shouldToggleSnapshotFlag = $this->shouldToggleSnapshotInvalidationFlag($connection->getDriverName());
 
         if ($shouldToggleSnapshotFlag) {
@@ -1247,12 +1287,7 @@ class ImportIndexController extends Controller
                 return $this->deleteRowsByIdentityBatch($tableName, $baseQuery, $identityColumn, $limit, $connection);
             }
 
-            $rows = (clone $baseQuery)->limit($limit)->get();
-            if ($rows->isEmpty()) {
-                return 0;
-            }
-
-            return $this->deleteRowsBySnapshot($tableName, $rows, $connection);
+            throw new \RuntimeException("Delete parsial untuk tabel `{$tableName}` diblokir karena tidak ada kolom identity/unique yang aman.");
         } finally {
             if ($shouldToggleSnapshotFlag) {
                 $connection->statement('SET @skip_snapshot_invalidation = NULL');
@@ -1288,35 +1323,6 @@ class ImportIndexController extends Controller
         }
 
         return $deleted;
-    }
-
-    private function deleteRowsBySnapshot(string $tableName, iterable $rows, $connection = null): int
-    {
-        $connection = $connection ?: DB::connection();
-        $rowsCollection = collect($rows)->values();
-        if ($rowsCollection->isEmpty()) {
-            return 0;
-        }
-
-        $deletedRows = 0;
-        $uniqueKeys = array_keys(get_object_vars((object) $rowsCollection->first()));
-
-        foreach ($rowsCollection as $row) {
-            $deleteQuery = $connection->table($tableName);
-
-            foreach ($uniqueKeys as $column) {
-                $value = $row->{$column} ?? null;
-                if ($value === null) {
-                    $deleteQuery->whereNull($column);
-                } else {
-                    $deleteQuery->where($column, $value);
-                }
-            }
-
-            $deletedRows += (int) $deleteQuery->limit(1)->delete();
-        }
-
-        return $deletedRows;
     }
 
     private function markDeleteBatchPending(array $state): array
@@ -1390,6 +1396,59 @@ class ImportIndexController extends Controller
     private function shouldToggleSnapshotInvalidationFlag(?string $driverName): bool
     {
         return in_array(strtolower((string) $driverName), ['mysql', 'mariadb'], true);
+    }
+
+    private function canDeleteScopesWithoutIdentity(
+        string $tableName,
+        ?string $periodColumn,
+        ?string $kancaColumn,
+        array $scopes
+    ): bool
+    {
+        foreach ($scopes as $scope) {
+            if (!$this->scopeSupportsPartitionDeleteShortcut($tableName, $periodColumn, $kancaColumn, $scope)) {
+                return false;
+            }
+        }
+
+        return !empty($scopes);
+    }
+
+    private function scopeSupportsPartitionDeleteShortcut(
+        string $tableName,
+        ?string $periodColumn,
+        ?string $kancaColumn,
+        array $scope
+    ): bool
+    {
+        if (!$this->partitionMaintenanceService->supportsPartitionDdl()) {
+            return false;
+        }
+
+        if ($periodColumn === null) {
+            return false;
+        }
+
+        $periodValue = (string) ($scope['period_filter'] ?? '');
+        if ($periodValue === '' || (bool) ($scope['period_is_null'] ?? false)) {
+            return false;
+        }
+
+        $hasKancaRestriction = ($kancaColumn !== null)
+            && (
+                ((string) ($scope['kanca_filter'] ?? '')) !== ''
+                || (bool) ($scope['kanca_is_null'] ?? false)
+            );
+
+        if ($hasKancaRestriction) {
+            return false;
+        }
+
+        return $this->partitionMaintenanceService->resolveSinglePartitionForValue(
+            $tableName,
+            $periodColumn,
+            $periodValue
+        ) !== null;
     }
 
     private function tryDeleteScopeByPartition(

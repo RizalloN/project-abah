@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Support\ReportDataSyncService;
+use App\Jobs\EnsureRekeningDormantSnapshotJob;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Http\Request;
@@ -590,36 +590,47 @@ class RekeningDormantController extends Controller
             ->values();
 
         foreach ($missingPeriods as $missingPeriod) {
+            $cacheKey = 'rekening_dormant:snapshot_exists:v' . $this->reportCacheVersion() . ':' . $missingPeriod;
+            if (Cache::get($cacheKey) === true) {
+                continue;
+            }
+
             $hasSourceRows = DB::table('simpanan_multipn')
                 ->where('posisi', $missingPeriod)
                 ->where('status', '9')
                 ->exists();
 
             if (!$hasSourceRows) {
+                Cache::put($cacheKey, false, now()->addSeconds(30));
                 continue;
             }
 
             $lock = Cache::lock('snapshot:dormant:auto-rebuild:' . $missingPeriod, 60);
+            $pendingKey = 'snapshot:dormant:auto-rebuild:pending:' . $missingPeriod;
+            $jobDispatched = false;
 
             try {
                 if ($lock->get()) {
-                    defer(function () use ($missingPeriod, $lock) {
-                        try {
-                            app(ReportDataSyncService::class)->syncImportedTable(
-                                'simpanan_multipn',
-                                $missingPeriod,
-                                source: static::class . '::hasDormantSnapshots'
-                            );
-                        } finally {
-                            $lock->release();
-                        }
-                    });
+                    if (Cache::add($pendingKey, now()->toIso8601String(), now()->addMinutes(10))) {
+                        EnsureRekeningDormantSnapshotJob::dispatch($missingPeriod, static::class . '::hasDormantSnapshots')
+                            ->onQueue('reports');
+                        $jobDispatched = true;
+                    }
                 }
             } catch (Throwable $e) {
                 Log::warning('Auto rebuild rekening dormant snapshot gagal: ' . $e->getMessage(), [
                     'period' => $missingPeriod,
                 ]);
+            } finally {
+                optional($lock)->release();
             }
+
+            Log::info('Rekening dormant snapshot unavailable; using source query fallback.', [
+                'period' => $missingPeriod,
+                'job_dispatched' => $jobDispatched,
+            ]);
+
+            Cache::put($cacheKey, false, now()->addSeconds(30));
         }
 
         return DB::table(self::SNAPSHOT_TABLE)

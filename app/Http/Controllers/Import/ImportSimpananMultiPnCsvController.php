@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Import;
 
 use App\Support\ReportDataSyncService;
+use App\Support\StrictDateParser;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -567,12 +568,7 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
 
             $setClauses[] = match (strtolower($dbColumn)) {
                 'saldo_idr' => "`{$dbColumn}` = NULLIF(REPLACE(REPLACE(TRIM({$variable}), ',', ''), ' ', ''), '')",
-                'posisi' => "`{$dbColumn}` = CASE "
-                    . "WHEN TRIM({$variable}) = '' THEN NULL "
-                    . "WHEN STR_TO_DATE(TRIM({$variable}), '%Y-%m-%d') IS NOT NULL THEN STR_TO_DATE(TRIM({$variable}), '%Y-%m-%d') "
-                    . "WHEN STR_TO_DATE(TRIM({$variable}), '%d/%m/%Y') IS NOT NULL THEN STR_TO_DATE(TRIM({$variable}), '%d/%m/%Y') "
-                    . "WHEN STR_TO_DATE(TRIM({$variable}), '%m/%d/%Y') IS NOT NULL THEN STR_TO_DATE(TRIM({$variable}), '%m/%d/%Y') "
-                    . "ELSE NULL END",
+                'posisi' => "`{$dbColumn}` = " . StrictDateParser::buildMySqlCaseExpression("NULLIF(TRIM({$variable}), '')"),
                 default => "`{$dbColumn}` = NULLIF(TRIM({$variable}), '')",
             };
         }

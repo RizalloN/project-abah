@@ -101,6 +101,15 @@ class ImportExcelControllerDailyLoanCsvTest extends TestCase
         Log::shouldHaveReceived('warning')->once();
     }
 
+    public function test_normalize_excel_value_uses_strict_day_first_date_parsing(): void
+    {
+        $normalized = $this->invokeMethod('normalizeExcelValue', ['POSISI', '04/04/2026']);
+        $usNormalized = $this->invokeMethod('normalizeExcelValue', ['POSISI', '04/20/2024']);
+
+        $this->assertSame('2026-04-04', $normalized);
+        $this->assertSame('2024-04-20', $usNormalized);
+    }
+
     private function dailyLoanHeaders(): array
     {
         $reflection = new ReflectionClass(ImportExcelController::class);

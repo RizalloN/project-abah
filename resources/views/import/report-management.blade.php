@@ -166,9 +166,9 @@
             if (progressDesc) progressDesc.innerHTML = `Terhapus <b>${formatNumber(payload?.deleted_rows || 0)}</b> dari <b>${formatNumber(payload?.total_rows || 0)}</b> baris.`;
             if (progressMeta) {
                 if (payload?.status === 'failed') {
-                    progressMeta.innerText = [errorCode, payload?.error || 'Delete gagal diproses.'].filter(Boolean).join(' • ');
+                    progressMeta.innerText = [errorCode, payload?.error || 'Delete gagal diproses.'].filter(Boolean).join(' - ');
                 } else if (waitingOnBatch) {
-                    progressMeta.innerText = `Memproses batch ${formatNumber(activeBatchSize)} baris • Grup ${formatNumber(currentScope)}/${formatNumber(payload?.scope_count || 1)}`;
+                    progressMeta.innerText = `Memproses batch ${formatNumber(activeBatchSize)} baris - Grup ${formatNumber(currentScope)}/${formatNumber(payload?.scope_count || 1)}`;
                 } else if ((payload?.stage || '') === 'cleanup') {
                     progressMeta.innerText = 'Delete sumber selesai, membersihkan snapshot...';
                 } else if ((payload?.stage || '') === 'syncing') {
@@ -189,7 +189,7 @@
             return data;
         }
 
-        async function runDeleteProgress(processUrl, statusUrl, initialPayload) {
+        async function runDeleteProgress(statusUrl, initialPayload) {
             themedSwal({
                 title: 'Memproses Delete',
                 html: `<div class="text-center mb-3"><span style="font-size: 14px; color: #64748b;" id="delete-progress-desc">Menginisialisasi delete bertahap...</span></div><div class="progress report-management-progress"><div id="delete-progress-bar" class="progress-bar report-management-progress__bar" role="progressbar" style="width: 0%;"></div></div><div class="text-center mt-2"><small id="delete-progress-value" class="report-management-progress__value">0%</small></div><div class="text-center mt-3"><small id="delete-progress-text" class="report-management-progress__text">Menyiapkan chunk pertama...</small></div><div class="text-center mt-2"><small id="delete-progress-meta" class="report-management-progress__meta"></small></div>`,
@@ -203,28 +203,14 @@
             updateDeleteProgressUi(finalPayload);
             try {
                 while (true) {
-                    let requestResolved = false;
-                    let requestError = null;
-                    let latestPayload = finalPayload;
-                    const requestPromise = postJson(processUrl, {}).then(function (payload) { requestResolved = true; latestPayload = payload; return payload; }).catch(function (error) { requestResolved = true; requestError = error; throw error; });
-                    while (!requestResolved) {
-                        if (statusUrl) {
-                            try {
-                                const statusPayload = await getJson(statusUrl);
-                                if (statusPayload && statusPayload.delete_id) latestPayload = statusPayload;
-                            } catch (_) {}
-                        }
-                        updateDeleteProgressUi(latestPayload);
-                        await new Promise(resolve => setTimeout(resolve, 700));
-                    }
-                    if (requestError) throw requestError;
-                    finalPayload = await requestPromise;
+                    if (!statusUrl) throw new Error('Endpoint status delete tidak tersedia.');
+                    finalPayload = await getJson(statusUrl);
                     updateDeleteProgressUi(finalPayload);
                     if (['completed', 'warning', 'failed'].includes(finalPayload.status)) {
                         Swal.close();
                         return finalPayload;
                     }
-                    await new Promise(resolve => setTimeout(resolve, 350));
+                    await new Promise(resolve => setTimeout(resolve, 700));
                 }
             } catch (error) {
                 Swal.close();
@@ -329,7 +315,7 @@
             managementTableBody.innerHTML = periods.map(function (periodGroup) {
                 const periodLabel = periodGroup.period ?? '(Blank)';
                 const periodBucket = encodeURIComponent(createPeriodBucketKey(periodLabel, !!periodGroup.period_is_null));
-                const periodMeta = `${formatNumber(periodGroup.group_count || 0)} grup • ${formatNumber(periodGroup.total_rows || 0)} baris`;
+                const periodMeta = `${formatNumber(periodGroup.group_count || 0)} grup - ${formatNumber(periodGroup.total_rows || 0)} baris`;
                 const periodRows = Array.isArray(periodGroup.rows) ? periodGroup.rows : [];
                 const renderedRows = periodRows.map(function (row) {
                     const rowPeriodLabel = row.period ?? '(Blank)';
@@ -374,7 +360,6 @@
 
         async function deleteManagedScopes(scopes) {
             const deleteUrl = reportManagementCard?.dataset.deleteUrl;
-            const processUrlTemplate = reportManagementCard?.dataset.deleteProcessUrlTemplate;
             const statusUrlTemplate = reportManagementCard?.dataset.deleteStatusUrlTemplate;
             if (!deleteUrl || !managementReportSelect || !managementReportSelect.value) return;
             if (!Array.isArray(scopes) || scopes.length === 0) {
@@ -414,8 +399,8 @@
                 payload = await postJson(deleteUrl, Object.assign({}, deletePayload, { force: true, hard_force: true }));
                 if (payload.status === 'error') throw new Error(payload.message || 'Gagal menghapus data report.');
             }
-            if (!payload.delete_id || !processUrlTemplate) throw new Error(payload.message || 'Delete progress tidak dapat dimulai.');
-            const finalPayload = await runDeleteProgress(buildDeleteUrl(processUrlTemplate, payload.delete_id), statusUrlTemplate ? buildDeleteUrl(statusUrlTemplate, payload.delete_id) : null, payload);
+            if (!payload.delete_id || !statusUrlTemplate) throw new Error(payload.message || 'Delete progress tidak dapat dimulai.');
+            const finalPayload = await runDeleteProgress(buildDeleteUrl(statusUrlTemplate, payload.delete_id), payload);
             if (finalPayload.status === 'failed') {
                 const errorCode = finalPayload.error_code ? ` (${finalPayload.error_code})` : '';
                 throw new Error((finalPayload.error || finalPayload.message || 'Terjadi kesalahan saat menghapus data.') + errorCode);

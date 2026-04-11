@@ -7,6 +7,7 @@ use App\Http\Controllers\Import\ImportCleanupController;
 use App\Http\Controllers\Import\ImportFileBrimoController;
 use App\Http\Controllers\Import\ImportFileController;
 use App\Http\Controllers\Import\ImportIndexController;
+use App\Http\Controllers\Import\ImportJobStatusController;
 use App\Http\Controllers\Import\ImportPerformancePisPerProdukController;
 use App\Http\Controllers\Import\ImportReportPhController;
 use App\Http\Controllers\Import\ImportSimpananMultiPnCsvController;
@@ -91,6 +92,7 @@ Route::middleware(['auth', 'role:admin', 'release.session.lock'])->group(functio
     Route::post('/import/report-management/delete', [ImportIndexController::class, 'deleteManagedReportRows'])->name('import.report-management.delete');
     Route::post('/import/report-management/delete/{deleteId}/process', [ImportIndexController::class, 'processManagedReportDelete'])->name('import.report-management.delete.process');
     Route::get('/import/report-management/delete/{deleteId}/status', [ImportIndexController::class, 'managedReportDeleteStatus'])->name('import.report-management.delete.status');
+    Route::get('/import/jobs/{jobId}/status', ImportJobStatusController::class)->name('import.jobs.status');
     Route::post('/import/upload', [ImportFileController::class, 'upload'])->name('import.upload');
 
     Route::get('/import/select', function () {

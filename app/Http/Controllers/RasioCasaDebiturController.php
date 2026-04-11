@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Support\ReportDataSyncService;
+use App\Jobs\EnsureRasioCasaSnapshotJob;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -363,11 +363,17 @@ class RasioCasaDebiturController extends Controller
             return;
         }
 
+        $cacheKey = 'rasio_casa:snapshot_exists:v' . $this->reportCacheVersion() . ':' . $loanPeriod;
+        if (Cache::get($cacheKey) === true) {
+            return;
+        }
+
         $exists = DB::table(self::SNAPSHOT_TABLE)
             ->where('loan_period', $loanPeriod)
             ->exists();
 
         if ($exists) {
+            Cache::put($cacheKey, true, now()->addMinutes(10));
             return;
         }
 
@@ -376,30 +382,36 @@ class RasioCasaDebiturController extends Controller
             ->exists();
 
         if (!$hasSourceRows) {
+            Cache::put($cacheKey, false, now()->addSeconds(30));
             return;
         }
 
         $lock = Cache::lock('snapshot:rasio:auto-rebuild:' . $loanPeriod, 60);
+        $pendingKey = 'snapshot:rasio:auto-rebuild:pending:' . $loanPeriod;
+        $jobDispatched = false;
 
         try {
             if ($lock->get()) {
-                defer(function () use ($loanPeriod, $lock) {
-                    try {
-                        app(ReportDataSyncService::class)->syncImportedTable(
-                            'daily_loan_dinamis',
-                            $loanPeriod,
-                            source: static::class . '::ensureRasioSnapshot'
-                        );
-                    } finally {
-                        $lock->release();
-                    }
-                });
+                if (Cache::add($pendingKey, now()->toIso8601String(), now()->addMinutes(10))) {
+                    EnsureRasioCasaSnapshotJob::dispatch($loanPeriod, static::class . '::ensureRasioSnapshot')
+                        ->onQueue('reports');
+                    $jobDispatched = true;
+                }
             }
         } catch (Throwable $e) {
             Log::warning('Auto rebuild rasio snapshot gagal: ' . $e->getMessage(), [
                 'loan_period' => $loanPeriod,
             ]);
+        } finally {
+            optional($lock)->release();
         }
+
+        Log::info('Rasio CASA snapshot unavailable; using source query fallback.', [
+            'loan_period' => $loanPeriod,
+            'job_dispatched' => $jobDispatched,
+        ]);
+
+        Cache::put($cacheKey, false, now()->addSeconds(30));
     }
 
     private function assembleRows(array $branches, array $previousSummary, array $currentSummary): array

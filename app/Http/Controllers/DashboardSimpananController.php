@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Support\ReportDataSyncService;
+use App\Jobs\EnsureDashboardSimpananSnapshotJob;
 use Carbon\Carbon;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Collection;
@@ -516,52 +516,64 @@ class DashboardSimpananController extends Controller
         }
 
         $cacheKey = 'dashboard_simpanan:snapshot_exists:v' . $this->reportCacheVersion() . ':' . $period;
+        $knownExists = Cache::get($cacheKey);
+        if ($knownExists === true) {
+            $this->snapshotExistsMemo[$period] = true;
 
-        $exists = Cache::remember($cacheKey, now()->addMinutes(10), function () use ($period) {
-            $exists = DB::table(self::SNAPSHOT_SUMMARY_TABLE)
-                ->where('snapshot_period', $period)
-                ->exists();
+            return true;
+        }
 
-            if ($exists) {
-                return true;
-            }
+        $exists = DB::table(self::SNAPSHOT_SUMMARY_TABLE)
+            ->where('snapshot_period', $period)
+            ->exists();
 
-            $hasSourceRows = DB::table('simpanan_multipn')
-                ->where('posisi', $period)
-                ->exists();
+        if ($exists) {
+            Cache::put($cacheKey, true, now()->addMinutes(10));
+            $this->snapshotExistsMemo[$period] = true;
 
-            if (!$hasSourceRows) {
-                return false;
-            }
+            return true;
+        }
 
-            $lock = Cache::lock('snapshot:dashboard_simpanan:auto-rebuild:' . $period, 60);
+        $hasSourceRows = DB::table('simpanan_multipn')
+            ->where('posisi', $period)
+            ->exists();
 
+        if (!$hasSourceRows) {
+            Cache::put($cacheKey, false, now()->addSeconds(30));
+            $this->snapshotExistsMemo[$period] = false;
+
+            return false;
+        }
+
+        $lock = Cache::lock('snapshot:dashboard_simpanan:auto-rebuild:' . $period, 60);
+        $pendingKey = 'snapshot:dashboard_simpanan:auto-rebuild:pending:' . $period;
+        $jobDispatched = false;
+
+        try {
             if ($lock->get()) {
-                defer(function () use ($period, $lock) {
-                    try {
-                        app(ReportDataSyncService::class)->syncImportedTable(
-                            'simpanan_multipn',
-                            $period,
-                            source: static::class . '::hasSimpananSnapshot'
-                        );
-                    } catch (Throwable $e) {
-                        Log::warning('Auto rebuild dashboard simpanan snapshot gagal: ' . $e->getMessage(), [
-                            'period' => $period,
-                        ]);
-                    } finally {
-                        $lock->release();
-                    }
-                });
+                if (Cache::add($pendingKey, now()->toIso8601String(), now()->addMinutes(10))) {
+                    EnsureDashboardSimpananSnapshotJob::dispatch($period, static::class . '::hasSimpananSnapshot')
+                        ->onQueue('reports');
+                    $jobDispatched = true;
+                }
             }
+        } catch (Throwable $e) {
+            Log::warning('Auto rebuild dashboard simpanan snapshot gagal: ' . $e->getMessage(), [
+                'period' => $period,
+            ]);
+        } finally {
+            optional($lock)->release();
+        }
 
-            return DB::table(self::SNAPSHOT_SUMMARY_TABLE)
-                ->where('snapshot_period', $period)
-                ->exists();
-        });
+        Log::info('Dashboard simpanan snapshot unavailable; using source query fallback.', [
+            'period' => $period,
+            'job_dispatched' => $jobDispatched,
+        ]);
 
-        $this->snapshotExistsMemo[$period] = $exists;
+        Cache::put($cacheKey, false, now()->addSeconds(30));
+        $this->snapshotExistsMemo[$period] = false;
 
-        return $exists;
+        return false;
     }
 
     private function resolveDashboardPeriods(): array

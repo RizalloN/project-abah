@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Import;
 
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Import\Concerns\AllocatesGapIds;
+use App\Support\StrictDateParser;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -1199,25 +1200,10 @@ class ImportPerformancePisPerProdukController extends Controller
             return null;
         }
 
-        if (is_numeric($value)) {
-            try {
-                return Carbon::create(1899, 12, 30)->addDays((int) floor((float) $value))->format('Y-m-d');
-            } catch (\Throwable $e) {
-            }
-        }
-
-        try {
-            return Carbon::parse(str_replace('/', '-', $value))->format('Y-m-d');
-        } catch (\Throwable $e) {
-            foreach (['d-M-y', 'd-M-Y', 'j-M-y', 'j-M-Y', 'd/m/Y', 'j/n/Y', 'n/j/Y'] as $format) {
-                try {
-                    return Carbon::createFromFormat($format, $value)->format('Y-m-d');
-                } catch (\Throwable $inner) {
-                }
-            }
-
-            return null;
-        }
+        return StrictDateParser::normalize($value, [
+            'j/n/Y',
+            'n/j/Y',
+        ]);
     }
 
     private function normalizeDecimalValue($value): ?string

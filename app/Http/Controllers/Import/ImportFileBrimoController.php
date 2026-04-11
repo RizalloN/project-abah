@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Import;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Import\Concerns\AllocatesGapIds;
 use App\Support\ReportDataSyncService;
+use App\Support\StrictDateParser;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
@@ -148,18 +149,18 @@ class ImportFileBrimoController extends Controller
                             $rawPosisi = trim($data[$posisiIndex]);
                             try {
                                 if (strpos($rawPosisi, '/') !== false) {
-                                    $data[$posisiIndex] = Carbon::parse(str_replace('/', '-', $rawPosisi))->format('Y-m-d');
+                                    $data[$posisiIndex] = StrictDateParser::normalize($rawPosisi);
                                 } else {
                                     if ($tahunIndex !== -1 && isset($data[$tahunIndex]) && trim($data[$tahunIndex]) !== '') {
                                         $rawTahun = trim($data[$tahunIndex]);
                                         if (preg_match('/^([a-zA-Z]+\s+\d+)/', $rawPosisi, $matches)) {
                                             $fixedDateStr = $matches[1] . ' ' . $rawTahun; 
-                                            $data[$posisiIndex] = Carbon::parse($fixedDateStr)->format('Y-m-d');
+                                            $data[$posisiIndex] = StrictDateParser::normalize($fixedDateStr);
                                         } else {
-                                            $data[$posisiIndex] = Carbon::parse($rawPosisi)->format('Y-m-d');
+                                            $data[$posisiIndex] = StrictDateParser::normalize($rawPosisi);
                                         }
                                     } else {
-                                        $data[$posisiIndex] = Carbon::parse($rawPosisi)->format('Y-m-d');
+                                        $data[$posisiIndex] = StrictDateParser::normalize($rawPosisi);
                                     }
                                 }
                             } catch (\Exception $e) {}
@@ -320,18 +321,18 @@ class ImportFileBrimoController extends Controller
                     $rawPosisi = trim($data[$posisiIndex]);
                     try {
                         if (strpos($rawPosisi, '/') !== false) {
-                            $data[$posisiIndex] = Carbon::parse(str_replace('/', '-', $rawPosisi))->format('Y-m-d');
+                            $data[$posisiIndex] = StrictDateParser::normalize($rawPosisi);
                         } else {
                             if ($tahunIndex !== -1 && isset($data[$tahunIndex]) && trim($data[$tahunIndex]) !== '') {
                                 $rawTahun = trim($data[$tahunIndex]);
                                 if (preg_match('/^([a-zA-Z]+\s+\d+)/', $rawPosisi, $matches)) {
                                     $fixedDateStr = $matches[1] . ' ' . $rawTahun;
-                                    $data[$posisiIndex] = Carbon::parse($fixedDateStr)->format('Y-m-d');
+                                    $data[$posisiIndex] = StrictDateParser::normalize($fixedDateStr);
                                 } else {
-                                    $data[$posisiIndex] = Carbon::parse($rawPosisi)->format('Y-m-d');
+                                    $data[$posisiIndex] = StrictDateParser::normalize($rawPosisi);
                                 }
                             } else {
-                                $data[$posisiIndex] = Carbon::parse($rawPosisi)->format('Y-m-d');
+                                $data[$posisiIndex] = StrictDateParser::normalize($rawPosisi);
                             }
                         }
                     } catch (\Exception $e) {}

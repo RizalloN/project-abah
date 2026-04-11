@@ -5,7 +5,10 @@ namespace App\Http\Controllers\Import;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Import\Concerns\AllocatesGapIds;
 use App\Http\Controllers\Import\Concerns\SmartCsvImportSupport;
+use App\Services\Import\MySqlBulkLoadService;
+use App\Services\Import\SchemaIntrospectionService;
 use App\Support\ReportDataSyncService;
+use App\Support\StrictDateParser;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
@@ -19,6 +22,19 @@ class ImportFileController extends Controller
 {
     use AllocatesGapIds;
     use SmartCsvImportSupport;
+
+    private ?array $dailyLoanColumnsCache = null;
+    private array $timestampSupportCache = [];
+
+    private function schemaService(): SchemaIntrospectionService
+    {
+        return app(SchemaIntrospectionService::class);
+    }
+
+    private function bulkLoadService(): MySqlBulkLoadService
+    {
+        return app(MySqlBulkLoadService::class);
+    }
 
     private const SAFE_MEMORY_LIMIT = '512M';
     private const PREVIEW_SAMPLE_LIMIT = 1200;
@@ -38,6 +54,21 @@ class ImportFileController extends Controller
     private function shouldUseDbStagingFastPath(): bool
     {
         return (bool) config('import.use_db_staging_fast_path', false);
+    }
+
+    private function cachedSchemaHasTable(string $tableName): bool
+    {
+        return $this->schemaService()->hasTable($tableName);
+    }
+
+    private function cachedSchemaColumnListing(string $tableName): array
+    {
+        return $this->schemaService()->getColumnListing($tableName);
+    }
+
+    private function cachedSchemaHasColumn(string $tableName, string $columnName): bool
+    {
+        return $this->schemaService()->hasColumn($tableName, $columnName);
     }
 
     private function parseIniSizeToBytes(string $value): int
@@ -187,7 +218,7 @@ class ImportFileController extends Controller
                 }
             }
 
-            return Carbon::parse($value)->format('Y-m-d');
+            return StrictDateParser::normalize($value);
         } catch (\Throwable $e) {
             return null;
         }
@@ -249,12 +280,8 @@ class ImportFileController extends Controller
 
     private function applyDailyLoanCompatibilityColumns(array $rowData): array
     {
-        static $dailyLoanColumns = null;
-
-        if ($dailyLoanColumns === null) {
-            $dailyLoanColumns = Schema::hasTable('daily_loan_dinamis')
-                ? array_fill_keys(Schema::getColumnListing('daily_loan_dinamis'), true)
-                : [];
+        if ($this->dailyLoanColumnsCache === null) {
+            $this->dailyLoanColumnsCache = array_fill_keys($this->cachedSchemaColumnListing('daily_loan_dinamis'), true);
         }
 
         $compatibilityMap = [
@@ -263,7 +290,7 @@ class ImportFileController extends Controller
         ];
 
         foreach ($compatibilityMap as $source => $target) {
-            if (!isset($dailyLoanColumns[$target])) {
+            if (!isset($this->dailyLoanColumnsCache[$target])) {
                 continue;
             }
             if (!array_key_exists($source, $rowData)) {
@@ -279,26 +306,24 @@ class ImportFileController extends Controller
 
     private function applyImportTimestamps(array $rowData, string $tableName): array
     {
-        static $timestampSupport = [];
-
-        if (!isset($timestampSupport[$tableName])) {
-            $timestampSupport[$tableName] = [
-                'created_at' => Schema::hasColumn($tableName, 'created_at'),
-                'updated_at' => Schema::hasColumn($tableName, 'updated_at'),
+        if (!isset($this->timestampSupportCache[$tableName])) {
+            $this->timestampSupportCache[$tableName] = [
+                'created_at' => $this->cachedSchemaHasColumn($tableName, 'created_at'),
+                'updated_at' => $this->cachedSchemaHasColumn($tableName, 'updated_at'),
             ];
         }
 
         $now = now();
 
         if (
-            $timestampSupport[$tableName]['created_at']
+            $this->timestampSupportCache[$tableName]['created_at']
             && (!array_key_exists('created_at', $rowData) || $rowData['created_at'] === null || $rowData['created_at'] === '')
         ) {
             $rowData['created_at'] = $now;
         }
 
         if (
-            $timestampSupport[$tableName]['updated_at']
+            $this->timestampSupportCache[$tableName]['updated_at']
             && (!array_key_exists('updated_at', $rowData) || $rowData['updated_at'] === null || $rowData['updated_at'] === '')
         ) {
             $rowData['updated_at'] = $now;
@@ -446,16 +471,16 @@ class ImportFileController extends Controller
 
             try {
                 if (strpos($rawPosisi, '/') !== false) {
-                    $data[$posisiIndex] = Carbon::parse(str_replace('/', '-', $rawPosisi))->format('Y-m-d');
+                    $data[$posisiIndex] = StrictDateParser::normalize($rawPosisi);
                 } elseif ($tahunIndex !== -1 && isset($data[$tahunIndex]) && trim((string) $data[$tahunIndex]) !== '') {
                     $rawTahun = trim((string) $data[$tahunIndex]);
                     if (preg_match('/^([a-zA-Z]+\s+\d+)/', $rawPosisi, $matches)) {
-                        $data[$posisiIndex] = Carbon::parse($matches[1] . ' ' . $rawTahun)->format('Y-m-d');
+                        $data[$posisiIndex] = StrictDateParser::normalize($matches[1] . ' ' . $rawTahun);
                     } else {
-                        $data[$posisiIndex] = Carbon::parse($rawPosisi)->format('Y-m-d');
+                        $data[$posisiIndex] = StrictDateParser::normalize($rawPosisi);
                     }
                 } else {
-                    $data[$posisiIndex] = Carbon::parse($rawPosisi)->format('Y-m-d');
+                    $data[$posisiIndex] = StrictDateParser::normalize($rawPosisi);
                 }
             } catch (\Exception $e) {
             }
@@ -493,142 +518,27 @@ class ImportFileController extends Controller
 
     private function supportsNativeBulkLoad(): bool
     {
-        $driver = DB::connection()->getDriverName();
-        if (!in_array($driver, ['mysql', 'mariadb'], true)) {
-            return false;
-        }
-
-        try {
-            $row = DB::selectOne("SHOW VARIABLES LIKE 'local_infile'");
-            return strtoupper((string) ($row->Value ?? $row->value ?? 'OFF')) === 'ON';
-        } catch (\Throwable $e) {
-            Log::warning('Unable to verify local_infile support: ' . $e->getMessage());
-            return false;
-        }
+        return $this->bulkLoadService()->supportsNativeBulkLoad();
     }
 
     private function createBulkLoadTempCsvPath(string $tableName, int $jobId): string
     {
-        $directory = storage_path(self::BULK_LOAD_TEMP_DIR);
-        if (!is_dir($directory)) {
-            @mkdir($directory, 0777, true);
-        }
-
-        return $directory . DIRECTORY_SEPARATOR . $tableName . '_' . $jobId . '_' . Str::random(8) . '.csv';
+        return $this->bulkLoadService()->createBulkLoadTempCsvPath(storage_path(self::BULK_LOAD_TEMP_DIR), $tableName, $jobId);
     }
 
     private function loadCsvIntoMysql(string $csvPath, string $tableName, array $columns): int
     {
-        if (!file_exists($csvPath)) {
-            throw new \RuntimeException('File CSV sementara tidak ditemukan untuk bulk load.');
-        }
-
-        if (empty($columns)) {
-            throw new \RuntimeException('Kolom bulk load kosong.');
-        }
-
-        $connection = config('database.default', 'mysql');
-        $dbConfig = config("database.connections.{$connection}", []);
-        $charset = $dbConfig['charset'] ?? 'utf8mb4';
-        $host = $dbConfig['host'] ?? '127.0.0.1';
-        $port = $dbConfig['port'] ?? '3306';
-        $database = $dbConfig['database'] ?? '';
-        $username = $dbConfig['username'] ?? '';
-        $password = $dbConfig['password'] ?? '';
-        $unixSocket = $dbConfig['unix_socket'] ?? '';
-
-        $dsn = $unixSocket !== ''
-            ? "mysql:unix_socket={$unixSocket};dbname={$database};charset={$charset}"
-            : "mysql:host={$host};port={$port};dbname={$database};charset={$charset}";
-
-        $quotedColumns = implode(', ', array_map(function (string $column) {
-            return '`' . str_replace('`', '``', $column) . '`';
-        }, $columns));
-
-        $lastException = null;
-        $maxAttempts = 3;
-        for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
-            $pdo = null;
-            try {
-                $pdo = new \PDO($dsn, $username, $password, [
-                    \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
-                    \PDO::MYSQL_ATTR_LOCAL_INFILE => true,
-                    \PDO::ATTR_TIMEOUT => 120,
-                ]);
-
-                $normalizedPath = str_replace('\\', '/', realpath($csvPath) ?: $csvPath);
-                $quotedPath = $pdo->quote($normalizedPath);
-                $sql = "LOAD DATA LOCAL INFILE {$quotedPath} INTO TABLE `{$tableName}` "
-                    . "CHARACTER SET utf8mb4 "
-                    . "FIELDS TERMINATED BY ',' ENCLOSED BY '\"' "
-                    . "LINES TERMINATED BY '\\n' "
-                    . "({$quotedColumns})";
-
-                $pdo->exec('SET @skip_snapshot_invalidation = 1');
-                $affected = $pdo->exec($sql);
-                $pdo->exec('SET @skip_snapshot_invalidation = NULL');
-
-                if ($affected === false) {
-                    throw new \RuntimeException('LOAD DATA LOCAL INFILE gagal dieksekusi.');
-                }
-
-                return (int) $affected;
-            } catch (\Throwable $e) {
-                $lastException = $e;
-                try {
-                    if ($pdo !== null) {
-                        $pdo->exec('SET @skip_snapshot_invalidation = NULL');
-                    }
-                } catch (\Throwable $ignored) {
-                }
-
-                if (!$this->isTransientMysqlLoadError($e) || $attempt === $maxAttempts) {
-                    break;
-                }
-
-                usleep(300000 * $attempt);
-            } finally {
-                $pdo = null;
-            }
-        }
-
-        if ($lastException instanceof \Throwable) {
-            throw $lastException;
-        }
-
-        throw new \RuntimeException('LOAD DATA LOCAL INFILE gagal dieksekusi.');
+        return $this->bulkLoadService()->loadCsvIntoMysql($csvPath, $tableName, $columns);
     }
 
     private function isTransientMysqlLoadError(\Throwable $e): bool
     {
-        $message = strtolower($e->getMessage());
-        return str_contains($message, "error while reading query's response packet")
-            || str_contains($message, 'server has gone away')
-            || str_contains($message, 'lost connection')
-            || str_contains($message, 'error writing communication packets')
-            || str_contains($message, 'packets out of order');
+        return $this->bulkLoadService()->isTransientMysqlLoadError($e);
     }
 
     private function countFileLines(string $path): int
     {
-        $handle = @fopen($path, 'r');
-        if ($handle === false) {
-            return 0;
-        }
-
-        $lines = 0;
-        try {
-            while (!feof($handle)) {
-                $line = fgets($handle);
-                if ($line !== false) {
-                    $lines++;
-                }
-            }
-        } finally {
-            fclose($handle);
-        }
-
-        return $lines;
+        return $this->bulkLoadService()->countFileLines($path);
     }
 
     private function loadCsvIntoMysqlChunked(
@@ -636,96 +546,26 @@ class ImportFileController extends Controller
         string $tableName,
         array $columns,
         ?callable $onProgress = null,
-        int $chunkLines = 8000
+        int $chunkLines = 8000,
+        ?int $totalLines = null
     ): int {
-        $totalLines = $this->countFileLines($csvPath);
-        if ($totalLines <= 0) {
-            return 0;
-        }
-
-        if ($totalLines <= $chunkLines) {
-            $inserted = $this->loadCsvIntoMysql($csvPath, $tableName, $columns);
-            if ($onProgress) {
-                $onProgress($totalLines, $totalLines, $inserted);
-            }
-            return $inserted;
-        }
-
-        $source = @fopen($csvPath, 'r');
-        if ($source === false) {
-            throw new \RuntimeException('Gagal membuka file CSV untuk chunked LOAD DATA.');
-        }
-
-        $insertedTotal = 0;
-        $processedLines = 0;
-        $chunkIndex = 0;
-        $chunkDir = dirname($csvPath);
-
-        try {
-            while (!feof($source)) {
-                $chunkPath = $chunkDir . DIRECTORY_SEPARATOR . 'chunk_' . $chunkIndex . '_' . Str::random(6) . '.csv';
-                $chunkHandle = @fopen($chunkPath, 'w');
-                if ($chunkHandle === false) {
-                    throw new \RuntimeException('Gagal membuat file chunk untuk LOAD DATA.');
-                }
-
-                $currentChunkLines = 0;
-                try {
-                    while ($currentChunkLines < $chunkLines && !feof($source)) {
-                        $line = fgets($source);
-                        if ($line === false) {
-                            break;
-                        }
-                        fwrite($chunkHandle, $line);
-                        $currentChunkLines++;
-                        $processedLines++;
-                    }
-                } finally {
-                    fclose($chunkHandle);
-                }
-
-                if ($currentChunkLines > 0) {
-                    try {
-                        $insertedTotal += $this->loadCsvIntoMysql($chunkPath, $tableName, $columns);
-                    } catch (\Throwable $e) {
-                        if ($this->isTransientMysqlLoadError($e) && $chunkLines > 1000) {
-                            $insertedTotal += $this->loadCsvIntoMysqlChunked(
-                                $chunkPath,
-                                $tableName,
-                                $columns,
-                                null,
-                                max(1000, (int) floor($chunkLines / 2))
-                            );
-                        } else {
-                            throw $e;
-                        }
-                    }
-
-                    if ($onProgress) {
-                        $onProgress($processedLines, $totalLines, $insertedTotal);
-                    }
-                }
-
-                if (file_exists($chunkPath)) {
-                    @unlink($chunkPath);
-                }
-
-                $chunkIndex++;
-            }
-        } finally {
-            fclose($source);
-        }
-
-        return $insertedTotal;
+        return $this->bulkLoadService()->loadCsvIntoMysqlChunked(
+            $csvPath,
+            $tableName,
+            $columns,
+            $onProgress,
+            $chunkLines,
+            $totalLines
+        );
     }
 
     private function buildBulkLoadColumnsForMappedRows(string $tableName, bool $isBrilinkSummary, array $columnBlueprint): array
     {
-        if (!Schema::hasTable($tableName)) {
+        if (!$this->cachedSchemaHasTable($tableName)) {
             return [];
         }
 
-        $tableColumns = Schema::getColumnListing($tableName);
+        $tableColumns = $this->cachedSchemaColumnListing($tableName);
         $lookupByLower = [];
         foreach ($tableColumns as $column) {
             $lookupByLower[strtolower((string) $column)] = (string) $column;
@@ -1168,7 +1008,9 @@ class ImportFileController extends Controller
                             'total' => $totalRows > 0 ? $totalRows : $rowsDone,
                             'speed' => 0,
                         ]);
-                    }
+                    },
+                    8000,
+                    $totalRows
                 );
                 $totalSuccess = $inserted;
                 $totalFailed = max(0, $rowsDone - $inserted);
@@ -1365,7 +1207,9 @@ class ImportFileController extends Controller
                         'total' => $totalRows > 0 ? $totalRows : $rowsDone,
                         'speed' => 0,
                     ]);
-                }
+                },
+                8000,
+                $totalRows
             );
 
             $totalSuccess = $inserted;
@@ -2056,18 +1900,18 @@ class ImportFileController extends Controller
                                 $rawPosisi = trim($data[$posisiIndex]);
                                 try {
                                     if (strpos($rawPosisi, '/') !== false) {
-                                        $data[$posisiIndex] = Carbon::parse(str_replace('/', '-', $rawPosisi))->format('Y-m-d');
+                                        $data[$posisiIndex] = StrictDateParser::normalize($rawPosisi);
                                     } else {
                                         if ($tahunIndex !== -1 && isset($data[$tahunIndex]) && trim($data[$tahunIndex]) !== '') {
                                             $rawTahun = trim($data[$tahunIndex]);
                                             if (preg_match('/^([a-zA-Z]+\s+\d+)/', $rawPosisi, $matches)) {
                                                 $fixedDateStr = $matches[1] . ' ' . $rawTahun; 
-                                                $data[$posisiIndex] = Carbon::parse($fixedDateStr)->format('Y-m-d');
+                                                $data[$posisiIndex] = StrictDateParser::normalize($fixedDateStr);
                                             } else {
-                                                $data[$posisiIndex] = Carbon::parse($rawPosisi)->format('Y-m-d');
+                                                $data[$posisiIndex] = StrictDateParser::normalize($rawPosisi);
                                             }
                                         } else {
-                                            $data[$posisiIndex] = Carbon::parse($rawPosisi)->format('Y-m-d');
+                                            $data[$posisiIndex] = StrictDateParser::normalize($rawPosisi);
                                         }
                                     }
                                 } catch (\Exception $e) {}
@@ -2813,18 +2657,18 @@ class ImportFileController extends Controller
                         $rawPosisi = trim($data[$posisiIndex]);
                         try {
                             if (strpos($rawPosisi, '/') !== false) {
-                                $data[$posisiIndex] = Carbon::parse(str_replace('/', '-', $rawPosisi))->format('Y-m-d');
+                                $data[$posisiIndex] = StrictDateParser::normalize($rawPosisi);
                             } else {
                                 if ($tahunIndex !== -1 && isset($data[$tahunIndex]) && trim($data[$tahunIndex]) !== '') {
                                     $rawTahun = trim($data[$tahunIndex]);
                                     if (preg_match('/^([a-zA-Z]+\s+\d+)/', $rawPosisi, $matches)) {
                                         $fixedDateStr = $matches[1] . ' ' . $rawTahun;
-                                        $data[$posisiIndex] = Carbon::parse($fixedDateStr)->format('Y-m-d');
+                                        $data[$posisiIndex] = StrictDateParser::normalize($fixedDateStr);
                                     } else {
-                                        $data[$posisiIndex] = Carbon::parse($rawPosisi)->format('Y-m-d');
+                                        $data[$posisiIndex] = StrictDateParser::normalize($rawPosisi);
                                     }
                                 } else {
-                                    $data[$posisiIndex] = Carbon::parse($rawPosisi)->format('Y-m-d');
+                                    $data[$posisiIndex] = StrictDateParser::normalize($rawPosisi);
                                 }
                             }
                         } catch (\Exception $e) {}
@@ -3031,7 +2875,7 @@ class ImportFileController extends Controller
                     }
 
                     try {
-                        $inserted = $this->loadCsvIntoMysqlChunked($bulkCsvPath, $tableName, $bulkColumns);
+                        $inserted = $this->loadCsvIntoMysqlChunked($bulkCsvPath, $tableName, $bulkColumns, null, 8000, count($filteredRows));
                         $totalSuccess = $inserted;
                         $totalFailed = max(0, count($filteredRows) - $inserted);
                         $bulkLoadHandled = true;
