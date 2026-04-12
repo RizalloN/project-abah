@@ -71,6 +71,7 @@
 
             @php 
                 $area6 = ['KC PONOROGO', 'KC NGAWI', 'KC MAGETAN', 'KC MADIUN', 'PONOROGO', 'NGAWI', 'MAGETAN', 'MADIUN']; 
+                $area6ColumnHints = $area6ColumnHints ?? ['KANCA', 'KCI'];
             @endphp
 
             <div class="card card-outline card-success">
@@ -125,7 +126,9 @@
                                     @foreach($headers as $index => $header)
                                         @php
                                             $isKancaCol = empty($disableArea6AutoFilter)
-                                                && (stripos($header, 'KANCA') !== false || stripos($header, 'KCI') !== false)
+                                                && collect($area6ColumnHints)->contains(function ($hint) use ($header) {
+                                                    return $hint !== '' && stripos($header, $hint) !== false;
+                                                })
                                                 && stripos($header, 'KODE') === false;
                                         @endphp
 
@@ -227,6 +230,8 @@
         const filterOptionsMap = @json($formattedUniqueValues);
         const forceAllChecked = @json(!empty($forceAllFiltersCheckedOnLoad));
         const area6Values = @json(array_map('strtoupper', $area6));
+        const area6ColumnHints = @json(array_map('strtoupper', $area6ColumnHints ?? ['KANCA', 'KCI']));
+        const initialArea6Selections = @json($initialArea6Selections ?? []);
         const headers = @json($headers);
         const disableArea6AutoFilter = @json(!empty($disableArea6AutoFilter));
         const filterState = {};
@@ -259,11 +264,19 @@
             }) : [];
             const header = String(headers[col] || '');
             const isKancaCol = !disableArea6AutoFilter
-                && ((header.toUpperCase().includes('KANCA')) || (header.toUpperCase().includes('KCI')))
+                && area6ColumnHints.some(function (hint) {
+                    return hint && header.toUpperCase().includes(hint);
+                })
                 && !header.toUpperCase().includes('KODE');
+            const initialSelectionRaw = initialArea6Selections[col] ?? initialArea6Selections[String(col)] ?? [];
+            const initialSelection = Array.isArray(initialSelectionRaw) ? initialSelectionRaw.map(function (value) {
+                return String(value).trim();
+            }).filter(Boolean) : [];
 
             let selectedValues;
-            if (forceAllChecked) {
+            if (initialSelection.length > 0) {
+                selectedValues = new Set(initialSelection);
+            } else if (forceAllChecked) {
                 selectedValues = new Set(values);
             } else if (isKancaCol) {
                 selectedValues = new Set(values.filter(function (value) {

@@ -60,6 +60,56 @@ class ImportFileBrimoController extends Controller
         return null;
     }
 
+    private function buildInitialArea6Selections(array $headers, array $formattedUniqueValues, array $columnHints): array
+    {
+        $area6Values = array_fill_keys(array_map('strtoupper', [
+            'KC PONOROGO',
+            'KC NGAWI',
+            'KC MAGETAN',
+            'KC MADIUN',
+            'PONOROGO',
+            'NGAWI',
+            'MAGETAN',
+            'MADIUN',
+        ]), true);
+
+        $normalizedHints = array_values(array_filter(array_map('strtoupper', (array) $columnHints), static fn ($hint): bool => $hint !== ''));
+        if (empty($normalizedHints)) {
+            return [];
+        }
+
+        $selections = [];
+        foreach ($headers as $index => $header) {
+            $headerText = strtoupper((string) $header);
+            if ($headerText === '' || str_contains($headerText, 'KODE')) {
+                continue;
+            }
+
+            $matchedHint = false;
+            foreach ($normalizedHints as $hint) {
+                if (str_contains($headerText, $hint)) {
+                    $matchedHint = true;
+                    break;
+                }
+            }
+
+            if (!$matchedHint) {
+                continue;
+            }
+
+            $values = array_map('trim', (array) ($formattedUniqueValues[$index] ?? []));
+            $selected = array_values(array_filter($values, static function (string $value) use ($area6Values): bool {
+                return $value !== '' && isset($area6Values[strtoupper($value)]);
+            }));
+
+            if (!empty($selected)) {
+                $selections[(string) $index] = $selected;
+            }
+        }
+
+        return $selections;
+    }
+
     private function hasMeaningfulImportData(array $row, array $ignoredKeys = []): bool
     {
         $ignoredLookup = array_fill_keys(array_map('strtolower', $ignoredKeys), true);
@@ -234,6 +284,9 @@ class ImportFileBrimoController extends Controller
         foreach ($uniqueValues as $index => $valuesMap) {
             $keys = array_keys($valuesMap); sort($keys); $formattedUniqueValues[$index] = $keys;
         }
+
+        $area6ColumnHints = ['MBDESC'];
+        $initialArea6Selections = $this->buildInitialArea6Selections($headers, $formattedUniqueValues, $area6ColumnHints);
         
         session(['final_import_path' => $filePath]);
 
@@ -246,7 +299,10 @@ class ImportFileBrimoController extends Controller
             'formattedUniqueValues',
             'currentDelimiter',
             'processRoute'
-        ));
+        ))->with([
+            'area6ColumnHints' => $area6ColumnHints,
+            'initialArea6Selections' => $initialArea6Selections,
+        ]);
     }
 
     public function processImport(Request $request)

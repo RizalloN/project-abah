@@ -123,30 +123,36 @@ class ImportIndexController extends Controller
             'period' => ['created_at', 'updated_at'],
             'kanca' => ['instansi', 'bod_boc', 'nama_nasabah'],
         ],
-        'user_brimo_fin' => [
+        'jumlah_merchant_detail' => [
             'period_priority' => ['posisi', 'periode'],
-            'kanca_priority' => ['brdesc', 'branch', 'mbdesc'],
-        ],
-        'brimo_fin' => [
-            'period_priority' => ['posisi', 'periode'],
-            'kanca_priority' => ['brdesc', 'branch', 'mbdesc'],
-        ],
-        'user_brimo_rpt_v2' => [
-            'period_priority' => ['posisi', 'periode'],
-            'kanca_priority' => ['brdesc', 'branch', 'mbdesc'],
-        ],
-        'brimo_rpt_v2' => [
-            'period_priority' => ['posisi', 'periode'],
-            'kanca_priority' => ['brdesc', 'branch', 'mbdesc'],
         ],
         'merchant_qris' => [
+            'period_priority' => ['posisi', 'periode'],
             'kanca_priority' => ['NAMA_KCI', 'nama_kci'],
         ],
         'merchant_qris_volume' => [
+            'period_priority' => ['posisi', 'periode'],
             'kanca_priority' => ['NAMA_KCI', 'nama_kci'],
         ],
         'sv_merchant' => [
+            'period_priority' => ['posisi', 'periode'],
             'kanca_priority' => ['NAMA_KCI', 'nama_kci'],
+        ],
+        'user_brimo_fin' => [
+            'period_priority' => ['posisi', 'periode'],
+            'kanca_priority' => ['mbdesc', 'branch', 'brdesc'],
+        ],
+        'brimo_fin' => [
+            'period_priority' => ['posisi', 'periode'],
+            'kanca_priority' => ['mbdesc', 'branch', 'brdesc'],
+        ],
+        'user_brimo_rpt_v2' => [
+            'period_priority' => ['posisi', 'periode'],
+            'kanca_priority' => ['mbdesc', 'branch', 'brdesc'],
+        ],
+        'brimo_rpt_v2' => [
+            'period_priority' => ['posisi', 'periode'],
+            'kanca_priority' => ['mbdesc', 'branch', 'brdesc'],
         ],
     ];
 
@@ -1458,8 +1464,16 @@ class ImportIndexController extends Controller
             return '';
         }
 
+        $columnName = strtolower((string) $columnName);
+        $looksLikePeriodColumn = str_contains($columnName, 'periode')
+            || str_contains($columnName, 'period')
+            || str_contains($columnName, 'posisi')
+            || str_contains($columnName, 'tanggal')
+            || str_contains($columnName, 'tgl');
+        $preferMonthLabel = $looksLikePeriodColumn;
+
         if (preg_match('/^\d{4}-\d{2}$/', $value) === 1) {
-            return $value . '-01';
+            return $value;
         }
 
         if (preg_match('/^(?<month>[A-Za-z]+)[\s-](?<year>\d{4})$/', $value, $matches) === 1) {
@@ -1471,22 +1485,19 @@ class ImportIndexController extends Controller
                 }
 
                 $monthNumber = (int) $month->format('n');
-                return Carbon::create((int) $matches['year'], $monthNumber, 1)->format('Y-m-d');
+                return Carbon::create((int) $matches['year'], $monthNumber, 1)->format('Y-m');
             } catch (\Throwable) {
             }
         }
 
         $strictNormalized = StrictDateParser::normalize($value);
         if ($strictNormalized !== null) {
+            if ($preferMonthLabel && preg_match('/^\d{4}-\d{2}(-\d{2})?/', $strictNormalized) === 1) {
+                return substr($strictNormalized, 0, 7);
+            }
+
             return $strictNormalized;
         }
-
-        $columnName = strtolower((string) $columnName);
-        $looksLikePeriodColumn = str_contains($columnName, 'periode')
-            || str_contains($columnName, 'period')
-            || str_contains($columnName, 'posisi')
-            || str_contains($columnName, 'tanggal')
-            || str_contains($columnName, 'tgl');
 
         if ($looksLikePeriodColumn) {
             $normalized = str_replace('/', '-', $value);
@@ -1503,19 +1514,19 @@ class ImportIndexController extends Controller
                 'd/m/Y',
             ] as $format) {
                 try {
-                    return Carbon::createFromFormat($format, $normalized)->format('Y-m-d');
+                    return Carbon::createFromFormat($format, $normalized)->format('Y-m');
                 } catch (\Throwable) {
                 }
             }
 
             try {
-                return Carbon::parse($normalized)->format('Y-m-d');
+                return Carbon::parse($normalized)->format('Y-m');
             } catch (\Throwable) {
             }
         }
 
         if (preg_match('/^\d{4}-\d{2}-\d{2}/', $value) === 1) {
-            return substr($value, 0, 10);
+            return substr($value, 0, 7);
         }
 
         return $value;

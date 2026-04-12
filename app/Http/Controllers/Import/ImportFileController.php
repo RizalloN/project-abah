@@ -275,6 +275,56 @@ class ImportFileController extends Controller
         return null;
     }
 
+    private function buildInitialArea6Selections(array $headers, array $formattedUniqueValues, array $columnHints): array
+    {
+        $area6Values = array_fill_keys(array_map('strtoupper', [
+            'KC PONOROGO',
+            'KC NGAWI',
+            'KC MAGETAN',
+            'KC MADIUN',
+            'PONOROGO',
+            'NGAWI',
+            'MAGETAN',
+            'MADIUN',
+        ]), true);
+
+        $normalizedHints = array_values(array_filter(array_map('strtoupper', (array) $columnHints), static fn ($hint): bool => $hint !== ''));
+        if (empty($normalizedHints)) {
+            return [];
+        }
+
+        $selections = [];
+        foreach ($headers as $index => $header) {
+            $headerText = strtoupper((string) $header);
+            if ($headerText === '' || str_contains($headerText, 'KODE')) {
+                continue;
+            }
+
+            $matchedHint = false;
+            foreach ($normalizedHints as $hint) {
+                if (str_contains($headerText, $hint)) {
+                    $matchedHint = true;
+                    break;
+                }
+            }
+
+            if (!$matchedHint) {
+                continue;
+            }
+
+            $values = array_map('trim', (array) ($formattedUniqueValues[$index] ?? []));
+            $selected = array_values(array_filter($values, static function (string $value) use ($area6Values): bool {
+                return $value !== '' && isset($area6Values[strtoupper($value)]);
+            }));
+
+            if (!empty($selected)) {
+                $selections[(string) $index] = $selected;
+            }
+        }
+
+        return $selections;
+    }
+
     private function isDailyLoanNumericColumn(string $column): bool
     {
         return in_array($column, [
@@ -2018,6 +2068,11 @@ class ImportFileController extends Controller
             $keys = array_keys($valuesMap); sort($keys); $formattedUniqueValues[$index] = $keys;
         }
 
+        $area6ColumnHints = $isDailyLoan
+            ? []
+            : ['KANCA', 'KCI', 'BRANCH', 'BRDESC', 'MBDESC'];
+        $initialArea6Selections = $this->buildInitialArea6Selections($headers, $formattedUniqueValues, $area6ColumnHints);
+
         $displayToSourceMap = range(0, max(count($headers) - 1, 0));
         if ($isDailyLoan) {
             $preparedPreview = $this->prepareDailyLoanPreview($headers, $previewData, $formattedUniqueValues);
@@ -2050,6 +2105,8 @@ class ImportFileController extends Controller
             'lockDelimiterSelector' => $isDailyLoan,
             'fixedDelimiterLabel' => 'Koma ( , )',
             'backRoute' => route('import.index'),
+            'area6ColumnHints' => $area6ColumnHints,
+            'initialArea6Selections' => $initialArea6Selections,
         ]);
     }
 
