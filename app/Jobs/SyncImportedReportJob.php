@@ -2,11 +2,13 @@
 
 namespace App\Jobs;
 
+use App\Services\Import\ImportCleanupService;
 use App\Support\ReportDataSyncService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Queue\SerializesModels;
 
 class SyncImportedReportJob implements ShouldQueue
@@ -26,24 +28,49 @@ class SyncImportedReportJob implements ShouldQueue
     ) {
     }
 
-    public function handle(ReportDataSyncService $syncService): void
+    public function middleware(): array
     {
-        if ($this->jobId !== null && $this->jobId > 0) {
-            $syncService->syncImportedJob(
-                $this->jobId,
-                $this->tableName,
-                $this->periodHint,
-                $this->source ?? static::class
-            );
-
-            return;
+        if ($this->tableName === null || trim($this->tableName) === '') {
+            return [];
         }
 
-        if ($this->tableName !== null && $this->tableName !== '') {
-            $syncService->syncImportedTable(
+        $periodScope = trim((string) $this->periodHint);
+        $scope = strtolower(trim($this->tableName)) . ':' . ($periodScope !== '' ? $periodScope : '__all__');
+
+        return [
+            (new WithoutOverlapping('snapshot:sync:job:' . $scope))
+                ->releaseAfter(5)
+                ->expireAfter(600),
+        ];
+    }
+
+    public function handle(ReportDataSyncService $syncService, ImportCleanupService $cleanupService): void
+    {
+        try {
+            if ($this->jobId !== null && $this->jobId > 0) {
+                $syncService->syncImportedJob(
+                    $this->jobId,
+                    $this->tableName,
+                    $this->periodHint,
+                    $this->source ?? static::class
+                );
+
+                return;
+            }
+
+            if ($this->tableName !== null && $this->tableName !== '') {
+                $syncService->syncImportedTable(
+                    $this->tableName,
+                    $this->periodHint,
+                    null,
+                    $this->source ?? static::class
+                );
+            }
+        } finally {
+            $cleanupService->finalizeImportedJobSyncDispatch(
+                $this->jobId ?? 0,
                 $this->tableName,
                 $this->periodHint,
-                null,
                 $this->source ?? static::class
             );
         }

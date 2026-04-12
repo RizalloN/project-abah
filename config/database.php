@@ -58,9 +58,10 @@ return [
             'prefix' => '',
             'prefix_indexes' => true,
             'strict' => true,
-            'engine' => null,
+            'engine' => env('DB_ENGINE', 'InnoDB'),
             'options' => extension_loaded('pdo_mysql') ? array_filter([
                 PDO::ATTR_TIMEOUT => (int) env('DB_CONNECT_TIMEOUT', 3),
+                PDO::MYSQL_ATTR_INIT_COMMAND => 'SET SESSION innodb_strict_mode = 1',
                 (PHP_VERSION_ID >= 80500 ? Mysql::ATTR_SSL_CA : PDO::MYSQL_ATTR_SSL_CA) => env('MYSQL_ATTR_SSL_CA'),
             ]) : [],
         ],
@@ -79,9 +80,10 @@ return [
             'prefix' => '',
             'prefix_indexes' => true,
             'strict' => true,
-            'engine' => null,
+            'engine' => env('DB_ENGINE', 'InnoDB'),
             'options' => extension_loaded('pdo_mysql') ? array_filter([
                 PDO::ATTR_TIMEOUT => (int) env('DB_CONNECT_TIMEOUT', 3),
+                PDO::MYSQL_ATTR_INIT_COMMAND => 'SET SESSION innodb_strict_mode = 1',
                 (PHP_VERSION_ID >= 80500 ? Mysql::ATTR_SSL_CA : PDO::MYSQL_ATTR_SSL_CA) => env('MYSQL_ATTR_SSL_CA'),
             ]) : [],
         ],

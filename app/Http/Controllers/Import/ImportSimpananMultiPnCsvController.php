@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\Import;
 
 use App\Services\Import\MySqlBulkLoadService;
-use App\Support\ReportDataSyncService;
+use App\Services\Import\ImportCleanupService;
 use App\Support\StrictDateParser;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -182,12 +182,156 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
         $jobState = method_exists($this, 'getExcelImportJobState') ? $this->getExcelImportJobState($jobId) : [];
         $params = !empty($jobState['params']) ? (array) $jobState['params'] : $sessionParams;
         $normalizedHeaders = !empty($jobState['headers']) ? (array) $jobState['headers'] : session('excel_headers', []);
+        $activeFilters = (array) ($params['active_filters'] ?? []);
         $eligibility = $this->resolveDirectCsvFastPathEligibility('simpanan_multipn', $params, $normalizedHeaders);
 
         if (!($eligibility['eligible'] ?? false)) {
-            $request->attributes->set('queue_message', (string) ($eligibility['reason'] ?? 'Fast import tidak tersedia. Menggunakan safe path queue.'));
-            return parent::processExcelStream($request);
+            $reason = (string) ($eligibility['reason'] ?? 'Fast import tidak tersedia.');
+            Log::warning('Simpanan MultiPN direct path not eligible; using staged direct LOAD DATA fallback: ' . $reason, [
+                'job_id' => $jobId,
+                'table_name' => 'simpanan_multipn',
+            ]);
+
+            if (!$this->shouldUseStagedDirectLoadFallback($reason)) {
+                if ($jobId > 0) {
+                    DB::table('import_jobs')->where('id', $jobId)->update([
+                        'status' => 'failed',
+                        'updated_at' => now(),
+                    ]);
+                }
+
+                return response()->stream(function () use ($reason): void {
+                    echo "event: error\n";
+                    echo 'data: ' . json_encode([
+                        'message' => 'Fast import Simpanan MultiPN tidak dapat dijalankan: ' . $reason,
+                    ]) . "\n\n";
+                    if (ob_get_level() > 0) {
+                        ob_flush();
+                    }
+                    flush();
+                }, 200, [
+                    'Content-Type' => 'text/event-stream',
+                    'Cache-Control' => 'no-cache, no-store',
+                    'X-Accel-Buffering' => 'no',
+                    'Connection' => 'keep-alive',
+                ]);
+            }
+
+            $relativePath = (string) ($eligibility['relative_path'] ?? '');
+            $absolutePath = (string) ($eligibility['absolute_path'] ?? '');
+            $totalRows = (int) ($eligibility['total_rows'] ?? 0);
+
+            request()->session()->save();
+
+            return response()->stream(function () use (
+                $jobId,
+                $relativePath,
+                $absolutePath,
+                $totalRows,
+                $normalizedHeaders,
+                $activeFilters,
+                $reason
+            ) {
+                $streamLock = null;
+                $send = function (string $event, array $data) {
+                    echo "event: {$event}\n";
+                    echo 'data: ' . json_encode($data) . "\n\n";
+                    if (ob_get_level() > 0) {
+                        ob_flush();
+                    }
+                    flush();
+                };
+
+                try {
+                    if ($jobId > 0) {
+                        $streamLock = Cache::lock('import_excel_stream_job_' . $jobId, 7200);
+                        if (!$streamLock->get()) {
+                            $send('error', [
+                                'message' => 'Job import ini sudah sedang diproses pada koneksi lain.',
+                            ]);
+                            return;
+                        }
+
+                        $this->progressService()->markProcessing($jobId, [
+                            'status' => 'processing',
+                            'phase' => 'preparing_load_plan',
+                            'percent' => 10,
+                            'message' => 'Direct LOAD DATA tidak siap. Menyiapkan staging CSV Simpanan MultiPN...',
+                            'processed_rows' => 0,
+                            'total_rows' => $totalRows,
+                        ]);
+                    }
+
+                    $send('progress', [
+                        'status' => 'processing',
+                        'phase' => 'preparing_load_plan',
+                        'percent' => 10,
+                        'message' => 'Direct LOAD DATA tidak siap. Menyiapkan staging CSV Simpanan MultiPN...',
+                        'rows_done' => 0,
+                        'total' => $totalRows,
+                        'speed' => 0,
+                    ]);
+
+                    $handled = $this->processStagedCsvStream(
+                        $send,
+                        $absolutePath,
+                        'simpanan_multipn',
+                        $activeFilters,
+                        $normalizedHeaders,
+                        $jobId,
+                        $totalRows,
+                        null,
+                        true
+                    );
+
+                    if ($handled) {
+                        $job = $jobId > 0 ? DB::table('import_jobs')->where('id', $jobId)->first() : null;
+                        if ($job && $job->status === 'completed') {
+                            $this->cleanupSuccessfulImportArtifacts($jobId, $relativePath, $absolutePath);
+                        }
+                        return;
+                    }
+
+                    if ($jobId > 0) {
+                        DB::table('import_jobs')->where('id', $jobId)->update([
+                            'status' => 'failed',
+                            'updated_at' => now(),
+                        ]);
+                    }
+
+                    $send('error', [
+                        'message' => 'Fast import Simpanan MultiPN tidak dapat dijalankan dengan direct LOAD DATA LOCAL INFILE: ' . $reason,
+                    ]);
+                } catch (\Throwable $e) {
+                    Log::error('SIMPANAN MULTIPN STAGED DIRECT LOAD FALLBACK ERROR: ' . $e->getMessage() . ' | ' . $e->getFile() . ':' . $e->getLine());
+
+                    if ($jobId > 0) {
+                        DB::table('import_jobs')->where('id', $jobId)->update([
+                            'status' => 'failed',
+                            'updated_at' => now(),
+                        ]);
+                    }
+
+                    $send('error', [
+                        'message' => 'Fast import Simpanan MultiPN gagal: ' . $e->getMessage(),
+                    ]);
+                } finally {
+                    if ($streamLock) {
+                        try {
+                            $streamLock->release();
+                        } catch (\Throwable $e) {
+                            Log::warning('Failed to release Simpanan MultiPN staged fallback lock for job ' . $jobId . ': ' . $e->getMessage());
+                        }
+                    }
+                }
+            }, 200, [
+                'Content-Type' => 'text/event-stream',
+                'Cache-Control' => 'no-cache, no-store',
+                'X-Accel-Buffering' => 'no',
+                'Connection' => 'keep-alive',
+            ]);
         }
+
         $selectedColumns = $this->resolveSelectedColumns($params, $normalizedHeaders);
         $relativePath = (string) ($eligibility['relative_path'] ?? '');
         $absolutePath = (string) ($eligibility['absolute_path'] ?? '');
@@ -233,6 +377,20 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                     return;
                 }
 
+                try {
+                    app(MySqlBulkLoadService::class)->assertTransactionalTable('simpanan_multipn', 'import CSV Simpanan MultiPN');
+                } catch (\RuntimeException $e) {
+                    if ($jobId > 0) {
+                        DB::table('import_jobs')->where('id', $jobId)->update([
+                            'status' => 'failed',
+                            'updated_at' => now(),
+                        ]);
+                    }
+
+                    $send('error', ['message' => $e->getMessage()]);
+                    return;
+                }
+
                 $send('progress', [
                     'status' => 'processing',
                     'phase' => 'validating',
@@ -246,7 +404,7 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                 try {
                     $loadPlan = $this->buildDirectCsvLoadPlan($absolutePath, $normalizedHeaders, $selectedColumns);
                 } catch (\Throwable $e) {
-                    Log::warning('Fast-path Simpanan MultiPN direct plan failed, trying staged fallback: ' . $e->getMessage(), [
+                    Log::warning('Fast-path Simpanan MultiPN direct plan failed, trying staged direct LOAD DATA fallback: ' . $e->getMessage(), [
                         'job_id' => $jobId,
                         'absolute_path' => $absolutePath,
                     ]);
@@ -255,7 +413,7 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                         'status' => 'processing',
                         'phase' => 'preparing_load_plan',
                         'percent' => 8,
-                        'message' => 'Direct plan gagal. Mengalihkan ke staged bulk import Simpanan MultiPN...',
+                        'message' => 'Direct plan gagal. Menyiapkan staging CSV lalu LOAD DATA LOCAL INFILE...',
                         'rows_done' => 0,
                         'total' => $totalRows,
                         'speed' => 0,
@@ -265,10 +423,12 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                         $send,
                         $absolutePath,
                         'simpanan_multipn',
-                        [],
+                        $activeFilters,
                         $normalizedHeaders,
                         $jobId,
-                        $totalRows
+                        $totalRows,
+                        null,
+                        true
                     );
 
                     if ($handled) {
@@ -283,22 +443,6 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                         'message' => 'Fast import CSV tidak bisa dilanjutkan: ' . $e->getMessage(),
                     ]);
                     return;
-                }
-
-                $snapshotValues = $this->collectCsvNormalizedValuesForHeaders($absolutePath, ['POSISI']);
-                if ($snapshotValues !== []) {
-                    $deletedRows = $this->deleteRowsByColumnValues('simpanan_multipn', 'posisi', $snapshotValues);
-                    if ($deletedRows > 0) {
-                        $send('progress', [
-                            'status' => 'processing',
-                            'phase' => 'preparing_load_plan',
-                            'percent' => 12,
-                            'message' => 'Data posisi lama ditemukan. Mengganti snapshot sebelum load...',
-                            'rows_done' => 0,
-                            'total' => $totalRows,
-                            'speed' => 0,
-                        ]);
-                    }
                 }
 
                 $send('progress', [
@@ -330,24 +474,19 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                 $send('progress', [
                     'status' => 'processing',
                     'phase' => 'syncing_report',
-                    'percent' => 99,
-                    'message' => 'Sinkronisasi report hasil import Simpanan MultiPN...',
+                    'percent' => 98,
+                    'message' => 'LOAD DATA selesai. Menyusun snapshot akhir Simpanan MultiPN...',
                     'rows_done' => $inserted,
                     'total' => $totalRows > 0 ? $totalRows : $inserted,
                     'speed' => 0,
                 ]);
 
-                $this->cleanupSuccessfulImportArtifacts($jobId, $relativePath, $absolutePath);
-
-                $send('progress', [
-                    'status' => 'processing',
-                    'phase' => 'loading',
-                    'percent' => 98,
-                    'message' => "LOAD DATA selesai. Kecepatan rata-rata {$speed} baris/detik.",
-                    'rows_done' => $inserted,
-                    'total' => $totalRows > 0 ? $totalRows : $inserted,
-                    'speed' => $speed,
-                ]);
+                $this->cleanupSuccessfulImportArtifacts(
+                    $jobId,
+                    $relativePath,
+                    $absolutePath,
+                    importBatchTimestamp: (string) ($loadPlan['import_batch_timestamp'] ?? '')
+                );
 
                 $send('complete', [
                     'total_success' => $inserted,
@@ -355,7 +494,7 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                     'total_rows' => $totalRows > 0 ? $totalRows : $inserted,
                 ]);
             } catch (\Throwable $e) {
-                Log::warning('Simpanan MultiPN direct path failed, trying staged fallback: ' . $e->getMessage(), [
+                Log::warning('Simpanan MultiPN direct path failed, trying staged direct LOAD DATA fallback: ' . $e->getMessage(), [
                     'job_id' => $jobId,
                     'absolute_path' => $absolutePath,
                 ]);
@@ -365,7 +504,7 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                         'status' => 'processing',
                         'phase' => 'preparing_load_plan',
                         'percent' => 10,
-                        'message' => 'Direct path gagal. Mengalihkan ke staged bulk import Simpanan MultiPN...',
+                        'message' => 'Direct path gagal. Menyiapkan staging CSV lalu LOAD DATA LOCAL INFILE...',
                         'rows_done' => 0,
                         'total' => $totalRows,
                         'speed' => 0,
@@ -375,22 +514,24 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                         $send,
                         $absolutePath,
                         'simpanan_multipn',
-                        [],
+                        $activeFilters,
                         $normalizedHeaders,
                         $jobId,
-                        $totalRows
+                        $totalRows,
+                        null,
+                        true
                     );
 
                     if ($handled) {
                         $job = $jobId > 0 ? DB::table('import_jobs')->where('id', $jobId)->first() : null;
                         if ($job && $job->status === 'completed') {
-                            $this->cleanupSuccessfulImportArtifacts($jobId, $relativePath, $absolutePath);
+                $this->cleanupSuccessfulImportArtifacts($jobId, $relativePath, $absolutePath);
                         }
                         return;
                     }
                 } catch (\Throwable $fallbackException) {
-                    Log::error('SIMPANAN MULTIPN STAGED FALLBACK ERROR: ' . $fallbackException->getMessage() . ' | ' . $fallbackException->getFile() . ':' . $fallbackException->getLine());
-                }
+                Log::error('SIMPANAN MULTIPN STAGED DIRECT LOAD FALLBACK ERROR: ' . $fallbackException->getMessage() . ' | ' . $fallbackException->getFile() . ':' . $fallbackException->getLine());
+            }
 
                 Log::error('SIMPANAN MULTIPN DIRECT CSV LOAD ERROR: ' . $e->getMessage() . ' | ' . $e->getFile() . ':' . $e->getLine());
 
@@ -610,10 +751,11 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
             }
         }
 
+        $importBatchTimestamp = now()->format('Y-m-d H:i:s');
         $fieldVariables = [];
         $setClauses = [
-            "`created_at` = NOW()",
-            "`updated_at` = NOW()",
+            "`created_at` = '{$importBatchTimestamp}'",
+            "`updated_at` = '{$importBatchTimestamp}'",
         ];
 
         if ($uniqueIdColumn !== null) {
@@ -654,56 +796,83 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
             'delimiter' => $delimiter,
             'field_variables' => $fieldVariables,
             'set_clauses' => $setClauses,
+            'import_batch_timestamp' => $importBatchTimestamp,
         ];
     }
 
-    private function executeDirectCsvLoad(string $absolutePath, array $loadPlan): int
+    private function executeDirectCsvLoad(string $absolutePath, array $loadPlan, ?callable $beforeLoad = null): int
     {
         $this->configureLongRunningImportRuntime();
+        $bulkLoadService = app(MySqlBulkLoadService::class);
+        $bulkLoadService->assertTransactionalTable('simpanan_multipn', 'import CSV Simpanan MultiPN');
 
-        $connection = config('database.default', 'mysql');
-        $dbConfig = config("database.connections.{$connection}", []);
-        $charset = $dbConfig['charset'] ?? 'utf8mb4';
-        $host = $dbConfig['host'] ?? '127.0.0.1';
-        $port = $dbConfig['port'] ?? '3306';
-        $database = $dbConfig['database'] ?? '';
-        $username = $dbConfig['username'] ?? '';
-        $password = $dbConfig['password'] ?? '';
-        $unixSocket = $dbConfig['unix_socket'] ?? '';
+        return $bulkLoadService->withTableWriteLock('simpanan_multipn', function () use ($absolutePath, $loadPlan, $beforeLoad): int {
+            $connection = config('database.default', 'mysql');
+            $dbConfig = config("database.connections.{$connection}", []);
+            $charset = $dbConfig['charset'] ?? 'utf8mb4';
+            $host = $dbConfig['host'] ?? '127.0.0.1';
+            $port = $dbConfig['port'] ?? '3306';
+            $database = $dbConfig['database'] ?? '';
+            $username = $dbConfig['username'] ?? '';
+            $password = $dbConfig['password'] ?? '';
+            $unixSocket = $dbConfig['unix_socket'] ?? '';
 
-        $dsn = $unixSocket !== ''
-            ? "mysql:unix_socket={$unixSocket};dbname={$database};charset={$charset}"
-            : "mysql:host={$host};port={$port};dbname={$database};charset={$charset}";
+            $dsn = $unixSocket !== ''
+                ? "mysql:unix_socket={$unixSocket};dbname={$database};charset={$charset}"
+                : "mysql:host={$host};port={$port};dbname={$database};charset={$charset}";
 
-        $pdo = new \PDO($dsn, $username, $password, [
-            \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
-            \PDO::MYSQL_ATTR_LOCAL_INFILE => true,
-        ]);
+            $pdo = new \PDO($dsn, $username, $password, [
+                \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
+                \PDO::MYSQL_ATTR_LOCAL_INFILE => true,
+                \PDO::ATTR_TIMEOUT => 120,
+            ]);
 
-        $normalizedPath = str_replace('\\', '/', realpath($absolutePath) ?: $absolutePath);
-        $quotedPath = $pdo->quote($normalizedPath);
-        $quotedFields = implode(', ', $loadPlan['field_variables']);
-        $quotedDelimiter = addslashes($loadPlan['delimiter']);
-        $setClause = implode(",\n", $loadPlan['set_clauses']);
+            $normalizedPath = str_replace('\\', '/', realpath($absolutePath) ?: $absolutePath);
+            $quotedPath = $pdo->quote($normalizedPath);
+            $quotedFields = implode(', ', $loadPlan['field_variables']);
+            $quotedDelimiter = addslashes($loadPlan['delimiter']);
+            $setClause = implode(",\n", $loadPlan['set_clauses']);
+            $sql = "LOAD DATA LOCAL INFILE {$quotedPath} INTO TABLE `simpanan_multipn` "
+                . "CHARACTER SET utf8mb4 "
+                . "FIELDS TERMINATED BY '{$quotedDelimiter}' OPTIONALLY ENCLOSED BY '\"' "
+                . "LINES TERMINATED BY '\\n' "
+                . "IGNORE 1 LINES "
+                . "({$quotedFields}) "
+                . "SET {$setClause}";
 
-        $sql = "LOAD DATA LOCAL INFILE {$quotedPath} INTO TABLE `simpanan_multipn` "
-            . "CHARACTER SET utf8mb4 "
-            . "FIELDS TERMINATED BY '{$quotedDelimiter}' OPTIONALLY ENCLOSED BY '\"' "
-            . "LINES TERMINATED BY '\\n' "
-            . "IGNORE 1 LINES "
-            . "({$quotedFields}) "
-            . "SET {$setClause}";
+            try {
+                $pdo->beginTransaction();
 
-        $affected = $this->executeLoadDataWithSnapshotInvalidationBypassed($pdo, $sql);
-        $pdo = null;
+                $affected = $this->executeLoadDataWithSnapshotInvalidationBypassed($pdo, $sql, $beforeLoad);
+                $pdo->commit();
+            } catch (\Throwable $e) {
+                if ($pdo->inTransaction()) {
+                    try {
+                        $pdo->rollBack();
+                    } catch (\Throwable) {
+                    }
+                }
 
-        return $affected;
+                throw $e;
+            } finally {
+                $pdo = null;
+            }
+
+            return $affected;
+        });
     }
 
-    private function executeLoadDataWithSnapshotInvalidationBypassed(\PDO $pdo, string $sql): int
+    private function executeLoadDataWithSnapshotInvalidationBypassed(
+        \PDO $pdo,
+        string $sql,
+        ?callable $beforeLoad = null
+    ): int
     {
         try {
             $pdo->exec('SET @skip_snapshot_invalidation = 1');
+            if ($beforeLoad !== null) {
+                $beforeLoad($pdo);
+            }
             $affected = $pdo->exec($sql);
         } finally {
             try {
@@ -720,6 +889,29 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
         return (int) $affected;
     }
 
+    private function shouldUseStagedDirectLoadFallback(string $reason): bool
+    {
+        $reason = strtolower(trim($reason));
+
+        if ($reason === '') {
+            return true;
+        }
+
+        if (str_contains($reason, 'local infile')) {
+            return false;
+        }
+
+        if (str_contains($reason, 'header import tidak tersedia')) {
+            return false;
+        }
+
+        if (str_contains($reason, 'file sumber import') || str_contains($reason, 'file csv') || str_contains($reason, 'file tidak ditemukan')) {
+            return false;
+        }
+
+        return true;
+    }
+
     private function configureLongRunningImportRuntime(): void
     {
         @ini_set('memory_limit', '1024M');
@@ -727,10 +919,77 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
         @set_time_limit(0);
     }
 
-    private function cleanupSuccessfulImportArtifacts(int $jobId, string $relativePath, ?string $absolutePath = null): void
+    private function collectSimpananMultiPnSnapshotPeriods(string $absolutePath): array
+    {
+        if ($absolutePath === '' || !file_exists($absolutePath)) {
+            return [];
+        }
+
+        $periods = $this->collectCsvNormalizedValuesForHeaders($absolutePath, ['POSISI']);
+        $periods = array_values(array_unique(array_filter(array_map(
+            static fn ($value) => trim((string) $value),
+            $periods
+        ), static fn (string $value): bool => $value !== '')));
+
+        sort($periods);
+
+        return $periods;
+    }
+
+    private function collectImportedBatchPeriods(string $importBatchTimestamp): array
+    {
+        $normalizedTimestamp = trim($importBatchTimestamp);
+        if ($normalizedTimestamp === '') {
+            return [];
+        }
+
+        try {
+            return DB::table('simpanan_multipn')
+                ->where('created_at', $normalizedTimestamp)
+                ->whereNotNull('posisi')
+                ->distinct()
+                ->orderBy('posisi')
+                ->pluck('posisi')
+                ->map(static fn ($value) => trim((string) $value))
+                ->filter(static fn (string $value): bool => $value !== '')
+                ->values()
+                ->all();
+        } catch (\Throwable $e) {
+            Log::warning('Gagal membaca periode hasil batch import Simpanan MultiPN: ' . $e->getMessage(), [
+                'created_at' => $normalizedTimestamp,
+            ]);
+
+            return [];
+        }
+    }
+
+    private function cleanupSuccessfulImportArtifacts(
+        int $jobId,
+        string $relativePath,
+        ?string $absolutePath = null,
+        array $periodHints = [],
+        ?string $importBatchTimestamp = null
+    ): void
     {
         try {
-            app(ReportDataSyncService::class)->syncImportedTable('simpanan_multipn', jobId: $jobId, source: static::class);
+            if ($periodHints === [] && $importBatchTimestamp !== null && trim($importBatchTimestamp) !== '') {
+                $periodHints = $this->collectImportedBatchPeriods($importBatchTimestamp);
+            }
+
+            if ($periodHints === [] && $absolutePath !== null) {
+                $periodHints = $this->collectSimpananMultiPnSnapshotPeriods($absolutePath);
+            }
+
+            $cleanupService = app(ImportCleanupService::class);
+
+            if (!empty($periodHints)) {
+                foreach ($periodHints as $periodHint) {
+                    $cleanupService->dispatchImportedJobSync($jobId, 'simpanan_multipn', $periodHint, static::class);
+                }
+            } else {
+                $cleanupService->dispatchImportedJobSync($jobId, 'simpanan_multipn', null, static::class);
+            }
+
             app(ImportCleanupController::class)->cleanupSuccessfulJobArtifacts(
                 $jobId,
                 array_values(array_filter([$relativePath, $absolutePath]))

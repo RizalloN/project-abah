@@ -3,12 +3,20 @@
 namespace Tests\Unit;
 
 use App\Http\Controllers\Import\ImportSimpananMultiPnCsvController;
+use App\Services\Import\ImportCleanupService;
 use Illuminate\Support\Facades\Schema;
+use Mockery;
 use ReflectionClass;
 use Tests\TestCase;
 
 class ImportSimpananMultiPnCsvControllerTest extends TestCase
 {
+    protected function tearDown(): void
+    {
+        Mockery::close();
+        parent::tearDown();
+    }
+
     public function test_direct_csv_load_plan_keeps_posisi_assignment_in_set_clause(): void
     {
         $controller = new ImportSimpananMultiPnCsvController();
@@ -100,6 +108,50 @@ class ImportSimpananMultiPnCsvControllerTest extends TestCase
         $this->assertNotEmpty($plan['set_clauses'] ?? []);
     }
 
+    public function test_direct_csv_load_plan_embeds_import_batch_timestamp_for_fast_snapshot_scope_resolution(): void
+    {
+        $controller = new ImportSimpananMultiPnCsvController();
+
+        Schema::shouldReceive('getColumnListing')
+            ->once()
+            ->with('simpanan_multipn')
+            ->andReturn([
+                'id',
+                'posisi',
+                'cifno',
+                'no_rekening',
+                'status',
+                'jenis_simpanan',
+                'saldo_idr',
+                'created_at',
+                'updated_at',
+            ]);
+
+        $csvPath = storage_path('framework/testing/simpanan_fast_import_batch_marker.csv');
+        if (!is_dir(dirname($csvPath))) {
+            @mkdir(dirname($csvPath), 0777, true);
+        }
+
+        file_put_contents($csvPath, implode("\n", [
+            'No;Posisi;CIFNO;No Rekening;Status;Jenis Simpanan;Saldo IDR',
+            '1;04-04-2026;PQ32242;636001000001;9;TABUNGAN;500',
+        ]));
+
+        try {
+            $plan = $this->invokeMethod($controller, 'buildDirectCsvLoadPlan', [
+                $csvPath,
+                ['No', 'Posisi', 'CIFNO', 'No Rekening', 'Status', 'Jenis Simpanan', 'Saldo IDR'],
+                [0, 1, 2, 3, 4, 5, 6],
+            ]);
+        } finally {
+            @unlink($csvPath);
+        }
+
+        $this->assertMatchesRegularExpression('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', (string) ($plan['import_batch_timestamp'] ?? ''));
+        $this->assertContains("`created_at` = '" . $plan['import_batch_timestamp'] . "'", $plan['set_clauses']);
+        $this->assertContains("`updated_at` = '" . $plan['import_batch_timestamp'] . "'", $plan['set_clauses']);
+    }
+
     public function test_direct_csv_load_bypasses_snapshot_invalidation_during_bulk_load(): void
     {
         $controller = new ImportSimpananMultiPnCsvController();
@@ -138,6 +190,103 @@ class ImportSimpananMultiPnCsvControllerTest extends TestCase
             "LOAD DATA LOCAL INFILE '/tmp/simpanan.csv' INTO TABLE `simpanan_multipn`",
             'SET @skip_snapshot_invalidation = NULL',
         ], $pdo->statements);
+    }
+
+    public function test_staged_direct_load_fallback_is_blocked_for_local_infile_errors(): void
+    {
+        $controller = new ImportSimpananMultiPnCsvController();
+
+        $this->assertFalse($this->invokeMethod($controller, 'shouldUseStagedDirectLoadFallback', [
+            'LOCAL INFILE tidak aktif di MySQL/PDO. Menggunakan safe path queue.',
+        ]));
+        $this->assertFalse($this->invokeMethod($controller, 'shouldUseStagedDirectLoadFallback', [
+            'Header import tidak tersedia. Menggunakan safe path queue.',
+        ]));
+        $this->assertFalse($this->invokeMethod($controller, 'shouldUseStagedDirectLoadFallback', [
+            'File CSV tidak ditemukan di server.',
+        ]));
+    }
+
+    public function test_staged_direct_load_fallback_is_allowed_for_filter_based_reasons(): void
+    {
+        $controller = new ImportSimpananMultiPnCsvController();
+
+        $this->assertTrue($this->invokeMethod($controller, 'shouldUseStagedDirectLoadFallback', [
+            'Filtered import menggunakan safe path queue.',
+        ]));
+    }
+
+    public function test_snapshot_period_collection_normalizes_and_deduplicates_values(): void
+    {
+        $controller = new ImportSimpananMultiPnCsvController();
+
+        $csvPath = storage_path('framework/testing/simpanan_snapshot_period_test.csv');
+        if (!is_dir(dirname($csvPath))) {
+            @mkdir(dirname($csvPath), 0777, true);
+        }
+
+        file_put_contents($csvPath, implode("\n", [
+            'POSISI;CIFNO;NO_REKENING',
+            '04-04-2026;A001;1001',
+            '2026-04-04;A002;1002',
+            '04/05/2026;A003;1003',
+            '04-04-2026;A004;1004',
+        ]));
+
+        try {
+            $periods = $this->invokeMethod($controller, 'collectSimpananMultiPnSnapshotPeriods', [$csvPath]);
+        } finally {
+            @unlink($csvPath);
+        }
+
+        $this->assertSame([
+            '2026-04-04',
+            '2026-05-04',
+        ], $periods);
+    }
+
+    public function test_cleanup_dispatches_background_snapshot_jobs_for_each_detected_period(): void
+    {
+        $controller = new ImportSimpananMultiPnCsvController();
+
+        $cleanupService = Mockery::mock(ImportCleanupService::class);
+        $cleanupService->shouldReceive('dispatchImportedJobSync')
+            ->twice()
+            ->with(42, 'simpanan_multipn', Mockery::type('string'), ImportSimpananMultiPnCsvController::class)
+            ->andReturnNull();
+
+        $jobCleanup = Mockery::mock(\App\Http\Controllers\Import\ImportCleanupController::class);
+        $jobCleanup->shouldReceive('cleanupSuccessfulJobArtifacts')
+            ->once()
+            ->with(42, Mockery::type('array'))
+            ->andReturnNull();
+
+        app()->instance(ImportCleanupService::class, $cleanupService);
+        app()->instance(\App\Http\Controllers\Import\ImportCleanupController::class, $jobCleanup);
+
+        $csvPath = storage_path('framework/testing/simpanan_cleanup_dispatch_test.csv');
+        if (!is_dir(dirname($csvPath))) {
+            @mkdir(dirname($csvPath), 0777, true);
+        }
+
+        file_put_contents($csvPath, implode("\n", [
+            'POSISI;CIFNO;NO_REKENING',
+            '04-04-2026;A001;1001',
+            '04-05-2026;A002;1002',
+            '04-04-2026;A003;1003',
+        ]));
+
+        try {
+            $this->invokeMethod($controller, 'cleanupSuccessfulImportArtifacts', [
+                42,
+                'relative/path.csv',
+                $csvPath,
+            ]);
+        } finally {
+            @unlink($csvPath);
+        }
+
+        $this->assertTrue(true);
     }
 
     private function invokeMethod(object $target, string $method, array $arguments)

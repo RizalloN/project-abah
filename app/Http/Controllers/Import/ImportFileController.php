@@ -1927,6 +1927,12 @@ class ImportFileController extends Controller
         $isBrilinkSummary = false;
         $this->releaseSessionLockIfNeeded();
         $isDailyLoan = $this->isDailyLoanReport($reportData);
+        $tableName = $this->resolveTableName($reportData);
+        $disableArea6AutoFilter = $isDailyLoan || in_array($tableName, [
+            'sv_merchant',
+            'merchant_qris',
+            'merchant_qris_volume',
+        ], true);
 
         if ($reportData && (stripos($reportData->nama_report, 'BRILINK Web - Laporan Summary Transaksi') !== false || stripos($reportData->nama_report, 'brilink_web') !== false)) {
             $isBrilinkSummary = true;
@@ -2072,6 +2078,9 @@ class ImportFileController extends Controller
             ? []
             : ['KANCA', 'KCI', 'BRANCH', 'BRDESC', 'MBDESC'];
         $initialArea6Selections = $this->buildInitialArea6Selections($headers, $formattedUniqueValues, $area6ColumnHints);
+        if ($disableArea6AutoFilter) {
+            $initialArea6Selections = [];
+        }
 
         $displayToSourceMap = range(0, max(count($headers) - 1, 0));
         if ($isDailyLoan) {
@@ -2107,6 +2116,7 @@ class ImportFileController extends Controller
             'backRoute' => route('import.index'),
             'area6ColumnHints' => $area6ColumnHints,
             'initialArea6Selections' => $initialArea6Selections,
+            'disableArea6AutoFilter' => $disableArea6AutoFilter,
         ]);
     }
 
@@ -2321,6 +2331,14 @@ class ImportFileController extends Controller
                 if ($filePath === '' || !file_exists($filePath)) {
                     $markJobFailed('File tidak ditemukan di server. Silakan upload ulang.');
                     $send('error', ['message' => 'File tidak ditemukan di server. Silakan upload ulang.']);
+                    return;
+                }
+
+                try {
+                    $this->bulkLoadService()->assertTransactionalTable($tableName, 'import CSV');
+                } catch (\RuntimeException $e) {
+                    $markJobFailed($e->getMessage());
+                    $send('error', ['message' => $e->getMessage()]);
                     return;
                 }
 
@@ -2712,6 +2730,20 @@ class ImportFileController extends Controller
         // 🔥 VALIDASI FINAL
         if (!DB::getSchemaBuilder()->hasTable($tableName)) {
             $tableName = 'jumlah_merchant_detail';
+        }
+
+        try {
+            $this->bulkLoadService()->assertTransactionalTable($tableName, 'import CSV');
+        } catch (\RuntimeException $e) {
+            $response = [
+                'status' => 'error',
+                'title' => 'Import Diblokir',
+                'text' => $e->getMessage(),
+            ];
+
+            return $request->expectsJson()
+                ? response()->json($response, 422)
+                : redirect()->route('import.index')->with('sweet_warning', $response);
         }
 
         $uniqueSuffix = '_MDT'; 

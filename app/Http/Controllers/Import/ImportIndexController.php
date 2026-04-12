@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Import;
 
 use App\Http\Controllers\Controller;
 use App\Jobs\RunManagedReportDeleteJob;
+use App\Services\Import\MySqlBulkLoadService;
 use App\Support\PartitionMaintenanceService;
 use App\Support\ReportDataSyncService;
 use App\Support\StrictDateParser;
@@ -59,12 +60,18 @@ class ImportIndexController extends Controller
             'period' => 'posisi',
             'kanca' => 'kantor_cabang',
             'identity' => 'uniqueid_SMPN',
+            'chunk_size' => 10000,
         ],
     ];
 
     public function __construct(
         private readonly PartitionMaintenanceService $partitionMaintenanceService
     ) {
+    }
+
+    private function bulkLoadService(): MySqlBulkLoadService
+    {
+        return app(MySqlBulkLoadService::class);
     }
 
     private const PERIOD_COLUMN_CANDIDATES = [
@@ -153,6 +160,14 @@ class ImportIndexController extends Controller
         'brimo_rpt_v2' => [
             'period_priority' => ['posisi', 'periode'],
             'kanca_priority' => ['mbdesc', 'branch', 'brdesc'],
+        ],
+        'casa_brilink_web' => [
+            'period_priority' => ['periode'],
+            'kanca_priority' => ['mbdesc'],
+        ],
+        'casa_brilink_edc' => [
+            'period_priority' => ['periode'],
+            'kanca_priority' => ['mbdesc'],
         ],
     ];
 
@@ -361,7 +376,7 @@ class ImportIndexController extends Controller
             'total_rows' => (int) $prepared['candidate_rows'],
             'deleted_rows' => 0,
             'remaining_rows' => (int) $prepared['candidate_rows'],
-            'chunk_size' => $this->resolveDeleteChunkSize($prepared['identity_column']),
+            'chunk_size' => $this->resolveDeleteChunkSize($prepared['table_name'], $prepared['identity_column']),
             'current_scope_index' => 0,
             'is_waiting_on_batch' => false,
             'active_batch_size' => 0,
@@ -384,16 +399,17 @@ class ImportIndexController extends Controller
                 'exception_class' => $e::class,
             ]);
 
-            $state['status'] = 'failed';
-            $state['stage'] = 'failed';
-            $state['batch_state'] = 'failed';
-            $state['message'] = 'Delete tidak dapat dimulai karena job queue gagal didaftarkan.';
-            $state['error'] = 'Queue worker gagal menerima job delete. Detail teknis sudah dicatat di log server.';
-            $state['error_code'] = $this->resolveManagedDeleteErrorCode($e);
+            // Queue insert can fail when the worker backend is temporarily unavailable.
+            // Keep the delete state alive so the HTTP fallback endpoint can continue processing.
+            $state['message'] = 'Queue tidak tersedia. Delete dialihkan ke fallback controller dan akan diproses langsung dari halaman ini.';
+            $state['queue_dispatch_error'] = $e->getMessage();
+            $state['queue_dispatch_error_code'] = $this->resolveManagedDeleteErrorCode($e);
             $state['updated_at'] = now()->toIso8601String();
             $this->putDeleteState($deleteId, $state);
 
-            return response()->json($this->formatDeleteStateResponse($state), 500);
+            return response()->json($this->formatDeleteStateResponse($state, [
+                'message' => 'Queue tidak tersedia. Delete dialihkan ke fallback controller.',
+            ]));
         }
 
         return response()->json($this->formatDeleteStateResponse($state, [
@@ -410,45 +426,88 @@ class ImportIndexController extends Controller
         $scopes = is_array($prepared['scopes'] ?? null) ? $prepared['scopes'] : [];
         $deletedRows = 0;
 
-        foreach ($scopes as $scope) {
-            if (!is_array($scope)) {
-                continue;
-            }
+        try {
+            foreach ($scopes as $scope) {
+                if (!is_array($scope)) {
+                    continue;
+                }
 
-            [$scopeQuery, $hasWhereClause] = $this->buildDeleteScopeQueryFromScopes(
-                $tableName,
-                $periodColumn,
-                $kancaColumn,
-                [$scope]
-            );
-
-            if (!$hasWhereClause) {
-                continue;
-            }
-
-            $iterationsLeft = 250;
-            do {
-                $affected = $this->deleteScopedRows(
+                [$scopeQuery, $hasWhereClause] = $this->buildDeleteScopeQueryFromScopes(
                     $tableName,
-                    $scopeQuery,
-                    $identityColumn,
-                    $this->resolveDeleteChunkSize($identityColumn),
                     $periodColumn,
                     $kancaColumn,
-                    $scope
+                    [$scope]
                 );
 
-                if ($affected <= 0) {
-                    break;
+                if (!$hasWhereClause) {
+                    continue;
                 }
 
-                $deletedRows += $affected;
-                $iterationsLeft--;
+                $iterationsLeft = 250;
+                do {
+                    $affected = $this->deleteScopedRows(
+                        $tableName,
+                        $scopeQuery,
+                        $identityColumn,
+                        $this->resolveDeleteChunkSize($tableName, $identityColumn),
+                        $periodColumn,
+                        $kancaColumn,
+                        $scope
+                    );
 
-                if ($iterationsLeft <= 0) {
-                    throw new \RuntimeException('Delete ringan berhenti karena batas iterasi tercapai.');
-                }
-            } while ((int) (clone $scopeQuery)->count() > 0);
+                    if ($affected <= 0) {
+                        break;
+                    }
+
+                    $deletedRows += $affected;
+                    $iterationsLeft--;
+
+                    if ($iterationsLeft <= 0) {
+                        throw new \RuntimeException('Delete ringan berhenti karena batas iterasi tercapai.');
+                    }
+                } while ((int) (clone $scopeQuery)->count() > 0);
+            }
+        } catch (Throwable $e) {
+            $failure = $this->buildManagedDeleteFailure([
+                'deleted_rows' => $deletedRows,
+            ], $e);
+
+            Log::warning('Delete ringan report gagal sebelum selesai: ' . $e->getMessage(), [
+                'table_name' => $tableName,
+                'period_hint' => $prepared['period_hint'] ?? null,
+                'deleted_rows' => $deletedRows,
+                'exception_class' => $e::class,
+            ]);
+
+            return [
+                'status' => $deletedRows > 0 ? 'warning' : 'failed',
+                'delete_id' => null,
+                'stage' => 'failed',
+                'batch_state' => 'failed',
+                'table_name' => $tableName,
+                'total_rows' => (int) ($prepared['candidate_rows'] ?? 0),
+                'deleted_rows' => $deletedRows,
+                'remaining_rows' => max(0, (int) ($prepared['candidate_rows'] ?? 0) - $deletedRows),
+                'chunk_size' => $this->resolveDeleteChunkSize($tableName, $identityColumn),
+                'current_scope_index' => 0,
+                'scope_count' => count($scopes),
+                'is_waiting_on_batch' => false,
+                'active_batch_size' => 0,
+                'last_batch_deleted_rows' => $deletedRows,
+                'last_batch_started_at' => null,
+                'last_batch_finished_at' => now()->toIso8601String(),
+                'created_at' => now()->toIso8601String(),
+                'updated_at' => now()->toIso8601String(),
+                'progress_percent' => $deletedRows > 0
+                    ? min(100, (int) floor(($deletedRows / max(1, (int) ($prepared['candidate_rows'] ?? 0))) * 100))
+                    : 0,
+                'message' => $failure['message'],
+                'error' => $failure['error'],
+                'error_code' => $failure['error_code'],
+                'cleanup' => null,
+                'can_process_fallback' => false,
+                'fallback_stale_seconds' => self::DELETE_PROCESS_STALE_SECONDS,
+            ];
         }
 
         $syncService->syncAfterDeleteLightweight(
@@ -466,7 +525,7 @@ class ImportIndexController extends Controller
             'total_rows' => (int) ($prepared['candidate_rows'] ?? 0),
             'deleted_rows' => $deletedRows,
             'remaining_rows' => 0,
-            'chunk_size' => $this->resolveDeleteChunkSize($identityColumn),
+            'chunk_size' => $this->resolveDeleteChunkSize($tableName, $identityColumn),
             'current_scope_index' => 0,
             'scope_count' => count($scopes),
             'is_waiting_on_batch' => false,
@@ -605,6 +664,15 @@ class ImportIndexController extends Controller
             return [null, response()->json([
                 'status' => 'error',
                 'message' => 'Tabel report tidak valid.',
+            ], 422)];
+        }
+
+        try {
+            $this->bulkLoadService()->assertTransactionalTable($tableName, 'delete data report');
+        } catch (\RuntimeException $e) {
+            return [null, response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
             ], 422)];
         }
 
@@ -806,33 +874,16 @@ class ImportIndexController extends Controller
                 return $state;
             }
 
-            if (!empty($state['skip_derived_sync'])) {
-                $state['cleanup'] = [
-                    'mode' => 'skipped',
-                    'reason' => 'period_null_only_delete',
-                ];
-            } elseif (!empty($state['skip_snapshot_cleanup'])) {
-                $state['cleanup'] = [
-                    'mode' => 'skipped',
-                    'reason' => 'missing_safe_period_hint',
-                ];
-            } else {
-                $state['cleanup'] = $syncService->cleanupDerivedArtifactsAfterDelete(
-                    (string) $state['table_name'],
-                    $state['period_hint'] ?? null,
-                    static::class . '::runManagedReportDelete'
-                );
-            }
+            $state['cleanup'] = [
+                'mode' => 'snapshot_refresh',
+                'reason' => 'rebuild_snapshots_from_current_source',
+            ];
 
             $state['stage'] = 'syncing';
             $state['batch_state'] = 'cleanup';
             $state['is_waiting_on_batch'] = false;
             $state['active_batch_size'] = 0;
-            $state['message'] = match (true) {
-                !empty($state['skip_derived_sync']) => 'Delete sumber selesai. Null-only delete terdeteksi, melewati rebuild snapshot penuh...',
-                !empty($state['skip_snapshot_cleanup']) => 'Delete sumber selesai. Scope tidak punya period hint tunggal, purge snapshot dilewati demi keamanan...',
-                default => 'Delete sumber selesai, membersihkan snapshot dan artefak turunan...',
-            };
+            $state['message'] = 'Delete sumber selesai, menyiapkan rebuild snapshot dari data terbaru...';
             $state['updated_at'] = now()->toIso8601String();
             $this->putDeleteState($deleteId, $state);
 
@@ -840,7 +891,7 @@ class ImportIndexController extends Controller
         }
 
         if ($stage === 'syncing') {
-            if ($maintenanceMode === 'lightweight' || !empty($state['skip_derived_sync']) || !empty($state['skip_snapshot_cleanup'])) {
+            if ($maintenanceMode === 'lightweight') {
                 $syncService->syncAfterDeleteLightweight(
                     (string) $state['table_name'],
                     $state['period_hint'] ?? null,
@@ -859,11 +910,9 @@ class ImportIndexController extends Controller
             $state['batch_state'] = 'completed';
             $state['is_waiting_on_batch'] = false;
             $state['active_batch_size'] = 0;
-            $state['message'] = match (true) {
-                !empty($state['skip_derived_sync']) => 'Delete selesai. Baris blank terhapus, statistik sumber dan cache disegarkan tanpa rebuild snapshot penuh.',
-                !empty($state['skip_snapshot_cleanup']) => 'Delete selesai. Data sumber terhapus, purge snapshot global dilewati demi keamanan; statistik dan cache sudah disegarkan.',
-                default => 'Delete selesai. Snapshot, cache, dan statistik optimizer sudah disegarkan.',
-            };
+            $state['message'] = $maintenanceMode === 'lightweight'
+                ? 'Delete selesai. Statistik sumber dan cache sudah disegarkan.'
+                : 'Delete selesai. Snapshot, cache, dan statistik optimizer sudah disegarkan.';
             $state['updated_at'] = now()->toIso8601String();
             $this->putDeleteState($deleteId, $state);
 
@@ -1023,6 +1072,7 @@ class ImportIndexController extends Controller
         $deletedRows = max(0, (int) ($state['deleted_rows'] ?? 0));
         $stage = (string) ($state['stage'] ?? 'queued');
         $status = (string) ($state['status'] ?? 'running');
+        $effectiveStatus = $status === 'failed' && $deletedRows > 0 ? 'warning' : $status;
         $isWaitingOnBatch = (bool) ($state['is_waiting_on_batch'] ?? false);
         $batchState = (string) ($state['batch_state'] ?? 'idle');
 
@@ -1039,12 +1089,12 @@ class ImportIndexController extends Controller
             default => min(100, $actualPercent),
         };
 
-        if (in_array($status, ['completed', 'warning'], true)) {
+        if (in_array($effectiveStatus, ['completed', 'warning'], true)) {
             $percent = 100;
         }
 
         return array_merge([
-            'status' => $status,
+            'status' => $effectiveStatus,
             'delete_id' => $state['delete_id'] ?? null,
             'stage' => $stage,
             'batch_state' => $batchState,
@@ -1899,8 +1949,14 @@ class ImportIndexController extends Controller
         return $this->resolveColumnName($tableColumns, ['uniqueid_namareport', 'uniqueid_SMPN', 'id']);
     }
 
-    private function resolveDeleteChunkSize(?string $identityColumn): int
+    private function resolveDeleteChunkSize(string $tableName, ?string $identityColumn): int
     {
+        $tableConfig = self::DELETE_INDEX_HINTS[$tableName] ?? null;
+        $override = is_array($tableConfig) ? ($tableConfig['chunk_size'] ?? null) : null;
+        if (is_int($override) && $override > 0) {
+            return $override;
+        }
+
         return $identityColumn !== null
             ? self::DELETE_CHUNK_SIZE_WITH_IDENTITY
             : self::DELETE_CHUNK_SIZE;
@@ -1916,82 +1972,94 @@ class ImportIndexController extends Controller
         array $scope = []
     ): int
     {
-        $limit = max(1, (int) ($chunkSize ?? self::DELETE_CHUNK_SIZE));
-        $connection = $baseQuery->getConnection();
-        $driverName = $connection->getDriverName();
-        $shouldToggleSnapshotFlag = $this->shouldToggleSnapshotInvalidationFlag($driverName);
-        $supportsIndexedDeleteShortcut = in_array($driverName, ['mysql', 'mariadb'], true);
+        $this->bulkLoadService()->assertTransactionalTable($tableName, 'delete data report');
 
-        if ($shouldToggleSnapshotFlag) {
-            $connection->statement('SET @skip_snapshot_invalidation = 1');
-        }
+        return $this->bulkLoadService()->withTableWriteLock($tableName, function () use (
+            $tableName,
+            $baseQuery,
+            $identityColumn,
+            $chunkSize,
+            $periodColumn,
+            $kancaColumn,
+            $scope
+        ): int {
+            $limit = max(1, (int) ($chunkSize ?? self::DELETE_CHUNK_SIZE));
+            $connection = $baseQuery->getConnection();
+            $driverName = $connection->getDriverName();
+            $shouldToggleSnapshotFlag = $this->shouldToggleSnapshotInvalidationFlag($driverName);
+            $supportsIndexedDeleteShortcut = in_array($driverName, ['mysql', 'mariadb'], true);
 
-        try {
-            if ($identityColumn !== null && Schema::hasColumn($tableName, $identityColumn)) {
-                $variants = $this->buildDeleteConstraintVariants($periodColumn, $kancaColumn, $scope);
-                if (empty($variants)) {
-                    return 0;
-                }
+            if ($shouldToggleSnapshotFlag) {
+                $connection->statement('SET @skip_snapshot_invalidation = 1');
+            }
 
-                $startedAt = microtime(true);
-                $deleted = 0;
-                $batches = 0;
-
-                foreach ($variants as $variant) {
-                    $indexHint = $this->resolveDeleteIndexHint(
-                        $tableName,
-                        $periodColumn,
-                        $kancaColumn,
-                        $identityColumn,
-                        $variant
-                    );
-                    if (!$supportsIndexedDeleteShortcut) {
-                        $indexHint = null;
+            try {
+                if ($identityColumn !== null && Schema::hasColumn($tableName, $identityColumn)) {
+                    $variants = $this->buildDeleteConstraintVariants($periodColumn, $kancaColumn, $scope);
+                    if (empty($variants)) {
+                        return 0;
                     }
-                    $supportsFastDelete = $indexHint !== null;
-                    $batchLimit = $supportsFastDelete
-                        ? max($limit, self::DELETE_CHUNK_SIZE_WITH_IDENTITY)
-                        : min($limit, self::DELETE_CHUNK_SIZE);
 
-                    do {
-                        $affected = $supportsFastDelete
-                            ? $this->deleteRowsByIndexedSubqueryBatch($tableName, $identityColumn, $variant, $batchLimit, $indexHint, $connection)
-                            : $this->deleteRowsByIdentityBatch(
-                                $tableName,
-                                $this->makeDeleteVariantQuery($tableName, $variant),
-                                $identityColumn,
-                                $batchLimit,
-                                $connection
-                            );
+                    $startedAt = microtime(true);
+                    $deleted = 0;
+                    $batches = 0;
 
-                        if ($affected <= 0) {
+                    foreach ($variants as $variant) {
+                        $indexHint = $this->resolveDeleteIndexHint(
+                            $tableName,
+                            $periodColumn,
+                            $kancaColumn,
+                            $identityColumn,
+                            $variant
+                        );
+                        if (!$supportsIndexedDeleteShortcut) {
+                            $indexHint = null;
+                        }
+                        $supportsFastDelete = $indexHint !== null;
+                        $batchLimit = $supportsFastDelete
+                            ? max(1, $limit)
+                            : min($limit, self::DELETE_CHUNK_SIZE);
+
+                        do {
+                            $affected = $supportsFastDelete
+                                ? $this->deleteRowsByIndexedSubqueryBatch($tableName, $identityColumn, $variant, $batchLimit, $indexHint, $connection)
+                                : $this->deleteRowsByIdentityBatch(
+                                    $tableName,
+                                    $this->makeDeleteVariantQuery($tableName, $variant),
+                                    $identityColumn,
+                                    $batchLimit,
+                                    $connection
+                                );
+
+                            if ($affected <= 0) {
+                                break;
+                            }
+
+                            $deleted += $affected;
+                            $batches++;
+                        } while (
+                            $batches < self::DELETE_MAX_BATCHES_PER_TICK
+                            && ((microtime(true) - $startedAt) * 1000) < self::DELETE_TICK_TIME_BUDGET_MS
+                        );
+
+                        if (
+                            $batches >= self::DELETE_MAX_BATCHES_PER_TICK
+                            || ((microtime(true) - $startedAt) * 1000) >= self::DELETE_TICK_TIME_BUDGET_MS
+                        ) {
                             break;
                         }
-
-                        $deleted += $affected;
-                        $batches++;
-                    } while (
-                        $batches < self::DELETE_MAX_BATCHES_PER_TICK
-                        && ((microtime(true) - $startedAt) * 1000) < self::DELETE_TICK_TIME_BUDGET_MS
-                    );
-
-                    if (
-                        $batches >= self::DELETE_MAX_BATCHES_PER_TICK
-                        || ((microtime(true) - $startedAt) * 1000) >= self::DELETE_TICK_TIME_BUDGET_MS
-                    ) {
-                        break;
                     }
+
+                    return $deleted;
                 }
 
-                return $deleted;
+                throw new \RuntimeException("Delete parsial untuk tabel `{$tableName}` diblokir karena tidak ada kolom identity/unique yang aman.");
+            } finally {
+                if ($shouldToggleSnapshotFlag) {
+                    $connection->statement('SET @skip_snapshot_invalidation = NULL');
+                }
             }
-
-            throw new \RuntimeException("Delete parsial untuk tabel `{$tableName}` diblokir karena tidak ada kolom identity/unique yang aman.");
-        } finally {
-            if ($shouldToggleSnapshotFlag) {
-                $connection->statement('SET @skip_snapshot_invalidation = NULL');
-            }
-        }
+        });
     }
 
     private function deleteRowsByIdentityBatch(string $tableName, Builder $baseQuery, string $identityColumn, int $limit, $connection = null): int
@@ -2153,7 +2221,27 @@ class ImportIndexController extends Controller
             return null;
         }
 
-        return (string) ($config['index'] ?? '');
+        $indexName = (string) ($config['index'] ?? '');
+        if ($indexName === '' || !$this->tableIndexExists($tableName, $indexName)) {
+            return null;
+        }
+
+        return $indexName;
+    }
+
+    private function tableIndexExists(string $tableName, string $indexName): bool
+    {
+        $driver = DB::connection()->getDriverName();
+        if (!in_array($driver, ['mysql', 'mariadb'], true)) {
+            return false;
+        }
+
+        $rows = DB::select(
+            'SHOW INDEX FROM `' . str_replace('`', '``', $tableName) . '` WHERE Key_name = ?',
+            [$indexName]
+        );
+
+        return !empty($rows);
     }
 
     private function buildDeleteWhereSql(array $constraints): array

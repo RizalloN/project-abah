@@ -35,6 +35,18 @@ class ReportSnapshotBuilder
     ];
     private const LOAN_SOURCE_KEY_COLUMN = 'uniqueid_namareport';
 
+    /** @var array<string, array<int, string>> */
+    private array $columnListingCache = [];
+
+    /** @var array<string, string|null> */
+    private array $availablePeriodCache = [];
+
+    /** @var array<string, string|null> */
+    private array $availableCasaPeriodCache = [];
+
+    /** @var array<string, bool> */
+    private array $casaTypeFilterCache = [];
+
     public function rebuild(string $report = 'all', ?string $period = null, bool $force = false): array
     {
         $report = strtolower(trim($report));
@@ -127,8 +139,11 @@ class ReportSnapshotBuilder
 
     private function buildDashboardPeriodSnapshot(string $period, bool $force): int
     {
-        if (!$force && DB::table(self::DASHBOARD_SNAPSHOT_TABLE)->where('periode', $period)->exists()) {
-            return (int) DB::table(self::DASHBOARD_SNAPSHOT_TABLE)->where('periode', $period)->count();
+        if (!$force) {
+            $existingCount = (int) DB::table(self::DASHBOARD_SNAPSHOT_TABLE)->where('periode', $period)->count();
+            if ($existingCount > 0) {
+                return $existingCount;
+            }
         }
 
         $bucketExpression = $this->buildDashboardBucketExpression();
@@ -250,14 +265,19 @@ class ReportSnapshotBuilder
             return 0;
         }
 
-        if (!$force && DB::table(self::DASHBOARD_SIMPANAN_SNAPSHOT_TABLE)->where('snapshot_period', $period)->exists()) {
-            return (int) DB::table(self::DASHBOARD_SIMPANAN_SNAPSHOT_TABLE)
+        if (!$force) {
+            $existingSourceRowCount = DB::table(self::DASHBOARD_SIMPANAN_SNAPSHOT_TABLE)
                 ->where('snapshot_period', $period)
                 ->value('source_row_count');
+
+            if ($existingSourceRowCount !== null) {
+                return (int) $existingSourceRowCount;
+            }
         }
 
-        $summary = DB::table('simpanan_multipn')
-            ->where('posisi', $period)
+        $baseQuery = DB::table('simpanan_multipn')->where('posisi', $period);
+
+        $summary = (clone $baseQuery)
             ->selectRaw('COUNT(*) as source_row_count')
             ->selectRaw('COALESCE(SUM(COALESCE(saldo_idr, 0)), 0) as total_balance')
             ->selectRaw('COUNT(DISTINCT no_rekening) as account_count')
@@ -282,8 +302,7 @@ class ReportSnapshotBuilder
         $giroBalance = (float) ($summary->giro_balance ?? 0);
         $otherBalance = max(0, $totalBalance - $tabunganBalance - $giroBalance);
 
-        $topBranches = DB::table('simpanan_multipn')
-            ->where('posisi', $period)
+        $topBranches = (clone $baseQuery)
             ->whereNotNull('kantor_cabang')
             ->where('kantor_cabang', '<>', '')
             ->selectRaw('TRIM(kantor_cabang) as kantor_cabang')
@@ -369,8 +388,11 @@ class ReportSnapshotBuilder
 
     private function buildDormantPeriodSnapshot(string $period, bool $force): int
     {
-        if (!$force && DB::table(self::DORMANT_SNAPSHOT_TABLE)->where('posisi', $period)->exists()) {
-            return (int) DB::table(self::DORMANT_SNAPSHOT_TABLE)->where('posisi', $period)->count();
+        if (!$force) {
+            $existingCount = (int) DB::table(self::DORMANT_SNAPSHOT_TABLE)->where('posisi', $period)->count();
+            if ($existingCount > 0) {
+                return $existingCount;
+            }
         }
 
         $snapshotTable = self::DORMANT_SNAPSHOT_TABLE;
@@ -441,8 +463,11 @@ class ReportSnapshotBuilder
             return 0;
         }
 
-        if (!$force && DB::table(self::NEW_PAYROLL_SNAPSHOT_TABLE)->where('snapshot_posisi', $snapshotPosisi)->exists()) {
-            return (int) DB::table(self::NEW_PAYROLL_SNAPSHOT_TABLE)->where('snapshot_posisi', $snapshotPosisi)->count();
+        if (!$force) {
+            $existingCount = (int) DB::table(self::NEW_PAYROLL_SNAPSHOT_TABLE)->where('snapshot_posisi', $snapshotPosisi)->count();
+            if ($existingCount > 0) {
+                return $existingCount;
+            }
         }
 
         $snapshotDate = Carbon::parse($snapshotPosisi);
@@ -754,6 +779,11 @@ class ReportSnapshotBuilder
 
     private function resolveAvailablePeriod(string $table, string $column, ?string $targetDate): ?string
     {
+        $cacheKey = $table . '|' . $column . '|' . ($targetDate ?? '__null__');
+        if (array_key_exists($cacheKey, $this->availablePeriodCache)) {
+            return $this->availablePeriodCache[$cacheKey];
+        }
+
         try {
             $query = DB::table($table);
 
@@ -761,19 +791,25 @@ class ReportSnapshotBuilder
                 $query->where($column, '<=', Carbon::parse($targetDate)->toDateString());
             }
 
-            return $query->max($column);
+            return $this->availablePeriodCache[$cacheKey] = $query->max($column);
         } catch (Throwable) {
+            $this->availablePeriodCache[$cacheKey] = null;
             return null;
         }
     }
 
     private function resolveAvailableCasaPeriod(string $targetDate): ?string
     {
+        if (array_key_exists($targetDate, $this->availableCasaPeriodCache)) {
+            return $this->availableCasaPeriodCache[$targetDate];
+        }
+
         try {
-            return DB::table('simpanan_multipn')
+            return $this->availableCasaPeriodCache[$targetDate] = DB::table('simpanan_multipn')
                 ->where('posisi', '<=', $targetDate)
                 ->max('posisi');
         } catch (Throwable) {
+            $this->availableCasaPeriodCache[$targetDate] = null;
             return null;
         }
     }
@@ -799,8 +835,12 @@ class ReportSnapshotBuilder
 
     private function shouldApplyCasaTypeFilter(string $casaDate): bool
     {
+        if (array_key_exists($casaDate, $this->casaTypeFilterCache)) {
+            return $this->casaTypeFilterCache[$casaDate];
+        }
+
         try {
-            return DB::table('simpanan_multipn')
+            return $this->casaTypeFilterCache[$casaDate] = DB::table('simpanan_multipn')
                 ->where('posisi', $casaDate)
                 ->where(function ($query) {
                     $query->where('jenis_simpanan', 'like', 'GIRO%')
@@ -808,6 +848,7 @@ class ReportSnapshotBuilder
                 })
                 ->exists();
         } catch (Throwable) {
+            $this->casaTypeFilterCache[$casaDate] = false;
             return false;
         }
     }
@@ -892,7 +933,7 @@ class ReportSnapshotBuilder
 
     private function resolveExistingColumn(string $table, array $candidates, string $fallback): string
     {
-        $columns = Schema::getColumnListing($table);
+        $columns = $this->cachedColumnListing($table);
         $map = [];
 
         foreach ($columns as $column) {
@@ -907,6 +948,18 @@ class ReportSnapshotBuilder
         }
 
         return $fallback;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function cachedColumnListing(string $table): array
+    {
+        if (!array_key_exists($table, $this->columnListingCache)) {
+            $this->columnListingCache[$table] = Schema::getColumnListing($table);
+        }
+
+        return $this->columnListingCache[$table];
     }
 
     private function normalizePriorityBranchKey(?string $branch): string

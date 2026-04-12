@@ -168,6 +168,23 @@ document.addEventListener('DOMContentLoaded', function () {
         return Swal.fire(Object.assign({}, swalTheme, options));
     }
 
+    function normalizeProgressStatus(message) {
+        const text = String(message || '').trim();
+        const speedMatch = text.match(/\(([\d.,]+)\s+baris\/detik\)$/i);
+
+        if (!speedMatch) {
+            return {
+                message: text,
+                speed: '',
+            };
+        }
+
+        return {
+            message: text.replace(speedMatch[0], '').trim(),
+            speed: speedMatch[1].replace(/[^\d]/g, ''),
+        };
+    }
+
     /* =========================================================
        DROPDOWN: klik di dalam menu tidak menutup dropdown
     ========================================================= */
@@ -520,11 +537,13 @@ document.addEventListener('DOMContentLoaded', function () {
             var st  = document.getElementById('swal-status-text');
             var ri  = document.getElementById('swal-rows-info');
             var si  = document.getElementById('swal-speed-info');
+            var normalized = normalizeProgressStatus(statusText);
+            var effectiveSpeed = speed > 0 ? speed : (normalized.speed ? Number(normalized.speed) : 0);
             if (bar) { bar.style.width = pct + '%'; bar.innerText = pct + '%'; }
             if (pp)  pp.innerText = pct + '%';
-            if (st)  st.innerText = statusText || '';
+            if (st)  st.innerText = normalized.message || statusText || '';
             if (ri && total > 0) ri.innerText = Number(rowsDone).toLocaleString('id-ID') + ' / ' + Number(total).toLocaleString('id-ID') + ' baris';
-            if (si && speed > 0) si.innerText = Number(speed).toLocaleString('id-ID') + ' baris/detik';
+            if (si)  si.innerText = effectiveSpeed > 0 ? Number(effectiveSpeed).toLocaleString('id-ID') + ' baris/detik' : '-';
         }
 
         function resetSubmitBtn() {
@@ -838,13 +857,17 @@ document.addEventListener('DOMContentLoaded', function () {
 
     .swal-import-head {
         display: grid;
+        justify-items: center;
         gap: 0.45rem;
+        text-align: center;
     }
 
     .swal-import-badge {
         display: inline-flex;
         align-items: center;
+        justify-content: center;
         width: fit-content;
+        margin-inline: auto;
         padding: 0.4rem 0.72rem;
         border-radius: 999px;
         background: rgba(15, 118, 110, 0.1);

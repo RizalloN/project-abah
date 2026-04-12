@@ -3,7 +3,9 @@
 namespace Tests\Unit;
 
 use App\Http\Controllers\Import\ImportIndexController;
+use App\Services\Import\MySqlBulkLoadService;
 use App\Support\ReportDataSyncService;
+use Illuminate\Contracts\Bus\Dispatcher as BusDispatcher;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -21,6 +23,7 @@ class ManagedReportDeleteTest extends TestCase
 
         Config::set('database.default', 'sqlite');
         Config::set('database.connections.sqlite.database', ':memory:');
+        Config::set('cache.default', 'array');
         Queue::fake();
 
         DB::purge('sqlite');
@@ -107,7 +110,7 @@ class ManagedReportDeleteTest extends TestCase
         $this->assertFalse($initPayload['is_waiting_on_batch']);
         $this->assertSame('queued', $initPayload['batch_state']);
 
-        Cache::put('report_management_delete:' . $initPayload['delete_id'], array_merge($initPayload, [
+        Cache::store('file')->put('report_management_delete:' . $initPayload['delete_id'], array_merge($initPayload, [
             'delete_id' => $initPayload['delete_id'],
             'status' => 'running',
             'stage' => 'deleting',
@@ -145,14 +148,13 @@ class ManagedReportDeleteTest extends TestCase
 
         $syncService = \Mockery::mock(ReportDataSyncService::class);
         $syncService->shouldReceive('resolvePostDeleteMaintenanceMode')->with('daily_loan_dinamis')->andReturn('snapshot');
-        $syncService->shouldReceive('cleanupDerivedArtifactsAfterDelete')->once()->andReturn([]);
         $syncService->shouldReceive('syncAfterDelete')->once()->andReturnNull();
 
         $firstPayload = $advanceMethod->invoke(
             $controller,
             $initPayload['delete_id'],
             $syncService,
-            Cache::get('report_management_delete:' . $initPayload['delete_id'])
+            Cache::store('file')->get('report_management_delete:' . $initPayload['delete_id'])
         );
 
         $this->assertSame('running', $firstPayload['status']);
@@ -167,7 +169,7 @@ class ManagedReportDeleteTest extends TestCase
             $controller,
             $initPayload['delete_id'],
             $syncService,
-            Cache::get('report_management_delete:' . $initPayload['delete_id'])
+            Cache::store('file')->get('report_management_delete:' . $initPayload['delete_id'])
         );
 
         $this->assertSame('running', $secondPayload['status']);
@@ -182,18 +184,19 @@ class ManagedReportDeleteTest extends TestCase
             $controller,
             $initPayload['delete_id'],
             $syncService,
-            Cache::get('report_management_delete:' . $initPayload['delete_id'])
+            Cache::store('file')->get('report_management_delete:' . $initPayload['delete_id'])
         );
 
         $finalPayload = $advanceMethod->invoke(
             $controller,
             $initPayload['delete_id'],
             $syncService,
-            Cache::get('report_management_delete:' . $initPayload['delete_id'])
+            Cache::store('file')->get('report_management_delete:' . $initPayload['delete_id'])
         );
 
         $this->assertSame('completed', $finalPayload['status']);
         $this->assertSame(5011, $finalPayload['deleted_rows']);
+        $this->assertSame('snapshot_refresh', $finalPayload['cleanup']['mode']);
         $this->assertSame(0, DB::table('daily_loan_dinamis')->where('periode', '2026-04-04')->whereIn('cabang1', ['KC Madiun', 'KC Magetan'])->count());
         $this->assertSame(1, DB::table('daily_loan_dinamis')->where('periode', '2026-04-04')->where('cabang1', 'KC Ponorogo')->count());
     }
@@ -539,6 +542,41 @@ class ManagedReportDeleteTest extends TestCase
         Queue::assertNothingPushed();
     }
 
+    public function test_delete_management_blocks_non_transactional_tables_before_processing(): void
+    {
+        DB::table('nama_report')->insert([
+            'id_report' => 13,
+            'nama_report' => 'Daily Loan Unsafe Engine',
+            'table_name' => 'daily_loan_dinamis',
+            'active' => 1,
+        ]);
+
+        $bulkLoadService = \Mockery::mock(MySqlBulkLoadService::class);
+        $bulkLoadService->shouldReceive('assertTransactionalTable')
+            ->once()
+            ->with('daily_loan_dinamis', 'delete data report')
+            ->andThrow(new \RuntimeException('Operasi delete data report diblokir karena tabel `daily_loan_dinamis` memakai engine `MyISAM`.'));
+        app()->instance(MySqlBulkLoadService::class, $bulkLoadService);
+
+        $controller = app(ImportIndexController::class);
+        $request = Request::create('/import/report-management/delete', 'POST', [
+            'id_report' => 13,
+            'scopes' => [
+                ['period' => '2026-04-30', 'kanca' => 'KC Madiun'],
+            ],
+            'force' => true,
+            'hard_force' => true,
+        ]);
+
+        $response = $controller->deleteManagedReportRows($request);
+        $payload = $response->getData(true);
+
+        $this->assertSame(422, $response->status());
+        $this->assertSame('error', $payload['status']);
+        $this->assertStringContainsString('daily_loan_dinamis', $payload['message']);
+        Queue::assertNothingPushed();
+    }
+
     public function test_delete_management_accepts_period_and_kanca_filters_from_scopes_payload(): void
     {
         Schema::create('user_brimo_rpt_v2', function (Blueprint $table) {
@@ -650,6 +688,179 @@ class ManagedReportDeleteTest extends TestCase
         $this->assertSame(2, $payload['deleted_rows']);
         $this->assertSame(1, DB::table('user_brimo_fin')->where('brdesc', 'KC Ponorogo')->count());
         $this->assertSame(0, DB::table('user_brimo_fin')->where('brdesc', 'KC Madiun')->count());
+        Queue::assertNothingPushed();
+    }
+
+    public function test_delete_management_falls_back_to_http_processor_when_queue_dispatch_fails(): void
+    {
+        DB::table('nama_report')->insert([
+            'id_report' => 16,
+            'nama_report' => 'Daily Loan Queue Fallback',
+            'table_name' => 'daily_loan_dinamis',
+            'active' => 1,
+        ]);
+
+        DB::table('daily_loan_dinamis')->insert([
+            [
+                'uniqueid_namareport' => 'FALLBACK-1',
+                'periode' => '2026-04-30',
+                'cabang1' => 'KC Madiun',
+                'payload' => 'row-1',
+            ],
+            [
+                'uniqueid_namareport' => 'FALLBACK-2',
+                'periode' => '2026-04-30',
+                'cabang1' => 'KC Madiun',
+                'payload' => 'row-2',
+            ],
+        ]);
+
+        $dispatcher = \Mockery::mock(BusDispatcher::class);
+        $dispatcher->shouldReceive('dispatch')
+            ->once()
+            ->andThrow(new \RuntimeException('Field `id` doesn\'t have a default value.'));
+        app()->instance(BusDispatcher::class, $dispatcher);
+
+        $controller = app(ImportIndexController::class);
+        $request = Request::create('/import/report-management/delete', 'POST', [
+            'id_report' => 16,
+            'scopes' => [
+                ['period' => '2026-04-30', 'kanca' => 'KC Madiun'],
+            ],
+            'force' => true,
+            'hard_force' => true,
+        ]);
+
+        $response = $controller->deleteManagedReportRows($request);
+        $payload = $response->getData(true);
+
+        $this->assertSame(200, $response->status());
+        $this->assertSame('running', $payload['status']);
+        $this->assertSame('queued', $payload['stage']);
+        $this->assertTrue($payload['can_process_fallback']);
+        $this->assertStringContainsString('fallback controller', $payload['message']);
+        $this->assertSame(2, DB::table('daily_loan_dinamis')->count());
+        Queue::assertNothingPushed();
+    }
+
+    public function test_delete_management_process_endpoint_advances_queued_state_to_cleanup(): void
+    {
+        DB::table('nama_report')->insert([
+            'id_report' => 17,
+            'nama_report' => 'Daily Loan Process Fallback',
+            'table_name' => 'daily_loan_dinamis',
+            'active' => 1,
+        ]);
+
+        DB::table('daily_loan_dinamis')->insert([
+            [
+                'uniqueid_namareport' => 'PROCESS-1',
+                'periode' => '2026-04-30',
+                'cabang1' => 'KC Madiun',
+                'payload' => 'row-1',
+            ],
+            [
+                'uniqueid_namareport' => 'PROCESS-2',
+                'periode' => '2026-04-30',
+                'cabang1' => 'KC Madiun',
+                'payload' => 'row-2',
+            ],
+        ]);
+
+        $deleteId = 'delete-process-fallback-1';
+        Cache::store('file')->put('report_management_delete:' . $deleteId, [
+            'delete_id' => $deleteId,
+            'status' => 'running',
+            'stage' => 'queued',
+            'batch_state' => 'queued',
+            'message' => 'Delete dimulai. Sistem akan memproses langsung dan fallback otomatis bila diperlukan...',
+            'table_name' => 'daily_loan_dinamis',
+            'id_report' => 17,
+            'period_column' => 'periode',
+            'kanca_column' => 'cabang1',
+            'scopes' => [
+                ['period_filter' => '2026-04-30', 'kanca_filter' => 'KC Madiun', 'period_is_null' => false, 'kanca_is_null' => false],
+            ],
+            'period_filter' => '2026-04-30',
+            'kanca_filter' => 'KC Madiun',
+            'period_is_null' => false,
+            'kanca_is_null' => false,
+            'period_hint' => '2026-04-30',
+            'skip_derived_sync' => false,
+            'skip_snapshot_cleanup' => false,
+            'identity_column' => 'uniqueid_namareport',
+            'total_rows' => 2,
+            'deleted_rows' => 0,
+            'remaining_rows' => 2,
+            'chunk_size' => 10000,
+            'current_scope_index' => 0,
+            'is_waiting_on_batch' => false,
+            'active_batch_size' => 0,
+            'last_batch_deleted_rows' => 0,
+            'last_batch_started_at' => null,
+            'last_batch_finished_at' => null,
+            'cleanup' => null,
+            'created_at' => now()->subSeconds(10)->toIso8601String(),
+            'updated_at' => now()->subSeconds(10)->toIso8601String(),
+        ], now()->addMinutes(5));
+
+        $syncService = \Mockery::mock(ReportDataSyncService::class);
+        $syncService->shouldReceive('resolvePostDeleteMaintenanceMode')->with('daily_loan_dinamis')->andReturn('snapshot');
+
+        $controller = app(ImportIndexController::class);
+        $response = $controller->processManagedReportDelete($deleteId, $syncService);
+        $payload = $response->getData(true);
+
+        $this->assertSame('running', $payload['status']);
+        $this->assertSame('cleanup', $payload['stage']);
+        $this->assertSame('deleting_committed', $payload['batch_state']);
+        $this->assertSame(2, $payload['deleted_rows']);
+        $this->assertSame(0, DB::table('daily_loan_dinamis')->count());
+    }
+
+    public function test_report_management_uses_mbdesc_for_casa_brilink_web_and_edc(): void
+    {
+        foreach (['casa_brilink_web', 'casa_brilink_edc'] as $index => $tableName) {
+            Schema::create($tableName, function (Blueprint $table) {
+                $table->string('uniqueid_namareport')->primary();
+                $table->date('periode')->nullable();
+                $table->string('mbdesc')->nullable();
+                $table->string('branch')->nullable();
+                $table->string('brdesc')->nullable();
+            });
+
+            DB::table('nama_report')->insert([
+                'id_report' => 20 + $index,
+                'nama_report' => strtoupper(str_replace('_', ' ', $tableName)),
+                'table_name' => $tableName,
+                'active' => 1,
+            ]);
+
+            DB::table($tableName)->insert([
+                ['uniqueid_namareport' => $tableName . '-1', 'periode' => '2026-04-30', 'mbdesc' => 'KC Madiun', 'branch' => 'BRANCH A', 'brdesc' => 'DESC A'],
+                ['uniqueid_namareport' => $tableName . '-2', 'periode' => '2026-04-30', 'mbdesc' => 'KC Madiun', 'branch' => 'BRANCH B', 'brdesc' => 'DESC B'],
+                ['uniqueid_namareport' => $tableName . '-3', 'periode' => '2026-04-30', 'mbdesc' => 'KC Madiun', 'branch' => 'BRANCH C', 'brdesc' => 'DESC C'],
+            ]);
+
+            $controller = app(ImportIndexController::class);
+            $request = Request::create('/import/report-management/data', 'POST', [
+                'id_report' => 20 + $index,
+                'max_rows' => 100,
+                'page' => 1,
+                'per_page' => 8,
+            ]);
+
+            $response = $controller->reportManagementData($request);
+            $payload = $response->getData(true);
+
+            $this->assertSame(200, $response->status());
+            $this->assertSame('success', $payload['status']);
+            $this->assertSame('periode', $payload['period_column']);
+            $this->assertSame('mbdesc', $payload['kanca_column']);
+            $this->assertSame(1, $payload['total_groups']);
+            $this->assertSame('KC Madiun', $payload['periods'][0]['rows'][0]['kanca_label']);
+        }
+
         Queue::assertNothingPushed();
     }
 }

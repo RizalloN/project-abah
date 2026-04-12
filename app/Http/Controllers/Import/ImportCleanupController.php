@@ -66,7 +66,7 @@ class ImportCleanupController extends Controller
         $eligibleJobs = 0;
 
         $completedJobs = DB::table('import_jobs')
-            ->where('status', 'completed')
+            ->whereIn('status', ['completed', 'failed_partial'])
             ->where('updated_at', '<=', $threshold)
             ->orderBy('id')
             ->get();
@@ -148,23 +148,15 @@ class ImportCleanupController extends Controller
             return false;
         }
 
-        if (strtolower((string) ($job->status ?? '')) !== 'completed') {
+        $status = strtolower((string) ($job->status ?? ''));
+        if (!in_array($status, ['completed', 'failed_partial'], true)) {
             return false;
         }
 
         $totalFiles = max(0, (int) ($job->total_files ?? 0));
         $totalSuccess = max(0, (int) ($job->total_success ?? 0));
-        $totalFailed = max(0, (int) ($job->total_failed ?? 0));
 
-        if ($totalFailed > 0) {
-            return false;
-        }
-
-        if ($totalFiles === 0) {
-            return true;
-        }
-
-        return $totalSuccess >= $totalFiles;
+        return $totalFiles === 0 || $totalSuccess > 0;
     }
 
     private function resolveJobSourcePath($job): ?string

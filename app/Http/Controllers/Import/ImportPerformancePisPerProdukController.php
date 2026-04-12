@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Import;
 
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Import\Concerns\AllocatesGapIds;
+use App\Services\Import\ExcelStagingService;
+use App\Services\Import\MySqlBulkLoadService;
 use App\Support\ReportDataSyncService;
 use App\Support\StrictDateParser;
 use Carbon\Carbon;
@@ -55,6 +57,56 @@ class ImportPerformancePisPerProdukController extends Controller
         'flag_briguna',
         'flag_cc',
     ];
+
+    private function bulkLoadService(): MySqlBulkLoadService
+    {
+        return app(MySqlBulkLoadService::class);
+    }
+
+    private function stagingService(): ExcelStagingService
+    {
+        return app(ExcelStagingService::class);
+    }
+
+    private function stageCacheKey(string $relativePath): string
+    {
+        return 'performance_pis_excel_stage_v2_' . md5($relativePath);
+    }
+
+    private function getStagedExcelState(string $relativePath): array
+    {
+        $cached = Cache::get($this->stageCacheKey($relativePath));
+        return is_array($cached) ? $cached : [];
+    }
+
+    private function putStagedExcelState(string $relativePath, array $payload): void
+    {
+        Cache::put($this->stageCacheKey($relativePath), $payload, now()->addHours(4));
+    }
+
+    private function resolveWorkingImportPath(string $relativePath): string
+    {
+        $absolutePath = Storage::path($relativePath);
+        if (!$this->isExcelFile($absolutePath)) {
+            return $absolutePath;
+        }
+
+        $stageState = $this->getStagedExcelState($relativePath);
+        $stagedCsvPath = (string) ($stageState['staged_csv_path'] ?? '');
+
+        return ($stagedCsvPath !== '' && file_exists($stagedCsvPath)) ? $stagedCsvPath : $absolutePath;
+    }
+
+    private function isExcelFile(string $path): bool
+    {
+        return in_array(strtolower(pathinfo($path, PATHINFO_EXTENSION)), ['xlsx', 'xls'], true);
+    }
+
+    private function isCsvFile(string $path): bool
+    {
+        return in_array(strtolower(pathinfo($path, PATHINFO_EXTENSION)), ['csv', 'txt'], true);
+    }
+
     private const TARGET_COLUMNS = [
         'posisi',
         'kode_kanwil',
@@ -102,7 +154,7 @@ class ImportPerformancePisPerProdukController extends Controller
             if ($request->expectsJson() || $request->ajax()) {
                 return response()->json([
                     'status' => 'success',
-                    'redirect' => route('import.performancepis.preview'),
+                    'redirect' => route('import.performancepis.prepare-preview'),
                 ]);
             }
 
@@ -121,6 +173,95 @@ class ImportPerformancePisPerProdukController extends Controller
 
             return redirect()->route('import.index')->with('error', 'Upload Performance PIS gagal: ' . $e->getMessage());
         }
+    }
+
+    public function preparePreviewStream(Request $request)
+    {
+        ini_set('memory_limit', '1024M');
+        set_time_limit(0);
+
+        $relativePath = session('performance_pis_file');
+        request()->session()->save();
+
+        return response()->stream(function () use ($relativePath) {
+            $send = function (string $event, array $data) {
+                echo "event: {$event}\n";
+                echo 'data: ' . json_encode($data) . "\n\n";
+                if (ob_get_level() > 0) {
+                    ob_flush();
+                }
+                flush();
+            };
+
+            try {
+                if (!$relativePath) {
+                    $send('error_msg', ['message' => 'Sesi upload Performance PIS tidak ditemukan. Silakan upload ulang.']);
+                    return;
+                }
+
+                $absolutePath = Storage::path($relativePath);
+                if (!file_exists($absolutePath)) {
+                    $send('error_msg', ['message' => 'File Excel Performance PIS tidak ditemukan di server.']);
+                    return;
+                }
+
+                $stageState = $this->getStagedExcelState($relativePath);
+                $stagedCsvPath = (string) ($stageState['staged_csv_path'] ?? '');
+                if ($stagedCsvPath !== '' && file_exists($stagedCsvPath)) {
+                    $send('progress', ['percent' => 82, 'message' => 'CSV staging siap. Menyiapkan halaman preview...']);
+                    $send('ready', [
+                        'redirect' => route('import.performancepis.preview', ['file_path' => $relativePath]),
+                    ]);
+                    return;
+                }
+
+                $send('progress', ['percent' => 18, 'message' => 'Mendeteksi header Excel Performance PIS...']);
+                $excelContext = $this->buildExcelContext($absolutePath, session('performance_pis_periode'));
+                $send('progress', ['percent' => 35, 'message' => 'Struktur header ditemukan. Menyiapkan CSV staging...']);
+
+                $stagedCsvPath = $this->stagingService()->createStagedCsvPath(
+                    storage_path(self::BULK_LOAD_TEMP_DIR),
+                    'performance_pis'
+                );
+
+                $send('progress', ['percent' => 55, 'message' => 'Mengonversi Excel ke CSV staging Performance PIS...']);
+                $stageResult = $this->stagingService()->stageExcelToCsv(
+                    $send,
+                    $absolutePath,
+                    max(0, (int) ($excelContext['header_line'] ?? 1) - 1),
+                    array_map(fn ($value) => $this->normalizeHeader($value), (array) ($excelContext['source_headers'] ?? [])),
+                    $stagedCsvPath
+                );
+
+                if ($stageResult === null) {
+                    $send('error_msg', ['message' => 'Gagal membuat CSV staging dari Excel Performance PIS.']);
+                    return;
+                }
+
+                $send('progress', ['percent' => 82, 'message' => 'CSV staging selesai. Menyiapkan halaman preview...']);
+                $this->putStagedExcelState($relativePath, [
+                    'staged_csv_path' => $stageResult['staged_csv_path'],
+                    'total_rows' => (int) ($stageResult['total_rows'] ?? 0),
+                    'header_index' => max(0, (int) ($excelContext['header_line'] ?? 1) - 1),
+                    'headers' => array_values((array) ($stageResult['headers'] ?? [])),
+                ]);
+
+                $send('ready', [
+                    'redirect' => route('import.performancepis.preview', ['file_path' => $relativePath]),
+                ]);
+            } catch (\Throwable $e) {
+                Log::error('Performance PIS prepare preview error: ' . $e->getMessage(), [
+                    'file' => $relativePath,
+                ]);
+
+                $send('error_msg', ['message' => 'Gagal menyiapkan preview Performance PIS: ' . $e->getMessage()]);
+            }
+        }, 200, [
+            'Content-Type' => 'text/event-stream',
+            'Cache-Control' => 'no-cache, no-store',
+            'X-Accel-Buffering' => 'no',
+            'Connection' => 'keep-alive',
+        ]);
     }
 
     public function preview(Request $request)
@@ -147,7 +288,9 @@ class ImportPerformancePisPerProdukController extends Controller
         session(['performance_pis_periode' => $periodeInput]);
 
         try {
-            $context = $this->buildExcelContext($absolutePath, $periodeInput);
+            $workingPath = $this->resolveWorkingImportPath($relativePath);
+            $stageState = $this->getStagedExcelState($relativePath);
+            $context = $this->buildImportContext($workingPath, $periodeInput, $stageState);
         } catch (\Throwable $e) {
             Log::error('Performance PIS preview context error: ' . $e->getMessage(), [
                 'file' => $absolutePath,
@@ -157,26 +300,13 @@ class ImportPerformancePisPerProdukController extends Controller
 
         try {
             $previewData = [];
-            $uniqueValues = [];
-            foreach ($context['headers'] as $index => $header) {
-                $uniqueValues[$index] = [];
-            }
 
             $scannedRows = 0;
-            $this->iterateExcelDataRows($absolutePath, $context, function (array $row) use (&$previewData, &$uniqueValues, &$scannedRows) {
+            $this->iterateDataRows($workingPath, $context, function (array $row) use (&$previewData, &$scannedRows) {
                 $scannedRows++;
 
                 if (count($previewData) < self::PREVIEW_ROW_LIMIT) {
                     $previewData[] = $row;
-                }
-
-                foreach ($row as $colIndex => $value) {
-                    if (!isset($uniqueValues[$colIndex]) || count($uniqueValues[$colIndex]) >= self::UNIQUE_VALUE_LIMIT) {
-                        continue;
-                    }
-
-                    $key = trim((string) ($value ?? ''));
-                    $uniqueValues[$colIndex][$key] = true;
                 }
 
                 return $scannedRows < self::PREVIEW_SCAN_LIMIT;
@@ -190,6 +320,7 @@ class ImportPerformancePisPerProdukController extends Controller
         }
 
         $formattedUniqueValues = [];
+        $uniqueValues = $this->collectPreviewUniqueValues($workingPath, $context);
         foreach ($uniqueValues as $index => $valuesMap) {
             $keys = array_keys($valuesMap);
             usort($keys, 'strnatcmp');
@@ -208,11 +339,11 @@ class ImportPerformancePisPerProdukController extends Controller
             'streamRoute' => route('import.performancepis.stream'),
             'backRoute' => route('import.index'),
             'disableArea6AutoFilter' => true,
-            'detectedPosisi' => $context['posisi'],
+            'detectedPosisi' => $context['posisi'] ?? $periodeInput,
             'manualPeriode' => $periodeInput,
             'manualPeriodeLabel' => Carbon::parse($periodeInput)->translatedFormat('d F Y'),
             'lockDelimiterSelector' => true,
-            'fixedDelimiterLabel' => 'Excel (.xlsx)',
+            'fixedDelimiterLabel' => 'CSV staging dari Excel (.xlsx)',
         ]);
     }
 
@@ -239,11 +370,23 @@ class ImportPerformancePisPerProdukController extends Controller
             ], 422);
         }
 
+        try {
+            $this->bulkLoadService()->assertTransactionalTable(self::TABLE_NAME, 'import Performance PIS');
+        } catch (\RuntimeException $e) {
+            return response()->json([
+                'status' => 'error',
+                'title' => 'Import Diblokir',
+                'text' => $e->getMessage(),
+            ], 422);
+        }
+
         $selectedColumns = array_map('intval', $request->input('selected_columns', []));
         $activeFilters = json_decode($request->input('active_filters_json', '{}'), true) ?: [];
 
         try {
-            $context = $this->buildExcelContext($absolutePath, $request->input('periode'));
+            $workingPath = $this->resolveWorkingImportPath($relativePath);
+            $stageState = $this->getStagedExcelState($relativePath);
+            $context = $this->buildImportContext($workingPath, $request->input('periode'), $stageState);
         } catch (\Throwable $e) {
             return response()->json([
                 'status' => 'error',
@@ -281,7 +424,7 @@ class ImportPerformancePisPerProdukController extends Controller
         $totalFailed = 0;
         $lastErrorMsg = '';
 
-        $this->iterateExcelDataRows($absolutePath, $context, function (array $row) use (&$rows, &$totalRows, &$totalSuccess, &$totalFailed, &$lastErrorMsg, $activeFilters, $selectedColumns, $context) {
+        $this->iterateDataRows($workingPath, $context, function (array $row) use (&$rows, &$totalRows, &$totalSuccess, &$totalFailed, &$lastErrorMsg, $activeFilters, $selectedColumns, $context) {
             if (!$this->passesFilters($row, $activeFilters)) {
                 return true;
             }
@@ -315,8 +458,14 @@ class ImportPerformancePisPerProdukController extends Controller
             'updated_at' => now(),
         ]);
 
-        if ($finalStatus === 'completed' && $totalSuccess >= $totalRows) {
-            $this->cleanupSuccessfulImportArtifacts($jobId, $relativePath);
+        if ($totalSuccess > 0) {
+            $extraCleanupPaths = [];
+            $stageCsvPath = (string) ($stageState['staged_csv_path'] ?? '');
+            if ($stageCsvPath !== '' && file_exists($stageCsvPath)) {
+                $extraCleanupPaths[] = $stageCsvPath;
+            }
+
+            $this->cleanupSuccessfulImportArtifacts($jobId, $relativePath, $request->input('periode'), $extraCleanupPaths);
         }
 
         if ($totalFailed > 0) {
@@ -362,7 +511,9 @@ class ImportPerformancePisPerProdukController extends Controller
         $activeFilters = json_decode($request->input('active_filters_json', '{}'), true) ?: [];
 
         try {
-            $context = $this->buildExcelContext($absolutePath, $request->input('periode'));
+            $workingPath = $this->resolveWorkingImportPath($relativePath);
+            $stageState = $this->getStagedExcelState($relativePath);
+            $context = $this->buildImportContext($workingPath, $request->input('periode'), $stageState);
             $totalRows = $this->estimateImportRowCount($context);
         } catch (\Throwable $e) {
             return response()->json([
@@ -482,13 +633,37 @@ class ImportPerformancePisPerProdukController extends Controller
                 $activeFilters = $params['active_filters'] ?? [];
                 $periode = $params['periode'] ?? null;
                 $totalRows = (int) ($params['total_rows'] ?? 0);
+                $stageState = $this->getStagedExcelState($relativePath);
 
                 if ($relativePath === '' || !file_exists($absolutePath)) {
                     $send('error', ['message' => 'File Excel Performance PIS tidak ditemukan di server.']);
                     return;
                 }
 
-                $context = $this->buildExcelContext($absolutePath, $periode);
+                if ($jobId > 0) {
+                    DB::table('import_jobs')->where('id', $jobId)->update([
+                        'status' => 'processing',
+                        'updated_at' => now(),
+                    ]);
+                    app(\App\Services\Import\ImportProgressService::class)->cacheProgress($jobId, [
+                        'status' => 'processing',
+                        'percent' => 1,
+                        'message' => 'Memvalidasi file Performance PIS dan menyiapkan konteks import...',
+                        'processed_rows' => 0,
+                        'total_rows' => $totalRows,
+                    ]);
+                }
+
+                $send('progress', [
+                    'percent' => 1,
+                    'message' => 'Memvalidasi file Performance PIS dan menyiapkan konteks import...',
+                    'rows_done' => 0,
+                    'total' => $totalRows,
+                    'speed' => 0,
+                ]);
+
+                $workingPath = $this->resolveWorkingImportPath($relativePath);
+                $context = $this->buildImportContext($workingPath, $periode, $stageState);
                 if ($totalRows <= 0) {
                     $totalRows = $this->estimateImportRowCount($context);
                 }
@@ -501,7 +676,7 @@ class ImportPerformancePisPerProdukController extends Controller
                     'speed' => 0,
                 ]);
 
-                $stagingResult = $this->createFilteredCsvStage($absolutePath, $context, $activeFilters, $selectedColumns, $totalRows, $send);
+                $stagingResult = $this->createFilteredCsvStage($workingPath, $context, $activeFilters, $selectedColumns, $totalRows, $send);
                 $totalPreparedRows = $stagingResult['rows_done'];
                 $stagingPath = $stagingResult['path'];
                 $loadColumns = $stagingResult['columns'];
@@ -527,6 +702,8 @@ class ImportPerformancePisPerProdukController extends Controller
                         'updated_at' => now(),
                     ]);
                 }
+
+                $this->bulkLoadService()->assertTransactionalTable(self::TABLE_NAME, 'import Performance PIS');
 
                 $send('progress', [
                     'percent' => 96,
@@ -582,8 +759,14 @@ class ImportPerformancePisPerProdukController extends Controller
                     'updated_at' => now(),
                 ]);
 
-                if ($totalFailed === 0 && $totalSuccess >= $totalPreparedRows) {
-                    $this->cleanupSuccessfulImportArtifacts($jobId, $relativePath, [$stagingPath]);
+                if ($totalSuccess > 0) {
+                    $extraCleanupPaths = [$stagingPath];
+                    $previewStageCsv = (string) ($stageState['staged_csv_path'] ?? '');
+                    if ($previewStageCsv !== '' && file_exists($previewStageCsv)) {
+                        $extraCleanupPaths[] = $previewStageCsv;
+                    }
+
+                    $this->cleanupSuccessfulImportArtifacts($jobId, $relativePath, $request->input('periode'), $extraCleanupPaths);
                 }
 
                 $send('complete', [
@@ -654,6 +837,157 @@ class ImportPerformancePisPerProdukController extends Controller
             'highest_column' => $worksheetMeta['highest_column'],
             'total_rows' => $worksheetMeta['total_rows'],
         ];
+    }
+
+    private function buildImportContext(string $path, ?string $manualPosisi = null, array $stageState = []): array
+    {
+        if ($this->isCsvFile($path)) {
+            return $this->buildCsvContext($path, $manualPosisi, (int) ($stageState['total_rows'] ?? 0));
+        }
+
+        return $this->buildExcelContext($path, $manualPosisi);
+    }
+
+    private function buildCsvContext(string $path, ?string $manualPosisi = null, int $dataRowsTotal = 0): array
+    {
+        $handle = fopen($path, 'r');
+        if ($handle === false) {
+            throw new \RuntimeException('Gagal membuka file CSV Performance PIS.');
+        }
+
+        $headerLine = null;
+        $sourceHeaders = [];
+
+        try {
+            $lineNumber = 0;
+            while (($line = fgets($handle)) !== false) {
+                $lineNumber++;
+                $trimmed = trim(preg_replace('/^\xEF\xBB\xBF/', '', $line));
+                if ($trimmed === '') {
+                    continue;
+                }
+
+                $headerLine = $lineNumber;
+                $sourceHeaders = array_map(
+                    fn ($value) => $this->normalizeHeader($value),
+                    $this->parseCsvLine($line, self::COLUMN_DELIMITER)
+                );
+                break;
+            }
+        } finally {
+            fclose($handle);
+        }
+
+        $sourceHeaders = array_values(array_filter($sourceHeaders, fn ($value) => $value !== ''));
+        if ($headerLine === null || empty($sourceHeaders)) {
+            throw new \RuntimeException('Header CSV Performance PIS tidak ditemukan.');
+        }
+
+        return [
+            'delimiter' => self::COLUMN_DELIMITER,
+            'header_line' => $headerLine,
+            'source_headers' => $sourceHeaders,
+            'source_indexes' => $this->buildSourceIndexes($sourceHeaders),
+            'headers' => self::TARGET_COLUMNS,
+            'posisi' => $this->normalizeDateValue($manualPosisi),
+            'source_format' => 'csv',
+            'total_rows' => $dataRowsTotal > 0 ? ($dataRowsTotal + $headerLine) : 0,
+        ];
+    }
+
+    private function parseCsvLine(string $line, ?string $delimiter = null): array
+    {
+        $parsed = str_getcsv($line, $delimiter ?? self::COLUMN_DELIMITER);
+        return array_map(static fn ($value) => $value === null ? null : (string) $value, $parsed ?: []);
+    }
+
+    private function iterateDataRows(string $path, array $context, callable $callback): void
+    {
+        if (($context['source_format'] ?? '') === 'csv' || $this->isCsvFile($path)) {
+            $this->iterateCsvDataRows($path, $context, $callback);
+            return;
+        }
+
+        $this->iterateExcelDataRows($path, $context, $callback);
+    }
+
+    private function iterateCsvDataRows(string $path, array $context, callable $callback): void
+    {
+        $handle = fopen($path, 'r');
+        if ($handle === false) {
+            throw new \RuntimeException('Gagal membuka file CSV Performance PIS.');
+        }
+
+        $lineNumber = 0;
+        try {
+            while (($line = fgets($handle)) !== false) {
+                $lineNumber++;
+                if ($lineNumber <= (int) ($context['header_line'] ?? 1)) {
+                    continue;
+                }
+
+                $row = $this->mapCsvRow($context, $this->parseCsvLine($line, $context['delimiter'] ?? self::COLUMN_DELIMITER));
+                if ($row === null) {
+                    continue;
+                }
+
+                if ($callback($row, $lineNumber) === false) {
+                    break;
+                }
+            }
+        } finally {
+            fclose($handle);
+        }
+    }
+
+    private function mapCsvRow(array $context, array $data): ?array
+    {
+        $data = $this->alignDataRowWithHeaders($context['source_headers'] ?? [], $data);
+        if ($data === null || $this->isEmptyCsvRow($data)) {
+            return null;
+        }
+
+        $row = [];
+        foreach ($context['headers'] as $column) {
+            if ($column === 'posisi') {
+                $row[] = $context['posisi'] ?? null;
+                continue;
+            }
+
+            $sourceIndex = $context['source_indexes'][$column] ?? null;
+            $row[] = $this->normalizeCellValue($column, $sourceIndex !== null ? ($data[$sourceIndex] ?? null) : null);
+        }
+
+        return $row;
+    }
+
+    private function alignDataRowWithHeaders(array $sourceHeaders, array $data): ?array
+    {
+        if (empty($sourceHeaders)) {
+            return null;
+        }
+
+        $expectedCount = count($sourceHeaders);
+        $actualCount = count($data);
+
+        if ($actualCount < $expectedCount) {
+            $data = array_pad($data, $expectedCount, null);
+        } elseif ($actualCount > $expectedCount) {
+            $data = array_slice($data, 0, $expectedCount);
+        }
+
+        return $data;
+    }
+
+    private function isEmptyCsvRow(array $row): bool
+    {
+        foreach ($row as $value) {
+            if (trim((string) $value) !== '') {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private function storePerformancePisUpload($file): string
@@ -1059,31 +1393,6 @@ class ImportPerformancePisPerProdukController extends Controller
         return $row;
     }
 
-    private function alignDataRowWithHeaders(array $sourceHeaders, array $data): ?array
-    {
-        $expectedCount = count($sourceHeaders);
-        $actualCount = count($data);
-
-        if ($actualCount === $expectedCount + 1 && isset($data[1])) {
-            $marker = trim((string) $data[1]);
-            if ($marker !== '' && preg_match('/^[A-Z]$/', $marker) === 1) {
-                array_splice($data, 1, 1);
-                $actualCount = count($data);
-            }
-        }
-
-        if ($actualCount !== $expectedCount) {
-            return null;
-        }
-
-        $rowNumber = trim((string) ($data[0] ?? ''));
-        if ($rowNumber === '' || preg_match('/^\d+$/', $rowNumber) !== 1) {
-            return null;
-        }
-
-        return $data;
-    }
-
     private function looksLikePosisiRow(array $cells): bool
     {
         foreach ($cells as $index => $cell) {
@@ -1308,7 +1617,7 @@ class ImportPerformancePisPerProdukController extends Controller
     {
         $totalRows = 0;
 
-        $this->iterateExcelDataRows($absolutePath, $context, function (array $row) use (&$totalRows, $activeFilters, $selectedColumns, $context) {
+        $this->iterateDataRows($absolutePath, $context, function (array $row) use (&$totalRows, $activeFilters, $selectedColumns, $context) {
             if (!$this->passesFilters($row, $activeFilters)) {
                 return true;
             }
@@ -1379,7 +1688,7 @@ class ImportPerformancePisPerProdukController extends Controller
         $lastHeartbeatAt = microtime(true);
 
         try {
-            $this->iterateExcelDataRows($absolutePath, $context, function (array $row) use (&$rowsDone, &$sourceRowsScanned, &$lastProgressAt, &$lastHeartbeatAt, $startTime, $totalRows, $activeFilters, $selectedColumns, $context, $timestamp, $outputHandle, $loadColumns, $send) {
+            $this->iterateDataRows($absolutePath, $context, function (array $row) use (&$rowsDone, &$sourceRowsScanned, &$lastProgressAt, &$lastHeartbeatAt, $startTime, $totalRows, $activeFilters, $selectedColumns, $context, $timestamp, $outputHandle, $loadColumns, $send) {
                 $sourceRowsScanned++;
 
                 $elapsed = max(microtime(true) - $startTime, 0.001);
@@ -1435,75 +1744,12 @@ class ImportPerformancePisPerProdukController extends Controller
 
     private function supportsNativeBulkLoad(): bool
     {
-        $driver = DB::connection()->getDriverName();
-        if (!in_array($driver, ['mysql', 'mariadb'], true)) {
-            return false;
-        }
-
-        try {
-            $row = DB::selectOne("SHOW VARIABLES LIKE 'local_infile'");
-            return strtoupper((string) ($row->Value ?? $row->value ?? 'OFF')) === 'ON';
-        } catch (\Throwable $e) {
-            Log::warning('Unable to verify local_infile support for Performance PIS: ' . $e->getMessage());
-            return false;
-        }
+        return $this->bulkLoadService()->supportsNativeBulkLoad();
     }
 
     private function loadCsvIntoMysql(string $csvPath, string $tableName, array $columns): int
     {
-        if (!file_exists($csvPath)) {
-            throw new \RuntimeException('File staging CSV tidak ditemukan untuk bulk load.');
-        }
-
-        if (empty($columns)) {
-            throw new \RuntimeException('Kolom bulk load kosong.');
-        }
-
-        $connection = config('database.default', 'mysql');
-        $dbConfig = config("database.connections.{$connection}", []);
-        $charset = $dbConfig['charset'] ?? 'utf8mb4';
-        $host = $dbConfig['host'] ?? '127.0.0.1';
-        $port = $dbConfig['port'] ?? '3306';
-        $database = $dbConfig['database'] ?? '';
-        $username = $dbConfig['username'] ?? '';
-        $password = $dbConfig['password'] ?? '';
-        $unixSocket = $dbConfig['unix_socket'] ?? '';
-
-        $dsn = $unixSocket !== ''
-            ? "mysql:unix_socket={$unixSocket};dbname={$database};charset={$charset}"
-            : "mysql:host={$host};port={$port};dbname={$database};charset={$charset}";
-
-        $pdo = new \PDO($dsn, $username, $password, [
-            \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
-            \PDO::MYSQL_ATTR_LOCAL_INFILE => true,
-        ]);
-
-        $normalizedPath = str_replace('\\', '/', realpath($csvPath) ?: $csvPath);
-        $quotedPath = $pdo->quote($normalizedPath);
-        $loadVariables = [];
-        $setAssignments = [];
-        foreach ($columns as $index => $column) {
-            $variable = '@col_' . $index;
-            $quotedColumn = '`' . str_replace('`', '``', $column) . '`';
-            $loadVariables[] = $variable;
-            $setAssignments[] = "{$quotedColumn} = NULLIF({$variable}, '\\\\N')";
-        }
-
-        $sql = "LOAD DATA LOCAL INFILE {$quotedPath} INTO TABLE `{$tableName}` "
-            . "CHARACTER SET utf8mb4 "
-            . "FIELDS TERMINATED BY ',' ENCLOSED BY '\"' ESCAPED BY '' "
-            . "LINES TERMINATED BY '\\n' "
-            . '(' . implode(', ', $loadVariables) . ') '
-            . 'SET ' . implode(', ', $setAssignments);
-
-        $affected = $pdo->exec($sql);
-        $pdo = null;
-
-        if ($affected === false) {
-            throw new \RuntimeException('LOAD DATA LOCAL INFILE gagal dieksekusi.');
-        }
-
-        return (int) $affected;
+        return $this->bulkLoadService()->loadCsvIntoMysql($csvPath, $tableName, $columns);
     }
 
     private function insertStagedCsvInBatches(string $csvPath, array $columns): array
@@ -1665,10 +1911,10 @@ class ImportPerformancePisPerProdukController extends Controller
         }
     }
 
-    private function cleanupSuccessfulImportArtifacts(int $jobId, string $relativePath, array $extraPaths = []): void
+    private function cleanupSuccessfulImportArtifacts(int $jobId, string $relativePath, ?string $periodHint = null, array $extraPaths = []): void
     {
         try {
-            app(ReportDataSyncService::class)->syncImportedTable(self::TABLE_NAME, jobId: $jobId, source: static::class);
+            app(ReportDataSyncService::class)->syncImportedTable(self::TABLE_NAME, $periodHint, jobId: $jobId, source: static::class);
             app(ImportCleanupController::class)->cleanupSuccessfulJobArtifacts(
                 $jobId,
                 array_values(array_filter(array_merge([$relativePath], $extraPaths)))
@@ -1713,5 +1959,28 @@ class ImportPerformancePisPerProdukController extends Controller
         }
 
         return false;
+    }
+
+    private function collectPreviewUniqueValues(string $path, array $context): array
+    {
+        $uniqueValues = [];
+        foreach ($context['headers'] as $index => $header) {
+            $uniqueValues[$index] = [];
+        }
+
+        $this->iterateDataRows($path, $context, function (array $row) use (&$uniqueValues): bool {
+            foreach ($row as $colIndex => $value) {
+                if (!isset($uniqueValues[$colIndex]) || count($uniqueValues[$colIndex]) >= self::UNIQUE_VALUE_LIMIT) {
+                    continue;
+                }
+
+                $key = trim((string) ($value ?? ''));
+                $uniqueValues[$colIndex][$key] = true;
+            }
+
+            return $this->hasUniqueCollectionCapacity($uniqueValues);
+        });
+
+        return $uniqueValues;
     }
 }

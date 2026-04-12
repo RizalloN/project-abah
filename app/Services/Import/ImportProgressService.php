@@ -13,6 +13,7 @@ class ImportProgressService
     private const CACHE_PREFIX = 'import_job_progress:';
     private const STATE_PREFIX = 'excel_import_job:';
     private const STALE_QUEUED_MINUTES = 15;
+    private const DAILY_LOAN_REPORT_ID = 8;
 
     public function cacheProgress(int $jobId, array $payload): array
     {
@@ -157,6 +158,7 @@ class ImportProgressService
             ];
         }
 
+        $job = $this->reconcileJobState($job) ?? $job;
         $progress = Cache::get($this->cacheKey($jobId));
         $progress = is_array($progress) ? $progress : [];
 
@@ -223,6 +225,107 @@ class ImportProgressService
                 'job_id' => $jobId,
             ]);
         }
+    }
+
+    private function reconcileJobState(object $job): ?object
+    {
+        $jobId = (int) ($job->id ?? 0);
+        if ($jobId <= 0) {
+            return $job;
+        }
+
+        $status = strtolower((string) ($job->status ?? ''));
+        $sourcePath = $this->resolveJobSourcePath($job);
+        $sourceExists = $sourcePath !== null && is_file($sourcePath);
+
+        if (!$sourceExists && $this->shouldInvalidateMissingSourceJob($job, $status)) {
+            $this->markFailed(
+                $jobId,
+                $this->resolveMissingSourceMessage($job),
+                (int) ($job->total_success ?? 0),
+                (int) ($job->total_failed ?? 0),
+                'failed'
+            );
+
+            return $this->findJob($jobId);
+        }
+
+        if (!in_array($status, ['queued', 'processing'], true)) {
+            return $job;
+        }
+
+        if ($status !== 'queued') {
+            return $job;
+        }
+
+        $updatedAt = $job->updated_at ?? null;
+        if ($updatedAt === null || $updatedAt === '') {
+            return $job;
+        }
+
+        try {
+            $queuedAt = Carbon::parse($updatedAt);
+        } catch (\Throwable) {
+            return $job;
+        }
+
+        if ($queuedAt->gte(now()->subMinutes(self::STALE_QUEUED_MINUTES))) {
+            return $job;
+        }
+
+        $success = (int) ($job->total_success ?? 0);
+        $failed = (int) ($job->total_failed ?? 0);
+        $this->markFailed(
+            $jobId,
+            'Job import terlalu lama berada di antrian. Silakan ulangi proses import.',
+            $success,
+            $failed,
+            $success > 0 || $failed > 0 ? 'failed_partial' : 'failed'
+        );
+
+        return $this->findJob($jobId);
+    }
+
+    private function resolveJobSourcePath(object $job): ?string
+    {
+        $folderPath = trim((string) ($job->folder_path ?? ''));
+        $fileName = trim((string) ($job->file_name ?? ''));
+
+        if ($folderPath === '' || $fileName === '') {
+            return null;
+        }
+
+        if (preg_match('/^[A-Za-z]:[\\\\\\/]/', $folderPath) === 1 || str_starts_with($folderPath, '\\\\')) {
+            return $folderPath . DIRECTORY_SEPARATOR . $fileName;
+        }
+
+        $cleanFolder = trim(str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $folderPath), DIRECTORY_SEPARATOR);
+
+        return storage_path('app/' . $cleanFolder . DIRECTORY_SEPARATOR . $fileName);
+    }
+
+    private function shouldInvalidateMissingSourceJob(object $job, string $status): bool
+    {
+        if (in_array($status, ['queued', 'processing'], true)) {
+            return true;
+        }
+
+        $reportId = (int) ($job->id_report ?? 0);
+        if ($reportId === self::DAILY_LOAN_REPORT_ID && in_array($status, ['completed', 'failed_partial'], true)) {
+            return true;
+        }
+
+        return false;
+    }
+
+    private function resolveMissingSourceMessage(object $job): string
+    {
+        $reportId = (int) ($job->id_report ?? 0);
+        if ($reportId === self::DAILY_LOAN_REPORT_ID) {
+            return 'File sumber import Daily Loan Dinamis tidak ditemukan atau sudah dihapus. Silakan upload ulang.';
+        }
+
+        return 'File sumber import tidak ditemukan atau sudah dihapus. Silakan upload ulang.';
     }
 
     private function isTerminalStatus(?string $status): bool

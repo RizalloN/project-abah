@@ -101,6 +101,27 @@ class ImportExcelControllerDailyLoanCsvTest extends TestCase
         Log::shouldHaveReceived('warning')->once();
     }
 
+    public function test_daily_loan_row_with_date_like_kode_kanwil_is_rejected(): void
+    {
+        $headers = array_map('strtolower', $this->dailyLoanHeaders());
+        $row = $this->makeDailyLoanRow([
+            'PERIODE' => '2026-04-04',
+            'KODE_KANWIL1' => '04/04/2026',
+            'NOMOR_REKENING1' => '5701033239106',
+            'STATUS_REKENING1' => 'AKTIF',
+            'NAMA_DEBITUR1' => 'SUWANDI,SH',
+            'RATE' => '0.110000',
+            'JANGKA_WAKTU1' => '84',
+            'PLAFON' => '175000000.00',
+            'BAKI_DEBET1' => '90000000.00',
+        ]);
+
+        $valuesByHeader = array_combine($headers, $row);
+
+        $this->assertNotFalse($valuesByHeader);
+        $this->assertFalse($this->invokeMethod('isValidDailyLoanRowValues', [(array) $valuesByHeader]));
+    }
+
     public function test_prepare_daily_loan_direct_load_source_keeps_rows_with_blank_noncritical_values(): void
     {
         $csvPath = storage_path('framework/testing/daily_loan_direct_load_normalize.csv');
@@ -149,6 +170,126 @@ class ImportExcelControllerDailyLoanCsvTest extends TestCase
         $this->assertSame(0, $result['skipped_count']);
     }
 
+    public function test_prepare_daily_loan_direct_load_source_skips_malformed_rows_when_normalizing(): void
+    {
+        $csvPath = storage_path('framework/testing/daily_loan_direct_load_malformed.csv');
+        if (!is_dir(dirname($csvPath))) {
+            @mkdir(dirname($csvPath), 0777, true);
+        }
+
+        $validRow1 = $this->toCsvLine([
+            '2026-04-04',
+            'R',
+            'KANWIL MALANG',
+            '01',
+            'KCP',
+            'BRANCH',
+            'UNIT',
+            'IDR',
+            'AO',
+            '1234567890',
+            '4501060057100',
+            'AKTIF',
+            'KREDIT',
+            'DARTO',
+            '0.110000',
+            '120',
+            '185000000.00',
+            '64633760.00',
+            '',
+        ]);
+
+        $validRow2 = $this->toCsvLine([
+            '2026-04-05',
+            'R',
+            'KANWIL MALANG',
+            '01',
+            'KCP',
+            'BRANCH',
+            'UNIT',
+            'IDR',
+            'AO',
+            '1234567891',
+            '4501060057101',
+            'AKTIF',
+            'KREDIT',
+            'SAMPLE',
+            '0.110000',
+            '120',
+            '195000000.00',
+            '74633760.00',
+            '',
+        ]);
+
+        file_put_contents($csvPath, implode("\n", [
+            implode(',', array_slice($this->dailyLoanHeaders(), 0, 19)),
+            $validRow1,
+            'BROKEN,ROW,WITH,TOO,MANY,COLUMNS,EXTRA',
+            $validRow2,
+        ]) . "\n");
+
+        try {
+            $result = $this->invokeMethod('prepareDailyLoanDirectLoadSource', [$csvPath, ',']);
+
+            $this->assertTrue($result['normalized']);
+            $this->assertSame(2, $result['written_rows']);
+            $this->assertGreaterThanOrEqual(1, $result['skipped_count']);
+        } finally {
+            @unlink($csvPath);
+            if (!empty($result['path'] ?? '') && file_exists((string) $result['path']) && ($result['cleanup'] ?? false)) {
+                @unlink((string) $result['path']);
+            }
+        }
+    }
+
+    public function test_estimate_csv_import_total_rows_ignores_malformed_daily_loan_rows(): void
+    {
+        $headers = $this->dailyLoanHeaders();
+        $csvPath = storage_path('framework/testing/daily_loan_total_rows_estimate.csv');
+        if (!is_dir(dirname($csvPath))) {
+            @mkdir(dirname($csvPath), 0777, true);
+        }
+
+        $row1 = $this->makeDailyLoanRow([
+            'PERIODE' => '2026-04-04',
+            'NOMOR_REKENING1' => '636001011738109',
+            'STATUS_REKENING1' => 'AKTIF',
+            'NAMA_DEBITUR1' => 'ICHWAN JATMIKO, S.H',
+            'RATE' => '0.125000',
+            'JANGKA_WAKTU1' => '96',
+            'PLAFON' => '250000000.00',
+            'BAKI_DEBET1' => '125000000.00',
+            'Textbox21' => '125000000.00',
+        ]);
+
+        $row2 = $this->makeDailyLoanRow([
+            'PERIODE' => '2026-04-05',
+            'NOMOR_REKENING1' => '636001011738110',
+            'STATUS_REKENING1' => 'AKTIF',
+            'NAMA_DEBITUR1' => 'SAMPLE DEBITUR',
+            'RATE' => '0.125000',
+            'JANGKA_WAKTU1' => '96',
+            'PLAFON' => '150000000.00',
+            'BAKI_DEBET1' => '75000000.00',
+            'Textbox21' => '75000000.00',
+        ]);
+
+        file_put_contents($csvPath, implode("\n", [
+            implode(',', $headers),
+            $this->toCsvLine($row1),
+            'BROKEN,ROW',
+            $this->toCsvLine($row2),
+        ]) . "\n");
+
+        try {
+            $estimate = $this->invokeMethod('estimateCsvImportTotalRows', [$csvPath, 0]);
+
+            $this->assertSame(3, $estimate);
+        } finally {
+            @unlink($csvPath);
+        }
+    }
+
     public function test_normalize_excel_value_uses_strict_day_first_date_parsing(): void
     {
         $normalized = $this->invokeMethod('normalizeExcelValue', ['POSISI', '04/04/2026']);
@@ -170,6 +311,10 @@ class ImportExcelControllerDailyLoanCsvTest extends TestCase
         $headers = $this->dailyLoanHeaders();
         $row = array_fill(0, count($headers), '');
         $headerMap = array_flip($headers);
+
+        if (isset($headerMap['KODE_KANWIL1'])) {
+            $row[$headerMap['KODE_KANWIL1']] = 'R';
+        }
 
         foreach ($overrides as $header => $value) {
             $row[$headerMap[$header]] = $value;

@@ -179,6 +179,23 @@
             return Swal.fire(Object.assign({}, swalTheme, options));
         }
 
+        function normalizeProgressStatus(message) {
+            const text = String(message || '').trim();
+            const speedMatch = text.match(/\(([\d.,]+)\s+baris\/detik\)$/i);
+
+            if (!speedMatch) {
+                return {
+                    message: text,
+                    speed: '',
+                };
+            }
+
+            return {
+                message: text.replace(speedMatch[0], '').trim(),
+                speed: speedMatch[1].replace(/[^\d]/g, ''),
+            };
+        }
+
         const reportSelect = document.querySelector('select[name="id_report"]');
         const formRAR = document.getElementById('form-rar');
         const formExcel = document.getElementById('form-excel');
@@ -568,17 +585,20 @@
             });
 
             const payload = await response.json();
-            if (!response.ok || (payload.status !== 'success' && payload.status !== 'warning')) {
+            const deletedRows = Number(payload.deleted_rows || 0);
+            const recoveredWarning = payload.status === 'failed' && deletedRows > 0;
+            const outcomeStatus = recoveredWarning ? 'warning' : payload.status;
+            if ((!response.ok && !recoveredWarning) || (outcomeStatus !== 'success' && outcomeStatus !== 'warning')) {
                 throw new Error(payload.message || 'Gagal menghapus data report.');
             }
 
-            const isWarning = payload.status === 'warning';
+            const isWarning = outcomeStatus === 'warning';
             await themedSwal({
                 icon: isWarning ? 'warning' : 'success',
                 title: isWarning ? 'Selesai dengan Catatan' : 'Berhasil',
                 text: isWarning
-                    ? (payload.message || 'Data sumber terhapus tetapi sinkronisasi snapshot bermasalah.')
-                    : `Data terhapus ${Number(payload.deleted_rows || 0).toLocaleString('id-ID')} baris.`
+                    ? (payload.error || payload.message || `Data terhapus ${deletedRows.toLocaleString('id-ID')} baris, tetapi sinkronisasi lanjutan gagal.`)
+                    : `Data terhapus ${deletedRows.toLocaleString('id-ID')} baris.`
             });
 
             await fetchManagementData();
@@ -1126,6 +1146,76 @@
                             return;
                         }
 
+                        if (data.redirect && String(data.redirect).includes('prepare-preview')) {
+                            if (uploadProgressBar) {
+                                uploadProgressBar.style.width = '88%';
+                                uploadProgressBar.innerText = '88%';
+                            }
+                            const progressPercent = document.getElementById('swal-progress-percent');
+                            if (progressPercent) {
+                                progressPercent.textContent = '88%';
+                            }
+                            if (uploadProgressText) {
+                                uploadProgressText.innerText = 'Upload selesai. Menyiapkan preview cepat...';
+                            }
+
+                            const eventSource = new EventSource(data.redirect);
+
+                            eventSource.addEventListener('progress', function(event) {
+                                var evtData = {};
+                                try { evtData = JSON.parse(event.data); } catch (_) {}
+                                var progressBar  = document.getElementById('swal-progress-bar');
+                                var progressText = document.getElementById('swal-progress-text');
+                                if (progressBar && evtData.percent != null) {
+                                    var composedPercent = Math.max(88, Math.min(100, 88 + Math.round((evtData.percent / 100) * 12)));
+                                    progressBar.style.width = composedPercent + '%';
+                                    progressBar.innerText = composedPercent + '%';
+                                }
+                                if (progressText && evtData.message) {
+                                    var normalized = normalizeProgressStatus(evtData.message);
+                                    progressText.innerText = normalized.message || evtData.message;
+                                    var speedInfo = document.getElementById('swal-speed-info');
+                                    if (speedInfo) {
+                                        var speedValue = normalized.speed || (evtData.speed != null ? String(evtData.speed).replace(/[^\d]/g, '') : '');
+                                        speedInfo.innerText = speedValue ? Number(speedValue).toLocaleString('id-ID') + ' baris/detik' : '-';
+                                    }
+                                }
+                            });
+
+                            eventSource.addEventListener('ready', function(event) {
+                                var evtData = {};
+                                try { evtData = JSON.parse(event.data); } catch (_) {}
+                                eventSource.close();
+                                if (evtData.redirect) {
+                                    window.location.href = evtData.redirect;
+                                }
+                            });
+
+                            eventSource.addEventListener('error_msg', function(event) {
+                                var evtData = {};
+                                try { evtData = JSON.parse(event.data); } catch (_) {}
+                                eventSource.close();
+                                themedSwal({
+                                    icon: 'error',
+                                    title: 'Error',
+                                    text: evtData.message || 'Terjadi kesalahan server.'
+                                });
+                                resetSubmitButton();
+                            });
+
+                            eventSource.onerror = function() {
+                                eventSource.close();
+                                themedSwal({
+                                    icon: 'error',
+                                    title: 'Koneksi Terputus',
+                                    text: 'Gagal terhubung ke server untuk update progress.'
+                                });
+                                resetSubmitButton();
+                            };
+
+                            return;
+                        }
+
                         if (data.redirect) {
                             if (uploadProgressBar) {
                                 uploadProgressBar.style.width = '100%';
@@ -1183,7 +1273,13 @@
                                 progressBar.innerText = composedPercent + '%';
                             }
                             if (progressText && evtData.message) {
-                                progressText.innerText = evtData.message;
+                                var normalized = normalizeProgressStatus(evtData.message);
+                                progressText.innerText = normalized.message || evtData.message;
+                                var speedInfo = document.getElementById('swal-speed-info');
+                                if (speedInfo) {
+                                    var speedValue = normalized.speed || (evtData.speed != null ? String(evtData.speed).replace(/[^\d]/g, '') : '');
+                                    speedInfo.innerText = speedValue ? Number(speedValue).toLocaleString('id-ID') + ' baris/detik' : '-';
+                                }
                             }
                         });
 
@@ -1504,13 +1600,17 @@
 
     .swal-import-head {
         display: grid;
+        justify-items: center;
         gap: 0.45rem;
+        text-align: center;
     }
 
     .swal-import-badge {
         display: inline-flex;
         align-items: center;
+        justify-content: center;
         width: fit-content;
+        margin-inline: auto;
         padding: 0.4rem 0.72rem;
         border-radius: 999px;
         background: rgba(15, 118, 110, 0.1);

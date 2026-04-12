@@ -376,7 +376,8 @@
             const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-TOKEN': csrfToken }, body: JSON.stringify(payload) });
             let data = {};
             try { data = await response.json(); } catch (_) { data = {}; }
-            if (!response.ok && data.status !== 'warning') throw new Error(data.message || 'Terjadi kesalahan pada server.');
+            const recoveredWarning = data.status === 'failed' && Number(data.deleted_rows || 0) > 0;
+            if (!response.ok && data.status !== 'warning' && !recoveredWarning) throw new Error(data.message || 'Terjadi kesalahan pada server.');
             return data;
         }
 
@@ -447,12 +448,21 @@
                 statusUrlTemplate ? buildDeleteUrl(statusUrlTemplate, payload.delete_id) : '',
                 payload
             );
-            if (finalPayload.status === 'failed') {
+            const deletedRows = Number(finalPayload.deleted_rows || 0);
+            const recoveredWarning = finalPayload.status === 'failed' && deletedRows > 0;
+            const outcomeStatus = recoveredWarning ? 'warning' : finalPayload.status;
+            if (outcomeStatus === 'failed') {
                 const errorCode = finalPayload.error_code ? ` (${finalPayload.error_code})` : '';
                 throw new Error((finalPayload.error || finalPayload.message || 'Terjadi kesalahan saat menghapus data.') + errorCode);
             }
             scopes.forEach(function (scope) { managementState.selectedScopes.delete(createScopeKey(scope)); });
-            await themedSwal({ icon: finalPayload.status === 'warning' ? 'warning' : 'success', title: finalPayload.status === 'warning' ? 'Selesai dengan Catatan' : 'Berhasil', text: finalPayload.status === 'warning' ? (finalPayload.error || finalPayload.message || 'Delete selesai dengan catatan.') : `Data terhapus ${formatNumber(finalPayload.deleted_rows || 0)} baris. Snapshot, cache index, dan statistik optimizer sudah diperbarui.` });
+            await themedSwal({
+                icon: outcomeStatus === 'warning' ? 'warning' : 'success',
+                title: outcomeStatus === 'warning' ? 'Selesai dengan Catatan' : 'Berhasil',
+                text: outcomeStatus === 'warning'
+                    ? (finalPayload.error || finalPayload.message || `Data terhapus ${formatNumber(deletedRows)} baris, tetapi sinkronisasi lanjutan gagal.`)
+                    : `Data terhapus ${formatNumber(deletedRows)} baris. Snapshot, cache index, dan statistik optimizer sudah diperbarui.`
+            });
             await fetchManagementData(managementState.currentPage);
         }
 

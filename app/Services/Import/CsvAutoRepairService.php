@@ -163,8 +163,9 @@ class CsvAutoRepairService
 
         $pushVariant($payload);
 
-        if (strlen($payload) >= 2 && str_starts_with($payload, '"') && str_ends_with($payload, '"')) {
-            $pushVariant(str_replace('""', '"', substr($payload, 1, -1)));
+        $normalizedSerializedPayload = $this->normalizeSerializedDailyLoanPayload($payload);
+        if ($normalizedSerializedPayload !== null) {
+            $pushVariant($normalizedSerializedPayload);
         }
 
         $pushVariant(str_replace('\,', ',', $payload));
@@ -172,6 +173,23 @@ class CsvAutoRepairService
         $pushVariant(str_replace(['\,', ';"'], [',', ''], $payload));
 
         return $variants;
+    }
+
+    private function normalizeSerializedDailyLoanPayload(string $payload): ?string
+    {
+        $payload = trim($payload);
+        if ($payload === '' || !str_starts_with($payload, '"')) {
+            return null;
+        }
+
+        if (preg_match('/^"(.*)"(?:;*)$/s', $payload, $matches) !== 1) {
+            return null;
+        }
+
+        $normalized = str_replace('""', '"', (string) ($matches[1] ?? ''));
+        $normalized = trim($normalized);
+
+        return $normalized === '' ? null : $normalized;
     }
 
     private function repairDailyLoanParsedFields(array $fields, int $expectedColumns): array

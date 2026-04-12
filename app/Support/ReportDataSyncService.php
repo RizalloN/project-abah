@@ -19,6 +19,8 @@ class ReportDataSyncService
     private const DORMANT_SNAPSHOT_TABLE = 'rekening_dormant_snapshots';
     private const NEW_PAYROLL_SNAPSHOT_TABLE = 'performance_new_payroll_snapshots';
     private const CACHE_VERSION_KEY = 'report_cache_version:global';
+    private const RASIO_REBUILD_LOCK_KEY = 'snapshot:rasio:rebuild:global';
+    private const SIMPANAN_REBUILD_LOCK_PREFIX = 'snapshot:simpanan:rebuild:';
     private const POST_DELETE_SNAPSHOT_REPORTS = [
         'daily_loan_dinamis',
         'simpanan_multipn',
@@ -116,31 +118,50 @@ class ReportDataSyncService
         $this->runSnapshotAudit('daily_loan_dinamis', $periodHint, $jobId, $source, 'snapshot_dashboard', function () use ($periodHint) {
             return $this->snapshotBuilder->rebuildDashboard($periodHint, true);
         });
-        $this->refreshTableStatistics(self::DASHBOARD_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
+        if ($this->shouldRefreshDerivedSnapshotStatistics($periodHint)) {
+            $this->refreshTableStatistics(self::DASHBOARD_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
+        }
 
-        $this->runSnapshotAudit('daily_loan_dinamis', $periodHint, $jobId, $source, 'snapshot_rasio_casa', function () use ($periodHint) {
-            return $this->snapshotBuilder->rebuildRasioCasa($periodHint, true);
+        $this->runWithRasioSnapshotLock(function () use ($periodHint, $jobId, $source) {
+            $this->runSnapshotAudit('daily_loan_dinamis', $periodHint, $jobId, $source, 'snapshot_rasio_casa', function () use ($periodHint) {
+                return $this->snapshotBuilder->rebuildRasioCasa($periodHint, true);
+            });
         });
-        $this->refreshTableStatistics(self::RASIO_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
+        if ($this->shouldRefreshDerivedSnapshotStatistics($periodHint)) {
+            $this->refreshTableStatistics(self::RASIO_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
+        }
     }
 
     private function syncSimpanan(?string $periodHint, ?int $jobId, ?string $source): void
     {
-        $this->runSnapshotAudit('simpanan_multipn', $periodHint, $jobId, $source, 'snapshot_dashboard_simpanan', function () use ($periodHint) {
-            return $this->snapshotBuilder->rebuildDashboardSimpanan($periodHint, true);
-        });
-        $this->refreshTableStatistics(self::DASHBOARD_SIMPANAN_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
-        $this->refreshTableStatistics(self::DASHBOARD_SIMPANAN_BRANCH_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
+        $this->runWithSimpananSnapshotLock($periodHint, function () use ($periodHint, $jobId, $source) {
+            $this->runSnapshotAudit('simpanan_multipn', $periodHint, $jobId, $source, 'snapshot_dashboard_simpanan', function () use ($periodHint) {
+                return $this->snapshotBuilder->rebuildDashboardSimpanan($periodHint, true);
+            });
 
-        $this->runSnapshotAudit('simpanan_multipn', $periodHint, $jobId, $source, 'snapshot_rekening_dormant', function () use ($periodHint) {
-            return $this->snapshotBuilder->rebuildRekeningDormant($periodHint, true);
-        });
-        $this->refreshTableStatistics(self::DORMANT_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
+            if ($this->shouldRefreshDerivedSnapshotStatistics($periodHint)) {
+                $this->refreshTableStatistics(self::DASHBOARD_SIMPANAN_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
+                $this->refreshTableStatistics(self::DASHBOARD_SIMPANAN_BRANCH_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
+            }
 
-        $this->runSnapshotAudit('simpanan_multipn', $periodHint, $jobId, $source, 'snapshot_rasio_casa', function () {
-            return $this->snapshotBuilder->rebuildRasioCasa(null, true);
+            $this->runSnapshotAudit('simpanan_multipn', $periodHint, $jobId, $source, 'snapshot_rekening_dormant', function () use ($periodHint) {
+                return $this->snapshotBuilder->rebuildRekeningDormant($periodHint, true);
+            });
+
+            if ($this->shouldRefreshDerivedSnapshotStatistics($periodHint)) {
+                $this->refreshTableStatistics(self::DORMANT_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
+            }
+
+            $this->runWithRasioSnapshotLock(function () use ($periodHint, $jobId, $source) {
+                $this->runSnapshotAudit('simpanan_multipn', $periodHint, $jobId, $source, 'snapshot_rasio_casa', function () use ($periodHint) {
+                    return $this->snapshotBuilder->rebuildRasioCasa($periodHint, true);
+                });
+            });
+
+            if ($this->shouldRefreshDerivedSnapshotStatistics($periodHint)) {
+                $this->refreshTableStatistics(self::RASIO_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
+            }
         });
-        $this->refreshTableStatistics(self::RASIO_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
     }
 
     private function syncReportPh(?string $periodHint, ?int $jobId, ?string $source): void
@@ -319,6 +340,51 @@ class ReportDataSyncService
                 'table' => $tableName,
             ]);
         }
+    }
+
+    private function runWithRasioSnapshotLock(callable $callback): mixed
+    {
+        $lock = Cache::lock(self::RASIO_REBUILD_LOCK_KEY, 120);
+
+        try {
+            return $lock->block(10, $callback);
+        } finally {
+            try {
+                optional($lock)->release();
+            } catch (Throwable $e) {
+                Log::warning('Gagal melepas lock rebuild rasio snapshot: ' . $e->getMessage());
+            }
+        }
+    }
+
+    private function runWithSimpananSnapshotLock(?string $periodHint, callable $callback): mixed
+    {
+        $scope = $this->normalizeSnapshotLockScope($periodHint);
+        $lock = Cache::lock(self::SIMPANAN_REBUILD_LOCK_PREFIX . $scope, 180);
+
+        try {
+            return $lock->block(10, $callback);
+        } finally {
+            try {
+                optional($lock)->release();
+            } catch (Throwable $e) {
+                Log::warning('Gagal melepas lock rebuild snapshot simpanan: ' . $e->getMessage(), [
+                    'period_hint' => $periodHint,
+                ]);
+            }
+        }
+    }
+
+    private function shouldRefreshDerivedSnapshotStatistics(?string $periodHint): bool
+    {
+        return trim((string) $periodHint) === '';
+    }
+
+    private function normalizeSnapshotLockScope(?string $periodHint): string
+    {
+        $normalized = trim((string) $periodHint);
+
+        return $normalized !== '' ? $normalized : '__all__';
     }
 
     private function runSnapshotAudit(string $tableName, ?string $periodHint, ?int $jobId, ?string $source, string $action, callable $callback): void

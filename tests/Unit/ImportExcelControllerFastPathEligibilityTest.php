@@ -20,7 +20,7 @@ class ImportExcelControllerFastPathEligibilityTest extends TestCase
 
     public function test_daily_loan_fast_path_is_eligible_for_csv_without_filters(): void
     {
-        config()->set('import.direct_load.daily_loan.max_rows', 300000);
+        config()->set('import.direct_load.daily_loan.max_rows', 0);
 
         $service = Mockery::mock(MySqlBulkLoadService::class);
         $service->shouldReceive('supportsNativeBulkLoad')->andReturn(true);
@@ -43,7 +43,40 @@ class ImportExcelControllerFastPathEligibilityTest extends TestCase
 
         $result = $controller->resolveEligibility([
             'staged_csv_path' => $absolutePath,
-            'total_rows' => 10,
+            'total_rows' => 320987,
+            'active_filters' => [],
+        ], ['PERIODE', 'NOMOR_REKENING1', 'BAKI_DEBET1']);
+
+        $this->assertTrue($result['eligible']);
+        $this->assertSame($absolutePath, $result['absolute_path']);
+    }
+
+    public function test_simpanan_fast_path_is_eligible_without_row_limit(): void
+    {
+        config()->set('import.direct_load.simpanan_multipn.max_rows', 0);
+
+        $service = Mockery::mock(MySqlBulkLoadService::class);
+        $service->shouldReceive('supportsNativeBulkLoad')->andReturn(true);
+        $this->app->instance(MySqlBulkLoadService::class, $service);
+
+        $relativePath = 'testing/daily_loan_fast_path.csv';
+        $absolutePath = storage_path('app/' . $relativePath);
+        if (!is_dir(dirname($absolutePath))) {
+            @mkdir(dirname($absolutePath), 0777, true);
+        }
+
+        file_put_contents($absolutePath, "PERIODE,NOMOR_REKENING1,BAKI_DEBET1\n2026-04-04,123,1000\n");
+
+        $controller = new class extends ImportExcelController {
+            public function resolveEligibility(array $params, array $headers): array
+            {
+                return $this->resolveDirectCsvFastPathEligibility('simpanan_multipn', $params, $headers);
+            }
+        };
+
+        $result = $controller->resolveEligibility([
+            'staged_csv_path' => $absolutePath,
+            'total_rows' => 320987,
             'active_filters' => [],
         ], ['PERIODE', 'NOMOR_REKENING1', 'BAKI_DEBET1']);
 

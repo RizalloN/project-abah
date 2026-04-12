@@ -69,11 +69,6 @@
                 <input type="hidden" name="periode" value="{{ $manualPeriodeValue }}">
             @endif
 
-            @php 
-                $area6 = ['KC PONOROGO', 'KC NGAWI', 'KC MAGETAN', 'KC MADIUN', 'PONOROGO', 'NGAWI', 'MAGETAN', 'MADIUN']; 
-                $area6ColumnHints = $area6ColumnHints ?? ['KANCA', 'KCI'];
-            @endphp
-
             <div class="card card-outline card-success">
                 <div class="card-header bg-light">
                     <h3 class="card-title text-success font-weight-bold">
@@ -124,14 +119,6 @@
                                 <tr>
                                     <th class="text-center align-middle bg-light" style="width: 50px;">#</th>
                                     @foreach($headers as $index => $header)
-                                        @php
-                                            $isKancaCol = empty($disableArea6AutoFilter)
-                                                && collect($area6ColumnHints)->contains(function ($hint) use ($header) {
-                                                    return $hint !== '' && stripos($header, $hint) !== false;
-                                                })
-                                                && stripos($header, 'KODE') === false;
-                                        @endphp
-
                                         <th class="align-middle bg-light" style="min-width: 250px;">
                                             <div class="d-flex justify-content-between align-items-center">
                                                 
@@ -149,7 +136,7 @@
                                                 <input type="hidden" name="has_filter[]" value="{{ $index }}">
 
                                                 <div class="dropdown">
-                                                    <button class="btn btn-xs btn-light border dropdown-toggle filter-btn" type="button" data-toggle="dropdown" aria-expanded="false" data-boundary="window">
+                                                    <button class="btn btn-xs btn-light border dropdown-toggle filter-btn" type="button" data-toggle="dropdown" aria-expanded="false">
                                                         <i class="fas fa-filter text-muted" id="icon_filter_{{ $index }}"></i>
                                                     </button>
                                                     
@@ -164,7 +151,7 @@
                                                         </div>
                                                         <div class="p-2 border-bottom bg-white">
                                                             <div class="custom-control custom-checkbox">
-                                                                <input class="custom-control-input select-all-cb" type="checkbox" id="select_all_{{ $index }}" data-col="{{ $index }}" {{ $isKancaCol ? '' : 'checked' }}>
+                                                                <input class="custom-control-input select-all-cb" type="checkbox" id="select_all_{{ $index }}" data-col="{{ $index }}" checked>
                                                                 <label for="select_all_{{ $index }}" class="custom-control-label font-weight-bold text-dark">(Select All)</label>
                                                             </div>
                                                         </div>
@@ -229,9 +216,6 @@
     document.addEventListener('DOMContentLoaded', function () {
         const filterOptionsMap = @json($formattedUniqueValues);
         const forceAllChecked = @json(!empty($forceAllFiltersCheckedOnLoad));
-        const area6Values = @json(array_map('strtoupper', $area6));
-        const area6ColumnHints = @json(array_map('strtoupper', $area6ColumnHints ?? ['KANCA', 'KCI']));
-        const initialArea6Selections = @json($initialArea6Selections ?? []);
         const headers = @json($headers);
         const disableArea6AutoFilter = @json(!empty($disableArea6AutoFilter));
         const filterState = {};
@@ -252,8 +236,26 @@
         function themedSwal(options) {
             return Swal.fire(Object.assign({}, swalTheme, options));
         }
+
+        function normalizeProgressStatus(message) {
+            const text = String(message || '').trim();
+            const speedMatch = text.match(/\(([\d.,]+)\s+baris\/detik\)$/i);
+
+            if (!speedMatch) {
+                return {
+                    message: text,
+                    speed: '',
+                };
+            }
+
+            return {
+                message: text.replace(speedMatch[0], '').trim(),
+                speed: speedMatch[1].replace(/[^\d]/g, ''),
+            };
+        }
         
         const dropdownMenus = document.querySelectorAll('.dropdown-menu');
+
         dropdownMenus.forEach(menu => {
             menu.addEventListener('click', function (e) { e.stopPropagation(); });
         });
@@ -263,25 +265,9 @@
                 return String(value).trim();
             }) : [];
             const header = String(headers[col] || '');
-            const isKancaCol = !disableArea6AutoFilter
-                && area6ColumnHints.some(function (hint) {
-                    return hint && header.toUpperCase().includes(hint);
-                })
-                && !header.toUpperCase().includes('KODE');
-            const initialSelectionRaw = initialArea6Selections[col] ?? initialArea6Selections[String(col)] ?? [];
-            const initialSelection = Array.isArray(initialSelectionRaw) ? initialSelectionRaw.map(function (value) {
-                return String(value).trim();
-            }).filter(Boolean) : [];
-
             let selectedValues;
-            if (initialSelection.length > 0) {
-                selectedValues = new Set(initialSelection);
-            } else if (forceAllChecked) {
+            if (forceAllChecked) {
                 selectedValues = new Set(values);
-            } else if (isKancaCol) {
-                selectedValues = new Set(values.filter(function (value) {
-                    return area6Values.includes(String(value).toUpperCase());
-                }));
             } else {
                 selectedValues = new Set(values);
             }
@@ -602,12 +588,16 @@
             const progressText = document.getElementById('swal-progress-text');
             const rowsInfo = document.getElementById('swal-rows-info');
             const speedInfo = document.getElementById('swal-speed-info');
+            const normalized = normalizeProgressStatus(message);
+            const effectiveSpeed = speed > 0
+                ? speed
+                : (normalized.speed ? Number(normalized.speed) : 0);
             importProgressSnapshot = {
                 percent: Number(percent || 0),
-                message: message || '',
+                message: normalized.message || message || '',
                 rowsDone: Number(rowsDone || 0),
                 totalRows: Number(totalRows || 0),
-                speed: Number(speed || 0)
+                speed: Number(effectiveSpeed || 0)
             };
 
             if (progressBar) {
@@ -622,7 +612,7 @@
             }
 
             if (progressText) {
-                progressText.innerText = message || '';
+                progressText.innerText = normalized.message || message || '';
             }
 
             if (rowsInfo && totalRows > 0) {
@@ -630,7 +620,7 @@
             }
 
             if (speedInfo) {
-                speedInfo.innerText = speed > 0 ? Number(speed).toLocaleString('id-ID') + ' baris/detik' : '';
+                speedInfo.innerText = effectiveSpeed > 0 ? Number(effectiveSpeed).toLocaleString('id-ID') + ' baris/detik' : '';
             }
 
             refreshImportTimeInfo();
@@ -1071,13 +1061,17 @@
 
     .swal-import-head {
         display: grid;
+        justify-items: center;
         gap: 0.45rem;
+        text-align: center;
     }
 
     .swal-import-badge {
         display: inline-flex;
         align-items: center;
+        justify-content: center;
         width: fit-content;
+        margin-inline: auto;
         padding: 0.4rem 0.72rem;
         border-radius: 999px;
         background: rgba(15, 118, 110, 0.1);
@@ -1191,3 +1185,4 @@
     }
 </style>
 @endsection
+
