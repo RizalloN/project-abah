@@ -19,6 +19,11 @@ class ReportDataSyncService
     private const DORMANT_SNAPSHOT_TABLE = 'rekening_dormant_snapshots';
     private const NEW_PAYROLL_SNAPSHOT_TABLE = 'performance_new_payroll_snapshots';
     private const CACHE_VERSION_KEY = 'report_cache_version:global';
+    private const POST_DELETE_SNAPSHOT_REPORTS = [
+        'daily_loan_dinamis',
+        'simpanan_multipn',
+        'performance_pis_per_produk',
+    ];
 
     public function __construct(
         private readonly ReportSnapshotBuilder $snapshotBuilder,
@@ -182,6 +187,18 @@ class ReportDataSyncService
                 'table' => $normalizedTable,
             ]);
         }
+    }
+
+    public function resolvePostDeleteMaintenanceMode(string $tableName): string
+    {
+        $normalizedTable = strtolower(trim($tableName));
+        if ($normalizedTable === '') {
+            return 'lightweight';
+        }
+
+        return in_array($normalizedTable, self::POST_DELETE_SNAPSHOT_REPORTS, true)
+            ? 'snapshot'
+            : 'lightweight';
     }
 
     public function cleanupDerivedArtifactsAfterDelete(string $tableName, ?string $periodHint = null, ?string $source = null): array
@@ -374,11 +391,13 @@ class ReportDataSyncService
         }
 
         try {
+            $normalizedPeriodHint = $this->normalizeAuditPeriodHint($periodHint);
+
             DB::table(self::AUDIT_TABLE)->insert([
                 'import_job_id' => $jobId,
                 'source' => $source,
                 'table_name' => $tableName,
-                'period_hint' => $periodHint,
+                'period_hint' => $normalizedPeriodHint,
                 'action' => $action,
                 'status' => $status,
                 'duration_ms' => $payload['duration_ms'] ?? null,
@@ -394,6 +413,28 @@ class ReportDataSyncService
                 'action' => $action,
                 'status' => $status,
             ]);
+        }
+    }
+
+    private function normalizeAuditPeriodHint(?string $periodHint): ?string
+    {
+        $value = trim((string) $periodHint);
+        if ($value === '') {
+            return null;
+        }
+
+        if (preg_match('/^\d{4}-\d{2}$/', $value) === 1) {
+            return $value . '-01';
+        }
+
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $value) === 1) {
+            return $value;
+        }
+
+        try {
+            return \Carbon\Carbon::parse($value)->toDateString();
+        } catch (Throwable) {
+            return null;
         }
     }
 }

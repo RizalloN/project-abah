@@ -82,22 +82,24 @@
         </div>
 
         <div id="management-pagination" class="report-management-pagination d-none"></div>
-    </div>
-</div>
 
-<div id="management-selection-toast" class="report-management-selection-toast d-none" aria-live="polite">
-    <div class="report-management-selection-toast__body">
-        <div class="report-management-selection-toast__eyebrow">Seleksi Aktif</div>
-        <div id="management-selection-toast-text" class="report-management-selection-toast__text">0 grup dipilih</div>
-        <div id="management-selection-toast-subtext" class="report-management-selection-toast__subtext">0 baris siap dihapus</div>
-    </div>
-    <div class="report-management-selection-toast__actions">
-        <button type="button" id="btn-management-clear-selected" class="btn btn-sm report-management-selection-toast__btn report-management-selection-toast__btn--ghost" disabled>
-            Reset
-        </button>
-        <button type="button" id="btn-management-delete-selected" class="btn btn-sm report-management-selection-toast__btn report-management-selection-toast__btn--danger" disabled>
-            <i class="fas fa-trash-alt mr-1"></i> Hapus
-        </button>
+        <div class="report-management-selection-toast-shell">
+            <div id="management-selection-toast" class="report-management-selection-toast d-none" aria-live="polite">
+                <div class="report-management-selection-toast__body">
+                    <div class="report-management-selection-toast__eyebrow">Seleksi Aktif</div>
+                    <div id="management-selection-toast-text" class="report-management-selection-toast__text">0 grup dipilih</div>
+                    <div id="management-selection-toast-subtext" class="report-management-selection-toast__subtext">0 baris siap dihapus</div>
+                </div>
+                <div class="report-management-selection-toast__actions">
+                    <button type="button" id="btn-management-clear-selected" class="btn btn-sm report-management-selection-toast__btn report-management-selection-toast__btn--ghost" disabled>
+                        Reset
+                    </button>
+                    <button type="button" id="btn-management-delete-selected" class="btn btn-sm report-management-selection-toast__btn report-management-selection-toast__btn--danger" disabled>
+                        <i class="fas fa-trash-alt mr-1"></i> Hapus
+                    </button>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 @endsection
@@ -137,8 +139,17 @@
         }
 
         function formatNumber(value) { return Number(value || 0).toLocaleString('id-ID'); }
+        function normalizeShortDateLabel(value) {
+            const text = String(value ?? '').trim();
+            if (!text || text === '(Blank)' || text === '(Tanpa Periode)') return text || '(Blank)';
+            const isoMatch = text.match(/^(\d{4}-\d{2}-\d{2})/);
+            if (isoMatch) return isoMatch[1];
+            const slashMatch = text.match(/^(\d{2}\/\d{2}\/\d{4})/);
+            if (slashMatch) return slashMatch[1].split('/').reverse().join('-');
+            return text;
+        }
         function buildDeleteUrl(template, deleteId) { return String(template || '').replace('__DELETE_ID__', encodeURIComponent(deleteId)); }
-        function createScopeKey(scope) { return JSON.stringify([scope?.period || '', scope?.kanca || '', !!scope?.period_is_null, !!scope?.kanca_is_null]); }
+        function createScopeKey(scope) { return JSON.stringify([scope?.period_filter ?? scope?.period ?? '', scope?.kanca_filter ?? scope?.kanca ?? '', !!scope?.period_is_null, !!scope?.kanca_is_null]); }
         function createPeriodBucketKey(periodLabel, periodIsNull) { return periodIsNull ? '__blank__' : String(periodLabel || '(Tanpa Periode)'); }
 
         function updateDeleteProgressUi(payload) {
@@ -167,6 +178,8 @@
             if (progressMeta) {
                 if (payload?.status === 'failed') {
                     progressMeta.innerText = [errorCode, payload?.error || 'Delete gagal diproses.'].filter(Boolean).join(' - ');
+                } else if ((payload?.stage || '') === 'queued') {
+                    progressMeta.innerText = 'Menunggu queue worker. Fallback controller akan mengambil alih bila progres tidak bergerak.';
                 } else if (waitingOnBatch) {
                     progressMeta.innerText = `Memproses batch ${formatNumber(activeBatchSize)} baris - Grup ${formatNumber(currentScope)}/${formatNumber(payload?.scope_count || 1)}`;
                 } else if ((payload?.stage || '') === 'cleanup') {
@@ -189,7 +202,7 @@
             return data;
         }
 
-        async function runDeleteProgress(statusUrl, initialPayload) {
+        async function runDeleteProgress(processUrl, statusUrl, initialPayload) {
             themedSwal({
                 title: 'Memproses Delete',
                 html: `<div class="text-center mb-3"><span style="font-size: 14px; color: #64748b;" id="delete-progress-desc">Menginisialisasi delete bertahap...</span></div><div class="progress report-management-progress"><div id="delete-progress-bar" class="progress-bar report-management-progress__bar" role="progressbar" style="width: 0%;"></div></div><div class="text-center mt-2"><small id="delete-progress-value" class="report-management-progress__value">0%</small></div><div class="text-center mt-3"><small id="delete-progress-text" class="report-management-progress__text">Menyiapkan chunk pertama...</small></div><div class="text-center mt-2"><small id="delete-progress-meta" class="report-management-progress__meta"></small></div>`,
@@ -200,11 +213,24 @@
             });
             await new Promise(resolve => setTimeout(resolve, 30));
             let finalPayload = initialPayload;
+            let lastProcessAttemptAt = 0;
             updateDeleteProgressUi(finalPayload);
             try {
                 while (true) {
-                    if (!statusUrl) throw new Error('Endpoint status delete tidak tersedia.');
-                    finalPayload = await getJson(statusUrl);
+                    if (!statusUrl && !processUrl) throw new Error('Endpoint progress delete tidak tersedia.');
+                    if (statusUrl) {
+                        finalPayload = await getJson(statusUrl);
+                    } else if (processUrl) {
+                        finalPayload = await postJson(processUrl, {});
+                    }
+                    const canUseFallback = !!processUrl
+                        && !!finalPayload?.can_process_fallback
+                        && (Date.now() - lastProcessAttemptAt) >= 1500
+                        && !['completed', 'warning', 'failed'].includes(finalPayload?.status);
+                    if (canUseFallback) {
+                        lastProcessAttemptAt = Date.now();
+                        finalPayload = await postJson(processUrl, {});
+                    }
                     updateDeleteProgressUi(finalPayload);
                     if (['completed', 'warning', 'failed'].includes(finalPayload.status)) {
                         Swal.close();
@@ -241,10 +267,12 @@
         function decodeScopeDataset(element) {
             if (!element) return null;
             const period = decodeURIComponent(element.getAttribute('data-period') || '');
+            const periodLabel = decodeURIComponent(element.getAttribute('data-period-label') || period || '');
             const kanca = decodeURIComponent(element.getAttribute('data-kanca') || '');
+            const kancaLabel = decodeURIComponent(element.getAttribute('data-kanca-label') || kanca || '');
             const periodIsNull = element.getAttribute('data-period-is-null') === '1';
             const kancaIsNull = element.getAttribute('data-kanca-is-null') === '1';
-            return { period: periodIsNull ? '' : period, kanca: kancaIsNull ? '' : kanca, row_count: Number(element.getAttribute('data-row-count') || 0), period_is_null: periodIsNull, kanca_is_null: kancaIsNull, period_label: period || '(Blank)', kanca_label: kanca || '(Blank)' };
+            return { period: periodIsNull ? '' : period, period_filter: periodIsNull ? '' : period, kanca: kancaIsNull ? '' : kanca, kanca_filter: kancaIsNull ? '' : kanca, row_count: Number(element.getAttribute('data-row-count') || 0), period_is_null: periodIsNull, kanca_is_null: kancaIsNull, period_label: periodLabel || '(Blank)', kanca_label: kancaLabel || '(Blank)' };
         }
 
         function getSelectedScopeCheckboxes() { return Array.from(managementTableBody?.querySelectorAll('.management-row-checkbox:checked') || []); }
@@ -313,21 +341,26 @@
                 return;
             }
             managementTableBody.innerHTML = periods.map(function (periodGroup) {
-                const periodLabel = periodGroup.period ?? '(Blank)';
+                const periodFilter = String(periodGroup.period ?? '');
+                const periodLabel = normalizeShortDateLabel(periodGroup.period_label ?? periodGroup.period ?? '(Blank)');
                 const periodBucket = encodeURIComponent(createPeriodBucketKey(periodLabel, !!periodGroup.period_is_null));
                 const periodMeta = `${formatNumber(periodGroup.group_count || 0)} grup - ${formatNumber(periodGroup.total_rows || 0)} baris`;
                 const periodRows = Array.isArray(periodGroup.rows) ? periodGroup.rows : [];
                 const renderedRows = periodRows.map(function (row) {
-                    const rowPeriodLabel = row.period ?? '(Blank)';
-                    const kanca = row.kanca ?? '(Blank)';
+                    const rowPeriodFilter = String(row.period ?? '');
+                    const rowPeriodLabel = normalizeShortDateLabel(row.period_label ?? row.period ?? '(Blank)');
+                    const kanca = row.kanca ?? '';
+                    const kancaLabel = row.kanca_label ?? kanca ?? '(Blank)';
                     const total = formatNumber(row.row_count || 0);
                     const periodIsNull = row.period_is_null ? '1' : '0';
                     const kancaIsNull = row.kanca_is_null ? '1' : '0';
-                    const periodEncoded = encodeURIComponent(String(rowPeriodLabel));
+                    const periodEncoded = encodeURIComponent(String(rowPeriodFilter));
+                    const periodLabelEncoded = encodeURIComponent(String(rowPeriodLabel));
                     const kancaEncoded = encodeURIComponent(String(kanca));
+                    const kancaLabelEncoded = encodeURIComponent(String(kancaLabel));
                     const rowCount = Number(row.row_count || 0);
-                    const isChecked = managementState.selectedScopes.has(createScopeKey({ period: row.period_is_null ? '' : String(rowPeriodLabel), kanca: row.kanca_is_null ? '' : String(kanca), period_is_null: !!row.period_is_null, kanca_is_null: !!row.kanca_is_null }));
-                    return `<tr class="management-data-row" data-period="${periodEncoded}" data-kanca="${kancaEncoded}" data-row-count="${rowCount}" data-period-is-null="${periodIsNull}" data-kanca-is-null="${kancaIsNull}"><td class="text-center report-management-col-check"><input type="checkbox" class="management-row-checkbox" data-period="${periodEncoded}" data-kanca="${kancaEncoded}" data-row-count="${rowCount}" data-period-is-null="${periodIsNull}" data-kanca-is-null="${kancaIsNull}" data-period-bucket="${periodBucket}" ${isChecked ? 'checked' : ''}></td><td><span class="report-management-primary">${escapeHtml(kanca)}</span></td><td class="text-right"><span class="report-management-count">${total}</span></td><td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger btn-management-delete report-management-delete-btn" data-period="${periodEncoded}" data-kanca="${kancaEncoded}" data-row-count="${rowCount}" data-period-is-null="${periodIsNull}" data-kanca-is-null="${kancaIsNull}"><i class="fas fa-trash-alt mr-1"></i> Delete</button></td></tr>`;
+                    const isChecked = managementState.selectedScopes.has(createScopeKey({ period_filter: row.period_is_null ? '' : String(rowPeriodFilter), kanca_filter: row.kanca_is_null ? '' : String(kanca), period_is_null: !!row.period_is_null, kanca_is_null: !!row.kanca_is_null }));
+                    return `<tr class="management-data-row" data-period="${periodEncoded}" data-period-label="${periodLabelEncoded}" data-kanca="${kancaEncoded}" data-kanca-label="${kancaLabelEncoded}" data-row-count="${rowCount}" data-period-is-null="${periodIsNull}" data-kanca-is-null="${kancaIsNull}"><td class="text-center report-management-col-check"><input type="checkbox" class="management-row-checkbox" data-period="${periodEncoded}" data-period-label="${periodLabelEncoded}" data-kanca="${kancaEncoded}" data-kanca-label="${kancaLabelEncoded}" data-row-count="${rowCount}" data-period-is-null="${periodIsNull}" data-kanca-is-null="${kancaIsNull}" data-period-bucket="${periodBucket}" ${isChecked ? 'checked' : ''}></td><td><span class="report-management-primary">${escapeHtml(kancaLabel)}</span></td><td class="text-right"><span class="report-management-count">${total}</span></td><td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger btn-management-delete report-management-delete-btn" data-period="${periodEncoded}" data-period-label="${periodLabelEncoded}" data-kanca="${kancaEncoded}" data-kanca-label="${kancaLabelEncoded}" data-row-count="${rowCount}" data-period-is-null="${periodIsNull}" data-kanca-is-null="${kancaIsNull}"><i class="fas fa-trash-alt mr-1"></i> Delete</button></td></tr>`;
                 }).join('');
                 return `<tr class="report-management-period-row"><td colspan="4"><div class="report-management-period-card"><div><div class="report-management-period-card__title">${escapeHtml(periodLabel)}</div><div class="report-management-period-card__meta">${periodMeta}</div></div><label class="report-management-period-card__toggle"><input type="checkbox" class="management-period-checkbox" data-period-bucket="${periodBucket}"><span>Pilih semua periode ini</span></label></div></td></tr>${renderedRows}`;
             }).join('');
@@ -360,6 +393,7 @@
 
         async function deleteManagedScopes(scopes) {
             const deleteUrl = reportManagementCard?.dataset.deleteUrl;
+            const processUrlTemplate = reportManagementCard?.dataset.deleteProcessUrlTemplate;
             const statusUrlTemplate = reportManagementCard?.dataset.deleteStatusUrlTemplate;
             if (!deleteUrl || !managementReportSelect || !managementReportSelect.value) return;
             if (!Array.isArray(scopes) || scopes.length === 0) {
@@ -374,7 +408,7 @@
             const selectedRows = scopes.reduce((sum, scope) => sum + Number(scope.row_count || 0), 0);
             const confirm = await themedSwal({ icon: 'warning', title: 'Hapus Data?', html: `Data akan dihapus untuk <b>${formatNumber(scopes.length)}</b> grup dengan total <b>${formatNumber(selectedRows)}</b> baris terpilih:<ul class="text-left mb-0 pl-4">${previewItems}</ul>${extraInfo}`, showCancelButton: true, confirmButtonText: 'Ya, Hapus', cancelButtonText: 'Batal' });
             if (!confirm.isConfirmed) return;
-            const deletePayload = { id_report: managementReportSelect.value, scopes: scopes.map(function (scope) { return { period: scope.period || '', kanca: scope.kanca || '', period_is_null: !!scope.period_is_null, kanca_is_null: !!scope.kanca_is_null }; }) };
+            const deletePayload = { id_report: managementReportSelect.value, scopes: scopes.map(function (scope) { return { period_filter: scope.period_filter || scope.period || '', period_label: scope.period_label || '', kanca_filter: scope.kanca_filter || scope.kanca || '', kanca_label: scope.kanca_label || '', period_is_null: !!scope.period_is_null, kanca_is_null: !!scope.kanca_is_null }; }) };
             let payload = await postJson(deleteUrl, deletePayload);
             if (payload.status === 'error') throw new Error(payload.message || 'Gagal menghapus data report.');
             if (payload.status === 'completed') {
@@ -394,13 +428,20 @@
                 const candidateRows = formatNumber(payload.candidate_rows || 0);
                 const tableTotalRows = formatNumber(payload.table_total_rows || 0);
                 const ratioText = Number(payload.delete_ratio_percent || 0) + '%';
-                const hardForceConfirm = await themedSwal({ icon: 'warning', title: 'Konfirmasi Final Diperlukan', html: `Delete ini mencakup <b>${candidateRows}</b> dari <b>${tableTotalRows}</b> baris (~ <b>${ratioText}</b>).<br>Guard keamanan aktif untuk mencegah tabel kosong saat proses terhenti.<br><br>Lanjutkan hanya jika benar-benar yakin.`, showCancelButton: true, confirmButtonText: 'Ya, Hapus Besar', cancelButtonText: 'Batal' });
+                const hardForceHtml = payload.full_table_scope
+                    ? `Scope ini akan menghapus <b>seluruh isi tabel</b> (${tableTotalRows} baris).<br><br>Jika ini memang tujuan Anda, lanjutkan konfirmasi final untuk mengosongkan tabel.`
+                    : `Delete ini mencakup <b>${candidateRows}</b> dari <b>${tableTotalRows}</b> baris (~ <b>${ratioText}</b>).<br>Guard keamanan aktif untuk memastikan penghapusan besar tetap disengaja.<br><br>Lanjutkan hanya jika benar-benar yakin.`;
+                const hardForceConfirm = await themedSwal({ icon: 'warning', title: payload.full_table_scope ? 'Konfirmasi Kosongkan Tabel' : 'Konfirmasi Final Diperlukan', html: hardForceHtml, showCancelButton: true, confirmButtonText: payload.full_table_scope ? 'Ya, Kosongkan Tabel' : 'Ya, Hapus Besar', cancelButtonText: 'Batal' });
                 if (!hardForceConfirm.isConfirmed) return;
                 payload = await postJson(deleteUrl, Object.assign({}, deletePayload, { force: true, hard_force: true }));
                 if (payload.status === 'error') throw new Error(payload.message || 'Gagal menghapus data report.');
             }
-            if (!payload.delete_id || !statusUrlTemplate) throw new Error(payload.message || 'Delete progress tidak dapat dimulai.');
-            const finalPayload = await runDeleteProgress(buildDeleteUrl(statusUrlTemplate, payload.delete_id), payload);
+            if (!payload.delete_id || (!processUrlTemplate && !statusUrlTemplate)) throw new Error(payload.message || 'Delete progress tidak dapat dimulai.');
+            const finalPayload = await runDeleteProgress(
+                processUrlTemplate ? buildDeleteUrl(processUrlTemplate, payload.delete_id) : '',
+                statusUrlTemplate ? buildDeleteUrl(statusUrlTemplate, payload.delete_id) : '',
+                payload
+            );
             if (finalPayload.status === 'failed') {
                 const errorCode = finalPayload.error_code ? ` (${finalPayload.error_code})` : '';
                 throw new Error((finalPayload.error || finalPayload.message || 'Terjadi kesalahan saat menghapus data.') + errorCode);
@@ -540,7 +581,7 @@
     .import-upload-card__header{padding:1.45rem 1.5rem 1rem;background:radial-gradient(circle at top left,rgba(59,130,246,.09),transparent 28%),linear-gradient(180deg,#fff 0%,#f8fafc 100%)}
     .import-upload-card__eyebrow{color:#1d4ed8;background:rgba(37,99,235,.08)}
     .import-upload-card__subtitle{color:#64748b;max-width:700px;line-height:1.6}
-    .import-upload-card__body{padding:1.5rem}
+    .import-upload-card__body{position:relative;padding:1.5rem 1.5rem 7rem}
     .report-management-filter-btn{min-height:48px;border-radius:16px}
     .report-management-stat{height:100%;padding:1rem 1.05rem;border-radius:20px;background:linear-gradient(180deg,#fff 0%,#f8fbff 100%);border:1px solid rgba(148,163,184,.22)}
     .report-management-stat small{display:block;color:#64748b;font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;margin-bottom:.45rem}
@@ -571,7 +612,8 @@
     .report-management-page-btn{display:inline-flex;align-items:center;justify-content:center;min-width:40px;height:40px;padding:0 .8rem;border:1px solid rgba(148,163,184,.28);border-radius:12px;background:#fff;color:#334155;font-weight:800}
     .report-management-page-btn.is-active{background:linear-gradient(135deg,#0f4c81,#1d4ed8);border-color:transparent;color:#fff;box-shadow:0 16px 32px -24px rgba(29,78,216,.55)}
     .report-management-page-btn:disabled{opacity:.45;cursor:not-allowed}
-    .report-management-selection-toast{position:fixed;right:24px;bottom:24px;z-index:1080;display:flex;align-items:center;gap:1rem;max-width:min(420px,calc(100vw - 2rem));padding:1rem 1.05rem;border-radius:20px;background:linear-gradient(135deg,#0a4f8f 0%,#1166b1 52%,#0f82c9 100%);color:#fff;box-shadow:0 26px 60px -28px rgba(8,47,73,.58);border:1px solid rgba(191,219,254,.24)}
+    .report-management-selection-toast-shell{position:sticky;bottom:1rem;right:1.5rem;z-index:30;display:flex;justify-content:flex-end;align-items:flex-end;max-width:min(420px,calc(100% - 3rem));margin:1rem 0 0 auto;pointer-events:none}
+    .report-management-selection-toast{position:relative;display:flex;align-items:center;justify-content:space-between;gap:1rem;width:100%;max-width:100%;margin-left:auto;padding:1rem 1.05rem;border-radius:20px;background:linear-gradient(135deg,#0a4f8f 0%,#1166b1 52%,#0f82c9 100%);color:#fff;box-shadow:0 26px 60px -28px rgba(8,47,73,.58);border:1px solid rgba(191,219,254,.24);pointer-events:auto}
     .report-management-selection-toast__body{min-width:0}
     .report-management-selection-toast__eyebrow{font-size:.72rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:rgba(219,234,254,.88)}
     .report-management-selection-toast__text{font-size:1rem;font-weight:800;line-height:1.35}
@@ -591,6 +633,6 @@
     .swal-modern-confirm,.swal-modern-cancel{display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:16px;font-weight:700;padding:.8rem 1.3rem}
     .swal-modern-confirm{background:linear-gradient(135deg,#0f766e,#115e59);color:#fff;box-shadow:0 16px 34px -22px rgba(15,23,42,.45)}
     .swal-modern-cancel{background:#e2e8f0;color:#334155;margin-left:.5rem}
-    @media (max-width:767.98px){.report-management-hero,.import-upload-card__header,.import-upload-card__body{padding-left:1rem;padding-right:1rem}.report-management-hero__title{font-size:1.15rem}.report-management-hero__badge,.report-management-filter-btn{width:100%}.report-management-table thead th,.report-management-table tbody td{padding:.8rem}.report-management-bulkbar,.report-management-period-card,.report-management-pagination,.report-management-selection-toast{align-items:flex-start}.report-management-period-card__toggle,.report-management-selection-toast,.report-management-selection-toast__actions{width:100%}.report-management-selection-toast{right:1rem;left:1rem;bottom:1rem;max-width:none;flex-direction:column}}
+    @media (max-width:767.98px){.report-management-hero,.import-upload-card__header{padding-left:1rem;padding-right:1rem}.import-upload-card__body{padding:1rem 1rem 7.5rem}.report-management-hero__title{font-size:1.15rem}.report-management-hero__badge,.report-management-filter-btn{width:100%}.report-management-table thead th,.report-management-table tbody td{padding:.8rem}.report-management-bulkbar,.report-management-period-card,.report-management-selection-toast,.report-management-pagination{align-items:flex-start}.report-management-period-card__toggle,.report-management-selection-toast,.report-management-selection-toast__actions{width:100%}.report-management-selection-toast-shell{bottom:1rem;right:1rem;max-width:calc(100% - 2rem)}.report-management-selection-toast{flex-direction:column}}
 </style>
 @endsection

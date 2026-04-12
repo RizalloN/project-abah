@@ -14,6 +14,7 @@ use App\Http\Controllers\Import\ImportSimpananMultiPnCsvController;
 use App\Http\Controllers\Input\BodBocController;
 use App\Http\Controllers\Input\InputRekananController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
+use App\Http\Controllers\Admin\UserManagementController;
 use App\Http\Controllers\RasioCasaDebiturController;
 use App\Http\Controllers\RekeningDormantController;
 use Illuminate\Http\Request;
@@ -86,6 +87,10 @@ Route::middleware(['auth', 'role:admin', 'release.session.lock'])->group(functio
     Route::post('/bod-boc/store', [BodBocController::class, 'store'])->name('bod-boc.store');
     Route::get('/import', [ImportIndexController::class, 'index'])->name('import.index');
     Route::get('/report-management', [ImportIndexController::class, 'reportManagement'])->name('report-management.index');
+    Route::get('/user-management', [UserManagementController::class, 'index'])->name('user-management.index');
+    Route::post('/user-management', [UserManagementController::class, 'store'])->name('user-management.store');
+    Route::put('/user-management/{user}', [UserManagementController::class, 'update'])->name('user-management.update');
+    Route::delete('/user-management/{user}', [UserManagementController::class, 'destroy'])->name('user-management.destroy');
     Route::get('/import/upload-limits', [ImportIndexController::class, 'uploadLimits'])->name('import.upload-limits');
     Route::get('/import/template', [ImportIndexController::class, 'downloadTemplate'])->name('import.template');
     Route::post('/import/report-management/data', [ImportIndexController::class, 'reportManagementData'])->name('import.report-management.data');

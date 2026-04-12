@@ -227,9 +227,52 @@ class ImportFileController extends Controller
     private function isDailyLoanDateColumn(string $column): bool
     {
         return in_array($column, [
-            'periode','tgl_realisasi','tgl_jatuh_tempo','tanggal_menunggak','tgl_bayar_terakhir',
+            'tgl_realisasi','tgl_jatuh_tempo','tanggal_menunggak','tgl_bayar_terakhir',
             'tgl_terminate','last_date_maintenance_billing','next_pmt_date','next_pmt_int_date','tgl_akad_restruk',
         ], true);
+    }
+
+    private function normalizeImportPeriodValue($value, $fallbackPosisi = null, $fallbackTahun = null): ?string
+    {
+        $value = trim((string) $value);
+        if ($value !== '') {
+            $normalized = str_replace('/', '-', $value);
+
+            if (preg_match('/^\d{4}-\d{2}$/', $normalized) === 1) {
+                return $normalized;
+            }
+
+            if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $normalized) === 1) {
+                return substr($normalized, 0, 7);
+            }
+
+            foreach (['F Y', 'M Y', 'F-Y', 'M-Y', 'Y-m'] as $format) {
+                try {
+                    return Carbon::createFromFormat($format, $normalized)->startOfMonth()->format('Y-m');
+                } catch (\Throwable $e) {
+                }
+            }
+
+            try {
+                return Carbon::parse($normalized)->startOfMonth()->format('Y-m');
+            } catch (\Throwable $e) {
+            }
+        }
+
+        $fallbackPosisi = trim((string) $fallbackPosisi);
+        if ($fallbackPosisi !== '') {
+            try {
+                return Carbon::parse($fallbackPosisi)->startOfMonth()->format('Y-m');
+            } catch (\Throwable $e) {
+            }
+        }
+
+        $fallbackTahun = trim((string) $fallbackTahun);
+        if (preg_match('/^\d{4}$/', $fallbackTahun) === 1) {
+            return $fallbackTahun . '-01';
+        }
+
+        return null;
     }
 
     private function isDailyLoanNumericColumn(string $column): bool
@@ -262,7 +305,9 @@ class ImportFileController extends Controller
             }
 
             $type = 'string';
-            if ($this->isDailyLoanDateColumn($normalizedColName)) {
+            if ($normalizedColName === 'periode') {
+                $type = 'period';
+            } elseif ($this->isDailyLoanDateColumn($normalizedColName)) {
                 $type = 'date';
             } elseif ($this->isDailyLoanNumericColumn($normalizedColName) || in_array(strtoupper($colName), self::NUMERIC_COLUMNS, true)) {
                 $type = 'numeric';
@@ -945,7 +990,9 @@ class ImportFileController extends Controller
                         $csvHeaders,
                         $isBrilinkSummary,
                         $uniqueSuffix,
-                        $columnBlueprint
+                        $columnBlueprint,
+                        $posisiIndex,
+                        $tahunIndex
                     );
                     if ($mappedRow === null) {
                         continue;
@@ -1141,7 +1188,9 @@ class ImportFileController extends Controller
                     $csvHeaders,
                     $isBrilinkSummary,
                     $uniqueSuffix,
-                    $columnBlueprint
+                    $columnBlueprint,
+                    $posisiIndex,
+                    $tahunIndex
                 );
                 if ($mappedRow === null) {
                     $rowCounter++;
@@ -1440,7 +1489,9 @@ class ImportFileController extends Controller
         array $csvHeaders,
         bool $isBrilinkSummary,
         string $uniqueSuffix,
-        ?array $columnBlueprint = null
+        ?array $columnBlueprint = null,
+        int $posisiIndex = -1,
+        int $tahunIndex = -1
     ): ?array {
         if ($isBrilinkSummary) {
             $rawPeriode = $sourceData[0] ?? '';
@@ -1479,7 +1530,13 @@ class ImportFileController extends Controller
             $index = $columnMeta['index'];
             $cellValue = isset($sourceData[$index]) ? trim((string) $sourceData[$index]) : '';
 
-            if ($columnMeta['type'] === 'date') {
+            if ($columnMeta['type'] === 'period') {
+                $cellValue = $this->normalizeImportPeriodValue(
+                    $cellValue,
+                    $posisiIndex !== -1 ? ($sourceData[$posisiIndex] ?? null) : null,
+                    $tahunIndex !== -1 ? ($sourceData[$tahunIndex] ?? null) : null
+                );
+            } elseif ($columnMeta['type'] === 'date') {
                 $cellValue = $this->normalizeDailyLoanDate($cellValue);
             } elseif ($columnMeta['type'] === 'numeric') {
                 $cellValue = $this->normalizeDecimalValue($cellValue);
@@ -2149,6 +2206,18 @@ class ImportFileController extends Controller
                 }
                 flush();
             };
+            $markJobFailed = function (string $message, int $success = 0, int $failed = 0, ?string $status = null) use ($jobId): void {
+                if ($jobId <= 0) {
+                    return;
+                }
+
+                DB::table('import_jobs')->where('id', $jobId)->update([
+                    'status' => $status ?? ($success > 0 ? 'failed_partial' : 'failed'),
+                    'total_success' => $success,
+                    'total_failed' => $failed,
+                    'updated_at' => now(),
+                ]);
+            };
 
             try {
                 if ($jobId > 0) {
@@ -2193,12 +2262,14 @@ class ImportFileController extends Controller
                 $progressStep = strtolower($tableName) === 'daily_loan_dinamis' ? 200 : 500;
 
                 if ($filePath === '' || !file_exists($filePath)) {
+                    $markJobFailed('File tidak ditemukan di server. Silakan upload ulang.');
                     $send('error', ['message' => 'File tidak ditemukan di server. Silakan upload ulang.']);
                     return;
                 }
 
                 $handle = fopen($filePath, 'r');
                 if ($handle === false) {
+                    $markJobFailed('File tidak dapat dibaca oleh server.');
                     $send('error', ['message' => 'File tidak dapat dibaca oleh server.']);
                     return;
                 }
@@ -2318,68 +2389,83 @@ class ImportFileController extends Controller
                     $handle = null;
                 }
 
-                if (!$this->supportsNativeBulkLoad()) {
-                    $send('error', [
-                        'message' => 'LOCAL INFILE tidak aktif di MySQL/PDO. Import dibatalkan karena mode strict LOCAL INFILE.',
-                    ]);
-                    return;
-                }
+                $fallbackReason = '';
 
-                $strictHandled = $this->processImportStreamViaStrictLocalInfile(
-                    $send,
-                    $filePath,
-                    $resolvedDelimiter,
-                    $selectedColumns,
-                    $activeFilters,
-                    $tableName,
-                    $uniqueSuffix,
-                    $isBrilinkSummary,
-                    $csvHeaders,
-                    $posisiIndex,
-                    $tahunIndex,
-                    $totalRows,
-                    $duplicateLookup,
-                    $duplicateSkipped,
-                    $totalSuccess,
-                    $totalFailed,
-                    $lastErrorMsg,
-                    $jobId,
-                    $columnBlueprint
-                );
+                if ($this->supportsNativeBulkLoad()) {
+                    $strictHandled = $this->processImportStreamViaStrictLocalInfile(
+                        $send,
+                        $filePath,
+                        $resolvedDelimiter,
+                        $selectedColumns,
+                        $activeFilters,
+                        $tableName,
+                        $uniqueSuffix,
+                        $isBrilinkSummary,
+                        $csvHeaders,
+                        $posisiIndex,
+                        $tahunIndex,
+                        $totalRows,
+                        $duplicateLookup,
+                        $duplicateSkipped,
+                        $totalSuccess,
+                        $totalFailed,
+                        $lastErrorMsg,
+                        $jobId,
+                        $columnBlueprint
+                    );
 
-                if ($strictHandled) {
-                    $finalStatus = $totalFailed > 0 ? ($totalSuccess > 0 ? 'failed_partial' : 'failed') : 'completed';
+                    if ($strictHandled) {
+                        $finalStatus = $totalFailed > 0 ? ($totalSuccess > 0 ? 'failed_partial' : 'failed') : 'completed';
 
-                    DB::table('import_jobs')->where('id', $jobId)->update([
-                        'status' => $finalStatus,
-                        'total_success' => $totalSuccess,
-                        'total_failed' => $totalFailed + $duplicateSkipped,
-                        'updated_at' => now(),
-                    ]);
+                        DB::table('import_jobs')->where('id', $jobId)->update([
+                            'status' => $finalStatus,
+                            'total_success' => $totalSuccess,
+                            'total_failed' => $totalFailed + $duplicateSkipped,
+                            'updated_at' => now(),
+                        ]);
 
-                    if ($totalSuccess > 0) {
-                        $this->syncReportArtifacts($tableName, $jobId, $syncPeriod);
+                        if ($totalSuccess > 0) {
+                            $this->syncReportArtifacts($tableName, $jobId, $syncPeriod);
+                        }
+
+                        $this->cleanupImportDirectory($filePath);
+
+                        $send('complete', [
+                            'total_success' => $totalSuccess,
+                            'total_failed' => $totalFailed + $duplicateSkipped,
+                            'total_rows' => $totalRows,
+                            'error_message' => $lastErrorMsg,
+                            'duplicates_skipped' => $duplicateSkipped,
+                            'skipped_count' => 0,
+                            'skipped_rows' => [],
+                            'skip_reasons_summary' => [],
+                        ]);
+                        return;
                     }
 
-                    $this->cleanupImportDirectory($filePath);
+                    $fallbackReason = $lastErrorMsg !== ''
+                        ? 'LOAD DATA LOCAL INFILE gagal. Lanjut fallback insert batch...'
+                        : 'LOAD DATA LOCAL INFILE gagal. Lanjut fallback insert batch biasa...';
+                } else {
+                    $fallbackReason = 'LOCAL INFILE tidak aktif di MySQL/PDO. Lanjut fallback insert batch biasa...';
+                }
 
-                    $send('complete', [
-                        'total_success' => $totalSuccess,
-                        'total_failed' => $totalFailed + $duplicateSkipped,
-                        'total_rows' => $totalRows,
-                        'error_message' => $lastErrorMsg,
-                        'duplicates_skipped' => $duplicateSkipped,
-                        'skipped_count' => 0,
-                        'skipped_rows' => [],
-                        'skip_reasons_summary' => [],
+                $handle = fopen($filePath, 'r');
+                if ($handle === false) {
+                    $markJobFailed('File tidak dapat dibaca ulang untuk fallback insert batch.', $totalSuccess, $totalFailed + $duplicateSkipped);
+                    $send('error', [
+                        'message' => 'File tidak dapat dibaca ulang untuk fallback insert batch.',
                     ]);
                     return;
                 }
 
-                $send('error', [
-                    'message' => 'Gagal memproses CSV via LOCAL INFILE (mode strict, tanpa fallback). ' . $lastErrorMsg,
+                $send('progress', [
+                    'percent' => 12,
+                    'message' => $fallbackReason,
+                    'rows_done' => $rowsDone,
+                    'total' => $totalRows,
+                    'speed' => 0,
                 ]);
-                return;
 
                 while (($data = $this->readCsvRecord($handle, $resolvedDelimiter)) !== false) {
                     if (empty($data) || implode('', $data) === '') {
@@ -2403,7 +2489,9 @@ class ImportFileController extends Controller
                         $csvHeaders,
                         $isBrilinkSummary,
                         $uniqueSuffix,
-                        $columnBlueprint
+                        $columnBlueprint,
+                        $posisiIndex,
+                        $tahunIndex
                     );
                     if ($mappedRow === null) {
                         $rowCounter++;
@@ -2737,7 +2825,13 @@ class ImportFileController extends Controller
                         $index = $columnMeta['index'];
                         $cellValue = isset($data[$index]) ? trim((string) $data[$index]) : '';
 
-                        if ($columnMeta['type'] === 'date') {
+                        if ($columnMeta['type'] === 'period') {
+                            $cellValue = $this->normalizeImportPeriodValue(
+                                $cellValue,
+                                $posisiIndex !== -1 ? ($data[$posisiIndex] ?? null) : null,
+                                $tahunIndex !== -1 ? ($data[$tahunIndex] ?? null) : null
+                            );
+                        } elseif ($columnMeta['type'] === 'date') {
                             $cellValue = $this->normalizeDailyLoanDate($cellValue);
                         } elseif ($columnMeta['type'] === 'numeric') {
                             $cellValue = $this->normalizeDecimalValue($cellValue);

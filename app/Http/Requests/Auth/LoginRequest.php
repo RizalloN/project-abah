@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use RuntimeException;
 
 class LoginRequest extends FormRequest
 {
@@ -52,7 +53,17 @@ class LoginRequest extends FormRequest
             'password' => (string) $this->input('password'),
         ];
 
-        if (! Auth::attempt($credentials, $this->boolean('remember'))) {
+        try {
+            $authenticated = Auth::attempt($credentials, $this->boolean('remember'));
+        } catch (RuntimeException $e) {
+            if (! $this->isInvalidStoredPasswordHash($e)) {
+                throw $e;
+            }
+
+            $authenticated = false;
+        }
+
+        if (! $authenticated) {
             $this->hitRateLimiters();
 
             throw ValidationException::withMessages([
@@ -130,5 +141,10 @@ class LoginRequest extends FormRequest
     {
         RateLimiter::clear($this->throttleKey());
         RateLimiter::clear($this->ipThrottleKey());
+    }
+
+    private function isInvalidStoredPasswordHash(RuntimeException $e): bool
+    {
+        return str_contains(Str::lower($e->getMessage()), 'bcrypt');
     }
 }

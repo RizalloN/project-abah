@@ -767,21 +767,37 @@
                 setImportProgress(12, 'Inisialisasi selesai. Membuka koneksi progress...', 0, initResult.total_rows || 0, 0);
 
                 const streamUrl = streamUrlBase + '?job_id=' + encodeURIComponent(initResult.job_id);
+                const statusUrlTemplate = @json(route('import.jobs.status', ['jobId' => '__JOB_ID__']));
                 let streamDone = false;
-                const evtSource = new EventSource(streamUrl);
+                let reconnectAttempts = 0;
+                let evtSource = null;
 
-                evtSource.addEventListener('progress', function (event) {
-                    let data = {};
-                    try { data = JSON.parse(event.data); } catch (_) {}
-                    setImportProgress(data.percent || 0, data.message || '', data.rows_done || 0, data.total || 0, data.speed || 0);
-                });
+                const showImportError = function (message) {
+                    stopImportProgressTicker();
+                    themedSwal({
+                        icon: 'error',
+                        title: 'Proses Terhenti',
+                        html: message || 'Import gagal dijalankan!',
+                        confirmButtonText: 'Tutup'
+                    });
+                    resetImportButton();
+                };
 
-                evtSource.addEventListener('complete', function (event) {
+                const isNonFatalProcessingMessage = function (message) {
+                    const text = String(message || '').toLowerCase();
+                    return text.includes('sedang diproses')
+                        || text.includes('import sedang diproses')
+                        || text.includes('job import ini sudah sedang diproses')
+                        || text.includes('job import masuk ke queue')
+                        || text.includes('menunggu worker queue');
+                };
+
+                const showImportComplete = function (data) {
                     streamDone = true;
-                    evtSource.close();
+                    if (evtSource) {
+                        evtSource.close();
+                    }
 
-                    let data = {};
-                    try { data = JSON.parse(event.data); } catch (_) {}
                     const skippedCount = Number(data.skipped_count || 0);
                     const skippedRows = Array.isArray(data.skipped_rows) ? data.skipped_rows : [];
                     const skippedHtml = skippedCount > 0
@@ -822,42 +838,119 @@
                             window.location.href = "{{ route('import.index') }}";
                         });
                     }, 500);
-                });
-
-                evtSource.addEventListener('error', function (event) {
-                    if (streamDone) {
-                        return;
-                    }
-
-                    evtSource.close();
-                    let data = {};
-                    try { data = JSON.parse(event.data); } catch (_) {}
-
-                    stopImportProgressTicker();
-                    themedSwal({
-                        icon: 'error',
-                        title: 'Proses Terhenti',
-                        html: data.message || 'Import gagal dijalankan!',
-                        confirmButtonText: 'Tutup'
-                    });
-                    resetImportButton();
-                });
-
-                evtSource.onerror = function () {
-                    if (streamDone) {
-                        return;
-                    }
-
-                    evtSource.close();
-                    stopImportProgressTicker();
-                    themedSwal({
-                        icon: 'error',
-                        title: 'Koneksi Stream Terputus',
-                        text: 'Gagal terhubung ke server untuk update progress import.',
-                        confirmButtonText: 'Tutup'
-                    });
-                    resetImportButton();
                 };
+
+                const statusUrlForJob = function (jobId) {
+                    return statusUrlTemplate.replace('__JOB_ID__', encodeURIComponent(jobId));
+                };
+
+                const inspectJobStatus = async function (jobId) {
+                    const response = await fetch(statusUrlForJob(jobId), {
+                        headers: {
+                            'Accept': 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest'
+                        }
+                    });
+
+                    if (!response.ok) {
+                        return null;
+                    }
+
+                    return await response.json();
+                };
+
+                const connectSSE = function () {
+                    if (streamDone) {
+                        return;
+                    }
+
+                    evtSource = new EventSource(streamUrl);
+
+                    evtSource.addEventListener('progress', function (event) {
+                        reconnectAttempts = 0;
+                        let data = {};
+                        try { data = JSON.parse(event.data); } catch (_) {}
+                        setImportProgress(data.percent || 0, data.message || '', data.rows_done || data.processed_rows || 0, data.total || data.total_rows || 0, data.speed || 0);
+                    });
+
+                    evtSource.addEventListener('complete', function (event) {
+                        let data = {};
+                        try { data = JSON.parse(event.data); } catch (_) {}
+                        showImportComplete(data);
+                    });
+
+                    evtSource.addEventListener('error', function (event) {
+                        if (streamDone) {
+                            return;
+                        }
+
+                        let data = {};
+                        try { data = JSON.parse(event.data); } catch (_) {}
+                        if (isNonFatalProcessingMessage(data.message)) {
+                            return;
+                        }
+
+                        showImportError(data.message || 'Import gagal dijalankan!');
+                    });
+
+                    evtSource.onerror = async function () {
+                        if (streamDone) {
+                            return;
+                        }
+
+                        evtSource.close();
+
+                        let statusPayload = null;
+                        try {
+                            statusPayload = await inspectJobStatus(initResult.job_id);
+                        } catch (_) {}
+
+                        const status = String(statusPayload && statusPayload.status ? statusPayload.status : '');
+                        if (status === 'completed') {
+                            showImportComplete(statusPayload || {});
+                            return;
+                        }
+
+                        if (status === 'queued' || status === 'processing') {
+                            reconnectAttempts += 1;
+                            if (reconnectAttempts <= 10) {
+                                setImportProgress(
+                                    Math.max(importProgressSnapshot.percent || 12, 12),
+                                    (statusPayload && statusPayload.message) || 'Import sedang diproses. Menyambung ulang progress...',
+                                    importProgressSnapshot.rowsDone || 0,
+                                    importProgressSnapshot.totalRows || 0,
+                                    importProgressSnapshot.speed || 0
+                                );
+
+                                setTimeout(connectSSE, 1000 * Math.min(reconnectAttempts, 5));
+                                return;
+                            }
+                        }
+
+                        if (status === 'failed' || status === 'failed_partial' || status === 'error') {
+                            showImportError((statusPayload && statusPayload.message) || 'Import gagal dijalankan!');
+                            return;
+                        }
+
+                        reconnectAttempts += 1;
+                        if (reconnectAttempts <= 5) {
+                            setImportProgress(
+                                importProgressSnapshot.percent || 12,
+                                'Koneksi progress terputus, mencoba menyambung ulang...',
+                                importProgressSnapshot.rowsDone || 0,
+                                importProgressSnapshot.totalRows || 0,
+                                importProgressSnapshot.speed || 0
+                            );
+
+                            setTimeout(connectSSE, 1000 * reconnectAttempts);
+                            return;
+                        }
+
+                        showImportError('Gagal terhubung ke server untuk update progress import.');
+                    };
+                };
+
+                connectSSE();
             } catch (err) {
                 stopImportProgressTicker();
                 themedSwal({

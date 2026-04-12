@@ -364,6 +364,13 @@
                         <p>Report Management</p>
                     </a>
                 </li>
+
+                <li class="nav-item">
+                    <a href="{{ route('user-management.index') }}" class="nav-link {{ request()->routeIs('user-management.*') ? 'active' : '' }}">
+                        <i class="nav-icon fas fa-users-cog"></i>
+                        <p>User Management</p>
+                    </a>
+                </li>
                 @endif
 
                 <li class="nav-header text-uppercase">Report</li>

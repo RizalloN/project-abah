@@ -348,13 +348,13 @@
         <section class="left-panel">
             <div>
             <a href="{{ url('/') }}" class="left-brand">
-                    <span class="left-brand-badge">BR</span>
+                    <span class="left-brand-badge">BRI</span>
                     BRI DigiBranch
                 </a>
 
-                <p class="left-eyebrow">Secure Performance Portal</p>
-                <h1 class="left-title">Dashboard Area 6 dengan identitas visual BRI yang lebih kuat.</h1>
-                <p class="left-copy">Akses insight performa simpanan, pinjaman, dan digital channel dalam satu portal operasional yang cepat dan terstruktur.</p>
+                <p class="left-eyebrow">BRI Performance Portal</p>
+                <h1 class="left-title">Dashboard - Area 6</h1>
+                <p class="left-copy">Akses terhadap Performa Simpanan, Pinjaman, dan Digital Channel dalam satu portal operasional yang cepat dan terstruktur.</p>
             </div>
 
             <div class="left-features">
@@ -371,13 +371,13 @@
 
         <section class="right-panel">
                 <a href="{{ url('/') }}" class="mobile-brand">
-                <span class="mobile-brand-badge">BR</span>
+                <span class="mobile-brand-badge">BRI</span>
                 BRI DigiBranch
             </a>
 
             <p class="right-eyebrow">Welcome Back</p>
             <h2 class="right-title">Masuk ke akun Anda</h2>
-            <p class="right-copy">Gunakan personal number dan password untuk melanjutkan ke dashboard.</p>
+            <p class="right-copy">Gunakan PN dan Password untuk melanjutkan ke dashboard.</p>
 
             @if (session('status'))
                 <div class="status-box">{{ session('status') }}</div>
@@ -387,13 +387,13 @@
                 @csrf
 
                 <div class="field">
-                    <label for="pn">Personal Number</label>
+                    <label for="pn">PN</label>
                     <input
                         id="pn"
                         type="text"
                         name="pn"
                         value="{{ old('pn') }}"
-                        placeholder="Masukkan personal number"
+                        placeholder="PN Anda"
                         required
                         autofocus
                     />
@@ -414,7 +414,7 @@
                         id="password"
                         type="password"
                         name="password"
-                        placeholder="Masukkan password"
+                        placeholder="Password Anda"
                         required
                     />
                     @error('password')

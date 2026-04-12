@@ -17,6 +17,49 @@ class ImportFileBrimoController extends Controller
 {
     use AllocatesGapIds;
 
+    private function normalizeBrimoPeriodValue($value, $fallbackPosisi = null, $fallbackTahun = null): ?string
+    {
+        $value = trim((string) $value);
+        if ($value !== '') {
+            $normalized = str_replace('/', '-', $value);
+
+            if (preg_match('/^\d{4}-\d{2}$/', $normalized) === 1) {
+                return $normalized;
+            }
+
+            if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $normalized) === 1) {
+                return substr($normalized, 0, 7);
+            }
+
+            foreach (['F Y', 'M Y', 'F-Y', 'M-Y', 'Y-m'] as $format) {
+                try {
+                    return Carbon::createFromFormat($format, $normalized)->startOfMonth()->format('Y-m');
+                } catch (\Throwable $e) {
+                }
+            }
+
+            try {
+                return Carbon::parse($normalized)->startOfMonth()->format('Y-m');
+            } catch (\Throwable $e) {
+            }
+        }
+
+        $fallbackPosisi = trim((string) $fallbackPosisi);
+        if ($fallbackPosisi !== '') {
+            try {
+                return Carbon::parse($fallbackPosisi)->startOfMonth()->format('Y-m');
+            } catch (\Throwable $e) {
+            }
+        }
+
+        $fallbackTahun = trim((string) $fallbackTahun);
+        if (preg_match('/^\d{4}$/', $fallbackTahun) === 1) {
+            return $fallbackTahun . '-01';
+        }
+
+        return null;
+    }
+
     private function hasMeaningfulImportData(array $row, array $ignoredKeys = []): bool
     {
         $ignoredLookup = array_fill_keys(array_map('strtolower', $ignoredKeys), true);
@@ -107,6 +150,7 @@ class ImportFileBrimoController extends Controller
         $headers = []; $previewData = []; $uniqueValues = []; 
         $posisiIndex = -1; 
         $tahunIndex = -1;
+        $periodeIndex = -1;
 
         if (in_array($extension, ['csv', 'txt'])) {
             if (($handle = fopen($filePath, 'r')) !== FALSE) {
@@ -131,6 +175,7 @@ class ImportFileBrimoController extends Controller
                         foreach ($headers as $i => $h) { 
                             if (stripos($h, 'POSISI') !== false) { $posisiIndex = $i; }
                             if (stripos($h, 'TAHUN') !== false) { $tahunIndex = $i; }
+                            if (stripos($h, 'PERIODE') !== false) { $periodeIndex = $i; }
                         }
 
                         foreach ($headers as $i => $h) { 
@@ -386,7 +431,23 @@ class ImportFileBrimoController extends Controller
                         $cellValue = $clean;
                     }
 
+                    if ($colName === 'periode') {
+                        $cellValue = $this->normalizeBrimoPeriodValue(
+                            $cellValue,
+                            $posisiIndex !== -1 ? ($data[$posisiIndex] ?? null) : null,
+                            $tahunIndex !== -1 ? ($data[$tahunIndex] ?? null) : null
+                        );
+                    }
+
                     $rowData[$colName] = ($cellValue === '') ? null : $cellValue;
+                }
+
+                if ((!array_key_exists('periode', $rowData) || $rowData['periode'] === null || $rowData['periode'] === '') && $periodeIndex !== -1) {
+                    $rowData['periode'] = $this->normalizeBrimoPeriodValue(
+                        $data[$periodeIndex] ?? null,
+                        $posisiIndex !== -1 ? ($data[$posisiIndex] ?? null) : null,
+                        $tahunIndex !== -1 ? ($data[$tahunIndex] ?? null) : null
+                    );
                 }
                 
                 if ($this->hasMeaningfulImportData($rowData, ['uniqueid_namareport', 'periode', 'posisi'])) {

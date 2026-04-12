@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Import;
 
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Import\Concerns\AllocatesGapIds;
+use App\Support\ReportDataSyncService;
 use App\Support\StrictDateParser;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -1667,6 +1668,7 @@ class ImportPerformancePisPerProdukController extends Controller
     private function cleanupSuccessfulImportArtifacts(int $jobId, string $relativePath, array $extraPaths = []): void
     {
         try {
+            app(ReportDataSyncService::class)->syncImportedTable(self::TABLE_NAME, jobId: $jobId, source: static::class);
             app(ImportCleanupController::class)->cleanupSuccessfulJobArtifacts(
                 $jobId,
                 array_values(array_filter(array_merge([$relativePath], $extraPaths)))

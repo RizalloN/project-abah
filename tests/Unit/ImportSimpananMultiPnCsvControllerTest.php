@@ -54,6 +54,46 @@ class ImportSimpananMultiPnCsvControllerTest extends TestCase
         $this->assertStringContainsString('`posisi` = CASE', $posisiClause);
     }
 
+    public function test_direct_csv_load_bypasses_snapshot_invalidation_during_bulk_load(): void
+    {
+        $controller = new ImportSimpananMultiPnCsvController();
+        $pdo = new SpySnapshotFlagPdo();
+
+        $result = $this->invokeMethod($controller, 'executeLoadDataWithSnapshotInvalidationBypassed', [
+            $pdo,
+            "LOAD DATA LOCAL INFILE '/tmp/simpanan.csv' INTO TABLE `simpanan_multipn`",
+        ]);
+
+        $this->assertSame(321, $result);
+        $this->assertSame([
+            'SET @skip_snapshot_invalidation = 1',
+            "LOAD DATA LOCAL INFILE '/tmp/simpanan.csv' INTO TABLE `simpanan_multipn`",
+            'SET @skip_snapshot_invalidation = NULL',
+        ], $pdo->statements);
+    }
+
+    public function test_direct_csv_load_resets_snapshot_bypass_flag_after_failure(): void
+    {
+        $controller = new ImportSimpananMultiPnCsvController();
+        $pdo = new SpySnapshotFlagPdo(shouldThrowOnLoad: true);
+
+        try {
+            $this->invokeMethod($controller, 'executeLoadDataWithSnapshotInvalidationBypassed', [
+                $pdo,
+                "LOAD DATA LOCAL INFILE '/tmp/simpanan.csv' INTO TABLE `simpanan_multipn`",
+            ]);
+            $this->fail('Expected bulk load helper to rethrow the load failure.');
+        } catch (\RuntimeException $e) {
+            $this->assertSame('Simulated LOAD DATA failure.', $e->getMessage());
+        }
+
+        $this->assertSame([
+            'SET @skip_snapshot_invalidation = 1',
+            "LOAD DATA LOCAL INFILE '/tmp/simpanan.csv' INTO TABLE `simpanan_multipn`",
+            'SET @skip_snapshot_invalidation = NULL',
+        ], $pdo->statements);
+    }
+
     private function invokeMethod(object $target, string $method, array $arguments)
     {
         $reflection = new ReflectionClass($target);
@@ -61,5 +101,29 @@ class ImportSimpananMultiPnCsvControllerTest extends TestCase
         $methodReflection->setAccessible(true);
 
         return $methodReflection->invokeArgs($target, $arguments);
+    }
+}
+
+class SpySnapshotFlagPdo extends \PDO
+{
+    public array $statements = [];
+
+    public function __construct(private readonly bool $shouldThrowOnLoad = false)
+    {
+    }
+
+    public function exec(string $statement): int|false
+    {
+        $this->statements[] = $statement;
+
+        if (str_starts_with($statement, 'LOAD DATA LOCAL INFILE')) {
+            if ($this->shouldThrowOnLoad) {
+                throw new \RuntimeException('Simulated LOAD DATA failure.');
+            }
+
+            return 321;
+        }
+
+        return 0;
     }
 }

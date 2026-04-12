@@ -621,8 +621,24 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
             . "({$quotedFields}) "
             . "SET {$setClause}";
 
-        $affected = $pdo->exec($sql);
+        $affected = $this->executeLoadDataWithSnapshotInvalidationBypassed($pdo, $sql);
         $pdo = null;
+
+        return $affected;
+    }
+
+    private function executeLoadDataWithSnapshotInvalidationBypassed(\PDO $pdo, string $sql): int
+    {
+        try {
+            $pdo->exec('SET @skip_snapshot_invalidation = 1');
+            $affected = $pdo->exec($sql);
+        } finally {
+            try {
+                $pdo->exec('SET @skip_snapshot_invalidation = NULL');
+            } catch (\Throwable) {
+                // abaikan reset session variable bila koneksi sudah gagal
+            }
+        }
 
         if ($affected === false) {
             throw new \RuntimeException('LOAD DATA LOCAL INFILE gagal dieksekusi untuk Simpanan MultiPN.');

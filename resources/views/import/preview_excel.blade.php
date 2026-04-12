@@ -590,9 +590,86 @@ document.addEventListener('DOMContentLoaded', function () {
 
         // ── STEP 2 & 3: SSE Stream dengan auto-reconnect ───────────────────
         var streamUrl  = '{{ $streamRoute ?? route("import.excel.stream") }}?job_id=' + encodeURIComponent(jobId);
+        var statusUrlTemplate = @json(route('import.jobs.status', ['jobId' => '__JOB_ID__']));
         var evtSource  = null;
         var streamDone = false;
+        var reconnectAttempts = 0;
         var lastProg   = { percent: 12, message: 'Menginisialisasi...', rows_done: 0, total: 0, speed: 0 };
+
+        function statusUrlForJob(jobId) {
+            return statusUrlTemplate.replace('__JOB_ID__', encodeURIComponent(jobId));
+        }
+
+        function showImportFailure(message) {
+            streamDone = true;
+            if (evtSource) evtSource.close();
+            themedSwal({ icon: 'error', title: 'Proses Terhenti', html: message || 'Import gagal dijalankan!', confirmButtonText: 'Tutup' });
+            resetSubmitBtn();
+        }
+
+        function isNonFatalProcessingMessage(message) {
+            var text = String(message || '').toLowerCase();
+            return text.indexOf('sedang diproses') !== -1
+                || text.indexOf('import sedang diproses') !== -1
+                || text.indexOf('job import ini sudah sedang diproses') !== -1
+                || text.indexOf('job import masuk ke queue') !== -1
+                || text.indexOf('menunggu worker queue') !== -1;
+        }
+
+        function showImportSuccess(d) {
+            streamDone = true;
+            if (evtSource) evtSource.close();
+
+            var skippedCount = Number(d.skipped_count || 0);
+            var skippedRows = Array.isArray(d.skipped_rows) ? d.skipped_rows : [];
+            var skippedRowsText = skippedRows.length ? skippedRows.join(', ') : '';
+            var skippedHtml = skippedCount > 0
+                ? '<br><small class="text-warning">Baris rusak di-skip: <b>' + skippedCount.toLocaleString('id-ID') + '</b>' +
+                  (skippedRowsText ? '<br>Contoh baris: ' + skippedRowsText : '') +
+                  '</small>'
+                : '';
+
+            activateStep('step-done', 'line-3');
+            setProgress(100, 'Import selesai!', d.total_rows || 0, d.total_rows || 0, 0);
+
+            setTimeout(function () {
+                if (!d.total_success || d.total_success === 0) {
+                    themedSwal({
+                        icon: 'warning',
+                        title: 'Tidak Ada Data Masuk',
+                        html: '<p>Total: <b>' + Number(d.total_rows || 0).toLocaleString('id-ID') + ' baris</b></p>' +
+                              '<p>Gagal: <b>' + Number(d.total_failed || 0).toLocaleString('id-ID') + ' baris</b></p>' +
+                              '<small class="text-muted">Sebagian baris gagal diproses atau terbatasi oleh filter yang aktif.</small>' +
+                              skippedHtml,
+                        confirmButtonText: 'Kembali ke Import',
+                    }).then(function () { window.location.href = '{{ route("import.index") }}'; });
+                } else {
+                    themedSwal({
+                        icon: d.total_failed > 0 ? 'warning' : 'success',
+                        title: d.total_failed > 0 ? 'Import Memiliki Kendala' : 'Import Sukses',
+                        html: 'Berhasil mengimport <b>' + Number(d.total_success).toLocaleString('id-ID') + ' baris</b> data ke database.' +
+                              (d.total_failed > 0 ? '<br><small class="text-warning">' + Number(d.total_failed).toLocaleString('id-ID') + ' baris gagal saat insert atau tidak lolos proses validasi.</small>' : '') +
+                              skippedHtml,
+                        confirmButtonText: 'Lanjut',
+                    }).then(function () { window.location.href = '{{ route("import.index") }}'; });
+                }
+            }, 600);
+        }
+
+        async function inspectImportJob(jobId) {
+            var response = await fetch(statusUrlForJob(jobId), {
+                headers: {
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            });
+
+            if (!response.ok) {
+                return null;
+            }
+
+            return await response.json();
+        }
 
         function connectSSE() {
             if (streamDone) return;
@@ -600,6 +677,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
             // ── progress event ──────────────────────────────────────────────
             evtSource.addEventListener('progress', function (e) {
+                reconnectAttempts = 0;
                 var d = {};
                 try { d = JSON.parse(e.data); } catch (_) {}
                 if (!d) return;
@@ -607,8 +685,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 lastProg = {
                     percent:  d.percent   != null ? d.percent   : lastProg.percent,
                     message:  d.message   != null ? d.message   : lastProg.message,
-                    rows_done: d.rows_done != null ? d.rows_done : lastProg.rows_done,
-                    total:    d.total     != null ? d.total     : lastProg.total,
+                    rows_done: d.rows_done != null ? d.rows_done : (d.processed_rows != null ? d.processed_rows : lastProg.rows_done),
+                    total:    d.total     != null ? d.total     : (d.total_rows != null ? d.total_rows : lastProg.total),
                     speed:    d.speed     != null ? d.speed     : lastProg.speed,
                 };
 
@@ -620,9 +698,12 @@ document.addEventListener('DOMContentLoaded', function () {
 
             // ── complete event ──────────────────────────────────────────────
             evtSource.addEventListener('complete', function (e) {
-                streamDone = true;
-                evtSource.close();
-
+                showImportSuccess((function () {
+                    var payload = {};
+                    try { payload = JSON.parse(e.data); } catch (_) {}
+                    return payload;
+                })());
+                return;
                 var d = {};
                 try { d = JSON.parse(e.data); } catch (_) {}
                 var skippedCount = Number(d.skipped_count || 0);
@@ -666,25 +747,54 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (streamDone) return;
                 var msg = lastProg.message || 'Terjadi kesalahan server.';
                 try { var d = JSON.parse(e.data); if (d && d.message) msg = d.message; } catch (_) {}
-                evtSource.close();
-                streamDone = true;
-                themedSwal({ icon: 'error', title: 'Proses Terhenti', html: msg, confirmButtonText: 'Tutup' });
-                resetSubmitBtn();
+                if (isNonFatalProcessingMessage(msg)) return;
+                showImportFailure(msg);
             });
 
             // ── onerror (koneksi putus / network drop) ──────────────────────
-            evtSource.onerror = function () {
+            evtSource.onerror = async function () {
                 if (streamDone) return;
                 evtSource.close();
-                streamDone = true;
-                themedSwal({
-                    icon: 'error',
-                    title: 'Koneksi Stream Terputus',
-                    html: 'Koneksi import dihentikan untuk mencegah proses berjalan ganda dan data menjadi dobel.<br>' +
-                          '<small>Silakan cek hasil import terlebih dahulu sebelum menjalankan ulang.</small>',
-                    confirmButtonText: 'Tutup'
-                });
-                resetSubmitBtn();
+
+                var statusPayload = null;
+                try {
+                    statusPayload = await inspectImportJob(jobId);
+                } catch (_) {}
+
+                var status = String(statusPayload && statusPayload.status ? statusPayload.status : '');
+                if (status === 'completed') {
+                    showImportSuccess(statusPayload || {});
+                    return;
+                }
+
+                if (status === 'queued' || status === 'processing') {
+                    reconnectAttempts += 1;
+                    if (reconnectAttempts <= 10) {
+                        setProgress(
+                            Math.max(lastProg.percent || 12, 12),
+                            (statusPayload && statusPayload.message) || 'Import sedang diproses. Menyambung ulang progress...',
+                            lastProg.rows_done || 0,
+                            lastProg.total || 0,
+                            lastProg.speed || 0
+                        );
+                        setTimeout(connectSSE, 1000 * Math.min(reconnectAttempts, 5));
+                        return;
+                    }
+                }
+
+                if (status === 'failed' || status === 'failed_partial' || status === 'error') {
+                    showImportFailure((statusPayload && statusPayload.message) || 'Import gagal dijalankan!');
+                    return;
+                }
+
+                reconnectAttempts += 1;
+                if (reconnectAttempts <= 5) {
+                    setProgress(lastProg.percent, 'Koneksi progress terputus, mencoba menyambung ulang...', lastProg.rows_done, lastProg.total, lastProg.speed);
+                    setTimeout(connectSSE, 1000 * reconnectAttempts);
+                    return;
+                }
+
+                showImportFailure('Gagal terhubung ke server untuk update progress import.');
             };
         }
 
