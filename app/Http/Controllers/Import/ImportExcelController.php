@@ -1522,7 +1522,7 @@ class ImportExcelController extends Controller
 
     public function streamDailyLoanImport(Request $request)
     {
-        return $this->processExcelStream($this->useDailyLoanReport($request));
+        return $this->processDailyLoanImportStream($this->useDailyLoanReport($request));
     }
 
     public function chunkDailyLoanImport(Request $request)
@@ -1565,6 +1565,179 @@ class ImportExcelController extends Controller
     public function chunkSimpananMultiPnImport(Request $request)
     {
         return $this->processExcelChunk($this->useSimpananMultiPnReport($request));
+    }
+
+    private function processDailyLoanImportStream(Request $request)
+    {
+        @ini_set('memory_limit', '1024M');
+        @ini_set('max_execution_time', '0');
+        @set_time_limit(0);
+
+        $sessionParams = session('excel_import_params', []);
+        $jobId = (int) ($sessionParams['job_id'] ?? $request->query('job_id', 0));
+        $jobState = $this->getExcelImportJobState($jobId);
+        $params = !empty($jobState['params']) ? (array) $jobState['params'] : $sessionParams;
+        $normalizedHeaders = !empty($jobState['headers']) ? (array) $jobState['headers'] : session('excel_headers', []);
+        $eligibility = $this->resolveDirectCsvFastPathEligibility('daily_loan', $params, $normalizedHeaders);
+
+        if (!($eligibility['eligible'] ?? false)) {
+            $request->attributes->set('queue_message', (string) ($eligibility['reason'] ?? 'Fast import tidak tersedia. Menggunakan safe path queue.'));
+            return $this->processExcelStream($request);
+        }
+
+        $relativePath = (string) ($eligibility['relative_path'] ?? '');
+        $absolutePath = (string) ($eligibility['absolute_path'] ?? '');
+        $totalRows = (int) ($eligibility['total_rows'] ?? 0);
+
+        request()->session()->save();
+
+        return response()->stream(function () use ($jobId, $relativePath, $absolutePath, $totalRows, $normalizedHeaders) {
+            $streamLock = null;
+            $send = function (string $event, array $data) {
+                echo "event: {$event}\n";
+                echo 'data: ' . json_encode($data) . "\n\n";
+                if (ob_get_level() > 0) {
+                    ob_flush();
+                }
+                flush();
+            };
+
+            try {
+                if ($jobId > 0) {
+                    $streamLock = Cache::lock('import_excel_stream_job_' . $jobId, 7200);
+
+                    if (!$streamLock->get()) {
+                        $job = DB::table('import_jobs')->where('id', $jobId)->first();
+
+                        if ($job && in_array($job->status, ['completed', 'failed', 'failed_partial'], true)) {
+                            $payload = [
+                                'status' => (string) $job->status,
+                                'total_success' => (int) ($job->total_success ?? 0),
+                                'total_failed' => (int) ($job->total_failed ?? 0),
+                                'total_rows' => (int) ($job->total_files ?? 0),
+                            ];
+                            $send($job->status === 'completed' ? 'complete' : 'error', $payload);
+                        } else {
+                            $send('error', ['message' => 'Job import ini sudah sedang diproses pada koneksi lain.']);
+                        }
+                        return;
+                    }
+                }
+
+                if (!file_exists($absolutePath)) {
+                    $send('error', ['message' => 'File CSV Daily Loan tidak ditemukan di server.']);
+                    return;
+                }
+
+                if ($jobId > 0) {
+                    $this->progressService()->markProcessing($jobId, [
+                        'status' => 'processing',
+                        'phase' => 'validating',
+                        'percent' => 3,
+                        'message' => 'Validasi fast import Daily Loan dimulai.',
+                        'processed_rows' => 0,
+                        'total_rows' => $totalRows,
+                    ]);
+                }
+
+                $send('progress', [
+                    'status' => 'processing',
+                    'phase' => 'validating',
+                    'percent' => 3,
+                    'message' => 'Validasi file fast import Daily Loan...',
+                    'rows_done' => 0,
+                    'total' => $totalRows,
+                    'speed' => 0,
+                ]);
+
+                $handled = $this->processDailyLoanDirectCsvStream(
+                    $send,
+                    $absolutePath,
+                    'daily_loan_dinamis',
+                    $normalizedHeaders,
+                    $jobId,
+                    $totalRows,
+                    null,
+                    false
+                );
+
+                if (!$handled) {
+                    throw new \RuntimeException('Fast import Daily Loan tidak dapat dijalankan.');
+                }
+
+                $job = $jobId > 0 ? $this->progressService()->findJob($jobId) : null;
+                $status = (string) ($job->status ?? 'completed');
+                $totalSuccess = (int) ($job->total_success ?? 0);
+                $totalFailed = (int) ($job->total_failed ?? 0);
+                $finalTotalRows = (int) ($job->total_files ?? max($totalRows, $totalSuccess + $totalFailed));
+
+                if (in_array($status, ['completed', 'failed_partial'], true)) {
+                    $syncPayload = [
+                        'status' => 'processing',
+                        'phase' => 'syncing_report',
+                        'percent' => 99,
+                        'message' => 'Sinkronisasi report hasil import Daily Loan...',
+                        'processed_rows' => $totalSuccess + $totalFailed,
+                        'total_rows' => $finalTotalRows,
+                        'total_success' => $totalSuccess,
+                        'total_failed' => $totalFailed,
+                    ];
+                    $this->cacheFastImportProgress($jobId, $syncPayload);
+                    $send('progress', array_merge($syncPayload, [
+                        'rows_done' => $totalSuccess + $totalFailed,
+                        'total' => $finalTotalRows,
+                        'speed' => 0,
+                    ]));
+
+                    $this->cleanupSuccessfulImportArtifacts($jobId, $relativePath, $absolutePath);
+                }
+
+                $terminalPayload = [
+                    'status' => $status,
+                    'total_success' => $totalSuccess,
+                    'total_failed' => $totalFailed,
+                    'total_rows' => $finalTotalRows,
+                ];
+
+                if ($status === 'completed') {
+                    $send('complete', $terminalPayload);
+                    return;
+                }
+
+                $send('error', array_merge($terminalPayload, [
+                    'message' => $status === 'failed_partial'
+                        ? 'Fast import Daily Loan selesai dengan kegagalan parsial.'
+                        : 'Fast import Daily Loan gagal diproses.',
+                ]));
+            } catch (\Throwable $e) {
+                Log::error('DAILY LOAN DIRECT CSV LOAD ERROR: ' . $e->getMessage() . ' | ' . $e->getFile() . ':' . $e->getLine());
+
+                if ($jobId > 0) {
+                    $job = $this->progressService()->findJob($jobId);
+                    $this->progressService()->markFailed(
+                        $jobId,
+                        'Fast import Daily Loan gagal: ' . $e->getMessage(),
+                        (int) ($job->total_success ?? 0),
+                        (int) ($job->total_failed ?? 0)
+                    );
+                }
+
+                $send('error', ['message' => 'Fast import Daily Loan gagal: ' . $e->getMessage()]);
+            } finally {
+                if ($streamLock) {
+                    try {
+                        $streamLock->release();
+                    } catch (\Throwable $e) {
+                        Log::warning('Failed to release Daily Loan direct import lock for job ' . $jobId . ': ' . $e->getMessage());
+                    }
+                }
+            }
+        }, 200, [
+            'Content-Type' => 'text/event-stream',
+            'Cache-Control' => 'no-cache, no-store',
+            'X-Accel-Buffering' => 'no',
+            'Connection' => 'keep-alive',
+        ]);
     }
 
     private function countCsvDataRows(string $csvPath): int
@@ -1876,6 +2049,87 @@ class ImportExcelController extends Controller
         }
 
         return $this->progressService()->getJobState($jobId);
+    }
+
+    protected function directLoadValidationSampleRows(): int
+    {
+        return max(1, (int) config('import.direct_load.validation_sample_rows', 5000));
+    }
+
+    protected function directLoadMaxRows(string $reportKey, int $default = 300000): int
+    {
+        return max(0, (int) config("import.direct_load.{$reportKey}.max_rows", $default));
+    }
+
+    protected function directLoadEnabled(string $reportKey): bool
+    {
+        return (bool) config("import.direct_load.{$reportKey}.enabled", true);
+    }
+
+    protected function resolveDirectCsvFastPathEligibility(
+        string $reportKey,
+        array $params,
+        array $normalizedHeaders,
+        int $defaultMaxRows = 300000
+    ): array {
+        if (!$this->directLoadEnabled($reportKey)) {
+            return ['eligible' => false, 'reason' => 'Fast import dinonaktifkan pada konfigurasi aplikasi. Menggunakan safe path queue.'];
+        }
+
+        if (!empty($params['active_filters'] ?? [])) {
+            return ['eligible' => false, 'reason' => 'Filtered import menggunakan safe path queue.'];
+        }
+
+        if ($normalizedHeaders === []) {
+            return ['eligible' => false, 'reason' => 'Header import tidak tersedia. Menggunakan safe path queue.'];
+        }
+
+        if (!$this->supportsNativeBulkLoad()) {
+            return ['eligible' => false, 'reason' => 'LOCAL INFILE tidak aktif di MySQL/PDO. Menggunakan safe path queue.'];
+        }
+
+        $candidatePaths = array_values(array_filter([
+            (string) ($params['staged_csv_path'] ?? ''),
+            (string) ($params['file_path'] ?? ''),
+        ], static fn ($path): bool => is_string($path) && $path !== ''));
+
+        foreach ($candidatePaths as $candidatePath) {
+            $absolutePath = $candidatePath;
+            if (!file_exists($absolutePath)) {
+                $absolutePath = Storage::path($candidatePath);
+            }
+
+            if (!file_exists($absolutePath) || !$this->isCsvFile($absolutePath)) {
+                continue;
+            }
+
+            $totalRows = max(0, (int) ($params['total_rows'] ?? 0));
+            $maxRows = $this->directLoadMaxRows($reportKey, $defaultMaxRows);
+            if ($maxRows > 0 && $totalRows > $maxRows) {
+                return [
+                    'eligible' => false,
+                    'reason' => "Jumlah baris {$totalRows} melebihi batas fast import {$maxRows}. Menggunakan safe path queue.",
+                ];
+            }
+
+            return [
+                'eligible' => true,
+                'relative_path' => file_exists($candidatePath) ? '' : $candidatePath,
+                'absolute_path' => $absolutePath,
+                'total_rows' => $totalRows,
+            ];
+        }
+
+        return ['eligible' => false, 'reason' => 'Sumber file CSV belum siap untuk fast import. Menggunakan safe path queue.'];
+    }
+
+    protected function cacheFastImportProgress(int $jobId, array $payload): void
+    {
+        if ($jobId <= 0) {
+            return;
+        }
+
+        $this->progressService()->cacheProgress($jobId, $payload);
     }
 
     private function resolveCsvDataRowEstimate(?int $totalRows, int $headerIndex): int
@@ -2453,7 +2707,12 @@ class ImportExcelController extends Controller
     private function prepareDailyLoanDirectLoadSource(string $csvPath, ?string $delimiter = null): array
     {
         $requiresNormalization = $this->requiresDailyLoanDirectLoadNormalization($csvPath, $delimiter);
-        $hasMalformedRows = $this->hasMalformedRowsForDirectDailyLoanLoad($csvPath, self::DAILY_LOAN_SOURCE_HEADERS, 5000, $delimiter);
+        $hasMalformedRows = $this->hasMalformedRowsForDirectDailyLoanLoad(
+            $csvPath,
+            self::DAILY_LOAN_SOURCE_HEADERS,
+            $this->directLoadValidationSampleRows(),
+            $delimiter
+        );
 
         if (!$requiresNormalization && !$hasMalformedRows) {
             return [
@@ -2902,7 +3161,7 @@ class ImportExcelController extends Controller
         $loadSource = null;
         $sourcePath = $csvPath;
 
-        if ($this->hasMalformedRowsForDirectDailyLoanLoad($csvPath, $normalizedHeaders, 5000, $delimiter)) {
+        if ($this->hasMalformedRowsForDirectDailyLoanLoad($csvPath, $normalizedHeaders, $this->directLoadValidationSampleRows(), $delimiter)) {
             throw new \RuntimeException('CSV Daily Loan mengandung struktur kolom tidak konsisten, fast import dialihkan ke mode aman.');
         }
 
@@ -3050,7 +3309,8 @@ class ImportExcelController extends Controller
         array $normalizedHeaders,
         int $jobId,
         int $estimatedTotalRows,
-        ?string $delimiter = null
+        ?string $delimiter = null,
+        bool $emitComplete = true
     ): bool {
         if ($csvPath === '' || !file_exists($csvPath) || !$this->isDailyLoanTable($tableName)) {
             return false;
@@ -3067,6 +3327,8 @@ class ImportExcelController extends Controller
 
         try {
             $send('progress', [
+                'status' => 'processing',
+                'phase' => 'preparing_load_plan',
                 'percent' => 18,
                 'message' => 'Menyiapkan direct LOAD DATA untuk Daily Loan...',
                 'rows_done' => 0,
@@ -3090,10 +3352,21 @@ class ImportExcelController extends Controller
                     'total_files' => $baseTotal,
                     'total_success' => (int) ($job->total_success ?? 0),
                     'total_failed' => (int) ($job->total_failed ?? 0),
+                ], [
+                    'status' => 'processing',
+                    'phase' => 'preparing_load_plan',
+                    'percent' => 32,
+                    'message' => 'Load plan Daily Loan siap dijalankan.',
+                    'processed_rows' => 0,
+                    'total_rows' => $baseTotal,
+                    'total_success' => (int) ($job->total_success ?? 0),
+                    'total_failed' => (int) ($job->total_failed ?? 0),
                 ]);
             }
 
             $send('progress', [
+                'status' => 'processing',
+                'phase' => 'loading',
                 'percent' => 56,
                 'message' => $sourceWasNormalized
                     ? (
@@ -3120,10 +3393,23 @@ class ImportExcelController extends Controller
                 : 'completed';
 
             if ($jobId > 0) {
-                $this->progressService()->updateTotals($jobId, $inserted, $failed, $baseTotal, $status);
+                $this->progressService()->updateTotals($jobId, $inserted, $failed, $baseTotal, $status, [
+                    'status' => $status,
+                    'phase' => 'loading',
+                    'percent' => $status === 'completed' ? 98 : 96,
+                    'message' => $status === 'completed'
+                        ? 'Direct LOAD DATA Daily Loan selesai diproses.'
+                        : 'Direct LOAD DATA Daily Loan selesai dengan kegagalan parsial.',
+                    'processed_rows' => $inserted + $failed,
+                    'total_rows' => $baseTotal,
+                    'total_success' => $inserted,
+                    'total_failed' => $failed,
+                ]);
             }
 
             $send('progress', [
+                'status' => 'processing',
+                'phase' => 'loading',
                 'percent' => 98,
                 'message' => 'Direct LOAD DATA Daily Loan selesai diproses.',
                 'rows_done' => $inserted,
@@ -3131,13 +3417,15 @@ class ImportExcelController extends Controller
                 'speed' => 0,
             ]);
 
-            $send('complete', [
-                'total_success' => $inserted,
-                'total_failed' => $failed,
-                'total_rows' => $baseTotal,
-                'skipped_rows' => $skippedRows,
-                'skipped_count' => $skippedCount,
-            ]);
+            if ($emitComplete) {
+                $send('complete', [
+                    'total_success' => $inserted,
+                    'total_failed' => $failed,
+                    'total_rows' => $baseTotal,
+                    'skipped_rows' => $skippedRows,
+                    'skipped_count' => $skippedCount,
+                ]);
+            }
 
             return true;
         } finally {
@@ -5146,7 +5434,8 @@ class ImportExcelController extends Controller
         }
 
         request()->session()->save();
-        $this->executionService()->dispatch($jobId);
+        $queueMessage = $request->attributes->get('queue_message');
+        $this->executionService()->dispatch($jobId, is_string($queueMessage) ? $queueMessage : null);
 
         return $this->executionService()->streamStatus($request, $jobId);
     }

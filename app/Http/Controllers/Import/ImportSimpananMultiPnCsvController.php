@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Import;
 
+use App\Services\Import\MySqlBulkLoadService;
 use App\Support\ReportDataSyncService;
 use App\Support\StrictDateParser;
 use Illuminate\Http\Request;
@@ -14,8 +15,6 @@ use Illuminate\Support\Facades\Storage;
 class ImportSimpananMultiPnCsvController extends ImportExcelController
 {
     private const REPORT_ID = 9;
-    private const DIRECT_LOAD_MAX_ROWS = 300000;
-    private const DIRECT_LOAD_VALIDATION_SAMPLE_ROWS = 5000;
 
     private function useSimpananReport(Request $request): Request
     {
@@ -183,28 +182,16 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
         $jobState = method_exists($this, 'getExcelImportJobState') ? $this->getExcelImportJobState($jobId) : [];
         $params = !empty($jobState['params']) ? (array) $jobState['params'] : $sessionParams;
         $normalizedHeaders = !empty($jobState['headers']) ? (array) $jobState['headers'] : session('excel_headers', []);
-        $activeFilters = $params['active_filters'] ?? [];
+        $eligibility = $this->resolveDirectCsvFastPathEligibility('simpanan_multipn', $params, $normalizedHeaders);
 
-        if (!empty($activeFilters) || empty($normalizedHeaders) || !$this->supportsDirectCsvBulkLoad()) {
+        if (!($eligibility['eligible'] ?? false)) {
+            $request->attributes->set('queue_message', (string) ($eligibility['reason'] ?? 'Fast import tidak tersedia. Menggunakan safe path queue.'));
             return parent::processExcelStream($request);
         }
-
-        $relativePath = (string) ($params['file_path'] ?? '');
         $selectedColumns = $this->resolveSelectedColumns($params, $normalizedHeaders);
-        $totalRows = (int) ($params['total_rows'] ?? 0);
-
-        if ($totalRows > self::DIRECT_LOAD_MAX_ROWS) {
-            return parent::processExcelStream($request);
-        }
-
-        if ($relativePath === '') {
-            return parent::processExcelStream($request);
-        }
-
-        $absolutePath = Storage::path($relativePath);
-        if (!file_exists($absolutePath)) {
-            return parent::processExcelStream($request);
-        }
+        $relativePath = (string) ($eligibility['relative_path'] ?? '');
+        $absolutePath = (string) ($eligibility['absolute_path'] ?? '');
+        $totalRows = (int) ($eligibility['total_rows'] ?? 0);
 
         request()->session()->save();
 
@@ -247,8 +234,10 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                 }
 
                 $send('progress', [
+                    'status' => 'processing',
+                    'phase' => 'validating',
                     'percent' => 3,
-                    'message' => 'Membuka koneksi stream import...',
+                    'message' => 'Validasi file fast import Simpanan MultiPN...',
                     'rows_done' => 0,
                     'total' => $totalRows,
                     'speed' => 0,
@@ -265,6 +254,8 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                 }
 
                 $send('progress', [
+                    'status' => 'processing',
+                    'phase' => 'preparing_load_plan',
                     'percent' => 8,
                     'message' => 'Menyiapkan direct LOAD DATA untuk Simpanan MultiPN...',
                     'rows_done' => 0,
@@ -288,9 +279,21 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                     ]);
                 }
 
+                $send('progress', [
+                    'status' => 'processing',
+                    'phase' => 'syncing_report',
+                    'percent' => 99,
+                    'message' => 'Sinkronisasi report hasil import Simpanan MultiPN...',
+                    'rows_done' => $inserted,
+                    'total' => $totalRows > 0 ? $totalRows : $inserted,
+                    'speed' => 0,
+                ]);
+
                 $this->cleanupSuccessfulImportArtifacts($jobId, $relativePath, $absolutePath);
 
                 $send('progress', [
+                    'status' => 'processing',
+                    'phase' => 'loading',
                     'percent' => 98,
                     'message' => "LOAD DATA selesai. Kecepatan rata-rata {$speed} baris/detik.",
                     'rows_done' => $inserted,
@@ -354,18 +357,7 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
 
     private function supportsDirectCsvBulkLoad(): bool
     {
-        $driver = DB::connection()->getDriverName();
-        if (!in_array($driver, ['mysql', 'mariadb'], true)) {
-            return false;
-        }
-
-        try {
-            $row = DB::selectOne("SHOW VARIABLES LIKE 'local_infile'");
-            return strtoupper((string) ($row->Value ?? $row->value ?? 'OFF')) === 'ON';
-        } catch (\Throwable $e) {
-            Log::warning('Unable to verify local_infile support for Simpanan MultiPN CSV: ' . $e->getMessage());
-            return false;
-        }
+        return app(MySqlBulkLoadService::class)->supportsNativeBulkLoad();
     }
 
     private function detectCsvDelimiter(string $path): string
@@ -505,7 +497,7 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
             throw new \RuntimeException('Header CSV Simpanan MultiPN tidak ditemukan.');
         }
 
-        if ($this->hasMalformedRowsForDirectLoad($absolutePath, $delimiter, $sourceHeaders, self::DIRECT_LOAD_VALIDATION_SAMPLE_ROWS)) {
+        if ($this->hasMalformedRowsForDirectLoad($absolutePath, $delimiter, $sourceHeaders, $this->directLoadValidationSampleRows())) {
             throw new \RuntimeException('CSV mengandung baris tidak lengkap, fast import dialihkan ke mode aman.');
         }
 

@@ -1,0 +1,109 @@
+<?php
+
+namespace Tests\Unit;
+
+use App\Http\Controllers\Import\ImportExcelController;
+use App\Services\Import\MySqlBulkLoadService;
+use Mockery;
+use Tests\TestCase;
+
+class ImportExcelControllerFastPathEligibilityTest extends TestCase
+{
+    protected function tearDown(): void
+    {
+        @unlink(storage_path('app/testing/daily_loan_fast_path.csv'));
+        @rmdir(storage_path('app/testing'));
+        Mockery::close();
+
+        parent::tearDown();
+    }
+
+    public function test_daily_loan_fast_path_is_eligible_for_csv_without_filters(): void
+    {
+        config()->set('import.direct_load.daily_loan.max_rows', 300000);
+
+        $service = Mockery::mock(MySqlBulkLoadService::class);
+        $service->shouldReceive('supportsNativeBulkLoad')->andReturn(true);
+        $this->app->instance(MySqlBulkLoadService::class, $service);
+
+        $relativePath = 'testing/daily_loan_fast_path.csv';
+        $absolutePath = storage_path('app/' . $relativePath);
+        if (!is_dir(dirname($absolutePath))) {
+            @mkdir(dirname($absolutePath), 0777, true);
+        }
+
+        file_put_contents($absolutePath, "PERIODE,NOMOR_REKENING1,BAKI_DEBET1\n2026-04-04,123,1000\n");
+
+        $controller = new class extends ImportExcelController {
+            public function resolveEligibility(array $params, array $headers): array
+            {
+                return $this->resolveDirectCsvFastPathEligibility('daily_loan', $params, $headers);
+            }
+        };
+
+        $result = $controller->resolveEligibility([
+            'staged_csv_path' => $absolutePath,
+            'total_rows' => 10,
+            'active_filters' => [],
+        ], ['PERIODE', 'NOMOR_REKENING1', 'BAKI_DEBET1']);
+
+        $this->assertTrue($result['eligible']);
+        $this->assertSame($absolutePath, $result['absolute_path']);
+    }
+
+    public function test_daily_loan_fast_path_falls_back_when_local_infile_is_unavailable(): void
+    {
+        $service = Mockery::mock(MySqlBulkLoadService::class);
+        $service->shouldReceive('supportsNativeBulkLoad')->andReturn(false);
+        $this->app->instance(MySqlBulkLoadService::class, $service);
+
+        $controller = new class extends ImportExcelController {
+            public function resolveEligibility(array $params, array $headers): array
+            {
+                return $this->resolveDirectCsvFastPathEligibility('daily_loan', $params, $headers);
+            }
+        };
+
+        $result = $controller->resolveEligibility([
+            'file_path' => 'testing/missing.csv',
+            'total_rows' => 10,
+            'active_filters' => [],
+        ], ['PERIODE', 'NOMOR_REKENING1', 'BAKI_DEBET1']);
+
+        $this->assertFalse($result['eligible']);
+        $this->assertStringContainsString('LOCAL INFILE', $result['reason']);
+    }
+
+    public function test_daily_loan_fast_path_falls_back_when_row_limit_is_exceeded(): void
+    {
+        config()->set('import.direct_load.daily_loan.max_rows', 10);
+
+        $service = Mockery::mock(MySqlBulkLoadService::class);
+        $service->shouldReceive('supportsNativeBulkLoad')->andReturn(true);
+        $this->app->instance(MySqlBulkLoadService::class, $service);
+
+        $relativePath = 'testing/daily_loan_fast_path.csv';
+        $absolutePath = storage_path('app/' . $relativePath);
+        if (!is_dir(dirname($absolutePath))) {
+            @mkdir(dirname($absolutePath), 0777, true);
+        }
+
+        file_put_contents($absolutePath, "PERIODE,NOMOR_REKENING1,BAKI_DEBET1\n2026-04-04,123,1000\n");
+
+        $controller = new class extends ImportExcelController {
+            public function resolveEligibility(array $params, array $headers): array
+            {
+                return $this->resolveDirectCsvFastPathEligibility('daily_loan', $params, $headers);
+            }
+        };
+
+        $result = $controller->resolveEligibility([
+            'staged_csv_path' => $absolutePath,
+            'total_rows' => 11,
+            'active_filters' => [],
+        ], ['PERIODE', 'NOMOR_REKENING1', 'BAKI_DEBET1']);
+
+        $this->assertFalse($result['eligible']);
+        $this->assertStringContainsString('melebihi batas fast import', $result['reason']);
+    }
+}

@@ -18,7 +18,7 @@ class ImportExecutionService
     ) {
     }
 
-    public function dispatch(int $jobId): void
+    public function dispatch(int $jobId, ?string $queueMessage = null): void
     {
         if ($jobId <= 0) {
             return;
@@ -48,7 +48,7 @@ class ImportExecutionService
             $this->progressService->markQueued($jobId, [
                 'status' => 'queued',
                 'percent' => 1,
-                'message' => 'Job import masuk ke queue.',
+                'message' => $queueMessage ?: 'Job import masuk ke queue.',
                 'processed_rows' => 0,
                 'total_success' => (int) ($job->total_success ?? 0),
                 'total_failed' => (int) ($job->total_failed ?? 0),
