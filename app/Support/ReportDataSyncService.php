@@ -377,7 +377,7 @@ class ReportDataSyncService
 
     private function shouldRefreshDerivedSnapshotStatistics(?string $periodHint): bool
     {
-        return trim((string) $periodHint) === '';
+        return true;
     }
 
     private function normalizeSnapshotLockScope(?string $periodHint): string

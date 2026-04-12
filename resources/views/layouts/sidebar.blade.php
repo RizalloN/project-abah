@@ -366,6 +366,13 @@
                 </li>
 
                 <li class="nav-item">
+                    <a href="{{ route('file-management.index') }}" class="nav-link {{ request()->routeIs('file-management.*') ? 'active' : '' }}">
+                        <i class="nav-icon fas fa-folder-open"></i>
+                        <p>File Management</p>
+                    </a>
+                </li>
+
+                <li class="nav-item">
                     <a href="{{ route('user-management.index') }}" class="nav-link {{ request()->routeIs('user-management.*') ? 'active' : '' }}">
                         <i class="nav-icon fas fa-users-cog"></i>
                         <p>User Management</p>

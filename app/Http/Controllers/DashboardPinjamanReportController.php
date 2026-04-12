@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Jobs\EnsureDashboardSnapshotJob;
+use App\Support\ReportIndexHintResolver;
 use App\Support\LoanQualityBucketMapper;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
@@ -448,7 +449,7 @@ class DashboardPinjamanReportController extends Controller
         $alias = 'anon';
         $bucketExpression = $this->buildQualityBucketExpression($alias);
 
-        $baseQuery = DB::table(DB::raw($this->buildLoanSnapshotSource($alias, $filters)))
+        $rowQuery = DB::table(DB::raw($this->buildLoanSnapshotSource($alias, $filters)))
             ->where("{$alias}.periode", $period)
             ->where(function ($query) use ($alias) {
                 $query->whereNull("{$alias}.nomor_rekening1")
@@ -456,14 +457,21 @@ class DashboardPinjamanReportController extends Controller
             })
             ->selectRaw("
                 {$bucketExpression} as after_bucket,
-                CAST(ROUND(SUM(COALESCE({$alias}.baki_debet1, 0)) * 100, 0) AS SIGNED) as amount_cents
-            ")
-            ->groupByRaw($bucketExpression);
+                COALESCE({$alias}.baki_debet1, 0) as loan_balance
+            ");
 
-        $this->applyFilterConstraint($baseQuery, "{$alias}.segmen_dashboard", $filters['segmen']);
-        $this->applyFilterConstraint($baseQuery, "{$alias}.produk_dashboard", $filters['produk']);
-        $this->applyFilterConstraint($baseQuery, "{$alias}.cabang1", $filters['cabang']);
-        $this->applyFilterConstraint($baseQuery, "{$alias}.unit1", $filters['unit']);
+        $this->applyFilterConstraint($rowQuery, "{$alias}.segmen_dashboard", $filters['segmen']);
+        $this->applyFilterConstraint($rowQuery, "{$alias}.produk_dashboard", $filters['produk']);
+        $this->applyFilterConstraint($rowQuery, "{$alias}.cabang1", $filters['cabang']);
+        $this->applyFilterConstraint($rowQuery, "{$alias}.unit1", $filters['unit']);
+
+        $baseQuery = DB::query()
+            ->fromSub($rowQuery, 'anon_rows')
+            ->selectRaw("
+                after_bucket,
+                CAST(ROUND(SUM(COALESCE(loan_balance, 0)) * 100, 0) AS SIGNED) as amount_cents
+            ")
+            ->groupBy('after_bucket');
 
         return DB::query()
             ->fromSub($baseQuery, 'anon_matrix')
@@ -550,7 +558,7 @@ class DashboardPinjamanReportController extends Controller
 
     private function buildPhSnapshotQuery(?string $period)
     {
-        $query = DB::table(DB::raw(self::PH_TABLE . ' as ph FORCE INDEX (' . self::PH_LOOKUP_INDEX . ')'))
+        $query = DB::table(DB::raw($this->qualifyIndexedSource(self::PH_TABLE, 'ph', [self::PH_LOOKUP_INDEX])))
             ->selectRaw('DISTINCT TRIM(ph.acctno) as account_number')
             ->whereNotNull('ph.acctno')
             ->where('ph.acctno', '<>', '')
@@ -567,15 +575,25 @@ class DashboardPinjamanReportController extends Controller
 
     private function buildLoanSnapshotSource(string $alias, array $filters): string
     {
-        $indexName = self::LOAN_REKENING_INDEX;
+        $preferredIndexes = [self::LOAN_REKENING_INDEX];
 
         if (!empty($filters['segmen']) || !empty($filters['produk'])) {
-            $indexName = self::LOAN_FILTER_INDEX;
+            array_unshift($preferredIndexes, self::LOAN_FILTER_INDEX);
         } elseif (!empty($filters['cabang']) || !empty($filters['unit'])) {
-            $indexName = self::LOAN_CABANG_UNIT_INDEX;
+            array_unshift($preferredIndexes, self::LOAN_CABANG_UNIT_INDEX);
         }
 
-        return "daily_loan_dinamis as {$alias} FORCE INDEX ({$indexName})";
+        return $this->qualifyIndexedSource('daily_loan_dinamis', $alias, $preferredIndexes);
+    }
+
+    private function qualifyIndexedSource(string $table, string $alias, array $preferredIndexes = []): string
+    {
+        return $this->reportIndexHintResolver()->qualify($table, $alias, $preferredIndexes);
+    }
+
+    private function reportIndexHintResolver(): ReportIndexHintResolver
+    {
+        return app(ReportIndexHintResolver::class);
     }
 
     private function buildQualityBucketExpression(string $alias): string

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Jobs\EnsureRekeningDormantSnapshotJob;
+use App\Support\ReportIndexHintResolver;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Http\Request;
@@ -435,7 +436,7 @@ class RekeningDormantController extends Controller
             $ytdPeriod,
             $yoyPeriod
         ) {
-            $rows = DB::table(DB::raw('simpanan_multipn FORCE INDEX (' . self::DORMANT_SUMMARY_INDEX . ')'))
+            $rows = DB::table(DB::raw($this->qualifyIndexedSource('simpanan_multipn', null, [self::DORMANT_SUMMARY_INDEX])))
                 ->select(
                     'posisi',
                     'kantor_cabang',
@@ -489,9 +490,7 @@ class RekeningDormantController extends Controller
 
     private function baseDormantQuery(string $period, ?string $indexName = null)
     {
-        $source = $indexName
-            ? DB::raw("simpanan_multipn FORCE INDEX ({$indexName})")
-            : 'simpanan_multipn';
+        $source = DB::raw($this->qualifyIndexedSource('simpanan_multipn', null, $indexName ? [$indexName] : []));
 
         return DB::table($source)
             ->where('posisi', $period)
@@ -542,7 +541,7 @@ class RekeningDormantController extends Controller
                 ->mapWithKeys(fn (string $label) => [$label => []])
                 ->all();
 
-            $rawBranches = DB::table(DB::raw('simpanan_multipn FORCE INDEX (' . self::DORMANT_SUMMARY_INDEX . ')'))
+            $rawBranches = DB::table(DB::raw($this->qualifyIndexedSource('simpanan_multipn', null, [self::DORMANT_SUMMARY_INDEX])))
                 ->where('posisi', $period)
                 ->where('status', '9')
                 ->whereNotNull('kantor_cabang')
@@ -808,5 +807,15 @@ class RekeningDormantController extends Controller
     private function reportCacheVersion(): int
     {
         return (int) Cache::get('report_cache_version:global', 1);
+    }
+
+    private function qualifyIndexedSource(string $table, ?string $alias = null, array $preferredIndexes = []): string
+    {
+        return $this->reportIndexHintResolver()->qualify($table, $alias, $preferredIndexes);
+    }
+
+    private function reportIndexHintResolver(): ReportIndexHintResolver
+    {
+        return app(ReportIndexHintResolver::class);
     }
 }

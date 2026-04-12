@@ -316,6 +316,7 @@ class ReportSnapshotBuilder
 
         DB::table(self::DASHBOARD_SIMPANAN_SNAPSHOT_TABLE)->upsert([
             [
+                'uniqueid_dss' => md5(implode('|', ['dss', $period])),
                 'snapshot_period' => $period,
                 'total_balance' => $totalBalance,
                 'account_count' => (int) ($summary->account_count ?? 0),
@@ -332,7 +333,7 @@ class ReportSnapshotBuilder
                 'created_at' => now(),
                 'updated_at' => now(),
             ],
-        ], ['snapshot_period'], [
+        ], ['uniqueid_dss'], [
             'total_balance',
             'account_count',
             'cif_count',
@@ -414,15 +415,20 @@ class ReportSnapshotBuilder
                 NOW() as updated_at
             FROM (
                 SELECT
-                    kantor_cabang as raw_branch,
-                    COALESCE(NULLIF(TRIM(unit_kerja), ''), '') as unit_kerja,
+                    normalized.raw_branch as raw_branch,
+                    normalized.unit_kerja as unit_kerja,
                     COUNT(*) as dormant_count
-                FROM simpanan_multipn
-                WHERE posisi = ?
-                    AND status = '9'
-                    AND kantor_cabang IS NOT NULL
-                    AND TRIM(kantor_cabang) <> ''
-                GROUP BY kantor_cabang, COALESCE(NULLIF(TRIM(unit_kerja), ''), '')
+                FROM (
+                    SELECT
+                        TRIM(kantor_cabang) as raw_branch,
+                        COALESCE(NULLIF(TRIM(unit_kerja), ''), '') as unit_kerja
+                    FROM simpanan_multipn
+                    WHERE posisi = ?
+                        AND status = '9'
+                        AND kantor_cabang IS NOT NULL
+                        AND TRIM(kantor_cabang) <> ''
+                ) normalized
+                GROUP BY normalized.raw_branch, normalized.unit_kerja
             ) base
             WHERE {$branchLabelExpression} IS NOT NULL
             ON DUPLICATE KEY UPDATE
@@ -439,14 +445,19 @@ class ReportSnapshotBuilder
                     MD5(CONCAT_WS('|', 'rds', ?, TRIM(base.raw_branch), TRIM(base.unit_kerja))) as uniqueid_rds
                 FROM (
                     SELECT
-                        kantor_cabang as raw_branch,
-                        COALESCE(NULLIF(TRIM(unit_kerja), ''), '') as unit_kerja
-                    FROM simpanan_multipn
-                    WHERE posisi = ?
-                        AND status = '9'
-                        AND kantor_cabang IS NOT NULL
-                        AND TRIM(kantor_cabang) <> ''
-                    GROUP BY kantor_cabang, COALESCE(NULLIF(TRIM(unit_kerja), ''), '')
+                        normalized.raw_branch as raw_branch,
+                        normalized.unit_kerja as unit_kerja
+                    FROM (
+                        SELECT
+                            TRIM(kantor_cabang) as raw_branch,
+                            COALESCE(NULLIF(TRIM(unit_kerja), ''), '') as unit_kerja
+                        FROM simpanan_multipn
+                        WHERE posisi = ?
+                            AND status = '9'
+                            AND kantor_cabang IS NOT NULL
+                            AND TRIM(kantor_cabang) <> ''
+                    ) normalized
+                    GROUP BY normalized.raw_branch, normalized.unit_kerja
                 ) base
                 WHERE {$branchLabelExpression} IS NOT NULL
             ) src ON src.uniqueid_rds = snap.uniqueid_rds

@@ -63,7 +63,7 @@ return new class extends Migration
     public function up(): void
     {
         if ($this->isFreshApplicationSchema()) {
-            $this->importSchemaDump(database_path('schema/mysql-schema.sql'));
+            $this->importSchemaDump(database_path('schema/mysql-schema-bootstrap.sql'));
         }
 
         $this->createDashboardSimpananSnapshotTables();
@@ -208,7 +208,8 @@ return new class extends Migration
     {
         if (!Schema::hasTable('dashboard_simpanan_snapshots')) {
             Schema::create('dashboard_simpanan_snapshots', function (Blueprint $table) {
-                $table->date('snapshot_period')->primary();
+                $table->string('uniqueid_dss', 191)->primary();
+                $table->date('snapshot_period');
                 $table->decimal('total_balance', 24, 2)->default(0);
                 $table->unsignedBigInteger('account_count')->default(0);
                 $table->unsignedBigInteger('cif_count')->default(0);
@@ -222,6 +223,9 @@ return new class extends Migration
                 $table->unsignedBigInteger('source_row_count')->default(0);
                 $table->timestamp('source_updated_at')->nullable();
                 $table->timestamps();
+            });
+            Schema::table('dashboard_simpanan_snapshots', function (Blueprint $table) {
+                $table->unique('snapshot_period', 'uq_dss_snapshot_period');
             });
         }
 

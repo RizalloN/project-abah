@@ -3,6 +3,8 @@
 namespace App\Console\Commands;
 
 use App\Http\Controllers\DashboardPinjamanReportController;
+use App\Http\Controllers\RasioCasaDebiturController;
+use App\Http\Controllers\RekeningDormantController;
 use App\Http\Controllers\DashboardSimpananController;
 use Illuminate\Console\Command;
 use Illuminate\Http\Request;
@@ -32,7 +34,8 @@ class WarmDashboardCache extends Command
         $this->info('Mulai pemanasan cache (Cache Warming) untuk Dasbor Laporan...');
 
         $this->warmDashboardPinjaman();
-        // $this->warmDashboardSimpanan(); // Optional, if you want to warm other dashboards as well
+        $this->warmRasioCasaDebitur();
+        $this->warmRekeningDormant();
 
         $this->info('Cache warming selesai!');
         return self::SUCCESS;
@@ -60,6 +63,42 @@ class WarmDashboardCache extends Command
             $this->info('   Berhasil memanaskan cache Dashboard Pinjaman.');
         } catch (Throwable $e) {
             $this->error('   Gagal memanaskan cache Dashboard Pinjaman: ' . $e->getMessage());
+        }
+    }
+
+    private function warmRasioCasaDebitur(): void
+    {
+        $this->info('-> Memproses Rasio CASA Debitur...');
+
+        try {
+            $controller = app()->make(RasioCasaDebiturController::class);
+            $request = Request::create('/report/rekening-transaksi-debitur/rasio-casa-debitur', 'POST');
+
+            $controller->index();
+            $controller->fetchData($request);
+
+            $this->info('   Berhasil memanaskan cache Rasio CASA Debitur.');
+        } catch (Throwable $e) {
+            $this->error('   Gagal memanaskan cache Rasio CASA Debitur: ' . $e->getMessage());
+        }
+    }
+
+    private function warmRekeningDormant(): void
+    {
+        $this->info('-> Memproses Rekening Dormant...');
+
+        try {
+            $controller = app()->make(RekeningDormantController::class);
+            $getRequest = Request::create('/report/rekening-transaksi-debitur/rekening-dormant', 'GET');
+            $postRequest = Request::create('/report/data/rekening-dormant', 'POST');
+
+            $controller->index();
+            $controller->filters($getRequest);
+            $controller->fetchData($postRequest);
+
+            $this->info('   Berhasil memanaskan cache Rekening Dormant.');
+        } catch (Throwable $e) {
+            $this->error('   Gagal memanaskan cache Rekening Dormant: ' . $e->getMessage());
         }
     }
 }

@@ -123,11 +123,16 @@ class ImportCleanupController extends Controller
             }
 
             foreach (File::files($directory) as $file) {
+                $fullPath = $file->getPathname();
+                if (isset($activePaths[strtolower($fullPath)])) {
+                    continue;
+                }
+
                 if ($file->getMTime() > $threshold->getTimestamp()) {
                     continue;
                 }
 
-                $result = $this->deleteArtifacts([$file->getPathname()]);
+                $result = $this->deleteArtifacts([$fullPath]);
                 $deletedFiles = array_merge($deletedFiles, $result['deleted_files']);
                 $deletedDirectories = array_merge($deletedDirectories, $result['deleted_directories']);
             }

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Jobs\EnsureRasioCasaSnapshotJob;
+use App\Support\ReportIndexHintResolver;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -193,7 +194,7 @@ class RasioCasaDebiturController extends Controller
         $mikroFlagSql = $this->buildSegmentFlagExpression('d', $loanSegmentColumn, $loanProductColumn, 'mikro');
         $smcFlagSql = $this->buildSegmentFlagExpression('d', $loanSegmentColumn, $loanProductColumn, 'smc');
 
-        $loanBase = DB::table(DB::raw('daily_loan_dinamis as d FORCE INDEX (' . self::LOAN_CIF_BRANCH_INDEX . ')'))
+        $loanBase = DB::table(DB::raw($this->qualifyIndexedSource('daily_loan_dinamis', 'd', [self::LOAN_CIF_BRANCH_INDEX])))
             ->where('d.periode', $loanPeriod)
             ->whereNotNull("d.{$loanKeyColumn}")
             ->where("d.{$loanKeyColumn}", '<>', '')
@@ -275,7 +276,7 @@ class RasioCasaDebiturController extends Controller
             $casaBalances = [];
 
             foreach (array_chunk(array_keys($identityVariants), 2000) as $chunk) {
-                $casaQuery = DB::table(DB::raw('simpanan_multipn FORCE INDEX (' . self::CASA_CIF_TYPE_INDEX . ')'))
+                $casaQuery = DB::table(DB::raw($this->qualifyIndexedSource('simpanan_multipn', null, [self::CASA_CIF_TYPE_INDEX])))
                     ->where('posisi', $casaDate)
                     ->whereIn($casaKeyColumn, $chunk);
 
@@ -876,5 +877,15 @@ class RasioCasaDebiturController extends Controller
     private function reportCacheVersion(): int
     {
         return (int) Cache::get('report_cache_version:global', 1);
+    }
+
+    private function qualifyIndexedSource(string $table, ?string $alias = null, array $preferredIndexes = []): string
+    {
+        return $this->reportIndexHintResolver()->qualify($table, $alias, $preferredIndexes);
+    }
+
+    private function reportIndexHintResolver(): ReportIndexHintResolver
+    {
+        return app(ReportIndexHintResolver::class);
     }
 }

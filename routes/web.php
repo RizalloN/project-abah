@@ -14,6 +14,7 @@ use App\Http\Controllers\Import\ImportSimpananMultiPnCsvController;
 use App\Http\Controllers\Input\BodBocController;
 use App\Http\Controllers\Input\InputRekananController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
+use App\Http\Controllers\Admin\FileManagementController;
 use App\Http\Controllers\Admin\UserManagementController;
 use App\Http\Controllers\RasioCasaDebiturController;
 use App\Http\Controllers\RekeningDormantController;
@@ -87,6 +88,8 @@ Route::middleware(['auth', 'role:admin', 'release.session.lock'])->group(functio
     Route::post('/bod-boc/store', [BodBocController::class, 'store'])->name('bod-boc.store');
     Route::get('/import', [ImportIndexController::class, 'index'])->name('import.index');
     Route::get('/report-management', [ImportIndexController::class, 'reportManagement'])->name('report-management.index');
+    Route::get('/file-management', [FileManagementController::class, 'index'])->name('file-management.index');
+    Route::post('/file-management/delete', [FileManagementController::class, 'destroy'])->name('file-management.destroy');
     Route::get('/user-management', [UserManagementController::class, 'index'])->name('user-management.index');
     Route::post('/user-management', [UserManagementController::class, 'store'])->name('user-management.store');
     Route::put('/user-management/{user}', [UserManagementController::class, 'update'])->name('user-management.update');
