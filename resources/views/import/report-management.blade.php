@@ -1,17 +1,17 @@
 @extends('layouts.admin')
 
-@section('title', 'Report Management')
+@section('title', 'Kelola Report')
 
 @section('content')
 <div class="report-management-hero mb-4">
     <div class="report-management-hero__glow"></div>
     <div class="d-flex align-items-center justify-content-between flex-wrap position-relative">
         <div class="pr-3">
-            <span class="report-management-hero__eyebrow">Report Management</span>
-            <div class="report-management-hero__title"><i class="fas fa-layer-group mr-2"></i> Kontrol Data Report</div>
-            <p class="report-management-hero__text mb-0">Pilih report, review grouping per periode, lalu kelola delete secara aman tanpa perlu scroll panjang untuk memantau seleksi.</p>
+            <span class="report-management-hero__eyebrow">Kelola Report</span>
+            <div class="report-management-hero__title"><i class="fas fa-layer-group mr-2"></i> Kelola Data Report</div>
+            <p class="report-management-hero__text mb-0">Pilih report, lalu hapus data per grup.</p>
         </div>
-        <div class="report-management-hero__badge mt-3 mt-md-0"><i class="fas fa-shield-alt mr-2"></i> Delete Guard Aktif</div>
+        <div class="report-management-hero__badge mt-3 mt-md-0"><i class="fas fa-shield-alt mr-2"></i> Guard Aktif</div>
     </div>
 </div>
 
@@ -21,11 +21,11 @@
      data-delete-process-url-template="{{ route('import.report-management.delete.process', ['deleteId' => '__DELETE_ID__']) }}"
      data-delete-status-url-template="{{ route('import.report-management.delete.status', ['deleteId' => '__DELETE_ID__']) }}">
     <div class="card-header bg-white border-0 import-upload-card__header">
-        <span class="import-upload-card__eyebrow">Scope & Preview</span>
+        <span class="import-upload-card__eyebrow">Seleksi & Preview</span>
         <h5 class="card-title font-weight-bold text-dark mb-1">
-            <i class="fas fa-database text-primary mr-2"></i> Kelola Data per Grup
+            <i class="fas fa-database text-primary mr-2"></i> Data per Grup
         </h5>
-        <p class="import-upload-card__subtitle mb-0">Klik baris untuk memilih grup, gunakan centang per periode untuk bulk select yang lebih rapi, lalu jalankan delete dengan guard controller yang tetap aktif.</p>
+        <p class="import-upload-card__subtitle mb-0">Pilih grup, lalu hapus data yang diperlukan.</p>
     </div>
     <div class="card-body import-upload-card__body">
         <div class="row align-items-end">
@@ -230,7 +230,7 @@
                     }
                     const canUseFallback = !!processUrl
                         && !!finalPayload?.can_process_fallback
-                        && (Date.now() - lastProcessAttemptAt) >= 1500
+                        && (Date.now() - lastProcessAttemptAt) >= 250
                         && !['completed', 'warning', 'failed'].includes(finalPayload?.status);
                     if (canUseFallback) {
                         lastProcessAttemptAt = Date.now();
@@ -241,7 +241,7 @@
                         Swal.close();
                         return finalPayload;
                     }
-                    await new Promise(resolve => setTimeout(resolve, 700));
+                    await new Promise(resolve => setTimeout(resolve, 350));
                 }
             } catch (error) {
                 Swal.close();

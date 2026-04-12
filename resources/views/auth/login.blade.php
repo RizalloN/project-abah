@@ -353,18 +353,18 @@
                 </a>
 
                 <p class="left-eyebrow">BRI Performance Portal</p>
-                <h1 class="left-title">Dashboard - Area 6</h1>
-                <p class="left-copy">Akses terhadap Performa Simpanan, Pinjaman, dan Digital Channel dalam satu portal operasional yang cepat dan terstruktur.</p>
+                <h1 class="left-title">Dashboard Area 6</h1>
+                <p class="left-copy">Akses ringkas ke laporan utama dalam satu portal.</p>
             </div>
 
             <div class="left-features">
                 <article class="left-feature">
                     <p class="left-feature-title">Warna BRI Konsisten</p>
-                    <p class="left-feature-copy">Nusantara Blue sebagai warna utama antarmuka.</p>
+                    <p class="left-feature-copy">Warna utama tetap konsisten.</p>
                 </article>
                 <article class="left-feature">
                     <p class="left-feature-title">Akses Internal Aman</p>
-                    <p class="left-feature-copy">Login menggunakan personal number dan password.</p>
+                    <p class="left-feature-copy">Masuk dengan PN dan password.</p>
                 </article>
             </div>
         </section>
@@ -375,9 +375,9 @@
                 BRI DigiBranch
             </a>
 
-            <p class="right-eyebrow">Welcome Back</p>
-            <h2 class="right-title">Masuk ke akun Anda</h2>
-            <p class="right-copy">Gunakan PN dan Password untuk melanjutkan ke dashboard.</p>
+            <p class="right-eyebrow">Selamat Datang</p>
+            <h2 class="right-title">Masuk ke akun</h2>
+            <p class="right-copy">Masuk dengan PN dan password.</p>
 
             @if (session('status'))
                 <div class="status-box">{{ session('status') }}</div>
@@ -425,13 +425,13 @@
                 <div class="form-foot">
                     <label for="remember_me" class="remember">
                         <input id="remember_me" type="checkbox" name="remember">
-                        <span>Remember me</span>
+                    <span>Ingat saya</span>
                     </label>
                     <span class="internal-label">Area 6 Internal</span>
                 </div>
 
                 <div class="submit-wrap">
-                    <button type="submit" class="submit-btn">Log In</button>
+                    <button type="submit" class="submit-btn">Masuk</button>
                 </div>
             </form>
         </section>

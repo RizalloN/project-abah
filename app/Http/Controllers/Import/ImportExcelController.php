@@ -192,10 +192,10 @@ class ImportExcelController extends Controller
         return 'Header utama file tidak ditemukan.';
     }
 
-    private const DB_INSERT_BATCH_SIZE = 500;
+    private const DB_INSERT_BATCH_SIZE = 2000;
     private const STREAM_PROGRESS_EVERY = 1000;
     private const FALLBACK_SPLIT_THRESHOLD = 25;
-    private const INSERT_BUFFER_FLUSH_SIZE = 500;
+    private const INSERT_BUFFER_FLUSH_SIZE = 2000;
     private const BULK_LOAD_TEMP_DIR = 'app/import_bulk';
     private const STAGED_CSV_TEMP_DIR = 'app/excel_stage';
 
@@ -1710,6 +1710,43 @@ class ImportExcelController extends Controller
                         : 'Fast import Daily Loan gagal diproses.',
                 ]));
             } catch (\Throwable $e) {
+                Log::warning('Daily Loan direct path failed, trying staged fallback: ' . $e->getMessage(), [
+                    'job_id' => $jobId,
+                    'absolute_path' => $absolutePath,
+                ]);
+
+                try {
+                    $send('progress', [
+                        'status' => 'processing',
+                        'phase' => 'preparing_load_plan',
+                        'percent' => 10,
+                        'message' => 'Direct path gagal. Mengalihkan ke staged bulk import Daily Loan...',
+                        'rows_done' => 0,
+                        'total' => $totalRows,
+                        'speed' => 0,
+                    ]);
+
+                    $handled = $this->processStagedCsvStream(
+                        $send,
+                        $absolutePath,
+                        'daily_loan_dinamis',
+                        [],
+                        $normalizedHeaders,
+                        $jobId,
+                        $totalRows
+                    );
+
+                    if ($handled) {
+                        $job = $jobId > 0 ? $this->progressService()->findJob($jobId) : null;
+                        if ($job && $job->status === 'completed') {
+                            $this->cleanupSuccessfulImportArtifacts($jobId, $relativePath, $absolutePath);
+                        }
+                        return;
+                    }
+                } catch (\Throwable $fallbackException) {
+                    Log::error('DAILY LOAN STAGED FALLBACK ERROR: ' . $fallbackException->getMessage() . ' | ' . $fallbackException->getFile() . ':' . $fallbackException->getLine());
+                }
+
                 Log::error('DAILY LOAN DIRECT CSV LOAD ERROR: ' . $e->getMessage() . ' | ' . $e->getFile() . ':' . $e->getLine());
 
                 if ($jobId > 0) {
@@ -1845,16 +1882,6 @@ class ImportExcelController extends Controller
 
     private function cleanupSuccessfulImportArtifacts(int $jobId = 0, string $relativePath = '', ?string $absolutePath = null, array $extraPaths = []): void
     {
-        if ($jobId > 0) {
-            try {
-                $this->cleanupService()->dispatchImportedJobSync($jobId, source: static::class);
-            } catch (\Throwable $e) {
-                Log::warning('Failed to sync report snapshots after import: ' . $e->getMessage(), [
-                    'job_id' => $jobId,
-                ]);
-            }
-        }
-
         if ($jobId <= 0) {
             $this->cleanupImportedFile($relativePath, $absolutePath);
 
@@ -1877,6 +1904,14 @@ class ImportExcelController extends Controller
                 'job_id' => $jobId,
                 'relative_path' => $relativePath,
             ]);
+        } finally {
+            try {
+                $this->cleanupService()->dispatchImportedJobSync($jobId, source: static::class);
+            } catch (\Throwable $e) {
+                Log::warning('Failed to sync report snapshots after import: ' . $e->getMessage(), [
+                    'job_id' => $jobId,
+                ]);
+            }
         }
     }
 
@@ -2056,6 +2091,16 @@ class ImportExcelController extends Controller
         return max(1, (int) config('import.direct_load.validation_sample_rows', 5000));
     }
 
+    protected function fallbackBulkLoadChunkLines(): int
+    {
+        return max(2000, (int) config('import.direct_load.fallback_chunk_lines', 20000));
+    }
+
+    protected function fallbackInsertBatchSize(): int
+    {
+        return max(500, (int) config('import.direct_load.fallback_insert_batch_size', self::DB_INSERT_BATCH_SIZE));
+    }
+
     protected function directLoadMaxRows(string $reportKey, int $default = 300000): int
     {
         return max(0, (int) config("import.direct_load.{$reportKey}.max_rows", $default));
@@ -2130,6 +2175,78 @@ class ImportExcelController extends Controller
         }
 
         $this->progressService()->cacheProgress($jobId, $payload);
+    }
+
+    protected function collectCsvNormalizedValuesForHeaders(string $csvPath, array $candidateHeaders, ?string $delimiter = null): array
+    {
+        $delimiter = ($delimiter !== null && $delimiter !== '')
+            ? $delimiter
+            : $this->detectCsvDelimiter($csvPath);
+        $handle = @fopen($csvPath, 'rb');
+
+        if ($handle === false) {
+            throw new \RuntimeException('Gagal membuka CSV untuk membaca nilai snapshot.');
+        }
+
+        try {
+            $headers = $this->readCsvRecord($handle, $delimiter);
+            if ($headers === false || empty($headers)) {
+                return [];
+            }
+
+            $candidateLookup = [];
+            foreach ($candidateHeaders as $candidateHeader) {
+                $candidateLookup[$this->normalizeImportColumnName((string) $candidateHeader)] = true;
+            }
+
+            $valueIndexes = [];
+            foreach ($headers as $index => $header) {
+                $normalizedHeader = $this->normalizeImportColumnName((string) $header);
+                if (isset($candidateLookup[$normalizedHeader])) {
+                    $valueIndexes[] = (int) $index;
+                }
+            }
+
+            if ($valueIndexes === []) {
+                return [];
+            }
+
+            $values = [];
+            while (($row = $this->readCsvRecord($handle, $delimiter)) !== false) {
+                if (empty(array_filter((array) $row, static fn ($value) => trim((string) $value) !== ''))) {
+                    continue;
+                }
+
+                foreach ($valueIndexes as $index) {
+                    $value = trim((string) ($row[$index] ?? ''));
+                    if ($value === '') {
+                        continue;
+                    }
+
+                    try {
+                        $normalized = StrictDateParser::normalize($value);
+                    } catch (\Throwable) {
+                        $normalized = null;
+                    }
+
+                    $values[$normalized ?: $value] = true;
+                }
+            }
+
+            return array_values(array_keys($values));
+        } finally {
+            fclose($handle);
+        }
+    }
+
+    protected function deleteRowsByColumnValues(string $tableName, string $columnName, array $values): int
+    {
+        $values = array_values(array_filter(array_map(static fn ($value) => trim((string) $value), $values), static fn (string $value): bool => $value !== ''));
+        if ($values === []) {
+            return 0;
+        }
+
+        return (int) DB::table($tableName)->whereIn($columnName, $values)->delete();
     }
 
     private function resolveCsvDataRowEstimate(?int $totalRows, int $headerIndex): int
@@ -2640,7 +2757,6 @@ class ImportExcelController extends Controller
             }
 
             $expectedColumns = count($header);
-            $requiredIndexes = $this->resolveDailyLoanRequiredSourceIndexes($header);
             $lineNumber = 1;
             $skippedRows = [];
             $skippedCount = 0;
@@ -2655,29 +2771,7 @@ class ImportExcelController extends Controller
                     continue;
                 }
 
-                if ($this->hasDailyLoanFieldCountMismatch($header, $row, $lineNumber, 'direct_daily_loan_normalize', $delimiter)) {
-                    $skippedCount++;
-                    if (count($skippedRows) < 50) {
-                        $skippedRows[] = $lineNumber;
-                    }
-                    continue;
-                }
-
                 $row = $this->padRow($row, $expectedColumns);
-
-                if (!$this->hasMinimumDailyLoanSourceValues($row, $requiredIndexes)) {
-                    Log::warning('Daily Loan direct load skipped row because required fields are empty.', [
-                        'table_name' => 'daily_loan_dinamis',
-                        'source' => 'direct_daily_loan_normalize',
-                        'line_number' => $lineNumber,
-                        'required_headers' => ['periode', 'nomor_rekening1', 'baki_debet1'],
-                    ]);
-                    $skippedCount++;
-                    if (count($skippedRows) < 50) {
-                        $skippedRows[] = $lineNumber;
-                    }
-                    continue;
-                }
 
                 if (count($row) > $expectedColumns) {
                     $row = array_slice($row, 0, $expectedColumns);
@@ -2707,14 +2801,8 @@ class ImportExcelController extends Controller
     private function prepareDailyLoanDirectLoadSource(string $csvPath, ?string $delimiter = null): array
     {
         $requiresNormalization = $this->requiresDailyLoanDirectLoadNormalization($csvPath, $delimiter);
-        $hasMalformedRows = $this->hasMalformedRowsForDirectDailyLoanLoad(
-            $csvPath,
-            self::DAILY_LOAN_SOURCE_HEADERS,
-            $this->directLoadValidationSampleRows(),
-            $delimiter
-        );
 
-        if (!$requiresNormalization && !$hasMalformedRows) {
+        if (!$requiresNormalization) {
             return [
                 'path' => $csvPath,
                 'cleanup' => false,
@@ -3182,6 +3270,20 @@ class ImportExcelController extends Controller
 
             $loadSource = $this->prepareDailyLoanDirectLoadSource($csvPath, $delimiter);
             $sourcePath = (string) ($loadSource['path'] ?? $csvPath);
+            $snapshotValues = $this->collectCsvNormalizedValuesForHeaders($sourcePath, ['PERIODE'], $delimiter);
+
+            if ($snapshotValues !== []) {
+                $deletedRows = $this->deleteRowsByColumnValues('daily_loan_dinamis', 'periode', $snapshotValues);
+                if ($deletedRows > 0) {
+                    $send('progress', [
+                        'percent' => 28,
+                        'message' => 'Data periode lama ditemukan. Mengganti snapshot sebelum staging...',
+                        'rows_done' => 0,
+                        'total' => $estimatedTotalRows,
+                        'speed' => 0,
+                    ]);
+                }
+            }
 
             $stagingTable = $this->createCsvStagingTable('tmp_daily_loan_csv_stage', $jobId, $headerCount);
             $loadedRows = $this->loadCsvIntoStagingTable($sourcePath, $stagingTable, $headerCount, $delimiter, 1);
@@ -3341,6 +3443,23 @@ class ImportExcelController extends Controller
             $sourceWasNormalized = !empty($loadSource['normalized']);
             $skippedRows = array_values(array_unique(array_map('intval', (array) ($loadSource['skipped_rows'] ?? []))));
             $skippedCount = (int) ($loadSource['skipped_count'] ?? count($skippedRows));
+            $snapshotValues = $this->collectCsvNormalizedValuesForHeaders($sourcePath, ['PERIODE'], $delimiter);
+
+            if ($snapshotValues !== []) {
+                $deletedRows = $this->deleteRowsByColumnValues('daily_loan_dinamis', 'periode', $snapshotValues);
+                if ($deletedRows > 0) {
+                    $send('progress', [
+                        'status' => 'processing',
+                        'phase' => 'preparing_load_plan',
+                        'percent' => 24,
+                        'message' => 'Data periode lama ditemukan. Mengganti data snapshot sebelum load...',
+                        'rows_done' => 0,
+                        'total' => $estimatedTotalRows,
+                        'speed' => 0,
+                    ]);
+                }
+            }
+
             $loadPlan = $this->buildDirectDailyLoanCsvLoadPlan($sourcePath, $normalizedHeaders);
             $baseTotal = !empty($loadSource['written_rows'])
                 ? max(0, (int) $loadSource['written_rows'])
@@ -3836,7 +3955,7 @@ class ImportExcelController extends Controller
             return;
         }
 
-        foreach (array_chunk($rows, self::DB_INSERT_BATCH_SIZE) as $batch) {
+        foreach (array_chunk($rows, $this->fallbackInsertBatchSize()) as $batch) {
             $this->insertBatchWithFallback($batch, $tableName, $totalInserted, $totalFailed);
 
             if ($afterBatch) {
@@ -5008,7 +5127,7 @@ class ImportExcelController extends Controller
         }
     }
 
-    private function processStagedCsvStream(
+    protected function processStagedCsvStream(
         callable $send,
         string $csvPath,
         string $tableName,
@@ -5134,7 +5253,7 @@ class ImportExcelController extends Controller
                     ]);
                 }
                 ,
-                8000,
+                $this->fallbackBulkLoadChunkLines(),
                 $estimatedTotalRows
             );
             $failed = max(0, $rowsDone - $inserted);
@@ -5787,7 +5906,7 @@ class ImportExcelController extends Controller
                 if (empty($dataToInsert)) {
                     return;
                 }
-                foreach (array_chunk($dataToInsert, self::DB_INSERT_BATCH_SIZE) as $batch) {
+                foreach (array_chunk($dataToInsert, $this->fallbackInsertBatchSize()) as $batch) {
                     $this->insertBatchWithFallback($batch, $tableName, $totalInserted, $totalFailed);
                     $ping();
                 }

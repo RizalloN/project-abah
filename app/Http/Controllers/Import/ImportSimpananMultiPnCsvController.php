@@ -246,11 +246,59 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                 try {
                     $loadPlan = $this->buildDirectCsvLoadPlan($absolutePath, $normalizedHeaders, $selectedColumns);
                 } catch (\Throwable $e) {
-                    Log::warning('Fast-path Simpanan MultiPN CSV unavailable in stream: ' . $e->getMessage());
+                    Log::warning('Fast-path Simpanan MultiPN direct plan failed, trying staged fallback: ' . $e->getMessage(), [
+                        'job_id' => $jobId,
+                        'absolute_path' => $absolutePath,
+                    ]);
+
+                    $send('progress', [
+                        'status' => 'processing',
+                        'phase' => 'preparing_load_plan',
+                        'percent' => 8,
+                        'message' => 'Direct plan gagal. Mengalihkan ke staged bulk import Simpanan MultiPN...',
+                        'rows_done' => 0,
+                        'total' => $totalRows,
+                        'speed' => 0,
+                    ]);
+
+                    $handled = $this->processStagedCsvStream(
+                        $send,
+                        $absolutePath,
+                        'simpanan_multipn',
+                        [],
+                        $normalizedHeaders,
+                        $jobId,
+                        $totalRows
+                    );
+
+                    if ($handled) {
+                        $job = $jobId > 0 ? DB::table('import_jobs')->where('id', $jobId)->first() : null;
+                        if ($job && $job->status === 'completed') {
+                            $this->cleanupSuccessfulImportArtifacts($jobId, $relativePath, $absolutePath);
+                        }
+                        return;
+                    }
+
                     $send('error', [
                         'message' => 'Fast import CSV tidak bisa dilanjutkan: ' . $e->getMessage(),
                     ]);
                     return;
+                }
+
+                $snapshotValues = $this->collectCsvNormalizedValuesForHeaders($absolutePath, ['POSISI']);
+                if ($snapshotValues !== []) {
+                    $deletedRows = $this->deleteRowsByColumnValues('simpanan_multipn', 'posisi', $snapshotValues);
+                    if ($deletedRows > 0) {
+                        $send('progress', [
+                            'status' => 'processing',
+                            'phase' => 'preparing_load_plan',
+                            'percent' => 12,
+                            'message' => 'Data posisi lama ditemukan. Mengganti snapshot sebelum load...',
+                            'rows_done' => 0,
+                            'total' => $totalRows,
+                            'speed' => 0,
+                        ]);
+                    }
                 }
 
                 $send('progress', [
@@ -307,6 +355,43 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                     'total_rows' => $totalRows > 0 ? $totalRows : $inserted,
                 ]);
             } catch (\Throwable $e) {
+                Log::warning('Simpanan MultiPN direct path failed, trying staged fallback: ' . $e->getMessage(), [
+                    'job_id' => $jobId,
+                    'absolute_path' => $absolutePath,
+                ]);
+
+                try {
+                    $send('progress', [
+                        'status' => 'processing',
+                        'phase' => 'preparing_load_plan',
+                        'percent' => 10,
+                        'message' => 'Direct path gagal. Mengalihkan ke staged bulk import Simpanan MultiPN...',
+                        'rows_done' => 0,
+                        'total' => $totalRows,
+                        'speed' => 0,
+                    ]);
+
+                    $handled = $this->processStagedCsvStream(
+                        $send,
+                        $absolutePath,
+                        'simpanan_multipn',
+                        [],
+                        $normalizedHeaders,
+                        $jobId,
+                        $totalRows
+                    );
+
+                    if ($handled) {
+                        $job = $jobId > 0 ? DB::table('import_jobs')->where('id', $jobId)->first() : null;
+                        if ($job && $job->status === 'completed') {
+                            $this->cleanupSuccessfulImportArtifacts($jobId, $relativePath, $absolutePath);
+                        }
+                        return;
+                    }
+                } catch (\Throwable $fallbackException) {
+                    Log::error('SIMPANAN MULTIPN STAGED FALLBACK ERROR: ' . $fallbackException->getMessage() . ' | ' . $fallbackException->getFile() . ':' . $fallbackException->getLine());
+                }
+
                 Log::error('SIMPANAN MULTIPN DIRECT CSV LOAD ERROR: ' . $e->getMessage() . ' | ' . $e->getFile() . ':' . $e->getLine());
 
                 if ($jobId > 0) {
@@ -495,10 +580,6 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
 
         if ($sourceHeaders === false || empty($sourceHeaders)) {
             throw new \RuntimeException('Header CSV Simpanan MultiPN tidak ditemukan.');
-        }
-
-        if ($this->hasMalformedRowsForDirectLoad($absolutePath, $delimiter, $sourceHeaders, $this->directLoadValidationSampleRows())) {
-            throw new \RuntimeException('CSV mengandung baris tidak lengkap, fast import dialihkan ke mode aman.');
         }
 
         $selectedLookup = [];

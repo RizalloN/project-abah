@@ -2,13 +2,17 @@
 
 namespace App\Services\Import;
 
+use App\Jobs\RunImportJob;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Carbon;
 
 class ImportProgressService
 {
     private const CACHE_PREFIX = 'import_job_progress:';
     private const STATE_PREFIX = 'excel_import_job:';
+    private const STALE_QUEUED_MINUTES = 15;
 
     public function cacheProgress(int $jobId, array $payload): array
     {
@@ -68,26 +72,50 @@ class ImportProgressService
 
     public function markCompleted(int $jobId, int $success, int $failed, int $totalRows, ?array $progressPayload = null): void
     {
-        $this->updateJob($jobId, [
-            'status' => 'completed',
-            'total_success' => $success,
-            'total_failed' => $failed,
-            'total_files' => $totalRows,
-        ], $progressPayload);
+        $this->updateTotals($jobId, $success, $failed, $totalRows, 'completed', $progressPayload);
     }
 
     public function markFailed(int $jobId, string $message, int $success = 0, int $failed = 0, ?string $status = null): void
     {
-        $this->updateJob($jobId, [
-            'status' => $status ?? ($success > 0 ? 'failed_partial' : 'failed'),
-            'total_success' => $success,
-            'total_failed' => $failed,
-        ], [
-            'status' => $status ?? ($success > 0 ? 'failed_partial' : 'failed'),
+        $resolvedStatus = $status ?? ($success > 0 ? 'failed_partial' : 'failed');
+
+        $this->updateTotals($jobId, $success, $failed, null, $resolvedStatus, [
+            'status' => $resolvedStatus,
             'message' => $message,
             'total_success' => $success,
             'total_failed' => $failed,
         ]);
+    }
+
+    public function purgeStaleQueuedJobs(): int
+    {
+        $cutoff = now()->subMinutes(self::STALE_QUEUED_MINUTES);
+        $staleJobs = DB::table('import_jobs')
+            ->where('status', 'queued')
+            ->where('updated_at', '<', $cutoff)
+            ->orderBy('updated_at')
+            ->get(['id', 'total_success', 'total_failed']);
+
+        $purged = 0;
+        foreach ($staleJobs as $job) {
+            $jobId = (int) ($job->id ?? 0);
+            if ($jobId <= 0) {
+                continue;
+            }
+
+            $success = (int) ($job->total_success ?? 0);
+            $failed = (int) ($job->total_failed ?? 0);
+            $this->markFailed(
+                $jobId,
+                'Job import terlalu lama berada di antrian. Silakan ulangi proses import.',
+                $success,
+                $failed,
+                $success > 0 || $failed > 0 ? 'failed_partial' : 'failed'
+            );
+            $purged++;
+        }
+
+        return $purged;
     }
 
     public function updateTotals(
@@ -112,6 +140,10 @@ class ImportProgressService
         }
 
         $this->updateJob($jobId, $attributes, $progressPayload);
+
+        if ($this->isTerminalStatus($status)) {
+            $this->cleanupQueuedImportJobRows($jobId);
+        }
     }
 
     public function getStatusPayload(int $jobId): array
@@ -133,6 +165,20 @@ class ImportProgressService
         $failed = (int) ($progress['total_failed'] ?? $job->total_failed ?? 0);
         $processed = max($success + $failed, (int) ($progress['processed_rows'] ?? 0));
         $percent = (int) ($progress['percent'] ?? ($totalRows > 0 ? round(($processed / $totalRows) * 100) : 0));
+        $queuedAt = null;
+        $queuedForSeconds = null;
+        $isStaleQueue = false;
+
+        if ($job->status === 'queued' && !empty($job->updated_at)) {
+            try {
+                $queuedAt = Carbon::parse($job->updated_at);
+                $queuedForSeconds = max(0, now()->diffInSeconds($queuedAt));
+                $isStaleQueue = $queuedAt->lt(now()->subMinutes(self::STALE_QUEUED_MINUTES));
+            } catch (\Throwable) {
+                $queuedForSeconds = null;
+                $isStaleQueue = false;
+            }
+        }
 
         return [
             'status' => (string) $job->status,
@@ -146,6 +192,8 @@ class ImportProgressService
             'percent' => max(0, min(100, $percent)),
             'message' => (string) ($progress['message'] ?? 'Import sedang diproses.'),
             'updated_at' => $progress['updated_at'] ?? (string) $job->updated_at,
+            'queued_for_seconds' => $queuedForSeconds,
+            'is_stale_queue' => $isStaleQueue,
         ];
     }
 
@@ -157,5 +205,28 @@ class ImportProgressService
     private function stateKey(int $jobId): string
     {
         return self::STATE_PREFIX . $jobId;
+    }
+
+    private function cleanupQueuedImportJobRows(int $jobId): void
+    {
+        if ($jobId <= 0) {
+            return;
+        }
+
+        try {
+            DB::table('jobs')
+                ->whereRaw("JSON_UNQUOTE(JSON_EXTRACT(payload, '$.data.commandName')) = ?", [RunImportJob::class])
+                ->whereRaw("JSON_UNQUOTE(JSON_EXTRACT(payload, '$.data.command')) LIKE ?", ['%jobId";i:' . $jobId . ';%'])
+                ->delete();
+        } catch (\Throwable $e) {
+            Log::warning('Failed to clean queued import job rows: ' . $e->getMessage(), [
+                'job_id' => $jobId,
+            ]);
+        }
+    }
+
+    private function isTerminalStatus(?string $status): bool
+    {
+        return in_array($status, ['completed', 'failed', 'failed_partial'], true);
     }
 }

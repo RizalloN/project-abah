@@ -58,7 +58,7 @@ class ImportSimpananMultiPnCsvControllerTest extends TestCase
     public function test_direct_csv_load_plan_honors_configured_validation_sample_size(): void
     {
         $controller = new ImportSimpananMultiPnCsvController();
-        config()->set('import.direct_load.validation_sample_rows', 1);
+        config()->set('import.direct_load.validation_sample_rows', 5000);
 
         Schema::shouldReceive('getColumnListing')
             ->once()

@@ -101,6 +101,54 @@ class ImportExcelControllerDailyLoanCsvTest extends TestCase
         Log::shouldHaveReceived('warning')->once();
     }
 
+    public function test_prepare_daily_loan_direct_load_source_keeps_rows_with_blank_noncritical_values(): void
+    {
+        $csvPath = storage_path('framework/testing/daily_loan_direct_load_normalize.csv');
+        if (!is_dir(dirname($csvPath))) {
+            @mkdir(dirname($csvPath), 0777, true);
+        }
+
+        $innerRow = $this->toCsvLine([
+            '2026-04-04',
+            'R',
+            'KANWIL MALANG',
+            '01',
+            'KCP',
+            'BRANCH',
+            'UNIT',
+            'IDR',
+            'AO',
+            '1234567890',
+            '4501060057100',
+            'AKTIF',
+            'KREDIT',
+            'DARTO',
+            '0.110000',
+            '120',
+            '185000000.00',
+            '64633760.00',
+            '',
+        ]);
+        file_put_contents($csvPath, implode("\n", [
+            implode(',', array_slice($this->dailyLoanHeaders(), 0, 19)),
+            '"' . str_replace('"', '""', $innerRow) . '"',
+        ]));
+
+        $result = [];
+        try {
+            $result = $this->invokeMethod('prepareDailyLoanDirectLoadSource', [$csvPath, ',']);
+        } finally {
+            @unlink($csvPath);
+            if (!empty($result['path'] ?? '') && file_exists((string) $result['path']) && ($result['cleanup'] ?? false)) {
+                @unlink((string) $result['path']);
+            }
+        }
+
+        $this->assertTrue($result['normalized']);
+        $this->assertSame(1, $result['written_rows']);
+        $this->assertSame(0, $result['skipped_count']);
+    }
+
     public function test_normalize_excel_value_uses_strict_day_first_date_parsing(): void
     {
         $normalized = $this->invokeMethod('normalizeExcelValue', ['POSISI', '04/04/2026']);

@@ -8,41 +8,54 @@ use App\Jobs\SyncImportedReportJob;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Symfony\Component\HttpFoundation\StreamedResponse;
+use Illuminate\Support\Carbon;
 
 class ImportExecutionService
 {
     private const DISPATCHED_KEY_PREFIX = 'import_excel_dispatched_job_';
+    private const DISPATCHED_TTL_HOURS = 6;
+    private const STALE_QUEUED_MINUTES = 10;
 
     public function __construct(
         private readonly ImportProgressService $progressService,
     ) {
     }
 
-    public function dispatch(int $jobId, ?string $queueMessage = null): void
+    public function dispatch(int $jobId, ?string $queueMessage = null): bool
     {
         if ($jobId <= 0) {
-            return;
+            return false;
         }
 
         $job = $this->progressService->findJob($jobId);
         if (!$job || in_array($job->status, ['processing', 'completed', 'failed', 'failed_partial'], true)) {
-            return;
+            $this->releaseDispatchMarker($jobId);
+            return false;
+        }
+
+        $this->progressService->purgeStaleQueuedJobs();
+
+        $job = $this->progressService->findJob($jobId);
+        if (!$job || in_array($job->status, ['processing', 'completed', 'failed', 'failed_partial'], true)) {
+            $this->releaseDispatchMarker($jobId);
+            return false;
         }
 
         $lock = Cache::lock('import_excel_dispatch_job_' . $jobId, 30);
 
         try {
             if (!$lock->get()) {
-                return;
+                return false;
             }
 
             $job = $this->progressService->findJob($jobId);
             if (!$job || in_array($job->status, ['processing', 'completed', 'failed', 'failed_partial'], true)) {
-                return;
+                $this->releaseDispatchMarker($jobId);
+                return false;
             }
 
-            if (Cache::has($this->dispatchedKey($jobId))) {
-                return;
+            if (Cache::has($this->dispatchedKey($jobId)) && !$this->shouldRedispatchQueuedJob($job)) {
+                return false;
             }
 
             $this->progressService->markQueued($jobId, [
@@ -55,8 +68,18 @@ class ImportExecutionService
                 'total_rows' => (int) ($job->total_files ?? 0),
             ]);
 
-            Cache::put($this->dispatchedKey($jobId), true, now()->addHours(6));
+            Cache::put($this->dispatchedKey($jobId), true, now()->addHours(self::DISPATCHED_TTL_HOURS));
             RunImportJob::dispatch($jobId);
+            return true;
+        } catch (\Throwable $e) {
+            $this->releaseDispatchMarker($jobId);
+
+            $this->progressService->markFailed(
+                $jobId,
+                'Gagal menjadwalkan job import ke queue: ' . $e->getMessage()
+            );
+
+            return false;
         } finally {
             optional($lock)->release();
         }
@@ -85,6 +108,32 @@ class ImportExecutionService
 
                 $payload = $this->progressService->getStatusPayload($jobId);
                 $hash = md5(json_encode($payload));
+                $isStaleQueue = ($payload['status'] ?? '') === 'queued' && !empty($payload['is_stale_queue']);
+
+                if ($isStaleQueue) {
+                    if ($hash !== $lastPayloadHash) {
+                        $lastPayloadHash = $hash;
+                        $send('progress', $payload);
+                    }
+
+                    $timeoutPayload = [
+                        'job_id' => $jobId,
+                        'message' => 'Job import terlalu lama berada di antrian. Silakan ulangi proses import.',
+                        'status' => 'timeout',
+                        'queued_for_seconds' => (int) ($payload['queued_for_seconds'] ?? 0),
+                    ];
+
+                    $this->progressService->markFailed(
+                        $jobId,
+                        $timeoutPayload['message'],
+                        (int) ($payload['total_success'] ?? 0),
+                        (int) ($payload['total_failed'] ?? 0),
+                        'failed'
+                    );
+
+                    $send('error', $timeoutPayload);
+                    break;
+                }
 
                 if ($hash !== $lastPayloadHash) {
                     $lastPayloadHash = $hash;
@@ -136,11 +185,24 @@ class ImportExecutionService
 
         if ($params === [] || $headers === []) {
             $this->progressService->markFailed($jobId, 'State import job hilang. Silakan ulangi import dari awal.');
+            $this->releaseDispatchMarker($jobId);
             return;
         }
 
         $lock = Cache::lock('import_excel_execute_job_' . $jobId, 7200);
         if (!$lock->get()) {
+            $job = $this->progressService->findJob($jobId);
+            if ($job && $this->shouldRedispatchQueuedJob($job)) {
+                $this->progressService->markFailed(
+                    $jobId,
+                    'Job import terkunci oleh proses lain terlalu lama. Silakan ulangi proses import.',
+                    (int) ($job->total_success ?? 0),
+                    (int) ($job->total_failed ?? 0),
+                    'failed'
+                );
+                $this->releaseDispatchMarker($jobId);
+            }
+
             return;
         }
 
@@ -171,6 +233,7 @@ class ImportExecutionService
 
             $job = $this->progressService->findJob($jobId);
             if ($job && in_array($job->status, ['completed', 'failed', 'failed_partial'], true)) {
+                $this->releaseDispatchMarker($jobId);
                 return;
             }
 
@@ -192,6 +255,7 @@ class ImportExecutionService
                     ],
                 );
                 SyncImportedReportJob::dispatch($jobId, null, null, static::class)->onQueue('reports-low');
+                $this->releaseDispatchMarker($jobId);
                 return;
             }
 
@@ -206,6 +270,7 @@ class ImportExecutionService
                 (int) ($result['total_failed'] ?? 0),
                 $status
             );
+            $this->releaseDispatchMarker($jobId);
         } finally {
             $lock->release();
         }
@@ -214,5 +279,28 @@ class ImportExecutionService
     private function dispatchedKey(int $jobId): string
     {
         return self::DISPATCHED_KEY_PREFIX . $jobId;
+    }
+
+    private function releaseDispatchMarker(int $jobId): void
+    {
+        Cache::forget($this->dispatchedKey($jobId));
+    }
+
+    private function shouldRedispatchQueuedJob(object $job): bool
+    {
+        if (($job->status ?? null) !== 'queued') {
+            return false;
+        }
+
+        $updatedAt = $job->updated_at ?? null;
+        if ($updatedAt === null || $updatedAt === '') {
+            return true;
+        }
+
+        try {
+            return Carbon::parse($updatedAt)->lt(now()->subMinutes(self::STALE_QUEUED_MINUTES));
+        } catch (\Throwable) {
+            return true;
+        }
     }
 }

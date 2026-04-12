@@ -616,6 +616,11 @@
                 progressBar.setAttribute('aria-valuenow', percent);
             }
 
+            const progressPercent = document.getElementById('swal-progress-percent');
+            if (progressPercent) {
+                progressPercent.innerText = percent + '%';
+            }
+
             if (progressText) {
                 progressText.innerText = message || '';
             }
@@ -673,17 +678,34 @@
 
             if (!initUrl || !streamUrlBase) {
                 const formData = new FormData(form);
+                const loadingHtml = `
+                    <div class="swal-import-shell">
+                        <div class="swal-import-head">
+                            <span class="swal-import-badge"><i class="fas fa-circle-notch fa-spin mr-1"></i> Sedang diproses</span>
+                            <div class="swal-import-title">Memproses Data</div>
+                            <div class="swal-import-desc">Sistem sedang memindahkan baris data ke MySQL.</div>
+                        </div>
+                        <div class="swal-import-card">
+                            <div class="swal-import-card__top">
+                                <span class="swal-import-label">Status</span>
+                                <span class="swal-import-percent">0%</span>
+                            </div>
+                            <div class="progress swal-import-progress" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+                                <div class="progress-bar swal-import-progress__bar progress-bar-striped progress-bar-animated" style="width: 100%;">Memproses</div>
+                            </div>
+                            <div class="swal-import-meta">
+                                <small class="swal-import-meta__status">Mohon tunggu sebentar.</small>
+                            </div>
+                        </div>
+                    </div>`;
 
                 themedSwal({
-                    title: 'Sedang Memproses Data...',
-                    html: 'Sistem sedang memindahkan baris data ke MySQL.<br><br><b>Mohon tunggu dan jangan tutup halaman ini!</b>',
+                    title: '<i class="fas fa-cloud-upload-alt mr-2 text-success"></i> Memproses Data',
+                    html: loadingHtml,
                     allowOutsideClick: false,
                     allowEscapeKey: false,
                     showConfirmButton: false,
-                    width: 520,
-                    didOpen: () => {
-                        Swal.showLoading();
-                    }
+                    width: 560,
                 });
 
                 try {
@@ -721,32 +743,53 @@
             }
 
             const progressHtml = `
-                <div class="text-center mb-3">
-                    <span style="font-size: 14px; color: #64748b;">Sistem sedang memindahkan data ke MySQL. Jangan tutup halaman ini.</span>
-                </div>
-                <div class="progress" style="height: 16px; border-radius: 999px; background-color: #e2e8f0; overflow: hidden; box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.08);">
-                    <div id="swal-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated"
-                         role="progressbar" style="width: 0%; font-weight: 700; font-size: 12px; line-height: 16px; background: linear-gradient(135deg, #0f766e, #115e59);"
-                         aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
-                </div>
-                <div class="text-center mt-3">
-                    <small id="swal-progress-text" style="color: #0f766e; font-weight: 700; letter-spacing: 0.02em;">Menginisialisasi import...</small>
-                </div>
-                <div class="text-center mt-2">
-                    <small id="swal-rows-info" class="d-block text-muted"></small>
-                    <small id="swal-speed-info" class="d-block text-muted"></small>
-                    <small id="swal-elapsed-info" class="d-block text-muted"></small>
-                    <small id="swal-eta-info" class="d-block text-muted"></small>
+                <div class="swal-import-shell">
+                    <div class="swal-import-head">
+                        <span class="swal-import-badge"><i class="fas fa-circle-notch fa-spin mr-1"></i> Sedang diproses</span>
+                        <div class="swal-import-title">Memproses Data</div>
+                        <div class="swal-import-desc">Sistem sedang memindahkan data ke MySQL.</div>
+                    </div>
+                    <div class="swal-import-card">
+                        <div class="swal-import-card__top">
+                            <span class="swal-import-label">Progress</span>
+                            <span class="swal-import-percent" id="swal-progress-percent">0%</span>
+                        </div>
+                        <div class="progress swal-import-progress" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+                            <div id="swal-progress-bar" class="progress-bar swal-import-progress__bar progress-bar-striped progress-bar-animated"
+                                 style="width: 0%;">0%</div>
+                        </div>
+                        <div class="swal-import-meta">
+                            <small id="swal-progress-text" class="swal-import-meta__status">Menginisialisasi import...</small>
+                        </div>
+                    </div>
+                    <div class="swal-import-stats swal-import-stats--compact">
+                        <div class="swal-import-stat">
+                            <span class="swal-import-stat__label">Baris</span>
+                            <span id="swal-rows-info" class="swal-import-stat__value">0 / 0</span>
+                        </div>
+                        <div class="swal-import-stat">
+                            <span class="swal-import-stat__label">Kecepatan</span>
+                            <span id="swal-speed-info" class="swal-import-stat__value">-</span>
+                        </div>
+                        <div class="swal-import-stat">
+                            <span class="swal-import-stat__label">Durasi</span>
+                            <span id="swal-elapsed-info" class="swal-import-stat__value">-</span>
+                        </div>
+                        <div class="swal-import-stat">
+                            <span class="swal-import-stat__label">Sisa</span>
+                            <span id="swal-eta-info" class="swal-import-stat__value">-</span>
+                        </div>
+                    </div>
                 </div>
             `;
 
             themedSwal({
-                title: 'Sedang Memproses Data...',
+                title: '<i class="fas fa-cloud-upload-alt mr-2 text-success"></i> Memproses Data',
                 html: progressHtml,
                 allowOutsideClick: false,
                 allowEscapeKey: false,
                 showConfirmButton: false,
-                width: 520,
+                width: 560,
             });
 
             startImportProgressTicker();
@@ -924,6 +967,11 @@
                             return;
                         }
 
+                        if (status === 'queued' && statusPayload && statusPayload.is_stale_queue) {
+                            showImportError((statusPayload && statusPayload.message) || 'Job import terlalu lama berada di antrian.');
+                            return;
+                        }
+
                         if (status === 'queued' || status === 'processing') {
                             reconnectAttempts += 1;
                             if (reconnectAttempts <= 10) {
@@ -1013,6 +1061,133 @@
         font-weight: 700;
         padding: 0.8rem 1.3rem;
         box-shadow: 0 16px 34px -22px rgba(15, 23, 42, 0.45);
+    }
+
+    .swal-import-shell {
+        display: grid;
+        gap: 1rem;
+        text-align: left;
+    }
+
+    .swal-import-head {
+        display: grid;
+        gap: 0.45rem;
+    }
+
+    .swal-import-badge {
+        display: inline-flex;
+        align-items: center;
+        width: fit-content;
+        padding: 0.4rem 0.72rem;
+        border-radius: 999px;
+        background: rgba(15, 118, 110, 0.1);
+        color: #0f766e;
+        font-size: 0.72rem;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+    }
+
+    .swal-import-title {
+        color: #0f172a;
+        font-size: 1.08rem;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+    }
+
+    .swal-import-desc {
+        color: #64748b;
+        font-size: 0.92rem;
+        line-height: 1.5;
+    }
+
+    .swal-import-card {
+        padding: 1rem;
+        border-radius: 20px;
+        background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        box-shadow: 0 18px 42px -32px rgba(15, 23, 42, 0.28);
+    }
+
+    .swal-import-card__top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-bottom: 0.6rem;
+    }
+
+    .swal-import-label {
+        color: #64748b;
+        font-size: 0.72rem;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+    }
+
+    .swal-import-percent {
+        color: #0f172a;
+        font-size: 0.92rem;
+        font-weight: 800;
+    }
+
+    .swal-import-progress {
+        height: 14px;
+        border-radius: 999px;
+        background: #e2e8f0;
+        overflow: hidden;
+        box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.08);
+    }
+
+    .swal-import-progress__bar {
+        background: linear-gradient(135deg, #0f766e, #14b8a6);
+        font-weight: 800;
+        font-size: 11px;
+        line-height: 14px;
+    }
+
+    .swal-import-meta {
+        margin-top: 0.7rem;
+    }
+
+    .swal-import-meta__status {
+        color: #0f766e;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+    }
+
+    .swal-import-stats {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.75rem;
+    }
+
+    .swal-import-stats--compact {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .swal-import-stat {
+        padding: 0.85rem 0.9rem;
+        border-radius: 16px;
+        background: #f8fafc;
+        border: 1px solid rgba(148, 163, 184, 0.15);
+    }
+
+    .swal-import-stat__label {
+        display: block;
+        margin-bottom: 0.25rem;
+        color: #64748b;
+        font-size: 0.7rem;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+    }
+
+    .swal-import-stat__value {
+        display: block;
+        color: #0f172a;
+        font-size: 0.94rem;
+        font-weight: 800;
     }
 </style>
 @endsection

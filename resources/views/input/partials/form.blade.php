@@ -7,7 +7,7 @@
                         <h5 class="card-title mb-2 text-dark">
                             <i class="fas fa-edit text-info mr-2"></i>Form Input Data
                         </h5>
-                        <p class="mb-0 text-muted">Isi form berikut lalu klik preview untuk memunculkan data di tabel bawah.</p>
+                        <p class="mb-0 text-muted">Isi form lalu klik preview.</p>
                     </div>
                     <span class="mt-3 mt-lg-0 px-3 py-2" style="border-radius: 999px; background: #ecfeff; color: #0f766e; font-size: 0.78rem; font-weight: 700;">
                         Preview Sebelum Simpan
@@ -22,7 +22,7 @@
                             <div class="form-group mb-4">
                                 <label for="perusahaan_anak" class="font-weight-bold text-dark">Perusahaan Anak</label>
                                 <select id="perusahaan_anak" name="perusahaan_anak" class="form-control">
-                                    <option value="" selected disabled>Pilih salah satu perusahaan anak</option>
+                                    <option value="" selected disabled>Pilih perusahaan anak</option>
                                     <option>BRI Life</option>
                                     <option>BRI Finance</option>
                                     <option>BRI Danareksa Sekuritas</option>
@@ -37,7 +37,7 @@
                             <div class="form-group mb-4">
                                 <label for="status_nasabah" class="font-weight-bold text-dark">Status Nasabah</label>
                                 <select id="status_nasabah" name="status_nasabah" class="form-control">
-                                    <option value="" selected disabled>Pilih status nasabah</option>
+                                    <option value="" selected disabled>Pilih status</option>
                                     <option>Sudah Nasabah</option>
                                     <option>Belum Nasabah</option>
                                 </select>
@@ -47,21 +47,21 @@
                         <div class="col-lg-6">
                             <div class="form-group mb-4">
                                 <label for="rekanan_level_1" class="font-weight-bold text-dark">Rekanan - Level 1</label>
-                                <input type="text" id="rekanan_level_1" name="rekanan_level_1" class="form-control" placeholder="Masukkan rekanan level 1">
+                                <input type="text" id="rekanan_level_1" name="rekanan_level_1" class="form-control" placeholder="Rekanan level 1">
                             </div>
                         </div>
 
                         <div class="col-lg-6">
                             <div class="form-group mb-4">
                                 <label for="rekanan_level_2" class="font-weight-bold text-dark">Rekanan - Level 2</label>
-                                <input type="text" id="rekanan_level_2" name="rekanan_level_2" class="form-control" placeholder="Masukkan rekanan level 2">
+                                <input type="text" id="rekanan_level_2" name="rekanan_level_2" class="form-control" placeholder="Rekanan level 2">
                             </div>
                         </div>
 
                         <div class="col-12">
                             <div class="form-group mb-2">
                                 <label for="cif" class="font-weight-bold text-dark">CIF</label>
-                                <input type="text" id="cif" name="cif" class="form-control" placeholder="Masukkan CIF">
+                                <input type="text" id="cif" name="cif" class="form-control" placeholder="CIF">
                             </div>
                         </div>
                     </div>
@@ -70,7 +70,7 @@
                 <div class="card-footer bg-white border-0 px-4 pb-4">
                     <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-md-between">
                         <p class="text-muted mb-3 mb-md-0" style="font-size: 0.9rem;">
-                            Preview akan menambahkan data ke tabel. Kolom produk bisa diisi langsung di tabel preview.
+                            Kolom produk diisi di preview.
                         </p>
                         <div class="d-flex">
                             <button type="reset" class="btn btn-light mr-2">

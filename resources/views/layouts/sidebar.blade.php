@@ -361,7 +361,7 @@
                 <li class="nav-item">
                     <a href="{{ route('report-management.index') }}" class="nav-link {{ request()->routeIs('report-management.*') ? 'active' : '' }}">
                         <i class="nav-icon fas fa-database"></i>
-                        <p>Report Management</p>
+                        <p>Kelola Report</p>
                     </a>
                 </li>
 

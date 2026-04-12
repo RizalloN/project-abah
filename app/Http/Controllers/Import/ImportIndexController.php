@@ -29,8 +29,8 @@ class ImportIndexController extends Controller
     private const DELETE_PROGRESS_CACHE_PREFIX = 'report_management_delete:';
     private const DELETE_PROCESS_LOCK_PREFIX = 'report_management_delete_lock:';
     private const DELETE_PROCESS_LOCK_SECONDS = 120;
-    private const DELETE_PROCESS_GRACE_SECONDS = 3;
-    private const DELETE_PROCESS_STALE_SECONDS = 6;
+    private const DELETE_PROCESS_GRACE_SECONDS = 0;
+    private const DELETE_PROCESS_STALE_SECONDS = 0;
     private const DELETE_TICK_TIME_BUDGET_MS = 2500;
     private const DELETE_MAX_BATCHES_PER_TICK = 8;
     private const DELETE_HARD_GUARD_RATIO = 0.85;
@@ -344,7 +344,7 @@ class ImportIndexController extends Controller
             'status' => 'running',
             'stage' => 'queued',
             'batch_state' => 'queued',
-            'message' => 'Delete dimulai. Menunggu worker queue atau fallback controller memproses job...',
+            'message' => 'Delete dimulai. Sistem akan memproses langsung dan fallback otomatis bila diperlukan...',
             'table_name' => $prepared['table_name'],
             'id_report' => $prepared['id_report'],
             'period_column' => $prepared['period_column'],
@@ -1074,14 +1074,14 @@ class ImportIndexController extends Controller
 
     private function getDeleteState(string $deleteId): ?array
     {
-        $state = Cache::get($this->deleteProgressCacheKey($deleteId));
+        $state = $this->deleteProgressStore()->get($this->deleteProgressCacheKey($deleteId));
 
         return is_array($state) ? $state : null;
     }
 
     private function putDeleteState(string $deleteId, array $state): void
     {
-        Cache::put(
+        $this->deleteProgressStore()->put(
             $this->deleteProgressCacheKey($deleteId),
             $state,
             now()->addMinutes(self::DELETE_PROGRESS_TTL_MINUTES)
@@ -1112,7 +1112,7 @@ class ImportIndexController extends Controller
 
     private function acquireManagedDeleteProcessLock(string $deleteId): bool
     {
-        return Cache::add(
+        return $this->deleteProgressStore()->add(
             $this->managedDeleteProcessLockKey($deleteId),
             now()->toIso8601String(),
             now()->addSeconds(self::DELETE_PROCESS_LOCK_SECONDS)
@@ -1121,7 +1121,7 @@ class ImportIndexController extends Controller
 
     private function releaseManagedDeleteProcessLock(string $deleteId): void
     {
-        Cache::forget($this->managedDeleteProcessLockKey($deleteId));
+        $this->deleteProgressStore()->forget($this->managedDeleteProcessLockKey($deleteId));
     }
 
     private function managedDeleteProcessLockKey(string $deleteId): string
@@ -1140,6 +1140,11 @@ class ImportIndexController extends Controller
         } catch (Throwable) {
             return PHP_INT_MAX;
         }
+    }
+
+    private function deleteProgressStore()
+    {
+        return Cache::store('file');
     }
 
     private function downloadTemplateOptions(): array
@@ -1922,17 +1927,6 @@ class ImportIndexController extends Controller
         }
 
         try {
-            $partitionAffected = $this->tryDeleteScopeByPartition(
-                $tableName,
-                $baseQuery,
-                $periodColumn,
-                $kancaColumn,
-                $scope
-            );
-            if ($partitionAffected !== null) {
-                return $partitionAffected;
-            }
-
             if ($identityColumn !== null && Schema::hasColumn($tableName, $identityColumn)) {
                 $variants = $this->buildDeleteConstraintVariants($periodColumn, $kancaColumn, $scope);
                 if (empty($variants)) {

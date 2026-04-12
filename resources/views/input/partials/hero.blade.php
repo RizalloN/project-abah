@@ -7,9 +7,9 @@
                         <span class="d-inline-flex align-items-center px-3 py-2 mb-3" style="border-radius: 999px; background: rgba(255,255,255,0.12); font-size: 0.78rem; letter-spacing: 0.08em; text-transform: uppercase;">
                             Form Entri Manual
                         </span>
-                        <h4 class="font-weight-bold mb-3" style="font-size: 2rem; line-height: 1.2;">Input data rekanan dan nasabah dengan alur preview sebelum simpan.</h4>
+                        <h4 class="font-weight-bold mb-3" style="font-size: 2rem; line-height: 1.2;">Input data rekanan dan nasabah.</h4>
                         <p class="mb-0" style="color: rgba(226, 232, 240, 0.82); max-width: 560px;">
-                            Isi form, buat preview ke tabel, edit bila perlu, lalu simpan ke database. Tampilan tabel dibuat konsisten dengan pola tabel yang sudah ada di aplikasi.
+                            Isi form, lihat preview, lalu simpan.
                         </p>
                     </div>
                     <div class="col-lg-5">
@@ -20,7 +20,7 @@
                                 </span>
                                 <div>
                                     <div class="font-weight-bold">Input Data Baru</div>
-                                    <div style="font-size: 0.85rem; color: rgba(226, 232, 240, 0.72);">Preview akan menambah baris ke tabel yang editable.</div>
+                                    <div style="font-size: 0.85rem; color: rgba(226, 232, 240, 0.72);">Preview langsung ke tabel editable.</div>
                                 </div>
                             </div>
                             <div class="d-flex flex-wrap">

@@ -7,7 +7,7 @@
                         <h5 class="card-title mb-2 text-dark">
                             <i class="fas fa-history text-secondary mr-2"></i>Data Tersimpan Terbaru
                         </h5>
-                        <p class="mb-0 text-muted">Menampilkan maksimal 10 data terakhir dari tabel <code>input_rekanan</code>.</p>
+                        <p class="mb-0 text-muted">10 data terakhir dari <code>input_rekanan</code>.</p>
                     </div>
                 </div>
             </div>

@@ -10,9 +10,9 @@
         <div class="import-template-banner__content pr-3">
             <span class="import-template-banner__eyebrow">Template Siap Pakai</span>
             <div class="import-template-banner__title">
-                <i class="fas fa-download mr-2"></i> Download Template Import
+                <i class="fas fa-download mr-2"></i> Template Import
             </div>
-            <p class="import-template-banner__text mb-0">Pilih kategori report, unduh template yang sesuai, lalu isi datanya agar proses import lebih cepat dan rapi.</p>
+            <p class="import-template-banner__text mb-0">Pilih report, unduh template, lalu isi datanya.</p>
         </div>
         <div class="import-template-banner__actions mt-3 mt-md-0">
             <div class="import-template-banner__download-group">
@@ -27,7 +27,7 @@
                    class="btn import-template-banner__button disabled"
                    aria-disabled="true"
                    data-route-template="{{ route('import.template') }}">
-                    <i class="fas fa-file-download mr-2"></i> Download Template
+                    <i class="fas fa-file-download mr-2"></i> Unduh Template
                 </a>
             </div>
         </div>
@@ -42,7 +42,7 @@
                 <h5 class="card-title font-weight-bold text-dark mb-1">
                     <i class="fas fa-cloud-upload-alt text-primary mr-2"></i> Upload Data Report
                 </h5>
-                <p class="import-upload-card__subtitle mb-0">Unggah file sesuai format report yang dipilih. Sistem akan menyesuaikan jenis upload secara otomatis.</p>
+                <p class="import-upload-card__subtitle mb-0">Unggah file sesuai format report.</p>
             </div>
         </div>
     </div>
@@ -52,7 +52,7 @@
 
         <div class="card-body import-upload-card__body">
             <div class="form-group">
-                <label class="font-weight-bold text-dark">Pilih Kategori Report</label>
+                <label class="font-weight-bold text-dark">Pilih Report</label>
                 <select name="id_report" class="form-control select2" required>
                     <option value="" data-name="" data-table="">-- Pilih Report --</option>
                     @foreach($reports as $report)
@@ -74,50 +74,50 @@
                     <i class="fas fa-calendar-alt text-primary mr-1"></i> Periode
                 </label>
                 <input type="date" id="periode_input" name="periode" class="form-control">
-                <small id="periode-help" class="text-muted mt-2 d-block">Wajib diisi untuk import Performance PIS Per Produk, Input Rekanan, dan Nasabah Prioritas BOD BOC.</small>
+                <small id="periode-help" class="text-muted mt-2 d-block">Wajib untuk report tertentu.</small>
             </div>
 
             <div id="form-rar" class="form-group">
-                <label class="font-weight-bold text-dark">Upload File Extracted (.rar)</label>
+                <label class="font-weight-bold text-dark">Upload File (.rar)</label>
                 <div class="custom-file">
                     <input type="file" id="file_rar" name="file" class="custom-file-input" accept=".rar" required>
                     <label class="custom-file-label" for="file_rar">Pilih file .rar...</label>
                 </div>
-                <small class="text-muted mt-2 d-block">Sistem akan mengekstrak otomatis dan mendeteksi file CSV di dalamnya.</small>
+                <small class="text-muted mt-2 d-block">File akan diproses otomatis.</small>
             </div>
 
             <div id="form-excel" class="form-group" style="display: none;">
-                <label id="excel-label" class="text-success font-weight-bold"><i class="fas fa-file-excel mr-1"></i> Upload File Excel (.xlsx, .xls)</label>
+                <label id="excel-label" class="text-success font-weight-bold"><i class="fas fa-file-excel mr-1"></i> Upload Excel (.xlsx, .xls)</label>
                 <input type="file" id="file_excel" name="file" class="form-control border-success shadow-sm" accept=".xlsx,.xls">
-                <small class="text-muted mt-2 d-block" id="excel-help">Mendukung format .xlsx dan .xls sesuai batas upload server aktif, dengan preview bertahap.</small>
-                <small class="text-muted mt-2 d-block" id="upload-limit-hint">Mendukung format .xlsx dan .xls sesuai batas upload server aktif, dengan preview bertahap.</small>
+                <small class="text-muted mt-2 d-block" id="excel-help">Format .xlsx dan .xls didukung.</small>
+                <small class="text-muted mt-2 d-block" id="upload-limit-hint">Format .xlsx dan .xls didukung.</small>
             </div>
 
             <div id="form-csv" class="form-group" style="display: none;">
-                <label id="csv-label" class="text-info font-weight-bold"><i class="fas fa-file-csv mr-1"></i> Upload File CSV (.csv, .txt)</label>
+                <label id="csv-label" class="text-info font-weight-bold"><i class="fas fa-file-csv mr-1"></i> Upload CSV (.csv, .txt)</label>
                 <input type="file" id="file_csv" name="file" class="form-control border-info shadow-sm" accept=".csv,.txt">
-                <small id="csv-help" class="text-muted mt-2 d-block">Gunakan file CSV sesuai kebutuhan report yang dipilih.</small>
+                <small id="csv-help" class="text-muted mt-2 d-block">Gunakan CSV sesuai report.</small>
             </div>
         </div>
 
         <div class="card-footer bg-light border-0 import-upload-card__footer">
             <button type="submit" id="btn-submit" class="btn btn-primary font-weight-bold import-upload-card__submit">
-                <i class="fas fa-file-archive"></i> Upload RAR
+                <i class="fas fa-file-archive"></i> Upload
             </button>
         </div>
     </form>
 </div>
 
 @if(!empty($showReportManagementPanel))
-<div class="card shadow-sm border-0 mt-4" id="report-management-card"
-     data-fetch-url="{{ route('import.report-management.data') }}"
-     data-delete-url="{{ route('import.report-management.delete') }}">
+    <div class="card shadow-sm border-0 mt-4" id="report-management-card"
+         data-fetch-url="{{ route('import.report-management.data') }}"
+         data-delete-url="{{ route('import.report-management.delete') }}">
     <div class="card-header bg-white border-0">
-        <span class="import-upload-card__eyebrow">Report Management</span>
+        <span class="import-upload-card__eyebrow">Kelola Report</span>
         <h5 class="card-title font-weight-bold text-dark mb-1">
             <i class="fas fa-database text-danger mr-2"></i> Kelola Data Report
         </h5>
-        <p class="text-muted mb-0">Filter data berdasarkan report lalu hapus per kombinasi periode dan kanca. Snapshot terkait akan ikut disinkronkan.</p>
+        <p class="text-muted mb-0">Filter report lalu hapus data yang tidak diperlukan.</p>
     </div>
     <div class="card-body">
         <div class="row">
@@ -224,10 +224,10 @@
         function describeUploadLimitMessage(limits) {
             const maxBytes = Number(limits?.effective_max_upload_bytes || 0);
             if (maxBytes > 0) {
-                return `Mendukung format .xlsx dan .xls hingga ${formatBytes(maxBytes)} dengan preview bertahap.`;
+                return `Format .xlsx/.xls hingga ${formatBytes(maxBytes)}.`;
             }
 
-            return 'Mendukung format .xlsx dan .xls sesuai batas upload server aktif, dengan preview bertahap.';
+            return 'Format .xlsx/.xls didukung.';
         }
 
         function applyUploadLimitHints(limits) {
@@ -374,6 +374,10 @@
                     uploadProgressBar.style.width = percent + '%';
                     uploadProgressBar.innerText = percent + '%';
                 }
+                const progressPercent = document.getElementById('swal-progress-percent');
+                if (progressPercent) {
+                    progressPercent.textContent = percent + '%';
+                }
                 if (uploadProgressText) {
                     uploadProgressText.innerText = `Mengunggah file ke server... ${percent}%`;
                 }
@@ -382,6 +386,10 @@
             if (uploadProgressBar) {
                 uploadProgressBar.style.width = '96%';
                 uploadProgressBar.innerText = '96%';
+            }
+            const progressPercent96 = document.getElementById('swal-progress-percent');
+            if (progressPercent96) {
+                progressPercent96.textContent = '96%';
             }
             if (uploadProgressText) {
                 uploadProgressText.innerText = 'Upload selesai. Menggabungkan file di server...';
@@ -969,39 +977,58 @@
             const directRedirect = formImport.dataset.directRedirect === '1';
             const uploadKind = formImport.dataset.uploadKind || 'rar';
             const titleText = uploadKind === 'excel'
-                ? 'Uploading Excel...'
+                ? 'Proses Excel'
                 : uploadKind === 'csv'
-                    ? 'Uploading CSV...'
-                    : 'Uploading Report...';
+                    ? 'Proses CSV'
+                    : 'Proses Import';
             const descText = hasAsyncPreview
-                ? 'File sedang diproses dan disiapkan untuk preview.<br><b>Mohon tunggu...</b>'
-                : 'Sedang mengupload dan memproses file.<br><b>Mohon tunggu...</b>';
+                ? 'File sedang diproses untuk preview.'
+                : 'File sedang diproses.';
 
             const progressHtml = `
-                <div class="text-center mb-3">
-                    <span style="font-size: 14px; color: #64748b;" id="swal-desc-text">${descText}</span>
-                </div>
-                <div class="progress" style="height: 16px; border-radius: 999px; background-color: #e2e8f0; overflow: hidden; box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.08);">
-                    <div id="swal-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated"
-                         role="progressbar" style="width: 0%; font-weight: 700; font-size: 12px; line-height: 16px; background: linear-gradient(135deg, #0f766e, #115e59);"
-                         aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
-                </div>
-                <div class="text-center mt-3">
-                    <small id="swal-progress-text" style="color: #0f766e; font-weight: 700; letter-spacing: 0.02em;">Memulai proses...</small>
+                <div class="swal-import-shell">
+                    <div class="swal-import-head">
+                        <span class="swal-import-badge"><i class="fas fa-circle-notch fa-spin mr-1"></i> Sedang diproses</span>
+                        <div class="swal-import-title">${titleText}</div>
+                        <div class="swal-import-desc" id="swal-desc-text">${descText}</div>
+                    </div>
+                    <div class="swal-import-card">
+                        <div class="swal-import-card__top">
+                            <span class="swal-import-label">Progress</span>
+                            <span class="swal-import-percent" id="swal-progress-percent">0%</span>
+                        </div>
+                        <div class="progress swal-import-progress" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+                            <div id="swal-progress-bar" class="progress-bar swal-import-progress__bar progress-bar-striped progress-bar-animated"
+                                 style="width: 0%;">0%</div>
+                        </div>
+                        <div class="swal-import-meta">
+                            <small id="swal-progress-text" class="swal-import-meta__status">Menunggu proses...</small>
+                        </div>
+                    </div>
+                    <div class="swal-import-stats">
+                        <div class="swal-import-stat">
+                            <span class="swal-import-stat__label">Baris</span>
+                            <span id="swal-rows-info" class="swal-import-stat__value">0 / 0</span>
+                        </div>
+                        <div class="swal-import-stat">
+                            <span class="swal-import-stat__label">Kecepatan</span>
+                            <span id="swal-speed-info" class="swal-import-stat__value">-</span>
+                        </div>
+                    </div>
                 </div>
             `;
 
             themedSwal({
-                title: titleText,
+                title: '<i class="fas fa-cloud-upload-alt mr-2 text-success"></i>' + titleText,
                 html: progressHtml,
                 allowOutsideClick: false,
                 allowEscapeKey: false,
                 showConfirmButton: false,
-                width: 520,
+                width: 560,
                 didOpen: () => {
                     if (btnSubmit) {
                         btnSubmit.disabled = true;
-                        btnSubmit.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
+                        btnSubmit.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Memproses';
                     }
 
                     if (!hasAsyncPreview && !directRedirect) {
@@ -1044,6 +1071,10 @@
                         if (uploadProgressBar) {
                             uploadProgressBar.style.width = percent + '%';
                             uploadProgressBar.innerText = percent + '%';
+                        }
+                        const progressPercent = document.getElementById('swal-progress-percent');
+                        if (progressPercent) {
+                            progressPercent.textContent = percent + '%';
                         }
                         if (uploadProgressText) {
                             uploadProgressText.innerText = 'Mengunggah file ke server... ' + percent + '%';
@@ -1100,6 +1131,10 @@
                                 uploadProgressBar.style.width = '100%';
                                 uploadProgressBar.innerText = '100%';
                             }
+                            const progressPercent = document.getElementById('swal-progress-percent');
+                            if (progressPercent) {
+                                progressPercent.textContent = '100%';
+                            }
                             if (uploadProgressText) {
                                 uploadProgressText.innerText = 'Upload selesai. Membuka halaman preview...';
                             }
@@ -1126,6 +1161,10 @@
                         if (uploadProgressBar) {
                             uploadProgressBar.style.width = '88%';
                             uploadProgressBar.innerText = '88%';
+                        }
+                        const progressPercent = document.getElementById('swal-progress-percent');
+                        if (progressPercent) {
+                            progressPercent.textContent = '88%';
                         }
                         if (uploadProgressText) {
                             uploadProgressText.innerText = 'Upload selesai. Menyiapkan preview cepat...';
@@ -1455,6 +1494,133 @@
         font-weight: 700;
         padding: 0.8rem 1.3rem;
         box-shadow: 0 16px 34px -22px rgba(15, 23, 42, 0.45);
+    }
+
+    .swal-import-shell {
+        display: grid;
+        gap: 1rem;
+        text-align: left;
+    }
+
+    .swal-import-head {
+        display: grid;
+        gap: 0.45rem;
+    }
+
+    .swal-import-badge {
+        display: inline-flex;
+        align-items: center;
+        width: fit-content;
+        padding: 0.4rem 0.72rem;
+        border-radius: 999px;
+        background: rgba(15, 118, 110, 0.1);
+        color: #0f766e;
+        font-size: 0.72rem;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+    }
+
+    .swal-import-title {
+        color: #0f172a;
+        font-size: 1.08rem;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+    }
+
+    .swal-import-desc {
+        color: #64748b;
+        font-size: 0.92rem;
+        line-height: 1.5;
+    }
+
+    .swal-import-card {
+        padding: 1rem;
+        border-radius: 20px;
+        background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        box-shadow: 0 18px 42px -32px rgba(15, 23, 42, 0.28);
+    }
+
+    .swal-import-card__top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-bottom: 0.6rem;
+    }
+
+    .swal-import-label {
+        color: #64748b;
+        font-size: 0.72rem;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+    }
+
+    .swal-import-percent {
+        color: #0f172a;
+        font-size: 0.92rem;
+        font-weight: 800;
+    }
+
+    .swal-import-progress {
+        height: 14px;
+        border-radius: 999px;
+        background: #e2e8f0;
+        overflow: hidden;
+        box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.08);
+    }
+
+    .swal-import-progress__bar {
+        background: linear-gradient(135deg, #0f766e, #14b8a6);
+        font-weight: 800;
+        font-size: 11px;
+        line-height: 14px;
+    }
+
+    .swal-import-meta {
+        margin-top: 0.7rem;
+    }
+
+    .swal-import-meta__status {
+        color: #0f766e;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+    }
+
+    .swal-import-stats {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.75rem;
+    }
+
+    .swal-import-stats--compact {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .swal-import-stat {
+        padding: 0.85rem 0.9rem;
+        border-radius: 16px;
+        background: #f8fafc;
+        border: 1px solid rgba(148, 163, 184, 0.15);
+    }
+
+    .swal-import-stat__label {
+        display: block;
+        margin-bottom: 0.25rem;
+        color: #64748b;
+        font-size: 0.7rem;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+    }
+
+    .swal-import-stat__value {
+        display: block;
+        color: #0f172a;
+        font-size: 0.94rem;
+        font-weight: 800;
     }
 
     @media (max-width: 767.98px) {

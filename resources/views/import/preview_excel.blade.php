@@ -455,65 +455,45 @@ document.addEventListener('DOMContentLoaded', function () {
 
         // ── Modal loading ───────────────────────────────────────────────────
         var swalHtml = `
-            <div style="font-family:inherit;">
-                <div class="d-flex justify-content-between mb-3 px-1">
-                    <div class="text-center" id="step-init" style="flex:1;">
-                        <div class="step-icon mx-auto mb-1" style="width:36px;height:36px;border-radius:50%;background:#e9ecef;display:flex;align-items:center;justify-content:center;font-size:14px;transition:all .4s;">
-                            <i class="fas fa-cog text-muted"></i>
-                        </div>
-                        <small class="text-muted" style="font-size:10px;">Inisialisasi</small>
+            <div class="swal-import-shell">
+                <div class="swal-import-head">
+                    <span class="swal-import-badge"><i class="fas fa-circle-notch fa-spin mr-1"></i> Sedang diproses</span>
+                    <div class="swal-import-title">Import Excel</div>
+                    <div class="swal-import-desc">Memeriksa file dan menyiapkan data ke database.</div>
+                </div>
+                <div class="swal-import-card">
+                    <div class="swal-import-card__top">
+                        <span class="swal-import-label">Progress</span>
+                        <span class="swal-import-percent" id="swal-progress-percent">0%</span>
                     </div>
-                    <div style="flex:0.3;display:flex;align-items:center;padding-bottom:18px;">
-                        <div style="height:2px;width:100%;background:#e9ecef;" id="line-1"></div>
+                    <div class="progress swal-import-progress" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+                        <div id="swal-progress-bar"
+                             class="progress-bar swal-import-progress__bar progress-bar-striped progress-bar-animated bg-success"
+                             style="width:0%;font-weight:700;font-size:13px;transition:width .6s ease;line-height:22px;">0%</div>
                     </div>
-                    <div class="text-center" id="step-read" style="flex:1;">
-                        <div class="step-icon mx-auto mb-1" style="width:36px;height:36px;border-radius:50%;background:#e9ecef;display:flex;align-items:center;justify-content:center;font-size:14px;transition:all .4s;">
-                            <i class="fas fa-file-excel text-muted"></i>
-                        </div>
-                        <small class="text-muted" style="font-size:10px;">Baca File</small>
-                    </div>
-                    <div style="flex:0.3;display:flex;align-items:center;padding-bottom:18px;">
-                        <div style="height:2px;width:100%;background:#e9ecef;" id="line-2"></div>
-                    </div>
-                    <div class="text-center" id="step-insert" style="flex:1;">
-                        <div class="step-icon mx-auto mb-1" style="width:36px;height:36px;border-radius:50%;background:#e9ecef;display:flex;align-items:center;justify-content:center;font-size:14px;transition:all .4s;">
-                            <i class="fas fa-database text-muted"></i>
-                        </div>
-                        <small class="text-muted" style="font-size:10px;">Insert DB</small>
-                    </div>
-                    <div style="flex:0.3;display:flex;align-items:center;padding-bottom:18px;">
-                        <div style="height:2px;width:100%;background:#e9ecef;" id="line-3"></div>
-                    </div>
-                    <div class="text-center" id="step-done" style="flex:1;">
-                        <div class="step-icon mx-auto mb-1" style="width:36px;height:36px;border-radius:50%;background:#e9ecef;display:flex;align-items:center;justify-content:center;font-size:14px;transition:all .4s;">
-                            <i class="fas fa-check text-muted"></i>
-                        </div>
-                        <small class="text-muted" style="font-size:10px;">Selesai</small>
+                    <div id="swal-status-text" class="swal-import-meta">
+                        <small class="swal-import-meta__status">Memeriksa struktur file dan database...</small>
                     </div>
                 </div>
-                <div class="progress mb-2" style="height:22px;border-radius:12px;background:#e9ecef;overflow:hidden;">
-                    <div id="swal-progress-bar"
-                         class="progress-bar progress-bar-striped progress-bar-animated bg-success"
-                         style="width:0%;font-weight:700;font-size:13px;transition:width .6s ease;line-height:22px;">0%</div>
-                </div>
-                <div class="d-flex justify-content-between mb-1" style="font-size:12px;">
-                    <span id="swal-rows-info" class="text-muted">0 / 0 baris</span>
-                    <span id="swal-speed-info" class="text-muted"></span>
-                </div>
-                <div id="swal-status-text"
-                     class="text-center py-2 px-3 rounded"
-                     style="background:#f8f9fa;font-size:13px;color:#495057;min-height:38px;line-height:1.4;">
-                    Memeriksa struktur file dan database...
+                <div class="swal-import-stats swal-import-stats--compact">
+                    <div class="swal-import-stat">
+                        <span class="swal-import-stat__label">Baris</span>
+                        <span id="swal-rows-info" class="swal-import-stat__value">0 / 0</span>
+                    </div>
+                    <div class="swal-import-stat">
+                        <span class="swal-import-stat__label">Kecepatan</span>
+                        <span id="swal-speed-info" class="swal-import-stat__value">-</span>
+                    </div>
                 </div>
             </div>`;
 
         themedSwal({
-            title: '<i class="fas fa-file-import text-success mr-1"></i> Import Data File',
+            title: '<i class="fas fa-cloud-upload-alt text-success mr-1"></i> Import Data',
             html: swalHtml,
             allowOutsideClick: false,
             allowEscapeKey: false,
             showConfirmButton: false,
-            width: 520,
+            width: 560,
         });
 
         // ── Helper: aktifkan step indicator ────────────────────────────────
@@ -536,10 +516,12 @@ document.addEventListener('DOMContentLoaded', function () {
 
         function setProgress(pct, statusText, rowsDone, total, speed) {
             var bar = document.getElementById('swal-progress-bar');
+            var pp  = document.getElementById('swal-progress-percent');
             var st  = document.getElementById('swal-status-text');
             var ri  = document.getElementById('swal-rows-info');
             var si  = document.getElementById('swal-speed-info');
             if (bar) { bar.style.width = pct + '%'; bar.innerText = pct + '%'; }
+            if (pp)  pp.innerText = pct + '%';
             if (st)  st.innerText = statusText || '';
             if (ri && total > 0) ri.innerText = Number(rowsDone).toLocaleString('id-ID') + ' / ' + Number(total).toLocaleString('id-ID') + ' baris';
             if (si && speed > 0) si.innerText = Number(speed).toLocaleString('id-ID') + ' baris/detik';
@@ -767,6 +749,11 @@ document.addEventListener('DOMContentLoaded', function () {
                     return;
                 }
 
+                if (status === 'queued' && statusPayload && statusPayload.is_stale_queue) {
+                    showImportFailure((statusPayload && statusPayload.message) || 'Job import terlalu lama berada di antrian.');
+                    return;
+                }
+
                 if (status === 'queued' || status === 'processing') {
                     reconnectAttempts += 1;
                     if (reconnectAttempts <= 10) {
@@ -841,6 +828,133 @@ document.addEventListener('DOMContentLoaded', function () {
         font-weight: 700;
         padding: 0.8rem 1.3rem;
         box-shadow: 0 16px 34px -22px rgba(15, 23, 42, 0.45);
+    }
+
+    .swal-import-shell {
+        display: grid;
+        gap: 1rem;
+        text-align: left;
+    }
+
+    .swal-import-head {
+        display: grid;
+        gap: 0.45rem;
+    }
+
+    .swal-import-badge {
+        display: inline-flex;
+        align-items: center;
+        width: fit-content;
+        padding: 0.4rem 0.72rem;
+        border-radius: 999px;
+        background: rgba(15, 118, 110, 0.1);
+        color: #0f766e;
+        font-size: 0.72rem;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+    }
+
+    .swal-import-title {
+        color: #0f172a;
+        font-size: 1.08rem;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+    }
+
+    .swal-import-desc {
+        color: #64748b;
+        font-size: 0.92rem;
+        line-height: 1.5;
+    }
+
+    .swal-import-card {
+        padding: 1rem;
+        border-radius: 20px;
+        background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        box-shadow: 0 18px 42px -32px rgba(15, 23, 42, 0.28);
+    }
+
+    .swal-import-card__top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-bottom: 0.6rem;
+    }
+
+    .swal-import-label {
+        color: #64748b;
+        font-size: 0.72rem;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+    }
+
+    .swal-import-percent {
+        color: #0f172a;
+        font-size: 0.92rem;
+        font-weight: 800;
+    }
+
+    .swal-import-progress {
+        height: 14px;
+        border-radius: 999px;
+        background: #e2e8f0;
+        overflow: hidden;
+        box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.08);
+    }
+
+    .swal-import-progress__bar {
+        background: linear-gradient(135deg, #0f766e, #14b8a6);
+        font-weight: 800;
+        font-size: 11px;
+        line-height: 14px;
+    }
+
+    .swal-import-meta {
+        margin-top: 0.7rem;
+    }
+
+    .swal-import-meta__status {
+        color: #0f766e;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+    }
+
+    .swal-import-stats {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.75rem;
+    }
+
+    .swal-import-stats--compact {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .swal-import-stat {
+        padding: 0.85rem 0.9rem;
+        border-radius: 16px;
+        background: #f8fafc;
+        border: 1px solid rgba(148, 163, 184, 0.15);
+    }
+
+    .swal-import-stat__label {
+        display: block;
+        margin-bottom: 0.25rem;
+        color: #64748b;
+        font-size: 0.7rem;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+    }
+
+    .swal-import-stat__value {
+        display: block;
+        color: #0f172a;
+        font-size: 0.94rem;
+        font-weight: 800;
     }
 </style>
 @endsection

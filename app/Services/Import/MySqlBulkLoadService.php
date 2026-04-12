@@ -16,13 +16,6 @@ class MySqlBulkLoadService
             return $this->supportsNativeBulkLoad;
         }
 
-        if ((bool) config('import.direct_load.require_local_infile', true)) {
-            $envFlag = filter_var(env('DB_MYSQL_LOCAL_INFILE', false), FILTER_VALIDATE_BOOL);
-            if ($envFlag !== true) {
-                return $this->supportsNativeBulkLoad = false;
-            }
-        }
-
         $driver = DB::connection()->getDriverName();
         if (!in_array($driver, ['mysql', 'mariadb'], true)) {
             return $this->supportsNativeBulkLoad = false;
