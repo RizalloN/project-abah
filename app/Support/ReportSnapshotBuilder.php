@@ -48,6 +48,11 @@ class ReportSnapshotBuilder
     /** @var array<string, bool> */
     private array $casaTypeFilterCache = [];
 
+    public function __construct(
+        private readonly DashboardHarianSnapshotService $dashboardHarianSnapshotService
+    ) {
+    }
+
     public function rebuild(string $report = 'all', ?string $period = null, bool $force = false): array
     {
         $report = strtolower(trim($report));
@@ -68,9 +73,13 @@ class ReportSnapshotBuilder
             'new-payroll', 'performance-new-payroll', 'payroll' => [
                 'new_payroll' => $this->rebuildPerformanceNewPayroll($period, $force),
             ],
+            'dashboard-harian', 'harian' => [
+                'dashboard_harian' => $this->dashboardHarianSnapshotService->rebuild($period, $force),
+            ],
             default => [
                 'dashboard' => $this->rebuildDashboard($period, $force),
                 'dashboard_simpanan' => $this->rebuildDashboardSimpanan($period, $force),
+                'dashboard_harian' => $this->dashboardHarianSnapshotService->rebuild($period, $force),
                 'rasio' => $this->rebuildRasioCasa($period, $force),
                 'dormant' => $this->rebuildRekeningDormant($period, $force),
                 'new_payroll' => $this->rebuildPerformanceNewPayroll($period, $force),

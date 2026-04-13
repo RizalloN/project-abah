@@ -1,6 +1,28 @@
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
     document.addEventListener('DOMContentLoaded', function () {
+        const inputToast = Swal.mixin({
+            toast: true,
+            position: 'top-end',
+            showConfirmButton: false,
+            timer: 2600,
+            timerProgressBar: true,
+            background: '#ffffff',
+            customClass: {
+                popup: 'swal-modern-popup',
+                title: 'swal-modern-title',
+                htmlContainer: 'swal-modern-html',
+            },
+        });
+
+        function showInputToast(icon, title, text) {
+            return inputToast.fire({
+                icon,
+                title,
+                text,
+            });
+        }
+
         const form = document.getElementById('inputDataForm');
         const previewButton = document.getElementById('btnPreviewData');
         const addEmptyRowButton = document.getElementById('btnAddEmptyRow');
@@ -126,12 +148,7 @@
             const formData = collectFormData();
 
             if (!hasAnyValue(formData)) {
-                Swal.fire({
-                    icon: 'warning',
-                    title: 'Form Masih Kosong',
-                    text: 'Isi minimal satu field sebelum menambahkan preview.',
-                    confirmButtonText: 'OK'
-                });
+                showInputToast('warning', 'Form Masih Kosong', 'Isi minimal satu field sebelum menambahkan preview.');
                 return;
             }
 
@@ -139,13 +156,7 @@
             form.reset();
             previewCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
-            Swal.fire({
-                icon: 'success',
-                title: 'Preview Ditambahkan',
-                text: 'Data berhasil dimasukkan ke tabel preview dan masih bisa diedit.',
-                timer: 1800,
-                showConfirmButton: false
-            });
+            showInputToast('success', 'Preview Ditambahkan', 'Data berhasil dimasukkan ke tabel preview dan masih bisa diedit.');
         });
 
         addEmptyRowButton.addEventListener('click', function () {
@@ -169,12 +180,7 @@
 
             if (rows.length === 0) {
                 event.preventDefault();
-                Swal.fire({
-                    icon: 'warning',
-                    title: 'Data Belum Ada',
-                    text: 'Tambahkan minimal satu baris preview sebelum menyimpan.',
-                    confirmButtonText: 'OK'
-                });
+                showInputToast('warning', 'Data Belum Ada', 'Tambahkan minimal satu baris preview sebelum menyimpan.');
                 return;
             }
 
@@ -192,21 +198,11 @@
         togglePreviewState();
 
         @if(session('sweet_success'))
-        Swal.fire({
-            icon: 'success',
-            title: @json(session('sweet_success.title')),
-            text: @json(session('sweet_success.text')),
-            confirmButtonText: 'OK'
-        });
+        showInputToast('success', @json(session('sweet_success.title')), @json(session('sweet_success.text')));
         @endif
 
         @if(session('sweet_warning'))
-        Swal.fire({
-            icon: 'warning',
-            title: @json(session('sweet_warning.title')),
-            text: @json(session('sweet_warning.text')),
-            confirmButtonText: 'OK'
-        });
+        showInputToast('warning', @json(session('sweet_warning.title')), @json(session('sweet_warning.text')));
         @endif
     });
 </script>

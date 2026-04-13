@@ -148,6 +148,28 @@
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
     document.addEventListener('DOMContentLoaded', function () {
+        const previewToast = Swal.mixin({
+            toast: true,
+            position: 'top-end',
+            showConfirmButton: false,
+            timer: 2600,
+            timerProgressBar: true,
+            background: '#ffffff',
+            customClass: {
+                popup: 'swal-modern-popup',
+                title: 'swal-modern-title',
+                htmlContainer: 'swal-modern-html',
+            },
+        });
+
+        function showPreviewToast(icon, title, text) {
+            return previewToast.fire({
+                icon,
+                title,
+                text,
+            });
+        }
+
         const headers = @json(array_keys($headers));
         const previewRows = @json($previewRows);
         const filterOptionsMap = @json($uniqueValues);
@@ -363,12 +385,7 @@
 
             if (!filteredRows.length) {
                 e.preventDefault();
-                Swal.fire({
-                    icon: 'warning',
-                    title: 'Data Tidak Ada',
-                    text: 'Tidak ada baris yang lolos filter untuk diimport ke database.',
-                    confirmButtonText: 'OK'
-                });
+                showPreviewToast('warning', 'Data Tidak Ada', 'Tidak ada baris yang lolos filter untuk diimport ke database.');
                 return;
             }
 
@@ -382,32 +399,15 @@
         updatePreviewTable();
 
         @if(session('sweet_success'))
-        Swal.fire({
-            icon: 'success',
-            title: @json(session('sweet_success.title')),
-            text: @json(session('sweet_success.text')),
-            confirmButtonText: 'OK'
-        });
+        showPreviewToast('success', @json(session('sweet_success.title')), @json(session('sweet_success.text')));
         @endif
 
         @if(session('sweet_warning'))
-        Swal.fire({
-            icon: 'warning',
-            title: @json(session('sweet_warning.title')),
-            text: @json(session('sweet_warning.text')),
-            confirmButtonText: 'OK'
-        }).then(() => {
-            window.location.href = @json(route('import.index'));
-        });
+        showPreviewToast('warning', @json(session('sweet_warning.title')), @json(session('sweet_warning.text')));
         @endif
 
         @if(session('error'))
-        Swal.fire({
-            icon: 'error',
-            title: 'Terjadi Kesalahan',
-            text: @json(session('error')),
-            confirmButtonText: 'OK'
-        });
+        showPreviewToast('error', 'Terjadi Kesalahan', @json(session('error')));
         @endif
     });
 </script>

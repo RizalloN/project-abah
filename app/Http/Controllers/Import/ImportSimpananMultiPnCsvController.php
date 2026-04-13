@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class ImportSimpananMultiPnCsvController extends ImportExcelController
 {
@@ -341,6 +342,7 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
 
         return response()->stream(function () use ($jobId, $relativePath, $absolutePath, $totalRows, $normalizedHeaders, $selectedColumns) {
             $streamLock = null;
+            $cleanupPaths = [];
             $send = function (string $event, array $data) {
                 echo "event: {$event}\n";
                 echo 'data: ' . json_encode($data) . "\n\n";
@@ -402,7 +404,10 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                 ]);
 
                 try {
-                    $loadPlan = $this->buildDirectCsvLoadPlan($absolutePath, $normalizedHeaders, $selectedColumns);
+                    $loadPlan = $this->buildDirectCsvLoadPlan($absolutePath, $normalizedHeaders, $selectedColumns, $send);
+                    if (!empty($loadPlan['cleanup_path']) && is_string($loadPlan['cleanup_path'])) {
+                        $cleanupPaths[] = $loadPlan['cleanup_path'];
+                    }
                 } catch (\Throwable $e) {
                     Log::warning('Fast-path Simpanan MultiPN direct plan failed, trying staged direct LOAD DATA fallback: ' . $e->getMessage(), [
                         'job_id' => $jobId,
@@ -456,7 +461,7 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                 ]);
 
                 $startTime = microtime(true);
-                $inserted = $this->executeDirectCsvLoad($absolutePath, $loadPlan);
+                $inserted = $this->executeDirectCsvLoad($loadPlan);
                 $elapsed = max(microtime(true) - $startTime, 0.001);
                 $speed = (int) ($inserted / $elapsed);
                 $failed = max(0, $totalRows - $inserted);
@@ -545,16 +550,22 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                 $send('error', [
                     'message' => 'Fast import CSV gagal: ' . $e->getMessage(),
                 ]);
-            } finally {
-                if ($streamLock) {
-                    try {
-                        $streamLock->release();
-                    } catch (\Throwable $e) {
-                        Log::warning('Failed to release Simpanan MultiPN direct import lock for job ' . $jobId . ': ' . $e->getMessage());
+                } finally {
+                    if ($streamLock) {
+                        try {
+                            $streamLock->release();
+                        } catch (\Throwable $e) {
+                            Log::warning('Failed to release Simpanan MultiPN direct import lock for job ' . $jobId . ': ' . $e->getMessage());
+                        }
+                    }
+
+                    foreach (array_unique(array_filter($cleanupPaths)) as $cleanupPath) {
+                        if (is_string($cleanupPath) && $cleanupPath !== '' && file_exists($cleanupPath)) {
+                            @unlink($cleanupPath);
+                        }
                     }
                 }
-            }
-        }, 200, [
+            }, 200, [
             'Content-Type' => 'text/event-stream',
             'Cache-Control' => 'no-cache, no-store',
             'X-Accel-Buffering' => 'no',
@@ -705,10 +716,15 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
         return false;
     }
 
-    private function buildDirectCsvLoadPlan(string $absolutePath, array $normalizedHeaders, array $selectedColumns): array
+    private function buildDirectCsvLoadPlan(string $absolutePath, array $normalizedHeaders, array $selectedColumns, ?callable $send = null): array
     {
         $delimiter = $this->detectCsvDelimiter($absolutePath);
-        $handle = fopen($absolutePath, 'r');
+        $loadSource = $this->prepareSimpananMultiPnDirectLoadSource($absolutePath, $delimiter, $send);
+        $sourcePath = (string) ($loadSource['path'] ?? $absolutePath);
+        $cleanupPath = !empty($loadSource['cleanup']) ? $sourcePath : null;
+        $sourceBalanceTotalCents = $this->calculateSimpananMultiPnSourceBalanceTotal($sourcePath, $delimiter);
+
+        $handle = fopen($sourcePath, 'r');
         if ($handle === false) {
             throw new \RuntimeException('Gagal membuka file CSV.');
         }
@@ -752,6 +768,7 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
         }
 
         $importBatchTimestamp = now()->format('Y-m-d H:i:s');
+        $importBatchToken = str_replace('-', '', Str::uuid()->toString());
         $fieldVariables = [];
         $setClauses = [
             "`created_at` = '{$importBatchTimestamp}'",
@@ -759,7 +776,7 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
         ];
 
         if ($uniqueIdColumn !== null) {
-            $setClauses[] = "`{$uniqueIdColumn}` = CONCAT(REPLACE(UUID(), '-', ''), '_SMPN')";
+            $setClauses[] = "`{$uniqueIdColumn}` = CONCAT('SMPN_{$importBatchToken}_', REPLACE(UUID(), '-', ''), '_SMPN')";
         }
 
         foreach ($sourceHeaders as $index => $header) {
@@ -782,7 +799,7 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
             }
 
             $setClauses[] = match (strtolower($dbColumn)) {
-                'saldo_idr' => "`{$dbColumn}` = NULLIF(REPLACE(REPLACE(TRIM({$variable}), ',', ''), ' ', ''), '')",
+                'saldo_idr' => $this->buildDirectLoadDecimalExpression($variable),
                 'posisi' => "`{$dbColumn}` = " . StrictDateParser::buildMySqlCaseExpression("NULLIF(TRIM({$variable}), '')"),
                 default => "`{$dbColumn}` = NULLIF(TRIM({$variable}), '')",
             };
@@ -797,11 +814,24 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
             'field_variables' => $fieldVariables,
             'set_clauses' => $setClauses,
             'import_batch_timestamp' => $importBatchTimestamp,
+            'source_path' => $sourcePath,
+            'cleanup_path' => $cleanupPath,
+            'validation_backend' => (string) ($loadSource['backend'] ?? 'php'),
+            'validation_skipped_count' => (int) ($loadSource['skipped_count'] ?? 0),
+            'validation_duplicate_count' => (int) ($loadSource['duplicate_count'] ?? 0),
+            'validation_written_rows' => (int) ($loadSource['written_rows'] ?? 0),
+            'source_balance_total_cents' => $sourceBalanceTotalCents,
+            'import_batch_token' => $importBatchToken,
         ];
     }
 
-    private function executeDirectCsvLoad(string $absolutePath, array $loadPlan, ?callable $beforeLoad = null): int
+    private function executeDirectCsvLoad(array $loadPlan, ?callable $beforeLoad = null): int
     {
+        $absolutePath = (string) ($loadPlan['source_path'] ?? '');
+        if ($absolutePath === '') {
+            throw new \RuntimeException('Path source direct load Simpanan MultiPN tidak ditemukan.');
+        }
+
         $this->configureLongRunningImportRuntime();
         $bulkLoadService = app(MySqlBulkLoadService::class);
         $bulkLoadService->assertTransactionalTable('simpanan_multipn', 'import CSV Simpanan MultiPN');
@@ -844,6 +874,47 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                 $pdo->beginTransaction();
 
                 $affected = $this->executeLoadDataWithSnapshotInvalidationBypassed($pdo, $sql, $beforeLoad);
+
+                if (array_key_exists('source_balance_total_cents', $loadPlan)) {
+                    $expectedBalanceCents = (int) $loadPlan['source_balance_total_cents'];
+                    $batchToken = trim((string) ($loadPlan['import_batch_token'] ?? ''));
+                    if ($batchToken === '') {
+                        throw new \RuntimeException('Token validasi batch import Simpanan MultiPN tidak ditemukan.');
+                    }
+
+                    $batchPrefix = 'SMPN_' . $batchToken . '_';
+                    $quotedPrefix = $pdo->quote($batchPrefix . '%');
+                    $summarySql = "SELECT COUNT(*) AS row_count, COALESCE(SUM(COALESCE(`saldo_idr`, 0)), 0) AS total_balance "
+                        . "FROM `simpanan_multipn` "
+                        . "WHERE `uniqueid_SMPN` LIKE {$quotedPrefix}";
+                    $summary = $pdo->query($summarySql);
+                    if ($summary === false) {
+                        throw new \RuntimeException('Gagal melakukan crosscheck hasil import Simpanan MultiPN.');
+                    }
+
+                    $summaryRow = $summary->fetch(\PDO::FETCH_ASSOC) ?: [];
+                    $importBalanceCents = $this->decimalStringToCents((string) ($summaryRow['total_balance'] ?? '0.00'));
+                    $importedRows = (int) ($summaryRow['row_count'] ?? 0);
+                    $expectedRows = (int) ($loadPlan['validation_written_rows'] ?? 0);
+
+                    if ($importedRows !== $affected || $importedRows !== $expectedRows) {
+                        throw new \RuntimeException(sprintf(
+                            'Crosscheck jumlah baris Simpanan MultiPN gagal. CSV bersih=%d, LOAD DATA=%d, query batch=%d.',
+                            $expectedRows,
+                            $affected,
+                            $importedRows
+                        ));
+                    }
+
+                    if ($importBalanceCents !== $expectedBalanceCents) {
+                        throw new \RuntimeException(sprintf(
+                            'Crosscheck saldo Simpanan MultiPN gagal. CSV bersih=%s, database=%s.',
+                            $this->formatCentsAsDecimal($expectedBalanceCents),
+                            $this->formatCentsAsDecimal($importBalanceCents)
+                        ));
+                    }
+                }
+
                 $pdo->commit();
             } catch (\Throwable $e) {
                 if ($pdo->inTransaction()) {
@@ -887,6 +958,84 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
         }
 
         return (int) $affected;
+    }
+
+    private function calculateSimpananMultiPnSourceBalanceTotal(string $csvPath, string $delimiter): int
+    {
+        $handle = fopen($csvPath, 'r');
+        if ($handle === false) {
+            throw new \RuntimeException('Gagal membuka file CSV Simpanan MultiPN untuk menghitung total saldo.');
+        }
+
+        try {
+            $headers = $this->readCsvRecord($handle, $delimiter);
+            if ($headers === false || empty($headers)) {
+                throw new \RuntimeException('Header CSV Simpanan MultiPN tidak ditemukan saat menghitung total saldo.');
+            }
+
+            $saldoIndex = null;
+            foreach ($headers as $index => $header) {
+                if ($this->normalizeHeaderName((string) $header) === 'saldo_idr') {
+                    $saldoIndex = $index;
+                    break;
+                }
+            }
+
+            if ($saldoIndex === null) {
+                throw new \RuntimeException('Kolom saldo_idr tidak ditemukan pada CSV Simpanan MultiPN.');
+            }
+
+            $totalCents = 0;
+            while (($row = $this->readCsvRecord($handle, $delimiter)) !== false) {
+                if (empty(array_filter((array) $row, fn ($value) => trim((string) $value) !== ''))) {
+                    continue;
+                }
+
+                $saldo = $row[$saldoIndex] ?? null;
+                $normalized = $this->normalizeDecimalValue($saldo);
+                if ($normalized === null) {
+                    throw new \RuntimeException('Gagal menormalisasi saldo_idr pada CSV Simpanan MultiPN.');
+                }
+
+                $totalCents += $this->decimalStringToCents($normalized);
+            }
+
+            return $totalCents;
+        } finally {
+            fclose($handle);
+        }
+    }
+
+    private function decimalStringToCents(string $value): int
+    {
+        $value = trim($value);
+        if ($value === '') {
+            return 0;
+        }
+
+        $negative = str_starts_with($value, '-');
+        if ($negative) {
+            $value = ltrim($value, '-');
+        }
+
+        $parts = explode('.', $value, 2);
+        $whole = preg_replace('/\D+/', '', $parts[0] ?? '0');
+        $fraction = preg_replace('/\D+/', '', $parts[1] ?? '');
+        $fraction = substr(str_pad($fraction, 2, '0', STR_PAD_RIGHT), 0, 2);
+
+        $cents = ((int) ($whole === '' ? '0' : $whole)) * 100 + (int) ($fraction === '' ? '0' : $fraction);
+
+        return $negative ? -$cents : $cents;
+    }
+
+    private function formatCentsAsDecimal(int $cents): string
+    {
+        $negative = $cents < 0;
+        $absolute = abs($cents);
+        $whole = intdiv($absolute, 100);
+        $fraction = str_pad((string) ($absolute % 100), 2, '0', STR_PAD_LEFT);
+
+        return ($negative ? '-' : '') . $whole . '.' . $fraction;
     }
 
     private function shouldUseStagedDirectLoadFallback(string $reason): bool

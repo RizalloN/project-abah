@@ -34,6 +34,8 @@
     </div>
 </div>
 
+<div id="download-toast-stack" class="download-toast-stack" aria-live="polite" aria-atomic="true"></div>
+
 <div class="card shadow-sm import-upload-card border-0">
     <div class="card-header bg-white border-0 import-upload-card__header">
         <div class="d-flex align-items-center justify-content-between flex-wrap">
@@ -177,6 +179,57 @@
 
         function themedSwal(options) {
             return Swal.fire(Object.assign({}, swalTheme, options));
+        }
+
+        function showDownloadToast(icon, title, text) {
+            const stack = document.getElementById('download-toast-stack');
+            if (!stack) {
+                return;
+            }
+
+            const variant = icon === 'error' ? 'error' : 'success';
+            const toast = document.createElement('div');
+            toast.className = `download-toast download-toast--${variant}`;
+
+            const iconWrap = document.createElement('div');
+            iconWrap.className = 'download-toast__icon';
+            const iconNode = document.createElement('i');
+            iconNode.className = `fas ${variant === 'success' ? 'fa-circle-check' : 'fa-triangle-exclamation'}`;
+            iconWrap.appendChild(iconNode);
+
+            const body = document.createElement('div');
+            body.className = 'download-toast__body';
+
+            const titleNode = document.createElement('div');
+            titleNode.className = 'download-toast__title';
+            titleNode.textContent = title;
+
+            const textNode = document.createElement('div');
+            textNode.className = 'download-toast__text';
+            textNode.textContent = text;
+
+            body.appendChild(titleNode);
+            body.appendChild(textNode);
+
+            const closeButton = document.createElement('button');
+            closeButton.type = 'button';
+            closeButton.className = 'download-toast__close';
+            closeButton.setAttribute('aria-label', 'Tutup');
+            closeButton.textContent = '×';
+
+            toast.appendChild(iconWrap);
+            toast.appendChild(body);
+            toast.appendChild(closeButton);
+
+            const closeToast = () => {
+                toast.classList.add('is-hiding');
+                window.setTimeout(() => toast.remove(), 220);
+            };
+
+            closeButton.addEventListener('click', closeToast);
+            stack.appendChild(toast);
+
+            window.setTimeout(closeToast, 3200);
         }
 
         function normalizeProgressStatus(message) {
@@ -614,14 +667,7 @@
             const filename = selectedOption ? (selectedOption.getAttribute('data-filename') || '') : '';
 
             if (templateKey) {
-                const params = new URLSearchParams();
-                params.set('report', templateKey);
-
-                if (filename) {
-                    params.set('file', filename);
-                }
-
-                btnDownloadTemplate.href = `${btnDownloadTemplate.dataset.routeTemplate}?${params.toString()}`;
+                btnDownloadTemplate.href = buildTemplateDownloadUrl(templateKey, filename, true);
                 btnDownloadTemplate.classList.remove('disabled');
                 btnDownloadTemplate.removeAttribute('aria-disabled');
                 return;
@@ -630,6 +676,132 @@
             btnDownloadTemplate.href = '#';
             btnDownloadTemplate.classList.add('disabled');
             btnDownloadTemplate.setAttribute('aria-disabled', 'true');
+        }
+
+        function buildTemplateDownloadUrl(templateKey, filename, directDownload = false) {
+            const params = new URLSearchParams();
+            params.set('report', templateKey);
+
+            if (filename) {
+                params.set('file', filename);
+            }
+
+            if (directDownload) {
+                params.set('download', '1');
+            }
+
+            return `${btnDownloadTemplate.dataset.routeTemplate}?${params.toString()}`;
+        }
+
+        function getSelectedTemplateMeta() {
+            if (!downloadTemplateSelect) {
+                return {
+                    templateKey: '',
+                    label: '',
+                    filename: '',
+                };
+            }
+
+            const templateKey = downloadTemplateSelect.value || '';
+            const selectedOption = downloadTemplateSelect.options[downloadTemplateSelect.selectedIndex];
+
+            return {
+                templateKey,
+                label: selectedOption ? selectedOption.textContent.trim() : '',
+                filename: selectedOption ? (selectedOption.getAttribute('data-filename') || '') : '',
+            };
+        }
+
+        function setDownloadTemplateBusy(isBusy) {
+            if (!btnDownloadTemplate) {
+                return;
+            }
+
+            if (isBusy) {
+                btnDownloadTemplate.classList.add('disabled');
+                btnDownloadTemplate.setAttribute('aria-disabled', 'true');
+                btnDownloadTemplate.setAttribute('aria-busy', 'true');
+                btnDownloadTemplate.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Mengunduh...';
+                return;
+            }
+
+            btnDownloadTemplate.removeAttribute('aria-busy');
+            syncDownloadButton();
+        }
+
+        async function downloadSelectedTemplate() {
+            const meta = getSelectedTemplateMeta();
+
+            if (!meta.templateKey) {
+                return;
+            }
+
+            const requestUrl = buildTemplateDownloadUrl(meta.templateKey, meta.filename, false);
+            setDownloadTemplateBusy(true);
+
+            try {
+                const response = await fetch(requestUrl, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                    credentials: 'same-origin',
+                });
+
+                const responseType = response.headers.get('content-type') || '';
+                if (!response.ok) {
+                    throw new Error('Template tidak dapat diproses.');
+                }
+
+                if (!responseType.includes('application/json')) {
+                    throw new Error('Respon server tidak valid saat menyiapkan template.');
+                }
+
+                const payload = await response.json();
+
+                if (payload.status !== 'success' || !payload.download_url) {
+                    throw new Error(payload.message || 'Template tidak dapat diunduh.');
+                }
+
+                const fileResponse = await fetch(payload.download_url, {
+                    method: 'GET',
+                    credentials: 'same-origin',
+                });
+
+                const fileResponseType = fileResponse.headers.get('content-type') || '';
+                if (!fileResponse.ok || fileResponseType.includes('text/html')) {
+                    throw new Error('Gagal mengambil file template dari server.');
+                }
+
+                const blob = await fileResponse.blob();
+                const blobUrl = window.URL.createObjectURL(blob);
+                const tempLink = document.createElement('a');
+                tempLink.href = blobUrl;
+                tempLink.download = payload.filename || meta.filename || 'template.xlsx';
+                document.body.appendChild(tempLink);
+                tempLink.click();
+                tempLink.remove();
+                setTimeout(() => window.URL.revokeObjectURL(blobUrl), 1000);
+
+                showDownloadToast('success', 'Berhasil Diunduh', `Template ${meta.label || meta.templateKey} berhasil diunduh.`);
+            } catch (error) {
+                showDownloadToast('error', 'Gagal Mengunduh', error?.message || 'Template gagal diunduh.');
+            } finally {
+                setDownloadTemplateBusy(false);
+            }
+        }
+
+        if (btnDownloadTemplate) {
+            btnDownloadTemplate.addEventListener('click', function (event) {
+                if (btnDownloadTemplate.classList.contains('disabled') || btnDownloadTemplate.getAttribute('aria-disabled') === 'true') {
+                    event.preventDefault();
+                    return;
+                }
+
+                event.preventDefault();
+                downloadSelectedTemplate();
+            });
         }
 
         function applyButtonState(kind, label) {
@@ -1388,6 +1560,101 @@
     });
 </script>
 <style>
+    .download-toast-stack {
+        position: fixed;
+        top: 1rem;
+        right: 1rem;
+        z-index: 1085;
+        display: flex;
+        flex-direction: column;
+        gap: .75rem;
+        width: min(360px, calc(100vw - 2rem));
+        pointer-events: none;
+    }
+
+    .download-toast {
+        pointer-events: auto;
+        display: flex;
+        align-items: flex-start;
+        gap: .75rem;
+        padding: .9rem 1rem;
+        border-radius: 16px;
+        background: #fff;
+        box-shadow: 0 18px 40px -24px rgba(15, 23, 42, .45);
+        border: 1px solid rgba(148, 163, 184, .24);
+        transform: translateY(0);
+        opacity: 1;
+        transition: transform .18s ease, opacity .18s ease;
+    }
+
+    .download-toast.is-hiding {
+        transform: translateY(-8px);
+        opacity: 0;
+    }
+
+    .download-toast--success {
+        border-left: 4px solid #16a34a;
+    }
+
+    .download-toast--error {
+        border-left: 4px solid #dc2626;
+    }
+
+    .download-toast__icon {
+        flex: 0 0 auto;
+        width: 34px;
+        height: 34px;
+        border-radius: 999px;
+        display: grid;
+        place-items: center;
+        font-size: .95rem;
+        color: #fff;
+        margin-top: 2px;
+    }
+
+    .download-toast--success .download-toast__icon {
+        background: #16a34a;
+    }
+
+    .download-toast--error .download-toast__icon {
+        background: #dc2626;
+    }
+
+    .download-toast__body {
+        min-width: 0;
+        flex: 1 1 auto;
+    }
+
+    .download-toast__title {
+        font-weight: 800;
+        color: #0f172a;
+        line-height: 1.25;
+        margin-bottom: .2rem;
+    }
+
+    .download-toast__text {
+        color: #475569;
+        font-size: .93rem;
+        line-height: 1.35;
+        word-break: break-word;
+    }
+
+    .download-toast__close {
+        flex: 0 0 auto;
+        border: 0;
+        background: transparent;
+        color: #94a3b8;
+        font-size: 1.4rem;
+        line-height: 1;
+        padding: 0 .1rem;
+        margin-top: -2px;
+        cursor: pointer;
+    }
+
+    .download-toast__close:hover {
+        color: #0f172a;
+    }
+
     .import-template-banner {
         position: relative;
         overflow: hidden;
