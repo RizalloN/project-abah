@@ -2,11 +2,13 @@
 
 namespace Tests\Unit;
 
+use App\Support\DashboardHarianSnapshotService;
 use App\Support\PartitionMaintenanceService;
 use App\Support\ReportDataSyncService;
 use App\Support\ReportSnapshotBuilder;
 use Illuminate\Contracts\Cache\Lock;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Schema;
 use Mockery;
 use Tests\TestCase;
 
@@ -21,8 +23,9 @@ class ReportDataSyncServiceTest extends TestCase
     public function test_rasio_snapshot_rebuild_uses_dedicated_lock(): void
     {
         $builder = Mockery::mock(ReportSnapshotBuilder::class);
+        $dashboardHarianSnapshotService = Mockery::mock(DashboardHarianSnapshotService::class);
         $partitionMaintenance = Mockery::mock(PartitionMaintenanceService::class);
-        $service = new ReportDataSyncService($builder, $partitionMaintenance);
+        $service = new ReportDataSyncService($builder, $dashboardHarianSnapshotService, $partitionMaintenance);
 
         $lock = Mockery::mock(Lock::class);
 
@@ -57,8 +60,9 @@ class ReportDataSyncServiceTest extends TestCase
     public function test_simpanan_sync_rebuilds_rasio_using_the_import_period_hint(): void
     {
         $builder = Mockery::mock(ReportSnapshotBuilder::class);
+        $dashboardHarianSnapshotService = Mockery::mock(DashboardHarianSnapshotService::class);
         $partitionMaintenance = Mockery::mock(PartitionMaintenanceService::class);
-        $service = new ReportDataSyncService($builder, $partitionMaintenance);
+        $service = new ReportDataSyncService($builder, $dashboardHarianSnapshotService, $partitionMaintenance);
 
         $simpananLock = Mockery::mock(Lock::class);
         $lock = Mockery::mock(Lock::class);
@@ -89,6 +93,11 @@ class ReportDataSyncServiceTest extends TestCase
             });
         $lock->shouldReceive('release')->once();
 
+        $dashboardHarianSnapshotService->shouldReceive('rebuild')
+            ->once()
+            ->with('2026-04-04', true)
+            ->andReturn(['2026-04-04' => 1]);
+
         $builder->shouldReceive('rebuildDashboardSimpanan')
             ->once()
             ->with('2026-04-04', true)
@@ -110,11 +119,36 @@ class ReportDataSyncServiceTest extends TestCase
         $this->assertTrue(true);
     }
 
+    public function test_sync_after_delete_cleans_snapshot_artifacts_without_rebuilding_snapshot_for_snapshot_reports(): void
+    {
+        $builder = Mockery::mock(ReportSnapshotBuilder::class);
+        $dashboardHarianSnapshotService = Mockery::mock(DashboardHarianSnapshotService::class);
+        $partitionMaintenance = Mockery::mock(PartitionMaintenanceService::class);
+        $service = Mockery::mock(ReportDataSyncService::class, [$builder, $dashboardHarianSnapshotService, $partitionMaintenance])->makePartial();
+
+        Schema::shouldReceive('hasTable')->andReturn(false);
+
+        $service->shouldReceive('cleanupDerivedArtifactsAfterDelete')
+            ->once()
+            ->with('daily_loan_dinamis', '2026-04-04', 'unit-test')
+            ->andReturn(['dashboard_pinjaman_snapshots' => 0]);
+
+        $builder->shouldNotReceive('rebuildDashboard');
+        $builder->shouldNotReceive('rebuildDashboardSimpanan');
+        $builder->shouldNotReceive('rebuildRasioCasa');
+        $builder->shouldNotReceive('rebuildRekeningDormant');
+        $builder->shouldNotReceive('rebuildPerformanceNewPayroll');
+
+        $service->syncAfterDelete('daily_loan_dinamis', '2026-04-04', 'unit-test');
+
+        $this->assertTrue(true);
+    }
     public function test_performance_sync_rebuilds_new_payroll_using_the_import_period_hint(): void
     {
         $builder = Mockery::mock(ReportSnapshotBuilder::class);
+        $dashboardHarianSnapshotService = Mockery::mock(DashboardHarianSnapshotService::class);
         $partitionMaintenance = Mockery::mock(PartitionMaintenanceService::class);
-        $service = new ReportDataSyncService($builder, $partitionMaintenance);
+        $service = new ReportDataSyncService($builder, $dashboardHarianSnapshotService, $partitionMaintenance);
 
         $builder->shouldReceive('rebuildPerformanceNewPayroll')
             ->once()
@@ -129,3 +163,8 @@ class ReportDataSyncServiceTest extends TestCase
         $this->assertTrue(true);
     }
 }
+
+
+
+
+

@@ -15,6 +15,7 @@ class ReportDataSyncService
     private const DASHBOARD_SNAPSHOT_TABLE = 'dashboard_pinjaman_snapshots';
     private const DASHBOARD_SIMPANAN_SNAPSHOT_TABLE = 'dashboard_simpanan_snapshots';
     private const DASHBOARD_SIMPANAN_BRANCH_SNAPSHOT_TABLE = 'dashboard_simpanan_branch_snapshots';
+    private const DASHBOARD_HARIAN_SNAPSHOT_TABLE = 'dashboard_harian_snapshots';
     private const RASIO_SNAPSHOT_TABLE = 'rasio_casa_debitur_snapshots';
     private const DORMANT_SNAPSHOT_TABLE = 'rekening_dormant_snapshots';
     private const NEW_PAYROLL_SNAPSHOT_TABLE = 'performance_new_payroll_snapshots';
@@ -29,6 +30,7 @@ class ReportDataSyncService
 
     public function __construct(
         private readonly ReportSnapshotBuilder $snapshotBuilder,
+        private readonly DashboardHarianSnapshotService $dashboardHarianSnapshotService,
         private readonly PartitionMaintenanceService $partitionMaintenanceService
     ) {
     }
@@ -122,6 +124,13 @@ class ReportDataSyncService
             $this->refreshTableStatistics(self::DASHBOARD_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
         }
 
+        $this->runSnapshotAudit('daily_loan_dinamis', $periodHint, $jobId, $source, 'snapshot_dashboard_harian', function () use ($periodHint) {
+            return $this->dashboardHarianSnapshotService->rebuild($periodHint, true);
+        });
+        if ($this->shouldRefreshDerivedSnapshotStatistics($periodHint)) {
+            $this->refreshTableStatistics(self::DASHBOARD_HARIAN_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
+        }
+
         $this->runWithRasioSnapshotLock(function () use ($periodHint, $jobId, $source) {
             $this->runSnapshotAudit('daily_loan_dinamis', $periodHint, $jobId, $source, 'snapshot_rasio_casa', function () use ($periodHint) {
                 return $this->snapshotBuilder->rebuildRasioCasa($periodHint, true);
@@ -142,6 +151,14 @@ class ReportDataSyncService
             if ($this->shouldRefreshDerivedSnapshotStatistics($periodHint)) {
                 $this->refreshTableStatistics(self::DASHBOARD_SIMPANAN_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
                 $this->refreshTableStatistics(self::DASHBOARD_SIMPANAN_BRANCH_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
+            }
+
+            $this->runSnapshotAudit('simpanan_multipn', $periodHint, $jobId, $source, 'snapshot_dashboard_harian', function () use ($periodHint) {
+                return $this->dashboardHarianSnapshotService->rebuild($periodHint, true);
+            });
+
+            if ($this->shouldRefreshDerivedSnapshotStatistics($periodHint)) {
+                $this->refreshTableStatistics(self::DASHBOARD_HARIAN_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
             }
 
             $this->runSnapshotAudit('simpanan_multipn', $periodHint, $jobId, $source, 'snapshot_rekening_dormant', function () use ($periodHint) {
@@ -183,7 +200,21 @@ class ReportDataSyncService
 
     public function syncAfterDelete(string $tableName, ?string $periodHint = null, ?string $source = null): void
     {
-        $this->syncImportedTable($tableName, $periodHint, null, $source ?? static::class . '::syncAfterDelete');
+        $normalizedTable = strtolower(trim($tableName));
+        if ($normalizedTable === '') {
+            return;
+        }
+
+        $source = $source ?? static::class . '::syncAfterDelete';
+
+        if (in_array($normalizedTable, self::POST_DELETE_SNAPSHOT_REPORTS, true)) {
+            $this->refreshTableStatistics($normalizedTable, $periodHint, null, $source);
+            $this->cleanupDerivedArtifactsAfterDelete($normalizedTable, $periodHint, $source);
+
+            return;
+        }
+
+        $this->syncAfterDeleteLightweight($normalizedTable, $periodHint, $source);
     }
 
     public function syncAfterDeleteLightweight(string $tableName, ?string $periodHint = null, ?string $source = null): void
@@ -232,11 +263,13 @@ class ReportDataSyncService
         $cleanupMap = match ($normalizedTable) {
             'daily_loan_dinamis' => [
                 self::DASHBOARD_SNAPSHOT_TABLE => 'periode',
+                self::DASHBOARD_HARIAN_SNAPSHOT_TABLE => 'snapshot_period',
                 self::RASIO_SNAPSHOT_TABLE => 'loan_period',
             ],
             'simpanan_multipn' => [
                 self::DASHBOARD_SIMPANAN_SNAPSHOT_TABLE => 'snapshot_period',
                 self::DASHBOARD_SIMPANAN_BRANCH_SNAPSHOT_TABLE => 'snapshot_period',
+                self::DASHBOARD_HARIAN_SNAPSHOT_TABLE => 'snapshot_period',
                 self::DORMANT_SNAPSHOT_TABLE => 'posisi',
                 self::RASIO_SNAPSHOT_TABLE => 'casa_period',
             ],
@@ -504,3 +537,4 @@ class ReportDataSyncService
         }
     }
 }
+

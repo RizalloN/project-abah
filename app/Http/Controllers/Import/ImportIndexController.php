@@ -558,7 +558,13 @@ class ImportIndexController extends Controller
             ], 404);
         }
 
-        if (in_array($state['status'] ?? '', ['completed', 'warning', 'failed'], true)) {
+        if ($this->isManagedDeleteCancellationRequested($deleteId, $state)) {
+            $latestState = $this->finalizeManagedDeleteCancelled($deleteId, $state);
+
+            return response()->json($this->formatDeleteStateResponse($latestState));
+        }
+
+        if (in_array($state['status'] ?? '', ['completed', 'warning', 'failed', 'cancelled'], true)) {
             return response()->json($this->formatDeleteStateResponse($state));
         }
 
@@ -575,7 +581,7 @@ class ImportIndexController extends Controller
         try {
             $latestState = $this->getDeleteState($deleteId) ?? $state;
 
-            if (!in_array($latestState['status'] ?? '', ['completed', 'warning', 'failed'], true)) {
+            if (!in_array($latestState['status'] ?? '', ['completed', 'warning', 'failed', 'cancelled'], true)) {
                 $latestState = $this->advanceManagedReportDelete($deleteId, $syncService, $latestState);
             }
         } catch (Throwable $e) {
@@ -585,6 +591,35 @@ class ImportIndexController extends Controller
         }
 
         return response()->json($this->formatDeleteStateResponse($latestState));
+    }
+
+    public function cancelManagedReportDelete(string $deleteId)
+    {
+        $state = $this->getDeleteState($deleteId);
+        if ($state === null) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Progress delete tidak ditemukan atau sudah kedaluwarsa.',
+            ], 404);
+        }
+
+        if (in_array($state['status'] ?? '', ['completed', 'warning', 'failed', 'cancelled'], true)) {
+            return response()->json($this->formatDeleteStateResponse($state));
+        }
+
+        $state['cancel_requested'] = true;
+        $state['status'] = 'cancelling';
+        $state['stage'] = 'cancelling';
+        $state['batch_state'] = 'cancel_requested';
+        $state['message'] = 'Pembatalan delete dikirim. Worker akan berhenti setelah batch aman selesai.';
+        $state['updated_at'] = now()->toIso8601String();
+        $this->putDeleteState($deleteId, $state);
+
+        $state = $this->finalizeManagedDeleteCancelled($deleteId, $state);
+
+        return response()->json($this->formatDeleteStateResponse($state, [
+            'message' => 'Delete dibatalkan dengan aman.',
+        ]));
     }
 
     public function managedReportDeleteStatus(string $deleteId)
@@ -618,6 +653,19 @@ class ImportIndexController extends Controller
             return redirect()
                 ->route('import.index')
                 ->with('error', 'File template untuk report tersebut belum tersedia di project.');
+        }
+
+        if ($request->expectsJson() || $request->ajax()) {
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Template ' . $template['label'] . ' siap diunduh.',
+                'download_url' => route('import.template', [
+                    'report' => $templateKey,
+                    'file' => $template['filename'],
+                    'download' => 1,
+                ]),
+                'filename' => $template['filename'],
+            ]);
         }
 
         return response()->download(
@@ -780,12 +828,17 @@ class ImportIndexController extends Controller
     public function runManagedReportDelete(string $deleteId, ReportDataSyncService $syncService): void
     {
         $state = $this->getDeleteState($deleteId);
-        if ($state === null || in_array($state['status'] ?? '', ['completed', 'warning', 'failed'], true)) {
+        if ($state === null || in_array($state['status'] ?? '', ['completed', 'warning', 'failed', 'cancelled'], true)) {
             return;
         }
 
         try {
-            while (!in_array($state['status'] ?? '', ['completed', 'warning', 'failed'], true)) {
+            while (!in_array($state['status'] ?? '', ['completed', 'warning', 'failed', 'cancelled'], true)) {
+                if ($this->isManagedDeleteCancellationRequested($deleteId, $state)) {
+                    $this->finalizeManagedDeleteCancelled($deleteId, $state);
+                    return;
+                }
+
                 if (!$this->acquireManagedDeleteProcessLock($deleteId)) {
                     usleep(250000);
                     $state = $this->getDeleteState($deleteId) ?? $state;
@@ -794,7 +847,11 @@ class ImportIndexController extends Controller
 
                 try {
                     $state = $this->getDeleteState($deleteId) ?? $state;
-                    if (in_array($state['status'] ?? '', ['completed', 'warning', 'failed'], true)) {
+                    if ($this->isManagedDeleteCancellationRequested($deleteId, $state)) {
+                        $state = $this->finalizeManagedDeleteCancelled($deleteId, $state);
+                        return;
+                    }
+                    if (in_array($state['status'] ?? '', ['completed', 'warning', 'failed', 'cancelled'], true)) {
                         continue;
                     }
 
@@ -812,10 +869,18 @@ class ImportIndexController extends Controller
 
     private function advanceManagedReportDelete(string $deleteId, ReportDataSyncService $syncService, array $state): array
     {
+        if ($this->isManagedDeleteCancellationRequested($deleteId, $state)) {
+            return $this->finalizeManagedDeleteCancelled($deleteId, $state);
+        }
+
         $stage = (string) ($state['stage'] ?? 'deleting');
         $maintenanceMode = $syncService->resolvePostDeleteMaintenanceMode((string) ($state['table_name'] ?? ''));
 
         if ($stage === 'queued') {
+            if ($this->isManagedDeleteCancellationRequested($deleteId, $state)) {
+                return $this->finalizeManagedDeleteCancelled($deleteId, $state);
+            }
+
             $state['stage'] = 'deleting';
             $state['batch_state'] = 'queued';
             $state['is_waiting_on_batch'] = false;
@@ -827,10 +892,18 @@ class ImportIndexController extends Controller
         }
 
         if ($stage === 'deleting') {
+            if ($this->isManagedDeleteCancellationRequested($deleteId, $state)) {
+                return $this->finalizeManagedDeleteCancelled($deleteId, $state);
+            }
+
             $state = $this->markDeleteBatchPending($state);
             $this->putDeleteState($deleteId, $state);
 
             $state = $this->processDeleteChunk($state);
+
+            if ($this->isManagedDeleteCancellationRequested($deleteId, $state)) {
+                return $this->finalizeManagedDeleteCancelled($deleteId, $state);
+            }
 
             if (($state['stage'] ?? null) === 'deleting') {
                 $state['batch_state'] = 'deleting_committed';
@@ -851,6 +924,10 @@ class ImportIndexController extends Controller
         }
 
         if ($stage === 'cleanup') {
+            if ($this->isManagedDeleteCancellationRequested($deleteId, $state)) {
+                return $this->finalizeManagedDeleteCancelled($deleteId, $state);
+            }
+
             if ($maintenanceMode === 'lightweight') {
                 $syncService->syncAfterDeleteLightweight(
                     (string) $state['table_name'],
@@ -875,15 +952,15 @@ class ImportIndexController extends Controller
             }
 
             $state['cleanup'] = [
-                'mode' => 'snapshot_refresh',
-                'reason' => 'rebuild_snapshots_from_current_source',
+                'mode' => 'snapshot_cleanup',
+                'reason' => 'delete_derived_artifacts_after_delete',
             ];
 
             $state['stage'] = 'syncing';
             $state['batch_state'] = 'cleanup';
             $state['is_waiting_on_batch'] = false;
             $state['active_batch_size'] = 0;
-            $state['message'] = 'Delete sumber selesai, menyiapkan rebuild snapshot dari data terbaru...';
+            $state['message'] = 'Delete sumber selesai, membersihkan snapshot dan cache...';
             $state['updated_at'] = now()->toIso8601String();
             $this->putDeleteState($deleteId, $state);
 
@@ -891,6 +968,10 @@ class ImportIndexController extends Controller
         }
 
         if ($stage === 'syncing') {
+            if ($this->isManagedDeleteCancellationRequested($deleteId, $state)) {
+                return $this->finalizeManagedDeleteCancelled($deleteId, $state);
+            }
+
             if ($maintenanceMode === 'lightweight') {
                 $syncService->syncAfterDeleteLightweight(
                     (string) $state['table_name'],
@@ -912,14 +993,14 @@ class ImportIndexController extends Controller
             $state['active_batch_size'] = 0;
             $state['message'] = $maintenanceMode === 'lightweight'
                 ? 'Delete selesai. Statistik sumber dan cache sudah disegarkan.'
-                : 'Delete selesai. Snapshot, cache, dan statistik optimizer sudah disegarkan.';
+                : 'Delete selesai. Snapshot turunan, cache, dan statistik optimizer sudah dibersihkan.';
             $state['updated_at'] = now()->toIso8601String();
             $this->putDeleteState($deleteId, $state);
 
             return $state;
         }
 
-        if (in_array($stage, ['completed', 'failed'], true)) {
+        if (in_array($stage, ['completed', 'failed', 'cancelled'], true)) {
             return $state;
         }
 
@@ -957,6 +1038,7 @@ class ImportIndexController extends Controller
             throw new \RuntimeException('Scope delete tidak lagi valid.');
         }
 
+        $deleteId = (string) ($state['delete_id'] ?? '');
         $tableName = (string) $state['table_name'];
         $periodColumn = $state['period_column'] ?? null;
         $kancaColumn = $state['kanca_column'] ?? null;
@@ -966,6 +1048,10 @@ class ImportIndexController extends Controller
         $totalScopes = count($scopes);
 
         while ($currentScopeIndex < $totalScopes) {
+            if ($this->isManagedDeleteCancellationRequested($deleteId, $state)) {
+                return $this->finalizeManagedDeleteCancelled($deleteId, $state);
+            }
+
             $scope = $scopes[$currentScopeIndex];
 
             [$scopeQuery, $hasWhereClause] = $this->buildDeleteScopeQueryFromScopes(
@@ -1004,8 +1090,21 @@ class ImportIndexController extends Controller
                 $chunkSize,
                 $periodColumn,
                 $kancaColumn,
-                $scope
+                $scope,
+                $deleteId
             );
+
+            if ($this->isManagedDeleteCancellationRequested($deleteId, $state)) {
+                $state['deleted_rows'] = (int) ($state['deleted_rows'] ?? 0) + max(0, (int) $affected);
+                $state['remaining_rows'] = max(0, (int) ($state['total_rows'] ?? 0) - (int) ($state['deleted_rows'] ?? 0));
+                $state['last_batch_deleted_rows'] = max(0, (int) $affected);
+                $state['last_batch_finished_at'] = now()->toIso8601String();
+                $state['updated_at'] = now()->toIso8601String();
+                $this->putDeleteState((string) $state['delete_id'], $state);
+
+                return $this->finalizeManagedDeleteCancelled($deleteId, $state);
+            }
+
             if ($affected > 0) {
                 $state['deleted_rows'] = (int) ($state['deleted_rows'] ?? 0) + $affected;
                 $state['remaining_rows'] = max(0, (int) ($state['total_rows'] ?? 0) - (int) ($state['deleted_rows'] ?? 0));
@@ -1086,6 +1185,7 @@ class ImportIndexController extends Controller
             'syncing' => max($actualPercent, $deletedRows >= $totalRows && $totalRows > 0 ? 99 : $actualPercent),
             'completed' => 100,
             'failed' => min(100, $actualPercent),
+            'cancelled' => min(100, $actualPercent),
             default => min(100, $actualPercent),
         };
 
@@ -1117,6 +1217,7 @@ class ImportIndexController extends Controller
             'error' => $state['error'] ?? null,
             'error_code' => $state['error_code'] ?? null,
             'cleanup' => $state['cleanup'] ?? null,
+            'cancel_requested' => (bool) ($state['cancel_requested'] ?? false),
             'can_process_fallback' => $this->shouldAllowManagedDeleteFallback($state),
             'fallback_stale_seconds' => self::DELETE_PROCESS_STALE_SECONDS,
         ], $overrides);
@@ -1127,6 +1228,42 @@ class ImportIndexController extends Controller
         $state = $this->deleteProgressStore()->get($this->deleteProgressCacheKey($deleteId));
 
         return is_array($state) ? $state : null;
+    }
+
+    private function isManagedDeleteCancellationRequested(string $deleteId, ?array $state = null): bool
+    {
+        $state = $state ?? $this->getDeleteState($deleteId);
+        if (!is_array($state)) {
+            return false;
+        }
+
+        return (bool) ($state['cancel_requested'] ?? false)
+            || in_array((string) ($state['status'] ?? ''), ['cancelling', 'cancelled'], true);
+    }
+
+    private function finalizeManagedDeleteCancelled(string $deleteId, array $state): array
+    {
+        $deletedRows = max(0, (int) ($state['deleted_rows'] ?? 0));
+
+        $state['cancel_requested'] = true;
+        $state['status'] = 'warning';
+        $state['stage'] = 'cancelled';
+        $state['batch_state'] = 'cancelled';
+        $state['is_waiting_on_batch'] = false;
+        $state['active_batch_size'] = 0;
+        $state['remaining_rows'] = max(0, (int) ($state['remaining_rows'] ?? ($state['total_rows'] ?? 0)));
+        $state['cleanup'] = [
+            'mode' => 'cancelled',
+            'reason' => 'user_requested_termination',
+        ];
+        $state['message'] = $deletedRows > 0
+            ? 'Delete dibatalkan aman setelah sebagian batch selesai. Tidak ada cleanup lanjutan dijalankan.'
+            : 'Delete dibatalkan aman sebelum perubahan data lanjut diproses.';
+        $state['updated_at'] = now()->toIso8601String();
+
+        $this->putDeleteState($deleteId, $state);
+
+        return $state;
     }
 
     private function putDeleteState(string $deleteId, array $state): void
@@ -1145,7 +1282,7 @@ class ImportIndexController extends Controller
 
     private function shouldAllowManagedDeleteFallback(array $state): bool
     {
-        if (in_array($state['status'] ?? '', ['completed', 'warning', 'failed'], true)) {
+        if (in_array($state['status'] ?? '', ['completed', 'warning', 'failed', 'cancelled'], true)) {
             return false;
         }
 
@@ -1969,7 +2106,8 @@ class ImportIndexController extends Controller
         ?int $chunkSize = null,
         ?string $periodColumn = null,
         ?string $kancaColumn = null,
-        array $scope = []
+        array $scope = [],
+        ?string $deleteId = null
     ): int
     {
         $this->bulkLoadService()->assertTransactionalTable($tableName, 'delete data report');
@@ -1981,7 +2119,8 @@ class ImportIndexController extends Controller
             $chunkSize,
             $periodColumn,
             $kancaColumn,
-            $scope
+            $scope,
+            $deleteId
         ): int {
             $limit = max(1, (int) ($chunkSize ?? self::DELETE_CHUNK_SIZE));
             $connection = $baseQuery->getConnection();
@@ -1994,6 +2133,24 @@ class ImportIndexController extends Controller
             }
 
             try {
+                if ($deleteId !== null && $this->isManagedDeleteCancellationRequested($deleteId)) {
+                    return 0;
+                }
+
+                if (!empty($scope)) {
+                    $partitionAffected = $this->tryDeleteScopeByPartition(
+                        $tableName,
+                        $baseQuery,
+                        $periodColumn,
+                        $kancaColumn,
+                        $scope
+                    );
+
+                    if ($partitionAffected !== null) {
+                        return $partitionAffected;
+                    }
+                }
+
                 if ($identityColumn !== null && Schema::hasColumn($tableName, $identityColumn)) {
                     $variants = $this->buildDeleteConstraintVariants($periodColumn, $kancaColumn, $scope);
                     if (empty($variants)) {
@@ -2021,14 +2178,19 @@ class ImportIndexController extends Controller
                             : min($limit, self::DELETE_CHUNK_SIZE);
 
                         do {
+                            if ($deleteId !== null && $this->isManagedDeleteCancellationRequested($deleteId)) {
+                                return $deleted;
+                            }
+
                             $affected = $supportsFastDelete
-                                ? $this->deleteRowsByIndexedSubqueryBatch($tableName, $identityColumn, $variant, $batchLimit, $indexHint, $connection)
+                                ? $this->deleteRowsByIndexedSubqueryBatch($tableName, $identityColumn, $variant, $batchLimit, $indexHint, $connection, $deleteId)
                                 : $this->deleteRowsByIdentityBatch(
                                     $tableName,
                                     $this->makeDeleteVariantQuery($tableName, $variant),
                                     $identityColumn,
                                     $batchLimit,
-                                    $connection
+                                    $connection,
+                                    $deleteId
                                 );
 
                             if ($affected <= 0) {
@@ -2062,7 +2224,7 @@ class ImportIndexController extends Controller
         });
     }
 
-    private function deleteRowsByIdentityBatch(string $tableName, Builder $baseQuery, string $identityColumn, int $limit, $connection = null): int
+    private function deleteRowsByIdentityBatch(string $tableName, Builder $baseQuery, string $identityColumn, int $limit, $connection = null, ?string $deleteId = null): int
     {
         $connection = $connection ?: DB::connection();
         $identityValues = (clone $baseQuery)
@@ -2084,6 +2246,10 @@ class ImportIndexController extends Controller
         $deleteBatchSize = 2000;
 
         foreach (array_chunk($identityValues, $deleteBatchSize) as $chunk) {
+            if ($deleteId !== null && $this->isManagedDeleteCancellationRequested($deleteId)) {
+                break;
+            }
+
             $deleted += (int) $connection->table($tableName)
                 ->whereIn($identityColumn, $chunk)
                 ->delete();
@@ -2291,9 +2457,14 @@ class ImportIndexController extends Controller
         array $constraints,
         int $limit,
         string $indexHint,
-        $connection = null
+        $connection = null,
+        ?string $deleteId = null
     ): int {
         $connection = $connection ?: DB::connection();
+        if ($deleteId !== null && $this->isManagedDeleteCancellationRequested($deleteId)) {
+            return 0;
+        }
+
         [$whereSql, $bindings] = $this->buildDeleteWhereSql($constraints);
 
         $wrappedTable = '`' . str_replace('`', '``', $tableName) . '`';
@@ -2372,7 +2543,8 @@ INNER JOIN (
         if ($e instanceof QueryException) {
             $errorInfo = $e->errorInfo ?? [];
             if (isset($errorInfo[1])) {
-                return (string) $errorInfo[1];
+                $normalizedCode = trim((string) $errorInfo[1]);
+                return ($normalizedCode !== '' && $normalizedCode !== '0') ? $normalizedCode : null;
             }
         }
 
@@ -2381,8 +2553,13 @@ INNER JOIN (
         }
 
         $code = $e->getCode();
+        if (!is_scalar($code)) {
+            return null;
+        }
 
-        return is_scalar($code) && $code !== '' ? (string) $code : null;
+        $normalizedCode = trim((string) $code);
+
+        return ($normalizedCode !== '' && $normalizedCode !== '0') ? $normalizedCode : null;
     }
 
     private function shouldToggleSnapshotInvalidationFlag(?string $driverName): bool
@@ -2531,3 +2708,5 @@ INNER JOIN (
         };
     }
 }
+
+

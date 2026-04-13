@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\DashboardPinjamanReportController;
+use App\Http\Controllers\DashboardHarianController;
 use App\Http\Controllers\DashboardSimpananController;
 use App\Http\Controllers\Import\ImportCasaBrilinkController;
 use App\Http\Controllers\Import\ImportCleanupController;
@@ -30,6 +31,11 @@ Route::get('/', function () {
 })->name('home');
 
 Route::middleware(['auth', 'release.session.lock', 'throttle:240,1'])->group(function () {
+    Route::get('/dashboard-harian', [DashboardHarianController::class, 'index'])
+        ->name('dashboard.harian');
+    Route::get('/dashboard-harian/data', [DashboardHarianController::class, 'data'])
+        ->name('dashboard.harian.data');
+
     Route::get('/dashboard', [DashboardSimpananController::class, 'index'])
         ->name('dashboard');
 
@@ -100,6 +106,7 @@ Route::middleware(['auth', 'role:admin', 'release.session.lock'])->group(functio
     Route::post('/import/report-management/delete', [ImportIndexController::class, 'deleteManagedReportRows'])->name('import.report-management.delete');
     Route::post('/import/report-management/delete/{deleteId}/process', [ImportIndexController::class, 'processManagedReportDelete'])->name('import.report-management.delete.process');
     Route::get('/import/report-management/delete/{deleteId}/status', [ImportIndexController::class, 'managedReportDeleteStatus'])->name('import.report-management.delete.status');
+    Route::post('/import/report-management/delete/{deleteId}/cancel', [ImportIndexController::class, 'cancelManagedReportDelete'])->name('import.report-management.delete.cancel');
     Route::get('/import/jobs/{jobId}/status', ImportJobStatusController::class)->name('import.jobs.status');
     Route::post('/import/upload', [ImportFileController::class, 'upload'])->name('import.upload');
 

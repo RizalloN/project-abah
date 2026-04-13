@@ -999,7 +999,7 @@ public function performanceBrilink()
             $casaYoyMap = $fetchCasaByPeriod($casaYoyDate);
             $brilinkRows = DB::table('brilink_web_laporan_summary_transaksi_brilink_web')
                 ->selectRaw('UPPER(TRIM(cabang)) as branch')
-                ->select('periode')
+                ->addSelect('periode')
                 ->selectRaw('COUNT(*) as agen')
                 ->selectRaw('SUM(CASE WHEN COALESCE(total_fee, 0) >= 750000 THEN 1 ELSE 0 END) as juragan')
                 ->selectRaw('SUM(CASE WHEN COALESCE(total_fee, 0) >= 150000 THEN 1 ELSE 0 END) as bep')

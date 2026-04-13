@@ -196,9 +196,90 @@ class ManagedReportDeleteTest extends TestCase
 
         $this->assertSame('completed', $finalPayload['status']);
         $this->assertSame(5011, $finalPayload['deleted_rows']);
-        $this->assertSame('snapshot_refresh', $finalPayload['cleanup']['mode']);
+        $this->assertSame('snapshot_cleanup', $finalPayload['cleanup']['mode']);
         $this->assertSame(0, DB::table('daily_loan_dinamis')->where('periode', '2026-04-04')->whereIn('cabang1', ['KC Madiun', 'KC Magetan'])->count());
         $this->assertSame(1, DB::table('daily_loan_dinamis')->where('periode', '2026-04-04')->where('cabang1', 'KC Ponorogo')->count());
+    }
+
+    public function test_delete_management_uses_partition_shortcut_for_period_only_scopes_when_available(): void
+    {
+        DB::table('nama_report')->insert([
+            'id_report' => 8,
+            'nama_report' => 'Daily Loan Dinamis',
+            'table_name' => 'daily_loan_dinamis',
+            'active' => 1,
+        ]);
+
+        DB::table('daily_loan_dinamis')->insert([
+            [
+                'uniqueid_namareport' => 'ROW-1',
+                'periode' => '2026-04-04',
+                'cabang1' => 'KC Madiun',
+                'payload' => 'row-1',
+            ],
+            [
+                'uniqueid_namareport' => 'ROW-2',
+                'periode' => '2026-04-04',
+                'cabang1' => 'KC Magetan',
+                'payload' => 'row-2',
+            ],
+            [
+                'uniqueid_namareport' => 'ROW-3',
+                'periode' => '2026-04-05',
+                'cabang1' => 'KC Ponorogo',
+                'payload' => 'row-3',
+            ],
+        ]);
+
+        $partitionMaintenance = \Mockery::mock(\App\Support\PartitionMaintenanceService::class);
+        $partitionMaintenance->shouldReceive('supportsPartitionDdl')->andReturnTrue();
+        $partitionMaintenance->shouldReceive('resolveSinglePartitionForValue')
+            ->once()
+            ->with('daily_loan_dinamis', 'periode', '2026-04-04')
+            ->andReturn('p202604');
+        $partitionMaintenance->shouldReceive('truncatePartition')
+            ->once()
+            ->with('daily_loan_dinamis', 'p202604')
+            ->andReturnNull();
+
+        $bulkLoadService = \Mockery::mock(MySqlBulkLoadService::class);
+        $bulkLoadService->shouldReceive('assertTransactionalTable')->once()->with('daily_loan_dinamis', 'delete data report')->andReturnNull();
+        $bulkLoadService->shouldReceive('withTableWriteLock')
+            ->once()
+            ->with('daily_loan_dinamis', \Mockery::type('callable'))
+            ->andReturnUsing(function (string $tableName, callable $callback) {
+                return $callback();
+            });
+
+        app()->instance(MySqlBulkLoadService::class, $bulkLoadService);
+
+        try {
+            $controller = new ImportIndexController($partitionMaintenance);
+            $method = new \ReflectionMethod($controller, 'deleteScopedRows');
+            $method->setAccessible(true);
+
+            $baseQuery = DB::table('daily_loan_dinamis')->where('periode', '2026-04-04');
+            $affected = $method->invoke(
+                $controller,
+                'daily_loan_dinamis',
+                $baseQuery,
+                'uniqueid_namareport',
+                10000,
+                'periode',
+                'cabang1',
+                [
+                    'period_filter' => '2026-04-04',
+                    'kanca_filter' => null,
+                    'period_is_null' => false,
+                    'kanca_is_null' => false,
+                ]
+            );
+
+            $this->assertSame(2, $affected);
+            $this->assertSame(3, DB::table('daily_loan_dinamis')->count());
+        } finally {
+            app()->forgetInstance(MySqlBulkLoadService::class);
+        }
     }
 
     public function test_lock_timeout_error_is_mapped_to_short_user_facing_message(): void
@@ -216,6 +297,15 @@ class ManagedReportDeleteTest extends TestCase
         $this->assertSame('1205', $result['error_code']);
         $this->assertSame('Batch delete gagal karena lock timeout saat menunggu trigger atau snapshot.', $result['message']);
         $this->assertSame('Lock timeout saat delete batch. Coba ulang setelah proses lain selesai.', $result['error']);
+    }
+
+    public function test_zero_error_codes_are_not_exposed_in_delete_failures(): void
+    {
+        $controller = app(ImportIndexController::class);
+        $method = new \ReflectionMethod($controller, 'resolveManagedDeleteErrorCode');
+        $method->setAccessible(true);
+
+        $this->assertNull($method->invoke($controller, new \RuntimeException('Generic failure', 0)));
     }
 
     public function test_snapshot_skip_flag_is_only_enabled_for_mysql_like_drivers(): void
@@ -864,3 +954,4 @@ class ManagedReportDeleteTest extends TestCase
         Queue::assertNothingPushed();
     }
 }
+

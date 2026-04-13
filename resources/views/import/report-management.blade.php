@@ -19,7 +19,8 @@
      data-fetch-url="{{ route('import.report-management.data') }}"
      data-delete-url="{{ route('import.report-management.delete') }}"
      data-delete-process-url-template="{{ route('import.report-management.delete.process', ['deleteId' => '__DELETE_ID__']) }}"
-     data-delete-status-url-template="{{ route('import.report-management.delete.status', ['deleteId' => '__DELETE_ID__']) }}">
+     data-delete-status-url-template="{{ route('import.report-management.delete.status', ['deleteId' => '__DELETE_ID__']) }}"
+     data-delete-cancel-url-template="{{ route('import.report-management.delete.cancel', ['deleteId' => '__DELETE_ID__']) }}">
     <div class="card-header bg-white border-0 import-upload-card__header">
         <span class="import-upload-card__eyebrow">Seleksi & Preview</span>
         <h5 class="card-title font-weight-bold text-dark mb-1">
@@ -169,6 +170,7 @@
             const activeBatchSize = Math.max(0, Number(payload?.active_batch_size || payload?.chunk_size || 0));
             const lastBatchDeletedRows = Math.max(0, Number(payload?.last_batch_deleted_rows || 0));
             const errorCode = payload?.error_code ? `Kode ${escapeHtml(payload.error_code)}` : '';
+            const isCancelled = payload?.status === 'cancelled' || payload?.stage === 'cancelled';
             if (progressBar) {
                 progressBar.classList.remove('report-management-progress__bar--indeterminate');
                 progressBar.classList.remove('progress-bar-animated');
@@ -178,11 +180,13 @@
                 progressBar.setAttribute('aria-valuetext', waitingOnBatch ? `Progress riil ${percent}% - batch sedang diproses` : `${percent}%`);
             }
             if (progressValue) progressValue.innerText = `${percent}%`;
-            if (progressText) progressText.innerText = payload?.message || 'Memproses delete...';
+            if (progressText) progressText.innerText = payload?.message || (isCancelled ? 'Delete dibatalkan.' : 'Memproses delete...');
             if (progressDesc) progressDesc.innerHTML = `Terhapus <b>${formatNumber(payload?.deleted_rows || 0)}</b> dari <b>${formatNumber(payload?.total_rows || 0)}</b> baris.`;
             if (progressMeta) {
                 if (payload?.status === 'failed') {
                     progressMeta.innerText = [errorCode, payload?.error || 'Delete gagal diproses.'].filter(Boolean).join(' - ');
+                } else if (isCancelled) {
+                    progressMeta.innerText = 'Delete dibatalkan aman. Worker akan berhenti tanpa cleanup lanjutan.';
                 } else if ((payload?.stage || '') === 'queued') {
                     progressMeta.innerText = 'Menunggu queue worker. Fallback controller akan mengambil alih bila progres tidak bergerak.';
                 } else if (waitingOnBatch) {
@@ -190,7 +194,7 @@
                 } else if ((payload?.stage || '') === 'cleanup') {
                     progressMeta.innerText = 'Delete sumber selesai, membersihkan snapshot...';
                 } else if ((payload?.stage || '') === 'syncing') {
-                    progressMeta.innerText = 'Menyegarkan statistik dan cache...';
+                    progressMeta.innerText = 'Membersihkan snapshot turunan, statistik, dan cache...';
                 } else if (lastBatchDeletedRows > 0) {
                     progressMeta.innerText = `Batch terakhir menghapus ${formatNumber(lastBatchDeletedRows)} baris.`;
                 } else {
@@ -207,10 +211,10 @@
             return data;
         }
 
-        async function runDeleteProgress(processUrl, statusUrl, initialPayload) {
+        async function runDeleteProgress(processUrl, statusUrl, cancelUrl, initialPayload) {
             themedSwal({
                 title: 'Memproses Delete',
-                html: `<div class="text-center mb-3"><span style="font-size: 14px; color: #64748b;" id="delete-progress-desc">Menginisialisasi delete bertahap...</span></div><div class="progress report-management-progress"><div id="delete-progress-bar" class="progress-bar report-management-progress__bar" role="progressbar" style="width: 0%;"></div></div><div class="text-center mt-2"><small id="delete-progress-value" class="report-management-progress__value">0%</small></div><div class="text-center mt-3"><small id="delete-progress-text" class="report-management-progress__text">Menyiapkan chunk pertama...</small></div><div class="text-center mt-2"><small id="delete-progress-meta" class="report-management-progress__meta"></small></div>`,
+                html: `<div class="text-center mb-3"><span style="font-size: 14px; color: #64748b;" id="delete-progress-desc">Menginisialisasi delete bertahap...</span></div><div class="progress report-management-progress"><div id="delete-progress-bar" class="progress-bar report-management-progress__bar" role="progressbar" style="width: 0%;"></div></div><div class="text-center mt-2"><small id="delete-progress-value" class="report-management-progress__value">0%</small></div><div class="text-center mt-3"><small id="delete-progress-text" class="report-management-progress__text">Menyiapkan chunk pertama...</small></div><div class="text-center mt-2"><small id="delete-progress-meta" class="report-management-progress__meta"></small></div><div class="text-center mt-3"><button type="button" class="btn btn-sm btn-outline-danger" id="delete-cancel-btn"><i class="fas fa-ban mr-1"></i> Batalkan Delete</button></div>`,
                 allowOutsideClick: false,
                 allowEscapeKey: false,
                 showConfirmButton: false,
@@ -219,7 +223,26 @@
             await new Promise(resolve => setTimeout(resolve, 30));
             let finalPayload = initialPayload;
             let lastProcessAttemptAt = 0;
+            let cancelInFlight = false;
             updateDeleteProgressUi(finalPayload);
+            const cancelButton = document.getElementById('delete-cancel-btn');
+            if (cancelButton && cancelUrl) {
+                cancelButton.addEventListener('click', async function () {
+                    if (cancelInFlight || ['completed', 'warning', 'failed', 'cancelled'].includes(finalPayload?.status)) return;
+                    cancelInFlight = true;
+                    cancelButton.disabled = true;
+                    cancelButton.innerText = 'Membatalkan...';
+                    try {
+                        finalPayload = await postJson(cancelUrl, {});
+                        updateDeleteProgressUi(finalPayload);
+                    } catch (error) {
+                        cancelInFlight = false;
+                        cancelButton.disabled = false;
+                        cancelButton.innerText = 'Batalkan Delete';
+                        themedSwal({ icon: 'error', title: 'Gagal Membatalkan', text: error.message || 'Pembatalan delete gagal diproses.' });
+                    }
+                });
+            }
             try {
                 while (true) {
                     if (!statusUrl && !processUrl) throw new Error('Endpoint progress delete tidak tersedia.');
@@ -237,7 +260,7 @@
                         finalPayload = await postJson(processUrl, {});
                     }
                     updateDeleteProgressUi(finalPayload);
-                    if (['completed', 'warning', 'failed'].includes(finalPayload.status)) {
+                    if (['completed', 'warning', 'failed', 'cancelled'].includes(finalPayload.status)) {
                         Swal.close();
                         return finalPayload;
                     }
@@ -401,6 +424,7 @@
             const deleteUrl = reportManagementCard?.dataset.deleteUrl;
             const processUrlTemplate = reportManagementCard?.dataset.deleteProcessUrlTemplate;
             const statusUrlTemplate = reportManagementCard?.dataset.deleteStatusUrlTemplate;
+            const cancelUrlTemplate = reportManagementCard?.dataset.deleteCancelUrlTemplate;
             if (!deleteUrl || !managementReportSelect || !managementReportSelect.value) return;
             if (!Array.isArray(scopes) || scopes.length === 0) {
                 themedSwal({ icon: 'warning', title: 'Pilih Data', text: 'Pilih minimal satu grup yang ingin dihapus.' });
@@ -446,13 +470,15 @@
             const finalPayload = await runDeleteProgress(
                 processUrlTemplate ? buildDeleteUrl(processUrlTemplate, payload.delete_id) : '',
                 statusUrlTemplate ? buildDeleteUrl(statusUrlTemplate, payload.delete_id) : '',
+                cancelUrlTemplate ? buildDeleteUrl(cancelUrlTemplate, payload.delete_id) : '',
                 payload
             );
             const deletedRows = Number(finalPayload.deleted_rows || 0);
             const recoveredWarning = finalPayload.status === 'failed' && deletedRows > 0;
             const outcomeStatus = recoveredWarning ? 'warning' : finalPayload.status;
             if (outcomeStatus === 'failed') {
-                const errorCode = finalPayload.error_code ? ` (${finalPayload.error_code})` : '';
+                const normalizedErrorCode = String(finalPayload.error_code ?? '').trim();
+                const errorCode = normalizedErrorCode && normalizedErrorCode !== '0' ? ` (${normalizedErrorCode})` : '';
                 throw new Error((finalPayload.error || finalPayload.message || 'Terjadi kesalahan saat menghapus data.') + errorCode);
             }
             scopes.forEach(function (scope) { managementState.selectedScopes.delete(createScopeKey(scope)); });
@@ -651,3 +677,4 @@
     @media (max-width:767.98px){.report-management-hero,.import-upload-card__header{padding-left:1rem;padding-right:1rem}.import-upload-card__body{padding:1rem 1rem 7.5rem}.report-management-hero__title{font-size:1.15rem}.report-management-hero__badge,.report-management-filter-btn{width:100%}.report-management-table thead th,.report-management-table tbody td{padding:.8rem}.report-management-bulkbar,.report-management-period-card,.report-management-selection-toast,.report-management-pagination{align-items:flex-start}.report-management-period-card__toggle,.report-management-selection-toast,.report-management-selection-toast__actions{width:100%}.report-management-selection-toast-shell{left:1rem;right:1rem;bottom:1rem;width:calc(100vw - 2rem);max-width:calc(100vw - 2rem)}.report-management-selection-toast{flex-direction:column}}
 </style>
 @endsection
+

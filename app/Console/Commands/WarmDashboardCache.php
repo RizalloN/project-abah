@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Http\Controllers\DashboardPinjamanReportController;
+use App\Http\Controllers\DashboardHarianController;
 use App\Http\Controllers\RasioCasaDebiturController;
 use App\Http\Controllers\RekeningDormantController;
 use App\Http\Controllers\DashboardSimpananController;
@@ -34,6 +35,7 @@ class WarmDashboardCache extends Command
         $this->info('Mulai pemanasan cache (Cache Warming) untuk Dasbor Laporan...');
 
         $this->warmDashboardPinjaman();
+        $this->warmDashboardHarian();
         $this->warmRasioCasaDebitur();
         $this->warmRekeningDormant();
 
@@ -63,6 +65,26 @@ class WarmDashboardCache extends Command
             $this->info('   Berhasil memanaskan cache Dashboard Pinjaman.');
         } catch (Throwable $e) {
             $this->error('   Gagal memanaskan cache Dashboard Pinjaman: ' . $e->getMessage());
+        }
+    }
+
+    private function warmDashboardHarian(): void
+    {
+        $this->info('-> Memproses Dashboard Harian...');
+
+        try {
+            $controller = app()->make(DashboardHarianController::class);
+            $request = Request::create('/dashboard-harian', 'GET');
+
+            $this->line('   [1/2] Mengambil halaman index...');
+            $controller->index($request);
+
+            $this->line('   [2/2] Memuat payload data utama...');
+            $controller->data($request);
+
+            $this->info('   Berhasil memanaskan cache Dashboard Harian.');
+        } catch (Throwable $e) {
+            $this->error('   Gagal memanaskan cache Dashboard Harian: ' . $e->getMessage());
         }
     }
 

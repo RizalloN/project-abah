@@ -1008,6 +1008,18 @@ class ImportExcelController extends Controller
         return $this->normalizeDecimalValue($saldo) !== null;
     }
 
+    private function buildSimpananMultiPnDuplicateKey(array $valuesByHeader): ?string
+    {
+        $posisi = $this->normalizeExcelValue('POSISI', $valuesByHeader['posisi'] ?? null);
+        $noRekening = trim((string) ($valuesByHeader['no_rekening'] ?? ''));
+
+        if ($posisi === null || $noRekening === '') {
+            return null;
+        }
+
+        return $posisi . '|' . $noRekening;
+    }
+
     private function isValidDailyLoanRowValues(array $valuesByHeader): bool
     {
         $periode = $this->normalizeExcelValue('PERIODE', $valuesByHeader['periode'] ?? null);
@@ -3116,6 +3128,323 @@ class ImportExcelController extends Controller
         ];
     }
 
+    protected function stageSimpananMultiPnCsvWithPolars(?callable $send, string $csvPath, ?string $delimiter = null): ?array
+    {
+        $pythonExe = $this->findPython();
+        $scriptPath = base_path('scripts/simpanan_multipn_polars_processor.py');
+
+        if (!$pythonExe || !file_exists($scriptPath)) {
+            return null;
+        }
+
+        $delimiter = ($delimiter !== null && $delimiter !== '')
+            ? $delimiter
+            : $this->detectCsvDelimiter($csvPath);
+
+        $tempDirectory = storage_path('app/temp');
+        if (!is_dir($tempDirectory)) {
+            @mkdir($tempDirectory, 0777, true);
+        }
+
+        $outputCsvPath = $tempDirectory . DIRECTORY_SEPARATOR . 'simpanan_multipn_polars_' . Str::uuid()->toString() . '.csv';
+        $configFile = storage_path('app/simpanan_multipn_polars_config_' . uniqid() . '.json');
+        file_put_contents($configFile, json_encode([
+            'file_path' => $csvPath,
+            'delimiter' => $delimiter,
+            'output_csv_path' => $outputCsvPath,
+            'required_headers' => ['POSISI', 'CIFNO', 'NO_REKENING', 'JENIS_SIMPANAN', 'SALDO_IDR'],
+            'duplicate_key_headers' => ['POSISI', 'NO_REKENING'],
+        ], JSON_UNESCAPED_UNICODE));
+
+        $cmd = escapeshellarg($pythonExe)
+            . ' ' . escapeshellarg($scriptPath)
+            . ' --config ' . escapeshellarg($configFile)
+            . ' --mode stage';
+
+        $descriptors = [
+            0 => ['pipe', 'r'],
+            1 => ['pipe', 'w'],
+            2 => ['pipe', 'w'],
+        ];
+
+        $gpuEnv = [
+            'CUDA_VISIBLE_DEVICES' => '',
+            'ROCR_VISIBLE_DEVICES' => '',
+            'MLU_VISIBLE_DEVICES' => '',
+            'ASCEND_VISIBLE_DEVICES' => '',
+            'HIP_VISIBLE_DEVICES' => '',
+        ];
+        $procEnv = array_merge((getenv() ?: $_ENV ?: []), $gpuEnv);
+
+        $process = proc_open($cmd, $descriptors, $pipes, null, $procEnv);
+        if (!is_resource($process)) {
+            @unlink($configFile);
+            @unlink($outputCsvPath);
+            return null;
+        }
+
+        fclose($pipes[0]);
+        stream_set_blocking($pipes[1], false);
+        stream_set_blocking($pipes[2], false);
+
+        $buffer = '';
+        $donePayload = null;
+        $pythonError = null;
+        $pythonProducedOutput = false;
+        $lastKeepAlive = time();
+        $keepAliveEvery = 15;
+
+        $processLine = static function (string $line) use ($send, &$donePayload, &$pythonError, &$lastKeepAlive): void {
+            $line = trim($line);
+            if ($line === '') {
+                return;
+            }
+
+            $data = json_decode($line, true);
+            if (!is_array($data)) {
+                return;
+            }
+
+            $type = $data['type'] ?? 'progress';
+            unset($data['type']);
+
+            if ($type === 'progress') {
+                if ($send) {
+                    $send('progress', $data);
+                }
+                $lastKeepAlive = time();
+                return;
+            }
+
+            if ($type === 'done') {
+                $donePayload = $data;
+                $lastKeepAlive = time();
+                return;
+            }
+
+            if ($type === 'error') {
+                $pythonError = $data['message'] ?? 'Python Simpanan MultiPN stage error tidak diketahui';
+                $lastKeepAlive = time();
+            }
+        };
+
+        try {
+            while (true) {
+                $status = proc_get_status($process);
+                $chunk = fread($pipes[1], 65536);
+
+                if ($chunk !== false && $chunk !== '') {
+                    $pythonProducedOutput = true;
+                    $buffer .= $chunk;
+                    while (($pos = strpos($buffer, "\n")) !== false) {
+                        $line = substr($buffer, 0, $pos);
+                        $buffer = substr($buffer, $pos + 1);
+                        $processLine($line);
+                    }
+                }
+
+                if ((time() - $lastKeepAlive) >= $keepAliveEvery && $send) {
+                    echo ": keepalive\n\n";
+                    if (ob_get_level() > 0) {
+                        ob_flush();
+                    }
+                    flush();
+                    $lastKeepAlive = time();
+                }
+
+                if (!$status['running']) {
+                    break;
+                }
+
+                usleep(50000);
+            }
+
+            $remaining = stream_get_contents($pipes[1]);
+            if ($remaining) {
+                $pythonProducedOutput = true;
+                $buffer .= $remaining;
+                foreach (explode("\n", $buffer) as $line) {
+                    $processLine($line);
+                }
+            }
+        } finally {
+            if (isset($pipes[1]) && is_resource($pipes[1])) {
+                fclose($pipes[1]);
+            }
+            if (isset($pipes[2]) && is_resource($pipes[2])) {
+                fclose($pipes[2]);
+            }
+
+            if (is_resource($process)) {
+                proc_close($process);
+            }
+
+            @unlink($configFile);
+        }
+
+        if (!$pythonProducedOutput || $pythonError !== null || !$donePayload || !file_exists($outputCsvPath)) {
+            @unlink($outputCsvPath);
+            return null;
+        }
+
+        return [
+            'path' => $outputCsvPath,
+            'cleanup' => true,
+            'normalized' => true,
+            'backend' => 'polars',
+            'skipped_rows' => array_values(array_map('intval', (array) ($donePayload['skipped_rows'] ?? []))),
+            'skipped_count' => (int) ($donePayload['skipped_count'] ?? 0),
+            'duplicate_count' => (int) ($donePayload['duplicate_count'] ?? 0),
+            'written_rows' => (int) ($donePayload['written_rows'] ?? 0),
+            'total_rows' => (int) ($donePayload['total_rows'] ?? 0),
+        ];
+    }
+
+    protected function createNormalizedSimpananMultiPnDirectLoadCsv(string $csvPath, ?string $delimiter = null, ?callable $send = null): array
+    {
+        $polarsResult = $this->stageSimpananMultiPnCsvWithPolars($send, $csvPath, $delimiter);
+        if ($polarsResult !== null) {
+            return $polarsResult;
+        }
+
+        $delimiter = ($delimiter !== null && $delimiter !== '')
+            ? $delimiter
+            : $this->detectCsvDelimiter($csvPath);
+        $tempDirectory = storage_path('app/temp');
+        if (!is_dir($tempDirectory)) {
+            @mkdir($tempDirectory, 0777, true);
+        }
+
+        $tempPath = $tempDirectory . DIRECTORY_SEPARATOR . 'simpanan_multipn_direct_' . Str::uuid()->toString() . '.csv';
+        $inputHandle = @fopen($csvPath, 'rb');
+        if ($inputHandle === false) {
+            throw new \RuntimeException('Gagal membuka file sumber Simpanan MultiPN untuk normalisasi direct load.');
+        }
+
+        $outputHandle = @fopen($tempPath, 'wb');
+        if ($outputHandle === false) {
+            fclose($inputHandle);
+            throw new \RuntimeException('Gagal membuat file sementara Simpanan MultiPN untuk direct load.');
+        }
+
+        try {
+            $header = fgetcsv($inputHandle, 0, $delimiter);
+            if ($header === false || empty($header)) {
+                throw new \RuntimeException('Header CSV Simpanan MultiPN tidak ditemukan saat normalisasi direct load.');
+            }
+
+            if (!empty($header) && isset($header[0]) && is_string($header[0])) {
+                $header[0] = preg_replace('/^\xEF\xBB\xBF/', '', $header[0]);
+            }
+
+            $expectedColumns = count($header);
+            $lineNumber = 1;
+            $skippedRows = [];
+            $skippedCount = 0;
+            $duplicateCount = 0;
+            $writtenRows = 0;
+            $normalizationChanged = false;
+            $seenKeys = [];
+            $normalizedHeaders = array_map(
+                fn ($value) => $this->normalizeImportColumnName((string) $value),
+                $header
+            );
+
+            fputcsv($outputHandle, $header, $delimiter, '"', '\\');
+
+            while (($rawRow = fgetcsv($inputHandle, 0, $delimiter)) !== false) {
+                $lineNumber++;
+                $row = $this->normalizeCsvRow((array) $rawRow, $delimiter, $expectedColumns);
+
+                if (empty(array_filter((array) $row, fn ($value) => trim((string) $value) !== ''))) {
+                    continue;
+                }
+
+                if (count($row) !== $expectedColumns) {
+                    $skippedRows[] = $lineNumber;
+                    $skippedCount++;
+                    $normalizationChanged = true;
+                    continue;
+                }
+
+                $valuesByHeader = [];
+                foreach ($normalizedHeaders as $index => $normalizedHeader) {
+                    if ($normalizedHeader === '' || str_starts_with($normalizedHeader, 'col_')) {
+                        continue;
+                    }
+
+                    $valuesByHeader[$normalizedHeader] = $row[$index] ?? null;
+                }
+
+                if (!$this->hasRequiredSimpananMultiPnImportData($valuesByHeader)) {
+                    $skippedRows[] = $lineNumber;
+                    $skippedCount++;
+                    continue;
+                }
+
+                $duplicateKey = $this->buildSimpananMultiPnDuplicateKey($valuesByHeader);
+                if ($duplicateKey === null) {
+                    $skippedRows[] = $lineNumber;
+                    $skippedCount++;
+                    continue;
+                }
+
+                if (isset($seenKeys[$duplicateKey])) {
+                    $skippedRows[] = $lineNumber;
+                    $skippedCount++;
+                    $duplicateCount++;
+                    continue;
+                }
+
+                $seenKeys[$duplicateKey] = true;
+                fputcsv($outputHandle, $row, $delimiter, '"', '\\');
+                $writtenRows++;
+            }
+        } catch (\Throwable $e) {
+            fclose($inputHandle);
+            fclose($outputHandle);
+            @unlink($tempPath);
+            throw $e;
+        }
+
+        fclose($inputHandle);
+        fclose($outputHandle);
+
+        if ($writtenRows === 0) {
+            @unlink($tempPath);
+            throw new \RuntimeException('Polars tidak menemukan baris data Simpanan MultiPN yang valid.');
+        }
+
+        return [
+            'path' => $tempPath,
+            'cleanup' => true,
+            'normalized' => true,
+            'backend' => 'php',
+            'skipped_rows' => $skippedRows,
+            'skipped_count' => $skippedCount,
+            'duplicate_count' => $duplicateCount,
+            'written_rows' => $writtenRows,
+            'rewritten' => $normalizationChanged || $skippedCount > 0,
+            'total_rows' => $skippedCount + $writtenRows,
+        ];
+    }
+
+    protected function prepareSimpananMultiPnDirectLoadSource(string $csvPath, ?string $delimiter = null, ?callable $send = null): array
+    {
+        $normalized = $this->createNormalizedSimpananMultiPnDirectLoadCsv($csvPath, $delimiter, $send);
+
+        return [
+            'path' => $normalized['path'],
+            'cleanup' => (bool) ($normalized['cleanup'] ?? true),
+            'normalized' => (bool) ($normalized['normalized'] ?? true),
+            'backend' => (string) ($normalized['backend'] ?? 'php'),
+            'skipped_rows' => $normalized['skipped_rows'] ?? [],
+            'skipped_count' => (int) ($normalized['skipped_count'] ?? 0),
+            'duplicate_count' => (int) ($normalized['duplicate_count'] ?? 0),
+            'written_rows' => (int) ($normalized['written_rows'] ?? 0),
+        ];
+    }
+
     private function createNormalizedDailyLoanDirectLoadCsv(string $csvPath, ?string $delimiter = null, ?callable $send = null): array
     {
         $polarsResult = $this->stageDailyLoanCsvWithPolars($send, $csvPath, $delimiter);
@@ -3242,7 +3571,7 @@ class ImportExcelController extends Controller
         return "NULLIF(NULLIF({$trimmed}, ''), '\\\\N')";
     }
 
-    private function buildDirectLoadDecimalExpression(string $columnExpression): string
+    protected function buildDirectLoadDecimalExpression(string $columnExpression): string
     {
         $textExpression = $this->buildDirectLoadTextExpression($columnExpression);
         $compacted = "REPLACE({$textExpression}, ' ', '')";
@@ -4382,7 +4711,7 @@ class ImportExcelController extends Controller
         $this->insertBatchWithFallback($rightBatch, $tableName, $totalInserted, $totalFailed);
     }
 
-    private function normalizeDecimalValue($value): ?string
+    protected function normalizeDecimalValue($value): ?string
     {
         if ($value === null) {
             return null;
@@ -5550,6 +5879,7 @@ class ImportExcelController extends Controller
         $bulkLoadColumns = $this->buildBulkLoadColumns($tableName, $normalizedHeaders, $activeFilters);
         $outputCsvPath = $this->createBulkLoadTempCsvPath($tableName, $jobId);
         $outputHandle = fopen($outputCsvPath, 'w');
+        $cleanupPaths = [$outputCsvPath];
 
         if ($outputHandle === false) {
             fclose($handle);
@@ -5645,6 +5975,15 @@ class ImportExcelController extends Controller
             $outputHandle = null;
 
             if ($forceDirectLoad) {
+                $directLoadSourcePath = $outputCsvPath;
+                if ($tableName === 'simpanan_multipn') {
+                    $loadSource = $this->prepareSimpananMultiPnDirectLoadSource($outputCsvPath, $delimiter, $send);
+                    $directLoadSourcePath = (string) ($loadSource['path'] ?? $outputCsvPath);
+                    if (!empty($loadSource['cleanup']) && $directLoadSourcePath !== '') {
+                        $cleanupPaths[] = $directLoadSourcePath;
+                    }
+                }
+
                 $send('progress', [
                     'percent' => 96,
                     'message' => 'CSV hasil filter siap. Memuat data ke MySQL via LOAD DATA LOCAL INFILE...',
@@ -5654,7 +5993,7 @@ class ImportExcelController extends Controller
                 ]);
 
                 $inserted = $this->loadCsvIntoMysqlDirect(
-                    $outputCsvPath,
+                    $directLoadSourcePath,
                     $tableName,
                     $bulkLoadColumns,
                     $beforeDirectLoad
@@ -5703,7 +6042,11 @@ class ImportExcelController extends Controller
             if (is_resource($outputHandle)) {
                 fclose($outputHandle);
             }
-            @unlink($outputCsvPath);
+            foreach (array_unique(array_filter($cleanupPaths)) as $cleanupPath) {
+                if (is_string($cleanupPath) && $cleanupPath !== '' && file_exists($cleanupPath)) {
+                    @unlink($cleanupPath);
+                }
+            }
         }
     }
 
