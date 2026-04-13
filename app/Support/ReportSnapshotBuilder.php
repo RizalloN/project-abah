@@ -13,6 +13,7 @@ class ReportSnapshotBuilder
     private const DASHBOARD_SIMPANAN_SNAPSHOT_TABLE = 'dashboard_simpanan_snapshots';
     private const DASHBOARD_SIMPANAN_BRANCH_SNAPSHOT_TABLE = 'dashboard_simpanan_branch_snapshots';
     private const RASIO_SNAPSHOT_TABLE = 'rasio_casa_debitur_snapshots';
+    private const RASIO_UKER_SNAPSHOT_TABLE = 'rasio_casa_debitur_uker_snapshots';
     private const DORMANT_SNAPSHOT_TABLE = 'rekening_dormant_snapshots';
     private const NEW_PAYROLL_SNAPSHOT_TABLE = 'performance_new_payroll_snapshots';
 
@@ -109,7 +110,8 @@ class ReportSnapshotBuilder
         $results = [];
 
         foreach ($this->resolveRasioPeriods($period) as $snapshotPeriod) {
-            $results[$snapshotPeriod] = $this->buildRasioPeriodSnapshot($snapshotPeriod, $force);
+            $results[$snapshotPeriod] = $this->buildRasioPeriodSnapshot($snapshotPeriod, $force)
+                + $this->buildRasioUkerPeriodSnapshot($snapshotPeriod, $force);
         }
 
         return $results;
@@ -252,6 +254,35 @@ class ReportSnapshotBuilder
                     $chunk,
                     ['loan_period', 'branch_key', 'segment_key'],
                     ['casa_period', 'branch_label', 'os_amount', 'casa_amount', 'source_row_count', 'updated_at']
+                );
+            }
+        }
+
+        return count($rows);
+    }
+
+    private function buildRasioUkerPeriodSnapshot(string $loanPeriod, bool $force): int
+    {
+        if (!Schema::hasTable(self::RASIO_UKER_SNAPSHOT_TABLE)) {
+            return 0;
+        }
+
+        if (!$force && DB::table(self::RASIO_UKER_SNAPSHOT_TABLE)->where('loan_period', $loanPeriod)->exists()) {
+            return (int) DB::table(self::RASIO_UKER_SNAPSHOT_TABLE)->where('loan_period', $loanPeriod)->count();
+        }
+
+        $rows = $this->computeRasioUkerSnapshotRows($loanPeriod);
+
+        DB::table(self::RASIO_UKER_SNAPSHOT_TABLE)
+            ->where('loan_period', $loanPeriod)
+            ->delete();
+
+        if (!empty($rows)) {
+            foreach (array_chunk($rows, 500) as $chunk) {
+                DB::table(self::RASIO_UKER_SNAPSHOT_TABLE)->upsert(
+                    $chunk,
+                    ['loan_period', 'source_branch_key', 'uker_key', 'segment_key'],
+                    ['casa_period', 'uker_label', 'os_amount', 'casa_amount', 'source_row_count', 'updated_at']
                 );
             }
         }
@@ -681,6 +712,132 @@ class ReportSnapshotBuilder
         return $snapshot;
     }
 
+    private function computeRasioUkerSnapshotRows(string $loanPeriod): array
+    {
+        $loanKeyColumn = $this->resolveExistingColumn('daily_loan_dinamis', ['nocif', 'cifno', 'CIFNO'], 'cifno');
+        $casaKeyColumn = $this->resolveExistingColumn('simpanan_multipn', ['nocif', 'cifno', 'CIFNO'], 'CIFNO');
+        $loanBranchColumn = $this->resolveExistingColumn('daily_loan_dinamis', ['cabang1', 'cabang'], 'cabang1');
+        $loanUkerColumn = $this->resolveExistingColumn('daily_loan_dinamis', ['unit1', 'unit'], 'unit1');
+        $loanSegmentColumn = $this->resolveExistingColumn('daily_loan_dinamis', ['segmen_dashboard'], 'segmen_dashboard');
+        $loanProductColumn = $this->resolveExistingColumn('daily_loan_dinamis', ['produk_dashboard'], 'produk_dashboard');
+        $loanBalanceColumn = $this->resolveExistingColumn('daily_loan_dinamis', ['baki_debet1', 'baki_debet'], 'baki_debet1');
+        $casaDate = $this->resolveAvailableCasaPeriod($loanPeriod);
+
+        $loanIdentitySql = $this->buildJoinableIdentitySql("d.{$loanKeyColumn}");
+        $brigunaFlagSql = $this->buildSegmentFlagExpression("d.{$loanSegmentColumn}", "d.{$loanProductColumn}", 'briguna');
+        $kprFlagSql = $this->buildSegmentFlagExpression("d.{$loanSegmentColumn}", "d.{$loanProductColumn}", 'kpr');
+        $mikroFlagSql = $this->buildSegmentFlagExpression("d.{$loanSegmentColumn}", "d.{$loanProductColumn}", 'mikro');
+        $smcFlagSql = $this->buildSegmentFlagExpression("d.{$loanSegmentColumn}", "d.{$loanProductColumn}", 'smc');
+
+        $loanBase = DB::table('daily_loan_dinamis as d')
+            ->where('d.periode', $loanPeriod)
+            ->whereNotNull("d.{$loanKeyColumn}")
+            ->where("d.{$loanKeyColumn}", '<>', '')
+            ->whereRaw("TRIM(COALESCE(d.{$loanBranchColumn}, '')) <> ''")
+            ->whereRaw("TRIM(COALESCE(d.{$loanUkerColumn}, '')) <> ''")
+            ->selectRaw("
+                UPPER(TRIM(d.{$loanBranchColumn})) as source_branch_key,
+                UPPER(TRIM(d.{$loanUkerColumn})) as uker_key,
+                {$loanIdentitySql} as identity_key,
+                COALESCE(d.{$loanBalanceColumn}, 0) as loan_balance,
+                1 as has_total,
+                {$brigunaFlagSql} as has_briguna,
+                {$kprFlagSql} as has_kpr,
+                {$mikroFlagSql} as has_mikro,
+                {$smcFlagSql} as has_smc
+            ");
+
+        $loanPerCif = DB::query()
+            ->fromSub($loanBase, 'loan_base')
+            ->selectRaw("
+                source_branch_key,
+                uker_key,
+                identity_key,
+                SUM(loan_balance) as loan_balance,
+                MAX(has_total) as has_total,
+                MAX(has_briguna) as has_briguna,
+                MAX(has_kpr) as has_kpr,
+                MAX(has_mikro) as has_mikro,
+                MAX(has_smc) as has_smc
+            ")
+            ->groupBy('source_branch_key', 'uker_key', 'identity_key');
+
+        $joined = DB::query()->fromSub($loanPerCif, 'loan_per_cif');
+
+        if ($casaDate) {
+            $applyCasaTypeFilter = $this->shouldApplyCasaTypeFilter($casaDate);
+            $casaIdentitySql = $this->buildJoinableIdentitySql($casaKeyColumn);
+
+            $casaBase = DB::table('simpanan_multipn')
+                ->where('posisi', $casaDate)
+                ->whereNotNull($casaKeyColumn)
+                ->where($casaKeyColumn, '<>', '')
+                ->when($applyCasaTypeFilter, function ($query) {
+                    $query->where(function ($inner) {
+                        $inner->where('jenis_simpanan', 'like', 'GIRO%')
+                            ->orWhere('jenis_simpanan', 'like', 'TABUNGAN%');
+                    });
+                })
+                ->selectRaw("{$casaIdentitySql} as identity_key, SUM(COALESCE(saldo_idr, 0)) as casa_balance")
+                ->groupBy('identity_key');
+
+            $joined->leftJoinSub($casaBase, 'casa_base', function ($join) {
+                $join->on('loan_per_cif.identity_key', '=', 'casa_base.identity_key');
+            });
+        }
+
+        $summaryRows = $joined
+            ->selectRaw("
+                loan_per_cif.source_branch_key,
+                loan_per_cif.uker_key,
+                SUM(loan_per_cif.loan_balance) as total_os,
+                SUM(CASE WHEN loan_per_cif.has_briguna = 1 THEN loan_per_cif.loan_balance ELSE 0 END) as briguna_os,
+                SUM(CASE WHEN loan_per_cif.has_kpr = 1 THEN loan_per_cif.loan_balance ELSE 0 END) as kpr_os,
+                SUM(CASE WHEN loan_per_cif.has_mikro = 1 THEN loan_per_cif.loan_balance ELSE 0 END) as mikro_os,
+                SUM(CASE WHEN loan_per_cif.has_smc = 1 THEN loan_per_cif.loan_balance ELSE 0 END) as smc_os,
+                SUM(COALESCE(casa_base.casa_balance, 0)) as total_casa,
+                SUM(CASE WHEN loan_per_cif.has_briguna = 1 THEN COALESCE(casa_base.casa_balance, 0) ELSE 0 END) as briguna_casa,
+                SUM(CASE WHEN loan_per_cif.has_kpr = 1 THEN COALESCE(casa_base.casa_balance, 0) ELSE 0 END) as kpr_casa,
+                SUM(CASE WHEN loan_per_cif.has_mikro = 1 THEN COALESCE(casa_base.casa_balance, 0) ELSE 0 END) as mikro_casa,
+                SUM(CASE WHEN loan_per_cif.has_smc = 1 THEN COALESCE(casa_base.casa_balance, 0) ELSE 0 END) as smc_casa,
+                COUNT(*) as source_row_count
+            ")
+            ->groupBy('loan_per_cif.source_branch_key', 'loan_per_cif.uker_key')
+            ->orderBy('loan_per_cif.source_branch_key')
+            ->orderBy('loan_per_cif.uker_key')
+            ->get();
+
+        $rows = [];
+
+        foreach ($summaryRows as $row) {
+            $sourceBranchKey = strtoupper(trim((string) ($row->source_branch_key ?? '')));
+            $ukerKey = strtoupper(trim((string) ($row->uker_key ?? '')));
+
+            if ($sourceBranchKey === '' || $ukerKey === '') {
+                continue;
+            }
+
+            foreach (self::SEGMENTS as $segmentKey) {
+                $rows[] = [
+                    'uniqueid_rcdus' => $this->makeRasioUkerSnapshotId($loanPeriod, $sourceBranchKey, $ukerKey, $segmentKey),
+                    'loan_period' => $loanPeriod,
+                    'casa_period' => $casaDate,
+                    'source_branch_key' => $sourceBranchKey,
+                    'uker_key' => $ukerKey,
+                    'uker_label' => $ukerKey,
+                    'segment_key' => $segmentKey,
+                    'os_amount' => (float) ($row->{$segmentKey . '_os'} ?? 0),
+                    'casa_amount' => (float) ($row->{$segmentKey . '_casa'} ?? 0),
+                    'source_row_count' => (int) ($row->source_row_count ?? 0),
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ];
+            }
+        }
+
+        return $rows;
+    }
+
     private function resolveDashboardPeriods(?string $period): array
     {
         $selected = $this->resolveAvailablePeriod('daily_loan_dinamis', 'periode', $period);
@@ -1046,6 +1203,22 @@ class ReportSnapshotBuilder
             trim($branchKey),
             trim($segmentKey),
         ]));
+    }
+
+    private function makeRasioUkerSnapshotId(string $loanPeriod, string $sourceBranchKey, string $ukerKey, string $segmentKey): string
+    {
+        return md5(implode('|', [
+            'rcdus',
+            $loanPeriod,
+            trim($sourceBranchKey),
+            trim($ukerKey),
+            trim($segmentKey),
+        ]));
+    }
+
+    private function buildJoinableIdentitySql(string $column): string
+    {
+        return "CONVERT(UPPER(REPLACE(TRIM(COALESCE({$column}, '')), \"'\", '')) USING utf8mb4) COLLATE utf8mb4_unicode_ci";
     }
 
     private function makeDormantSnapshotId(string $period, string $rawBranch, string $unitKerja): string

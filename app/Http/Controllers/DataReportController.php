@@ -11,14 +11,37 @@ class DataReportController extends Controller
     public function performanceNewPayroll()
     {
         $branches = ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'];
+        ['branchOptions' => $branchOptions, 'branchUkerMap' => $branchUkerMap] = $this->buildBranchUkerFilterOptions(
+            'performance_pis_per_produk',
+            'kanca',
+            'uker'
+        );
 
-        return view('report.kinerja-new-payroll', compact('branches'));
+        return view('report.kinerja-new-payroll', compact('branches', 'branchOptions', 'branchUkerMap'));
     }
 
     public function fetchNewPayrollData(Request $request)
     {
         $selectedDate = Carbon::parse($request->input('posisi', date('Y-m-d')));
-        $branches = ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'];
+        $defaultBranches = ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'];
+        $selectedBranches = collect((array) $request->input('branch_office', []))
+            ->map(fn ($branch) => strtoupper(trim((string) $branch)))
+            ->filter()
+            ->values()
+            ->all();
+        $selectedUkers = collect((array) $request->input('nama_uker', []))
+            ->map(fn ($uker) => strtoupper(trim((string) $uker)))
+            ->filter()
+            ->reject(fn ($uker) => $uker === 'ALL UKER')
+            ->values()
+            ->all();
+        $isBranchFiltered = !empty($selectedBranches);
+        $branches = $isBranchFiltered ? $selectedBranches : $defaultBranches;
+        $groupExpression = $isBranchFiltered ? 'UPPER(TRIM(uker))' : 'UPPER(TRIM(kanca))';
+        $groupLabel = $isBranchFiltered ? 'UKER' : 'BRANCH OFFICE';
+        $totalLabel = $isBranchFiltered
+            ? 'TOTAL ' . strtoupper(implode(', ', $selectedBranches))
+            : 'TOTAL AREA 6';
 
         $effectiveSnapshot = DB::table('performance_pis_per_produk')
             ->whereDate('posisi', '<=', $selectedDate->toDateString())
@@ -42,7 +65,7 @@ class DataReportController extends Controller
         $yoyEnd = Carbon::parse($yoyStart)->endOfMonth()->toDateString();
 
         $rows = DB::table('performance_pis_per_produk')
-            ->selectRaw('UPPER(kanca) as branch')
+            ->selectRaw("{$groupExpression} as branch")
             ->selectRaw('COUNT(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN 1 END) as rekening_curr', [$currStart, $currEnd])
             ->selectRaw('COUNT(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN 1 END) as rekening_prev', [$prevStart, $prevEnd])
             ->selectRaw('COUNT(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN 1 END) as rekening_yoy_prev', [$yoyStart, $yoyEnd])
@@ -50,20 +73,27 @@ class DataReportController extends Controller
             ->selectRaw('SUM(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN saldo_britama_kerjasama ELSE 0 END) as saldo_prev', [$prevStart, $prevEnd])
             ->selectRaw('SUM(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN saldo_britama_kerjasama ELSE 0 END) as saldo_yoy_prev', [$yoyStart, $yoyEnd])
             ->whereDate('posisi', $effectiveSnapshot)
-            ->whereIn(DB::raw('UPPER(kanca)'), array_map('strtoupper', $branches))
-            ->groupBy(DB::raw('UPPER(kanca)'))
+            ->whereIn(DB::raw('UPPER(TRIM(kanca))'), array_map('strtoupper', $branches))
+            ->when(!empty($selectedUkers), function ($query) use ($selectedUkers) {
+                $query->whereIn(DB::raw('UPPER(TRIM(uker))'), $selectedUkers);
+            })
+            ->groupBy(DB::raw($groupExpression))
             ->get()
             ->keyBy('branch');
 
+        $displayKeys = $isBranchFiltered
+            ? $rows->keys()->sort()->values()->all()
+            : $defaultBranches;
+
         $data = [];
         $total = [
-            'branch' => 'TOTAL AREA 6',
+            'branch' => $totalLabel,
             'rekening' => ['curr' => 0, 'prev' => 0, 'yoy_prev' => 0, 'rka' => null],
             'saldo' => ['curr' => 0, 'prev' => 0, 'yoy_prev' => 0, 'rka' => null],
             'kualitas' => ['curr' => null, 'prev' => null, 'yoy_prev' => null, 'rka' => null],
         ];
 
-        foreach ($branches as $branch) {
+        foreach ($displayKeys as $branch) {
             $row = $rows->get(strtoupper($branch));
 
             $rekeningCurr = (int) ($row->rekening_curr ?? 0);
@@ -75,7 +105,7 @@ class DataReportController extends Controller
             $saldoYoyPrev = (float) ($row->saldo_yoy_prev ?? 0);
 
             $data[] = [
-                'branch' => $branch,
+                'branch' => strtoupper($branch),
                 'rekening' => $this->calculateNewPayrollMetrics($rekeningCurr, $rekeningPrev, $rekeningYoyPrev),
                 'saldo' => $this->calculateNewPayrollMetrics($saldoCurr, $saldoPrev, $saldoYoyPrev),
                 'kualitas' => $this->emptyNewPayrollMetric(),
@@ -106,6 +136,7 @@ class DataReportController extends Controller
             'status' => 'success',
             'labels' => $this->buildNewPayrollLabels($selectedDate),
             'effective_snapshot' => Carbon::parse($effectiveSnapshot)->toDateString(),
+            'group_label' => $groupLabel,
             'data' => $data,
             'total' => $total,
         ]);
