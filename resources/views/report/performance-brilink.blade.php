@@ -10,7 +10,7 @@
     .report-data-card {
         border: 1px solid #e9ecef;
         border-radius: 16px;
-        overflow: hidden;
+        overflow: visible;
         box-shadow: 0 0.5rem 1rem rgba(15, 23, 42, 0.08) !important;
     }
     .report-filter-card .card-body,
@@ -18,9 +18,77 @@
     .report-data-card .card-body {
         background-color: #ffffff;
     }
+    .report-filter-card .card-body {
+        overflow: visible;
+    }
     .report-filter-card .form-control {
         border-radius: 10px;
         min-height: 40px;
+    }
+    .branch-filter-dropdown,
+    .uker-filter-dropdown {
+        position: relative;
+    }
+    .branch-dropdown-toggle {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        text-align: left;
+        background: #fff;
+    }
+    .branch-dropdown-toggle:disabled {
+        background: #e9ecef;
+        cursor: not-allowed;
+        opacity: 1;
+    }
+    .branch-dropdown-label {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .branch-dropdown-menu,
+    .uker-dropdown-menu {
+        position: absolute;
+        top: calc(100% + 6px);
+        left: 0;
+        right: 0;
+        z-index: 1050;
+        display: none;
+        width: 100%;
+        max-height: 260px;
+        overflow-y: auto;
+        background: #fff;
+        border: 1px solid #dee2e6;
+        border-radius: 10px;
+        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.12);
+        padding: 8px 0;
+    }
+    .branch-dropdown-menu.show,
+    .uker-dropdown-menu.show {
+        display: block;
+    }
+    .branch-dropdown-menu .dropdown-item,
+    .uker-dropdown-menu .dropdown-item {
+        padding: 0.45rem 1rem;
+        cursor: pointer;
+        margin-bottom: 0;
+    }
+    .branch-dropdown-menu .form-check,
+    .uker-dropdown-menu .form-check {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .branch-dropdown-menu .form-check-input,
+    .uker-dropdown-menu .form-check-input {
+        position: static;
+        margin: 0;
+    }
+    .branch-dropdown-menu .form-check-label,
+    .uker-dropdown-menu .form-check-label {
+        margin: 0;
+        font-weight: 500;
+        cursor: pointer;
     }
     .table-container { width: 100%; overflow-x: hidden; }
     .table-report { border-collapse: collapse; width: 100%; table-layout: auto; }
@@ -69,13 +137,36 @@
             <div class="col-md-3">
                 <div class="form-group mb-0">
                     <label class="text-muted text-sm mb-1">Branch Office (Kanca)</label>
-                    <input type="text" class="form-control font-weight-bold" value="Area 6 - All" disabled>
+                    <div class="branch-filter-dropdown">
+                        <button type="button" class="form-control font-weight-bold branch-dropdown-toggle" id="filterBranchDropdown" aria-haspopup="true" aria-expanded="false">
+                            <span id="filter_branch_office_label" class="branch-dropdown-label">Area 6 - All</span>
+                            <i class="fas fa-chevron-down text-muted"></i>
+                        </button>
+                        <div class="branch-dropdown-menu" id="filterBranchMenu" aria-labelledby="filterBranchDropdown">
+                            @forelse(($branchOptions ?? collect()) as $branchOption)
+                                <label class="dropdown-item" for="branch_{{ \Illuminate\Support\Str::slug($branchOption, '_') }}">
+                                    <div class="form-check">
+                                        <input class="form-check-input filter-branch-checkbox" type="checkbox" value="{{ $branchOption }}" id="branch_{{ \Illuminate\Support\Str::slug($branchOption, '_') }}">
+                                        <span class="form-check-label">{{ $branchOption }}</span>
+                                    </div>
+                                </label>
+                            @empty
+                                <div class="dropdown-item text-muted small px-3">Data branch belum tersedia</div>
+                            @endforelse
+                        </div>
+                    </div>
                 </div>
             </div>
             <div class="col-md-2">
                 <div class="form-group mb-0">
                     <label class="text-muted text-sm mb-1">Nama Uker</label>
-                    <input type="text" class="form-control" value="ALL UKER" disabled>
+                    <div class="uker-filter-dropdown">
+                        <button type="button" class="form-control branch-dropdown-toggle" id="filterUkerDropdown" aria-haspopup="true" aria-expanded="false" disabled>
+                            <span id="filter_nama_uker_label" class="branch-dropdown-label">ALL UKER</span>
+                            <i class="fas fa-chevron-down text-muted"></i>
+                        </button>
+                        <div class="uker-dropdown-menu" id="filterUkerMenu" aria-labelledby="filterUkerDropdown"></div>
+                    </div>
                 </div>
             </div>
             <div class="col-md-2">
@@ -143,7 +234,7 @@
                     <table class="table table-hover table-report m-0">
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
-                                <th rowspan="2" class="bg-brilink-dark align-middle">BRANCH OFFICE</th>
+                                <th rowspan="2" class="bg-brilink-dark align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER">BRANCH OFFICE</th>
                                 <th colspan="6" class="bg-brilink-mid">Agen Brilink</th>
                                 <th colspan="6" class="bg-brilink-light">Agen Juragan/Jawara</th>
                                 <th colspan="6" class="bg-brilink-mid">Agen BEP</th>
@@ -175,7 +266,7 @@
                     <table class="table table-hover table-report m-0">
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
-                                <th rowspan="2" class="bg-brilink-dark align-middle">BRANCH OFFICE</th>
+                                <th rowspan="2" class="bg-brilink-dark align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER">BRANCH OFFICE</th>
                                 <th colspan="10" class="bg-brilink-mid">Jumlah Agen Brilink</th>
                             </tr>
                             <tr class="bg-header-sub">
@@ -201,7 +292,7 @@
                     <table class="table table-hover table-report m-0">
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
-                                <th rowspan="2" class="bg-brilink-dark align-middle">BRANCH OFFICE</th>
+                                <th rowspan="2" class="bg-brilink-dark align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER">BRANCH OFFICE</th>
                                 <th colspan="10" class="bg-brilink-mid">Agen Juragan+Jawara</th>
                             </tr>
                             <tr class="bg-header-sub">
@@ -227,7 +318,7 @@
                     <table class="table table-hover table-report m-0">
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
-                                <th rowspan="2" class="bg-brilink-dark align-middle">BRANCH OFFICE</th>
+                                <th rowspan="2" class="bg-brilink-dark align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER">BRANCH OFFICE</th>
                                 <th colspan="10" class="bg-brilink-mid">Agen BEP</th>
                             </tr>
                             <tr class="bg-header-sub">
@@ -253,7 +344,7 @@
                     <table class="table table-hover table-report m-0">
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
-                                <th rowspan="2" class="bg-brilink-dark align-middle">BRANCH OFFICE</th>
+                                <th rowspan="2" class="bg-brilink-dark align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER">BRANCH OFFICE</th>
                                 <th colspan="5" class="bg-brilink-mid">Transaksi Agen Brilink</th>
                             </tr>
                             <tr class="bg-header-sub">
@@ -274,7 +365,7 @@
                     <table class="table table-hover table-report m-0">
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
-                                <th rowspan="2" class="bg-brilink-dark align-middle">BRANCH OFFICE</th>
+                                <th rowspan="2" class="bg-brilink-dark align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER">BRANCH OFFICE</th>
                                 <th colspan="10" class="bg-brilink-mid">CASA Agen Brilink <br><small>(Rp. Juta)</small></th>
                             </tr>
                             <tr class="bg-header-sub">
@@ -445,11 +536,105 @@ document.addEventListener('DOMContentLoaded', function () {
         </tr>`;
     }
 
+    const branchUkerMap = @json($branchUkerMap ?? []);
+
+    function getSelectedBranches() {
+        return $('.filter-branch-checkbox:checked').map(function () {
+            return $(this).val();
+        }).get();
+    }
+
+    function getSelectedUkers() {
+        return $('.filter-uker-checkbox:checked').map(function () {
+            return $(this).val();
+        }).get();
+    }
+
+    function getAvailableUkers() {
+        const selectedBranches = getSelectedBranches();
+        if (!selectedBranches.length) {
+            return [];
+        }
+
+        const ukerSet = new Set();
+        selectedBranches.forEach(function (branch) {
+            (branchUkerMap[branch] || []).forEach(function (uker) {
+                if (uker) {
+                    ukerSet.add(uker);
+                }
+            });
+        });
+
+        return Array.from(ukerSet).sort(function (a, b) {
+            return a.localeCompare(b, 'id');
+        });
+    }
+
+    function updateBranchLabel() {
+        const selectedBranches = getSelectedBranches();
+        $('#filter_branch_office_label').text(selectedBranches.length ? selectedBranches.join(', ') : 'Area 6 - All');
+    }
+
+    function updateUkerLabel() {
+        const selectedUkers = getSelectedUkers();
+        $('#filter_nama_uker_label').text(selectedUkers.length ? selectedUkers.join(', ') : 'ALL UKER');
+    }
+
+    function closeBranchDropdown() {
+        $('#filterBranchMenu').removeClass('show');
+        $('#filterBranchDropdown').attr('aria-expanded', 'false');
+    }
+
+    function closeUkerDropdown() {
+        $('#filterUkerMenu').removeClass('show');
+        $('#filterUkerDropdown').attr('aria-expanded', 'false');
+    }
+
+    function updateGroupLabel(label) {
+        const normalizedLabel = (label || 'BRANCH OFFICE').toUpperCase();
+        $('.col-group-label').each(function () {
+            const $label = $(this);
+            const nextText = normalizedLabel === 'UKER'
+                ? ($label.data('filtered-label') || 'UKER')
+                : ($label.data('default-label') || 'BRANCH OFFICE');
+            $label.text(nextText);
+        });
+    }
+
+    function syncNamaUkerOptions() {
+        const availableUkers = getAvailableUkers();
+        const selectedUkers = getSelectedUkers();
+        const $ukerMenu = $('#filterUkerMenu');
+        $ukerMenu.empty();
+
+        availableUkers.forEach(function (uker) {
+            const safeId = uker.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+            const isChecked = selectedUkers.includes(uker) ? 'checked' : '';
+            $ukerMenu.append(`
+                <label class="dropdown-item" for="uker_${safeId}">
+                    <div class="form-check">
+                        <input class="form-check-input filter-uker-checkbox" type="checkbox" value="${$('<div>').text(uker).html()}" id="uker_${safeId}" ${isChecked}>
+                        <span class="form-check-label">${$('<div>').text(uker).html()}</span>
+                    </div>
+                </label>
+            `);
+        });
+
+        const shouldDisable = availableUkers.length === 0;
+        if (shouldDisable) {
+            closeUkerDropdown();
+        }
+        $('#filterUkerDropdown').prop('disabled', shouldDisable).attr('aria-expanded', 'false');
+        updateUkerLabel();
+    }
+
     // 🔥 FIX FINAL: Variabel global untuk menampung request AJAX (Mencegah Race Condition)
     let brilinkXhr = null;
 
     function loadDataBrilink() {
         const bulanAktif = $('#filter_bulan').val();
+        const selectedBranches = getSelectedBranches();
+        const selectedUkers = getSelectedUkers();
 
         // 🔥 Batalkan request sebelumnya jika belum selesai
         if (brilinkXhr && brilinkXhr.readyState !== 4) {
@@ -466,6 +651,8 @@ document.addEventListener('DOMContentLoaded', function () {
             data: {
                 periode_bulan : bulanAktif,
                 tab: 'brilink',                  
+                branch_office: selectedBranches,
+                nama_uker: selectedUkers,
                 _token: '{{ csrf_token() }}'
             },
             success: function(res) {
@@ -478,6 +665,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     if (res.labels) {
                         $('.lbl-curr').text('Bulan Berjalan (' + res.labels.curr + ')');
                     }
+                    updateGroupLabel(res.group_label);
 
                     let html = '';
                     let htmlAgenUser = '';
@@ -639,7 +827,45 @@ document.addEventListener('DOMContentLoaded', function () {
         loadDataBrilink();
     });
 
+    $('#filterBranchDropdown').on('click', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        closeUkerDropdown();
+        $('#filterBranchMenu').toggleClass('show');
+        $(this).attr('aria-expanded', $('#filterBranchMenu').hasClass('show') ? 'true' : 'false');
+    });
+
+    $('#filterUkerDropdown').on('click', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        if ($(this).prop('disabled')) return;
+        closeBranchDropdown();
+        $('#filterUkerMenu').toggleClass('show');
+        $(this).attr('aria-expanded', $('#filterUkerMenu').hasClass('show') ? 'true' : 'false');
+    });
+
+    $(document).on('click', function (e) {
+        if (!$(e.target).closest('.branch-filter-dropdown').length) {
+            closeBranchDropdown();
+        }
+        if (!$(e.target).closest('.uker-filter-dropdown').length) {
+            closeUkerDropdown();
+        }
+    });
+
+    $(document).on('change', '.filter-branch-checkbox', function () {
+        syncNamaUkerOptions();
+        updateBranchLabel();
+        loadDataBrilink();
+    });
+
+    $(document).on('change', '.filter-uker-checkbox', function () {
+        updateUkerLabel();
+        loadDataBrilink();
+    });
+
     // Initial Load
+    syncNamaUkerOptions();
     loadDataBrilink();
 });
 </script>
