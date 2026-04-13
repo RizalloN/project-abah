@@ -5,12 +5,11 @@
 @section('content')
 
 <style>
-    /* 🔥 KONSISTENSI UI: Sesuai Gambar Report */
     .report-filter-card,
     .report-data-card {
         border: 1px solid #e9ecef;
         border-radius: 16px;
-        overflow: hidden;
+        overflow: visible;
         box-shadow: 0 0.5rem 1rem rgba(15, 23, 42, 0.08) !important;
     }
     .report-filter-card .card-body,
@@ -18,14 +17,82 @@
     .report-data-card .card-body {
         background-color: #ffffff;
     }
+    .report-filter-card .card-body {
+        overflow: visible;
+    }
     .report-filter-card .form-control {
         border-radius: 10px;
         min-height: 40px;
     }
+    .branch-filter-dropdown,
+    .uker-filter-dropdown {
+        position: relative;
+    }
+    .branch-dropdown-toggle {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        text-align: left;
+        background: #fff;
+    }
+    .branch-dropdown-toggle:disabled {
+        background: #e9ecef;
+        cursor: not-allowed;
+        opacity: 1;
+    }
+    .branch-dropdown-label {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .branch-dropdown-menu,
+    .uker-dropdown-menu {
+        position: absolute;
+        top: calc(100% + 6px);
+        left: 0;
+        right: 0;
+        z-index: 1050;
+        display: none;
+        width: 100%;
+        max-height: 260px;
+        overflow-y: auto;
+        background: #fff;
+        border: 1px solid #dee2e6;
+        border-radius: 10px;
+        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.12);
+        padding: 8px 0;
+    }
+    .branch-dropdown-menu.show,
+    .uker-dropdown-menu.show {
+        display: block;
+    }
+    .branch-dropdown-menu .dropdown-item,
+    .uker-dropdown-menu .dropdown-item {
+        padding: 0.45rem 1rem;
+        cursor: pointer;
+        margin-bottom: 0;
+    }
+    .branch-dropdown-menu .form-check,
+    .uker-dropdown-menu .form-check {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .branch-dropdown-menu .form-check-input,
+    .uker-dropdown-menu .form-check-input {
+        position: static;
+        margin: 0;
+    }
+    .branch-dropdown-menu .form-check-label,
+    .uker-dropdown-menu .form-check-label {
+        margin: 0;
+        font-weight: 500;
+        cursor: pointer;
+    }
     .table-container { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
     .table-report { border-collapse: collapse; width: 100%; table-layout: auto; }
-    .table-report th, .table-report td { 
-        vertical-align: middle !important; 
+    .table-report th, .table-report td {
+        vertical-align: middle !important;
         border: 1px solid #dee2e6;
         word-wrap: break-word;
         white-space: normal;
@@ -33,35 +100,25 @@
     .table-report th { font-size: 0.65rem; padding: 10px 4px; text-align: center; }
     .table-report td { font-size: 0.70rem; padding: 6px 4px; text-align: right; }
     .table-report td.text-left { text-align: left; }
-    
-    /* Pewarnaan Header Persis Gambar */
     .bg-brimo-main,
     .bg-header-branch { background-color: #003366 !important; color: #ffffff !important; font-weight: bold; }
     .bg-brimo-rek { background-color: #2F5597 !important; color: #ffffff !important; border-color: #203b6b !important; }
     .bg-brimo-fin { background-color: #5B9BD5 !important; color: #ffffff !important; border-color: #3f7bb5 !important; }
     .bg-brimo-usak { background-color: #A5A5A5 !important; color: #ffffff !important; border-color: #7b7b7b !important; }
     .bg-brimo-vol { background-color: #7030A0 !important; color: #ffffff !important; border-color: #5a2580 !important; }
-    
     .bg-header-sub { background-color: #f1f5fa !important; color: #333 !important; font-weight: bold; }
     .bg-header-light-blue { background-color: #f1f5fa !important; color: #333 !important; font-weight: bold; }
-
     .table-hover tbody tr:hover { background-color: #f1f7ff; }
-    
-    /* Baris Total */
     .bg-good { background-color: #d4edda !important; color: #155724 !important; font-weight: bold; }
     .bg-bad { background-color: #f8d7da !important; color: #721c24 !important; font-weight: bold; }
-    .row-total { --row-total-bg: #003366; --row-total-color: #ffffff; background-color: #003366 !important; color: #ffffff !important; font-weight: bold; }
+    .row-total { background-color: #003366 !important; color: #ffffff !important; font-weight: bold; }
     .row-total td { color: #ffffff !important; }
-    .row-total-blue { --row-total-bg: #003366; --row-total-color: #ffffff; background-color: #003366 !important; font-weight: bold; color: #ffffff !important; }
+    .row-total-blue { background-color: #003366 !important; font-weight: bold; color: #ffffff !important; }
     .row-total-blue td { background-color: #003366 !important; color: #ffffff !important; }
-    
-    /* Indikator Panah */
     .text-success,
     .val-up { color: #28a745 !important; font-weight: bold; margin-left: 2px; }
     .text-danger,
     .val-down { color: #dc3545 !important; font-weight: bold; margin-left: 2px; }
-    
-    /* Style Tabs */
     .nav-tabs.report-tabs { border-bottom: 2px solid #dee2e6; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; white-space: nowrap; scrollbar-width: thin; }
     .nav-tabs.report-tabs .nav-link { border: none; font-weight: 600; color: #6c757d; padding: 12px 18px; font-size: 0.95rem; background: transparent; }
     .nav-tabs.report-tabs .nav-link.active { border-bottom: 3px solid #007bff; color: #007bff; background: transparent; }
@@ -81,13 +138,36 @@
             <div class="col-md-3">
                 <div class="form-group mb-0">
                     <label class="text-muted text-sm mb-1">Branch Office (Kanca)</label>
-                    <input type="text" class="form-control font-weight-bold" value="Area 6 - All" disabled>
+                    <div class="branch-filter-dropdown">
+                        <button type="button" class="form-control font-weight-bold branch-dropdown-toggle" id="filterBranchDropdown" aria-haspopup="true" aria-expanded="false">
+                            <span id="filter_branch_office_label" class="branch-dropdown-label">Area 6 - All</span>
+                            <i class="fas fa-chevron-down text-muted"></i>
+                        </button>
+                        <div class="branch-dropdown-menu" id="filterBranchMenu" aria-labelledby="filterBranchDropdown">
+                            @forelse(($branchOptions ?? collect()) as $branchOption)
+                                <label class="dropdown-item" for="branch_{{ \Illuminate\Support\Str::slug($branchOption, '_') }}">
+                                    <div class="form-check">
+                                        <input class="form-check-input filter-branch-checkbox" type="checkbox" value="{{ $branchOption }}" id="branch_{{ \Illuminate\Support\Str::slug($branchOption, '_') }}">
+                                        <span class="form-check-label">{{ $branchOption }}</span>
+                                    </div>
+                                </label>
+                            @empty
+                                <div class="dropdown-item text-muted small">Data branch belum tersedia</div>
+                            @endforelse
+                        </div>
+                    </div>
                 </div>
             </div>
             <div class="col-md-2">
                 <div class="form-group mb-0">
                     <label class="text-muted text-sm mb-1">Nama Uker</label>
-                    <input type="text" class="form-control" value="ALL UKER" disabled>
+                    <div class="uker-filter-dropdown">
+                        <button type="button" class="form-control branch-dropdown-toggle" id="filterUkerDropdown" aria-haspopup="true" aria-expanded="false" disabled>
+                            <span id="filter_nama_uker_label" class="branch-dropdown-label">ALL UKER</span>
+                            <i class="fas fa-chevron-down text-muted"></i>
+                        </button>
+                        <div class="uker-dropdown-menu" id="filterUkerMenu" aria-labelledby="filterUkerDropdown"></div>
+                    </div>
                 </div>
             </div>
             <div class="col-md-2">
@@ -108,8 +188,6 @@
 
 <div class="card shadow-sm border-0 mb-4 report-data-card">
     <div class="card-header bg-white p-0 border-bottom-0">
-        <!-- 🔥 TABS HEADER -->
-        <!-- ðŸ”¥ TABS HEADER -->
         <ul class="nav nav-tabs report-tabs px-3 pt-2" role="tablist">
             <li class="nav-item">
                 <a class="nav-link active" data-toggle="tab" href="#tab-brimo" role="tab">
@@ -146,14 +224,12 @@
     
     <div class="card-body p-0">
         <div class="tab-content">
-            
-            <!-- 📊 TAB 1: OVERVIEW PERFORMANCE BRIMO -->
             <div class="tab-pane fade show active" id="tab-brimo" role="tabpanel">
                 <div class="table-container">
                     <table class="table table-hover table-report m-0">
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
-                                <th rowspan="2" class="bg-brimo-main align-middle" style="min-width: 150px;">BRANCH OFFICE</th>
+                                <th rowspan="2" class="bg-brimo-main align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER" style="min-width: 150px;">BRANCH OFFICE</th>
                                 <th colspan="5" class="bg-brimo-rek">Ureg BRImo (by Rekening)</th>
                                 <th colspan="5" class="bg-brimo-fin">Ureg BRImo (by Rk. Finansial)</th>
                                 <th colspan="5" class="bg-brimo-usak">Usak (User Aktif) BRImo<br><small>Trx Finansial > 3x / bulan</small></th>
@@ -171,13 +247,12 @@
                 </div>
             </div>
 
-            <!-- 📊 TAB 2: UREG BRIMO DETAIL (REKENING) -->
             <div class="tab-pane fade" id="tab-ureg-rek" role="tabpanel">
                 <div class="table-container">
                     <table class="table table-hover table-report m-0">
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
-                                <th rowspan="2" class="bg-brimo-rek align-middle" style="min-width:150px;">BRANCH OFFICE</th>
+                                <th rowspan="2" class="bg-brimo-rek align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER" style="min-width:150px;">BRANCH OFFICE</th>
                                 <th colspan="8" class="bg-brimo-rek">User Reg BRImo (by Rekening)</th>
                             </tr>
                             <tr class="bg-header-sub">
@@ -196,13 +271,12 @@
                 </div>
             </div>
 
-            <!-- 📊 TAB 3: UREG FINANSIAL DETAIL -->
             <div class="tab-pane fade" id="tab-ureg-fin" role="tabpanel">
                 <div class="table-container">
                     <table class="table table-hover table-report m-0">
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
-                                <th rowspan="2" class="bg-brimo-fin align-middle" style="min-width:150px;">BRANCH OFFICE</th>
+                                <th rowspan="2" class="bg-brimo-fin align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER" style="min-width:150px;">BRANCH OFFICE</th>
                                 <th colspan="8" class="bg-brimo-fin">User Rek Financial BRImo</th>
                             </tr>
                             <tr class="bg-header-sub">
@@ -244,7 +318,6 @@
                     </table>
                 </div>
             </div>
-
         </div>
     </div>
 </div>
@@ -254,67 +327,154 @@
 @section('scripts')
 <script>
 document.addEventListener('DOMContentLoaded', function () {
+    const branchUkerMap = @json($branchUkerMap ?? []);
 
-    // 🚀 FORMAT FUNCTIONS
-    function formatNum(num, decimals = 0) { 
+    function getSelectedBranches() {
+        return $('.filter-branch-checkbox:checked').map(function () {
+            return $(this).val();
+        }).get();
+    }
+
+    function getSelectedUkers() {
+        return $('.filter-uker-checkbox:checked').map(function () {
+            return $(this).val();
+        }).get();
+    }
+
+    function getAvailableUkers() {
+        const selectedBranches = getSelectedBranches();
+        if (!selectedBranches.length) {
+            return [];
+        }
+
+        const ukerSet = new Set();
+        selectedBranches.forEach(function (branch) {
+            (branchUkerMap[branch] || []).forEach(function (uker) {
+                if (uker) {
+                    ukerSet.add(uker);
+                }
+            });
+        });
+
+        return Array.from(ukerSet).sort(function (a, b) {
+            return a.localeCompare(b, 'id');
+        });
+    }
+
+    function updateBranchLabel() {
+        const selectedBranches = getSelectedBranches();
+        $('#filter_branch_office_label').text(selectedBranches.length ? selectedBranches.join(', ') : 'Area 6 - All');
+    }
+
+    function updateUkerLabel() {
+        const selectedUkers = getSelectedUkers();
+        $('#filter_nama_uker_label').text(selectedUkers.length ? selectedUkers.join(', ') : 'ALL UKER');
+    }
+
+    function closeBranchDropdown() {
+        $('#filterBranchMenu').removeClass('show');
+        $('#filterBranchDropdown').attr('aria-expanded', 'false');
+    }
+
+    function closeUkerDropdown() {
+        $('#filterUkerMenu').removeClass('show');
+        $('#filterUkerDropdown').attr('aria-expanded', 'false');
+    }
+
+    function syncNamaUkerOptions() {
+        const availableUkers = getAvailableUkers();
+        const selectedUkers = getSelectedUkers();
+        const $ukerMenu = $('#filterUkerMenu');
+        $ukerMenu.empty();
+
+        availableUkers.forEach(function (uker) {
+            const slug = uker.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+            const escapedUker = $('<div>').text(uker).html();
+            const isChecked = selectedUkers.includes(uker) ? 'checked' : '';
+            $ukerMenu.append(`
+                <label class="dropdown-item" for="uker_${slug}">
+                    <div class="form-check">
+                        <input class="form-check-input filter-uker-checkbox" type="checkbox" value="${escapedUker}" id="uker_${slug}" ${isChecked}>
+                        <span class="form-check-label">${escapedUker}</span>
+                    </div>
+                </label>
+            `);
+        });
+
+        const shouldDisable = availableUkers.length === 0;
+        if (shouldDisable) {
+            closeUkerDropdown();
+        }
+
+        $('#filterUkerDropdown').prop('disabled', shouldDisable).attr('aria-expanded', 'false');
+        updateUkerLabel();
+    }
+
+    function updateGroupLabel(label) {
+        const normalizedLabel = (label || 'BRANCH OFFICE').toUpperCase();
+        $('.col-group-label').each(function () {
+            const $label = $(this);
+            const nextText = normalizedLabel === 'UKER'
+                ? ($label.data('filtered-label') || 'UKER')
+                : ($label.data('default-label') || 'BRANCH OFFICE');
+            $label.text(nextText);
+        });
+    }
+
+    function formatNum(num, decimals = 0) {
         if (num === null || num === undefined || isNaN(parseFloat(num))) return '-';
         let val = parseFloat(num);
-        return new Intl.NumberFormat('id-ID', { minimumFractionDigits: decimals, maximumFractionDigits: decimals }).format(val); 
+        return new Intl.NumberFormat('id-ID', { minimumFractionDigits: decimals, maximumFractionDigits: decimals }).format(val);
     }
     
     function formatGrowth(val, isPct = false) {
         if (val === null || val === undefined || isNaN(parseFloat(val))) return '-';
         let num = parseFloat(val);
-        
         let text = isPct ? formatNum(Math.abs(num), 1) + '%' : formatNum(Math.abs(num), 0);
-        
         if (num > 0) return `${text} <i class="fas fa-arrow-up text-success"></i>`;
         if (num < 0) return `${text} <i class="fas fa-arrow-down text-danger"></i>`;
         return `${text} -`;
     }
 
-    // 🚀 LOAD DATA FUNCTION
     window.loadData = function() {
         $('#loadingIndicator').fadeIn('fast');
         
         let payload = {
             posisi: $('#filter_posisi').val(),
-            id_report: 4,
-            _token: '{{ csrf_token() }}' 
+            branch_office: getSelectedBranches(),
+            nama_uker: getSelectedUkers(),
+            _token: '{{ csrf_token() }}'
         };
 
         $.ajax({
-            url: "{{ route('report.data.brimo') }}", 
-
+            url: "{{ route('report.data.brimo') }}",
             type: "POST",
             data: payload,
             success: function(res) {
-                if(res.status === 'success') {
-                    
+                if (res.status === 'success') {
+                    updateGroupLabel(res.group_label);
+
                     let selectedDate = new Date($('#filter_posisi').val());
                     let monthList = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
                     let d = selectedDate.getDate();
                     let m = monthList[selectedDate.getMonth()];
                     let y = selectedDate.getFullYear().toString().substr(-2);
                     
-                    let autoDateLabel = d + ' ' + m + " " + y; 
-                    let autoMonthLabel = m + "'" + y;          
+                    let autoDateLabel = d + ' ' + m + " " + y;
+                    let autoMonthLabel = m + "'" + y;
                     
-                    let currDateLabel = (res.labels && res.labels.curr_date) ? res.labels.curr_date : autoDateLabel;   
-                    let currMonthLabel = (res.labels && res.labels.curr_month) ? res.labels.curr_month : autoMonthLabel; 
-                    
+                    let currDateLabel = (res.labels && res.labels.curr_date) ? res.labels.curr_date : autoDateLabel;
+                    let currMonthLabel = (res.labels && res.labels.curr_month) ? res.labels.curr_month : autoMonthLabel;
                     let yoyLabel = (res.labels && res.labels.yoy) ? res.labels.yoy : '-';
                     let decLabel = (res.labels && res.labels.ytd) ? res.labels.ytd : '-';
                     let prevLabel = (res.labels && res.labels.mtd) ? res.labels.mtd : '-';
 
-                    // Update Semua Label Header
                     $('.lbl-curr-th').text(currDateLabel);
-                    $('.lbl-rka-th').text('RKA ' + currMonthLabel); 
+                    $('.lbl-rka-th').text('RKA ' + currMonthLabel);
                     $('.lbl-yoy-th').text(yoyLabel);
                     $('.lbl-dec-th').text(decLabel);
                     $('.lbl-prev-th').text(prevLabel);
                     
-                    // 🔥 PERBAIKAN: Persiapkan HTML untuk KETIGA TAB sekaligus
                     let htmlBrimo = '';
                     let htmlUregRek = '';
                     let htmlUregFin = '';
@@ -324,24 +484,22 @@ document.addEventListener('DOMContentLoaded', function () {
                         let rek = row.ureg_rekening || {};
                         let fin = row.ureg_finansial || {};
 
-                        // RENDER HTML TAB 1
                         htmlBrimo += `<tr>
                             <td class="text-left font-weight-bold">${row.branch || '-'}</td>
                             <td>${formatNum(rek.curr)}</td>
-                            <td>${formatGrowth(rek.mtd)}</td> 
-                            <td>${formatGrowth(rek.ytd)}</td> 
+                            <td>${formatGrowth(rek.mtd)}</td>
+                            <td>${formatGrowth(rek.ytd)}</td>
                             <td>${formatGrowth(rek.yoy)}</td>
                             <td>${formatGrowth(rek.yoy_pct, true)}</td>
                             <td style="background-color: #f6f9fc;">${formatNum(fin.curr)}</td>
-                            <td>${formatGrowth(fin.mtd)}</td> 
-                            <td>${formatGrowth(fin.ytd)}</td> 
+                            <td>${formatGrowth(fin.mtd)}</td>
+                            <td>${formatGrowth(fin.ytd)}</td>
                             <td>${formatGrowth(fin.yoy)}</td>
                             <td>${formatGrowth(fin.yoy_pct, true)}</td>
                             <td class="text-center">-</td> <td class="text-center">-</td> <td class="text-center">-</td> <td class="text-center">-</td> <td class="text-center">-</td>
                             <td class="text-center">-</td> <td class="text-center">-</td> <td class="text-center">-</td> <td class="text-center">-</td> <td class="text-center">-</td>
                         </tr>`;
 
-                        // RENDER HTML TAB 2
                         htmlUregRek += `<tr>
                             <td class="text-left font-weight-bold">${row.branch || '-'}</td>
                             <td>${formatNum(rek.yoy_prev)}</td>
@@ -354,7 +512,6 @@ document.addEventListener('DOMContentLoaded', function () {
                             <td>${formatGrowth(rek.yoy)}</td>
                         </tr>`;
 
-                        // RENDER HTML TAB 3
                         htmlUregFin += `<tr>
                             <td class="text-left font-weight-bold">${row.branch || '-'}</td>
                             <td>${formatNum(fin.yoy_prev)}</td>
@@ -372,26 +529,24 @@ document.addEventListener('DOMContentLoaded', function () {
                     let t_rek = totalData.ureg_rekening || {};
                     let t_fin = totalData.ureg_finansial || {};
 
-                    // TOTAL TAB 1
                     htmlBrimo += `<tr class="row-total">
                         <td class="text-left">${totalData.branch || 'TOTAL AREA 6'}</td>
-                        <td>${formatNum(t_rek.curr)}</td> 
-                        <td>${formatGrowth(t_rek.mtd)}</td> 
-                        <td>${formatGrowth(t_rek.ytd)}</td> 
+                        <td>${formatNum(t_rek.curr)}</td>
+                        <td>${formatGrowth(t_rek.mtd)}</td>
+                        <td>${formatGrowth(t_rek.ytd)}</td>
                         <td>${formatGrowth(t_rek.yoy)}</td>
                         <td>${formatGrowth(t_rek.yoy_pct, true)}</td>
-                        <td style="background-color: #e2e8f0;">${formatNum(t_fin.curr)}</td> 
-                        <td>${formatGrowth(t_fin.mtd)}</td> 
-                        <td>${formatGrowth(t_fin.ytd)}</td> 
+                        <td style="background-color: #e2e8f0;">${formatNum(t_fin.curr)}</td>
+                        <td>${formatGrowth(t_fin.mtd)}</td>
+                        <td>${formatGrowth(t_fin.ytd)}</td>
                         <td>${formatGrowth(t_fin.yoy)}</td>
                         <td>${formatGrowth(t_fin.yoy_pct, true)}</td>
                         <td class="text-center">-</td><td class="text-center">-</td><td class="text-center">-</td><td class="text-center">-</td><td class="text-center">-</td>
                         <td class="text-center">-</td><td class="text-center">-</td><td class="text-center">-</td><td class="text-center">-</td><td class="text-center">-</td>
                     </tr>`;
 
-                    // TOTAL TAB 2
                     htmlUregRek += `<tr class="row-total-blue">
-                        <td class="text-left">TOTAL AREA 6</td>
+                        <td class="text-left">${totalData.branch || 'TOTAL AREA 6'}</td>
                         <td>${formatNum(t_rek.yoy_prev)}</td>
                         <td>${formatNum(t_rek.dec)}</td>
                         <td>${formatNum(t_rek.prev)}</td>
@@ -402,9 +557,8 @@ document.addEventListener('DOMContentLoaded', function () {
                         <td>${formatGrowth(t_rek.yoy)}</td>
                     </tr>`;
 
-                    // TOTAL TAB 3
                     htmlUregFin += `<tr class="row-total-blue">
-                        <td class="text-left">TOTAL AREA 6</td>
+                        <td class="text-left">${totalData.branch || 'TOTAL AREA 6'}</td>
                         <td>${formatNum(t_fin.yoy_prev)}</td>
                         <td>${formatNum(t_fin.dec)}</td>
                         <td>${formatNum(t_fin.prev)}</td>
@@ -415,25 +569,58 @@ document.addEventListener('DOMContentLoaded', function () {
                         <td>${formatGrowth(t_fin.yoy)}</td>
                     </tr>`;
 
-                    // 🔥 TEMPELKAN KE KETIGA TAB SECARA BERSAMAAN
                     $('#tbody-brimo').html(htmlBrimo);
                     $('#tbody-ureg-rek').html(htmlUregRek);
                     $('#tbody-ureg-fin').html(htmlUregFin);
                 }
                 $('#loadingIndicator').fadeOut('fast');
             },
-            error: function(xhr, status, error) {
+            error: function(xhr) {
                 $('#loadingIndicator').fadeOut('fast');
                 console.error(xhr.responseText);
                 alert('Gagal mengambil data. Cek console log.');
             }
         });
-    }
+    };
 
-    // Hanya memuat ulang data bila form tanggal dirubah
     $('.filter-trigger').on('change', function() { loadData(); });
-    
-    // Auto Load saat halaman pertama dibuka
+    $('#filterBranchDropdown').on('click', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        $('#filterBranchMenu').toggleClass('show');
+        closeUkerDropdown();
+        $(this).attr('aria-expanded', $('#filterBranchMenu').hasClass('show') ? 'true' : 'false');
+    });
+    $('#filterUkerDropdown').on('click', function (e) {
+        if ($(this).prop('disabled')) {
+            return;
+        }
+        e.preventDefault();
+        e.stopPropagation();
+        $('#filterUkerMenu').toggleClass('show');
+        closeBranchDropdown();
+        $(this).attr('aria-expanded', $('#filterUkerMenu').hasClass('show') ? 'true' : 'false');
+    });
+    $('.filter-branch-checkbox').on('change', function () {
+        updateBranchLabel();
+        syncNamaUkerOptions();
+        loadData();
+    });
+    $(document).on('change', '.filter-uker-checkbox', function () {
+        updateUkerLabel();
+        loadData();
+    });
+    $(document).on('click', function (e) {
+        if (!$(e.target).closest('.branch-filter-dropdown').length) {
+            closeBranchDropdown();
+        }
+        if (!$(e.target).closest('.uker-filter-dropdown').length) {
+            closeUkerDropdown();
+        }
+    });
+
+    syncNamaUkerOptions();
+    updateBranchLabel();
     loadData();
 });
 </script>

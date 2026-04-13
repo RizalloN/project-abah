@@ -115,39 +115,38 @@ class DataReportController extends Controller
     public function performanceEdc()
     {
         $branches = ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'];
-        $id_report = 1; 
+        ['branchOptions' => $branchOptions, 'branchUkerMap' => $branchUkerMap] = $this->buildBranchUkerFilterOptions(
+            'jumlah_merchant_detail',
+            'NAMA_KANCA',
+            'NAMA_UKER'
+        );
 
-        return view('report.performance-edc', compact('branches', 'id_report'));
+        return view('report.performance-edc', compact('branches', 'branchOptions', 'branchUkerMap'));
     }
 
     // 🔥 2. VIEW PERFORMANCE QRIS
     public function performanceQris()
     {
         $branches = ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'];
-        $id_report = 2; 
+        ['branchOptions' => $branchOptions, 'branchUkerMap' => $branchUkerMap] = $this->buildBranchUkerFilterOptions(
+            'merchant_qris',
+            'NAMA_KCI',
+            'NAMA_BRANCH'
+        );
 
-        return view('report.performance-qris', compact('branches', 'id_report'));
+        return view('report.performance-qris', compact('branches', 'branchOptions', 'branchUkerMap'));
     }
 
     // 🔥 3. VIEW PERFORMANCE BRILINK
-public function performanceBrilink()
+    public function performanceBrilink()
     {
         $branches = ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'];
-        $id_report = 3; 
+        ['branchOptions' => $branchOptions, 'branchUkerMap' => $branchUkerMap] = $this->buildBrilinkFilterOptions();
 
-        return view('report.performance-brilink', compact('branches', 'id_report'));
+        return view('report.performance-brilink', compact('branches', 'branchOptions', 'branchUkerMap'));
     }
 
     // 🔥 5. VIEW PERFORMANCE BRIMO
-    public function performanceBrimo()
-    {
-        $branches = ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'];
-        $id_report = 4; 
-
-        return view('report.performance-brimo', compact('branches', 'id_report'));
-    }
-
-
     // 🔥 4. MESIN PENGOLAH DATA UTAMA (AJAX API)
     public function programReferralPartnerPerusahaanAnak(Request $request)
     {
@@ -433,12 +432,65 @@ public function performanceBrilink()
         ]);
     }
 
+    private function buildBranchUkerFilterOptions(string $table, string $branchColumn, string $ukerColumn): array
+    {
+        $branchUkerRows = DB::table($table)
+            ->selectRaw("TRIM($branchColumn) as branch_name")
+            ->selectRaw("TRIM($ukerColumn) as uker_name")
+            ->whereNotNull($branchColumn)
+            ->whereNotNull($ukerColumn)
+            ->whereRaw("TRIM($branchColumn) <> ''")
+            ->whereRaw("TRIM($ukerColumn) <> ''")
+            ->distinct()
+            ->orderBy('branch_name')
+            ->orderBy('uker_name')
+            ->get();
+
+        return [
+            'branchOptions' => $branchUkerRows
+                ->pluck('branch_name')
+                ->filter()
+                ->unique()
+                ->values(),
+            'branchUkerMap' => $branchUkerRows
+                ->groupBy('branch_name')
+                ->map(function ($rows) {
+                    return $rows->pluck('uker_name')
+                        ->filter()
+                        ->unique()
+                        ->values()
+                        ->all();
+                }),
+        ];
+    }
+
     public function fetchData(Request $request)
     {
-        $id_report = $request->input('id_report', 1);
-        $branches = $request->input('branches', ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO']); 
-        $posisi = $request->input('posisi'); 
-        $tab = $request->input('tab', 'edc'); 
+        $branches = $request->input('branches', ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO']);
+        $selectedBranches = collect((array) $request->input('branch_office', []))
+            ->map(fn ($branch) => trim((string) $branch))
+            ->filter()
+            ->values()
+            ->all();
+        if (!empty($selectedBranches)) {
+            $branches = $selectedBranches;
+        }
+        $isBranchFiltered = !empty($selectedBranches);
+        $groupColumn = $isBranchFiltered ? 'NAMA_UKER' : 'NAMA_KANCA';
+        $groupLabel = $isBranchFiltered ? 'UKER' : 'BRANCH OFFICE';
+        $selectedUkers = collect((array) $request->input('nama_uker', []))
+            ->map(fn ($uker) => trim((string) $uker))
+            ->filter()
+            ->reject(fn ($uker) => strtoupper($uker) === 'ALL UKER')
+            ->values()
+            ->all();
+        $upperBranches = array_map('strtoupper', $branches);
+        $upperSelectedUkers = array_map('strtoupper', $selectedUkers);
+        $totalBranchLabel = !empty($selectedBranches)
+            ? 'TOTAL ' . strtoupper(implode(', ', $selectedBranches))
+            : 'TOTAL AREA 6';
+        $posisi = $request->input('posisi');
+        $tab = $request->input('tab', 'edc');
 
         if (!$posisi) $posisi = date('Y-m-d');
 
@@ -463,7 +515,7 @@ public function performanceBrilink()
         if ($tab === 'edc') {
             
             $q = DB::table('jumlah_merchant_detail')
-                ->select(DB::raw('UPPER(NAMA_KANCA) as branch'))
+                ->select(DB::raw("UPPER($groupColumn) as branch"))
                 ->selectRaw("COUNT(DISTINCT CASE WHEN DATE(POSISI)=? THEN MID END) as mid_curr", [$dateCurr])
                 ->selectRaw("COUNT(DISTINCT CASE WHEN DATE(POSISI)=? THEN MID END) as mid_mtd", [$dateMtD])
                 ->selectRaw("COUNT(DISTINCT CASE WHEN DATE(POSISI)=? THEN MID END) as mid_ytd", [$dateYtD])
@@ -478,7 +530,14 @@ public function performanceBrilink()
                 ->selectRaw("SUM(CASE WHEN DATE(POSISI)=? THEN SALES_VOLUME ELSE 0 END) as sv_mtd", [$dateMtD])
                 ->selectRaw("SUM(CASE WHEN DATE(POSISI)=? THEN SALES_VOLUME ELSE 0 END) as sv_yoy", [$dateYoY]);
 
-            $q->whereIn(DB::raw('UPPER(NAMA_KANCA)'), array_map('strtoupper', $branches));
+            $q->whereIn(DB::raw('UPPER(NAMA_KANCA)'), $upperBranches);
+            if ($isBranchFiltered) {
+                $q->whereNotNull('NAMA_UKER')
+                    ->whereRaw("TRIM(NAMA_UKER) <> ''");
+            }
+            if (!empty($selectedUkers)) {
+                $q->whereIn(DB::raw('UPPER(TRIM(NAMA_UKER))'), $upperSelectedUkers);
+            }
             $rows = $q->groupBy('branch')->get();
 
             $data = [];
@@ -514,9 +573,9 @@ public function performanceBrilink()
             }
 
             return response()->json([
-                'status'=>'success', 'labels'=>$labels, 'data'=>$data,
+                'status'=>'success', 'labels'=>$labels, 'group_label' => $groupLabel, 'data'=>$data,
                 'total'=>[
-                    'branch'=>'TOTAL AREA 6',
+                    'branch'=>$totalBranchLabel,
                     'mid'=>[
                         'curr'=>$total['mid_curr'], 'mtd'=>$total['mid_mtd'], 'ytd'=>$total['mid_ytd'], 'yoy'=>$total['mid_yoy'],
                         'mtd_val'=>$total['mid_curr']-$total['mid_mtd'], 'mtd_pct'=>$total['mid_mtd']>0?(($total['mid_curr']-$total['mid_mtd'])/$total['mid_mtd'])*100:0,
@@ -541,7 +600,7 @@ public function performanceBrilink()
         // =================================================================================
         elseif ($tab === 'mid_tid') {
             $query = DB::table('jumlah_merchant_detail')
-                ->select(DB::raw('UPPER(NAMA_KANCA) as branch'))
+                ->select(DB::raw("UPPER($groupColumn) as branch"))
                 ->selectRaw("COUNT(DISTINCT CASE WHEN DATE(POSISI) = ? THEN MID END) as mid_curr", [$dateCurr])
                 ->selectRaw("COUNT(DISTINCT CASE WHEN DATE(POSISI) = ? THEN MID END) as mid_mtd", [$dateMtD])
                 ->selectRaw("COUNT(DISTINCT CASE WHEN DATE(POSISI) = ? THEN MID END) as mid_ytd", [$dateYtD])
@@ -551,7 +610,14 @@ public function performanceBrilink()
                 ->selectRaw("COUNT(CASE WHEN DATE(POSISI) = ? THEN TID END) as tid_ytd", [$dateYtD])
                 ->selectRaw("COUNT(CASE WHEN DATE(POSISI) = ? THEN TID END) as tid_yoy", [$dateYoY]);
 
-            $query->whereIn(DB::raw('UPPER(NAMA_KANCA)'), array_map('strtoupper', $branches));
+            $query->whereIn(DB::raw('UPPER(NAMA_KANCA)'), $upperBranches);
+            if ($isBranchFiltered) {
+                $query->whereNotNull('NAMA_UKER')
+                    ->whereRaw("TRIM(NAMA_UKER) <> ''");
+            }
+            if (!empty($selectedUkers)) {
+                $query->whereIn(DB::raw('UPPER(TRIM(NAMA_UKER))'), $upperSelectedUkers);
+            }
             $rawData = $query->groupBy('branch')->get();
 
             $data = [];
@@ -587,7 +653,7 @@ public function performanceBrilink()
             $t_tid_mtd_val = $totals['tid_curr'] - $totals['tid_mtd']; $t_tid_mtd_pct = $totals['tid_mtd'] > 0 ? ($t_tid_mtd_val / $totals['tid_mtd']) * 100 : 0;
 
             $grandTotal = [
-                'branch' => 'TOTAL AREA 6',
+                'branch' => $totalBranchLabel,
                 'mid' => [
                     'yoy' => $totals['mid_yoy'], 'ytd' => $totals['mid_ytd'], 'mtd' => $totals['mid_mtd'], 'curr' => $totals['mid_curr'],
                     'mtd_val' => $t_mid_mtd_val, 'mtd_pct' => round($t_mid_mtd_pct, 1), 'ytd_val' => $totals['mid_curr'] - $totals['mid_ytd'], 'yoy_val' => $totals['mid_curr'] - $totals['mid_yoy']
@@ -599,7 +665,7 @@ public function performanceBrilink()
                 ]
             ];
 
-            return response()->json(['status' => 'success', 'labels' => $labels, 'data' => $data, 'total' => $grandTotal]);
+            return response()->json(['status' => 'success', 'labels' => $labels, 'group_label' => $groupLabel, 'data' => $data, 'total' => $grandTotal]);
         }
 
         // =================================================================================
@@ -607,7 +673,7 @@ public function performanceBrilink()
         // =================================================================================
         elseif ($tab === 'prod_mom') {
             $q = DB::table('jumlah_merchant_detail')
-                ->select(DB::raw('UPPER(NAMA_KANCA) as branch'))
+                ->select(DB::raw("UPPER($groupColumn) as branch"))
                 ->selectRaw("COUNT(DISTINCT CASE WHEN DATE(POSISI) = ? AND TIERING_SALES_VOLUME = '0' THEN MID END) as sv0_curr", [$dateCurr])
                 ->selectRaw("COUNT(DISTINCT CASE WHEN DATE(POSISI) = ? AND TIERING_SALES_VOLUME = '0' THEN MID END) as sv0_mtd", [$datePrevMoM])
                 ->selectRaw("COUNT(DISTINCT CASE WHEN DATE(POSISI) = ? AND TIERING_SALES_VOLUME IN ('1 - <1jt', '1jt - <15jt') THEN MID END) as sv1_15_curr", [$dateCurr])
@@ -619,7 +685,14 @@ public function performanceBrilink()
                 ->selectRaw("SUM(CASE WHEN DATE(POSISI) = ? THEN CAST(REPLACE(SALES_VOLUME, ',', '') AS DECIMAL(20,2)) ELSE 0 END) as sv_vol_curr", [$dateCurr])
                 ->selectRaw("SUM(CASE WHEN DATE(POSISI) = ? THEN CAST(REPLACE(SALES_VOLUME, ',', '') AS DECIMAL(20,2)) ELSE 0 END) as sv_vol_mtd", [$datePrevMoM]);
 
-            $q->whereIn(DB::raw('UPPER(NAMA_KANCA)'), array_map('strtoupper', $branches));
+            $q->whereIn(DB::raw('UPPER(NAMA_KANCA)'), $upperBranches);
+            if ($isBranchFiltered) {
+                $q->whereNotNull('NAMA_UKER')
+                    ->whereRaw("TRIM(NAMA_UKER) <> ''");
+            }
+            if (!empty($selectedUkers)) {
+                $q->whereIn(DB::raw('UPPER(TRIM(NAMA_UKER))'), $upperSelectedUkers);
+            }
             $rawData = $q->groupBy('branch')->get();
 
             $data = [];
@@ -660,7 +733,7 @@ public function performanceBrilink()
             $t_vol_mom = $totals['sv_vol_curr'] - $totals['sv_vol_mtd']; $t_vol_pct = $totals['sv_vol_mtd'] > 0 ? ($t_vol_mom / $totals['sv_vol_mtd']) * 100 : 0;
 
             $grandTotal = [
-                'branch' => 'TOTAL AREA 6',
+                'branch' => $totalBranchLabel,
                 'sv0' => ['mtd' => $totals['sv0_mtd'], 'curr' => $totals['sv0_curr'], 'mom' => $t_sv0_mom, 'pct' => round($t_sv0_pct, 1)],
                 'sv1_15' => ['mtd' => $totals['sv1_15_mtd'], 'curr' => $totals['sv1_15_curr'], 'mom' => $t_sv1_mom, 'pct' => round($t_sv1_pct, 1)],
                 'prod' => ['mtd' => $totals['prod_mtd'], 'curr' => $totals['prod_curr'], 'mom' => $t_prod_mom, 'pct' => round($t_prod_pct, 1), 'rka' => 0, 'gap' => 0, 'penc' => 0],
@@ -668,25 +741,38 @@ public function performanceBrilink()
                 'sv_vol' => ['mtd' => round($totals['sv_vol_mtd'],2), 'curr' => round($totals['sv_vol_curr'],2), 'mom' => round($t_vol_mom,2), 'pct' => round($t_vol_pct, 1)]
             ];
 
-            return response()->json(['status' => 'success', 'labels' => $labels, 'data' => $data, 'total' => $grandTotal]);
+            return response()->json(['status' => 'success', 'labels' => $labels, 'group_label' => $groupLabel, 'data' => $data, 'total' => $grandTotal]);
         }
 
         // =================================================================================
         // LOGIKA TAB QRIS: FORMAT MATRIKS
         // =================================================================================
         elseif ($tab === 'qris') {
+            $isQrisBranchFiltered = !empty($selectedBranches);
+            $qrisGroupColumn = $isQrisBranchFiltered ? 'NAMA_BRANCH' : 'NAMA_KCI';
+            $qrisGroupLabel = $isQrisBranchFiltered ? 'UKER' : 'BRANCH OFFICE';
+            $qrisTotalLabel = !empty($selectedBranches)
+                ? 'TOTAL ' . strtoupper(implode(', ', $selectedBranches))
+                : 'TOTAL AREA 6';
             
             $q1 = DB::table('merchant_qris')
-                ->select(DB::raw('UPPER(NAMA_KCI) as branch'))
+                ->select(DB::raw("UPPER($qrisGroupColumn) as branch"))
                 ->selectRaw("SUM(CASE WHEN DATE(POSISI) = ? THEN NILAI ELSE 0 END) as jml_curr", [$dateCurr])
                 ->selectRaw("SUM(CASE WHEN DATE(POSISI) = ? THEN NILAI ELSE 0 END) as jml_mtd", [$dateMtD])
                 ->selectRaw("SUM(CASE WHEN DATE(POSISI) = ? THEN NILAI ELSE 0 END) as jml_ytd", [$dateYtD])
                 ->selectRaw("SUM(CASE WHEN DATE(POSISI) = ? THEN NILAI ELSE 0 END) as jml_yoy", [$dateYoY]);
-            $q1->whereIn(DB::raw('UPPER(NAMA_KCI)'), array_map('strtoupper', $branches));
+            $q1->whereIn(DB::raw('UPPER(NAMA_KCI)'), $upperBranches);
+            if ($isQrisBranchFiltered) {
+                $q1->whereNotNull('NAMA_BRANCH')
+                    ->whereRaw("TRIM(NAMA_BRANCH) <> ''");
+            }
+            if (!empty($selectedUkers)) {
+                $q1->whereIn(DB::raw('UPPER(TRIM(NAMA_BRANCH))'), $upperSelectedUkers);
+            }
             $dataQris = $q1->groupBy('branch')->get()->keyBy('branch');
 
             $q2 = DB::table('merchant_qris_volume')
-                ->select(DB::raw('UPPER(NAMA_KCI) as branch'))
+                ->select(DB::raw("UPPER($qrisGroupColumn) as branch"))
                 ->selectRaw("COUNT(CASE WHEN DATE(POSISI) = ? AND JENIS = 'AKUMULASI' AND MERCHANT_QRIS_VOLUME >= 50000 THEN 1 END) as prod_curr", [$dateCurr])
                 ->selectRaw("COUNT(CASE WHEN DATE(POSISI) = ? AND JENIS = 'AKUMULASI' AND MERCHANT_QRIS_VOLUME >= 50000 THEN 1 END) as prod_mtd", [$dateMtD])
                 ->selectRaw("COUNT(CASE WHEN DATE(POSISI) = ? AND JENIS = 'AKUMULASI' AND MERCHANT_QRIS_VOLUME >= 50000 THEN 1 END) as prod_ytd", [$dateYtD])
@@ -696,7 +782,14 @@ public function performanceBrilink()
                 ->selectRaw("SUM(CASE WHEN DATE(POSISI) = ? AND JENIS = 'AKUMULASI' THEN MERCHANT_QRIS_VOLUME ELSE 0 END) as vol_ytd", [$dateYtD])
                 ->selectRaw("SUM(CASE WHEN DATE(POSISI) = ? AND JENIS = 'AKUMULASI' THEN MERCHANT_QRIS_VOLUME ELSE 0 END) as vol_yoy", [$dateYoY]);
             
-            $q2->whereIn(DB::raw('UPPER(NAMA_KCI)'), array_map('strtoupper', $branches));
+            $q2->whereIn(DB::raw('UPPER(NAMA_KCI)'), $upperBranches);
+            if ($isQrisBranchFiltered) {
+                $q2->whereNotNull('NAMA_BRANCH')
+                    ->whereRaw("TRIM(NAMA_BRANCH) <> ''");
+            }
+            if (!empty($selectedUkers)) {
+                $q2->whereIn(DB::raw('UPPER(TRIM(NAMA_BRANCH))'), $upperSelectedUkers);
+            }
             $dataVol = $q2->groupBy('branch')->get()->keyBy('branch');
 
             $data = [];
@@ -706,7 +799,11 @@ public function performanceBrilink()
                 'vol_curr' => 0, 'vol_mtd' => 0, 'vol_ytd' => 0, 'vol_yoy' => 0
             ];
 
-            foreach ($branches as $branchRaw) {
+            $groupKeys = $isQrisBranchFiltered
+                ? $dataQris->keys()->merge($dataVol->keys())->unique()->values()->all()
+                : array_map('strtoupper', $branches);
+
+            foreach ($groupKeys as $branchRaw) {
                 $b = strtoupper($branchRaw);
                 $rowQ = $dataQris->get($b);
                 $rowV = $dataVol->get($b);
@@ -753,7 +850,7 @@ public function performanceBrilink()
             $t_vol_mtd_val = $totals['vol_curr'] - $totals['vol_mtd']; $t_vol_mtd_pct = $totals['vol_mtd'] > 0 ? ($t_vol_mtd_val / $totals['vol_mtd']) * 100 : 0;
 
             $grandTotal = [
-                'branch' => 'TOTAL AREA 6',
+                'branch' => $qrisTotalLabel,
                 'jml' => [
                     'curr' => $totals['jml_curr'], 'mtd_val' => $t_jml_mtd_val, 'mtd_pct' => round($t_jml_mtd_pct, 1),
                     'ytd_val' => $totals['jml_curr'] - $totals['jml_ytd'], 'yoy_val' => $totals['jml_curr'] - $totals['jml_yoy']
@@ -770,32 +867,54 @@ public function performanceBrilink()
                 ]
             ];
 
-            return response()->json(['status' => 'success', 'labels' => $labels, 'data' => $data, 'total' => $grandTotal]);
+            return response()->json(['status' => 'success', 'labels' => $labels, 'group_label' => $qrisGroupLabel, 'data' => $data, 'total' => $grandTotal]);
         }
 
         // =================================================================================
         // LOGIKA TAB QRIS MoM
         // =================================================================================
         elseif ($tab === 'qris_mom') {
+            $isQrisBranchFiltered = !empty($selectedBranches);
+            $qrisGroupColumn = $isQrisBranchFiltered ? 'NAMA_BRANCH' : 'NAMA_KCI';
+            $qrisGroupLabel = $isQrisBranchFiltered ? 'UKER' : 'BRANCH OFFICE';
+            $qrisTotalLabel = !empty($selectedBranches)
+                ? 'TOTAL ' . strtoupper(implode(', ', $selectedBranches))
+                : 'TOTAL AREA 6';
 
             $q1 = DB::table('merchant_qris')
-                ->select(DB::raw('UPPER(NAMA_KCI) as branch'))
+                ->select(DB::raw("UPPER($qrisGroupColumn) as branch"))
                 ->selectRaw("SUM(CASE WHEN DATE(POSISI) = ? THEN NILAI ELSE 0 END) as store_curr", [$dateCurr])
                 ->selectRaw("SUM(CASE WHEN DATE(POSISI) = ? THEN NILAI ELSE 0 END) as store_prev", [$datePrevMoM])
-                ->whereIn(DB::raw('UPPER(NAMA_KCI)'), array_map('strtoupper', $branches))
+                ->whereIn(DB::raw('UPPER(NAMA_KCI)'), $upperBranches);
+            if ($isQrisBranchFiltered) {
+                $q1->whereNotNull('NAMA_BRANCH')
+                    ->whereRaw("TRIM(NAMA_BRANCH) <> ''");
+            }
+            if (!empty($selectedUkers)) {
+                $q1->whereIn(DB::raw('UPPER(TRIM(NAMA_BRANCH))'), $upperSelectedUkers);
+            }
+            $q1 = $q1
                 ->groupBy('branch')
                 ->get()
                 ->keyBy('branch');
 
             $q2 = DB::table('merchant_qris_volume')
-                ->select(DB::raw('UPPER(NAMA_KCI) as branch'))
+                ->select(DB::raw("UPPER($qrisGroupColumn) as branch"))
                 ->selectRaw("COUNT(CASE WHEN DATE(POSISI)=? AND JENIS='AKUMULASI' AND MERCHANT_QRIS_VOLUME=0 THEN 1 END) as sv0_curr", [$dateCurr])
                 ->selectRaw("COUNT(CASE WHEN DATE(POSISI)=? AND JENIS='AKUMULASI' AND MERCHANT_QRIS_VOLUME=0 THEN 1 END) as sv0_prev", [$datePrevMoM])
                 ->selectRaw("COUNT(CASE WHEN DATE(POSISI)=? AND JENIS='AKUMULASI' AND MERCHANT_QRIS_VOLUME>=50000 THEN 1 END) as prod_curr", [$dateCurr])
                 ->selectRaw("COUNT(CASE WHEN DATE(POSISI)=? AND JENIS='AKUMULASI' AND MERCHANT_QRIS_VOLUME>=50000 THEN 1 END) as prod_prev", [$datePrevMoM])
                 ->selectRaw("SUM(CASE WHEN DATE(POSISI)=? AND JENIS='AKUMULASI' THEN MERCHANT_QRIS_VOLUME ELSE 0 END) as vol_curr", [$dateCurr])
                 ->selectRaw("SUM(CASE WHEN DATE(POSISI)=? AND JENIS='AKUMULASI' THEN MERCHANT_QRIS_VOLUME ELSE 0 END) as vol_prev", [$datePrevMoM])
-                ->whereIn(DB::raw('UPPER(NAMA_KCI)'), array_map('strtoupper', $branches))
+                ->whereIn(DB::raw('UPPER(NAMA_KCI)'), $upperBranches);
+            if ($isQrisBranchFiltered) {
+                $q2->whereNotNull('NAMA_BRANCH')
+                    ->whereRaw("TRIM(NAMA_BRANCH) <> ''");
+            }
+            if (!empty($selectedUkers)) {
+                $q2->whereIn(DB::raw('UPPER(TRIM(NAMA_BRANCH))'), $upperSelectedUkers);
+            }
+            $q2 = $q2
                 ->groupBy('branch')
                 ->get()
                 ->keyBy('branch');
@@ -809,7 +928,11 @@ public function performanceBrilink()
                 'vol_curr' => 0, 'vol_prev' => 0
             ];
 
-            foreach ($branches as $branchRaw) {
+            $groupKeys = $isQrisBranchFiltered
+                ? $q1->keys()->merge($q2->keys())->unique()->values()->all()
+                : array_map('strtoupper', $branches);
+
+            foreach ($groupKeys as $branchRaw) {
                 $b = strtoupper($branchRaw);
 
                 $rowStore = $q1->get($b);
@@ -875,7 +998,7 @@ public function performanceBrilink()
             $t_vol_pct = $totals['vol_prev'] > 0 ? ($t_vol_mom / $totals['vol_prev']) * 100 : 0;
 
             $grandTotal = [
-                'branch' => 'TOTAL AREA 6',
+                'branch' => $qrisTotalLabel,
                 'sv0' => [
                     'prev' => $totals['sv0_prev'], 'curr' => $totals['sv0_curr'], 'mom' => $t_sv0_mom, 'pct' => round($t_sv0_pct, 1)
                 ],
@@ -894,6 +1017,7 @@ public function performanceBrilink()
             return response()->json([
                 'status' => 'success',
                 'labels' => $labels,
+                'group_label' => $qrisGroupLabel,
                 'data' => $data,
                 'total' => $grandTotal
             ]);
@@ -938,6 +1062,16 @@ public function performanceBrilink()
                 'casa' => ['curr' => 0, 'mtd' => 0, 'ytd' => 0, 'yoy' => 0]
             ];
 
+            $isBranchFiltered = !empty($selectedBranches);
+            $groupLabel = $isBranchFiltered ? 'UKER' : 'BRANCH OFFICE';
+            $brilinkFilterOptions = $this->buildBrilinkFilterOptions();
+            $brilinkBranchUkerMap = $brilinkFilterOptions['branchUkerMap'] ?? collect();
+            $displayItems = !empty($selectedUkers)
+                ? $selectedUkers
+                : ($isBranchFiltered ? $this->getBrilinkUkersForBranches($branches, $brilinkBranchUkerMap) : $branches);
+            $displayColumn = $isBranchFiltered ? 'uker' : 'cabang';
+            $casaDisplayColumn = $isBranchFiltered ? 'brdesc' : 'mbdesc';
+
             $selectedCasaDate = $current->copy()->endOfMonth();
             $latestCasaWeb = DB::table('casa_brilink_web')
                 ->whereDate('periode', '<=', $selectedCasaDate->toDateString())
@@ -958,22 +1092,28 @@ public function performanceBrilink()
             $branchAliasMap = $this->buildBranchAliasMap($branches);
             $branchLookupKeys = array_values(array_unique(array_merge(...array_values($branchAliasMap))));
 
-            $fetchCasaByPeriod = function (Carbon $period) use ($branchLookupKeys, $branchAliasMap) {
+            $fetchCasaByPeriod = function (Carbon $period) use ($branchLookupKeys, $branchAliasMap, $isBranchFiltered, $selectedUkers, $casaDisplayColumn) {
 
                 $webRows = DB::table('casa_brilink_web')
-                    ->selectRaw('UPPER(TRIM(mbdesc)) as branch')
+                    ->selectRaw("UPPER(TRIM($casaDisplayColumn)) as branch")
                     ->selectRaw('SUM(COALESCE(jml_nominal_casa, 0)) as total_nominal')
                     ->whereDate('periode', $period->toDateString())
                     ->whereIn(DB::raw('UPPER(TRIM(mbdesc))'), $branchLookupKeys)
-                    ->groupBy(DB::raw('UPPER(TRIM(mbdesc))'))
+                    ->when($isBranchFiltered && !empty($selectedUkers), function ($query) use ($selectedUkers, $casaDisplayColumn) {
+                        $query->whereIn(DB::raw("UPPER(TRIM($casaDisplayColumn))"), $selectedUkers);
+                    })
+                    ->groupBy(DB::raw("UPPER(TRIM($casaDisplayColumn))"))
                     ->get();
 
                 $edcRows = DB::table('casa_brilink_edc')
-                    ->selectRaw('UPPER(TRIM(mbdesc)) as branch')
+                    ->selectRaw("UPPER(TRIM($casaDisplayColumn)) as branch")
                     ->selectRaw('SUM(COALESCE(jml_nominal_casa, 0)) as total_nominal')
                     ->whereDate('periode', $period->toDateString())
                     ->whereIn(DB::raw('UPPER(TRIM(mbdesc))'), $branchLookupKeys)
-                    ->groupBy(DB::raw('UPPER(TRIM(mbdesc))'))
+                    ->when($isBranchFiltered && !empty($selectedUkers), function ($query) use ($selectedUkers, $casaDisplayColumn) {
+                        $query->whereIn(DB::raw("UPPER(TRIM($casaDisplayColumn))"), $selectedUkers);
+                    })
+                    ->groupBy(DB::raw("UPPER(TRIM($casaDisplayColumn))"))
                     ->get();
 
                 $merged = [];
@@ -998,8 +1138,8 @@ public function performanceBrilink()
             $casaYtdMap = $fetchCasaByPeriod($casaYtdDate);
             $casaYoyMap = $fetchCasaByPeriod($casaYoyDate);
             $brilinkRows = DB::table('brilink_web_laporan_summary_transaksi_brilink_web')
-                ->selectRaw('UPPER(TRIM(cabang)) as branch')
-                ->select('periode')
+                ->selectRaw("UPPER(TRIM($displayColumn)) as branch")
+                ->addSelect('periode')
                 ->selectRaw('COUNT(*) as agen')
                 ->selectRaw('SUM(CASE WHEN COALESCE(total_fee, 0) >= 750000 THEN 1 ELSE 0 END) as juragan')
                 ->selectRaw('SUM(CASE WHEN COALESCE(total_fee, 0) >= 150000 THEN 1 ELSE 0 END) as bep')
@@ -1007,7 +1147,10 @@ public function performanceBrilink()
                 ->selectRaw('COALESCE(SUM(COALESCE(total_nominal, 0)), 0) as volume')
                 ->whereIn('periode', array_values(array_unique([$periodeCurr, $periodePrev, $periodeYoY, $periodeYtD])))
                 ->whereIn(DB::raw('UPPER(TRIM(cabang))'), $branchLookupKeys)
-                ->groupBy('periode', DB::raw('UPPER(TRIM(cabang))'))
+                ->when($isBranchFiltered && !empty($selectedUkers), function ($query) use ($selectedUkers, $displayColumn) {
+                    $query->whereIn(DB::raw("UPPER(TRIM($displayColumn))"), $selectedUkers);
+                })
+                ->groupBy('periode', DB::raw("UPPER(TRIM($displayColumn))"))
                 ->get();
 
             $brilinkMap = [];
@@ -1024,7 +1167,7 @@ public function performanceBrilink()
                 ];
             }
 
-            foreach ($branches as $branch) {
+            foreach ($displayItems as $branch) {
                 $branchKey = $this->resolveCanonicalBranchKey($branchAliasMap, strtoupper(trim((string) $branch)));
                 $currData = $brilinkMap[$periodeCurr][$branchKey] ?? null;
                 $prevData = $brilinkMap[$periodePrev][$branchKey] ?? null;
@@ -1124,6 +1267,7 @@ public function performanceBrilink()
             return response()->json([
                 'status' => 'success',
                 'data' => $data,
+                'group_label' => $groupLabel,
                 'labels' => [
                     'curr' => $periodeCurr,
                     'casa_curr' => $effectiveCasaDate->translatedFormat("M'y"),
@@ -1350,6 +1494,91 @@ public function performanceBrilink()
         }
 
         return $map;
+    }
+
+    private function buildBrilinkFilterOptions(): array
+    {
+        $rows = collect([
+            DB::table('brilink_web_laporan_summary_transaksi_brilink_web')
+                ->selectRaw('TRIM(cabang) as branch_name')
+                ->selectRaw('TRIM(uker) as uker_name')
+                ->whereNotNull('cabang')
+                ->whereNotNull('uker')
+                ->whereRaw("TRIM(cabang) <> ''")
+                ->whereRaw("TRIM(uker) <> ''")
+                ->get(),
+            DB::table('casa_brilink_web')
+                ->selectRaw('TRIM(mbdesc) as branch_name')
+                ->selectRaw('TRIM(brdesc) as uker_name')
+                ->whereNotNull('mbdesc')
+                ->whereNotNull('brdesc')
+                ->whereRaw("TRIM(mbdesc) <> ''")
+                ->whereRaw("TRIM(brdesc) <> ''")
+                ->get(),
+            DB::table('casa_brilink_edc')
+                ->selectRaw('TRIM(mbdesc) as branch_name')
+                ->selectRaw('TRIM(brdesc) as uker_name')
+                ->whereNotNull('mbdesc')
+                ->whereNotNull('brdesc')
+                ->whereRaw("TRIM(mbdesc) <> ''")
+                ->whereRaw("TRIM(brdesc) <> ''")
+                ->get(),
+        ])->flatten(1)
+            ->map(function ($row) {
+                $row->branch_name = strtoupper(trim((string) ($row->branch_name ?? '')));
+                $row->uker_name = strtoupper(trim((string) ($row->uker_name ?? '')));
+                return $row;
+            })
+            ->filter(function ($row) {
+                return $row->branch_name !== '' && $row->uker_name !== '';
+            })
+            ->unique(fn ($row) => $row->branch_name . '|' . $row->uker_name)
+            ->sortBy([
+                ['branch_name', 'asc'],
+                ['uker_name', 'asc'],
+            ])
+            ->values();
+
+        return [
+            'branchOptions' => $rows
+                ->pluck('branch_name')
+                ->filter()
+                ->unique()
+                ->values(),
+            'branchUkerMap' => $rows
+                ->groupBy('branch_name')
+                ->map(function ($items) {
+                    return $items->pluck('uker_name')
+                        ->filter()
+                        ->unique()
+                        ->values()
+                        ->all();
+            }),
+        ];
+    }
+
+    private function getBrilinkUkersForBranches(array $selectedBranches, $branchUkerMap = null): array
+    {
+        $selectedBranches = collect($selectedBranches)
+            ->map(fn ($branch) => strtoupper(trim((string) $branch)))
+            ->filter()
+            ->values()
+            ->all();
+
+        if (empty($selectedBranches)) {
+            return [];
+        }
+
+        $branchUkerMap = $branchUkerMap ?? ($this->buildBrilinkFilterOptions()['branchUkerMap'] ?? collect());
+
+        return collect($selectedBranches)
+            ->flatMap(function ($branch) use ($branchUkerMap) {
+                return $branchUkerMap[$branch] ?? [];
+            })
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
     }
 
     private function resolveCanonicalBranchKey(array $branchAliasMap, string $rawBranchKey): string
