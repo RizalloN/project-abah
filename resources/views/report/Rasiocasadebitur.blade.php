@@ -16,6 +16,10 @@
         box-shadow: 0 14px 30px -24px rgba(15, 23, 42, 0.22);
     }
 
+    .casa-shell {
+        overflow: visible;
+    }
+
     .casa-shell .card-body,
     .casa-table-shell .card-header,
     .casa-table-shell .card-body {
@@ -56,6 +60,75 @@
     .casa-filter-control:disabled {
         background: #edf2f7 !important;
         color: #64748b !important;
+    }
+
+    .branch-filter-dropdown,
+    .uker-filter-dropdown {
+        position: relative;
+    }
+
+    .casa-dropdown-toggle {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        text-align: left;
+        background: #fff;
+    }
+
+    .casa-dropdown-toggle:disabled {
+        background: #edf2f7;
+        cursor: not-allowed;
+        opacity: 1;
+    }
+
+    .casa-dropdown-label {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .casa-dropdown-menu {
+        position: absolute;
+        top: calc(100% + 6px);
+        left: 0;
+        right: 0;
+        z-index: 1050;
+        display: none;
+        width: 100%;
+        max-height: 260px;
+        overflow-y: auto;
+        background: #fff;
+        border: 1px solid #dee2e6;
+        border-radius: 12px;
+        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.12);
+        padding: 8px 0;
+    }
+
+    .casa-dropdown-menu.show {
+        display: block;
+    }
+
+    .casa-dropdown-menu .dropdown-item {
+        padding: 0.45rem 1rem;
+        cursor: pointer;
+        margin-bottom: 0;
+    }
+
+    .casa-dropdown-menu .form-check {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .casa-dropdown-menu .form-check-input {
+        position: static;
+        margin: 0;
+    }
+
+    .casa-dropdown-menu .form-check-label {
+        margin: 0;
+        font-weight: 500;
+        cursor: pointer;
     }
 
     .casa-filter-meta {
@@ -362,7 +435,7 @@
 
             <form id="filterForm">
                 <div class="row align-items-end">
-                    <div class="col-md-4">
+                    <div class="col-md-3">
                         <div class="form-group mb-3 mb-md-0">
                             <label class="casa-filter-label">Periode Akhir</label>
                             <input type="date" id="filter_posisi" name="posisi" class="form-control casa-filter-control" value="{{ $defaultPeriod ?? date('Y-m-d') }}">
@@ -371,13 +444,36 @@
                     <div class="col-md-3">
                         <div class="form-group mb-3 mb-md-0">
                             <label class="casa-filter-label">Branch Office (Kanca)</label>
-                            <input type="text" class="form-control casa-filter-control font-weight-bold" value="Area 6 - All" disabled>
+                            <div class="branch-filter-dropdown">
+                                <button type="button" class="form-control casa-filter-control casa-dropdown-toggle font-weight-bold" id="filterBranchDropdown" aria-haspopup="true" aria-expanded="false">
+                                    <span id="filter_branch_office_label" class="casa-dropdown-label">Area 6 - All</span>
+                                    <i class="fas fa-chevron-down text-muted"></i>
+                                </button>
+                                <div class="casa-dropdown-menu" id="filterBranchMenu" aria-labelledby="filterBranchDropdown">
+                                    @forelse(($branchOptions ?? collect()) as $branchOption)
+                                        <label class="dropdown-item" for="branch_{{ \Illuminate\Support\Str::slug($branchOption, '_') }}">
+                                            <div class="form-check">
+                                                <input class="form-check-input filter-branch-checkbox" type="checkbox" value="{{ $branchOption }}" id="branch_{{ \Illuminate\Support\Str::slug($branchOption, '_') }}">
+                                                <span class="form-check-label">{{ $branchOption }}</span>
+                                            </div>
+                                        </label>
+                                    @empty
+                                        <div class="dropdown-item text-muted small px-3">Data branch belum tersedia</div>
+                                    @endforelse
+                                </div>
+                            </div>
                         </div>
                     </div>
                     <div class="col-md-3">
                         <div class="form-group mb-3 mb-md-0">
                             <label class="casa-filter-label">Nama Uker</label>
-                            <input type="text" class="form-control casa-filter-control" value="ALL UKER" disabled>
+                            <div class="uker-filter-dropdown">
+                                <button type="button" class="form-control casa-filter-control casa-dropdown-toggle" id="filterUkerDropdown" aria-haspopup="true" aria-expanded="false" disabled>
+                                    <span id="filter_nama_uker_label" class="casa-dropdown-label">ALL UKER</span>
+                                    <i class="fas fa-chevron-down text-muted"></i>
+                                </button>
+                                <div class="casa-dropdown-menu" id="filterUkerMenu" aria-labelledby="filterUkerDropdown"></div>
+                            </div>
                         </div>
                     </div>
                     <div class="col-md-2">
@@ -462,7 +558,7 @@
                             <table class="table table-hover table-report m-0">
                                 <thead class="sticky-top" style="z-index: 2;">
                                     <tr>
-                                        <th rowspan="3" class="bg-header-main align-middle" style="min-width: 170px;">BRANCH OFFICE</th>
+                                        <th rowspan="3" class="bg-header-main align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER" style="min-width: 170px;">BRANCH OFFICE</th>
                                         <th colspan="7" class="bg-header-main">TOTAL</th>
                                     </tr>
                                     <tr class="bg-header-sub">
@@ -490,7 +586,7 @@
                             <table class="table table-hover table-report m-0">
                                 <thead class="sticky-top" style="z-index: 2;">
                                     <tr>
-                                        <th rowspan="3" class="bg-header-main align-middle" style="min-width: 170px;">BRANCH OFFICE</th>
+                                        <th rowspan="3" class="bg-header-main align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER" style="min-width: 170px;">BRANCH OFFICE</th>
                                         <th colspan="7" class="bg-header-main">BRIGUNA</th>
                                         <th colspan="7" class="bg-header-main">KPR</th>
                                     </tr>
@@ -529,7 +625,7 @@
                             <table class="table table-hover table-report m-0">
                                 <thead class="sticky-top" style="z-index: 2;">
                                     <tr>
-                                        <th rowspan="3" class="bg-header-main align-middle" style="min-width: 170px;">BRANCH OFFICE</th>
+                                        <th rowspan="3" class="bg-header-main align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER" style="min-width: 170px;">BRANCH OFFICE</th>
                                         <th colspan="7" class="bg-header-main">MIKRO</th>
                                         <th colspan="7" class="bg-header-main">SMC</th>
                                     </tr>
@@ -581,7 +677,98 @@ document.addEventListener('DOMContentLoaded', function () {
     const overlayTitle = document.getElementById('overlayTitle');
     const overlayCopy = document.getElementById('overlayCopy');
     const filterPosisi = document.getElementById('filter_posisi');
+    const branchUkerMap = @json($branchUkerMap ?? []);
     let activeRequest = null;
+
+    function getSelectedBranches() {
+        return $('.filter-branch-checkbox:checked').map(function () {
+            return $(this).val();
+        }).get();
+    }
+
+    function getSelectedUkers() {
+        return $('.filter-uker-checkbox:checked').map(function () {
+            return $(this).val();
+        }).get();
+    }
+
+    function getAvailableUkers() {
+        const selectedBranches = getSelectedBranches();
+        if (!selectedBranches.length) {
+            return [];
+        }
+
+        const ukerSet = new Set();
+        selectedBranches.forEach(function (branch) {
+            (branchUkerMap[branch] || []).forEach(function (uker) {
+                if (uker) {
+                    ukerSet.add(uker);
+                }
+            });
+        });
+
+        return Array.from(ukerSet).sort(function (a, b) {
+            return a.localeCompare(b, 'id');
+        });
+    }
+
+    function updateBranchLabel() {
+        const selectedBranches = getSelectedBranches();
+        $('#filter_branch_office_label').text(selectedBranches.length ? selectedBranches.join(', ') : 'Area 6 - All');
+    }
+
+    function updateUkerLabel() {
+        const selectedUkers = getSelectedUkers();
+        $('#filter_nama_uker_label').text(selectedUkers.length ? selectedUkers.join(', ') : 'ALL UKER');
+    }
+
+    function closeBranchDropdown() {
+        $('#filterBranchMenu').removeClass('show');
+        $('#filterBranchDropdown').attr('aria-expanded', 'false');
+    }
+
+    function closeUkerDropdown() {
+        $('#filterUkerMenu').removeClass('show');
+        $('#filterUkerDropdown').attr('aria-expanded', 'false');
+    }
+
+    function updateGroupLabel(label) {
+        const normalizedLabel = (label || 'BRANCH OFFICE').toUpperCase();
+        $('.col-group-label').each(function () {
+            const $label = $(this);
+            const nextText = normalizedLabel === 'UKER'
+                ? ($label.data('filtered-label') || 'UKER')
+                : ($label.data('default-label') || 'BRANCH OFFICE');
+            $label.text(nextText);
+        });
+    }
+
+    function syncNamaUkerOptions() {
+        const availableUkers = getAvailableUkers();
+        const selectedUkers = getSelectedUkers();
+        const $ukerMenu = $('#filterUkerMenu');
+        $ukerMenu.empty();
+
+        availableUkers.forEach(function (uker) {
+            const safeId = uker.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+            const isChecked = selectedUkers.includes(uker) ? 'checked' : '';
+            $ukerMenu.append(`
+                <label class="dropdown-item" for="uker_${safeId}">
+                    <div class="form-check">
+                        <input class="form-check-input filter-uker-checkbox" type="checkbox" value="${$('<div>').text(uker).html()}" id="uker_${safeId}" ${isChecked}>
+                        <span class="form-check-label">${$('<div>').text(uker).html()}</span>
+                    </div>
+                </label>
+            `);
+        });
+
+        const shouldDisable = availableUkers.length === 0;
+        if (shouldDisable) {
+            closeUkerDropdown();
+        }
+        $('#filterUkerDropdown').prop('disabled', shouldDisable).attr('aria-expanded', 'false');
+        updateUkerLabel();
+    }
 
     function formatNum(num) {
         if (num === null || num === undefined || isNaN(parseFloat(num))) return '-';
@@ -660,7 +847,7 @@ document.addEventListener('DOMContentLoaded', function () {
             htmlMikroSmc += `<tr>${branchCell}${createDataCells(row.mikro)}${createDataCells(row.smc)}</tr>`;
         });
 
-        const totalBranchCell = '<td class="text-left">TOTAL AREA 6</td>';
+        const totalBranchCell = `<td class="text-left">${totalData.branch || 'TOTAL AREA 6'}</td>`;
         htmlTotal += `<tr class="row-total">${totalBranchCell}${createDataCells(totalData.total)}</tr>`;
         htmlBrigunaKpr += `<tr class="row-total">${totalBranchCell}${createDataCells(totalData.briguna)}${createDataCells(totalData.kpr)}</tr>`;
         htmlMikroSmc += `<tr class="row-total">${totalBranchCell}${createDataCells(totalData.mikro)}${createDataCells(totalData.smc)}</tr>`;
@@ -672,6 +859,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function resetTableState() {
         updateTableLabels('-', '-');
+        updateGroupLabel('BRANCH OFFICE');
+        updateBranchLabel();
+        updateUkerLabel();
         summaryBadge.textContent = 'Belum ada data';
         filterMetaPeriod.innerHTML = '<strong>Periode aktif:</strong> belum dijalankan';
         renderMessage('Belum ada data. Klik <strong>Tampilkan</strong>.');
@@ -693,6 +883,8 @@ document.addEventListener('DOMContentLoaded', function () {
             type: 'POST',
             data: {
                 posisi: filterPosisi.value,
+                branch_office: getSelectedBranches(),
+                nama_uker: getSelectedUkers(),
                 _token: '{{ csrf_token() }}'
             },
             dataType: 'json',
@@ -715,8 +907,11 @@ document.addEventListener('DOMContentLoaded', function () {
             const meta = res.meta || {};
             const currentDate = effectiveDates.curr || filterPosisi.value;
             const hasAnyData = meta.has_rows === true || dataList.length > 0;
+            const rowLabel = (res.group_label || 'BRANCH OFFICE').toUpperCase() === 'UKER' ? 'uker' : 'branch';
+            const summaryLabel = rowLabel === 'uker' ? 'uker' : 'branch';
 
             updateTableLabels(labels.prev || '-', labels.curr || '-');
+            updateGroupLabel(res.group_label);
 
             if (currentDate) {
                 filterPosisi.value = currentDate;
@@ -732,7 +927,7 @@ document.addEventListener('DOMContentLoaded', function () {
             }
 
             renderRows(dataList, totalData);
-            summaryBadge.textContent = `${dataList.length} branch | ${labels.curr || currentDate}`;
+            summaryBadge.textContent = `${dataList.length} ${summaryLabel} | ${labels.curr || currentDate}`;
             setOverlay('Data Siap Ditampilkan', 'Data siap ditampilkan.', false);
         } catch (xhr) {
             if (xhr && xhr.statusText === 'abort') {
@@ -758,7 +953,43 @@ document.addEventListener('DOMContentLoaded', function () {
         loadData();
     });
 
+    $('#filterBranchDropdown').on('click', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        closeUkerDropdown();
+        $('#filterBranchMenu').toggleClass('show');
+        $(this).attr('aria-expanded', $('#filterBranchMenu').hasClass('show') ? 'true' : 'false');
+    });
+
+    $('#filterUkerDropdown').on('click', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        if ($(this).prop('disabled')) return;
+        closeBranchDropdown();
+        $('#filterUkerMenu').toggleClass('show');
+        $(this).attr('aria-expanded', $('#filterUkerMenu').hasClass('show') ? 'true' : 'false');
+    });
+
+    $(document).on('click', function (e) {
+        if (!$(e.target).closest('.branch-filter-dropdown').length) {
+            closeBranchDropdown();
+        }
+        if (!$(e.target).closest('.uker-filter-dropdown').length) {
+            closeUkerDropdown();
+        }
+    });
+
+    $(document).on('change', '.filter-branch-checkbox', function () {
+        syncNamaUkerOptions();
+        updateBranchLabel();
+    });
+
+    $(document).on('change', '.filter-uker-checkbox', function () {
+        updateUkerLabel();
+    });
+
     resetTableState();
+    syncNamaUkerOptions();
 });
 </script>
 @endsection

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Jobs\EnsureRasioCasaSnapshotJob;
+use App\Support\ReportSnapshotBuilder;
 use App\Support\ReportIndexHintResolver;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -18,6 +19,7 @@ class RasioCasaDebiturController extends Controller
     private const PRIORITY_BRANCHES = ['MADIUN', 'MAGETAN', 'NGAWI', 'PONOROGO'];
     private const SEGMENTS = ['TOTAL', 'BRIGUNA', 'KPR', 'MIKRO', 'SMC'];
     private const SNAPSHOT_TABLE = 'rasio_casa_debitur_snapshots';
+    private const UKER_SNAPSHOT_TABLE = 'rasio_casa_debitur_uker_snapshots';
     private const LOAN_CIF_BRANCH_INDEX = 'idx_dld_periode_cif_cabang';
     private const CASA_CIF_TYPE_INDEX = 'idx_smp_posisi_cif_jenis';
 
@@ -27,8 +29,9 @@ class RasioCasaDebiturController extends Controller
         $branches = collect(self::PRIORITY_BRANCHES)
             ->map(fn (string $branch) => $this->formatBranchLabel($branch))
             ->all();
+        ['branchOptions' => $branchOptions, 'branchUkerMap' => $branchUkerMap] = $this->buildRasioFilterOptions();
 
-        return view('report.Rasiocasadebitur', compact('branches', 'defaultPeriod'));
+        return view('report.Rasiocasadebitur', compact('branches', 'defaultPeriod', 'branchOptions', 'branchUkerMap'));
     }
 
     public function fetchData(Request $request)
@@ -37,6 +40,19 @@ class RasioCasaDebiturController extends Controller
         DB::connection()->disableQueryLog();
 
         try {
+            $selectedBranches = collect((array) $request->input('branch_office', []))
+                ->map(fn ($branch) => strtoupper(trim((string) $branch)))
+                ->filter()
+                ->values()
+                ->all();
+            $selectedUkers = collect((array) $request->input('nama_uker', []))
+                ->map(fn ($uker) => strtoupper(trim((string) $uker)))
+                ->filter()
+                ->reject(fn ($uker) => $uker === 'ALL UKER')
+                ->values()
+                ->all();
+            $isBranchFiltered = !empty($selectedBranches);
+
             if (!$this->hasAnyColumn('daily_loan_dinamis', ['baki_debet1', 'baki_debet'])) {
                 return response()->json([
                     'status' => 'error',
@@ -73,16 +89,47 @@ class RasioCasaDebiturController extends Controller
             $previousPeriod = $this->resolveAvailableLoanPeriod($prevCandidate);
 
             $forceRefresh = $request->boolean('refresh');
+            $responseCacheKey = 'rasio_casa:fetch:v' . $this->reportCacheVersion() . ':' . md5(json_encode([
+                'curr' => $currentPeriod,
+                'prev' => $previousPeriod,
+                'branches' => $selectedBranches,
+                'ukers' => $selectedUkers,
+            ]));
 
-            $currentSummary = $this->buildSummarySnapshot($currentPeriod, $forceRefresh);
-            $previousSummary = $previousPeriod ? $this->buildSummarySnapshot($previousPeriod, $forceRefresh) : $this->emptySnapshot();
+            if (!$forceRefresh) {
+                $cachedResponse = Cache::get($responseCacheKey);
+                if (is_array($cachedResponse)) {
+                    return response()->json($cachedResponse);
+                }
+            }
 
-            $branches = $this->resolveDynamicBranches($previousSummary, $currentSummary);
-            [$rows, $total] = $this->assembleRows($branches, $previousSummary, $currentSummary);
+            if ($isBranchFiltered) {
+                $currentSummary = $this->buildFilteredSummarySnapshot($currentPeriod, $selectedBranches, $selectedUkers, $forceRefresh);
+                $previousSummary = $previousPeriod
+                    ? $this->buildFilteredSummarySnapshot($previousPeriod, $selectedBranches, $selectedUkers, $forceRefresh)
+                    : $this->emptySnapshot();
 
-            return response()->json([
+                $branches = $this->resolveFilteredBranches($previousSummary, $currentSummary);
+                [$rows, $total] = $this->assembleFilteredRows(
+                    $branches,
+                    $previousSummary,
+                    $currentSummary,
+                    'TOTAL ' . implode(', ', $selectedBranches)
+                );
+                $groupLabel = 'UKER';
+            } else {
+                $currentSummary = $this->buildSummarySnapshot($currentPeriod, $forceRefresh);
+                $previousSummary = $previousPeriod ? $this->buildSummarySnapshot($previousPeriod, $forceRefresh) : $this->emptySnapshot();
+
+                $branches = $this->resolveDynamicBranches($previousSummary, $currentSummary);
+                [$rows, $total] = $this->assembleRows($branches, $previousSummary, $currentSummary);
+                $groupLabel = 'BRANCH OFFICE';
+            }
+
+            $payload = [
                 'status' => 'success',
                 'labels' => $this->buildLabels($previousPeriod, $currentPeriod),
+                'group_label' => $groupLabel,
                 'effective_dates' => [
                     'prev' => $previousPeriod,
                     'curr' => $currentPeriod,
@@ -97,7 +144,11 @@ class RasioCasaDebiturController extends Controller
                 ],
                 'data' => $rows,
                 'total' => $total,
-            ]);
+            ];
+
+            Cache::put($responseCacheKey, $payload, now()->addMinutes(3));
+
+            return response()->json($payload);
         } catch (Throwable $e) {
             Log::error('[RasioCasa] Critical Failure: ' . $e->getMessage(), [
                 'trace' => $e->getTraceAsString(),
@@ -316,6 +367,251 @@ class RasioCasaDebiturController extends Controller
         return $snapshot;
     }
 
+    private function buildRasioFilterOptions(): array
+    {
+        $loanPeriod = $this->resolveAvailableLoanPeriod(null);
+        if (!$loanPeriod) {
+            return [
+                'branchOptions' => collect(),
+                'branchUkerMap' => collect(),
+            ];
+        }
+
+        $branchColumn = $this->resolveExistingColumn('daily_loan_dinamis', ['cabang1', 'cabang'], 'cabang1');
+        $ukerColumn = $this->resolveExistingColumn('daily_loan_dinamis', ['unit1', 'unit'], 'unit1');
+        $cacheKey = 'rasio_casa_filter_options:v' . $this->reportCacheVersion() . ':' . $loanPeriod;
+
+        return Cache::remember($cacheKey, now()->addMinutes(10), function () use ($loanPeriod, $branchColumn, $ukerColumn) {
+            $rows = DB::table('daily_loan_dinamis')
+                ->where('periode', $loanPeriod)
+                ->whereNotNull($branchColumn)
+                ->whereNotNull($ukerColumn)
+                ->whereRaw("TRIM({$branchColumn}) <> ''")
+                ->whereRaw("TRIM({$ukerColumn}) <> ''")
+                ->selectRaw("UPPER(TRIM({$branchColumn})) as branch_name")
+                ->selectRaw("UPPER(TRIM({$ukerColumn})) as uker_name")
+                ->distinct()
+                ->orderBy('branch_name')
+                ->orderBy('uker_name')
+                ->get();
+
+            $branchOptions = $rows->pluck('branch_name')
+                ->filter()
+                ->unique()
+                ->values();
+
+            $branchUkerMap = $rows->groupBy('branch_name')
+                ->map(function ($items) {
+                    return $items->pluck('uker_name')
+                        ->filter()
+                        ->unique()
+                        ->values()
+                        ->all();
+                });
+
+            return [
+                'branchOptions' => $branchOptions,
+                'branchUkerMap' => $branchUkerMap,
+            ];
+        });
+    }
+
+    private function buildFilteredSummarySnapshot(string $loanPeriod, array $selectedBranches, array $selectedUkers, bool $forceRefresh = false): array
+    {
+        $selectedBranches = collect($selectedBranches)
+            ->map(fn ($branch) => strtoupper(trim((string) $branch)))
+            ->filter()
+            ->values()
+            ->all();
+        $selectedUkers = collect($selectedUkers)
+            ->map(fn ($uker) => strtoupper(trim((string) $uker)))
+            ->filter()
+            ->values()
+            ->all();
+
+        $cacheKey = 'rasio_casa_filtered:v' . $this->reportCacheVersion() . ':' . md5(json_encode([
+            'loan_period' => $loanPeriod,
+            'branches' => $selectedBranches,
+            'ukers' => $selectedUkers,
+        ]));
+
+        if (!$forceRefresh) {
+            if (Cache::has($cacheKey)) {
+                return Cache::get($cacheKey);
+            }
+        }
+
+        $payload = $this->loadPersistedFilteredSummarySnapshot($loanPeriod, $selectedBranches, $selectedUkers);
+
+        if ($payload === null) {
+            $this->ensureRasioSnapshot($loanPeriod);
+            $this->rebuildRasioSnapshotInline($loanPeriod);
+            $payload = $this->loadPersistedFilteredSummarySnapshot($loanPeriod, $selectedBranches, $selectedUkers)
+                ?? $this->computeFilteredSummarySnapshot($loanPeriod, $selectedBranches, $selectedUkers);
+        }
+
+        Cache::put($cacheKey, $payload, now()->addMinutes(10));
+
+        return $payload;
+    }
+
+    private function computeFilteredSummarySnapshot(string $loanPeriod, array $selectedBranches, array $selectedUkers): array
+    {
+        $loanKeyColumn = $this->resolveLoanIdentityColumn();
+        $casaKeyColumn = $this->resolveCasaIdentityColumn();
+        $loanBranchColumn = $this->resolveExistingColumn('daily_loan_dinamis', ['cabang1', 'cabang'], 'cabang1');
+        $loanUkerColumn = $this->resolveExistingColumn('daily_loan_dinamis', ['unit1', 'unit'], 'unit1');
+        $loanSegmentColumn = $this->resolveExistingColumn('daily_loan_dinamis', ['segmen_dashboard'], 'segmen_dashboard');
+        $loanProductColumn = $this->resolveExistingColumn('daily_loan_dinamis', ['produk_dashboard'], 'produk_dashboard');
+        $loanBalanceColumn = $this->resolveExistingColumn('daily_loan_dinamis', ['baki_debet1', 'baki_debet'], 'baki_debet1');
+        $loanIdentitySql = "TRIM(d.{$loanKeyColumn})";
+
+        $casaDate = $this->resolveAvailableCasaPeriod($loanPeriod);
+        $selectedBranches = collect($selectedBranches)
+            ->map(fn ($branch) => strtoupper(trim((string) $branch)))
+            ->filter()
+            ->values()
+            ->all();
+        $selectedUkers = collect($selectedUkers)
+            ->map(fn ($uker) => strtoupper(trim((string) $uker)))
+            ->filter()
+            ->values()
+            ->all();
+
+        $totalFlagSql = '1';
+        $brigunaFlagSql = $this->buildSegmentFlagExpression('d', $loanSegmentColumn, $loanProductColumn, 'briguna');
+        $kprFlagSql = $this->buildSegmentFlagExpression('d', $loanSegmentColumn, $loanProductColumn, 'kpr');
+        $mikroFlagSql = $this->buildSegmentFlagExpression('d', $loanSegmentColumn, $loanProductColumn, 'mikro');
+        $smcFlagSql = $this->buildSegmentFlagExpression('d', $loanSegmentColumn, $loanProductColumn, 'smc');
+
+        $loanBase = DB::table(DB::raw($this->qualifyIndexedSource('daily_loan_dinamis', 'd', [self::LOAN_CIF_BRANCH_INDEX])))
+            ->where('d.periode', $loanPeriod)
+            ->whereNotNull("d.{$loanKeyColumn}")
+            ->where("d.{$loanKeyColumn}", '<>', '')
+            ->whereRaw("TRIM(COALESCE(d.{$loanBranchColumn}, '')) <> ''")
+            ->whereRaw("TRIM(COALESCE(d.{$loanUkerColumn}, '')) <> ''")
+            ->when(!empty($selectedBranches), function ($query) use ($loanBranchColumn, $selectedBranches) {
+                $query->whereIn(DB::raw("UPPER(TRIM(d.{$loanBranchColumn}))"), $selectedBranches);
+            })
+            ->when(!empty($selectedUkers), function ($query) use ($loanUkerColumn, $selectedUkers) {
+                $query->whereIn(DB::raw("UPPER(TRIM(d.{$loanUkerColumn}))"), $selectedUkers);
+            })
+            ->selectRaw("
+                UPPER(TRIM(d.{$loanUkerColumn})) as branch_key,
+                {$loanIdentitySql} as identity_key,
+                COALESCE(d.{$loanBalanceColumn}, 0) as loan_balance,
+                {$totalFlagSql} as has_total,
+                {$brigunaFlagSql} as has_briguna,
+                {$kprFlagSql} as has_kpr,
+                {$mikroFlagSql} as has_mikro,
+                {$smcFlagSql} as has_smc
+            ");
+
+        $loanPerCif = DB::query()
+            ->fromSub($loanBase, 'loan_base')
+            ->selectRaw("
+                branch_key,
+                identity_key,
+                SUM(loan_balance) as total_os,
+                SUM(CASE WHEN has_briguna = 1 THEN loan_balance ELSE 0 END) as briguna_os,
+                SUM(CASE WHEN has_kpr = 1 THEN loan_balance ELSE 0 END) as kpr_os,
+                SUM(CASE WHEN has_mikro = 1 THEN loan_balance ELSE 0 END) as mikro_os,
+                SUM(CASE WHEN has_smc = 1 THEN loan_balance ELSE 0 END) as smc_os,
+                MAX(has_total) as has_total,
+                MAX(has_briguna) as has_briguna,
+                MAX(has_kpr) as has_kpr,
+                MAX(has_mikro) as has_mikro,
+                MAX(has_smc) as has_smc
+            ")
+            ->groupBy('branch_key', 'identity_key');
+
+        $snapshot = $this->emptySnapshot();
+        $snapshot['loan_date'] = $loanPeriod;
+        $snapshot['casa_date'] = $casaDate;
+        $identityVariants = [];
+        $identityMappings = [];
+
+        $loanRows = $loanPerCif
+            ->orderBy('branch_key')
+            ->get();
+
+        foreach ($loanRows as $row) {
+            $branchKey = strtoupper(trim((string) ($row->branch_key ?? '')));
+            $identityKey = $this->normalizeIdentityKey($row->identity_key ?? null);
+
+            if ($branchKey === '' || $identityKey === '') {
+                continue;
+            }
+
+            $snapshot['row_count']++;
+            $snapshot['branch_labels'][$branchKey] = $branchKey;
+            $snapshot['os'][$branchKey] ??= ['total' => 0, 'briguna' => 0, 'kpr' => 0, 'mikro' => 0, 'smc' => 0];
+            $snapshot['casa'][$branchKey] ??= ['total' => 0, 'briguna' => 0, 'kpr' => 0, 'mikro' => 0, 'smc' => 0];
+
+            $snapshot['os'][$branchKey]['total'] += (float) ($row->total_os ?? 0);
+            $snapshot['os'][$branchKey]['briguna'] += (float) ($row->briguna_os ?? 0);
+            $snapshot['os'][$branchKey]['kpr'] += (float) ($row->kpr_os ?? 0);
+            $snapshot['os'][$branchKey]['mikro'] += (float) ($row->mikro_os ?? 0);
+            $snapshot['os'][$branchKey]['smc'] += (float) ($row->smc_os ?? 0);
+
+            $identityMappings[$identityKey][$branchKey] = [
+                'total' => ((int) ($row->has_total ?? 0)) === 1,
+                'briguna' => ((int) ($row->has_briguna ?? 0)) === 1,
+                'kpr' => ((int) ($row->has_kpr ?? 0)) === 1,
+                'mikro' => ((int) ($row->has_mikro ?? 0)) === 1,
+                'smc' => ((int) ($row->has_smc ?? 0)) === 1,
+            ];
+
+            foreach ($this->buildIdentityVariants($identityKey) as $variant) {
+                $identityVariants[$variant] = $identityKey;
+            }
+        }
+
+        if ($casaDate && !empty($identityVariants)) {
+            $applyCasaTypeFilter = $this->shouldApplyCasaTypeFilter($casaDate);
+            $casaBalances = [];
+
+            foreach (array_chunk(array_keys($identityVariants), 2000) as $chunk) {
+                $casaQuery = DB::table(DB::raw($this->qualifyIndexedSource('simpanan_multipn', null, [self::CASA_CIF_TYPE_INDEX])))
+                    ->where('posisi', $casaDate)
+                    ->whereIn($casaKeyColumn, $chunk);
+
+                if ($applyCasaTypeFilter) {
+                    $casaQuery->where(function ($query) {
+                        $query->where('jenis_simpanan', 'like', 'GIRO%')
+                            ->orWhere('jenis_simpanan', 'like', 'TABUNGAN%');
+                    });
+                }
+
+                $casas = $casaQuery
+                    ->selectRaw("{$casaKeyColumn} as identity_key, SUM(COALESCE(saldo_idr, 0)) as casa_balance")
+                    ->groupBy($casaKeyColumn)
+                    ->get();
+
+                foreach ($casas as $casaRow) {
+                    $normalizedIdentity = $this->normalizeIdentityKey($casaRow->identity_key ?? null);
+                    if ($normalizedIdentity === '') {
+                        continue;
+                    }
+
+                    $casaBalances[$normalizedIdentity] = ($casaBalances[$normalizedIdentity] ?? 0) + (float) ($casaRow->casa_balance ?? 0);
+                }
+            }
+
+            foreach ($casaBalances as $identityKey => $balance) {
+                foreach (($identityMappings[$identityKey] ?? []) as $branchKey => $flags) {
+                    foreach ($flags as $segmentKey => $hasBucket) {
+                        if ($hasBucket) {
+                            $snapshot['casa'][$branchKey][$segmentKey] += $balance;
+                        }
+                    }
+                }
+            }
+        }
+
+        return $snapshot;
+    }
+
     private function loadPersistedSummarySnapshot(string $loanPeriod): ?array
     {
         if (!Schema::hasTable(self::SNAPSHOT_TABLE)) {
@@ -358,9 +654,74 @@ class RasioCasaDebiturController extends Controller
         return $snapshot;
     }
 
+    private function loadPersistedFilteredSummarySnapshot(string $loanPeriod, array $selectedBranches, array $selectedUkers): ?array
+    {
+        if (!Schema::hasTable(self::UKER_SNAPSHOT_TABLE) || empty($selectedBranches)) {
+            return null;
+        }
+
+        $normalizedBranches = collect($selectedBranches)
+            ->map(fn ($branch) => strtoupper(trim((string) $branch)))
+            ->filter()
+            ->values()
+            ->all();
+        $normalizedUkers = collect($selectedUkers)
+            ->map(fn ($uker) => strtoupper(trim((string) $uker)))
+            ->filter()
+            ->values()
+            ->all();
+
+        $rows = DB::table(self::UKER_SNAPSHOT_TABLE)
+            ->where('loan_period', $loanPeriod)
+            ->whereIn('source_branch_key', $normalizedBranches)
+            ->when(!empty($normalizedUkers), function ($query) use ($normalizedUkers) {
+                $query->whereIn('uker_key', $normalizedUkers);
+            })
+            ->orderByRaw('source_branch_key asc, uker_key asc')
+            ->orderBy('segment_key')
+            ->get();
+
+        if ($rows->isEmpty()) {
+            return null;
+        }
+
+        $snapshot = $this->emptySnapshot();
+        $snapshot['loan_date'] = $loanPeriod;
+        $snapshot['casa_date'] = $rows->first()->casa_period;
+        $rowCountKeys = [];
+
+        foreach ($rows as $row) {
+            $ukerKey = strtoupper(trim((string) ($row->uker_key ?? '')));
+            $segmentKey = strtolower(trim((string) ($row->segment_key ?? '')));
+            $sourceBranchKey = strtoupper(trim((string) ($row->source_branch_key ?? '')));
+
+            if ($ukerKey === '' || $segmentKey === '') {
+                continue;
+            }
+
+            $snapshot['branch_labels'][$ukerKey] = trim((string) ($row->uker_label ?? $ukerKey));
+            $snapshot['os'][$ukerKey] ??= ['total' => 0, 'briguna' => 0, 'kpr' => 0, 'mikro' => 0, 'smc' => 0];
+            $snapshot['casa'][$ukerKey] ??= ['total' => 0, 'briguna' => 0, 'kpr' => 0, 'mikro' => 0, 'smc' => 0];
+
+            if (array_key_exists($segmentKey, $snapshot['os'][$ukerKey])) {
+                $snapshot['os'][$ukerKey][$segmentKey] += (float) ($row->os_amount ?? 0);
+                $snapshot['casa'][$ukerKey][$segmentKey] += (float) ($row->casa_amount ?? 0);
+            }
+
+            $rowCountKeys[$sourceBranchKey . '|' . $ukerKey] = (int) ($row->source_row_count ?? 0);
+        }
+
+        $snapshot['row_count'] = array_sum($rowCountKeys);
+
+        return $snapshot;
+    }
+
     private function ensureRasioSnapshot(string $loanPeriod): void
     {
-        if (!Schema::hasTable(self::SNAPSHOT_TABLE)) {
+        $hasSummarySnapshotTable = Schema::hasTable(self::SNAPSHOT_TABLE);
+        $hasUkerSnapshotTable = Schema::hasTable(self::UKER_SNAPSHOT_TABLE);
+
+        if (!$hasSummarySnapshotTable && !$hasUkerSnapshotTable) {
             return;
         }
 
@@ -369,9 +730,13 @@ class RasioCasaDebiturController extends Controller
             return;
         }
 
-        $exists = DB::table(self::SNAPSHOT_TABLE)
+        $summaryExists = !$hasSummarySnapshotTable || DB::table(self::SNAPSHOT_TABLE)
             ->where('loan_period', $loanPeriod)
             ->exists();
+        $ukerExists = !$hasUkerSnapshotTable || DB::table(self::UKER_SNAPSHOT_TABLE)
+            ->where('loan_period', $loanPeriod)
+            ->exists();
+        $exists = $summaryExists && $ukerExists;
 
         if ($exists) {
             Cache::put($cacheKey, true, now()->addMinutes(10));
@@ -415,6 +780,51 @@ class RasioCasaDebiturController extends Controller
         Cache::put($cacheKey, false, now()->addSeconds(30));
     }
 
+    private function rebuildRasioSnapshotInline(string $loanPeriod): void
+    {
+        if (!Schema::hasTable(self::UKER_SNAPSHOT_TABLE) || !Schema::hasTable(self::SNAPSHOT_TABLE)) {
+            return;
+        }
+
+        $summaryExists = DB::table(self::SNAPSHOT_TABLE)
+            ->where('loan_period', $loanPeriod)
+            ->exists();
+        $ukerExists = DB::table(self::UKER_SNAPSHOT_TABLE)
+            ->where('loan_period', $loanPeriod)
+            ->exists();
+
+        if ($summaryExists && $ukerExists) {
+            Cache::put('rasio_casa:snapshot_exists:v' . $this->reportCacheVersion() . ':' . $loanPeriod, true, now()->addMinutes(10));
+            return;
+        }
+
+        $lock = Cache::lock('snapshot:rasio:inline-rebuild:' . $loanPeriod, 300);
+
+        try {
+            $lock->block(5, function () use ($loanPeriod) {
+                $summaryExists = DB::table(self::SNAPSHOT_TABLE)
+                    ->where('loan_period', $loanPeriod)
+                    ->exists();
+                $ukerExists = DB::table(self::UKER_SNAPSHOT_TABLE)
+                    ->where('loan_period', $loanPeriod)
+                    ->exists();
+
+                if ($summaryExists && $ukerExists) {
+                    return;
+                }
+
+                app(ReportSnapshotBuilder::class)->rebuildRasioCasa($loanPeriod, true);
+                Cache::put('rasio_casa:snapshot_exists:v' . $this->reportCacheVersion() . ':' . $loanPeriod, true, now()->addMinutes(10));
+            });
+        } catch (LockTimeoutException|Throwable $e) {
+            Log::warning('Inline rebuild rasio snapshot gagal atau timeout: ' . $e->getMessage(), [
+                'loan_period' => $loanPeriod,
+            ]);
+        } finally {
+            optional($lock)->release();
+        }
+    }
+
     private function assembleRows(array $branches, array $previousSummary, array $currentSummary): array
     {
         $rows = [];
@@ -432,6 +842,57 @@ class RasioCasaDebiturController extends Controller
 
         foreach ($branches as $branchLabel) {
             $branchKey = $this->normalizeBranchKey($branchLabel);
+            $row = ['branch' => $branchLabel];
+
+            foreach (self::SEGMENTS as $segment) {
+                $segmentKey = strtolower($segment);
+                $prevOs = (float) ($previousSummary['os'][$branchKey][$segmentKey] ?? 0);
+                $prevCasa = (float) ($previousSummary['casa'][$branchKey][$segmentKey] ?? 0);
+                $currOs = (float) ($currentSummary['os'][$branchKey][$segmentKey] ?? 0);
+                $currCasa = (float) ($currentSummary['casa'][$branchKey][$segmentKey] ?? 0);
+
+                $row[$segmentKey] = $this->calculateMetrics(
+                    ['os' => $prevOs, 'casa' => $prevCasa],
+                    ['os' => $currOs, 'casa' => $currCasa]
+                );
+
+                $total[$segmentKey]['os_prev'] += $prevOs;
+                $total[$segmentKey]['os_curr'] += $currOs;
+                $total[$segmentKey]['casa_prev'] += $prevCasa;
+                $total[$segmentKey]['casa_curr'] += $currCasa;
+            }
+
+            $rows[] = $row;
+        }
+
+        foreach (self::SEGMENTS as $segment) {
+            $segmentKey = strtolower($segment);
+            $total[$segmentKey] = $this->calculateMetrics(
+                ['os' => $total[$segmentKey]['os_prev'], 'casa' => $total[$segmentKey]['casa_prev']],
+                ['os' => $total[$segmentKey]['os_curr'], 'casa' => $total[$segmentKey]['casa_curr']]
+            );
+        }
+
+        return [$rows, $total];
+    }
+
+    private function assembleFilteredRows(array $branches, array $previousSummary, array $currentSummary, string $totalLabel): array
+    {
+        $rows = [];
+        $total = ['branch' => $totalLabel];
+
+        foreach (self::SEGMENTS as $segment) {
+            $segmentKey = strtolower($segment);
+            $total[$segmentKey] = [
+                'os_prev' => 0,
+                'os_curr' => 0,
+                'casa_prev' => 0,
+                'casa_curr' => 0,
+            ];
+        }
+
+        foreach ($branches as $branchLabel) {
+            $branchKey = strtoupper(trim((string) $branchLabel));
             $row = ['branch' => $branchLabel];
 
             foreach (self::SEGMENTS as $segment) {
@@ -667,6 +1128,11 @@ class RasioCasaDebiturController extends Controller
         ";
     }
 
+    private function buildJoinableIdentitySql(string $column): string
+    {
+        return "CONVERT(UPPER(REPLACE(TRIM(COALESCE({$column}, '')), '''', '')) USING utf8mb4) COLLATE utf8mb4_unicode_ci";
+    }
+
     private function buildBranchSortExpression(string $column): string
     {
         return "
@@ -777,6 +1243,29 @@ class RasioCasaDebiturController extends Controller
         }
 
         uksort($branchMap, fn (string $a, string $b) => $this->compareBranchPriority($a, $b));
+
+        return array_values($branchMap);
+    }
+
+    private function resolveFilteredBranches(array $previousSummary, array $currentSummary): array
+    {
+        $branchMap = [];
+
+        foreach ([$previousSummary, $currentSummary] as $dataset) {
+            foreach (($dataset['branch_labels'] ?? []) as $branchKey => $label) {
+                $normalizedKey = strtoupper(trim((string) $branchKey));
+                $normalizedLabel = strtoupper(trim((string) ($label ?? $branchKey)));
+                if ($normalizedKey !== '') {
+                    $branchMap[$normalizedKey] = $normalizedLabel !== '' ? $normalizedLabel : $normalizedKey;
+                }
+            }
+        }
+
+        if (empty($branchMap)) {
+            return [];
+        }
+
+        ksort($branchMap, SORT_NATURAL | SORT_FLAG_CASE);
 
         return array_values($branchMap);
     }

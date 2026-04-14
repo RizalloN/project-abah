@@ -134,6 +134,7 @@ class RekeningDormantController extends Controller
         $yoyPeriod = $currDate->copy()->subYearNoOverflow()->endOfMonth()->toDateString();
         $requestedBranches = $this->normalizeFilterValues($request->input('kantor_cabang'));
         $requestedUnits = $this->normalizeFilterValues($request->input('unit_kerja'));
+        $isBranchFiltered = !empty($requestedBranches);
         $availableBranches = $this->fetchAvailableBranches($currentPeriod, $forceRefresh);
         $selectedBranches = $availableBranches
             ->filter(fn (string $branch) => empty($requestedBranches) || in_array($branch, $requestedBranches, true))
@@ -152,51 +153,94 @@ class RekeningDormantController extends Controller
                 ->values();
         }
 
-        $periodCounts = $this->fetchDormantCountsSummary(
-            $currentPeriod,
-            $mtdPeriod,
-            $ytdPeriod,
-            $yoyPeriod,
-            $selectedBranches,
-            $selectedUnits,
-            $forceRefresh
-        );
-
         $rows = [];
         $totals = [
-            'branch' => 'TOTAL AREA 6',
+            'branch' => $isBranchFiltered
+                ? 'TOTAL ' . strtoupper(implode(', ', $selectedBranches->values()->all()))
+                : 'TOTAL AREA 6',
             'current' => 0,
             'mtd' => 0,
             'ytd' => 0,
             'yoy' => 0,
         ];
 
-        foreach ($selectedBranches as $branch) {
-            $branchSummary = $periodCounts[$branch] ?? [];
-            $current = (int) ($branchSummary['current'] ?? 0);
-            $mtdBase = (int) ($branchSummary['mtd_base'] ?? 0);
-            $ytdBase = (int) ($branchSummary['ytd_base'] ?? 0);
-            $yoyBase = (int) ($branchSummary['yoy_base'] ?? 0);
+        if ($isBranchFiltered) {
+            $periodCounts = $this->fetchDormantCountsByUnit(
+                $currentPeriod,
+                $mtdPeriod,
+                $ytdPeriod,
+                $yoyPeriod,
+                $selectedBranches,
+                $selectedUnits,
+                $forceRefresh
+            );
 
-            $row = [
-                'branch' => $branch,
-                'source_branch' => $branch,
-                'current' => $current,
-                'mtd' => $current - $mtdBase,
-                'ytd' => $current - $ytdBase,
-                'yoy' => $current - $yoyBase,
-            ];
+            $rowKeys = $selectedUnits->isNotEmpty()
+                ? $selectedUnits->values()->all()
+                : collect(array_keys($periodCounts))->sort()->values()->all();
 
-            $rows[] = $row;
+            foreach ($rowKeys as $unit) {
+                $unitSummary = $periodCounts[$unit] ?? [];
+                $current = (int) ($unitSummary['current'] ?? 0);
+                $mtdBase = (int) ($unitSummary['mtd_base'] ?? 0);
+                $ytdBase = (int) ($unitSummary['ytd_base'] ?? 0);
+                $yoyBase = (int) ($unitSummary['yoy_base'] ?? 0);
 
-            $totals['current'] += $row['current'];
-            $totals['mtd'] += $row['mtd'];
-            $totals['ytd'] += $row['ytd'];
-            $totals['yoy'] += $row['yoy'];
+                $row = [
+                    'branch' => $unit,
+                    'source_branch' => $unit,
+                    'current' => $current,
+                    'mtd' => $current - $mtdBase,
+                    'ytd' => $current - $ytdBase,
+                    'yoy' => $current - $yoyBase,
+                ];
+
+                $rows[] = $row;
+
+                $totals['current'] += $row['current'];
+                $totals['mtd'] += $row['mtd'];
+                $totals['ytd'] += $row['ytd'];
+                $totals['yoy'] += $row['yoy'];
+            }
+        } else {
+            $periodCounts = $this->fetchDormantCountsSummary(
+                $currentPeriod,
+                $mtdPeriod,
+                $ytdPeriod,
+                $yoyPeriod,
+                $selectedBranches,
+                $selectedUnits,
+                $forceRefresh
+            );
+
+            foreach ($selectedBranches as $branch) {
+                $branchSummary = $periodCounts[$branch] ?? [];
+                $current = (int) ($branchSummary['current'] ?? 0);
+                $mtdBase = (int) ($branchSummary['mtd_base'] ?? 0);
+                $ytdBase = (int) ($branchSummary['ytd_base'] ?? 0);
+                $yoyBase = (int) ($branchSummary['yoy_base'] ?? 0);
+
+                $row = [
+                    'branch' => $branch,
+                    'source_branch' => $branch,
+                    'current' => $current,
+                    'mtd' => $current - $mtdBase,
+                    'ytd' => $current - $ytdBase,
+                    'yoy' => $current - $yoyBase,
+                ];
+
+                $rows[] = $row;
+
+                $totals['current'] += $row['current'];
+                $totals['mtd'] += $row['mtd'];
+                $totals['ytd'] += $row['ytd'];
+                $totals['yoy'] += $row['yoy'];
+            }
         }
 
         return response()->json([
             'status' => 'success',
+            'group_label' => $isBranchFiltered ? 'UKER' : 'BRANCH OFFICE',
             'labels' => $this->buildLabels($currentPeriod, $mtdPeriod, $ytdPeriod, $yoyPeriod),
             'effective_dates' => [
                 'curr' => $currentPeriod,
@@ -328,6 +372,7 @@ class RekeningDormantController extends Controller
                 ->values();
         }, $forceRefresh);
     }
+
 
     private function fetchDormantCountsSummary(
         string $currentPeriod,
@@ -486,6 +531,127 @@ class RekeningDormantController extends Controller
 
             return $counts;
         }, $forceRefresh);
+    }
+
+    private function fetchDormantCountsByUnit(
+        string $currentPeriod,
+        ?string $mtdPeriod,
+        ?string $ytdPeriod,
+        ?string $yoyPeriod,
+        Collection $branches,
+        Collection $units,
+        bool $forceRefresh = false
+    ): array
+    {
+        if ($branches->isEmpty()) {
+            return [];
+        }
+
+        $periods = collect([$currentPeriod, $mtdPeriod, $ytdPeriod, $yoyPeriod])->filter()->values();
+        $branchMap = $this->resolveBranchMapForPeriod($currentPeriod);
+        $selectedBranchLabels = $branches->values()->all();
+        $selectedRawBranches = collect($selectedBranchLabels)
+            ->flatMap(fn (string $label) => $branchMap[$label] ?? [])
+            ->unique()
+            ->values();
+
+        if ($selectedRawBranches->isEmpty()) {
+            return [];
+        }
+
+        $cacheKey = 'rekening_dormant_v8_counts_by_unit:' . md5(json_encode([
+            'cache_version' => $this->reportCacheVersion(),
+            'periods' => $periods->all(),
+            'branches' => $selectedBranchLabels,
+            'units' => $units->values()->all(),
+        ]));
+
+        if ($this->hasDormantSnapshots($periods->all())) {
+            return $this->rememberPayload($cacheKey, now()->addMinutes(3), function () use (
+                $periods,
+                $selectedBranchLabels,
+                $units,
+                $currentPeriod,
+                $mtdPeriod,
+                $ytdPeriod,
+                $yoyPeriod
+            ) {
+                $rows = DB::table(self::SNAPSHOT_TABLE)
+                    ->select('posisi', 'unit_kerja', DB::raw('SUM(dormant_count) as dormant_count'))
+                    ->whereIn('posisi', $periods->all())
+                    ->whereIn('branch_label', $selectedBranchLabels)
+                    ->whereNotNull('unit_kerja')
+                    ->where('unit_kerja', '<>', '')
+                    ->when($units->isNotEmpty(), fn ($query) => $query->whereIn('unit_kerja', $units->all()))
+                    ->groupBy('posisi', 'unit_kerja')
+                    ->get();
+
+                return $this->formatDormantGroupedCounts($rows, 'unit_kerja', $currentPeriod, $mtdPeriod, $ytdPeriod, $yoyPeriod);
+            }, $forceRefresh);
+        }
+
+        return $this->rememberPayload($cacheKey, now()->addMinutes(3), function () use (
+            $periods,
+            $selectedRawBranches,
+            $units,
+            $currentPeriod,
+            $mtdPeriod,
+            $ytdPeriod,
+            $yoyPeriod
+        ) {
+            $rows = DB::table(DB::raw($this->qualifyIndexedSource('simpanan_multipn', null, [self::DORMANT_SUMMARY_INDEX])))
+                ->select('posisi', 'unit_kerja', DB::raw('COUNT(*) as dormant_count'))
+                ->whereIn('posisi', $periods->all())
+                ->where('status', '9')
+                ->whereIn('kantor_cabang', $selectedRawBranches->all())
+                ->whereNotNull('unit_kerja')
+                ->where('unit_kerja', '<>', '')
+                ->when($units->isNotEmpty(), fn ($query) => $query->whereIn('unit_kerja', $units->all()))
+                ->groupBy('posisi', 'unit_kerja')
+                ->get();
+
+            return $this->formatDormantGroupedCounts($rows, 'unit_kerja', $currentPeriod, $mtdPeriod, $ytdPeriod, $yoyPeriod);
+        }, $forceRefresh);
+    }
+
+    private function formatDormantGroupedCounts($rows, string $groupField, string $currentPeriod, ?string $mtdPeriod, ?string $ytdPeriod, ?string $yoyPeriod): array
+    {
+        $counts = [];
+
+        foreach ($rows as $row) {
+            $groupValue = trim((string) ($row->{$groupField} ?? ''));
+
+            if ($groupValue === '') {
+                continue;
+            }
+
+            $counts[$groupValue] ??= [
+                'current' => 0,
+                'mtd_base' => 0,
+                'ytd_base' => 0,
+                'yoy_base' => 0,
+            ];
+
+            $count = (int) ($row->dormant_count ?? 0);
+
+            if ($row->posisi === $currentPeriod) {
+                $counts[$groupValue]['current'] += $count;
+            }
+
+            if ($mtdPeriod && $row->posisi === $mtdPeriod) {
+                $counts[$groupValue]['mtd_base'] += $count;
+            }
+
+            if ($ytdPeriod && $row->posisi === $ytdPeriod) {
+                $counts[$groupValue]['ytd_base'] += $count;
+            }
+
+            if ($yoyPeriod && $row->posisi === $yoyPeriod) {
+                $counts[$groupValue]['yoy_base'] += $count;
+            }
+        }
+
+        return $counts;
     }
 
     private function baseDormantQuery(string $period, ?string $indexName = null)

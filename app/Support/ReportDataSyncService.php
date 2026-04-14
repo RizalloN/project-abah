@@ -17,6 +17,7 @@ class ReportDataSyncService
     private const DASHBOARD_SIMPANAN_BRANCH_SNAPSHOT_TABLE = 'dashboard_simpanan_branch_snapshots';
     private const DASHBOARD_HARIAN_SNAPSHOT_TABLE = 'dashboard_harian_snapshots';
     private const RASIO_SNAPSHOT_TABLE = 'rasio_casa_debitur_snapshots';
+    private const RASIO_UKER_SNAPSHOT_TABLE = 'rasio_casa_debitur_uker_snapshots';
     private const DORMANT_SNAPSHOT_TABLE = 'rekening_dormant_snapshots';
     private const NEW_PAYROLL_SNAPSHOT_TABLE = 'performance_new_payroll_snapshots';
     private const CACHE_VERSION_KEY = 'report_cache_version:global';
@@ -138,6 +139,7 @@ class ReportDataSyncService
         });
         if ($this->shouldRefreshDerivedSnapshotStatistics($periodHint)) {
             $this->refreshTableStatistics(self::RASIO_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
+            $this->refreshTableStatistics(self::RASIO_UKER_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
         }
     }
 
@@ -177,6 +179,7 @@ class ReportDataSyncService
 
             if ($this->shouldRefreshDerivedSnapshotStatistics($periodHint)) {
                 $this->refreshTableStatistics(self::RASIO_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
+                $this->refreshTableStatistics(self::RASIO_UKER_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
             }
         });
     }
@@ -266,6 +269,7 @@ class ReportDataSyncService
                 self::DASHBOARD_SNAPSHOT_TABLE => 'periode',
                 self::DASHBOARD_HARIAN_SNAPSHOT_TABLE => 'snapshot_period',
                 self::RASIO_SNAPSHOT_TABLE => 'loan_period',
+                self::RASIO_UKER_SNAPSHOT_TABLE => 'loan_period',
             ],
             'simpanan_multipn' => [
                 self::DASHBOARD_SIMPANAN_SNAPSHOT_TABLE => 'snapshot_period',
@@ -273,6 +277,7 @@ class ReportDataSyncService
                 self::DASHBOARD_HARIAN_SNAPSHOT_TABLE => 'snapshot_period',
                 self::DORMANT_SNAPSHOT_TABLE => 'posisi',
                 self::RASIO_SNAPSHOT_TABLE => 'casa_period',
+                self::RASIO_UKER_SNAPSHOT_TABLE => 'casa_period',
             ],
             'performance_pis_per_produk' => [
                 self::NEW_PAYROLL_SNAPSHOT_TABLE => 'snapshot_posisi',

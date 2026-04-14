@@ -8,7 +8,7 @@
     .report-data-card {
         border: 1px solid #e9ecef;
         border-radius: 16px;
-        overflow: hidden;
+        overflow: visible;
         box-shadow: 0 0.5rem 1rem rgba(15, 23, 42, 0.08) !important;
     }
     .report-filter-card .card-body,
@@ -16,9 +16,71 @@
     .report-data-card .card-body {
         background-color: #ffffff;
     }
+    .report-filter-card .card-body { overflow: visible; }
     .report-filter-card .form-control {
         border-radius: 10px;
         min-height: 40px;
+    }
+    .branch-filter-dropdown,
+    .uker-filter-dropdown { position: relative; }
+    .branch-dropdown-toggle {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        text-align: left;
+        background: #fff;
+    }
+    .branch-dropdown-toggle:disabled {
+        background: #e9ecef;
+        cursor: not-allowed;
+        opacity: 1;
+    }
+    .branch-dropdown-label {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .branch-dropdown-menu,
+    .uker-dropdown-menu {
+        position: absolute;
+        top: calc(100% + 6px);
+        left: 0;
+        right: 0;
+        z-index: 1050;
+        display: none;
+        width: 100%;
+        max-height: 260px;
+        overflow-y: auto;
+        background: #fff;
+        border: 1px solid #dee2e6;
+        border-radius: 10px;
+        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.12);
+        padding: 8px 0;
+    }
+    .branch-dropdown-menu.show,
+    .uker-dropdown-menu.show { display: block; }
+    .branch-dropdown-menu .dropdown-item,
+    .uker-dropdown-menu .dropdown-item {
+        padding: 0.45rem 1rem;
+        cursor: pointer;
+        margin-bottom: 0;
+    }
+    .branch-dropdown-menu .form-check,
+    .uker-dropdown-menu .form-check {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .branch-dropdown-menu .form-check-input,
+    .uker-dropdown-menu .form-check-input {
+        position: static;
+        margin: 0;
+    }
+    .branch-dropdown-menu .form-check-label,
+    .uker-dropdown-menu .form-check-label {
+        margin: 0;
+        font-weight: 500;
+        cursor: pointer;
     }
     .table-container { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
     .table-report {
@@ -60,13 +122,34 @@
             <div class="col-md-3">
                 <div class="form-group mb-0">
                     <label class="text-muted text-sm mb-1">Branch Office (Kanca)</label>
-                    <input type="text" class="form-control font-weight-bold" value="Area 6 - All" disabled>
+                    <div class="branch-filter-dropdown">
+                        <button type="button" class="form-control font-weight-bold branch-dropdown-toggle" id="filterBranchDropdown" aria-haspopup="true" aria-expanded="false">
+                            <span id="filter_branch_office_label" class="branch-dropdown-label">Area 6 - All</span>
+                            <i class="fas fa-chevron-down text-muted"></i>
+                        </button>
+                        <div class="branch-dropdown-menu" id="filterBranchMenu" aria-labelledby="filterBranchDropdown">
+                            @foreach(($branchOptions ?? collect()) as $branchOption)
+                                <label class="dropdown-item" for="branch_{{ \Illuminate\Support\Str::slug($branchOption, '_') }}">
+                                    <div class="form-check">
+                                        <input class="form-check-input filter-branch-checkbox" type="checkbox" value="{{ strtoupper($branchOption) }}" id="branch_{{ \Illuminate\Support\Str::slug($branchOption, '_') }}">
+                                        <span class="form-check-label">{{ strtoupper($branchOption) }}</span>
+                                    </div>
+                                </label>
+                            @endforeach
+                        </div>
+                    </div>
                 </div>
             </div>
             <div class="col-md-3">
                 <div class="form-group mb-0">
                     <label class="text-muted text-sm mb-1">Nama Uker</label>
-                    <input type="text" class="form-control" value="ALL UKER" disabled>
+                    <div class="uker-filter-dropdown">
+                        <button type="button" class="form-control branch-dropdown-toggle" id="filterUkerDropdown" aria-haspopup="true" aria-expanded="false" disabled>
+                            <span id="filter_nama_uker_label" class="branch-dropdown-label">ALL UKER</span>
+                            <i class="fas fa-chevron-down text-muted"></i>
+                        </button>
+                        <div class="uker-dropdown-menu" id="filterUkerMenu" aria-labelledby="filterUkerDropdown"></div>
+                    </div>
                 </div>
             </div>
             <div class="col-md-3">
@@ -114,7 +197,7 @@
                     <table class="table table-hover table-report m-0">
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
-                                <th rowspan="2" class="bg-header-main align-middle" style="min-width: 210px;">BRANCH OFFICE</th>
+                                <th rowspan="2" class="bg-header-main align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER" style="min-width: 210px;">BRANCH OFFICE</th>
                                 <th colspan="5" class="bg-header-main">New Rekening Payroll</th>
                                 <th colspan="5" class="bg-header-main">Saldo New Payroll</th>
                                 <th colspan="3" class="bg-header-main">Kualitas New Payroll</th>
@@ -148,7 +231,7 @@
                                 <th colspan="8" class="bg-header-main">New Rekening Payroll</th>
                             </tr>
                             <tr class="bg-header-sub">
-                                <th class="text-left" style="min-width: 210px;">Branch Office</th>
+                                <th class="text-left col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER" style="min-width: 210px;">Branch Office</th>
                                 <th class="lbl-yoy">-</th>
                                 <th class="lbl-prev">-</th>
                                 <th class="lbl-curr">-</th>
@@ -171,7 +254,7 @@
                                 <th colspan="8" class="bg-header-main">Saldo New Payroll</th>
                             </tr>
                             <tr class="bg-header-sub">
-                                <th class="text-left" style="min-width: 210px;">Branch Office</th>
+                                <th class="text-left col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER" style="min-width: 210px;">Branch Office</th>
                                 <th class="lbl-yoy">-</th>
                                 <th class="lbl-prev">-</th>
                                 <th class="lbl-curr">-</th>
@@ -197,6 +280,112 @@ document.addEventListener('DOMContentLoaded', function () {
     const filterRka = document.getElementById('filter_rka');
     const effectiveSnapshot = document.getElementById('effectiveSnapshot');
     const loadingIndicator = document.getElementById('loadingIndicator');
+    const branchDropdown = document.getElementById('filterBranchDropdown');
+    const branchMenu = document.getElementById('filterBranchMenu');
+    const branchLabel = document.getElementById('filter_branch_office_label');
+    const ukerDropdown = document.getElementById('filterUkerDropdown');
+    const ukerMenu = document.getElementById('filterUkerMenu');
+    const ukerLabel = document.getElementById('filter_nama_uker_label');
+    const branchUkerMap = @json(collect($branchUkerMap ?? [])->mapWithKeys(function ($ukers, $branch) {
+        return [
+            strtoupper(trim((string) $branch)) => collect($ukers)
+                ->map(fn ($uker) => strtoupper(trim((string) $uker)))
+                ->values()
+                ->all()
+        ];
+    }));
+    let selectedBranches = [];
+    let selectedUkers = [];
+
+    function normalizeUpper(value) {
+        return String(value || '').trim().toUpperCase();
+    }
+
+    function getCheckedValues(selector) {
+        return Array.from(document.querySelectorAll(selector))
+            .filter((checkbox) => checkbox.checked)
+            .map((checkbox) => normalizeUpper(checkbox.value))
+            .filter(Boolean);
+    }
+
+    function syncGroupLabels() {
+        const isFiltered = selectedBranches.length > 0;
+        document.querySelectorAll('.col-group-label').forEach((label) => {
+            label.textContent = isFiltered
+                ? (label.dataset.filteredLabel || 'UKER')
+                : (label.dataset.defaultLabel || 'BRANCH OFFICE');
+        });
+    }
+
+    function updateBranchLabel() {
+        branchLabel.textContent = selectedBranches.length > 0 ? selectedBranches.join(', ') : 'Area 6 - All';
+        syncGroupLabels();
+    }
+
+    function renderUkerOptions() {
+        const availableUkers = [...new Set(
+            selectedBranches.flatMap((branch) => branchUkerMap[branch] || [])
+        )].sort();
+
+        selectedUkers = selectedUkers.filter((uker) => availableUkers.includes(uker));
+
+        if (selectedBranches.length === 0) {
+            ukerDropdown.disabled = true;
+            ukerLabel.textContent = 'ALL UKER';
+            ukerMenu.innerHTML = '';
+            selectedUkers = [];
+            return;
+        }
+
+        ukerDropdown.disabled = false;
+
+        if (availableUkers.length === 0) {
+            ukerMenu.innerHTML = '<div class="dropdown-item text-muted small">Data uker belum tersedia</div>';
+            ukerLabel.textContent = 'ALL UKER';
+            return;
+        }
+
+        ukerMenu.innerHTML = availableUkers.map((uker) => {
+            const id = `uker_${uker.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`;
+            const checked = selectedUkers.includes(uker) ? 'checked' : '';
+            return `
+                <label class="dropdown-item" for="${id}">
+                    <div class="form-check">
+                        <input class="form-check-input filter-uker-checkbox" type="checkbox" value="${uker}" id="${id}" ${checked}>
+                        <span class="form-check-label">${uker}</span>
+                    </div>
+                </label>
+            `;
+        }).join('');
+
+        bindUkerCheckboxes();
+        updateUkerLabel();
+    }
+
+    function updateUkerLabel() {
+        ukerLabel.textContent = selectedUkers.length > 0 ? selectedUkers.join(', ') : 'ALL UKER';
+    }
+
+    function closeMenus(except = null) {
+        if (except !== 'branch') {
+            branchMenu.classList.remove('show');
+            branchDropdown.setAttribute('aria-expanded', 'false');
+        }
+        if (except !== 'uker') {
+            ukerMenu.classList.remove('show');
+            ukerDropdown.setAttribute('aria-expanded', 'false');
+        }
+    }
+
+    function bindUkerCheckboxes() {
+        document.querySelectorAll('.filter-uker-checkbox').forEach((checkbox) => {
+            checkbox.addEventListener('change', function () {
+                selectedUkers = getCheckedValues('.filter-uker-checkbox');
+                updateUkerLabel();
+                loadReport();
+            });
+        });
+    }
 
     function formatNumber(value, decimals = 0) {
         if (value === null || value === undefined || value === '' || Number.isNaN(Number(value))) {
@@ -335,7 +524,9 @@ document.addEventListener('DOMContentLoaded', function () {
                     'Accept': 'application/json'
                 },
                 body: JSON.stringify({
-                    posisi: filterPosisi.value
+                    posisi: filterPosisi.value,
+                    branch_office: selectedBranches,
+                    nama_uker: selectedUkers
                 })
             });
 
@@ -347,6 +538,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
             updateLabels(result.labels || {});
             effectiveSnapshot.textContent = result.effective_snapshot || '-';
+            syncGroupLabels();
 
             renderRows('tbody-total', buildTotalTable(result.data || [], result.total || {
                 branch: 'TOTAL AREA 6',
@@ -374,7 +566,44 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
+    branchDropdown.addEventListener('click', function (event) {
+        event.preventDefault();
+        const willShow = !branchMenu.classList.contains('show');
+        closeMenus();
+        branchMenu.classList.toggle('show', willShow);
+        branchDropdown.setAttribute('aria-expanded', willShow ? 'true' : 'false');
+    });
+
+    ukerDropdown.addEventListener('click', function (event) {
+        event.preventDefault();
+        if (ukerDropdown.disabled) {
+            return;
+        }
+        const willShow = !ukerMenu.classList.contains('show');
+        closeMenus();
+        ukerMenu.classList.toggle('show', willShow);
+        ukerDropdown.setAttribute('aria-expanded', willShow ? 'true' : 'false');
+    });
+
+    document.querySelectorAll('.filter-branch-checkbox').forEach((checkbox) => {
+        checkbox.addEventListener('change', function () {
+            selectedBranches = getCheckedValues('.filter-branch-checkbox');
+            updateBranchLabel();
+            renderUkerOptions();
+            loadReport();
+        });
+    });
+
+    document.addEventListener('click', function (event) {
+        if (!branchDropdown.closest('.branch-filter-dropdown').contains(event.target)
+            && !ukerDropdown.closest('.uker-filter-dropdown').contains(event.target)) {
+            closeMenus();
+        }
+    });
+
     filterPosisi.addEventListener('change', loadReport);
+    updateBranchLabel();
+    renderUkerOptions();
     loadReport();
 });
 </script>

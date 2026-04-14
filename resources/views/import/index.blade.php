@@ -24,13 +24,13 @@
                         @endforeach
                     </select>
                 </div>
-                <a href="#"
+                <button type="button"
                    id="btn-download-template"
                    class="btn import-template-banner__button disabled"
                    aria-disabled="true"
                    data-route-template="{{ route('import.template') }}">
                     <i class="fas fa-file-download mr-2"></i> Unduh Template
-                </a>
+                </button>
             </div>
         </div>
     </div>
@@ -671,13 +671,11 @@
             const filename = selectedOption ? (selectedOption.getAttribute('data-filename') || '') : '';
 
             if (templateKey) {
-                btnDownloadTemplate.href = buildTemplateDownloadUrl(templateKey, filename, true);
                 btnDownloadTemplate.classList.remove('disabled');
                 btnDownloadTemplate.removeAttribute('aria-disabled');
                 return;
             }
 
-            btnDownloadTemplate.href = '#';
             btnDownloadTemplate.classList.add('disabled');
             btnDownloadTemplate.setAttribute('aria-disabled', 'true');
         }
@@ -722,6 +720,9 @@
             }
 
             if (isBusy) {
+                if (!btnDownloadTemplate.dataset.defaultLabel) {
+                    btnDownloadTemplate.dataset.defaultLabel = btnDownloadTemplate.innerHTML;
+                }
                 btnDownloadTemplate.classList.add('disabled');
                 btnDownloadTemplate.setAttribute('aria-disabled', 'true');
                 btnDownloadTemplate.setAttribute('aria-busy', 'true');
@@ -730,6 +731,9 @@
             }
 
             btnDownloadTemplate.removeAttribute('aria-busy');
+            if (btnDownloadTemplate.dataset.defaultLabel) {
+                btnDownloadTemplate.innerHTML = btnDownloadTemplate.dataset.defaultLabel;
+            }
             syncDownloadButton();
         }
 
