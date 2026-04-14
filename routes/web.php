@@ -16,6 +16,7 @@ use App\Http\Controllers\Import\ImportSimpananMultiPnCsvController;
 use App\Http\Controllers\Input\BodBocController;
 use App\Http\Controllers\Input\InputRekananController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
+use App\Http\Controllers\Admin\FileManagementDownloadController;
 use App\Http\Controllers\Admin\FileManagementController;
 use App\Http\Controllers\Admin\UserManagementController;
 use App\Http\Controllers\RasioCasaDebiturController;
@@ -104,6 +105,8 @@ Route::middleware(['auth', 'role:admin', 'release.session.lock'])->group(functio
     Route::post('/job-management/{jobId}/terminate', [ImportJobManagementController::class, 'terminate'])->name('job-management.terminate');
     Route::delete('/job-management/{jobId}', [ImportJobManagementController::class, 'destroy'])->name('job-management.destroy');
     Route::get('/file-management', [FileManagementController::class, 'index'])->name('file-management.index');
+    Route::post('/file-management/database-backup', [FileManagementController::class, 'backupDatabase'])->name('file-management.database-backup');
+    Route::get('/file-management/download', FileManagementDownloadController::class)->name('file-management.download');
     Route::post('/file-management/delete', [FileManagementController::class, 'destroy'])->name('file-management.destroy');
     Route::get('/user-management', [UserManagementController::class, 'index'])->name('user-management.index');
     Route::post('/user-management', [UserManagementController::class, 'store'])->name('user-management.store');

@@ -61,6 +61,7 @@
 </div>
 
 <div class="card shadow-sm border-0 file-management-card" id="file-management-card"
+     data-backup-url="{{ route('file-management.database-backup') }}"
      data-delete-url="{{ route('file-management.destroy') }}"
      data-cleanup-url="{{ route('import.cleanup-artifacts') }}">
     <div class="card-header bg-white border-0 file-management-card__header">
@@ -71,6 +72,16 @@
         <p class="file-management-card__subtitle mb-0">Folder yang dipantau: import excel, casa brilink, report PH, performance PIS, dan workspace staging.</p>
     </div>
     <div class="card-body file-management-card__body">
+        <div class="file-management-backup-panel mb-3">
+            <div>
+                <div class="file-management-backup-panel__title">Backup Database Full</div>
+                <div class="file-management-backup-panel__text">Generate file `.sql` bersih dari seluruh database aktif. Output dipisahkan dari stderr agar tidak tercampur HTML atau karakter aneh yang mengganggu proses import.</div>
+            </div>
+            <button type="button" id="btn-file-management-backup" class="btn btn-success file-management-action-btn">
+                <i class="fas fa-database mr-2"></i> Backup Database
+            </button>
+        </div>
+
         <div class="row align-items-end mb-3">
             <div class="col-lg-5 mb-3 mb-lg-0">
                 <label class="font-weight-bold text-dark">Cari File</label>
@@ -164,6 +175,11 @@
                                 <div class="file-management-time">{{ $file['modified_human'] }}</div>
                             </td>
                             <td class="text-center">
+                                @if(strtolower(pathinfo($file['name'], PATHINFO_EXTENSION)) === 'sql')
+                                    <a href="{{ route('file-management.download', ['path' => $file['relative_path']]) }}" class="btn btn-sm btn-outline-primary file-management-download-btn mr-2">
+                                        <i class="fas fa-download mr-1"></i>Unduh
+                                    </a>
+                                @endif
                                 <button type="button" class="btn btn-sm btn-outline-danger file-management-delete-btn"
                                         data-path="{{ $file['relative_path'] }}"
                                         data-name="{{ $file['name'] }}"
@@ -192,11 +208,13 @@
     document.addEventListener('DOMContentLoaded', function () {
         const card = document.getElementById('file-management-card');
         const deleteUrl = card?.getAttribute('data-delete-url') || '';
+        const backupUrl = card?.getAttribute('data-backup-url') || '';
         const cleanupUrl = card?.getAttribute('data-cleanup-url') || '';
         const searchInput = document.getElementById('file-management-search');
         const selectAll = document.getElementById('file-management-select-all');
         const tableBody = document.getElementById('file-management-table-body');
         const btnDeleteSelected = document.getElementById('btn-file-management-delete-selected');
+        const btnBackup = document.getElementById('btn-file-management-backup');
         const btnCleanup = document.getElementById('btn-file-management-cleanup');
         const hoursInput = document.getElementById('file-management-hours');
         const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '{{ csrf_token() }}';
@@ -380,6 +398,47 @@
             window.location.reload();
         });
 
+        btnBackup?.addEventListener('click', async function () {
+            const confirm = await themedSwal({
+                icon: 'question',
+                title: 'Backup Database Full',
+                html: 'Buat backup SQL penuh dari database aktif sekarang?',
+                showCancelButton: true,
+                confirmButtonText: 'Buat Backup',
+                cancelButtonText: 'Batal',
+            });
+
+            if (!confirm.isConfirmed) {
+                return;
+            }
+
+            btnBackup.disabled = true;
+            try {
+                const payload = await postJson(backupUrl, {});
+                const downloadUrl = String(payload?.file?.download_url || '').trim();
+
+                await themedSwal({
+                    icon: 'success',
+                    title: 'Backup Selesai',
+                    html: `File <b>${escapeHtml(payload?.file?.name || 'backup.sql')}</b> berhasil dibuat.`,
+                });
+
+                if (downloadUrl) {
+                    window.location.assign(downloadUrl);
+                }
+
+                window.setTimeout(() => window.location.reload(), 700);
+            } catch (error) {
+                await themedSwal({
+                    icon: 'error',
+                    title: 'Backup Gagal',
+                    text: error.message || 'Terjadi kesalahan saat membuat backup database.',
+                });
+            } finally {
+                btnBackup.disabled = false;
+            }
+        });
+
         updateSelectionState();
         applySearch();
     });
@@ -408,6 +467,9 @@
     .file-management-card__eyebrow { color: #1d4ed8; background: rgba(37,99,235,0.08); }
     .file-management-card__subtitle { color: #64748b; max-width: 780px; line-height: 1.6; }
     .file-management-card__body { padding: 1.75rem; background: #f8fafc; }
+    .file-management-backup-panel { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; padding: 1.25rem 1.35rem; border-radius: 20px; background: linear-gradient(135deg, #eff6ff 0%, #ecfeff 100%); border: 1px solid rgba(59,130,246,0.16); box-shadow: 0 12px 28px -18px rgba(14,165,233,0.4); }
+    .file-management-backup-panel__title { color: #0f172a; font-size: 1rem; font-weight: 800; margin-bottom: 0.25rem; }
+    .file-management-backup-panel__text { color: #475569; font-size: 0.9rem; line-height: 1.65; max-width: 760px; }
     .file-management-input { min-height: 48px; border-radius: 16px; border: 1px solid rgba(148, 163, 184, 0.3); background: #ffffff; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.02); }
     .file-management-input:focus { border-color: #307fe2; background: #fff; box-shadow: 0 0 0 4px rgba(48,127,226,0.16); }
     .file-management-input-group__append { border-radius: 0 16px 16px 0; border: 1px solid rgba(148, 163, 184, 0.3); border-left: none; background: #ffffff; color: #4b5563; }
@@ -436,6 +498,7 @@
     .file-management-folder__meta { font-size: 0.85rem; color: #64748b; line-height: 1.4; }
     .file-management-size { display: inline-flex; align-items: center; justify-content: flex-end; min-width: 90px; padding: 0.45rem 0.85rem; border-radius: 999px; background: rgba(37,99,235,0.08); color: #1d4ed8; font-weight: 800; border: 1px solid rgba(37,99,235,0.15); }
     .file-management-time { font-weight: 700; color: #0f172a; font-size: 0.95rem; }
+    .file-management-download-btn,
     .file-management-delete-btn { min-width: 110px; border-radius: 14px; font-weight: 800; }
     .management-file-checkbox { width: 1.2rem; height: 1.2rem; border-radius: 6px; cursor: pointer; }
     .management-file-checkbox:disabled { cursor: not-allowed; opacity: 0.45; }
