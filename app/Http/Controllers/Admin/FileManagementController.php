@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\View\View;
+use App\Services\Import\ImportProgressService;
 
 class FileManagementController extends Controller
 {
@@ -117,7 +118,9 @@ class FileManagementController extends Controller
         $deleted = [];
         $skipped = [];
         $blocked = [];
+        $deletedImportJobs = [];
         $activeFiles = $this->collectActiveImportFiles();
+        $importProgressService = app(ImportProgressService::class);
 
         foreach ($data['paths'] as $path) {
             $resolvedPath = $this->resolveRequestedPath($path);
@@ -134,7 +137,12 @@ class FileManagementController extends Controller
             if (is_file($resolvedPath)) {
                 @unlink($resolvedPath);
                 $deleted[] = $resolvedPath;
+                $jobCleanup = $importProgressService->deleteJobsForSourcePath($resolvedPath);
+                if (!empty($jobCleanup['deleted_job_ids'])) {
+                    $deletedImportJobs = array_merge($deletedImportJobs, $jobCleanup['deleted_job_ids']);
+                }
                 $this->pruneEmptyManagedParents(dirname($resolvedPath));
+                $this->clearStaleImportSessionIfMatched($resolvedPath);
                 continue;
             }
 
@@ -147,6 +155,10 @@ class FileManagementController extends Controller
             !empty($skipped) ? ' dan melewati ' . count(array_unique($skipped)) . ' item yang tidak valid' : ''
         );
 
+        if (!empty($deletedImportJobs)) {
+            $message .= sprintf(' %d record import terkait ikut dibersihkan.', count(array_unique($deletedImportJobs)));
+        }
+
         if (!empty($blocked)) {
             $message .= sprintf(' %d file aktif dilewati.', count(array_unique($blocked)));
         }
@@ -156,6 +168,7 @@ class FileManagementController extends Controller
                 'status' => 'success',
                 'message' => $message,
                 'deleted_count' => count(array_unique($deleted)),
+                'deleted_import_job_count' => count(array_unique($deletedImportJobs)),
                 'skipped_count' => count(array_unique($skipped)),
                 'blocked_count' => count(array_unique($blocked)),
             ]);
@@ -364,5 +377,47 @@ class FileManagementController extends Controller
     private function isAbsolutePath(string $path): bool
     {
         return preg_match('/^[A-Za-z]:[\\\\\\/]/', $path) === 1 || str_starts_with($path, '\\\\');
+    }
+
+    private function clearStaleImportSessionIfMatched(string $deletedPath): void
+    {
+        $sessionPath = (string) session('excel_path', '');
+        if ($sessionPath === '') {
+            return;
+        }
+
+        $resolvedSessionPath = $this->resolveSessionImportPath($sessionPath);
+        if ($resolvedSessionPath === null) {
+            return;
+        }
+
+        if (strtolower(str_replace('\\', '/', $resolvedSessionPath)) !== strtolower(str_replace('\\', '/', $deletedPath))) {
+            return;
+        }
+
+        session()->forget([
+            'active_id_report',
+            'excel_path',
+            'excel_preview_key',
+            'excel_headers',
+            'excel_display_filter_map',
+            'excel_preview_meta',
+            'excel_import_params',
+            'excel_import_source',
+        ]);
+    }
+
+    private function resolveSessionImportPath(string $sessionPath): ?string
+    {
+        $normalized = trim(str_replace(['\\', '//'], ['/', '/'], $sessionPath));
+        if ($normalized === '') {
+            return null;
+        }
+
+        if (preg_match('/^[A-Za-z]:[\\\\\\/]/', $normalized) === 1 || str_starts_with($normalized, '/')) {
+            return $normalized;
+        }
+
+        return storage_path('app/' . ltrim($normalized, '/'));
     }
 }

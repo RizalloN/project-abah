@@ -371,6 +371,12 @@ class ImportCasaBrilinkController extends Controller
                 $totalRows = (int) ($params['total_rows'] ?? 0);
 
                 if ($relativePath === '' || !file_exists($absolutePath)) {
+                    if ($jobId > 0) {
+                        $progressService = app(\App\Services\Import\ImportProgressService::class);
+                        $progressService->markFailed($jobId, 'File tidak ditemukan di server. Silakan upload ulang.', 0, 0, 'failed');
+                        $progressService->cleanupQueuedImportJobRowsForJob($jobId);
+                    }
+
                     $send('error', ['message' => 'File CSV CASA BRILINK tidak ditemukan di server.']);
                     return;
                 }

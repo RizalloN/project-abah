@@ -106,8 +106,21 @@ class ManagedReportManagementService
         ],
     ];
 
-    public function resolveReportManagementData(int $reportId, array $options, bool $duplicateCleanupAvailable = false): array
+    public function resolveReportManagementData(
+        int $reportId,
+        array $options,
+        bool $duplicateCleanupAvailable = false,
+        ?callable $progressCallback = null
+    ): array
     {
+        $this->emitProgress($progressCallback, [
+            'stage' => 'validating',
+            'message' => 'Memvalidasi report dan tabel sumber...',
+            'completed_units' => 0,
+            'total_units' => 4,
+            'progress_percent' => 5,
+        ]);
+
         $report = NamaReport::where('active', 1)
             ->where('id_report', $reportId)
             ->first();
@@ -146,17 +159,52 @@ class ManagedReportManagementService
             ];
         }
 
+        $this->emitProgress($progressCallback, [
+            'stage' => 'scanning_columns',
+            'message' => 'Mendeteksi kolom periode dan kanca yang paling relevan...',
+            'completed_units' => 1,
+            'total_units' => 4,
+            'progress_percent' => 25,
+        ]);
+
         $tableColumns = Schema::getColumnListing($tableName);
         [$periodColumn, $kancaColumn] = $this->resolveManagementScopeColumns($tableName, $tableColumns);
 
         $maxRows = (int) ($options['max_rows'] ?? self::MANAGEMENT_MAX_GROUP_ROWS);
         $page = (int) ($options['page'] ?? 1);
         $perPage = (int) ($options['per_page'] ?? self::MANAGEMENT_PERIODS_PER_PAGE);
+
+        $this->emitProgress($progressCallback, [
+            'stage' => 'grouping',
+            'message' => 'Menjalankan query grouping data report. Tahap ini paling berat untuk report besar...',
+            'completed_units' => 2,
+            'total_units' => 4,
+            'progress_percent' => 55,
+        ]);
+
         [$rows, $truncated] = $this->buildManagementRows($tableName, $periodColumn, $kancaColumn, $maxRows);
+
+        $this->emitProgress($progressCallback, [
+            'stage' => 'counting',
+            'message' => 'Menghitung total baris sumber dan menyiapkan pagination periode...',
+            'completed_units' => 3,
+            'total_units' => 4,
+            'progress_percent' => 82,
+        ]);
+
         $paginatedPeriods = $this->paginateManagementPeriods($rows, $page, $perPage, $periodColumn !== null);
         $displayedRowsTotal = array_reduce($paginatedPeriods['periods'], static function (int $carry, array $period): int {
             return $carry + (int) ($period['total_rows'] ?? 0);
         }, 0);
+        $grandTotalRows = (int) DB::table($tableName)->count();
+
+        $this->emitProgress($progressCallback, [
+            'stage' => 'finalizing',
+            'message' => 'Merapikan hasil akhir agar siap dirender ke tabel management...',
+            'completed_units' => 4,
+            'total_units' => 4,
+            'progress_percent' => 95,
+        ]);
 
         return [
             'ok' => true,
@@ -170,13 +218,20 @@ class ManagedReportManagementService
                 'max_rows' => $maxRows,
                 'truncated' => $truncated,
                 'displayed_rows_total' => $displayedRowsTotal,
-                'grand_total_rows' => (int) DB::table($tableName)->count(),
+                'grand_total_rows' => $grandTotalRows,
                 'total_groups' => count($rows),
                 'rows' => $paginatedPeriods['rows'],
                 'periods' => $paginatedPeriods['periods'],
                 'pagination' => $paginatedPeriods['pagination'],
             ],
         ];
+    }
+
+    private function emitProgress(?callable $progressCallback, array $payload): void
+    {
+        if ($progressCallback !== null) {
+            $progressCallback($payload);
+        }
     }
 
     public function resolveManagementScopeColumns(string $tableName, array $tableColumns): array

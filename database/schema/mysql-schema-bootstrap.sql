@@ -368,6 +368,7 @@ CREATE TABLE `import_jobs` (
   `total_success` int(10) unsigned NOT NULL DEFAULT 0,
   `total_failed` int(10) unsigned NOT NULL DEFAULT 0,
   `created_by` bigint(20) unsigned NOT NULL,
+  `job_context` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`job_context`)),
   `job_fingerprint` varchar(64) DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT NULL,
   `updated_at` timestamp NULL DEFAULT NULL,

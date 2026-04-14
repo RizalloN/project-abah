@@ -2280,8 +2280,15 @@ class ImportFileController extends Controller
                 }
                 flush();
             };
-            $markJobFailed = function (string $message, int $success = 0, int $failed = 0, ?string $status = null) use ($jobId): void {
+            $progressService = app(\App\Services\Import\ImportProgressService::class);
+            $markJobFailed = function (string $message, int $success = 0, int $failed = 0, ?string $status = null) use ($jobId, $progressService): void {
                 if ($jobId <= 0) {
+                    return;
+                }
+
+                if ($success === 0 && $failed === 0 && str_contains(strtolower($message), 'file tidak ditemukan')) {
+                    $progressService->markFailed($jobId, $message, 0, 0, $status ?? 'failed');
+                    $progressService->cleanupQueuedImportJobRowsForJob($jobId);
                     return;
                 }
 

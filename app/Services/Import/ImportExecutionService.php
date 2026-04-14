@@ -37,6 +37,7 @@ class ImportExecutionService
         }
 
         $this->progressService->purgeStaleQueuedJobs();
+        $this->progressService->purgeStaleProcessingJobs();
 
         $job = $this->progressService->findJob($jobId);
         if (!$job || in_array($job->status, ['processing', 'completed', 'failed', 'failed_partial'], true)) {
@@ -219,6 +220,8 @@ class ImportExecutionService
 
     public function run(int $jobId): void
     {
+        $this->progressService->purgeStaleProcessingJobs();
+
         $state = $this->progressService->getJobState($jobId);
         $params = (array) ($state['params'] ?? []);
         $headers = array_values((array) ($state['headers'] ?? []));

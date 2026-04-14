@@ -21,6 +21,7 @@ class RunManagedReportDeleteJob implements ShouldQueue
 
     public function __construct(public readonly string $deleteId)
     {
+        $this->onQueue('imports-high');
     }
 
     public function handle(

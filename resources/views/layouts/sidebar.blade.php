@@ -12,6 +12,7 @@
         scrollbar-width: none;
         scrollbar-gutter: stable;
         padding-top: 0.1rem;
+        padding-bottom: 6rem !important; /* Fix for Windows taskbar cutoff */
     }
 
     .main-sidebar .os-host,
@@ -305,16 +306,16 @@
             <span class="d-inline-flex align-items-center justify-content-center mr-3 sidebar-brand-badge">
                 <span class="sidebar-brand-mark">
                     <img
-                        src="{{ asset('images/bri-logo.png') }}"
-                        alt="BRI Icon"
+                        src="{{ asset('images/a-six-logo.svg') }}"
+                        alt="Logo A-Six"
                         onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-flex';"
                     >
-                    <span class="sidebar-brand-fallback">BRI</span>
+                    <span class="sidebar-brand-fallback">ASIX</span>
                 </span>
             </span>
             <div class="brand-text sidebar-brand-text">
-                <div class="title">DigiBranch</div>
-                <div class="subtitle">Area 6 Portal</div>
+                <div class="title">A-Six</div>
+                <div class="subtitle">Dashboard Portal</div>
             </div>
         </div>
     </a>

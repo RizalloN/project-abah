@@ -9,7 +9,7 @@
         <div class="pr-3">
             <span class="user-management-hero__eyebrow">User Management</span>
             <div class="user-management-hero__title"><i class="fas fa-users-cog mr-2"></i> Kontrol Akses Pengguna</div>
-            <p class="user-management-hero__text mb-0">Kelola akun internal, role akses, dan reset password dari satu halaman dengan tampilan yang konsisten dengan portal BRI.</p>
+            <p class="user-management-hero__text mb-0">Kelola akun internal, role akses, dan reset password dari satu halaman dengan tampilan yang konsisten dengan portal A-Six.</p>
         </div>
         <div class="user-management-hero__badge mt-3 mt-md-0"><i class="fas fa-user-shield mr-2"></i> Admin Only</div>
     </div>

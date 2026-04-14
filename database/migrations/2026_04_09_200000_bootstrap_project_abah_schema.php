@@ -384,6 +384,10 @@ return new class extends Migration
         }
 
         Schema::table('import_jobs', function (Blueprint $table) {
+            if (!Schema::hasColumn('import_jobs', 'job_context')) {
+                $table->longText('job_context')->nullable()->after('created_by');
+            }
+
             if (!Schema::hasColumn('import_jobs', 'total_success')) {
                 $table->unsignedInteger('total_success')->default(0)->after('total_files');
             }

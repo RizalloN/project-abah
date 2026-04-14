@@ -16,12 +16,14 @@
         </div>
         <div class="import-template-banner__actions mt-3 mt-md-0">
             <div class="import-template-banner__download-group">
-                <select id="download-template-select" class="form-control import-template-banner__select">
-                    <option value="">-- Pilih Template --</option>
-                    @foreach($downloadTemplates as $key => $template)
-                        <option value="{{ $key }}" data-filename="{{ $template['filename'] }}">{{ $template['label'] }}</option>
-                    @endforeach
-                </select>
+                <div class="import-template-banner__select-wrapper">
+                    <select id="download-template-select" class="form-control select2 import-template-banner__select" data-placeholder="-- Cari & Pilih Report --">
+                        <option value="">-- Cari & Pilih Report --</option>
+                        @foreach($downloadTemplates as $key => $template)
+                            <option value="{{ $key }}" data-filename="{{ $template['filename'] }}">{{ $template['label'] }}</option>
+                        @endforeach
+                    </select>
+                </div>
                 <a href="#"
                    id="btn-download-template"
                    class="btn import-template-banner__button disabled"
@@ -1865,13 +1867,36 @@
         justify-content: flex-end;
     }
 
-    .import-template-banner__select {
-        min-width: 260px;
+    .import-template-banner__select-wrapper {
+        min-width: 280px;
+        flex: 1 1 auto;
+        max-width: 400px;
+    }
+
+    .import-template-banner .select2-container--bootstrap4 .select2-selection--single {
         min-height: 48px;
-        border-radius: 16px;
-        border: 1px solid rgba(16, 185, 129, 0.18);
-        box-shadow: none;
-        background: rgba(255, 255, 255, 0.88);
+        border-radius: 16px !important;
+        border: 1px solid rgba(16, 185, 129, 0.25) !important;
+        background: rgba(255, 255, 255, 0.95) !important;
+        display: flex;
+        align-items: center;
+        box-shadow: 0 4px 12px -8px rgba(5, 150, 105, 0.2) !important;
+    }
+
+    .import-template-banner .select2-container--bootstrap4 .select2-selection--single .select2-selection__rendered {
+        color: #064e3b;
+        font-weight: 600;
+        padding-left: 1.25rem;
+    }
+
+    .import-template-banner .select2-container--bootstrap4 .select2-selection--single .select2-selection__arrow {
+        height: 46px;
+        right: 8px;
+    }
+
+    .import-template-banner .select2-container--bootstrap4.select2-container--focus .select2-selection--single {
+        border-color: #10b981 !important;
+        box-shadow: 0 0 0 0.25rem rgba(16, 185, 129, 0.15) !important;
     }
 
     .import-template-banner__button:hover {

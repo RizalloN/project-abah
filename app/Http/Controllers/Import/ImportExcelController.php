@@ -1738,6 +1738,7 @@ class ImportExcelController extends Controller
                             0,
                             'failed'
                         );
+                        $this->progressService()->cleanupQueuedImportJobRowsForJob($jobId);
                     }
 
                     $this->clearDailyLoanImportSessionState();
@@ -4301,13 +4302,6 @@ class ImportExcelController extends Controller
 
     private function prepareCsvPreviewPayload(string $path): array
     {
-        if ($this->isDailyLoanActive()) {
-            $payload = $this->buildPreviewPayloadFromCsvFile($path);
-            $payload['total_rows'] = null;
-
-            return $payload;
-        }
-
         $delimiter = $this->detectCsvDelimiter($path);
         $handle = @fopen($path, 'r');
         if (!$handle) {
@@ -5367,15 +5361,6 @@ class ImportExcelController extends Controller
 
             ksort($normalizedActiveFilters);
 
-            $jobId = $this->excelImportJobService()->createImportJobRecord((int) $idReport, $path, 0, [
-                'controller' => static::class,
-                'mode' => 'preview_init',
-                'table_name' => $tableName,
-                'header_index' => $headerIndex,
-                'selected_columns' => $normalizedActiveFilters,
-                'file_path' => $relativePath,
-            ]);
-
             session([
                 'excel_headers'        => $previewHeaders,
                 'excel_preview_meta'   => [
@@ -5394,9 +5379,24 @@ class ImportExcelController extends Controller
                     'active_filters' => $normalizedActiveFilters,
                     'total_rows'     => $previewTotalRows,
                     'delimiter'      => $previewDelimiter,
-                    'job_id'         => $jobId,
                 ],
             ]);
+
+            $jobId = $this->excelImportJobService()->createImportJobRecord((int) $idReport, $path, 0, [
+                'controller' => static::class,
+                'mode' => 'preview_init',
+                'table_name' => $tableName,
+                'header_index' => $headerIndex,
+                'selected_columns' => $normalizedActiveFilters,
+                'file_path' => $relativePath,
+            ]);
+
+            session([
+                'excel_import_params' => array_merge(session('excel_import_params', []), [
+                    'job_id' => $jobId,
+                ]),
+            ]);
+
             $this->excelImportJobService()->putImportJobState($jobId, [
                 'params' => [
                     'header_index'   => $headerIndex,
@@ -5537,16 +5537,6 @@ class ImportExcelController extends Controller
 
         ksort($normalizedActiveFilters);
 
-        $jobId = $this->excelImportJobService()->createImportJobRecord((int) $idReport, $path, $dataRowsCount, [
-            'controller' => static::class,
-            'mode' => 'previews',
-            'table_name' => $tableName,
-            'file_path' => $relativePath,
-            'header_index' => $headerIndex,
-            'active_filters_hash' => sha1(json_encode($normalizedActiveFilters)),
-            'normalized_headers_hash' => sha1(json_encode($normalizedHeadersForSession)),
-        ]);
-
         if (!$this->isCsvFile($path) && ($stagedCsvPath === '' || !file_exists($stagedCsvPath))) {
             $stageResult = $this->stageExcelToCsv(
                 static function (string $event, array $data): void {
@@ -5564,6 +5554,22 @@ class ImportExcelController extends Controller
                 $delimiter = ',';
             }
         }
+
+        $jobId = $this->excelImportJobService()->createImportJobRecord((int) $idReport, $path, $dataRowsCount, [
+            'controller' => static::class,
+            'mode' => 'previews',
+            'table_name' => $tableName,
+            'file_path' => $relativePath,
+            'header_index' => $headerIndex,
+            'active_filters_hash' => sha1(json_encode($normalizedActiveFilters)),
+            'normalized_headers_hash' => sha1(json_encode($normalizedHeadersForSession)),
+        ]);
+
+        session([
+            'excel_import_params' => array_merge(session('excel_import_params', []), [
+                'job_id' => $jobId,
+            ]),
+        ]);
 
         session([
             'excel_headers'        => $normalizedHeadersForSession,

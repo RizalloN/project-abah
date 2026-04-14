@@ -3,18 +3,19 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Login - BRI DigiBranch Area 6</title>
+    <title>Login - Dashboard A-Six</title>
+    <link rel="icon" type="image/svg+xml" href="{{ asset('images/a-six-logo.svg') }}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bri-nusantara: #0857c3;
-            --bri-cakrawala: #307fe2;
-            --bri-mentari: #71c5e8;
-            --bri-night: #053b82;
-            --bri-ink: #153f79;
-            --bri-bg: #eaf2ff;
+            --asix-primary: #f97316;
+            --asix-secondary: #fb923c;
+            --asix-soft: #fed7aa;
+            --asix-night: #111827;
+            --asix-ink: #2f3b52;
+            --asix-bg: #fff7ed;
         }
 
         * {
@@ -24,7 +25,7 @@
         body {
             margin: 0;
             font-family: "Inter", sans-serif;
-            background: var(--bri-bg);
+            background: var(--asix-bg);
             color: #0f172a;
             min-height: 100vh;
         }
@@ -33,9 +34,9 @@
             min-height: 100vh;
             padding: 28px;
             background:
-                radial-gradient(circle at 10% 5%, rgba(113, 197, 232, 0.28), transparent 34%),
-                radial-gradient(circle at 95% 0%, rgba(48, 127, 226, 0.24), transparent 26%),
-                linear-gradient(135deg, #053b82 0%, #0857c3 54%, #307fe2 100%);
+                radial-gradient(circle at 10% 5%, rgba(251, 146, 60, 0.22), transparent 34%),
+                radial-gradient(circle at 95% 0%, rgba(253, 186, 116, 0.18), transparent 26%),
+                linear-gradient(135deg, #111827 0%, #1f2937 48%, #f97316 100%);
             display: flex;
             align-items: center;
             justify-content: center;
@@ -85,8 +86,13 @@
             justify-content: center;
             border: 1px solid rgba(255, 255, 255, 0.34);
             background: rgba(255, 255, 255, 0.14);
-            font-size: 0.95rem;
-            font-weight: 800;
+            padding: 7px;
+        }
+
+        .left-brand-badge img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
         }
 
         .left-eyebrow {
@@ -95,7 +101,7 @@
             font-weight: 700;
             text-transform: uppercase;
             letter-spacing: 0.35em;
-            color: #cde8ff;
+            color: #ffd8b4;
         }
 
         .left-title {
@@ -154,14 +160,14 @@
             font-weight: 800;
             letter-spacing: 0.34em;
             text-transform: uppercase;
-            color: var(--bri-nusantara);
+            color: var(--asix-primary);
         }
 
         .right-title {
             margin: 12px 0 0;
             font-size: clamp(1.95rem, 3vw, 2.5rem);
             line-height: 1.15;
-            color: var(--bri-night);
+            color: var(--asix-night);
             font-weight: 800;
         }
 
@@ -196,7 +202,7 @@
             display: block;
             font-size: 0.95rem;
             font-weight: 700;
-            color: var(--bri-ink);
+            color: var(--asix-ink);
             margin-bottom: 8px;
         }
 
@@ -204,8 +210,8 @@
         .field input[type="password"] {
             width: 100%;
             border-radius: 16px;
-            border: 1px solid #c7dcfb;
-            background: #f4f9ff;
+            border: 1px solid #fed7aa;
+            background: #fffaf5;
             padding: 12px 14px;
             font-size: 0.94rem;
             color: #0f172a;
@@ -214,13 +220,13 @@
         }
 
         .field input::placeholder {
-            color: #8ba2c0;
+            color: #b08968;
         }
 
         .field input:focus {
-            border-color: var(--bri-cakrawala);
+            border-color: var(--asix-secondary);
             background: #ffffff;
-            box-shadow: 0 0 0 4px rgba(48, 127, 226, 0.16);
+            box-shadow: 0 0 0 4px rgba(249, 115, 22, 0.14);
         }
 
         .error {
@@ -249,7 +255,7 @@
         .remember input[type="checkbox"] {
             width: 16px;
             height: 16px;
-            accent-color: var(--bri-nusantara);
+            accent-color: var(--asix-primary);
         }
 
         .internal-label {
@@ -269,14 +275,14 @@
             border: none;
             border-radius: 16px;
             padding: 13px 16px;
-            background: linear-gradient(130deg, var(--bri-nusantara), var(--bri-cakrawala));
+            background: linear-gradient(130deg, var(--asix-primary), var(--asix-secondary));
             color: #ffffff;
             text-transform: uppercase;
             letter-spacing: 0.22em;
             font-size: 0.82rem;
             font-weight: 800;
             cursor: pointer;
-            box-shadow: 0 16px 26px -18px rgba(8, 87, 195, 0.8);
+            box-shadow: 0 16px 26px -18px rgba(249, 115, 22, 0.62);
             transition: transform 0.15s ease, filter 0.15s ease;
         }
 
@@ -287,7 +293,7 @@
 
         .submit-btn:focus {
             outline: none;
-            box-shadow: 0 0 0 4px rgba(48, 127, 226, 0.2);
+            box-shadow: 0 0 0 4px rgba(249, 115, 22, 0.18);
         }
 
         @media (max-width: 1024px) {
@@ -309,7 +315,7 @@
                 align-items: center;
                 gap: 10px;
                 text-decoration: none;
-                color: var(--bri-nusantara);
+                color: var(--asix-primary);
                 text-transform: uppercase;
                 letter-spacing: 0.22em;
                 font-weight: 700;
@@ -324,10 +330,15 @@
                 display: inline-flex;
                 align-items: center;
                 justify-content: center;
-                font-weight: 800;
-                color: #fff;
-                background: linear-gradient(130deg, var(--bri-nusantara), var(--bri-cakrawala));
-                box-shadow: 0 12px 20px -14px rgba(8, 87, 195, 0.72);
+                padding: 6px;
+                background: rgba(249, 115, 22, 0.08);
+                box-shadow: 0 12px 20px -14px rgba(249, 115, 22, 0.4);
+            }
+
+            .mobile-brand-badge img {
+                width: 100%;
+                height: 100%;
+                object-fit: contain;
             }
         }
 
@@ -347,20 +358,22 @@
     <div class="login-card">
         <section class="left-panel">
             <div>
-            <a href="{{ url('/') }}" class="left-brand">
-                    <span class="left-brand-badge">BRI</span>
-                    BRI DigiBranch
+                <a href="{{ url('/') }}" class="left-brand">
+                    <span class="left-brand-badge">
+                        <img src="{{ asset('images/a-six-logo.svg') }}" alt="Logo A-Six">
+                    </span>
+                    Dashboard A-Six
                 </a>
 
-                <p class="left-eyebrow">BRI Performance Portal</p>
-                <h1 class="left-title">Dashboard Area 6</h1>
-                <p class="left-copy">Akses ringkas ke laporan utama dalam satu portal.</p>
+                <p class="left-eyebrow">A-Six Analytics Suite</p>
+                <h1 class="left-title">Dashboard A-Six</h1>
+                <p class="left-copy">Akses ringkas ke laporan utama dalam satu portal kerja dengan identitas visual A-Six yang lebih tegas dan modern.</p>
             </div>
 
             <div class="left-features">
                 <article class="left-feature">
-                    <p class="left-feature-title">Warna BRI Konsisten</p>
-                    <p class="left-feature-copy">Warna utama tetap konsisten.</p>
+                    <p class="left-feature-title">Identitas A-Six Konsisten</p>
+                    <p class="left-feature-copy">Nama, logo, dan warna portal kini seragam di seluruh halaman utama.</p>
                 </article>
                 <article class="left-feature">
                     <p class="left-feature-title">Akses Internal Aman</p>
@@ -370,9 +383,11 @@
         </section>
 
         <section class="right-panel">
-                <a href="{{ url('/') }}" class="mobile-brand">
-                <span class="mobile-brand-badge">BRI</span>
-                BRI DigiBranch
+            <a href="{{ url('/') }}" class="mobile-brand">
+                <span class="mobile-brand-badge">
+                    <img src="{{ asset('images/a-six-logo.svg') }}" alt="Logo A-Six">
+                </span>
+                Dashboard A-Six
             </a>
 
             <p class="right-eyebrow">Selamat Datang</p>
@@ -425,9 +440,9 @@
                 <div class="form-foot">
                     <label for="remember_me" class="remember">
                         <input id="remember_me" type="checkbox" name="remember">
-                    <span>Ingat saya</span>
+                        <span>Ingat saya</span>
                     </label>
-                    <span class="internal-label">Area 6 Internal</span>
+                    <span class="internal-label">A-Six Internal</span>
                 </div>
 
                 <div class="submit-wrap">

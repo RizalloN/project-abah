@@ -1,10 +1,12 @@
 <?php
 
+use App\Services\JobHealthService;
 use App\Support\ReportDataSyncService;
 use App\Support\ReportSnapshotBuilder;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schedule;
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
@@ -140,3 +142,30 @@ Artisan::command('daily-loan:audit-shifted-plafon {--period=*} {--account=*} {--
 
     $this->info('Total row audit: ' . count($tableRows));
 })->purpose('Audit row Daily Loan yang dicurigai mengalami pergeseran kolom akibat nama debitur berkoma');
+
+Artisan::command('queue:health-sweep', function () {
+    $summary = app(JobHealthService::class)->sweepNow();
+
+    if ($summary === []) {
+        $this->line('Queue health sweep tidak jalan karena lock masih aktif.');
+        return;
+    }
+
+    $this->table(
+        ['metric', 'value'],
+        collect($summary)
+            ->map(function ($value, $key) {
+                if (is_array($value)) {
+                    return [$key, json_encode($value, JSON_UNESCAPED_SLASHES)];
+                }
+
+                return [$key, (string) $value];
+            })
+            ->values()
+            ->all()
+    );
+})->purpose('Bersihkan state queue stale dan terminasi job pending yang tidak lagi sehat');
+
+Schedule::command('queue:health-sweep')
+    ->everyMinute()
+    ->withoutOverlapping();

@@ -4,6 +4,7 @@ namespace Tests\Unit;
 
 use App\Http\Controllers\Import\ImportExcelController;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use ReflectionClass;
 use Tests\TestCase;
 
@@ -287,6 +288,70 @@ class ImportExcelControllerDailyLoanCsvTest extends TestCase
             $this->assertSame(3, $estimate);
         } finally {
             @unlink($csvPath);
+        }
+    }
+
+    public function test_prepare_csv_preview_payload_accepts_daily_loan_source_headers_without_suffixes(): void
+    {
+        $csvPath = storage_path('framework/testing/daily_loan_preview_source_headers.csv');
+        if (!is_dir(dirname($csvPath))) {
+            @mkdir(dirname($csvPath), 0777, true);
+        }
+
+        $headers = array_map(static function (string $header): string {
+            if (preg_match('/^Textbox\d+$/i', $header) === 1) {
+                return $header;
+            }
+
+            $header = preg_replace('/\d+$/', '', $header);
+
+            return str_replace('_', ' ', $header);
+        }, $this->dailyLoanHeaders());
+
+        $row = array_fill(0, count($headers), '');
+        $headerIndexes = array_flip($this->dailyLoanHeaders());
+        $row[$headerIndexes['PERIODE']] = '31/03/2025';
+        $row[$headerIndexes['KODE_KANWIL1']] = 'R';
+        $row[$headerIndexes['KANWIL1']] = 'KANWIL MALANG';
+        $row[$headerIndexes['KODE_CABANG1']] = '45';
+        $row[$headerIndexes['CABANG1']] = 'KC Madiun';
+        $row[$headerIndexes['NOMOR_REKENING1']] = '5,01E+11';
+        $row[$headerIndexes['STATUS_REKENING1']] = '1';
+        $row[$headerIndexes['LN_TYPE']] = 'WL';
+        $row[$headerIndexes['NAMA_DEBITUR1']] = 'SAMINGUN';
+        $row[$headerIndexes['RATE']] = '0,0813';
+        $row[$headerIndexes['JANGKA_WAKTU1']] = '60M';
+        $row[$headerIndexes['PLAFON']] = '150,000,000.00';
+        $row[$headerIndexes['BAKI_DEBET1']] = '89,939,319.00';
+
+        file_put_contents($csvPath, implode("\n", [
+            implode(';', $headers),
+            implode(';', $row),
+        ]) . "\n");
+
+        $createdNamaReportTable = false;
+        if (!Schema::hasTable('nama_report')) {
+            Schema::create('nama_report', function ($table) {
+                $table->integer('id_report')->primary();
+                $table->string('nama_report')->nullable();
+                $table->string('table_name')->nullable();
+            });
+            $createdNamaReportTable = true;
+        }
+
+        try {
+            session(['active_id_report' => 8]);
+            $payload = $this->invokeMethod('prepareCsvPreviewPayload', [$csvPath]);
+
+            $this->assertNotEmpty($payload['headers'] ?? []);
+            $this->assertNotEmpty($payload['preview'] ?? []);
+            $this->assertSame('2025-03-31', (string) ($payload['preview'][0]['PERIODE'] ?? ''));
+            $this->assertSame('5,01E+11', (string) ($payload['preview'][0]['NOMOR_REKENING1'] ?? ''));
+        } finally {
+            @unlink($csvPath);
+            if ($createdNamaReportTable) {
+                Schema::drop('nama_report');
+            }
         }
     }
 

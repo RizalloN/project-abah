@@ -649,6 +649,12 @@ class ImportPerformancePisPerProdukController extends Controller
                 $stageState = $this->getStagedExcelState($relativePath);
 
                 if ($relativePath === '' || !file_exists($absolutePath)) {
+                    if ($jobId > 0) {
+                        $progressService = app(\App\Services\Import\ImportProgressService::class);
+                        $progressService->markFailed($jobId, 'File tidak ditemukan di server. Silakan upload ulang.', 0, 0, 'failed');
+                        $progressService->cleanupQueuedImportJobRowsForJob($jobId);
+                    }
+
                     $send('error', ['message' => 'File Excel Performance PIS tidak ditemukan di server.']);
                     return;
                 }

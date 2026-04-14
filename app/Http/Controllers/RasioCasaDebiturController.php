@@ -395,7 +395,7 @@ class RasioCasaDebiturController extends Controller
             if ($lock->get()) {
                 if (Cache::add($pendingKey, now()->toIso8601String(), now()->addMinutes(10))) {
                     EnsureRasioCasaSnapshotJob::dispatch($loanPeriod, static::class . '::ensureRasioSnapshot')
-                        ->onQueue('reports');
+                        ->onQueue('reports-low');
                     $jobDispatched = true;
                 }
             }

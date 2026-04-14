@@ -3,7 +3,8 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Project ABAH</title>
+    <title>@hasSection('title')@yield('title') - @endif{{ config('app.name', 'Dashboard A-Six') }}</title>
+    <link rel="icon" type="image/svg+xml" href="{{ asset('images/a-six-logo.svg') }}">
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -565,7 +566,7 @@
                     <span class="modern-user-badge mr-3">{{ strtoupper(substr(Auth::user()->name, 0, 2)) }}</span>
                     <span class="d-none d-sm-block">
                         <span class="d-block font-weight-bold" style="font-size: 0.92rem; line-height: 1.05; color: #0b3b80;">{{ Auth::user()->pn }} - {{ Auth::user()->name }}</span>
-                        <span class="d-block text-uppercase" style="font-size: 0.62rem; letter-spacing: 0.16em; color: #5b7da7;">BRI Account</span>
+                        <span class="d-block text-uppercase" style="font-size: 0.62rem; letter-spacing: 0.16em; color: #5b7da7;">A-Six Account</span>
                     </span>
                     <i class="fas fa-chevron-down ml-3" style="font-size: 0.75rem; color: #4f72a0;"></i>
                 </a>

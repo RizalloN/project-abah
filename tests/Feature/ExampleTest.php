@@ -6,5 +6,5 @@ it('returns a successful response', function () {
     $response = app()->handle(Request::create('/', 'GET'));
 
     expect($response->getStatusCode())->toBe(200);
-    expect($response->getContent())->toContain('BRI DigiBranch');
+    expect($response->getContent())->toContain('Dashboard A-Six');
 });

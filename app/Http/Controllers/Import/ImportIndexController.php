@@ -4,7 +4,9 @@ namespace App\Http\Controllers\Import;
 
 use App\Http\Controllers\Controller;
 use App\Jobs\RunManagedReportDeleteJob;
+use App\Services\Import\ImportCleanupService;
 use App\Services\Import\MySqlBulkLoadService;
+use App\Support\ManagedReportLoadCoordinator;
 use App\Support\ManagedReportManagementService;
 use App\Support\PartitionMaintenanceService;
 use App\Support\ManagedReportSnapshotRebuildCoordinator;
@@ -31,10 +33,14 @@ class ImportIndexController extends Controller
     private const DELETE_CHUNK_SIZE_WITH_IDENTITY = 50000;
     private const DELETE_PROGRESS_TTL_MINUTES = 60;
     private const DELETE_PROGRESS_CACHE_PREFIX = 'report_management_delete:';
+    private const DELETE_ACTIVE_IDS_CACHE_KEY = 'report_management_delete:active_ids';
     private const DELETE_PROCESS_LOCK_PREFIX = 'report_management_delete_lock:';
     private const DELETE_PROCESS_LOCK_SECONDS = 120;
     private const DELETE_PROCESS_GRACE_SECONDS = 0;
     private const DELETE_PROCESS_STALE_SECONDS = 0;
+    private const DELETE_FAIL_STALE_SECONDS = 900;
+    private const DELETE_QUEUE = 'imports-high';
+    private const DELETE_SYNC_QUEUE = 'imports-high';
     private const DELETE_TICK_TIME_BUDGET_MS = 2500;
     private const DELETE_MAX_BATCHES_PER_TICK = 8;
     private const DELETE_HARD_GUARD_RATIO = 0.85;
@@ -83,6 +89,11 @@ class ImportIndexController extends Controller
         return app(MySqlBulkLoadService::class);
     }
 
+    private function cleanupService(): ImportCleanupService
+    {
+        return app(ImportCleanupService::class);
+    }
+
     private function reportManagementService(): ManagedReportManagementService
     {
         return app(ManagedReportManagementService::class);
@@ -91,6 +102,11 @@ class ImportIndexController extends Controller
     private function managedReportSnapshotRebuildCoordinator(): ManagedReportSnapshotRebuildCoordinator
     {
         return app(ManagedReportSnapshotRebuildCoordinator::class);
+    }
+
+    private function managedReportLoadCoordinator(): ManagedReportLoadCoordinator
+    {
+        return app(ManagedReportLoadCoordinator::class);
     }
 
     private const TEMPLATE_DEFINITIONS = [
@@ -172,6 +188,31 @@ class ImportIndexController extends Controller
         if (($resolved['ok'] ?? false) && isset($resolved['payload']['table_name'])) {
             $resolved['payload']['duplicate_cleanup_available'] = $this->supportsDuplicateCleanup((string) $resolved['payload']['table_name']);
         }
+
+        return response()->json($resolved['payload'], (int) ($resolved['status_code'] ?? 200));
+    }
+
+    public function startManagedReportLoad(Request $request)
+    {
+        $validated = $request->validate([
+            'id_report' => 'required|integer',
+            'max_rows' => 'nullable|integer|min:100|max:20000',
+            'page' => 'nullable|integer|min:1',
+            'per_page' => 'nullable|integer|min:1|max:24',
+        ]);
+
+        $resolved = $this->managedReportLoadCoordinator()->queue(
+            (int) $validated['id_report'],
+            $validated,
+            static::class
+        );
+
+        return response()->json($resolved['payload'], (int) ($resolved['status_code'] ?? 200));
+    }
+
+    public function managedReportLoadStatus(string $loadId)
+    {
+        $resolved = $this->managedReportLoadCoordinator()->status($loadId);
 
         return response()->json($resolved['payload'], (int) ($resolved['status_code'] ?? 200));
     }
@@ -276,6 +317,7 @@ class ImportIndexController extends Controller
             'period_hint' => $prepared['period_hint'],
             'skip_derived_sync' => (bool) ($prepared['skip_derived_sync'] ?? false),
             'skip_snapshot_cleanup' => (bool) ($prepared['skip_snapshot_cleanup'] ?? false),
+            'full_table_scope' => (bool) ($prepared['full_table_scope'] ?? false),
             'identity_column' => $prepared['identity_column'],
             'total_rows' => (int) $prepared['candidate_rows'],
             'deleted_rows' => 0,
@@ -287,6 +329,7 @@ class ImportIndexController extends Controller
             'last_batch_deleted_rows' => 0,
             'last_batch_started_at' => null,
             'last_batch_finished_at' => null,
+            'sync_periods' => [],
             'cleanup' => null,
             'created_at' => now()->toIso8601String(),
             'updated_at' => now()->toIso8601String(),
@@ -295,7 +338,7 @@ class ImportIndexController extends Controller
         $this->putDeleteState($deleteId, $state);
 
         try {
-            RunManagedReportDeleteJob::dispatch($deleteId);
+            RunManagedReportDeleteJob::dispatch($deleteId)->onQueue(self::DELETE_QUEUE);
         } catch (Throwable $e) {
             Log::warning('Gagal dispatch managed report delete job: ' . $e->getMessage(), [
                 'delete_id' => $deleteId,
@@ -416,19 +459,26 @@ class ImportIndexController extends Controller
         }
 
         $syncWarnings = [];
+        $cleanupService = $this->cleanupService();
         try {
             if (empty($affectedPeriods)) {
-                $syncService->dispatchSnapshotRefresh(
+                $syncService->syncAfterDeleteLightweight(
                     $tableName,
                     null,
                     static::class . '::deleteManagedReportDuplicates'
                 );
             } else {
                 foreach ($affectedPeriods as $period) {
-                    $syncService->dispatchSnapshotRefresh(
+                    $syncService->cleanupDerivedArtifactsAfterDelete(
                         $tableName,
                         $period,
                         static::class . '::deleteManagedReportDuplicates'
+                    );
+                    $cleanupService->dispatchSnapshotRefresh(
+                        $tableName,
+                        $period,
+                        static::class . '::deleteManagedReportDuplicates',
+                        self::DELETE_SYNC_QUEUE
                     );
                 }
             }
@@ -442,9 +492,8 @@ class ImportIndexController extends Controller
 
         $message = 'Berhasil menghapus ' . number_format($deletedRows, 0, ',', '.') . ' baris duplikat Simpanan MultiPN.'
             . (!empty($affectedPeriods)
-                ? ' Periode terdampak: ' . implode(', ', $affectedPeriods) . '.'
-                : '')
-            . ' Refresh snapshot dijadwalkan di background.';
+                ? ' Periode terdampak: ' . implode(', ', $affectedPeriods) . '. Refresh snapshot prioritas tinggi dijadwalkan per periode.'
+                : ' Baris terdampak tidak memiliki periode eksplisit, jadi sistem hanya menyegarkan statistik sumber dan cache tanpa rebuild snapshot global.');
 
         if (!empty($syncWarnings)) {
             return response()->json([
@@ -715,17 +764,32 @@ class ImportIndexController extends Controller
         try {
             $this->bulkLoadService()->assertTransactionalTable($tableName, 'delete data report');
 
-            $this->bulkLoadService()->withTableWriteLock($tableName, function () use ($tableName, $syncService, $maintenanceMode, $periodHint, $source, &$sourceDeleted): void {
+            $this->bulkLoadService()->withTableWriteLock($tableName, function () use ($tableName, &$sourceDeleted): void {
                 $this->truncateManagedDeleteTable($tableName);
                 $sourceDeleted = true;
-
-                if ($maintenanceMode === 'lightweight') {
-                    $syncService->syncAfterDeleteLightweight($tableName, $periodHint, $source);
-                    return;
-                }
-
-                $syncService->dispatchSnapshotRefresh($tableName, $periodHint, $source);
             });
+
+            $cleanup = [
+                'mode' => 'lightweight',
+                'reason' => 'full_table_truncate_shortcut',
+            ];
+            $message = 'Seluruh tabel berhasil dikosongkan cepat. Statistik dan cache sudah disegarkan.';
+
+            if ($maintenanceMode === 'lightweight') {
+                $syncService->syncAfterDeleteLightweight($tableName, $periodHint, $source);
+            } else {
+                $maintenance = $this->prepareManagedDeleteSnapshotMaintenance([
+                    'table_name' => $tableName,
+                    'period_hint' => $periodHint,
+                    'scopes' => $prepared['scopes'] ?? [],
+                    'skip_derived_sync' => (bool) ($prepared['skip_derived_sync'] ?? false),
+                    'skip_snapshot_cleanup' => false,
+                    'full_table_scope' => true,
+                ], $syncService, $source);
+
+                $cleanup = $maintenance['cleanup'];
+                $message = $maintenance['final_message'];
+            }
 
             $this->writeManagedDeleteAudit($tableName, $periodHint, 'managed_delete_shortcut', 'success', [
                 'duration_ms' => $this->elapsedManagedDeleteMs($startedAt),
@@ -757,15 +821,10 @@ class ImportIndexController extends Controller
                 'created_at' => now()->toIso8601String(),
                 'updated_at' => now()->toIso8601String(),
                 'progress_percent' => 100,
-                'message' => $maintenanceMode === 'lightweight'
-                    ? 'Seluruh tabel berhasil dikosongkan cepat. Statistik dan cache sudah disegarkan.'
-                    : 'Seluruh tabel berhasil dikosongkan cepat. Snapshot turunan, cache, dan statistik optimizer sudah dibersihkan.',
+                'message' => $message,
                 'error' => null,
                 'error_code' => null,
-                'cleanup' => [
-                    'mode' => $maintenanceMode === 'lightweight' ? 'lightweight' : 'snapshot_cleanup',
-                    'reason' => 'full_table_truncate_shortcut',
-                ],
+                'cleanup' => $cleanup,
                 'delete_strategy' => $strategy,
                 'can_process_fallback' => false,
                 'fallback_stale_seconds' => self::DELETE_PROCESS_STALE_SECONDS,
@@ -906,7 +965,7 @@ class ImportIndexController extends Controller
 
     public function managedReportDeleteStatus(string $deleteId)
     {
-        $state = $this->getDeleteState($deleteId);
+        $state = $this->reconcileManagedReportDeleteState($deleteId);
         if ($state === null) {
             return response()->json([
                 'status' => 'error',
@@ -915,6 +974,54 @@ class ImportIndexController extends Controller
         }
 
         return response()->json($this->formatDeleteStateResponse($state));
+    }
+
+    public function reconcileManagedReportDeleteState(string $deleteId, ?ReportDataSyncService $syncService = null): ?array
+    {
+        $state = $this->getDeleteState($deleteId);
+        if ($state === null) {
+            return null;
+        }
+
+        if (in_array($state['status'] ?? '', ['completed', 'warning', 'failed', 'cancelled'], true)) {
+            return $state;
+        }
+
+        if ($this->shouldAllowManagedDeleteFallback($state)) {
+            $syncService = $syncService ?? app(ReportDataSyncService::class);
+
+            if ($this->acquireManagedDeleteProcessLock($deleteId)) {
+                try {
+                    $latestState = $this->getDeleteState($deleteId) ?? $state;
+                    if (!in_array($latestState['status'] ?? '', ['completed', 'warning', 'failed', 'cancelled'], true)) {
+                        $latestState = $this->advanceManagedReportDelete($deleteId, $syncService, $latestState);
+                    }
+                    $state = $latestState;
+                } catch (Throwable $e) {
+                    $state = $this->markManagedDeleteFailed($deleteId, $this->getDeleteState($deleteId) ?? $state, $e);
+                } finally {
+                    $this->releaseManagedDeleteProcessLock($deleteId);
+                }
+            } else {
+                $state = $this->getDeleteState($deleteId) ?? $state;
+            }
+        }
+
+        return $this->reconcileStaleManagedDeleteState($deleteId, $state);
+    }
+
+    public function sweepManagedReportDeleteStates(?ReportDataSyncService $syncService = null): int
+    {
+        $syncService = $syncService ?? app(ReportDataSyncService::class);
+        $reconciled = 0;
+
+        foreach ($this->activeManagedDeleteIds() as $deleteId) {
+            if ($this->reconcileManagedReportDeleteState($deleteId, $syncService) !== null) {
+                $reconciled++;
+            }
+        }
+
+        return $reconciled;
     }
 
     public function downloadTemplate(Request $request)
@@ -1100,6 +1207,7 @@ class ImportIndexController extends Controller
             'hard_force' => $hardForce,
             'candidate_rows' => $candidateRows,
             'table_total_rows' => $tableTotalRows,
+            'full_table_scope' => $tableTotalRows > 0 && $candidateRows >= $tableTotalRows,
             'identity_column' => $identityColumn,
             'period_hint' => $periodHint,
             'skip_derived_sync' => $skipDerivedSync,
@@ -1210,11 +1318,13 @@ class ImportIndexController extends Controller
                 return $this->finalizeManagedDeleteCancelled($deleteId, $state);
             }
 
+            $source = static::class . '::runManagedReportDelete';
+
             if ($maintenanceMode === 'lightweight') {
                 $syncService->syncAfterDeleteLightweight(
                     (string) $state['table_name'],
                     $state['period_hint'] ?? null,
-                    static::class . '::runManagedReportDelete'
+                    $source
                 );
 
                 $state['cleanup'] = [
@@ -1233,16 +1343,28 @@ class ImportIndexController extends Controller
                 return $state;
             }
 
-            $state['cleanup'] = [
-                'mode' => 'snapshot_cleanup',
-                'reason' => 'delete_derived_artifacts_after_delete',
-            ];
+            $maintenance = $this->prepareManagedDeleteSnapshotMaintenance($state, $syncService, $source);
+            $state['cleanup'] = $maintenance['cleanup'];
+            $state['sync_periods'] = $maintenance['sync_periods'];
+
+            if ($maintenance['complete_without_sync']) {
+                $state['status'] = 'completed';
+                $state['stage'] = 'completed';
+                $state['batch_state'] = 'completed';
+                $state['is_waiting_on_batch'] = false;
+                $state['active_batch_size'] = 0;
+                $state['message'] = $maintenance['final_message'];
+                $state['updated_at'] = now()->toIso8601String();
+                $this->putDeleteState($deleteId, $state);
+
+                return $state;
+            }
 
             $state['stage'] = 'syncing';
             $state['batch_state'] = 'cleanup';
             $state['is_waiting_on_batch'] = false;
             $state['active_batch_size'] = 0;
-            $state['message'] = 'Delete sumber selesai, membersihkan snapshot dan cache...';
+            $state['message'] = $maintenance['sync_message'];
             $state['updated_at'] = now()->toIso8601String();
             $this->putDeleteState($deleteId, $state);
 
@@ -1254,18 +1376,24 @@ class ImportIndexController extends Controller
                 return $this->finalizeManagedDeleteCancelled($deleteId, $state);
             }
 
+            $syncPeriods = array_values(array_filter(array_map(
+                static fn ($period): string => trim((string) $period),
+                is_array($state['sync_periods'] ?? null) ? $state['sync_periods'] : []
+            ), static fn (string $period): bool => $period !== ''));
+
             if ($maintenanceMode === 'lightweight') {
                 $syncService->syncAfterDeleteLightweight(
                     (string) $state['table_name'],
                     $state['period_hint'] ?? null,
                     static::class . '::runManagedReportDelete'
                 );
-            } else {
-                $syncService->dispatchSnapshotRefresh(
+            } elseif (!empty($syncPeriods)) {
+                $this->dispatchManagedDeleteSnapshotRefreshes(
                     (string) $state['table_name'],
-                    $state['period_hint'] ?? null,
+                    $syncPeriods,
                     static::class . '::runManagedReportDelete'
                 );
+                $state['cleanup']['queued_periods'] = $syncPeriods;
             }
 
             $state['status'] = 'completed';
@@ -1275,7 +1403,7 @@ class ImportIndexController extends Controller
             $state['active_batch_size'] = 0;
             $state['message'] = $maintenanceMode === 'lightweight'
                 ? 'Delete selesai. Statistik sumber dan cache sudah disegarkan.'
-                : 'Delete selesai. Refresh snapshot, cache, dan statistik optimizer dijadwalkan di background.';
+                : $this->managedDeleteSnapshotSyncMessage($syncPeriods);
             $state['updated_at'] = now()->toIso8601String();
             $this->putDeleteState($deleteId, $state);
 
@@ -1287,6 +1415,139 @@ class ImportIndexController extends Controller
         }
 
         throw new \RuntimeException('Stage delete tidak dikenali.');
+    }
+
+    /**
+     * @return array{cleanup:array<string,mixed>,sync_periods:array<int,string>,complete_without_sync:bool,final_message:string,sync_message:string}
+     */
+    private function prepareManagedDeleteSnapshotMaintenance(array $context, ReportDataSyncService $syncService, string $source): array
+    {
+        $tableName = strtolower(trim((string) ($context['table_name'] ?? '')));
+        $periodHint = $this->normalizeManagedDeletePeriod($context['period_hint'] ?? null);
+        $explicitPeriods = $this->resolveManagedDeleteExplicitPeriodsFromScopes(
+            is_array($context['scopes'] ?? null) ? $context['scopes'] : []
+        );
+        $fullTableScope = (bool) ($context['full_table_scope'] ?? false);
+        $skipDerivedSync = (bool) ($context['skip_derived_sync'] ?? false);
+        $skipSnapshotCleanup = (bool) ($context['skip_snapshot_cleanup'] ?? false);
+
+        if ($fullTableScope) {
+            $deletedSnapshots = $syncService->cleanupDerivedArtifactsAfterDelete($tableName, null, $source);
+            $syncService->syncAfterDeleteLightweight($tableName, null, $source);
+
+            return [
+                'cleanup' => [
+                    'mode' => 'snapshot_cleanup',
+                    'reason' => 'full_table_delete',
+                    'snapshot_tables' => $deletedSnapshots,
+                    'snapshot_periods' => [],
+                    'queued_periods' => [],
+                ],
+                'sync_periods' => [],
+                'complete_without_sync' => true,
+                'final_message' => 'Delete selesai. Tabel sumber dan snapshot pembantu yang terkait sudah dibersihkan tanpa rebuild ulang karena scope mengosongkan seluruh tabel.',
+                'sync_message' => '',
+            ];
+        }
+
+        $cleanupPeriods = [];
+        $cleanupSnapshots = [];
+
+        if (!empty($explicitPeriods)) {
+            foreach ($explicitPeriods as $period) {
+                $cleanupSnapshots[$period] = $syncService->cleanupDerivedArtifactsAfterDelete($tableName, $period, $source);
+                $cleanupPeriods[] = $period;
+            }
+        }
+
+        $syncService->syncAfterDeleteLightweight($tableName, $periodHint, $source);
+
+        $syncPeriods = $skipDerivedSync ? [] : $explicitPeriods;
+        $completeWithoutSync = empty($syncPeriods);
+
+        $reason = $completeWithoutSync
+            ? ($skipDerivedSync
+                ? 'snapshot_sync_skipped_null_scope'
+                : 'snapshot_sync_skipped_ambiguous_scope')
+            : 'snapshot_cleanup_scoped_periods';
+
+        return [
+            'cleanup' => [
+                'mode' => $completeWithoutSync ? 'lightweight' : 'snapshot_cleanup',
+                'reason' => $reason,
+                'snapshot_tables' => $cleanupSnapshots,
+                'snapshot_periods' => $cleanupPeriods,
+                'queued_periods' => $syncPeriods,
+            ],
+            'sync_periods' => $syncPeriods,
+            'complete_without_sync' => $completeWithoutSync,
+            'final_message' => $skipDerivedSync
+                ? 'Delete selesai. Scope hanya menyentuh baris dengan periode null/kosong, jadi sistem hanya menyegarkan statistik sumber dan cache tanpa rebuild snapshot global.'
+                : ($skipSnapshotCleanup
+                    ? 'Delete selesai. Statistik sumber dan cache sudah disegarkan. Rebuild snapshot dilewati karena scope delete tidak memiliki periode eksplisit yang aman untuk ditargetkan.'
+                    : 'Delete selesai. Statistik sumber dan cache sudah disegarkan. Tidak ada refresh snapshot tambahan yang perlu dijalankan.'),
+            'sync_message' => count($syncPeriods) === 1
+                ? 'Delete sumber selesai. Snapshot periode ' . $syncPeriods[0] . ' sedang dijadwalkan di queue prioritas tinggi...'
+                : 'Delete sumber selesai. Snapshot ' . count($syncPeriods) . ' periode sedang dijadwalkan di queue prioritas tinggi...',
+        ];
+    }
+
+    /**
+     * @param array<int, mixed> $scopes
+     * @return array<int, string>
+     */
+    private function resolveManagedDeleteExplicitPeriodsFromScopes(array $scopes): array
+    {
+        $periods = [];
+
+        foreach ($scopes as $scope) {
+            if (!is_array($scope)) {
+                continue;
+            }
+
+            $period = $this->normalizeManagedDeletePeriod($scope['period_filter'] ?? null);
+            if ($period !== null) {
+                $periods[$period] = true;
+            }
+        }
+
+        return array_keys($periods);
+    }
+
+    private function normalizeManagedDeletePeriod(mixed $period): ?string
+    {
+        $normalized = trim((string) $period);
+
+        return $normalized !== '' ? $normalized : null;
+    }
+
+    /**
+     * @param array<int, string> $periods
+     */
+    private function dispatchManagedDeleteSnapshotRefreshes(string $tableName, array $periods, string $source): void
+    {
+        foreach ($periods as $period) {
+            $this->cleanupService()->dispatchSnapshotRefresh(
+                $tableName,
+                $period,
+                $source,
+                self::DELETE_SYNC_QUEUE
+            );
+        }
+    }
+
+    /**
+     * @param array<int, string> $periods
+     */
+    private function managedDeleteSnapshotSyncMessage(array $periods): string
+    {
+        if (empty($periods)) {
+            return 'Delete selesai. Statistik sumber dan cache sudah disegarkan.';
+        }
+
+        return count($periods) === 1
+            ? 'Delete selesai. Refresh snapshot periode ' . $periods[0] . ' dijadwalkan di queue prioritas tinggi.'
+            : 'Delete selesai. Refresh snapshot untuk ' . count($periods) . ' periode dijadwalkan di queue prioritas tinggi.';
     }
 
     private function markManagedDeleteFailed(string $deleteId, array $state, Throwable $e): array
@@ -1616,11 +1877,53 @@ class ImportIndexController extends Controller
             $state,
             now()->addMinutes(self::DELETE_PROGRESS_TTL_MINUTES)
         );
+        $this->syncManagedDeleteRegistry($deleteId, $state);
     }
 
     private function deleteProgressCacheKey(string $deleteId): string
     {
         return self::DELETE_PROGRESS_CACHE_PREFIX . trim($deleteId);
+    }
+
+    private function activeManagedDeleteIds(): array
+    {
+        $value = $this->deleteProgressStore()->get(self::DELETE_ACTIVE_IDS_CACHE_KEY);
+        if (!is_array($value)) {
+            return [];
+        }
+
+        return array_values(array_filter(array_map(
+            static fn ($id): string => trim((string) $id),
+            $value
+        ), static fn (string $id): bool => $id !== ''));
+    }
+
+    private function syncManagedDeleteRegistry(string $deleteId, array $state): void
+    {
+        $normalizedId = trim($deleteId);
+        if ($normalizedId === '') {
+            return;
+        }
+
+        $ids = $this->activeManagedDeleteIds();
+        $terminal = in_array((string) ($state['status'] ?? ''), ['completed', 'warning', 'failed', 'cancelled'], true);
+
+        if ($terminal) {
+            $ids = array_values(array_filter($ids, static fn (string $id): bool => $id !== $normalizedId));
+        } elseif (!in_array($normalizedId, $ids, true)) {
+            $ids[] = $normalizedId;
+        }
+
+        if ($ids === []) {
+            $this->deleteProgressStore()->forget(self::DELETE_ACTIVE_IDS_CACHE_KEY);
+            return;
+        }
+
+        $this->deleteProgressStore()->put(
+            self::DELETE_ACTIVE_IDS_CACHE_KEY,
+            array_values($ids),
+            now()->addMinutes(self::DELETE_PROGRESS_TTL_MINUTES)
+        );
     }
 
     private function shouldAllowManagedDeleteFallback(array $state): bool
@@ -1638,6 +1941,24 @@ class ImportIndexController extends Controller
         }
 
         return $ageSeconds >= self::DELETE_PROCESS_STALE_SECONDS;
+    }
+
+    private function reconcileStaleManagedDeleteState(string $deleteId, array $state): array
+    {
+        if (in_array($state['status'] ?? '', ['completed', 'warning', 'failed', 'cancelled'], true)) {
+            return $state;
+        }
+
+        $ageSeconds = $this->diffNowInSeconds($state['updated_at'] ?? $state['created_at'] ?? null);
+        if ($ageSeconds < self::DELETE_FAIL_STALE_SECONDS) {
+            return $state;
+        }
+
+        return $this->markManagedDeleteFailed(
+            $deleteId,
+            $state,
+            new \RuntimeException('Delete report management stale timeout. Progress tidak bergerak terlalu lama.')
+        );
     }
 
     private function acquireManagedDeleteProcessLock(string $deleteId): bool

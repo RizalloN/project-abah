@@ -612,7 +612,7 @@ class RekeningDormantController extends Controller
                 if ($lock->get()) {
                     if (Cache::add($pendingKey, now()->toIso8601String(), now()->addMinutes(10))) {
                         EnsureRekeningDormantSnapshotJob::dispatch($missingPeriod, static::class . '::hasDormantSnapshots')
-                            ->onQueue('reports');
+                            ->onQueue('reports-low');
                         $jobDispatched = true;
                     }
                 }

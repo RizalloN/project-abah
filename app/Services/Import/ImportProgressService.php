@@ -14,6 +14,7 @@ class ImportProgressService
     private const CACHE_PREFIX = 'import_job_progress:';
     private const STATE_PREFIX = 'excel_import_job:';
     private const STALE_QUEUED_MINUTES = 15;
+    private const STALE_PROCESSING_HOURS = 2;
     private const ACTIVE_PROCESSING_REUSE_HOURS = 6;
     private const MISSING_SOURCE_GRACE_SECONDS = 120;
     private const DAILY_LOAN_REPORT_ID = 8;
@@ -43,7 +44,9 @@ class ImportProgressService
     {
         $attributes['created_at'] = $attributes['created_at'] ?? now();
         $attributes['updated_at'] = $attributes['updated_at'] ?? now();
+        $jobContext = $attributes['job_context'] ?? null;
         $attributes['job_fingerprint'] = $this->resolveJobFingerprint($attributes);
+        $attributes['job_context'] = $this->normalizeJobContextForStorage($jobContext);
 
         $existingJobId = $this->findReusableActiveJobId($attributes);
         if ($existingJobId !== null) {
@@ -81,6 +84,47 @@ class ImportProgressService
         $cached = Cache::get($this->stateKey($jobId));
 
         return is_array($cached) ? $cached : [];
+    }
+
+    public function deleteJobsForSourcePath(string $sourcePath): array
+    {
+        $normalizedSourcePath = $this->normalizeComparablePath($sourcePath);
+        if ($normalizedSourcePath === '') {
+            return [
+                'deleted_job_ids' => [],
+                'deleted_count' => 0,
+            ];
+        }
+
+        $jobs = DB::table('import_jobs')
+            ->orderBy('id')
+            ->get(['id', 'folder_path', 'file_name']);
+
+        $deletedJobIds = [];
+
+        foreach ($jobs as $job) {
+            $jobId = (int) ($job->id ?? 0);
+            if ($jobId <= 0) {
+                continue;
+            }
+
+            $resolvedPath = $this->resolveJobSourcePath($job);
+            if ($resolvedPath === null) {
+                continue;
+            }
+
+            if ($this->normalizeComparablePath($resolvedPath) !== $normalizedSourcePath) {
+                continue;
+            }
+
+            $this->deleteJobRecord($jobId);
+            $deletedJobIds[] = $jobId;
+        }
+
+        return [
+            'deleted_job_ids' => $deletedJobIds,
+            'deleted_count' => count($deletedJobIds),
+        ];
     }
 
     public function markQueued(int $jobId, ?array $progressPayload = null): void
@@ -136,6 +180,37 @@ class ImportProgressService
             $this->markFailed(
                 $jobId,
                 'Job import terlalu lama berada di antrian. Silakan ulangi proses import.',
+                $success,
+                $failed,
+                $success > 0 || $failed > 0 ? 'failed_partial' : 'failed'
+            );
+            $purged++;
+        }
+
+        return $purged;
+    }
+
+    public function purgeStaleProcessingJobs(): int
+    {
+        $cutoff = now()->subHours(self::STALE_PROCESSING_HOURS);
+        $staleJobs = DB::table('import_jobs')
+            ->where('status', 'processing')
+            ->where('updated_at', '<', $cutoff)
+            ->orderBy('updated_at')
+            ->get(['id', 'total_success', 'total_failed']);
+
+        $purged = 0;
+        foreach ($staleJobs as $job) {
+            $jobId = (int) ($job->id ?? 0);
+            if ($jobId <= 0) {
+                continue;
+            }
+
+            $success = (int) ($job->total_success ?? 0);
+            $failed = (int) ($job->total_failed ?? 0);
+            $this->markFailed(
+                $jobId,
+                'Job import terlalu lama berada di status processing tanpa progress. Sistem menandainya gagal agar tidak menggantung.',
                 $success,
                 $failed,
                 $success > 0 || $failed > 0 ? 'failed_partial' : 'failed'
@@ -390,6 +465,18 @@ class ImportProgressService
         return $normalized;
     }
 
+    private function normalizeJobContextForStorage(mixed $context): ?string
+    {
+        $normalized = $this->normalizeFingerprintContext($context);
+        if ($normalized === null) {
+            return null;
+        }
+
+        $encoded = json_encode($normalized, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+        return $encoded !== false ? $encoded : null;
+    }
+
     private function isDuplicateFingerprintException(QueryException $e): bool
     {
         $message = strtolower($e->getMessage());
@@ -451,10 +538,6 @@ class ImportProgressService
             return $job;
         }
 
-        if ($status !== 'queued') {
-            return $job;
-        }
-
         $updatedAt = $job->updated_at ?? null;
         if ($updatedAt === null || $updatedAt === '') {
             return $job;
@@ -466,21 +549,40 @@ class ImportProgressService
             return $job;
         }
 
-        if ($queuedAt->gte(now()->subMinutes(self::STALE_QUEUED_MINUTES))) {
-            return $job;
+        if ($status === 'queued') {
+            if ($queuedAt->gte(now()->subMinutes(self::STALE_QUEUED_MINUTES))) {
+                return $job;
+            }
+
+            $success = (int) ($job->total_success ?? 0);
+            $failed = (int) ($job->total_failed ?? 0);
+            $this->markFailed(
+                $jobId,
+                'Job import terlalu lama berada di antrian. Silakan ulangi proses import.',
+                $success,
+                $failed,
+                $success > 0 || $failed > 0 ? 'failed_partial' : 'failed'
+            );
+
+            return $this->findJob($jobId);
         }
 
         $success = (int) ($job->total_success ?? 0);
         $failed = (int) ($job->total_failed ?? 0);
-        $this->markFailed(
-            $jobId,
-            'Job import terlalu lama berada di antrian. Silakan ulangi proses import.',
-            $success,
-            $failed,
-            $success > 0 || $failed > 0 ? 'failed_partial' : 'failed'
-        );
 
-        return $this->findJob($jobId);
+        if ($queuedAt->lt(now()->subHours(self::STALE_PROCESSING_HOURS))) {
+            $this->markFailed(
+                $jobId,
+                'Job import terlalu lama berada di status processing tanpa progress. Sistem menandainya gagal agar tidak menggantung.',
+                $success,
+                $failed,
+                $success > 0 || $failed > 0 ? 'failed_partial' : 'failed'
+            );
+
+            return $this->findJob($jobId);
+        }
+
+        return $job;
     }
 
     private function resolveJobSourcePath(object $job): ?string
@@ -499,6 +601,16 @@ class ImportProgressService
         $cleanFolder = trim(str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $folderPath), DIRECTORY_SEPARATOR);
 
         return storage_path('app/' . $cleanFolder . DIRECTORY_SEPARATOR . $fileName);
+    }
+
+    private function normalizeComparablePath(string $path): string
+    {
+        $path = trim($path);
+        if ($path === '') {
+            return '';
+        }
+
+        return strtolower(str_replace('\\', '/', $path));
     }
 
     private function shouldInvalidateMissingSourceJob(object $job, string $status): bool

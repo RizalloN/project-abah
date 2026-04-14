@@ -17,6 +17,8 @@
 
 <div class="card shadow-sm border-0 import-upload-card" id="report-management-card"
      data-fetch-url="{{ route('import.report-management.data') }}"
+     data-load-start-url="{{ route('import.report-management.load') }}"
+     data-load-status-url-template="{{ route('import.report-management.load.status', ['loadId' => '__LOAD_ID__']) }}"
      data-rebuild-url="{{ route('import.report-management.rebuild') }}"
      data-rebuild-status-url-template="{{ route('import.report-management.rebuild.status', ['rebuildId' => '__REBUILD_ID__']) }}"
      data-delete-url="{{ route('import.report-management.delete') }}"
@@ -95,6 +97,25 @@
         </div>
 
         <div id="management-notice" class="report-management-notice d-none mb-3"></div>
+
+        <div id="management-load-progress" class="report-management-load-card d-none mb-3" aria-live="polite">
+            <div class="report-management-load-card__header">
+                <div>
+                    <div class="report-management-load-card__eyebrow">Realtime Progress</div>
+                    <div id="management-load-title" class="report-management-load-card__title">Memuat data report management...</div>
+                </div>
+                <div id="management-load-stage" class="report-management-load-card__stage">Queued</div>
+            </div>
+            <div class="report-management-progress">
+                <div id="management-load-progress-bar" class="progress-bar report-management-progress__bar report-management-progress__bar--indeterminate" role="progressbar" style="width: 0%;"></div>
+            </div>
+            <div class="report-management-load-card__meta-row">
+                <div id="management-load-percent" class="report-management-progress__value">0%</div>
+                <div id="management-load-units" class="report-management-load-card__units">0 / 4 tahap</div>
+            </div>
+            <div id="management-load-text" class="report-management-progress__text mt-2">Menunggu worker memulai proses...</div>
+            <div id="management-load-meta" class="report-management-progress__meta mt-2"></div>
+        </div>
 
         <div class="report-management-bulkbar mt-3">
             <div class="form-check m-0">
@@ -397,6 +418,13 @@
     .report-management-notice{margin-top:.25rem;padding:.95rem 1rem;border-radius:18px;font-size:.92rem;line-height:1.65}
     .report-management-notice--info{color:#0f3f8c;background:rgba(219,234,254,.72);border:1px solid rgba(96,165,250,.2)}
     .report-management-notice--warning{color:#92400e;background:rgba(254,243,199,.78);border:1px solid rgba(251,191,36,.25)}
+    .report-management-load-card{padding:1rem 1.05rem;border-radius:20px;background:linear-gradient(180deg,#fcfdff 0%,#f1f7ff 100%);border:1px solid rgba(191,219,254,.72);box-shadow:0 18px 38px -32px rgba(29,78,216,.34)}
+    .report-management-load-card__header{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:.85rem}
+    .report-management-load-card__eyebrow{font-size:.72rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#1d4ed8}
+    .report-management-load-card__title{font-size:1rem;font-weight:800;color:#0f172a;line-height:1.4}
+    .report-management-load-card__stage{display:inline-flex;align-items:center;justify-content:center;min-width:108px;padding:.45rem .7rem;border-radius:999px;background:rgba(29,78,216,.08);color:#1d4ed8;font-size:.78rem;font-weight:800;letter-spacing:.04em;text-transform:uppercase}
+    .report-management-load-card__meta-row{display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-top:.65rem;flex-wrap:wrap}
+    .report-management-load-card__units{color:#475569;font-size:.86rem;font-weight:700}
     .report-management-bulkbar{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;padding:.8rem 1rem;border-radius:16px;background:linear-gradient(180deg,#f8fafc 0%,#f1f5f9 100%);border:1px solid rgba(148,163,184,.2)}
     .report-management-bulkbar__hint{font-size:.88rem;font-weight:600;color:#475569}
     .report-management-table-wrap{border:1px solid rgba(148,163,184,.18);border-radius:22px;overflow:hidden;background:#fff}
@@ -432,9 +460,11 @@
     .report-management-selection-toast__btn--danger{background:#fff;border:1px solid rgba(255,255,255,.18);color:#0f3f8c}
     .report-management-progress{height:14px;border-radius:999px;background:linear-gradient(180deg,#dbe7ef 0%,#cfe0ea 100%);overflow:hidden;box-shadow:inset 0 1px 2px rgba(15,23,42,.08)}
     .report-management-progress__bar{height:100%;font-weight:700;font-size:12px;line-height:14px;background:linear-gradient(90deg,#0f766e 0%,#147a72 55%,#1a8b80 100%);box-shadow:0 0 0 1px rgba(15,118,110,.05) inset;transition:width .45s cubic-bezier(.22,1,.36,1)}
+    .report-management-progress__bar--indeterminate{background-image:linear-gradient(90deg,#0f766e 0%,#147a72 30%,#5eead4 50%,#147a72 70%,#0f766e 100%);background-size:200% 100%;animation:reportManagementProgressShift 1.2s linear infinite}
     .report-management-progress__value{display:inline-block;color:#0f172a;font-weight:800;letter-spacing:.04em}
     .report-management-progress__text{color:#0f766e;font-weight:700;letter-spacing:.02em}
     .report-management-progress__meta{display:block;color:#64748b;font-weight:600;letter-spacing:.01em;min-height:1.2rem}
+    @keyframes reportManagementProgressShift{0%{background-position:200% 0}100%{background-position:-200% 0}}
     .swal-modern-popup{border:1px solid rgba(226,232,240,.95);border-radius:28px;padding:1.4rem 1.4rem 1.2rem;box-shadow:0 30px 80px -35px rgba(15,23,42,.35)}
     .swal-modern-title{color:#0f172a;font-weight:800;letter-spacing:-.02em}
     .swal-modern-html{color:#475569;font-size:.95rem;line-height:1.65}
@@ -442,6 +472,6 @@
     .swal-modern-confirm{background:linear-gradient(135deg,#0f766e,#115e59);color:#fff;box-shadow:0 16px 34px -22px rgba(15,23,42,.45)}
     .swal-modern-cancel{background:#e2e8f0;color:#334155;margin-left:.5rem}
     @media (max-width:575.98px){.report-management-filter-btn{width:100%}.report-management-action-bar__group{width:100%}.report-management-filter-btn--primary,.report-management-filter-btn--danger{min-width:0}}
-    @media (max-width:767.98px){.report-management-hero,.import-upload-card__header{padding-left:1rem;padding-right:1rem}.import-upload-card__body{padding:1rem 1rem 7.5rem}.report-management-hero__title{font-size:1.15rem}.report-management-hero__badge,.report-management-rebuild-panel,.report-management-top-shell{width:100%}.report-management-top-shell{padding:1rem}.report-management-field-panel,.report-management-rebuild-panel,.report-management-action-bar,.report-management-stat{border-radius:18px}.report-management-table thead th,.report-management-table tbody td{padding:.8rem}.report-management-bulkbar,.report-management-period-card,.report-management-selection-toast,.report-management-pagination{align-items:flex-start}.report-management-period-card__toggle,.report-management-selection-toast,.report-management-selection-toast__actions{width:100%}.report-management-selection-toast-shell{left:1rem;right:1rem;bottom:1rem;width:calc(100vw - 2rem);max-width:calc(100vw - 2rem)}.report-management-selection-toast{flex-direction:column}}
+    @media (max-width:767.98px){.report-management-hero,.import-upload-card__header{padding-left:1rem;padding-right:1rem}.import-upload-card__body{padding:1rem 1rem 7.5rem}.report-management-hero__title{font-size:1.15rem}.report-management-hero__badge,.report-management-rebuild-panel,.report-management-top-shell{width:100%}.report-management-top-shell{padding:1rem}.report-management-field-panel,.report-management-rebuild-panel,.report-management-action-bar,.report-management-stat,.report-management-load-card{border-radius:18px}.report-management-table thead th,.report-management-table tbody td{padding:.8rem}.report-management-bulkbar,.report-management-period-card,.report-management-selection-toast,.report-management-pagination,.report-management-load-card__header,.report-management-load-card__meta-row{align-items:flex-start}.report-management-period-card__toggle,.report-management-selection-toast,.report-management-selection-toast__actions,.report-management-load-card__stage{width:100%}.report-management-selection-toast-shell{left:1rem;right:1rem;bottom:1rem;width:calc(100vw - 2rem);max-width:calc(100vw - 2rem)}.report-management-selection-toast{flex-direction:column}}
 </style>
 @endsection

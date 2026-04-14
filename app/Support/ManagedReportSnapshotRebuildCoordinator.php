@@ -13,6 +13,8 @@ class ManagedReportSnapshotRebuildCoordinator
     private const REBUILD_FALLBACK_LOCK_PREFIX = 'report_management_rebuild_lock:';
     private const REBUILD_FALLBACK_LOCK_SECONDS = 7200;
     private const REBUILD_FALLBACK_STALE_SECONDS = 15;
+    private const QUEUED_FAIL_SECONDS = 300;
+    private const RUNNING_FAIL_SECONDS = 1800;
 
     public function queue(bool $forceRebuild, ?string $source = null): array
     {
@@ -123,7 +125,7 @@ class ManagedReportSnapshotRebuildCoordinator
 
     public function status(string $rebuildId): array
     {
-        $state = ManagedReportSnapshotRebuildStore::getState($rebuildId);
+        $state = $this->reconcile($rebuildId);
         if ($state === null) {
             return [
                 'status_code' => 404,
@@ -140,50 +142,39 @@ class ManagedReportSnapshotRebuildCoordinator
         ];
     }
 
+    public function reconcile(string $rebuildId): ?array
+    {
+        $state = ManagedReportSnapshotRebuildStore::getState($rebuildId);
+        if ($state === null) {
+            return null;
+        }
+
+        $state = $this->maybeProcessFallback($state);
+
+        return $this->reconcileStaleState($state);
+    }
+
+    public function sweepStaleStates(): int
+    {
+        $reconciled = 0;
+
+        $activeRebuildId = ManagedReportSnapshotRebuildStore::getActiveRebuildId();
+        if ($activeRebuildId !== null && $this->reconcile($activeRebuildId) !== null) {
+            $reconciled++;
+        }
+
+        $pendingValue = Cache::get(ManagedReportSnapshotRebuildStore::PENDING_KEY);
+        $pendingRebuildId = $this->extractManagedReportRebuildId($pendingValue);
+        if ($pendingRebuildId !== null && $pendingRebuildId !== $activeRebuildId && $this->reconcile($pendingRebuildId) !== null) {
+            $reconciled++;
+        }
+
+        return $reconciled;
+    }
+
     private function maybeProcessFallback(array $state): array
     {
-        if (!$this->shouldAttemptFallback($state)) {
-            return $state;
-        }
-
-        $rebuildId = (string) ($state['rebuild_id'] ?? '');
-        if ($rebuildId === '') {
-            return $state;
-        }
-
-        $lockKey = self::REBUILD_FALLBACK_LOCK_PREFIX . $rebuildId;
-        if (!Cache::add($lockKey, now()->toIso8601String(), now()->addSeconds(self::REBUILD_FALLBACK_LOCK_SECONDS))) {
-            return ManagedReportSnapshotRebuildStore::getState($rebuildId) ?? $state;
-        }
-
-        try {
-            $latestState = ManagedReportSnapshotRebuildStore::getState($rebuildId) ?? $state;
-            if (!$this->shouldAttemptFallback($latestState)) {
-                return $latestState;
-            }
-
-            ManagedReportSnapshotRebuildStore::setActiveRebuildId($rebuildId);
-
-            $job = new RunManagedReportSnapshotRebuildJob(
-                (bool) ($latestState['force_rebuild'] ?? false),
-                (__CLASS__ . '::statusFallback'),
-                $rebuildId
-            );
-
-            app()->call([$job, 'handle']);
-
-            return ManagedReportSnapshotRebuildStore::getState($rebuildId) ?? $latestState;
-        } catch (Throwable $e) {
-            Log::warning('Fallback rebuild snapshot report management gagal: ' . $e->getMessage(), [
-                'rebuild_id' => $rebuildId,
-                'status' => $state['status'] ?? null,
-                'stage' => $state['stage'] ?? null,
-            ]);
-
-            return ManagedReportSnapshotRebuildStore::getState($rebuildId) ?? $state;
-        } finally {
-            Cache::forget($lockKey);
-        }
+        return $state;
     }
 
     private function shouldAttemptFallback(array $state): bool
@@ -212,6 +203,49 @@ class ManagedReportSnapshotRebuildCoordinator
         $activeRebuildId = ManagedReportSnapshotRebuildStore::getActiveRebuildId();
 
         return $activeRebuildId === null || $activeRebuildId === $rebuildId;
+    }
+
+    private function reconcileStaleState(array $state): array
+    {
+        $status = strtolower(trim((string) ($state['status'] ?? '')));
+        $stage = strtolower(trim((string) ($state['stage'] ?? '')));
+        if (in_array($status, ['completed', 'failed', 'warning'], true)) {
+            return $state;
+        }
+
+        $referenceTimestamp = $state['started_at'] ?: ($state['updated_at'] ?? $state['created_at'] ?? null);
+
+        $shouldFail = match (true) {
+            in_array($stage, ['queued', 'planning'], true) => $this->timestampIsStale($referenceTimestamp, self::QUEUED_FAIL_SECONDS),
+            in_array($stage, ['rebuilding', 'cache'], true) => $this->timestampIsStale($referenceTimestamp, self::RUNNING_FAIL_SECONDS),
+            default => false,
+        };
+
+        if (!$shouldFail) {
+            return $state;
+        }
+
+        $failedState = ManagedReportSnapshotRebuildStore::putState(array_merge($state, [
+            'status' => 'failed',
+            'stage' => 'failed',
+            'queued' => false,
+            'message' => 'Rebuild snapshot gagal otomatis karena progress tidak bergerak terlalu lama. Jalankan ulang proses.',
+            'error' => 'Managed report snapshot rebuild stale timeout.',
+            'finished_at' => now()->toIso8601String(),
+        ]));
+
+        Log::warning('Rebuild snapshot report management ditandai gagal karena stale.', [
+            'rebuild_id' => $state['rebuild_id'] ?? null,
+            'stage' => $stage,
+            'updated_at' => $state['updated_at'] ?? null,
+        ]);
+
+        if (ManagedReportSnapshotRebuildStore::getActiveRebuildId() === ($state['rebuild_id'] ?? null)) {
+            ManagedReportSnapshotRebuildStore::forgetActiveRebuildId();
+        }
+        Cache::forget(ManagedReportSnapshotRebuildStore::PENDING_KEY);
+
+        return $failedState;
     }
 
     private function shouldRecoverManagedReportRebuildSlot(mixed $pendingValue, ?string $activeRebuildId, ?array $activeState): bool

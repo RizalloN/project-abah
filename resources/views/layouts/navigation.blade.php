@@ -6,12 +6,12 @@
                 <!-- Logo -->
                 <div class="shrink-0 flex items-center">
                     <a href="{{ route('dashboard') }}" class="inline-flex items-center gap-3">
-                        <span class="flex h-11 w-11 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,_#0f172a,_#0f766e)] text-xs font-extrabold uppercase tracking-[0.2em] text-white shadow-lg shadow-emerald-900/20">
-                            DB
+                        <span class="flex h-11 w-11 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,_#0f172a,_#f97316)] p-2 text-white shadow-lg shadow-orange-900/20">
+                            <img src="{{ asset('images/a-six-logo.svg') }}" alt="Logo A-Six" class="h-full w-full object-contain">
                         </span>
                         <span class="hidden sm:block">
-                            <span class="block text-sm font-extrabold tracking-tight text-slate-900">DigiBranch</span>
-                            <span class="block text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400">Area 6 Portal</span>
+                            <span class="block text-sm font-extrabold tracking-tight text-slate-900">Dashboard A-Six</span>
+                            <span class="block text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400">Analytics Portal</span>
                         </span>
                     </a>
                 </div>

@@ -3,9 +3,18 @@
         const reportManagementCard = document.getElementById('report-management-card');
         const managementReportSelect = document.getElementById('management-report-select');
         const btnManagementFilter = document.getElementById('btn-management-filter');
+        const btnManagementDeduplicate = document.getElementById('btn-management-deduplicate');
         const managementTableBody = document.getElementById('management-table-body');
         const managementPagination = document.getElementById('management-pagination');
         const managementNotice = document.getElementById('management-notice');
+        const managementLoadProgress = document.getElementById('management-load-progress');
+        const managementLoadTitle = document.getElementById('management-load-title');
+        const managementLoadStage = document.getElementById('management-load-stage');
+        const managementLoadProgressBar = document.getElementById('management-load-progress-bar');
+        const managementLoadPercent = document.getElementById('management-load-percent');
+        const managementLoadUnits = document.getElementById('management-load-units');
+        const managementLoadText = document.getElementById('management-load-text');
+        const managementLoadMeta = document.getElementById('management-load-meta');
         const summaryReport = document.getElementById('management-summary-report');
         const summaryGroups = document.getElementById('management-summary-groups');
         const summaryRows = document.getElementById('management-summary-rows');
@@ -17,7 +26,7 @@
         const btnDeleteSelected = document.getElementById('btn-management-delete-selected');
         const btnClearSelected = document.getElementById('btn-management-clear-selected');
         const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '{{ csrf_token() }}';
-        const managementState = { currentPage: 1, perPage: 8, selectedScopes: new Map() };
+        const managementState = { currentPage: 1, perPage: 8, selectedScopes: new Map(), isLoading: false, activeLoadId: null, loadToken: 0, directLoadTimer: null };
 
         if (managementSelectionToastShell && managementSelectionToastShell.parentElement !== document.body) {
             document.body.appendChild(managementSelectionToastShell);
@@ -45,9 +54,185 @@
             if (slashMatch) return slashMatch[1].split('/').reverse().join('-');
             return text;
         }
+        function humanizeStage(stage) {
+            const normalized = String(stage || '').trim().toLowerCase();
+            const lookup = {
+                queued: 'Queued',
+                validating: 'Validasi',
+                scanning_columns: 'Deteksi Kolom',
+                grouping: 'Grouping',
+                counting: 'Hitung Total',
+                finalizing: 'Finalisasi',
+                completed: 'Selesai',
+                failed: 'Gagal',
+            };
+            return lookup[normalized] || 'Memuat';
+        }
         function buildDeleteUrl(template, deleteId) { return String(template || '').replace('__DELETE_ID__', encodeURIComponent(deleteId)); }
         function createScopeKey(scope) { return JSON.stringify([scope?.period_filter ?? scope?.period ?? '', scope?.kanca_filter ?? scope?.kanca ?? '', !!scope?.period_is_null, !!scope?.kanca_is_null]); }
         function createPeriodBucketKey(periodLabel, periodIsNull) { return periodIsNull ? '__blank__' : String(periodLabel || '(Tanpa Periode)'); }
+
+        function setManagementLoadingState(isLoading) {
+            managementState.isLoading = !!isLoading;
+            if (btnManagementFilter) {
+                btnManagementFilter.disabled = !!isLoading;
+                btnManagementFilter.innerHTML = isLoading
+                    ? '<i class="fas fa-spinner fa-spin mr-2"></i> Memuat Data...'
+                    : '<i class="fas fa-filter mr-2"></i> Tampilkan Data';
+            }
+            if (managementReportSelect) {
+                managementReportSelect.disabled = !!isLoading;
+            }
+            if (managementSelectAll) {
+                managementSelectAll.disabled = !!isLoading || !(managementTableBody?.querySelector('.management-row-checkbox'));
+            }
+            if (btnDeleteSelected) {
+                btnDeleteSelected.disabled = !!isLoading || managementState.selectedScopes.size === 0;
+            }
+            if (btnClearSelected) {
+                btnClearSelected.disabled = !!isLoading || managementState.selectedScopes.size === 0;
+            }
+            Array.from(managementTableBody?.querySelectorAll('.btn-management-delete, .management-row-checkbox, .management-period-checkbox') || []).forEach(function (element) {
+                element.disabled = !!isLoading;
+            });
+            if (btnManagementDeduplicate) {
+                const selectedOption = managementReportSelect?.selectedOptions?.[0];
+                const canDeduplicate = !!managementReportSelect?.value && String(selectedOption?.dataset?.tableName || '').trim() === 'simpanan_multipn';
+                btnManagementDeduplicate.disabled = !!isLoading || !canDeduplicate;
+            }
+        }
+
+        function setLoadingTableState(message) {
+            if (!managementTableBody) return;
+            managementTableBody.innerHTML = `<tr><td colspan="4" class="text-center text-muted py-4">${escapeHtml(message || 'Memuat data...')}</td></tr>`;
+            if (managementPagination) {
+                managementPagination.classList.add('d-none');
+                managementPagination.innerHTML = '';
+            }
+        }
+
+        function showLoadProgress(payload) {
+            if (!managementLoadProgress) return;
+
+            if (managementState.autoHideTimer) {
+                clearTimeout(managementState.autoHideTimer);
+                managementState.autoHideTimer = null;
+            }
+
+            const percent = Math.max(0, Math.min(100, Number(payload?.progress_percent || 0)));
+            const completedUnits = Math.max(0, Number(payload?.completed_units || 0));
+            const totalUnits = Math.max(1, Number(payload?.total_units || 4));
+            const stage = String(payload?.stage || 'queued');
+            const status = String(payload?.status || '');
+            const isIndeterminate = ['queued', 'grouping'].includes(stage) && !['completed', 'failed'].includes(status);
+
+            console.log("Current Progress:", percent, "Status:", status);
+
+            managementLoadProgress.classList.remove('d-none');
+            if (managementLoadTitle) {
+                managementLoadTitle.textContent = status === 'completed'
+                    ? 'Data report management siap dipakai'
+                    : 'Memuat data report management...';
+            }
+            if (managementLoadStage) managementLoadStage.textContent = humanizeStage(stage);
+            if (managementLoadProgressBar) {
+                managementLoadProgressBar.style.width = percent + '%';
+                managementLoadProgressBar.classList.toggle('report-management-progress__bar--indeterminate', isIndeterminate);
+                managementLoadProgressBar.setAttribute('aria-valuetext', `${percent}% - ${humanizeStage(stage)}`);
+            }
+            if (managementLoadPercent) managementLoadPercent.textContent = `${percent}%`;
+            if (managementLoadUnits) managementLoadUnits.textContent = `${formatNumber(completedUnits)} / ${formatNumber(totalUnits)} tahap`;
+            if (managementLoadText) managementLoadText.textContent = payload?.message || 'Memuat data report management...';
+            if (managementLoadMeta) {
+                if (status === 'completed') {
+                    const result = payload?.result || {};
+                    managementLoadMeta.textContent = `${formatNumber(result.total_groups || 0)} grup, ${formatNumber(result.grand_total_rows || 0)} baris sumber, halaman ${formatNumber(result.pagination?.current_page || 1)} siap ditampilkan.`;
+                } else if (status === 'failed') {
+                    managementLoadMeta.textContent = payload?.error || 'Load data report management gagal.';
+                } else if (stage === 'grouping') {
+                    managementLoadMeta.textContent = 'Database sedang menjalankan query grouping. Tahap ini bisa memakan waktu lebih lama pada report besar.';
+                } else if (stage === 'counting') {
+                    managementLoadMeta.textContent = 'Hasil grouping sudah didapat. Sistem sedang menghitung total baris dan pagination.';
+                } else {
+                    managementLoadMeta.textContent = '';
+                }
+            }
+
+            if (status === 'completed' && percent === 100) {
+                console.log("Timer auto-hide berjalan");
+                managementState.autoHideTimer = setTimeout(() => {
+                    hideLoadProgress();
+                }, 2500);
+            }
+        }
+
+        function hideLoadProgress() {
+            if (managementLoadProgress) {
+                managementLoadProgress.classList.add('d-none');
+            }
+            if (managementState.autoHideTimer) {
+                clearTimeout(managementState.autoHideTimer);
+                managementState.autoHideTimer = null;
+            }
+        }
+
+        function stopDirectLoadTimer() {
+            if (managementState.directLoadTimer) {
+                clearInterval(managementState.directLoadTimer);
+                managementState.directLoadTimer = null;
+            }
+        }
+
+        function startDirectLoadTimer(selectedLabel) {
+            stopDirectLoadTimer();
+            const startedAt = Date.now();
+            const label = String(selectedLabel || 'report yang dipilih').trim();
+
+            const update = function () {
+                const elapsedMs = Math.max(0, Date.now() - startedAt);
+                const elapsedSec = Math.floor(elapsedMs / 1000);
+                let stage = 'validating';
+                let completedUnits = 1;
+                let percent = 12;
+                let message = `Memvalidasi report ${label}...`;
+                let meta = 'Mengecek konfigurasi report dan tabel sumber.';
+
+                if (elapsedMs >= 900) {
+                    stage = 'scanning_columns';
+                    completedUnits = 2;
+                    percent = 28;
+                    message = 'Mendeteksi kolom periode dan kanca...';
+                    meta = 'Menentukan kolom yang dipakai untuk grouping.';
+                }
+
+                if (elapsedMs >= 1800) {
+                    stage = 'grouping';
+                    completedUnits = 3;
+                    percent = Math.min(88, 40 + Math.floor(elapsedSec * 2));
+                    message = 'Menjalankan query grouping data report...';
+                    meta = elapsedSec >= 10
+                        ? `Query grouping masih berjalan selama ${formatNumber(elapsedSec)} detik. Report besar memang bisa lebih lama.`
+                        : 'Database sedang menghitung grouping data. Tahap ini paling berat.';
+                }
+
+                showLoadProgress({
+                    status: 'running',
+                    stage: stage,
+                    progress_percent: percent,
+                    completed_units: completedUnits,
+                    total_units: 4,
+                    message: message,
+                    error: null,
+                });
+
+                if (managementLoadMeta) {
+                    managementLoadMeta.textContent = meta;
+                }
+            };
+
+            update();
+            managementState.directLoadTimer = setInterval(update, 400);
+        }
 
         function updateDeleteProgressUi(payload) {
             const progressBar = document.getElementById('delete-progress-bar');
@@ -98,7 +283,7 @@
             const response = await fetch(url, { headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' } });
             let data = {};
             try { data = await response.json(); } catch (_) { data = {}; }
-            if (!response.ok && data.status !== 'warning') throw new Error(data.message || 'Gagal mengambil status delete.');
+            if (!response.ok && data.status !== 'warning') throw new Error(data.message || 'Gagal mengambil status proses.');
             return data;
         }
 
@@ -286,8 +471,13 @@
             syncBulkSelectionUi();
         }
 
-        async function postJson(url, payload) {
-            const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-TOKEN': csrfToken }, body: JSON.stringify(payload) });
+        async function postJson(url, payload, options = {}) {
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-TOKEN': csrfToken },
+                body: JSON.stringify(payload),
+                signal: options.signal,
+            });
             let data = {};
             try { data = await response.json(); } catch (_) { data = {}; }
             const recoveredWarning = data.status === 'failed' && Number(data.deleted_rows || 0) > 0;
@@ -302,13 +492,78 @@
             }
             const fetchUrl = reportManagementCard?.dataset.fetchUrl;
             if (!fetchUrl) return;
-            setNotice('', '');
-            managementTableBody.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-4">Memuat data...</td></tr>';
-            const payload = await postJson(fetchUrl, { id_report: managementReportSelect.value, page: page, per_page: managementState.perPage });
-            if (payload.status !== 'success') throw new Error(payload.message || 'Gagal memuat data report management.');
-            managementState.currentPage = Number(payload.pagination?.current_page || page || 1);
-            setNotice(payload.truncated ? 'warning' : 'info', payload.truncated ? 'Daftar grup dibatasi oleh server untuk menjaga performa. Pagination diterapkan pada hasil grouping yang berhasil dimuat.' : 'Data siap dikelola. Gunakan klik baris, centang per periode, dan pagination agar review data tetap ringkas.');
-            renderManagementRows(payload.periods || [], Object.assign({}, payload, { rows: payload.rows || [] }));
+
+            const token = managementState.loadToken + 1;
+            managementState.loadToken = token;
+            managementState.activeLoadId = null;
+            const selectedLabel = managementReportSelect?.options?.[managementReportSelect.selectedIndex]?.text || 'report yang dipilih';
+            const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+            const timeoutId = setTimeout(function () {
+                controller?.abort();
+            }, 180000);
+
+            try {
+                setNotice('', '');
+                setManagementLoadingState(true);
+                managementState.selectedScopes.clear();
+                updateSelectionToast();
+                setLoadingTableState('Menjalankan load data report management...');
+                startDirectLoadTimer(selectedLabel);
+
+                const payload = await postJson(fetchUrl, {
+                    id_report: managementReportSelect.value,
+                    page: page,
+                    per_page: managementState.perPage,
+                }, { signal: controller?.signal });
+
+                if (token !== managementState.loadToken) {
+                    return;
+                }
+
+                if (payload.status !== 'success') {
+                    throw new Error(payload.message || 'Gagal memuat data report management.');
+                }
+
+                stopDirectLoadTimer();
+                showLoadProgress({
+                    status: 'completed',
+                    stage: 'completed',
+                    progress_percent: 100,
+                    completed_units: 4,
+                    total_units: 4,
+                    message: 'Data report management selesai dimuat.',
+                    result: payload,
+                });
+
+                managementState.currentPage = Number(payload.pagination?.current_page || page || 1);
+                setNotice(payload.truncated ? 'warning' : 'info', payload.truncated ? 'Daftar grup dibatasi oleh server untuk menjaga performa. Pagination diterapkan pada hasil grouping yang berhasil dimuat.' : 'Data siap dikelola. Gunakan klik baris, centang per periode, dan pagination agar review data tetap ringkas.');
+                renderManagementRows(payload.periods || [], Object.assign({}, payload, { rows: payload.rows || [] }));
+            } catch (error) {
+                stopDirectLoadTimer();
+                const isAbort = error?.name === 'AbortError';
+                showLoadProgress({
+                    status: 'failed',
+                    stage: 'failed',
+                    progress_percent: 100,
+                    completed_units: 4,
+                    total_units: 4,
+                    message: isAbort
+                        ? 'Load data dihentikan karena melewati batas waktu aman.'
+                        : 'Load data report management gagal.',
+                    error: isAbort
+                        ? 'Request load report management dihentikan otomatis setelah 180 detik agar tidak menggantung tanpa kepastian.'
+                        : (error?.message || 'Terjadi kesalahan saat memuat data report management.'),
+                });
+                setLoadingTableState(isAbort ? 'Load data dihentikan karena timeout aman.' : 'Gagal memuat data report management.');
+                throw isAbort
+                    ? new Error('Load data report management melebihi 180 detik dan dihentikan otomatis agar tidak menggantung.')
+                    : error;
+            } finally {
+                clearTimeout(timeoutId);
+                if (token === managementState.loadToken) {
+                    setManagementLoadingState(false);
+                }
+            }
         }
 
         async function deleteManagedScopes(scopes) {
@@ -391,15 +646,12 @@
 
         btnManagementFilter?.addEventListener('click', async function () {
             try {
-                btnManagementFilter.disabled = true;
                 managementState.currentPage = 1;
-                managementState.selectedScopes.clear();
-                updateSelectionToast();
                 await fetchManagementData(1);
             } catch (error) {
                 themedSwal({ icon: 'error', title: 'Gagal Memuat Data', text: error.message || 'Terjadi kesalahan saat memuat data.' });
             } finally {
-                btnManagementFilter.disabled = false;
+                setManagementLoadingState(false);
             }
         });
 
@@ -417,6 +669,7 @@
         });
 
         managementSelectAll?.addEventListener('change', function () {
+            if (managementState.isLoading) return;
             const allCheckboxes = managementTableBody?.querySelectorAll('.management-row-checkbox') || [];
             allCheckboxes.forEach(function (checkbox) {
                 checkbox.checked = !!managementSelectAll.checked;
@@ -427,6 +680,7 @@
         });
 
         managementTableBody?.addEventListener('change', function (event) {
+            if (managementState.isLoading) return;
             if (event.target.closest('.management-row-checkbox')) {
                 const checkbox = event.target.closest('.management-row-checkbox');
                 const scope = decodeScopeDataset(checkbox);
@@ -448,6 +702,7 @@
         });
 
         managementTableBody?.addEventListener('click', function (event) {
+            if (managementState.isLoading) return;
             const row = event.target.closest('.management-data-row');
             if (!row || event.target.closest('button, input, label, a')) return;
             const checkbox = row.querySelector('.management-row-checkbox');
@@ -459,6 +714,7 @@
         });
 
         btnDeleteSelected?.addEventListener('click', async function () {
+            if (managementState.isLoading) return;
             const selectedScopes = Array.from(managementState.selectedScopes.values());
             btnDeleteSelected.disabled = true;
             try {
@@ -471,6 +727,7 @@
         });
 
         btnClearSelected?.addEventListener('click', function () {
+            if (managementState.isLoading) return;
             managementState.selectedScopes.clear();
             Array.from(managementTableBody?.querySelectorAll('.management-row-checkbox') || []).forEach(function (checkbox) { checkbox.checked = false; });
             syncBulkSelectionUi();
@@ -478,26 +735,37 @@
 
         managementPagination?.addEventListener('click', async function (event) {
             const button = event.target.closest('.report-management-page-btn');
-            if (!button || button.disabled) return;
+            if (!button || button.disabled || managementState.isLoading) return;
             const targetPage = Number(button.getAttribute('data-page') || 1);
             if (!targetPage || targetPage === managementState.currentPage) return;
             try {
                 await fetchManagementData(targetPage);
             } catch (error) {
                 themedSwal({ icon: 'error', title: 'Gagal Memuat Halaman', text: error.message || 'Terjadi kesalahan saat memuat halaman data.' });
+            } finally {
+                setManagementLoadingState(false);
             }
         });
 
         managementReportSelect?.addEventListener('change', function () {
+            managementState.loadToken += 1;
+            managementState.isLoading = false;
             managementState.currentPage = 1;
+            managementState.activeLoadId = null;
             managementState.selectedScopes.clear();
+            stopDirectLoadTimer();
             if (managementTableBody) managementTableBody.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-4">Pilih report lalu klik "Tampilkan Data".</td></tr>';
             if (managementPagination) {
                 managementPagination.classList.add('d-none');
                 managementPagination.innerHTML = '';
             }
+            hideLoadProgress();
+            setManagementLoadingState(false);
             updateSummary([], {});
             updateSelectionToast();
+        });
+    });
+</script>
         });
     });
 </script>

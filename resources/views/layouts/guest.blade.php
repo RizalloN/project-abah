@@ -4,8 +4,9 @@
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="csrf-token" content="{{ csrf_token() }}">
+        <link rel="icon" type="image/svg+xml" href="{{ asset('images/a-six-logo.svg') }}">
 
-        <title>{{ config('app.name', 'Laravel') }}</title>
+        <title>{{ config('app.name', 'Dashboard A-Six') }}</title>
 
         <!-- Scripts -->
         @vite(['resources/css/app.css', 'resources/js/app.js'])
@@ -21,8 +22,10 @@
                 <section class="hidden border-b border-white/10 p-10 text-white lg:flex lg:flex-col lg:justify-between lg:border-b-0 lg:border-r lg:p-12">
                     <div>
                         <a href="/" class="inline-flex items-center gap-3 text-sm font-semibold uppercase tracking-[0.32em] text-white/75 transition hover:text-white">
-                            <span class="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10 ring-1 ring-white/15">DB</span>
-                            DigiBranch - Area 6
+                            <span class="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10 p-2 ring-1 ring-white/15">
+                                <img src="{{ asset('images/a-six-logo.svg') }}" alt="Logo A-Six" class="h-full w-full object-contain">
+                            </span>
+                            Dashboard A-Six
                         </a>
 
                         <div class="mt-12">
@@ -31,7 +34,7 @@
                                 Satu tampilan autentikasi yang konsisten untuk seluruh portal.
                             </h1>
                             <p class="mt-6 max-w-lg text-base leading-7 text-slate-300">
-                                Halaman login, reset password, verifikasi email, dan form akun lain kini mengikuti gaya DigiBranch yang lebih bersih, modern, dan profesional.
+                                Halaman login, reset password, verifikasi email, dan form akun lain kini mengikuti identitas Dashboard A-Six yang lebih bersih, modern, dan profesional.
                             </p>
                         </div>
                     </div>
@@ -51,14 +54,16 @@
                 <section class="bg-white px-6 py-8 sm:px-10 sm:py-10 lg:px-12 lg:py-12">
                     <div class="mx-auto w-full max-w-md">
                         <a href="/" class="inline-flex items-center gap-3 text-sm font-semibold uppercase tracking-[0.28em] text-emerald-700 lg:hidden">
-                            <span class="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-600 text-white shadow-lg shadow-emerald-600/25">DB</span>
-                            DigiBranch - Area 6
+                            <span class="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-600 p-2 text-white shadow-lg shadow-emerald-600/25">
+                                <img src="{{ asset('images/a-six-logo.svg') }}" alt="Logo A-Six" class="h-full w-full object-contain">
+                            </span>
+                            Dashboard A-Six
                         </a>
 
                         <div class="mt-6 lg:mt-0">
                             <p class="text-sm font-semibold uppercase tracking-[0.3em] text-emerald-700">Account Access</p>
                             <h2 class="mt-3 text-3xl font-extrabold tracking-tight text-slate-900">
-                                Portal autentikasi DigiBranch
+                                Portal autentikasi Dashboard A-Six
                             </h2>
                             <p class="mt-3 text-sm leading-6 text-slate-500">
                                 Lanjutkan ke akun Anda melalui form yang tersedia di bawah ini.

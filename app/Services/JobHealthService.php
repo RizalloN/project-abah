@@ -1,0 +1,170 @@
+<?php
+
+namespace App\Services;
+
+use App\Http\Controllers\Import\ImportIndexController;
+use App\Jobs\EnsureDashboardSimpananSnapshotJob;
+use App\Jobs\EnsureDashboardSnapshotJob;
+use App\Jobs\EnsureRasioCasaSnapshotJob;
+use App\Jobs\EnsureRekeningDormantSnapshotJob;
+use App\Jobs\RunImportJob;
+use App\Jobs\RunManagedReportDeleteJob;
+use App\Jobs\RunManagedReportLoadJob;
+use App\Jobs\RunManagedReportSnapshotRebuildJob;
+use App\Jobs\SyncImportedReportJob;
+use App\Jobs\WarmReportCacheJob;
+use App\Services\Import\ImportProgressService;
+use App\Support\ManagedReportLoadCoordinator;
+use App\Support\ManagedReportSnapshotRebuildCoordinator;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+
+class JobHealthService
+{
+    private const SWEEP_LOCK_KEY = 'job_health:sweep:lock';
+    private const SWEEP_LAST_RUN_KEY = 'job_health:sweep:last_run';
+    private const SWEEP_INTERVAL_SECONDS = 60;
+    private const IMPORT_QUEUE_STALE_SECONDS = 15 * 60;
+    private const MANAGED_QUEUE_STALE_SECONDS = 15 * 60;
+    private const REPORT_QUEUE_STALE_SECONDS = 20 * 60;
+
+    public function __construct(
+        private readonly ImportProgressService $importProgressService,
+        private readonly ManagedReportLoadCoordinator $managedReportLoadCoordinator,
+        private readonly ManagedReportSnapshotRebuildCoordinator $managedReportSnapshotRebuildCoordinator,
+        private readonly ImportIndexController $importIndexController
+    ) {
+    }
+
+    public function sweepIfDue(): void
+    {
+        $this->sweep(false);
+    }
+
+    public function sweepNow(): array
+    {
+        return $this->sweep(true);
+    }
+
+    private function sweep(bool $force): array
+    {
+        if (!$force) {
+            $lastRunAt = Cache::get(self::SWEEP_LAST_RUN_KEY);
+            if (is_string($lastRunAt) && trim($lastRunAt) !== '') {
+                try {
+                    if (now()->diffInSeconds($lastRunAt) < self::SWEEP_INTERVAL_SECONDS) {
+                        return [];
+                    }
+                } catch (\Throwable) {
+                }
+            }
+        }
+
+        $lock = Cache::lock(self::SWEEP_LOCK_KEY, 55);
+        if (!$lock->get()) {
+            return [];
+        }
+
+        try {
+            $queuedImports = $this->importProgressService->purgeStaleQueuedJobs();
+            $processingImports = $this->importProgressService->purgeStaleProcessingJobs();
+            $managedLoads = $this->managedReportLoadCoordinator->sweepStaleStates();
+            $managedRebuilds = $this->managedReportSnapshotRebuildCoordinator->sweepStaleStates();
+            $managedDeletes = $this->importIndexController->sweepManagedReportDeleteStates();
+            $purgedQueueRows = $this->purgeStaleQueueRows();
+
+            Cache::put(self::SWEEP_LAST_RUN_KEY, now()->toIso8601String(), now()->addMinutes(10));
+
+            $summary = [
+                'stale_imports_queued' => $queuedImports,
+                'stale_imports_processing' => $processingImports,
+                'managed_loads_reconciled' => $managedLoads,
+                'managed_rebuilds_reconciled' => $managedRebuilds,
+                'managed_deletes_reconciled' => $managedDeletes,
+                'purged_queue_rows' => $purgedQueueRows,
+            ];
+
+            $purgedQueueRowCount = array_sum($purgedQueueRows);
+
+            if (($queuedImports + $processingImports + $managedLoads + $managedRebuilds + $managedDeletes + $purgedQueueRowCount) > 0) {
+                Log::info('Job health sweep dijalankan.', $summary);
+            }
+
+            return $summary;
+        } finally {
+            optional($lock)->release();
+        }
+    }
+
+    private function purgeStaleQueueRows(): array
+    {
+        return [
+            'imports' => $this->deletePendingQueueRows(
+                ['imports-daily-loan', 'imports-high'],
+                [RunImportJob::class],
+                self::IMPORT_QUEUE_STALE_SECONDS
+            ),
+            'managed_imports' => $this->deletePendingQueueRows(
+                ['imports-high', 'reports-low', 'default'],
+                [RunManagedReportLoadJob::class, RunManagedReportDeleteJob::class],
+                self::MANAGED_QUEUE_STALE_SECONDS
+            ),
+            'reports_low' => $this->deletePendingQueueRows(
+                ['reports-low'],
+                [
+                    SyncImportedReportJob::class,
+                    WarmReportCacheJob::class,
+                    EnsureDashboardSnapshotJob::class,
+                    EnsureDashboardSimpananSnapshotJob::class,
+                    EnsureRasioCasaSnapshotJob::class,
+                    EnsureRekeningDormantSnapshotJob::class,
+                    RunManagedReportSnapshotRebuildJob::class,
+                ],
+                self::REPORT_QUEUE_STALE_SECONDS
+            ),
+            'default_known' => $this->deletePendingQueueRows(
+                ['default'],
+                [
+                    SyncImportedReportJob::class,
+                    WarmReportCacheJob::class,
+                    EnsureDashboardSnapshotJob::class,
+                    EnsureDashboardSimpananSnapshotJob::class,
+                    EnsureRasioCasaSnapshotJob::class,
+                    EnsureRekeningDormantSnapshotJob::class,
+                ],
+                self::REPORT_QUEUE_STALE_SECONDS
+            ),
+        ];
+    }
+
+    private function deletePendingQueueRows(array $queues, array $jobClasses, int $olderThanSeconds): int
+    {
+        if ($queues === [] || $jobClasses === []) {
+            return 0;
+        }
+
+        try {
+            $threshold = now()->subSeconds(max(1, $olderThanSeconds))->timestamp;
+
+            return DB::table('jobs')
+                ->whereNull('reserved_at')
+                ->whereIn('queue', $queues)
+                ->where('created_at', '<=', $threshold)
+                ->where(function ($query) use ($jobClasses): void {
+                    foreach ($jobClasses as $jobClass) {
+                        $query->orWhere('payload', 'like', '%' . class_basename($jobClass) . '%');
+                    }
+                })
+                ->delete();
+        } catch (\Throwable $e) {
+            Log::warning('Gagal membersihkan row jobs stale dari queue monitor: ' . $e->getMessage(), [
+                'queues' => $queues,
+                'job_classes' => array_map(static fn (string $class): string => class_basename($class), $jobClasses),
+                'older_than_seconds' => $olderThanSeconds,
+            ]);
+
+            return 0;
+        }
+    }
+}
