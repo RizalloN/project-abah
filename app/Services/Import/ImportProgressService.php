@@ -13,6 +13,7 @@ class ImportProgressService
 {
     private const CACHE_PREFIX = 'import_job_progress:';
     private const STATE_PREFIX = 'excel_import_job:';
+    private const TERMINATE_PREFIX = 'import_job_terminate:';
     private const STALE_QUEUED_MINUTES = 15;
     private const STALE_PROCESSING_HOURS = 2;
     private const ACTIVE_PROCESSING_REUSE_HOURS = 6;
@@ -288,8 +289,47 @@ class ImportProgressService
         $this->updateJob($jobId, $attributes, $progressPayload);
 
         if ($this->isTerminalStatus($status)) {
+            $this->clearTerminationRequest($jobId);
             $this->cleanupQueuedImportJobRows($jobId);
         }
+    }
+
+    public function requestTermination(int $jobId, ?int $requestedBy = null): void
+    {
+        if ($jobId <= 0) {
+            return;
+        }
+
+        Cache::put($this->terminationKey($jobId), [
+            'requested' => true,
+            'requested_by' => $requestedBy,
+            'requested_at' => now()->toIso8601String(),
+        ], now()->addHours(6));
+    }
+
+    public function getTerminationRequest(int $jobId): array
+    {
+        if ($jobId <= 0) {
+            return [];
+        }
+
+        $cached = Cache::get($this->terminationKey($jobId));
+
+        return is_array($cached) ? $cached : [];
+    }
+
+    public function isTerminationRequested(int $jobId): bool
+    {
+        return (bool) ($this->getTerminationRequest($jobId)['requested'] ?? false);
+    }
+
+    public function clearTerminationRequest(int $jobId): void
+    {
+        if ($jobId <= 0) {
+            return;
+        }
+
+        Cache::forget($this->terminationKey($jobId));
     }
 
     public function getStatusPayload(int $jobId): array
@@ -327,6 +367,8 @@ class ImportProgressService
         $queuedAt = null;
         $queuedForSeconds = null;
         $isStaleQueue = false;
+        $terminationRequest = $this->getTerminationRequest($jobId);
+        $terminationRequested = (bool) ($terminationRequest['requested'] ?? false);
 
         if ($job->status === 'queued' && !empty($job->updated_at)) {
             try {
@@ -355,6 +397,8 @@ class ImportProgressService
             'updated_at' => $progress['updated_at'] ?? (string) $job->updated_at,
             'queued_for_seconds' => $queuedForSeconds,
             'is_stale_queue' => $isStaleQueue,
+            'termination_requested' => $terminationRequested,
+            'termination_requested_at' => $terminationRequest['requested_at'] ?? null,
         ];
     }
 
@@ -366,6 +410,11 @@ class ImportProgressService
     private function stateKey(int $jobId): string
     {
         return self::STATE_PREFIX . $jobId;
+    }
+
+    private function terminationKey(int $jobId): string
+    {
+        return self::TERMINATE_PREFIX . $jobId;
     }
 
     private function cleanupQueuedImportJobRows(int $jobId): void
@@ -690,6 +739,7 @@ class ImportProgressService
 
         Cache::forget($this->cacheKey($jobId));
         Cache::forget($this->stateKey($jobId));
+        $this->clearTerminationRequest($jobId);
         $this->cleanupQueuedImportJobRows($jobId);
     }
 

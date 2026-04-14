@@ -18,6 +18,7 @@ class ImportExecutionService
     private const DISPATCHED_KEY_PREFIX = 'import_excel_dispatched_job_';
     private const DISPATCHED_TTL_HOURS = 6;
     private const STALE_QUEUED_MINUTES = 10;
+    private const TERMINATION_EXCEPTION_PREFIX = 'import_job_terminated_by_request:';
 
     public function __construct(
         private readonly ImportProgressService $progressService,
@@ -222,6 +223,12 @@ class ImportExecutionService
     {
         $this->progressService->purgeStaleProcessingJobs();
 
+        if ($this->progressService->isTerminationRequested($jobId)) {
+            $this->terminateRequestedJob($jobId);
+            $this->releaseDispatchMarker($jobId);
+            return;
+        }
+
         $state = $this->progressService->getJobState($jobId);
         $params = (array) ($state['params'] ?? []);
         $headers = array_values((array) ($state['headers'] ?? []));
@@ -267,6 +274,10 @@ class ImportExecutionService
                 'params' => $params,
                 'headers' => $headers,
             ], function (string $event, array $payload) use ($jobId): void {
+                if ($this->progressService->isTerminationRequested($jobId)) {
+                    throw new \RuntimeException(self::TERMINATION_EXCEPTION_PREFIX . $jobId);
+                }
+
                 $status = match ($event) {
                     'complete' => 'completed',
                     'error' => 'failed',
@@ -274,6 +285,10 @@ class ImportExecutionService
                 };
 
                 $this->progressService->cacheProgress($jobId, array_merge($payload, ['status' => $status]));
+
+                if ($this->progressService->isTerminationRequested($jobId)) {
+                    throw new \RuntimeException(self::TERMINATION_EXCEPTION_PREFIX . $jobId);
+                }
             });
 
             $job = $this->progressService->findJob($jobId);
@@ -316,6 +331,22 @@ class ImportExecutionService
                 $status
             );
             $this->releaseDispatchMarker($jobId);
+        } catch (\Throwable $e) {
+            if ($this->isTerminationException($e) || $this->progressService->isTerminationRequested($jobId)) {
+                $this->terminateRequestedJob($jobId);
+                $this->releaseDispatchMarker($jobId);
+                return;
+            }
+
+            $job = $this->progressService->findJob($jobId);
+            $this->progressService->markFailed(
+                $jobId,
+                'Worker import gagal: ' . $e->getMessage(),
+                (int) ($job->total_success ?? 0),
+                (int) ($job->total_failed ?? 0),
+                ((int) ($job->total_success ?? 0) > 0 || (int) ($job->total_failed ?? 0) > 0) ? 'failed_partial' : 'failed'
+            );
+            $this->releaseDispatchMarker($jobId);
         } finally {
             $lock->release();
         }
@@ -347,5 +378,25 @@ class ImportExecutionService
         } catch (\Throwable) {
             return true;
         }
+    }
+
+    private function isTerminationException(\Throwable $e): bool
+    {
+        return str_starts_with($e->getMessage(), self::TERMINATION_EXCEPTION_PREFIX);
+    }
+
+    private function terminateRequestedJob(int $jobId): void
+    {
+        $job = $this->progressService->findJob($jobId);
+        $success = (int) ($job->total_success ?? 0);
+        $failed = (int) ($job->total_failed ?? 0);
+
+        $this->progressService->markFailed(
+            $jobId,
+            'Job dihentikan melalui Job Management.',
+            $success,
+            $failed,
+            ($success > 0 || $failed > 0) ? 'failed_partial' : 'failed'
+        );
     }
 }

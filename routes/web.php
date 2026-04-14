@@ -9,6 +9,7 @@ use App\Http\Controllers\Import\ImportFileBrimoController;
 use App\Http\Controllers\Import\ImportFileController;
 use App\Http\Controllers\Import\ImportIndexController;
 use App\Http\Controllers\Import\ImportJobStatusController;
+use App\Http\Controllers\Import\ImportJobManagementController;
 use App\Http\Controllers\Import\ImportPerformancePisPerProdukController;
 use App\Http\Controllers\Import\ImportReportPhController;
 use App\Http\Controllers\Import\ImportSimpananMultiPnCsvController;
@@ -94,6 +95,9 @@ Route::middleware(['auth', 'role:admin', 'release.session.lock'])->group(functio
     Route::post('/bod-boc/store', [BodBocController::class, 'store'])->name('bod-boc.store');
     Route::get('/import', [ImportIndexController::class, 'index'])->name('import.index');
     Route::get('/report-management', [ImportIndexController::class, 'reportManagement'])->name('report-management.index');
+    Route::get('/job-management', [ImportJobManagementController::class, 'index'])->name('job-management.index');
+    Route::get('/job-management/data', [ImportJobManagementController::class, 'data'])->name('job-management.data');
+    Route::post('/job-management/{jobId}/terminate', [ImportJobManagementController::class, 'terminate'])->name('job-management.terminate');
     Route::get('/file-management', [FileManagementController::class, 'index'])->name('file-management.index');
     Route::post('/file-management/delete', [FileManagementController::class, 'destroy'])->name('file-management.destroy');
     Route::get('/user-management', [UserManagementController::class, 'index'])->name('user-management.index');

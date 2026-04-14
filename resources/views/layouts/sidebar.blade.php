@@ -374,6 +374,13 @@
                 </li>
 
                 <li class="nav-item">
+                    <a href="{{ route('job-management.index') }}" class="nav-link {{ request()->routeIs('job-management.*') ? 'active' : '' }}">
+                        <i class="nav-icon fas fa-tasks"></i>
+                        <p>Job Management</p>
+                    </a>
+                </li>
+
+                <li class="nav-item">
                     <a href="{{ route('file-management.index') }}" class="nav-link {{ request()->routeIs('file-management.*') ? 'active' : '' }}">
                         <i class="nav-icon fas fa-folder-open"></i>
                         <p>File Management</p>
