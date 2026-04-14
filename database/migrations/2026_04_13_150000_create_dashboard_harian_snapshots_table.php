@@ -59,12 +59,22 @@ return new class extends Migration
             });
         }
 
+        if (!in_array(DB::connection()->getDriverName(), ['mysql', 'mariadb'], true)) {
+            return;
+        }
+
         $this->recreateDailyLoanTriggers(withDashboardHarian: true);
         $this->recreateSimpananTriggers(withDashboardHarian: true);
     }
 
     public function down(): void
     {
+        if (!in_array(DB::connection()->getDriverName(), ['mysql', 'mariadb'], true)) {
+            Schema::dropIfExists('dashboard_harian_snapshots');
+
+            return;
+        }
+
         $this->recreateDailyLoanTriggers(withDashboardHarian: false);
         $this->recreateSimpananTriggers(withDashboardHarian: false);
 

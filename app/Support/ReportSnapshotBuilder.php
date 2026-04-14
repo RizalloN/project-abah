@@ -86,24 +86,95 @@ class ReportSnapshotBuilder
         };
     }
 
-    public function rebuildDashboard(?string $period = null, bool $force = false): array
+    public function describeRebuildPlan(?string $period = null): array
+    {
+        $reports = [
+            [
+                'key' => 'dashboard',
+                'label' => 'Dashboard Pinjaman',
+                'periods' => $this->resolveDashboardPeriods($period),
+            ],
+            [
+                'key' => 'dashboard_simpanan',
+                'label' => 'Dashboard Simpanan',
+                'periods' => $this->resolveSimpananDashboardPeriods($period),
+            ],
+            [
+                'key' => 'dashboard_harian',
+                'label' => 'Dashboard Harian',
+                'periods' => $this->dashboardHarianSnapshotService->describeRebuildPlan($period)['periods'] ?? [],
+            ],
+            [
+                'key' => 'rasio',
+                'label' => 'Rasio CASA Debitur',
+                'periods' => $this->resolveRasioPeriods($period),
+            ],
+            [
+                'key' => 'dormant',
+                'label' => 'Rekening Dormant',
+                'periods' => $this->resolveDormantPeriods($period),
+            ],
+            [
+                'key' => 'new_payroll',
+                'label' => 'Performance New Payroll',
+                'periods' => $this->resolveNewPayrollPeriods($period),
+            ],
+        ];
+
+        $buildUnits = 0;
+        foreach ($reports as &$reportEntry) {
+            $reportEntry['periods'] = array_values(array_unique(array_filter($reportEntry['periods'] ?? [])));
+            $reportEntry['total_units'] = count($reportEntry['periods']);
+            $buildUnits += (int) $reportEntry['total_units'];
+        }
+        unset($reportEntry);
+
+        return [
+            'reports' => $reports,
+            'build_units' => $buildUnits,
+            'total_units' => max(1, $buildUnits + 1),
+        ];
+    }
+
+    public function rebuildDashboard(?string $period = null, bool $force = false, ?callable $progress = null): array
     {
         $results = [];
+        $periods = $this->resolveDashboardPeriods($period);
+        $totalPeriods = count($periods);
 
-        foreach ($this->resolveDashboardPeriods($period) as $snapshotPeriod) {
+        foreach ($periods as $index => $snapshotPeriod) {
             $results[$snapshotPeriod] = $this->buildDashboardPeriodSnapshot($snapshotPeriod, $force);
+
+            if ($progress !== null) {
+                $progress([
+                    'current_period' => $snapshotPeriod,
+                    'completed_units' => $index + 1,
+                    'total_units' => $totalPeriods,
+                    'current_result_count' => (int) ($results[$snapshotPeriod] ?? 0),
+                ]);
+            }
         }
 
         return $results;
     }
 
-    public function rebuildDashboardSimpanan(?string $period = null, bool $force = false): array
+    public function rebuildDashboardSimpanan(?string $period = null, bool $force = false, ?callable $progress = null): array
     {
         $results = [];
         $periods = $this->resolveSimpananDashboardPeriods($period);
+        $totalPeriods = count($periods);
 
-        foreach ($periods as $snapshotPeriod) {
+        foreach ($periods as $index => $snapshotPeriod) {
             $results[$snapshotPeriod] = $this->buildDashboardSimpananPeriodSnapshot($snapshotPeriod, $force);
+
+            if ($progress !== null) {
+                $progress([
+                    'current_period' => $snapshotPeriod,
+                    'completed_units' => $index + 1,
+                    'total_units' => $totalPeriods,
+                    'current_result_count' => (int) ($results[$snapshotPeriod] ?? 0),
+                ]);
+            }
         }
 
         if ($period === null) {
@@ -113,34 +184,67 @@ class ReportSnapshotBuilder
         return $results;
     }
 
-    public function rebuildRasioCasa(?string $period = null, bool $force = false): array
+    public function rebuildRasioCasa(?string $period = null, bool $force = false, ?callable $progress = null): array
     {
         $results = [];
+        $periods = $this->resolveRasioPeriods($period);
+        $totalPeriods = count($periods);
 
-        foreach ($this->resolveRasioPeriods($period) as $snapshotPeriod) {
+        foreach ($periods as $index => $snapshotPeriod) {
             $results[$snapshotPeriod] = $this->buildRasioPeriodSnapshot($snapshotPeriod, $force);
+
+            if ($progress !== null) {
+                $progress([
+                    'current_period' => $snapshotPeriod,
+                    'completed_units' => $index + 1,
+                    'total_units' => $totalPeriods,
+                    'current_result_count' => (int) ($results[$snapshotPeriod] ?? 0),
+                ]);
+            }
         }
 
         return $results;
     }
 
-    public function rebuildRekeningDormant(?string $period = null, bool $force = false): array
+    public function rebuildRekeningDormant(?string $period = null, bool $force = false, ?callable $progress = null): array
     {
         $results = [];
+        $periods = $this->resolveDormantPeriods($period);
+        $totalPeriods = count($periods);
 
-        foreach ($this->resolveDormantPeriods($period) as $snapshotPeriod) {
+        foreach ($periods as $index => $snapshotPeriod) {
             $results[$snapshotPeriod] = $this->buildDormantPeriodSnapshot($snapshotPeriod, $force);
+
+            if ($progress !== null) {
+                $progress([
+                    'current_period' => $snapshotPeriod,
+                    'completed_units' => $index + 1,
+                    'total_units' => $totalPeriods,
+                    'current_result_count' => (int) ($results[$snapshotPeriod] ?? 0),
+                ]);
+            }
         }
 
         return $results;
     }
 
-    public function rebuildPerformanceNewPayroll(?string $period = null, bool $force = false): array
+    public function rebuildPerformanceNewPayroll(?string $period = null, bool $force = false, ?callable $progress = null): array
     {
         $results = [];
+        $periods = $this->resolveNewPayrollPeriods($period);
+        $totalPeriods = count($periods);
 
-        foreach ($this->resolveNewPayrollPeriods($period) as $snapshotPeriod) {
+        foreach ($periods as $index => $snapshotPeriod) {
             $results[$snapshotPeriod] = $this->buildNewPayrollPeriodSnapshot($snapshotPeriod, $force);
+
+            if ($progress !== null) {
+                $progress([
+                    'current_period' => $snapshotPeriod,
+                    'completed_units' => $index + 1,
+                    'total_units' => $totalPeriods,
+                    'current_result_count' => (int) ($results[$snapshotPeriod] ?? 0),
+                ]);
+            }
         }
 
         return $results;

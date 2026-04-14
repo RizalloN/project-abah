@@ -103,7 +103,10 @@ Route::middleware(['auth', 'role:admin', 'release.session.lock'])->group(functio
     Route::get('/import/upload-limits', [ImportIndexController::class, 'uploadLimits'])->name('import.upload-limits');
     Route::get('/import/template', [ImportIndexController::class, 'downloadTemplate'])->name('import.template');
     Route::post('/import/report-management/data', [ImportIndexController::class, 'reportManagementData'])->name('import.report-management.data');
+    Route::post('/import/report-management/rebuild', [ImportIndexController::class, 'rebuildManagedReportSnapshots'])->name('import.report-management.rebuild');
+    Route::get('/import/report-management/rebuild/{rebuildId}/status', [ImportIndexController::class, 'managedReportRebuildStatus'])->name('import.report-management.rebuild.status');
     Route::post('/import/report-management/delete', [ImportIndexController::class, 'deleteManagedReportRows'])->name('import.report-management.delete');
+    Route::post('/import/report-management/duplicates', [ImportIndexController::class, 'deleteManagedReportDuplicates'])->name('import.report-management.duplicates');
     Route::post('/import/report-management/delete/{deleteId}/process', [ImportIndexController::class, 'processManagedReportDelete'])->name('import.report-management.delete.process');
     Route::get('/import/report-management/delete/{deleteId}/status', [ImportIndexController::class, 'managedReportDeleteStatus'])->name('import.report-management.delete.status');
     Route::post('/import/report-management/delete/{deleteId}/cancel', [ImportIndexController::class, 'cancelManagedReportDelete'])->name('import.report-management.delete.cancel');

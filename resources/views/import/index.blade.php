@@ -236,16 +236,18 @@
             const text = String(message || '').trim();
             const speedMatch = text.match(/\(([\d.,]+)\s+baris\/detik\)$/i);
 
-            if (!speedMatch) {
+            if (speedMatch) {
                 return {
-                    message: text,
-                    speed: '',
+                    message: text.replace(speedMatch[0], '').trim(),
+                    speed: speedMatch[1].replace(/[^\d]/g, ''),
+                    speedLabel: 'baris/detik',
                 };
             }
 
             return {
-                message: text.replace(speedMatch[0], '').trim(),
-                speed: speedMatch[1].replace(/[^\d]/g, ''),
+                message: text,
+                speed: '',
+                speedLabel: '',
             };
         }
 
@@ -1168,14 +1170,17 @@
             const hasAsyncPreview = Boolean(formImport.dataset.preparePreviewUrl);
             const directRedirect = formImport.dataset.directRedirect === '1';
             const uploadKind = formImport.dataset.uploadKind || 'rar';
+            const isPolarsFlow = uploadKind === 'excel' || uploadKind === 'csv';
             const titleText = uploadKind === 'excel'
                 ? 'Proses Excel'
                 : uploadKind === 'csv'
                     ? 'Proses CSV'
                     : 'Proses Import';
             const descText = hasAsyncPreview
-                ? 'File sedang diproses untuk preview.'
-                : 'File sedang diproses.';
+                ? (isPolarsFlow ? 'File sedang diproses menuju fase Polars.' : 'File sedang diproses untuk preview.')
+                : (isPolarsFlow ? 'File sedang diproses menuju fase Polars.' : 'File sedang diproses.');
+            const initialPhaseText = isPolarsFlow ? 'Fase Polars dimulai...' : 'Menyiapkan proses...';
+            const initialStatusText = isPolarsFlow ? 'Menyiapkan batch Polars...' : 'Menunggu proses...';
 
             const progressHtml = `
                 <div class="swal-import-shell">
@@ -1183,6 +1188,7 @@
                         <span class="swal-import-badge"><i class="fas fa-circle-notch fa-spin mr-1"></i> Sedang diproses</span>
                         <div class="swal-import-title">${titleText}</div>
                         <div class="swal-import-desc" id="swal-desc-text">${descText}</div>
+                        <div class="swal-import-phase" id="swal-progress-phase">${initialPhaseText}</div>
                     </div>
                     <div class="swal-import-card">
                         <div class="swal-import-card__top">
@@ -1194,17 +1200,28 @@
                                  style="width: 0%;">0%</div>
                         </div>
                         <div class="swal-import-meta">
-                            <small id="swal-progress-text" class="swal-import-meta__status">Menunggu proses...</small>
+                            <small id="swal-progress-text" class="swal-import-meta__status">${initialStatusText}</small>
                         </div>
                     </div>
-                    <div class="swal-import-stats">
-                        <div class="swal-import-stat">
-                            <span class="swal-import-stat__label">Baris</span>
-                            <span id="swal-rows-info" class="swal-import-stat__value">0 / 0</span>
+                    <div id="swal-import-metrics" class="swal-import-metrics" hidden>
+                        <div class="swal-import-metrics__head">
+                            <div class="swal-import-metrics__title-group">
+                                <span id="swal-import-metrics-label" class="swal-import-label">Progress Data</span>
+                                <div id="swal-import-metrics-note" class="swal-import-metrics__note">Menunggu data...</div>
+                            </div>
+                            <div id="swal-import-metrics-state" class="swal-import-metrics__state">Akan muncul saat data tersedia</div>
                         </div>
-                        <div class="swal-import-stat">
-                            <span class="swal-import-stat__label">Kecepatan</span>
-                            <span id="swal-speed-info" class="swal-import-stat__value">-</span>
+                        <div class="swal-import-stats swal-import-stats--compact">
+                            <div class="swal-import-stat">
+                                <span class="swal-import-stat__label">Baris</span>
+                                <span id="swal-rows-info" class="swal-import-stat__value">-</span>
+                                <span id="swal-rows-detail" class="swal-import-stat__detail">Menunggu data baris pertama...</span>
+                            </div>
+                            <div class="swal-import-stat">
+                                <span class="swal-import-stat__label">Kecepatan</span>
+                                <span id="swal-speed-info" class="swal-import-stat__value">-</span>
+                                <span id="swal-speed-detail" class="swal-import-stat__detail">Menunggu data kecepatan pertama...</span>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1231,10 +1248,137 @@
                     const formData = new FormData(formImport);
                     const uploadProgressBar = document.getElementById('swal-progress-bar');
                     const uploadProgressText = document.getElementById('swal-progress-text');
+                    const progressPhase = document.getElementById('swal-progress-phase');
+                    const progressPercent = document.getElementById('swal-progress-percent');
+                    const progressMetrics = document.getElementById('swal-import-metrics');
+                    const progressMetricsLabel = document.getElementById('swal-import-metrics-label');
+                    const progressMetricsNote = document.getElementById('swal-import-metrics-note');
+                    const progressMetricsState = document.getElementById('swal-import-metrics-state');
+                    const rowsInfo = document.getElementById('swal-rows-info');
+                    const rowsDetail = document.getElementById('swal-rows-detail');
+                    const speedInfo = document.getElementById('swal-speed-info');
+                    const speedDetail = document.getElementById('swal-speed-detail');
                     const chunkedUpload = formImport.dataset.chunkedUpload === '1';
                     const selectedFile = !inputRar.disabled
                         ? inputRar?.files?.[0]
                         : (!inputExcel.disabled ? inputExcel?.files?.[0] : inputCsv?.files?.[0]);
+                    const processStartedAt = Date.now();
+
+                    function formatDuration(seconds) {
+                        const totalSeconds = Math.max(0, Math.round(Number(seconds) || 0));
+                        const hours = Math.floor(totalSeconds / 3600);
+                        const minutes = Math.floor((totalSeconds % 3600) / 60);
+                        const secs = totalSeconds % 60;
+
+                        if (hours > 0) {
+                            return `${hours}j ${String(minutes).padStart(2, '0')}m`;
+                        }
+
+                        if (minutes > 0) {
+                            return `${minutes}m ${String(secs).padStart(2, '0')} dtk`;
+                        }
+
+                        return `${secs} dtk`;
+                    }
+
+                    function setMetricsVisible(visible) {
+                        if (!progressMetrics) {
+                            return;
+                        }
+
+                        progressMetrics.hidden = !visible;
+                        progressMetrics.classList.toggle('is-hidden', !visible);
+                    }
+
+                    updateProgressSurface(
+                        isPolarsFlow ? 5 : 3,
+                        initialStatusText,
+                        0,
+                        0,
+                        0,
+                        '',
+                        isPolarsFlow ? 'polars' : '',
+                        isPolarsFlow ? 'polars' : ''
+                    );
+
+                    function updateProgressSurface(percent, message, rowsDone = null, totalRows = null, speedValue = null, speedLabel = '', mode = '', phase = '') {
+                        if (uploadProgressBar && Number.isFinite(percent)) {
+                            uploadProgressBar.style.width = percent + '%';
+                            uploadProgressBar.innerText = percent + '%';
+                        }
+                        if (progressPercent && Number.isFinite(percent)) {
+                            progressPercent.textContent = percent + '%';
+                        }
+                        if (uploadProgressText && message) {
+                            uploadProgressText.innerText = message;
+                        }
+                        if (progressPhase && message) {
+                            progressPhase.textContent = message;
+                        }
+
+                        const numericPercent = Number(percent);
+                        const numericRowsDone = Number(rowsDone);
+                        const numericTotalRows = Number(totalRows);
+                        const numericSpeed = Number(speedValue || 0);
+                        const isDirectLoad = mode === 'direct_load' || phase === 'direct_load';
+                        const isPolars = mode === 'polars';
+                        const hasRows = Number.isFinite(numericRowsDone) && numericRowsDone > 0;
+                        const hasTotal = Number.isFinite(numericTotalRows) && numericTotalRows > 0;
+                        const hasSpeed = Number.isFinite(numericSpeed) && numericSpeed > 0;
+                        const isFinalLoadStage = Number.isFinite(numericPercent) && numericPercent >= 95;
+                        const showMetrics = !isDirectLoad && !isFinalLoadStage && (hasRows || hasSpeed || (isPolars && hasTotal));
+
+                        setMetricsVisible(showMetrics);
+
+                        if (progressMetricsLabel) {
+                            progressMetricsLabel.textContent = isPolars ? 'Progress Polars' : 'Progress Data';
+                        }
+
+                        if (progressMetricsNote) {
+                            progressMetricsNote.textContent = isPolars
+                                ? 'Normalisasi Polars aktif'
+                                : (showMetrics ? 'Data proses aktif' : 'Menunggu data...');
+                        }
+
+                        if (progressMetricsState) {
+                            progressMetricsState.textContent = isDirectLoad
+                                ? 'Mode direct load disembunyikan'
+                                : (showMetrics
+                                    ? (isPolars ? 'Batch normalisasi aktif' : 'Panel aktif saat data tersedia')
+                                    : 'Akan muncul saat data tersedia');
+                        }
+
+                        if (rowsInfo) {
+                            if (hasRows && hasTotal) {
+                                rowsInfo.textContent = numericRowsDone.toLocaleString('id-ID') + ' / ' + numericTotalRows.toLocaleString('id-ID');
+                            } else if (hasRows) {
+                                rowsInfo.textContent = numericRowsDone.toLocaleString('id-ID');
+                            } else {
+                                rowsInfo.textContent = '-';
+                            }
+                        }
+
+                        if (rowsDetail) {
+                            rowsDetail.textContent = isPolars
+                                ? 'Baris terhitung dari tahap sanitasi dan normalisasi Polars.'
+                                : (showMetrics ? 'Total baris dari batch aktif.' : 'Menunggu data baris pertama...');
+                        }
+
+                        if (speedInfo) {
+                            const displayLabel = speedLabel || 'baris/detik';
+                            speedInfo.textContent = hasSpeed ? numericSpeed.toLocaleString('id-ID') + ' ' + displayLabel : '-';
+                        }
+
+                        if (speedDetail) {
+                            speedDetail.textContent = isPolars
+                                ? (hasSpeed
+                                    ? 'Kecepatan normalisasi dihitung dari batch yang sedang berjalan.'
+                                    : 'Menunggu pembacaan batch berikutnya.')
+                                : (hasSpeed
+                                    ? 'Rata-rata proses saat ini.'
+                                    : 'Menunggu data kecepatan pertama...');
+                        }
+                    }
 
                     if (chunkedUpload && selectedFile) {
                         uploadDailyLoanChunked(selectedFile, uploadProgressBar, uploadProgressText)
@@ -1260,17 +1404,7 @@
                         }
 
                         const percent = Math.min(85, Math.max(3, Math.round((event.loaded / event.total) * 85)));
-                        if (uploadProgressBar) {
-                            uploadProgressBar.style.width = percent + '%';
-                            uploadProgressBar.innerText = percent + '%';
-                        }
-                        const progressPercent = document.getElementById('swal-progress-percent');
-                        if (progressPercent) {
-                            progressPercent.textContent = percent + '%';
-                        }
-                        if (uploadProgressText) {
-                            uploadProgressText.innerText = 'Mengunggah file ke server... ' + percent + '%';
-                        }
+                        updateProgressSurface(percent, 'Mengunggah file ke server...', null, null, null, '', 'upload');
                     });
 
                     uploadRequest.addEventListener('load', function() {
@@ -1323,13 +1457,7 @@
                                 uploadProgressBar.style.width = '88%';
                                 uploadProgressBar.innerText = '88%';
                             }
-                            const progressPercent = document.getElementById('swal-progress-percent');
-                            if (progressPercent) {
-                                progressPercent.textContent = '88%';
-                            }
-                            if (uploadProgressText) {
-                                uploadProgressText.innerText = 'Upload selesai. Menyiapkan preview cepat...';
-                            }
+                            updateProgressSurface(88, 'Upload selesai. Menyiapkan preview cepat...', null, null, null, '', 'preview');
 
                             const eventSource = new EventSource(data.redirect);
 
@@ -1343,15 +1471,18 @@
                                     progressBar.style.width = composedPercent + '%';
                                     progressBar.innerText = composedPercent + '%';
                                 }
-                                if (progressText && evtData.message) {
-                                    var normalized = normalizeProgressStatus(evtData.message);
-                                    progressText.innerText = normalized.message || evtData.message;
-                                    var speedInfo = document.getElementById('swal-speed-info');
-                                    if (speedInfo) {
-                                        var speedValue = normalized.speed || (evtData.speed != null ? String(evtData.speed).replace(/[^\d]/g, '') : '');
-                                        speedInfo.innerText = speedValue ? Number(speedValue).toLocaleString('id-ID') + ' baris/detik' : '-';
-                                    }
-                                }
+                                var normalized = normalizeProgressStatus(evtData.message || '');
+                                var speedValue = normalized.speed || (evtData.speed != null ? String(evtData.speed).replace(/[^\d]/g, '') : '');
+                                updateProgressSurface(
+                                    evtData.percent != null ? Math.max(88, Math.min(100, 88 + Math.round((evtData.percent / 100) * 12))) : 88,
+                                    normalized.message || evtData.message || 'Memproses data...',
+                                    evtData.rows_done != null ? Number(evtData.rows_done) : null,
+                                    evtData.total != null ? Number(evtData.total) : null,
+                                    speedValue,
+                                    evtData.speed_label || normalized.speedLabel || '',
+                                    evtData.mode || normalized.mode || '',
+                                    evtData.phase || ''
+                                );
                             });
 
                             eventSource.addEventListener('ready', function(event) {
@@ -1424,13 +1555,7 @@
                             uploadProgressBar.style.width = '88%';
                             uploadProgressBar.innerText = '88%';
                         }
-                        const progressPercent = document.getElementById('swal-progress-percent');
-                        if (progressPercent) {
-                            progressPercent.textContent = '88%';
-                        }
-                        if (uploadProgressText) {
-                            uploadProgressText.innerText = 'Upload selesai. Menyiapkan preview cepat...';
-                        }
+                        updateProgressSurface(88, 'Upload selesai. Menyiapkan preview cepat...', null, null, null, '', 'preview');
 
                         const eventSource = new EventSource(formImport.dataset.preparePreviewUrl);
 
@@ -1444,15 +1569,18 @@
                                 progressBar.style.width = composedPercent + '%';
                                 progressBar.innerText = composedPercent + '%';
                             }
-                            if (progressText && evtData.message) {
-                                var normalized = normalizeProgressStatus(evtData.message);
-                                progressText.innerText = normalized.message || evtData.message;
-                                var speedInfo = document.getElementById('swal-speed-info');
-                                if (speedInfo) {
-                                    var speedValue = normalized.speed || (evtData.speed != null ? String(evtData.speed).replace(/[^\d]/g, '') : '');
-                                    speedInfo.innerText = speedValue ? Number(speedValue).toLocaleString('id-ID') + ' baris/detik' : '-';
-                                }
-                            }
+                            var normalized = normalizeProgressStatus(evtData.message || '');
+                            var speedValue = normalized.speed || (evtData.speed != null ? String(evtData.speed).replace(/[^\d]/g, '') : '');
+                            updateProgressSurface(
+                                evtData.percent != null ? Math.max(88, Math.min(100, 88 + Math.round((evtData.percent / 100) * 12))) : 88,
+                                normalized.message || evtData.message || 'Memproses data...',
+                                evtData.rows_done != null ? Number(evtData.rows_done) : null,
+                                evtData.total != null ? Number(evtData.total) : null,
+                                speedValue,
+                                evtData.speed_label || normalized.speedLabel || '',
+                                evtData.mode || normalized.mode || '',
+                                evtData.phase || ''
+                            );
                         });
 
                         eventSource.addEventListener('ready', function(event) {
@@ -1901,6 +2029,14 @@
         line-height: 1.5;
     }
 
+    .swal-import-phase {
+        color: #0f766e;
+        font-size: 0.76rem;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+    }
+
     .swal-import-card {
         padding: 1rem;
         border-radius: 20px;
@@ -1932,7 +2068,7 @@
     }
 
     .swal-import-progress {
-        height: 14px;
+        height: 15px;
         border-radius: 999px;
         background: #e2e8f0;
         overflow: hidden;
@@ -1940,10 +2076,14 @@
     }
 
     .swal-import-progress__bar {
-        background: linear-gradient(135deg, #0f766e, #14b8a6);
+        position: relative;
+        background: linear-gradient(90deg, #0f766e 0%, #14b8a6 48%, #2dd4bf 100%);
+        background-size: 200% 100%;
         font-weight: 800;
         font-size: 11px;
         line-height: 14px;
+        transition: width 220ms cubic-bezier(0.22, 1, 0.36, 1);
+        animation: swalImportShine 1.8s linear infinite;
     }
 
     .swal-import-meta {
@@ -1956,6 +2096,48 @@
         letter-spacing: 0.02em;
     }
 
+    .swal-import-metrics {
+        display: grid;
+        gap: 0.85rem;
+        padding: 0.95rem;
+        border-radius: 18px;
+        background: linear-gradient(180deg, rgba(248, 250, 252, 0.98), rgba(241, 245, 249, 0.98));
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+    }
+
+    .swal-import-metrics.is-hidden {
+        display: none !important;
+    }
+
+    .swal-import-metrics__head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+    }
+
+    .swal-import-metrics__title-group {
+        min-width: 0;
+    }
+
+    .swal-import-metrics__note {
+        margin-top: 0.2rem;
+        color: #475569;
+        font-size: 0.74rem;
+        line-height: 1.35;
+    }
+
+    .swal-import-metrics__state {
+        flex: 0 0 auto;
+        color: #0f766e;
+        font-size: 0.73rem;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        text-align: right;
+    }
+
     .swal-import-stats {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1963,10 +2145,24 @@
     }
 
     .swal-import-stats--compact {
-        grid-template-columns: repeat(4, minmax(0, 1fr));
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    @keyframes swalImportShine {
+        0% {
+            background-position: 0% 50%;
+        }
+
+        100% {
+            background-position: 200% 50%;
+        }
     }
 
     .swal-import-stat {
+        min-height: 94px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
         padding: 0.85rem 0.9rem;
         border-radius: 16px;
         background: #f8fafc;
@@ -1988,6 +2184,14 @@
         color: #0f172a;
         font-size: 0.94rem;
         font-weight: 800;
+    }
+
+    .swal-import-stat__detail {
+        display: block;
+        margin-top: 0.35rem;
+        color: #64748b;
+        font-size: 0.72rem;
+        line-height: 1.35;
     }
 
     @media (max-width: 767.98px) {

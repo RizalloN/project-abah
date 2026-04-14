@@ -12,6 +12,10 @@ return new class extends Migration
 
     public function up(): void
     {
+        if (!in_array(DB::connection()->getDriverName(), ['mysql', 'mariadb'], true)) {
+            return;
+        }
+
         if (!Schema::hasTable(self::TABLE_NAME) || $this->indexExists(self::TABLE_NAME, self::INDEX_NAME)) {
             return;
         }
@@ -23,6 +27,10 @@ return new class extends Migration
 
     public function down(): void
     {
+        if (!in_array(DB::connection()->getDriverName(), ['mysql', 'mariadb'], true)) {
+            return;
+        }
+
         if (!Schema::hasTable(self::TABLE_NAME) || !$this->indexExists(self::TABLE_NAME, self::INDEX_NAME)) {
             return;
         }

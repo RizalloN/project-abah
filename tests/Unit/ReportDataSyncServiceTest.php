@@ -119,23 +119,48 @@ class ReportDataSyncServiceTest extends TestCase
         $this->assertTrue(true);
     }
 
-    public function test_sync_after_delete_cleans_snapshot_artifacts_without_rebuilding_snapshot_for_snapshot_reports(): void
+    public function test_sync_after_delete_cleans_snapshot_artifacts_and_rebuilds_affected_snapshot_reports(): void
     {
         $builder = Mockery::mock(ReportSnapshotBuilder::class);
         $dashboardHarianSnapshotService = Mockery::mock(DashboardHarianSnapshotService::class);
         $partitionMaintenance = Mockery::mock(PartitionMaintenanceService::class);
         $service = Mockery::mock(ReportDataSyncService::class, [$builder, $dashboardHarianSnapshotService, $partitionMaintenance])->makePartial();
 
+        $lock = Mockery::mock(Lock::class);
+
         Schema::shouldReceive('hasTable')->andReturn(false);
+
+        Cache::shouldReceive('lock')
+            ->once()
+            ->with('snapshot:rasio:rebuild:global', 120)
+            ->andReturn($lock);
+
+        $lock->shouldReceive('block')
+            ->once()
+            ->with(10, Mockery::type('callable'))
+            ->andReturnUsing(function (int $seconds, callable $callback) {
+                return $callback();
+            });
+        $lock->shouldReceive('release')->once();
 
         $service->shouldReceive('cleanupDerivedArtifactsAfterDelete')
             ->once()
             ->with('daily_loan_dinamis', '2026-04-04', 'unit-test')
             ->andReturn(['dashboard_pinjaman_snapshots' => 0]);
 
-        $builder->shouldNotReceive('rebuildDashboard');
+        $builder->shouldReceive('rebuildDashboard')
+            ->once()
+            ->with('2026-04-04', true)
+            ->andReturn(['2026-04-04' => 0]);
+        $dashboardHarianSnapshotService->shouldReceive('rebuild')
+            ->once()
+            ->with('2026-04-04', true)
+            ->andReturn(['2026-04-04' => 0]);
+        $builder->shouldReceive('rebuildRasioCasa')
+            ->once()
+            ->with('2026-04-04', true)
+            ->andReturn(['2026-04-04' => 0]);
         $builder->shouldNotReceive('rebuildDashboardSimpanan');
-        $builder->shouldNotReceive('rebuildRasioCasa');
         $builder->shouldNotReceive('rebuildRekeningDormant');
         $builder->shouldNotReceive('rebuildPerformanceNewPayroll');
 

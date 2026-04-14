@@ -368,12 +368,14 @@ CREATE TABLE `import_jobs` (
   `total_success` int(10) unsigned NOT NULL DEFAULT 0,
   `total_failed` int(10) unsigned NOT NULL DEFAULT 0,
   `created_by` bigint(20) unsigned NOT NULL,
+  `job_fingerprint` varchar(64) DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT NULL,
   `updated_at` timestamp NULL DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `idx_import_jobs_status_updated_at` (`status`,`updated_at`),
   KEY `idx_import_jobs_created_by_status_created_at` (`created_by`,`status`,`created_at`),
-  KEY `idx_import_jobs_report_created_at` (`id_report`,`created_at`)
+  KEY `idx_import_jobs_report_created_at` (`id_report`,`created_at`),
+  UNIQUE KEY `idx_import_jobs_job_fingerprint` (`job_fingerprint`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `input_rekanan`;

@@ -210,13 +210,64 @@ class ImportSimpananMultiPnCsvControllerTest extends TestCase
 
         $planSql = implode("\n", (array) ($plan['set_clauses'] ?? []));
 
+        $this->assertStringContainsString('`saldo_idr` = CASE', $planSql);
         $this->assertStringContainsString('CASE', $planSql);
         $this->assertStringContainsString('DECIMAL(24,2)', $planSql);
         $this->assertStringContainsString("REGEXP '^-?[0-9]+(,[0-9]+)?$'", $planSql);
         $this->assertSame(383158180, (int) ($plan['source_balance_total_cents'] ?? 0));
     }
 
-    public function test_prepare_simpanan_direct_load_source_skips_duplicates_and_malformed_rows(): void
+    public function test_direct_csv_load_plan_tracks_legacy_unique_id_column_alias(): void
+    {
+        $controller = new ImportSimpananMultiPnCsvController();
+
+        Schema::shouldReceive('getColumnListing')
+            ->once()
+            ->with('simpanan_multipn')
+            ->andReturn([
+                'id',
+                'uniqueid_SimoPN',
+                'posisi',
+                'cifno',
+                'no_rekening',
+                'status',
+                'jenis_simpanan',
+                'saldo_idr',
+                'created_at',
+                'updated_at',
+            ]);
+
+        $csvPath = storage_path('framework/testing/simpanan_fast_import_legacy_unique_id.csv');
+        if (!is_dir(dirname($csvPath))) {
+            @mkdir(dirname($csvPath), 0777, true);
+        }
+
+        file_put_contents($csvPath, implode("\n", [
+            'No;Posisi;CIFNO;No Rekening;Status;Jenis Simpanan;Saldo IDR',
+            '1;04-04-2026;PQ32242;636001000001;9;TABUNGAN;500',
+        ]));
+
+        $plan = [];
+        try {
+            $plan = $this->invokeMethod($controller, 'buildDirectCsvLoadPlan', [
+                $csvPath,
+                ['No', 'Posisi', 'CIFNO', 'No Rekening', 'Status', 'Jenis Simpanan', 'Saldo IDR'],
+                [0, 1, 2, 3, 4, 5, 6],
+            ]);
+        } finally {
+            @unlink($csvPath);
+            if (!empty($plan['cleanup_path'] ?? '') && file_exists((string) $plan['cleanup_path'])) {
+                @unlink((string) $plan['cleanup_path']);
+            }
+        }
+
+        $planSql = implode("\n", (array) ($plan['set_clauses'] ?? []));
+
+        $this->assertSame('uniqueid_SimoPN', $plan['unique_id_column'] ?? null);
+        $this->assertStringContainsString('`uniqueid_SimoPN` = CONCAT(', $planSql);
+    }
+
+    public function test_prepare_simpanan_direct_load_source_preserves_duplicates_and_skips_malformed_rows(): void
     {
         $controller = new ImportSimpananMultiPnCsvController();
 
@@ -244,9 +295,9 @@ class ImportSimpananMultiPnCsvControllerTest extends TestCase
             }
         }
 
-        $this->assertSame(3, $result['written_rows']);
-        $this->assertGreaterThanOrEqual(2, $result['skipped_count']);
-        $this->assertGreaterThanOrEqual(1, $result['duplicate_count']);
+        $this->assertSame(4, $result['written_rows']);
+        $this->assertSame(0, $result['duplicate_count']);
+        $this->assertSame(1, $result['skipped_count']);
         $this->assertTrue((bool) ($result['normalized'] ?? false));
     }
 

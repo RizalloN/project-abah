@@ -273,7 +273,7 @@ class ImportCasaBrilinkController extends Controller
             ], 422);
         }
 
-        $jobId = DB::table('import_jobs')->insertGetId([
+        $jobId = app(\App\Services\Import\ImportProgressService::class)->createJob([
             'id_report' => $activeReportId,
             'file_name' => basename($absolutePath),
             'folder_path' => dirname($absolutePath),
@@ -282,6 +282,14 @@ class ImportCasaBrilinkController extends Controller
             'total_success' => 0,
             'total_failed' => 0,
             'created_by' => auth()->id() ?? 1,
+            'job_context' => [
+                'controller' => static::class,
+                'mode' => 'streaming',
+                'table_name' => $tableName,
+                'periode' => $context['periode'] ?? null,
+                'active_filters_hash' => sha1(json_encode($context)),
+                'file_hash' => sha1($absolutePath),
+            ],
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -452,7 +460,7 @@ class ImportCasaBrilinkController extends Controller
 
                 if ($totalSuccess > 0) {
                     try {
-                        app(ReportDataSyncService::class)->syncImportedTable($tableName, $context['periode'] ?? null, $jobId, static::class);
+                        app(\App\Services\Import\ImportCleanupService::class)->dispatchImportedJobSync($jobId, $tableName, $context['periode'] ?? null, static::class);
                     } catch (\Throwable $e) {
                         Log::warning('Sinkronisasi report CASA BRILINK (stream) gagal: ' . $e->getMessage(), [
                             'job_id' => $jobId,
@@ -565,7 +573,7 @@ class ImportCasaBrilinkController extends Controller
             ]);
         }
 
-        $jobId = DB::table('import_jobs')->insertGetId([
+        $jobId = app(\App\Services\Import\ImportProgressService::class)->createJob([
             'id_report' => $activeReportId,
             'file_name' => basename($absolutePath),
             'folder_path' => dirname($absolutePath),
@@ -574,6 +582,14 @@ class ImportCasaBrilinkController extends Controller
             'total_success' => 0,
             'total_failed' => 0,
             'created_by' => auth()->id() ?? 1,
+            'job_context' => [
+                'controller' => static::class,
+                'mode' => 'csv_preview',
+                'table_name' => $tableName,
+                'periode' => $context['periode'] ?? null,
+                'active_filters_hash' => sha1(json_encode($context)),
+                'file_hash' => sha1($absolutePath),
+            ],
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -636,13 +652,13 @@ class ImportCasaBrilinkController extends Controller
             'updated_at' => now(),
         ]);
 
-        if ($totalSuccess > 0) {
-            try {
-                app(ReportDataSyncService::class)->syncImportedTable($tableName, $context['periode'] ?? null, $jobId, static::class);
-            } catch (\Throwable $e) {
-                Log::warning('Sinkronisasi report CASA BRILINK gagal: ' . $e->getMessage(), [
-                    'job_id' => $jobId,
-                    'table' => $tableName,
+            if ($totalSuccess > 0) {
+                try {
+                    app(\App\Services\Import\ImportCleanupService::class)->dispatchImportedJobSync($jobId, $tableName, $context['periode'] ?? null, static::class);
+                } catch (\Throwable $e) {
+                    Log::warning('Sinkronisasi report CASA BRILINK gagal: ' . $e->getMessage(), [
+                        'job_id' => $jobId,
+                        'table' => $tableName,
                 ]);
             }
         }

@@ -7,6 +7,10 @@ return new class extends Migration
 {
     public function up(): void
     {
+        if (!in_array(DB::connection()->getDriverName(), ['mysql', 'mariadb'], true)) {
+            return;
+        }
+
         $this->dropTriggers();
 
         DB::unprepared(<<<'SQL'
@@ -98,6 +102,10 @@ SQL);
 
     public function down(): void
     {
+        if (!in_array(DB::connection()->getDriverName(), ['mysql', 'mariadb'], true)) {
+            return;
+        }
+
         $this->dropTriggers();
     }
 
@@ -115,4 +123,3 @@ SQL);
         }
     }
 };
-

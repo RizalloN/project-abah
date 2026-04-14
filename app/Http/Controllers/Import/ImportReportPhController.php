@@ -576,7 +576,7 @@ class ImportReportPhController extends Controller
             ], 422);
         }
 
-        $jobId = DB::table('import_jobs')->insertGetId([
+        $jobId = app(\App\Services\Import\ImportProgressService::class)->createJob([
             'id_report' => session('active_id_report'),
             'file_name' => basename($absolutePath),
             'folder_path' => dirname($absolutePath),
@@ -585,6 +585,13 @@ class ImportReportPhController extends Controller
             'total_success' => 0,
             'total_failed' => 0,
             'created_by' => auth()->id() ?? 1,
+            'job_context' => [
+                'controller' => static::class,
+                'mode' => 'report_ph_import',
+                'table_name' => 'lw325_ph',
+                'file_hash' => sha1($absolutePath),
+                'total_rows' => (int) $totalRows,
+            ],
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -1386,7 +1393,7 @@ class ImportReportPhController extends Controller
     private function cleanupSuccessfulImportArtifacts(int $jobId, string $relativePath, array $extraPaths = []): void
     {
         try {
-            app(ReportDataSyncService::class)->syncImportedTable(self::TABLE_NAME, jobId: $jobId, source: static::class);
+            app(\App\Services\Import\ImportCleanupService::class)->dispatchImportedJobSync($jobId, self::TABLE_NAME, null, static::class);
             app(ImportCleanupController::class)->cleanupSuccessfulJobArtifacts(
                 $jobId,
                 array_values(array_filter(array_merge([$relativePath], $extraPaths)))

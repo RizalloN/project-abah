@@ -17,7 +17,10 @@
 
 <div class="card shadow-sm border-0 import-upload-card" id="report-management-card"
      data-fetch-url="{{ route('import.report-management.data') }}"
+     data-rebuild-url="{{ route('import.report-management.rebuild') }}"
+     data-rebuild-status-url-template="{{ route('import.report-management.rebuild.status', ['rebuildId' => '__REBUILD_ID__']) }}"
      data-delete-url="{{ route('import.report-management.delete') }}"
+     data-duplicate-url="{{ route('import.report-management.duplicates') }}"
      data-delete-process-url-template="{{ route('import.report-management.delete.process', ['deleteId' => '__DELETE_ID__']) }}"
      data-delete-status-url-template="{{ route('import.report-management.delete.status', ['deleteId' => '__DELETE_ID__']) }}"
      data-delete-cancel-url-template="{{ route('import.report-management.delete.cancel', ['deleteId' => '__DELETE_ID__']) }}">
@@ -29,30 +32,69 @@
         <p class="import-upload-card__subtitle mb-0">Pilih grup, lalu hapus data yang diperlukan.</p>
     </div>
     <div class="card-body import-upload-card__body">
-        <div class="row align-items-end">
-            <div class="col-lg-8 mb-3">
-                <label class="font-weight-bold text-dark">Pilih Report</label>
-                <select id="management-report-select" class="form-control select2">
-                    <option value="">-- Pilih Report --</option>
-                    @foreach($reports as $report)
-                        <option value="{{ $report->id_report }}">{{ $report->nama_report }} ({{ $report->table_name }})</option>
-                    @endforeach
-                </select>
+        <div class="report-management-top-shell mb-4">
+            <div class="row report-management-top-grid">
+                <div class="col-xl-8 mb-3 mb-xl-0">
+                    <div class="report-management-field-panel h-100">
+                        <div class="report-management-field-panel__eyebrow">Sumber Data</div>
+                        <label class="report-management-field-panel__label" for="management-report-select">Pilih Report</label>
+                        <select id="management-report-select" class="form-control select2">
+                            <option value="">-- Pilih Report --</option>
+                            @foreach($reports as $report)
+                                <option value="{{ $report->id_report }}" data-table-name="{{ $report->table_name }}">{{ $report->nama_report }} ({{ $report->table_name }})</option>
+                            @endforeach
+                        </select>
+                    </div>
+                </div>
+                <div class="col-xl-4">
+                    <div class="report-management-rebuild-panel report-management-rebuild-panel--formal h-100">
+                        <div class="report-management-rebuild-panel__topline">Sinkronisasi Snapshot</div>
+                        <div class="custom-control custom-switch report-management-rebuild-switch">
+                            <input type="checkbox" class="custom-control-input" id="management-rebuild-force">
+                            <label class="custom-control-label" for="management-rebuild-force">Mulai dari awal</label>
+                        </div>
+                        <div class="report-management-rebuild-hint">Bangun ulang seluruh snapshot untuk semua report dengan mode penuh bila diperlukan.</div>
+                        <button type="button" id="btn-management-rebuild" class="btn btn-outline-primary report-management-filter-btn report-management-filter-btn--secondary">
+                            <i class="fas fa-sync-alt mr-2"></i> <span id="management-rebuild-label">Refresh Snapshot</span>
+                        </button>
+                    </div>
+                </div>
             </div>
-            <div class="col-lg-4 mb-3">
-                <button type="button" id="btn-management-filter" class="btn btn-primary btn-block report-management-filter-btn">
+        </div>
+
+        <div class="row report-management-stat-row mb-4">
+            <div class="col-md-4 mb-3 mb-md-0">
+                <div class="report-management-stat">
+                    <small>Report Aktif</small>
+                    <strong id="management-summary-report">Belum dipilih</strong>
+                </div>
+            </div>
+            <div class="col-md-4 mb-3 mb-md-0">
+                <div class="report-management-stat">
+                    <small>Jumlah Grup</small>
+                    <strong id="management-summary-groups">0</strong>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="report-management-stat">
+                    <small>Grand Total Baris</small>
+                    <strong id="management-summary-rows">0</strong>
+                </div>
+            </div>
+        </div>
+
+        <div class="report-management-action-bar mb-4">
+            <div class="report-management-action-bar__group">
+                <button type="button" id="btn-management-filter" class="btn btn-primary report-management-filter-btn report-management-filter-btn--primary shadow-sm">
                     <i class="fas fa-filter mr-2"></i> Tampilkan Data
+                </button>
+                <button type="button" id="btn-management-deduplicate" class="btn btn-outline-danger report-management-filter-btn report-management-filter-btn--danger shadow-sm" disabled>
+                    <i class="fas fa-clone mr-2"></i> Hapus Duplikat
                 </button>
             </div>
         </div>
 
-        <div class="row">
-            <div class="col-md-4 mb-3"><div class="report-management-stat"><small>Report Aktif</small><strong id="management-summary-report">Belum dipilih</strong></div></div>
-            <div class="col-md-4 mb-3"><div class="report-management-stat"><small>Jumlah Grup</small><strong id="management-summary-groups">0</strong></div></div>
-            <div class="col-md-4 mb-3"><div class="report-management-stat"><small>Grand Total Baris</small><strong id="management-summary-rows">0</strong></div></div>
-        </div>
-
-        <div id="management-notice" class="report-management-notice d-none"></div>
+        <div id="management-notice" class="report-management-notice d-none mb-3"></div>
 
         <div class="report-management-bulkbar mt-3">
             <div class="form-check m-0">
@@ -104,512 +146,218 @@
     </div>
 </div>
 @endsection
-
 @section('scripts')
-<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+@include('import.partials.report-management-scripts')
 <script>
     document.addEventListener('DOMContentLoaded', function () {
         const reportManagementCard = document.getElementById('report-management-card');
         const managementReportSelect = document.getElementById('management-report-select');
         const btnManagementFilter = document.getElementById('btn-management-filter');
-        const managementTableBody = document.getElementById('management-table-body');
-        const managementPagination = document.getElementById('management-pagination');
-        const managementNotice = document.getElementById('management-notice');
-        const summaryReport = document.getElementById('management-summary-report');
-        const summaryGroups = document.getElementById('management-summary-groups');
-        const summaryRows = document.getElementById('management-summary-rows');
-        const managementSelectAll = document.getElementById('management-select-all');
-        const managementSelectionToastShell = document.querySelector('.report-management-selection-toast-shell');
-        const managementSelectionToast = document.getElementById('management-selection-toast');
-        const managementSelectionToastText = document.getElementById('management-selection-toast-text');
-        const managementSelectionToastSubtext = document.getElementById('management-selection-toast-subtext');
-        const btnDeleteSelected = document.getElementById('btn-management-delete-selected');
-        const btnClearSelected = document.getElementById('btn-management-clear-selected');
+        const btnManagementDeduplicate = document.getElementById('btn-management-deduplicate');
+        const btnManagementRebuild = document.getElementById('btn-management-rebuild');
+        const managementRebuildForce = document.getElementById('management-rebuild-force');
         const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '{{ csrf_token() }}';
-        const managementState = { currentPage: 1, perPage: 8, selectedScopes: new Map() };
 
-        if (managementSelectionToastShell && managementSelectionToastShell.parentElement !== document.body) {
-            document.body.appendChild(managementSelectionToastShell);
+        if (!reportManagementCard || !managementReportSelect) {
+            return;
         }
 
-        function themedSwal(options) {
-            return Swal.fire(Object.assign({
-                customClass: { popup: 'swal-modern-popup', title: 'swal-modern-title', htmlContainer: 'swal-modern-html', confirmButton: 'swal-modern-confirm', cancelButton: 'swal-modern-cancel' },
-                buttonsStyling: false,
-                background: '#ffffff',
-            }, options));
+        function selectedTableName() {
+            const selectedOption = managementReportSelect.selectedOptions?.[0];
+            return String(selectedOption?.dataset?.tableName || '').trim();
         }
 
-        function escapeHtml(value) {
-            return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;').replace(/'/g, '&#39;');
-        }
-
-        function formatNumber(value) { return Number(value || 0).toLocaleString('id-ID'); }
-        function normalizeShortDateLabel(value) {
-            const text = String(value ?? '').trim();
-            if (!text || text === '(Blank)' || text === '(Tanpa Periode)') return text || '(Blank)';
-            const isoMatch = text.match(/^(\d{4}-\d{2}-\d{2})/);
-            if (isoMatch) return isoMatch[1];
-            const slashMatch = text.match(/^(\d{2}\/\d{2}\/\d{4})/);
-            if (slashMatch) return slashMatch[1].split('/').reverse().join('-');
-            return text;
-        }
-        function buildDeleteUrl(template, deleteId) { return String(template || '').replace('__DELETE_ID__', encodeURIComponent(deleteId)); }
-        function createScopeKey(scope) { return JSON.stringify([scope?.period_filter ?? scope?.period ?? '', scope?.kanca_filter ?? scope?.kanca ?? '', !!scope?.period_is_null, !!scope?.kanca_is_null]); }
-        function createPeriodBucketKey(periodLabel, periodIsNull) { return periodIsNull ? '__blank__' : String(periodLabel || '(Tanpa Periode)'); }
-
-        function updateDeleteProgressUi(payload) {
-            const progressBar = document.getElementById('delete-progress-bar');
-            const progressValue = document.getElementById('delete-progress-value');
-            const progressText = document.getElementById('delete-progress-text');
-            const progressDesc = document.getElementById('delete-progress-desc');
-            const progressMeta = document.getElementById('delete-progress-meta');
-            const percent = Math.max(0, Math.min(100, Number(payload?.progress_percent || 0)));
-            const waitingOnBatch = !!payload?.is_waiting_on_batch;
-            const currentScope = Math.min(Math.max(1, Number(payload?.scope_count || 1)), Math.max(1, Number(payload?.current_scope_index || 0) + 1));
-            const activeBatchSize = Math.max(0, Number(payload?.active_batch_size || payload?.chunk_size || 0));
-            const lastBatchDeletedRows = Math.max(0, Number(payload?.last_batch_deleted_rows || 0));
-            const errorCode = payload?.error_code ? `Kode ${escapeHtml(payload.error_code)}` : '';
-            const isCancelled = payload?.status === 'cancelled' || payload?.stage === 'cancelled';
-            if (progressBar) {
-                progressBar.classList.remove('report-management-progress__bar--indeterminate');
-                progressBar.classList.remove('progress-bar-animated');
-                progressBar.classList.remove('progress-bar-striped');
-                progressBar.style.width = percent + '%';
-                progressBar.innerText = '';
-                progressBar.setAttribute('aria-valuetext', waitingOnBatch ? `Progress riil ${percent}% - batch sedang diproses` : `${percent}%`);
+        function syncExtraActionState() {
+            if (btnManagementDeduplicate) {
+                const canDeduplicate = managementReportSelect.value && selectedTableName() === 'simpanan_multipn';
+                btnManagementDeduplicate.disabled = !canDeduplicate;
+                btnManagementDeduplicate.title = canDeduplicate
+                    ? 'Hapus duplikat exact-match untuk Simpanan MultiPN.'
+                    : 'Hapus duplikat hanya tersedia untuk Simpanan MultiPN.';
             }
-            if (progressValue) progressValue.innerText = `${percent}%`;
-            if (progressText) progressText.innerText = payload?.message || (isCancelled ? 'Delete dibatalkan.' : 'Memproses delete...');
-            if (progressDesc) progressDesc.innerHTML = `Terhapus <b>${formatNumber(payload?.deleted_rows || 0)}</b> dari <b>${formatNumber(payload?.total_rows || 0)}</b> baris.`;
-            if (progressMeta) {
-                if (payload?.status === 'failed') {
-                    progressMeta.innerText = [errorCode, payload?.error || 'Delete gagal diproses.'].filter(Boolean).join(' - ');
-                } else if (isCancelled) {
-                    progressMeta.innerText = 'Delete dibatalkan aman. Worker akan berhenti tanpa cleanup lanjutan.';
-                } else if ((payload?.stage || '') === 'queued') {
-                    progressMeta.innerText = 'Menunggu queue worker. Fallback controller akan mengambil alih bila progres tidak bergerak.';
-                } else if (waitingOnBatch) {
-                    progressMeta.innerText = `Memproses batch ${formatNumber(activeBatchSize)} baris - Grup ${formatNumber(currentScope)}/${formatNumber(payload?.scope_count || 1)}`;
-                } else if ((payload?.stage || '') === 'cleanup') {
-                    progressMeta.innerText = 'Delete sumber selesai, membersihkan snapshot...';
-                } else if ((payload?.stage || '') === 'syncing') {
-                    progressMeta.innerText = 'Membersihkan snapshot turunan, statistik, dan cache...';
-                } else if (lastBatchDeletedRows > 0) {
-                    progressMeta.innerText = `Batch terakhir menghapus ${formatNumber(lastBatchDeletedRows)} baris.`;
-                } else {
-                    progressMeta.innerText = '';
-                }
+
+            if (btnManagementRebuild) {
+                btnManagementRebuild.title = managementRebuildForce?.checked
+                    ? 'Bangun ulang seluruh snapshot report dari awal.'
+                    : 'Refresh snapshot seluruh report tanpa memaksa rebuild penuh.';
             }
-        }
-
-        async function getJson(url) {
-            const response = await fetch(url, { headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' } });
-            let data = {};
-            try { data = await response.json(); } catch (_) { data = {}; }
-            if (!response.ok && data.status !== 'warning') throw new Error(data.message || 'Gagal mengambil status delete.');
-            return data;
-        }
-
-        async function runDeleteProgress(processUrl, statusUrl, cancelUrl, initialPayload) {
-            themedSwal({
-                title: 'Memproses Delete',
-                html: `<div class="text-center mb-3"><span style="font-size: 14px; color: #64748b;" id="delete-progress-desc">Menginisialisasi delete bertahap...</span></div><div class="progress report-management-progress"><div id="delete-progress-bar" class="progress-bar report-management-progress__bar" role="progressbar" style="width: 0%;"></div></div><div class="text-center mt-2"><small id="delete-progress-value" class="report-management-progress__value">0%</small></div><div class="text-center mt-3"><small id="delete-progress-text" class="report-management-progress__text">Menyiapkan chunk pertama...</small></div><div class="text-center mt-2"><small id="delete-progress-meta" class="report-management-progress__meta"></small></div><div class="text-center mt-3"><button type="button" class="btn btn-sm btn-outline-danger" id="delete-cancel-btn"><i class="fas fa-ban mr-1"></i> Batalkan Delete</button></div>`,
-                allowOutsideClick: false,
-                allowEscapeKey: false,
-                showConfirmButton: false,
-                width: 520,
-            });
-            await new Promise(resolve => setTimeout(resolve, 30));
-            let finalPayload = initialPayload;
-            let lastProcessAttemptAt = 0;
-            let cancelInFlight = false;
-            updateDeleteProgressUi(finalPayload);
-            const cancelButton = document.getElementById('delete-cancel-btn');
-            if (cancelButton && cancelUrl) {
-                cancelButton.addEventListener('click', async function () {
-                    if (cancelInFlight || ['completed', 'warning', 'failed', 'cancelled'].includes(finalPayload?.status)) return;
-                    cancelInFlight = true;
-                    cancelButton.disabled = true;
-                    cancelButton.innerText = 'Membatalkan...';
-                    try {
-                        finalPayload = await postJson(cancelUrl, {});
-                        updateDeleteProgressUi(finalPayload);
-                    } catch (error) {
-                        cancelInFlight = false;
-                        cancelButton.disabled = false;
-                        cancelButton.innerText = 'Batalkan Delete';
-                        themedSwal({ icon: 'error', title: 'Gagal Membatalkan', text: error.message || 'Pembatalan delete gagal diproses.' });
-                    }
-                });
-            }
-            try {
-                while (true) {
-                    if (!statusUrl && !processUrl) throw new Error('Endpoint progress delete tidak tersedia.');
-                    if (statusUrl) {
-                        finalPayload = await getJson(statusUrl);
-                    } else if (processUrl) {
-                        finalPayload = await postJson(processUrl, {});
-                    }
-                    const canUseFallback = !!processUrl
-                        && !!finalPayload?.can_process_fallback
-                        && (Date.now() - lastProcessAttemptAt) >= 250
-                        && !['completed', 'warning', 'failed'].includes(finalPayload?.status);
-                    if (canUseFallback) {
-                        lastProcessAttemptAt = Date.now();
-                        finalPayload = await postJson(processUrl, {});
-                    }
-                    updateDeleteProgressUi(finalPayload);
-                    if (['completed', 'warning', 'failed', 'cancelled'].includes(finalPayload.status)) {
-                        Swal.close();
-                        return finalPayload;
-                    }
-                    await new Promise(resolve => setTimeout(resolve, 350));
-                }
-            } catch (error) {
-                Swal.close();
-                throw error;
-            }
-        }
-
-        function setNotice(type, message) {
-            if (!managementNotice) return;
-            if (!message) {
-                managementNotice.className = 'report-management-notice d-none';
-                managementNotice.innerHTML = '';
-                return;
-            }
-            managementNotice.className = 'report-management-notice report-management-notice--' + type;
-            managementNotice.innerHTML = message;
-        }
-
-        function updateSummary(rows, meta = {}) {
-            const label = managementReportSelect?.options?.[managementReportSelect.selectedIndex]?.text || 'Belum dipilih';
-            const groups = Number(meta.total_groups ?? (Array.isArray(rows) ? rows.length : 0));
-            const rowsCount = Number(meta.grand_total_rows ?? 0);
-            if (summaryReport) summaryReport.textContent = label;
-            if (summaryGroups) summaryGroups.textContent = formatNumber(groups);
-            if (summaryRows) summaryRows.textContent = formatNumber(rowsCount);
-        }
-
-        function decodeScopeDataset(element) {
-            if (!element) return null;
-            const period = decodeURIComponent(element.getAttribute('data-period') || '');
-            const periodLabel = decodeURIComponent(element.getAttribute('data-period-label') || period || '');
-            const kanca = decodeURIComponent(element.getAttribute('data-kanca') || '');
-            const kancaLabel = decodeURIComponent(element.getAttribute('data-kanca-label') || kanca || '');
-            const periodIsNull = element.getAttribute('data-period-is-null') === '1';
-            const kancaIsNull = element.getAttribute('data-kanca-is-null') === '1';
-            return { period: periodIsNull ? '' : period, period_filter: periodIsNull ? '' : period, kanca: kancaIsNull ? '' : kanca, kanca_filter: kancaIsNull ? '' : kanca, row_count: Number(element.getAttribute('data-row-count') || 0), period_is_null: periodIsNull, kanca_is_null: kancaIsNull, period_label: periodLabel || '(Blank)', kanca_label: kancaLabel || '(Blank)' };
-        }
-
-        function getSelectedScopeCheckboxes() { return Array.from(managementTableBody?.querySelectorAll('.management-row-checkbox:checked') || []); }
-        function setRowVisualState(element, checked) { const row = element?.closest('.management-data-row'); if (row) row.classList.toggle('is-selected', !!checked); }
-        function setScopeSelection(scope, checked) { const scopeKey = createScopeKey(scope); if (!scopeKey) return; if (checked) managementState.selectedScopes.set(scopeKey, Object.assign({}, scope)); else managementState.selectedScopes.delete(scopeKey); }
-
-        function updateSelectionToast() {
-            const selectedScopes = Array.from(managementState.selectedScopes.values());
-            const selectedCount = selectedScopes.length;
-            const selectedRows = selectedScopes.reduce((sum, scope) => sum + Number(scope.row_count || 0), 0);
-            if (managementSelectionToastText) managementSelectionToastText.textContent = `${formatNumber(selectedCount)} grup dipilih`;
-            if (managementSelectionToastSubtext) managementSelectionToastSubtext.textContent = `${formatNumber(selectedRows)} baris siap dihapus`;
-            if (btnDeleteSelected) btnDeleteSelected.disabled = selectedCount === 0;
-            if (btnClearSelected) btnClearSelected.disabled = selectedCount === 0;
-            if (managementSelectionToast) managementSelectionToast.classList.toggle('d-none', selectedCount === 0);
-        }
-
-        function syncBulkSelectionUi() {
-            const allCheckboxes = Array.from(managementTableBody?.querySelectorAll('.management-row-checkbox') || []);
-            const selectedCheckboxes = getSelectedScopeCheckboxes();
-            const totalCount = allCheckboxes.length;
-            if (managementSelectAll) {
-                managementSelectAll.disabled = totalCount === 0;
-                managementSelectAll.checked = totalCount > 0 && selectedCheckboxes.length === totalCount;
-                managementSelectAll.indeterminate = selectedCheckboxes.length > 0 && selectedCheckboxes.length < totalCount;
-            }
-            Array.from(managementTableBody?.querySelectorAll('.management-period-checkbox') || []).forEach(function (periodCheckbox) {
-                const bucket = periodCheckbox.getAttribute('data-period-bucket') || '';
-                const periodRows = Array.from(managementTableBody?.querySelectorAll(`.management-row-checkbox[data-period-bucket="${bucket}"]`) || []);
-                const checkedRows = periodRows.filter(item => item.checked);
-                periodCheckbox.checked = periodRows.length > 0 && checkedRows.length === periodRows.length;
-                periodCheckbox.indeterminate = checkedRows.length > 0 && checkedRows.length < periodRows.length;
-            });
-            allCheckboxes.forEach(function (checkbox) { setRowVisualState(checkbox, checkbox.checked); });
-            updateSelectionToast();
-        }
-
-        function renderPagination(pagination = {}) {
-            if (!managementPagination) return;
-            const totalPages = Number(pagination.total_pages || 0);
-            if (totalPages <= 1) {
-                managementPagination.classList.add('d-none');
-                managementPagination.innerHTML = '';
-                return;
-            }
-            const currentPage = Number(pagination.current_page || 1);
-            const buttons = [];
-            const startPage = Math.max(1, currentPage - 2);
-            const endPage = Math.min(totalPages, currentPage + 2);
-            buttons.push(`<button type="button" class="report-management-page-btn" data-page="${currentPage - 1}" ${pagination.has_prev ? '' : 'disabled'}><i class="fas fa-chevron-left"></i></button>`);
-            for (let page = startPage; page <= endPage; page++) {
-                buttons.push(`<button type="button" class="report-management-page-btn ${page === currentPage ? 'is-active' : ''}" data-page="${page}">${page}</button>`);
-            }
-            buttons.push(`<button type="button" class="report-management-page-btn" data-page="${currentPage + 1}" ${pagination.has_next ? '' : 'disabled'}><i class="fas fa-chevron-right"></i></button>`);
-            managementPagination.classList.remove('d-none');
-            managementPagination.innerHTML = `<div class="report-management-pagination__meta">Menampilkan periode ${formatNumber(pagination.from_period || 0)}-${formatNumber(pagination.to_period || 0)} dari ${formatNumber(pagination.total_periods || 0)} periode</div><div class="report-management-pagination__actions">${buttons.join('')}</div>`;
-        }
-
-        function renderManagementRows(periods, meta = {}) {
-            if (!managementTableBody) return;
-            updateSummary(meta.rows || [], meta);
-            renderPagination(meta.pagination || {});
-            if (!Array.isArray(periods) || periods.length === 0) {
-                managementTableBody.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-4">Tidak ada data untuk kriteria ini.</td></tr>';
-                syncBulkSelectionUi();
-                return;
-            }
-            managementTableBody.innerHTML = periods.map(function (periodGroup) {
-                const periodFilter = String(periodGroup.period ?? '');
-                const periodLabel = normalizeShortDateLabel(periodGroup.period_label ?? periodGroup.period ?? '(Blank)');
-                const periodBucket = encodeURIComponent(createPeriodBucketKey(periodLabel, !!periodGroup.period_is_null));
-                const periodMeta = `${formatNumber(periodGroup.group_count || 0)} grup - ${formatNumber(periodGroup.total_rows || 0)} baris`;
-                const periodRows = Array.isArray(periodGroup.rows) ? periodGroup.rows : [];
-                const renderedRows = periodRows.map(function (row) {
-                    const rowPeriodFilter = String(row.period ?? '');
-                    const rowPeriodLabel = normalizeShortDateLabel(row.period_label ?? row.period ?? '(Blank)');
-                    const kanca = row.kanca ?? '';
-                    const kancaLabel = row.kanca_label ?? kanca ?? '(Blank)';
-                    const total = formatNumber(row.row_count || 0);
-                    const periodIsNull = row.period_is_null ? '1' : '0';
-                    const kancaIsNull = row.kanca_is_null ? '1' : '0';
-                    const periodEncoded = encodeURIComponent(String(rowPeriodFilter));
-                    const periodLabelEncoded = encodeURIComponent(String(rowPeriodLabel));
-                    const kancaEncoded = encodeURIComponent(String(kanca));
-                    const kancaLabelEncoded = encodeURIComponent(String(kancaLabel));
-                    const rowCount = Number(row.row_count || 0);
-                    const isChecked = managementState.selectedScopes.has(createScopeKey({ period_filter: row.period_is_null ? '' : String(rowPeriodFilter), kanca_filter: row.kanca_is_null ? '' : String(kanca), period_is_null: !!row.period_is_null, kanca_is_null: !!row.kanca_is_null }));
-                    return `<tr class="management-data-row" data-period="${periodEncoded}" data-period-label="${periodLabelEncoded}" data-kanca="${kancaEncoded}" data-kanca-label="${kancaLabelEncoded}" data-row-count="${rowCount}" data-period-is-null="${periodIsNull}" data-kanca-is-null="${kancaIsNull}"><td class="text-center report-management-col-check"><input type="checkbox" class="management-row-checkbox" data-period="${periodEncoded}" data-period-label="${periodLabelEncoded}" data-kanca="${kancaEncoded}" data-kanca-label="${kancaLabelEncoded}" data-row-count="${rowCount}" data-period-is-null="${periodIsNull}" data-kanca-is-null="${kancaIsNull}" data-period-bucket="${periodBucket}" ${isChecked ? 'checked' : ''}></td><td><span class="report-management-primary">${escapeHtml(kancaLabel)}</span></td><td class="text-right"><span class="report-management-count">${total}</span></td><td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger btn-management-delete report-management-delete-btn" data-period="${periodEncoded}" data-period-label="${periodLabelEncoded}" data-kanca="${kancaEncoded}" data-kanca-label="${kancaLabelEncoded}" data-row-count="${rowCount}" data-period-is-null="${periodIsNull}" data-kanca-is-null="${kancaIsNull}"><i class="fas fa-trash-alt mr-1"></i> Delete</button></td></tr>`;
-                }).join('');
-                return `<tr class="report-management-period-row"><td colspan="4"><div class="report-management-period-card"><div><div class="report-management-period-card__title">${escapeHtml(periodLabel)}</div><div class="report-management-period-card__meta">${periodMeta}</div></div><label class="report-management-period-card__toggle"><input type="checkbox" class="management-period-checkbox" data-period-bucket="${periodBucket}"><span>Pilih semua periode ini</span></label></div></td></tr>${renderedRows}`;
-            }).join('');
-            syncBulkSelectionUi();
         }
 
         async function postJson(url, payload) {
-            const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-TOKEN': csrfToken }, body: JSON.stringify(payload) });
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'X-CSRF-TOKEN': csrfToken,
+                },
+                body: JSON.stringify(payload || {}),
+            });
+
             let data = {};
-            try { data = await response.json(); } catch (_) { data = {}; }
-            const recoveredWarning = data.status === 'failed' && Number(data.deleted_rows || 0) > 0;
-            if (!response.ok && data.status !== 'warning' && !recoveredWarning) throw new Error(data.message || 'Terjadi kesalahan pada server.');
+            try {
+                data = await response.json();
+            } catch (_) {
+                data = {};
+            }
+
+            if (!response.ok && data.status !== 'warning') {
+                throw new Error(data.message || 'Request gagal diproses.');
+            }
+
             return data;
         }
 
-        async function fetchManagementData(page = 1) {
-            if (!managementReportSelect || !managementReportSelect.value) {
-                themedSwal({ icon: 'warning', title: 'Pilih Report', text: 'Silakan pilih report terlebih dahulu.' });
-                return;
-            }
-            const fetchUrl = reportManagementCard?.dataset.fetchUrl;
-            if (!fetchUrl) return;
-            setNotice('', '');
-            managementTableBody.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-4">Memuat data...</td></tr>';
-            const payload = await postJson(fetchUrl, { id_report: managementReportSelect.value, page: page, per_page: managementState.perPage });
-            if (payload.status !== 'success') throw new Error(payload.message || 'Gagal memuat data report management.');
-            managementState.currentPage = Number(payload.pagination?.current_page || page || 1);
-            setNotice(payload.truncated ? 'warning' : 'info', payload.truncated ? 'Daftar grup dibatasi oleh server untuk menjaga performa. Pagination diterapkan pada hasil grouping yang berhasil dimuat.' : 'Data siap dikelola. Gunakan klik baris, centang per periode, dan pagination agar review data tetap ringkas.');
-            renderManagementRows(payload.periods || [], Object.assign({}, payload, { rows: payload.rows || [] }));
+        function templateUrl(template, value) {
+            return String(template || '').replace('__REBUILD_ID__', encodeURIComponent(value || ''));
         }
 
-        async function deleteManagedScopes(scopes) {
-            const deleteUrl = reportManagementCard?.dataset.deleteUrl;
-            const processUrlTemplate = reportManagementCard?.dataset.deleteProcessUrlTemplate;
-            const statusUrlTemplate = reportManagementCard?.dataset.deleteStatusUrlTemplate;
-            const cancelUrlTemplate = reportManagementCard?.dataset.deleteCancelUrlTemplate;
-            if (!deleteUrl || !managementReportSelect || !managementReportSelect.value) return;
-            if (!Array.isArray(scopes) || scopes.length === 0) {
-                themedSwal({ icon: 'warning', title: 'Pilih Data', text: 'Pilih minimal satu grup yang ingin dihapus.' });
+        async function refreshCurrentGrid() {
+            if (btnManagementFilter) {
+                btnManagementFilter.click();
+            } else {
+                window.location.reload();
+            }
+        }
+
+        async function handleDeduplicate() {
+            if (!btnManagementDeduplicate || btnManagementDeduplicate.disabled) {
                 return;
             }
-            const previewItems = scopes.slice(0, 5).map(function (scope) {
-                const rowCount = formatNumber(scope.row_count || 0);
-                return `<li><b>${escapeHtml(scope.period_label || '(Blank)')}</b> | ${escapeHtml(scope.kanca_label || '(Blank)')} <span class="text-muted">(${rowCount} baris)</span></li>`;
-            }).join('');
-            const extraInfo = scopes.length > 5 ? `<div class="mt-2 text-muted">+${formatNumber(scopes.length - 5)} grup lainnya</div>` : '';
-            const selectedRows = scopes.reduce((sum, scope) => sum + Number(scope.row_count || 0), 0);
-            const confirm = await themedSwal({ icon: 'warning', title: 'Hapus Data?', html: `Data akan dihapus untuk <b>${formatNumber(scopes.length)}</b> grup dengan total <b>${formatNumber(selectedRows)}</b> baris terpilih:<ul class="text-left mb-0 pl-4">${previewItems}</ul>${extraInfo}`, showCancelButton: true, confirmButtonText: 'Ya, Hapus', cancelButtonText: 'Batal' });
-            if (!confirm.isConfirmed) return;
-            const deletePayload = { id_report: managementReportSelect.value, scopes: scopes.map(function (scope) { return { period_filter: scope.period_filter || scope.period || '', period_label: scope.period_label || '', kanca_filter: scope.kanca_filter || scope.kanca || '', kanca_label: scope.kanca_label || '', period_is_null: !!scope.period_is_null, kanca_is_null: !!scope.kanca_is_null }; }) };
-            let payload = await postJson(deleteUrl, deletePayload);
-            if (payload.status === 'error') throw new Error(payload.message || 'Gagal menghapus data report.');
-            if (payload.status === 'completed') {
-                scopes.forEach(function (scope) { managementState.selectedScopes.delete(createScopeKey(scope)); });
-                await themedSwal({ icon: 'success', title: 'Selesai', text: payload.message || 'Tidak ada data yang perlu dihapus.' });
-                await fetchManagementData(managementState.currentPage);
+
+            const idReport = Number(managementReportSelect.value || 0);
+            if (!idReport) {
                 return;
             }
-            if (payload.status === 'warning' && payload.requires_force) {
-                const candidateRows = formatNumber(payload.candidate_rows || 0);
-                const forceConfirm = await themedSwal({ icon: 'warning', title: 'Data Sangat Besar', html: `Penghapusan ini akan menghapus sekitar <b>${candidateRows}</b> baris.<br>Lanjutkan hanya jika Anda yakin ingin menghapus seluruh grup tersebut.`, showCancelButton: true, confirmButtonText: 'Lanjutkan Delete', cancelButtonText: 'Batal' });
-                if (!forceConfirm.isConfirmed) return;
-                payload = await postJson(deleteUrl, Object.assign({}, deletePayload, { force: true }));
-                if (payload.status === 'error') throw new Error(payload.message || 'Gagal menghapus data report.');
-            }
-            if (payload.status === 'warning' && payload.requires_hard_force) {
-                const candidateRows = formatNumber(payload.candidate_rows || 0);
-                const tableTotalRows = formatNumber(payload.table_total_rows || 0);
-                const ratioText = Number(payload.delete_ratio_percent || 0) + '%';
-                const hardForceHtml = payload.full_table_scope
-                    ? `Scope ini akan menghapus <b>seluruh isi tabel</b> (${tableTotalRows} baris).<br><br>Jika ini memang tujuan Anda, lanjutkan konfirmasi final untuk mengosongkan tabel.`
-                    : `Delete ini mencakup <b>${candidateRows}</b> dari <b>${tableTotalRows}</b> baris (~ <b>${ratioText}</b>).<br>Guard keamanan aktif untuk memastikan penghapusan besar tetap disengaja.<br><br>Lanjutkan hanya jika benar-benar yakin.`;
-                const hardForceConfirm = await themedSwal({ icon: 'warning', title: payload.full_table_scope ? 'Konfirmasi Kosongkan Tabel' : 'Konfirmasi Final Diperlukan', html: hardForceHtml, showCancelButton: true, confirmButtonText: payload.full_table_scope ? 'Ya, Kosongkan Tabel' : 'Ya, Hapus Besar', cancelButtonText: 'Batal' });
-                if (!hardForceConfirm.isConfirmed) return;
-                payload = await postJson(deleteUrl, Object.assign({}, deletePayload, { force: true, hard_force: true }));
-                if (payload.status === 'error') throw new Error(payload.message || 'Gagal menghapus data report.');
-            }
-            if (!payload.delete_id || (!processUrlTemplate && !statusUrlTemplate)) throw new Error(payload.message || 'Delete progress tidak dapat dimulai.');
-            const finalPayload = await runDeleteProgress(
-                processUrlTemplate ? buildDeleteUrl(processUrlTemplate, payload.delete_id) : '',
-                statusUrlTemplate ? buildDeleteUrl(statusUrlTemplate, payload.delete_id) : '',
-                cancelUrlTemplate ? buildDeleteUrl(cancelUrlTemplate, payload.delete_id) : '',
-                payload
-            );
-            const deletedRows = Number(finalPayload.deleted_rows || 0);
-            const recoveredWarning = finalPayload.status === 'failed' && deletedRows > 0;
-            const outcomeStatus = recoveredWarning ? 'warning' : finalPayload.status;
-            if (outcomeStatus === 'failed') {
-                const normalizedErrorCode = String(finalPayload.error_code ?? '').trim();
-                const errorCode = normalizedErrorCode && normalizedErrorCode !== '0' ? ` (${normalizedErrorCode})` : '';
-                throw new Error((finalPayload.error || finalPayload.message || 'Terjadi kesalahan saat menghapus data.') + errorCode);
-            }
-            scopes.forEach(function (scope) { managementState.selectedScopes.delete(createScopeKey(scope)); });
-            await themedSwal({
-                icon: outcomeStatus === 'warning' ? 'warning' : 'success',
-                title: outcomeStatus === 'warning' ? 'Selesai dengan Catatan' : 'Berhasil',
-                text: outcomeStatus === 'warning'
-                    ? (finalPayload.error || finalPayload.message || `Data terhapus ${formatNumber(deletedRows)} baris, tetapi sinkronisasi lanjutan gagal.`)
-                    : `Data terhapus ${formatNumber(deletedRows)} baris. Snapshot, cache index, dan statistik optimizer sudah diperbarui.`
+
+            const confirmation = await Swal.fire({
+                icon: 'warning',
+                title: 'Hapus Duplikat Simpanan MultiPN?',
+                text: 'Aksi ini akan menghapus baris duplikat exact-match dari tabel Simpanan MultiPN.',
+                showCancelButton: true,
+                confirmButtonText: 'Lanjutkan',
+                cancelButtonText: 'Batal',
             });
-            await fetchManagementData(managementState.currentPage);
-        }
 
-        async function deleteManagedRow(button) {
-            const scope = decodeScopeDataset(button);
-            if (!scope) return;
-            await deleteManagedScopes([scope]);
-        }
-
-        btnManagementFilter?.addEventListener('click', async function () {
-            try {
-                btnManagementFilter.disabled = true;
-                managementState.currentPage = 1;
-                managementState.selectedScopes.clear();
-                updateSelectionToast();
-                await fetchManagementData(1);
-            } catch (error) {
-                themedSwal({ icon: 'error', title: 'Gagal Memuat Data', text: error.message || 'Terjadi kesalahan saat memuat data.' });
-            } finally {
-                btnManagementFilter.disabled = false;
-            }
-        });
-
-        managementTableBody?.addEventListener('click', async function (event) {
-            const button = event.target.closest('.btn-management-delete');
-            if (!button) return;
-            button.disabled = true;
-            try {
-                await deleteManagedRow(button);
-            } catch (error) {
-                themedSwal({ icon: 'error', title: 'Delete Gagal', text: error.message || 'Terjadi kesalahan saat menghapus data.' });
-            } finally {
-                button.disabled = false;
-            }
-        });
-
-        managementSelectAll?.addEventListener('change', function () {
-            const allCheckboxes = managementTableBody?.querySelectorAll('.management-row-checkbox') || [];
-            allCheckboxes.forEach(function (checkbox) {
-                checkbox.checked = !!managementSelectAll.checked;
-                const scope = decodeScopeDataset(checkbox);
-                if (scope) setScopeSelection(scope, checkbox.checked);
-            });
-            syncBulkSelectionUi();
-        });
-
-        managementTableBody?.addEventListener('change', function (event) {
-            if (event.target.closest('.management-row-checkbox')) {
-                const checkbox = event.target.closest('.management-row-checkbox');
-                const scope = decodeScopeDataset(checkbox);
-                if (scope) setScopeSelection(scope, checkbox.checked);
-                syncBulkSelectionUi();
+            if (!confirmation.isConfirmed) {
                 return;
             }
-            if (event.target.closest('.management-period-checkbox')) {
-                const periodCheckbox = event.target.closest('.management-period-checkbox');
-                const bucket = periodCheckbox.getAttribute('data-period-bucket') || '';
-                const periodRows = Array.from(managementTableBody?.querySelectorAll(`.management-row-checkbox[data-period-bucket="${bucket}"]`) || []);
-                periodRows.forEach(function (checkbox) {
-                    checkbox.checked = !!periodCheckbox.checked;
-                    const scope = decodeScopeDataset(checkbox);
-                    if (scope) setScopeSelection(scope, checkbox.checked);
+
+            const payload = await postJson(reportManagementCard.dataset.duplicateUrl, { id_report: idReport });
+            if (payload.status === 'error') {
+                throw new Error(payload.message || 'Gagal menghapus duplikat.');
+            }
+
+            await Swal.fire({
+                icon: payload.status === 'warning' ? 'warning' : 'success',
+                title: payload.status === 'warning' ? 'Selesai dengan Catatan' : 'Berhasil',
+                text: payload.message || 'Duplikat berhasil diproses.',
+            });
+
+            await refreshCurrentGrid();
+        }
+
+        async function handleRebuild() {
+            if (!btnManagementRebuild) {
+                return;
+            }
+
+            const confirmation = await Swal.fire({
+                icon: 'question',
+                title: managementRebuildForce?.checked ? 'Rebuild dari Awal?' : 'Refresh Snapshot?',
+                text: managementRebuildForce?.checked
+                    ? 'Seluruh snapshot akan dibangun ulang dari awal.'
+                    : 'Snapshot seluruh report akan direfresh tanpa force rebuild penuh.',
+                showCancelButton: true,
+                confirmButtonText: 'Lanjutkan',
+                cancelButtonText: 'Batal',
+            });
+
+            if (!confirmation.isConfirmed) {
+                return;
+            }
+
+            const payload = await postJson(reportManagementCard.dataset.rebuildUrl, {
+                force_rebuild: !!managementRebuildForce?.checked,
+            });
+
+            if (payload.status === 'error') {
+                throw new Error(payload.message || 'Gagal menjadwalkan rebuild.');
+            }
+
+            await Swal.fire({
+                icon: payload.status === 'warning' ? 'warning' : 'success',
+                title: payload.status === 'warning' ? 'Dalam Antrean' : 'Berhasil',
+                text: payload.message || 'Rebuild snapshot sudah dijadwalkan.',
+            });
+
+            if (payload.rebuild_id) {
+                const statusUrl = templateUrl(reportManagementCard.dataset.rebuildStatusUrlTemplate, payload.rebuild_id);
+                const finalState = await pollRebuildStatus(statusUrl);
+                if (finalState?.status === 'error') {
+                    throw new Error(finalState.message || 'Progress rebuild gagal dipantau.');
+                }
+            }
+
+            await refreshCurrentGrid();
+        }
+
+        async function pollRebuildStatus(statusUrl) {
+            if (!statusUrl) {
+                return null;
+            }
+
+            for (let attempt = 0; attempt < 120; attempt++) {
+                const response = await fetch(statusUrl, {
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
                 });
-                syncBulkSelectionUi();
+
+                const state = await response.json().catch(() => ({}));
+                const status = String(state.status || '').toLowerCase();
+
+                if (['completed', 'failed', 'warning', 'error'].includes(status)) {
+                    return state;
+                }
+
+                await new Promise((resolve) => setTimeout(resolve, 1500));
             }
-        });
 
-        managementTableBody?.addEventListener('click', function (event) {
-            const row = event.target.closest('.management-data-row');
-            if (!row || event.target.closest('button, input, label, a')) return;
-            const checkbox = row.querySelector('.management-row-checkbox');
-            if (!checkbox) return;
-            checkbox.checked = !checkbox.checked;
-            const scope = decodeScopeDataset(checkbox);
-            if (scope) setScopeSelection(scope, checkbox.checked);
-            syncBulkSelectionUi();
-        });
+            return { status: 'warning', message: 'Rebuild snapshot masih berjalan di background.' };
+        }
 
-        btnDeleteSelected?.addEventListener('click', async function () {
-            const selectedScopes = Array.from(managementState.selectedScopes.values());
-            btnDeleteSelected.disabled = true;
+        syncExtraActionState();
+
+        managementReportSelect.addEventListener('change', syncExtraActionState);
+        managementRebuildForce?.addEventListener('change', syncExtraActionState);
+        btnManagementDeduplicate?.addEventListener('click', async function () {
+            btnManagementDeduplicate.disabled = true;
             try {
-                await deleteManagedScopes(selectedScopes);
+                await handleDeduplicate();
             } catch (error) {
-                themedSwal({ icon: 'error', title: 'Delete Gagal', text: error.message || 'Terjadi kesalahan saat menghapus data.' });
+                await Swal.fire({ icon: 'error', title: 'Hapus Duplikat Gagal', text: error.message || 'Terjadi kesalahan saat memproses duplikat.' });
             } finally {
-                updateSelectionToast();
+                syncExtraActionState();
             }
         });
-
-        btnClearSelected?.addEventListener('click', function () {
-            managementState.selectedScopes.clear();
-            Array.from(managementTableBody?.querySelectorAll('.management-row-checkbox') || []).forEach(function (checkbox) { checkbox.checked = false; });
-            syncBulkSelectionUi();
-        });
-
-        managementPagination?.addEventListener('click', async function (event) {
-            const button = event.target.closest('.report-management-page-btn');
-            if (!button || button.disabled) return;
-            const targetPage = Number(button.getAttribute('data-page') || 1);
-            if (!targetPage || targetPage === managementState.currentPage) return;
+        btnManagementRebuild?.addEventListener('click', async function () {
+            btnManagementRebuild.disabled = true;
             try {
-                await fetchManagementData(targetPage);
+                await handleRebuild();
             } catch (error) {
-                themedSwal({ icon: 'error', title: 'Gagal Memuat Halaman', text: error.message || 'Terjadi kesalahan saat memuat halaman data.' });
+                await Swal.fire({ icon: 'error', title: 'Rebuild Gagal', text: error.message || 'Terjadi kesalahan saat menjadwalkan rebuild.' });
+            } finally {
+                syncExtraActionState();
             }
-        });
-
-        managementReportSelect?.addEventListener('change', function () {
-            managementState.currentPage = 1;
-            managementState.selectedScopes.clear();
-            if (managementTableBody) managementTableBody.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-4">Pilih report lalu klik "Tampilkan Data".</td></tr>';
-            if (managementPagination) {
-                managementPagination.classList.add('d-none');
-                managementPagination.innerHTML = '';
-            }
-            updateSummary([], {});
-            updateSelectionToast();
         });
     });
 </script>
+@endsection
+
+@section('styles')
 <style>
     .report-management-hero{position:relative;overflow:hidden;border-radius:24px;padding:1.45rem 1.5rem;background:radial-gradient(circle at top right,rgba(37,99,235,.22),transparent 30%),linear-gradient(135deg,#f8fbff 0%,#eef4ff 46%,#dbeafe 100%);border:1px solid rgba(37,99,235,.16);box-shadow:0 22px 45px -32px rgba(29,78,216,.4)}
     .report-management-hero__glow{position:absolute;top:-48px;right:-30px;width:170px;height:170px;border-radius:999px;background:rgba(14,165,233,.16);filter:blur(10px)}
@@ -623,10 +371,29 @@
     .import-upload-card__eyebrow{color:#1d4ed8;background:rgba(37,99,235,.08)}
     .import-upload-card__subtitle{color:#64748b;max-width:700px;line-height:1.6}
     .import-upload-card__body{position:relative;padding:1.5rem 1.5rem 7rem}
-    .report-management-filter-btn{min-height:48px;border-radius:16px}
-    .report-management-stat{height:100%;padding:1rem 1.05rem;border-radius:20px;background:linear-gradient(180deg,#fff 0%,#f8fbff 100%);border:1px solid rgba(148,163,184,.22)}
-    .report-management-stat small{display:block;color:#64748b;font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;margin-bottom:.45rem}
-    .report-management-stat strong{display:block;color:#0f172a;font-size:1.05rem;font-weight:800;line-height:1.45;word-break:break-word}
+    .report-management-top-shell{padding:1.1rem;border-radius:24px;background:linear-gradient(180deg,#fafcff 0%,#f3f7fd 100%);border:1px solid rgba(191,219,254,.52);box-shadow:inset 0 1px 0 rgba(255,255,255,.78)}
+    .report-management-top-grid{align-items:stretch}
+    .report-management-field-panel{display:flex;flex-direction:column;justify-content:center;height:100%;padding:1.2rem 1.25rem;border-radius:22px;background:linear-gradient(180deg,#fff 0%,#fcfdff 100%);border:1px solid rgba(148,163,184,.16);box-shadow:0 18px 40px -34px rgba(15,23,42,.3)}
+    .report-management-field-panel__eyebrow{display:inline-flex;align-items:center;align-self:flex-start;margin-bottom:.6rem;padding:.32rem .72rem;border-radius:999px;background:rgba(15,76,129,.08);color:#0f4c81;font-size:.72rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
+    .report-management-field-panel__label{margin-bottom:.72rem;color:#0f172a;font-size:1rem;font-weight:800;letter-spacing:.01em}
+    .report-management-filter-btn{min-height:48px;border-radius:14px;display:inline-flex;align-items:center;justify-content:center;font-weight:800;padding:0 1.3rem;letter-spacing:.01em;transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease,background-color .18s ease}
+    .report-management-filter-btn:hover:not(:disabled){transform:translateY(-1px)}
+    .report-management-filter-btn:disabled{transform:none;box-shadow:none}
+    .report-management-filter-btn--primary{min-width:196px;box-shadow:0 18px 36px -24px rgba(29,78,216,.48)}
+    .report-management-filter-btn--danger{min-width:196px}
+    .report-management-filter-btn--secondary{width:100%;margin-top:.15rem}
+    .report-management-rebuild-panel{padding:1.2rem 1.25rem;border-radius:22px;background:linear-gradient(180deg,#ffffff 0%,#f6f9ff 100%);border:1px solid rgba(148,163,184,.16);box-shadow:0 18px 40px -34px rgba(15,23,42,.28)}
+    .report-management-rebuild-panel--formal{display:flex;flex-direction:column;justify-content:space-between;gap:.78rem}
+    .report-management-rebuild-panel__topline{display:inline-flex;align-items:center;align-self:flex-start;padding:.32rem .72rem;border-radius:999px;background:rgba(29,78,216,.08);font-size:.72rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#1d4ed8}
+    .report-management-rebuild-switch{padding-left:2.2rem}
+    .report-management-rebuild-switch .custom-control-label{font-weight:800;color:#0f3f8c;cursor:pointer}
+    .report-management-rebuild-hint{margin-top:.1rem;color:#5f6f86;font-size:.84rem;line-height:1.55}
+    .report-management-stat-row{align-items:stretch}
+    .report-management-stat{display:flex;flex-direction:column;justify-content:space-between;height:100%;min-height:118px;padding:1.2rem 1.15rem;border-radius:22px;background:linear-gradient(180deg,#fff 0%,#fbfcfe 100%);border:1px solid rgba(148,163,184,.16);box-shadow:0 16px 34px -32px rgba(15,23,42,.28)}
+    .report-management-stat small{display:block;color:#64748b;font-size:.74rem;font-weight:800;text-transform:uppercase;letter-spacing:.1em;margin-bottom:.5rem}
+    .report-management-stat strong{display:block;color:#0f172a;font-size:1.08rem;font-weight:800;line-height:1.5;word-break:break-word}
+    .report-management-action-bar{display:flex;align-items:center;justify-content:flex-start;padding:1rem 1.05rem;border-radius:22px;background:linear-gradient(180deg,#ffffff 0%,#f8fafc 100%);border:1px solid rgba(226,232,240,.92);box-shadow:0 16px 34px -30px rgba(15,23,42,.24)}
+    .report-management-action-bar__group{display:flex;align-items:center;flex-wrap:wrap;gap:.85rem}
     .report-management-notice{margin-top:.25rem;padding:.95rem 1rem;border-radius:18px;font-size:.92rem;line-height:1.65}
     .report-management-notice--info{color:#0f3f8c;background:rgba(219,234,254,.72);border:1px solid rgba(96,165,250,.2)}
     .report-management-notice--warning{color:#92400e;background:rgba(254,243,199,.78);border:1px solid rgba(251,191,36,.25)}
@@ -674,7 +441,7 @@
     .swal-modern-confirm,.swal-modern-cancel{display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:16px;font-weight:700;padding:.8rem 1.3rem}
     .swal-modern-confirm{background:linear-gradient(135deg,#0f766e,#115e59);color:#fff;box-shadow:0 16px 34px -22px rgba(15,23,42,.45)}
     .swal-modern-cancel{background:#e2e8f0;color:#334155;margin-left:.5rem}
-    @media (max-width:767.98px){.report-management-hero,.import-upload-card__header{padding-left:1rem;padding-right:1rem}.import-upload-card__body{padding:1rem 1rem 7.5rem}.report-management-hero__title{font-size:1.15rem}.report-management-hero__badge,.report-management-filter-btn{width:100%}.report-management-table thead th,.report-management-table tbody td{padding:.8rem}.report-management-bulkbar,.report-management-period-card,.report-management-selection-toast,.report-management-pagination{align-items:flex-start}.report-management-period-card__toggle,.report-management-selection-toast,.report-management-selection-toast__actions{width:100%}.report-management-selection-toast-shell{left:1rem;right:1rem;bottom:1rem;width:calc(100vw - 2rem);max-width:calc(100vw - 2rem)}.report-management-selection-toast{flex-direction:column}}
+    @media (max-width:575.98px){.report-management-filter-btn{width:100%}.report-management-action-bar__group{width:100%}.report-management-filter-btn--primary,.report-management-filter-btn--danger{min-width:0}}
+    @media (max-width:767.98px){.report-management-hero,.import-upload-card__header{padding-left:1rem;padding-right:1rem}.import-upload-card__body{padding:1rem 1rem 7.5rem}.report-management-hero__title{font-size:1.15rem}.report-management-hero__badge,.report-management-rebuild-panel,.report-management-top-shell{width:100%}.report-management-top-shell{padding:1rem}.report-management-field-panel,.report-management-rebuild-panel,.report-management-action-bar,.report-management-stat{border-radius:18px}.report-management-table thead th,.report-management-table tbody td{padding:.8rem}.report-management-bulkbar,.report-management-period-card,.report-management-selection-toast,.report-management-pagination{align-items:flex-start}.report-management-period-card__toggle,.report-management-selection-toast,.report-management-selection-toast__actions{width:100%}.report-management-selection-toast-shell{left:1rem;right:1rem;bottom:1rem;width:calc(100vw - 2rem);max-width:calc(100vw - 2rem)}.report-management-selection-toast{flex-direction:column}}
 </style>
 @endsection
-

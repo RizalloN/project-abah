@@ -21,6 +21,7 @@ import os
 import re
 import sys
 import tempfile
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -31,7 +32,15 @@ def send_event(event_type: str, data: dict) -> None:
     print(json.dumps(payload, ensure_ascii=False, default=str), flush=True)
 
 
-def send_progress(percent: int, message: str, rows_done: int = 0, total: int = 0, speed: int = 0) -> None:
+def send_progress(
+    percent: int,
+    message: str,
+    rows_done: int = 0,
+    total: int = 0,
+    speed: int = 0,
+    speed_label: str = "",
+    mode: str = "",
+) -> None:
     send_event(
         "progress",
         {
@@ -40,6 +49,8 @@ def send_progress(percent: int, message: str, rows_done: int = 0, total: int = 0
             "rows_done": rows_done,
             "total": total,
             "speed": speed,
+            "speed_label": speed_label,
+            "mode": mode,
         },
     )
 
@@ -252,16 +263,6 @@ def is_valid_simpanan_row_values(values_by_header: dict[str, object]) -> bool:
     return normalize_decimal_value(saldo) is not None
 
 
-def build_duplicate_key(values_by_header: dict[str, object]) -> str | None:
-    posisi = normalize_date_value(values_by_header.get("posisi"))
-    no_rekening = normalize_cell(values_by_header.get("no_rekening"))
-
-    if posisi is None or no_rekening == "":
-        return None
-
-    return f"{posisi}|{no_rekening}"
-
-
 def sanitize_source(
     source_path: str,
     delimiter: str,
@@ -273,12 +274,11 @@ def sanitize_source(
     total_records = 0
     structural_skipped = 0
     validation_skipped = 0
-    duplicate_skipped = 0
     rewrite_needed = False
     skipped_rows: list[int] = []
     headers: list[str] = []
     valid_rows = 0
-    seen_keys: set[str] = set()
+    start_time = time.perf_counter()
 
     with open(source_path, "r", encoding="utf-8-sig", errors="replace", newline="") as raw_handle, open(
         temp_path,
@@ -295,7 +295,18 @@ def sanitize_source(
 
             total_records += 1
             if row_number % 25000 == 0:
-                send_progress(min(50, 5 + int((row_number / 250000) * 45)), f"Menyiapkan sanitasi CSV Simpanan MultiPN... ({row_number} record)")
+                elapsed = max(time.perf_counter() - start_time, 0.001)
+                processed_rows = max(0, total_records - 1)
+                speed = int(processed_rows / elapsed)
+                send_progress(
+                    min(50, 5 + int((row_number / 250000) * 45)),
+                    "Menyiapkan sanitasi CSV Simpanan MultiPN...",
+                    processed_rows,
+                    0,
+                    speed,
+                    "baris/detik",
+                    "polars",
+                )
 
             if not headers:
                 raw_headers = [normalize_cell(cell) for cell in row]
@@ -323,21 +334,6 @@ def sanitize_source(
                 rewrite_needed = True
                 continue
 
-            duplicate_key = build_duplicate_key(values_by_header)
-            if duplicate_key is None:
-                validation_skipped += 1
-                skipped_rows.append(row_number)
-                rewrite_needed = True
-                continue
-
-            if duplicate_key in seen_keys:
-                duplicate_skipped += 1
-                skipped_rows.append(row_number)
-                rewrite_needed = True
-                continue
-
-            seen_keys.add(duplicate_key)
-
             writer.writerow(values)
             valid_rows += 1
             rewrite_needed = rewrite_needed or any(values[index] != normalize_cell(row[index]) for index in range(len(row)))
@@ -345,7 +341,7 @@ def sanitize_source(
     if not headers:
         raise RuntimeError("Header CSV Simpanan MultiPN tidak ditemukan.")
 
-    return temp_path, headers, total_records, structural_skipped, validation_skipped, duplicate_skipped, rewrite_needed, skipped_rows, valid_rows
+    return temp_path, headers, total_records, structural_skipped, validation_skipped, 0, rewrite_needed, skipped_rows, valid_rows
 
 
 def read_with_polars(path: str, headers: list[str], delimiter: str):
@@ -421,17 +417,13 @@ def stage_simpanan_multipn(config: dict) -> None:
     source_path = config["file_path"]
     output_csv_path = config["output_csv_path"]
     delimiter = config.get("delimiter") or detect_delimiter(source_path, ",")
-    duplicate_key_headers = [normalize_header_name(str(value)) for value in config.get(
-        "duplicate_key_headers",
-        ["POSISI", "NO_REKENING"],
-    )]
 
-    send_progress(5, "Membaca dan menyiapkan CSV Simpanan MultiPN dengan Polars...", 0, 0, 0)
+    send_progress(5, "Membaca dan menyiapkan CSV Simpanan MultiPN dengan Polars...", 0, 0, 0, "", "polars")
     temp_sanitized_path, headers, total_records, structural_skipped, validation_skipped, duplicate_skipped, rewrite_needed, skipped_rows, valid_rows = sanitize_source(source_path, delimiter)
     total_data_rows = max(0, total_records - 1)
 
     try:
-        send_progress(56, "Sanitasi selesai. Membaca file bersih dengan Polars dan menghapus duplikat...", total_data_rows, total_data_rows, 0)
+        send_progress(56, "Sanitasi selesai. Membaca file bersih dengan Polars...", total_data_rows, total_data_rows, 0, "", "polars")
         df = read_with_polars(temp_sanitized_path, headers, delimiter)
 
         if df.height == 0:
@@ -442,26 +434,14 @@ def stage_simpanan_multipn(config: dict) -> None:
             for column in df.columns
         ])
 
-        missing_duplicate_headers = [header for header in duplicate_key_headers if header not in df.columns]
-        if missing_duplicate_headers:
-            raise RuntimeError("Kolom duplikat Simpanan MultiPN tidak lengkap: " + ", ".join(missing_duplicate_headers))
-
-        duplicate_key_exprs = [
-            pl.col(column).fill_null("").cast(pl.Utf8).str.strip_chars()
-            for column in duplicate_key_headers
-        ]
-        df = df.with_columns(pl.concat_str(duplicate_key_exprs, separator="|").alias("_duplicate_key"))
-
-        before_unique = int(df.height)
-        df = df.unique(subset=["_duplicate_key"], keep="first", maintain_order=True).drop("_duplicate_key")
         written_rows = int(df.height)
-        duplicate_count = int(duplicate_skipped + max(0, before_unique - written_rows))
+        duplicate_count = int(duplicate_skipped)
         skipped_total = int(structural_skipped + validation_skipped + duplicate_count)
 
         if written_rows == 0:
             raise RuntimeError("Polars tidak menemukan baris data Simpanan MultiPN yang valid.")
 
-        send_progress(86, "Menulis CSV bersih untuk LOAD DATA...", written_rows, total_data_rows, 0)
+        send_progress(86, "Menulis CSV bersih untuk LOAD DATA...", written_rows, total_data_rows, 0, "", "polars")
         write_with_polars(df, output_csv_path, delimiter)
 
         send_event(

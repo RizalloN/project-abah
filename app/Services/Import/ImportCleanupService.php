@@ -61,6 +61,16 @@ class ImportCleanupService
         }
     }
 
+    public function dispatchSnapshotRefresh(string $tableName, ?string $periodHint = null, ?string $source = null): void
+    {
+        $normalizedTableName = $this->normalizeSyncScopeValue($tableName);
+        if ($normalizedTableName === null) {
+            return;
+        }
+
+        $this->dispatchImportedJobSync(0, $normalizedTableName, $periodHint, $source);
+    }
+
     public function finalizeImportedJobSyncDispatch(int $jobId, ?string $tableName = null, ?string $periodHint = null, ?string $source = null): void
     {
         $normalizedTableName = $this->normalizeSyncScopeValue($tableName);

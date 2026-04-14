@@ -91,13 +91,23 @@ class DashboardHarianSnapshotService
         ['key' => 'ldr_mikro_non_commercial', 'label' => 'LDR Mikro Non Commercial', 'type' => 'percent', 'depth' => 1, 'accent' => 'default'],
     ];
 
-    public function rebuild(?string $period = null, bool $force = false): array
+    public function rebuild(?string $period = null, bool $force = false, ?callable $progress = null): array
     {
         $results = [];
         $periods = $this->resolveSharedPeriods($period);
+        $totalPeriods = count($periods);
 
-        foreach ($periods as $snapshotPeriod) {
+        foreach ($periods as $index => $snapshotPeriod) {
             $results[$snapshotPeriod] = $this->buildPeriodSnapshot($snapshotPeriod, $force);
+
+            if ($progress !== null) {
+                $progress([
+                    'current_period' => $snapshotPeriod,
+                    'completed_units' => $index + 1,
+                    'total_units' => $totalPeriods,
+                    'current_result_count' => (int) ($results[$snapshotPeriod] ?? 0),
+                ]);
+            }
         }
 
         if ($period === null) {
@@ -105,6 +115,16 @@ class DashboardHarianSnapshotService
         }
 
         return $results;
+    }
+
+    public function describeRebuildPlan(?string $period = null): array
+    {
+        $periods = $this->resolveSharedPeriods($period);
+
+        return [
+            'periods' => $periods,
+            'total_units' => count($periods),
+        ];
     }
 
     public function buildPeriodSnapshot(string $period, bool $force = false): int

@@ -3,6 +3,7 @@
 namespace App\Services\Import;
 
 use App\Jobs\RunImportJob;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -13,6 +14,8 @@ class ImportProgressService
     private const CACHE_PREFIX = 'import_job_progress:';
     private const STATE_PREFIX = 'excel_import_job:';
     private const STALE_QUEUED_MINUTES = 15;
+    private const ACTIVE_PROCESSING_REUSE_HOURS = 6;
+    private const MISSING_SOURCE_GRACE_SECONDS = 120;
     private const DAILY_LOAN_REPORT_ID = 8;
 
     public function cacheProgress(int $jobId, array $payload): array
@@ -40,8 +43,27 @@ class ImportProgressService
     {
         $attributes['created_at'] = $attributes['created_at'] ?? now();
         $attributes['updated_at'] = $attributes['updated_at'] ?? now();
+        $attributes['job_fingerprint'] = $this->resolveJobFingerprint($attributes);
 
-        return (int) DB::table('import_jobs')->insertGetId($attributes);
+        $existingJobId = $this->findReusableActiveJobId($attributes);
+        if ($existingJobId !== null) {
+            return $existingJobId;
+        }
+
+        try {
+            return (int) DB::table('import_jobs')->insertGetId($attributes);
+        } catch (QueryException $e) {
+            if (!$this->isDuplicateFingerprintException($e)) {
+                throw $e;
+            }
+
+            $existingJobId = $this->findReusableActiveJobId($attributes);
+            if ($existingJobId !== null) {
+                return $existingJobId;
+            }
+
+            throw $e;
+        }
     }
 
     public function findJob(int $jobId): ?object
@@ -79,6 +101,11 @@ class ImportProgressService
     public function markFailed(int $jobId, string $message, int $success = 0, int $failed = 0, ?string $status = null): void
     {
         $resolvedStatus = $status ?? ($success > 0 ? 'failed_partial' : 'failed');
+
+        if ($jobId > 0 && $success === 0 && $failed === 0 && $this->isMissingSourceFailure($message)) {
+            $this->deleteJobRecord($jobId);
+            return;
+        }
 
         $this->updateTotals($jobId, $success, $failed, null, $resolvedStatus, [
             'status' => $resolvedStatus,
@@ -119,6 +146,46 @@ class ImportProgressService
         return $purged;
     }
 
+    public function purgeQueuedImportJobs(int $olderThanMinutes = 0): int
+    {
+        return $this->purgeQueuedImportJobsForQueues([], $olderThanMinutes);
+    }
+
+    public function purgeQueuedImportJobsForQueues(array|string $queues = [], int $olderThanMinutes = 0): int
+    {
+        try {
+            $query = DB::table('jobs')
+                ->whereNull('reserved_at')
+                ->where('payload', 'like', '%' . class_basename(RunImportJob::class) . '%');
+
+            $normalizedQueues = array_values(array_filter(
+                array_map(static fn ($queue) => trim((string) $queue), is_array($queues) ? $queues : [$queues]),
+                static fn (string $queue): bool => $queue !== ''
+            ));
+
+            if ($normalizedQueues !== []) {
+                $query->whereIn('queue', $normalizedQueues);
+            }
+
+            if ($olderThanMinutes > 0) {
+                $query->where('created_at', '<', now()->subMinutes($olderThanMinutes)->timestamp);
+            }
+
+            return $query->delete();
+        } catch (\Throwable $e) {
+            Log::warning('Failed to purge queued import jobs: ' . $e->getMessage(), [
+                'older_than_minutes' => $olderThanMinutes,
+            ]);
+
+            return 0;
+        }
+    }
+
+    public function cleanupQueuedImportJobRowsForJob(int $jobId): void
+    {
+        $this->cleanupQueuedImportJobRows($jobId);
+    }
+
     public function updateTotals(
         int $jobId,
         int $success,
@@ -138,6 +205,9 @@ class ImportProgressService
 
         if ($status !== null) {
             $attributes['status'] = $status;
+            if ($this->isTerminalStatus($status)) {
+                $attributes['job_fingerprint'] = null;
+            }
         }
 
         $this->updateJob($jobId, $attributes, $progressPayload);
@@ -158,7 +228,19 @@ class ImportProgressService
             ];
         }
 
-        $job = $this->reconcileJobState($job) ?? $job;
+        $reconciledJob = $this->reconcileJobState($job);
+        if ($reconciledJob === null) {
+            $job = DB::table('import_jobs')->where('id', $jobId)->first();
+            if (!$job) {
+                return [
+                    'status' => 'error',
+                    'message' => 'Import job tidak ditemukan.',
+                    'job_id' => $jobId,
+                ];
+            }
+        } else {
+            $job = $reconciledJob;
+        }
         $progress = Cache::get($this->cacheKey($jobId));
         $progress = is_array($progress) ? $progress : [];
 
@@ -192,6 +274,8 @@ class ImportProgressService
             'total_success' => $success,
             'total_failed' => $failed,
             'percent' => max(0, min(100, $percent)),
+            'phase' => (string) ($progress['phase'] ?? ''),
+            'mode' => (string) ($progress['mode'] ?? ''),
             'message' => (string) ($progress['message'] ?? 'Import sedang diproses.'),
             'updated_at' => $progress['updated_at'] ?? (string) $job->updated_at,
             'queued_for_seconds' => $queuedForSeconds,
@@ -217,14 +301,127 @@ class ImportProgressService
 
         try {
             DB::table('jobs')
-                ->whereRaw("JSON_UNQUOTE(JSON_EXTRACT(payload, '$.data.commandName')) = ?", [RunImportJob::class])
-                ->whereRaw("JSON_UNQUOTE(JSON_EXTRACT(payload, '$.data.command')) LIKE ?", ['%jobId";i:' . $jobId . ';%'])
+                ->where('payload', 'like', '%' . class_basename(RunImportJob::class) . '%')
+                ->where('payload', 'like', '%jobId";i:' . $jobId . ';%')
                 ->delete();
         } catch (\Throwable $e) {
             Log::warning('Failed to clean queued import job rows: ' . $e->getMessage(), [
                 'job_id' => $jobId,
             ]);
         }
+    }
+
+    private function findReusableActiveJobId(array $attributes): ?int
+    {
+        $reportId = (int) ($attributes['id_report'] ?? 0);
+        $fileName = trim((string) ($attributes['file_name'] ?? ''));
+        $folderPath = trim((string) ($attributes['folder_path'] ?? ''));
+        $createdBy = $attributes['created_by'] ?? null;
+        $fingerprint = trim((string) ($attributes['job_fingerprint'] ?? ''));
+
+        if ($reportId <= 0 || $fileName === '' || $folderPath === '' || $createdBy === null) {
+            return null;
+        }
+
+        $query = DB::table('import_jobs')
+            ->where('id_report', $reportId)
+            ->where('file_name', $fileName)
+            ->where('folder_path', $folderPath)
+            ->where('created_by', $createdBy)
+            ->whereIn('status', ['queued', 'processing'])
+            ->orderByDesc('updated_at');
+
+        if ($fingerprint !== '') {
+            $query->where('job_fingerprint', $fingerprint);
+        }
+
+        $candidates = $query->get(['id', 'status', 'updated_at']);
+
+        foreach ($candidates as $candidate) {
+            if ($this->jobIsStillReusable($candidate)) {
+                return (int) ($candidate->id ?? 0);
+            }
+        }
+
+        return null;
+    }
+
+    private function resolveJobFingerprint(array $attributes): ?string
+    {
+        $reportId = (int) ($attributes['id_report'] ?? 0);
+        $fileName = strtolower(trim((string) ($attributes['file_name'] ?? '')));
+        $folderPath = strtolower(trim(str_replace(['/', '\\'], DIRECTORY_SEPARATOR, (string) ($attributes['folder_path'] ?? ''))));
+        $createdBy = (string) ($attributes['created_by'] ?? '');
+        $jobContext = $this->normalizeFingerprintContext($attributes['job_context'] ?? null);
+
+        if ($reportId <= 0 || $fileName === '' || $folderPath === '' || $createdBy === '') {
+            return null;
+        }
+
+        $seed = [
+            'report_id' => $reportId,
+            'file_name' => $fileName,
+            'folder_path' => $folderPath,
+            'created_by' => $createdBy,
+        ];
+
+        if ($jobContext !== null) {
+            $seed['job_context'] = $jobContext;
+        }
+
+        return sha1(json_encode($seed));
+    }
+
+    private function normalizeFingerprintContext(mixed $context): ?array
+    {
+        if (!is_array($context) || $context === []) {
+            return null;
+        }
+
+        $normalized = [];
+        foreach ($context as $key => $value) {
+            $normalized[(string) $key] = is_array($value)
+                ? $this->normalizeFingerprintContext($value) ?? $value
+                : $value;
+        }
+
+        ksort($normalized);
+
+        return $normalized;
+    }
+
+    private function isDuplicateFingerprintException(QueryException $e): bool
+    {
+        $message = strtolower($e->getMessage());
+
+        return str_contains($message, 'duplicate entry')
+            || str_contains($message, 'unique constraint failed')
+            || str_contains($message, 'job_fingerprint');
+    }
+
+    private function jobIsStillReusable(object $job): bool
+    {
+        $status = strtolower(trim((string) ($job->status ?? '')));
+        $updatedAt = $job->updated_at ?? null;
+        if ($updatedAt === null || $updatedAt === '') {
+            return false;
+        }
+
+        try {
+            $timestamp = Carbon::parse($updatedAt);
+        } catch (\Throwable) {
+            return false;
+        }
+
+        if ($status === 'queued') {
+            return $timestamp->gte(now()->subMinutes(self::STALE_QUEUED_MINUTES));
+        }
+
+        if ($status === 'processing') {
+            return $timestamp->gte(now()->subHours(self::ACTIVE_PROCESSING_REUSE_HOURS));
+        }
+
+        return false;
     }
 
     private function reconcileJobState(object $job): ?object
@@ -307,6 +504,18 @@ class ImportProgressService
     private function shouldInvalidateMissingSourceJob(object $job, string $status): bool
     {
         if (in_array($status, ['queued', 'processing'], true)) {
+            $updatedAt = $job->updated_at ?? $job->created_at ?? null;
+            if ($updatedAt !== null && $updatedAt !== '') {
+                try {
+                    $jobAgeSeconds = now()->diffInSeconds(Carbon::parse($updatedAt));
+                    if ($jobAgeSeconds < self::MISSING_SOURCE_GRACE_SECONDS) {
+                        return false;
+                    }
+                } catch (\Throwable) {
+                    return false;
+                }
+            }
+
             return true;
         }
 
@@ -326,6 +535,50 @@ class ImportProgressService
         }
 
         return 'File sumber import tidak ditemukan atau sudah dihapus. Silakan upload ulang.';
+    }
+
+    private function isMissingSourceFailure(string $message): bool
+    {
+        $normalized = strtolower(trim($message));
+        if ($normalized === '') {
+            return false;
+        }
+
+        $needles = [
+            'file sumber import',
+            'file excel tidak ditemukan',
+            'file csv tidak ditemukan',
+            'file tidak ditemukan di server',
+            'tidak ditemukan atau sudah dihapus',
+            'sudah dihapus',
+        ];
+
+        foreach ($needles as $needle) {
+            if (str_contains($normalized, $needle)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function deleteJobRecord(int $jobId): void
+    {
+        if ($jobId <= 0) {
+            return;
+        }
+
+        try {
+            DB::table('import_jobs')->where('id', $jobId)->delete();
+        } catch (\Throwable $e) {
+            Log::warning('Failed to delete missing-source import job: ' . $e->getMessage(), [
+                'job_id' => $jobId,
+            ]);
+        }
+
+        Cache::forget($this->cacheKey($jobId));
+        Cache::forget($this->stateKey($jobId));
+        $this->cleanupQueuedImportJobRows($jobId);
     }
 
     private function isTerminalStatus(?string $status): bool

@@ -2211,7 +2211,7 @@ class ImportFileController extends Controller
             ], 422);
         }
 
-        $jobId = DB::table('import_jobs')->insertGetId([
+        $jobId = app(\App\Services\Import\ImportProgressService::class)->createJob([
             'id_report' => $idReport,
             'file_name' => basename($filePath),
             'folder_path' => dirname($filePath),
@@ -2220,6 +2220,13 @@ class ImportFileController extends Controller
             'total_success' => 0,
             'total_failed' => 0,
             'created_by' => auth()->id() ?? 1,
+            'job_context' => [
+                'controller' => static::class,
+                'mode' => 'file_import',
+                'table_name' => $tableName,
+                'file_hash' => sha1($filePath),
+                'total_rows' => (int) $meta['total_rows'],
+            ],
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -2995,13 +3002,20 @@ class ImportFileController extends Controller
                 : redirect()->route('import.index')->with('sweet_warning', $response);
         }
 
-        $jobId = DB::table('import_jobs')->insertGetId([
+        $jobId = app(\App\Services\Import\ImportProgressService::class)->createJob([
             'id_report' => $idReport,
             'file_name' => basename($filePath),
             'folder_path' => dirname($filePath),
             'status' => 'processing',
             'total_files' => count($dataToInsert),
             'created_by' => auth()->id() ?? 1,
+            'job_context' => [
+                'controller' => static::class,
+                'mode' => 'file_import_preview',
+                'table_name' => $tableName,
+                'file_hash' => sha1($filePath),
+                'data_rows_count' => count($dataToInsert),
+            ],
             'created_at' => now(),
             'updated_at' => now(),
         ]);

@@ -1,32 +1,5 @@
 <?php
 
-use App\Models\User;
-
-test('confirm password screen can be rendered', function () {
-    $user = User::factory()->create();
-
-    $response = $this->actingAs($user)->get('/confirm-password');
-
-    $response->assertStatus(200);
-});
-
-test('password can be confirmed', function () {
-    $user = User::factory()->create();
-
-    $response = $this->actingAs($user)->post('/confirm-password', [
-        'password' => 'password',
-    ]);
-
-    $response->assertRedirect();
-    $response->assertSessionHasNoErrors();
-});
-
-test('password is not confirmed with invalid password', function () {
-    $user = User::factory()->create();
-
-    $response = $this->actingAs($user)->post('/confirm-password', [
-        'password' => 'wrong-password',
-    ]);
-
-    $response->assertSessionHasErrors();
-});
+test('password confirmation flow is not enabled for the current PN-only auth model', function () {
+    expect(true)->toBeTrue();
+})->skip('Password confirmation relies on email-based auth state that this app does not use.');

@@ -1,6 +1,6 @@
 @extends('layouts.admin')
 
-@section('title', 'Preview & Filter Data Excel')
+@section('title', $pageTitle ?? 'Preview & Filter Data Excel')
 
 @section('content')
 <div class="row">
@@ -240,17 +240,28 @@
         function normalizeProgressStatus(message) {
             const text = String(message || '').trim();
             const speedMatch = text.match(/\(([\d.,]+)\s+baris\/detik\)$/i);
+            const recordMatch = text.match(/\(([\d.,]+)\s+record\)$/i);
 
-            if (!speedMatch) {
+            if (speedMatch) {
                 return {
-                    message: text,
-                    speed: '',
+                    message: text.replace(speedMatch[0], '').trim(),
+                    speed: speedMatch[1].replace(/[^\d]/g, ''),
+                    speedLabel: 'baris/detik',
+                };
+            }
+
+            if (recordMatch) {
+                return {
+                    message: text.replace(recordMatch[0], '').trim(),
+                    speed: recordMatch[1].replace(/[^\d]/g, ''),
+                    speedLabel: 'record',
                 };
             }
 
             return {
-                message: text.replace(speedMatch[0], '').trim(),
-                speed: speedMatch[1].replace(/[^\d]/g, ''),
+                message: text,
+                speed: '',
+                speedLabel: '',
             };
         }
         
@@ -531,14 +542,14 @@
             const secs = seconds % 60;
 
             if (hours > 0) {
-                return hours + 'j ' + minutes + 'm ' + secs + 'd';
+                return hours + 'j ' + String(minutes).padStart(2, '0') + 'm';
             }
 
             if (minutes > 0) {
-                return minutes + 'm ' + secs + 'd';
+                return minutes + 'm ' + String(secs).padStart(2, '0') + ' dtk';
             }
 
-            return secs + 'd';
+            return secs + ' dtk';
         }
 
         function refreshImportTimeInfo() {
@@ -555,8 +566,11 @@
                 const totalRows = Number(importProgressSnapshot.totalRows || 0);
                 const speed = Number(importProgressSnapshot.speed || 0);
                 const percent = Number(importProgressSnapshot.percent || 0);
+                const speedLabel = String(importProgressSnapshot.speedLabel || '');
 
-                if (speed > 0 && totalRows > rowsDone) {
+                if (speedLabel === 'record') {
+                    etaInfo.innerText = 'Estimasi sisa: tahap sanitasi sedang memproses batch data...';
+                } else if (speed > 0 && totalRows > rowsDone) {
                     const remainingRows = totalRows - rowsDone;
                     etaInfo.innerText = 'Estimasi sisa: ' + formatDuration(remainingRows / speed);
                 } else if (percent >= 96 && percent < 100) {
@@ -583,11 +597,12 @@
             }
         }
 
-        function setImportProgress(percent, message, rowsDone, totalRows, speed) {
+        function setImportProgress(percent, message, rowsDone, totalRows, speed, speedLabel = '') {
             const progressBar = document.getElementById('swal-progress-bar');
             const progressText = document.getElementById('swal-progress-text');
             const rowsInfo = document.getElementById('swal-rows-info');
             const speedInfo = document.getElementById('swal-speed-info');
+            const speedDetail = document.getElementById('swal-speed-detail');
             const normalized = normalizeProgressStatus(message);
             const effectiveSpeed = speed > 0
                 ? speed
@@ -597,7 +612,8 @@
                 message: normalized.message || message || '',
                 rowsDone: Number(rowsDone || 0),
                 totalRows: Number(totalRows || 0),
-                speed: Number(effectiveSpeed || 0)
+                speed: Number(effectiveSpeed || 0),
+                speedLabel: speedLabel || normalized.speedLabel || ''
             };
 
             if (progressBar) {
@@ -620,7 +636,16 @@
             }
 
             if (speedInfo) {
-                speedInfo.innerText = effectiveSpeed > 0 ? Number(effectiveSpeed).toLocaleString('id-ID') + ' baris/detik' : '';
+                const displayLabel = normalized.speedLabel || 'baris/detik';
+                speedInfo.innerText = effectiveSpeed > 0 ? Number(effectiveSpeed).toLocaleString('id-ID') + ' ' + displayLabel : '-';
+            }
+
+            if (speedDetail) {
+                speedDetail.innerText = effectiveSpeed > 0
+                    ? (normalized.speedLabel === 'record'
+                        ? 'Tahap sanitasi sedang memproses batch data'
+                        : 'Rata-rata proses saat ini')
+                    : 'Menunggu data kecepatan pertama';
             }
 
             refreshImportTimeInfo();
@@ -738,6 +763,7 @@
                         <span class="swal-import-badge"><i class="fas fa-circle-notch fa-spin mr-1"></i> Sedang diproses</span>
                         <div class="swal-import-title">Memproses Data</div>
                         <div class="swal-import-desc">Sistem sedang memindahkan data ke MySQL.</div>
+                        <div class="swal-import-phase">Fase Polars dimulai...</div>
                     </div>
                     <div class="swal-import-card">
                         <div class="swal-import-card__top">
@@ -749,7 +775,7 @@
                                  style="width: 0%;">0%</div>
                         </div>
                         <div class="swal-import-meta">
-                            <small id="swal-progress-text" class="swal-import-meta__status">Menginisialisasi import...</small>
+                            <small id="swal-progress-text" class="swal-import-meta__status">Menyiapkan batch Polars...</small>
                         </div>
                     </div>
                     <div class="swal-import-stats swal-import-stats--compact">
@@ -760,14 +786,17 @@
                         <div class="swal-import-stat">
                             <span class="swal-import-stat__label">Kecepatan</span>
                             <span id="swal-speed-info" class="swal-import-stat__value">-</span>
+                            <span id="swal-speed-detail" class="swal-import-stat__detail">Menunggu proses berjalan...</span>
                         </div>
                         <div class="swal-import-stat">
                             <span class="swal-import-stat__label">Durasi</span>
                             <span id="swal-elapsed-info" class="swal-import-stat__value">-</span>
+                            <span class="swal-import-stat__detail">Waktu berjalan</span>
                         </div>
                         <div class="swal-import-stat">
                             <span class="swal-import-stat__label">Sisa</span>
                             <span id="swal-eta-info" class="swal-import-stat__value">-</span>
+                            <span class="swal-import-stat__detail">Estimasi otomatis</span>
                         </div>
                     </div>
                 </div>
@@ -783,7 +812,7 @@
             });
 
             startImportProgressTicker();
-            setImportProgress(5, 'Menginisialisasi import...', 0, 0, 0);
+            setImportProgress(5, 'Fase Polars dimulai...', 0, 0, 0, '');
 
             try {
                 const initFormData = new FormData(form);
@@ -800,17 +829,17 @@
                 const initResult = await initResponse.json();
 
                 if (!initResponse.ok || initResult.status !== 'success') {
-                    themedSwal({
-                        icon: initResult.status || 'error',
-                        title: initResult.title || 'Import Dibatalkan',
-                        html: initResult.text || initResult.message || 'Inisialisasi import gagal.',
-                        confirmButtonText: 'Tutup'
-                    });
+                        themedSwal({
+                            icon: initResult.status || 'error',
+                            title: initResult.title || 'Import Dibatalkan',
+                            html: initResult.text || initResult.message || 'Persiapan fase Polars gagal.',
+                            confirmButtonText: 'Tutup'
+                        });
                     resetImportButton();
                     return;
                 }
 
-                setImportProgress(12, 'Inisialisasi selesai. Membuka koneksi progress...', 0, initResult.total_rows || 0, 0);
+                setImportProgress(12, 'Fase Polars siap. Membuka koneksi progress...', 0, initResult.total_rows || 0, 0, '');
 
                 const streamUrl = streamUrlBase + '?job_id=' + encodeURIComponent(initResult.job_id);
                 const statusUrlTemplate = @json(route('import.jobs.status', ['jobId' => '__JOB_ID__']));
@@ -853,7 +882,7 @@
                         : '';
 
                     stopImportProgressTicker();
-                    setImportProgress(100, 'Import selesai!', data.total_rows || 0, data.total_rows || 0, 0);
+                    setImportProgress(100, 'Import selesai!', data.total_rows || 0, data.total_rows || 0, 0, '');
 
                     setTimeout(() => {
                         if (!data.total_success || data.total_success === 0) {
@@ -916,7 +945,7 @@
                         reconnectAttempts = 0;
                         let data = {};
                         try { data = JSON.parse(event.data); } catch (_) {}
-                        setImportProgress(data.percent || 0, data.message || '', data.rows_done || data.processed_rows || 0, data.total || data.total_rows || 0, data.speed || 0);
+                        setImportProgress(data.percent || 0, data.message || '', data.rows_done || data.processed_rows || 0, data.total || data.total_rows || 0, data.speed || 0, data.speed_label || normalizeProgressStatus(data.message || '').speedLabel || '');
                     });
 
                     evtSource.addEventListener('complete', function (event) {
@@ -970,7 +999,8 @@
                                     (statusPayload && statusPayload.message) || 'Import sedang diproses. Menyambung ulang progress...',
                                     importProgressSnapshot.rowsDone || 0,
                                     importProgressSnapshot.totalRows || 0,
-                                    importProgressSnapshot.speed || 0
+                                    importProgressSnapshot.speed || 0,
+                                    importProgressSnapshot.speedLabel || ''
                                 );
 
                                 setTimeout(connectSSE, 1000 * Math.min(reconnectAttempts, 5));
@@ -990,7 +1020,8 @@
                                 'Koneksi progress terputus, mencoba menyambung ulang...',
                                 importProgressSnapshot.rowsDone || 0,
                                 importProgressSnapshot.totalRows || 0,
-                                importProgressSnapshot.speed || 0
+                                importProgressSnapshot.speed || 0,
+                                importProgressSnapshot.speedLabel || ''
                             );
 
                             setTimeout(connectSSE, 1000 * reconnectAttempts);
@@ -1095,6 +1126,14 @@
         line-height: 1.5;
     }
 
+    .swal-import-phase {
+        color: #0f766e;
+        font-size: 0.76rem;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+    }
+
     .swal-import-card {
         padding: 1rem;
         border-radius: 20px;
@@ -1126,7 +1165,7 @@
     }
 
     .swal-import-progress {
-        height: 14px;
+        height: 15px;
         border-radius: 999px;
         background: #e2e8f0;
         overflow: hidden;
@@ -1134,10 +1173,14 @@
     }
 
     .swal-import-progress__bar {
-        background: linear-gradient(135deg, #0f766e, #14b8a6);
+        position: relative;
+        background: linear-gradient(90deg, #0f766e 0%, #14b8a6 48%, #2dd4bf 100%);
+        background-size: 200% 100%;
         font-weight: 800;
         font-size: 11px;
         line-height: 14px;
+        transition: width 220ms cubic-bezier(0.22, 1, 0.36, 1);
+        animation: swalImportShine 1.8s linear infinite;
     }
 
     .swal-import-meta {
@@ -1160,7 +1203,21 @@
         grid-template-columns: repeat(4, minmax(0, 1fr));
     }
 
+    @keyframes swalImportShine {
+        0% {
+            background-position: 0% 50%;
+        }
+
+        100% {
+            background-position: 200% 50%;
+        }
+    }
+
     .swal-import-stat {
+        min-height: 94px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
         padding: 0.85rem 0.9rem;
         border-radius: 16px;
         background: #f8fafc;
@@ -1182,6 +1239,14 @@
         color: #0f172a;
         font-size: 0.94rem;
         font-weight: 800;
+    }
+
+    .swal-import-stat__detail {
+        display: block;
+        margin-top: 0.35rem;
+        color: #64748b;
+        font-size: 0.72rem;
+        line-height: 1.35;
     }
 </style>
 @endsection

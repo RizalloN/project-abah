@@ -1,6 +1,6 @@
 @extends('layouts.admin')
 
-@section('title', 'Preview & Filter Data - Daily Loan Dinamis')
+@section('title', $pageTitle ?? 'Preview & Filter Data Excel')
 
 @section('content')
 <div class="row">
@@ -13,7 +13,7 @@
         <div class="card card-outline card-success shadow-sm mb-3">
             <div class="card-header bg-light">
                 <h3 class="card-title font-weight-bold text-success">
-                    <i class="fas fa-file-import mr-1"></i> Preview Data Import (Daily Loan Dinamis / Simpanan MultiPN)
+                    <i class="fas fa-file-import mr-1"></i> {{ $previewBannerTitle ?? 'Preview Data Import' }}
                 </h3>
             </div>
             <div class="card-body">
@@ -555,7 +555,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         // ── STEP 1: Inisialisasi (POST) ─────────────────────────────────────
         activateStep('step-init', null);
-        setProgress(5, 'Menginisialisasi proses import...', 0, 0, 0);
+        setProgress(5, 'Fase Polars dimulai...', 0, 0, 0);
 
         var jobId;
         try {
@@ -576,15 +576,15 @@ document.addEventListener('DOMContentLoaded', function () {
             }
 
             if (!resRaw.ok || resInit.status === 'error') {
-                throw new Error(resInit.text || resInit.message || 'Gagal inisialisasi.');
+                throw new Error(resInit.text || resInit.message || 'Gagal menyiapkan fase Polars.');
             }
 
             jobId = resInit.job_id;
             activateStep('step-init', 'line-1');
-            setProgress(12, 'Inisialisasi selesai. Membuka koneksi stream...', 0, 0, 0);
+            setProgress(12, 'Fase Polars siap. Membuka koneksi stream...', 0, 0, 0);
 
         } catch (err) {
-            themedSwal({ icon: 'error', title: 'Gagal Inisialisasi', html: err.message, confirmButtonText: 'Tutup' });
+            themedSwal({ icon: 'error', title: 'Gagal Menyiapkan Polars', html: err.message, confirmButtonText: 'Tutup' });
             resetSubmitBtn();
             return;
         }
@@ -595,7 +595,7 @@ document.addEventListener('DOMContentLoaded', function () {
         var evtSource  = null;
         var streamDone = false;
         var reconnectAttempts = 0;
-        var lastProg   = { percent: 12, message: 'Menginisialisasi...', rows_done: 0, total: 0, speed: 0 };
+        var lastProg   = { percent: 12, message: 'Fase Polars...', rows_done: 0, total: 0, speed: 0 };
 
         function statusUrlForJob(jobId) {
             return statusUrlTemplate.replace('__JOB_ID__', encodeURIComponent(jobId));

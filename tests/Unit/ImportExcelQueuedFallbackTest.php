@@ -53,7 +53,9 @@ class ImportExcelQueuedFallbackTest extends TestCase
                 array $normalizedHeaders,
                 int $jobId,
                 ?int $estimatedTotalRows = null,
-                ?string $delimiter = null
+                ?string $delimiter = null,
+                bool $forceDirectLoad = false,
+                ?callable $beforeDirectLoad = null
             ): bool {
                 $this->stagedFallbackCalled = true;
 

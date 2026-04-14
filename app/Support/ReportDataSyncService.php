@@ -210,6 +210,7 @@ class ReportDataSyncService
         if (in_array($normalizedTable, self::POST_DELETE_SNAPSHOT_REPORTS, true)) {
             $this->refreshTableStatistics($normalizedTable, $periodHint, null, $source);
             $this->cleanupDerivedArtifactsAfterDelete($normalizedTable, $periodHint, $source);
+            $this->rebuildSnapshotsAfterDelete($normalizedTable, $periodHint, $source);
 
             return;
         }
@@ -351,6 +352,27 @@ class ReportDataSyncService
         return $deleted;
     }
 
+    private function rebuildSnapshotsAfterDelete(string $tableName, ?string $periodHint = null, ?string $source = null): void
+    {
+        $normalizedTable = strtolower(trim($tableName));
+        $normalizedPeriodHint = trim((string) $periodHint);
+
+        if ($normalizedPeriodHint === '') {
+            $this->writeAudit($normalizedTable, $periodHint, null, $source, 'snapshot_rebuild_after_delete', 'skipped', [
+                'message' => 'Snapshot rebuild after delete dilewati karena period hint tidak tersedia.',
+            ]);
+
+            return;
+        }
+
+        match ($normalizedTable) {
+            'daily_loan_dinamis' => $this->syncDailyLoan($normalizedPeriodHint, null, $source),
+            'simpanan_multipn' => $this->syncSimpanan($normalizedPeriodHint, null, $source),
+            'performance_pis_per_produk' => $this->syncPerformanceNewPayroll($normalizedPeriodHint, null, $source),
+            default => null,
+        };
+    }
+
     private function refreshTableStatistics(string $tableName, ?string $periodHint, ?int $jobId, ?string $source): void
     {
         if (!Schema::hasTable($tableName)) {
@@ -481,6 +503,17 @@ class ReportDataSyncService
         Cache::add(self::CACHE_VERSION_KEY, 1, now()->addDays(30));
 
         return (int) Cache::increment(self::CACHE_VERSION_KEY);
+    }
+
+    public function invalidateReportCaches(?string $source = null): int
+    {
+        $newVersion = $this->bumpReportCacheVersion();
+
+        $this->writeAudit('report_snapshot_rebuild', null, null, $source, 'cache_invalidate', 'success', [
+            'context' => ['cache_version' => $newVersion],
+        ]);
+
+        return $newVersion;
     }
 
     private function writeAudit(string $tableName, ?string $periodHint, ?int $jobId, ?string $source, string $action, string $status, array $payload = []): void

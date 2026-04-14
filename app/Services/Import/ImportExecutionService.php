@@ -12,6 +12,9 @@ use Illuminate\Support\Carbon;
 
 class ImportExecutionService
 {
+    private const IMPORT_QUEUE = 'imports-high';
+    private const DAILY_LOAN_IMPORT_QUEUE = 'imports-daily-loan';
+    private const DAILY_LOAN_REPORT_ID = 8;
     private const DISPATCHED_KEY_PREFIX = 'import_excel_dispatched_job_';
     private const DISPATCHED_TTL_HOURS = 6;
     private const STALE_QUEUED_MINUTES = 10;
@@ -48,6 +51,11 @@ class ImportExecutionService
                 return false;
             }
 
+            $queue = $this->resolveImportQueue($jobId);
+            $this->progressService->purgeQueuedImportJobsForQueues(
+                $this->queuesToPurgeFor($queue),
+                self::STALE_QUEUED_MINUTES
+            );
             $job = $this->progressService->findJob($jobId);
             if (!$job || in_array($job->status, ['processing', 'completed', 'failed', 'failed_partial'], true)) {
                 $this->releaseDispatchMarker($jobId);
@@ -60,16 +68,20 @@ class ImportExecutionService
 
             $this->progressService->markQueued($jobId, [
                 'status' => 'queued',
-                'percent' => 1,
-                'message' => $queueMessage ?: 'Job import masuk ke queue.',
+                'phase' => 'polars',
+                'mode' => 'polars',
+                'percent' => 5,
+                'message' => $queueMessage ?: 'Fase Polars dimulai. Menyiapkan import fresh.',
                 'processed_rows' => 0,
                 'total_success' => (int) ($job->total_success ?? 0),
                 'total_failed' => (int) ($job->total_failed ?? 0),
                 'total_rows' => (int) ($job->total_files ?? 0),
+                'queue' => $queue,
             ]);
 
+            $this->progressService->cleanupQueuedImportJobRowsForJob($jobId);
             Cache::put($this->dispatchedKey($jobId), true, now()->addHours(self::DISPATCHED_TTL_HOURS));
-            RunImportJob::dispatch($jobId);
+            dispatch((new RunImportJob($jobId))->onQueue($queue));
             return true;
         } catch (\Throwable $e) {
             $this->releaseDispatchMarker($jobId);
@@ -83,6 +95,34 @@ class ImportExecutionService
         } finally {
             optional($lock)->release();
         }
+    }
+
+    private function resolveImportQueue(int $jobId): string
+    {
+        $job = $this->progressService->findJob($jobId);
+        $state = $this->progressService->getJobState($jobId);
+        $tableName = strtolower(trim((string) ($state['params']['table_name'] ?? '')));
+        $reportId = (int) ($job->id_report ?? 0);
+
+        if ($reportId === self::DAILY_LOAN_REPORT_ID || $tableName === 'daily_loan_dinamis') {
+            return self::DAILY_LOAN_IMPORT_QUEUE;
+        }
+
+        return self::IMPORT_QUEUE;
+    }
+
+    /**
+     * Daily Loan harus membersihkan antrean import umum supaya worker khususnya dapat jalan lebih dulu.
+     *
+     * @return array<int, string>
+     */
+    private function queuesToPurgeFor(string $queue): array
+    {
+        if ($queue === self::DAILY_LOAN_IMPORT_QUEUE) {
+            return [self::DAILY_LOAN_IMPORT_QUEUE, self::IMPORT_QUEUE];
+        }
+
+        return [self::IMPORT_QUEUE];
     }
 
     public function streamStatus(Request $request, int $jobId): StreamedResponse
@@ -209,8 +249,10 @@ class ImportExecutionService
         try {
             $this->progressService->markProcessing($jobId, [
                 'status' => 'processing',
-                'percent' => 3,
-                'message' => 'Worker queue mulai memproses import.',
+                'phase' => 'polars',
+                'mode' => 'polars',
+                'percent' => 8,
+                'message' => 'Worker queue masuk fase Polars.',
                 'processed_rows' => 0,
                 'total_rows' => (int) ($params['total_rows'] ?? 0),
             ]);

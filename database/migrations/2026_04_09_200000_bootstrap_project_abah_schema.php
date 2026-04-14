@@ -7,6 +7,18 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
+    private const SQLITE_AUTO_INCREMENT_COLUMNS = [
+        'bod_boc' => 'id',
+        'failed_jobs' => 'id',
+        'import_jobs' => 'id',
+        'input_rekanan' => 'id',
+        'jobs' => 'id',
+        'migrations' => 'id',
+        'nama_report' => 'id_report',
+        'report_sync_audits' => 'id',
+        'users' => 'id',
+    ];
+
     private const MANAGED_TABLES = [
         'bod_boc',
         'brilink_web_laporan_summary_transaksi_brilink_web',
@@ -71,7 +83,9 @@ return new class extends Migration
         $this->ensureInputAndBodColumns();
         $this->ensureNamaReportMetadataColumns();
         $this->ensureRuntimeIndexes();
-        $this->createSnapshotInvalidationTriggers();
+        if (!in_array(DB::connection()->getDriverName(), ['sqlite'], true)) {
+            $this->createSnapshotInvalidationTriggers();
+        }
         $this->seedNamaReport();
     }
 
@@ -86,6 +100,17 @@ return new class extends Migration
 
     private function isFreshApplicationSchema(): bool
     {
+        $driver = DB::connection()->getDriverName();
+
+        if ($driver === 'sqlite') {
+            $tables = DB::table('sqlite_master')
+                ->where('type', 'table')
+                ->where('name', '<>', 'migrations')
+                ->pluck('name');
+
+            return $tables->isEmpty();
+        }
+
         $tables = DB::table('information_schema.tables')
             ->whereRaw('table_schema = DATABASE()')
             ->where('table_name', '<>', 'migrations')
@@ -102,6 +127,14 @@ return new class extends Migration
 
         foreach ($this->parseSqlStatements($path) as $statement) {
             if ($this->shouldSkipSchemaStatement($statement)) {
+                continue;
+            }
+
+            if (DB::connection()->getDriverName() === 'sqlite') {
+                $statement = $this->normalizeStatementForSqlite($statement);
+            }
+
+            if ($statement === '') {
                 continue;
             }
 
@@ -185,6 +218,18 @@ return new class extends Migration
             return true;
         }
 
+        if (str_starts_with($normalized, '/*!')) {
+            return true;
+        }
+
+        if (str_starts_with($normalized, 'set ')) {
+            return true;
+        }
+
+        if (str_starts_with($normalized, 'lock tables') || str_starts_with($normalized, 'unlock tables')) {
+            return true;
+        }
+
         if (str_starts_with($normalized, 'drop table if exists `migrations`')) {
             return true;
         }
@@ -202,6 +247,73 @@ return new class extends Migration
         }
 
         return false;
+    }
+
+    private function normalizeStatementForSqlite(string $statement): string
+    {
+        $normalized = $statement;
+
+        $normalized = preg_replace('/\s+ENGINE=[^;]+$/i', '', $normalized) ?? $normalized;
+        $normalized = preg_replace('/\s+DEFAULT CHARSET=[^)\s]+/i', '', $normalized) ?? $normalized;
+        $normalized = preg_replace('/\s+COLLATE=[^)\s]+/i', '', $normalized) ?? $normalized;
+        $normalized = preg_replace('/\s+CHARACTER SET\s+\w+(?:\s+COLLATE\s+\w+)?/i', '', $normalized) ?? $normalized;
+        $normalized = preg_replace('/\bunsigned\b/i', '', $normalized) ?? $normalized;
+        $normalized = str_ireplace('DEFAULT current_timestamp() ON UPDATE current_timestamp()', 'DEFAULT CURRENT_TIMESTAMP', $normalized);
+        $normalized = str_ireplace('DEFAULT current_timestamp()', 'DEFAULT CURRENT_TIMESTAMP', $normalized);
+
+        if (!preg_match('/^CREATE TABLE `([^`]+)`/i', trim($normalized), $matches)) {
+            return trim($normalized);
+        }
+
+        $table = $matches[1];
+        $autoIncrementColumn = self::SQLITE_AUTO_INCREMENT_COLUMNS[$table] ?? null;
+
+        $lines = preg_split('/\R/', $normalized);
+        if ($lines === false) {
+            return trim($normalized);
+        }
+
+        $filtered = [];
+        foreach ($lines as $line) {
+            $trimmed = trim($line);
+
+            if ($trimmed === '') {
+                continue;
+            }
+
+            if ($autoIncrementColumn !== null && preg_match('/^`' . preg_quote($autoIncrementColumn, '/') . '`/i', $trimmed) === 1 && str_contains($trimmed, 'AUTO_INCREMENT')) {
+                $filtered[] = '  `' . $autoIncrementColumn . '` integer primary key autoincrement,';
+                continue;
+            }
+
+            if ($autoIncrementColumn !== null && preg_match('/^PRIMARY KEY\b/i', $trimmed) === 1) {
+                continue;
+            }
+
+            if (preg_match('/^(?:UNIQUE\s+)?KEY\b/i', $trimmed) === 1) {
+                continue;
+            }
+
+            if (preg_match('/^INDEX\b/i', $trimmed) === 1) {
+                continue;
+            }
+
+            if (preg_match('/^FULLTEXT\b/i', $trimmed) === 1 || preg_match('/^SPATIAL\b/i', $trimmed) === 1) {
+                continue;
+            }
+
+            $filtered[] = $line;
+        }
+
+        $normalized = implode(PHP_EOL, $filtered);
+        $normalized = preg_replace('/,\s*\n\s*\)/', "\n)", $normalized) ?? $normalized;
+        $normalized = trim($normalized);
+
+        if (!str_ends_with($normalized, ';')) {
+            $normalized .= ';';
+        }
+
+        return $normalized;
     }
 
     private function createDashboardSimpananSnapshotTables(): void
@@ -263,6 +375,10 @@ return new class extends Migration
 
     private function ensureImportJobsSchema(): void
     {
+        if (DB::connection()->getDriverName() === 'sqlite') {
+            return;
+        }
+
         if (!Schema::hasTable('import_jobs')) {
             return;
         }
@@ -275,11 +391,16 @@ return new class extends Migration
             if (!Schema::hasColumn('import_jobs', 'total_failed')) {
                 $table->unsignedInteger('total_failed')->default(0)->after('total_success');
             }
+
+            if (!Schema::hasColumn('import_jobs', 'job_fingerprint')) {
+                $table->string('job_fingerprint', 64)->nullable()->after('created_by');
+            }
         });
 
         $this->addIndexIfPossible('import_jobs', 'idx_import_jobs_status_updated_at', ['status', 'updated_at']);
         $this->addIndexIfPossible('import_jobs', 'idx_import_jobs_created_by_status_created_at', ['created_by', 'status', 'created_at']);
         $this->addIndexIfPossible('import_jobs', 'idx_import_jobs_report_created_at', ['id_report', 'created_at']);
+        $this->addIndexIfPossible('import_jobs', 'idx_import_jobs_job_fingerprint', ['job_fingerprint'], true);
     }
 
     private function ensureNamaReportMetadataColumns(): void
@@ -313,6 +434,10 @@ return new class extends Migration
 
     private function ensureRuntimeIndexes(): void
     {
+        if (DB::connection()->getDriverName() === 'sqlite') {
+            return;
+        }
+
         $this->addIndexIfPossible('input_rekanan', 'idx_input_rekanan_periode', ['periode']);
         $this->addIndexIfPossible('input_rekanan', 'idx_input_rekanan_cif', ['cif']);
         $this->addIndexIfPossible('input_rekanan', 'idx_input_rekanan_periode_cif', ['periode', 'cif']);
@@ -365,6 +490,10 @@ return new class extends Migration
 
     private function createSnapshotInvalidationTriggers(): void
     {
+        if (DB::connection()->getDriverName() === 'sqlite') {
+            return;
+        }
+
         $this->dropSnapshotInvalidationTriggers();
 
         if (Schema::hasTable('daily_loan_dinamis')) {
@@ -456,6 +585,10 @@ SQL);
 
     private function dropSnapshotInvalidationTriggers(): void
     {
+        if (DB::connection()->getDriverName() === 'sqlite') {
+            return;
+        }
+
         foreach ([
             'trg_dld_after_ins_invalidate_snapshots',
             'trg_dld_after_upd_invalidate_snapshots',
@@ -509,6 +642,10 @@ SQL);
 
     private function hasIndex(string $table, string $indexName): bool
     {
+        if (!in_array(DB::connection()->getDriverName(), ['mysql', 'mariadb'], true)) {
+            return false;
+        }
+
         $result = DB::select(
             'SHOW INDEX FROM `' . str_replace('`', '``', $table) . '` WHERE Key_name = ?',
             [$indexName]

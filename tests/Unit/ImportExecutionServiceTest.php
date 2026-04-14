@@ -6,7 +6,7 @@ use App\Jobs\RunImportJob;
 use App\Services\Import\ImportExecutionService;
 use App\Services\Import\ImportProgressService;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Carbon;
 use Mockery;
 use Tests\TestCase;
@@ -15,21 +15,56 @@ class ImportExecutionServiceTest extends TestCase
 {
     public function test_dispatch_only_enqueues_once_for_same_job(): void
     {
-        Queue::fake();
+        Bus::fake();
         Cache::flush();
+
+        $lock = Mockery::mock();
+        $lock->shouldReceive('get')->twice()->andReturn(true);
+        $lock->shouldReceive('release')->twice();
+        Cache::shouldReceive('lock')
+            ->twice()
+            ->with('import_excel_dispatch_job_55', 30)
+            ->andReturn($lock);
+        Cache::shouldReceive('has')
+            ->twice()
+            ->with('import_excel_dispatched_job_55')
+            ->andReturn(false, true);
+        Cache::shouldReceive('put')
+            ->once()
+            ->with('import_excel_dispatched_job_55', true, Mockery::type(\Illuminate\Support\Carbon::class))
+            ->andReturnTrue();
+        Cache::shouldReceive('forget')->never();
 
         $progressService = Mockery::mock(ImportProgressService::class);
         $progressService->shouldReceive('findJob')
-            ->times(6)
+            ->times(8)
             ->andReturn((object) [
                 'id' => 55,
+                'id_report' => 12,
                 'status' => 'queued',
                 'updated_at' => now()->toDateTimeString(),
                 'total_success' => 0,
                 'total_failed' => 0,
                 'total_files' => 100,
             ]);
+        $progressService->shouldReceive('getJobState')
+            ->twice()
+            ->andReturn([
+                'params' => [
+                    'table_name' => 'performance_pis_per_produk',
+                ],
+            ]);
         $progressService->shouldReceive('purgeStaleQueuedJobs')->twice()->andReturn(0);
+        $progressService->shouldReceive('purgeQueuedImportJobsForQueues')
+            ->twice()
+            ->with(
+                Mockery::on(static function (array $queues): bool {
+                    return $queues === ['imports-high'];
+                }),
+                10
+            )
+            ->andReturn(0);
+        $progressService->shouldReceive('cleanupQueuedImportJobRowsForJob')->once()->with(55);
         $progressService->shouldReceive('markQueued')->once();
 
         $service = new ImportExecutionService($progressService);
@@ -37,29 +72,65 @@ class ImportExecutionServiceTest extends TestCase
         $service->dispatch(55);
         $service->dispatch(55);
 
-        Queue::assertPushed(RunImportJob::class, 1);
+        Bus::assertDispatched(RunImportJob::class, function (RunImportJob $job): bool {
+            return $job->jobId === 55 && $job->queue === 'imports-high';
+        });
     }
 
     public function test_dispatch_requeues_stale_queued_job_when_marker_exists(): void
     {
-        Queue::fake();
+        Bus::fake();
         Cache::flush();
 
         $jobId = 88;
-        Cache::put('import_excel_dispatched_job_' . $jobId, true, now()->addHours(6));
+
+        $lock = Mockery::mock();
+        $lock->shouldReceive('get')->once()->andReturn(true);
+        $lock->shouldReceive('release')->once();
+        Cache::shouldReceive('lock')
+            ->once()
+            ->with('import_excel_dispatch_job_' . $jobId, 30)
+            ->andReturn($lock);
+        Cache::shouldReceive('has')
+            ->once()
+            ->with('import_excel_dispatched_job_' . $jobId)
+            ->andReturn(true);
+        Cache::shouldReceive('put')
+            ->once()
+            ->with('import_excel_dispatched_job_' . $jobId, true, Mockery::type(\Illuminate\Support\Carbon::class))
+            ->andReturnTrue();
+        Cache::shouldReceive('forget')->never();
 
         $progressService = Mockery::mock(ImportProgressService::class);
         $progressService->shouldReceive('findJob')
-            ->times(3)
+            ->times(4)
             ->andReturn((object) [
                 'id' => $jobId,
+                'id_report' => 12,
                 'status' => 'queued',
                 'updated_at' => Carbon::now()->subMinutes(30)->toDateTimeString(),
                 'total_success' => 0,
                 'total_failed' => 0,
                 'total_files' => 100,
             ]);
+        $progressService->shouldReceive('getJobState')
+            ->once()
+            ->andReturn([
+                'params' => [
+                    'table_name' => 'performance_pis_per_produk',
+                ],
+            ]);
         $progressService->shouldReceive('purgeStaleQueuedJobs')->once()->andReturn(1);
+        $progressService->shouldReceive('purgeQueuedImportJobsForQueues')
+            ->once()
+            ->with(
+                Mockery::on(static function (array $queues): bool {
+                    return $queues === ['imports-high'];
+                }),
+                10
+            )
+            ->andReturn(0);
+        $progressService->shouldReceive('cleanupQueuedImportJobRowsForJob')->once()->with($jobId);
         $progressService->shouldReceive('markQueued')->once();
 
         $service = new ImportExecutionService($progressService);
@@ -67,7 +138,75 @@ class ImportExecutionServiceTest extends TestCase
         $result = $service->dispatch($jobId);
 
         $this->assertTrue($result);
-        Queue::assertPushed(RunImportJob::class, 1);
+        Bus::assertDispatched(RunImportJob::class, function (RunImportJob $job) use ($jobId): bool {
+            return $job->jobId === $jobId && $job->queue === 'imports-high';
+        });
+    }
+
+    public function test_dispatch_routes_daily_loan_jobs_to_priority_queue(): void
+    {
+        Bus::fake();
+        Cache::flush();
+
+        $jobId = 108;
+
+        $lock = Mockery::mock();
+        $lock->shouldReceive('get')->once()->andReturn(true);
+        $lock->shouldReceive('release')->once();
+        Cache::shouldReceive('lock')
+            ->once()
+            ->with('import_excel_dispatch_job_' . $jobId, 30)
+            ->andReturn($lock);
+        Cache::shouldReceive('has')
+            ->once()
+            ->with('import_excel_dispatched_job_' . $jobId)
+            ->andReturn(false);
+        Cache::shouldReceive('put')
+            ->once()
+            ->with('import_excel_dispatched_job_' . $jobId, true, Mockery::type(\Illuminate\Support\Carbon::class))
+            ->andReturnTrue();
+        Cache::shouldReceive('forget')->never();
+
+        $progressService = Mockery::mock(ImportProgressService::class);
+        $progressService->shouldReceive('findJob')
+            ->times(4)
+            ->andReturn((object) [
+                'id' => $jobId,
+                'id_report' => 8,
+                'status' => 'queued',
+                'updated_at' => now()->toDateTimeString(),
+                'total_success' => 0,
+                'total_failed' => 0,
+                'total_files' => 250,
+            ]);
+        $progressService->shouldReceive('getJobState')
+            ->once()
+            ->andReturn([
+                'params' => [
+                    'table_name' => 'daily_loan_dinamis',
+                ],
+            ]);
+        $progressService->shouldReceive('purgeStaleQueuedJobs')->once()->andReturn(0);
+        $progressService->shouldReceive('purgeQueuedImportJobsForQueues')
+            ->once()
+            ->with(
+                Mockery::on(static function (array $queues): bool {
+                    return $queues === ['imports-daily-loan', 'imports-high'];
+                }),
+                10
+            )
+            ->andReturn(0);
+        $progressService->shouldReceive('cleanupQueuedImportJobRowsForJob')->once()->with($jobId);
+        $progressService->shouldReceive('markQueued')->once();
+
+        $service = new ImportExecutionService($progressService);
+
+        $result = $service->dispatch($jobId);
+
+        $this->assertTrue($result);
+        Bus::assertDispatched(RunImportJob::class, function (RunImportJob $job) use ($jobId): bool {
+            return $job->jobId === $jobId && $job->queue === 'imports-daily-loan';
+        });
     }
 
     public function test_run_marks_stale_queued_job_failed_when_execution_lock_is_unavailable(): void

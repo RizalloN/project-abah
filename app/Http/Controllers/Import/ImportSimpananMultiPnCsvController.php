@@ -799,7 +799,7 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
             }
 
             $setClauses[] = match (strtolower($dbColumn)) {
-                'saldo_idr' => $this->buildDirectLoadDecimalExpression($variable),
+                'saldo_idr' => "`{$dbColumn}` = " . $this->buildDirectLoadDecimalExpression($variable),
                 'posisi' => "`{$dbColumn}` = " . StrictDateParser::buildMySqlCaseExpression("NULLIF(TRIM({$variable}), '')"),
                 default => "`{$dbColumn}` = NULLIF(TRIM({$variable}), '')",
             };
@@ -822,6 +822,7 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
             'validation_written_rows' => (int) ($loadSource['written_rows'] ?? 0),
             'source_balance_total_cents' => $sourceBalanceTotalCents,
             'import_batch_token' => $importBatchToken,
+            'unique_id_column' => $uniqueIdColumn,
         ];
     }
 
@@ -882,11 +883,26 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                         throw new \RuntimeException('Token validasi batch import Simpanan MultiPN tidak ditemukan.');
                     }
 
-                    $batchPrefix = 'SMPN_' . $batchToken . '_';
-                    $quotedPrefix = $pdo->quote($batchPrefix . '%');
+                    $uniqueIdColumn = trim((string) ($loadPlan['unique_id_column'] ?? ''));
+                    $summaryWhereClause = '';
+
+                    if ($uniqueIdColumn !== '') {
+                        $batchPrefix = 'SMPN_' . $batchToken . '_';
+                        $quotedPrefix = $pdo->quote($batchPrefix . '%');
+                        $summaryWhereClause = "WHERE `{$uniqueIdColumn}` LIKE {$quotedPrefix}";
+                    } else {
+                        $importBatchTimestamp = trim((string) ($loadPlan['import_batch_timestamp'] ?? ''));
+                        if ($importBatchTimestamp === '') {
+                            throw new \RuntimeException('Marker validasi batch import Simpanan MultiPN tidak ditemukan.');
+                        }
+
+                        $quotedTimestamp = $pdo->quote($importBatchTimestamp);
+                        $summaryWhereClause = "WHERE `created_at` = {$quotedTimestamp}";
+                    }
+
                     $summarySql = "SELECT COUNT(*) AS row_count, COALESCE(SUM(COALESCE(`saldo_idr`, 0)), 0) AS total_balance "
                         . "FROM `simpanan_multipn` "
-                        . "WHERE `uniqueid_SMPN` LIKE {$quotedPrefix}";
+                        . $summaryWhereClause;
                     $summary = $pdo->query($summarySql);
                     if ($summary === false) {
                         throw new \RuntimeException('Gagal melakukan crosscheck hasil import Simpanan MultiPN.');

@@ -5,7 +5,9 @@ namespace App\Http\Controllers\Import;
 use App\Http\Controllers\Controller;
 use App\Jobs\RunManagedReportDeleteJob;
 use App\Services\Import\MySqlBulkLoadService;
+use App\Support\ManagedReportManagementService;
 use App\Support\PartitionMaintenanceService;
+use App\Support\ManagedReportSnapshotRebuildCoordinator;
 use App\Support\ReportDataSyncService;
 use App\Support\StrictDateParser;
 use Illuminate\Database\QueryException;
@@ -21,6 +23,7 @@ use Throwable;
 
 class ImportIndexController extends Controller
 {
+    private const DELETE_AUDIT_TABLE = 'report_sync_audits';
     private const MANAGEMENT_MAX_GROUP_ROWS = 5000;
     private const MANAGEMENT_PERIODS_PER_PAGE = 8;
     private const DELETE_PRECHECK_LIMIT = 200000;
@@ -35,6 +38,12 @@ class ImportIndexController extends Controller
     private const DELETE_TICK_TIME_BUDGET_MS = 2500;
     private const DELETE_MAX_BATCHES_PER_TICK = 8;
     private const DELETE_HARD_GUARD_RATIO = 0.85;
+    private const REBUILD_FALLBACK_LOCK_PREFIX = 'report_management_rebuild_lock:';
+    private const REBUILD_FALLBACK_LOCK_SECONDS = 7200;
+    private const REBUILD_FALLBACK_STALE_SECONDS = 15;
+    private const FULL_TABLE_TRUNCATE_SHORTCUT_TABLES = [
+        'simpanan_multipn',
+    ];
 
     private const DELETE_INDEX_HINTS = [
         'daily_loan_dinamis' => [
@@ -74,102 +83,15 @@ class ImportIndexController extends Controller
         return app(MySqlBulkLoadService::class);
     }
 
-    private const PERIOD_COLUMN_CANDIDATES = [
-        'periode',
-        'posisi',
-        'tanggal',
-        'tgl',
-        'PERIODE',
-        'POSISI',
-        'period',
-        'snapshot_period',
-        'tanggal_periode',
-        'tgl_periode',
-        'loan_period',
-        'casa_period',
-    ];
+    private function reportManagementService(): ManagedReportManagementService
+    {
+        return app(ManagedReportManagementService::class);
+    }
 
-    private const KANCA_COLUMN_CANDIDATES = [
-        'kanca',
-        'nama_kanca',
-        'kantor_cabang',
-        'nama_kantor_cabang',
-        'cabang1',
-        'nama_cabang1',
-        'cabang',
-        'nama_cabang',
-        'branch',
-        'nama_branch',
-        'brdesc',
-        'mbdesc',
-        'nama_kci',
-        'nama_kcp',
-        'kode_cabang1',
-        'kode_cabang',
-        'kode_kanca',
-        'kode_branch',
-        'kode_kci',
-        'kci',
-        'kcp',
-        'perusahaan_anak',
-        'instansi',
-        'bod_boc',
-        'nama_nasabah',
-        'rekanan_level_1',
-    ];
-
-    /**
-     * Fallback kolom filter untuk tabel yang tidak memiliki pasangan periode/kanca standar.
-     */
-    private const MANAGEMENT_SCOPE_COLUMN_OVERRIDES = [
-        'input_rekanan' => [
-            'period' => ['created_at', 'updated_at'],
-            'kanca' => ['perusahaan_anak', 'rekanan_level_1', 'status_nasabah'],
-        ],
-        'bod_boc' => [
-            'period' => ['created_at', 'updated_at'],
-            'kanca' => ['instansi', 'bod_boc', 'nama_nasabah'],
-        ],
-        'jumlah_merchant_detail' => [
-            'period_priority' => ['posisi', 'periode'],
-        ],
-        'merchant_qris' => [
-            'period_priority' => ['posisi', 'periode'],
-            'kanca_priority' => ['NAMA_KCI', 'nama_kci'],
-        ],
-        'merchant_qris_volume' => [
-            'period_priority' => ['posisi', 'periode'],
-            'kanca_priority' => ['NAMA_KCI', 'nama_kci'],
-        ],
-        'sv_merchant' => [
-            'period_priority' => ['posisi', 'periode'],
-            'kanca_priority' => ['NAMA_KCI', 'nama_kci'],
-        ],
-        'user_brimo_fin' => [
-            'period_priority' => ['posisi', 'periode'],
-            'kanca_priority' => ['mbdesc', 'branch', 'brdesc'],
-        ],
-        'brimo_fin' => [
-            'period_priority' => ['posisi', 'periode'],
-            'kanca_priority' => ['mbdesc', 'branch', 'brdesc'],
-        ],
-        'user_brimo_rpt_v2' => [
-            'period_priority' => ['posisi', 'periode'],
-            'kanca_priority' => ['mbdesc', 'branch', 'brdesc'],
-        ],
-        'brimo_rpt_v2' => [
-            'period_priority' => ['posisi', 'periode'],
-            'kanca_priority' => ['mbdesc', 'branch', 'brdesc'],
-        ],
-        'casa_brilink_web' => [
-            'period_priority' => ['periode'],
-            'kanca_priority' => ['mbdesc'],
-        ],
-        'casa_brilink_edc' => [
-            'period_priority' => ['periode'],
-            'kanca_priority' => ['mbdesc'],
-        ],
-    ];
+    private function managedReportSnapshotRebuildCoordinator(): ManagedReportSnapshotRebuildCoordinator
+    {
+        return app(ManagedReportSnapshotRebuildCoordinator::class);
+    }
 
     private const TEMPLATE_DEFINITIONS = [
         'input_rekanan' => [
@@ -241,59 +163,37 @@ class ImportIndexController extends Controller
             'per_page' => 'nullable|integer|min:1|max:24',
         ]);
 
-        $report = NamaReport::where('active', 1)
-            ->where('id_report', (int) $validated['id_report'])
-            ->first();
+        $resolved = $this->reportManagementService()->resolveReportManagementData(
+            (int) $validated['id_report'],
+            $validated,
+            false
+        );
 
-        if (!$report) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Report tidak ditemukan.',
-            ], 404);
+        if (($resolved['ok'] ?? false) && isset($resolved['payload']['table_name'])) {
+            $resolved['payload']['duplicate_cleanup_available'] = $this->supportsDuplicateCleanup((string) $resolved['payload']['table_name']);
         }
 
-        $tableName = trim((string) ($report->table_name ?? ''));
-        if ($tableName === '') {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Table report belum dikonfigurasi.',
-            ], 422);
-        }
+        return response()->json($resolved['payload'], (int) ($resolved['status_code'] ?? 200));
+    }
 
-        if (!Schema::hasTable($tableName)) {
-            return response()->json([
-                'status' => 'error',
-                'message' => "Tabel `{$tableName}` tidak ditemukan.",
-            ], 404);
-        }
-
-        $tableColumns = Schema::getColumnListing($tableName);
-        [$periodColumn, $kancaColumn] = $this->resolveManagementScopeColumns($tableName, $tableColumns);
-
-        $maxRows = (int) ($validated['max_rows'] ?? self::MANAGEMENT_MAX_GROUP_ROWS);
-        $page = (int) ($validated['page'] ?? 1);
-        $perPage = (int) ($validated['per_page'] ?? self::MANAGEMENT_PERIODS_PER_PAGE);
-        [$rows, $truncated] = $this->buildManagementRows($tableName, $periodColumn, $kancaColumn, $maxRows);
-        $paginatedPeriods = $this->paginateManagementPeriods($rows, $page, $perPage, $periodColumn !== null);
-        $displayedRowsTotal = array_reduce($paginatedPeriods['periods'], static function (int $carry, array $period): int {
-            return $carry + (int) ($period['total_rows'] ?? 0);
-        }, 0);
-        $grandTotalRows = (int) DB::table($tableName)->count();
-
-        return response()->json([
-            'status' => 'success',
-            'table_name' => $tableName,
-            'period_column' => $periodColumn,
-            'kanca_column' => $kancaColumn,
-            'max_rows' => $maxRows,
-            'truncated' => $truncated,
-            'displayed_rows_total' => $displayedRowsTotal,
-            'grand_total_rows' => $grandTotalRows,
-            'total_groups' => count($rows),
-            'rows' => $paginatedPeriods['rows'],
-            'periods' => $paginatedPeriods['periods'],
-            'pagination' => $paginatedPeriods['pagination'],
+    public function rebuildManagedReportSnapshots(Request $request)
+    {
+        $validated = $request->validate([
+            'force_rebuild' => 'nullable|boolean',
         ]);
+        $resolved = $this->managedReportSnapshotRebuildCoordinator()->queue(
+            (bool) ($validated['force_rebuild'] ?? false),
+            static::class
+        );
+
+        return response()->json($resolved['payload'], (int) ($resolved['status_code'] ?? 200));
+    }
+
+    public function managedReportRebuildStatus(string $rebuildId)
+    {
+        $resolved = $this->managedReportSnapshotRebuildCoordinator()->status($rebuildId);
+
+        return response()->json($resolved['payload'], (int) ($resolved['status_code'] ?? 200));
     }
 
     public function deleteManagedReportRows(Request $request)
@@ -347,6 +247,10 @@ class ImportIndexController extends Controller
                     ? 'Guard keamanan aktif: scope delete menyentuh seluruh tabel. Kirim `hard_force=true` untuk konfirmasi final.'
                     : 'Guard keamanan aktif: scope delete berdampak sangat besar pada tabel. Kirim `hard_force=true` untuk konfirmasi final.',
             ]);
+        }
+
+        if ($this->shouldUseManagedDeleteFullTableShortcut($prepared)) {
+            return response()->json($this->executeManagedFullTableDeleteShortcut($prepared, $syncService, $maintenanceMode));
         }
 
         if ($maintenanceMode === 'lightweight') {
@@ -415,6 +319,166 @@ class ImportIndexController extends Controller
         return response()->json($this->formatDeleteStateResponse($state, [
             'message' => 'Delete dimulai. Sistem akan memproses penghapusan di background.',
         ]));
+    }
+
+    public function deleteManagedReportDuplicates(Request $request, ReportDataSyncService $syncService)
+    {
+        $validated = $request->validate([
+            'id_report' => 'required|integer',
+        ]);
+
+        $report = NamaReport::where('active', 1)
+            ->where('id_report', (int) $validated['id_report'])
+            ->first();
+
+        if (!$report) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Report tidak ditemukan.',
+            ], 404);
+        }
+
+        $tableName = trim((string) ($report->table_name ?? ''));
+        if (!$this->supportsDuplicateCleanup($tableName)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Hapus duplikat hanya tersedia untuk Simpanan MultiPN.',
+            ], 422);
+        }
+
+        if ($tableName === '' || !Schema::hasTable($tableName)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => "Tabel `{$tableName}` tidak ditemukan.",
+            ], 404);
+        }
+
+        $requiredColumns = array_merge($this->getSimpananDuplicateFingerprintColumns(), ['uniqueid_SMPN', 'created_at']);
+        foreach ($requiredColumns as $column) {
+            if (!Schema::hasColumn($tableName, $column)) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => "Kolom `{$column}` tidak tersedia untuk pembersihan duplikat.",
+                ], 422);
+            }
+        }
+
+        [$deleteSql, $periodSql] = $this->buildSimpananDuplicateCleanupQueries($tableName);
+        $startedAt = microtime(true);
+        $affectedPeriods = [];
+        $deletedRows = 0;
+
+        try {
+            DB::transaction(function () use ($deleteSql, $periodSql, &$affectedPeriods, &$deletedRows): void {
+                $periodRows = DB::select($periodSql);
+                $affectedPeriods = array_values(array_filter(array_unique(array_map(
+                    static fn ($row): string => trim((string) ($row->period ?? '')),
+                    $periodRows
+                )), static fn (string $period): bool => $period !== ''));
+
+                $deletedRows = (int) DB::affectingStatement($deleteSql);
+            });
+        } catch (Throwable $e) {
+            Log::warning('Hapus duplikat Simpanan MultiPN gagal: ' . $e->getMessage(), [
+                'table_name' => $tableName,
+                'report_id' => (int) $validated['id_report'],
+                'exception_class' => $e::class,
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Gagal menghapus duplikat: ' . $e->getMessage(),
+            ], 500);
+        }
+
+        if ($deletedRows <= 0) {
+            $syncService->syncAfterDeleteLightweight(
+                $tableName,
+                null,
+                static::class . '::deleteManagedReportDuplicates'
+            );
+
+            return response()->json([
+                'status' => 'completed',
+                'table_name' => $tableName,
+                'deleted_rows' => 0,
+                'duplicate_groups' => 0,
+                'affected_periods' => [],
+                'message' => 'Tidak ditemukan duplikat untuk dibersihkan.',
+                'progress_percent' => 100,
+                'stage' => 'completed',
+                'cleanup' => [
+                    'mode' => 'dedupe_exact',
+                    'periods' => [],
+                    'duration_ms' => $this->elapsedMs($startedAt),
+                ],
+            ]);
+        }
+
+        $syncWarnings = [];
+        try {
+            if (empty($affectedPeriods)) {
+                $syncService->dispatchSnapshotRefresh(
+                    $tableName,
+                    null,
+                    static::class . '::deleteManagedReportDuplicates'
+                );
+            } else {
+                foreach ($affectedPeriods as $period) {
+                    $syncService->dispatchSnapshotRefresh(
+                        $tableName,
+                        $period,
+                        static::class . '::deleteManagedReportDuplicates'
+                    );
+                }
+            }
+        } catch (Throwable $e) {
+            $syncWarnings[] = $e->getMessage();
+            Log::warning('Sinkronisasi report setelah hapus duplikat Simpanan MultiPN gagal: ' . $e->getMessage(), [
+                'table_name' => $tableName,
+                'affected_periods' => $affectedPeriods,
+            ]);
+        }
+
+        $message = 'Berhasil menghapus ' . number_format($deletedRows, 0, ',', '.') . ' baris duplikat Simpanan MultiPN.'
+            . (!empty($affectedPeriods)
+                ? ' Periode terdampak: ' . implode(', ', $affectedPeriods) . '.'
+                : '')
+            . ' Refresh snapshot dijadwalkan di background.';
+
+        if (!empty($syncWarnings)) {
+            return response()->json([
+                'status' => 'warning',
+                'table_name' => $tableName,
+                'deleted_rows' => $deletedRows,
+                'duplicate_groups' => count($affectedPeriods),
+                'affected_periods' => $affectedPeriods,
+                'message' => $message . ' Sinkronisasi lanjutan memiliki catatan: ' . implode(' ', $syncWarnings),
+                'progress_percent' => 100,
+                'stage' => 'completed',
+                'cleanup' => [
+                    'mode' => 'dedupe_exact',
+                    'periods' => $affectedPeriods,
+                    'duration_ms' => $this->elapsedMs($startedAt),
+                ],
+            ]);
+        }
+
+        return response()->json([
+            'status' => 'completed',
+            'table_name' => $tableName,
+            'deleted_rows' => $deletedRows,
+            'duplicate_groups' => count($affectedPeriods),
+            'affected_periods' => $affectedPeriods,
+            'message' => $message,
+            'progress_percent' => 100,
+            'stage' => 'completed',
+            'cleanup' => [
+                'mode' => 'dedupe_exact',
+                'periods' => $affectedPeriods,
+                'duration_ms' => $this->elapsedMs($startedAt),
+            ],
+        ]);
     }
 
     private function executeManagedLightweightDelete(array $prepared, ReportDataSyncService $syncService): array
@@ -546,6 +610,224 @@ class ImportIndexController extends Controller
             'can_process_fallback' => false,
             'fallback_stale_seconds' => self::DELETE_PROCESS_STALE_SECONDS,
         ];
+    }
+
+    private function supportsDuplicateCleanup(string $tableName): bool
+    {
+        return strtolower(trim($tableName)) === 'simpanan_multipn';
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function getSimpananDuplicateFingerprintColumns(): array
+    {
+        return [
+            'posisi',
+            'regional_office',
+            'kantor_cabang',
+            'unit_kerja',
+            'CIFNO',
+            'no_rekening',
+            'jenis_simpanan',
+            'status',
+            'saldo_idr',
+        ];
+    }
+
+    private function buildSimpananDuplicateKeepSignatureExpression(string $alias): string
+    {
+        return "CONCAT(DATE_FORMAT(COALESCE({$alias}.`created_at`, '1000-01-01 00:00:00'), '%Y%m%d%H%i%s'), '|', COALESCE({$alias}.`uniqueid_SMPN`, ''))";
+    }
+
+    /**
+     * @param array<int, string> $columns
+     */
+    private function buildNullSafeColumnJoinConditions(array $columns, string $leftAlias, string $rightAlias): string
+    {
+        return implode(' AND ', array_map(
+            static fn (string $column): string => "{$leftAlias}.`{$column}` <=> {$rightAlias}.`{$column}`",
+            $columns
+        ));
+    }
+
+    /**
+     * @return array{0:string,1:string}
+     */
+    private function buildSimpananDuplicateCleanupQueries(string $tableName): array
+    {
+        $columns = $this->getSimpananDuplicateFingerprintColumns();
+        $groupColumns = implode(', ', array_map(
+            static fn (string $column): string => "s.`{$column}`",
+            $columns
+        ));
+        $joinConditions = $this->buildNullSafeColumnJoinConditions($columns, 't', 'd');
+        $keepSignature = $this->buildSimpananDuplicateKeepSignatureExpression('t');
+        $groupKeepSignature = $this->buildSimpananDuplicateKeepSignatureExpression('s');
+        $duplicateGroupsSql = "SELECT {$groupColumns}, MIN({$groupKeepSignature}) AS keep_signature, COUNT(*) AS duplicate_count FROM `{$tableName}` s GROUP BY {$groupColumns} HAVING COUNT(*) > 1";
+        $deleteWhereClause = "{$keepSignature} <> d.keep_signature";
+
+        return [
+            "DELETE t FROM `{$tableName}` t INNER JOIN ({$duplicateGroupsSql}) d ON {$joinConditions} WHERE {$deleteWhereClause}",
+            "SELECT DISTINCT t.`posisi` AS period FROM `{$tableName}` t INNER JOIN ({$duplicateGroupsSql}) d ON {$joinConditions} WHERE {$deleteWhereClause}",
+        ];
+    }
+
+    private function shouldUseManagedDeleteFullTableShortcut(array $prepared): bool
+    {
+        $tableName = strtolower(trim((string) ($prepared['table_name'] ?? '')));
+        if (!in_array($tableName, self::FULL_TABLE_TRUNCATE_SHORTCUT_TABLES, true)) {
+            return false;
+        }
+
+        $candidateRows = max(0, (int) ($prepared['candidate_rows'] ?? 0));
+        $tableTotalRows = max(0, (int) ($prepared['table_total_rows'] ?? 0));
+
+        return $candidateRows > 0
+            && $tableTotalRows > 0
+            && $candidateRows >= $tableTotalRows
+            && (bool) ($prepared['hard_force'] ?? false);
+    }
+
+    private function executeManagedFullTableDeleteShortcut(array $prepared, ReportDataSyncService $syncService, string $maintenanceMode): array
+    {
+        $tableName = (string) ($prepared['table_name'] ?? '');
+        $candidateRows = max(0, (int) ($prepared['candidate_rows'] ?? 0));
+        $periodHint = $prepared['period_hint'] ?? null;
+        $identityColumn = $prepared['identity_column'] ?? null;
+        $scopeCount = count(is_array($prepared['scopes'] ?? null) ? $prepared['scopes'] : []);
+        $startedAt = microtime(true);
+        $sourceDeleted = false;
+        $strategy = $this->supportsNativeDeleteTruncateShortcut()
+            ? 'full_table_truncate'
+            : 'full_table_delete_fallback';
+        $source = static::class . '::executeManagedFullTableDeleteShortcut';
+
+        $this->writeManagedDeleteAudit($tableName, $periodHint, 'managed_delete_shortcut_prepare', 'success', [
+            'affected_rows' => $candidateRows,
+            'context' => [
+                'strategy' => $strategy,
+                'scope_count' => $scopeCount,
+                'maintenance_mode' => $maintenanceMode,
+            ],
+        ]);
+
+        try {
+            $this->bulkLoadService()->assertTransactionalTable($tableName, 'delete data report');
+
+            $this->bulkLoadService()->withTableWriteLock($tableName, function () use ($tableName, $syncService, $maintenanceMode, $periodHint, $source, &$sourceDeleted): void {
+                $this->truncateManagedDeleteTable($tableName);
+                $sourceDeleted = true;
+
+                if ($maintenanceMode === 'lightweight') {
+                    $syncService->syncAfterDeleteLightweight($tableName, $periodHint, $source);
+                    return;
+                }
+
+                $syncService->dispatchSnapshotRefresh($tableName, $periodHint, $source);
+            });
+
+            $this->writeManagedDeleteAudit($tableName, $periodHint, 'managed_delete_shortcut', 'success', [
+                'duration_ms' => $this->elapsedManagedDeleteMs($startedAt),
+                'affected_rows' => $candidateRows,
+                'context' => [
+                    'strategy' => $strategy,
+                    'scope_count' => $scopeCount,
+                    'maintenance_mode' => $maintenanceMode,
+                ],
+            ]);
+
+            return [
+                'status' => 'completed',
+                'delete_id' => null,
+                'stage' => 'completed',
+                'batch_state' => 'completed',
+                'table_name' => $tableName,
+                'total_rows' => $candidateRows,
+                'deleted_rows' => $candidateRows,
+                'remaining_rows' => 0,
+                'chunk_size' => $this->resolveDeleteChunkSize($tableName, $identityColumn),
+                'current_scope_index' => max(0, $scopeCount - 1),
+                'scope_count' => $scopeCount,
+                'is_waiting_on_batch' => false,
+                'active_batch_size' => 0,
+                'last_batch_deleted_rows' => $candidateRows,
+                'last_batch_started_at' => now()->toIso8601String(),
+                'last_batch_finished_at' => now()->toIso8601String(),
+                'created_at' => now()->toIso8601String(),
+                'updated_at' => now()->toIso8601String(),
+                'progress_percent' => 100,
+                'message' => $maintenanceMode === 'lightweight'
+                    ? 'Seluruh tabel berhasil dikosongkan cepat. Statistik dan cache sudah disegarkan.'
+                    : 'Seluruh tabel berhasil dikosongkan cepat. Snapshot turunan, cache, dan statistik optimizer sudah dibersihkan.',
+                'error' => null,
+                'error_code' => null,
+                'cleanup' => [
+                    'mode' => $maintenanceMode === 'lightweight' ? 'lightweight' : 'snapshot_cleanup',
+                    'reason' => 'full_table_truncate_shortcut',
+                ],
+                'delete_strategy' => $strategy,
+                'can_process_fallback' => false,
+                'fallback_stale_seconds' => self::DELETE_PROCESS_STALE_SECONDS,
+            ];
+        } catch (Throwable $e) {
+            $deletedRows = $sourceDeleted ? $candidateRows : 0;
+            $failure = $this->buildManagedDeleteFailure([
+                'deleted_rows' => $deletedRows,
+            ], $e);
+
+            Log::warning('Delete shortcut report gagal: ' . $e->getMessage(), [
+                'table_name' => $tableName,
+                'period_hint' => $periodHint,
+                'strategy' => $strategy,
+                'deleted_rows' => $deletedRows,
+                'exception_class' => $e::class,
+            ]);
+
+            $this->writeManagedDeleteAudit($tableName, $periodHint, 'managed_delete_shortcut', 'failed', [
+                'duration_ms' => $this->elapsedManagedDeleteMs($startedAt),
+                'affected_rows' => $deletedRows,
+                'message' => $e->getMessage(),
+                'context' => [
+                    'strategy' => $strategy,
+                    'scope_count' => $scopeCount,
+                    'maintenance_mode' => $maintenanceMode,
+                    'source_deleted' => $sourceDeleted,
+                ],
+            ]);
+
+            return [
+                'status' => $deletedRows > 0 ? 'warning' : 'failed',
+                'delete_id' => null,
+                'stage' => 'failed',
+                'batch_state' => 'failed',
+                'table_name' => $tableName,
+                'total_rows' => $candidateRows,
+                'deleted_rows' => $deletedRows,
+                'remaining_rows' => max(0, $candidateRows - $deletedRows),
+                'chunk_size' => $this->resolveDeleteChunkSize($tableName, $identityColumn),
+                'current_scope_index' => 0,
+                'scope_count' => $scopeCount,
+                'is_waiting_on_batch' => false,
+                'active_batch_size' => 0,
+                'last_batch_deleted_rows' => $deletedRows,
+                'last_batch_started_at' => null,
+                'last_batch_finished_at' => now()->toIso8601String(),
+                'created_at' => now()->toIso8601String(),
+                'updated_at' => now()->toIso8601String(),
+                'progress_percent' => $deletedRows > 0 ? 100 : 0,
+                'message' => $failure['message'],
+                'error' => $failure['error'],
+                'error_code' => $failure['error_code'],
+                'cleanup' => $deletedRows > 0 ? [
+                    'mode' => $maintenanceMode === 'lightweight' ? 'lightweight' : 'snapshot_cleanup',
+                    'reason' => 'cleanup_failed_after_full_table_truncate',
+                ] : null,
+                'delete_strategy' => $strategy,
+                'can_process_fallback' => false,
+                'fallback_stale_seconds' => self::DELETE_PROCESS_STALE_SECONDS,
+            ];
+        }
     }
 
     public function processManagedReportDelete(string $deleteId, ReportDataSyncService $syncService)
@@ -725,7 +1007,7 @@ class ImportIndexController extends Controller
         }
 
         $tableColumns = Schema::getColumnListing($tableName);
-        [$periodColumn, $kancaColumn] = $this->resolveManagementScopeColumns($tableName, $tableColumns);
+        [$periodColumn, $kancaColumn] = $this->reportManagementService()->resolveManagementScopeColumns($tableName, $tableColumns);
 
         $scopes = $this->normalizeDeleteScopes($validated);
         $firstScope = $scopes[0] ?? [
@@ -979,7 +1261,7 @@ class ImportIndexController extends Controller
                     static::class . '::runManagedReportDelete'
                 );
             } else {
-                $syncService->syncAfterDelete(
+                $syncService->dispatchSnapshotRefresh(
                     (string) $state['table_name'],
                     $state['period_hint'] ?? null,
                     static::class . '::runManagedReportDelete'
@@ -993,7 +1275,7 @@ class ImportIndexController extends Controller
             $state['active_batch_size'] = 0;
             $state['message'] = $maintenanceMode === 'lightweight'
                 ? 'Delete selesai. Statistik sumber dan cache sudah disegarkan.'
-                : 'Delete selesai. Snapshot turunan, cache, dan statistik optimizer sudah dibersihkan.';
+                : 'Delete selesai. Refresh snapshot, cache, dan statistik optimizer dijadwalkan di background.';
             $state['updated_at'] = now()->toIso8601String();
             $this->putDeleteState($deleteId, $state);
 
@@ -1027,6 +1309,21 @@ class ImportIndexController extends Controller
         $state['error_code'] = $failure['error_code'];
         $state['updated_at'] = now()->toIso8601String();
         $this->putDeleteState($deleteId, $state);
+        $this->writeManagedDeleteAudit(
+            (string) ($state['table_name'] ?? ''),
+            $state['period_hint'] ?? null,
+            'managed_delete_failed',
+            'failed',
+            [
+                'affected_rows' => max(0, (int) ($state['deleted_rows'] ?? 0)),
+                'message' => $e->getMessage(),
+                'context' => [
+                    'delete_id' => $deleteId,
+                    'stage' => $state['stage'] ?? null,
+                    'strategy' => $state['last_delete_strategy'] ?? null,
+                ],
+            ]
+        );
 
         return $state;
     }
@@ -1053,6 +1350,14 @@ class ImportIndexController extends Controller
             }
 
             $scope = $scopes[$currentScopeIndex];
+            $deleteStrategy = $this->resolveDeleteScopeStrategy(
+                $tableName,
+                $periodColumn,
+                $kancaColumn,
+                $identityColumn,
+                $scope
+            );
+            $batchStartedAt = microtime(true);
 
             [$scopeQuery, $hasWhereClause] = $this->buildDeleteScopeQueryFromScopes(
                 $tableName,
@@ -1070,6 +1375,7 @@ class ImportIndexController extends Controller
             $state['is_waiting_on_batch'] = true;
             $state['active_batch_size'] = $chunkSize;
             $state['current_scope_index'] = $currentScopeIndex;
+            $state['last_delete_strategy'] = $deleteStrategy;
             $state['last_batch_deleted_rows'] = 0;
             $state['last_batch_started_at'] = now()->toIso8601String();
             $state['last_batch_finished_at'] = null;
@@ -1101,6 +1407,24 @@ class ImportIndexController extends Controller
                 $state['last_batch_finished_at'] = now()->toIso8601String();
                 $state['updated_at'] = now()->toIso8601String();
                 $this->putDeleteState((string) $state['delete_id'], $state);
+                $this->writeManagedDeleteAudit(
+                    $tableName,
+                    $scope['period_filter'] ?? ($state['period_hint'] ?? null),
+                    'managed_delete_chunk',
+                    'warning',
+                    [
+                        'duration_ms' => $this->elapsedManagedDeleteMs($batchStartedAt),
+                        'affected_rows' => max(0, (int) $affected),
+                        'context' => [
+                            'delete_id' => $deleteId,
+                            'scope_index' => $currentScopeIndex + 1,
+                            'scope_count' => $totalScopes,
+                            'strategy' => $deleteStrategy,
+                            'scope' => $scope,
+                            'cancel_requested' => true,
+                        ],
+                    ]
+                );
 
                 return $this->finalizeManagedDeleteCancelled($deleteId, $state);
             }
@@ -1130,6 +1454,24 @@ class ImportIndexController extends Controller
                 }
 
                 $this->putDeleteState((string) $state['delete_id'], $state);
+                $this->writeManagedDeleteAudit(
+                    $tableName,
+                    $scope['period_filter'] ?? ($state['period_hint'] ?? null),
+                    'managed_delete_chunk',
+                    'success',
+                    [
+                        'duration_ms' => $this->elapsedManagedDeleteMs($batchStartedAt),
+                        'affected_rows' => $affected,
+                        'context' => [
+                            'delete_id' => $deleteId,
+                            'scope_index' => $currentScopeIndex + 1,
+                            'scope_count' => $totalScopes,
+                            'strategy' => $deleteStrategy,
+                            'scope' => $scope,
+                            'remaining_rows' => $state['remaining_rows'] ?? null,
+                        ],
+                    ]
+                );
 
                 return $state;
             }
@@ -1217,6 +1559,7 @@ class ImportIndexController extends Controller
             'error' => $state['error'] ?? null,
             'error_code' => $state['error_code'] ?? null,
             'cleanup' => $state['cleanup'] ?? null,
+            'delete_strategy' => $state['last_delete_strategy'] ?? ($state['delete_strategy'] ?? null),
             'cancel_requested' => (bool) ($state['cancel_requested'] ?? false),
             'can_process_fallback' => $this->shouldAllowManagedDeleteFallback($state),
             'fallback_stale_seconds' => self::DELETE_PROCESS_STALE_SECONDS,
@@ -1591,62 +1934,7 @@ class ImportIndexController extends Controller
 
     private function resolveManagementScopeColumns(string $tableName, array $tableColumns): array
     {
-        $periodCandidates = $this->resolveCandidateColumns($tableColumns, self::PERIOD_COLUMN_CANDIDATES);
-        $periodColumn = $this->resolveMostPopulatedColumn($tableName, $periodCandidates);
-        if ($periodColumn === null) {
-            $semanticPeriodColumn = $this->resolveSemanticPeriodColumn($tableColumns);
-            $periodColumn = $semanticPeriodColumn !== null
-                ? $this->resolveMostPopulatedColumn($tableName, [$semanticPeriodColumn])
-                : null;
-        }
-
-        $kancaCandidates = $this->resolveCandidateColumns($tableColumns, self::KANCA_COLUMN_CANDIDATES);
-        $kancaColumn = $this->resolveMostPopulatedColumn($tableName, $kancaCandidates);
-        if ($kancaColumn === null) {
-            $semanticKancaColumn = $this->resolveSemanticKancaColumn($tableColumns);
-            $kancaColumn = $semanticKancaColumn !== null
-                ? $this->resolveMostPopulatedColumn($tableName, [$semanticKancaColumn])
-                : null;
-        }
-
-        $override = self::MANAGEMENT_SCOPE_COLUMN_OVERRIDES[$tableName] ?? null;
-        if (!is_array($override)) {
-            return [$periodColumn, $kancaColumn];
-        }
-
-        $priorityPeriodColumn = $this->resolveMostPopulatedColumn(
-            $tableName,
-            $this->resolveCandidateColumns($tableColumns, (array) ($override['period_priority'] ?? []))
-        );
-        if ($priorityPeriodColumn !== null) {
-            $periodColumn = $priorityPeriodColumn;
-        }
-
-        // Some reports (e.g. BRIMO) have explicit branch-name source and should
-        // not be grouped by code-like fallback columns.
-        $priorityKancaColumn = $this->resolveMostPopulatedColumn(
-            $tableName,
-            $this->resolveCandidateColumns($tableColumns, (array) ($override['kanca_priority'] ?? []))
-        );
-        if ($priorityKancaColumn !== null) {
-            $kancaColumn = $priorityKancaColumn;
-        }
-
-        if ($periodColumn === null) {
-            $periodColumn = $this->resolveMostPopulatedColumn(
-                $tableName,
-                $this->resolveCandidateColumns($tableColumns, (array) ($override['period'] ?? []))
-            );
-        }
-
-        if ($kancaColumn === null) {
-            $kancaColumn = $this->resolveMostPopulatedColumn(
-                $tableName,
-                $this->resolveCandidateColumns($tableColumns, (array) ($override['kanca'] ?? []))
-            );
-        }
-
-        return [$periodColumn, $kancaColumn];
+        return $this->reportManagementService()->resolveManagementScopeColumns($tableName, $tableColumns);
     }
 
     private function formatManagementPeriodLabel($value, ?string $columnName = null): string
@@ -2099,6 +2387,125 @@ class ImportIndexController extends Controller
             : self::DELETE_CHUNK_SIZE;
     }
 
+    private function resolveDeleteScopeStrategy(
+        string $tableName,
+        ?string $periodColumn,
+        ?string $kancaColumn,
+        ?string $identityColumn,
+        array $scope
+    ): string {
+        if ($this->scopeSupportsPartitionDeleteShortcut($tableName, $periodColumn, $kancaColumn, $scope)) {
+            return 'partition_truncate';
+        }
+
+        if ($identityColumn === null) {
+            return 'unsupported';
+        }
+
+        foreach ($this->buildDeleteConstraintVariants($periodColumn, $kancaColumn, $scope) as $variant) {
+            if ($this->resolveDeleteIndexHint($tableName, $periodColumn, $kancaColumn, $identityColumn, $variant) !== null) {
+                return 'indexed_batch_delete';
+            }
+        }
+
+        return 'identity_batch_delete';
+    }
+
+    private function supportsNativeDeleteTruncateShortcut(): bool
+    {
+        return in_array(DB::connection()->getDriverName(), ['mysql', 'mariadb'], true);
+    }
+
+    private function truncateManagedDeleteTable(string $tableName): void
+    {
+        if (!$this->supportsNativeDeleteTruncateShortcut()) {
+            DB::table($tableName)->delete();
+            return;
+        }
+
+        $lockWaitSeconds = max(1, (int) config('import.direct_load.snapshot_delete_lock_wait_seconds', 8));
+        $wrappedTable = '`' . str_replace('`', '``', $tableName) . '`';
+        $originalLockWait = null;
+
+        try {
+            $row = DB::selectOne('SELECT @@SESSION.lock_wait_timeout AS lock_wait_timeout');
+            $originalLockWait = isset($row->lock_wait_timeout) ? (int) $row->lock_wait_timeout : null;
+        } catch (Throwable) {
+            $originalLockWait = null;
+        }
+
+        try {
+            DB::statement('SET SESSION lock_wait_timeout = ' . $lockWaitSeconds);
+            DB::statement("TRUNCATE TABLE {$wrappedTable}");
+        } finally {
+            if ($originalLockWait !== null) {
+                try {
+                    DB::statement('SET SESSION lock_wait_timeout = ' . max(1, $originalLockWait));
+                } catch (Throwable) {
+                    // Ignore restore failures; the connection can still be safely reused.
+                }
+            }
+        }
+    }
+
+    private function elapsedManagedDeleteMs(float $startedAt): int
+    {
+        return (int) round((microtime(true) - $startedAt) * 1000);
+    }
+
+    private function writeManagedDeleteAudit(string $tableName, ?string $periodHint, string $action, string $status, array $payload = []): void
+    {
+        $tableName = trim($tableName);
+        if ($tableName === '' || !Schema::hasTable(self::DELETE_AUDIT_TABLE)) {
+            return;
+        }
+
+        try {
+            DB::table(self::DELETE_AUDIT_TABLE)->insert([
+                'import_job_id' => null,
+                'source' => static::class,
+                'table_name' => $tableName,
+                'period_hint' => $this->normalizeManagedDeleteAuditPeriodHint($periodHint),
+                'action' => $action,
+                'status' => $status,
+                'duration_ms' => $payload['duration_ms'] ?? null,
+                'affected_rows' => $payload['affected_rows'] ?? null,
+                'message' => $payload['message'] ?? null,
+                'context' => isset($payload['context']) ? json_encode($payload['context'], JSON_UNESCAPED_UNICODE) : null,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        } catch (Throwable $e) {
+            Log::warning('Gagal menulis audit delete report management: ' . $e->getMessage(), [
+                'table_name' => $tableName,
+                'action' => $action,
+                'status' => $status,
+            ]);
+        }
+    }
+
+    private function normalizeManagedDeleteAuditPeriodHint(?string $periodHint): ?string
+    {
+        $value = trim((string) $periodHint);
+        if ($value === '') {
+            return null;
+        }
+
+        if (preg_match('/^\d{4}-\d{2}$/', $value) === 1) {
+            return $value . '-01';
+        }
+
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $value) === 1) {
+            return $value;
+        }
+
+        try {
+            return \Carbon\Carbon::parse($value)->toDateString();
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
     private function deleteScopedRows(
         string $tableName,
         Builder $baseQuery,
@@ -2410,10 +2817,13 @@ class ImportIndexController extends Controller
         return !empty($rows);
     }
 
-    private function buildDeleteWhereSql(array $constraints): array
+    private function buildDeleteWhereSql(array $constraints, ?string $tableAlias = null): array
     {
         $clauses = [];
         $bindings = [];
+        $wrappedAlias = $tableAlias !== null && trim($tableAlias) !== ''
+            ? '`' . str_replace('`', '``', trim($tableAlias)) . '`.'
+            : '';
 
         foreach ($constraints as $constraint) {
             $column = (string) ($constraint['column'] ?? '');
@@ -2422,7 +2832,7 @@ class ImportIndexController extends Controller
                 continue;
             }
 
-            $wrappedColumn = '`' . str_replace('`', '``', $column) . '`';
+            $wrappedColumn = $wrappedAlias . '`' . str_replace('`', '``', $column) . '`';
 
             if ($mode === 'equal') {
                 $clauses[] = "{$wrappedColumn} = ?";
@@ -2469,20 +2879,11 @@ class ImportIndexController extends Controller
 
         $wrappedTable = '`' . str_replace('`', '``', $tableName) . '`';
         $wrappedIdentity = '`' . str_replace('`', '``', $identityColumn) . '`';
-        $wrappedIndex = '`' . str_replace('`', '``', $indexHint) . '`';
         $sql = "
-DELETE target
-FROM {$wrappedTable} AS target
-INNER JOIN (
-    SELECT picked_outer.{$wrappedIdentity}
-    FROM (
-        SELECT {$wrappedIdentity}
-        FROM {$wrappedTable} FORCE INDEX ({$wrappedIndex})
-        WHERE {$whereSql}
-        ORDER BY {$wrappedIdentity}
-        LIMIT {$limit}
-    ) AS picked_outer
-) AS picked ON picked.{$wrappedIdentity} = target.{$wrappedIdentity}
+DELETE FROM {$wrappedTable}
+WHERE {$whereSql}
+ORDER BY {$wrappedIdentity}
+LIMIT {$limit}
 ";
 
         return (int) $connection->affectingStatement($sql, $bindings);

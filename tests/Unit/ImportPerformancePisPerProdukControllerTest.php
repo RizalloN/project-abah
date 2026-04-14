@@ -4,7 +4,7 @@ namespace Tests\Unit;
 
 use App\Http\Controllers\Import\ImportCleanupController;
 use App\Http\Controllers\Import\ImportPerformancePisPerProdukController;
-use App\Support\ReportDataSyncService;
+use App\Services\Import\ImportCleanupService;
 use Illuminate\Support\Facades\Cache;
 use Mockery;
 use ReflectionClass;
@@ -16,11 +16,11 @@ class ImportPerformancePisPerProdukControllerTest extends TestCase
     {
         $controller = new ImportPerformancePisPerProdukController();
 
-        $syncService = Mockery::mock(ReportDataSyncService::class);
-        $syncService->shouldReceive('syncImportedTable')
+        $cleanupService = Mockery::mock(ImportCleanupService::class);
+        $cleanupService->shouldReceive('dispatchImportedJobSync')
             ->once()
-            ->with('performance_pis_per_produk', null, 77, ImportPerformancePisPerProdukController::class);
-        $this->app->instance(ReportDataSyncService::class, $syncService);
+            ->with(77, 'performance_pis_per_produk', null, ImportPerformancePisPerProdukController::class);
+        $this->app->instance(ImportCleanupService::class, $cleanupService);
 
         $cleanupController = Mockery::mock(ImportCleanupController::class);
         $cleanupController->shouldReceive('cleanupSuccessfulJobArtifacts')
@@ -37,6 +37,7 @@ class ImportPerformancePisPerProdukControllerTest extends TestCase
         $this->invokeMethod($controller, 'cleanupSuccessfulImportArtifacts', [
             77,
             'performance/sample.xlsx',
+            null,
             ['C:\\temp\\performance_stage.csv'],
         ]);
     }

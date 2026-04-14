@@ -1,7 +1,10 @@
 <?php
 
-it('returns a successful response', function () {
-    $response = $this->get('/');
+use Illuminate\Http\Request;
 
-    $response->assertStatus(200);
+it('returns a successful response', function () {
+    $response = app()->handle(Request::create('/', 'GET'));
+
+    expect($response->getStatusCode())->toBe(200);
+    expect($response->getContent())->toContain('BRI DigiBranch');
 });

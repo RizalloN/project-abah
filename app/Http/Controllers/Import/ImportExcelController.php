@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Http\Controllers\Import\Concerns\SmartCsvImportSupport;
 use App\Http\Controllers\Import\Concerns\AllocatesGapIds;
 use App\Services\Import\CsvAutoRepairService;
+use App\Services\Import\ExcelImportJobService;
+use App\Services\Import\ExcelQueuedImportService;
 use App\Services\Import\ExcelStagingService;
 use App\Services\Import\ImportCleanupService;
 use App\Services\Import\ImportExecutionService;
@@ -132,6 +134,27 @@ class ImportExcelController extends Controller
             : $default;
     }
 
+    private function resolvePreviewReportLabel(): string
+    {
+        $tableName = strtolower(trim($this->resolveActiveTableName()));
+
+        return match ($tableName) {
+            'daily_loan_dinamis' => 'Daily Loan Dinamis',
+            'simpanan_multipn' => 'Simpanan MultiPN',
+            default => $this->resolveActiveReport()?->nama_report ?? 'Preview Data',
+        };
+    }
+
+    private function resolvePreviewPageTitle(): string
+    {
+        return 'Preview & Filter Data - ' . $this->resolvePreviewReportLabel();
+    }
+
+    private function resolvePreviewBannerTitle(): string
+    {
+        return 'Preview Data Import (' . $this->resolvePreviewReportLabel() . ')';
+    }
+
     protected function resolveExcelTableName(): string
     {
         return $this->resolveActiveTableName();
@@ -224,6 +247,16 @@ class ImportExcelController extends Controller
     private function progressService(): ImportProgressService
     {
         return app(ImportProgressService::class);
+    }
+
+    private function excelImportJobService(): ExcelImportJobService
+    {
+        return app(ExcelImportJobService::class);
+    }
+
+    private function excelQueuedImportService(): ExcelQueuedImportService
+    {
+        return app(ExcelQueuedImportService::class);
     }
 
     private function executionService(): ImportExecutionService
@@ -1008,18 +1041,6 @@ class ImportExcelController extends Controller
         return $this->normalizeDecimalValue($saldo) !== null;
     }
 
-    private function buildSimpananMultiPnDuplicateKey(array $valuesByHeader): ?string
-    {
-        $posisi = $this->normalizeExcelValue('POSISI', $valuesByHeader['posisi'] ?? null);
-        $noRekening = trim((string) ($valuesByHeader['no_rekening'] ?? ''));
-
-        if ($posisi === null || $noRekening === '') {
-            return null;
-        }
-
-        return $posisi . '|' . $noRekening;
-    }
-
     private function isValidDailyLoanRowValues(array $valuesByHeader): bool
     {
         $periode = $this->normalizeExcelValue('PERIODE', $valuesByHeader['periode'] ?? null);
@@ -1658,7 +1679,7 @@ class ImportExcelController extends Controller
 
         $sessionParams = session('excel_import_params', []);
         $jobId = (int) ($sessionParams['job_id'] ?? $request->query('job_id', 0));
-        $jobState = $this->getExcelImportJobState($jobId);
+        $jobState = $this->excelImportJobService()->getImportJobState($jobId);
         $params = !empty($jobState['params']) ? (array) $jobState['params'] : $sessionParams;
         $normalizedHeaders = !empty($jobState['headers']) ? (array) $jobState['headers'] : session('excel_headers', []);
         $eligibility = $this->resolveDirectCsvFastPathEligibility('daily_loan', $params, $normalizedHeaders);
@@ -2271,39 +2292,6 @@ class ImportExcelController extends Controller
         return $this->importContextCache[$cacheKey] = $context;
     }
 
-    protected function putExcelPreviewState(string $key, array $payload): void
-    {
-        Cache::put('excel_preview_state_' . $key, $payload, now()->addMinutes(30));
-    }
-
-    protected function getExcelPreviewState(?string $key): array
-    {
-        if (!$key) {
-            return [];
-        }
-
-        $cached = Cache::get('excel_preview_state_' . $key);
-        return is_array($cached) ? $cached : [];
-    }
-
-    protected function putExcelImportJobState(int $jobId, array $payload): void
-    {
-        if ($jobId <= 0) {
-            return;
-        }
-
-        $this->progressService()->cacheJobState($jobId, $payload);
-    }
-
-    protected function getExcelImportJobState(int $jobId): array
-    {
-        if ($jobId <= 0) {
-            return [];
-        }
-
-        return $this->progressService()->getJobState($jobId);
-    }
-
     protected function fallbackBulkLoadChunkLines(): int
     {
         return max(2000, (int) config('import.direct_load.fallback_chunk_lines', 20000));
@@ -2450,6 +2438,22 @@ class ImportExcelController extends Controller
         } finally {
             fclose($handle);
         }
+    }
+
+    protected function deleteRowsByColumnValues(string $tableName, string $columnName, array $values): int
+    {
+        $normalizedValues = array_values(array_filter(array_map(
+            static fn ($value): string => trim((string) $value),
+            $values
+        ), static fn (string $value): bool => $value !== ''));
+
+        if ($tableName === '' || $columnName === '' || $normalizedValues === []) {
+            return 0;
+        }
+
+        return (int) DB::table($tableName)
+            ->whereIn($columnName, $normalizedValues)
+            ->delete();
     }
 
     private function acquireMysqlAdvisoryLockOnDb(string $lockName, int $timeoutSeconds = 5): bool
@@ -3341,10 +3345,8 @@ class ImportExcelController extends Controller
             $lineNumber = 1;
             $skippedRows = [];
             $skippedCount = 0;
-            $duplicateCount = 0;
             $writtenRows = 0;
             $normalizationChanged = false;
-            $seenKeys = [];
             $normalizedHeaders = array_map(
                 fn ($value) => $this->normalizeImportColumnName((string) $value),
                 $header
@@ -3382,21 +3384,6 @@ class ImportExcelController extends Controller
                     continue;
                 }
 
-                $duplicateKey = $this->buildSimpananMultiPnDuplicateKey($valuesByHeader);
-                if ($duplicateKey === null) {
-                    $skippedRows[] = $lineNumber;
-                    $skippedCount++;
-                    continue;
-                }
-
-                if (isset($seenKeys[$duplicateKey])) {
-                    $skippedRows[] = $lineNumber;
-                    $skippedCount++;
-                    $duplicateCount++;
-                    continue;
-                }
-
-                $seenKeys[$duplicateKey] = true;
                 fputcsv($outputHandle, $row, $delimiter, '"', '\\');
                 $writtenRows++;
             }
@@ -3422,7 +3409,7 @@ class ImportExcelController extends Controller
             'backend' => 'php',
             'skipped_rows' => $skippedRows,
             'skipped_count' => $skippedCount,
-            'duplicate_count' => $duplicateCount,
+            'duplicate_count' => 0,
             'written_rows' => $writtenRows,
             'rewritten' => $normalizationChanged || $skippedCount > 0,
             'total_rows' => $skippedCount + $writtenRows,
@@ -5082,7 +5069,7 @@ class ImportExcelController extends Controller
                     'delimiter' => isset($cached['delimiter']) ? (string) $cached['delimiter'] : null,
                 ];
                 $previewStateKey = (string) $ck;
-                $this->putExcelPreviewState($previewStateKey, [
+                $this->excelImportJobService()->putPreviewState($previewStateKey, [
                     'displayFilterMap' => $cached['displayFilterMap'] ?? [],
                     'previewMeta' => $previewMeta,
                 ]);
@@ -5109,6 +5096,8 @@ class ImportExcelController extends Controller
                         'previewStateKey' => $previewStateKey,
                         'disableArea6AutoFilter' => true,
                         'forceAllFiltersCheckedOnLoad' => true,
+                        'pageTitle' => $this->resolvePreviewPageTitle(),
+                        'previewBannerTitle' => $this->resolvePreviewBannerTitle(),
                     ]);
                 }
 
@@ -5116,6 +5105,8 @@ class ImportExcelController extends Controller
                     $cached['initRoute'] = $initRoute;
                     $cached['streamRoute'] = $streamRoute;
                     $cached['previewStateKey'] = $previewStateKey;
+                    $cached['pageTitle'] = $this->resolvePreviewPageTitle();
+                    $cached['previewBannerTitle'] = $this->resolvePreviewBannerTitle();
                     return view('import.preview_excel', $cached);
                 }
             }
@@ -5146,6 +5137,26 @@ class ImportExcelController extends Controller
                 $this->cachedSchemaColumnListing($tableName)
             );
 
+            $previewStateKey = 'excel_preview_' . md5($relativePath . '|csv_direct|' . microtime(true));
+            $previewMeta = [
+                'path' => $relativePath,
+                'staged_csv_path' => $path,
+                'header_index' => isset($csvPayload['header_index']) ? (int) $csvPayload['header_index'] : 0,
+                'normalized_headers' => $reorderedPayload['headers'],
+                'total_rows' => isset($csvPayload['total_rows']) ? (int) $csvPayload['total_rows'] : null,
+                'delimiter' => isset($csvPayload['delimiter']) ? (string) $csvPayload['delimiter'] : null,
+            ];
+
+            $this->excelImportJobService()->putPreviewState($previewStateKey, [
+                'displayFilterMap' => $reorderedPayload['display_filter_map'] ?? [],
+                'previewMeta' => $previewMeta,
+            ]);
+
+            session([
+                'excel_display_filter_map' => $reorderedPayload['display_filter_map'] ?? [],
+                'excel_preview_meta' => $previewMeta,
+            ]);
+
             return view('import.preview_excel', [
                 'headers' => $reorderedPayload['headers'],
                 'preview' => $reorderedPayload['preview'],
@@ -5153,6 +5164,9 @@ class ImportExcelController extends Controller
                 'path' => $relativePath,
                 'initRoute' => $initRoute,
                 'streamRoute' => $streamRoute,
+                'previewStateKey' => $previewStateKey,
+                'pageTitle' => $this->resolvePreviewPageTitle(),
+                'previewBannerTitle' => $this->resolvePreviewBannerTitle(),
             ]);
         }
 
@@ -5221,7 +5235,7 @@ class ImportExcelController extends Controller
         );
 
         $previewStateKey = 'excel_preview_' . md5($relativePath . '|fallback|' . microtime(true));
-        $this->putExcelPreviewState($previewStateKey, [
+        $this->excelImportJobService()->putPreviewState($previewStateKey, [
             'displayFilterMap' => $reorderedPayload['displayFilterMap'] ?? [],
             'previewMeta' => [
                 'path' => $relativePath,
@@ -5256,6 +5270,8 @@ class ImportExcelController extends Controller
                 'previewStateKey' => $previewStateKey,
                 'disableArea6AutoFilter' => true,
                 'forceAllFiltersCheckedOnLoad' => true,
+                'pageTitle' => $this->resolvePreviewPageTitle(),
+                'previewBannerTitle' => $this->resolvePreviewBannerTitle(),
             ]);
         }
 
@@ -5267,6 +5283,8 @@ class ImportExcelController extends Controller
             'initRoute' => $initRoute,
             'streamRoute' => $streamRoute,
             'previewStateKey' => $previewStateKey,
+            'pageTitle' => $this->resolvePreviewPageTitle(),
+            'previewBannerTitle' => $this->resolvePreviewBannerTitle(),
         ]);
     }
 
@@ -5304,20 +5322,6 @@ class ImportExcelController extends Controller
         ], 422);
     }
 
-    private function createImportJobRecord(int $reportId, string $path, int $totalFiles = 0): int
-    {
-        return $this->progressService()->createJob([
-            'id_report' => $reportId,
-            'file_name' => basename($path),
-            'folder_path' => dirname($path),
-            'status' => 'queued',
-            'total_files' => $totalFiles,
-            'total_success' => 0,
-            'total_failed' => 0,
-            'created_by' => auth()->id() ?? 1,
-        ]);
-    }
-
     public function initExcelImport(Request $request)
     {
         ini_set('memory_limit', '512M');
@@ -5338,7 +5342,7 @@ class ImportExcelController extends Controller
             return $schemaValidationResponse;
         }
 
-        $previewState = $this->getExcelPreviewState($request->input('preview_state_key'));
+        $previewState = $this->excelImportJobService()->getPreviewState($request->input('preview_state_key'));
         $previewMeta = !empty($previewState['previewMeta'])
             ? (array) $previewState['previewMeta']
             : session('excel_preview_meta', []);
@@ -5363,7 +5367,14 @@ class ImportExcelController extends Controller
 
             ksort($normalizedActiveFilters);
 
-            $jobId = $this->createImportJobRecord((int) $idReport, $path, 0);
+            $jobId = $this->excelImportJobService()->createImportJobRecord((int) $idReport, $path, 0, [
+                'controller' => static::class,
+                'mode' => 'preview_init',
+                'table_name' => $tableName,
+                'header_index' => $headerIndex,
+                'selected_columns' => $normalizedActiveFilters,
+                'file_path' => $relativePath,
+            ]);
 
             session([
                 'excel_headers'        => $previewHeaders,
@@ -5386,7 +5397,7 @@ class ImportExcelController extends Controller
                     'job_id'         => $jobId,
                 ],
             ]);
-            $this->putExcelImportJobState($jobId, [
+            $this->excelImportJobService()->putImportJobState($jobId, [
                 'params' => [
                     'header_index'   => $headerIndex,
                     'table_name'     => $tableName,
@@ -5401,8 +5412,10 @@ class ImportExcelController extends Controller
             ]);
             $this->progressService()->markQueued($jobId, [
                 'status' => 'queued',
+                'phase' => 'polars',
+                'mode' => 'polars',
                 'percent' => 0,
-                'message' => 'Job import siap diproses.',
+                'message' => 'Fase Polars siap diproses.',
                 'total_rows' => (int) ($previewTotalRows ?? 0),
                 'processed_rows' => 0,
             ]);
@@ -5503,8 +5516,6 @@ class ImportExcelController extends Controller
 
         $dataRowsCount = max(0, $totalRows - ($headerIndex + 1));
 
-        $jobId = $this->createImportJobRecord((int) $idReport, $path, $dataRowsCount);
-
         // Ambil nama kolom dari baris header
         $rawHeaders = $sheet[$headerIndex] ?? [];
         $normalizedHeadersForSession = [];
@@ -5525,6 +5536,16 @@ class ImportExcelController extends Controller
         }
 
         ksort($normalizedActiveFilters);
+
+        $jobId = $this->excelImportJobService()->createImportJobRecord((int) $idReport, $path, $dataRowsCount, [
+            'controller' => static::class,
+            'mode' => 'previews',
+            'table_name' => $tableName,
+            'file_path' => $relativePath,
+            'header_index' => $headerIndex,
+            'active_filters_hash' => sha1(json_encode($normalizedActiveFilters)),
+            'normalized_headers_hash' => sha1(json_encode($normalizedHeadersForSession)),
+        ]);
 
         if (!$this->isCsvFile($path) && ($stagedCsvPath === '' || !file_exists($stagedCsvPath))) {
             $stageResult = $this->stageExcelToCsv(
@@ -5565,7 +5586,7 @@ class ImportExcelController extends Controller
                 'job_id'         => $jobId,
             ],
         ]);
-        $this->putExcelImportJobState($jobId, [
+        $this->excelImportJobService()->putImportJobState($jobId, [
             'params' => [
                 'header_index'   => $headerIndex,
                 'table_name'     => $tableName,
@@ -5580,8 +5601,10 @@ class ImportExcelController extends Controller
         ]);
         $this->progressService()->markQueued($jobId, [
             'status' => 'queued',
+            'phase' => 'polars',
+            'mode' => 'polars',
             'percent' => 0,
-            'message' => 'Job import siap diproses.',
+            'message' => 'Fase Polars siap diproses.',
             'total_rows' => (int) $totalRows,
             'processed_rows' => 0,
         ]);
@@ -5903,6 +5926,7 @@ class ImportExcelController extends Controller
                 'speed' => 0,
                 'total_rows' => $estimatedTotalRows,
                 'processed_rows' => 0,
+                'mode' => $forceDirectLoad ? 'direct_load' : 'staged_load',
             ]);
             $rowsDone = 0;
             $startTime = microtime(true);
@@ -5967,6 +5991,7 @@ class ImportExcelController extends Controller
                         'rows_done' => $rowsDone,
                         'total' => $estimatedTotalRows,
                         'speed' => $speed,
+                        'mode' => $forceDirectLoad ? 'direct_load' : 'staged_load',
                     ]);
                 }
             }
@@ -5990,6 +6015,7 @@ class ImportExcelController extends Controller
                     'rows_done' => $rowsDone,
                     'total' => $estimatedTotalRows > 0 ? $estimatedTotalRows : $rowsDone,
                     'speed' => 0,
+                    'mode' => $forceDirectLoad ? 'direct_load' : 'staged_load',
                 ]);
 
                 $inserted = $this->loadCsvIntoMysqlDirect(
@@ -6012,6 +6038,7 @@ class ImportExcelController extends Controller
                             'rows_done' => $rowsDone,
                             'total' => $estimatedTotalRows > 0 ? $estimatedTotalRows : $rowsDone,
                             'speed' => 0,
+                            'mode' => $forceDirectLoad ? 'direct_load' : 'staged_load',
                         ]);
                     },
                     $this->fallbackBulkLoadChunkLines(),
@@ -6327,495 +6354,30 @@ class ImportExcelController extends Controller
 
     public function executeQueuedImport(array $state, ?callable $send = null): array
     {
-        ini_set('memory_limit', '2048M');
-        set_time_limit(0);
-        DB::disableQueryLog();
-
-        $send ??= static function (string $event, array $payload): void {
-        };
-
-        $params = (array) ($state['params'] ?? []);
-        $normalizedHeaders = array_values((array) ($state['headers'] ?? []));
-        $jobId = (int) ($state['job_id'] ?? ($params['job_id'] ?? 0));
-        $headerIndex = (int) ($params['header_index'] ?? 0);
-        $tableName = (string) ($params['table_name'] ?? 'daily_loan_dinamis');
-        $activeFilters = (array) ($params['active_filters'] ?? []);
-        $strategy = $this->resolveImportStrategy($tableName);
-        $relativePath = (string) ($params['file_path'] ?? '');
-        $stagedCsvPath = (string) ($params['staged_csv_path'] ?? '');
-        $estimatedTotalRows = isset($params['total_rows']) ? (int) $params['total_rows'] : null;
-        $csvDelimiter = isset($params['delimiter']) ? (string) $params['delimiter'] : null;
-
-        $fail = function (string $message, int $success = 0, int $failed = 0) use ($jobId, $send): array {
-            if ($jobId > 0) {
-                $this->progressService()->markFailed($jobId, $message, $success, $failed);
-            }
-            $send('error', [
-                'message' => $message,
-                'total_success' => $success,
-                'total_failed' => $failed,
-            ]);
-
-            return [
-                'status' => $success > 0 ? 'failed_partial' : 'failed',
-                'total_success' => $success,
-                'total_failed' => $failed,
-            ];
-        };
-
-        $resolveCurrentResult = function (string $fallbackStatus = 'processing') use ($jobId): array {
-            $job = $jobId > 0 ? $this->progressService()->findJob($jobId) : null;
-
-            return [
-                'status' => (string) ($job->status ?? $fallbackStatus),
-                'total_success' => (int) ($job->total_success ?? 0),
-                'total_failed' => (int) ($job->total_failed ?? 0),
-                'total_rows' => (int) ($job->total_files ?? 0),
-            ];
-        };
-
-        try {
-            $path = Storage::path($relativePath);
-            $workingPath = $path;
-            $workingHeaderIndex = $headerIndex;
-            $workingEstimatedTotalRows = $estimatedTotalRows;
-            $workingCsvDelimiter = $csvDelimiter;
-            $cleanupExtraPaths = [];
-            $lastKeepAlive = time();
-            $keepAliveEvery = 15;
-            $ping = static function () use (&$lastKeepAlive): void {
-                $lastKeepAlive = time();
-            };
-
-            if (!file_exists($path)) {
-                return $fail('File Excel tidak ditemukan di server. Silakan upload ulang.');
-            }
-            if ($normalizedHeaders === []) {
-                return $fail('Header session hilang. Silakan ulangi import dari awal.');
-            }
-
-            try {
-                $this->bulkLoadService()->assertTransactionalTable($tableName, 'import Excel/CSV');
-            } catch (\RuntimeException $e) {
-                return $fail($e->getMessage());
-            }
-
-            if (!$this->isCsvFile($path) && $stagedCsvPath !== '' && file_exists($stagedCsvPath)) {
-                $workingPath = $stagedCsvPath;
-                $workingHeaderIndex = 0;
-                $workingCsvDelimiter = ',';
-                $cleanupExtraPaths[] = $stagedCsvPath;
-            }
-
-            if ($this->isCsvFile($workingPath)) {
-                $delimiter = $workingCsvDelimiter !== null && $workingCsvDelimiter !== ''
-                    ? $workingCsvDelimiter
-                    : $this->detectCsvDelimiter($workingPath);
-                $resolvedTotalRows = $workingEstimatedTotalRows;
-                if ($resolvedTotalRows === null || $resolvedTotalRows <= 0) {
-                    $resolvedTotalRows = $this->countCsvDataRows($workingPath) + ($workingHeaderIndex + 1);
-                }
-
-                $totalDataRows = $this->resolveCsvDataRowEstimate($resolvedTotalRows, $workingHeaderIndex);
-
-                $send('progress', [
-                    'percent' => 10,
-                    'message' => $workingPath === $path
-                        ? "File CSV terdeteksi: {$totalDataRows} baris data. Memulai processing..."
-                        : "Excel berhasil distage ke CSV: {$totalDataRows} baris data. Memulai bulk import...",
-                    'rows_done' => 0,
-                    'total' => $totalDataRows,
-                    'speed' => 0,
-                    'total_rows' => $totalDataRows,
-                    'processed_rows' => 0,
-                ]);
-
-                $mode = $strategy->importMode([
-                    'active_filters' => $activeFilters,
-                    'table_name' => $tableName,
-                    'path' => $workingPath,
-                ]);
-
-                $send('progress', [
-                    'percent' => 12,
-                    'message' => 'Mode strict aktif: filter CSV -> LOAD DATA LOCAL INFILE...',
-                    'rows_done' => 0,
-                    'total' => $totalDataRows,
-                    'speed' => 0,
-                    'total_rows' => $totalDataRows,
-                    'processed_rows' => 0,
-                ]);
-
-                $send('progress', [
-                    'percent' => 14,
-                    'message' => $mode === 'bulk_csv_direct'
-                        ? 'Menjalankan direct Daily Loan CSV import...'
-                        : ($mode === 'bulk_csv_filtered'
-                            ? 'Menyiapkan CSV staging terfilter untuk bulk load MySQL...'
-                            : 'Fast-path native tidak dipakai. Menyiapkan CSV staging untuk bulk load MySQL...'),
-                    'rows_done' => 0,
-                    'total' => $totalDataRows,
-                    'speed' => 0,
-                    'total_rows' => $totalDataRows,
-                    'processed_rows' => 0,
-                ]);
-
-                $csvPipeline = $this->pipelineService()->runCsvPipeline([
-                    'mode' => $mode,
-                    'direct_handler' => function () use (
-                        $send, $workingPath, $tableName, $normalizedHeaders, $jobId, $totalDataRows, $delimiter
-                    ): array {
-                        try {
-                            return [
-                                'handled' => $this->processDailyLoanDirectCsvStream(
-                                    $send,
-                                    $workingPath,
-                                    $tableName,
-                                    $normalizedHeaders,
-                                    $jobId,
-                                    $totalDataRows,
-                                    $delimiter
-                                ),
-                            ];
-                        } catch (\Throwable $e) {
-                            Log::warning('Fast-path Daily Loan CSV unavailable, fallback ke mode lama: ' . $e->getMessage(), [
-                                'job_id' => $jobId,
-                                'table_name' => $tableName,
-                            ]);
-                            return ['handled' => false];
-                        }
-                    },
-                    'filtered_handler' => function () use (
-                        $send, $workingPath, $tableName, $normalizedHeaders, $activeFilters, $jobId, $totalDataRows, $delimiter
-                    ): array {
-                        try {
-                            return [
-                                'handled' => $this->processDailyLoanBulkCsvStream(
-                                    $send,
-                                    $workingPath,
-                                    $tableName,
-                                    $normalizedHeaders,
-                                    $activeFilters,
-                                    $jobId,
-                                    max(0, $totalDataRows),
-                                    $delimiter
-                                ),
-                            ];
-                        } catch (\Throwable $e) {
-                            Log::warning('Filtered fast-path Daily Loan CSV unavailable, fallback ke mode lama: ' . $e->getMessage(), [
-                                'job_id' => $jobId,
-                                'table_name' => $tableName,
-                            ]);
-                            return ['handled' => false];
-                        }
-                    },
-                    'staged_handler' => function () use (
-                        $send, $workingPath, $tableName, $activeFilters, $normalizedHeaders, $jobId, $resolvedTotalRows, $totalDataRows, $delimiter
-                    ): array {
-                        $forceDirectLoad = $tableName === 'simpanan_multipn';
-
-                        return [
-                            'handled' => $this->processStagedCsvStream(
-                                $send,
-                                $workingPath,
-                                $tableName,
-                                $activeFilters,
-                                $normalizedHeaders,
-                                $jobId,
-                                $resolvedTotalRows !== null ? $totalDataRows : null,
-                                $delimiter,
-                                $forceDirectLoad
-                            ),
-                        ];
-                    },
-                ]);
-
-                if (($csvPipeline['handled'] ?? false) === true) {
-                    $job = $jobId > 0 ? $this->progressService()->findJob($jobId) : null;
-                    if ($job && $job->status === 'completed') {
-                        $this->cleanupSuccessfulImportArtifacts($jobId, $relativePath, $path, $cleanupExtraPaths);
-                    }
-
-                    return $resolveCurrentResult();
-                }
-
-                return $fail('Gagal memproses CSV via LOCAL INFILE (mode strict, tanpa fallback).');
-            }
-
-            $send('progress', [
-                'percent' => 3,
-                'message' => 'Menyiapkan pandas -> CSV temp -> LOAD DATA LOCAL INFILE...',
-                'rows_done' => 0,
-                'total' => 0,
-                'speed' => 0,
-                'processed_rows' => 0,
-            ]);
-
-            $pythonHandled = $this->tryPythonBulkLoad(
-                $send,
-                $path,
-                $headerIndex,
-                $tableName,
-                $activeFilters,
-                $normalizedHeaders,
-                $jobId
-            );
-
-            if ($pythonHandled) {
-                $job = $jobId > 0 ? $this->progressService()->findJob($jobId) : null;
-                if ($job && $job->status === 'completed') {
-                    $this->cleanupSuccessfulImportArtifacts($jobId, $relativePath, $path, $stagedCsvPath !== '' ? [$stagedCsvPath] : []);
-                    if ($stagedCsvPath !== '' && file_exists($stagedCsvPath)) {
-                        @unlink($stagedCsvPath);
-                    }
-                }
-
-                return $resolveCurrentResult();
-            }
-
-            $send('progress', [
-                'percent' => 5,
-                'message' => 'Bulk load native tidak dipakai. Fallback ke import Python/PHP lama...',
-                'rows_done' => 0,
-                'total' => 0,
-                'speed' => 0,
-                'processed_rows' => 0,
-            ]);
-
-            $pythonHandled = $this->tryPythonGPU(
-                $send,
-                $path,
-                $headerIndex,
-                $tableName,
-                $activeFilters,
-                $normalizedHeaders,
-                $jobId
-            );
-
-            if ($pythonHandled) {
-                $job = $jobId > 0 ? $this->progressService()->findJob($jobId) : null;
-                if ($job && $job->status === 'completed') {
-                    $this->cleanupSuccessfulImportArtifacts($jobId, $relativePath, $path);
-                }
-
-                return $resolveCurrentResult();
-            }
-
-            $send('progress', [
-                'percent' => 5,
-                'message' => 'Mode PHP Chunked aktif (chunk adaptif, hemat memori)...',
-                'rows_done' => 0,
-                'total' => 0,
-                'speed' => 0,
-                'processed_rows' => 0,
-            ]);
-
-            $reader = IOFactory::createReaderForFile($path);
-            $reader->setReadDataOnly(true);
-            $reader->setReadEmptyCells(false);
-
-            $worksheetInfo = $reader->listWorksheetInfo($path);
-            $totalRows = $worksheetInfo[0]['totalRows'] ?? 0;
-            $totalDataRows = max(0, $totalRows - ($headerIndex + 1));
-
-            $send('progress', [
-                'percent' => 10,
-                'message' => "File terdeteksi: {$totalDataRows} baris data. Memulai chunked processing...",
-                'rows_done' => 0,
-                'total' => $totalDataRows,
-                'speed' => 0,
-                'total_rows' => $totalDataRows,
-                'processed_rows' => 0,
-            ]);
-
-            if ($jobId > 0) {
-                $this->progressService()->updateJob($jobId, [
-                    'total_files' => $totalDataRows,
-                ], [
-                    'status' => 'processing',
-                    'total_rows' => $totalDataRows,
-                    'processed_rows' => 0,
-                    'percent' => 10,
-                    'message' => "File terdeteksi: {$totalDataRows} baris data. Memulai chunked processing...",
-                ]);
-            }
-
-            $importContext = $this->buildImportContext($tableName, $normalizedHeaders, $activeFilters);
-
-            $send('progress', [
-                'percent' => 15,
-                'message' => "Mapping kolom selesai. Mulai insert ke tabel `{$tableName}`...",
-                'rows_done' => 0,
-                'total' => $totalDataRows,
-                'speed' => 0,
-                'total_rows' => $totalDataRows,
-                'processed_rows' => 0,
-            ]);
-
-            $chunkFilter = new ChunkReadFilter();
-            $chunkFilter->setHeaderRow($headerIndex + 1);
-
-            $chunkSize = match (true) {
-                $totalDataRows >= 250000 => 4000,
-                $totalDataRows >= 100000 => 3000,
-                $totalDataRows >= 25000 => 2000,
-                $totalDataRows > 0 => 1000,
-                default => 1000,
-            };
-            $chunkSize = max(500, min($chunkSize, 4000));
-            $startExcelRow = $headerIndex + 2;
-
-            $dataToInsert = [];
-            $totalInserted = 0;
-            $totalFailed = 0;
-            $rowsDone = 0;
-            $progressEvery = self::STREAM_PROGRESS_EVERY;
-            $startTime = microtime(true);
-            $lastProgressAt = 0;
-
-            $flushBatch = function () use (&$dataToInsert, &$totalInserted, &$totalFailed, $tableName, $ping) {
-                if (empty($dataToInsert)) {
-                    return;
-                }
-                foreach (array_chunk($dataToInsert, $this->fallbackInsertBatchSize()) as $batch) {
-                    $this->insertBatchWithFallback($batch, $tableName, $totalInserted, $totalFailed);
-                    $ping();
-                }
-                $dataToInsert = [];
-            };
-
-            while ($startExcelRow <= $totalRows) {
-                if ((time() - $lastKeepAlive) >= $keepAliveEvery) {
-                    $ping();
-                }
-
-                $chunkFilter->setRows($startExcelRow, $chunkSize);
-                $reader->setReadFilter($chunkFilter);
-
-                $spreadsheet = $reader->load($path);
-                $sheet = $spreadsheet->getActiveSheet()->toArray(null, true, true, false);
-                $spreadsheet->disconnectWorksheets();
-                $ping();
-                unset($spreadsheet);
-                gc_collect_cycles();
-
-                $startArrayIdx = $startExcelRow - 1;
-                $endArrayIdx = $startArrayIdx + $chunkSize;
-                $timestamp = now()->toDateTimeString();
-
-                foreach ($sheet as $rowIndex => $row) {
-                    if ($rowIndex < $startArrayIdx || $rowIndex >= $endArrayIdx) {
-                        continue;
-                    }
-                    if ($rowIndex <= $headerIndex) {
-                        continue;
-                    }
-                    if (empty(array_filter((array) $row, fn($v) => trim((string) $v) !== ''))) {
-                        continue;
-                    }
-
-                    $finalRow = $this->mapExcelRowForInsert($row, $normalizedHeaders, $importContext, $timestamp);
-                    if ($finalRow === null) {
-                        continue;
-                    }
-
-                    $dataToInsert[] = $finalRow;
-                    $rowsDone++;
-
-                    if (count($dataToInsert) >= self::INSERT_BUFFER_FLUSH_SIZE) {
-                        $flushBatch();
-                    }
-
-                    if ($rowsDone - $lastProgressAt >= $progressEvery) {
-                        $lastProgressAt = $rowsDone;
-                        $elapsed = max(microtime(true) - $startTime, 0.001);
-                        $speed = (int) ($rowsDone / $elapsed);
-                        $pct = $totalDataRows > 0
-                            ? min(92, 15 + (int) (($rowsDone / $totalDataRows) * 77))
-                            : 50;
-
-                        $send('progress', [
-                            'percent' => $pct,
-                            'message' => "Menyimpan data ke database... ({$speed} baris/detik)",
-                            'rows_done' => $rowsDone,
-                            'total' => $totalDataRows,
-                            'speed' => $speed,
-                            'processed_rows' => $rowsDone,
-                            'total_rows' => $totalDataRows,
-                            'total_success' => $totalInserted,
-                            'total_failed' => $totalFailed,
-                        ]);
-                    } elseif ((time() - $lastKeepAlive) >= $keepAliveEvery) {
-                        $ping();
-                    }
-                }
-
-                $flushBatch();
-                $startExcelRow += $chunkSize;
-            }
-
-            $send('progress', [
-                'percent' => 96,
-                'message' => 'Finalisasi dan menyimpan status import...',
-                'rows_done' => $rowsDone,
-                'total' => $totalDataRows,
-                'speed' => 0,
-                'processed_rows' => $rowsDone,
-                'total_rows' => $totalDataRows,
-                'total_success' => $totalInserted,
-                'total_failed' => $totalFailed,
-            ]);
-
-            $finalStatus = $totalFailed > 0
-                ? ($totalInserted > 0 ? 'failed_partial' : 'failed')
-                : 'completed';
-
-            if ($jobId > 0) {
-                $this->progressService()->updateJob($jobId, [
-                    'total_success' => $totalInserted,
-                    'total_failed' => $totalFailed,
-                    'status' => $finalStatus,
-                ], [
-                    'status' => $finalStatus,
-                    'percent' => 100,
-                    'message' => $finalStatus === 'completed'
-                        ? 'Import selesai diproses.'
-                        : 'Import selesai dengan kegagalan parsial.',
-                    'processed_rows' => $rowsDone,
-                    'total_rows' => $totalDataRows,
-                    'total_success' => $totalInserted,
-                    'total_failed' => $totalFailed,
-                ]);
-            }
-
-                if ($jobId > 0 && $totalInserted > 0 && $finalStatus !== 'completed') {
-                    try {
-                        $this->cleanupService()->dispatchImportedJobSync($jobId, source: static::class);
-                    } catch (\Throwable $e) {
-                        Log::warning('Failed to dispatch report snapshot sync after chunk import stream: ' . $e->getMessage(), [
-                            'job_id' => $jobId,
-                            'status' => $finalStatus,
-                        ]);
-                    }
-                }
-
-            if ($finalStatus === 'completed') {
-                $this->cleanupSuccessfulImportArtifacts($jobId, $relativePath, $path, $stagedCsvPath !== '' ? [$stagedCsvPath] : []);
-            }
-
-            $payload = [
-                'total_success' => $totalInserted,
-                'total_failed' => $totalFailed,
-                'total_rows' => $totalDataRows,
-            ];
-            $send($finalStatus === 'completed' ? 'complete' : 'error', $payload);
-
-            return array_merge(['status' => $finalStatus], $payload);
-        } catch (\Throwable $e) {
-            Log::error('EXCEL QUEUED IMPORT ERROR: ' . $e->getMessage() . ' | ' . $e->getFile() . ':' . $e->getLine());
-
-            return $fail('Fatal Error: ' . $e->getMessage() . ' (line ' . $e->getLine() . ')');
-        }
+        return $this->excelQueuedImportService()->execute($state, [
+            'resolve_import_strategy' => fn(string $tableName) => $this->resolveImportStrategy($tableName),
+            'mark_failed' => fn(int $jobId, string $message, int $success = 0, int $failed = 0) => $this->progressService()->markFailed($jobId, $message, $success, $failed),
+            'find_job' => fn(int $jobId) => $this->progressService()->findJob($jobId),
+            'update_job' => fn(int $jobId, array $attributes, ?array $progressPayload = null) => $this->progressService()->updateJob($jobId, $attributes, $progressPayload),
+            'assert_transactional_table' => fn(string $tableName, string $context) => $this->bulkLoadService()->assertTransactionalTable($tableName, $context),
+            'is_csv_file' => fn(string $path) => $this->isCsvFile($path),
+            'detect_csv_delimiter' => fn(string $path) => $this->detectCsvDelimiter($path),
+            'count_csv_data_rows' => fn(string $path) => $this->countCsvDataRows($path),
+            'resolve_csv_data_row_estimate' => fn(?int $totalRows, int $headerIndex) => $this->resolveCsvDataRowEstimate($totalRows, $headerIndex),
+            'run_csv_pipeline' => fn(array $payload) => $this->pipelineService()->runCsvPipeline($payload),
+            'process_daily_loan_direct_csv_stream' => fn($send, string $workingPath, string $tableName, array $normalizedHeaders, int $jobId, int $totalDataRows, ?string $delimiter) => $this->processDailyLoanDirectCsvStream($send, $workingPath, $tableName, $normalizedHeaders, $jobId, $totalDataRows, $delimiter),
+            'process_daily_loan_bulk_csv_stream' => fn($send, string $workingPath, string $tableName, array $normalizedHeaders, array $activeFilters, int $jobId, int $totalDataRows, ?string $delimiter) => $this->processDailyLoanBulkCsvStream($send, $workingPath, $tableName, $normalizedHeaders, $activeFilters, $jobId, $totalDataRows, $delimiter),
+            'process_staged_csv_stream' => fn($send, string $workingPath, string $tableName, array $activeFilters, array $normalizedHeaders, int $jobId, ?int $estimatedTotalRows = null, ?string $delimiter = null, bool $forceDirectLoad = false) => $this->processStagedCsvStream($send, $workingPath, $tableName, $activeFilters, $normalizedHeaders, $jobId, $estimatedTotalRows, $delimiter, $forceDirectLoad),
+            'try_python_bulk_load' => fn($send, string $path, int $headerIndex, string $tableName, array $activeFilters, array $normalizedHeaders, int $jobId) => $this->tryPythonBulkLoad($send, $path, $headerIndex, $tableName, $activeFilters, $normalizedHeaders, $jobId),
+            'try_python_gpu' => fn($send, string $path, int $headerIndex, string $tableName, array $activeFilters, array $normalizedHeaders, int $jobId) => $this->tryPythonGPU($send, $path, $headerIndex, $tableName, $activeFilters, $normalizedHeaders, $jobId),
+            'build_import_context' => fn(string $tableName, array $normalizedHeaders, array $activeFilters = []) => $this->buildImportContext($tableName, $normalizedHeaders, $activeFilters),
+            'fallback_insert_batch_size' => fn(): int => $this->fallbackInsertBatchSize(),
+            'insert_batch_with_fallback' => function (array $batch, string $tableName, int &$totalInserted, int &$totalFailed): void {
+                $this->insertBatchWithFallback($batch, $tableName, $totalInserted, $totalFailed);
+            },
+            'cleanup_successful_import_artifacts' => fn(int $jobId, string $relativePath, string $path, array $extraPaths = []) => $this->cleanupSuccessfulImportArtifacts($jobId, $relativePath, $path, $extraPaths),
+            'cleanup_service_dispatch_imported_job_sync' => fn(int $jobId, string $status) => $this->cleanupService()->dispatchImportedJobSync($jobId, source: static::class),
+        ], $send);
     }
     public function processExcelChunk(Request $request)
     {

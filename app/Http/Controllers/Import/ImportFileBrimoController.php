@@ -551,13 +551,20 @@ class ImportFileBrimoController extends Controller
         }
 
         // CATAT KE IMPORT JOBS
-        $jobId = DB::table('import_jobs')->insertGetId([
+        $jobId = app(\App\Services\Import\ImportProgressService::class)->createJob([
             'id_report' => $idReport,
             'file_name' => basename($filePath),
             'folder_path' => dirname($filePath),
             'status' => 'processing',
             'total_files' => count($dataToInsert),
             'created_by' => auth()->id() ?? 1,
+            'job_context' => [
+                'controller' => static::class,
+                'mode' => 'brimo_import',
+                'table_name' => $tableName,
+                'file_hash' => sha1($filePath),
+                'data_rows_count' => count($dataToInsert),
+            ],
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -600,7 +607,7 @@ class ImportFileBrimoController extends Controller
         if ($totalSuccess > 0) {
             try {
                 $periodHint = $samplePeriode ?: $samplePosisi;
-                app(ReportDataSyncService::class)->syncImportedTable($tableName, $periodHint, $jobId, static::class);
+                app(\App\Services\Import\ImportCleanupService::class)->dispatchImportedJobSync($jobId, $tableName, $periodHint, static::class);
             } catch (\Throwable $e) {
                 Log::warning('Gagal sinkronisasi data report setelah import Brimo: ' . $e->getMessage(), [
                     'job_id' => $jobId,

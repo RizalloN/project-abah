@@ -84,18 +84,20 @@ class ImportProgressServiceTest extends TestCase
             ->andReturn(1);
 
         $jobsTable = Mockery::mock();
-        $jobsTable->shouldReceive('whereRaw')
+        $jobsTable->shouldReceive('where')
             ->once()
-            ->withArgs(static function (string $sql, array $bindings): bool {
-                return str_contains($sql, "JSON_UNQUOTE(JSON_EXTRACT(payload, '$.data.commandName')) = ?")
-                    && $bindings === [RunImportJob::class];
+            ->withArgs(static function (string $column, string $operator, string $value): bool {
+                return $column === 'payload'
+                    && $operator === 'like'
+                    && str_contains($value, 'RunImportJob');
             })
             ->andReturnSelf();
-        $jobsTable->shouldReceive('whereRaw')
+        $jobsTable->shouldReceive('where')
             ->once()
-            ->withArgs(static function (string $sql, array $bindings): bool {
-                return str_contains($sql, "JSON_UNQUOTE(JSON_EXTRACT(payload, '$.data.command')) LIKE ?")
-                    && $bindings === ['%jobId";i:77;%'];
+            ->withArgs(static function (string $column, string $operator, string $value): bool {
+                return $column === 'payload'
+                    && $operator === 'like'
+                    && str_contains($value, 'jobId";i:77;');
             })
             ->andReturnSelf();
         $jobsTable->shouldReceive('delete')->once()->andReturn(1);
@@ -130,18 +132,20 @@ class ImportProgressServiceTest extends TestCase
             ->andReturn(1);
 
         $jobsTable = Mockery::mock();
-        $jobsTable->shouldReceive('whereRaw')
+        $jobsTable->shouldReceive('where')
             ->once()
-            ->withArgs(static function (string $sql, array $bindings): bool {
-                return str_contains($sql, "JSON_UNQUOTE(JSON_EXTRACT(payload, '$.data.commandName')) = ?")
-                    && $bindings === [RunImportJob::class];
+            ->withArgs(static function (string $column, string $operator, string $value): bool {
+                return $column === 'payload'
+                    && $operator === 'like'
+                    && str_contains($value, 'RunImportJob');
             })
             ->andReturnSelf();
-        $jobsTable->shouldReceive('whereRaw')
+        $jobsTable->shouldReceive('where')
             ->once()
-            ->withArgs(static function (string $sql, array $bindings): bool {
-                return str_contains($sql, "JSON_UNQUOTE(JSON_EXTRACT(payload, '$.data.command')) LIKE ?")
-                    && $bindings === ['%jobId";i:88;%'];
+            ->withArgs(static function (string $column, string $operator, string $value): bool {
+                return $column === 'payload'
+                    && $operator === 'like'
+                    && str_contains($value, 'jobId";i:88;');
             })
             ->andReturnSelf();
         $jobsTable->shouldReceive('delete')->once()->andReturn(1);
@@ -156,6 +160,72 @@ class ImportProgressServiceTest extends TestCase
             ->andReturn($jobsTable);
 
         app(ImportProgressService::class)->markCompleted(88, 50, 0, 50);
+    }
+
+    public function test_purge_queued_import_jobs_for_queues_filters_target_queue_rows(): void
+    {
+        $jobsTable = Mockery::mock();
+        $jobsTable->shouldReceive('whereNull')
+            ->once()
+            ->with('reserved_at')
+            ->andReturnSelf();
+        $jobsTable->shouldReceive('where')
+            ->once()
+            ->withArgs(static function (string $column, string $operator, string $value): bool {
+                return $column === 'payload'
+                    && $operator === 'like'
+                    && str_contains($value, 'RunImportJob');
+            })
+            ->andReturnSelf();
+        $jobsTable->shouldReceive('whereIn')
+            ->once()
+            ->with('queue', ['imports-daily-loan', 'imports-high'])
+            ->andReturnSelf();
+        $jobsTable->shouldReceive('delete')->once()->andReturn(2);
+
+        DB::shouldReceive('table')
+            ->once()
+            ->with('jobs')
+            ->andReturn($jobsTable);
+
+        $service = app(ImportProgressService::class);
+        $this->assertSame(2, $service->purgeQueuedImportJobsForQueues(['imports-daily-loan', 'imports-high']));
+    }
+
+    public function test_create_job_reuses_active_duplicate_for_same_report_and_file(): void
+    {
+        $query = Mockery::mock();
+        $query->shouldReceive('where')->times(5)->andReturnSelf();
+        $query->shouldReceive('whereIn')->once()->with('status', ['queued', 'processing'])->andReturnSelf();
+        $query->shouldReceive('orderByDesc')->once()->with('updated_at')->andReturnSelf();
+        $query->shouldReceive('get')
+            ->once()
+            ->with(['id', 'status', 'updated_at'])
+            ->andReturn(collect([
+                (object) [
+                    'id' => 321,
+                    'status' => 'queued',
+                    'updated_at' => now()->toDateTimeString(),
+                ],
+            ]));
+
+        DB::shouldReceive('table')
+            ->once()
+            ->with('import_jobs')
+            ->andReturn($query);
+
+        $createdId = app(ImportProgressService::class)->createJob([
+            'id_report' => 8,
+            'file_name' => 'same-file.csv',
+            'folder_path' => 'C:\\imports',
+            'status' => 'queued',
+            'total_files' => 10,
+            'total_success' => 0,
+            'total_failed' => 0,
+            'created_by' => 1,
+        ]);
+
+        $this->assertSame(321, $createdId);
     }
 
     public function test_get_status_payload_reconciles_stale_queued_jobs_to_failed_state(): void
