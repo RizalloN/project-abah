@@ -28,7 +28,7 @@
 @endif
 
 <div class="row align-items-stretch">
-    <div class="col-xl-4 mb-4">
+    <div class="col-xl-5 col-lg-5 mb-4">
         <div class="card shadow-sm border-0 user-management-card h-100">
             <div class="card-header bg-white border-0 user-management-card__header">
                 <span class="user-management-card__eyebrow">Create User</span>
@@ -84,87 +84,95 @@
         </div>
     </div>
 
-    <div class="col-xl-8 mb-4">
-        <div class="row align-items-stretch">
-            <div class="col-md-4 mb-3">
+    <div class="col-xl-7 col-lg-7 mb-4 d-flex">
+        <div class="user-management-directory-column w-100">
+            <div class="row align-items-stretch user-management-stat-row">
+            <div class="col-lg-4 col-md-12 col-sm-12 mb-3">
                 <div class="user-management-stat">
                     <small>Total User</small>
                     <strong>{{ number_format($stats['total'], 0, ',', '.') }}</strong>
                 </div>
             </div>
-            <div class="col-md-4 mb-3">
+            <div class="col-lg-4 col-md-12 col-sm-12 mb-3">
                 <div class="user-management-stat">
                     <small>Admin</small>
                     <strong>{{ number_format($stats['admins'], 0, ',', '.') }}</strong>
                 </div>
             </div>
-            <div class="col-md-4 mb-3">
+            <div class="col-lg-4 col-md-12 col-sm-12 mb-3">
                 <div class="user-management-stat">
                     <small>User Biasa</small>
                     <strong>{{ number_format($stats['users'], 0, ',', '.') }}</strong>
                 </div>
             </div>
-        </div>
-
-        <div class="card shadow-sm border-0 user-management-card h-100" style="min-height: calc(100% - 90px);">
-            <div class="card-header bg-white border-0 user-management-card__header">
-                <span class="user-management-card__eyebrow">Directory</span>
-                <h5 class="card-title font-weight-bold text-dark mb-1">
-                    <i class="fas fa-address-card text-primary mr-2"></i> Daftar Pengguna
-                </h5>
-                <p class="user-management-card__subtitle mb-0">Edit nama, PN, role, atau reset password langsung dari daftar berikut.</p>
             </div>
-            <div class="card-body user-management-card__body pt-0">
-                <div class="table-responsive user-management-table-wrap">
-                    <table class="table table-hover mb-0 user-management-table">
-                        <thead>
-                            <tr>
-                                <th>Pengguna</th>
-                                <th>PN</th>
-                                <th>Role</th>
-                                <th class="text-center">Aksi</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @forelse ($users as $userItem)
+
+            <div class="card shadow-sm border-0 user-management-card user-management-directory-card">
+                <div class="card-header bg-white border-0 user-management-card__header">
+                    <span class="user-management-card__eyebrow">Directory</span>
+                    <h5 class="card-title font-weight-bold text-dark mb-1">
+                        <i class="fas fa-address-card text-primary mr-2"></i> Daftar Pengguna
+                    </h5>
+                    <p class="user-management-card__subtitle mb-0">Edit nama, PN, role, atau reset password langsung dari daftar berikut.</p>
+                </div>
+                <div class="card-body user-management-card__body pt-0">
+                    <div class="table-responsive user-management-table-wrap">
+                        <table class="table table-hover mb-0 user-management-table">
+                            <thead>
                                 <tr>
-                                    <td>
-                                        <div class="user-management-usercell">
-                                            <div class="user-management-avatar">{{ strtoupper(substr($userItem->name ?? 'U', 0, 2)) }}</div>
-                                            <div>
-                                                <div class="user-management-usercell__name">{{ $userItem->name }}</div>
-                                                <div class="user-management-usercell__meta">
-                                                    {{ auth()->id() === $userItem->id ? 'Sedang aktif login' : 'Akun internal portal' }}
+                                    <th>Pengguna</th>
+                                    <th>PN</th>
+                                    <th>Role</th>
+                                    <th class="text-center">Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @forelse ($users as $userItem)
+                                    <tr>
+                                        <td>
+                                            <div class="user-management-usercell">
+                                                <div class="user-management-avatar">{{ strtoupper(substr($userItem->name ?? 'U', 0, 2)) }}</div>
+                                                <div>
+                                                    <div class="user-management-usercell__name">{{ $userItem->name }}</div>
+                                                    <div class="user-management-usercell__meta">
+                                                        {{ auth()->id() === $userItem->id ? 'Sedang aktif login' : 'Akun internal portal' }}
+                                                    </div>
                                                 </div>
                                             </div>
-                                        </div>
-                                    </td>
-                                    <td><span class="user-management-pill user-management-pill--plain">{{ $userItem->pn }}</span></td>
-                                    <td>
-                                        <span class="user-management-pill {{ $userItem->role === 'admin' ? 'user-management-pill--admin' : 'user-management-pill--user' }}">
-                                            {{ strtoupper($userItem->role) }}
-                                        </span>
-                                    </td>
-                                    <td class="text-center">
-                                        <button type="button" class="btn btn-sm btn-outline-primary user-management-action" data-toggle="modal" data-target="#editUserModal-{{ $userItem->id }}">
-                                            <i class="fas fa-pen mr-1"></i>Edit
-                                        </button>
-                                        <form method="POST" action="{{ route('user-management.destroy', $userItem) }}" class="d-inline" onsubmit="return confirm('Hapus user {{ addslashes($userItem->name) }}?');">
-                                            @csrf
-                                            @method('DELETE')
-                                            <button type="submit" class="btn btn-sm btn-outline-danger user-management-action" {{ auth()->id() === $userItem->id ? 'disabled' : '' }}>
-                                                <i class="fas fa-trash-alt mr-1"></i>Hapus
+                                        </td>
+                                        <td><span class="user-management-pill user-management-pill--plain">{{ $userItem->pn }}</span></td>
+                                        <td>
+                                            <span class="user-management-pill {{ $userItem->role === 'admin' ? 'user-management-pill--admin' : 'user-management-pill--user' }}">
+                                                {{ strtoupper($userItem->role) }}
+                                            </span>
+                                        </td>
+                                        <td class="text-center">
+                                            <button type="button" class="btn btn-sm btn-outline-primary user-management-action" data-toggle="modal" data-target="#editUserModal-{{ $userItem->id }}">
+                                                <i class="fas fa-pen mr-1"></i>Edit
                                             </button>
-                                        </form>
-                                    </td>
-                                </tr>
-                            @empty
-                                <tr>
-                                    <td colspan="4" class="text-center text-muted py-4">Belum ada user terdaftar.</td>
-                                </tr>
-                            @endforelse
-                        </tbody>
-                    </table>
+                                            <form method="POST" action="{{ route('user-management.destroy', $userItem) }}" class="d-inline" onsubmit="return confirm('Hapus user {{ addslashes($userItem->name) }}?');">
+                                                @csrf
+                                                @method('DELETE')
+                                                <button type="submit" class="btn btn-sm btn-outline-danger user-management-action" {{ auth()->id() === $userItem->id ? 'disabled' : '' }}>
+                                                    <i class="fas fa-trash-alt mr-1"></i>Hapus
+                                                </button>
+                                            </form>
+                                        </td>
+                                    </tr>
+                                @empty
+                                    <tr>
+                                        <td colspan="4" class="text-center text-muted py-4">Belum ada user terdaftar.</td>
+                                    </tr>
+                                @endforelse
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    @if(method_exists($users, 'hasPages') && $users->hasPages())
+                    <div class="user-management-pagination mt-4 d-flex justify-content-end">
+                        {{ $users->links('pagination::bootstrap-4') }}
+                    </div>
+                    @endif
                 </div>
             </div>
         </div>
@@ -249,16 +257,20 @@
     .user-management-stat:hover { box-shadow: 0 20px 40px -15px rgba(15, 23, 42, 0.08); transform: translateY(-2px); }
     .user-management-stat small { display: block; color: #64748b; font-size: 0.75rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.5rem; }
     .user-management-stat strong { display: block; color: #0f172a; font-size: 1.15rem; font-weight: 800; line-height: 1.3; word-break: break-word; }
+    .user-management-directory-column { display: flex; flex-direction: column; width: 100%; min-height: 100%; }
+    .user-management-stat-row { flex: 0 0 auto; }
     .user-management-card { border-radius: 26px; overflow: hidden; box-shadow: 0 28px 60px -40px rgba(15,23,42,0.32) !important; border: 1px solid rgba(226,232,240,0.8); background: #fff; }
+    .user-management-directory-card { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; }
     .user-management-card__header { padding: 1.45rem 1.5rem 1rem; border-bottom: 1px solid rgba(226,232,240,0.5); background: radial-gradient(circle at top left, rgba(59, 130, 246, 0.09), transparent 28%), linear-gradient(180deg, #ffffff 0%, #f8fafc 100%); }
     .user-management-card__eyebrow { color: #1d4ed8; background: rgba(37,99,235,0.08); }
     .user-management-card__subtitle { color: #64748b; max-width: 780px; line-height: 1.6; }
     .user-management-card__body { padding: 1.75rem; background: #f8fafc; }
+    .user-management-directory-card .user-management-card__body { display: flex; flex: 1 1 auto; flex-direction: column; }
     .user-management-input { min-height: 48px; border-radius: 16px; border: 1px solid rgba(148, 163, 184, 0.3); background: #ffffff; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.02); }
     .user-management-input:focus { border-color: #307fe2; background: #fff; box-shadow: 0 0 0 4px rgba(48,127,226,0.16); }
     .user-management-btn, .user-management-modal__btn { min-height: 48px; border-radius: 16px; font-weight: 800; box-shadow: 0 4px 12px rgba(0,0,0,0.05); transition: transform 0.2s ease, box-shadow 0.2s ease; }
     .user-management-btn:hover, .user-management-modal__btn:hover { transform: translateY(-2px); box-shadow: 0 10px 20px rgba(0,0,0,0.08); }
-    .user-management-table-wrap { border: 1px solid rgba(148,163,184,0.2); border-radius: 22px; overflow: hidden; background: #fff; box-shadow: 0 10px 25px -10px rgba(15, 23, 42, 0.05); }
+    .user-management-table-wrap { border: 1px solid rgba(148,163,184,0.2); border-radius: 22px; overflow: hidden; background: #fff; box-shadow: 0 10px 25px -10px rgba(15, 23, 42, 0.05); flex: 1 1 auto; }
     .user-management-table thead th { background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%); border-bottom: 1px solid rgba(148,163,184,0.2); color: #334155; font-size: 0.8rem; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; padding: 1.15rem 1rem; }
     .user-management-table tbody td { padding: 1.15rem 1rem; border-top: 1px solid rgba(226,232,240,0.8); vertical-align: middle; }
     .user-management-usercell { display: flex; align-items: center; gap: 1rem; }
@@ -272,11 +284,16 @@
     .user-management-action { border-radius: 14px; font-weight: 800; transition: transform 0.2s ease, box-shadow 0.2s ease; }
     .user-management-action:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
     .user-management-modal { border: 1px solid rgba(226,232,240,0.95); border-radius: 28px; padding: 1.4rem 1.4rem 1.2rem; box-shadow: 0 30px 80px -35px rgba(15,23,42,0.35); }
+    .user-management-pagination .page-item .page-link { border-radius: 12px; margin: 0 4px; color: #475569; font-weight: 700; border: 1px solid transparent; background: transparent; transition: all 0.2s ease; }
+    .user-management-pagination .page-item:not(.active):not(.disabled) .page-link:hover { background: rgba(37,99,235,0.08); color: #1d4ed8; border-color: rgba(37,99,235,0.1); transform: translateY(-1px); }
+    .user-management-pagination .page-item.active .page-link { background: linear-gradient(135deg, #2563eb, #1d4ed8); color: #fff; border-color: transparent; box-shadow: 0 8px 16px -8px rgba(37,99,235,0.5); }
+    .user-management-pagination .page-item.disabled .page-link { color: #94a3b8; background: transparent; border-color: transparent; }
     @media (max-width: 767.98px) {
         .user-management-hero, .user-management-card__header, .user-management-card__body { padding-left: 1.25rem; padding-right: 1.25rem; }
         .user-management-hero__title { font-size: 1.25rem; }
         .user-management-hero__badge, .user-management-btn { width: 100%; }
         .user-management-table thead th, .user-management-table tbody td { padding: 1rem; }
+        .user-management-directory-column { min-height: auto; }
     }
 </style>
 @endsection

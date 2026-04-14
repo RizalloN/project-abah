@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Import;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\RunManagedReportSnapshotRebuildJob;
 use App\Services\Import\ImportExecutionService;
 use App\Services\Import\ImportProgressService;
 use App\Support\ManagedReportSnapshotRebuildCoordinator;
@@ -15,6 +16,9 @@ use Illuminate\Support\Facades\Schema;
 
 class ImportJobManagementController extends Controller
 {
+    private const SNAPSHOT_QUEUELESS_STALE_SECONDS = 300;
+    private const SNAPSHOT_RESERVED_STALE_SECONDS = 600;
+
     public function __construct(
         private readonly ManagedReportSnapshotRebuildCoordinator $snapshotRebuildCoordinator
     ) {
@@ -398,9 +402,20 @@ class ImportJobManagementController extends Controller
             $snapshotIds[] = $pendingRebuildId;
         }
 
+        $queueRows = $this->snapshotRebuildQueueRows();
+        foreach ($queueRows as $queueRow) {
+            $rebuildId = trim((string) ($queueRow['rebuild_id'] ?? ''));
+            if ($rebuildId !== '') {
+                $snapshotIds[] = $rebuildId;
+            }
+        }
+
+        $queueRowsByRebuildId = collect($queueRows)->keyBy('rebuild_id');
         $jobs = collect(array_values(array_unique($snapshotIds)))
-            ->map(function (string $rebuildId) {
+            ->map(function (string $rebuildId) use ($queueRowsByRebuildId) {
                 $state = $this->snapshotRebuildCoordinator->reconcile($rebuildId);
+                $queueRow = $queueRowsByRebuildId->get($rebuildId);
+                $state = $this->reconcileSnapshotStateWithQueueRow($rebuildId, $state, is_array($queueRow) ? $queueRow : null);
                 if ($state === null) {
                     return null;
                 }
@@ -418,6 +433,7 @@ class ImportJobManagementController extends Controller
                 $status = $this->mapSnapshotStatus((string) ($state['status'] ?? 'queued'), (string) ($state['stage'] ?? 'queued'));
                 $reportTotalUnits = max(0, (int) ($state['report_total_units'] ?? 0));
                 $reportCompletedUnits = max(0, (int) ($state['report_completed_units'] ?? 0));
+                $queueRow = $queueRowsByRebuildId->get($rebuildId);
 
                 return [
                     'id' => (string) ($state['rebuild_id'] ?? $rebuildId),
@@ -455,6 +471,9 @@ class ImportJobManagementController extends Controller
                     'report_completed_units' => $reportCompletedUnits,
                     'report_total_units' => $reportTotalUnits,
                     'reports_count' => is_array($state['reports'] ?? null) ? count($state['reports']) : 0,
+                    'queue_name' => (string) (($queueRow['queue'] ?? '') ?: ''),
+                    'queue_reserved' => (bool) ($queueRow['reserved'] ?? false),
+                    'queue_job_id' => isset($queueRow['job_id']) ? (int) $queueRow['job_id'] : null,
                 ];
             })
             ->filter()
@@ -462,6 +481,200 @@ class ImportJobManagementController extends Controller
             ->values();
 
         return $jobs->all();
+    }
+
+    private function snapshotRebuildQueueRows(): array
+    {
+        if (!Schema::hasTable('jobs')) {
+            return [];
+        }
+
+        $configuredReportQueue = trim((string) config('queue.report_queue', 'default')) ?: 'default';
+        $queues = array_values(array_unique(array_filter([$configuredReportQueue, 'default', 'reports-low'])));
+        $basename = class_basename(RunManagedReportSnapshotRebuildJob::class);
+
+        return DB::table('jobs')
+            ->whereIn('queue', $queues)
+            ->where('payload', 'like', '%' . $basename . '%')
+            ->select(['id', 'queue', 'reserved_at', 'available_at', 'created_at', 'payload'])
+            ->orderByDesc('id')
+            ->get()
+            ->map(function ($job): array {
+                $payload = (string) ($job->payload ?? '');
+
+                return [
+                    'job_id' => (int) ($job->id ?? 0),
+                    'queue' => (string) ($job->queue ?? ''),
+                    'reserved' => $job->reserved_at !== null,
+                    'reserved_at' => $job->reserved_at,
+                    'reserved_age_seconds' => $this->queueTimestampAgeSeconds($job->reserved_at),
+                    'created_at' => $job->created_at,
+                    'created_age_seconds' => $this->queueTimestampAgeSeconds($job->created_at),
+                    'available_at' => $job->available_at,
+                    'payload' => $payload,
+                    'rebuild_id' => $this->extractSnapshotRebuildIdFromPayload($payload),
+                ];
+            })
+            ->filter(fn (array $row): bool => trim((string) ($row['rebuild_id'] ?? '')) !== '')
+            ->values()
+            ->all();
+    }
+
+    private function reconcileSnapshotStateWithQueueRow(string $rebuildId, ?array $state, ?array $queueRow): ?array
+    {
+        if ($state === null) {
+            return $queueRow ? $this->makeSyntheticSnapshotState($rebuildId, $queueRow) : null;
+        }
+
+        $status = strtolower(trim((string) ($state['status'] ?? '')));
+        if (in_array($status, ['completed', 'failed'], true)) {
+            return $state;
+        }
+
+        $updatedAt = (string) ($state['updated_at'] ?? $state['started_at'] ?? $state['created_at'] ?? '');
+
+        if ($queueRow === null && $this->timestampOlderThan($updatedAt, self::SNAPSHOT_QUEUELESS_STALE_SECONDS)) {
+            return $this->markSnapshotStateAsFailed(
+                $state,
+                'Progress snapshot tidak lagi memiliki job queue aktif dan tidak bergerak terlalu lama. State dibersihkan otomatis.'
+            );
+        }
+
+        if (
+            $queueRow !== null
+            && (bool) ($queueRow['reserved'] ?? false)
+            && (int) ($queueRow['reserved_age_seconds'] ?? 0) >= self::SNAPSHOT_RESERVED_STALE_SECONDS
+            && $this->timestampOlderThan($updatedAt, self::SNAPSHOT_RESERVED_STALE_SECONDS)
+        ) {
+            return $this->markSnapshotStateAsFailed(
+                $state,
+                'Job snapshot sudah di-reserve worker tetapi progress tidak bergerak terlalu lama. Kemungkinan worker berhenti di tengah proses.'
+            );
+        }
+
+        if ($queueRow !== null && (bool) ($queueRow['reserved'] ?? false) && $status === 'queued') {
+            $state['status'] = 'running';
+            $state['stage'] = in_array(strtolower(trim((string) ($state['stage'] ?? ''))), ['queued'], true) ? 'planning' : ($state['stage'] ?? 'planning');
+            $state['queued'] = false;
+            $state['message'] = trim((string) ($state['message'] ?? '')) !== ''
+                ? (string) $state['message']
+                : 'Snapshot rebuild sedang diproses worker queue.';
+        }
+
+        return $state;
+    }
+
+    private function makeSyntheticSnapshotState(string $rebuildId, array $queueRow): array
+    {
+        $timestamp = now()->toIso8601String();
+        $reserved = (bool) ($queueRow['reserved'] ?? false);
+        $createdAt = $this->queueTimestampToIso8601($queueRow['created_at'] ?? null) ?? $timestamp;
+        $updatedAt = $reserved
+            ? ($this->queueTimestampToIso8601($queueRow['reserved_at'] ?? null) ?? $createdAt)
+            : $createdAt;
+
+        return [
+            'rebuild_id' => $rebuildId,
+            'status' => $reserved ? 'running' : 'queued',
+            'stage' => $reserved ? 'planning' : 'queued',
+            'queued' => !$reserved,
+            'force_rebuild' => true,
+            'source' => static::class,
+            'message' => $reserved
+                ? 'Snapshot rebuild sedang diproses worker queue.'
+                : 'Snapshot rebuild masih menunggu worker queue.',
+            'progress_percent' => 0,
+            'completed_units' => 0,
+            'total_units' => 1,
+            'build_units' => 0,
+            'current_report_key' => null,
+            'current_report_label' => null,
+            'current_period' => null,
+            'report_completed_units' => 0,
+            'report_total_units' => 0,
+            'reports' => [],
+            'results' => [],
+            'started_at' => $reserved ? $updatedAt : null,
+            'finished_at' => null,
+            'created_at' => $createdAt,
+            'updated_at' => $updatedAt,
+        ];
+    }
+
+    private function markSnapshotStateAsFailed(array $state, string $message): array
+    {
+        $rebuildId = trim((string) ($state['rebuild_id'] ?? ''));
+        $failedState = ManagedReportSnapshotRebuildStore::putState(array_merge($state, [
+            'status' => 'failed',
+            'stage' => 'failed',
+            'queued' => false,
+            'message' => $message,
+            'error' => $message,
+            'finished_at' => now()->toIso8601String(),
+        ]));
+
+        if ($rebuildId !== '' && ManagedReportSnapshotRebuildStore::getActiveRebuildId() === $rebuildId) {
+            ManagedReportSnapshotRebuildStore::forgetActiveRebuildId();
+        }
+
+        $pendingRebuildId = $this->extractSnapshotRebuildId(Cache::get(ManagedReportSnapshotRebuildStore::PENDING_KEY));
+        if ($rebuildId !== '' && $pendingRebuildId === $rebuildId) {
+            Cache::forget(ManagedReportSnapshotRebuildStore::PENDING_KEY);
+        }
+
+        return $failedState;
+    }
+
+    private function extractSnapshotRebuildIdFromPayload(string $payload): ?string
+    {
+        $candidate = '';
+
+        if (preg_match('/rebuildId";s:\d+:"([0-9a-f\-]{36})"/i', $payload, $matches) === 1) {
+            $candidate = (string) ($matches[1] ?? '');
+        }
+
+        if ($candidate === '' && preg_match('/"rebuildId":"([0-9a-f\-]{36})"/i', $payload, $matches) === 1) {
+            $candidate = (string) ($matches[1] ?? '');
+        }
+
+        $candidate = trim($candidate);
+
+        return $candidate !== '' ? $candidate : null;
+    }
+
+    private function queueTimestampAgeSeconds(mixed $value): int
+    {
+        if ($value === null || $value === '') {
+            return 0;
+        }
+
+        if (is_numeric($value)) {
+            return max(0, now()->timestamp - (int) $value);
+        }
+
+        $parsed = $this->safeParseDate($value);
+
+        return $parsed ? max(0, now()->diffInSeconds($parsed)) : 0;
+    }
+
+    private function queueTimestampToIso8601(mixed $value): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        if (is_numeric($value)) {
+            return Carbon::createFromTimestamp((int) $value)->toIso8601String();
+        }
+
+        return $this->safeParseDate($value)?->toIso8601String();
+    }
+
+    private function timestampOlderThan(?string $value, int $seconds): bool
+    {
+        $parsed = $this->safeParseDate($value);
+
+        return $parsed ? $parsed->addSeconds(max(1, $seconds))->lessThanOrEqualTo(now()) : true;
     }
 
     private function extractSnapshotRebuildId(mixed $value): ?string
@@ -558,8 +771,18 @@ class ImportJobManagementController extends Controller
         $configuredQueuePending = $jobs->where('queue', $configuredReportQueue)->count();
         $oldestPending = $jobs->first();
         $oldestAgeSeconds = $oldestPending ? $this->queueRowAgeSeconds($oldestPending) : null;
+        $reservedSnapshotJobs = DB::table('jobs')
+            ->whereNotNull('reserved_at')
+            ->whereIn('queue', $queues)
+            ->where('payload', 'like', '%' . $snapshotRebuildBasename . '%')
+            ->select(['id', 'queue', 'reserved_at', 'payload'])
+            ->orderBy('id')
+            ->get();
+        $staleReservedSnapshotJobs = $reservedSnapshotJobs->filter(function ($job): bool {
+            return $this->queueTimestampAgeSeconds($job->reserved_at) >= self::SNAPSHOT_RESERVED_STALE_SECONDS;
+        })->count();
 
-        if ($pendingReportJobs === 0) {
+        if ($pendingReportJobs === 0 && $staleReservedSnapshotJobs === 0) {
             return [
                 'status' => 'ok',
                 'tone' => 'info',
@@ -569,6 +792,7 @@ class ImportJobManagementController extends Controller
                 'pending_snapshot_rebuilds' => 0,
                 'legacy_reports_low_pending' => 0,
                 'oldest_pending_age_seconds' => 0,
+                'stale_reserved_snapshot_jobs' => 0,
             ];
         }
 
@@ -579,10 +803,16 @@ class ImportJobManagementController extends Controller
                 $configuredReportQueue,
                 $pendingSnapshotRebuilds > 0 ? " termasuk {$pendingSnapshotRebuilds} snapshot rebuild" : ''
             )
-            : 'Ada job report yang masih menunggu di queue.';
+            : ($pendingReportJobs > 0
+                ? 'Ada job report yang masih menunggu di queue.'
+                : 'Ada job snapshot yang sudah di-reserve worker tetapi terlalu lama tidak selesai.');
 
         if ($legacyReportsLowPending > 0 && $configuredReportQueue !== 'reports-low') {
             $message .= sprintf(' Masih ada %d job lama di queue `reports-low` yang perlu dikonsumsi worker lama atau dibersihkan.', $legacyReportsLowPending);
+        }
+
+        if ($staleReservedSnapshotJobs > 0) {
+            $message .= sprintf(' Terdeteksi %d snapshot rebuild reserved terlalu lama; progress bisa macet bila worker sudah berhenti.', $staleReservedSnapshotJobs);
         }
 
         if (($oldestAgeSeconds ?? 0) >= 120) {
@@ -598,6 +828,7 @@ class ImportJobManagementController extends Controller
             'pending_snapshot_rebuilds' => $pendingSnapshotRebuilds,
             'legacy_reports_low_pending' => $legacyReportsLowPending,
             'oldest_pending_age_seconds' => $oldestAgeSeconds ?? 0,
+            'stale_reserved_snapshot_jobs' => $staleReservedSnapshotJobs,
         ];
     }
 
