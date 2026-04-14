@@ -867,8 +867,8 @@ class DashboardPinjamanReportController extends Controller
         try {
             if ($lock->get()) {
                 if (Cache::add($pendingKey, now()->toIso8601String(), now()->addMinutes(10))) {
-                    EnsureDashboardSnapshotJob::dispatch($period, static::class . '::hasDashboardSnapshot')
-                        ->onQueue('reports-low');
+                        EnsureDashboardSnapshotJob::dispatch($period, static::class . '::hasDashboardSnapshot')
+                        ->onQueue((string) config('queue.report_queue', 'default'));
                     $jobDispatched = true;
                 }
             }

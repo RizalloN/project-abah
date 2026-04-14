@@ -99,6 +99,8 @@ class JobHealthService
 
     private function purgeStaleQueueRows(): array
     {
+        $reportQueue = trim((string) config('queue.report_queue', 'default')) ?: 'default';
+
         return [
             'imports' => $this->deletePendingQueueRows(
                 ['imports-daily-loan', 'imports-high'],
@@ -123,8 +125,8 @@ class JobHealthService
                 ],
                 self::REPORT_QUEUE_STALE_SECONDS
             ),
-            'default_known' => $this->deletePendingQueueRows(
-                ['default'],
+            'configured_report_queue' => $this->deletePendingQueueRows(
+                [$reportQueue],
                 [
                     SyncImportedReportJob::class,
                     WarmReportCacheJob::class,
@@ -132,6 +134,7 @@ class JobHealthService
                     EnsureDashboardSimpananSnapshotJob::class,
                     EnsureRasioCasaSnapshotJob::class,
                     EnsureRekeningDormantSnapshotJob::class,
+                    RunManagedReportSnapshotRebuildJob::class,
                 ],
                 self::REPORT_QUEUE_STALE_SECONDS
             ),

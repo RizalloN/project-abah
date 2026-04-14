@@ -77,7 +77,7 @@ class ManagedReportSnapshotRebuildCoordinator
 
         try {
             RunManagedReportSnapshotRebuildJob::dispatch($forceRebuild, $source, $rebuildId)
-                ->onQueue('reports-low');
+                ->onQueue((string) config('queue.report_queue', 'default'));
         } catch (Throwable $e) {
             Cache::forget(ManagedReportSnapshotRebuildStore::PENDING_KEY);
             ManagedReportSnapshotRebuildStore::forgetActiveRebuildId();
@@ -142,6 +142,44 @@ class ManagedReportSnapshotRebuildCoordinator
         ];
     }
 
+    public function forceStart(string $rebuildId): array
+    {
+        $rebuildId = trim($rebuildId);
+        $state = ManagedReportSnapshotRebuildStore::getState($rebuildId);
+
+        if ($rebuildId === '' || $state === null) {
+            return [
+                'status_code' => 404,
+                'payload' => [
+                    'status' => 'error',
+                    'message' => 'Snapshot rebuild tidak ditemukan.',
+                ],
+            ];
+        }
+
+        $status = strtolower(trim((string) ($state['status'] ?? '')));
+        $stage = strtolower(trim((string) ($state['stage'] ?? '')));
+        if (in_array($status, ['completed', 'failed'], true) || !in_array($stage, ['queued', 'planning'], true)) {
+            return [
+                'status_code' => 422,
+                'payload' => [
+                    'status' => 'error',
+                    'message' => 'Force start hanya tersedia untuk snapshot rebuild yang masih queued.',
+                ],
+            ];
+        }
+
+        $executedState = $this->runInline($state);
+
+        return [
+            'status_code' => 200,
+            'payload' => array_merge($executedState, [
+                'status' => $executedState['status'] ?? 'completed',
+                'message' => 'Force start snapshot dijalankan. Proses dipicu langsung tanpa menunggu worker queue.',
+            ]),
+        ];
+    }
+
     public function reconcile(string $rebuildId): ?array
     {
         $state = ManagedReportSnapshotRebuildStore::getState($rebuildId);
@@ -174,7 +212,56 @@ class ManagedReportSnapshotRebuildCoordinator
 
     private function maybeProcessFallback(array $state): array
     {
-        return $state;
+        if (!$this->shouldAttemptFallback($state)) {
+            return $state;
+        }
+
+        return $this->runInline($state);
+    }
+
+    private function runInline(array $state): array
+    {
+        $rebuildId = trim((string) ($state['rebuild_id'] ?? ''));
+        if ($rebuildId === '') {
+            return $state;
+        }
+
+        ManagedReportSnapshotRebuildStore::setActiveRebuildId($rebuildId);
+        Cache::put(ManagedReportSnapshotRebuildStore::PENDING_KEY, $rebuildId, ManagedReportSnapshotRebuildStore::ttl());
+
+        $lock = Cache::lock(
+            self::REBUILD_FALLBACK_LOCK_PREFIX . $rebuildId,
+            self::REBUILD_FALLBACK_LOCK_SECONDS
+        );
+
+        if (!$lock->get()) {
+            return $state;
+        }
+
+        try {
+            $freshState = ManagedReportSnapshotRebuildStore::getState($rebuildId) ?? $state;
+            if (!$this->shouldAttemptFallback($freshState)) {
+                return $freshState;
+            }
+
+            app()->call([
+                new RunManagedReportSnapshotRebuildJob(
+                    (bool) ($freshState['force_rebuild'] ?? false),
+                    $freshState['source'] ?? static::class,
+                    $rebuildId
+                ),
+                'handle',
+            ]);
+        } catch (Throwable $e) {
+            Log::warning('Fallback rebuild snapshot report management gagal dijalankan: ' . $e->getMessage(), [
+                'rebuild_id' => $rebuildId,
+                'exception_class' => $e::class,
+            ]);
+        } finally {
+            optional($lock)->release();
+        }
+
+        return ManagedReportSnapshotRebuildStore::getState($rebuildId) ?? $state;
     }
 
     private function shouldAttemptFallback(array $state): bool

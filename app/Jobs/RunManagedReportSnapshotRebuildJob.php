@@ -230,7 +230,7 @@ class RunManagedReportSnapshotRebuildJob implements ShouldQueue
             ]));
 
             $syncService->invalidateReportCaches($this->source ?? static::class);
-            WarmReportCacheJob::dispatch()->onQueue('reports-low');
+            WarmReportCacheJob::dispatch()->onQueue((string) config('queue.report_queue', 'default'));
 
             $state = $this->writeState(array_merge($state, [
                 'status' => 'completed',

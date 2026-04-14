@@ -31,20 +31,23 @@ class ImportProgressServiceTest extends TestCase
                 'total_files' => 100,
                 'total_success' => 25,
                 'total_failed' => 5,
-                'updated_at' => '2026-04-11 10:00:00',
+                'updated_at' => now()->subMinutes(5)->toDateTimeString(),
             ]);
 
         Cache::shouldReceive('get')
-            ->once()
-            ->andReturn([
-                'message' => 'Masih jalan',
-                'processed_rows' => 40,
-                'total_rows' => 100,
-                'total_success' => 30,
-                'total_failed' => 10,
-                'percent' => 40,
-                'updated_at' => '2026-04-11T10:00:00+07:00',
-            ]);
+            ->twice()
+            ->andReturn(
+                [
+                    'message' => 'Masih jalan',
+                    'processed_rows' => 40,
+                    'total_rows' => 100,
+                    'total_success' => 30,
+                    'total_failed' => 10,
+                    'percent' => 40,
+                    'updated_at' => now()->toIso8601String(),
+                ],
+                []
+            );
 
         try {
             $payload = app(ImportProgressService::class)->getStatusPayload(77);
@@ -68,6 +71,10 @@ class ImportProgressServiceTest extends TestCase
     public function test_mark_failed_removes_matching_queue_job_row(): void
     {
         Cache::shouldReceive('put')->once()->andReturnTrue();
+        Cache::shouldReceive('forget')
+            ->once()
+            ->with('import_job_terminate:77')
+            ->andReturnTrue();
 
         $importJobsTable = Mockery::mock();
         $importJobsTable->shouldReceive('where')
@@ -116,6 +123,11 @@ class ImportProgressServiceTest extends TestCase
 
     public function test_mark_completed_removes_matching_queue_job_row(): void
     {
+        Cache::shouldReceive('forget')
+            ->once()
+            ->with('import_job_terminate:88')
+            ->andReturnTrue();
+
         $importJobsTable = Mockery::mock();
         $importJobsTable->shouldReceive('where')
             ->once()
@@ -254,8 +266,8 @@ class ImportProgressServiceTest extends TestCase
                 ]);
 
             Cache::shouldReceive('get')
-                ->once()
-                ->andReturn([]);
+                ->twice()
+                ->andReturn([], []);
 
             $progressService->shouldReceive('markFailed')
                 ->once()

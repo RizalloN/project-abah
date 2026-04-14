@@ -10,7 +10,7 @@ class ImportCleanupService
 {
     private const SYNC_PENDING_TTL_MINUTES = 15;
     private const SYNC_COORDINATOR_LOCK_SECONDS = 5;
-    private const DEFAULT_SYNC_QUEUE = 'reports-low';
+    private const DEFAULT_SYNC_QUEUE = 'default';
 
     public function cleanupPaths(array $paths): void
     {
@@ -92,7 +92,7 @@ class ImportCleanupService
                 if ($shouldRerun) {
                     $resolvedQueue = is_string($rerunQueue) && trim($rerunQueue) !== ''
                         ? trim($rerunQueue)
-                        : self::DEFAULT_SYNC_QUEUE;
+                        : $this->resolveSyncQueue(null);
 
                     SyncImportedReportJob::dispatch($jobId > 0 ? $jobId : null, $tableName, $periodHint, $source)
                         ->onQueue($resolvedQueue);
@@ -117,7 +117,7 @@ class ImportCleanupService
     {
         $normalized = trim((string) $queue);
 
-        return $normalized !== '' ? $normalized : self::DEFAULT_SYNC_QUEUE;
+        return $normalized !== '' ? $normalized : (string) config('queue.report_queue', self::DEFAULT_SYNC_QUEUE);
     }
 
     private function normalizeSyncPeriodHint(?string $periodHint): string

@@ -32,7 +32,7 @@ class ImportExecutionService
         }
 
         $job = $this->progressService->findJob($jobId);
-        if (!$job || in_array($job->status, ['processing', 'completed', 'failed', 'failed_partial'], true)) {
+        if (!$job || in_array($job->status, ['processing', 'completed', 'failed', 'failed_partial', 'terminated'], true)) {
             $this->releaseDispatchMarker($jobId);
             return false;
         }
@@ -41,7 +41,7 @@ class ImportExecutionService
         $this->progressService->purgeStaleProcessingJobs();
 
         $job = $this->progressService->findJob($jobId);
-        if (!$job || in_array($job->status, ['processing', 'completed', 'failed', 'failed_partial'], true)) {
+        if (!$job || in_array($job->status, ['processing', 'completed', 'failed', 'failed_partial', 'terminated'], true)) {
             $this->releaseDispatchMarker($jobId);
             return false;
         }
@@ -59,7 +59,7 @@ class ImportExecutionService
                 self::STALE_QUEUED_MINUTES
             );
             $job = $this->progressService->findJob($jobId);
-            if (!$job || in_array($job->status, ['processing', 'completed', 'failed', 'failed_partial'], true)) {
+            if (!$job || in_array($job->status, ['processing', 'completed', 'failed', 'failed_partial', 'terminated'], true)) {
                 $this->releaseDispatchMarker($jobId);
                 return false;
             }
@@ -187,7 +187,7 @@ class ImportExecutionService
 
                     $send('progress', $payload);
 
-                    if (in_array($payload['status'] ?? '', ['completed', 'failed', 'failed_partial'], true)) {
+                    if (in_array($payload['status'] ?? '', ['completed', 'failed', 'failed_partial', 'terminated'], true)) {
                         $event = ($payload['status'] ?? '') === 'completed' ? 'complete' : 'error';
                         $send($event, $payload);
                         break;
@@ -314,13 +314,13 @@ class ImportExecutionService
                         'percent' => 100,
                     ],
                 );
-                SyncImportedReportJob::dispatch($jobId, null, null, static::class)->onQueue('reports-low');
+                SyncImportedReportJob::dispatch($jobId, null, null, static::class)->onQueue((string) config('queue.report_queue', 'default'));
                 $this->releaseDispatchMarker($jobId);
                 return;
             }
 
             if ($status === 'failed_partial' && (int) ($result['total_success'] ?? 0) > 0) {
-                SyncImportedReportJob::dispatch($jobId, null, null, static::class)->onQueue('reports-low');
+                SyncImportedReportJob::dispatch($jobId, null, null, static::class)->onQueue((string) config('queue.report_queue', 'default'));
             }
 
             $this->progressService->markFailed(
@@ -391,12 +391,11 @@ class ImportExecutionService
         $success = (int) ($job->total_success ?? 0);
         $failed = (int) ($job->total_failed ?? 0);
 
-        $this->progressService->markFailed(
+        $this->progressService->markTerminated(
             $jobId,
             'Job dihentikan melalui Job Management.',
             $success,
-            $failed,
-            ($success > 0 || $failed > 0) ? 'failed_partial' : 'failed'
+            $failed
         );
     }
 }

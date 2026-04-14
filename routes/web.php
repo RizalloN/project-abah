@@ -97,7 +97,12 @@ Route::middleware(['auth', 'role:admin', 'release.session.lock'])->group(functio
     Route::get('/report-management', [ImportIndexController::class, 'reportManagement'])->name('report-management.index');
     Route::get('/job-management', [ImportJobManagementController::class, 'index'])->name('job-management.index');
     Route::get('/job-management/data', [ImportJobManagementController::class, 'data'])->name('job-management.data');
+    Route::post('/job-management/clear', [ImportJobManagementController::class, 'clear'])->name('job-management.clear');
+    Route::post('/job-management/bulk-delete', [ImportJobManagementController::class, 'bulkDestroy'])->name('job-management.bulk-destroy');
+    Route::post('/job-management/{jobId}/force-start', [ImportJobManagementController::class, 'forceStart'])->name('job-management.force-start');
+    Route::post('/job-management/snapshot/{rebuildId}/force-start', [ImportJobManagementController::class, 'forceStartSnapshot'])->name('job-management.snapshot.force-start');
     Route::post('/job-management/{jobId}/terminate', [ImportJobManagementController::class, 'terminate'])->name('job-management.terminate');
+    Route::delete('/job-management/{jobId}', [ImportJobManagementController::class, 'destroy'])->name('job-management.destroy');
     Route::get('/file-management', [FileManagementController::class, 'index'])->name('file-management.index');
     Route::post('/file-management/delete', [FileManagementController::class, 'destroy'])->name('file-management.destroy');
     Route::get('/user-management', [UserManagementController::class, 'index'])->name('user-management.index');

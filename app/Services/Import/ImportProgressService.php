@@ -128,6 +128,40 @@ class ImportProgressService
         ];
     }
 
+    public function deleteJob(int $jobId): bool
+    {
+        if ($jobId <= 0) {
+            return false;
+        }
+
+        $job = $this->findJob($jobId);
+        if (!$job) {
+            return false;
+        }
+
+        $this->deleteJobRecord($jobId);
+
+        return true;
+    }
+
+    public function deleteJobsByIds(array $jobIds): int
+    {
+        $deleted = 0;
+
+        foreach ($jobIds as $jobId) {
+            $jobId = (int) $jobId;
+            if ($jobId <= 0) {
+                continue;
+            }
+
+            if ($this->deleteJob($jobId)) {
+                $deleted++;
+            }
+        }
+
+        return $deleted;
+    }
+
     public function markQueued(int $jobId, ?array $progressPayload = null): void
     {
         $this->updateJob($jobId, ['status' => 'queued'], $progressPayload);
@@ -141,6 +175,16 @@ class ImportProgressService
     public function markCompleted(int $jobId, int $success, int $failed, int $totalRows, ?array $progressPayload = null): void
     {
         $this->updateTotals($jobId, $success, $failed, $totalRows, 'completed', $progressPayload);
+    }
+
+    public function markTerminated(int $jobId, string $message, int $success = 0, int $failed = 0): void
+    {
+        $this->updateTotals($jobId, $success, $failed, null, 'terminated', [
+            'status' => 'terminated',
+            'message' => $message,
+            'total_success' => $success,
+            'total_failed' => $failed,
+        ]);
     }
 
     public function markFailed(int $jobId, string $message, int $success = 0, int $failed = 0, ?string $status = null): void
@@ -745,6 +789,6 @@ class ImportProgressService
 
     private function isTerminalStatus(?string $status): bool
     {
-        return in_array($status, ['completed', 'failed', 'failed_partial'], true);
+        return in_array($status, ['completed', 'failed', 'failed_partial', 'terminated'], true);
     }
 }

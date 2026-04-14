@@ -15,6 +15,8 @@ return [
 
     'default' => env('QUEUE_CONNECTION', 'database'),
 
+    'report_queue' => env('REPORT_QUEUE', 'default'),
+
     /*
     |--------------------------------------------------------------------------
     | Queue Connections

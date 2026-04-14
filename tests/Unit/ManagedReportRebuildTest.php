@@ -127,4 +127,61 @@ class ManagedReportRebuildTest extends TestCase
         $this->assertSame('completed', $payload['stage']);
         Queue::assertPushed(WarmReportCacheJob::class, 1);
     }
+
+    public function test_force_start_runs_snapshot_inline_from_queued_state(): void
+    {
+        $rebuildId = (string) \Illuminate\Support\Str::uuid();
+
+        Cache::put(
+            ManagedReportSnapshotRebuildStore::stateKey($rebuildId),
+            [
+                'rebuild_id' => $rebuildId,
+                'status' => 'queued',
+                'stage' => 'queued',
+                'queued' => true,
+                'force_rebuild' => true,
+                'source' => 'unit-test-force-start',
+                'message' => 'Rebuild snapshot seluruh report sedang menunggu worker.',
+                'progress_percent' => 0,
+                'completed_units' => 0,
+                'total_units' => 1,
+                'build_units' => 0,
+                'current_report_key' => null,
+                'current_report_label' => null,
+                'current_period' => null,
+                'report_completed_units' => 0,
+                'report_total_units' => 0,
+                'reports' => [],
+                'results' => [],
+                'started_at' => null,
+                'finished_at' => null,
+                'created_at' => now()->subMinute()->toIso8601String(),
+                'updated_at' => now()->subMinute()->toIso8601String(),
+            ],
+            ManagedReportSnapshotRebuildStore::ttl()
+        );
+
+        $builder = Mockery::mock(ReportSnapshotBuilder::class);
+        $builder->shouldReceive('describeRebuildPlan')
+            ->once()
+            ->andReturn([
+                'reports' => [],
+                'build_units' => 0,
+                'total_units' => 1,
+            ]);
+
+        $dashboardHarianSnapshotService = Mockery::mock(DashboardHarianSnapshotService::class);
+        $syncService = Mockery::mock(ReportDataSyncService::class);
+        $syncService->shouldReceive('invalidateReportCaches')->once()->andReturn(2);
+
+        app()->instance(ReportSnapshotBuilder::class, $builder);
+        app()->instance(DashboardHarianSnapshotService::class, $dashboardHarianSnapshotService);
+        app()->instance(ReportDataSyncService::class, $syncService);
+
+        $resolved = app(\App\Support\ManagedReportSnapshotRebuildCoordinator::class)->forceStart($rebuildId);
+
+        $this->assertSame(200, $resolved['status_code']);
+        $this->assertSame('completed', $resolved['payload']['status']);
+        Queue::assertPushed(WarmReportCacheJob::class, 1);
+    }
 }
