@@ -199,6 +199,14 @@ class ImportJobManagementController extends Controller
 
     public function forceStartSnapshot(string $rebuildId)
     {
+        if (Schema::hasTable('jobs')) {
+            $basename = class_basename(\App\Jobs\RunManagedReportSnapshotRebuildJob::class);
+            DB::table('jobs')
+                ->where('payload', 'like', '%' . $basename . '%')
+                ->where('payload', 'like', '%' . $rebuildId . '%')
+                ->delete();
+        }
+
         $resolved = $this->snapshotRebuildCoordinator->forceStart($rebuildId);
 
         return response()->json($resolved['payload'], (int) ($resolved['status_code'] ?? 200));
@@ -225,6 +233,8 @@ class ImportJobManagementController extends Controller
         $progressService->requestTermination($jobId, auth()->id());
 
         if ($status === 'queued') {
+            $progressService->cleanupQueuedImportJobRowsForJob($jobId);
+
             $progressService->markTerminated(
                 $jobId,
                 'Job dihentikan melalui Job Management.',
@@ -546,6 +556,10 @@ class ImportJobManagementController extends Controller
             && (int) ($queueRow['reserved_age_seconds'] ?? 0) >= self::SNAPSHOT_RESERVED_STALE_SECONDS
             && $this->timestampOlderThan($updatedAt, self::SNAPSHOT_RESERVED_STALE_SECONDS)
         ) {
+            if (isset($queueRow['job_id'])) {
+                DB::table('jobs')->where('id', $queueRow['job_id'])->delete();
+            }
+
             return $this->markSnapshotStateAsFailed(
                 $state,
                 'Job snapshot sudah di-reserve worker tetapi progress tidak bergerak terlalu lama. Kemungkinan worker berhenti di tengah proses.'

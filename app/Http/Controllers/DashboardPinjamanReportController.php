@@ -453,7 +453,7 @@ class DashboardPinjamanReportController extends Controller
             ->where("{$alias}.periode", $period)
             ->where(function ($query) use ($alias) {
                 $query->whereNull("{$alias}.nomor_rekening1")
-                    ->orWhereRaw("TRIM({$alias}.nomor_rekening1) = ''");
+                    ->orWhere("{$alias}.nomor_rekening1", '=', '');
             })
             ->selectRaw("
                 {$bucketExpression} as after_bucket,
@@ -494,9 +494,9 @@ class DashboardPinjamanReportController extends Controller
             $query = DB::table(self::SNAPSHOT_TABLE . " as {$alias}")
                 ->where("{$alias}.periode", $period)
                 ->whereNotNull("{$alias}.account_number")
-                ->whereRaw("TRIM({$alias}.account_number) <> ''")
+                ->where("{$alias}.account_number", '<>', '')
                 ->selectRaw("
-                    TRIM({$alias}.account_number) as account_number,
+                    {$alias}.account_number as account_number,
                     COALESCE({$alias}.loan_balance, 0) as " . ($alias === 'curr' ? 'current_balance' : 'previous_balance') . ",
                     {$alias}.quality_bucket as " . ($alias === 'curr' ? 'after_bucket' : 'before_bucket')
                 );
@@ -514,7 +514,7 @@ class DashboardPinjamanReportController extends Controller
         $query = DB::table(DB::raw($this->buildLoanSnapshotSource($alias, $filters)))
             ->where("{$alias}.periode", $period)
             ->whereNotNull("{$alias}.nomor_rekening1")
-            ->whereRaw("TRIM({$alias}.nomor_rekening1) <> ''")
+            ->where("{$alias}.nomor_rekening1", '<>', '')
             ->selectRaw("
                 TRIM({$alias}.nomor_rekening1) as account_number,
                 COALESCE({$alias}.baki_debet1, 0) as " . ($alias === 'curr' ? 'current_balance' : 'previous_balance') . ",
