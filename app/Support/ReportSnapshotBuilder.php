@@ -878,8 +878,9 @@ class ReportSnapshotBuilder
             ->groupBy('source_branch_key', 'uker_key', 'identity_key');
 
         $joined = DB::query()->fromSub($loanPerCif, 'loan_per_cif');
+        $includeCasa = (bool) $casaDate;
 
-        if ($casaDate) {
+        if ($includeCasa) {
             $applyCasaTypeFilter = $this->shouldApplyCasaTypeFilter($casaDate);
             $casaIdentitySql = $this->buildJoinableIdentitySql($casaKeyColumn);
 
@@ -901,6 +902,22 @@ class ReportSnapshotBuilder
             });
         }
 
+        $casaSelectSql = $includeCasa
+            ? "
+                SUM(COALESCE(casa_base.casa_balance, 0)) as total_casa,
+                SUM(CASE WHEN loan_per_cif.has_briguna = 1 THEN COALESCE(casa_base.casa_balance, 0) ELSE 0 END) as briguna_casa,
+                SUM(CASE WHEN loan_per_cif.has_kpr = 1 THEN COALESCE(casa_base.casa_balance, 0) ELSE 0 END) as kpr_casa,
+                SUM(CASE WHEN loan_per_cif.has_mikro = 1 THEN COALESCE(casa_base.casa_balance, 0) ELSE 0 END) as mikro_casa,
+                SUM(CASE WHEN loan_per_cif.has_smc = 1 THEN COALESCE(casa_base.casa_balance, 0) ELSE 0 END) as smc_casa,
+            "
+            : "
+                0 as total_casa,
+                0 as briguna_casa,
+                0 as kpr_casa,
+                0 as mikro_casa,
+                0 as smc_casa,
+            ";
+
         $summaryRows = $joined
             ->selectRaw("
                 loan_per_cif.source_branch_key,
@@ -910,11 +927,7 @@ class ReportSnapshotBuilder
                 SUM(CASE WHEN loan_per_cif.has_kpr = 1 THEN loan_per_cif.loan_balance ELSE 0 END) as kpr_os,
                 SUM(CASE WHEN loan_per_cif.has_mikro = 1 THEN loan_per_cif.loan_balance ELSE 0 END) as mikro_os,
                 SUM(CASE WHEN loan_per_cif.has_smc = 1 THEN loan_per_cif.loan_balance ELSE 0 END) as smc_os,
-                SUM(COALESCE(casa_base.casa_balance, 0)) as total_casa,
-                SUM(CASE WHEN loan_per_cif.has_briguna = 1 THEN COALESCE(casa_base.casa_balance, 0) ELSE 0 END) as briguna_casa,
-                SUM(CASE WHEN loan_per_cif.has_kpr = 1 THEN COALESCE(casa_base.casa_balance, 0) ELSE 0 END) as kpr_casa,
-                SUM(CASE WHEN loan_per_cif.has_mikro = 1 THEN COALESCE(casa_base.casa_balance, 0) ELSE 0 END) as mikro_casa,
-                SUM(CASE WHEN loan_per_cif.has_smc = 1 THEN COALESCE(casa_base.casa_balance, 0) ELSE 0 END) as smc_casa,
+                {$casaSelectSql}
                 COUNT(*) as source_row_count
             ")
             ->groupBy('loan_per_cif.source_branch_key', 'loan_per_cif.uker_key')

@@ -4,47 +4,32 @@
 
 @section('content')
 
-<div class="import-template-banner mb-4">
-    <div class="import-template-banner__glow"></div>
-    <div class="d-flex align-items-center justify-content-between flex-wrap position-relative">
-        <div class="import-template-banner__content pr-3">
-            <span class="import-template-banner__eyebrow">Template Siap Pakai</span>
-            <div class="import-template-banner__title">
-                <i class="fas fa-download mr-2"></i> Template Import
+<div class="card import-template-card border-0 mb-4">
+    <div class="import-template-card__body">
+        <div class="row align-items-center">
+            <div class="col-lg-7">
+                <span class="import-template-card__eyebrow">Template Import</span>
+                <h5 class="import-template-card__title mb-1">Unduh template, isi data, lalu unggah</h5>
+                <p class="import-template-card__text mb-0">Pilih report terlebih dahulu agar format template dan validasi file tetap mengikuti kebutuhan yang tepat.</p>
             </div>
-            <p class="import-template-banner__text mb-0">Pilih report, unduh template, lalu isi datanya.</p>
-            <div class="import-template-banner__meta">
-                <span><i class="fas fa-palette mr-1"></i> Tema selaras logo</span>
-                <span><i class="fas fa-bolt mr-1"></i> Lebih responsif</span>
-                <span><i class="fas fa-hand-pointer mr-1"></i> Upload lebih interaktif</span>
-            </div>
-        </div>
-        <div class="import-template-banner__brand mt-3 mt-lg-0">
-            <div class="import-template-banner__brand-card">
-                <img src="{{ asset('images/a-six-logo.svg') }}" alt="Logo A-SIX" class="import-template-banner__logo">
-                <div>
-                    <div class="import-template-banner__brand-label">A-SIX Dashboard</div>
-                    <div class="import-template-banner__brand-text">Aksen warna mengikuti logo aktif dengan nuansa gelap dan oranye.</div>
+            <div class="col-lg-5 mt-3 mt-lg-0">
+                <div class="import-template-actions">
+                    <div class="import-template-select">
+                        <select id="download-template-select" class="form-control select2 import-template-select__control" data-placeholder="-- Cari & Pilih Report --">
+                            <option value="">-- Cari & Pilih Report --</option>
+                            @foreach($downloadTemplates as $key => $template)
+                                <option value="{{ $key }}" data-filename="{{ $template['filename'] }}">{{ $template['label'] }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <button type="button"
+                       id="btn-download-template"
+                       class="btn import-template-button disabled"
+                       aria-disabled="true"
+                       data-route-template="{{ route('import.template') }}">
+                        <i class="fas fa-file-download mr-2"></i> Unduh Template
+                    </button>
                 </div>
-            </div>
-        </div>
-        <div class="import-template-banner__actions mt-3 mt-md-0">
-            <div class="import-template-banner__download-group">
-                <div class="import-template-banner__select-wrapper">
-                    <select id="download-template-select" class="form-control select2 import-template-banner__select" data-placeholder="-- Cari & Pilih Report --">
-                        <option value="">-- Cari & Pilih Report --</option>
-                        @foreach($downloadTemplates as $key => $template)
-                            <option value="{{ $key }}" data-filename="{{ $template['filename'] }}">{{ $template['label'] }}</option>
-                        @endforeach
-                    </select>
-                </div>
-                <button type="button"
-                   id="btn-download-template"
-                   class="btn import-template-banner__button disabled"
-                   aria-disabled="true"
-                   data-route-template="{{ route('import.template') }}">
-                    <i class="fas fa-file-download mr-2"></i> Unduh Template
-                </button>
             </div>
         </div>
     </div>
@@ -69,54 +54,22 @@
         @csrf
 
         <div class="card-body import-upload-card__body">
-            <div class="import-report-hero mb-4">
-                <div class="import-report-hero__head">
-                    <div>
-                        <span class="import-upload-card__eyebrow">Alur Import</span>
-                        <h6 class="mb-1 font-weight-bold text-dark">Pilih report, cek format, lalu unggah file</h6>
-                        <p class="mb-0 text-muted">Halaman akan menyesuaikan jenis file dan kebutuhan periode secara otomatis.</p>
-                    </div>
+            <div class="import-report-summary mb-4">
+                <div class="import-report-summary__item">
+                    <span class="import-report-summary__label">Report aktif</span>
+                    <strong id="summary-report-name">Belum dipilih</strong>
                 </div>
-                <div class="import-report-steps">
-                    <div class="import-report-step is-active">
-                        <span class="import-report-step__num">1</span>
-                        <div>
-                            <strong>Pilih Report</strong>
-                            <small>Tentukan sumber data</small>
-                        </div>
-                    </div>
-                    <div class="import-report-step">
-                        <span class="import-report-step__num">2</span>
-                        <div>
-                            <strong>Siapkan File</strong>
-                            <small>Format menyesuaikan report</small>
-                        </div>
-                    </div>
-                    <div class="import-report-step">
-                        <span class="import-report-step__num">3</span>
-                        <div>
-                            <strong>Upload & Proses</strong>
-                            <small>Preview muncul setelah valid</small>
-                        </div>
-                    </div>
+                <div class="import-report-summary__item">
+                    <span class="import-report-summary__label">Format</span>
+                    <strong id="summary-upload-type">RAR</strong>
                 </div>
-                <div class="import-report-summary">
-                    <div class="import-report-summary__item">
-                        <span class="import-report-summary__label">Report</span>
-                        <strong id="summary-report-name">Belum dipilih</strong>
-                    </div>
-                    <div class="import-report-summary__item">
-                        <span class="import-report-summary__label">Format Aktif</span>
-                        <strong id="summary-upload-type">RAR</strong>
-                    </div>
-                    <div class="import-report-summary__item">
-                        <span class="import-report-summary__label">Periode</span>
-                        <strong id="summary-periode-status">Otomatis</strong>
-                    </div>
-                    <div class="import-report-summary__item">
-                        <span class="import-report-summary__label">Target</span>
-                        <strong id="summary-target-table">-</strong>
-                    </div>
+                <div class="import-report-summary__item">
+                    <span class="import-report-summary__label">Periode</span>
+                    <strong id="summary-periode-status">Otomatis</strong>
+                </div>
+                <div class="import-report-summary__item">
+                    <span class="import-report-summary__label">Target</span>
+                    <strong id="summary-target-table">-</strong>
                 </div>
             </div>
 
@@ -2300,35 +2253,19 @@
         color: #0f172a;
     }
 
-    .import-template-banner {
-        position: relative;
+    .import-template-card {
         overflow: hidden;
-        border-radius: 24px;
-        padding: 1.4rem 1.5rem;
-        background:
-            radial-gradient(circle at top right, rgba(251, 146, 60, 0.18), transparent 28%),
-            radial-gradient(circle at bottom left, rgba(17, 24, 39, 0.22), transparent 30%),
-            linear-gradient(135deg, #111827 0%, #1f2937 52%, #2f3b52 100%);
-        border: 1px solid rgba(249, 115, 22, 0.18);
-        box-shadow: 0 28px 54px -34px rgba(17, 24, 39, 0.68);
+        border-radius: 22px;
+        background: #ffffff;
+        border: 1px solid rgba(8, 87, 195, 0.12);
+        box-shadow: 0 18px 34px -28px rgba(4, 42, 95, 0.24);
     }
 
-    .import-template-banner__glow {
-        position: absolute;
-        top: -42px;
-        right: -28px;
-        width: 160px;
-        height: 160px;
-        border-radius: 999px;
-        background: rgba(249, 115, 22, 0.22);
-        filter: blur(10px);
+    .import-template-card__body {
+        padding: 1.35rem 1.5rem;
     }
 
-    .import-template-banner__content {
-        max-width: 680px;
-    }
-
-    .import-template-banner__eyebrow,
+    .import-template-card__eyebrow,
     .import-upload-card__eyebrow {
         display: inline-block;
         margin-bottom: 0.55rem;
@@ -2340,90 +2277,68 @@
         text-transform: uppercase;
     }
 
-    .import-template-banner__eyebrow {
-        color: #fdba74;
-        background: rgba(255, 255, 255, 0.08);
-        border: 1px solid rgba(251, 146, 60, 0.18);
+    .import-template-card__eyebrow {
+        color: #1d4ed8;
+        background: rgba(37, 99, 235, 0.08);
+        border: 1px solid rgba(37, 99, 235, 0.12);
     }
 
-    .import-template-banner__title {
-        color: #ffffff;
-        font-size: 1.35rem;
+    .import-template-card__title {
+        color: #0f172a;
+        font-size: 1.2rem;
         font-weight: 800;
         letter-spacing: -0.03em;
         margin-bottom: 0.35rem;
     }
 
-    .import-template-banner__text {
-        color: rgba(255, 255, 255, 0.78);
+    .import-template-card__text {
+        color: #64748b;
         line-height: 1.65;
         max-width: 620px;
     }
 
-    .import-template-banner__meta {
+    .import-template-actions {
         display: flex;
-        gap: 0.65rem;
+        align-items: center;
+        gap: 0.75rem;
+        justify-content: flex-end;
         flex-wrap: wrap;
-        margin-top: 0.9rem;
     }
 
-    .import-template-banner__meta span {
-        display: inline-flex;
-        align-items: center;
-        padding: 0.45rem 0.72rem;
-        border-radius: 999px;
-        background: rgba(255, 255, 255, 0.08);
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        color: rgba(255, 255, 255, 0.82);
-        font-size: 0.82rem;
-        font-weight: 600;
+    .import-template-select {
+        min-width: 280px;
+        max-width: 420px;
+        flex: 1 1 auto;
     }
 
-    .import-template-banner__brand {
+    .import-template-select__control,
+    .import-template-select .select2-container--bootstrap4 .select2-selection--single {
+        min-height: 48px;
+        border-radius: 14px !important;
+        border: 1px solid rgba(8, 87, 195, 0.14) !important;
+        background: #ffffff !important;
         display: flex;
         align-items: center;
-        padding-right: 1rem;
+        box-shadow: none !important;
     }
 
-    .import-template-banner__brand-card {
-        display: flex;
-        align-items: center;
-        gap: 0.9rem;
-        min-width: 290px;
-        max-width: 340px;
-        padding: 0.95rem 1rem;
-        border-radius: 20px;
-        background: linear-gradient(145deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.04));
-        border: 1px solid rgba(251, 146, 60, 0.14);
-        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-    }
-
-    .import-template-banner__logo {
-        width: 58px;
-        height: 58px;
-        padding: 0.2rem;
-        border-radius: 16px;
-        background: rgba(255, 255, 255, 0.96);
-        flex: 0 0 auto;
-    }
-
-    .import-template-banner__brand-label {
-        color: #fdba74;
-        font-size: 0.7rem;
-        font-weight: 800;
-        letter-spacing: 0.14em;
-        text-transform: uppercase;
-        margin-bottom: 0.18rem;
-    }
-
-    .import-template-banner__brand-text {
-        color: rgba(255, 255, 255, 0.84);
-        font-size: 0.9rem;
-        line-height: 1.45;
+    .import-template-select .select2-container--bootstrap4 .select2-selection--single .select2-selection__rendered {
+        color: #0f172a;
         font-weight: 600;
+        padding-left: 1rem;
     }
 
-    .import-template-banner__button {
+    .import-template-select .select2-container--bootstrap4 .select2-selection--single .select2-selection__arrow {
+        height: 46px;
+        right: 8px;
+    }
+
+    .import-template-select .select2-container--bootstrap4.select2-container--focus .select2-selection--single {
+        border-color: #307fe2 !important;
+        box-shadow: 0 0 0 0.2rem rgba(48, 127, 226, 0.16) !important;
+    }
+
+    .import-template-button {
         display: inline-flex;
         align-items: center;
         justify-content: center;
@@ -2431,62 +2346,22 @@
         padding: 0.8rem 1.25rem;
         border-radius: 16px;
         border: 0;
-        background: linear-gradient(135deg, #fb923c, #ea580c);
+        background: linear-gradient(135deg, #0857c3, #307fe2);
         color: #ffffff;
         font-weight: 700;
-        box-shadow: 0 18px 30px -20px rgba(249, 115, 22, 0.48);
+        box-shadow: 0 18px 30px -20px rgba(8, 87, 195, 0.42);
         transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
     }
 
-    .import-template-banner__download-group {
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-        flex-wrap: wrap;
-        justify-content: flex-end;
-    }
-
-    .import-template-banner__select-wrapper {
-        min-width: 280px;
-        flex: 1 1 auto;
-        max-width: 400px;
-    }
-
-    .import-template-banner .select2-container--bootstrap4 .select2-selection--single {
-        min-height: 48px;
-        border-radius: 16px !important;
-        border: 1px solid rgba(251, 146, 60, 0.22) !important;
-        background: rgba(255, 255, 255, 0.95) !important;
-        display: flex;
-        align-items: center;
-        box-shadow: 0 4px 12px -8px rgba(17, 24, 39, 0.28) !important;
-    }
-
-    .import-template-banner .select2-container--bootstrap4 .select2-selection--single .select2-selection__rendered {
-        color: #1f2937;
-        font-weight: 600;
-        padding-left: 1.25rem;
-    }
-
-    .import-template-banner .select2-container--bootstrap4 .select2-selection--single .select2-selection__arrow {
-        height: 46px;
-        right: 8px;
-    }
-
-    .import-template-banner .select2-container--bootstrap4.select2-container--focus .select2-selection--single {
-        border-color: #fb923c !important;
-        box-shadow: 0 0 0 0.25rem rgba(251, 146, 60, 0.16) !important;
-    }
-
-    .import-template-banner__button:hover {
+    .import-template-button:hover {
         color: #ffffff;
         text-decoration: none;
         transform: translateY(-1px);
-        box-shadow: 0 22px 34px -20px rgba(249, 115, 22, 0.55);
+        box-shadow: 0 22px 34px -20px rgba(8, 87, 195, 0.5);
     }
 
-    .import-template-banner__button.disabled,
-    .import-template-banner__button[aria-disabled="true"] {
+    .import-template-button.disabled,
+    .import-template-button[aria-disabled="true"] {
         pointer-events: none;
         opacity: 0.6;
         background: linear-gradient(135deg, #94a3b8, #64748b);
@@ -2494,22 +2369,23 @@
     }
 
     .import-upload-card {
-        border-radius: 26px;
+        border-radius: 22px;
         overflow: hidden;
-        box-shadow: 0 28px 60px -40px rgba(15, 23, 42, 0.32) !important;
+        border: 1px solid rgba(8, 87, 195, 0.12) !important;
+        box-shadow: 0 18px 34px -28px rgba(4, 42, 95, 0.24) !important;
+        background: #ffffff;
     }
 
     .import-upload-card__header {
-        padding: 1.45rem 1.5rem 1rem;
-        background:
-            radial-gradient(circle at top left, rgba(249, 115, 22, 0.1), transparent 24%),
-            radial-gradient(circle at top right, rgba(17, 24, 39, 0.06), transparent 26%),
-            linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+        padding: 1.25rem 1.5rem 1rem;
+        background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+        border-bottom: 1px solid rgba(8, 87, 195, 0.08);
     }
 
     .import-upload-card__eyebrow {
-        color: #c2410c;
-        background: rgba(251, 146, 60, 0.12);
+        color: #1d4ed8;
+        background: rgba(37, 99, 235, 0.08);
+        border: 1px solid rgba(37, 99, 235, 0.12);
     }
 
     .import-upload-card__subtitle {
@@ -2522,82 +2398,23 @@
         padding: 1.5rem;
     }
 
-    .import-report-hero {
-        padding: 1.15rem;
-        border-radius: 22px;
-        background:
-            radial-gradient(circle at top right, rgba(251, 146, 60, 0.12), transparent 30%),
-            linear-gradient(180deg, #fffaf5 0%, #ffffff 100%);
-        border: 1px solid rgba(251, 146, 60, 0.14);
-        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
-    }
-
-    .import-report-steps {
-        display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 0.85rem;
-        margin-top: 1rem;
-    }
-
-    .import-report-step {
-        display: flex;
-        align-items: center;
-        gap: 0.8rem;
-        padding: 0.95rem 1rem;
-        border-radius: 18px;
-        background: #ffffff;
-        border: 1px solid rgba(148, 163, 184, 0.18);
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
-    }
-
-    .import-report-step.is-active,
-    .import-report-step:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 18px 30px -26px rgba(17, 24, 39, 0.3);
-    }
-
-    .import-report-step__num {
-        width: 34px;
-        height: 34px;
-        border-radius: 999px;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        background: linear-gradient(135deg, #fb923c, #ea580c);
-        color: #ffffff;
-        font-weight: 800;
-        flex: 0 0 auto;
-    }
-
-    .import-report-step strong,
-    .import-report-step small {
-        display: block;
-    }
-
-    .import-report-step small {
-        margin-top: 0.16rem;
-        color: #64748b;
-        line-height: 1.45;
-    }
-
     .import-report-summary {
         display: grid;
         grid-template-columns: repeat(4, minmax(0, 1fr));
-        gap: 0.85rem;
-        margin-top: 1rem;
+        gap: 0.75rem;
     }
 
     .import-report-summary__item {
-        padding: 0.95rem 1rem;
-        border-radius: 18px;
-        background: #ffffff;
-        border: 1px solid rgba(148, 163, 184, 0.14);
+        padding: 0.9rem 1rem;
+        border-radius: 16px;
+        background: #f8fbff;
+        border: 1px solid rgba(8, 87, 195, 0.12);
     }
 
     .import-report-summary__label {
         display: block;
         margin-bottom: 0.26rem;
-        color: #64748b;
+        color: #5b7da7;
         font-size: 0.7rem;
         font-weight: 800;
         letter-spacing: 0.08em;
@@ -2606,7 +2423,7 @@
 
     .import-report-summary__item strong {
         display: block;
-        color: #111827;
+        color: #0f172a;
         font-size: 0.94rem;
         font-weight: 800;
         line-height: 1.35;
@@ -2636,27 +2453,28 @@
         height: calc(100% - 8px);
         margin: 4px;
         border-radius: 12px;
-        background: #e2e8f0;
+        background: #eaf2ff;
+        color: #0b3b80;
     }
 
     .import-upload-card__footer {
         padding: 0 1.5rem 1.5rem;
-        background: linear-gradient(180deg, rgba(248, 250, 252, 0) 0%, #f8fafc 100%);
+        background: linear-gradient(180deg, rgba(248, 251, 255, 0) 0%, #f8fbff 100%);
     }
 
     .import-upload-card__submit {
         min-height: 50px;
         padding: 0.85rem 1.4rem;
         border-radius: 16px;
-        box-shadow: 0 18px 34px -22px rgba(37, 99, 235, 0.52);
+        box-shadow: 0 18px 34px -22px rgba(8, 87, 195, 0.48);
     }
 
     .import-upload-card__submit.btn-primary,
     .import-upload-card__submit.btn-success,
     .import-upload-card__submit.btn-info {
         border: 0;
-        background: linear-gradient(135deg, #fb923c, #ea580c);
-        box-shadow: 0 18px 34px -22px rgba(249, 115, 22, 0.5);
+        background: linear-gradient(135deg, #0857c3, #307fe2);
+        box-shadow: 0 18px 34px -22px rgba(8, 87, 195, 0.5);
     }
 
     .import-upload-card__submit.btn-primary:hover,
@@ -2665,8 +2483,8 @@
     .import-upload-card__submit.btn-primary:focus,
     .import-upload-card__submit.btn-success:focus,
     .import-upload-card__submit.btn-info:focus {
-        background: linear-gradient(135deg, #f97316, #c2410c);
-        box-shadow: 0 22px 38px -24px rgba(249, 115, 22, 0.55);
+        background: linear-gradient(135deg, #0749a5, #236bcc);
+        box-shadow: 0 22px 38px -24px rgba(8, 87, 195, 0.55);
     }
 
     .import-dropzone {
@@ -2676,8 +2494,8 @@
         margin-top: 1.15rem;
         padding: 1.1rem 1.15rem;
         border-radius: 22px;
-        border: 1.5px dashed rgba(251, 146, 60, 0.34);
-        background: linear-gradient(180deg, #fffaf5 0%, #ffffff 100%);
+        border: 1.5px dashed rgba(8, 87, 195, 0.28);
+        background: linear-gradient(180deg, #f7fbff 0%, #ffffff 100%);
         cursor: pointer;
         transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
     }
@@ -2687,13 +2505,13 @@
     .import-dropzone.is-dragover {
         outline: none;
         transform: translateY(-2px);
-        border-color: rgba(234, 88, 12, 0.6);
-        box-shadow: 0 20px 34px -28px rgba(249, 115, 22, 0.42);
+        border-color: rgba(8, 87, 195, 0.56);
+        box-shadow: 0 20px 34px -28px rgba(8, 87, 195, 0.3);
     }
 
     .import-dropzone.has-file {
         border-style: solid;
-        background: linear-gradient(180deg, #fff7ed 0%, #ffffff 100%);
+        background: linear-gradient(180deg, #eef6ff 0%, #ffffff 100%);
     }
 
     .import-dropzone__icon {
@@ -2702,8 +2520,8 @@
         border-radius: 18px;
         display: grid;
         place-items: center;
-        background: linear-gradient(135deg, #111827, #2f3b52);
-        color: #fb923c;
+        background: linear-gradient(135deg, #053b82, #0857c3);
+        color: #71c5e8;
         font-size: 1.45rem;
         flex: 0 0 auto;
     }
@@ -2728,8 +2546,8 @@
         padding: 0.95rem 1rem;
         border-radius: 18px;
         background: #ffffff;
-        border: 1px solid rgba(251, 146, 60, 0.16);
-        box-shadow: 0 16px 28px -24px rgba(17, 24, 39, 0.24);
+        border: 1px solid rgba(8, 87, 195, 0.12);
+        box-shadow: 0 16px 28px -24px rgba(4, 42, 95, 0.2);
     }
 
     .import-file-preview__icon {
@@ -2738,8 +2556,8 @@
         border-radius: 14px;
         display: grid;
         place-items: center;
-        background: rgba(251, 146, 60, 0.12);
-        color: #c2410c;
+        background: rgba(48, 127, 226, 0.12);
+        color: #0857c3;
         font-size: 1.1rem;
         flex: 0 0 auto;
     }
@@ -2770,14 +2588,14 @@
         border: 0;
         border-radius: 14px;
         padding: 0.7rem 0.95rem;
-        background: rgba(17, 24, 39, 0.08);
-        color: #111827;
+        background: rgba(8, 87, 195, 0.08);
+        color: #0f172a;
         font-weight: 700;
         transition: background 0.2s ease;
     }
 
     .import-file-preview__clear:hover {
-        background: rgba(17, 24, 39, 0.14);
+        background: rgba(8, 87, 195, 0.14);
     }
 
     .swal-modern-popup {
@@ -3020,12 +2838,10 @@
     }
 
     @media (max-width: 767.98px) {
-        .import-template-banner__brand {
-            width: 100%;
-            padding-right: 0;
-        }
-
-        .import-template-banner__brand-card,
+        .import-template-actions,
+        .import-template-select,
+        .import-template-button,
+        .import-upload-card__submit,
         .import-dropzone,
         .import-file-preview {
             width: 100%;
@@ -3036,12 +2852,10 @@
             text-align: center;
         }
 
-        .import-report-steps,
         .import-report-summary {
             grid-template-columns: 1fr;
         }
 
-        .import-template-banner,
         .import-upload-card__header,
         .import-upload-card__body,
         .import-upload-card__footer {
@@ -3049,16 +2863,8 @@
             padding-right: 1rem;
         }
 
-        .import-template-banner__title {
+        .import-template-card__title {
             font-size: 1.15rem;
-        }
-
-        .import-template-banner__actions,
-        .import-template-banner__download-group,
-        .import-template-banner__select,
-        .import-template-banner__button,
-        .import-upload-card__submit {
-            width: 100%;
         }
     }
 </style>
