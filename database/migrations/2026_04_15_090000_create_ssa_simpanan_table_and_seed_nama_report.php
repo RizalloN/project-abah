@@ -12,7 +12,7 @@ return new class extends Migration
         if (!Schema::hasTable('ssa_simpanan')) {
             Schema::create('ssa_simpanan', function (Blueprint $table) {
                 $table->string('uniqueid_namareport', 255)->primary();
-                $table->string('posisi', 50)->nullable();
+                $table->string('Month_Day_Year_of_Posisi', 50)->nullable();
                 $table->string('nama_cabang', 150)->nullable();
                 $table->string('nama_uker', 150)->nullable();
                 $table->string('produk', 50)->nullable();
@@ -25,7 +25,7 @@ return new class extends Migration
                 $table->string('bulan_tahun', 30)->nullable();
                 $table->timestamps();
 
-                $table->index(['posisi', 'nama_cabang'], 'idx_ssa_simpanan_posisi_cabang');
+                $table->index(['Month_Day_Year_of_Posisi', 'nama_cabang'], 'idx_ssa_simpanan_posisi_cabang');
                 $table->index(['nama_uker', 'produk'], 'idx_ssa_simpanan_uker_produk');
                 $table->index(['bulan_tahun', 'segmentasi'], 'idx_ssa_simpanan_bulan_tahun_segmentasi');
             });

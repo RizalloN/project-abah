@@ -25,7 +25,7 @@ from pathlib import Path
 
 
 REQUIRED_HEADERS = {
-    "posisi",
+    "month_day_year_of_posisi",
     "nama_cabang",
     "nama_uker",
     "produk",
@@ -121,6 +121,9 @@ def normalize_cell(value: object) -> str:
     if text == "":
         return ""
 
+    if text.strip() == r"\N":
+        return ""
+
     previous = None
     while text != previous:
         previous = text
@@ -137,7 +140,7 @@ def normalize_header_name(header_name: str) -> str:
     normalized = re.sub(r"[^A-Z0-9]+", "_", normalize_cell(header_name).upper()).strip("_")
 
     aliases = {
-        "MONTH_DAY_YEAR_OF_POSISI": "posisi",
+        "MONTH_DAY_YEAR_OF_POSISI": "month_day_year_of_posisi",
         "NAMA_CABANG": "nama_cabang",
         "NAMA_UKER": "nama_uker",
         "PRODUK": "produk",
@@ -224,7 +227,7 @@ def normalize_integer_value(value: object) -> str | None:
 
 
 def is_valid_ssa_row_values(values_by_header: dict[str, object]) -> bool:
-    posisi = normalize_cell(values_by_header.get("posisi"))
+    posisi = normalize_cell(values_by_header.get("month_day_year_of_posisi"))
     nama_cabang = normalize_cell(values_by_header.get("nama_cabang"))
     nama_uker = normalize_cell(values_by_header.get("nama_uker"))
     produk = normalize_cell(values_by_header.get("produk"))
