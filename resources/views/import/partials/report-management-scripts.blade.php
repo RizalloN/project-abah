@@ -163,6 +163,10 @@
                 managementState.autoHideTimer = setTimeout(() => {
                     hideLoadProgress();
                 }, 2500);
+            } else if (status === 'failed') {
+                managementState.autoHideTimer = setTimeout(() => {
+                    hideLoadProgress();
+                }, 8000);
             }
         }
 
@@ -174,6 +178,11 @@
                 clearTimeout(managementState.autoHideTimer);
                 managementState.autoHideTimer = null;
             }
+        }
+
+        function resetManagementStatusState() {
+            hideLoadProgress();
+            setNotice('', '');
         }
 
         function stopDirectLoadTimer() {
@@ -503,7 +512,7 @@
             }, 180000);
 
             try {
-                setNotice('', '');
+                resetManagementStatusState();
                 setManagementLoadingState(true);
                 managementState.selectedScopes.clear();
                 updateSelectionToast();
@@ -653,6 +662,10 @@
             } finally {
                 setManagementLoadingState(false);
             }
+        });
+
+        managementReportSelect?.addEventListener('change', function () {
+            resetManagementStatusState();
         });
 
         managementTableBody?.addEventListener('click', async function (event) {

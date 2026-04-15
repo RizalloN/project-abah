@@ -398,6 +398,7 @@ def _run_process_inner(config):
     suffix        = '_SimoPN'         if is_simpanan_multipn else '_DLD'
     table_columns_map = {str(col).lower(): str(col) for col in table_columns}
     unique_id_col = table_columns_map.get(unique_id_col.lower(), unique_id_col)
+    unique_id_prefix = str(config.get('unique_id_prefix') or 'imp').strip() or 'imp'
     skip_cols     = set(['id', unique_id_col.lower()])
 
     # Build valid headers list: [(original_col_index, header_name), ...]
@@ -458,7 +459,7 @@ def _run_process_inner(config):
 
         # Bangun baris final dengan unique ID dan timestamps
         final_row = {
-            unique_id_col: str(uuid.uuid4()) + suffix,
+            unique_id_col: unique_id_prefix + '_' + str(uuid.uuid4()) + suffix,
             'created_at':  now_str,
             'updated_at':  now_str,
         }
