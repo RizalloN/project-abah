@@ -119,6 +119,8 @@ Route::middleware(['auth', 'role:admin', 'release.session.lock'])->group(functio
     Route::get('/import/report-management/load/{loadId}/status', [ImportIndexController::class, 'managedReportLoadStatus'])->name('import.report-management.load.status');
     Route::post('/import/report-management/rebuild', [ImportIndexController::class, 'rebuildManagedReportSnapshots'])->name('import.report-management.rebuild');
     Route::get('/import/report-management/rebuild/{rebuildId}/status', [ImportIndexController::class, 'managedReportRebuildStatus'])->name('import.report-management.rebuild.status');
+    Route::post('/import/report-management/recover', [ImportIndexController::class, 'startManagedReportRecovery'])->name('import.report-management.recover');
+    Route::get('/import/report-management/recover/{recoveryId}/status', [ImportIndexController::class, 'managedReportRecoveryStatus'])->name('import.report-management.recover.status');
     Route::post('/import/report-management/delete', [ImportIndexController::class, 'deleteManagedReportRows'])->name('import.report-management.delete');
     Route::post('/import/report-management/duplicates', [ImportIndexController::class, 'deleteManagedReportDuplicates'])->name('import.report-management.duplicates');
     Route::post('/import/report-management/delete/{deleteId}/process', [ImportIndexController::class, 'processManagedReportDelete'])->name('import.report-management.delete.process');

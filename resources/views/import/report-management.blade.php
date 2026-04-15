@@ -21,6 +21,8 @@
      data-load-status-url-template="{{ route('import.report-management.load.status', ['loadId' => '__LOAD_ID__']) }}"
      data-rebuild-url="{{ route('import.report-management.rebuild') }}"
      data-rebuild-status-url-template="{{ route('import.report-management.rebuild.status', ['rebuildId' => '__REBUILD_ID__']) }}"
+     data-recover-url="{{ route('import.report-management.recover') }}"
+     data-recover-status-url-template="{{ route('import.report-management.recover.status', ['recoveryId' => '__RECOVERY_ID__']) }}"
      data-delete-url="{{ route('import.report-management.delete') }}"
      data-duplicate-url="{{ route('import.report-management.duplicates') }}"
      data-delete-process-url-template="{{ route('import.report-management.delete.process', ['deleteId' => '__DELETE_ID__']) }}"
@@ -36,7 +38,7 @@
     <div class="card-body import-upload-card__body">
         <div class="report-management-top-shell mb-4">
             <div class="row report-management-top-grid">
-                <div class="col-lg-7 mb-3 mb-lg-0">
+                <div class="col-lg-5 mb-3 mb-lg-0">
                     <div class="report-management-field-panel h-100">
                         <div class="report-management-field-panel__eyebrow">Sumber Data</div>
                         <label class="report-management-field-panel__label" for="management-report-select">Pilih Report</label>
@@ -48,7 +50,23 @@
                         </select>
                     </div>
                 </div>
-                <div class="col-lg-5">
+                <div class="col-lg-4 mb-3 mb-lg-0">
+                    <div class="report-management-recover-panel h-100">
+                        <div class="report-management-rebuild-panel__topline mb-2">Recover Dari Backup</div>
+                        <label class="report-management-field-panel__label mb-2" for="management-backup-select">File Backup SQL</label>
+                        <select id="management-backup-select" class="form-control">
+                            <option value="">-- Pilih Backup --</option>
+                            @foreach($backupFiles as $backup)
+                                <option value="{{ $backup['path'] }}">{{ $backup['name'] }} ({{ $backup['size_human'] }} · {{ $backup['modified_at'] }})</option>
+                            @endforeach
+                        </select>
+                        <div class="report-management-rebuild-hint mt-2 mb-3">Recovery hanya menimpa tabel report yang dipilih. Sistem mengekstrak tabel terkait dari backup full agar lebih aman dan lebih cepat.</div>
+                        <button type="button" id="btn-management-recover" class="btn btn-outline-success report-management-filter-btn report-management-filter-btn--secondary mt-auto" {{ empty($backupFiles) ? 'disabled' : '' }}>
+                            <i class="fas fa-life-ring mr-2"></i> <span id="management-recover-label">Recover Backup</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="col-lg-3">
                     <div class="report-management-rebuild-panel h-100">
                         <div>
                             <div class="report-management-rebuild-panel__topline mb-2">Sinkronisasi Snapshot</div>
@@ -128,6 +146,25 @@
             <div id="management-load-meta" class="report-management-progress__meta mt-1"></div>
         </div>
 
+        <div id="management-recovery-progress" class="report-management-load-card d-none mb-4" aria-live="polite">
+            <div class="report-management-load-card__header">
+                <div>
+                    <div class="report-management-load-card__eyebrow">Recovery Progress</div>
+                    <div id="management-recovery-title" class="report-management-load-card__title">Recovery backup report sedang berjalan...</div>
+                </div>
+                <div id="management-recovery-stage" class="report-management-load-card__stage">Queued</div>
+            </div>
+            <div class="report-management-progress">
+                <div id="management-recovery-progress-bar" class="progress-bar report-management-progress__bar report-management-progress__bar--indeterminate" role="progressbar" style="width: 0%;"></div>
+            </div>
+            <div class="report-management-load-card__meta-row">
+                <div id="management-recovery-percent" class="report-management-progress__value">0%</div>
+                <div id="management-recovery-units" class="report-management-load-card__units">0 / 6 tahap</div>
+            </div>
+            <div id="management-recovery-text" class="report-management-progress__text mt-2">Menunggu worker memulai proses recovery...</div>
+            <div id="management-recovery-meta" class="report-management-progress__meta mt-1"></div>
+        </div>
+
         <div class="report-management-bulkbar mb-3">
             <div class="form-check m-0">
                 <input class="form-check-input" type="checkbox" id="management-select-all" disabled>
@@ -187,7 +224,17 @@
         const btnManagementFilter = document.getElementById('btn-management-filter');
         const btnManagementDeduplicate = document.getElementById('btn-management-deduplicate');
         const btnManagementRebuild = document.getElementById('btn-management-rebuild');
+        const btnManagementRecover = document.getElementById('btn-management-recover');
+        const managementBackupSelect = document.getElementById('management-backup-select');
         const managementRebuildForce = document.getElementById('management-rebuild-force');
+        const managementRecoveryProgress = document.getElementById('management-recovery-progress');
+        const managementRecoveryTitle = document.getElementById('management-recovery-title');
+        const managementRecoveryStage = document.getElementById('management-recovery-stage');
+        const managementRecoveryProgressBar = document.getElementById('management-recovery-progress-bar');
+        const managementRecoveryPercent = document.getElementById('management-recovery-percent');
+        const managementRecoveryUnits = document.getElementById('management-recovery-units');
+        const managementRecoveryText = document.getElementById('management-recovery-text');
+        const managementRecoveryMeta = document.getElementById('management-recovery-meta');
         const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '{{ csrf_token() }}';
 
         if (!reportManagementCard || !managementReportSelect) {
@@ -197,6 +244,26 @@
         function selectedTableName() {
             const selectedOption = managementReportSelect.selectedOptions?.[0];
             return String(selectedOption?.dataset?.tableName || '').trim();
+        }
+
+        function formatManagementNumber(value) {
+            return Number(value || 0).toLocaleString('id-ID');
+        }
+
+        function humanizeRecoveryStage(stage) {
+            const lookup = {
+                queued: 'Queued',
+                validating: 'Validasi',
+                extracting_backup: 'Ekstraksi',
+                importing_backup: 'Import SQL',
+                swapping_data: 'Pulihkan Data',
+                syncing: 'Sinkronisasi',
+                cleanup: 'Cleanup',
+                completed: 'Selesai',
+                failed: 'Gagal',
+            };
+
+            return lookup[String(stage || '').trim().toLowerCase()] || 'Recovery';
         }
 
         function syncExtraActionState() {
@@ -212,6 +279,14 @@
                 btnManagementRebuild.title = managementRebuildForce?.checked
                     ? 'Bangun ulang seluruh snapshot report dari awal.'
                     : 'Refresh snapshot seluruh report tanpa memaksa rebuild penuh.';
+            }
+
+            if (btnManagementRecover) {
+                const canRecover = !!managementReportSelect.value && !!managementBackupSelect?.value;
+                btnManagementRecover.disabled = !canRecover;
+                btnManagementRecover.title = canRecover
+                    ? 'Pulihkan tabel report dari file backup yang dipilih.'
+                    : 'Pilih report dan file backup terlebih dahulu.';
             }
         }
 
@@ -335,6 +410,133 @@
             await refreshCurrentGrid();
         }
 
+        function updateRecoveryProgress(payload) {
+            if (!managementRecoveryProgress) {
+                return;
+            }
+
+            const percent = Math.max(0, Math.min(100, Number(payload?.progress_percent || 0)));
+            const completedUnits = Math.max(0, Number(payload?.completed_units || 0));
+            const totalUnits = Math.max(1, Number(payload?.total_units || 6));
+            const stage = String(payload?.stage || 'queued');
+            const status = String(payload?.status || '');
+            const isIndeterminate = ['queued', 'extracting_backup'].includes(stage) && !['completed', 'failed'].includes(status) && percent < 100;
+
+            managementRecoveryProgress.classList.remove('d-none');
+            if (managementRecoveryTitle) {
+                managementRecoveryTitle.textContent = status === 'completed'
+                    ? 'Recovery backup selesai'
+                    : 'Recovery backup report sedang berjalan...';
+            }
+            if (managementRecoveryStage) managementRecoveryStage.textContent = humanizeRecoveryStage(stage);
+            if (managementRecoveryProgressBar) {
+                managementRecoveryProgressBar.style.width = percent + '%';
+                managementRecoveryProgressBar.classList.toggle('report-management-progress__bar--indeterminate', isIndeterminate);
+            }
+            if (managementRecoveryPercent) managementRecoveryPercent.textContent = `${percent}%`;
+            if (managementRecoveryUnits) managementRecoveryUnits.textContent = `${formatManagementNumber(completedUnits)} / ${formatManagementNumber(totalUnits)} tahap`;
+            if (managementRecoveryText) managementRecoveryText.textContent = payload?.message || 'Recovery backup sedang berjalan...';
+            if (managementRecoveryMeta) {
+                if (status === 'completed') {
+                    const result = payload?.result || {};
+                    managementRecoveryMeta.textContent = `${formatManagementNumber(result.restored_rows || 0)} baris dipulihkan ke tabel ${result.table_name || '-'}.`;
+                } else if (status === 'failed') {
+                    managementRecoveryMeta.textContent = payload?.error || 'Recovery backup gagal.';
+                } else if (stage === 'extracting_backup' && payload?.bytes_read && payload?.total_bytes) {
+                    managementRecoveryMeta.textContent = `Memindai ${(Number(payload.bytes_read) / 1024 / 1024).toFixed(1)} MB dari ${(Number(payload.total_bytes) / 1024 / 1024).toFixed(1)} MB backup.`;
+                } else {
+                    managementRecoveryMeta.textContent = 'Recovery dilakukan per tabel agar lebih aman dibanding restore full database.';
+                }
+            }
+        }
+
+        async function pollRecoveryStatus(statusUrl) {
+            if (!statusUrl) {
+                return null;
+            }
+
+            for (let attempt = 0; attempt < 14400; attempt++) {
+                const response = await fetch(statusUrl, {
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                });
+
+                const state = await response.json().catch(() => ({}));
+                updateRecoveryProgress(state);
+
+                const status = String(state.status || '').toLowerCase();
+                if (['completed', 'failed', 'warning', 'error'].includes(status)) {
+                    return state;
+                }
+
+                await new Promise((resolve) => setTimeout(resolve, 1500));
+            }
+
+            return { status: 'warning', message: 'Recovery backup masih berjalan di background.' };
+        }
+
+        async function handleRecovery() {
+            if (!btnManagementRecover || !managementReportSelect?.value || !managementBackupSelect?.value) {
+                return;
+            }
+
+            const backupLabel = managementBackupSelect.selectedOptions?.[0]?.text || 'backup terpilih';
+            const reportLabel = managementReportSelect.selectedOptions?.[0]?.text || 'report terpilih';
+            const confirmation = await Swal.fire({
+                icon: 'warning',
+                title: 'Recover Data Report?',
+                html: `Data pada <b>${reportLabel}</b> akan diganti dari backup <b>${backupLabel}</b>.`,
+                showCancelButton: true,
+                confirmButtonText: 'Lanjutkan',
+                cancelButtonText: 'Batal',
+            });
+
+            if (!confirmation.isConfirmed) {
+                return;
+            }
+
+            updateRecoveryProgress({
+                status: 'queued',
+                stage: 'queued',
+                progress_percent: 0,
+                completed_units: 0,
+                total_units: 6,
+                message: 'Menjadwalkan recovery backup report...',
+            });
+
+            const payload = await postJson(reportManagementCard.dataset.recoverUrl, {
+                id_report: Number(managementReportSelect.value || 0),
+                backup_path: String(managementBackupSelect.value || ''),
+            });
+
+            if (payload.status === 'error') {
+                throw new Error(payload.message || 'Gagal memulai recovery backup.');
+            }
+
+            const recoveryId = String(payload.recovery_id || '').trim();
+            if (!recoveryId) {
+                throw new Error('Recovery ID tidak diterima dari server.');
+            }
+
+            const finalState = await pollRecoveryStatus(
+                String(reportManagementCard.dataset.recoverStatusUrlTemplate || '').replace('__RECOVERY_ID__', encodeURIComponent(recoveryId))
+            );
+
+            if (String(finalState?.status || '').toLowerCase() === 'failed') {
+                throw new Error(finalState?.error || finalState?.message || 'Recovery backup gagal.');
+            }
+
+            await Swal.fire({
+                icon: String(finalState?.status || '').toLowerCase() === 'warning' ? 'warning' : 'success',
+                title: String(finalState?.status || '').toLowerCase() === 'warning' ? 'Recovery Berjalan' : 'Recovery Selesai',
+                text: finalState?.message || 'Recovery backup selesai diproses.',
+            });
+
+            await refreshCurrentGrid();
+        }
+
         async function pollRebuildStatus(statusUrl) {
             if (!statusUrl) {
                 return null;
@@ -363,7 +565,13 @@
 
         syncExtraActionState();
 
-        managementReportSelect.addEventListener('change', syncExtraActionState);
+        managementReportSelect.addEventListener('change', function () {
+            if (managementRecoveryProgress) {
+                managementRecoveryProgress.classList.add('d-none');
+            }
+            syncExtraActionState();
+        });
+        managementBackupSelect?.addEventListener('change', syncExtraActionState);
         managementRebuildForce?.addEventListener('change', syncExtraActionState);
         btnManagementDeduplicate?.addEventListener('click', async function () {
             btnManagementDeduplicate.disabled = true;
@@ -381,6 +589,16 @@
                 await handleRebuild();
             } catch (error) {
                 await Swal.fire({ icon: 'error', title: 'Rebuild Gagal', text: error.message || 'Terjadi kesalahan saat menjadwalkan rebuild.' });
+            } finally {
+                syncExtraActionState();
+            }
+        });
+        btnManagementRecover?.addEventListener('click', async function () {
+            btnManagementRecover.disabled = true;
+            try {
+                await handleRecovery();
+            } catch (error) {
+                await Swal.fire({ icon: 'error', title: 'Recovery Gagal', text: error.message || 'Terjadi kesalahan saat memproses recovery backup.' });
             } finally {
                 syncExtraActionState();
             }
@@ -410,7 +628,7 @@
     .report-management-field-panel__eyebrow { display:inline-flex; align-items:center; align-self:flex-start; margin-bottom:0.75rem; padding:0.35rem 0.85rem; border-radius:999px; background:rgba(15,23,42,0.04); color:#475569; font-size:0.75rem; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; }
     .report-management-field-panel__label { margin-bottom:0.75rem; color:#0f172a; font-size:0.95rem; font-weight:600; }
 
-    .report-management-rebuild-panel { display:flex; flex-direction:column; justify-content:space-between; padding:1.5rem; border-radius:12px; background:#ffffff; border:1px solid rgba(226,232,240,0.8); box-shadow:0 4px 6px -1px rgba(0,0,0,0.02); }
+    .report-management-rebuild-panel, .report-management-recover-panel { display:flex; flex-direction:column; justify-content:space-between; padding:1.5rem; border-radius:12px; background:#ffffff; border:1px solid rgba(226,232,240,0.8); box-shadow:0 4px 6px -1px rgba(0,0,0,0.02); }
     .report-management-rebuild-panel__topline { display:inline-flex; align-items:center; align-self:flex-start; padding:0.35rem 0.85rem; border-radius:999px; background:rgba(37,99,235,0.08); font-size:0.75rem; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; color:#2563eb; }
     .report-management-rebuild-switch { padding-left:2.5rem; }
     .report-management-rebuild-switch .custom-control-label { font-weight:600; color:#1e293b; cursor:pointer; font-size: 0.95rem; }

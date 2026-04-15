@@ -9,6 +9,7 @@ use App\Services\Import\MySqlBulkLoadService;
 use App\Support\ManagedReportLoadCoordinator;
 use App\Support\ManagedReportManagementService;
 use App\Support\PartitionMaintenanceService;
+use App\Support\ManagedReportRecoveryCoordinator;
 use App\Support\ManagedReportSnapshotRebuildCoordinator;
 use App\Support\ReportDataSyncService;
 use App\Support\StrictDateParser;
@@ -18,6 +19,7 @@ use App\Models\NamaReport;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
@@ -109,6 +111,11 @@ class ImportIndexController extends Controller
         return app(ManagedReportLoadCoordinator::class);
     }
 
+    private function managedReportRecoveryCoordinator(): ManagedReportRecoveryCoordinator
+    {
+        return app(ManagedReportRecoveryCoordinator::class);
+    }
+
     private const TEMPLATE_DEFINITIONS = [
         'input_rekanan' => [
             'label' => 'Input Rekanan',
@@ -141,8 +148,9 @@ class ImportIndexController extends Controller
         $reports = NamaReport::where('active', 1)
             ->orderBy('id_report')
             ->get();
+        $backupFiles = $this->managedDatabaseBackupOptions();
 
-        return view('import.report-management', compact('reports'));
+        return view('import.report-management', compact('reports', 'backupFiles'));
     }
 
     public function uploadLimits()
@@ -233,6 +241,29 @@ class ImportIndexController extends Controller
     public function managedReportRebuildStatus(string $rebuildId)
     {
         $resolved = $this->managedReportSnapshotRebuildCoordinator()->status($rebuildId);
+
+        return response()->json($resolved['payload'], (int) ($resolved['status_code'] ?? 200));
+    }
+
+    public function startManagedReportRecovery(Request $request)
+    {
+        $validated = $request->validate([
+            'id_report' => 'required|integer',
+            'backup_path' => 'required|string|max:2048',
+        ]);
+
+        $resolved = $this->managedReportRecoveryCoordinator()->queue(
+            (int) $validated['id_report'],
+            (string) $validated['backup_path'],
+            static::class
+        );
+
+        return response()->json($resolved['payload'], (int) ($resolved['status_code'] ?? 200));
+    }
+
+    public function managedReportRecoveryStatus(string $recoveryId)
+    {
+        $resolved = $this->managedReportRecoveryCoordinator()->status($recoveryId);
 
         return response()->json($resolved['payload'], (int) ($resolved['status_code'] ?? 200));
     }
@@ -2005,6 +2036,36 @@ class ImportIndexController extends Controller
                 return [
                     'label' => $template['label'],
                     'filename' => $template['filename'],
+                ];
+            })
+            ->all();
+    }
+
+    private function managedDatabaseBackupOptions(): array
+    {
+        $directory = storage_path('app/private/database_backups');
+        if (!is_dir($directory)) {
+            return [];
+        }
+
+        return collect(File::files($directory))
+            ->filter(static fn ($file): bool => strtolower($file->getExtension()) === 'sql')
+            ->sortByDesc(static fn ($file): int => (int) $file->getMTime())
+            ->values()
+            ->map(static function ($file): array {
+                $absolutePath = $file->getPathname();
+                $storageBase = str_replace('\\', '/', storage_path('app'));
+                $normalizedPath = str_replace('\\', '/', $absolutePath);
+                $relativePath = str_starts_with($normalizedPath, rtrim($storageBase, '/') . '/')
+                    ? substr($normalizedPath, strlen(rtrim($storageBase, '/')) + 1)
+                    : $normalizedPath;
+
+                return [
+                    'name' => $file->getFilename(),
+                    'path' => $relativePath,
+                    'size' => (int) $file->getSize(),
+                    'size_human' => number_format(((int) $file->getSize()) / 1024 / 1024, 2, ',', '.') . ' MB',
+                    'modified_at' => date('d M Y H:i', (int) $file->getMTime()),
                 ];
             })
             ->all();
