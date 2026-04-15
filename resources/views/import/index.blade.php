@@ -167,34 +167,24 @@
                     <input type="file" id="file_rar" name="file" class="custom-file-input" accept=".rar" required>
                     <label class="custom-file-label" for="file_rar">Pilih file .rar...</label>
                 </div>
+                <small class="text-muted mt-2 d-block">File akan diproses otomatis.</small>
+            </div>
 
-                <div class="col-lg-6">
-                    <div class="import-step-panel">
-                        <span class="import-step-badge import-step-badge--step2">2. Upload File</span>
+            <div id="form-excel" class="form-group" style="display: none;">
+                <label id="excel-label" class="font-weight-bold text-dark">
+                    <i class="fas fa-file-excel text-success mr-1"></i> Upload Excel (.xlsx, .xls)
+                </label>
+                <input type="file" id="file_excel" name="file" class="form-control" accept=".xlsx,.xls">
+                <small class="text-muted mt-2 d-block" id="excel-help">Format .xlsx dan .xls didukung.</small>
+                <small class="text-muted mt-1 d-block" id="upload-limit-hint">Format .xlsx dan .xls didukung.</small>
+            </div>
 
-                        <div id="form-rar" class="form-group mb-0">
-                            <label class="font-weight-bold text-dark mb-2" style="font-size: 0.95rem;">Upload File (.rar)</label>
-                            <div class="custom-file">
-                                <input type="file" id="file_rar" name="file" class="custom-file-input" accept=".rar" required>
-                                <label class="custom-file-label" for="file_rar">Pilih file .rar...</label>
-                            </div>
-                            <small class="text-muted mt-2 d-block" style="font-size: 0.85rem;">File akan diproses otomatis.</small>
-                        </div>
-
-                        <div id="form-excel" class="form-group mb-0" style="display: none;">
-                            <label id="excel-label" class="font-weight-bold mb-2" style="color: #10b981; font-size: 0.95rem;"><i class="fas fa-file-excel mr-1"></i> Upload Excel (.xlsx, .xls)</label>
-                            <input type="file" id="file_excel" name="file" class="form-control shadow-sm" accept=".xlsx,.xls" style="height: auto; padding: 0.75rem; border: 1px solid #10b981;">
-                            <small class="text-muted mt-2 d-block" id="excel-help" style="font-size: 0.85rem;">Format .xlsx dan .xls didukung.</small>
-                            <small class="text-muted mt-1 d-block" id="upload-limit-hint" style="font-size: 0.85rem;">Format .xlsx dan .xls didukung.</small>
-                        </div>
-
-                        <div id="form-csv" class="form-group mb-0" style="display: none;">
-                            <label id="csv-label" class="font-weight-bold mb-2" style="color: #0ea5e9; font-size: 0.95rem;"><i class="fas fa-file-csv mr-1"></i> Upload CSV (.csv, .txt)</label>
-                            <input type="file" id="file_csv" name="file" class="form-control shadow-sm" accept=".csv,.txt" style="height: auto; padding: 0.75rem; border: 1px solid #0ea5e9;">
-                            <small id="csv-help" class="text-muted mt-2 d-block" style="font-size: 0.85rem;">Gunakan CSV sesuai report.</small>
-                        </div>
-                    </div>
-                </div>
+            <div id="form-csv" class="form-group" style="display: none;">
+                <label id="csv-label" class="font-weight-bold text-dark">
+                    <i class="fas fa-file-csv text-info mr-1"></i> Upload CSV (.csv, .txt)
+                </label>
+                <input type="file" id="file_csv" name="file" class="form-control" accept=".csv,.txt">
+                <small id="csv-help" class="text-muted mt-2 d-block">Gunakan CSV sesuai report.</small>
             </div>
 
             <div id="import-dropzone" class="import-dropzone" tabindex="0" role="button" aria-label="Area upload file">
