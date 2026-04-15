@@ -17,6 +17,7 @@ import argparse
 import time
 import uuid
 import csv
+import re
 from datetime import datetime, date, timedelta
 
 # ── Force CPU: matikan semua GPU device sebelum import apapun ────────────────
@@ -156,11 +157,32 @@ EXCEL_EPOCH  = date(1899, 12, 30)
 DATE_COLUMNS = {'PERIODE', 'POSISI', 'MONTH_DAY_YEAR_OF_POSISI', 'TGL_REALISASI', 'TGL_JATUH_TEMPO', 'TANGGAL'}
 DECIMAL_COLUMNS = {'BAKI_DEBET', 'SALDO'}
 NULL_STRS    = {'', 'nan', 'none', 'nat', 'null', 'n/a', 'na'}
+INDONESIAN_MONTHS = {
+    'januari': 'january',
+    'februari': 'february',
+    'maret': 'march',
+    'april': 'april',
+    'mei': 'may',
+    'juni': 'june',
+    'juli': 'july',
+    'agustus': 'august',
+    'september': 'september',
+    'oktober': 'october',
+    'november': 'november',
+    'desember': 'december',
+}
 
 
 def canonicalize_header(header_name):
     import re
     return re.sub(r'[^A-Z0-9]+', '_', str(header_name).upper().strip()).strip('_')
+
+
+def normalize_locale_date_text(value: str) -> str:
+    normalized = value.strip()
+    for source, target in INDONESIAN_MONTHS.items():
+        normalized = re.sub(rf'\b{source}\b', target, normalized, flags=re.IGNORECASE)
+    return normalized
 
 
 def normalize_decimal_value(value):
@@ -234,7 +256,8 @@ def normalize_value(header_name, value):
             except (ValueError, OverflowError):
                 pass
             from dateutil import parser as dateutil_parser
-            return dateutil_parser.parse(value_str.replace('/', '-')).strftime('%Y-%m-%d')
+            normalized_date_text = normalize_locale_date_text(value_str).replace('/', '-')
+            return dateutil_parser.parse(normalized_date_text).strftime('%Y-%m-%d')
         except Exception:
             return None
 
@@ -370,8 +393,9 @@ def _run_process_inner(config):
         send_error('Gagal membaca file Excel: ' + str(e))
         sys.exit(1)
 
-    unique_id_col = 'uniqueid_SimoPN' if 'simpanan' in table_name else 'uniqueid_namareport'
-    suffix        = '_SimoPN'         if 'simpanan' in table_name else '_DLD'
+    is_simpanan_multipn = str(table_name).strip().lower() == 'simpanan_multipn'
+    unique_id_col = 'uniqueid_SimoPN' if is_simpanan_multipn else 'uniqueid_namareport'
+    suffix        = '_SimoPN'         if is_simpanan_multipn else '_DLD'
     table_columns_map = {str(col).lower(): str(col) for col in table_columns}
     unique_id_col = table_columns_map.get(unique_id_col.lower(), unique_id_col)
     unique_id_prefix = str(config.get('unique_id_prefix') or 'imp').strip() or 'imp'

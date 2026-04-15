@@ -392,7 +392,7 @@ class ImportExcelController extends Controller
             'TOTAL_KEWAJIBAN' => 'total_kewajiban',
             'TEXTBOX21' => 'os_idr',
             'OS_IDR' => 'os_idr',
-            'MONTH_DAY_YEAR_OF_POSISI' => 'posisi',
+            'MONTH_DAY_YEAR_OF_POSISI' => 'month_day_year_of_posisi',
             'NOREKENING' => 'no_rekening',
             'NOMORREKENING' => 'no_rekening',
             'NOMOR_REKENING' => 'no_rekening',
@@ -5015,12 +5015,17 @@ class ImportExcelController extends Controller
 
     private function getHeaderDatabaseCandidates(string $header): array
     {
+        $exact = strtolower(trim($header));
         $raw = strtolower(trim($header));
         $raw = preg_replace('/[^a-z0-9]+/', '_', $raw);
         $raw = trim((string) $raw, '_');
 
         $normalized = $this->normalizeHeaderForDatabase($header);
         $candidates = [];
+
+        if ($exact !== '') {
+            $candidates[] = $exact;
+        }
 
         if ($raw !== '') {
             $candidates[] = $raw;
@@ -5033,7 +5038,7 @@ class ImportExcelController extends Controller
         $aliasMap = [
             'textbox20' => 'total_kewajiban',
             'textbox21' => 'os_idr',
-            'month_day_year_of_posisi' => 'posisi',
+            'month_day_year_of_posisi' => 'month_day_year_of_posisi',
             'periode' => 'periode',
             'segmen_dashboard' => 'segmen_dashboard',
             'produk_dashboard' => 'produk_dashboard',
@@ -5068,7 +5073,7 @@ class ImportExcelController extends Controller
                     continue;
                 }
 
-                if ($this->normalizeHeaderForDatabase($header) === strtolower($dbCol)) {
+                if ($this->normalizeHeaderForDatabase($header) === $this->normalizeHeaderForDatabase($dbCol)) {
                     $matchedHeaders[] = $header;
                     $matchedUniqueValues[] = $formattedUniqueValues[$index] ?? [];
                     $usedHeaders[$header] = true;
@@ -5586,6 +5591,7 @@ class ImportExcelController extends Controller
         $dateColumns = [
             'PERIODE',
             'POSISI',
+            'MONTH_DAY_YEAR_OF_POSISI',
             'TGL_REALISASI',
             'TGL_JATUH_TEMPO',
             'TANGGAL',
@@ -6219,6 +6225,28 @@ class ImportExcelController extends Controller
 
             ksort($normalizedActiveFilters);
 
+            if ($tableName === 'ssa_simpanan' && !$this->isCsvFile($path)) {
+                if ($stagedCsvPath !== '' && file_exists($stagedCsvPath)) {
+                    @unlink($stagedCsvPath);
+                }
+
+                $stageResult = $this->stageExcelToCsv(
+                    static function (string $event, array $data): void {
+                        // preview-init phase does not stream progress
+                    },
+                    $path,
+                    $headerIndex,
+                    $sourceHeaders,
+                    $tableName
+                );
+
+                if (!empty($stageResult['staged_csv_path']) && file_exists((string) $stageResult['staged_csv_path'])) {
+                    $stagedCsvPath = (string) $stageResult['staged_csv_path'];
+                    $previewTotalRows = max(1, ((int) ($stageResult['total_rows'] ?? 0)) + 1);
+                    $previewDelimiter = ',';
+                }
+            }
+
             session([
                 'excel_headers'        => $sourceHeaders,
                 'excel_preview_meta'   => [
@@ -6398,7 +6426,14 @@ class ImportExcelController extends Controller
 
         ksort($normalizedActiveFilters);
 
-        if (!$this->isCsvFile($path) && ($stagedCsvPath === '' || !file_exists($stagedCsvPath))) {
+        $mustRefreshStagedCsv = $tableName === 'ssa_simpanan';
+
+        if (!$this->isCsvFile($path) && ($mustRefreshStagedCsv || $stagedCsvPath === '' || !file_exists($stagedCsvPath))) {
+            if ($mustRefreshStagedCsv && $stagedCsvPath !== '' && file_exists($stagedCsvPath)) {
+                @unlink($stagedCsvPath);
+                $stagedCsvPath = '';
+            }
+
             $stageResult = $this->stageExcelToCsv(
                 static function (string $event, array $data): void {
                     // init phase does not stream progress

@@ -7,6 +7,21 @@ use PhpOffice\PhpSpreadsheet\Shared\Date as ExcelDate;
 
 class StrictDateParser
 {
+    private const INDONESIAN_MONTHS = [
+        'januari' => 'January',
+        'februari' => 'February',
+        'maret' => 'March',
+        'april' => 'April',
+        'mei' => 'May',
+        'juni' => 'June',
+        'juli' => 'July',
+        'agustus' => 'August',
+        'september' => 'September',
+        'oktober' => 'October',
+        'november' => 'November',
+        'desember' => 'December',
+    ];
+
     /**
      * Parse common import date inputs into Y-m-d without relying on Carbon::parse
      * for numeric-only or slash-delimited ambiguous values.
@@ -17,6 +32,8 @@ class StrictDateParser
         if ($value === '') {
             return null;
         }
+
+        $value = self::normalizeLocaleDateText($value);
 
         if (preg_match('/^\d{8}$/', $value) === 1) {
             foreach (['Ymd', 'dmY', 'mdY'] as $format) {
@@ -133,6 +150,15 @@ class StrictDateParser
         }
 
         return null;
+    }
+
+    private static function normalizeLocaleDateText(string $value): string
+    {
+        foreach (self::INDONESIAN_MONTHS as $source => $target) {
+            $value = preg_replace('/\b' . preg_quote($source, '/') . '\b/i', $target, $value) ?? $value;
+        }
+
+        return $value;
     }
 
     public static function buildMySqlCaseExpression(string $textExpression): string
