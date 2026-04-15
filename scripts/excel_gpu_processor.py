@@ -153,8 +153,8 @@ def read_excel_table(file_path, header_index):
 # ─────────────────────────────────────────────────────────────────────────────
 
 EXCEL_EPOCH  = date(1899, 12, 30)
-DATE_COLUMNS = {'PERIODE', 'POSISI', 'TGL_REALISASI', 'TGL_JATUH_TEMPO', 'TANGGAL'}
-DECIMAL_COLUMNS = {'BAKI_DEBET'}
+DATE_COLUMNS = {'PERIODE', 'POSISI', 'MONTH_DAY_YEAR_OF_POSISI', 'TGL_REALISASI', 'TGL_JATUH_TEMPO', 'TANGGAL'}
+DECIMAL_COLUMNS = {'BAKI_DEBET', 'SALDO'}
 NULL_STRS    = {'', 'nan', 'none', 'nat', 'null', 'n/a', 'na'}
 
 
@@ -277,20 +277,37 @@ def run_init(config):
     header_index  = None
     header_values = []
 
+    best_row_index = None
+    best_row_values = []
+    best_score = -1
+
     for i in range(len(scan_rows)):
         row       = scan_rows[i]
         row_upper = [str(v).upper().strip() if str(v).lower() not in ('nan', 'none', '') else '' for v in row]
-        if 'PERIODE' in row_upper or 'POSISI' in row_upper:
+        filled_cells = sum(1 for value in row_upper if value != '')
+        contains_posisi = any('POSISI' in value for value in row_upper)
+        contains_periode = any('PERIODE' in value for value in row_upper)
+
+        if filled_cells > best_score:
+            best_score = filled_cells
+            best_row_index = i
+            best_row_values = [str(v).strip() if str(v).lower() not in ('nan', 'none') else '' for v in row]
+
+        if contains_periode or contains_posisi:
             header_index  = i
             header_values = [str(v).strip() if str(v).lower() not in ('nan', 'none') else '' for v in row]
             break
 
     if header_index is None:
-        print(json.dumps({
-            'status':  'error',
-            'message': 'Header utama (PERIODE / POSISI) tidak ditemukan dalam 200 baris pertama.',
-        }), flush=True)
-        sys.exit(1)
+        if best_row_index is not None and best_score >= 3:
+            header_index = best_row_index
+            header_values = best_row_values
+        else:
+            print(json.dumps({
+                'status':  'error',
+                'message': 'Header utama tidak ditemukan dalam 200 baris pertama.',
+            }), flush=True)
+            sys.exit(1)
 
     # Total baris via openpyxl read-only (cepat, dari metadata XML)
     total_rows = 0
