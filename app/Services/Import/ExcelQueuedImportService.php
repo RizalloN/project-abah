@@ -150,7 +150,13 @@ class ExcelQueuedImportService
                 $send('progress', [
                     'percent' => 14,
                     'message' => $mode === 'bulk_csv_direct'
-                        ? 'Menjalankan direct Daily Loan CSV import...'
+                        ? (
+                            $tableName === 'daily_loan_dinamis'
+                                ? 'Menjalankan direct Daily Loan CSV import...'
+                                : ($tableName === 'ssa_simpanan'
+                                    ? 'Menjalankan direct SSA Simpanan CSV import...'
+                                    : 'Menjalankan direct CSV import...')
+                        )
                         : ($mode === 'bulk_csv_filtered'
                             ? 'Menyiapkan CSV staging terfilter untuk bulk load MySQL...'
                             : 'Fast-path native tidak dipakai. Menyiapkan CSV staging untuk bulk load MySQL...'),
@@ -186,7 +192,7 @@ class ExcelQueuedImportService
                                 ),
                             ];
                         } catch (\Throwable $e) {
-                            Log::warning('Fast-path Daily Loan CSV unavailable, fallback ke mode lama: ' . $e->getMessage(), [
+                            Log::warning('Fast-path direct CSV unavailable, fallback ke mode lama: ' . $e->getMessage(), [
                                 'job_id' => $jobId,
                                 'table_name' => $tableName,
                             ]);
