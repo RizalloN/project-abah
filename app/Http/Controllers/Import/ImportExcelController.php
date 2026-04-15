@@ -2224,11 +2224,14 @@ class ImportExcelController extends Controller
         }
     }
 
-    private function buildImportContext(string $tableName, array $normalizedHeaders, array $activeFilters = []): array
+    private function buildImportContext(string $tableName, array $normalizedHeaders, array $activeFilters = [], array $importOptions = []): array
     {
         $cacheKey = $tableName . '|' . sha1(json_encode([
             'headers' => array_values($normalizedHeaders),
             'filters' => $activeFilters,
+            'import_options' => [
+                'manual_kanca' => $importOptions['manual_kanca'] ?? null,
+            ],
         ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
 
         if (isset($this->importContextCache[$cacheKey])) {
@@ -2243,8 +2246,8 @@ class ImportExcelController extends Controller
         }
 
         $headerCount = empty($normalizedHeaders) ? 0 : (max(array_keys($normalizedHeaders)) + 1);
-        $tableColumns = $this->cachedSchemaColumnListing($tableName);
-        $tableColumnMetaByLower = $this->cachedTableColumnMetadata($tableName);
+        $tableColumns = $this->schemaColumnsForBulkImport($tableName);
+        $tableColumnMetaByLower = $this->tableColumnMetadataForBulkImport($tableName);
         $tableColumnsLookup = [];
         $tableColumnsByLower = [];
         foreach ($tableColumns as $columnName) {
@@ -2355,7 +2358,7 @@ class ImportExcelController extends Controller
             'has_filters' => $hasFilters,
             'unique_id_prefix' => str_replace('.', '', uniqid('imp', true)),
             'row_sequence' => 0,
-            'manual_column_values' => $this->resolveManualImportColumnValues($tableName, $tableColumnsLookup, $tableColumnsByLower),
+            'manual_column_values' => $this->resolveManualImportColumnValues($tableName, $tableColumnsLookup, $tableColumnsByLower, $importOptions),
         ];
 
         $context = $this->resolveImportStrategy($tableName)->prepareContext($context);
@@ -2363,12 +2366,12 @@ class ImportExcelController extends Controller
         return $this->importContextCache[$cacheKey] = $context;
     }
 
-    private function resolveManualImportColumnValues(string $tableName, array $tableColumnsLookup, array $tableColumnsByLower): array
+    private function resolveManualImportColumnValues(string $tableName, array $tableColumnsLookup, array $tableColumnsByLower, array $importOptions = []): array
     {
         $manualValues = [];
 
         if ($tableName === 'rka') {
-            $manualKanca = trim((string) session('excel_manual_kanca', ''));
+            $manualKanca = trim((string) ($importOptions['manual_kanca'] ?? session('excel_manual_kanca', '')));
             if ($manualKanca !== '' && isset($tableColumnsLookup['kanca'])) {
                 $resolvedColumn = $tableColumnsByLower['kanca'] ?? 'kanca';
                 $manualValues[$resolvedColumn] = $manualKanca;
@@ -2624,7 +2627,36 @@ class ImportExcelController extends Controller
             $columns[] = $context['table_columns_by_lower'][$dbColumn] ?? $dbColumn;
         }
 
+        foreach ((array) ($context['manual_column_values'] ?? []) as $manualColumn => $manualValue) {
+            $manualColumnLower = strtolower((string) $manualColumn);
+            if ($manualColumnLower === '' || isset($context['skip_columns_lookup'][$manualColumnLower])) {
+                continue;
+            }
+
+            if (!isset($context['table_columns_lookup'][$manualColumnLower])) {
+                continue;
+            }
+
+            $columns[] = $context['table_columns_by_lower'][$manualColumnLower] ?? $manualColumnLower;
+        }
+
         return array_values(array_unique($columns));
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    protected function schemaColumnsForBulkImport(string $tableName): array
+    {
+        return $this->cachedSchemaColumnListing($tableName);
+    }
+
+    /**
+     * @return array<string, array<string, mixed>>
+     */
+    protected function tableColumnMetadataForBulkImport(string $tableName): array
+    {
+        return $this->cachedTableColumnMetadata($tableName);
     }
 
     private function createBulkLoadTempCsvPath(string $tableName, int $jobId): string
@@ -2720,6 +2752,52 @@ class ImportExcelController extends Controller
         }
 
         return $bulkLoadService->loadCsvIntoMysql($csvPath, $tableName, $columns, false, $beforeLoad);
+    }
+
+    private function applyManualColumnValuesAfterLoad(string $tableName, array $context, int $insertedRows): int
+    {
+        if ($insertedRows <= 0) {
+            return 0;
+        }
+
+        $manualValues = (array) ($context['manual_column_values'] ?? []);
+        $manualValues = array_filter($manualValues, static fn ($value): bool => trim((string) $value) !== '');
+        if ($manualValues === [] || empty($context['unique_id_col'])) {
+            return 0;
+        }
+
+        $uniqueIdPrefix = trim((string) ($context['unique_id_prefix'] ?? ''));
+        if ($uniqueIdPrefix === '') {
+            return 0;
+        }
+
+        $uniqueIdColumn = (string) $context['unique_id_col'];
+        $updates = [];
+        foreach ($manualValues as $column => $value) {
+            $resolvedColumn = (string) ($context['table_columns_by_lower'][strtolower((string) $column)] ?? $column);
+            if ($resolvedColumn === '') {
+                continue;
+            }
+
+            $updates[$resolvedColumn] = $this->normalizeValueForDatabaseColumn($resolvedColumn, $value, $context);
+        }
+
+        if ($updates === []) {
+            return 0;
+        }
+
+        try {
+            return (int) DB::table($tableName)
+                ->where($uniqueIdColumn, 'like', $uniqueIdPrefix . '%')
+                ->update($updates);
+        } catch (\Throwable $e) {
+            Log::warning('Failed to apply manual column values after import load: ' . $e->getMessage(), [
+                'table' => $tableName,
+                'unique_id_column' => $uniqueIdColumn,
+                'unique_id_prefix' => $uniqueIdPrefix,
+            ]);
+            return 0;
+        }
     }
 
     private function createCsvStagingTable(string $prefix, int $jobId, int $columnCount): string
@@ -5033,6 +5111,90 @@ class ImportExcelController extends Controller
         ];
     }
 
+    /**
+     * @param array{headers: array, formattedUniqueValues: array, preview: array} $payload
+     * @return array{headers: array, formattedUniqueValues: array, preview: array, sourceHeaders: array}
+     */
+    protected function applyManualPreviewColumns(string $tableName, array $payload, ?array $sourceHeaders = null): array
+    {
+        $headers = array_values((array) ($payload['headers'] ?? []));
+        $formattedUniqueValues = (array) ($payload['formattedUniqueValues'] ?? []);
+        $preview = array_values((array) ($payload['preview'] ?? []));
+        $resolvedSourceHeaders = array_values($sourceHeaders ?? $headers);
+
+        if ($tableName !== 'rka') {
+            return [
+                'headers' => $headers,
+                'formattedUniqueValues' => $formattedUniqueValues,
+                'preview' => $preview,
+                'sourceHeaders' => $resolvedSourceHeaders,
+            ];
+        }
+
+        $manualKanca = trim((string) session('excel_manual_kanca', ''));
+        if ($manualKanca === '') {
+            return [
+                'headers' => $headers,
+                'formattedUniqueValues' => $formattedUniqueValues,
+                'preview' => $preview,
+                'sourceHeaders' => $resolvedSourceHeaders,
+            ];
+        }
+
+        $headerLookup = array_map(
+            fn ($header) => strtolower(trim((string) $header)),
+            $headers
+        );
+        $kancaIndex = array_search('kanca', $headerLookup, true);
+
+        if ($kancaIndex === false) {
+            $headers[] = 'kanca';
+            $formattedUniqueValues[] = [];
+        } else {
+            $formattedUniqueValues[$kancaIndex] = [];
+        }
+
+        foreach ($preview as &$row) {
+            $rowData = is_array($row) ? $row : (array) $row;
+            $rowData['kanca'] = $manualKanca;
+            $row = $rowData;
+        }
+        unset($row);
+
+        if (!in_array('kanca', array_map(
+            fn ($header) => strtolower(trim((string) $header)),
+            $resolvedSourceHeaders
+        ), true)) {
+            $resolvedSourceHeaders[] = 'kanca';
+        }
+
+        $reordered = $this->reorderPreviewPayload(
+            $headers,
+            $formattedUniqueValues,
+            $preview,
+            $this->schemaColumnsForBulkImport($tableName)
+        );
+
+        if (!in_array('kanca', array_map(
+            fn ($header) => strtolower(trim((string) $header)),
+            $reordered['headers']
+        ), true)) {
+            return [
+                'headers' => $headers,
+                'formattedUniqueValues' => $formattedUniqueValues,
+                'preview' => $this->rebuildPreviewRowsForHeaders($headers, $preview),
+                'sourceHeaders' => $resolvedSourceHeaders,
+            ];
+        }
+
+        return [
+            'headers' => $reordered['headers'],
+            'formattedUniqueValues' => $reordered['formattedUniqueValues'],
+            'preview' => $reordered['preview'],
+            'sourceHeaders' => $reordered['headers'],
+        ];
+    }
+
     protected function rebuildPreviewRowsForHeaders(array $headers, array $preview): array
     {
         $rebuilt = [];
@@ -5099,7 +5261,12 @@ class ImportExcelController extends Controller
         ];
 
         if (!empty($context['unique_id_col'])) {
-            $finalRow[$context['unique_id_col']] = uniqid('', true) . $context['suffix'];
+            $uniquePrefix = trim((string) ($context['unique_id_prefix'] ?? 'imp'));
+            if ($uniquePrefix === '') {
+                $uniquePrefix = 'imp';
+            }
+
+            $finalRow[$context['unique_id_col']] = $uniquePrefix . '_' . uniqid('', true) . $context['suffix'];
         }
 
         foreach ($mappedExcelData as $dbCol => $value) {
@@ -5629,6 +5796,7 @@ class ImportExcelController extends Controller
                 $csvPayload['preview'],
                 $this->cachedSchemaColumnListing($tableName)
             );
+            $reorderedPayload = $this->applyManualPreviewColumns($tableName, $reorderedPayload, array_values($csvPayload['headers']));
 
             Cache::put($cacheKey, [
                 'headers' => $reorderedPayload['headers'],
@@ -5639,7 +5807,7 @@ class ImportExcelController extends Controller
                 'stagedCsvPath' => $path,
                 'headerIndex' => (int) ($csvPayload['header_index'] ?? 0),
                 'normalizedHeaders' => $reorderedPayload['headers'],
-                'sourceHeaders' => array_values($csvPayload['headers']),
+                'sourceHeaders' => $reorderedPayload['sourceHeaders'],
                 'total_rows' => isset($csvPayload['total_rows']) ? (int) $csvPayload['total_rows'] : null,
                 'delimiter' => isset($csvPayload['delimiter']) ? (string) $csvPayload['delimiter'] : null,
             ], now()->addHour());
@@ -5687,6 +5855,7 @@ class ImportExcelController extends Controller
             $previewRows,
             $this->cachedSchemaColumnListing($tableName)
         );
+        $reorderedPayload = $this->applyManualPreviewColumns($tableName, $reorderedPayload, array_values($headers));
 
         Cache::put($cacheKey, [
             'headers' => $reorderedPayload['headers'],
@@ -5697,7 +5866,7 @@ class ImportExcelController extends Controller
             'stagedCsvPath' => null,
             'headerIndex' => (int) ($nativePreview['header_index'] ?? 0),
             'normalizedHeaders' => $reorderedPayload['headers'],
-            'sourceHeaders' => array_values($headers),
+            'sourceHeaders' => $reorderedPayload['sourceHeaders'],
             'total_rows' => isset($nativePreview['total_rows']) ? (int) $nativePreview['total_rows'] : null,
             'delimiter' => null,
         ], now()->addHour());
@@ -5804,6 +5973,7 @@ class ImportExcelController extends Controller
                 $csvPayload['preview'],
                 $this->cachedSchemaColumnListing($tableName)
             );
+            $reorderedPayload = $this->applyManualPreviewColumns($tableName, $reorderedPayload, array_values($csvPayload['headers']));
 
             $previewStateKey = 'excel_preview_' . md5($relativePath . '|csv_direct|' . microtime(true));
             $previewMeta = [
@@ -5811,7 +5981,7 @@ class ImportExcelController extends Controller
                 'staged_csv_path' => $path,
                 'header_index' => isset($csvPayload['header_index']) ? (int) $csvPayload['header_index'] : 0,
                 'normalized_headers' => $reorderedPayload['headers'],
-                'source_headers' => array_values($csvPayload['headers']),
+                'source_headers' => $reorderedPayload['sourceHeaders'],
                 'total_rows' => isset($csvPayload['total_rows']) ? (int) $csvPayload['total_rows'] : null,
                 'delimiter' => isset($csvPayload['delimiter']) ? (string) $csvPayload['delimiter'] : null,
             ];
@@ -5902,6 +6072,7 @@ class ImportExcelController extends Controller
             $previewRows,
             $this->cachedSchemaColumnListing($tableName)
         );
+        $reorderedPayload = $this->applyManualPreviewColumns($tableName, $reorderedPayload, array_values($headers));
 
         $previewStateKey = 'excel_preview_' . md5($relativePath . '|fallback|' . microtime(true));
         $this->excelImportJobService()->putPreviewState($previewStateKey, [
@@ -5911,7 +6082,7 @@ class ImportExcelController extends Controller
                 'staged_csv_path' => null,
                 'header_index' => $headerIndex,
                 'normalized_headers' => $reorderedPayload['headers'],
-                'source_headers' => array_values($headers),
+                'source_headers' => $reorderedPayload['sourceHeaders'],
                 'total_rows' => $csvPayload['total_rows'] ?? null,
                 'delimiter' => $csvPayload['delimiter'] ?? null,
             ],
@@ -6067,6 +6238,7 @@ class ImportExcelController extends Controller
                     'active_filters' => $normalizedActiveFilters,
                     'total_rows'     => $previewTotalRows,
                     'delimiter'      => $previewDelimiter,
+                    'manual_kanca'   => $tableName === 'rka' ? trim((string) session('excel_manual_kanca', '')) : null,
                 ],
             ]);
 
@@ -6094,6 +6266,7 @@ class ImportExcelController extends Controller
                     'active_filters' => $normalizedActiveFilters,
                     'total_rows'     => $previewTotalRows,
                     'delimiter'      => $previewDelimiter,
+                    'manual_kanca'   => $tableName === 'rka' ? trim((string) session('excel_manual_kanca', '')) : null,
                     'job_id'         => $jobId,
                 ],
                 'headers' => $sourceHeaders,
@@ -6278,6 +6451,7 @@ class ImportExcelController extends Controller
                 'active_filters' => $normalizedActiveFilters,
                 'total_rows'     => $totalRows,
                 'delimiter'      => $delimiter ?? null,
+                'manual_kanca'   => $tableName === 'rka' ? trim((string) session('excel_manual_kanca', '')) : null,
                 'job_id'         => $jobId,
             ],
         ]);
@@ -6290,6 +6464,7 @@ class ImportExcelController extends Controller
                 'active_filters' => $normalizedActiveFilters,
                 'total_rows'     => $totalRows,
                 'delimiter'      => $delimiter ?? null,
+                'manual_kanca'   => $tableName === 'rka' ? trim((string) session('excel_manual_kanca', '')) : null,
                 'job_id'         => $jobId,
             ],
             'headers' => $normalizedHeadersForSession,
@@ -6358,6 +6533,7 @@ class ImportExcelController extends Controller
             return false;
         }
 
+        $importContext = $this->buildImportContext($tableName, $normalizedHeaders, $activeFilters);
         $bulkLoadColumns = $this->buildBulkLoadColumns($tableName, $normalizedHeaders, $activeFilters);
         $csvTempPath = $this->createBulkLoadTempCsvPath($tableName, $jobId);
 
@@ -6370,6 +6546,7 @@ class ImportExcelController extends Controller
             'table_columns' => $bulkLoadColumns,
             'output_csv_path' => $csvTempPath,
             'load_columns' => $bulkLoadColumns,
+            'unique_id_prefix' => $importContext['unique_id_prefix'] ?? null,
         ];
 
         $configFile = storage_path('app/excel_gpu_config_' . uniqid() . '.json');
@@ -6541,6 +6718,7 @@ class ImportExcelController extends Controller
                 $csvRowsPrepared
             );
             $failed = max(0, $csvRowsPrepared - $inserted);
+            $this->applyManualColumnValuesAfterLoad($tableName, $importContext, $inserted);
 
             if ($jobId > 0) {
                 $this->progressService()->updateTotals(
@@ -6741,6 +6919,7 @@ class ImportExcelController extends Controller
                 );
             }
             $failed = max(0, $rowsDone - $inserted);
+            $this->applyManualColumnValuesAfterLoad($tableName, $context, $inserted);
 
             if ($jobId > 0) {
                 $this->progressService()->updateTotals(
@@ -6807,6 +6986,7 @@ class ImportExcelController extends Controller
             'active_filters'     => $activeFilters,
             'normalized_headers' => $normalizedHeaders,
             'table_columns'      => array_keys($importContext['table_columns_lookup']),  // PHP kirim daftar kolom valid ke Python
+            'unique_id_prefix'   => $importContext['unique_id_prefix'] ?? null,
         ];
 
         $configFile = storage_path('app/excel_gpu_config_' . uniqid() . '.json');
@@ -6878,7 +7058,12 @@ class ImportExcelController extends Controller
                 }
 
                 if (!empty($importContext['unique_id_col']) && !isset($clean[$importContext['unique_id_col']])) {
-                    $clean[$importContext['unique_id_col']] = uniqid('', true) . $importContext['suffix'];
+                    $uniquePrefix = trim((string) ($importContext['unique_id_prefix'] ?? 'imp'));
+                    if ($uniquePrefix === '') {
+                        $uniquePrefix = 'imp';
+                    }
+
+                    $clean[$importContext['unique_id_col']] = $uniquePrefix . '_' . uniqid('', true) . $importContext['suffix'];
                 }
                 if (!isset($clean['created_at'])) {
                     $clean['created_at'] = $timestamp;
@@ -6897,7 +7082,7 @@ class ImportExcelController extends Controller
 
         // ── Helper: proses satu baris JSON dari Python ────────────────────
         $processLine = function (string $line) use (
-            $send, $insertBatch, $tableName, $jobId,
+            $send, $insertBatch, $tableName, $jobId, $importContext,
             &$totalInserted, &$totalFailed, &$lastKeepAlive,
             &$doneSent, &$pythonError
         ) {
@@ -6925,6 +7110,8 @@ class ImportExcelController extends Controller
                 $finalStatus = $totalFailed === 0
                     ? 'completed'
                     : ($totalInserted > 0 ? 'failed_partial' : 'failed');
+
+                $this->applyManualColumnValuesAfterLoad($tableName, $importContext, $totalInserted);
 
                 if ($jobId > 0) {
                     $this->progressService()->updateTotals($jobId, $totalInserted, $totalFailed, null, $finalStatus);
@@ -7066,7 +7253,7 @@ class ImportExcelController extends Controller
             'try_python_bulk_load' => fn($send, string $path, int $headerIndex, string $tableName, array $activeFilters, array $normalizedHeaders, int $jobId) => $this->tryPythonBulkLoad($send, $path, $headerIndex, $tableName, $activeFilters, $normalizedHeaders, $jobId),
             'try_python_gpu' => fn($send, string $path, int $headerIndex, string $tableName, array $activeFilters, array $normalizedHeaders, int $jobId) => $this->tryPythonGPU($send, $path, $headerIndex, $tableName, $activeFilters, $normalizedHeaders, $jobId),
             'assert_duplicate_guard' => fn(string $tableName) => $this->assertDuplicateGuard($tableName),
-            'build_import_context' => fn(string $tableName, array $normalizedHeaders, array $activeFilters = []) => $this->buildImportContext($tableName, $normalizedHeaders, $activeFilters),
+            'build_import_context' => fn(string $tableName, array $normalizedHeaders, array $activeFilters = [], array $importOptions = []) => $this->buildImportContext($tableName, $normalizedHeaders, $activeFilters, $importOptions),
             'map_excel_row_for_insert' => fn(array $row, array $normalizedHeaders, array $context, string $timestamp) => $this->mapExcelRowForInsert($row, $normalizedHeaders, $context, $timestamp),
             'fallback_insert_batch_size' => fn(): int => $this->fallbackInsertBatchSize(),
             'insert_batch_with_fallback' => function (array $batch, string $tableName, int &$totalInserted, int &$totalFailed): void {

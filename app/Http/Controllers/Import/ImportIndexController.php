@@ -39,7 +39,7 @@ class ImportIndexController extends Controller
     private const DELETE_PROCESS_LOCK_PREFIX = 'report_management_delete_lock:';
     private const DELETE_PROCESS_LOCK_SECONDS = 120;
     private const DELETE_PROCESS_GRACE_SECONDS = 0;
-    private const DELETE_PROCESS_STALE_SECONDS = 0;
+    private const DELETE_PROCESS_STALE_SECONDS = 30;
     private const DELETE_FAIL_STALE_SECONDS = 900;
     private const DELETE_QUEUE = 'imports-high';
     private const DELETE_SYNC_QUEUE = 'imports-high';
@@ -1964,11 +1964,16 @@ class ImportIndexController extends Controller
         }
 
         $stage = (string) ($state['stage'] ?? 'queued');
+        $batchState = (string) ($state['batch_state'] ?? '');
         $reference = $state['updated_at'] ?? $state['created_at'] ?? null;
         $ageSeconds = $this->diffNowInSeconds($reference);
 
         if ($stage === 'queued') {
             return $ageSeconds >= self::DELETE_PROCESS_GRACE_SECONDS;
+        }
+
+        if (in_array($batchState, ['deleting_pending', 'deleting_committed'], true)) {
+            return $ageSeconds >= self::DELETE_PROCESS_STALE_SECONDS;
         }
 
         return $ageSeconds >= self::DELETE_PROCESS_STALE_SECONDS;

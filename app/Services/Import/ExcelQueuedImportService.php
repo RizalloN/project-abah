@@ -373,7 +373,7 @@ class ExcelQueuedImportService
                 ]);
             }
 
-            $importContext = ($callbacks['build_import_context'])($tableName, $normalizedHeaders, $activeFilters);
+            $importContext = ($callbacks['build_import_context'])($tableName, $normalizedHeaders, $activeFilters, $params);
 
             $send('progress', [
                 'percent' => 15,
