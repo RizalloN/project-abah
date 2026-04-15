@@ -242,7 +242,7 @@ class DataReportController extends Controller
 
         $sourceRows = DB::table($sourceTable . ' as src')
             ->whereNotNull('src.periode')
-            ->whereBetween(DB::raw('DATE(src.periode)'), [$windowStart, $selectedDate->toDateString()])
+            ->whereBetween('src.periode', [$windowStart, $selectedDate->toDateString()])
             ->selectRaw('DATE(src.periode) as periode')
             ->selectRaw('TRIM(src.cif) as cif')
             ->selectRaw('TRIM(COALESCE(src.' . $statusColumn . ', "")) as status_nasabah')
@@ -260,12 +260,13 @@ class DataReportController extends Controller
         if ($cifList->isNotEmpty()) {
             $simpananRows = DB::table('simpanan_multipn')
                 ->whereNotNull('CIFNO')
-                ->whereDate('posisi', '<=', $selectedDate->toDateString())
-                ->whereIn(DB::raw('TRIM(CIFNO)'), $cifList->all())
+                ->where('posisi', '<=', $selectedDate->toDateString())
+                ->whereIn('CIFNO', $cifList->all())
                 ->selectRaw('TRIM(CIFNO) as cif')
                 ->selectRaw('DATE(posisi) as posisi')
-                ->selectRaw("COALESCE(NULLIF(TRIM(kantor_cabang), ''), 'Branch Office Belum Terpetakan') as kantor_cabang")
-                ->selectRaw('COALESCE(saldo_idr, 0) as saldo_idr')
+                ->selectRaw("MAX(COALESCE(NULLIF(TRIM(kantor_cabang), ''), 'Branch Office Belum Terpetakan')) as kantor_cabang")
+                ->selectRaw('SUM(COALESCE(saldo_idr, 0)) as saldo_idr')
+                ->groupBy(DB::raw('TRIM(CIFNO)'), DB::raw('DATE(posisi)'))
                 ->orderByDesc('posisi')
                 ->get();
         }
@@ -277,21 +278,12 @@ class DataReportController extends Controller
                 continue;
             }
 
-            $posisi = (string) ($simpananRow->posisi ?? '');
-            $regional = trim((string) ($simpananRow->kantor_cabang ?: 'Branch Office Belum Terpetakan'));
-            $saldo = (float) ($simpananRow->saldo_idr ?? 0);
-
             if (!isset($latestSaldoByCif[$cif])) {
                 $latestSaldoByCif[$cif] = [
-                    'posisi' => $posisi,
-                    'kantor_cabang' => $regional,
-                    'saldo_idr' => $saldo,
+                    'posisi' => (string) ($simpananRow->posisi ?? ''),
+                    'kantor_cabang' => trim((string) ($simpananRow->kantor_cabang ?: 'Branch Office Belum Terpetakan')),
+                    'saldo_idr' => (float) ($simpananRow->saldo_idr ?? 0),
                 ];
-                continue;
-            }
-
-            if ($latestSaldoByCif[$cif]['posisi'] === $posisi) {
-                $latestSaldoByCif[$cif]['saldo_idr'] += $saldo;
             }
         }
 
