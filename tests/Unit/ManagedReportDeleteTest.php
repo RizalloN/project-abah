@@ -148,11 +148,14 @@ class ManagedReportDeleteTest extends TestCase
 
         $syncService = \Mockery::mock(ReportDataSyncService::class);
         $syncService->shouldReceive('resolvePostDeleteMaintenanceMode')->with('daily_loan_dinamis')->andReturn('snapshot');
-        $syncService->shouldReceive('dispatchSnapshotRefresh')
+        $syncService->shouldReceive('cleanupDerivedArtifactsAfterDelete')
+            ->once()
+            ->with('daily_loan_dinamis', '2026-04-04', \Mockery::type('string'))
+            ->andReturn([]);
+        $syncService->shouldReceive('syncAfterDeleteLightweight')
             ->once()
             ->with('daily_loan_dinamis', null, \Mockery::type('string'))
             ->andReturnNull();
-
         $firstPayload = $advanceMethod->invoke(
             $controller,
             $initPayload['delete_id'],
@@ -416,7 +419,14 @@ class ManagedReportDeleteTest extends TestCase
 
         $syncService = \Mockery::mock(ReportDataSyncService::class);
         $syncService->shouldReceive('resolvePostDeleteMaintenanceMode')->with('simpanan_multipn')->andReturn('snapshot');
-        $syncService->shouldReceive('dispatchSnapshotRefresh')->once()->with('simpanan_multipn', '2026-04-04', \Mockery::type('string'))->andReturnNull();
+        $syncService->shouldReceive('cleanupDerivedArtifactsAfterDelete')
+            ->once()
+            ->with('simpanan_multipn', null, \Mockery::type('string'))
+            ->andReturn([]);
+        $syncService->shouldReceive('syncAfterDeleteLightweight')
+            ->once()
+            ->with('simpanan_multipn', null, \Mockery::type('string'))
+            ->andReturnNull();
         app()->instance(ReportDataSyncService::class, $syncService);
 
         $bulkLoadService = \Mockery::mock(MySqlBulkLoadService::class);

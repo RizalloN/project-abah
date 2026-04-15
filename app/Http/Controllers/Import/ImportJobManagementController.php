@@ -759,6 +759,48 @@ class ImportJobManagementController extends Controller
         $queues = array_values(array_unique(array_filter([$configuredReportQueue, 'default', 'reports-low'])));
         $reportBasenames = $this->reportQueueBasenames();
         $snapshotRebuildBasename = class_basename(\App\Jobs\RunManagedReportSnapshotRebuildJob::class);
+        $reservedJobs = DB::table('jobs')
+            ->whereNotNull('reserved_at')
+            ->whereIn('queue', $queues)
+            ->select(['id', 'queue', 'reserved_at', 'created_at', 'available_at', 'payload'])
+            ->orderBy('id')
+            ->get()
+            ->filter(function ($job) use ($reportBasenames) {
+                $payload = (string) ($job->payload ?? '');
+
+                foreach ($reportBasenames as $basename) {
+                    if ($basename !== '' && str_contains($payload, $basename)) {
+                        return true;
+                    }
+                }
+
+                return false;
+            })
+            ->values();
+
+        $purgedReservedSnapshotJobs = 0;
+        $staleReservedSnapshotJobs = 0;
+        foreach ($reservedJobs as $job) {
+            $reservedAgeSeconds = $this->queueTimestampAgeSeconds($job->reserved_at ?? null);
+            if ($reservedAgeSeconds < self::SNAPSHOT_RESERVED_STALE_SECONDS) {
+                continue;
+            }
+
+            $rebuildId = $this->extractSnapshotRebuildIdFromPayload((string) ($job->payload ?? ''));
+            if ($rebuildId === null) {
+                continue;
+            }
+
+            $state = ManagedReportSnapshotRebuildStore::getState($rebuildId);
+            $status = strtolower(trim((string) ($state['status'] ?? '')));
+            if ($state !== null && !in_array($status, ['completed', 'failed', 'warning'], true)) {
+                $staleReservedSnapshotJobs++;
+                continue;
+            }
+
+            DB::table('jobs')->where('id', (int) ($job->id ?? 0))->delete();
+            $purgedReservedSnapshotJobs++;
+        }
 
         $jobs = DB::table('jobs')
             ->whereNull('reserved_at')
@@ -785,17 +827,6 @@ class ImportJobManagementController extends Controller
         $configuredQueuePending = $jobs->where('queue', $configuredReportQueue)->count();
         $oldestPending = $jobs->first();
         $oldestAgeSeconds = $oldestPending ? $this->queueRowAgeSeconds($oldestPending) : null;
-        $reservedSnapshotJobs = DB::table('jobs')
-            ->whereNotNull('reserved_at')
-            ->whereIn('queue', $queues)
-            ->where('payload', 'like', '%' . $snapshotRebuildBasename . '%')
-            ->select(['id', 'queue', 'reserved_at', 'payload'])
-            ->orderBy('id')
-            ->get();
-        $staleReservedSnapshotJobs = $reservedSnapshotJobs->filter(function ($job): bool {
-            return $this->queueTimestampAgeSeconds($job->reserved_at) >= self::SNAPSHOT_RESERVED_STALE_SECONDS;
-        })->count();
-
         if ($pendingReportJobs === 0 && $staleReservedSnapshotJobs === 0) {
             return [
                 'status' => 'ok',
@@ -807,6 +838,7 @@ class ImportJobManagementController extends Controller
                 'legacy_reports_low_pending' => 0,
                 'oldest_pending_age_seconds' => 0,
                 'stale_reserved_snapshot_jobs' => 0,
+                'purged_reserved_snapshot_jobs' => $purgedReservedSnapshotJobs,
             ];
         }
 
@@ -843,6 +875,7 @@ class ImportJobManagementController extends Controller
             'legacy_reports_low_pending' => $legacyReportsLowPending,
             'oldest_pending_age_seconds' => $oldestAgeSeconds ?? 0,
             'stale_reserved_snapshot_jobs' => $staleReservedSnapshotJobs,
+            'purged_reserved_snapshot_jobs' => $purgedReservedSnapshotJobs,
         ];
     }
 
