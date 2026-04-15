@@ -377,6 +377,11 @@ class ImportExcelController extends Controller
         return ($tableName ?? $this->resolveExcelTableName()) === 'ssa_simpanan';
     }
 
+    private function isSsaPinjamanTable(?string $tableName = null): bool
+    {
+        return ($tableName ?? $this->resolveExcelTableName()) === 'ssa_pinjaman';
+    }
+
     private function detectCsvDelimiter(string $path): string
     {
         return $this->smartDetectCsvDelimiter($path);
@@ -393,6 +398,7 @@ class ImportExcelController extends Controller
             'TEXTBOX21' => 'os_idr',
             'OS_IDR' => 'os_idr',
             'MONTH_DAY_YEAR_OF_POSISI' => 'month_day_year_of_posisi',
+            'MONTH_DAY_YEAR_OF_PERIODE' => 'month_day_year_of_periode',
             'NOREKENING' => 'no_rekening',
             'NOMORREKENING' => 'no_rekening',
             'NOMOR_REKENING' => 'no_rekening',
@@ -3715,6 +3721,203 @@ class ImportExcelController extends Controller
         ];
     }
 
+    private function stageSsaPinjamanCsvWithPolars(?callable $send, string $csvPath, ?string $delimiter = null): ?array
+    {
+        $pythonExe = $this->findPython();
+        $scriptPath = base_path('scripts/ssa_pinjaman_polars_processor.py');
+
+        if (!$pythonExe || !file_exists($scriptPath)) {
+            return null;
+        }
+
+        $delimiter = ($delimiter !== null && $delimiter !== '')
+            ? $delimiter
+            : $this->detectCsvDelimiter($csvPath);
+
+        $tempDirectory = storage_path('app/temp');
+        if (!is_dir($tempDirectory)) {
+            @mkdir($tempDirectory, 0777, true);
+        }
+
+        $outputCsvPath = $tempDirectory . DIRECTORY_SEPARATOR . 'ssa_pinjaman_polars_' . Str::uuid()->toString() . '.csv';
+        $configFile = storage_path('app/ssa_pinjaman_polars_config_' . uniqid() . '.json');
+        file_put_contents($configFile, json_encode([
+            'file_path' => $csvPath,
+            'delimiter' => $delimiter,
+            'output_csv_path' => $outputCsvPath,
+        ], JSON_UNESCAPED_UNICODE));
+
+        $cmd = escapeshellarg($pythonExe)
+            . ' ' . escapeshellarg($scriptPath)
+            . ' --config ' . escapeshellarg($configFile)
+            . ' --mode stage';
+
+        $descriptors = [
+            0 => ['pipe', 'r'],
+            1 => ['pipe', 'w'],
+            2 => ['pipe', 'w'],
+        ];
+
+        $process = proc_open($cmd, $descriptors, $pipes);
+        if (!is_resource($process)) {
+            @unlink($configFile);
+            @unlink($outputCsvPath);
+            return null;
+        }
+
+        fclose($pipes[0]);
+        stream_set_blocking($pipes[1], false);
+        stream_set_blocking($pipes[2], false);
+
+        $buffer = '';
+        $donePayload = null;
+        $pythonError = null;
+        $pythonProducedOutput = false;
+        $lastKeepAlive = time();
+        $keepAliveEvery = 15;
+
+        $processLine = static function (string $line) use ($send, &$donePayload, &$pythonError, &$lastKeepAlive): void {
+            $line = trim($line);
+            if ($line === '') {
+                return;
+            }
+
+            $data = json_decode($line, true);
+            if (!is_array($data)) {
+                return;
+            }
+
+            $type = $data['type'] ?? 'progress';
+            unset($data['type']);
+
+            if ($type === 'progress') {
+                if ($send) {
+                    $send('progress', $data);
+                }
+                $lastKeepAlive = time();
+                return;
+            }
+
+            if ($type === 'done') {
+                $donePayload = $data;
+                $lastKeepAlive = time();
+                return;
+            }
+
+            if ($type === 'error') {
+                $pythonError = $data['message'] ?? 'Python SSA Pinjaman stage error tidak diketahui';
+                $lastKeepAlive = time();
+            }
+        };
+
+        try {
+            while (true) {
+                $status = proc_get_status($process);
+                $chunk = fread($pipes[1], 65536);
+
+                if ($chunk !== false && $chunk !== '') {
+                    $pythonProducedOutput = true;
+                    $buffer .= $chunk;
+                    while (($pos = strpos($buffer, "\n")) !== false) {
+                        $line = substr($buffer, 0, $pos);
+                        $buffer = substr($buffer, $pos + 1);
+                        $processLine($line);
+                    }
+                }
+
+                if ((time() - $lastKeepAlive) >= $keepAliveEvery && $send) {
+                    echo ": keepalive\n\n";
+                    if (ob_get_level() > 0) {
+                        ob_flush();
+                    }
+                    flush();
+                    $lastKeepAlive = time();
+                }
+
+                if (!$status['running']) {
+                    break;
+                }
+
+                usleep(50000);
+            }
+
+            $remaining = stream_get_contents($pipes[1]);
+            if ($remaining) {
+                $pythonProducedOutput = true;
+                $buffer .= $remaining;
+                foreach (explode("\n", $buffer) as $line) {
+                    $processLine($line);
+                }
+            }
+        } finally {
+            if (isset($pipes[1]) && is_resource($pipes[1])) {
+                fclose($pipes[1]);
+            }
+            if (isset($pipes[2]) && is_resource($pipes[2])) {
+                fclose($pipes[2]);
+            }
+
+            if (is_resource($process)) {
+                proc_close($process);
+            }
+
+            @unlink($configFile);
+        }
+
+        if (!$pythonProducedOutput || $pythonError !== null || !$donePayload || !file_exists($outputCsvPath)) {
+            @unlink($outputCsvPath);
+            return null;
+        }
+
+        return [
+            'path' => $outputCsvPath,
+            'cleanup' => true,
+            'normalized' => true,
+            'backend' => 'polars',
+            'skipped_rows' => array_values(array_map('intval', (array) ($donePayload['skipped_rows'] ?? []))),
+            'skipped_count' => (int) ($donePayload['skipped_count'] ?? 0),
+            'duplicate_count' => (int) ($donePayload['duplicate_count'] ?? 0),
+            'written_rows' => (int) ($donePayload['written_rows'] ?? 0),
+            'total_rows' => (int) ($donePayload['total_rows'] ?? 0),
+        ];
+    }
+
+    protected function createNormalizedSsaPinjamanDirectLoadCsv(string $csvPath, ?string $delimiter = null, ?callable $send = null): array
+    {
+        $polarsResult = $this->stageSsaPinjamanCsvWithPolars($send, $csvPath, $delimiter);
+        if ($polarsResult !== null) {
+            return $polarsResult;
+        }
+
+        return [
+            'path' => $csvPath,
+            'cleanup' => false,
+            'normalized' => false,
+            'backend' => 'csv_stage',
+            'skipped_rows' => [],
+            'skipped_count' => 0,
+            'duplicate_count' => 0,
+            'written_rows' => 0,
+            'total_rows' => 0,
+        ];
+    }
+
+    protected function prepareSsaPinjamanDirectLoadSource(string $csvPath, ?string $delimiter = null, ?callable $send = null): array
+    {
+        $normalized = $this->createNormalizedSsaPinjamanDirectLoadCsv($csvPath, $delimiter, $send);
+
+        return [
+            'path' => $normalized['path'],
+            'cleanup' => (bool) ($normalized['cleanup'] ?? false),
+            'normalized' => (bool) ($normalized['normalized'] ?? false),
+            'backend' => (string) ($normalized['backend'] ?? 'csv_stage'),
+            'skipped_rows' => $normalized['skipped_rows'] ?? [],
+            'skipped_count' => (int) ($normalized['skipped_count'] ?? 0),
+            'duplicate_count' => (int) ($normalized['duplicate_count'] ?? 0),
+            'written_rows' => (int) ($normalized['written_rows'] ?? 0),
+        ];
+    }
+
     private function createNormalizedDailyLoanDirectLoadCsv(string $csvPath, ?string $delimiter = null, ?callable $send = null): array
     {
         $polarsResult = $this->stageDailyLoanCsvWithPolars($send, $csvPath, $delimiter);
@@ -4601,8 +4804,10 @@ class ImportExcelController extends Controller
 
         $isDailyLoanTable = $this->isDailyLoanTable($tableName);
         $isSsaSimpananTable = $this->isSsaSimpananTable($tableName);
+        $isSsaPinjamanTable = $this->isSsaPinjamanTable($tableName);
+        $isSsaTable = $isSsaSimpananTable || $isSsaPinjamanTable;
 
-        if (!$isDailyLoanTable && !$isSsaSimpananTable) {
+        if (!$isDailyLoanTable && !$isSsaTable) {
             return false;
         }
 
@@ -4622,7 +4827,7 @@ class ImportExcelController extends Controller
                 'percent' => 18,
                 'message' => $isDailyLoanTable
                     ? 'Menyiapkan direct LOAD DATA untuk Daily Loan...'
-                    : 'Menyiapkan direct LOAD DATA untuk SSA Simpanan...',
+                    : 'Menyiapkan direct LOAD DATA untuk ' . ($isSsaPinjamanTable ? 'SSA Pinjaman' : 'SSA Simpanan') . '...',
                 'rows_done' => 0,
                 'total' => $estimatedTotalRows,
                 'speed' => 0,
@@ -4630,7 +4835,9 @@ class ImportExcelController extends Controller
 
             $loadSource = $isDailyLoanTable
                 ? $this->prepareDailyLoanDirectLoadSource($csvPath, $delimiter, $send)
-                : $this->prepareSsaSimpananDirectLoadSource($csvPath, $delimiter, $send);
+                : ($isSsaPinjamanTable
+                    ? $this->prepareSsaPinjamanDirectLoadSource($csvPath, $delimiter, $send)
+                    : $this->prepareSsaSimpananDirectLoadSource($csvPath, $delimiter, $send));
             $sourcePath = (string) ($loadSource['path'] ?? $csvPath);
             $sourceWasNormalized = !empty($loadSource['normalized']);
             $loadBackend = (string) ($loadSource['backend'] ?? 'php');
@@ -4656,7 +4863,7 @@ class ImportExcelController extends Controller
                     'percent' => 32,
                     'message' => $isDailyLoanTable
                         ? 'Load plan Daily Loan siap dijalankan.'
-                        : 'Load plan SSA Simpanan siap dijalankan.',
+                        : 'Load plan ' . ($isSsaPinjamanTable ? 'SSA Pinjaman' : 'SSA Simpanan') . ' siap dijalankan.',
                     'processed_rows' => 0,
                     'total_rows' => $baseTotal,
                     'total_success' => (int) ($job->total_success ?? 0),
@@ -4679,10 +4886,10 @@ class ImportExcelController extends Controller
                     : ($sourceWasNormalized
                     ? (
                         $skippedCount > 0
-                            ? 'CSV SSA Simpanan diproses dengan ' . $loadBackend . '. ' . $skippedCount . ' baris tidak valid di-skip, lalu direct LOAD DATA dijalankan...'
-                            : 'CSV SSA Simpanan diproses dengan ' . $loadBackend . '. Menjalankan direct LOAD DATA ke tabel final...'
+                            ? 'CSV ' . ($isSsaPinjamanTable ? 'SSA Pinjaman' : 'SSA Simpanan') . ' diproses dengan ' . $loadBackend . '. ' . $skippedCount . ' baris tidak valid di-skip, lalu direct LOAD DATA dijalankan...'
+                            : 'CSV ' . ($isSsaPinjamanTable ? 'SSA Pinjaman' : 'SSA Simpanan') . ' diproses dengan ' . $loadBackend . '. Menjalankan direct LOAD DATA ke tabel final...'
                     )
-                    : 'Direct LOAD DATA aktif. Memuat CSV stage langsung ke tabel SSA Simpanan...'),
+                    : 'Direct LOAD DATA aktif. Memuat CSV stage langsung ke tabel ' . ($isSsaPinjamanTable ? 'SSA Pinjaman' : 'SSA Simpanan') . '...'),
                 'rows_done' => 0,
                 'total' => $baseTotal,
                 'speed' => 0,
@@ -4703,8 +4910,8 @@ class ImportExcelController extends Controller
                     'phase' => 'loading',
                     'percent' => $status === 'completed' ? 98 : 96,
                     'message' => $status === 'completed'
-                        ? ($isDailyLoanTable ? 'Direct LOAD DATA Daily Loan selesai diproses.' : 'Direct LOAD DATA SSA Simpanan selesai diproses.')
-                        : ($isDailyLoanTable ? 'Direct LOAD DATA Daily Loan selesai dengan kegagalan parsial.' : 'Direct LOAD DATA SSA Simpanan selesai dengan kegagalan parsial.'),
+                        ? ($isDailyLoanTable ? 'Direct LOAD DATA Daily Loan selesai diproses.' : 'Direct LOAD DATA ' . ($isSsaPinjamanTable ? 'SSA Pinjaman' : 'SSA Simpanan') . ' selesai diproses.')
+                        : ($isDailyLoanTable ? 'Direct LOAD DATA Daily Loan selesai dengan kegagalan parsial.' : 'Direct LOAD DATA ' . ($isSsaPinjamanTable ? 'SSA Pinjaman' : 'SSA Simpanan') . ' selesai dengan kegagalan parsial.'),
                     'processed_rows' => $inserted + $failed,
                     'total_rows' => $baseTotal,
                     'total_success' => $inserted,
@@ -4718,7 +4925,7 @@ class ImportExcelController extends Controller
                 'percent' => 98,
                 'message' => $isDailyLoanTable
                     ? 'Direct LOAD DATA Daily Loan selesai diproses.'
-                    : 'Direct LOAD DATA SSA Simpanan selesai diproses.',
+                    : 'Direct LOAD DATA ' . ($isSsaPinjamanTable ? 'SSA Pinjaman' : 'SSA Simpanan') . ' selesai diproses.',
                 'rows_done' => $inserted,
                 'total' => $baseTotal,
                 'speed' => 0,
@@ -5370,6 +5577,8 @@ class ImportExcelController extends Controller
                 'JUMLAH_PN1',
                 'JUMLAH_PN_ALL1',
                 'RESTRUK_KE1',
+                'JUMLAH_DEBITUR_AKTIF',
+                'JUMLAH_REKENING_AKTIF',
             ], true);
         }
 
@@ -5425,6 +5634,7 @@ class ImportExcelController extends Controller
             'PERIODE',
             'POSISI',
             'MONTH_DAY_YEAR_OF_POSISI',
+            'MONTH_DAY_YEAR_OF_PERIODE',
             'TGL_REALISASI',
             'TGL_JATUH_TEMPO',
             'TANGGAL',
@@ -6054,7 +6264,7 @@ class ImportExcelController extends Controller
 
             ksort($normalizedActiveFilters);
 
-            if ($tableName === 'ssa_simpanan' && !$this->isCsvFile($path)) {
+            if (in_array($tableName, ['ssa_simpanan', 'ssa_pinjaman'], true) && !$this->isCsvFile($path)) {
                 if ($stagedCsvPath !== '' && file_exists($stagedCsvPath)) {
                     @unlink($stagedCsvPath);
                 }
@@ -6253,7 +6463,7 @@ class ImportExcelController extends Controller
 
         ksort($normalizedActiveFilters);
 
-        $mustRefreshStagedCsv = $tableName === 'ssa_simpanan';
+        $mustRefreshStagedCsv = in_array($tableName, ['ssa_simpanan', 'ssa_pinjaman'], true);
 
         if (!$this->isCsvFile($path) && ($mustRefreshStagedCsv || $stagedCsvPath === '' || !file_exists($stagedCsvPath))) {
             if ($mustRefreshStagedCsv && $stagedCsvPath !== '' && file_exists($stagedCsvPath)) {
