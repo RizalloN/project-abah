@@ -102,7 +102,16 @@ class DatabaseBackupService
             2 => ['pipe', 'w'],
         ];
 
-        $process = proc_open($command, $descriptors, $pipes, base_path(), array_merge($_ENV, $_SERVER, $environment), ['bypass_shell' => true]);
+        $baseEnvironment = [];
+        foreach (array_merge($_ENV, $_SERVER) as $key => $value) {
+            if (!is_string($key) || $key === '' || is_array($value) || is_object($value)) {
+                continue;
+            }
+
+            $baseEnvironment[$key] = (string) $value;
+        }
+
+        $process = proc_open($command, $descriptors, $pipes, base_path(), array_merge($baseEnvironment, $environment), ['bypass_shell' => true]);
         if (!is_resource($process)) {
             throw new RuntimeException('Gagal menjalankan proses backup database.');
         }
