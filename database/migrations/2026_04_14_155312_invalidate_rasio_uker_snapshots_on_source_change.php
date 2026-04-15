@@ -1,9 +1,7 @@
 <?php
 
-use App\Support\ReportSnapshotBuilder;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
@@ -120,8 +118,6 @@ BEGIN
     END IF;
 END
 SQL);
-
-        $this->backfillExistingRasioSnapshots();
     }
 
     public function down(): void
@@ -230,36 +226,6 @@ BEGIN
 END
 SQL);
     }
-
-    private function backfillExistingRasioSnapshots(): void
-    {
-        if (!Schema::hasTable('daily_loan_dinamis') || !Schema::hasTable('rasio_casa_debitur_uker_snapshots')) {
-            return;
-        }
-
-        $periods = DB::table('daily_loan_dinamis')
-            ->whereNotNull('periode')
-            ->select('periode')
-            ->distinct()
-            ->orderBy('periode')
-            ->pluck('periode');
-
-        if ($periods->isEmpty()) {
-            return;
-        }
-
-        $builder = app(ReportSnapshotBuilder::class);
-
-        foreach ($periods as $period) {
-            $normalizedPeriod = trim((string) $period);
-            if ($normalizedPeriod === '') {
-                continue;
-            }
-
-            $builder->rebuildRasioCasa($normalizedPeriod, true);
-        }
-    }
-
     private function dropTriggers(): void
     {
         foreach ([
@@ -270,7 +236,21 @@ SQL);
             'trg_smp_after_upd_invalidate_snapshots',
             'trg_smp_after_del_invalidate_snapshots',
         ] as $trigger) {
-            DB::unprepared('DROP TRIGGER IF EXISTS ' . $trigger);
+            if ($this->triggerExists($trigger)) {
+                DB::unprepared('DROP TRIGGER `' . $trigger . '`');
+            }
         }
+    }
+
+    private function triggerExists(string $trigger): bool
+    {
+        $database = DB::connection()->getDatabaseName();
+
+        $row = DB::selectOne(
+            'SELECT 1 FROM information_schema.triggers WHERE trigger_schema = ? AND trigger_name = ? LIMIT 1',
+            [$database, $trigger]
+        );
+
+        return $row !== null;
     }
 };

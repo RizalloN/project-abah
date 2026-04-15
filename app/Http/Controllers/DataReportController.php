@@ -258,16 +258,25 @@ class DataReportController extends Controller
 
         $simpananRows = collect();
         if ($cifList->isNotEmpty()) {
-            $simpananRows = DB::table('simpanan_multipn')
+            // Subquery untuk mendapatkan 'posisi' (tanggal) terakhir per CIF
+            $latestPosisiQuery = DB::table('simpanan_multipn')
+                ->selectRaw('CIFNO, MAX(posisi) as max_posisi')
                 ->whereNotNull('CIFNO')
                 ->where('posisi', '<=', $selectedDate->toDateString())
                 ->whereIn('CIFNO', $cifList->all())
-                ->selectRaw('TRIM(CIFNO) as cif')
-                ->selectRaw('DATE(posisi) as posisi')
-                ->selectRaw("MAX(COALESCE(NULLIF(TRIM(kantor_cabang), ''), 'Branch Office Belum Terpetakan')) as kantor_cabang")
-                ->selectRaw('SUM(COALESCE(saldo_idr, 0)) as saldo_idr')
-                ->groupBy(DB::raw('TRIM(CIFNO)'), DB::raw('DATE(posisi)'))
-                ->orderByDesc('posisi')
+                ->groupBy('CIFNO');
+
+            // Join subquery dengan data utama agar hanya data terbaru yang di-SUM
+            $simpananRows = DB::table('simpanan_multipn as sm')
+                ->joinSub($latestPosisiQuery, 'latest', function ($join) {
+                    $join->on('sm.CIFNO', '=', 'latest.CIFNO')
+                         ->on('sm.posisi', '=', 'latest.max_posisi');
+                })
+                ->selectRaw('TRIM(sm.CIFNO) as cif')
+                ->selectRaw('DATE(sm.posisi) as posisi')
+                ->selectRaw("MAX(COALESCE(NULLIF(TRIM(sm.kantor_cabang), ''), 'Branch Office Belum Terpetakan')) as kantor_cabang")
+                ->selectRaw('SUM(COALESCE(sm.saldo_idr, 0)) as saldo_idr')
+                ->groupBy(DB::raw('TRIM(sm.CIFNO)'), DB::raw('DATE(sm.posisi)'))
                 ->get();
         }
 
@@ -278,13 +287,11 @@ class DataReportController extends Controller
                 continue;
             }
 
-            if (!isset($latestSaldoByCif[$cif])) {
-                $latestSaldoByCif[$cif] = [
-                    'posisi' => (string) ($simpananRow->posisi ?? ''),
-                    'kantor_cabang' => trim((string) ($simpananRow->kantor_cabang ?: 'Branch Office Belum Terpetakan')),
-                    'saldo_idr' => (float) ($simpananRow->saldo_idr ?? 0),
-                ];
-            }
+            $latestSaldoByCif[$cif] = [
+                'posisi' => (string) ($simpananRow->posisi ?? ''),
+                'kantor_cabang' => trim((string) ($simpananRow->kantor_cabang ?: 'Branch Office Belum Terpetakan')),
+                'saldo_idr' => (float) ($simpananRow->saldo_idr ?? 0),
+            ];
         }
 
         $sourceRows = $sourceRows
