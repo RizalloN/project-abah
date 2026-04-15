@@ -372,6 +372,11 @@ class ImportExcelController extends Controller
         return ($tableName ?? $this->resolveExcelTableName()) === 'simpanan_multipn';
     }
 
+    private function isSsaSimpananTable(?string $tableName = null): bool
+    {
+        return ($tableName ?? $this->resolveExcelTableName()) === 'ssa_simpanan';
+    }
+
     private function detectCsvDelimiter(string $path): string
     {
         return $this->smartDetectCsvDelimiter($path);
@@ -387,6 +392,7 @@ class ImportExcelController extends Controller
             'TOTAL_KEWAJIBAN' => 'total_kewajiban',
             'TEXTBOX21' => 'os_idr',
             'OS_IDR' => 'os_idr',
+            'MONTH_DAY_YEAR_OF_POSISI' => 'posisi',
             'NOREKENING' => 'no_rekening',
             'NOMORREKENING' => 'no_rekening',
             'NOMOR_REKENING' => 'no_rekening',
@@ -1163,6 +1169,69 @@ class ImportExcelController extends Controller
         }
 
         return $row;
+    }
+
+    private function resolveSourceHeadersForImport(string $path, int $headerIndex, array $fallbackHeaders): array
+    {
+        if ($headerIndex < 0 || !file_exists($path)) {
+            return array_values($fallbackHeaders);
+        }
+
+        try {
+            if ($this->isCsvFile($path)) {
+                $delimiter = $this->detectCsvDelimiter($path);
+                $handle = @fopen($path, 'r');
+                if ($handle === false) {
+                    return array_values($fallbackHeaders);
+                }
+
+                $currentIndex = 0;
+                while (($row = fgetcsv($handle, 0, $delimiter)) !== false) {
+                    if ($currentIndex === $headerIndex) {
+                        fclose($handle);
+                        $row = $this->normalizeCsvRow($row, $delimiter);
+
+                        return array_values(array_map(function ($headerValue, $index) {
+                            $label = trim((string) $headerValue);
+                            return $label !== '' ? $label : ('COL_' . $index);
+                        }, $row, array_keys($row)));
+                    }
+
+                    $currentIndex++;
+                }
+
+                fclose($handle);
+                return array_values($fallbackHeaders);
+            }
+
+            $reader = IOFactory::createReaderForFile($path);
+            $reader->setReadDataOnly(true);
+            $reader->setReadEmptyCells(false);
+
+            $chunkFilter = new ChunkReadFilter();
+            $chunkFilter->setRows($headerIndex + 1, 1);
+            $reader->setReadFilter($chunkFilter);
+
+            $spreadsheet = $reader->load($path);
+            $sheet = $spreadsheet->getActiveSheet()->toArray(null, true, true, false);
+            $spreadsheet->disconnectWorksheets();
+            unset($spreadsheet);
+
+            $headerRow = (array) ($sheet[$headerIndex] ?? []);
+            if ($headerRow === []) {
+                return array_values($fallbackHeaders);
+            }
+
+            $headers = [];
+            foreach ($headerRow as $index => $headerValue) {
+                $label = trim((string) $headerValue);
+                $headers[] = $label !== '' ? $label : ('COL_' . $index);
+            }
+
+            return array_values($headers);
+        } catch (\Throwable) {
+            return array_values($fallbackHeaders);
+        }
     }
 
     protected function stripIgnoredPreviewColumns(array $headers, array $rows, array $formattedUniqueValues, string $tableName): array
@@ -2286,11 +2355,27 @@ class ImportExcelController extends Controller
             'has_filters' => $hasFilters,
             'unique_id_prefix' => str_replace('.', '', uniqid('imp', true)),
             'row_sequence' => 0,
+            'manual_column_values' => $this->resolveManualImportColumnValues($tableName, $tableColumnsLookup, $tableColumnsByLower),
         ];
 
         $context = $this->resolveImportStrategy($tableName)->prepareContext($context);
 
         return $this->importContextCache[$cacheKey] = $context;
+    }
+
+    private function resolveManualImportColumnValues(string $tableName, array $tableColumnsLookup, array $tableColumnsByLower): array
+    {
+        $manualValues = [];
+
+        if ($tableName === 'rka') {
+            $manualKanca = trim((string) session('excel_manual_kanca', ''));
+            if ($manualKanca !== '' && isset($tableColumnsLookup['kanca'])) {
+                $resolvedColumn = $tableColumnsByLower['kanca'] ?? 'kanca';
+                $manualValues[$resolvedColumn] = $manualKanca;
+            }
+        }
+
+        return $manualValues;
     }
 
     protected function fallbackBulkLoadChunkLines(): int
@@ -3606,6 +3691,8 @@ class ImportExcelController extends Controller
 
         $normalizedHeader = preg_replace('/[^A-Z0-9]+/', '_', strtoupper(trim((string) ($rule['header_name'] ?? ''))));
         if (in_array($normalizedHeader, [
+            'TGL',
+            'TAHUN',
             'JANGKA_WAKTU1',
             'UMUR_TUNGGAKAN',
             'FREQ_PAYMENT',
@@ -3727,6 +3814,100 @@ class ImportExcelController extends Controller
         ];
     }
 
+    private function buildDirectGenericCsvLoadPlan(string $tableName, string $absolutePath, array $normalizedHeaders): array
+    {
+        $delimiter = $this->detectCsvDelimiter($absolutePath);
+        $handle = fopen($absolutePath, 'r');
+        if ($handle === false) {
+            throw new \RuntimeException("Gagal membuka file CSV {$tableName}.");
+        }
+
+        try {
+            $sourceHeaders = $this->readCsvRecord($handle, $delimiter);
+        } finally {
+            fclose($handle);
+        }
+
+        if ($sourceHeaders === false || empty($sourceHeaders)) {
+            throw new \RuntimeException("Header CSV {$tableName} tidak ditemukan.");
+        }
+
+        $context = $this->buildImportContext($tableName, $normalizedHeaders, []);
+        $fieldVariables = [];
+        $setClauses = [
+            "`created_at` = NOW()",
+            "`updated_at` = NOW()",
+        ];
+
+        if (!empty($context['unique_id_col'])) {
+            $uniquePadLength = max(12, strlen((string) max(1, count($normalizedHeaders))) + 8);
+            $setClauses[] = "`{$context['unique_id_col']}` = CONCAT(@generic_import_unique_prefix, LPAD((@generic_import_rownum := @generic_import_rownum + 1), {$uniquePadLength}, '0'), '{$context['suffix']}')";
+        }
+
+        foreach ($normalizedHeaders as $index => $header) {
+            $variable = '@csv_col_' . $index;
+            $fieldVariables[] = $variable;
+
+            $rule = $context['header_rules'][$index] ?? null;
+            if (!$rule) {
+                continue;
+            }
+
+            $dbColumn = '';
+            foreach ((array) ($rule['db_candidates'] ?? []) as $candidateColumn) {
+                $candidateLower = strtolower((string) $candidateColumn);
+                if (!isset($context['skip_columns_lookup'][$candidateLower])) {
+                    $dbColumn = (string) $candidateColumn;
+                    break;
+                }
+            }
+
+            if ($dbColumn === '') {
+                continue;
+            }
+
+            if (
+                in_array(strtolower($dbColumn), ['id', 'created_at', 'updated_at'], true)
+                || (!empty($context['unique_id_col']) && strcasecmp($dbColumn, (string) $context['unique_id_col']) === 0)
+            ) {
+                continue;
+            }
+
+            $expression = $this->buildDirectLoadSqlExpression($rule, $variable);
+            $expression = $this->applySqlColumnConstraints($expression, $dbColumn, $context);
+            $setClauses[] = $this->quoteSqlIdentifier($dbColumn) . " = {$expression}";
+        }
+
+        foreach ((array) ($context['manual_column_values'] ?? []) as $manualColumn => $manualValue) {
+            $manualColumn = (string) $manualColumn;
+            if ($manualColumn === '') {
+                continue;
+            }
+
+            $manualColumnLower = strtolower($manualColumn);
+            if (
+                isset($context['skip_columns_lookup'][$manualColumnLower])
+                || in_array($manualColumnLower, ['created_at', 'updated_at'], true)
+            ) {
+                continue;
+            }
+
+            $manualValue = $this->normalizeValueForDatabaseColumn($manualColumn, $manualValue, $context);
+            $setClauses[] = $this->quoteSqlIdentifier($manualColumn) . ' = ' . $this->quoteSqlStringLiteral($manualValue);
+        }
+
+        if (count($setClauses) <= (!empty($context['unique_id_col']) ? 3 : 2)) {
+            throw new \RuntimeException("Tidak ada mapping kolom {$tableName} yang bisa dipakai untuk direct import.");
+        }
+
+        return [
+            'delimiter' => $delimiter,
+            'field_variables' => $fieldVariables,
+            'set_clauses' => $setClauses,
+            'unique_id_prefix' => (string) ($context['unique_id_prefix'] ?? 'imp'),
+        ];
+    }
+
     private function executeDirectDailyLoanCsvLoad(string $absolutePath, array $loadPlan): int
     {
         $connection = config('database.default', 'mysql');
@@ -3820,6 +4001,97 @@ class ImportExcelController extends Controller
 
         if ($affected === false) {
             throw new \RuntimeException('LOAD DATA LOCAL INFILE gagal dieksekusi untuk Daily Loan.');
+        }
+
+        return (int) $affected;
+    }
+
+    private function executeDirectGenericCsvLoad(string $tableName, string $absolutePath, array $loadPlan): int
+    {
+        $connection = config('database.default', 'mysql');
+        $dbConfig = config("database.connections.{$connection}", []);
+        $charset = $dbConfig['charset'] ?? 'utf8mb4';
+        $host = $dbConfig['host'] ?? '127.0.0.1';
+        $port = $dbConfig['port'] ?? '3306';
+        $database = $dbConfig['database'] ?? '';
+        $username = $dbConfig['username'] ?? '';
+        $password = $dbConfig['password'] ?? '';
+        $unixSocket = $dbConfig['unix_socket'] ?? '';
+
+        $dsn = $unixSocket !== ''
+            ? "mysql:unix_socket={$unixSocket};dbname={$database};charset={$charset}"
+            : "mysql:host={$host};port={$port};dbname={$database};charset={$charset}";
+
+        $pdo = new \PDO($dsn, $username, $password, [
+            \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
+            \PDO::MYSQL_ATTR_LOCAL_INFILE => true,
+            \PDO::ATTR_TIMEOUT => 120,
+        ]);
+
+        $normalizedPath = str_replace('\\', '/', realpath($absolutePath) ?: $absolutePath);
+        $quotedPath = $pdo->quote($normalizedPath);
+        $quotedFields = implode(', ', $loadPlan['field_variables']);
+        $quotedDelimiter = addslashes($loadPlan['delimiter']);
+        $setClause = implode(",\n", $loadPlan['set_clauses']);
+        $uniquePrefix = (string) ($loadPlan['unique_id_prefix'] ?? 'imp');
+        $originalSqlMode = null;
+        $lockAcquired = false;
+        $affected = false;
+        $lockName = 'project_abah:table_write:' . strtolower(trim($tableName));
+
+        try {
+            $lockAcquired = $this->acquireMysqlAdvisoryLockOnPdo($pdo, $lockName, 10);
+            if (!$lockAcquired) {
+                throw new \RuntimeException("Import {$tableName} sedang berjalan. Tunggu proses sebelumnya selesai terlebih dahulu.");
+            }
+
+            $pdo->beginTransaction();
+            $originalSqlMode = $this->relaxMysqlSqlModeForImport($pdo);
+            $pdo->exec('SET @skip_snapshot_invalidation = 1');
+            $pdo->exec('SET @generic_import_rownum = 0');
+            $pdo->exec('SET @generic_import_unique_prefix = ' . $pdo->quote($uniquePrefix . '_'));
+
+            $sql = "LOAD DATA LOCAL INFILE {$quotedPath} INTO TABLE `{$tableName}` "
+                . "CHARACTER SET utf8mb4 "
+                . "FIELDS TERMINATED BY '{$quotedDelimiter}' OPTIONALLY ENCLOSED BY '\"' "
+                . "LINES TERMINATED BY '\\n' "
+                . "IGNORE 1 LINES "
+                . "({$quotedFields}) "
+                . "SET {$setClause}";
+
+            $affected = $pdo->exec($sql);
+            $pdo->commit();
+        } finally {
+            if ($pdo->inTransaction()) {
+                try {
+                    $pdo->rollBack();
+                } catch (\Throwable) {
+                }
+            }
+
+            try {
+                $pdo->exec('SET @skip_snapshot_invalidation = NULL');
+                $pdo->exec('SET @generic_import_rownum = NULL');
+                $pdo->exec('SET @generic_import_unique_prefix = NULL');
+            } catch (\Throwable) {
+            }
+
+            if ($lockAcquired) {
+                $this->releaseMysqlAdvisoryLockOnPdo($pdo, $lockName);
+            }
+
+            if ($originalSqlMode !== null) {
+                try {
+                    $pdo->exec('SET SESSION sql_mode = ' . $pdo->quote($originalSqlMode));
+                } catch (\Throwable) {
+                }
+            }
+
+            $pdo = null;
+        }
+
+        if ($affected === false) {
+            throw new \RuntimeException("LOAD DATA LOCAL INFILE gagal dieksekusi untuk {$tableName}.");
         }
 
         return (int) $affected;
@@ -4126,7 +4398,14 @@ class ImportExcelController extends Controller
         ?string $delimiter = null,
         bool $emitComplete = true
     ): bool {
-        if ($csvPath === '' || !file_exists($csvPath) || !$this->isDailyLoanTable($tableName)) {
+        if ($csvPath === '' || !file_exists($csvPath)) {
+            return false;
+        }
+
+        $isDailyLoanTable = $this->isDailyLoanTable($tableName);
+        $isSsaSimpananTable = $this->isSsaSimpananTable($tableName);
+
+        if (!$isDailyLoanTable && !$isSsaSimpananTable) {
             return false;
         }
 
@@ -4144,20 +4423,34 @@ class ImportExcelController extends Controller
                 'status' => 'processing',
                 'phase' => 'preparing_load_plan',
                 'percent' => 18,
-                'message' => 'Menyiapkan direct LOAD DATA untuk Daily Loan...',
+                'message' => $isDailyLoanTable
+                    ? 'Menyiapkan direct LOAD DATA untuk Daily Loan...'
+                    : 'Menyiapkan direct LOAD DATA untuk SSA Simpanan...',
                 'rows_done' => 0,
                 'total' => $estimatedTotalRows,
                 'speed' => 0,
             ]);
 
-            $loadSource = $this->prepareDailyLoanDirectLoadSource($csvPath, $delimiter, $send);
+            $loadSource = $isDailyLoanTable
+                ? $this->prepareDailyLoanDirectLoadSource($csvPath, $delimiter, $send)
+                : [
+                    'path' => $csvPath,
+                    'cleanup' => false,
+                    'normalized' => false,
+                    'backend' => 'csv_stage',
+                    'skipped_rows' => [],
+                    'skipped_count' => 0,
+                    'written_rows' => 0,
+                ];
             $sourcePath = (string) ($loadSource['path'] ?? $csvPath);
             $sourceWasNormalized = !empty($loadSource['normalized']);
             $loadBackend = (string) ($loadSource['backend'] ?? 'php');
             $skippedRows = array_values(array_unique(array_map('intval', (array) ($loadSource['skipped_rows'] ?? []))));
             $skippedCount = (int) ($loadSource['skipped_count'] ?? count($skippedRows));
 
-            $loadPlan = $this->buildDirectDailyLoanCsvLoadPlan($sourcePath, $normalizedHeaders);
+            $loadPlan = $isDailyLoanTable
+                ? $this->buildDirectDailyLoanCsvLoadPlan($sourcePath, $normalizedHeaders)
+                : $this->buildDirectGenericCsvLoadPlan($tableName, $sourcePath, $normalizedHeaders);
             $baseTotal = !empty($loadSource['written_rows'])
                 ? max(0, (int) $loadSource['written_rows'])
                 : max(0, $estimatedTotalRows - $skippedCount);
@@ -4172,7 +4465,9 @@ class ImportExcelController extends Controller
                     'status' => 'processing',
                     'phase' => 'preparing_load_plan',
                     'percent' => 32,
-                    'message' => 'Load plan Daily Loan siap dijalankan.',
+                    'message' => $isDailyLoanTable
+                        ? 'Load plan Daily Loan siap dijalankan.'
+                        : 'Load plan SSA Simpanan siap dijalankan.',
                     'processed_rows' => 0,
                     'total_rows' => $baseTotal,
                     'total_success' => (int) ($job->total_success ?? 0),
@@ -4184,19 +4479,23 @@ class ImportExcelController extends Controller
                 'status' => 'processing',
                 'phase' => 'loading',
                 'percent' => 56,
-                'message' => $sourceWasNormalized
+                'message' => $isDailyLoanTable
+                    ? ($sourceWasNormalized
                     ? (
                         $skippedCount > 0
                             ? 'CSV Daily Loan diproses dengan ' . $loadBackend . '. ' . $skippedCount . ' baris rusak di-skip, lalu direct LOAD DATA dijalankan...'
                             : 'CSV Daily Loan diproses dengan ' . $loadBackend . '. Menjalankan direct LOAD DATA ke tabel final...'
                     )
-                    : 'Direct LOAD DATA aktif. Memuat CSV langsung ke Daily Loan...',
+                    : 'Direct LOAD DATA aktif. Memuat CSV langsung ke Daily Loan...')
+                    : 'Direct LOAD DATA aktif. Memuat CSV stage langsung ke tabel SSA Simpanan...',
                 'rows_done' => 0,
                 'total' => $baseTotal,
                 'speed' => 0,
             ]);
 
-            $inserted = $this->executeDirectDailyLoanCsvLoad($sourcePath, $loadPlan);
+            $inserted = $isDailyLoanTable
+                ? $this->executeDirectDailyLoanCsvLoad($sourcePath, $loadPlan)
+                : $this->executeDirectGenericCsvLoad($tableName, $sourcePath, $loadPlan);
 
             $failed = max(0, $baseTotal - $inserted);
             $status = $failed > 0
@@ -4209,8 +4508,8 @@ class ImportExcelController extends Controller
                     'phase' => 'loading',
                     'percent' => $status === 'completed' ? 98 : 96,
                     'message' => $status === 'completed'
-                        ? 'Direct LOAD DATA Daily Loan selesai diproses.'
-                        : 'Direct LOAD DATA Daily Loan selesai dengan kegagalan parsial.',
+                        ? ($isDailyLoanTable ? 'Direct LOAD DATA Daily Loan selesai diproses.' : 'Direct LOAD DATA SSA Simpanan selesai diproses.')
+                        : ($isDailyLoanTable ? 'Direct LOAD DATA Daily Loan selesai dengan kegagalan parsial.' : 'Direct LOAD DATA SSA Simpanan selesai dengan kegagalan parsial.'),
                     'processed_rows' => $inserted + $failed,
                     'total_rows' => $baseTotal,
                     'total_success' => $inserted,
@@ -4222,7 +4521,9 @@ class ImportExcelController extends Controller
                 'status' => 'processing',
                 'phase' => 'loading',
                 'percent' => 98,
-                'message' => 'Direct LOAD DATA Daily Loan selesai diproses.',
+                'message' => $isDailyLoanTable
+                    ? 'Direct LOAD DATA Daily Loan selesai diproses.'
+                    : 'Direct LOAD DATA SSA Simpanan selesai diproses.',
                 'rows_done' => $inserted,
                 'total' => $baseTotal,
                 'speed' => 0,
@@ -4459,6 +4760,7 @@ class ImportExcelController extends Controller
         $aliasMap = [
             'textbox20' => 'total_kewajiban',
             'textbox21' => 'os_idr',
+            'month_day_year_of_posisi' => 'posisi',
             'periode' => 'periode',
             'segmen_dashboard' => 'segmen_dashboard',
             'produk_dashboard' => 'produk_dashboard',
@@ -4616,6 +4918,19 @@ class ImportExcelController extends Controller
             $finalRow[$resolvedColumn] = $this->normalizeValueForDatabaseColumn($resolvedColumn, $value, $context);
         }
 
+        foreach ((array) ($context['manual_column_values'] ?? []) as $manualColumn => $manualValue) {
+            $manualColumnLower = strtolower((string) $manualColumn);
+            if (isset($context['skip_columns_lookup'][$manualColumnLower])) {
+                continue;
+            }
+            if (!isset($context['table_columns_lookup'][$manualColumnLower])) {
+                continue;
+            }
+
+            $resolvedColumn = $context['table_columns_by_lower'][$manualColumnLower] ?? $manualColumn;
+            $finalRow[$resolvedColumn] = $this->normalizeValueForDatabaseColumn($resolvedColumn, $manualValue, $context);
+        }
+
         $minimumColumns = !empty($context['unique_id_col']) ? 3 : 2;
 
         if (($context['table_name'] ?? '') === 'simpanan_multipn' && !$this->hasRequiredSimpananMultiPnImportData($finalRow)) {
@@ -4639,6 +4954,49 @@ class ImportExcelController extends Controller
         }
 
         return $normalized;
+    }
+
+    private function validateRkaDuplicateGuardOrResponse(string $tableName)
+    {
+        try {
+            $this->assertDuplicateGuard($tableName);
+        } catch (\RuntimeException $e) {
+            return response()->json([
+                'status' => 'error',
+                'text' => $e->getMessage(),
+            ], 422);
+        }
+
+        return null;
+    }
+
+    private function assertDuplicateGuard(string $tableName): void
+    {
+        if ($tableName !== 'rka') {
+            return;
+        }
+
+        $selectedKanca = trim((string) session('excel_manual_kanca', ''));
+        if ($selectedKanca === '') {
+            return;
+        }
+
+        $normalizedKanca = function_exists('mb_strtolower')
+            ? mb_strtolower($selectedKanca, 'UTF-8')
+            : strtolower($selectedKanca);
+
+        $alreadyExists = DB::table('rka')
+            ->whereRaw('LOWER(TRIM(`kanca`)) = ?', [$normalizedKanca])
+            ->exists();
+
+        if (!$alreadyExists) {
+            return;
+        }
+
+        throw new \RuntimeException(
+            "Data RKA untuk kanca <b>{$selectedKanca}</b> sudah ada di database.<br><br>"
+            . 'Import dibatalkan agar data duplikat tidak masuk ke tabel <b class="text-uppercase">rka</b>.'
+        );
     }
 
     private function flushInsertBuffer(array &$rows, string $tableName, int &$totalInserted, int &$totalFailed, ?callable $afterBatch = null): void
@@ -4803,6 +5161,8 @@ class ImportExcelController extends Controller
 
         if ($this->excelIntegerColumnsLookupCache === null) {
             $this->excelIntegerColumnsLookupCache = array_fill_keys([
+                'TGL',
+                'TAHUN',
                 'JANGKA_WAKTU1',
                 'UMUR_TUNGGAKAN',
                 'FREQ_PAYMENT',
@@ -4919,6 +5279,7 @@ class ImportExcelController extends Controller
             'BILPRN',
             'BILINT',
             'BILLC',
+            'SALDO',
             'SALDO_IDR',
         ];
 
@@ -4939,6 +5300,19 @@ class ImportExcelController extends Controller
         $request->validate(['file' => 'required|file|mimes:' . implode(',', $allowedExtensions)]);
         $file = $request->file('file');
 
+        $reportId = (int) $request->input('id_report');
+        $tableName = strtolower(trim((string) DB::table('nama_report')->where('id_report', $reportId)->value('table_name')));
+        $manualKanca = trim((string) $request->input('kanca_manual', ''));
+
+        if ($tableName === 'rka' && $manualKanca === '') {
+            $message = 'Kanca wajib dipilih untuk import RKA.';
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json(['status' => 'error', 'message' => $message], 422);
+            }
+
+            return back()->with('error', $message);
+        }
+
         if (!$file || !$file->isValid()) {
             if ($request->ajax() || $request->wantsJson()) {
                 return response()->json(['status' => 'error', 'message' => 'Upload gagal, file tidak valid.'], 422);
@@ -4957,24 +5331,31 @@ class ImportExcelController extends Controller
             'excel_path'        => $path,
             'active_id_report'  => $request->id_report,
             'excel_preview_key' => $cacheKey,
+            'excel_manual_kanca' => $tableName === 'rka' ? $manualKanca : null,
         ]);
 
         $activeIdReport = (int) $request->id_report;
-        $redirect = $activeIdReport === self::DAILY_LOAN_REPORT_ID
+        $previewRedirect = $activeIdReport === self::DAILY_LOAN_REPORT_ID
             ? route('import.dailyloan.preview', ['ck' => $cacheKey])
             : ($activeIdReport === self::SIMPANAN_MULTIPN_REPORT_ID
                 ? route('import.simpanan.preview', ['ck' => $cacheKey])
                 : route('import.excel.preview', ['ck' => $cacheKey]));
+        $prepareRedirect = $activeIdReport === self::DAILY_LOAN_REPORT_ID
+            ? route('import.dailyloan.prepare-preview')
+            : ($activeIdReport === self::SIMPANAN_MULTIPN_REPORT_ID
+                ? route('import.simpanan.prepare-preview')
+                : route('import.excel.prepare-preview'));
 
         if ($request->ajax() || $request->wantsJson()) {
             return response()->json([
                 'status'    => 'success',
                 'cache_key' => $cacheKey,
-                'redirect'  => $redirect,
+                'redirect'  => $prepareRedirect,
+                'preview_redirect' => $previewRedirect,
             ]);
         }
 
-        return redirect($redirect);
+        return redirect($previewRedirect);
     }
 
     public function preparePreviewStream(Request $request)
@@ -5017,7 +5398,8 @@ class ImportExcelController extends Controller
                         ? route('import.simpanan.preview', ['ck' => $useCacheKey])
                         : route('import.excel.preview', ['ck' => $useCacheKey]));
 
-                $send('progress', ['percent' => 35, 'message' => 'File ditemukan. Menyiapkan preview...', 'step' => 1]);
+                $send('progress', ['percent' => 20, 'message' => 'File ditemukan. Menyiapkan preview...', 'step' => 1]);
+                $this->primeExcelPreviewCache($relativePath = urldecode($sessionPath), $path, $useCacheKey, $send);
                 $send('progress', ['percent' => 85, 'message' => 'Mengalihkan ke halaman preview...', 'step' => 2]);
                 $send('ready', ['redirect' => $redirect]);
             } catch (\Throwable $e) {
@@ -5030,6 +5412,102 @@ class ImportExcelController extends Controller
             'X-Accel-Buffering' => 'no',
             'Connection' => 'keep-alive',
         ]);
+    }
+
+    private function primeExcelPreviewCache(string $relativePath, string $path, string $cacheKey, ?callable $send = null): void
+    {
+        if ($cacheKey === '') {
+            return;
+        }
+
+        if (Cache::get($cacheKey)) {
+            return;
+        }
+
+        $tableName = $this->resolveActiveTableName();
+
+        if ($this->isCsvFile($path)) {
+            $csvPayload = $this->prepareCsvPreviewPayload($path);
+            $reorderedPayload = $this->reorderPreviewPayload(
+                $csvPayload['headers'],
+                $csvPayload['formattedUniqueValues'],
+                $csvPayload['preview'],
+                $this->cachedSchemaColumnListing($tableName)
+            );
+
+            Cache::put($cacheKey, [
+                'headers' => $reorderedPayload['headers'],
+                'preview' => $reorderedPayload['preview'],
+                'formattedUniqueValues' => $reorderedPayload['formattedUniqueValues'],
+                'displayFilterMap' => $reorderedPayload['display_filter_map'] ?? [],
+                'path' => $relativePath,
+                'stagedCsvPath' => $path,
+                'headerIndex' => (int) ($csvPayload['header_index'] ?? 0),
+                'normalizedHeaders' => $reorderedPayload['headers'],
+                'sourceHeaders' => array_values($csvPayload['headers']),
+                'total_rows' => isset($csvPayload['total_rows']) ? (int) $csvPayload['total_rows'] : null,
+                'delimiter' => isset($csvPayload['delimiter']) ? (string) $csvPayload['delimiter'] : null,
+            ], now()->addHour());
+
+            return;
+        }
+
+        $send && $send('progress', ['percent' => 48, 'message' => 'Membaca header dan sampel baris Excel...', 'step' => 1]);
+
+        $nativePreview = $this->excelStagingService()->extractPreviewViaNativeXlsx($path, 100);
+        if ($nativePreview === null) {
+            return;
+        }
+
+        $headers = [];
+        foreach ((array) ($nativePreview['headers'] ?? []) as $index => $headerLabel) {
+            $headers[$index] = trim((string) $headerLabel) !== '' ? trim((string) $headerLabel) : ('COL_' . $index);
+        }
+
+        $previewRows = [];
+        foreach ((array) ($nativePreview['preview_rows'] ?? []) as $row) {
+            $mapped = [];
+            foreach ($headers as $headerLabel) {
+                $mapped[$headerLabel] = $this->normalizeExcelValue($headerLabel, $row[$headerLabel] ?? null);
+            }
+            if ($this->hasMeaningfulImportData($mapped)) {
+                $previewRows[] = $mapped;
+            }
+        }
+
+        $formattedUniqueValues = [];
+        foreach ($headers as $headerLabel) {
+            $distinct = [];
+            foreach ($previewRows as $row) {
+                $raw = $row[$headerLabel] ?? null;
+                $key = ($raw === null || trim((string) $raw) === '') ? '(Blank)' : (string) $raw;
+                $distinct[$key] = true;
+            }
+            $formattedUniqueValues[$headerLabel] = array_keys($distinct);
+        }
+
+        $reorderedPayload = $this->reorderPreviewPayload(
+            array_values($headers),
+            $formattedUniqueValues,
+            $previewRows,
+            $this->cachedSchemaColumnListing($tableName)
+        );
+
+        Cache::put($cacheKey, [
+            'headers' => $reorderedPayload['headers'],
+            'preview' => $reorderedPayload['preview'],
+            'formattedUniqueValues' => $reorderedPayload['formattedUniqueValues'],
+            'displayFilterMap' => $reorderedPayload['displayFilterMap'] ?? [],
+            'path' => $relativePath,
+            'stagedCsvPath' => null,
+            'headerIndex' => (int) ($nativePreview['header_index'] ?? 0),
+            'normalizedHeaders' => $reorderedPayload['headers'],
+            'sourceHeaders' => array_values($headers),
+            'total_rows' => isset($nativePreview['total_rows']) ? (int) $nativePreview['total_rows'] : null,
+            'delimiter' => null,
+        ], now()->addHour());
+
+        $send && $send('progress', ['percent' => 72, 'message' => 'Preview cepat siap. Menyusun filter kolom...', 'step' => 1]);
     }
 
     public function previewExcel(Request $request)
@@ -5059,6 +5537,7 @@ class ImportExcelController extends Controller
                     'staged_csv_path' => $cached['stagedCsvPath'] ?? null,
                     'header_index' => isset($cached['headerIndex']) ? (int) $cached['headerIndex'] : null,
                     'normalized_headers' => (array) ($cached['normalizedHeaders'] ?? []),
+                    'source_headers' => (array) ($cached['sourceHeaders'] ?? ($cached['normalizedHeaders'] ?? [])),
                     'total_rows' => isset($cached['total_rows']) ? (int) $cached['total_rows'] : null,
                     'delimiter' => isset($cached['delimiter']) ? (string) $cached['delimiter'] : null,
                 ];
@@ -5137,6 +5616,7 @@ class ImportExcelController extends Controller
                 'staged_csv_path' => $path,
                 'header_index' => isset($csvPayload['header_index']) ? (int) $csvPayload['header_index'] : 0,
                 'normalized_headers' => $reorderedPayload['headers'],
+                'source_headers' => array_values($csvPayload['headers']),
                 'total_rows' => isset($csvPayload['total_rows']) ? (int) $csvPayload['total_rows'] : null,
                 'delimiter' => isset($csvPayload['delimiter']) ? (string) $csvPayload['delimiter'] : null,
             ];
@@ -5236,6 +5716,7 @@ class ImportExcelController extends Controller
                 'staged_csv_path' => null,
                 'header_index' => $headerIndex,
                 'normalized_headers' => $reorderedPayload['headers'],
+                'source_headers' => array_values($headers),
                 'total_rows' => $csvPayload['total_rows'] ?? null,
                 'delimiter' => $csvPayload['delimiter'] ?? null,
             ],
@@ -5331,6 +5812,15 @@ class ImportExcelController extends Controller
         $idReport = session('active_id_report');
         $tableName = $this->resolveActiveTableName();
 
+        if ($tableName === 'rka' && trim((string) session('excel_manual_kanca', '')) === '') {
+            return response()->json(['status' => 'error', 'text' => 'Kanca wajib dipilih untuk import RKA.'], 422);
+        }
+
+        $duplicateGuardResponse = $this->validateRkaDuplicateGuardOrResponse($tableName);
+        if ($duplicateGuardResponse !== null) {
+            return $duplicateGuardResponse;
+        }
+
         $schemaValidationResponse = $this->validateImportSchemaOrResponse($tableName);
         if ($schemaValidationResponse !== null) {
             return $schemaValidationResponse;
@@ -5343,11 +5833,13 @@ class ImportExcelController extends Controller
         $previewPath = urldecode((string) ($previewMeta['path'] ?? ''));
         $stagedCsvPath = (string) ($previewMeta['staged_csv_path'] ?? '');
         $previewHeaders = (array) ($previewMeta['normalized_headers'] ?? []);
+        $sourceHeaders = (array) ($previewMeta['source_headers'] ?? $previewHeaders);
         $previewTotalRows = isset($previewMeta['total_rows']) ? (int) $previewMeta['total_rows'] : null;
         $previewDelimiter = isset($previewMeta['delimiter']) ? (string) $previewMeta['delimiter'] : null;
 
         if ($previewPath === $relativePath && !empty($previewHeaders) && array_key_exists('header_index', $previewMeta)) {
             $headerIndex = (int) $previewMeta['header_index'];
+            $sourceHeaders = $this->resolveSourceHeadersForImport($path, $headerIndex, $sourceHeaders);
             $activeFilters = json_decode($request->active_filters_json ?? '{}', true) ?: [];
             $displayFilterMap = !empty($previewState['displayFilterMap'])
                 ? (array) $previewState['displayFilterMap']
@@ -5362,12 +5854,13 @@ class ImportExcelController extends Controller
             ksort($normalizedActiveFilters);
 
             session([
-                'excel_headers'        => $previewHeaders,
+                'excel_headers'        => $sourceHeaders,
                 'excel_preview_meta'   => [
                     'path' => $relativePath,
                     'staged_csv_path' => $stagedCsvPath !== '' && file_exists($stagedCsvPath) ? $stagedCsvPath : null,
                     'header_index' => $headerIndex,
                     'normalized_headers' => $previewHeaders,
+                    'source_headers' => $sourceHeaders,
                     'total_rows' => $previewTotalRows,
                     'delimiter' => $previewDelimiter,
                 ],
@@ -5408,7 +5901,7 @@ class ImportExcelController extends Controller
                     'delimiter'      => $previewDelimiter,
                     'job_id'         => $jobId,
                 ],
-                'headers' => $previewHeaders,
+                'headers' => $sourceHeaders,
             ]);
             $this->progressService()->markQueued($jobId, [
                 'status' => 'queued',
@@ -5578,6 +6071,7 @@ class ImportExcelController extends Controller
                 'staged_csv_path' => $stagedCsvPath !== '' && file_exists($stagedCsvPath) ? $stagedCsvPath : null,
                 'header_index' => $headerIndex,
                 'normalized_headers' => $normalizedHeadersForSession,
+                'source_headers' => $normalizedHeadersForSession,
                 'total_rows' => $totalRows,
                 'delimiter' => $delimiter ?? null,
             ],
@@ -6376,7 +6870,9 @@ class ImportExcelController extends Controller
             'process_staged_csv_stream' => fn($send, string $workingPath, string $tableName, array $activeFilters, array $normalizedHeaders, int $jobId, ?int $estimatedTotalRows = null, ?string $delimiter = null, bool $forceDirectLoad = false) => $this->processStagedCsvStream($send, $workingPath, $tableName, $activeFilters, $normalizedHeaders, $jobId, $estimatedTotalRows, $delimiter, $forceDirectLoad),
             'try_python_bulk_load' => fn($send, string $path, int $headerIndex, string $tableName, array $activeFilters, array $normalizedHeaders, int $jobId) => $this->tryPythonBulkLoad($send, $path, $headerIndex, $tableName, $activeFilters, $normalizedHeaders, $jobId),
             'try_python_gpu' => fn($send, string $path, int $headerIndex, string $tableName, array $activeFilters, array $normalizedHeaders, int $jobId) => $this->tryPythonGPU($send, $path, $headerIndex, $tableName, $activeFilters, $normalizedHeaders, $jobId),
+            'assert_duplicate_guard' => fn(string $tableName) => $this->assertDuplicateGuard($tableName),
             'build_import_context' => fn(string $tableName, array $normalizedHeaders, array $activeFilters = []) => $this->buildImportContext($tableName, $normalizedHeaders, $activeFilters),
+            'map_excel_row_for_insert' => fn(array $row, array $normalizedHeaders, array $context, string $timestamp) => $this->mapExcelRowForInsert($row, $normalizedHeaders, $context, $timestamp),
             'fallback_insert_batch_size' => fn(): int => $this->fallbackInsertBatchSize(),
             'insert_batch_with_fallback' => function (array $batch, string $tableName, int &$totalInserted, int &$totalFailed): void {
                 $this->insertBatchWithFallback($batch, $tableName, $totalInserted, $totalFailed);

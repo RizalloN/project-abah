@@ -13,6 +13,20 @@
                 <i class="fas fa-download mr-2"></i> Template Import
             </div>
             <p class="import-template-banner__text mb-0">Pilih report, unduh template, lalu isi datanya.</p>
+            <div class="import-template-banner__meta">
+                <span><i class="fas fa-palette mr-1"></i> Tema selaras logo</span>
+                <span><i class="fas fa-bolt mr-1"></i> Lebih responsif</span>
+                <span><i class="fas fa-hand-pointer mr-1"></i> Upload lebih interaktif</span>
+            </div>
+        </div>
+        <div class="import-template-banner__brand mt-3 mt-lg-0">
+            <div class="import-template-banner__brand-card">
+                <img src="{{ asset('images/a-six-logo.svg') }}" alt="Logo A-SIX" class="import-template-banner__logo">
+                <div>
+                    <div class="import-template-banner__brand-label">A-SIX Dashboard</div>
+                    <div class="import-template-banner__brand-text">Aksen warna mengikuti logo aktif dengan nuansa gelap dan oranye.</div>
+                </div>
+            </div>
         </div>
         <div class="import-template-banner__actions mt-3 mt-md-0">
             <div class="import-template-banner__download-group">
@@ -55,6 +69,57 @@
         @csrf
 
         <div class="card-body import-upload-card__body">
+            <div class="import-report-hero mb-4">
+                <div class="import-report-hero__head">
+                    <div>
+                        <span class="import-upload-card__eyebrow">Alur Import</span>
+                        <h6 class="mb-1 font-weight-bold text-dark">Pilih report, cek format, lalu unggah file</h6>
+                        <p class="mb-0 text-muted">Halaman akan menyesuaikan jenis file dan kebutuhan periode secara otomatis.</p>
+                    </div>
+                </div>
+                <div class="import-report-steps">
+                    <div class="import-report-step is-active">
+                        <span class="import-report-step__num">1</span>
+                        <div>
+                            <strong>Pilih Report</strong>
+                            <small>Tentukan sumber data</small>
+                        </div>
+                    </div>
+                    <div class="import-report-step">
+                        <span class="import-report-step__num">2</span>
+                        <div>
+                            <strong>Siapkan File</strong>
+                            <small>Format menyesuaikan report</small>
+                        </div>
+                    </div>
+                    <div class="import-report-step">
+                        <span class="import-report-step__num">3</span>
+                        <div>
+                            <strong>Upload & Proses</strong>
+                            <small>Preview muncul setelah valid</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="import-report-summary">
+                    <div class="import-report-summary__item">
+                        <span class="import-report-summary__label">Report</span>
+                        <strong id="summary-report-name">Belum dipilih</strong>
+                    </div>
+                    <div class="import-report-summary__item">
+                        <span class="import-report-summary__label">Format Aktif</span>
+                        <strong id="summary-upload-type">RAR</strong>
+                    </div>
+                    <div class="import-report-summary__item">
+                        <span class="import-report-summary__label">Periode</span>
+                        <strong id="summary-periode-status">Otomatis</strong>
+                    </div>
+                    <div class="import-report-summary__item">
+                        <span class="import-report-summary__label">Target</span>
+                        <strong id="summary-target-table">-</strong>
+                    </div>
+                </div>
+            </div>
+
             <div class="form-group">
                 <label class="font-weight-bold text-dark">Pilih Report</label>
                 <select name="id_report" class="form-control select2" required>
@@ -63,6 +128,7 @@
                         <option value="{{ $report->id_report }}"
                                 data-name="{{ strtolower($report->nama_report ?? '') }}"
                                 data-table="{{ strtolower($report->table_name ?? '') }}"
+                                data-import-controller="{{ $report->import_controller ?? '' }}"
                                 data-manual-periode="{{ (int) ($report->requires_manual_periode ?? 0) }}"
                                 data-manual-periode-type="{{ $report->manual_periode_type ?? '' }}"
                                 data-manual-periode-label="{{ $report->manual_periode_label ?? '' }}"
@@ -79,6 +145,20 @@
                 </label>
                 <input type="date" id="periode_input" name="periode" class="form-control">
                 <small id="periode-help" class="text-muted mt-2 d-block">Wajib untuk report tertentu.</small>
+            </div>
+
+            <div id="form-kanca" class="form-group" style="display: none;">
+                <label id="kanca-label" class="font-weight-bold text-dark">
+                    <i class="fas fa-building text-primary mr-1"></i> Kanca
+                </label>
+                <select id="kanca_input" name="kanca_manual" class="form-control">
+                    <option value="">-- Pilih Kanca --</option>
+                    <option value="KC Madiun">KC Madiun</option>
+                    <option value="KC Magetan">KC Magetan</option>
+                    <option value="KC Ngawi">KC Ngawi</option>
+                    <option value="KC Ponorogo">KC Ponorogo</option>
+                </select>
+                <small id="kanca-help" class="text-muted mt-2 d-block">Nilai ini akan dipakai untuk kolom `kanca` saat import RKA.</small>
             </div>
 
             <div id="form-rar" class="form-group">
@@ -101,6 +181,30 @@
                 <label id="csv-label" class="text-info font-weight-bold"><i class="fas fa-file-csv mr-1"></i> Upload CSV (.csv, .txt)</label>
                 <input type="file" id="file_csv" name="file" class="form-control border-info shadow-sm" accept=".csv,.txt">
                 <small id="csv-help" class="text-muted mt-2 d-block">Gunakan CSV sesuai report.</small>
+            </div>
+
+            <div id="import-dropzone" class="import-dropzone" tabindex="0" role="button" aria-label="Area upload file">
+                <div class="import-dropzone__icon">
+                    <i class="fas fa-cloud-upload-alt"></i>
+                </div>
+                <div class="import-dropzone__content">
+                    <div id="import-dropzone-title" class="import-dropzone__title">Tarik file ke sini atau klik untuk memilih</div>
+                    <div id="import-dropzone-text" class="import-dropzone__text">Input aktif akan otomatis mengikuti report yang dipilih.</div>
+                </div>
+            </div>
+
+            <div id="import-file-preview" class="import-file-preview d-none">
+                <div class="import-file-preview__icon">
+                    <i class="fas fa-file-alt"></i>
+                </div>
+                <div class="import-file-preview__body">
+                    <div id="import-file-name" class="import-file-preview__name">-</div>
+                    <div class="import-file-preview__meta">
+                        <span id="import-file-size">0 KB</span>
+                        <span id="import-file-extension">-</span>
+                    </div>
+                </div>
+                <button type="button" id="import-file-clear" class="import-file-preview__clear">Ganti File</button>
             </div>
         </div>
 
@@ -258,6 +362,7 @@
         const formExcel = document.getElementById('form-excel');
         const formCsv = document.getElementById('form-csv');
         const formPeriode = document.getElementById('form-periode');
+        const formKanca = document.getElementById('form-kanca');
         const formImport = document.getElementById('form-import');
         const btnSubmit = document.getElementById('btn-submit');
         const btnDownloadTemplate = document.getElementById('btn-download-template');
@@ -266,12 +371,27 @@
         const inputExcel = document.getElementById('file_excel');
         const inputCsv = document.getElementById('file_csv');
         const periodeInput = document.getElementById('periode_input');
+        const kancaInput = document.getElementById('kanca_input');
         const periodeLabel = document.getElementById('periode-label');
         const periodeHelp = document.getElementById('periode-help');
+        const kancaLabel = document.getElementById('kanca-label');
+        const kancaHelp = document.getElementById('kanca-help');
         const excelLabel = document.getElementById('excel-label');
         const excelHelp = document.getElementById('excel-help');
         const csvLabel = document.getElementById('csv-label');
         const csvHelp = document.getElementById('csv-help');
+        const importDropzone = document.getElementById('import-dropzone');
+        const importDropzoneTitle = document.getElementById('import-dropzone-title');
+        const importDropzoneText = document.getElementById('import-dropzone-text');
+        const importFilePreview = document.getElementById('import-file-preview');
+        const importFileName = document.getElementById('import-file-name');
+        const importFileSize = document.getElementById('import-file-size');
+        const importFileExtension = document.getElementById('import-file-extension');
+        const importFileClear = document.getElementById('import-file-clear');
+        const summaryReportName = document.getElementById('summary-report-name');
+        const summaryUploadType = document.getElementById('summary-upload-type');
+        const summaryPeriodeStatus = document.getElementById('summary-periode-status');
+        const summaryTargetTable = document.getElementById('summary-target-table');
         const csrfTokenInput = formImport?.querySelector('input[name="_token"]');
         const reportManagementCard = document.getElementById('report-management-card');
         const managementReportSelect = document.getElementById('management-report-select');
@@ -645,7 +765,7 @@
             const deletedRows = Number(payload.deleted_rows || 0);
             const recoveredWarning = payload.status === 'failed' && deletedRows > 0;
             const outcomeStatus = recoveredWarning ? 'warning' : payload.status;
-            if ((!response.ok && !recoveredWarning) || (outcomeStatus !== 'success' && outcomeStatus !== 'warning')) {
+            if ((!response.ok && !recoveredWarning) || !['success', 'warning', 'completed'].includes(outcomeStatus)) {
                 throw new Error(payload.message || 'Gagal menghapus data report.');
             }
 
@@ -655,7 +775,7 @@
                 title: isWarning ? 'Selesai dengan Catatan' : 'Berhasil',
                 text: isWarning
                     ? (payload.error || payload.message || `Data terhapus ${deletedRows.toLocaleString('id-ID')} baris, tetapi sinkronisasi lanjutan gagal.`)
-                    : `Data terhapus ${deletedRows.toLocaleString('id-ID')} baris.`
+                    : (payload.message || `Data terhapus ${deletedRows.toLocaleString('id-ID')} baris.`)
             });
 
             await fetchManagementData();
@@ -831,6 +951,7 @@
             return {
                 reportName: selectedOption?.getAttribute('data-name') || '',
                 tableName: selectedOption?.getAttribute('data-table') || '',
+                importController: selectedOption?.getAttribute('data-import-controller') || '',
                 requiresManualPeriode: selectedOption?.getAttribute('data-manual-periode') === '1',
                 manualPeriodeType: selectedOption?.getAttribute('data-manual-periode-type') || '',
                 manualPeriodeLabel: selectedOption?.getAttribute('data-manual-periode-label') || '',
@@ -879,9 +1000,172 @@
             }
         }
 
+        function configureKancaInput(options = {}) {
+            const {
+                visible = false,
+                required = false,
+                label = 'Kanca',
+                help = 'Pilih kanca untuk import.',
+                value = '',
+            } = options;
+
+            if (!formKanca || !kancaInput) {
+                return;
+            }
+
+            formKanca.style.display = visible ? 'block' : 'none';
+            kancaInput.disabled = !visible;
+            kancaInput.required = Boolean(visible && required);
+            kancaInput.value = value;
+
+            if (kancaLabel) {
+                kancaLabel.textContent = label;
+            }
+
+            if (kancaHelp) {
+                kancaHelp.textContent = help;
+            }
+        }
+
         function getFileExtension(fileName) {
             const parts = String(fileName || '').toLowerCase().split('.');
             return parts.length > 1 ? parts.pop() : '';
+        }
+
+        function getActiveFileInput() {
+            if (inputRar && !inputRar.disabled) {
+                return inputRar;
+            }
+
+            if (inputExcel && !inputExcel.disabled) {
+                return inputExcel;
+            }
+
+            if (inputCsv && !inputCsv.disabled) {
+                return inputCsv;
+            }
+
+            return null;
+        }
+
+        function getActiveUploadDescriptor() {
+            const activeInput = getActiveFileInput();
+
+            if (activeInput === inputExcel) {
+                return {
+                    type: 'Excel',
+                    accept: activeInput.getAttribute('accept') || '.xlsx,.xls',
+                };
+            }
+
+            if (activeInput === inputCsv) {
+                return {
+                    type: 'CSV',
+                    accept: activeInput.getAttribute('accept') || '.csv,.txt',
+                };
+            }
+
+            return {
+                type: 'RAR',
+                accept: activeInput?.getAttribute('accept') || '.rar',
+            };
+        }
+
+        function updateDropzoneCopy() {
+            const descriptor = getActiveUploadDescriptor();
+
+            if (importDropzoneTitle) {
+                importDropzoneTitle.textContent = `Tarik file ${descriptor.type} ke sini atau klik untuk memilih`;
+            }
+
+            if (importDropzoneText) {
+                importDropzoneText.textContent = `Format aktif: ${descriptor.accept}. Area upload akan mengikuti report yang dipilih.`;
+            }
+        }
+
+        function updateReportSummary() {
+            const meta = getSelectedReportMeta();
+            const selectedOption = reportSelect?.options?.[reportSelect.selectedIndex];
+            const descriptor = getActiveUploadDescriptor();
+
+            if (summaryReportName) {
+                summaryReportName.textContent = reportSelect?.value
+                    ? (selectedOption?.textContent?.trim() || 'Terpilih')
+                    : 'Belum dipilih';
+            }
+
+            if (summaryUploadType) {
+                summaryUploadType.textContent = descriptor.type;
+            }
+
+            if (summaryPeriodeStatus) {
+                summaryPeriodeStatus.textContent = formPeriode && formPeriode.style.display !== 'none'
+                    ? (periodeInput?.type === 'month' ? 'Manual Bulanan' : 'Manual Harian')
+                    : (meta.requiresManualPeriode ? 'Manual' : 'Otomatis');
+            }
+
+            if (summaryTargetTable) {
+                summaryTargetTable.textContent = meta.tableName ? meta.tableName.toUpperCase() : '-';
+            }
+
+            updateDropzoneCopy();
+        }
+
+        function updateFileSelectionUI() {
+            const activeInput = getActiveFileInput();
+            const file = activeInput?.files?.[0] || null;
+            const extension = getFileExtension(file?.name || '');
+
+            if (importDropzone) {
+                importDropzone.classList.toggle('has-file', Boolean(file));
+            }
+
+            if (!file) {
+                importFilePreview?.classList.add('d-none');
+                return;
+            }
+
+            importFilePreview?.classList.remove('d-none');
+
+            if (importFileName) {
+                importFileName.textContent = file.name;
+            }
+
+            if (importFileSize) {
+                importFileSize.textContent = formatBytes(file.size);
+            }
+
+            if (importFileExtension) {
+                importFileExtension.textContent = extension ? extension.toUpperCase() : 'FILE';
+            }
+        }
+
+        function assignFileToActiveInput(fileList) {
+            const activeInput = getActiveFileInput();
+            if (!activeInput || !fileList || !fileList.length) {
+                return;
+            }
+
+            try {
+                const transfer = new DataTransfer();
+                transfer.items.add(fileList[0]);
+                activeInput.files = transfer.files;
+            } catch (_) {
+                return;
+            }
+
+            if (activeInput === inputRar) {
+                const customLabel = activeInput.nextElementSibling;
+                if (customLabel?.classList.contains('custom-file-label')) {
+                    customLabel.textContent = fileList[0].name;
+                }
+            }
+
+            if (activeInput === inputExcel && isSimpananReportSelected()) {
+                applySimpananUploadMode();
+            }
+
+            updateFileSelectionUI();
         }
 
         function isSimpananReportSelected() {
@@ -922,9 +1206,10 @@
                     ? '<i class="fas fa-file-csv"></i> Upload CSV'
                     : '<i class="fas fa-file-excel"></i> Upload Excel'
             );
+            updateReportSummary();
         }
         function toggleForm() {
-            const { reportName, tableName } = getSelectedReportMeta();
+            const { reportName, tableName, importController } = getSelectedReportMeta();
             const isDailyLoan = reportName.includes('daily loan');
             const isSimpanan = reportName.includes('simpanan multipn');
             const isPerformancePis = reportName.includes('performance pis per produk');
@@ -932,6 +1217,8 @@
             const isReportPh = reportName.includes('report nominatif rekening pinjaman ph');
             const isInputRekanan = tableName === 'input_rekanan';
             const isBodBoc = tableName === 'bod_boc';
+            const isRka = tableName === 'rka';
+            const usesGenericExcelFlow = importController.includes('ImportExcelController') && !isDailyLoan && !isSimpanan;
 
             formRAR.style.display = 'none';
             formExcel.style.display = 'none';
@@ -945,6 +1232,11 @@
             inputCsv.required = false;
             periodeInput.disabled = true;
             periodeInput.required = false;
+            if (kancaInput) {
+                kancaInput.disabled = true;
+                kancaInput.required = false;
+            }
+            configureKancaInput({ visible: false });
 
             formImport.dataset.preparePreviewUrl = '';
             formImport.dataset.directRedirect = '';
@@ -966,6 +1258,8 @@
                 csvLabel.innerHTML = '<i class="fas fa-file-csv mr-1"></i> Upload File CSV Daily Loan Dinamis (.csv, .txt)';
                 csvHelp.textContent = 'Gunakan file CSV Daily Loan Dinamis yang sudah sesuai template untuk diproses ke database.';
                 applyButtonState('csv', '<i class="fas fa-file-csv"></i> Upload CSV');
+                updateReportSummary();
+                updateFileSelectionUI();
                 return;
             }
 
@@ -976,6 +1270,8 @@
                 inputExcel.setAttribute('accept', '.xlsx,.xls,.csv');
                 configurePeriodeInput({ visible: false });
                 applySimpananUploadMode();
+                updateReportSummary();
+                updateFileSelectionUI();
                 return;
             }
 
@@ -1006,6 +1302,9 @@
                     label: 'Tanggal Periode',
                     help: 'Input Rekanan dan Nasabah Prioritas BOD/BOC wajib diisi tanggal periode manual (YYYY-MM-DD).',
                 }));
+                configureKancaInput({ visible: false });
+                updateReportSummary();
+                updateFileSelectionUI();
                 return;
             }
 
@@ -1026,6 +1325,9 @@
                     label: 'Periode Bulan',
                     help: 'Wajib isi periode manual dalam format bulan (YYYY-MM) untuk CASA BRILINK WEB/EDC.',
                 }));
+                configureKancaInput({ visible: false });
+                updateReportSummary();
+                updateFileSelectionUI();
                 return;
             }
 
@@ -1040,6 +1342,9 @@
                 csvHelp.textContent = 'CSV tetap didukung. File Excel akan distage dulu ke CSV lalu masuk ke jalur bulk import yang sama.';
                 applyButtonState('csv', '<i class="fas fa-file-upload"></i> Upload File');
                 configurePeriodeInput({ visible: false });
+                configureKancaInput({ visible: false });
+                updateReportSummary();
+                updateFileSelectionUI();
                 return;
             }
 
@@ -1064,6 +1369,44 @@
                     label: 'Tanggal Periode',
                     help: 'Wajib isi tanggal periode manual (YYYY-MM-DD) untuk Performance PIS per Produk.',
                 }));
+                configureKancaInput({ visible: false });
+                updateReportSummary();
+                updateFileSelectionUI();
+                return;
+            }
+
+            if (usesGenericExcelFlow) {
+                formExcel.style.display = 'block';
+                inputExcel.disabled = false;
+                inputExcel.required = true;
+                inputExcel.setAttribute('accept', '.xlsx,.xls');
+                formImport.action = "{{ route('import.excel.upload') }}";
+                formImport.dataset.preparePreviewUrl = "{{ route('import.excel.prepare-preview') }}";
+
+                if (excelLabel) {
+                    excelLabel.innerHTML = '<i class="fas fa-file-excel mr-1"></i> Upload File Excel (.xlsx, .xls)';
+                }
+
+                if (excelHelp) {
+                    excelHelp.textContent = describeUploadLimitMessage(null);
+                }
+
+                configurePeriodeInput(buildManualPeriodeOptions({
+                    visible: false,
+                    required: false,
+                    type: 'date',
+                    label: 'Periode',
+                    help: 'Pilih periode manual sesuai kebutuhan report.',
+                }));
+                configureKancaInput({
+                    visible: isRka,
+                    required: isRka,
+                    label: 'Kanca',
+                    help: 'Pilih Kanca untuk mengisi kolom `kanca` pada semua baris import RKA.',
+                });
+                applyButtonState('excel', '<i class="fas fa-file-excel"></i> Upload Excel');
+                updateReportSummary();
+                updateFileSelectionUI();
                 return;
             }
 
@@ -1072,7 +1415,10 @@
                 inputRar.disabled = false;
                 inputRar.required = true;
                 formImport.action = "{{ route('import.brimo.upload') }}";
+                configureKancaInput({ visible: false });
                 applyButtonState('rar', '<i class="fas fa-file-archive"></i> Upload RAR');
+                updateReportSummary();
+                updateFileSelectionUI();
                 return;
             }
 
@@ -1087,8 +1433,11 @@
                 excelHelp.textContent = describeUploadLimitMessage(null);
             }
             configurePeriodeInput({ visible: false });
+            configureKancaInput({ visible: false });
             formImport.action = "{{ route('import.upload') }}";
             applyButtonState('rar', '<i class="fas fa-file-archive"></i> Upload RAR');
+            updateReportSummary();
+            updateFileSelectionUI();
         }
 
         if (reportSelect) {
@@ -1102,6 +1451,58 @@
             if (isSimpananReportSelected()) {
                 applySimpananUploadMode();
             }
+            updateFileSelectionUI();
+        });
+
+        inputCsv?.addEventListener('change', updateFileSelectionUI);
+        inputRar?.addEventListener('change', updateFileSelectionUI);
+
+        importDropzone?.addEventListener('click', function () {
+            getActiveFileInput()?.click();
+        });
+
+        importDropzone?.addEventListener('keydown', function (event) {
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                getActiveFileInput()?.click();
+            }
+        });
+
+        ['dragenter', 'dragover'].forEach(function(eventName) {
+            importDropzone?.addEventListener(eventName, function (event) {
+                event.preventDefault();
+                importDropzone.classList.add('is-dragover');
+            });
+        });
+
+        ['dragleave', 'dragend', 'drop'].forEach(function(eventName) {
+            importDropzone?.addEventListener(eventName, function (event) {
+                event.preventDefault();
+                importDropzone.classList.remove('is-dragover');
+            });
+        });
+
+        importDropzone?.addEventListener('drop', function (event) {
+            assignFileToActiveInput(event.dataTransfer?.files);
+        });
+
+        importFileClear?.addEventListener('click', function () {
+            [inputRar, inputExcel, inputCsv].forEach(function (input) {
+                if (input) {
+                    input.value = '';
+                }
+            });
+
+            const rarLabel = inputRar?.nextElementSibling;
+            if (rarLabel?.classList.contains('custom-file-label')) {
+                rarLabel.textContent = 'Pilih file .rar...';
+            }
+
+            if (isSimpananReportSelected()) {
+                applySimpananUploadMode();
+            }
+
+            updateFileSelectionUI();
         });
 
         if (downloadTemplateSelect) {
@@ -1124,6 +1525,8 @@
 
         toggleForm();
         syncDownloadButton();
+        updateReportSummary();
+        updateFileSelectionUI();
         setTimeout(syncDownloadButton, 0);
         setTimeout(syncDownloadButton, 150);
         getUploadLimits();
@@ -1163,6 +1566,7 @@
         $('#file_rar').on('change', function () {
             var fileName = $(this).val().split('\\').pop();
             $(this).next('.custom-file-label').html(fileName);
+            updateFileSelectionUI();
         });
 
         formImport.addEventListener('submit', async function(e) {
@@ -1795,10 +2199,11 @@
         border-radius: 24px;
         padding: 1.4rem 1.5rem;
         background:
-            radial-gradient(circle at top right, rgba(16, 185, 129, 0.22), transparent 30%),
-            linear-gradient(135deg, #f8fffc 0%, #ecfdf5 45%, #d1fae5 100%);
-        border: 1px solid rgba(16, 185, 129, 0.18);
-        box-shadow: 0 22px 45px -32px rgba(5, 150, 105, 0.45);
+            radial-gradient(circle at top right, rgba(251, 146, 60, 0.18), transparent 28%),
+            radial-gradient(circle at bottom left, rgba(17, 24, 39, 0.22), transparent 30%),
+            linear-gradient(135deg, #111827 0%, #1f2937 52%, #2f3b52 100%);
+        border: 1px solid rgba(249, 115, 22, 0.18);
+        box-shadow: 0 28px 54px -34px rgba(17, 24, 39, 0.68);
     }
 
     .import-template-banner__glow {
@@ -1808,8 +2213,8 @@
         width: 160px;
         height: 160px;
         border-radius: 999px;
-        background: rgba(16, 185, 129, 0.14);
-        filter: blur(8px);
+        background: rgba(249, 115, 22, 0.22);
+        filter: blur(10px);
     }
 
     .import-template-banner__content {
@@ -1829,13 +2234,13 @@
     }
 
     .import-template-banner__eyebrow {
-        color: #047857;
-        background: rgba(255, 255, 255, 0.72);
-        border: 1px solid rgba(16, 185, 129, 0.18);
+        color: #fdba74;
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(251, 146, 60, 0.18);
     }
 
     .import-template-banner__title {
-        color: #064e3b;
+        color: #ffffff;
         font-size: 1.35rem;
         font-weight: 800;
         letter-spacing: -0.03em;
@@ -1843,9 +2248,72 @@
     }
 
     .import-template-banner__text {
-        color: #166534;
+        color: rgba(255, 255, 255, 0.78);
         line-height: 1.65;
         max-width: 620px;
+    }
+
+    .import-template-banner__meta {
+        display: flex;
+        gap: 0.65rem;
+        flex-wrap: wrap;
+        margin-top: 0.9rem;
+    }
+
+    .import-template-banner__meta span {
+        display: inline-flex;
+        align-items: center;
+        padding: 0.45rem 0.72rem;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        color: rgba(255, 255, 255, 0.82);
+        font-size: 0.82rem;
+        font-weight: 600;
+    }
+
+    .import-template-banner__brand {
+        display: flex;
+        align-items: center;
+        padding-right: 1rem;
+    }
+
+    .import-template-banner__brand-card {
+        display: flex;
+        align-items: center;
+        gap: 0.9rem;
+        min-width: 290px;
+        max-width: 340px;
+        padding: 0.95rem 1rem;
+        border-radius: 20px;
+        background: linear-gradient(145deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.04));
+        border: 1px solid rgba(251, 146, 60, 0.14);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    }
+
+    .import-template-banner__logo {
+        width: 58px;
+        height: 58px;
+        padding: 0.2rem;
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.96);
+        flex: 0 0 auto;
+    }
+
+    .import-template-banner__brand-label {
+        color: #fdba74;
+        font-size: 0.7rem;
+        font-weight: 800;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        margin-bottom: 0.18rem;
+    }
+
+    .import-template-banner__brand-text {
+        color: rgba(255, 255, 255, 0.84);
+        font-size: 0.9rem;
+        line-height: 1.45;
+        font-weight: 600;
     }
 
     .import-template-banner__button {
@@ -1856,10 +2324,10 @@
         padding: 0.8rem 1.25rem;
         border-radius: 16px;
         border: 0;
-        background: linear-gradient(135deg, #059669, #047857);
+        background: linear-gradient(135deg, #fb923c, #ea580c);
         color: #ffffff;
         font-weight: 700;
-        box-shadow: 0 18px 30px -20px rgba(6, 95, 70, 0.55);
+        box-shadow: 0 18px 30px -20px rgba(249, 115, 22, 0.48);
         transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
     }
 
@@ -1880,15 +2348,15 @@
     .import-template-banner .select2-container--bootstrap4 .select2-selection--single {
         min-height: 48px;
         border-radius: 16px !important;
-        border: 1px solid rgba(16, 185, 129, 0.25) !important;
+        border: 1px solid rgba(251, 146, 60, 0.22) !important;
         background: rgba(255, 255, 255, 0.95) !important;
         display: flex;
         align-items: center;
-        box-shadow: 0 4px 12px -8px rgba(5, 150, 105, 0.2) !important;
+        box-shadow: 0 4px 12px -8px rgba(17, 24, 39, 0.28) !important;
     }
 
     .import-template-banner .select2-container--bootstrap4 .select2-selection--single .select2-selection__rendered {
-        color: #064e3b;
+        color: #1f2937;
         font-weight: 600;
         padding-left: 1.25rem;
     }
@@ -1899,15 +2367,15 @@
     }
 
     .import-template-banner .select2-container--bootstrap4.select2-container--focus .select2-selection--single {
-        border-color: #10b981 !important;
-        box-shadow: 0 0 0 0.25rem rgba(16, 185, 129, 0.15) !important;
+        border-color: #fb923c !important;
+        box-shadow: 0 0 0 0.25rem rgba(251, 146, 60, 0.16) !important;
     }
 
     .import-template-banner__button:hover {
         color: #ffffff;
         text-decoration: none;
         transform: translateY(-1px);
-        box-shadow: 0 22px 34px -20px rgba(6, 95, 70, 0.6);
+        box-shadow: 0 22px 34px -20px rgba(249, 115, 22, 0.55);
     }
 
     .import-template-banner__button.disabled,
@@ -1927,13 +2395,14 @@
     .import-upload-card__header {
         padding: 1.45rem 1.5rem 1rem;
         background:
-            radial-gradient(circle at top left, rgba(59, 130, 246, 0.09), transparent 28%),
+            radial-gradient(circle at top left, rgba(249, 115, 22, 0.1), transparent 24%),
+            radial-gradient(circle at top right, rgba(17, 24, 39, 0.06), transparent 26%),
             linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
     }
 
     .import-upload-card__eyebrow {
-        color: #1d4ed8;
-        background: rgba(37, 99, 235, 0.08);
+        color: #c2410c;
+        background: rgba(251, 146, 60, 0.12);
     }
 
     .import-upload-card__subtitle {
@@ -1944,6 +2413,97 @@
 
     .import-upload-card__body {
         padding: 1.5rem;
+    }
+
+    .import-report-hero {
+        padding: 1.15rem;
+        border-radius: 22px;
+        background:
+            radial-gradient(circle at top right, rgba(251, 146, 60, 0.12), transparent 30%),
+            linear-gradient(180deg, #fffaf5 0%, #ffffff 100%);
+        border: 1px solid rgba(251, 146, 60, 0.14);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+    }
+
+    .import-report-steps {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 0.85rem;
+        margin-top: 1rem;
+    }
+
+    .import-report-step {
+        display: flex;
+        align-items: center;
+        gap: 0.8rem;
+        padding: 0.95rem 1rem;
+        border-radius: 18px;
+        background: #ffffff;
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .import-report-step.is-active,
+    .import-report-step:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 18px 30px -26px rgba(17, 24, 39, 0.3);
+    }
+
+    .import-report-step__num {
+        width: 34px;
+        height: 34px;
+        border-radius: 999px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: linear-gradient(135deg, #fb923c, #ea580c);
+        color: #ffffff;
+        font-weight: 800;
+        flex: 0 0 auto;
+    }
+
+    .import-report-step strong,
+    .import-report-step small {
+        display: block;
+    }
+
+    .import-report-step small {
+        margin-top: 0.16rem;
+        color: #64748b;
+        line-height: 1.45;
+    }
+
+    .import-report-summary {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 0.85rem;
+        margin-top: 1rem;
+    }
+
+    .import-report-summary__item {
+        padding: 0.95rem 1rem;
+        border-radius: 18px;
+        background: #ffffff;
+        border: 1px solid rgba(148, 163, 184, 0.14);
+    }
+
+    .import-report-summary__label {
+        display: block;
+        margin-bottom: 0.26rem;
+        color: #64748b;
+        font-size: 0.7rem;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+    }
+
+    .import-report-summary__item strong {
+        display: block;
+        color: #111827;
+        font-size: 0.94rem;
+        font-weight: 800;
+        line-height: 1.35;
+        word-break: break-word;
     }
 
     .import-upload-card__body .form-group label {
@@ -1984,6 +2544,135 @@
         box-shadow: 0 18px 34px -22px rgba(37, 99, 235, 0.52);
     }
 
+    .import-upload-card__submit.btn-primary,
+    .import-upload-card__submit.btn-success,
+    .import-upload-card__submit.btn-info {
+        border: 0;
+        background: linear-gradient(135deg, #fb923c, #ea580c);
+        box-shadow: 0 18px 34px -22px rgba(249, 115, 22, 0.5);
+    }
+
+    .import-upload-card__submit.btn-primary:hover,
+    .import-upload-card__submit.btn-success:hover,
+    .import-upload-card__submit.btn-info:hover,
+    .import-upload-card__submit.btn-primary:focus,
+    .import-upload-card__submit.btn-success:focus,
+    .import-upload-card__submit.btn-info:focus {
+        background: linear-gradient(135deg, #f97316, #c2410c);
+        box-shadow: 0 22px 38px -24px rgba(249, 115, 22, 0.55);
+    }
+
+    .import-dropzone {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        margin-top: 1.15rem;
+        padding: 1.1rem 1.15rem;
+        border-radius: 22px;
+        border: 1.5px dashed rgba(251, 146, 60, 0.34);
+        background: linear-gradient(180deg, #fffaf5 0%, #ffffff 100%);
+        cursor: pointer;
+        transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .import-dropzone:hover,
+    .import-dropzone:focus,
+    .import-dropzone.is-dragover {
+        outline: none;
+        transform: translateY(-2px);
+        border-color: rgba(234, 88, 12, 0.6);
+        box-shadow: 0 20px 34px -28px rgba(249, 115, 22, 0.42);
+    }
+
+    .import-dropzone.has-file {
+        border-style: solid;
+        background: linear-gradient(180deg, #fff7ed 0%, #ffffff 100%);
+    }
+
+    .import-dropzone__icon {
+        width: 58px;
+        height: 58px;
+        border-radius: 18px;
+        display: grid;
+        place-items: center;
+        background: linear-gradient(135deg, #111827, #2f3b52);
+        color: #fb923c;
+        font-size: 1.45rem;
+        flex: 0 0 auto;
+    }
+
+    .import-dropzone__title {
+        color: #111827;
+        font-size: 1rem;
+        font-weight: 800;
+        margin-bottom: 0.18rem;
+    }
+
+    .import-dropzone__text {
+        color: #64748b;
+        line-height: 1.55;
+    }
+
+    .import-file-preview {
+        display: flex;
+        align-items: center;
+        gap: 0.9rem;
+        margin-top: 1rem;
+        padding: 0.95rem 1rem;
+        border-radius: 18px;
+        background: #ffffff;
+        border: 1px solid rgba(251, 146, 60, 0.16);
+        box-shadow: 0 16px 28px -24px rgba(17, 24, 39, 0.24);
+    }
+
+    .import-file-preview__icon {
+        width: 44px;
+        height: 44px;
+        border-radius: 14px;
+        display: grid;
+        place-items: center;
+        background: rgba(251, 146, 60, 0.12);
+        color: #c2410c;
+        font-size: 1.1rem;
+        flex: 0 0 auto;
+    }
+
+    .import-file-preview__body {
+        flex: 1 1 auto;
+        min-width: 0;
+    }
+
+    .import-file-preview__name {
+        color: #111827;
+        font-weight: 700;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .import-file-preview__meta {
+        display: flex;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+        margin-top: 0.2rem;
+        color: #64748b;
+        font-size: 0.88rem;
+    }
+
+    .import-file-preview__clear {
+        border: 0;
+        border-radius: 14px;
+        padding: 0.7rem 0.95rem;
+        background: rgba(17, 24, 39, 0.08);
+        color: #111827;
+        font-weight: 700;
+        transition: background 0.2s ease;
+    }
+
+    .import-file-preview__clear:hover {
+        background: rgba(17, 24, 39, 0.14);
+    }
+
     .swal-modern-popup {
         border: 1px solid rgba(226, 232, 240, 0.95);
         border-radius: 28px;
@@ -2009,7 +2698,7 @@
         justify-content: center;
         border: 0;
         border-radius: 16px;
-        background: linear-gradient(135deg, #0f766e, #115e59);
+        background: linear-gradient(135deg, #fb923c, #ea580c);
         color: #ffffff;
         font-weight: 700;
         padding: 0.8rem 1.3rem;
@@ -2037,8 +2726,8 @@
         margin-inline: auto;
         padding: 0.4rem 0.72rem;
         border-radius: 999px;
-        background: rgba(15, 118, 110, 0.1);
-        color: #0f766e;
+        background: rgba(251, 146, 60, 0.12);
+        color: #c2410c;
         font-size: 0.72rem;
         font-weight: 800;
         letter-spacing: 0.08em;
@@ -2059,7 +2748,7 @@
     }
 
     .swal-import-phase {
-        color: #0f766e;
+        color: #c2410c;
         font-size: 0.76rem;
         font-weight: 800;
         letter-spacing: 0.08em;
@@ -2106,7 +2795,7 @@
 
     .swal-import-progress__bar {
         position: relative;
-        background: linear-gradient(90deg, #0f766e 0%, #14b8a6 48%, #2dd4bf 100%);
+        background: linear-gradient(90deg, #111827 0%, #fb923c 48%, #ea580c 100%);
         background-size: 200% 100%;
         font-weight: 800;
         font-size: 11px;
@@ -2120,7 +2809,7 @@
     }
 
     .swal-import-meta__status {
-        color: #0f766e;
+        color: #c2410c;
         font-weight: 700;
         letter-spacing: 0.02em;
     }
@@ -2159,7 +2848,7 @@
 
     .swal-import-metrics__state {
         flex: 0 0 auto;
-        color: #0f766e;
+        color: #c2410c;
         font-size: 0.73rem;
         font-weight: 800;
         letter-spacing: 0.04em;
@@ -2224,6 +2913,27 @@
     }
 
     @media (max-width: 767.98px) {
+        .import-template-banner__brand {
+            width: 100%;
+            padding-right: 0;
+        }
+
+        .import-template-banner__brand-card,
+        .import-dropzone,
+        .import-file-preview {
+            width: 100%;
+        }
+
+        .import-dropzone {
+            flex-direction: column;
+            text-align: center;
+        }
+
+        .import-report-steps,
+        .import-report-summary {
+            grid-template-columns: 1fr;
+        }
+
         .import-template-banner,
         .import-upload-card__header,
         .import-upload-card__body,

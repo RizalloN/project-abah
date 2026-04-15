@@ -584,7 +584,16 @@ document.addEventListener('DOMContentLoaded', function () {
             setProgress(12, 'Fase Polars siap. Membuka koneksi stream...', 0, 0, 0);
 
         } catch (err) {
-            themedSwal({ icon: 'error', title: 'Gagal Menyiapkan Polars', html: err.message, confirmButtonText: 'Tutup' });
+            var errorHtml = String((err && err.message) || '');
+            var errorTitle = isDuplicateImportMessage(errorHtml)
+                ? 'Data Duplikat'
+                : 'Gagal Menyiapkan Polars';
+            themedSwal({ icon: 'error', title: errorTitle, html: errorHtml, confirmButtonText: 'Tutup' })
+                .then(function () {
+                    if (isDuplicateImportMessage(errorHtml)) {
+                        redirectToImportIndex();
+                    }
+                });
             resetSubmitBtn();
             return;
         }
@@ -601,10 +610,27 @@ document.addEventListener('DOMContentLoaded', function () {
             return statusUrlTemplate.replace('__JOB_ID__', encodeURIComponent(jobId));
         }
 
+        function isDuplicateImportMessage(message) {
+            var text = String(message || '').toLowerCase();
+            return text.indexOf('duplikat') !== -1
+                || text.indexOf('sudah ada di database') !== -1;
+        }
+
+        function redirectToImportIndex() {
+            window.location.href = '{{ route("import.index") }}';
+        }
+
         function showImportFailure(message) {
             streamDone = true;
             if (evtSource) evtSource.close();
-            themedSwal({ icon: 'error', title: 'Proses Terhenti', html: message || 'Import gagal dijalankan!', confirmButtonText: 'Tutup' });
+            var failureHtml = message || 'Import gagal dijalankan!';
+            var failureTitle = isDuplicateImportMessage(failureHtml) ? 'Data Duplikat' : 'Proses Terhenti';
+            themedSwal({ icon: 'error', title: failureTitle, html: failureHtml, confirmButtonText: 'Tutup' })
+                .then(function () {
+                    if (isDuplicateImportMessage(failureHtml)) {
+                        redirectToImportIndex();
+                    }
+                });
             resetSubmitBtn();
         }
 

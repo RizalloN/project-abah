@@ -93,6 +93,14 @@ class ExcelQueuedImportService
                 return $fail($e->getMessage());
             }
 
+            try {
+                if (isset($callbacks['assert_duplicate_guard'])) {
+                    ($callbacks['assert_duplicate_guard'])($tableName);
+                }
+            } catch (\RuntimeException $e) {
+                return $fail($e->getMessage());
+            }
+
             if (!($callbacks['is_csv_file'])($path) && $stagedCsvPath !== '' && file_exists($stagedCsvPath)) {
                 $workingPath = $stagedCsvPath;
                 $workingHeaderIndex = 0;

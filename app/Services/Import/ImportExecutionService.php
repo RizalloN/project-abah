@@ -18,6 +18,7 @@ class ImportExecutionService
     private const DISPATCHED_KEY_PREFIX = 'import_excel_dispatched_job_';
     private const DISPATCHED_TTL_HOURS = 6;
     private const STALE_QUEUED_MINUTES = 10;
+    private const INLINE_FALLBACK_GRACE_SECONDS = 3;
 
     public function __construct(
         private readonly ImportProgressService $progressService,
@@ -141,6 +142,7 @@ class ImportExecutionService
             $lastPayloadHash = null;
             $startedAt = time();
             $maxSeconds = 7200;
+            $inlineFallbackAttempted = false;
 
             while (true) {
                 if ($request->isMethod('GET') && function_exists('connection_aborted') && connection_aborted()) {
@@ -150,6 +152,29 @@ class ImportExecutionService
                 $payload = $this->progressService->getStatusPayload($jobId);
                 $hash = md5(json_encode($payload));
                 $isStaleQueue = ($payload['status'] ?? '') === 'queued' && !empty($payload['is_stale_queue']);
+
+                if ($this->shouldRunInlineFallback($payload, $startedAt, $inlineFallbackAttempted)) {
+                    $inlineFallbackAttempted = true;
+                    $send('progress', [
+                        'status' => 'processing',
+                        'phase' => (string) ($payload['phase'] ?? 'polars'),
+                        'mode' => (string) ($payload['mode'] ?? 'polars'),
+                        'percent' => max(6, (int) ($payload['percent'] ?? 5)),
+                        'message' => 'Worker queue belum mengambil job. Import dijalankan langsung dari request ini.',
+                        'processed_rows' => (int) ($payload['processed_rows'] ?? 0),
+                        'total_rows' => (int) ($payload['total_rows'] ?? 0),
+                        'total_success' => (int) ($payload['total_success'] ?? 0),
+                        'total_failed' => (int) ($payload['total_failed'] ?? 0),
+                    ]);
+                    $this->progressService->cleanupQueuedImportJobRowsForJob($jobId);
+                    $lastPayloadHash = null;
+
+                    $this->run($jobId, function (string $event, array $streamPayload) use ($send): void {
+                        $send($event, $streamPayload);
+                    });
+
+                    continue;
+                }
 
                 if ($isStaleQueue) {
                     if ($hash !== $lastPayloadHash) {
@@ -218,9 +243,25 @@ class ImportExecutionService
         ]);
     }
 
-    public function run(int $jobId): void
+    public function run(int $jobId, ?callable $streamSend = null): void
     {
         $this->progressService->purgeStaleProcessingJobs();
+
+        $job = $this->progressService->findJob($jobId);
+        if (!$job) {
+            $this->releaseDispatchMarker($jobId);
+            return;
+        }
+
+        if (in_array($job->status, ['completed', 'failed', 'failed_partial'], true)) {
+            $this->progressService->cleanupQueuedImportJobRowsForJob($jobId);
+            $this->releaseDispatchMarker($jobId);
+            return;
+        }
+
+        if ($job->status === 'processing') {
+            return;
+        }
 
         $state = $this->progressService->getJobState($jobId);
         $params = (array) ($state['params'] ?? []);
@@ -266,14 +307,18 @@ class ImportExecutionService
                 'job_id' => $jobId,
                 'params' => $params,
                 'headers' => $headers,
-            ], function (string $event, array $payload) use ($jobId): void {
+            ], function (string $event, array $payload) use ($jobId, $streamSend): void {
                 $status = match ($event) {
                     'complete' => 'completed',
                     'error' => 'failed',
                     default => 'processing',
                 };
 
-                $this->progressService->cacheProgress($jobId, array_merge($payload, ['status' => $status]));
+                $cachedPayload = $this->progressService->cacheProgress($jobId, array_merge($payload, ['status' => $status]));
+
+                if ($streamSend !== null) {
+                    $streamSend($event, $cachedPayload);
+                }
             });
 
             $job = $this->progressService->findJob($jobId);
@@ -319,6 +364,19 @@ class ImportExecutionService
         } finally {
             $lock->release();
         }
+    }
+
+    private function shouldRunInlineFallback(array $payload, int $startedAt, bool $inlineFallbackAttempted): bool
+    {
+        if ($inlineFallbackAttempted) {
+            return false;
+        }
+
+        if (($payload['status'] ?? '') !== 'queued') {
+            return false;
+        }
+
+        return (time() - $startedAt) >= self::INLINE_FALLBACK_GRACE_SECONDS;
     }
 
     private function dispatchedKey(int $jobId): string
