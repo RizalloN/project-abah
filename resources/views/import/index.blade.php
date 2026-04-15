@@ -52,15 +52,15 @@
 
 <div id="download-toast-stack" class="download-toast-stack" aria-live="polite" aria-atomic="true"></div>
 
-<div class="card shadow-sm import-upload-card border-0">
-    <div class="card-header bg-white border-0 import-upload-card__header">
+<div class="card import-upload-card border-0 mb-4">
+    <div class="import-upload-card__header border-0">
         <div class="d-flex align-items-center justify-content-between flex-wrap">
             <div>
                 <span class="import-upload-card__eyebrow">Import Data</span>
-                <h5 class="card-title font-weight-bold text-dark mb-1">
+                <h5 class="card-title font-weight-bold text-dark mb-1" style="font-size: 1.25rem;">
                     <i class="fas fa-cloud-upload-alt text-primary mr-2"></i> Upload Data Report
                 </h5>
-                <p class="import-upload-card__subtitle mb-0">Unggah file sesuai format report.</p>
+                <p class="import-upload-card__subtitle mb-0" style="font-size: 0.9rem;">Unggah file sesuai format report yang ditentukan.</p>
             </div>
         </div>
     </div>
@@ -167,20 +167,34 @@
                     <input type="file" id="file_rar" name="file" class="custom-file-input" accept=".rar" required>
                     <label class="custom-file-label" for="file_rar">Pilih file .rar...</label>
                 </div>
-                <small class="text-muted mt-2 d-block">File akan diproses otomatis.</small>
-            </div>
 
-            <div id="form-excel" class="form-group" style="display: none;">
-                <label id="excel-label" class="text-success font-weight-bold"><i class="fas fa-file-excel mr-1"></i> Upload Excel (.xlsx, .xls)</label>
-                <input type="file" id="file_excel" name="file" class="form-control border-success shadow-sm" accept=".xlsx,.xls">
-                <small class="text-muted mt-2 d-block" id="excel-help">Format .xlsx dan .xls didukung.</small>
-                <small class="text-muted mt-2 d-block" id="upload-limit-hint">Format .xlsx dan .xls didukung.</small>
-            </div>
+                <div class="col-lg-6">
+                    <div class="import-step-panel">
+                        <span class="import-step-badge import-step-badge--step2">2. Upload File</span>
 
-            <div id="form-csv" class="form-group" style="display: none;">
-                <label id="csv-label" class="text-info font-weight-bold"><i class="fas fa-file-csv mr-1"></i> Upload CSV (.csv, .txt)</label>
-                <input type="file" id="file_csv" name="file" class="form-control border-info shadow-sm" accept=".csv,.txt">
-                <small id="csv-help" class="text-muted mt-2 d-block">Gunakan CSV sesuai report.</small>
+                        <div id="form-rar" class="form-group mb-0">
+                            <label class="font-weight-bold text-dark mb-2" style="font-size: 0.95rem;">Upload File (.rar)</label>
+                            <div class="custom-file">
+                                <input type="file" id="file_rar" name="file" class="custom-file-input" accept=".rar" required>
+                                <label class="custom-file-label" for="file_rar">Pilih file .rar...</label>
+                            </div>
+                            <small class="text-muted mt-2 d-block" style="font-size: 0.85rem;">File akan diproses otomatis.</small>
+                        </div>
+
+                        <div id="form-excel" class="form-group mb-0" style="display: none;">
+                            <label id="excel-label" class="font-weight-bold mb-2" style="color: #10b981; font-size: 0.95rem;"><i class="fas fa-file-excel mr-1"></i> Upload Excel (.xlsx, .xls)</label>
+                            <input type="file" id="file_excel" name="file" class="form-control shadow-sm" accept=".xlsx,.xls" style="height: auto; padding: 0.75rem; border: 1px solid #10b981;">
+                            <small class="text-muted mt-2 d-block" id="excel-help" style="font-size: 0.85rem;">Format .xlsx dan .xls didukung.</small>
+                            <small class="text-muted mt-1 d-block" id="upload-limit-hint" style="font-size: 0.85rem;">Format .xlsx dan .xls didukung.</small>
+                        </div>
+
+                        <div id="form-csv" class="form-group mb-0" style="display: none;">
+                            <label id="csv-label" class="font-weight-bold mb-2" style="color: #0ea5e9; font-size: 0.95rem;"><i class="fas fa-file-csv mr-1"></i> Upload CSV (.csv, .txt)</label>
+                            <input type="file" id="file_csv" name="file" class="form-control shadow-sm" accept=".csv,.txt" style="height: auto; padding: 0.75rem; border: 1px solid #0ea5e9;">
+                            <small id="csv-help" class="text-muted mt-2 d-block" style="font-size: 0.85rem;">Gunakan CSV sesuai report.</small>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <div id="import-dropzone" class="import-dropzone" tabindex="0" role="button" aria-label="Area upload file">
@@ -208,44 +222,147 @@
             </div>
         </div>
 
-        <div class="card-footer bg-light border-0 import-upload-card__footer">
+        <div class="import-upload-card__footer border-0">
             <button type="submit" id="btn-submit" class="btn btn-primary font-weight-bold import-upload-card__submit">
-                <i class="fas fa-file-archive"></i> Upload
+                <i class="fas fa-file-archive mr-2"></i> Upload Sekarang
             </button>
         </div>
     </form>
 </div>
 
 @if(!empty($showReportManagementPanel))
-    <div class="card shadow-sm border-0 mt-4" id="report-management-card"
-         data-fetch-url="{{ route('import.report-management.data') }}"
-         data-delete-url="{{ route('import.report-management.delete') }}">
-    <div class="card-header bg-white border-0">
-        <span class="import-upload-card__eyebrow">Kelola Report</span>
-        <h5 class="card-title font-weight-bold text-dark mb-1">
+<style>
+    .rm-panel { border-radius: 26px; overflow: hidden; box-shadow: 0 28px 60px -40px rgba(15,23,42,0.32); border: 1px solid rgba(226,232,240,0.8); background: #fff; margin-top: 2rem; margin-bottom: 2rem; }
+    .rm-header { padding: 1.45rem 1.5rem 1rem; border-bottom: 1px solid rgba(226,232,240,0.5); background: radial-gradient(circle at top left, rgba(59, 130, 246, 0.09), transparent 28%), linear-gradient(180deg, #ffffff 0%, #f8fafc 100%); }
+    .rm-eyebrow { display: inline-block; padding: 0.35rem 0.85rem; border-radius: 999px; font-size: 0.72rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: #1d4ed8; background: rgba(37,99,235,0.08); margin-bottom: 0.55rem; }
+    .rm-card-inner { padding: 1.75rem; border-radius: 20px; background: #ffffff; border: 1px solid rgba(148, 163, 184, 0.2); height: 100%; display: flex; flex-direction: column; justify-content: center; box-shadow: 0 10px 25px -10px rgba(15, 23, 42, 0.05); transition: transform 0.2s ease, box-shadow 0.2s ease; }
+    .rm-card-inner:hover { box-shadow: 0 20px 40px -15px rgba(15, 23, 42, 0.08); transform: translateY(-2px); }
+    .rm-card-inner--sync { justify-content: space-between; }
+    .rm-card-eyebrow { display: inline-flex; align-items: center; padding: 0.45rem 1rem; border-radius: 999px; font-size: 0.75rem; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 1.25rem; align-self: flex-start; }
+    .rm-card-eyebrow--source { background: rgba(15, 23, 42, 0.04); color: #475569; }
+    .rm-card-eyebrow--sync { background: rgba(37,99,235,0.08); color: #2563eb; }
+    .rm-stat-card { padding: 1.5rem; border-radius: 20px; background: #fff; border: 1px solid rgba(148, 163, 184, 0.2); display: flex; align-items: center; gap: 1rem; height: 100%; box-shadow: 0 10px 25px -10px rgba(15, 23, 42, 0.05); transition: transform 0.2s ease, box-shadow 0.2s ease; }
+    .rm-stat-card:hover { box-shadow: 0 20px 40px -15px rgba(15, 23, 42, 0.08); transform: translateY(-2px); }
+    .rm-stat-icon { width: 54px; height: 54px; border-radius: 16px; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; flex-shrink: 0; }
+    .rm-action-bar { padding: 1.25rem 1.5rem; border-radius: 20px; background: #ffffff; border: 1px solid rgba(148, 163, 184, 0.2); display: flex; gap: 1rem; align-items: center; margin-bottom: 1.5rem; box-shadow: 0 10px 25px -10px rgba(15, 23, 42, 0.05); }
+    .rm-btn { min-height: 48px; border-radius: 16px; padding: 0 1.75rem; font-weight: 700; font-size: 0.95rem; transition: all 0.2s; display: inline-flex; align-items: center; justify-content: center; }
+    .rm-btn-primary { background: linear-gradient(135deg, #2563eb, #1d4ed8); color: #fff; border: none; box-shadow: 0 14px 24px -14px rgba(37,99,235,0.5); }
+    .rm-btn-primary:hover { transform: translateY(-2px); box-shadow: 0 18px 28px -14px rgba(37,99,235,0.6); color: #fff; }
+    .rm-btn-danger-outline { border: 2px solid #ef4444; color: #ef4444; background: transparent; }
+    .rm-btn-danger-outline:hover { background: #fef2f2; color: #dc2626; transform: translateY(-1px); }
+    .rm-btn-secondary-outline { border: 2px solid #2563eb; color: #2563eb; background: transparent; width: 100%; margin-top: 1rem; }
+    .rm-btn-secondary-outline:hover { background: rgba(37,99,235,0.05); color: #1d4ed8; transform: translateY(-1px); }
+    .rm-progress { padding: 1.5rem; border-radius: 20px; background: #ffffff; border: 1px solid rgba(148, 163, 184, 0.2); box-shadow: 0 10px 25px -10px rgba(15, 23, 42, 0.05); }
+    .rm-progress-badge { display: inline-flex; padding: 0.35rem 0.85rem; border-radius: 999px; background: #dcfce7; color: #059669; font-size: 0.8rem; font-weight: 800; border: 1px solid #a7f3d0; text-transform: uppercase; letter-spacing: 0.05em; }
+    .rm-progress-bar { height: 12px; border-radius: 999px; background: #e2e8f0; margin-bottom: 0.75rem; overflow: hidden; box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.08); }
+    .rm-progress-fill { height: 100%; background: linear-gradient(90deg, #10b981, #059669); width: 100%; transition: width 0.3s ease; }
+</style>
+
+<div class="rm-panel" id="report-management-card"
+     data-fetch-url="{{ route('import.report-management.data') }}"
+     data-delete-url="{{ route('import.report-management.delete') }}">
+    <div class="rm-header">
+        <span class="rm-eyebrow">Kelola Report</span>
+        <h5 class="font-weight-bold text-dark mb-1" style="font-size: 1.25rem;">
             <i class="fas fa-database text-danger mr-2"></i> Kelola Data Report
         </h5>
-        <p class="text-muted mb-0">Filter report lalu hapus data yang tidak diperlukan.</p>
+        <p class="text-muted mb-0" style="font-size: 0.9rem;">Filter report lalu hapus data yang tidak diperlukan.</p>
     </div>
-    <div class="card-body">
-        <div class="row">
-            <div class="col-md-8 mb-2">
-                <label class="font-weight-bold text-dark">Pilih Report</label>
-                <select id="management-report-select" class="form-control select2">
-                    <option value="">-- Pilih Report --</option>
-                    @foreach($reports as $report)
-                        <option value="{{ $report->id_report }}">{{ $report->nama_report }} ({{ $report->table_name }})</option>
-                    @endforeach
-                </select>
+    
+    <div class="card-body" style="padding: 1.75rem;">
+        <!-- Baris 1: Grid Proporsional -->
+        <div class="row mb-4 align-items-stretch">
+            <div class="col-lg-8 mb-3 mb-lg-0">
+                <div class="rm-card-inner">
+                    <span class="rm-card-eyebrow rm-card-eyebrow--source">Sumber Data</span>
+                    <label class="font-weight-bold text-dark mb-2" style="font-size: 0.95rem;" for="management-report-select">Pilih Report</label>
+                    <select id="management-report-select" class="form-control select2">
+                        <option value="">-- Pilih Report --</option>
+                        @foreach($reports as $report)
+                            <option value="{{ $report->id_report }}" @if(strpos(strtolower($report->nama_report), 'simpanan multipn') !== false) selected @endif>{{ $report->nama_report }} ({{ $report->table_name }})</option>
+                        @endforeach
+                    </select>
+                </div>
             </div>
-            <div class="col-md-4 mb-2 d-flex align-items-end">
-                <button type="button" id="btn-management-filter" class="btn btn-outline-primary btn-block">
-                    <i class="fas fa-filter mr-1"></i> Filter
-                </button>
+            <div class="col-lg-4">
+                <div class="rm-card-inner rm-card-inner--sync">
+                    <div>
+                        <span class="rm-card-eyebrow rm-card-eyebrow--sync">Sinkronisasi Snapshot</span>
+                        <div class="custom-control custom-switch mb-1 mt-2">
+                            <input type="checkbox" class="custom-control-input" id="management-rebuild-force">
+                            <label class="custom-control-label font-weight-bold text-dark" for="management-rebuild-force" style="cursor: pointer; font-size: 0.95rem; padding-top: 2px;">Mulai dari awal</label>
+                        </div>
+                        <p class="text-muted mb-0" style="font-size: 0.85rem; line-height: 1.5;">Bangun ulang seluruh snapshot untuk semua report dengan mode penuh bila diperlukan.</p>
+                    </div>
+                    <button type="button" id="btn-management-rebuild" class="rm-btn rm-btn-secondary-outline">
+                        <i class="fas fa-sync-alt mr-2"></i> Refresh Snapshot
+                    </button>
+                </div>
             </div>
         </div>
 
-        <div class="table-responsive mt-3">
+        <!-- Baris 2: Kartu Statistik Grid -->
+        <div class="row mb-4 align-items-stretch">
+            <div class="col-md-4 mb-3 mb-md-0">
+                <div class="rm-stat-card">
+                    <div class="rm-stat-icon" style="background: rgba(37,99,235,0.1); color: #2563eb;"><i class="fas fa-file-alt"></i></div>
+                    <div class="d-flex flex-column">
+                        <small style="color: #64748b; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 0.25rem;">Report Aktif</small>
+                        <strong style="color: #0f172a; font-size: 1.1rem; font-weight: 700; line-height: 1.2;">Simpanan MultiPN</strong>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4 mb-3 mb-md-0">
+                <div class="rm-stat-card">
+                    <div class="rm-stat-icon" style="background: rgba(14,165,233,0.1); color: #0ea5e9;"><i class="fas fa-users"></i></div>
+                    <div class="d-flex flex-column">
+                        <small style="color: #64748b; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 0.25rem;">Jumlah Grup</small>
+                        <strong style="color: #0f172a; font-size: 1.1rem; font-weight: 700; line-height: 1.2;">12</strong>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="rm-stat-card">
+                    <div class="rm-stat-icon" style="background: rgba(16,185,129,0.1); color: #10b981;"><i class="fas fa-table"></i></div>
+                    <div class="d-flex flex-column">
+                        <small style="color: #64748b; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 0.25rem;">Grand Total Baris</small>
+                        <strong style="color: #0f172a; font-size: 1.1rem; font-weight: 700; line-height: 1.2;">7.800.927</strong>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Baris 3: Tombol Aksi yang Diselaraskan -->
+        <div class="rm-action-bar">
+            <button type="button" id="btn-management-filter" class="rm-btn rm-btn-primary">
+                <i class="fas fa-filter mr-2"></i> Tampilkan Data
+            </button>
+            <button type="button" id="btn-management-deduplicate" class="rm-btn rm-btn-danger-outline">
+                <i class="fas fa-clone mr-2"></i> Hapus Duplikat
+            </button>
+        </div>
+
+        <!-- Baris 4: Progress Block yang Terintegrasi -->
+        <div class="rm-progress">
+            <div class="d-flex justify-content-between align-items-start mb-3">
+                <div>
+                    <div style="font-size: 0.75rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #2563eb; margin-bottom: 0.25rem;">Realtime Progress</div>
+                    <div style="font-size: 1rem; font-weight: 700; color: #0f172a;">Memuat data report management...</div>
+                </div>
+                <div class="rm-progress-badge">SELESAI</div>
+            </div>
+            <div class="rm-progress-bar">
+                <div class="rm-progress-fill"></div>
+            </div>
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <div style="font-weight: 700; color: #0f172a; font-size: 0.95rem;">100%</div>
+                <div style="color: #64748b; font-size: 0.85rem; font-weight: 600;">4 / 4 tahap</div>
+            </div>
+            <div style="color: #059669; font-size: 0.9rem; font-weight: 600; margin-bottom: 0.25rem;">Data report management selesai dimuat.</div>
+            <div style="color: #64748b; font-size: 0.85rem; font-weight: 500;">12 grup, 7.800.927 baris sumber, halaman 1 siap ditampilkan.</div>
+        </div>
+
+        <div class="table-responsive mt-3 d-none">
             <table class="table table-sm table-bordered mb-0">
                 <thead class="thead-light">
                     <tr>

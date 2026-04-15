@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Services\DatabaseBackupService;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -17,6 +18,12 @@ use App\Services\Import\ImportProgressService;
 class FileManagementController extends Controller
 {
     private const MANAGED_DIRECTORIES = [
+        [
+            'key' => 'database_backups',
+            'label' => 'Database Backups',
+            'description' => 'Backup SQL penuh database untuk restore/import ulang.',
+            'path' => 'private/database_backups',
+        ],
         [
             'key' => 'excel_imports',
             'label' => 'Excel Imports',
@@ -106,6 +113,43 @@ class FileManagementController extends Controller
         $totals['active_files'] = $files->where('is_active', true)->count();
 
         return view('admin.file-management', compact('directories', 'files', 'totals'));
+    }
+
+    public function backupDatabase(DatabaseBackupService $backupService): JsonResponse|RedirectResponse
+    {
+        try {
+            $backup = $backupService->createFullBackup();
+        } catch (\Throwable $e) {
+            if (request()->expectsJson() || request()->ajax()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => $e->getMessage(),
+                ], 500);
+            }
+
+            return redirect()
+                ->route('file-management.index')
+                ->withErrors([$e->getMessage()]);
+        }
+
+        $message = 'Backup database full berhasil dibuat dan siap diunduh.';
+
+        if (request()->expectsJson() || request()->ajax()) {
+            return response()->json([
+                'status' => 'success',
+                'message' => $message,
+                'file' => [
+                    'name' => $backup['filename'],
+                    'path' => $backup['relative_path'],
+                    'size' => $backup['size'],
+                    'download_url' => route('file-management.download', ['path' => $backup['relative_path']]),
+                ],
+            ]);
+        }
+
+        return redirect()
+            ->route('file-management.index')
+            ->with('success', $message);
     }
 
     public function destroy(Request $request): JsonResponse|RedirectResponse
@@ -236,6 +280,16 @@ class FileManagementController extends Controller
         }
 
         return $realPath;
+    }
+
+    public function resolveDownloadablePath(string $requestedPath): ?string
+    {
+        $resolvedPath = $this->resolveRequestedPath($requestedPath);
+        if ($resolvedPath === null || !is_file($resolvedPath)) {
+            return null;
+        }
+
+        return $resolvedPath;
     }
 
     private function isWithinManagedRoots(string $path): bool

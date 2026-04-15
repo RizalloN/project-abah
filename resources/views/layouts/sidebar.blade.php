@@ -298,6 +298,29 @@
     .main-sidebar .nav-link.active .right {
         color: #ffffff !important;
     }
+
+    .sidebar-job-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 1.5rem;
+        height: 1.5rem;
+        padding: 0 .42rem;
+        border-radius: 999px;
+        background: linear-gradient(135deg, #dc2626 0%, #ef4444 100%);
+        color: #fff;
+        font-size: .69rem;
+        font-weight: 800;
+        line-height: 1;
+        box-shadow: 0 12px 22px -16px rgba(127, 29, 29, .72);
+    }
+
+    .main-sidebar .nav-link:hover .sidebar-job-badge,
+    .main-sidebar .nav-link.active .sidebar-job-badge {
+        background: rgba(255,255,255,.18);
+        color: #fff;
+        box-shadow: inset 0 0 0 1px rgba(255,255,255,.2);
+    }
 </style>
 
 <aside class="main-sidebar elevation-4">
@@ -357,38 +380,71 @@
                 </li>
 
                 @if(Auth::user()?->isAdmin())
-                <li class="nav-header text-uppercase">Import</li>
+                <li class="nav-header text-uppercase">MANAGEMENT</li>
 
-                <li class="nav-item">
-                    <a href="{{ route('import.index') }}" class="nav-link {{ request()->routeIs('import.*') ? 'active' : '' }}">
-                        <i class="nav-icon fas fa-upload"></i>
-                        <p>Import Data</p>
+                <li class="nav-item {{ request()->routeIs('job-management.*', 'file-management.*', 'user-management.*') ? 'menu-open' : '' }}">
+                    <a href="#" class="nav-link {{ request()->routeIs('job-management.*', 'file-management.*', 'user-management.*') ? 'active' : '' }}">
+                        <i class="nav-icon fas fa-cogs"></i>
+                        <p>
+                            Management
+                            <i class="right fas fa-angle-left"></i>
+                        </p>
                     </a>
+                    <ul class="nav nav-treeview">
+                        <li class="nav-item">
+                            <a href="{{ route('job-management.index') }}" class="nav-link {{ request()->routeIs('job-management.*') ? 'active' : '' }}">
+                                <i class="nav-icon fas fa-tasks"></i>
+                                <p>
+                                    Job Management
+                                    <span
+                                        id="sidebar-job-badge"
+                                        class="sidebar-job-badge {{ ($activeImportJobCount ?? 0) > 0 ? '' : 'd-none' }}"
+                                        data-fetch-url="{{ route('job-management.data') }}"
+                                    >{{ ($activeImportJobCount ?? 0) > 99 ? '99+' : ($activeImportJobCount ?? 0) }}</span>
+                                </p>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="{{ route('file-management.index') }}" class="nav-link {{ request()->routeIs('file-management.*') ? 'active' : '' }}">
+                                <i class="nav-icon fas fa-folder-open"></i>
+                                <p>File Management</p>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="{{ route('user-management.index') }}" class="nav-link {{ request()->routeIs('user-management.*') ? 'active' : '' }}">
+                                <i class="nav-icon fas fa-users-cog"></i>
+                                <p>User Management</p>
+                            </a>
+                        </li>
+                    </ul>
                 </li>
 
-                <li class="nav-item">
-                    <a href="{{ route('report-management.index') }}" class="nav-link {{ request()->routeIs('report-management.*') ? 'active' : '' }}">
-                        <i class="nav-icon fas fa-database"></i>
-                        <p>Kelola Report</p>
+                <li class="nav-item {{ request()->routeIs('import.*', 'report-management.*') ? 'menu-open' : '' }}">
+                    <a href="#" class="nav-link {{ request()->routeIs('import.*', 'report-management.*') ? 'active' : '' }}">
+                        <i class="nav-icon fas fa-chart-pie"></i>
+                        <p>
+                            Report
+                            <i class="right fas fa-angle-left"></i>
+                        </p>
                     </a>
-                </li>
-
-                <li class="nav-item">
-                    <a href="{{ route('file-management.index') }}" class="nav-link {{ request()->routeIs('file-management.*') ? 'active' : '' }}">
-                        <i class="nav-icon fas fa-folder-open"></i>
-                        <p>File Management</p>
-                    </a>
-                </li>
-
-                <li class="nav-item">
-                    <a href="{{ route('user-management.index') }}" class="nav-link {{ request()->routeIs('user-management.*') ? 'active' : '' }}">
-                        <i class="nav-icon fas fa-users-cog"></i>
-                        <p>User Management</p>
-                    </a>
+                    <ul class="nav nav-treeview">
+                        <li class="nav-item">
+                            <a href="{{ route('import.index') }}" class="nav-link {{ request()->routeIs('import.*') ? 'active' : '' }}">
+                                <i class="nav-icon fas fa-upload"></i>
+                                <p>Import Data</p>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="{{ route('report-management.index') }}" class="nav-link {{ request()->routeIs('report-management.*') ? 'active' : '' }}">
+                                <i class="nav-icon fas fa-database"></i>
+                                <p>Kelola Report</p>
+                            </a>
+                        </li>
+                    </ul>
                 </li>
                 @endif
 
-                <li class="nav-header text-uppercase">Report</li>
+                <li class="nav-header text-uppercase">REPORT</li>
 
                 <li class="nav-item {{ request()->is('report/optimalisasi-digital*') ? 'menu-open' : '' }}">
                     <a href="#" class="nav-link {{ request()->is('report/optimalisasi-digital*') ? 'active' : '' }}">
@@ -519,3 +575,48 @@
         </nav>
     </div>
 </aside>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const badge = document.getElementById('sidebar-job-badge');
+    if (!badge || !badge.dataset.fetchUrl) {
+        return;
+    }
+
+    let sidebarJobBadgeTimer = null;
+
+    async function refreshSidebarJobBadge() {
+        try {
+            const response = await fetch(`${badge.dataset.fetchUrl}?status=all&page=1&per_page=1`, {
+                headers: {
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+            });
+
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || payload.status === 'error') {
+                return;
+            }
+
+            const count = Number(payload?.summary?.active_jobs || 0);
+            if (count > 0) {
+                badge.textContent = count > 99 ? '99+' : String(count);
+                badge.classList.remove('d-none');
+            } else {
+                badge.textContent = '0';
+                badge.classList.add('d-none');
+            }
+        } catch (_) {
+        }
+    }
+
+    refreshSidebarJobBadge();
+    sidebarJobBadgeTimer = window.setInterval(refreshSidebarJobBadge, 8000);
+
+    window.addEventListener('beforeunload', function () {
+        if (sidebarJobBadgeTimer) {
+            window.clearInterval(sidebarJobBadgeTimer);
+        }
+    });
+});
+</script>

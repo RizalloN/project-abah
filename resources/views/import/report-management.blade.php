@@ -9,9 +9,9 @@
         <div class="pr-3">
             <span class="report-management-hero__eyebrow">Kelola Report</span>
             <div class="report-management-hero__title"><i class="fas fa-layer-group mr-2"></i> Kelola Data Report</div>
-            <p class="report-management-hero__text mb-0">Pilih report, lalu hapus data per grup.</p>
+            <p class="report-management-hero__text mb-0">Pilih report, lalu hapus data per grup dengan mudah.</p>
         </div>
-        <div class="report-management-hero__badge mt-3 mt-md-0"><i class="fas fa-shield-alt mr-2"></i> Guard Aktif</div>
+        <div class="report-management-hero__badge mt-3 mt-md-0"><i class="fas fa-shield-alt mr-2 text-primary"></i> Guard Aktif</div>
     </div>
 </div>
 
@@ -36,7 +36,7 @@
     <div class="card-body import-upload-card__body">
         <div class="report-management-top-shell mb-4">
             <div class="row report-management-top-grid">
-                <div class="col-xl-8 mb-3 mb-xl-0">
+                <div class="col-lg-7 mb-3 mb-lg-0">
                     <div class="report-management-field-panel h-100">
                         <div class="report-management-field-panel__eyebrow">Sumber Data</div>
                         <label class="report-management-field-panel__label" for="management-report-select">Pilih Report</label>
@@ -48,15 +48,17 @@
                         </select>
                     </div>
                 </div>
-                <div class="col-xl-4">
-                    <div class="report-management-rebuild-panel report-management-rebuild-panel--formal h-100">
-                        <div class="report-management-rebuild-panel__topline">Sinkronisasi Snapshot</div>
-                        <div class="custom-control custom-switch report-management-rebuild-switch">
-                            <input type="checkbox" class="custom-control-input" id="management-rebuild-force">
-                            <label class="custom-control-label" for="management-rebuild-force">Mulai dari awal</label>
+                <div class="col-lg-5">
+                    <div class="report-management-rebuild-panel h-100">
+                        <div>
+                            <div class="report-management-rebuild-panel__topline mb-2">Sinkronisasi Snapshot</div>
+                            <div class="custom-control custom-switch report-management-rebuild-switch mb-1">
+                                <input type="checkbox" class="custom-control-input" id="management-rebuild-force">
+                                <label class="custom-control-label" for="management-rebuild-force">Mulai dari awal</label>
+                            </div>
+                            <div class="report-management-rebuild-hint mb-3">Bangun ulang seluruh snapshot untuk semua report dengan mode penuh bila diperlukan.</div>
                         </div>
-                        <div class="report-management-rebuild-hint">Bangun ulang seluruh snapshot untuk semua report dengan mode penuh bila diperlukan.</div>
-                        <button type="button" id="btn-management-rebuild" class="btn btn-outline-primary report-management-filter-btn report-management-filter-btn--secondary">
+                        <button type="button" id="btn-management-rebuild" class="btn btn-outline-primary report-management-filter-btn report-management-filter-btn--secondary mt-auto">
                             <i class="fas fa-sync-alt mr-2"></i> <span id="management-rebuild-label">Refresh Snapshot</span>
                         </button>
                     </div>
@@ -67,38 +69,47 @@
         <div class="row report-management-stat-row mb-4">
             <div class="col-md-4 mb-3 mb-md-0">
                 <div class="report-management-stat">
-                    <small>Report Aktif</small>
-                    <strong id="management-summary-report">Belum dipilih</strong>
+                    <div class="report-management-stat__icon"><i class="fas fa-file-alt"></i></div>
+                    <div class="report-management-stat__content">
+                        <small>Report Aktif</small>
+                        <strong id="management-summary-report">Belum dipilih</strong>
+                    </div>
                 </div>
             </div>
             <div class="col-md-4 mb-3 mb-md-0">
                 <div class="report-management-stat">
-                    <small>Jumlah Grup</small>
-                    <strong id="management-summary-groups">0</strong>
+                    <div class="report-management-stat__icon report-management-stat__icon--info"><i class="fas fa-users"></i></div>
+                    <div class="report-management-stat__content">
+                        <small>Jumlah Grup</small>
+                        <strong id="management-summary-groups">0</strong>
+                    </div>
                 </div>
             </div>
             <div class="col-md-4">
                 <div class="report-management-stat">
-                    <small>Grand Total Baris</small>
-                    <strong id="management-summary-rows">0</strong>
+                    <div class="report-management-stat__icon report-management-stat__icon--success"><i class="fas fa-table"></i></div>
+                    <div class="report-management-stat__content">
+                        <small>Grand Total Baris</small>
+                        <strong id="management-summary-rows">0</strong>
+                    </div>
                 </div>
             </div>
         </div>
 
         <div class="report-management-action-bar mb-4">
             <div class="report-management-action-bar__group">
-                <button type="button" id="btn-management-filter" class="btn btn-primary report-management-filter-btn report-management-filter-btn--primary shadow-sm">
+                <button type="button" id="btn-management-filter" class="btn btn-primary report-management-filter-btn report-management-filter-btn--primary">
                     <i class="fas fa-filter mr-2"></i> Tampilkan Data
                 </button>
-                <button type="button" id="btn-management-deduplicate" class="btn btn-outline-danger report-management-filter-btn report-management-filter-btn--danger shadow-sm" disabled>
+                <button type="button" id="btn-management-deduplicate" class="btn btn-outline-danger report-management-filter-btn report-management-filter-btn--danger" disabled>
                     <i class="fas fa-clone mr-2"></i> Hapus Duplikat
                 </button>
             </div>
         </div>
 
-        <div id="management-notice" class="report-management-notice d-none mb-3"></div>
+        <div id="management-notice" class="report-management-notice d-none mb-4"></div>
 
-        <div id="management-load-progress" class="report-management-load-card d-none mb-3" aria-live="polite">
+        <div id="management-load-progress" class="report-management-load-card d-none mb-4" aria-live="polite">
             <div class="report-management-load-card__header">
                 <div>
                     <div class="report-management-load-card__eyebrow">Realtime Progress</div>
@@ -114,20 +125,20 @@
                 <div id="management-load-units" class="report-management-load-card__units">0 / 4 tahap</div>
             </div>
             <div id="management-load-text" class="report-management-progress__text mt-2">Menunggu worker memulai proses...</div>
-            <div id="management-load-meta" class="report-management-progress__meta mt-2"></div>
+            <div id="management-load-meta" class="report-management-progress__meta mt-1"></div>
         </div>
 
-        <div class="report-management-bulkbar mt-3">
+        <div class="report-management-bulkbar mb-3">
             <div class="form-check m-0">
                 <input class="form-check-input" type="checkbox" id="management-select-all" disabled>
-                <label class="form-check-label font-weight-bold" for="management-select-all">Pilih Semua di Halaman</label>
+                <label class="form-check-label" for="management-select-all">Pilih Semua di Halaman</label>
             </div>
             <div class="report-management-bulkbar__hint">
                 Klik baris untuk centang cepat. Setiap header periode punya pilihan "Pilih semua periode ini".
             </div>
         </div>
 
-        <div class="report-management-table-wrap mt-3">
+        <div class="report-management-table-wrap">
             <div class="table-responsive">
                 <table class="table table-hover mb-0 report-management-table">
                     <thead>
@@ -139,7 +150,7 @@
                         </tr>
                     </thead>
                     <tbody id="management-table-body">
-                        <tr><td colspan="4" class="text-center text-muted py-4">Pilih report lalu klik "Tampilkan Data".</td></tr>
+                        <tr><td colspan="4" class="text-center text-muted py-5">Pilih report lalu klik "Tampilkan Data".</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -380,98 +391,140 @@
 
 @section('styles')
 <style>
-    .report-management-hero{position:relative;overflow:hidden;border-radius:24px;padding:1.45rem 1.5rem;background:radial-gradient(circle at top right,rgba(37,99,235,.22),transparent 30%),linear-gradient(135deg,#f8fbff 0%,#eef4ff 46%,#dbeafe 100%);border:1px solid rgba(37,99,235,.16);box-shadow:0 22px 45px -32px rgba(29,78,216,.4)}
-    .report-management-hero__glow{position:absolute;top:-48px;right:-30px;width:170px;height:170px;border-radius:999px;background:rgba(14,165,233,.16);filter:blur(10px)}
-    .report-management-hero__eyebrow,.import-upload-card__eyebrow{display:inline-block;margin-bottom:.55rem;padding:.35rem .7rem;border-radius:999px;font-size:.72rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
-    .report-management-hero__eyebrow{color:#1d4ed8;background:rgba(255,255,255,.72);border:1px solid rgba(37,99,235,.16)}
-    .report-management-hero__title{color:#0f3f8c;font-size:1.4rem;font-weight:800;letter-spacing:-.03em;margin-bottom:.35rem}
-    .report-management-hero__text{color:#31527c;line-height:1.7;max-width:700px}
-    .report-management-hero__badge{display:inline-flex;align-items:center;min-height:48px;padding:.8rem 1rem;border-radius:18px;background:rgba(255,255,255,.84);border:1px solid rgba(37,99,235,.14);color:#0f3f8c;font-weight:700;box-shadow:0 18px 32px -24px rgba(29,78,216,.3)}
-    .import-upload-card{border-radius:26px;overflow:hidden;box-shadow:0 28px 60px -40px rgba(15,23,42,.32)!important}
-    .import-upload-card__header{padding:1.45rem 1.5rem 1rem;background:radial-gradient(circle at top left,rgba(59,130,246,.09),transparent 28%),linear-gradient(180deg,#fff 0%,#f8fafc 100%)}
-    .import-upload-card__eyebrow{color:#1d4ed8;background:rgba(37,99,235,.08)}
-    .import-upload-card__subtitle{color:#64748b;max-width:700px;line-height:1.6}
-    .import-upload-card__body{position:relative;padding:1.5rem 1.5rem 7rem}
-    .report-management-top-shell{padding:1.1rem;border-radius:24px;background:linear-gradient(180deg,#fafcff 0%,#f3f7fd 100%);border:1px solid rgba(191,219,254,.52);box-shadow:inset 0 1px 0 rgba(255,255,255,.78)}
-    .report-management-top-grid{align-items:stretch}
-    .report-management-field-panel{display:flex;flex-direction:column;justify-content:center;height:100%;padding:1.2rem 1.25rem;border-radius:22px;background:linear-gradient(180deg,#fff 0%,#fcfdff 100%);border:1px solid rgba(148,163,184,.16);box-shadow:0 18px 40px -34px rgba(15,23,42,.3)}
-    .report-management-field-panel__eyebrow{display:inline-flex;align-items:center;align-self:flex-start;margin-bottom:.6rem;padding:.32rem .72rem;border-radius:999px;background:rgba(15,76,129,.08);color:#0f4c81;font-size:.72rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
-    .report-management-field-panel__label{margin-bottom:.72rem;color:#0f172a;font-size:1rem;font-weight:800;letter-spacing:.01em}
-    .report-management-filter-btn{min-height:48px;border-radius:14px;display:inline-flex;align-items:center;justify-content:center;font-weight:800;padding:0 1.3rem;letter-spacing:.01em;transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease,background-color .18s ease}
-    .report-management-filter-btn:hover:not(:disabled){transform:translateY(-1px)}
-    .report-management-filter-btn:disabled{transform:none;box-shadow:none}
-    .report-management-filter-btn--primary{min-width:196px;box-shadow:0 18px 36px -24px rgba(29,78,216,.48)}
-    .report-management-filter-btn--danger{min-width:196px}
-    .report-management-filter-btn--secondary{width:100%;margin-top:.15rem}
-    .report-management-rebuild-panel{padding:1.2rem 1.25rem;border-radius:22px;background:linear-gradient(180deg,#ffffff 0%,#f6f9ff 100%);border:1px solid rgba(148,163,184,.16);box-shadow:0 18px 40px -34px rgba(15,23,42,.28)}
-    .report-management-rebuild-panel--formal{display:flex;flex-direction:column;justify-content:space-between;gap:.78rem}
-    .report-management-rebuild-panel__topline{display:inline-flex;align-items:center;align-self:flex-start;padding:.32rem .72rem;border-radius:999px;background:rgba(29,78,216,.08);font-size:.72rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#1d4ed8}
-    .report-management-rebuild-switch{padding-left:2.2rem}
-    .report-management-rebuild-switch .custom-control-label{font-weight:800;color:#0f3f8c;cursor:pointer}
-    .report-management-rebuild-hint{margin-top:.1rem;color:#5f6f86;font-size:.84rem;line-height:1.55}
-    .report-management-stat-row{align-items:stretch}
-    .report-management-stat{display:flex;flex-direction:column;justify-content:space-between;height:100%;min-height:118px;padding:1.2rem 1.15rem;border-radius:22px;background:linear-gradient(180deg,#fff 0%,#fbfcfe 100%);border:1px solid rgba(148,163,184,.16);box-shadow:0 16px 34px -32px rgba(15,23,42,.28)}
-    .report-management-stat small{display:block;color:#64748b;font-size:.74rem;font-weight:800;text-transform:uppercase;letter-spacing:.1em;margin-bottom:.5rem}
-    .report-management-stat strong{display:block;color:#0f172a;font-size:1.08rem;font-weight:800;line-height:1.5;word-break:break-word}
-    .report-management-action-bar{display:flex;align-items:center;justify-content:flex-start;padding:1rem 1.05rem;border-radius:22px;background:linear-gradient(180deg,#ffffff 0%,#f8fafc 100%);border:1px solid rgba(226,232,240,.92);box-shadow:0 16px 34px -30px rgba(15,23,42,.24)}
-    .report-management-action-bar__group{display:flex;align-items:center;flex-wrap:wrap;gap:.85rem}
-    .report-management-notice{margin-top:.25rem;padding:.95rem 1rem;border-radius:18px;font-size:.92rem;line-height:1.65}
-    .report-management-notice--info{color:#0f3f8c;background:rgba(219,234,254,.72);border:1px solid rgba(96,165,250,.2)}
-    .report-management-notice--warning{color:#92400e;background:rgba(254,243,199,.78);border:1px solid rgba(251,191,36,.25)}
-    .report-management-load-card{padding:1rem 1.05rem;border-radius:20px;background:linear-gradient(180deg,#fcfdff 0%,#f1f7ff 100%);border:1px solid rgba(191,219,254,.72);box-shadow:0 18px 38px -32px rgba(29,78,216,.34)}
-    .report-management-load-card__header{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:.85rem}
-    .report-management-load-card__eyebrow{font-size:.72rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#1d4ed8}
-    .report-management-load-card__title{font-size:1rem;font-weight:800;color:#0f172a;line-height:1.4}
-    .report-management-load-card__stage{display:inline-flex;align-items:center;justify-content:center;min-width:108px;padding:.45rem .7rem;border-radius:999px;background:rgba(29,78,216,.08);color:#1d4ed8;font-size:.78rem;font-weight:800;letter-spacing:.04em;text-transform:uppercase}
-    .report-management-load-card__meta-row{display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-top:.65rem;flex-wrap:wrap}
-    .report-management-load-card__units{color:#475569;font-size:.86rem;font-weight:700}
-    .report-management-bulkbar{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;padding:.8rem 1rem;border-radius:16px;background:linear-gradient(180deg,#f8fafc 0%,#f1f5f9 100%);border:1px solid rgba(148,163,184,.2)}
-    .report-management-bulkbar__hint{font-size:.88rem;font-weight:600;color:#475569}
-    .report-management-table-wrap{border:1px solid rgba(148,163,184,.18);border-radius:22px;overflow:hidden;background:#fff}
-    .report-management-table thead th{background:linear-gradient(180deg,#f8fafc 0%,#eef4ff 100%);border-bottom:1px solid rgba(148,163,184,.18);color:#334155;font-size:.8rem;font-weight:800;letter-spacing:.04em;text-transform:uppercase;padding:1rem}
-    .report-management-table tbody td{padding:1rem;border-top:1px solid rgba(226,232,240,.8);vertical-align:middle}
-    .report-management-col-check{width:52px}
-    .report-management-primary{color:#0f172a;font-weight:700}
-    .report-management-count{display:inline-flex;align-items:center;justify-content:flex-end;min-width:72px;padding:.4rem .7rem;border-radius:999px;background:rgba(37,99,235,.08);color:#1d4ed8;font-weight:800}
-    .report-management-delete-btn{min-width:118px;border-radius:14px;font-weight:700}
-    .report-management-period-row td{padding:.9rem 1rem!important;background:linear-gradient(180deg,#f8fbff 0%,#f1f7ff 100%);border-top:1px solid rgba(191,219,254,.65)!important}
-    .report-management-period-card{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap}
-    .report-management-period-card__title{font-size:1rem;font-weight:800;color:#0f3f8c;letter-spacing:-.02em}
-    .report-management-period-card__meta{font-size:.84rem;font-weight:700;color:#64748b}
-    .report-management-period-card__toggle{display:inline-flex;align-items:center;gap:.55rem;margin:0;padding:.55rem .8rem;border-radius:999px;background:rgba(37,99,235,.08);color:#1d4ed8;font-weight:700;cursor:pointer}
-    .management-data-row{cursor:pointer;transition:background-color .18s ease,box-shadow .18s ease}
-    .management-data-row.is-selected{background:linear-gradient(180deg,rgba(219,234,254,.48) 0%,rgba(239,246,255,.78) 100%)}
-    .management-data-row:hover{background-color:rgba(248,250,252,.92)}
-    .report-management-pagination{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-top:1rem}
-    .report-management-pagination__meta{font-size:.9rem;font-weight:700;color:#475569}
-    .report-management-pagination__actions{display:flex;align-items:center;gap:.45rem;flex-wrap:wrap}
-    .report-management-page-btn{display:inline-flex;align-items:center;justify-content:center;min-width:40px;height:40px;padding:0 .8rem;border:1px solid rgba(148,163,184,.28);border-radius:12px;background:#fff;color:#334155;font-weight:800}
-    .report-management-page-btn.is-active{background:linear-gradient(135deg,#0f4c81,#1d4ed8);border-color:transparent;color:#fff;box-shadow:0 16px 32px -24px rgba(29,78,216,.55)}
-    .report-management-page-btn:disabled{opacity:.45;cursor:not-allowed}
-    .report-management-selection-toast-shell{position:fixed;right:1.5rem;bottom:1.5rem;z-index:1080;display:flex;justify-content:flex-end;align-items:flex-end;width:min(420px,calc(100vw - 3rem));max-width:calc(100vw - 3rem);margin:0;pointer-events:none}
-    .report-management-selection-toast{position:relative;display:flex;align-items:center;justify-content:space-between;gap:1rem;width:100%;max-width:100%;margin-left:auto;padding:1rem 1.05rem;border-radius:20px;background:linear-gradient(135deg,#0a4f8f 0%,#1166b1 52%,#0f82c9 100%);color:#fff;box-shadow:0 26px 60px -28px rgba(8,47,73,.58);border:1px solid rgba(191,219,254,.24);pointer-events:auto}
-    .report-management-selection-toast__body{min-width:0}
-    .report-management-selection-toast__eyebrow{font-size:.72rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:rgba(219,234,254,.88)}
-    .report-management-selection-toast__text{font-size:1rem;font-weight:800;line-height:1.35}
-    .report-management-selection-toast__subtext{font-size:.84rem;font-weight:600;color:rgba(239,246,255,.9)}
-    .report-management-selection-toast__actions{display:flex;align-items:center;gap:.55rem}
-    .report-management-selection-toast__btn{border-radius:12px;font-weight:800;padding:.65rem .95rem}
-    .report-management-selection-toast__btn--ghost{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.18);color:#fff}
-    .report-management-selection-toast__btn--danger{background:#fff;border:1px solid rgba(255,255,255,.18);color:#0f3f8c}
-    .report-management-progress{height:14px;border-radius:999px;background:linear-gradient(180deg,#dbe7ef 0%,#cfe0ea 100%);overflow:hidden;box-shadow:inset 0 1px 2px rgba(15,23,42,.08)}
-    .report-management-progress__bar{height:100%;font-weight:700;font-size:12px;line-height:14px;background:linear-gradient(90deg,#0f766e 0%,#147a72 55%,#1a8b80 100%);box-shadow:0 0 0 1px rgba(15,118,110,.05) inset;transition:width .45s cubic-bezier(.22,1,.36,1)}
-    .report-management-progress__bar--indeterminate{background-image:linear-gradient(90deg,#0f766e 0%,#147a72 30%,#5eead4 50%,#147a72 70%,#0f766e 100%);background-size:200% 100%;animation:reportManagementProgressShift 1.2s linear infinite}
-    .report-management-progress__value{display:inline-block;color:#0f172a;font-weight:800;letter-spacing:.04em}
-    .report-management-progress__text{color:#0f766e;font-weight:700;letter-spacing:.02em}
-    .report-management-progress__meta{display:block;color:#64748b;font-weight:600;letter-spacing:.01em;min-height:1.2rem}
-    @keyframes reportManagementProgressShift{0%{background-position:200% 0}100%{background-position:-200% 0}}
-    .swal-modern-popup{border:1px solid rgba(226,232,240,.95);border-radius:28px;padding:1.4rem 1.4rem 1.2rem;box-shadow:0 30px 80px -35px rgba(15,23,42,.35)}
-    .swal-modern-title{color:#0f172a;font-weight:800;letter-spacing:-.02em}
-    .swal-modern-html{color:#475569;font-size:.95rem;line-height:1.65}
-    .swal-modern-confirm,.swal-modern-cancel{display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:16px;font-weight:700;padding:.8rem 1.3rem}
-    .swal-modern-confirm{background:linear-gradient(135deg,#0f766e,#115e59);color:#fff;box-shadow:0 16px 34px -22px rgba(15,23,42,.45)}
-    .swal-modern-cancel{background:#e2e8f0;color:#334155;margin-left:.5rem}
-    @media (max-width:575.98px){.report-management-filter-btn{width:100%}.report-management-action-bar__group{width:100%}.report-management-filter-btn--primary,.report-management-filter-btn--danger{min-width:0}}
-    @media (max-width:767.98px){.report-management-hero,.import-upload-card__header{padding-left:1rem;padding-right:1rem}.import-upload-card__body{padding:1rem 1rem 7.5rem}.report-management-hero__title{font-size:1.15rem}.report-management-hero__badge,.report-management-rebuild-panel,.report-management-top-shell{width:100%}.report-management-top-shell{padding:1rem}.report-management-field-panel,.report-management-rebuild-panel,.report-management-action-bar,.report-management-stat,.report-management-load-card{border-radius:18px}.report-management-table thead th,.report-management-table tbody td{padding:.8rem}.report-management-bulkbar,.report-management-period-card,.report-management-selection-toast,.report-management-pagination,.report-management-load-card__header,.report-management-load-card__meta-row{align-items:flex-start}.report-management-period-card__toggle,.report-management-selection-toast,.report-management-selection-toast__actions,.report-management-load-card__stage{width:100%}.report-management-selection-toast-shell{left:1rem;right:1rem;bottom:1rem;width:calc(100vw - 2rem);max-width:calc(100vw - 2rem)}.report-management-selection-toast{flex-direction:column}}
+    .report-management-hero { position:relative; overflow:hidden; border-radius:16px; padding:1.75rem 2rem; background: radial-gradient(circle at top right, rgba(37,99,235,0.1) 0%, transparent 40%), linear-gradient(135deg, #f8fbff 0%, #eef4ff 100%); border:1px solid rgba(37,99,235,0.15); box-shadow:0 8px 16px -4px rgba(29,78,216,0.08); }
+    .report-management-hero__glow { position:absolute; top:-50px; right:-50px; width:200px; height:200px; border-radius:50%; background:rgba(56,189,248,0.2); filter:blur(30px); }
+    .report-management-hero__eyebrow { display:inline-block; margin-bottom:0.75rem; padding:0.35rem 0.85rem; border-radius:999px; font-size:0.75rem; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; color:#1d4ed8; background:rgba(255,255,255,0.8); border:1px solid rgba(37,99,235,0.15); box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
+    .report-management-hero__title { color:#0f172a; font-size:1.5rem; font-weight:800; letter-spacing:-0.02em; margin-bottom:0.5rem; }
+    .report-management-hero__text { color:#475569; font-size: 0.95rem; line-height:1.6; max-width:650px; }
+    .report-management-hero__badge { display:inline-flex; align-items:center; padding:0.6rem 1.25rem; border-radius:12px; background:#ffffff; border:1px solid rgba(226,232,240,0.8); color:#334155; font-size: 0.9rem; font-weight:600; box-shadow:0 4px 6px -1px rgba(0,0,0,0.05); }
+
+    .import-upload-card { border-radius:16px; overflow:hidden; box-shadow:0 10px 25px -5px rgba(15,23,42,0.08) !important; border: 1px solid rgba(226,232,240, 0.8) !important; }
+    .import-upload-card__header { padding:1.5rem 1.75rem 1rem; border-bottom: 1px solid rgba(226,232,240,0.5); background:#ffffff; }
+    .import-upload-card__eyebrow { display:inline-block; margin-bottom:0.5rem; padding:0.35rem 0.85rem; border-radius:999px; font-size:0.75rem; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; color:#2563eb; background:rgba(37,99,235,0.08); }
+    .import-upload-card__subtitle { color:#64748b; max-width:700px; line-height:1.6; font-size: 0.9rem; }
+    .import-upload-card__body { position:relative; padding:1.75rem 1.75rem 7rem; }
+
+    .report-management-top-shell { padding:1.25rem; border-radius:16px; background:#f8fafc; border:1px solid rgba(226,232,240,0.8); }
+    .report-management-top-grid { align-items:stretch; }
+    .report-management-field-panel { display:flex; flex-direction:column; justify-content:center; padding:1.5rem; border-radius:12px; background:#ffffff; border:1px solid rgba(226,232,240,0.8); box-shadow:0 4px 6px -1px rgba(0,0,0,0.02); }
+    .report-management-field-panel__eyebrow { display:inline-flex; align-items:center; align-self:flex-start; margin-bottom:0.75rem; padding:0.35rem 0.85rem; border-radius:999px; background:rgba(15,23,42,0.04); color:#475569; font-size:0.75rem; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; }
+    .report-management-field-panel__label { margin-bottom:0.75rem; color:#0f172a; font-size:0.95rem; font-weight:600; }
+
+    .report-management-rebuild-panel { display:flex; flex-direction:column; justify-content:space-between; padding:1.5rem; border-radius:12px; background:#ffffff; border:1px solid rgba(226,232,240,0.8); box-shadow:0 4px 6px -1px rgba(0,0,0,0.02); }
+    .report-management-rebuild-panel__topline { display:inline-flex; align-items:center; align-self:flex-start; padding:0.35rem 0.85rem; border-radius:999px; background:rgba(37,99,235,0.08); font-size:0.75rem; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; color:#2563eb; }
+    .report-management-rebuild-switch { padding-left:2.5rem; }
+    .report-management-rebuild-switch .custom-control-label { font-weight:600; color:#1e293b; cursor:pointer; font-size: 0.95rem; }
+    .report-management-rebuild-switch .custom-control-label::before, .report-management-rebuild-switch .custom-control-label::after { top: 0.15rem; left: -2.5rem; }
+    .report-management-rebuild-hint { color:#64748b; font-size:0.85rem; line-height:1.5; }
+
+    .report-management-filter-btn { min-height:44px; border-radius:10px; display:inline-flex; align-items:center; justify-content:center; font-weight:600; padding:0 1.5rem; font-size: 0.95rem; transition:all 0.2s ease; }
+    .report-management-filter-btn:hover:not(:disabled) { transform:translateY(-1px); box-shadow:0 4px 12px rgba(0,0,0,0.08); }
+    .report-management-filter-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+    .report-management-filter-btn--primary { min-width:180px; }
+    .report-management-filter-btn--danger { min-width:180px; }
+    .report-management-filter-btn--secondary { width:100%; border-width: 2px; }
+
+    .report-management-stat-row { align-items:stretch; }
+    .report-management-stat { display:flex; align-items:center; gap: 1rem; height:100%; padding:1.25rem; border-radius:12px; background:#ffffff; border:1px solid rgba(226,232,240,0.8); box-shadow:0 4px 6px -1px rgba(0,0,0,0.02); transition: border-color 0.2s; }
+    .report-management-stat:hover { border-color: rgba(148,163,184,0.5); }
+    .report-management-stat__icon { display:flex; align-items:center; justify-content:center; width:48px; height:48px; border-radius:12px; background:rgba(37,99,235,0.1); color:#2563eb; font-size: 1.25rem; flex-shrink: 0; }
+    .report-management-stat__icon--info { background:rgba(14,165,233,0.1); color:#0ea5e9; }
+    .report-management-stat__icon--success { background:rgba(16,185,129,0.1); color:#10b981; }
+    .report-management-stat__content { display:flex; flex-direction:column; justify-content:center; }
+    .report-management-stat small { color:#64748b; font-size:0.75rem; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:0.25rem; }
+    .report-management-stat strong { color:#0f172a; font-size:1.1rem; font-weight:700; line-height:1.2; word-break:break-word; }
+
+    .report-management-action-bar { display:flex; align-items:center; padding:1rem 1.25rem; border-radius:12px; background:#f8fafc; border:1px solid rgba(226,232,240,0.8); }
+    .report-management-action-bar__group { display:flex; align-items:center; flex-wrap:wrap; gap:1rem; }
+
+    .report-management-notice { padding:1rem 1.25rem; border-radius:12px; font-size:0.95rem; line-height:1.6; border-left: 4px solid transparent; }
+    .report-management-notice--info { color:#1e3a8a; background:#eff6ff; border-left-color: #3b82f6; }
+    .report-management-notice--warning { color:#78350f; background:#fffbeb; border-left-color: #f59e0b; }
+
+    .report-management-load-card { padding:1.25rem; border-radius:12px; background:#ffffff; border:1px solid #bfdbfe; box-shadow:0 4px 12px -2px rgba(37,99,235,0.1); }
+    .report-management-load-card__header { display:flex; align-items:flex-start; justify-content:space-between; gap:1rem; margin-bottom:1rem; }
+    .report-management-load-card__eyebrow { font-size:0.75rem; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; color:#2563eb; margin-bottom: 0.25rem; }
+    .report-management-load-card__title { font-size:1rem; font-weight:700; color:#0f172a; line-height:1.4; }
+    .report-management-load-card__stage { display:inline-flex; align-items:center; justify-content:center; padding:0.35rem 0.85rem; border-radius:999px; background:#eff6ff; color:#2563eb; font-size:0.8rem; font-weight:700; letter-spacing:0.02em; text-transform:uppercase; border: 1px solid #bfdbfe; }
+
+    .report-management-progress { height:12px; border-radius:999px; background:#e2e8f0; overflow:hidden; margin-bottom: 0.75rem; }
+    .report-management-progress__bar { height:100%; font-weight:700; font-size:10px; line-height:12px; background: linear-gradient(90deg, #0ea5e9, #2563eb); transition:width 0.3s ease; }
+    .report-management-progress__bar--indeterminate { background-image:linear-gradient(90deg, #e2e8f0 25%, #94a3b8 50%, #e2e8f0 75%); background-size:200% 100%; animation:reportManagementProgressShift 1.5s infinite linear; }
+
+    .report-management-load-card__meta-row { display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap; }
+    .report-management-progress__value { color:#0f172a; font-weight:700; font-size: 0.95rem; }
+    .report-management-load-card__units { color:#64748b; font-size:0.85rem; font-weight:600; }
+    .report-management-progress__text { color:#475569; font-size: 0.9rem; font-weight:600; }
+    .report-management-progress__meta { display:block; color:#94a3b8; font-size: 0.85rem; font-weight:500; min-height:1.2rem; }
+
+    .report-management-bulkbar { display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap; padding:1rem 1.25rem; border-radius:12px; background:#f8fafc; border:1px solid rgba(226,232,240,0.8); }
+    .report-management-bulkbar .form-check-label { font-weight:600; color:#1e293b; cursor: pointer; }
+    .report-management-bulkbar__hint { font-size:0.85rem; font-weight:500; color:#64748b; }
+
+    .report-management-table-wrap { border:1px solid rgba(226,232,240,0.8); border-radius:12px; overflow:hidden; background:#fff; box-shadow:0 2px 4px -1px rgba(0,0,0,0.02); }
+    .report-management-table thead th { background:#f8fafc; border-bottom:1px solid rgba(226,232,240,0.8); color:#475569; font-size:0.8rem; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; padding:1rem 1.25rem; }
+    .report-management-table tbody td { padding:1rem 1.25rem; border-top:1px solid rgba(226,232,240,0.5); vertical-align:middle; color:#334155; font-size: 0.95rem; }
+    .report-management-col-check { width:60px; }
+    .report-management-primary { color:#0f172a; font-weight:600; }
+    .report-management-count { display:inline-flex; align-items:center; justify-content:center; min-width:60px; padding:0.35rem 0.75rem; border-radius:999px; background:#eff6ff; color:#2563eb; font-size: 0.85rem; font-weight:700; border: 1px solid #bfdbfe; }
+
+    .report-management-period-row td { padding:0.75rem 1.25rem !important; background:#f8fafc !important; border-top:1px solid rgba(226,232,240,0.8) !important; border-bottom:1px solid rgba(226,232,240,0.8) !important; }
+    .report-management-period-card { display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap; }
+    .report-management-period-card__title { font-size:0.95rem; font-weight:700; color:#1e293b; }
+    .report-management-period-card__meta { font-size:0.85rem; font-weight:600; color:#64748b; }
+    .report-management-period-card__toggle { display:inline-flex; align-items:center; gap:0.5rem; margin:0; padding:0.4rem 0.85rem; border-radius:999px; background:#ffffff; border: 1px solid rgba(226,232,240,0.8); color:#475569; font-size: 0.85rem; font-weight:600; cursor:pointer; transition: all 0.2s; }
+    .report-management-period-card__toggle:hover { background: #f1f5f9; color: #0f172a; }
+
+    .management-data-row { cursor:pointer; transition:background-color 0.15s ease; }
+    .management-data-row.is-selected { background-color: #eff6ff; }
+    .management-data-row:hover { background-color: #f8fafc; }
+
+    .report-management-pagination { display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap; margin-top:1.5rem; padding: 0 0.5rem; }
+    .report-management-pagination__meta { font-size:0.9rem; font-weight:500; color:#64748b; }
+    .report-management-pagination__actions { display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap; }
+    .report-management-page-btn { display:inline-flex; align-items:center; justify-content:center; min-width:36px; height:36px; padding:0 0.75rem; border:1px solid rgba(226,232,240,0.8); border-radius:8px; background:#ffffff; color:#475569; font-weight:600; font-size: 0.9rem; transition: all 0.2s; }
+    .report-management-page-btn:hover:not(:disabled) { background: #f8fafc; border-color: #cbd5e1; }
+    .report-management-page-btn.is-active { background:#2563eb; border-color:#2563eb; color:#ffffff; }
+    .report-management-page-btn:disabled { opacity:0.5; cursor:not-allowed; }
+
+    .report-management-selection-toast-shell { position:fixed; right:2rem; bottom:2rem; z-index:1080; display:flex; justify-content:flex-end; align-items:flex-end; width:min(400px,calc(100vw - 4rem)); max-width:calc(100vw - 4rem); pointer-events:none; }
+    .report-management-selection-toast { position:relative; display:flex; align-items:center; justify-content:space-between; gap:1rem; width:100%; padding:1.25rem; border-radius:16px; background:#1e293b; color:#ffffff; box-shadow:0 10px 25px -5px rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.1); pointer-events:auto; }
+    .report-management-selection-toast__body { min-width:0; }
+    .report-management-selection-toast__eyebrow { font-size:0.75rem; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; color:#94a3b8; margin-bottom: 0.25rem; }
+    .report-management-selection-toast__text { font-size:1rem; font-weight:700; line-height:1.4; color: #f8fafc; }
+    .report-management-selection-toast__subtext { font-size:0.85rem; font-weight:500; color:#cbd5e1; }
+    .report-management-selection-toast__actions { display:flex; align-items:center; gap:0.5rem; }
+    .report-management-selection-toast__btn { border-radius:10px; font-weight:600; padding:0.6rem 1rem; font-size: 0.9rem; transition: all 0.2s; }
+    .report-management-selection-toast__btn--ghost { background:transparent; border:1px solid rgba(255,255,255,0.2); color:#f8fafc; }
+    .report-management-selection-toast__btn--ghost:hover:not(:disabled) { background:rgba(255,255,255,0.1); }
+    .report-management-selection-toast__btn--danger { background:#ef4444; border:1px solid #ef4444; color:#ffffff; }
+    .report-management-selection-toast__btn--danger:hover:not(:disabled) { background:#dc2626; }
+
+    @keyframes reportManagementProgressShift { 0% { background-position:200% 0; } 100% { background-position:-200% 0; } }
+
+    .swal-modern-popup { border-radius:16px; padding:1.5rem; box-shadow:0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1); }
+    .swal-modern-title { color:#0f172a; font-weight:700; font-size: 1.25rem; }
+    .swal-modern-html { color:#475569; font-size:0.95rem; line-height:1.6; }
+    .swal-modern-confirm, .swal-modern-cancel { border-radius:10px; font-weight:600; padding:0.75rem 1.5rem; font-size: 0.95rem; }
+    .swal-modern-confirm { background:#2563eb; color:#ffffff; }
+    .swal-modern-cancel { background:#f1f5f9; color:#475569; }
+
+    @media (max-width:991.98px) {
+        .report-management-top-grid > div { margin-bottom: 1rem; }
+        .report-management-top-grid > div:last-child { margin-bottom: 0; }
+    }
+
+    @media (max-width:767.98px) {
+        .report-management-hero, .import-upload-card__header { padding-left:1.25rem; padding-right:1.25rem; }
+        .import-upload-card__body { padding:1.25rem 1.25rem 6rem; }
+        .report-management-stat { flex-direction: row; gap: 1rem; }
+        .report-management-stat__icon { width: 40px; height: 40px; font-size: 1rem; }
+        .report-management-action-bar { flex-direction: column; align-items: stretch; gap: 1rem; }
+        .report-management-action-bar__group { flex-direction: column; align-items: stretch; }
+        .report-management-filter-btn { width: 100%; min-width: 0; }
+        .report-management-selection-toast-shell { left:1rem; right:1rem; bottom:1rem; width:calc(100vw - 2rem); max-width:calc(100vw - 2rem); }
+        .report-management-selection-toast { flex-direction:column; align-items: stretch; text-align: center; }
+        .report-management-selection-toast__actions { justify-content: center; margin-top: 0.5rem; }
+    }
 </style>
 @endsection

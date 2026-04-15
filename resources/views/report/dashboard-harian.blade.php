@@ -7,9 +7,9 @@
     .daily-dashboard {
         --daily-no-width: 64px;
         --daily-label-width: 280px;
-        --daily-position-width: 132px;
-        --daily-delta-width: 112px;
-        --daily-rka-width: 132px;
+        --daily-position-width: 142px;
+        --daily-delta-width: 122px;
+        --daily-rka-width: 142px;
         --daily-border: rgba(8, 87, 195, 0.14);
         --daily-muted: #5d7b9d;
         --daily-nusantara: #0857c3;
@@ -133,9 +133,10 @@
     }
 
     .daily-table {
-        table-layout: fixed;
-        min-width: 1736px;
-        width: 100%;
+        min-width: 1846px;
+        width: max-content;
+        border-collapse: separate;
+        border-spacing: 0;
         margin-bottom: 0;
         table-layout: fixed;
     }
@@ -144,6 +145,8 @@
     .daily-table td {
         white-space: nowrap;
         vertical-align: middle;
+        box-sizing: border-box;
+        background-clip: padding-box;
     }
 
     .daily-table thead th {
@@ -238,7 +241,8 @@
     .daily-table tbody tr.metric-block-casa .sticky-label,
     .daily-table tbody tr.metric-block-ldr .sticky-no,
     .daily-table tbody tr.metric-block-ldr .sticky-label {
-        background: linear-gradient(90deg, rgba(5, 150, 105, 0.12), rgba(5, 150, 105, 0.05));
+        background-color: #ffffff;
+        background-image: linear-gradient(90deg, rgba(5, 150, 105, 0.12), rgba(5, 150, 105, 0.05));
     }
 
     .daily-table tbody tr.metric-block-simpanan:hover td,
@@ -255,7 +259,7 @@
         left: 0;
         width: var(--daily-no-width);
         min-width: var(--daily-no-width);
-        z-index: 9;
+        z-index: 10;
         background: #ffffff;
         box-shadow: 8px 0 16px -16px rgba(4, 42, 95, 0.35);
         border-right: 1px solid rgba(8, 87, 195, 0.12);
@@ -267,11 +271,19 @@
         left: var(--daily-no-width);
         width: var(--daily-label-width);
         min-width: var(--daily-label-width);
-        z-index: 8;
+        z-index: 9;
         background: #ffffff;
         box-shadow: 8px 0 16px -16px rgba(4, 42, 95, 0.28);
         border-right: 1px solid rgba(8, 87, 195, 0.12);
         overflow: hidden;
+    }
+
+    .daily-table thead .sticky-no {
+        z-index: 15;
+    }
+
+    .daily-table thead .sticky-label {
+        z-index: 14;
     }
 
     .daily-table .header-subnote {
@@ -291,12 +303,26 @@
         max-width: var(--daily-position-width);
         font-variant-numeric: tabular-nums;
         letter-spacing: 0.01em;
-        padding-left: 0.28rem;
-        padding-right: 0.28rem;
+        padding-left: 0.4rem;
+        padding-right: 0.4rem;
         overflow: hidden;
         text-overflow: ellipsis;
-        text-align: center;
+        text-align: right;
         white-space: nowrap;
+    }
+
+    .daily-table td.value-col {
+        position: relative;
+        z-index: 1;
+    }
+
+    .daily-table .cell-text {
+        display: inline-block;
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        vertical-align: middle;
     }
 
     .daily-table th.value-col.delta-col,
@@ -356,6 +382,15 @@
         color: #0b3b80;
     }
 
+    .daily-table tbody tr.metric-block-simpanan td.value-col .cell-text,
+    .daily-table tbody tr.metric-block-os td.value-col .cell-text,
+    .daily-table tbody tr.metric-block-sml td.value-col .cell-text,
+    .daily-table tbody tr.metric-block-npl td.value-col .cell-text,
+    .daily-table tbody tr.metric-block-casa td.value-col .cell-text,
+    .daily-table tbody tr.metric-block-ldr td.value-col .cell-text {
+        font-size: 0.66rem;
+    }
+
     .daily-table .metric-label {
         display: block;
         white-space: nowrap;
@@ -412,7 +447,7 @@
     }
 
     .daily-table-sticky-spacer {
-        min-width: 1736px;
+        min-width: 1846px;
         height: 1px;
     }
 
@@ -425,13 +460,13 @@
     @media (max-width: 575.98px) {
         .daily-dashboard {
             --daily-label-width: 220px;
-            --daily-position-width: 104px;
-            --daily-delta-width: 104px;
-            --daily-rka-width: 104px;
+            --daily-position-width: 114px;
+            --daily-delta-width: 110px;
+            --daily-rka-width: 114px;
         }
 
         .daily-table col.numeric-col {
-            width: 104px !important;
+            width: 114px !important;
         }
 
         .daily-kpi-grid {
@@ -534,17 +569,17 @@
                 <colgroup>
                     <col style="width: 64px;">
                     <col style="width: 280px;">
-                    <col style="width: 132px;" class="numeric-col">
-                    <col style="width: 132px;" class="numeric-col">
-                    <col style="width: 132px;" class="numeric-col">
-                    <col style="width: 132px;" class="numeric-col">
-                    <col style="width: 132px;" class="numeric-col position-col-h1">
-                    <col style="width: 132px;" class="numeric-col">
-                    <col style="width: 112px;" class="numeric-col">
-                    <col style="width: 112px;" class="numeric-col">
-                    <col style="width: 112px;" class="numeric-col">
-                    <col style="width: 132px;" class="numeric-col">
-                    <col style="width: 132px;" class="numeric-col">
+                    <col style="width: 142px;" class="numeric-col">
+                    <col style="width: 142px;" class="numeric-col">
+                    <col style="width: 142px;" class="numeric-col">
+                    <col style="width: 142px;" class="numeric-col">
+                    <col style="width: 142px;" class="numeric-col position-col-h1">
+                    <col style="width: 142px;" class="numeric-col">
+                    <col style="width: 122px;" class="numeric-col">
+                    <col style="width: 122px;" class="numeric-col">
+                    <col style="width: 122px;" class="numeric-col">
+                    <col style="width: 142px;" class="numeric-col">
+                    <col style="width: 142px;" class="numeric-col">
                 </colgroup>
                 <thead>
                     <tr class="group-row text-center">
@@ -787,21 +822,21 @@
 
                 rowCells.push('<td class="sticky-no text-center font-weight-bold">' + (index + 1) + '</td>');
                 rowCells.push('<td class="sticky-label text-left"><span class="metric-label" title="' + escapeHtml(row.label) + '">' + escapeHtml(row.label) + '</span></td>');
-                rowCells.push('<td class="value-col position-col">' + formatValue(value.yoy, row.type) + '</td>');
-                rowCells.push('<td class="value-col position-col">' + formatValue(value.ytd, row.type) + '</td>');
-                rowCells.push('<td class="value-col position-col">' + formatValue(value.mtm, row.type) + '</td>');
-                rowCells.push('<td class="value-col position-col">' + formatValue(value.mtd, row.type) + '</td>');
+                rowCells.push('<td class="value-col position-col"><span class="cell-text">' + formatValue(value.yoy, row.type) + '</span></td>');
+                rowCells.push('<td class="value-col position-col"><span class="cell-text">' + formatValue(value.ytd, row.type) + '</span></td>');
+                rowCells.push('<td class="value-col position-col"><span class="cell-text">' + formatValue(value.mtm, row.type) + '</span></td>');
+                rowCells.push('<td class="value-col position-col"><span class="cell-text">' + formatValue(value.mtd, row.type) + '</span></td>');
 
                 if (hasH1) {
-                    rowCells.push('<td class="value-col position-col position-col-h1" data-position-col="h1">' + formatValue(value.h1, row.type) + '</td>');
+                    rowCells.push('<td class="value-col position-col position-col-h1" data-position-col="h1"><span class="cell-text">' + formatValue(value.h1, row.type) + '</span></td>');
                 }
 
-                rowCells.push('<td class="value-col position-col metric-value">' + formatValue(value.current, row.type) + '</td>');
-                rowCells.push('<td class="value-col delta-col ' + deltaClass(delta.yoy) + '">' + formatValue(delta.yoy, row.type) + '</td>');
-                rowCells.push('<td class="value-col delta-col ' + deltaClass(delta.ytd) + '">' + formatValue(delta.ytd, row.type) + '</td>');
-                rowCells.push('<td class="value-col delta-col ' + deltaClass(delta.dtd) + '">' + formatValue(delta.dtd, row.type) + '</td>');
-                rowCells.push('<td class="value-col rka-col">' + formatValue(value.rka, row.type) + '</td>');
-                rowCells.push('<td class="value-col rka-col">' + formatValue(value.rka_dec, row.type) + '</td>');
+                rowCells.push('<td class="value-col position-col metric-value"><span class="cell-text">' + formatValue(value.current, row.type) + '</span></td>');
+                rowCells.push('<td class="value-col delta-col ' + deltaClass(delta.yoy) + '"><span class="cell-text">' + formatValue(delta.yoy, row.type) + '</span></td>');
+                rowCells.push('<td class="value-col delta-col ' + deltaClass(delta.ytd) + '"><span class="cell-text">' + formatValue(delta.ytd, row.type) + '</span></td>');
+                rowCells.push('<td class="value-col delta-col ' + deltaClass(delta.dtd) + '"><span class="cell-text">' + formatValue(delta.dtd, row.type) + '</span></td>');
+                rowCells.push('<td class="value-col rka-col"><span class="cell-text">' + formatValue(value.rka, row.type) + '</span></td>');
+                rowCells.push('<td class="value-col rka-col"><span class="cell-text">' + formatValue(value.rka_dec, row.type) + '</span></td>');
 
                 const rowClasses = ['row-depth-' + row.depth];
                 if (blockClassMap[row.key]) {

@@ -287,7 +287,7 @@ class ReportSnapshotBuilder
             FROM daily_loan_dinamis
             WHERE periode = ?
                 AND nomor_rekening1 IS NOT NULL
-                AND TRIM(nomor_rekening1) <> ''
+                AND nomor_rekening1 <> ''
             ON DUPLICATE KEY UPDATE
                 loan_balance = VALUES(loan_balance),
                 quality_bucket = VALUES(quality_bucket),
@@ -307,7 +307,7 @@ class ReportSnapshotBuilder
                 FROM daily_loan_dinamis
                 WHERE periode = ?
                     AND nomor_rekening1 IS NOT NULL
-                    AND TRIM(nomor_rekening1) <> ''
+                    AND nomor_rekening1 <> ''
             ) src ON src.uniqueid_dps = snap.uniqueid_dps
             WHERE snap.periode = ?
                 AND src.uniqueid_dps IS NULL
@@ -570,7 +570,7 @@ class ReportSnapshotBuilder
                     WHERE posisi = ?
                         AND status = '9'
                         AND kantor_cabang IS NOT NULL
-                        AND TRIM(kantor_cabang) <> ''
+                        AND kantor_cabang <> ''
                 ) normalized
                 GROUP BY normalized.raw_branch, normalized.unit_kerja
             ) base
@@ -599,7 +599,7 @@ class ReportSnapshotBuilder
                         WHERE posisi = ?
                             AND status = '9'
                             AND kantor_cabang IS NOT NULL
-                            AND TRIM(kantor_cabang) <> ''
+                            AND kantor_cabang <> ''
                     ) normalized
                     GROUP BY normalized.raw_branch, normalized.unit_kerja
                 ) base
@@ -846,8 +846,10 @@ class ReportSnapshotBuilder
             ->where('d.periode', $loanPeriod)
             ->whereNotNull("d.{$loanKeyColumn}")
             ->where("d.{$loanKeyColumn}", '<>', '')
-            ->whereRaw("TRIM(COALESCE(d.{$loanBranchColumn}, '')) <> ''")
-            ->whereRaw("TRIM(COALESCE(d.{$loanUkerColumn}, '')) <> ''")
+            ->whereNotNull("d.{$loanBranchColumn}")
+            ->where("d.{$loanBranchColumn}", '<>', '')
+            ->whereNotNull("d.{$loanUkerColumn}")
+            ->where("d.{$loanUkerColumn}", '<>', '')
             ->selectRaw("
                 UPPER(TRIM(d.{$loanBranchColumn})) as source_branch_key,
                 UPPER(TRIM(d.{$loanUkerColumn})) as uker_key,

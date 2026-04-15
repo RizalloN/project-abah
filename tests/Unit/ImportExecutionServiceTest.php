@@ -55,6 +55,7 @@ class ImportExecutionServiceTest extends TestCase
                 ],
             ]);
         $progressService->shouldReceive('purgeStaleQueuedJobs')->twice()->andReturn(0);
+        $progressService->shouldReceive('purgeStaleProcessingJobs')->twice()->andReturn(0);
         $progressService->shouldReceive('purgeQueuedImportJobsForQueues')
             ->twice()
             ->with(
@@ -121,6 +122,7 @@ class ImportExecutionServiceTest extends TestCase
                 ],
             ]);
         $progressService->shouldReceive('purgeStaleQueuedJobs')->once()->andReturn(1);
+        $progressService->shouldReceive('purgeStaleProcessingJobs')->once()->andReturn(0);
         $progressService->shouldReceive('purgeQueuedImportJobsForQueues')
             ->once()
             ->with(
@@ -187,6 +189,7 @@ class ImportExecutionServiceTest extends TestCase
                 ],
             ]);
         $progressService->shouldReceive('purgeStaleQueuedJobs')->once()->andReturn(0);
+        $progressService->shouldReceive('purgeStaleProcessingJobs')->once()->andReturn(0);
         $progressService->shouldReceive('purgeQueuedImportJobsForQueues')
             ->once()
             ->with(
@@ -237,6 +240,8 @@ class ImportExecutionServiceTest extends TestCase
                 ],
                 'headers' => ['PERIODE'],
             ]);
+        $progressService->shouldReceive('purgeStaleProcessingJobs')->once()->andReturn(0);
+        $progressService->shouldReceive('isTerminationRequested')->once()->with(99)->andReturnFalse();
         $progressService->shouldReceive('findJob')
             ->once()
             ->with(99)

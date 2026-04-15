@@ -103,7 +103,7 @@ class ReportDataSyncService
                 default => null,
             };
 
-            WarmReportCacheJob::dispatch()->onQueue('reports-low');
+            WarmReportCacheJob::dispatch()->onQueue((string) config('queue.report_queue', 'default'));
 
         } catch (Throwable $e) {
             $this->writeAudit($normalizedTable, $periodHint, $jobId, $source, 'snapshot_sync', 'failed', [
@@ -575,4 +575,3 @@ class ReportDataSyncService
         }
     }
 }
-

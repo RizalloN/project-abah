@@ -19,6 +19,7 @@ class ImportExecutionService
     private const DISPATCHED_TTL_HOURS = 6;
     private const STALE_QUEUED_MINUTES = 10;
     private const INLINE_FALLBACK_GRACE_SECONDS = 3;
+    private const TERMINATION_EXCEPTION_PREFIX = 'import_job_terminated_by_request:';
 
     public function __construct(
         private readonly ImportProgressService $progressService,
@@ -32,7 +33,7 @@ class ImportExecutionService
         }
 
         $job = $this->progressService->findJob($jobId);
-        if (!$job || in_array($job->status, ['processing', 'completed', 'failed', 'failed_partial'], true)) {
+        if (!$job || in_array($job->status, ['processing', 'completed', 'failed', 'failed_partial', 'terminated'], true)) {
             $this->releaseDispatchMarker($jobId);
             return false;
         }
@@ -41,7 +42,7 @@ class ImportExecutionService
         $this->progressService->purgeStaleProcessingJobs();
 
         $job = $this->progressService->findJob($jobId);
-        if (!$job || in_array($job->status, ['processing', 'completed', 'failed', 'failed_partial'], true)) {
+        if (!$job || in_array($job->status, ['processing', 'completed', 'failed', 'failed_partial', 'terminated'], true)) {
             $this->releaseDispatchMarker($jobId);
             return false;
         }
@@ -59,7 +60,7 @@ class ImportExecutionService
                 self::STALE_QUEUED_MINUTES
             );
             $job = $this->progressService->findJob($jobId);
-            if (!$job || in_array($job->status, ['processing', 'completed', 'failed', 'failed_partial'], true)) {
+            if (!$job || in_array($job->status, ['processing', 'completed', 'failed', 'failed_partial', 'terminated'], true)) {
                 $this->releaseDispatchMarker($jobId);
                 return false;
             }
@@ -211,7 +212,7 @@ class ImportExecutionService
 
                     $send('progress', $payload);
 
-                    if (in_array($payload['status'] ?? '', ['completed', 'failed', 'failed_partial'], true)) {
+                    if (in_array($payload['status'] ?? '', ['completed', 'failed', 'failed_partial', 'terminated'], true)) {
                         $event = ($payload['status'] ?? '') === 'completed' ? 'complete' : 'error';
                         $send($event, $payload);
                         break;
@@ -248,6 +249,12 @@ class ImportExecutionService
         $this->progressService->purgeStaleProcessingJobs();
 
         $job = $this->progressService->findJob($jobId);
+        if ($this->progressService->isTerminationRequested($jobId)) {
+            $this->terminateRequestedJob($jobId);
+            $this->releaseDispatchMarker($jobId);
+            return;
+        }
+
         if (!$job) {
             $this->releaseDispatchMarker($jobId);
             return;
@@ -308,6 +315,9 @@ class ImportExecutionService
                 'params' => $params,
                 'headers' => $headers,
             ], function (string $event, array $payload) use ($jobId, $streamSend): void {
+                if ($this->progressService->isTerminationRequested($jobId)) {
+                    throw new \RuntimeException(self::TERMINATION_EXCEPTION_PREFIX . $jobId);
+                }
                 $status = match ($event) {
                     'complete' => 'completed',
                     'error' => 'failed',
@@ -318,6 +328,10 @@ class ImportExecutionService
 
                 if ($streamSend !== null) {
                     $streamSend($event, $cachedPayload);
+                }
+
+                if ($this->progressService->isTerminationRequested($jobId)) {
+                    throw new \RuntimeException(self::TERMINATION_EXCEPTION_PREFIX . $jobId);
                 }
             });
 
@@ -344,13 +358,13 @@ class ImportExecutionService
                         'percent' => 100,
                     ],
                 );
-                SyncImportedReportJob::dispatch($jobId, null, null, static::class)->onQueue('reports-low');
+                SyncImportedReportJob::dispatch($jobId, null, null, static::class)->onQueue((string) config('queue.report_queue', 'default'));
                 $this->releaseDispatchMarker($jobId);
                 return;
             }
 
             if ($status === 'failed_partial' && (int) ($result['total_success'] ?? 0) > 0) {
-                SyncImportedReportJob::dispatch($jobId, null, null, static::class)->onQueue('reports-low');
+                SyncImportedReportJob::dispatch($jobId, null, null, static::class)->onQueue((string) config('queue.report_queue', 'default'));
             }
 
             $this->progressService->markFailed(
@@ -359,6 +373,22 @@ class ImportExecutionService
                 (int) ($result['total_success'] ?? 0),
                 (int) ($result['total_failed'] ?? 0),
                 $status
+            );
+            $this->releaseDispatchMarker($jobId);
+        } catch (\Throwable $e) {
+            if ($this->isTerminationException($e) || $this->progressService->isTerminationRequested($jobId)) {
+                $this->terminateRequestedJob($jobId);
+                $this->releaseDispatchMarker($jobId);
+                return;
+            }
+
+            $job = $this->progressService->findJob($jobId);
+            $this->progressService->markFailed(
+                $jobId,
+                'Worker import gagal: ' . $e->getMessage(),
+                (int) ($job->total_success ?? 0),
+                (int) ($job->total_failed ?? 0),
+                ((int) ($job->total_success ?? 0) > 0 || (int) ($job->total_failed ?? 0) > 0) ? 'failed_partial' : 'failed'
             );
             $this->releaseDispatchMarker($jobId);
         } finally {
@@ -405,5 +435,24 @@ class ImportExecutionService
         } catch (\Throwable) {
             return true;
         }
+    }
+
+    private function isTerminationException(\Throwable $e): bool
+    {
+        return str_starts_with($e->getMessage(), self::TERMINATION_EXCEPTION_PREFIX);
+    }
+
+    private function terminateRequestedJob(int $jobId): void
+    {
+        $job = $this->progressService->findJob($jobId);
+        $success = (int) ($job->total_success ?? 0);
+        $failed = (int) ($job->total_failed ?? 0);
+
+        $this->progressService->markTerminated(
+            $jobId,
+            'Job dihentikan melalui Job Management.',
+            $success,
+            $failed
+        );
     }
 }

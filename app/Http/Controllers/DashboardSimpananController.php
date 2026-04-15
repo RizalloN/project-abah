@@ -553,7 +553,7 @@ class DashboardSimpananController extends Controller
             if ($lock->get()) {
                 if (Cache::add($pendingKey, now()->toIso8601String(), now()->addMinutes(10))) {
                     EnsureDashboardSimpananSnapshotJob::dispatch($period, static::class . '::hasSimpananSnapshot')
-                        ->onQueue('reports-low');
+                        ->onQueue((string) config('queue.report_queue', 'default'));
                     $jobDispatched = true;
                 }
             }
