@@ -763,7 +763,7 @@ class ImportReportPhController extends Controller
                 ]);
 
                 $extraPaths = $workingPath !== $absolutePath ? [$workingPath] : [];
-                $this->cleanupSuccessfulImportArtifacts($jobId, $relativePath, $extraPaths);
+                $this->cleanupSuccessfulImportArtifacts($jobId, $relativePath, $context['periode'] ?? null, $extraPaths);
 
                 $send('progress', [
                     'percent' => 98,
@@ -977,7 +977,8 @@ class ImportReportPhController extends Controller
             throw new \RuntimeException('Baris header CSV ' . self::REPORT_LABEL . ' tidak ditemukan.');
         }
 
-        $periode = $this->findPeriodeValue($path, $structure['header_row']['line_number'], $structure['parsed_headers'], $delimiter);
+        $periode = $this->findPeriodeValue($path, $structure['header_row']['line_number'], $structure['parsed_headers'], $delimiter)
+            ?? $this->findPeriodeValueFromMetadata($sampleRows, $structure['header_row']['line_number']);
 
         return [
             'delimiter' => $delimiter,
@@ -1109,6 +1110,28 @@ class ImportReportPhController extends Controller
         return null;
     }
 
+    private function findPeriodeValueFromMetadata(array $sampleRows, int $headerLineNumber): ?string
+    {
+        foreach ($sampleRows as $row) {
+            if (($row['line_number'] ?? 0) >= $headerLineNumber) {
+                continue;
+            }
+
+            $line = (string) ($row['line'] ?? '');
+            if ($line === '') {
+                continue;
+            }
+
+            if (preg_match('/periode\s*data\s*:\s*([^,]+)/i', $line, $matches) !== 1) {
+                continue;
+            }
+
+            return $this->normalizeDateValue($matches[1] ?? null);
+        }
+
+        return null;
+    }
+
     private function countFilteredRows(string $path, array $context, array $activeFilters, array $selectedColumns): int
     {
         $handle = fopen($path, 'r');
@@ -1183,7 +1206,17 @@ class ImportReportPhController extends Controller
 
     private function alignDataRowWithHeaders(array $sourceHeaders, array $data): ?array
     {
-        if (count($data) !== count($sourceHeaders)) {
+        $headerCount = count($sourceHeaders);
+        $dataCount = count($data);
+
+        if ($dataCount < $headerCount) {
+            // CSV export PH sering menghilangkan kolom kosong di ujung baris, mis. `FLAG_KLAIM,CLMAMT,CLMAPR` => `Y,,`.
+            // Padding menjaga preview/import tetap membaca row valid dengan trailing empty cells.
+            $data = array_pad($data, $headerCount, '');
+            $dataCount = count($data);
+        }
+
+        if ($dataCount !== $headerCount) {
             return null;
         }
 
@@ -1267,7 +1300,11 @@ class ImportReportPhController extends Controller
             return null;
         }
 
-        if (is_int($value) || is_float($value)) {
+        if (is_int($value)) {
+            return $value . '.00';
+        }
+
+        if (is_float($value)) {
             return number_format((float) $value, 2, '.', '');
         }
 
@@ -1283,39 +1320,68 @@ class ImportReportPhController extends Controller
             return null;
         }
 
-        $hasComma = str_contains($value, ',');
-        $hasDot = str_contains($value, '.');
-
-        if ($hasComma && $hasDot) {
-            if (strrpos($value, ',') > strrpos($value, '.')) {
-                $value = str_replace('.', '', $value);
-                $value = str_replace(',', '.', $value);
-            } else {
-                $value = str_replace(',', '', $value);
-            }
-        } elseif ($hasComma) {
-            $parts = explode(',', $value);
-            $lastPart = end($parts);
-
-            if (count($parts) > 2 || strlen((string) $lastPart) === 3) {
-                $value = str_replace(',', '', $value);
-            } else {
-                $value = str_replace(',', '.', $value);
-            }
-        } elseif ($hasDot) {
-            $parts = explode('.', $value);
-            $lastPart = end($parts);
-
-            if (count($parts) > 2 || strlen((string) $lastPart) === 3) {
-                $value = str_replace('.', '', $value);
-            }
-        }
-
-        if (!is_numeric($value)) {
+        $negative = str_starts_with($value, '-');
+        $unsignedValue = ltrim($value, '-');
+        if ($unsignedValue === '') {
             return null;
         }
 
-        return number_format((float) $value, 2, '.', '');
+        $hasComma = str_contains($value, ',');
+        $hasDot = str_contains($value, '.');
+        $decimalSeparator = null;
+
+        if ($hasComma && $hasDot) {
+            $decimalSeparator = strrpos($unsignedValue, ',') > strrpos($unsignedValue, '.') ? ',' : '.';
+        } elseif ($hasComma) {
+            $parts = explode(',', $unsignedValue);
+            $lastPart = (string) end($parts);
+
+            if (count($parts) === 2 && strlen($lastPart) > 0 && strlen($lastPart) <= 2) {
+                $decimalSeparator = ',';
+            }
+        } elseif ($hasDot) {
+            $parts = explode('.', $unsignedValue);
+            $lastPart = (string) end($parts);
+
+            if (count($parts) === 2 && strlen($lastPart) > 0 && strlen($lastPart) <= 2) {
+                $decimalSeparator = '.';
+            }
+        }
+
+        if ($decimalSeparator !== null) {
+            [$intPart, $decimalPart] = explode($decimalSeparator, $unsignedValue, 2);
+            $intPart = preg_replace('/[,.]/', '', $intPart);
+            $decimalPart = preg_replace('/[,.]/', '', $decimalPart);
+        } else {
+            $intPart = preg_replace('/[,.]/', '', $unsignedValue);
+            $decimalPart = '';
+        }
+
+        $intPart = preg_replace('/\D/', '', (string) $intPart);
+        $decimalPart = preg_replace('/\D/', '', (string) $decimalPart);
+
+        if ($intPart === '' && $decimalPart === '') {
+            return null;
+        }
+
+        if ($intPart === '') {
+            $intPart = '0';
+        }
+
+        if ($decimalPart === '') {
+            $decimalPart = '00';
+        } elseif (strlen($decimalPart) === 1) {
+            $decimalPart .= '0';
+        } elseif (strlen($decimalPart) > 2) {
+            return number_format((float) (($negative ? '-' : '') . $intPart . '.' . $decimalPart), 2, '.', '');
+        }
+
+        $normalizedIntPart = ltrim($intPart, '0');
+        if ($normalizedIntPart === '') {
+            $normalizedIntPart = '0';
+        }
+
+        return ($negative ? '-' : '') . $normalizedIntPart . '.' . $decimalPart;
     }
 
     private function passesFilters(array $row, array $activeFilters): bool
@@ -1396,10 +1462,10 @@ class ImportReportPhController extends Controller
         }
     }
 
-    private function cleanupSuccessfulImportArtifacts(int $jobId, string $relativePath, array $extraPaths = []): void
+    private function cleanupSuccessfulImportArtifacts(int $jobId, string $relativePath, ?string $periodHint = null, array $extraPaths = []): void
     {
         try {
-            app(\App\Services\Import\ImportCleanupService::class)->dispatchImportedJobSync($jobId, self::TABLE_NAME, null, static::class);
+            app(\App\Services\Import\ImportCleanupService::class)->dispatchImportedJobSync($jobId, self::TABLE_NAME, $periodHint, static::class);
             app(ImportCleanupController::class)->cleanupSuccessfulJobArtifacts(
                 $jobId,
                 array_values(array_filter(array_merge([$relativePath], $extraPaths)))

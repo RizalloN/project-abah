@@ -919,7 +919,7 @@ class ImportFileController extends Controller
             $stagingTable = $this->createCsvStagingTable('tmp_file_csv_stage', $jobId, $headerCount);
             $this->loadCsvIntoStagingTable($filePath, $stagingTable, $headerCount, $resolvedDelimiter, 1);
 
-            $bulkCsvPath = $this->createBulkLoadTempCsvPath($tableName, $jobId > 0 ? $jobId : 0);
+            $bulkCsvPath = $this->createBulkLoadTempCsvPath($tableName, max(0, $jobId));
             $bulkHandle = @fopen($bulkCsvPath, 'w');
             if ($bulkHandle === false) {
                 return false;
@@ -1179,7 +1179,7 @@ class ImportFileController extends Controller
             return false;
         }
 
-        $bulkCsvPath = $this->createBulkLoadTempCsvPath($tableName, $jobId > 0 ? $jobId : 0);
+        $bulkCsvPath = $this->createBulkLoadTempCsvPath($tableName, max(0, $jobId));
         $bulkHandle = @fopen($bulkCsvPath, 'w');
         if ($bulkHandle === false) {
             fclose($handle);
@@ -1418,16 +1418,12 @@ class ImportFileController extends Controller
 
     private function logFailedImportRow(string $tableName, array $row, string $errorMessage): void
     {
-        DB::table('failed_jobs')->insert([
-            'uuid' => (string) Str::uuid(),
-            'connection' => 'database',
-            'queue' => 'import_' . $tableName,
-            'payload' => json_encode([
-                'error' => 'Single row failed.',
-                'sample' => $this->summarizeFailedRow($row),
-            ]),
-            'exception' => mb_substr($errorMessage, 0, 1000),
-            'failed_at' => now(),
+        // NOTE: intentionally NOT inserting into failed_jobs (Laravel queue system table)
+        // to avoid contaminating queue monitoring dashboards.
+        Log::warning('Import row failed', [
+            'table'   => $tableName,
+            'error'   => mb_substr($errorMessage, 0, 600),
+            'sample'  => $this->summarizeFailedRow($row),
         ]);
     }
 
@@ -1664,8 +1660,12 @@ class ImportFileController extends Controller
 
                 $totalRows++;
 
-                if ($samplePeriode === null && isset($parsedRow[0])) {
-                    $samplePeriode = trim((string) $parsedRow[0]) ?: null;
+                if ($samplePeriode === null) {
+                    // Prefer the detected periodeIndex; fall back to column 0 only if no dedicated period column found
+                    $periodeCandidate = $periodeIndex !== -1
+                        ? ($parsedRow[$periodeIndex] ?? null)
+                        : ($posisiIndex !== -1 ? ($parsedRow[$posisiIndex] ?? null) : ($parsedRow[0] ?? null));
+                    $samplePeriode = trim((string) $periodeCandidate) ?: null;
                 }
 
                 if ($samplePosisi === null && $posisiIndex !== -1 && isset($parsedRow[$posisiIndex])) {
@@ -2109,14 +2109,13 @@ class ImportFileController extends Controller
             'initRoute',
             'streamRoute'
         ))->with([
-            'disableArea6AutoFilter' => $isDailyLoan,
+            'disableArea6AutoFilter' => $disableArea6AutoFilter,
             'forceAllFiltersCheckedOnLoad' => $isDailyLoan,
             'lockDelimiterSelector' => $isDailyLoan,
             'fixedDelimiterLabel' => 'Koma ( , )',
             'backRoute' => route('import.index'),
             'area6ColumnHints' => $area6ColumnHints,
             'initialArea6Selections' => $initialArea6Selections,
-            'disableArea6AutoFilter' => $disableArea6AutoFilter,
         ]);
     }
 
@@ -2190,12 +2189,15 @@ class ImportFileController extends Controller
                 $duplicateText = 'Semua kombinasi <b>PERIODE + TID</b> pada file ini sudah ada di tabel <b class="text-uppercase">' . $tableName . '</b>.<br><br>Sistem membatalkan proses untuk mencegah data dobel.';
             }
         } elseif ($isBrilinkSummary && $meta['sample_periode']) {
-            $isDuplicate = DB::table($tableName)->where('periode', $meta['sample_periode'])->exists();
+            $isDuplicate = $this->cachedSchemaHasColumn($tableName, 'periode')
+                && DB::table($tableName)->where('periode', $meta['sample_periode'])->exists();
             if ($isDuplicate) {
                 $duplicateText = "Data untuk PERIODE <b>{$meta['sample_periode']}</b> sudah pernah diunggah sebelumnya ke tabel <b class='text-uppercase'>{$tableName}</b>.<br><br>Sistem membatalkan proses ini.";
             }
         } elseif ($meta['sample_posisi']) {
-            $isDuplicate = DB::table($tableName)->whereDate('POSISI', $meta['sample_posisi'])->exists();
+            // BUG-03: Guard against tables that don't have a POSISI column
+            $isDuplicate = $this->cachedSchemaHasColumn($tableName, 'POSISI')
+                && DB::table($tableName)->whereDate('POSISI', $meta['sample_posisi'])->exists();
             if ($isDuplicate) {
                 $duplicateText = "Data untuk tanggal POSISI <b>{$meta['sample_posisi']}</b> sudah pernah diunggah sebelumnya ke tabel <b class='text-uppercase'>{$tableName}</b>.<br><br>Sistem membatalkan proses ini.";
             }
@@ -2708,6 +2710,13 @@ class ImportFileController extends Controller
                 return (int) ($displayToSourceMap[$displayIndex] ?? $displayIndex);
             }, $selectedColumns));
         }
+        $normalizedFilters = [];
+        foreach ($activeFilters as $columnIndex => $allowedValues) {
+            $sourceIndex = !empty($displayToSourceMap) ? (int) ($displayToSourceMap[$columnIndex] ?? $columnIndex) : (int) $columnIndex;
+            $normalizedFilters[$sourceIndex] = array_fill_keys(array_map(function ($value) {
+                return trim((string) $value);
+            }, (array) $allowedValues), true);
+        }
         $currentDelimiter = $request->input('delimiter', 'auto');
         
         // 🔥 1. DETEKSI REPORT (WAJIB SAMA DENGAN PREVIEW)
@@ -2731,22 +2740,7 @@ class ImportFileController extends Controller
                 : redirect()->route('import.index')->with('error', 'File tidak ditemukan.');
         }
 
-        // 🔥 PERBAIKAN FINAL: PRIORITAS TABLE_NAME DARI DB
-        $tableName = 'jumlah_merchant_detail'; // default fallback
-
-        if ($reportData) {
-            if (!empty($reportData->table_name)) {
-                $tableName = $reportData->table_name;
-            } else {
-                // fallback lama (JANGAN DIHAPUS)
-                $tableName = strtolower(str_replace(' ', '_', $reportData->nama_report));
-            }
-        }
-
-        // 🔥 VALIDASI FINAL
-        if (!DB::getSchemaBuilder()->hasTable($tableName)) {
-            $tableName = 'jumlah_merchant_detail';
-        }
+        $tableName = $this->resolveTableName($reportData);
 
         try {
             $this->bulkLoadService()->assertTransactionalTable($tableName, 'import CSV');
@@ -2762,16 +2756,7 @@ class ImportFileController extends Controller
                 : redirect()->route('import.index')->with('sweet_warning', $response);
         }
 
-        $uniqueSuffix = '_MDT'; 
-        if ($tableName === 'sv_merchant') {
-            $uniqueSuffix = '_SVMer';
-        } elseif ($tableName === 'merchant_qris') {
-            $uniqueSuffix = '_MQ';
-        } elseif ($tableName === 'merchant_qris_volume') {
-            $uniqueSuffix = '_MQV'; 
-        } elseif ($tableName === 'brilink_web_laporan_summary_transaksi_brilink_web') {
-            $uniqueSuffix = '_BST';
-        }
+        $uniqueSuffix = $this->resolveUniqueSuffix($tableName);
 
         $dataToInsert = [];
         $csvHeaders = [];
@@ -2795,7 +2780,8 @@ class ImportFileController extends Controller
         }
 
         if (($handle = fopen($filePath, "r")) !== FALSE) {
-            if ($currentDelimiter === 'auto') {
+            try {
+                if ($currentDelimiter === 'auto') {
                 $firstLine = fgets($handle);
                 $delimiters = [',' => 0, ';' => 0, '|' => 0, "\t" => 0, '.' => 0];
                 foreach ($delimiters as $delim => &$count) {
@@ -2874,10 +2860,9 @@ class ImportFileController extends Controller
 
                 // FILTER AKTIF
                 $passFilter = true;
-                foreach ($activeFilters as $colIdx => $allowedValues) {
-                    $sourceIndex = !empty($displayToSourceMap) ? (int) ($displayToSourceMap[$colIdx] ?? $colIdx) : (int) $colIdx;
+                foreach ($normalizedFilters as $sourceIndex => $allowedValues) {
                     $cellValue = isset($filterData[$sourceIndex]) ? trim((string) $filterData[$sourceIndex]) : '';
-                    if (!in_array($cellValue, $allowedValues)) {
+                    if (!isset($allowedValues[$cellValue])) {
                         $passFilter = false;
                         break;
                     }
@@ -2951,7 +2936,9 @@ class ImportFileController extends Controller
                 $dataToInsert[] = $this->applyImportTimestamps($rowData, $tableName);
                 $rowCounter++;
             }
-            fclose($handle);
+            } finally {
+                fclose($handle);
+            }
         }
 
         $samplePosisi = null;
@@ -2959,7 +2946,7 @@ class ImportFileController extends Controller
 
         if (!empty($dataToInsert)) {
             $samplePosisi = $dataToInsert[0]['POSISI'] ?? null;
-            $samplePeriode = $dataToInsert[0]['periode'] ?? null;
+            $samplePeriode = $dataToInsert[0]['periode'] ?? ($dataToInsert[0]['POSISI'] ?? null);
         }
 
         $isDuplicate = false;
@@ -3031,7 +3018,7 @@ class ImportFileController extends Controller
             'updated_at' => now(),
         ]);
 
-        \Illuminate\Support\Facades\Schema::dropIfExists('import_mappings');
+        // import_mappings drop removed
 
         $totalSuccess = 0;
         $totalFailed = 0;

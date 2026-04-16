@@ -12,7 +12,7 @@
         --primary-blue-dark: #1e3a8a; /* blue-900 */
         --surface-color: #ffffff;
         --bg-color: #f8fafc; /* slate-50 */
-        --border-color: #e2e8f0; /* slate-200 */
+        --border-color: #dbe5ef; /* harmonized with loan-dashboard */
         --text-main: #0f172a; /* slate-900 */
         --text-muted: #64748b; /* slate-500 */
         
@@ -33,10 +33,10 @@
 
     /* Surface & Cards */
     .daily-surface {
-        background: var(--surface-color);
+        background: #ffffff;
         border: 1px solid var(--border-color);
-        border-radius: 16px;
-        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.01);
+        border-radius: 18px; /* Formal rounded edge */
+        box-shadow: 0 14px 30px -24px rgba(15, 23, 42, 0.22); /* Deeper, softer shadow */
         overflow: hidden;
         transition: box-shadow 0.3s ease;
     }
@@ -48,10 +48,11 @@
 
     .daily-panel-title {
         margin: 0;
-        font-size: 1.25rem;
-        font-weight: 700;
-        color: var(--primary-blue-dark);
+        font-size: clamp(1.7rem, 2.7vw, 2.5rem);
+        font-weight: 800;
+        color: #0f172a;
         letter-spacing: -0.01em;
+        margin-bottom: 0.45rem;
     }
 
     .daily-panel-desc {
@@ -107,35 +108,47 @@
     .daily-kpi-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-        gap: 1rem;
+        gap: 1.25rem;
     }
 
     .daily-kpi {
-        background: #ffffff;
+        background: linear-gradient(180deg, #ffffff, #fcfdfd);
         border: 1px solid var(--border-color);
-        border-radius: 12px;
-        padding: 1.25rem;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
-        border-left: 4px solid var(--primary-blue-light);
+        border-radius: 16px;
+        padding: 1.5rem;
+        box-shadow: 0 4px 12px -8px rgba(15, 23, 42, 0.1);
+        transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        position: relative;
+        overflow: hidden;
+    }
+
+    .daily-kpi::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        width: 4px;
+        background: var(--primary-blue-light);
+        border-radius: 4px 0 0 4px;
     }
 
     .daily-kpi:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06);
+        transform: translateY(-3px);
+        box-shadow: 0 12px 24px -12px rgba(15, 23, 42, 0.15);
     }
 
     .daily-kpi .label {
-        font-size: 0.8rem;
-        font-weight: 600;
+        font-size: 0.84rem;
+        font-weight: 700;
         color: var(--text-muted);
         text-transform: uppercase;
-        letter-spacing: 0.05em;
-        margin-bottom: 0.5rem;
+        letter-spacing: 0.04em;
+        margin-bottom: 0.75rem;
     }
 
     .daily-kpi .value {
-        font-size: 1.5rem;
+        font-size: clamp(1.6rem, 2vw, 1.8rem);
         font-weight: 800;
         color: var(--text-main);
         line-height: 1.2;
@@ -144,24 +157,26 @@
     /* Form Controls */
     .select2-container--default .select2-selection--single {
         border: 1px solid var(--border-color) !important;
-        border-radius: 8px !important;
-        height: 42px !important;
+        border-radius: 14px !important;
+        height: 44px !important;
         display: flex;
         align-items: center;
         transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        background: #ffffff !important;
     }
     .select2-container--default.select2-container--focus .select2-selection--single {
-        border-color: var(--primary-blue-light) !important;
-        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2) !important;
+        border-color: #cfdae6 !important;
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1) !important;
     }
     .select2-container--default .select2-selection--single .select2-selection__rendered {
-        color: var(--text-main) !important;
+        color: #475569 !important;
+        font-size: 0.94rem;
         font-weight: 500;
         line-height: normal !important;
         padding-left: 12px !important;
     }
     .select2-container--default .select2-selection--single .select2-selection__arrow {
-        height: 40px !important;
+        height: 44px !important;
     }
 
     .daily-filter-native {
@@ -174,17 +189,18 @@
 
     .daily-dropdown-toggle {
         width: 100%;
-        min-height: 42px;
+        min-height: 44px;
         border: 1px solid var(--border-color);
-        border-radius: 8px;
+        border-radius: 14px;
         background: #ffffff;
-        color: var(--text-main);
+        color: #475569;
         display: flex;
         align-items: center;
         justify-content: space-between;
         gap: 0.75rem;
         padding: 0.65rem 0.85rem;
         font-weight: 500;
+        font-size: 0.94rem;
         text-align: left;
         transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
     }
@@ -197,8 +213,8 @@
     .daily-dropdown.is-open .daily-dropdown-toggle,
     .daily-dropdown-toggle:focus {
         outline: none;
-        border-color: var(--primary-blue-light);
-        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+        border-color: #cfdae6;
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
     }
 
     .daily-dropdown-toggle-text {
@@ -325,8 +341,8 @@
         overflow-x: auto;
         overflow-y: visible;
         border: 1px solid var(--border-color);
-        border-radius: 12px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        border-radius: 18px;
+        box-shadow: 0 10px 24px -12px rgba(15, 23, 42, 0.08); /* Sophisticated subtle inner drop outline */
         scrollbar-width: none;
     }
 
@@ -381,28 +397,28 @@
         font-size: 0.65rem;
     }
     .daily-table thead th.rka-period-cell {
-        background: linear-gradient(180deg, #9ed85c, #86c949);
-        color: #173b09;
+        background: var(--table-header-bg);
+        color: #ffffff;
         font-size: 0.86rem;
         font-weight: 800;
         letter-spacing: 0.04em;
-        border-right: 1px solid rgba(23, 59, 9, 0.18);
-        border-bottom: 1px solid rgba(23, 59, 9, 0.2);
+        border-right: 1px solid rgba(255, 255, 255, 0.1);
+        border-bottom: 2px solid rgba(0, 0, 0, 0.1);
     }
     .daily-table thead th.rka-period-cell:last-child {
         border-right: none;
     }
     .daily-table thead tr.rka-sub-row th {
-        background: #8fd14f;
-        color: #153706;
+        background: #274bba;
+        color: #ffffff;
         font-size: 0.72rem;
         font-weight: 800;
         letter-spacing: 0.06em;
-        border-right: 1px solid rgba(23, 59, 9, 0.16);
+        border-right: 1px solid rgba(255, 255, 255, 0.1);
     }
     .daily-table thead .group-rka {
-        background: linear-gradient(90deg, #295f10, #34761a);
-        color: #f4ffe8;
+        background: var(--table-header-bg);
+        color: #ffffff;
     }
     .daily-table thead .rka-period-label {
         display: inline-flex;
