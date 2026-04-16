@@ -372,11 +372,28 @@
                     </a>
                 </li>
 
-                <li class="nav-item">
-                    <a href="{{ route('report.dashboard-pinjaman') }}" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman') ? 'active' : '' }}">
+                <li class="nav-item {{ request()->routeIs('report.dashboard-pinjaman', 'report.dashboard-pinjaman.matrix', 'report.dashboard-pinjaman.kolek-tidak-sesuai', 'report.dashboard-pinjaman.filters', 'report.dashboard-pinjaman.data', 'report.dashboard-pinjaman.kolek-tidak-sesuai.*') ? 'menu-open' : '' }}">
+                    <a href="#" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman', 'report.dashboard-pinjaman.matrix', 'report.dashboard-pinjaman.kolek-tidak-sesuai', 'report.dashboard-pinjaman.filters', 'report.dashboard-pinjaman.data', 'report.dashboard-pinjaman.kolek-tidak-sesuai.*') ? 'active' : '' }}">
                         <i class="nav-icon fas fa-chart-line"></i>
-                        <p>Dashboard Pinjaman</p>
+                        <p>
+                            Dashboard Pinjaman
+                            <i class="right fas fa-angle-left"></i>
+                        </p>
                     </a>
+                    <ul class="nav nav-treeview">
+                        <li class="nav-item">
+                            <a href="{{ route('report.dashboard-pinjaman.matrix') }}" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman.matrix') ? 'active' : '' }}">
+                                <i class="far fa-circle nav-icon"></i>
+                                <p>Matrix Pergeseran Kolek</p>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="{{ route('report.dashboard-pinjaman.kolek-tidak-sesuai') }}" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman.kolek-tidak-sesuai') ? 'active' : '' }}">
+                                <i class="far fa-circle nav-icon"></i>
+                                <p>Kolek Tidak Sesuai</p>
+                            </a>
+                        </li>
+                    </ul>
                 </li>
 
                 @if(Auth::user()?->isAdmin())

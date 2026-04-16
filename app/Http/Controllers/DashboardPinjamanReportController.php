@@ -40,6 +40,21 @@ class DashboardPinjamanReportController extends Controller
 
     public function index(Request $request)
     {
+        return redirect()->route('report.dashboard-pinjaman.matrix', $request->query());
+    }
+
+    public function matrixIndex(Request $request)
+    {
+        return $this->renderIndex($request, 'matrix');
+    }
+
+    public function mismatchIndex(Request $request)
+    {
+        return $this->renderIndex($request, 'mismatch');
+    }
+
+    private function renderIndex(Request $request, string $mode)
+    {
         $periods = $this->fetchPeriods();
 
         $requestedPeriod = $request->input('periode');
@@ -60,7 +75,7 @@ class DashboardPinjamanReportController extends Controller
             'comparisonPeriod' => $comparisonPeriod,
             'matrixColumns' => self::QUALITY_BUCKETS,
             'requestedPeriod' => $requestedPeriod,
-            'selectedMode' => $this->normalizeReportMode($request->input('mode')),
+            'selectedMode' => $this->normalizeReportMode($mode),
             'mismatchRequestedPeriod' => $request->input('mismatch_periode'),
             'mismatchSelectedPeriod' => $this->resolveEffectivePeriod($request->input('mismatch_periode')),
             'mismatchSelectedBranch' => trim((string) $request->input('mismatch_cabang1', '')),

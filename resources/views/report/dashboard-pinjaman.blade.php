@@ -545,28 +545,11 @@
         <h2 class="loan-page-title">Dashboard Pinjaman</h2>
     </div>
 
-    <div class="card loan-mode-shell mb-4">
-        <div class="card-body p-4">
-            <div class="loan-mode-grid">
-                <div class="form-group mb-0">
-                    <label class="loan-filter-label">Jenis Dashboard Pinjaman</label>
-                    <select id="loanReportMode" class="form-control loan-filter-control">
-                        <option value="matrix" @selected($selectedMode === 'matrix')>Matrix Pergeseran Kolek</option>
-                        <option value="mismatch" @selected($selectedMode === 'mismatch')>Kolek Tidak Sesuai</option>
-                    </select>
-                </div>
-                <p class="loan-mode-copy">
-                    Pilih mode laporan sesuai kebutuhan. Matrix dipakai untuk membaca pergeseran kolek, sedangkan mode <strong>Kolek Tidak Sesuai</strong> dipakai untuk audit <strong>kol_adk1</strong> terhadap <strong>umur_tunggakan</strong> dan export Excel detail per unit kerja.
-                </p>
-            </div>
-        </div>
-    </div>
-
-    <div id="loanMatrixPanel" @class(['d-none' => $selectedMode !== 'matrix'])>
+    @if ($selectedMode === 'matrix')
+    <div id="loanMatrixPanel">
     <div class="card loan-shell mb-4">
         <div class="card-body p-4">
-            <form id="loanFilterForm" method="GET" action="{{ route('report.dashboard-pinjaman') }}">
-                <input type="hidden" name="mode" value="matrix">
+            <form id="loanFilterForm" method="GET" action="{{ route('report.dashboard-pinjaman.matrix') }}">
                 <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center mb-3">
                     <div>
                         <h5 class="mb-1 font-weight-bold text-dark">Filter Dashboard</h5>
@@ -636,7 +619,7 @@
                         <i class="fas fa-filter mr-1"></i>
                         Tampilkan
                     </button>
-                    <a href="{{ route('report.dashboard-pinjaman') }}" class="btn btn-light">
+                    <a href="{{ route('report.dashboard-pinjaman.matrix') }}" class="btn btn-light">
                         Reset
                     </a>
                     <div id="loanLoadingChip" class="loan-loading-chip d-none">
@@ -754,12 +737,13 @@
     </div>
 
     </div>
+    @endif
 
-    <div id="loanMismatchPanel" @class(['d-none' => $selectedMode !== 'mismatch'])>
+    @if ($selectedMode === 'mismatch')
+    <div id="loanMismatchPanel">
         <div class="card loan-shell mb-4">
             <div class="card-body p-4">
-                <form id="loanMismatchForm" method="GET" action="{{ route('report.dashboard-pinjaman') }}">
-                    <input type="hidden" name="mode" value="mismatch">
+                <form id="loanMismatchForm" method="GET" action="{{ route('report.dashboard-pinjaman.kolek-tidak-sesuai') }}">
                     <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center mb-3">
                         <div>
                             <h5 class="mb-1 font-weight-bold text-dark">Filter Kolek Tidak Sesuai</h5>
@@ -797,7 +781,7 @@
                                     <i class="fas fa-search mr-1"></i>
                                     Proses
                                 </button>
-                                <a href="{{ route('report.dashboard-pinjaman', ['mode' => 'mismatch']) }}" class="btn btn-light">
+                                <a href="{{ route('report.dashboard-pinjaman.kolek-tidak-sesuai') }}" class="btn btn-light">
                                     Reset
                                 </a>
                                 <div id="loanMismatchLoadingChip" class="loan-loading-chip d-none">
@@ -874,6 +858,7 @@
             </div>
         </div>
     </div>
+    @endif
 </div>
 @endsection
 
@@ -915,6 +900,10 @@
         let activeMatrixRequestId = 0;
         let activeFilterRequestId = 0;
         let isNavigatingAway = false;
+
+        if (!form || !body || !foot || !overlay || !chip || !submitButton || !periodInput) {
+            return;
+        }
 
         function abortInFlightRequests() {
             if (activeController) {
@@ -1491,7 +1480,7 @@
                 await nextFrame();
 
                 if (pushHistory) {
-                    const pageUrl = new URL(@json(route('report.dashboard-pinjaman')), window.location.origin);
+                    const pageUrl = new URL(@json(route('report.dashboard-pinjaman.matrix')), window.location.origin);
                     params.forEach((value, key) => {
                         if (key === '_ts') {
                             return;
@@ -1593,9 +1582,6 @@
 </script>
 <script>
     document.addEventListener('DOMContentLoaded', function () {
-        const modeSelect = document.getElementById('loanReportMode');
-        const matrixPanel = document.getElementById('loanMatrixPanel');
-        const mismatchPanel = document.getElementById('loanMismatchPanel');
         const mismatchForm = document.getElementById('loanMismatchForm');
         const mismatchPeriodInput = document.getElementById('loanMismatchPeriodeInput');
         const mismatchBranchSelect = document.getElementById('loanMismatchCabangSelect');
@@ -1610,11 +1596,11 @@
         const mismatchFiltersUrl = @json(route('report.dashboard-pinjaman.kolek-tidak-sesuai.filters'));
         const mismatchDataUrl = @json(route('report.dashboard-pinjaman.kolek-tidak-sesuai.data'));
         const mismatchExportUrl = @json(route('report.dashboard-pinjaman.kolek-tidak-sesuai.export'));
-        const pageUrl = @json(route('report.dashboard-pinjaman'));
+        const pageUrl = @json(route('report.dashboard-pinjaman.kolek-tidak-sesuai'));
         let mismatchFilterController = null;
         let mismatchDataController = null;
 
-        if (!modeSelect || !matrixPanel || !mismatchPanel || !mismatchForm) {
+        if (!mismatchForm) {
             return;
         }
 
@@ -1637,21 +1623,6 @@
 
         function formatNumber(value) {
             return Number(value || 0).toLocaleString('id-ID');
-        }
-
-        function setMode(mode, pushHistory = true) {
-            const normalizedMode = mode === 'mismatch' ? 'mismatch' : 'matrix';
-            modeSelect.value = normalizedMode;
-            matrixPanel.classList.toggle('d-none', normalizedMode !== 'matrix');
-            mismatchPanel.classList.toggle('d-none', normalizedMode !== 'mismatch');
-
-            if (!pushHistory) {
-                return;
-            }
-
-            const currentUrl = new URL(window.location.href);
-            currentUrl.searchParams.set('mode', normalizedMode);
-            window.history.replaceState({}, '', currentUrl.toString());
         }
 
         function resetMismatchState(message = 'Pilih periode dan cabang lalu klik <strong>Proses</strong>.') {
@@ -1828,7 +1799,6 @@
 
                 if (pushHistory) {
                     const currentUrl = new URL(pageUrl, window.location.origin);
-                    currentUrl.searchParams.set('mode', 'mismatch');
                     currentUrl.searchParams.set('mismatch_periode', mismatchPeriodInput.value);
                     currentUrl.searchParams.set('mismatch_cabang1', mismatchBranchSelect.value);
                     window.history.replaceState({}, '', currentUrl.toString());
@@ -1842,10 +1812,6 @@
                 setMismatchLoadingState(false);
             }
         }
-
-        modeSelect.addEventListener('change', function () {
-            setMode(modeSelect.value);
-        });
 
         mismatchPeriodInput.addEventListener('change', function () {
             mismatchBranchSelect.dataset.selected = '';
@@ -1866,10 +1832,9 @@
             processMismatch(true);
         });
 
-        setMode(modeSelect.value, false);
         resetMismatchState();
         loadMismatchBranches().then(function () {
-            if (modeSelect.value === 'mismatch' && mismatchPeriodInput.value && mismatchBranchSelect.value) {
+            if (mismatchPeriodInput.value && mismatchBranchSelect.value) {
                 processMismatch(false);
             } else {
                 setMismatchLoadingState(false);
