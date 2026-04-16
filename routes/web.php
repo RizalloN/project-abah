@@ -47,6 +47,12 @@ Route::middleware(['auth', 'release.session.lock', 'throttle:240,1'])->group(fun
         ->name('report.dashboard-pinjaman.filters');
     Route::get('/report/dashboard-pinjaman/data', [DashboardPinjamanReportController::class, 'data'])
         ->name('report.dashboard-pinjaman.data');
+    Route::get('/report/dashboard-pinjaman/kolek-tidak-sesuai/filters', [DashboardPinjamanReportController::class, 'mismatchFilters'])
+        ->name('report.dashboard-pinjaman.kolek-tidak-sesuai.filters');
+    Route::get('/report/dashboard-pinjaman/kolek-tidak-sesuai/data', [DashboardPinjamanReportController::class, 'mismatchData'])
+        ->name('report.dashboard-pinjaman.kolek-tidak-sesuai.data');
+    Route::get('/report/dashboard-pinjaman/kolek-tidak-sesuai/export', [DashboardPinjamanReportController::class, 'mismatchExport'])
+        ->name('report.dashboard-pinjaman.kolek-tidak-sesuai.export');
 
     Route::get('/report/optimalisasi-digital/edc', [App\Http\Controllers\DataReportController::class, 'performanceEdc'])->name('report.edc');
     Route::get('/report/optimalisasi-digital/qris', [App\Http\Controllers\DataReportController::class, 'performanceQris'])->name('report.qris');

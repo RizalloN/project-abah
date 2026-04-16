@@ -8,12 +8,16 @@ use App\Support\LoanQualityBucketMapper;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Contracts\Cache\LockTimeoutException;
+use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Throwable;
 
 class DashboardPinjamanReportController extends Controller
@@ -32,6 +36,7 @@ class DashboardPinjamanReportController extends Controller
     private const BEFORE_ROWS = ['New Account', 'L', 'LR', 'DPK 1', 'DPK 2', 'DPK 3', 'KL', 'D1', 'D2', 'M'];
 
     private const OUTPUT_COLUMNS = ['Turunan Pokok', 'Suplesi', 'PH', 'Lunas'];
+    private const KOLEK_MISMATCH_RULE_LABEL = 'kol_adk1_vs_umur_tunggakan_v1';
 
     public function index(Request $request)
     {
@@ -55,6 +60,10 @@ class DashboardPinjamanReportController extends Controller
             'comparisonPeriod' => $comparisonPeriod,
             'matrixColumns' => self::QUALITY_BUCKETS,
             'requestedPeriod' => $requestedPeriod,
+            'selectedMode' => $this->normalizeReportMode($request->input('mode')),
+            'mismatchRequestedPeriod' => $request->input('mismatch_periode'),
+            'mismatchSelectedPeriod' => $this->resolveEffectivePeriod($request->input('mismatch_periode')),
+            'mismatchSelectedBranch' => trim((string) $request->input('mismatch_cabang1', '')),
         ]);
     }
 
@@ -165,6 +174,146 @@ class DashboardPinjamanReportController extends Controller
             'grand_totals' => $grandTotals,
             'grand_total_value' => $grandTotalValue,
             'data_source' => $usesSnapshot ? self::SNAPSHOT_TABLE : 'daily_loan_dinamis',
+        ]);
+    }
+
+    public function mismatchFilters(Request $request)
+    {
+        @set_time_limit(30);
+        $this->releaseSessionLockIfNeeded();
+
+        $selectedPeriod = $this->resolveEffectivePeriod($request->input('periode'));
+
+        if (!$selectedPeriod) {
+            return response()->json([
+                'selected_period' => null,
+                'branches' => [],
+            ]);
+        }
+
+        $cacheKey = 'dashboard_pinjaman_kolek_mismatch_filters:v1:' . md5(json_encode([
+            'cache_version' => $this->reportCacheVersion(),
+            'periode' => $selectedPeriod,
+        ]));
+
+        $branches = $this->rememberPayload($cacheKey, now()->addMinutes(3), function () use ($selectedPeriod) {
+            return DB::table('daily_loan_dinamis')
+                ->where('periode', $selectedPeriod)
+                ->whereNotNull('cabang1')
+                ->whereRaw("TRIM(COALESCE(cabang1, '')) <> ''")
+                ->distinct()
+                ->orderBy('cabang1')
+                ->pluck('cabang1')
+                ->map(fn ($value) => trim((string) $value))
+                ->filter()
+                ->values();
+        });
+
+        return response()->json([
+            'selected_period' => $selectedPeriod,
+            'branches' => $branches->all(),
+        ]);
+    }
+
+    public function mismatchData(Request $request)
+    {
+        @set_time_limit(0);
+        DB::connection()->disableQueryLog();
+        $this->releaseSessionLockIfNeeded();
+
+        $selectedPeriod = $this->resolveEffectivePeriod($request->input('periode'));
+        $selectedBranch = trim((string) $request->input('cabang1', ''));
+        $forceRefresh = $request->boolean('refresh');
+
+        if (!$selectedPeriod || $selectedBranch === '') {
+            return response()->json([
+                'selected_period' => $selectedPeriod,
+                'selected_branch' => $selectedBranch !== '' ? $selectedBranch : null,
+                'summary_rows' => [],
+                'audit' => [
+                    'rule' => self::KOLEK_MISMATCH_RULE_LABEL,
+                    'scanned_rows' => 0,
+                    'matched_rows' => 0,
+                    'mismatch_rows' => 0,
+                    'units_with_mismatch' => 0,
+                ],
+            ]);
+        }
+
+        $cacheKey = 'dashboard_pinjaman_kolek_mismatch_data:v1:' . md5(json_encode([
+            'cache_version' => $this->reportCacheVersion(),
+            'periode' => $selectedPeriod,
+            'cabang1' => $selectedBranch,
+        ]));
+
+        $payload = $this->rememberPayload($cacheKey, now()->addMinutes(3), function () use ($selectedPeriod, $selectedBranch) {
+            return $this->buildKolekMismatchSummary($selectedPeriod, $selectedBranch);
+        }, $forceRefresh);
+
+        return response()->json([
+            'selected_period' => $selectedPeriod,
+            'selected_branch' => $selectedBranch,
+            'summary_rows' => $payload['summary_rows'],
+            'audit' => $payload['audit'],
+        ]);
+    }
+
+    public function mismatchExport(Request $request)
+    {
+        @set_time_limit(0);
+        DB::connection()->disableQueryLog();
+        $this->releaseSessionLockIfNeeded();
+
+        $selectedPeriod = $this->resolveEffectivePeriod($request->input('periode'));
+        $selectedBranch = trim((string) $request->input('cabang1', ''));
+        $selectedUnit = trim((string) $request->input('unit1', ''));
+
+        abort_if(!$selectedPeriod || $selectedBranch === '' || $selectedUnit === '', 422, 'Periode, cabang, dan unit kerja wajib dipilih.');
+
+        $rows = $this->fetchKolekMismatchRows($selectedPeriod, $selectedBranch, $selectedUnit);
+        $exportColumns = $this->collectKolekExportColumns();
+
+        Log::info('Dashboard pinjaman mismatch export generated.', [
+            'selected_period' => $selectedPeriod,
+            'selected_branch' => $selectedBranch,
+            'selected_unit' => $selectedUnit,
+            'mismatch_rows' => count($rows),
+            'rule' => self::KOLEK_MISMATCH_RULE_LABEL,
+        ]);
+
+        $filename = sprintf(
+            'kolek-tidak-sesuai_%s_%s_%s.xlsx',
+            str_replace('-', '', $selectedPeriod),
+            $this->sanitizeExportToken($selectedBranch),
+            $this->sanitizeExportToken($selectedUnit)
+        );
+
+        return response()->streamDownload(function () use ($rows, $exportColumns) {
+            $spreadsheet = new Spreadsheet();
+            $sheet = $spreadsheet->getActiveSheet();
+            $sheet->setTitle('Kolek Tidak Sesuai');
+
+            foreach ($exportColumns as $index => $column) {
+                $sheet->setCellValue(
+                    Coordinate::stringFromColumnIndex($index + 1) . '1',
+                    $column
+                );
+            }
+
+            foreach ($rows as $rowIndex => $row) {
+                foreach ($exportColumns as $columnIndex => $column) {
+                    $sheet->setCellValue(
+                        Coordinate::stringFromColumnIndex($columnIndex + 1) . ($rowIndex + 2),
+                        Arr::get($row, $column, '')
+                    );
+                }
+            }
+
+            $writer = new Xlsx($spreadsheet);
+            $writer->save('php://output');
+            $spreadsheet->disconnectWorksheets();
+        }, $filename, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         ]);
     }
 
@@ -893,6 +1042,184 @@ class DashboardPinjamanReportController extends Controller
         }
 
         return $this->hasDashboardSnapshot($period);
+    }
+
+    private function buildKolekMismatchSummary(string $selectedPeriod, string $selectedBranch): array
+    {
+        $startedAt = microtime(true);
+        $scannedRows = 0;
+        $matchedRows = 0;
+        $mismatchRows = 0;
+        $unitCounts = [];
+
+        foreach ($this->buildKolekMismatchBaseQuery($selectedPeriod, $selectedBranch)->cursor() as $row) {
+            $scannedRows++;
+
+            $actualKolek = $this->normalizeKolekValue($row->kol_adk1 ?? null);
+            $expectedKolek = $this->expectedKolekFromUmurTunggakan($row->umur_tunggakan ?? null);
+
+            if ($actualKolek === null || $expectedKolek === null) {
+                continue;
+            }
+
+            if ($actualKolek === $expectedKolek) {
+                $matchedRows++;
+                continue;
+            }
+
+            $mismatchRows++;
+            $unit = trim((string) ($row->unit1 ?? 'Tanpa Unit'));
+            $unit = $unit !== '' ? $unit : 'Tanpa Unit';
+            $unitCounts[$unit] = ($unitCounts[$unit] ?? 0) + 1;
+        }
+
+        $summaryRows = collect($unitCounts)
+            ->map(fn (int $count, string $unit) => [
+                'unit' => $unit,
+                'mismatch_count' => $count,
+            ])
+            ->sortBy([
+                ['mismatch_count', 'desc'],
+                ['unit', 'asc'],
+            ])
+            ->values()
+            ->all();
+
+        Log::info('Dashboard pinjaman mismatch scan completed.', [
+            'selected_period' => $selectedPeriod,
+            'selected_branch' => $selectedBranch,
+            'scanned_rows' => $scannedRows,
+            'matched_rows' => $matchedRows,
+            'mismatch_rows' => $mismatchRows,
+            'units_with_mismatch' => count($summaryRows),
+            'duration_ms' => (int) round((microtime(true) - $startedAt) * 1000),
+            'rule' => self::KOLEK_MISMATCH_RULE_LABEL,
+        ]);
+
+        return [
+            'summary_rows' => $summaryRows,
+            'audit' => [
+                'rule' => self::KOLEK_MISMATCH_RULE_LABEL,
+                'scanned_rows' => $scannedRows,
+                'matched_rows' => $matchedRows,
+                'mismatch_rows' => $mismatchRows,
+                'units_with_mismatch' => count($summaryRows),
+            ],
+        ];
+    }
+
+    private function fetchKolekMismatchRows(string $selectedPeriod, string $selectedBranch, string $selectedUnit): array
+    {
+        $rows = [];
+
+        foreach ($this->buildKolekMismatchBaseQuery($selectedPeriod, $selectedBranch, $selectedUnit)->cursor() as $row) {
+            $actualKolek = $this->normalizeKolekValue($row->kol_adk1 ?? null);
+            $expectedKolek = $this->expectedKolekFromUmurTunggakan($row->umur_tunggakan ?? null);
+
+            if ($actualKolek === null || $expectedKolek === null || $actualKolek === $expectedKolek) {
+                continue;
+            }
+
+            $rows[] = collect((array) $row)
+                ->except(['created_at', 'updated_at'])
+                ->all();
+        }
+
+        return $rows;
+    }
+
+    private function buildKolekMismatchBaseQuery(string $selectedPeriod, string $selectedBranch, ?string $selectedUnit = null): Builder
+    {
+        $orderingColumn = Schema::hasColumn('daily_loan_dinamis', 'norek')
+            ? 'norek'
+            : $this->resolveIdentityColumn('daily_loan_dinamis');
+
+        $query = DB::table('daily_loan_dinamis')
+            ->where('periode', $selectedPeriod)
+            ->where('cabang1', $selectedBranch)
+            ->orderBy('unit1')
+            ->orderBy($orderingColumn);
+
+        if ($selectedUnit !== null && $selectedUnit !== '') {
+            $query->where('unit1', $selectedUnit);
+        }
+
+        return $query;
+    }
+
+    private function collectKolekExportColumns(): array
+    {
+        return collect(Schema::getColumnListing('daily_loan_dinamis'))
+            ->reject(fn (string $column) => in_array($column, ['created_at', 'updated_at', 'uniqueid_namareport'], true))
+            ->values()
+            ->all();
+    }
+
+    private function normalizeKolekValue($value): ?int
+    {
+        $normalized = strtoupper(trim((string) $value));
+
+        if ($normalized === '') {
+            return null;
+        }
+
+        if (preg_match('/([1-5])/', $normalized, $matches)) {
+            return (int) $matches[1];
+        }
+
+        return null;
+    }
+
+    private function expectedKolekFromUmurTunggakan($value): ?int
+    {
+        $umurTunggakan = $this->normalizeUmurTunggakanValue($value);
+
+        if ($umurTunggakan === null) {
+            return null;
+        }
+
+        return match (true) {
+            $umurTunggakan <= 0 => 1,
+            $umurTunggakan <= 90 => 2,
+            $umurTunggakan <= 120 => 3,
+            $umurTunggakan <= 180 => 4,
+            default => 5,
+        };
+    }
+
+    private function normalizeUmurTunggakanValue($value): ?int
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        if (is_numeric($value)) {
+            return (int) round((float) $value);
+        }
+
+        $normalized = trim((string) $value);
+        if ($normalized === '') {
+            return null;
+        }
+
+        if (preg_match('/-?\d+/', str_replace(',', '', $normalized), $matches)) {
+            return (int) $matches[0];
+        }
+
+        return null;
+    }
+
+    private function normalizeReportMode(?string $value): string
+    {
+        return in_array($value, ['matrix', 'mismatch'], true) ? $value : 'matrix';
+    }
+
+    private function sanitizeExportToken(string $value): string
+    {
+        $sanitized = preg_replace('/[^A-Za-z0-9]+/', '-', trim($value)) ?? 'export';
+        $sanitized = trim($sanitized, '-');
+
+        return $sanitized !== '' ? $sanitized : 'export';
     }
 
     private function reportCacheVersion(): int

@@ -17,21 +17,21 @@ class DashboardHarianController extends Controller
 
     public function index(Request $request): View
     {
-        $selectedPeriod = $this->dashboardHarianSnapshotService->resolveEffectivePeriod($request->input('posisi_terakhir'));
-        $selectedRka = $this->dashboardHarianSnapshotService->resolveEffectivePeriod($request->input('posisi_rka') ?: $selectedPeriod);
         $selectedKanca = $this->normalizeFilter($request->input('kanca'));
         $selectedUnit = $this->normalizeFilter($request->input('unit_kerja'));
+        $selectedPeriod = $this->dashboardHarianSnapshotService->resolveEffectivePeriod($request->input('posisi_terakhir'));
+        $selectedRka = $this->dashboardHarianSnapshotService->resolveEffectiveRkaPeriod($request->input('posisi_rka'), $selectedPeriod);
 
         $dashboardPage = [
             'routes' => [
                 'data' => route('dashboard.harian.data'),
             ],
-            'filters' => $this->dashboardHarianSnapshotService->fetchFilterOptions($selectedPeriod),
+            'filters' => $this->dashboardHarianSnapshotService->fetchFilterOptions($selectedPeriod, $selectedKanca, $selectedUnit),
             'selected' => [
-                'kanca' => $selectedKanca ?? 'all',
+                'kanca' => $selectedKanca ?? [],
                 'unit_kerja' => $selectedUnit ?? 'all',
                 'posisi_terakhir' => $selectedPeriod,
-                'posisi_rka' => $selectedRka,
+                'posisi_rka' => $selectedRka ? substr($selectedRka, 0, 7) : null,
             ],
             'initialData' => null,
         ];
@@ -41,18 +41,18 @@ class DashboardHarianController extends Controller
 
     public function data(Request $request): JsonResponse
     {
-        $selectedPeriod = $this->dashboardHarianSnapshotService->resolveEffectivePeriod($request->input('posisi_terakhir'));
-        $selectedRka = $this->dashboardHarianSnapshotService->resolveEffectivePeriod($request->input('posisi_rka') ?: $selectedPeriod);
         $selectedKanca = $this->normalizeFilter($request->input('kanca'));
         $selectedUnit = $this->normalizeFilter($request->input('unit_kerja'));
+        $selectedPeriod = $this->dashboardHarianSnapshotService->resolveEffectivePeriod($request->input('posisi_terakhir'));
+        $selectedRka = $this->dashboardHarianSnapshotService->resolveEffectiveRkaPeriod($request->input('posisi_rka'), $selectedPeriod);
 
         return response()->json(
             $this->payload($selectedPeriod, $selectedRka, $selectedKanca, $selectedUnit)
-            + ['available_filters' => $this->dashboardHarianSnapshotService->fetchFilterOptions($selectedPeriod)]
+            + ['available_filters' => $this->dashboardHarianSnapshotService->fetchFilterOptions($selectedPeriod, $selectedKanca, $selectedUnit)]
         );
     }
 
-    private function payload(?string $selectedPeriod, ?string $selectedRka, ?string $selectedKanca, ?string $selectedUnit): array
+    private function payload(?string $selectedPeriod, ?string $selectedRka, array|string|null $selectedKanca, array|string|null $selectedUnit): array
     {
         $cacheKey = 'dashboard_harian:payload:' . md5(json_encode([
             'version' => (int) Cache::get('report_cache_version:global', 1),
@@ -72,10 +72,20 @@ class DashboardHarianController extends Controller
         });
     }
 
-    private function normalizeFilter($value): ?string
+    private function normalizeFilter($value): array|string|null
     {
-        $normalized = trim((string) $value);
+        if (is_array($value)) {
+            $normalized = collect($value)
+                ->map(fn ($item) => trim((string) $item))
+                ->filter(fn ($item) => $item !== '' && $item !== 'all')
+                ->unique()
+                ->values()
+                ->all();
 
+            return $normalized === [] ? null : $normalized;
+        }
+
+        $normalized = trim((string) $value);
         if ($normalized === '' || $normalized === 'all') {
             return null;
         }

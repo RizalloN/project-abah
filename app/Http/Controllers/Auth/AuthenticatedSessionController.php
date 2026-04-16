@@ -45,7 +45,7 @@ class AuthenticatedSessionController extends Controller
         $request->session()->regenerate();
         $request->session()->regenerateToken();
 
-        return redirect()->intended(route('dashboard', absolute: false));
+        return redirect()->intended(route('dashboard'));
     }
 
     private function ensureDatabaseIsReachable(): void

@@ -5,6 +5,8 @@ namespace Tests\Unit;
 use App\Services\Import\Strategies\DailyLoanImportStrategy;
 use App\Services\Import\Strategies\GenericCsvImportStrategy;
 use App\Services\Import\Strategies\SimpananMultiPnImportStrategy;
+use App\Services\Import\Strategies\SsaPinjamanImportStrategy;
+use App\Services\Import\Strategies\SsaSimpananImportStrategy;
 use PHPUnit\Framework\TestCase;
 
 class ImportStrategiesTest extends TestCase
@@ -41,5 +43,17 @@ class ImportStrategiesTest extends TestCase
         $this->assertTrue($strategy->supports(null, 'anything'));
         $this->assertSame(['A', 'B'], $strategy->transformHeaders(['A', 'B']));
         $this->assertSame('bulk_csv_staging', $strategy->importMode());
+    }
+
+    public function test_ssa_strategies_use_direct_csv_mode(): void
+    {
+        $ssaSimpanan = new SsaSimpananImportStrategy();
+        $ssaPinjaman = new SsaPinjamanImportStrategy();
+
+        $this->assertTrue($ssaSimpanan->supports(null, 'ssa_simpanan'));
+        $this->assertSame('bulk_csv_direct', $ssaSimpanan->importMode());
+
+        $this->assertTrue($ssaPinjaman->supports(null, 'ssa_pinjaman'));
+        $this->assertSame('bulk_csv_direct', $ssaPinjaman->importMode());
     }
 }

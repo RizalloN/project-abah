@@ -8,6 +8,7 @@ use App\Services\Import\Strategies\ImportStrategyInterface;
 use App\Services\Import\Strategies\Lw325PhImportStrategy;
 use App\Services\Import\Strategies\PerformancePisImportStrategy;
 use App\Services\Import\Strategies\SimpananMultiPnImportStrategy;
+use App\Services\Import\Strategies\SsaPinjamanImportStrategy;
 use App\Services\Import\Strategies\SsaSimpananImportStrategy;
 
 class ImportStrategyFactory
@@ -21,6 +22,7 @@ class ImportStrategyFactory
             app(DailyLoanImportStrategy::class),
             app(SimpananMultiPnImportStrategy::class),
             app(SsaSimpananImportStrategy::class),
+            app(SsaPinjamanImportStrategy::class),
             app(Lw325PhImportStrategy::class),
             app(PerformancePisImportStrategy::class),
             app(GenericCsvImportStrategy::class),

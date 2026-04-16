@@ -12,8 +12,8 @@ use Throwable;
 class DashboardHarianSnapshotService
 {
     public const SNAPSHOT_TABLE = 'dashboard_harian_snapshots';
-    private const LOAN_TABLE = 'daily_loan_dinamis';
-    private const SAVINGS_TABLE = 'simpanan_multipn';
+    private const LOAN_TABLE = 'ssa_pinjaman';
+    private const SAVINGS_TABLE = 'ssa_simpanan';
     private const METRIC_COLUMNS = [
         'total_simpanan',
         'simpanan_ritel',
@@ -24,6 +24,10 @@ class DashboardHarianSnapshotService
         'giro_mikro',
         'deposito_mikro',
         'tabungan_mikro',
+        'simpanan_wholesale',
+        'giro_wholesale',
+        'deposito_wholesale',
+        'tabungan_wholesale',
         'total_casa',
         'casa_ritel',
         'casa_mikro',
@@ -45,12 +49,43 @@ class DashboardHarianSnapshotService
         'kur_mikro_os',
         'kur_kecil_os',
         'kur_kpp_os',
-        'micro_cashcoll_os',
         'total_sml_abs_non_commercial',
+        'commercial_sml',
+        'sme_sml',
+        'kecil_sml',
+        'kecil_non_cashcoll_sml',
+        'cashcoll_sml',
+        'medium_sml',
+        'consumer_sml',
+        'briguna_konsumer_sml',
+        'kpr_sml',
+        'kkb_sml',
+        'micro_sml',
+        'briguna_mikro_sml',
+        'kupedes_sml',
+        'kur_mikro_sml',
+        'kur_kecil_sml',
+        'kur_kpp_sml',
         'total_npl_abs_non_commercial',
+        'commercial_npl',
+        'sme_npl',
+        'kecil_npl',
+        'kecil_non_cashcoll_npl',
+        'cashcoll_npl',
+        'medium_npl',
+        'consumer_npl',
+        'briguna_konsumer_npl',
+        'kpr_npl',
+        'kkb_npl',
+        'micro_npl',
+        'briguna_mikro_npl',
+        'kupedes_npl',
+        'kur_mikro_npl',
+        'kur_kecil_npl',
+        'kur_kpp_npl',
     ];
     private const ROW_DEFINITIONS = [
-        ['key' => 'total_simpanan', 'label' => '1. Total Simpanan', 'type' => 'currency', 'depth' => 0, 'accent' => 'strong'],
+        ['key' => 'total_simpanan', 'label' => '1. Simpanan', 'type' => 'currency', 'depth' => 0, 'accent' => 'strong'],
         ['key' => 'simpanan_ritel', 'label' => 'A. Ritel', 'type' => 'currency', 'depth' => 1, 'accent' => 'section'],
         ['key' => 'giro_ritel', 'label' => 'Giro', 'type' => 'currency', 'depth' => 2, 'accent' => 'default'],
         ['key' => 'deposito_ritel', 'label' => 'Deposito', 'type' => 'currency', 'depth' => 2, 'accent' => 'default'],
@@ -59,7 +94,11 @@ class DashboardHarianSnapshotService
         ['key' => 'giro_mikro', 'label' => 'Giro', 'type' => 'currency', 'depth' => 2, 'accent' => 'default'],
         ['key' => 'deposito_mikro', 'label' => 'Deposito', 'type' => 'currency', 'depth' => 2, 'accent' => 'default'],
         ['key' => 'tabungan_mikro', 'label' => 'Tabungan', 'type' => 'currency', 'depth' => 2, 'accent' => 'default'],
-        ['key' => 'total_os', 'label' => '2. Total OS', 'type' => 'currency', 'depth' => 0, 'accent' => 'strong'],
+        ['key' => 'simpanan_wholesale', 'label' => 'C. Wholesale', 'type' => 'currency', 'depth' => 1, 'accent' => 'section'],
+        ['key' => 'giro_wholesale', 'label' => 'Giro', 'type' => 'currency', 'depth' => 2, 'accent' => 'default'],
+        ['key' => 'deposito_wholesale', 'label' => 'Deposito', 'type' => 'currency', 'depth' => 2, 'accent' => 'default'],
+        ['key' => 'tabungan_wholesale', 'label' => 'Tabungan', 'type' => 'currency', 'depth' => 2, 'accent' => 'default'],
+        ['key' => 'total_os', 'label' => '2. OS Total', 'type' => 'currency', 'depth' => 0, 'accent' => 'strong'],
         ['key' => 'total_os_non_commercial', 'label' => 'Total OS Non Commercial', 'type' => 'currency', 'depth' => 1, 'accent' => 'section'],
         ['key' => 'commercial_os', 'label' => 'A. Commercial', 'type' => 'currency', 'depth' => 1, 'accent' => 'default'],
         ['key' => 'sme_os', 'label' => 'B. SME', 'type' => 'currency', 'depth' => 1, 'accent' => 'section'],
@@ -77,16 +116,47 @@ class DashboardHarianSnapshotService
         ['key' => 'kur_mikro_os', 'label' => 'KUR Mikro', 'type' => 'currency', 'depth' => 2, 'accent' => 'default'],
         ['key' => 'kur_kecil_os', 'label' => 'KUR Kecil', 'type' => 'currency', 'depth' => 2, 'accent' => 'default'],
         ['key' => 'kur_kpp_os', 'label' => 'KUR KPP', 'type' => 'currency', 'depth' => 2, 'accent' => 'default'],
-        ['key' => 'micro_cashcoll_os', 'label' => 'Mikro Cashcoll', 'type' => 'currency', 'depth' => 2, 'accent' => 'default'],
         ['key' => 'total_sml_pct_non_commercial', 'label' => '3. Total SML (%) Non Commercial', 'type' => 'percent', 'depth' => 0, 'accent' => 'strong'],
-        ['key' => 'total_sml_abs_non_commercial', 'label' => 'Total SML (abs) Non Commercial', 'type' => 'currency', 'depth' => 1, 'accent' => 'default'],
-        ['key' => 'total_npl_pct_non_commercial', 'label' => '4. Total NPL (%) Non Commercial', 'type' => 'percent', 'depth' => 0, 'accent' => 'strong'],
-        ['key' => 'total_npl_abs_non_commercial', 'label' => 'Total NPL (abs) Non Commercial', 'type' => 'currency', 'depth' => 1, 'accent' => 'default'],
+        ['key' => 'total_sml_abs_non_commercial', 'label' => 'Total SML (ABS) Non Commercial', 'type' => 'currency', 'depth' => 1, 'accent' => 'section'],
+        ['key' => 'commercial_sml', 'label' => 'A. Commercial', 'type' => 'currency', 'depth' => 1, 'accent' => 'default'],
+        ['key' => 'sme_sml', 'label' => 'B. SME', 'type' => 'currency', 'depth' => 1, 'accent' => 'section'],
+        ['key' => 'kecil_sml', 'label' => 'Kecil', 'type' => 'currency', 'depth' => 2, 'accent' => 'default'],
+        ['key' => 'kecil_non_cashcoll_sml', 'label' => 'Kecil Non Cashcoll', 'type' => 'currency', 'depth' => 3, 'accent' => 'muted'],
+        ['key' => 'cashcoll_sml', 'label' => 'Cashcoll', 'type' => 'currency', 'depth' => 3, 'accent' => 'muted'],
+        ['key' => 'medium_sml', 'label' => 'Medium', 'type' => 'currency', 'depth' => 2, 'accent' => 'default'],
+        ['key' => 'consumer_sml', 'label' => 'C. Konsumer', 'type' => 'currency', 'depth' => 1, 'accent' => 'section'],
+        ['key' => 'briguna_konsumer_sml', 'label' => 'Briguna', 'type' => 'currency', 'depth' => 2, 'accent' => 'default'],
+        ['key' => 'kpr_sml', 'label' => 'KPR', 'type' => 'currency', 'depth' => 2, 'accent' => 'default'],
+        ['key' => 'kkb_sml', 'label' => 'KKB', 'type' => 'currency', 'depth' => 2, 'accent' => 'default'],
+        ['key' => 'micro_sml', 'label' => 'D. Mikro', 'type' => 'currency', 'depth' => 1, 'accent' => 'section'],
+        ['key' => 'briguna_mikro_sml', 'label' => 'Briguna Mikro', 'type' => 'currency', 'depth' => 2, 'accent' => 'default'],
+        ['key' => 'kupedes_sml', 'label' => 'Kupedes', 'type' => 'currency', 'depth' => 2, 'accent' => 'default'],
+        ['key' => 'kur_mikro_sml', 'label' => 'KUR Mikro', 'type' => 'currency', 'depth' => 2, 'accent' => 'default'],
+        ['key' => 'kur_kecil_sml', 'label' => 'KUR Kecil', 'type' => 'currency', 'depth' => 2, 'accent' => 'default'],
+        ['key' => 'kur_kpp_sml', 'label' => 'KUR KPP', 'type' => 'currency', 'depth' => 2, 'accent' => 'default'],
+        ['key' => 'total_npl_pct_non_commercial', 'label' => '4. NPL', 'type' => 'percent', 'depth' => 0, 'accent' => 'strong'],
+        ['key' => 'total_npl_abs_non_commercial', 'label' => 'Total NPL (ABS) Non Commercial', 'type' => 'currency', 'depth' => 1, 'accent' => 'section'],
+        ['key' => 'commercial_npl', 'label' => 'A. Commercial', 'type' => 'currency', 'depth' => 1, 'accent' => 'default'],
+        ['key' => 'sme_npl', 'label' => 'B. SME', 'type' => 'currency', 'depth' => 1, 'accent' => 'section'],
+        ['key' => 'kecil_npl', 'label' => 'Kecil', 'type' => 'currency', 'depth' => 2, 'accent' => 'default'],
+        ['key' => 'kecil_non_cashcoll_npl', 'label' => 'Kecil Non Cashcoll', 'type' => 'currency', 'depth' => 3, 'accent' => 'muted'],
+        ['key' => 'cashcoll_npl', 'label' => 'Cashcoll', 'type' => 'currency', 'depth' => 3, 'accent' => 'muted'],
+        ['key' => 'medium_npl', 'label' => 'Medium', 'type' => 'currency', 'depth' => 2, 'accent' => 'default'],
+        ['key' => 'consumer_npl', 'label' => 'C. Konsumer', 'type' => 'currency', 'depth' => 1, 'accent' => 'section'],
+        ['key' => 'briguna_konsumer_npl', 'label' => 'Briguna', 'type' => 'currency', 'depth' => 2, 'accent' => 'default'],
+        ['key' => 'kpr_npl', 'label' => 'KPR', 'type' => 'currency', 'depth' => 2, 'accent' => 'default'],
+        ['key' => 'kkb_npl', 'label' => 'KKB', 'type' => 'currency', 'depth' => 2, 'accent' => 'default'],
+        ['key' => 'micro_npl', 'label' => 'D. Mikro', 'type' => 'currency', 'depth' => 1, 'accent' => 'section'],
+        ['key' => 'briguna_mikro_npl', 'label' => 'Briguna Mikro', 'type' => 'currency', 'depth' => 2, 'accent' => 'default'],
+        ['key' => 'kupedes_npl', 'label' => 'Kupedes', 'type' => 'currency', 'depth' => 2, 'accent' => 'default'],
+        ['key' => 'kur_mikro_npl', 'label' => 'KUR Mikro', 'type' => 'currency', 'depth' => 2, 'accent' => 'default'],
+        ['key' => 'kur_kecil_npl', 'label' => 'KUR Kecil', 'type' => 'currency', 'depth' => 2, 'accent' => 'default'],
+        ['key' => 'kur_kpp_npl', 'label' => 'KUR KPP', 'type' => 'currency', 'depth' => 2, 'accent' => 'default'],
         ['key' => 'casa_pct', 'label' => '5. %CASA', 'type' => 'percent', 'depth' => 0, 'accent' => 'strong'],
         ['key' => 'total_casa', 'label' => 'Total CASA', 'type' => 'currency', 'depth' => 1, 'accent' => 'default'],
         ['key' => 'casa_ritel', 'label' => 'CASA Ritel', 'type' => 'currency', 'depth' => 1, 'accent' => 'default'],
         ['key' => 'casa_mikro', 'label' => 'CASA Mikro', 'type' => 'currency', 'depth' => 1, 'accent' => 'default'],
-        ['key' => 'ldr_non_commercial', 'label' => '6. Total LDR Non Commercial', 'type' => 'percent', 'depth' => 0, 'accent' => 'strong'],
+        ['key' => 'ldr_non_commercial', 'label' => '6. LDR Non Commercial', 'type' => 'percent', 'depth' => 0, 'accent' => 'strong'],
         ['key' => 'ldr_ritel_non_commercial', 'label' => 'LDR Ritel Non Commercial', 'type' => 'percent', 'depth' => 1, 'accent' => 'default'],
         ['key' => 'ldr_mikro_non_commercial', 'label' => 'LDR Mikro Non Commercial', 'type' => 'percent', 'depth' => 1, 'accent' => 'default'],
     ];
@@ -140,13 +210,13 @@ class DashboardHarianSnapshotService
             }
         }
 
-        if (!$this->sourcePeriodExists(self::LOAN_TABLE, 'periode', $period) || !$this->sourcePeriodExists(self::SAVINGS_TABLE, 'posisi', $period)) {
+        if (!$this->sourcePeriodExists(self::LOAN_TABLE, $period) || !$this->sourcePeriodExists(self::SAVINGS_TABLE, $period)) {
             DB::table(self::SNAPSHOT_TABLE)->where('snapshot_period', $period)->delete();
 
             return 0;
         }
 
-        [$payload, $sourceRowCount] = $this->buildAggregatedRowsForPeriod($period);
+        [$payload] = $this->buildAggregatedRowsForPeriod($period);
 
         if ($payload === []) {
             DB::table(self::SNAPSHOT_TABLE)->where('snapshot_period', $period)->delete();
@@ -213,6 +283,31 @@ class DashboardHarianSnapshotService
         return $periods[0] ?? null;
     }
 
+    public function resolveEffectiveRkaPeriod(?string $requestedMonth, ?string $fallbackPeriod = null): ?string
+    {
+        $periods = $this->fetchPeriods()
+            ->map(fn ($value) => $this->normalizeDate($value))
+            ->filter()
+            ->values();
+
+        if ($periods->isEmpty()) {
+            return $this->resolveEffectivePeriod($fallbackPeriod);
+        }
+
+        $normalizedMonth = $this->normalizeMonthValue($requestedMonth);
+        if ($normalizedMonth !== null) {
+            $matchedPeriod = $periods
+                ->filter(fn ($value) => str_starts_with($value, $normalizedMonth . '-'))
+                ->max();
+
+            if ($matchedPeriod) {
+                return $matchedPeriod;
+            }
+        }
+
+        return $this->resolveEffectivePeriod($fallbackPeriod);
+    }
+
     public function resolveComparisonPeriods(string $selectedPeriod, ?string $rkaPeriod = null): array
     {
         $selected = Carbon::parse($selectedPeriod);
@@ -230,7 +325,7 @@ class DashboardHarianSnapshotService
         ];
     }
 
-    public function fetchFilterOptions(?string $period = null): array
+    public function fetchFilterOptions(?string $period = null, array|string|null $selectedKanca = null, array|string|null $selectedUnit = null): array
     {
         $effectivePeriod = $this->resolveEffectivePeriod($period);
         $periodOptions = $this->fetchPeriods()
@@ -239,33 +334,49 @@ class DashboardHarianSnapshotService
                 'label' => $this->formatPeriodLabel($value),
             ])
             ->all();
+        $monthOptions = $this->fetchMonthFilterOptions();
 
         if (!$effectivePeriod) {
             return [
                 'kanca' => [['value' => 'all', 'label' => 'Semua Kanca']],
                 'unit_kerja' => [['value' => 'all', 'label' => 'Semua Unit Kerja']],
                 'posisi_terakhir' => $periodOptions,
-                'posisi_rka' => $periodOptions,
+                'posisi_rka' => $monthOptions,
             ];
         }
 
+        $normalizedKanca = $this->normalizeFilterValues($selectedKanca);
+        $normalizedUnit = $this->normalizeFilterValues($selectedUnit);
         $kancas = collect();
         $units = collect();
 
         try {
-            if (Schema::hasTable(self::SNAPSHOT_TABLE)) {
-                $kancas = DB::table(self::SNAPSHOT_TABLE)
-                    ->where('snapshot_period', $effectivePeriod)
-                    ->select('kanca_key as value', 'kanca_label as label')
+            if (Schema::hasTable(self::SAVINGS_TABLE)) {
+                $rawPeriodCandidates = $this->sourcePeriodRawCandidates(self::SAVINGS_TABLE, $effectivePeriod);
+
+                $kancas = DB::table(self::SAVINGS_TABLE . ' as ss')
+                    ->whereIn('ss.Month_Day_Year_of_Posisi', $rawPeriodCandidates)
+                    ->selectRaw("TRIM(COALESCE(ss.nama_cabang, '')) as value")
+                    ->selectRaw("TRIM(COALESCE(ss.nama_cabang, '')) as label")
+                    ->whereRaw("TRIM(COALESCE(ss.nama_cabang, '')) <> ''")
                     ->distinct()
-                    ->orderBy('kanca_label')
+                    ->orderBy('label')
                     ->get();
 
-                $units = DB::table(self::SNAPSHOT_TABLE)
-                    ->where('snapshot_period', $effectivePeriod)
-                    ->select('unit_key as value', 'unit_label as label')
+                $unitQuery = DB::table(self::SAVINGS_TABLE . ' as ss')
+                    ->whereIn('ss.Month_Day_Year_of_Posisi', $rawPeriodCandidates)
+                    ->selectRaw("TRIM(COALESCE(ss.nama_uker, '')) as value")
+                    ->selectRaw("TRIM(COALESCE(ss.nama_uker, '')) as label")
+                    ->selectRaw("TRIM(COALESCE(ss.nama_cabang, '')) as kanca_value")
+                    ->whereRaw("TRIM(COALESCE(ss.nama_uker, '')) <> ''");
+
+                if ($normalizedKanca !== []) {
+                    $unitQuery->whereIn(DB::raw("TRIM(COALESCE(ss.nama_cabang, ''))"), $normalizedKanca);
+                }
+
+                $units = $unitQuery
                     ->distinct()
-                    ->orderBy('unit_label')
+                    ->orderBy('label')
                     ->get();
             }
         } catch (Throwable) {
@@ -283,21 +394,38 @@ class DashboardHarianSnapshotService
                 ->values();
 
             $units = collect($payload)
-                ->map(fn (array $row) => ['value' => $row['unit_key'], 'label' => $row['unit_label']])
-                ->unique('value')
+                ->map(fn (array $row) => ['value' => $row['unit_key'], 'label' => $row['unit_label'], 'kanca_value' => $row['kanca_key']])
+                ->unique(fn (array $row) => $row['kanca_value'] . '|' . $row['value'])
                 ->sortBy('label')
                 ->values();
         }
 
+        $scopedUnits = $units
+            ->filter(function ($row) use ($normalizedKanca) {
+                if ($normalizedKanca === []) {
+                    return true;
+                }
+
+                return in_array((string) data_get($row, 'kanca_value'), $normalizedKanca, true);
+            })
+            ->values();
+
+        if (
+            $normalizedUnit !== []
+            && !$scopedUnits->contains(fn ($row) => in_array((string) data_get($row, 'value'), $normalizedUnit, true))
+        ) {
+            $normalizedUnit = [];
+        }
+
         return [
             'kanca' => array_values(array_merge([['value' => 'all', 'label' => 'Semua Kanca']], $kancas->map(fn ($row) => (array) $row)->all())),
-            'unit_kerja' => array_values(array_merge([['value' => 'all', 'label' => 'Semua Unit Kerja']], $units->map(fn ($row) => (array) $row)->all())),
+            'unit_kerja' => array_values(array_merge([['value' => 'all', 'label' => 'Semua Unit Kerja']], $scopedUnits->map(fn ($row) => (array) $row)->all())),
             'posisi_terakhir' => $periodOptions,
-            'posisi_rka' => $periodOptions,
+            'posisi_rka' => $monthOptions,
         ];
     }
 
-    public function buildDashboardPayload(?string $selectedPeriod, ?string $rkaPeriod = null, ?string $kancaKey = null, ?string $unitKey = null): array
+    public function buildDashboardPayload(?string $selectedPeriod, ?string $rkaPeriod = null, array|string|null $kancaKey = null, array|string|null $unitKey = null): array
     {
         if (!$selectedPeriod) {
             return [
@@ -376,21 +504,21 @@ class DashboardHarianSnapshotService
             'selected_period' => $selectedPeriod,
             'selected_period_label' => $this->formatPeriodLabel($selectedPeriod),
             'selected_rka_period' => $comparisonPeriods['rka'],
-            'selected_rka_label' => $this->formatPeriodLabel($comparisonPeriods['rka']),
+            'selected_rka_label' => $this->formatMonthLabel($comparisonPeriods['rka']),
             'comparison_periods' => [
                 'yoy' => ['period' => $comparisonPeriods['yoy'], 'label' => $this->formatPeriodLabel($comparisonPeriods['yoy'])],
                 'ytd' => ['period' => $comparisonPeriods['ytd'], 'label' => $this->formatPeriodLabel($comparisonPeriods['ytd'])],
                 'mtm' => ['period' => $comparisonPeriods['mtm'], 'label' => $this->formatPeriodLabel($comparisonPeriods['mtm'])],
                 'mtd' => ['period' => $comparisonPeriods['mtd'], 'label' => $this->formatPeriodLabel($comparisonPeriods['mtd'])],
                 'h1' => ['period' => $comparisonPeriods['h1'], 'label' => $this->formatPeriodLabel($comparisonPeriods['h1'])],
-                'rka' => ['period' => $comparisonPeriods['rka'], 'label' => $this->formatPeriodLabel($comparisonPeriods['rka'])],
+                'rka' => ['period' => $comparisonPeriods['rka'], 'label' => $this->formatMonthLabel($comparisonPeriods['rka'])],
                 'rka_dec' => ['period' => $comparisonPeriods['rka_dec'], 'label' => $this->formatPeriodLabel($comparisonPeriods['rka_dec'])],
             ],
             'rows' => $rows,
             'summary' => [
                 'source' => $source,
-                'kanca_label' => $this->displayFilterLabel($kancaKey, 'Semua Kanca', $selectedPeriod, 'kanca'),
-                'unit_label' => $this->displayFilterLabel($unitKey, 'Semua Unit Kerja', $selectedPeriod, 'unit_kerja'),
+                'kanca_label' => $this->displayFilterLabel($kancaKey, 'Semua Kanca', $selectedPeriod, 'kanca', $kancaKey, $unitKey),
+                'unit_label' => $this->displayFilterLabel($unitKey, 'Semua Unit Kerja', $selectedPeriod, 'unit_kerja', $kancaKey, $unitKey),
                 'row_count' => count($rows),
                 'current_total_simpanan' => (float) ($currentMetrics['total_simpanan'] ?? 0),
                 'current_total_os_non_commercial' => (float) ($currentMetrics['total_os_non_commercial'] ?? 0),
@@ -399,7 +527,7 @@ class DashboardHarianSnapshotService
         ];
     }
 
-    private function loadMetricsForPeriods(array $periods, ?string $kancaKey, ?string $unitKey): array
+    private function loadMetricsForPeriods(array $periods, array|string|null $kancaKey, array|string|null $unitKey): array
     {
         $normalizedPeriods = array_values(array_unique(array_filter(array_map([$this, 'normalizeDate'], $periods))));
         if ($normalizedPeriods === []) {
@@ -407,9 +535,11 @@ class DashboardHarianSnapshotService
         }
 
         $metricsByPeriod = [];
-        $snapshotPeriods = [];
+        $normalizedKanca = $this->normalizeFilterValues($kancaKey);
+        $normalizedUnit = $this->normalizeFilterValues($unitKey);
+        $useSnapshot = $normalizedKanca === [] && $normalizedUnit === [];
 
-        if (Schema::hasTable(self::SNAPSHOT_TABLE)) {
+        if ($useSnapshot && Schema::hasTable(self::SNAPSHOT_TABLE)) {
             $selects = collect(self::METRIC_COLUMNS)
                 ->map(fn (string $column) => "COALESCE(SUM({$column}), 0) as {$column}")
                 ->implode(",\n");
@@ -422,50 +552,38 @@ class DashboardHarianSnapshotService
                 ->selectRaw($selects)
                 ->selectRaw('MAX(source_row_count) as source_row_count');
 
-            $this->applySnapshotFilter($query, 'kanca_key', $kancaKey);
-            $this->applySnapshotFilter($query, 'unit_key', $unitKey);
-
             foreach ($query->get() as $row) {
-                $snapshotPeriods[] = $row->snapshot_period;
                 $metricsByPeriod[$row->snapshot_period] = $this->finalizeMetrics((array) $row);
             }
         }
 
-        $missingPeriods = array_values(array_diff($normalizedPeriods, $snapshotPeriods));
-
-        foreach ($missingPeriods as $missingPeriod) {
-            $metricsByPeriod[$missingPeriod] = $this->buildMetricsFromSource($missingPeriod, $kancaKey, $unitKey);
+        foreach ($normalizedPeriods as $period) {
+            if (!isset($metricsByPeriod[$period])) {
+                $metricsByPeriod[$period] = $this->buildMetricsFromSource($period, $normalizedKanca, $normalizedUnit);
+            }
         }
 
         return $metricsByPeriod;
     }
 
-    private function buildMetricsFromSource(string $period, ?string $kancaKey, ?string $unitKey): array
+    private function buildMetricsFromSource(string $period, array|string|null $kancaKey, array|string|null $unitKey): array
     {
-        [$payload] = $this->buildAggregatedRowsForPeriod($period);
+        [$payload] = $this->buildAggregatedRowsForPeriod($period, $kancaKey, $unitKey);
         $metrics = $this->emptyMetrics();
 
         foreach ($payload as $row) {
-            if ($this->normalizeFilterValue($kancaKey) !== null && $row['kanca_key'] !== $this->normalizeFilterValue($kancaKey)) {
-                continue;
-            }
-
-            if ($this->normalizeFilterValue($unitKey) !== null && $row['unit_key'] !== $this->normalizeFilterValue($unitKey)) {
-                continue;
-            }
-
             $this->accumulateMetrics($metrics, $row);
         }
 
         return $this->finalizeMetrics($metrics);
     }
 
-    private function buildAggregatedRowsForPeriod(string $period): array
+    private function buildAggregatedRowsForPeriod(string $period, array|string|null $kancaKey = null, array|string|null $unitKey = null): array
     {
         $buckets = [];
         $sourceRowCount = 0;
 
-        foreach ($this->fetchSavingsAggregates($period) as $row) {
+        foreach ($this->fetchSavingsAggregates($period, $kancaKey, $unitKey) as $row) {
             $kancaLabel = $this->normalizeKancaLabel($row->raw_kantor_cabang ?? $row->raw_unit_kerja ?? null);
             if ($kancaLabel === '') {
                 continue;
@@ -475,16 +593,24 @@ class DashboardHarianSnapshotService
             $bucketKey = $this->makeBucketKey($kancaLabel, $unitLabel);
             $this->initializeBucket($buckets, $bucketKey, $kancaLabel, $unitLabel);
 
-            $buckets[$bucketKey]['giro_ritel'] += (float) ($row->giro_ritel ?? 0);
-            $buckets[$bucketKey]['deposito_ritel'] += (float) ($row->deposito_ritel ?? 0);
-            $buckets[$bucketKey]['tabungan_ritel'] += (float) ($row->tabungan_ritel ?? 0);
-            $buckets[$bucketKey]['giro_mikro'] += (float) ($row->giro_mikro ?? 0);
-            $buckets[$bucketKey]['deposito_mikro'] += (float) ($row->deposito_mikro ?? 0);
-            $buckets[$bucketKey]['tabungan_mikro'] += (float) ($row->tabungan_mikro ?? 0);
+            foreach ([
+                'giro_ritel',
+                'deposito_ritel',
+                'tabungan_ritel',
+                'giro_mikro',
+                'deposito_mikro',
+                'tabungan_mikro',
+                'giro_wholesale',
+                'deposito_wholesale',
+                'tabungan_wholesale',
+            ] as $metric) {
+                $buckets[$bucketKey][$metric] += (float) ($row->{$metric} ?? 0);
+            }
+
             $sourceRowCount++;
         }
 
-        foreach ($this->fetchLoanAggregates($period) as $row) {
+        foreach ($this->fetchLoanAggregates($period, $kancaKey, $unitKey) as $row) {
             $kancaLabel = $this->normalizeKancaLabel($row->raw_cabang ?? $row->raw_unit ?? null);
             if ($kancaLabel === '') {
                 continue;
@@ -494,25 +620,10 @@ class DashboardHarianSnapshotService
             $bucketKey = $this->makeBucketKey($kancaLabel, $unitLabel);
             $this->initializeBucket($buckets, $bucketKey, $kancaLabel, $unitLabel);
 
-            $buckets[$bucketKey]['commercial_os'] += (float) ($row->commercial_os ?? 0);
-            $buckets[$bucketKey]['sme_os'] += (float) ($row->sme_os ?? 0);
-            $buckets[$bucketKey]['kecil_os'] += (float) ($row->kecil_os ?? 0);
-            $buckets[$bucketKey]['kecil_non_cashcoll_os'] += (float) ($row->kecil_non_cashcoll_os ?? 0);
-            $buckets[$bucketKey]['cashcoll_os'] += (float) ($row->cashcoll_os ?? 0);
-            $buckets[$bucketKey]['medium_os'] += (float) ($row->medium_os ?? 0);
-            $buckets[$bucketKey]['consumer_os'] += (float) ($row->consumer_os ?? 0);
-            $buckets[$bucketKey]['briguna_konsumer_os'] += (float) ($row->briguna_konsumer_os ?? 0);
-            $buckets[$bucketKey]['kpr_os'] += (float) ($row->kpr_os ?? 0);
-            $buckets[$bucketKey]['kkb_os'] += (float) ($row->kkb_os ?? 0);
-            $buckets[$bucketKey]['micro_os'] += (float) ($row->micro_os ?? 0);
-            $buckets[$bucketKey]['briguna_mikro_os'] += (float) ($row->briguna_mikro_os ?? 0);
-            $buckets[$bucketKey]['kupedes_os'] += (float) ($row->kupedes_os ?? 0);
-            $buckets[$bucketKey]['kur_mikro_os'] += (float) ($row->kur_mikro_os ?? 0);
-            $buckets[$bucketKey]['kur_kecil_os'] += (float) ($row->kur_kecil_os ?? 0);
-            $buckets[$bucketKey]['kur_kpp_os'] += (float) ($row->kur_kpp_os ?? 0);
-            $buckets[$bucketKey]['micro_cashcoll_os'] += (float) ($row->micro_cashcoll_os ?? 0);
-            $buckets[$bucketKey]['total_sml_abs_non_commercial'] += (float) ($row->total_sml_abs_non_commercial ?? 0);
-            $buckets[$bucketKey]['total_npl_abs_non_commercial'] += (float) ($row->total_npl_abs_non_commercial ?? 0);
+            foreach ($this->loanMetricKeys() as $metric) {
+                $buckets[$bucketKey][$metric] += (float) ($row->{$metric} ?? 0);
+            }
+
             $sourceRowCount++;
         }
 
@@ -540,58 +651,73 @@ class DashboardHarianSnapshotService
         return [$payload, $sourceRowCount];
     }
 
-    private function fetchSavingsAggregates(string $period): Collection
+    private function fetchSavingsAggregates(string $period, array|string|null $kancaKey = null, array|string|null $unitKey = null): Collection
     {
-        $unit = "UPPER(TRIM(COALESCE(unit_kerja, '')))";
-        $type = "UPPER(TRIM(COALESCE(jenis_simpanan, '')))";
-        $retail = "({$unit} LIKE '%KC%' OR {$unit} LIKE '%KCP%')";
-        $micro = "{$unit} LIKE '%UNIT%'";
+        $segment = "UPPER(TRIM(COALESCE(ss.segmentasi, '')))";
+        $product = "UPPER(TRIM(COALESCE(ss.produk, '')))";
 
-        return DB::table(self::SAVINGS_TABLE)
-            ->where('posisi', $period)
-            ->selectRaw("TRIM(COALESCE(kantor_cabang, '')) as raw_kantor_cabang")
-            ->selectRaw("TRIM(COALESCE(unit_kerja, '')) as raw_unit_kerja")
-            ->selectRaw("SUM(CASE WHEN {$retail} AND {$type} LIKE 'GIRO%' THEN COALESCE(saldo_idr, 0) ELSE 0 END) as giro_ritel")
-            ->selectRaw("SUM(CASE WHEN {$retail} AND {$type} LIKE 'DEPOSITO%' THEN COALESCE(saldo_idr, 0) ELSE 0 END) as deposito_ritel")
-            ->selectRaw("SUM(CASE WHEN {$retail} AND {$type} LIKE 'TABUNGAN%' THEN COALESCE(saldo_idr, 0) ELSE 0 END) as tabungan_ritel")
-            ->selectRaw("SUM(CASE WHEN {$micro} AND {$type} LIKE 'GIRO%' THEN COALESCE(saldo_idr, 0) ELSE 0 END) as giro_mikro")
-            ->selectRaw("SUM(CASE WHEN {$micro} AND {$type} LIKE 'DEPOSITO%' THEN COALESCE(saldo_idr, 0) ELSE 0 END) as deposito_mikro")
-            ->selectRaw("SUM(CASE WHEN {$micro} AND {$type} LIKE 'TABUNGAN%' THEN COALESCE(saldo_idr, 0) ELSE 0 END) as tabungan_mikro")
-            ->groupBy('raw_kantor_cabang', 'raw_unit_kerja')
-            ->get();
+        $microSegment = "{$segment} IN ('MICRO', 'MIKRO')";
+
+        $query = DB::table(self::SAVINGS_TABLE . ' as ss')
+            ->whereIn('ss.Month_Day_Year_of_Posisi', $this->sourcePeriodRawCandidates(self::SAVINGS_TABLE, $period))
+            ->selectRaw("TRIM(COALESCE(ss.nama_cabang, '')) as raw_kantor_cabang")
+            ->selectRaw("TRIM(COALESCE(ss.nama_uker, '')) as raw_unit_kerja")
+            ->selectRaw("SUM(CASE WHEN {$segment} = 'RITEL' AND {$product} = 'GIRO' THEN COALESCE(ss.saldo, 0) ELSE 0 END) as giro_ritel")
+            ->selectRaw("SUM(CASE WHEN {$segment} = 'RITEL' AND {$product} = 'DEPOSITO' THEN COALESCE(ss.saldo, 0) ELSE 0 END) as deposito_ritel")
+            ->selectRaw("SUM(CASE WHEN {$segment} = 'RITEL' AND {$product} = 'TABUNGAN' THEN COALESCE(ss.saldo, 0) ELSE 0 END) as tabungan_ritel")
+            ->selectRaw("SUM(CASE WHEN {$microSegment} AND {$product} = 'GIRO' THEN COALESCE(ss.saldo, 0) ELSE 0 END) as giro_mikro")
+            ->selectRaw("SUM(CASE WHEN {$microSegment} AND {$product} = 'DEPOSITO' THEN COALESCE(ss.saldo, 0) ELSE 0 END) as deposito_mikro")
+            ->selectRaw("SUM(CASE WHEN {$microSegment} AND {$product} = 'TABUNGAN' THEN COALESCE(ss.saldo, 0) ELSE 0 END) as tabungan_mikro")
+            ->selectRaw("SUM(CASE WHEN {$segment} = 'WHOLESALE' AND {$product} = 'GIRO' THEN COALESCE(ss.saldo, 0) ELSE 0 END) as giro_wholesale")
+            ->selectRaw("SUM(CASE WHEN {$segment} = 'WHOLESALE' AND {$product} = 'DEPOSITO' THEN COALESCE(ss.saldo, 0) ELSE 0 END) as deposito_wholesale")
+            ->selectRaw("SUM(CASE WHEN {$segment} = 'WHOLESALE' AND {$product} = 'TABUNGAN' THEN COALESCE(ss.saldo, 0) ELSE 0 END) as tabungan_wholesale")
+            ->groupBy('raw_kantor_cabang', 'raw_unit_kerja');
+
+        $normalizedKanca = $this->normalizeFilterValues($kancaKey);
+        if ($normalizedKanca !== []) {
+            $query->whereIn(DB::raw("TRIM(COALESCE(ss.nama_cabang, ''))"), $normalizedKanca);
+        }
+
+        $normalizedUnit = $this->normalizeFilterValues($unitKey);
+        if ($normalizedUnit !== []) {
+            $query->whereIn(DB::raw("TRIM(COALESCE(ss.nama_uker, ''))"), $normalizedUnit);
+        }
+
+        return $query->get();
     }
 
-    private function fetchLoanAggregates(string $period): Collection
+    private function fetchLoanAggregates(string $period, array|string|null $kancaKey = null, array|string|null $unitKey = null): Collection
     {
-        $segment = "LOWER(TRIM(COALESCE(segmen_dashboard, '')))";
-        $product = "LOWER(TRIM(COALESCE(produk_dashboard, '')))";
-        $description = "LOWER(TRIM(COALESCE(description, '')))";
-        $balance = 'COALESCE(baki_debet1, 0)';
-        $kol = "CAST(NULLIF(TRIM(COALESCE(kol_adk1, '')), '') AS UNSIGNED)";
+        $segment = "UPPER(TRIM(COALESCE(sp.segmen_dashboard, '')))";
+        $productDashboard = "UPPER(TRIM(COALESCE(sp.produk_dashboard, '')))";
+        $product = "UPPER(TRIM(COALESCE(sp.produk, '')))";
+        $balance = 'COALESCE(sp.baki_debet, 0)';
+        $kol = "CAST(NULLIF(TRIM(COALESCE(sp.kolektabilitas_one_obligor, '')), '') AS UNSIGNED)";
 
-        return DB::table(self::LOAN_TABLE)
-            ->where('periode', $period)
-            ->selectRaw("TRIM(COALESCE(cabang1, '')) as raw_cabang")
-            ->selectRaw("TRIM(COALESCE(unit1, '')) as raw_unit")
-            ->selectRaw("SUM(CASE WHEN {$segment} = 'commercial' THEN {$balance} ELSE 0 END) as commercial_os")
-            ->selectRaw("SUM(CASE WHEN {$segment} IN ('small', 'medium') THEN {$balance} ELSE 0 END) as sme_os")
-            ->selectRaw("SUM(CASE WHEN {$segment} = 'small' THEN {$balance} ELSE 0 END) as kecil_os")
-            ->selectRaw("SUM(CASE WHEN {$segment} = 'small' AND {$product} = 'commercial' THEN {$balance} ELSE 0 END) as kecil_non_cashcoll_os")
-            ->selectRaw("SUM(CASE WHEN {$segment} = 'small' AND {$product} = 'cashcall' THEN {$balance} ELSE 0 END) as cashcoll_os")
-            ->selectRaw("SUM(CASE WHEN {$segment} = 'medium' AND {$product} = 'medium' THEN {$balance} ELSE 0 END) as medium_os")
-            ->selectRaw("SUM(CASE WHEN {$segment} = 'consumer' THEN {$balance} ELSE 0 END) as consumer_os")
-            ->selectRaw("SUM(CASE WHEN {$segment} = 'consumer' AND {$product} = 'briguna-konsumer' THEN {$balance} ELSE 0 END) as briguna_konsumer_os")
-            ->selectRaw("SUM(CASE WHEN {$segment} = 'consumer' AND {$product} = 'kpr' THEN {$balance} ELSE 0 END) as kpr_os")
-            ->selectRaw("SUM(CASE WHEN {$segment} = 'consumer' AND {$product} = 'kkb' THEN {$balance} ELSE 0 END) as kkb_os")
-            ->selectRaw("SUM(CASE WHEN {$segment} = 'micro' THEN {$balance} ELSE 0 END) as micro_os")
-            ->selectRaw("SUM(CASE WHEN {$segment} = 'micro' AND {$product} = 'briguna-mikro' THEN {$balance} ELSE 0 END) as briguna_mikro_os")
-            ->selectRaw("SUM(CASE WHEN {$segment} = 'micro' AND {$product} = 'kupedes' THEN {$balance} ELSE 0 END) as kupedes_os")
-            ->selectRaw("SUM(CASE WHEN {$segment} = 'micro' AND {$product} = 'kur-mikro' AND {$description} = 'kur mikro baru' THEN {$balance} ELSE 0 END) as kur_mikro_os")
-            ->selectRaw("SUM(CASE WHEN {$segment} = 'micro' AND {$product} = 'kur-mikro' AND {$description} LIKE 'kredit mikro - kur ritel 2015%' THEN {$balance} ELSE 0 END) as kur_kecil_os")
-            ->selectRaw("SUM(CASE WHEN {$segment} = 'micro' AND {$product} = 'kpr' THEN {$balance} ELSE 0 END) as kur_kpp_os")
-            ->selectRaw("SUM(CASE WHEN {$segment} = 'micro' AND {$product} = 'cash collateral' THEN {$balance} ELSE 0 END) as micro_cashcoll_os")
-            ->selectRaw("SUM(CASE WHEN {$segment} <> 'commercial' AND {$kol} = 2 THEN {$balance} ELSE 0 END) as total_sml_abs_non_commercial")
-            ->selectRaw("SUM(CASE WHEN {$segment} <> 'commercial' AND {$kol} > 2 AND {$kol} <= 5 THEN {$balance} ELSE 0 END) as total_npl_abs_non_commercial")
+        $query = DB::table(self::LOAN_TABLE . ' as sp')
+            ->whereIn('sp.month_day_year_of_periode', $this->sourcePeriodRawCandidates(self::LOAN_TABLE, $period))
+            ->selectRaw("TRIM(COALESCE(sp.nama_cabang, '')) as raw_cabang")
+            ->selectRaw("TRIM(COALESCE(sp.nama_uker, '')) as raw_unit");
+
+        $normalizedKanca = $this->normalizeFilterValues($kancaKey);
+        if ($normalizedKanca !== []) {
+            $query->whereIn(DB::raw("TRIM(COALESCE(sp.nama_cabang, ''))"), $normalizedKanca);
+        }
+
+        $normalizedUnit = $this->normalizeFilterValues($unitKey);
+        if ($normalizedUnit !== []) {
+            $query->whereIn(DB::raw("TRIM(COALESCE(sp.nama_uker, ''))"), $normalizedUnit);
+        }
+
+        foreach ($this->loanMetricDefinitions($segment, $productDashboard, $product) as $alias => $condition) {
+            $query->selectRaw("SUM(CASE WHEN {$condition} THEN {$balance} ELSE 0 END) as {$alias}_os");
+            $query->selectRaw("SUM(CASE WHEN {$condition} AND {$kol} = 2 THEN {$balance} ELSE 0 END) as {$alias}_sml");
+            $query->selectRaw("SUM(CASE WHEN {$condition} AND {$kol} > 2 THEN {$balance} ELSE 0 END) as {$alias}_npl");
+        }
+
+        return $query
+            ->selectRaw("SUM(CASE WHEN {$segment} IN ('SMALL', 'MEDIUM', 'CONSUMER', 'MICRO', 'MIKRO') AND {$kol} = 2 THEN {$balance} ELSE 0 END) as total_sml_abs_non_commercial")
+            ->selectRaw("SUM(CASE WHEN {$segment} IN ('SMALL', 'MEDIUM', 'CONSUMER', 'MICRO', 'MIKRO') AND {$kol} > 2 THEN {$balance} ELSE 0 END) as total_npl_abs_non_commercial")
             ->groupBy('raw_cabang', 'raw_unit')
             ->get();
     }
@@ -606,18 +732,22 @@ class DashboardHarianSnapshotService
 
         $final['simpanan_ritel'] = $final['giro_ritel'] + $final['deposito_ritel'] + $final['tabungan_ritel'];
         $final['simpanan_mikro'] = $final['giro_mikro'] + $final['deposito_mikro'] + $final['tabungan_mikro'];
-        $final['total_simpanan'] = $final['simpanan_ritel'] + $final['simpanan_mikro'];
+        $final['simpanan_wholesale'] = $final['giro_wholesale'] + $final['deposito_wholesale'] + $final['tabungan_wholesale'];
+        $final['total_simpanan'] = $final['simpanan_ritel'] + $final['simpanan_mikro'] + $final['simpanan_wholesale'];
         $final['casa_ritel'] = $final['giro_ritel'] + $final['tabungan_ritel'];
         $final['casa_mikro'] = $final['giro_mikro'] + $final['tabungan_mikro'];
         $final['total_casa'] = $final['casa_ritel'] + $final['casa_mikro'];
+        $final['sme_os'] = $final['kecil_os'];
+        $final['sme_sml'] = $final['kecil_sml'];
+        $final['sme_npl'] = $final['kecil_npl'];
         $final['total_os'] = $final['commercial_os'] + $final['sme_os'] + $final['consumer_os'] + $final['micro_os'];
         $final['total_os_non_commercial'] = $final['sme_os'] + $final['consumer_os'] + $final['micro_os'];
-        $final['ldr_non_commercial'] = $this->safePercent($final['total_os_non_commercial'], $final['total_simpanan']);
-        $final['ldr_ritel_non_commercial'] = $this->safePercent($final['sme_os'] + $final['consumer_os'], $final['simpanan_ritel']);
-        $final['ldr_mikro_non_commercial'] = $this->safePercent($final['micro_os'], $final['simpanan_mikro']);
+        $final['ldr_non_commercial'] = $this->safePercent($final['total_simpanan'], $final['total_os_non_commercial']);
+        $final['ldr_ritel_non_commercial'] = $this->safePercent($final['simpanan_ritel'], $final['sme_os'] + $final['consumer_os']);
+        $final['ldr_mikro_non_commercial'] = $this->safePercent($final['simpanan_mikro'], $final['micro_os']);
         $final['casa_pct'] = $this->safePercent($final['total_casa'], $final['total_simpanan']);
-        $final['total_sml_pct_non_commercial'] = $this->safePercent($final['total_sml_abs_non_commercial'], $final['total_os_non_commercial']);
-        $final['total_npl_pct_non_commercial'] = $this->safePercent($final['total_npl_abs_non_commercial'], $final['total_os_non_commercial']);
+        $final['total_sml_pct_non_commercial'] = $this->safePercent($final['total_sml_abs_non_commercial'], $final['total_os']);
+        $final['total_npl_pct_non_commercial'] = $this->safePercent($final['total_npl_abs_non_commercial'], $final['total_os']);
 
         return $final;
     }
@@ -727,40 +857,78 @@ class DashboardHarianSnapshotService
     {
         $clean = trim($value);
         $clean = ltrim($clean, "'");
-        $clean = preg_replace('/^\d+\s*--\s*/', '', $clean) ?? $clean;
+        $clean = preg_replace('/^\d+\s*[-–]+\s*/', '', $clean) ?? $clean;
         $clean = preg_replace('/\(.+\)$/', '', $clean) ?? $clean;
         $clean = preg_replace('/\s+/', ' ', $clean) ?? $clean;
 
         return trim($clean);
     }
 
-    private function resolveSharedPeriods(?string $targetDate = null): array
+    private function fetchMonthFilterOptions(): array
     {
-        $query = DB::table(self::LOAN_TABLE . ' as loan')
-            ->select('loan.periode')
-            ->whereNotNull('loan.periode')
-            ->whereExists(function ($builder) {
-                $builder->selectRaw('1')
-                    ->from(self::SAVINGS_TABLE . ' as savings')
-                    ->whereColumn('savings.posisi', 'loan.periode');
-            });
-
-        if ($targetDate) {
-            $resolved = $query
-                ->where('loan.periode', '<=', $this->normalizeDate($targetDate))
-                ->orderByDesc('loan.periode')
-                ->value('loan.periode');
-
-            return $resolved ? [Carbon::parse($resolved)->toDateString()] : [];
-        }
-
-        return $query
-            ->distinct()
-            ->orderByDesc('loan.periode')
-            ->pluck('loan.periode')
-            ->map(fn ($value) => Carbon::parse($value)->toDateString())
+        return $this->fetchPeriods()
+            ->map(fn ($value) => $this->normalizeDate($value))
+            ->filter()
+            ->unique(fn ($value) => Carbon::parse($value)->format('Y-m'))
+            ->map(fn ($value) => [
+                'value' => Carbon::parse($value)->format('Y-m'),
+                'label' => $this->formatMonthLabel($value),
+            ])
             ->values()
             ->all();
+    }
+
+    private function normalizeMonthValue(?string $value): ?string
+    {
+        $trimmed = trim((string) $value);
+        if ($trimmed === '') {
+            return null;
+        }
+
+        if (preg_match('/^\d{4}-\d{2}$/', $trimmed) === 1) {
+            return $trimmed;
+        }
+
+        $normalizedDate = $this->normalizeDate($trimmed);
+
+        return $normalizedDate ? Carbon::parse($normalizedDate)->format('Y-m') : null;
+    }
+
+    private function resolveSharedPeriods(?string $targetDate = null): array
+    {
+        $loanPeriods = DB::table(self::LOAN_TABLE)
+            ->select('month_day_year_of_periode')
+            ->distinct()
+            ->pluck('month_day_year_of_periode')
+            ->map(fn ($value) => $this->normalizeDate((string) $value))
+            ->filter()
+            ->values()
+            ->all();
+
+        $savingsPeriods = DB::table(self::SAVINGS_TABLE)
+            ->select('Month_Day_Year_of_Posisi')
+            ->distinct()
+            ->pluck('Month_Day_Year_of_Posisi')
+            ->map(fn ($value) => $this->normalizeDate((string) $value))
+            ->filter()
+            ->values()
+            ->all();
+
+        $shared = array_values(array_intersect($loanPeriods, $savingsPeriods));
+        rsort($shared);
+
+        if ($targetDate) {
+            $normalizedTargetDate = $this->normalizeDate($targetDate);
+            foreach ($shared as $sharedPeriod) {
+                if ($sharedPeriod <= $normalizedTargetDate) {
+                    return [$sharedPeriod];
+                }
+            }
+
+            return [];
+        }
+
+        return $shared;
     }
 
     private function cleanupSnapshotOrphans(array $validPeriods): void
@@ -795,9 +963,11 @@ class DashboardHarianSnapshotService
         return $this->resolveEffectivePeriod(Carbon::parse($period)->subDay()->toDateString());
     }
 
-    private function sourcePeriodExists(string $table, string $column, string $period): bool
+    private function sourcePeriodExists(string $table, string $period): bool
     {
-        return DB::table($table)->where($column, $period)->exists();
+        return DB::table($table)
+            ->whereIn($this->sourcePeriodColumn($table), $this->sourcePeriodRawCandidates($table, $period))
+            ->exists();
     }
 
     private function normalizeDate(?string $value): ?string
@@ -810,7 +980,11 @@ class DashboardHarianSnapshotService
         try {
             return Carbon::parse($trimmed)->toDateString();
         } catch (Throwable) {
-            return null;
+            try {
+                return Carbon::parse($this->translateIndonesianMonthPhp($trimmed))->toDateString();
+            } catch (Throwable) {
+                return null;
+            }
         }
     }
 
@@ -823,17 +997,36 @@ class DashboardHarianSnapshotService
         return Carbon::parse($period)->translatedFormat('d M Y');
     }
 
-    private function applySnapshotFilter($query, string $column, ?string $value): void
+    private function formatMonthLabel(?string $period): string
     {
-        $normalized = $this->normalizeFilterValue($value);
+        if (!$period) {
+            return 'Belum ada data';
+        }
 
-        if ($normalized !== null) {
-            $query->where($column, $normalized);
+        $normalizedMonth = $this->normalizeMonthValue($period);
+
+        if ($normalizedMonth === null) {
+            return 'Belum ada data';
+        }
+
+        return Carbon::createFromFormat('Y-m', $normalizedMonth)->translatedFormat('M Y');
+    }
+
+    private function applySnapshotFilter($query, string $column, array|string|null $value): void
+    {
+        $normalized = $this->normalizeFilterValues($value);
+
+        if ($normalized !== []) {
+            $query->whereIn($column, $normalized);
         }
     }
 
-    private function normalizeFilterValue(?string $value): ?string
+    private function normalizeFilterValue(array|string|null $value): ?string
     {
+        if (is_array($value)) {
+            return $this->normalizeFilterValues($value)[0] ?? null;
+        }
+
         $normalized = trim((string) $value);
 
         if ($normalized === '' || $normalized === 'all') {
@@ -843,21 +1036,45 @@ class DashboardHarianSnapshotService
         return $normalized;
     }
 
-    private function displayFilterLabel(?string $value, string $fallback, string $period, string $group): string
+    private function normalizeFilterValues(array|string|null $value): array
     {
+        if (is_array($value)) {
+            return collect($value)
+                ->map(fn ($item) => trim((string) $item))
+                ->filter(fn ($item) => $item !== '' && $item !== 'all')
+                ->unique()
+                ->values()
+                ->all();
+        }
+
         $normalized = $this->normalizeFilterValue($value);
-        if ($normalized === null) {
+
+        return $normalized === null ? [] : [$normalized];
+    }
+
+    private function displayFilterLabel(array|string|null $value, string $fallback, string $period, string $group, array|string|null $selectedKanca = null, array|string|null $selectedUnit = null): string
+    {
+        $normalized = $this->normalizeFilterValues($value);
+        if ($normalized === []) {
             return $fallback;
         }
 
-        $options = $this->fetchFilterOptions($period)[$group] ?? [];
-        foreach ($options as $option) {
-            if ((string) ($option['value'] ?? '') === $normalized) {
-                return (string) ($option['label'] ?? $fallback);
-            }
+        $options = $this->fetchFilterOptions($period, $selectedKanca, $selectedUnit)[$group] ?? [];
+        $labels = collect($options)
+            ->filter(fn ($option) => in_array((string) ($option['value'] ?? ''), $normalized, true))
+            ->pluck('label')
+            ->filter()
+            ->values();
+
+        if ($labels->isEmpty()) {
+            return $fallback;
         }
 
-        return $fallback;
+        if ($labels->count() === 1) {
+            return (string) $labels->first();
+        }
+
+        return $labels->count() . ' dipilih';
     }
 
     private function safePercent(float $value, float $base): float
@@ -867,5 +1084,201 @@ class DashboardHarianSnapshotService
         }
 
         return ($value / $base) * 100;
+    }
+
+    private function periodDateSql(string $alias, string $column): string
+    {
+        $wrappedColumn = "{$alias}.`" . str_replace('`', '``', $column) . '`';
+        $trimmed = "TRIM(COALESCE({$wrappedColumn}, ''))";
+        $translatedMonth = $this->translateIndonesianMonthSql($trimmed);
+
+        return "COALESCE(
+            DATE(STR_TO_DATE({$trimmed}, '%Y-%m-%d')),
+            DATE(STR_TO_DATE({$trimmed}, '%Y/%m/%d')),
+            DATE(STR_TO_DATE({$trimmed}, '%m/%d/%Y')),
+            DATE(STR_TO_DATE({$trimmed}, '%c/%e/%Y')),
+            DATE(STR_TO_DATE({$trimmed}, '%m-%d-%Y')),
+            DATE(STR_TO_DATE({$trimmed}, '%c-%e-%Y')),
+            DATE(STR_TO_DATE({$trimmed}, '%d/%m/%Y')),
+            DATE(STR_TO_DATE({$trimmed}, '%d-%m-%Y')),
+            DATE(STR_TO_DATE({$translatedMonth}, '%e %M %Y'))
+        )";
+    }
+
+    private function translateIndonesianMonthSql(string $expression): string
+    {
+        $translated = "UPPER({$expression})";
+
+        foreach ([
+            'JANUARI' => 'JANUARY',
+            'FEBRUARI' => 'FEBRUARY',
+            'MARET' => 'MARCH',
+            'APRIL' => 'APRIL',
+            'MEI' => 'MAY',
+            'JUNI' => 'JUNE',
+            'JULI' => 'JULY',
+            'AGUSTUS' => 'AUGUST',
+            'SEPTEMBER' => 'SEPTEMBER',
+            'OKTOBER' => 'OCTOBER',
+            'NOVEMBER' => 'NOVEMBER',
+            'DESEMBER' => 'DECEMBER',
+        ] as $from => $to) {
+            $translated = "REPLACE({$translated}, '{$from}', '{$to}')";
+        }
+
+        return $translated;
+    }
+
+    private function loanMetricDefinitions(string $segment, string $productDashboard, string $product): array
+    {
+        $microSegment = "{$segment} IN ('MICRO', 'MIKRO')";
+
+        return [
+            'commercial' => "{$segment} = 'COMMERCIAL'",
+            'sme' => "{$segment} = 'SMALL'",
+            'kecil' => "{$segment} = 'SMALL'",
+            'kecil_non_cashcoll' => "{$segment} = 'SMALL' AND {$productDashboard} = 'COMMERCIAL'",
+            'cashcoll' => "{$segment} = 'SMALL' AND {$productDashboard} IN ('CASHCALL', 'CASHCOLL')",
+            'medium' => "{$segment} = 'MEDIUM'",
+            'consumer' => "{$segment} = 'CONSUMER'",
+            'briguna_konsumer' => "{$segment} = 'CONSUMER' AND {$productDashboard} = 'BRIGUNA-KONSUMER'",
+            'kpr' => "{$segment} = 'CONSUMER' AND {$productDashboard} = 'KPR'",
+            'kkb' => "{$segment} = 'CONSUMER' AND {$productDashboard} = 'KKB'",
+            'micro' => "{$microSegment} AND (
+                {$productDashboard} = 'BRIGUNA-MIKRO'
+                OR {$product} = 'KUPEDES'
+                OR ({$productDashboard} = 'KUR-MIKRO' AND {$product} = 'KUR MIKRO')
+                OR ({$productDashboard} = 'KUR-MIKRO' AND {$product} IN ('KUR KECIL', 'KREDIT MIKRO - KUR RITEL 2015'))
+                OR {$productDashboard} = 'KPR'
+            )",
+            'briguna_mikro' => "{$microSegment} AND {$productDashboard} = 'BRIGUNA-MIKRO'",
+            'kupedes' => "{$microSegment} AND {$product} = 'KUPEDES'",
+            'kur_mikro' => "{$microSegment} AND {$productDashboard} = 'KUR-MIKRO' AND {$product} = 'KUR MIKRO'",
+            'kur_kecil' => "{$microSegment} AND {$productDashboard} = 'KUR-MIKRO' AND {$product} IN ('KUR KECIL', 'KREDIT MIKRO - KUR RITEL 2015')",
+            'kur_kpp' => "{$microSegment} AND {$productDashboard} = 'KPR'",
+        ];
+    }
+
+    private function loanMetricKeys(): array
+    {
+        return [
+            'commercial_os',
+            'sme_os',
+            'kecil_os',
+            'kecil_non_cashcoll_os',
+            'cashcoll_os',
+            'medium_os',
+            'consumer_os',
+            'briguna_konsumer_os',
+            'kpr_os',
+            'kkb_os',
+            'micro_os',
+            'briguna_mikro_os',
+            'kupedes_os',
+            'kur_mikro_os',
+            'kur_kecil_os',
+            'kur_kpp_os',
+            'commercial_sml',
+            'sme_sml',
+            'kecil_sml',
+            'kecil_non_cashcoll_sml',
+            'cashcoll_sml',
+            'medium_sml',
+            'consumer_sml',
+            'briguna_konsumer_sml',
+            'kpr_sml',
+            'kkb_sml',
+            'micro_sml',
+            'briguna_mikro_sml',
+            'kupedes_sml',
+            'kur_mikro_sml',
+            'kur_kecil_sml',
+            'kur_kpp_sml',
+            'total_sml_abs_non_commercial',
+            'commercial_npl',
+            'sme_npl',
+            'kecil_npl',
+            'kecil_non_cashcoll_npl',
+            'cashcoll_npl',
+            'medium_npl',
+            'consumer_npl',
+            'briguna_konsumer_npl',
+            'kpr_npl',
+            'kkb_npl',
+            'micro_npl',
+            'briguna_mikro_npl',
+            'kupedes_npl',
+            'kur_mikro_npl',
+            'kur_kecil_npl',
+            'kur_kpp_npl',
+            'total_npl_abs_non_commercial',
+        ];
+    }
+
+    private function sourcePeriodColumn(string $table): string
+    {
+        return $table === self::LOAN_TABLE
+            ? 'month_day_year_of_periode'
+            : 'Month_Day_Year_of_Posisi';
+    }
+
+    private function sourcePeriodRawCandidates(string $table, string $period): array
+    {
+        $normalizedPeriod = $this->normalizeDate($period);
+        if ($normalizedPeriod === null) {
+            return [$period];
+        }
+
+        if ($table === self::LOAN_TABLE) {
+            return array_values(array_unique(array_filter([
+                $period,
+                $this->formatIndonesianDate($normalizedPeriod),
+                Carbon::parse($normalizedPeriod)->format('Y-m-d'),
+            ])));
+        }
+
+        return array_values(array_unique(array_filter([
+            $period,
+            Carbon::parse($normalizedPeriod)->format('Y-m-d'),
+        ])));
+    }
+
+    private function formatIndonesianDate(string $date): string
+    {
+        $carbon = Carbon::parse($date);
+
+        return sprintf(
+            '%d %s %d',
+            $carbon->day,
+            $this->indonesianMonthName($carbon->month),
+            $carbon->year
+        );
+    }
+
+    private function indonesianMonthName(int $month): string
+    {
+        return [
+            1 => 'Januari',
+            2 => 'Februari',
+            3 => 'Maret',
+            4 => 'April',
+            5 => 'Mei',
+            6 => 'Juni',
+            7 => 'Juli',
+            8 => 'Agustus',
+            9 => 'September',
+            10 => 'Oktober',
+            11 => 'November',
+            12 => 'Desember',
+        ][$month] ?? '';
+    }
+
+    private function translateIndonesianMonthPhp(string $value): string
+    {
+        return str_ireplace(
+            ['Januari', 'Februari', 'Maret', 'Mei', 'Juni', 'Juli', 'Agustus', 'Oktober', 'Desember'],
+            ['January', 'February', 'March', 'May', 'June', 'July', 'August', 'October', 'December'],
+            $value
+        );
     }
 }

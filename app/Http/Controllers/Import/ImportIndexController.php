@@ -280,7 +280,7 @@ class ImportIndexController extends Controller
 
         if ($prepared['candidate_rows'] <= 0) {
             return response()->json([
-                'status' => 'completed',
+                'status' => 'success',
                 'deleted_rows' => 0,
                 'table_name' => $prepared['table_name'],
                 'message' => 'Tidak ada baris yang cocok dengan filter.',
@@ -473,7 +473,7 @@ class ImportIndexController extends Controller
             );
 
             return response()->json([
-                'status' => 'completed',
+                'status' => 'success',
                 'table_name' => $tableName,
                 'deleted_rows' => 0,
                 'duplicate_groups' => 0,
@@ -545,7 +545,7 @@ class ImportIndexController extends Controller
         }
 
         return response()->json([
-            'status' => 'completed',
+            'status' => 'success',
             'table_name' => $tableName,
             'deleted_rows' => $deletedRows,
             'duplicate_groups' => count($affectedPeriods),
@@ -661,7 +661,7 @@ class ImportIndexController extends Controller
         );
 
         return [
-            'status' => 'completed',
+            'status' => 'success',
             'delete_id' => null,
             'stage' => 'completed',
             'batch_state' => 'completed',
@@ -833,7 +833,7 @@ class ImportIndexController extends Controller
             ]);
 
             return [
-                'status' => 'completed',
+                'status' => 'success',
                 'delete_id' => null,
                 'stage' => 'completed',
                 'batch_state' => 'completed',
@@ -3496,5 +3496,3 @@ LIMIT {$limit}
         };
     }
 }
-
-

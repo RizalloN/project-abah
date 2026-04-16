@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-SSA Simpanan CSV processor
-==========================
+SSA Pinjaman CSV processor
+=========================
 
 Flow:
   1. Parse CSV stage hasil konversi Excel dengan stdlib csv reader.
-  2. Validasi struktur + kolom minimum yang wajib untuk SSA Simpanan.
+  2. Validasi struktur + kolom minimum yang wajib untuk SSA Pinjaman.
   3. Baca ulang file bersih dengan Polars.
   4. Rapikan nilai string dan tulis CSV final untuk LOAD DATA LOCAL INFILE.
 """
@@ -18,18 +18,16 @@ import io
 import json
 import os
 import re
-import sys
 import tempfile
 import time
 from pathlib import Path
 
 
 REQUIRED_HEADERS = {
-    "month_day_year_of_posisi",
+    "month_day_year_of_periode",
     "nama_cabang",
     "nama_uker",
     "produk",
-    "saldo",
 }
 
 
@@ -140,13 +138,22 @@ def normalize_header_name(header_name: str) -> str:
     normalized = re.sub(r"[^A-Z0-9]+", "_", normalize_cell(header_name).upper()).strip("_")
 
     aliases = {
-        "MONTH_DAY_YEAR_OF_POSISI": "month_day_year_of_posisi",
+        "MONTH_DAY_YEAR_OF_PERIODE": "month_day_year_of_periode",
         "NAMA_CABANG": "nama_cabang",
         "NAMA_UKER": "nama_uker",
         "PRODUK": "produk",
-        "SEGMENTASI": "segmentasi",
-        "SEGMEN_KATEGORISASI_BISNIS": "segmen_kategorisasi_bisnis",
-        "SALDO": "saldo",
+        "PRODUK_DASHBOARD": "produk_dashboard",
+        "SEGMEN": "segmen",
+        "SEGMEN_LAMA": "segmen_lama",
+        "SEGMEN_2025": "segmen_2025",
+        "SEGMEN_DASHBOARD": "segmen_dashboard",
+        "KOLEKTABILITAS_ONE_OBLIGOR": "kolektabilitas_one_obligor",
+        "FLAG_RESTRUK": "flag_restruk",
+        "BAKI_DEBET": "baki_debet",
+        "JUMLAH_DEBITUR_AKTIF": "jumlah_debitur_aktif",
+        "JUMLAH_REKENING_AKTIF": "jumlah_rekening_aktif",
+        "KETERANGAN_UKER": "keterangan_uker",
+        "KUALITAS": "kualitas",
         "TGL": "tgl",
         "BULAN": "bulan",
         "TAHUN": "tahun",
@@ -227,12 +234,12 @@ def normalize_integer_value(value: object) -> str | None:
 
 
 def is_valid_ssa_row_values(values_by_header: dict[str, object]) -> bool:
-    posisi = normalize_cell(values_by_header.get("month_day_year_of_posisi"))
+    periode = normalize_cell(values_by_header.get("month_day_year_of_periode"))
     nama_cabang = normalize_cell(values_by_header.get("nama_cabang"))
     nama_uker = normalize_cell(values_by_header.get("nama_uker"))
     produk = normalize_cell(values_by_header.get("produk"))
 
-    return posisi != "" and nama_cabang != "" and nama_uker != "" and produk != ""
+    return periode != "" and nama_cabang != "" and nama_uker != "" and produk != ""
 
 
 def sanitize_source(
@@ -240,7 +247,7 @@ def sanitize_source(
     delimiter: str,
 ) -> tuple[str, list[str], int, int, int, bool, list[int], int]:
     temp_dir = Path(tempfile.gettempdir())
-    fd, temp_path = tempfile.mkstemp(prefix="ssa_simpanan_sanitized_", suffix=".csv", dir=str(temp_dir))
+    fd, temp_path = tempfile.mkstemp(prefix="ssa_pinjaman_sanitized_", suffix=".csv", dir=str(temp_dir))
     os.close(fd)
 
     total_records = 0
@@ -271,8 +278,8 @@ def sanitize_source(
                 processed_rows = max(0, total_records - 1)
                 speed = int(processed_rows / elapsed)
                 send_progress(
-                    min(50, 5 + int((row_number / 350000) * 45)),
-                    "Menyiapkan sanitasi CSV SSA Simpanan...",
+                    min(50, 5 + int((row_number / 400000) * 45)),
+                    "Menyiapkan sanitasi CSV SSA Pinjaman...",
                     processed_rows,
                     0,
                     speed,
@@ -285,7 +292,7 @@ def sanitize_source(
                 headers = [normalize_header_name(header) or f"col_{index}" for index, header in enumerate(raw_headers)]
                 missing = sorted(REQUIRED_HEADERS.difference(set(headers)))
                 if missing:
-                    raise RuntimeError("Kolom wajib SSA Simpanan tidak lengkap: " + ", ".join(missing))
+                    raise RuntimeError("Kolom wajib SSA Pinjaman tidak lengkap: " + ", ".join(missing))
                 rewrite_needed = True
                 writer.writerow(headers)
                 continue
@@ -303,9 +310,9 @@ def sanitize_source(
             for index, header in enumerate(headers):
                 raw_value = values[index]
 
-                if header == "saldo":
+                if header == "baki_debet":
                     normalized_value = normalize_decimal_value(raw_value)
-                elif header in {"tgl", "tahun"}:
+                elif header in {"jumlah_debitur_aktif", "jumlah_rekening_aktif", "tgl", "tahun"}:
                     normalized_value = normalize_integer_value(raw_value)
                 else:
                     normalized_value = raw_value if raw_value != "" else None
@@ -323,7 +330,7 @@ def sanitize_source(
             valid_rows += 1
 
     if not headers:
-        raise RuntimeError("Header CSV SSA Simpanan tidak ditemukan.")
+        raise RuntimeError("Header CSV SSA Pinjaman tidak ditemukan.")
 
     return temp_path, headers, total_records, structural_skipped, validation_skipped, rewrite_needed, skipped_rows, valid_rows
 
@@ -374,7 +381,7 @@ def read_with_polars(path: str, headers: list[str], delimiter: str):
         except Exception as exc:
             last_error = exc
 
-    raise RuntimeError(f"Gagal membaca CSV SSA Simpanan dengan Polars: {last_error}")
+    raise RuntimeError(f"Gagal membaca CSV SSA Pinjaman dengan Polars: {last_error}")
 
 
 def write_with_polars(df, path: str, delimiter: str) -> None:
@@ -392,26 +399,26 @@ def write_with_polars(df, path: str, delimiter: str) -> None:
         except Exception as exc:
             last_error = exc
 
-    raise RuntimeError(f"Gagal menulis CSV hasil Polars SSA Simpanan: {last_error}")
+    raise RuntimeError(f"Gagal menulis CSV hasil Polars SSA Pinjaman: {last_error}")
 
 
-def stage_ssa_simpanan(config: dict) -> None:
+def stage_ssa_pinjaman(config: dict) -> None:
     import polars as pl
 
     source_path = config["file_path"]
     output_csv_path = config["output_csv_path"]
     delimiter = config.get("delimiter") or detect_delimiter(source_path, ",")
 
-    send_progress(5, "Membaca dan menyiapkan CSV SSA Simpanan dengan Polars...", 0, 0, 0, "", "polars")
+    send_progress(5, "Membaca dan menyiapkan CSV SSA Pinjaman dengan Polars...", 0, 0, 0, "", "polars")
     temp_sanitized_path, headers, total_records, structural_skipped, validation_skipped, rewrite_needed, skipped_rows, valid_rows = sanitize_source(source_path, delimiter)
     total_data_rows = max(0, total_records - 1)
 
     try:
-        send_progress(56, "Sanitasi selesai. Membaca file bersih SSA Simpanan dengan Polars...", total_data_rows, total_data_rows, 0, "", "polars")
+        send_progress(56, "Sanitasi selesai. Membaca file bersih SSA Pinjaman dengan Polars...", total_data_rows, total_data_rows, 0, "", "polars")
         df = read_with_polars(temp_sanitized_path, headers, delimiter)
 
         if df.height == 0:
-            raise RuntimeError("Polars tidak menemukan baris data SSA Simpanan yang valid.")
+            raise RuntimeError("Polars tidak menemukan baris data SSA Pinjaman yang valid.")
 
         df = df.with_columns([
             pl.col(column).cast(pl.Utf8).str.strip_chars().alias(column)
@@ -421,7 +428,7 @@ def stage_ssa_simpanan(config: dict) -> None:
         written_rows = int(df.height)
         skipped_total = int(structural_skipped + validation_skipped)
 
-        send_progress(86, "Menulis CSV bersih SSA Simpanan untuk LOAD DATA...", written_rows, total_data_rows, 0, "", "polars")
+        send_progress(86, "Menulis CSV bersih SSA Pinjaman untuk LOAD DATA...", written_rows, total_data_rows, 0, "", "polars")
         write_with_polars(df, output_csv_path, delimiter)
 
         send_event(
@@ -445,14 +452,14 @@ def stage_ssa_simpanan(config: dict) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="SSA Simpanan CSV stage processor")
+    parser = argparse.ArgumentParser(description="SSA Pinjaman CSV stage processor")
     parser.add_argument("--config", required=True, help="Path to JSON config file")
     parser.add_argument("--mode", default="stage", choices=["stage"], help="Processing mode")
     args = parser.parse_args()
 
     try:
         config = load_config(args.config)
-        stage_ssa_simpanan(config)
+        stage_ssa_pinjaman(config)
         return 0
     except Exception as exc:
         send_error(str(exc))

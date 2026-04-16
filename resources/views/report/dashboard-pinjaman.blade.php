@@ -466,6 +466,78 @@
         margin-bottom: 0.4rem;
         color: #0f172a;
     }
+
+    .loan-mode-shell {
+        border: 1px solid #dbe5ef;
+        border-radius: 18px;
+        background: linear-gradient(135deg, #f8fbff, #ffffff);
+        box-shadow: 0 14px 30px -24px rgba(15, 23, 42, 0.18);
+    }
+
+    .loan-mode-grid {
+        display: grid;
+        grid-template-columns: minmax(220px, 320px) 1fr;
+        gap: 1rem;
+        align-items: end;
+    }
+
+    .loan-mode-copy {
+        color: #64748b;
+        font-size: 0.88rem;
+        margin: 0;
+    }
+
+    .loan-mismatch-audit {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 0.85rem;
+        margin-bottom: 1rem;
+    }
+
+    .loan-audit-card {
+        border: 1px solid #dbe5ef;
+        border-radius: 16px;
+        padding: 1rem 1.05rem;
+        background: linear-gradient(180deg, #ffffff, #f8fafc);
+    }
+
+    .loan-audit-label {
+        color: #64748b;
+        font-size: 0.78rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        margin-bottom: 0.35rem;
+    }
+
+    .loan-audit-value {
+        color: #0f172a;
+        font-size: 1.35rem;
+        font-weight: 800;
+        line-height: 1.1;
+    }
+
+    .loan-audit-note {
+        color: #64748b;
+        font-size: 0.8rem;
+        margin-top: 0.25rem;
+    }
+
+    .loan-mismatch-table th,
+    .loan-mismatch-table td {
+        vertical-align: middle;
+    }
+
+    .loan-mismatch-table td:last-child,
+    .loan-mismatch-table th:last-child {
+        text-align: right;
+    }
+
+    @media (max-width: 991.98px) {
+        .loan-mode-grid {
+            grid-template-columns: 1fr;
+        }
+    }
 </style>
 
 <div class="loan-dashboard">
@@ -473,9 +545,28 @@
         <h2 class="loan-page-title">Dashboard Pinjaman</h2>
     </div>
 
+    <div class="card loan-mode-shell mb-4">
+        <div class="card-body p-4">
+            <div class="loan-mode-grid">
+                <div class="form-group mb-0">
+                    <label class="loan-filter-label">Jenis Dashboard Pinjaman</label>
+                    <select id="loanReportMode" class="form-control loan-filter-control">
+                        <option value="matrix" @selected($selectedMode === 'matrix')>Matrix Pergeseran Kolek</option>
+                        <option value="mismatch" @selected($selectedMode === 'mismatch')>Kolek Tidak Sesuai</option>
+                    </select>
+                </div>
+                <p class="loan-mode-copy">
+                    Pilih mode laporan sesuai kebutuhan. Matrix dipakai untuk membaca pergeseran kolek, sedangkan mode <strong>Kolek Tidak Sesuai</strong> dipakai untuk audit <strong>kol_adk1</strong> terhadap <strong>umur_tunggakan</strong> dan export Excel detail per unit kerja.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <div id="loanMatrixPanel" @class(['d-none' => $selectedMode !== 'matrix'])>
     <div class="card loan-shell mb-4">
         <div class="card-body p-4">
             <form id="loanFilterForm" method="GET" action="{{ route('report.dashboard-pinjaman') }}">
+                <input type="hidden" name="mode" value="matrix">
                 <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center mb-3">
                     <div>
                         <h5 class="mb-1 font-weight-bold text-dark">Filter Dashboard</h5>
@@ -658,6 +749,128 @@
                     <span class="loan-legend-swatch" style="background:#d1d5db;"></span>
                     New Account
                 </span>
+            </div>
+        </div>
+    </div>
+
+    </div>
+
+    <div id="loanMismatchPanel" @class(['d-none' => $selectedMode !== 'mismatch'])>
+        <div class="card loan-shell mb-4">
+            <div class="card-body p-4">
+                <form id="loanMismatchForm" method="GET" action="{{ route('report.dashboard-pinjaman') }}">
+                    <input type="hidden" name="mode" value="mismatch">
+                    <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center mb-3">
+                        <div>
+                            <h5 class="mb-1 font-weight-bold text-dark">Filter Kolek Tidak Sesuai</h5>
+                            <div class="loan-filter-meta">
+                                <span>Rule audit: <strong>1 <= 0 hari, 2 <= 90 hari, 3 <= 120 hari, 4 <= 180 hari, 5 &gt; 180 hari</strong></span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row loan-filter-grid">
+                        <div class="col-xl-3 col-lg-4 col-md-6">
+                            <div class="form-group">
+                                <label class="loan-filter-label">Periode</label>
+                                <input
+                                    id="loanMismatchPeriodeInput"
+                                    type="date"
+                                    name="mismatch_periode"
+                                    class="form-control loan-filter-control"
+                                    value="{{ $mismatchRequestedPeriod ?: $mismatchSelectedPeriod }}"
+                                    max="{{ $periods->first() }}"
+                                >
+                            </div>
+                        </div>
+                        <div class="col-xl-4 col-lg-5 col-md-6">
+                            <div class="form-group">
+                                <label class="loan-filter-label">Kantor Cabang</label>
+                                <select id="loanMismatchCabangSelect" name="mismatch_cabang1" class="form-control loan-filter-control" data-selected="{{ $mismatchSelectedBranch }}">
+                                    <option value="">Pilih periode dulu</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-xl-5 col-lg-3 col-md-12 d-flex align-items-end">
+                            <div class="d-flex flex-wrap align-items-center w-100" style="gap: 0.75rem;">
+                                <button id="loanMismatchSubmitButton" type="submit" class="btn btn-primary">
+                                    <i class="fas fa-search mr-1"></i>
+                                    Proses
+                                </button>
+                                <a href="{{ route('report.dashboard-pinjaman', ['mode' => 'mismatch']) }}" class="btn btn-light">
+                                    Reset
+                                </a>
+                                <div id="loanMismatchLoadingChip" class="loan-loading-chip d-none">
+                                    <span class="loan-loading-dot"></span>
+                                    Audit Sedang Jalan
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="card loan-table-shell">
+            <div class="card-body p-4">
+                <div class="loan-table-heading">
+                    <div>
+                        <h5>Kolek Tidak Sesuai</h5>
+                        <div class="loan-table-note">
+                            Sistem membaca <strong>daily_loan_dinamis</strong> berdasarkan <strong>periode</strong> dan <strong>cabang1</strong>, lalu membandingkan <strong>kol_adk1</strong> terhadap <strong>umur_tunggakan</strong>. Ringkasan ditampilkan per <strong>unit1</strong>, dan detail mismatch dapat diexport ke Excel.
+                        </div>
+                    </div>
+                    <div class="loan-table-badge">
+                        <i class="fas fa-file-excel"></i>
+                        <span id="loanMismatchPeriodBadge">
+                            {{ $mismatchSelectedPeriod ? \Carbon\Carbon::parse($mismatchSelectedPeriod)->format('d/m/Y') : '-' }} | {{ $mismatchSelectedBranch ?: 'Belum pilih cabang' }}
+                        </span>
+                    </div>
+                </div>
+
+                <div class="loan-mismatch-audit">
+                    <div class="loan-audit-card">
+                        <div class="loan-audit-label">Baris Discanning</div>
+                        <div id="loanMismatchScanned" class="loan-audit-value">0</div>
+                        <div class="loan-audit-note">Semua row yang masuk filter audit</div>
+                    </div>
+                    <div class="loan-audit-card">
+                        <div class="loan-audit-label">Mismatch</div>
+                        <div id="loanMismatchTotal" class="loan-audit-value">0</div>
+                        <div class="loan-audit-note">Jumlah row dengan kolek tidak sesuai</div>
+                    </div>
+                    <div class="loan-audit-card">
+                        <div class="loan-audit-label">Sesuai</div>
+                        <div id="loanMismatchMatched" class="loan-audit-value">0</div>
+                        <div class="loan-audit-note">Jumlah row yang sesuai rule audit</div>
+                    </div>
+                    <div class="loan-audit-card">
+                        <div class="loan-audit-label">Unit Bermasalah</div>
+                        <div id="loanMismatchUnits" class="loan-audit-value">0</div>
+                        <div class="loan-audit-note">Unit kerja yang memiliki mismatch</div>
+                    </div>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table table-hover loan-mismatch-table mb-0">
+                        <thead class="thead-light">
+                            <tr>
+                                <th style="width: 72px;">No</th>
+                                <th>Unit Kerja</th>
+                                <th style="width: 220px;">Jumlah Kolek Tidak Sesuai</th>
+                                <th style="width: 180px;">Export Detail</th>
+                            </tr>
+                        </thead>
+                        <tbody id="loanMismatchBody">
+                            <tr>
+                                <td colspan="4" class="loan-empty-state">
+                                    <strong>Audit belum dijalankan</strong>
+                                    Pilih periode dan cabang lalu klik <strong>Proses</strong>.
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </div>
@@ -1376,6 +1589,292 @@
             loadFilterOptions();
         }
 
+    });
+</script>
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const modeSelect = document.getElementById('loanReportMode');
+        const matrixPanel = document.getElementById('loanMatrixPanel');
+        const mismatchPanel = document.getElementById('loanMismatchPanel');
+        const mismatchForm = document.getElementById('loanMismatchForm');
+        const mismatchPeriodInput = document.getElementById('loanMismatchPeriodeInput');
+        const mismatchBranchSelect = document.getElementById('loanMismatchCabangSelect');
+        const mismatchBody = document.getElementById('loanMismatchBody');
+        const mismatchChip = document.getElementById('loanMismatchLoadingChip');
+        const mismatchSubmitButton = document.getElementById('loanMismatchSubmitButton');
+        const mismatchPeriodBadge = document.getElementById('loanMismatchPeriodBadge');
+        const mismatchScanned = document.getElementById('loanMismatchScanned');
+        const mismatchTotal = document.getElementById('loanMismatchTotal');
+        const mismatchMatched = document.getElementById('loanMismatchMatched');
+        const mismatchUnits = document.getElementById('loanMismatchUnits');
+        const mismatchFiltersUrl = @json(route('report.dashboard-pinjaman.kolek-tidak-sesuai.filters'));
+        const mismatchDataUrl = @json(route('report.dashboard-pinjaman.kolek-tidak-sesuai.data'));
+        const mismatchExportUrl = @json(route('report.dashboard-pinjaman.kolek-tidak-sesuai.export'));
+        const pageUrl = @json(route('report.dashboard-pinjaman'));
+        let mismatchFilterController = null;
+        let mismatchDataController = null;
+
+        if (!modeSelect || !matrixPanel || !mismatchPanel || !mismatchForm) {
+            return;
+        }
+
+        function formatDate(value) {
+            if (!value) {
+                return '-';
+            }
+
+            const date = new Date(`${value}T00:00:00`);
+            if (Number.isNaN(date.getTime())) {
+                return value;
+            }
+
+            return date.toLocaleDateString('id-ID', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+            });
+        }
+
+        function formatNumber(value) {
+            return Number(value || 0).toLocaleString('id-ID');
+        }
+
+        function setMode(mode, pushHistory = true) {
+            const normalizedMode = mode === 'mismatch' ? 'mismatch' : 'matrix';
+            modeSelect.value = normalizedMode;
+            matrixPanel.classList.toggle('d-none', normalizedMode !== 'matrix');
+            mismatchPanel.classList.toggle('d-none', normalizedMode !== 'mismatch');
+
+            if (!pushHistory) {
+                return;
+            }
+
+            const currentUrl = new URL(window.location.href);
+            currentUrl.searchParams.set('mode', normalizedMode);
+            window.history.replaceState({}, '', currentUrl.toString());
+        }
+
+        function resetMismatchState(message = 'Pilih periode dan cabang lalu klik <strong>Proses</strong>.') {
+            mismatchBody.innerHTML = `
+                <tr>
+                    <td colspan="4" class="loan-empty-state">
+                        <strong>Audit belum dijalankan</strong>
+                        ${message}
+                    </td>
+                </tr>
+            `;
+            mismatchScanned.textContent = '0';
+            mismatchTotal.textContent = '0';
+            mismatchMatched.textContent = '0';
+            mismatchUnits.textContent = '0';
+        }
+
+        function updateMismatchBadge(period, branch) {
+            mismatchPeriodBadge.textContent = `${formatDate(period)} | ${branch || 'Belum pilih cabang'}`;
+        }
+
+        function setMismatchLoadingState(isLoading) {
+            mismatchChip.classList.toggle('d-none', !isLoading);
+            mismatchSubmitButton.disabled = isLoading || !mismatchPeriodInput.value || !mismatchBranchSelect.value;
+            mismatchPeriodInput.disabled = isLoading;
+            mismatchBranchSelect.disabled = isLoading || !mismatchPeriodInput.value;
+        }
+
+        function populateMismatchBranches(branches, selectedBranch) {
+            const normalizedSelected = String(selectedBranch || '').trim();
+            mismatchBranchSelect.innerHTML = '<option value="">Pilih kantor cabang</option>';
+
+            (branches || []).forEach((branch) => {
+                const option = document.createElement('option');
+                option.value = branch;
+                option.textContent = branch;
+                if (branch === normalizedSelected) {
+                    option.selected = true;
+                }
+                mismatchBranchSelect.appendChild(option);
+            });
+
+            if (!normalizedSelected || !Array.from(mismatchBranchSelect.options).some((option) => option.value === normalizedSelected)) {
+                mismatchBranchSelect.value = '';
+            }
+
+            mismatchBranchSelect.dataset.selected = mismatchBranchSelect.value || '';
+            mismatchBranchSelect.disabled = !mismatchPeriodInput.value;
+            mismatchSubmitButton.disabled = !mismatchPeriodInput.value || !mismatchBranchSelect.value;
+        }
+
+        async function loadMismatchBranches() {
+            if (mismatchFilterController) {
+                mismatchFilterController.abort();
+            }
+
+            if (!mismatchPeriodInput.value) {
+                populateMismatchBranches([], '');
+                updateMismatchBadge('', '');
+                resetMismatchState();
+                return;
+            }
+
+            mismatchFilterController = new AbortController();
+            mismatchBranchSelect.disabled = true;
+
+            try {
+                const params = new URLSearchParams();
+                params.set('periode', mismatchPeriodInput.value);
+                params.set('_ts', String(Date.now()));
+
+                const response = await fetch(`${mismatchFiltersUrl}?${params.toString()}`, {
+                    cache: 'no-store',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Accept': 'application/json',
+                    },
+                    signal: mismatchFilterController.signal,
+                });
+
+                if (!response.ok) {
+                    throw new Error('Gagal memuat daftar cabang.');
+                }
+
+                const payload = await response.json();
+                populateMismatchBranches(payload.branches || [], mismatchBranchSelect.dataset.selected || '');
+                updateMismatchBadge(payload.selected_period, mismatchBranchSelect.value || '');
+            } catch (error) {
+                if (error.name !== 'AbortError') {
+                    populateMismatchBranches([], '');
+                    resetMismatchState('Daftar cabang gagal dimuat. Ulangi proses filter.');
+                }
+            } finally {
+                mismatchFilterController = null;
+            }
+        }
+
+        function renderMismatchTable(rows, period, branch) {
+            if (!rows || rows.length === 0) {
+                mismatchBody.innerHTML = `
+                    <tr>
+                        <td colspan="4" class="loan-empty-state">
+                            <strong>Tidak ada mismatch</strong>
+                            Semua data pada cabang ini sesuai dengan rule audit.
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            mismatchBody.innerHTML = rows.map((row, index) => {
+                const exportParams = new URLSearchParams({
+                    periode: period,
+                    cabang1: branch,
+                    unit1: row.unit,
+                });
+
+                return `
+                    <tr>
+                        <td>${index + 1}</td>
+                        <td>${row.unit}</td>
+                        <td><strong>${formatNumber(row.mismatch_count)}</strong></td>
+                        <td>
+                            <a class="btn btn-sm btn-outline-success" href="${mismatchExportUrl}?${exportParams.toString()}">
+                                <i class="fas fa-file-excel mr-1"></i>
+                                Export Excel
+                            </a>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        async function processMismatch(pushHistory = true) {
+            if (mismatchDataController) {
+                mismatchDataController.abort();
+            }
+
+            if (!mismatchPeriodInput.value || !mismatchBranchSelect.value) {
+                resetMismatchState();
+                updateMismatchBadge(mismatchPeriodInput.value, mismatchBranchSelect.value);
+                return;
+            }
+
+            mismatchDataController = new AbortController();
+            setMismatchLoadingState(true);
+
+            try {
+                const params = new URLSearchParams();
+                params.set('periode', mismatchPeriodInput.value);
+                params.set('cabang1', mismatchBranchSelect.value);
+                params.set('_ts', String(Date.now()));
+
+                const response = await fetch(`${mismatchDataUrl}?${params.toString()}`, {
+                    cache: 'no-store',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Accept': 'application/json',
+                    },
+                    signal: mismatchDataController.signal,
+                });
+
+                if (!response.ok) {
+                    throw new Error('Gagal memproses audit mismatch.');
+                }
+
+                const payload = await response.json();
+                renderMismatchTable(payload.summary_rows || [], payload.selected_period, payload.selected_branch);
+                mismatchScanned.textContent = formatNumber(payload.audit?.scanned_rows);
+                mismatchTotal.textContent = formatNumber(payload.audit?.mismatch_rows);
+                mismatchMatched.textContent = formatNumber(payload.audit?.matched_rows);
+                mismatchUnits.textContent = formatNumber(payload.audit?.units_with_mismatch);
+                updateMismatchBadge(payload.selected_period, payload.selected_branch);
+
+                if (pushHistory) {
+                    const currentUrl = new URL(pageUrl, window.location.origin);
+                    currentUrl.searchParams.set('mode', 'mismatch');
+                    currentUrl.searchParams.set('mismatch_periode', mismatchPeriodInput.value);
+                    currentUrl.searchParams.set('mismatch_cabang1', mismatchBranchSelect.value);
+                    window.history.replaceState({}, '', currentUrl.toString());
+                }
+            } catch (error) {
+                if (error.name !== 'AbortError') {
+                    resetMismatchState('Audit gagal diproses. Ulangi proses dan periksa filter.');
+                }
+            } finally {
+                mismatchDataController = null;
+                setMismatchLoadingState(false);
+            }
+        }
+
+        modeSelect.addEventListener('change', function () {
+            setMode(modeSelect.value);
+        });
+
+        mismatchPeriodInput.addEventListener('change', function () {
+            mismatchBranchSelect.dataset.selected = '';
+            resetMismatchState();
+            updateMismatchBadge(mismatchPeriodInput.value, '');
+            loadMismatchBranches();
+        });
+
+        mismatchBranchSelect.addEventListener('change', function () {
+            mismatchBranchSelect.dataset.selected = mismatchBranchSelect.value || '';
+            mismatchSubmitButton.disabled = !mismatchPeriodInput.value || !mismatchBranchSelect.value;
+            resetMismatchState();
+            updateMismatchBadge(mismatchPeriodInput.value, mismatchBranchSelect.value);
+        });
+
+        mismatchForm.addEventListener('submit', function (event) {
+            event.preventDefault();
+            processMismatch(true);
+        });
+
+        setMode(modeSelect.value, false);
+        resetMismatchState();
+        loadMismatchBranches().then(function () {
+            if (modeSelect.value === 'mismatch' && mismatchPeriodInput.value && mismatchBranchSelect.value) {
+                processMismatch(false);
+            } else {
+                setMismatchLoadingState(false);
+            }
+        });
     });
 </script>
 @endsection

@@ -26,6 +26,8 @@ class ReportDataSyncService
     private const POST_DELETE_SNAPSHOT_REPORTS = [
         'daily_loan_dinamis',
         'simpanan_multipn',
+        'ssa_simpanan',
+        'ssa_pinjaman',
         'performance_pis_per_produk',
     ];
 
@@ -98,6 +100,8 @@ class ReportDataSyncService
             match ($normalizedTable) {
                 'daily_loan_dinamis' => $this->syncDailyLoan($periodHint, $jobId, $source),
                 'simpanan_multipn' => $this->syncSimpanan($periodHint, $jobId, $source),
+                'ssa_simpanan' => $this->syncSsaSimpanan($periodHint, $jobId, $source),
+                'ssa_pinjaman' => $this->syncSsaPinjaman($periodHint, $jobId, $source),
                 'lw325_ph' => $this->syncReportPh($periodHint, $jobId, $source),
                 'performance_pis_per_produk' => $this->syncPerformanceNewPayroll($periodHint, $jobId, $source),
                 default => null,
@@ -201,6 +205,28 @@ class ReportDataSyncService
         $this->refreshTableStatistics(self::NEW_PAYROLL_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
     }
 
+    private function syncSsaSimpanan(?string $periodHint, ?int $jobId, ?string $source): void
+    {
+        $this->runSnapshotAudit('ssa_simpanan', $periodHint, $jobId, $source, 'snapshot_dashboard_harian', function () use ($periodHint) {
+            return $this->dashboardHarianSnapshotService->rebuild($periodHint, true);
+        });
+
+        if ($this->shouldRefreshDerivedSnapshotStatistics($periodHint)) {
+            $this->refreshTableStatistics(self::DASHBOARD_HARIAN_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
+        }
+    }
+
+    private function syncSsaPinjaman(?string $periodHint, ?int $jobId, ?string $source): void
+    {
+        $this->runSnapshotAudit('ssa_pinjaman', $periodHint, $jobId, $source, 'snapshot_dashboard_harian', function () use ($periodHint) {
+            return $this->dashboardHarianSnapshotService->rebuild($periodHint, true);
+        });
+
+        if ($this->shouldRefreshDerivedSnapshotStatistics($periodHint)) {
+            $this->refreshTableStatistics(self::DASHBOARD_HARIAN_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
+        }
+    }
+
     public function syncAfterDelete(string $tableName, ?string $periodHint = null, ?string $source = null): void
     {
         $normalizedTable = strtolower(trim($tableName));
@@ -278,6 +304,12 @@ class ReportDataSyncService
                 self::DORMANT_SNAPSHOT_TABLE => 'posisi',
                 self::RASIO_SNAPSHOT_TABLE => 'casa_period',
                 self::RASIO_UKER_SNAPSHOT_TABLE => 'casa_period',
+            ],
+            'ssa_simpanan' => [
+                self::DASHBOARD_HARIAN_SNAPSHOT_TABLE => 'snapshot_period',
+            ],
+            'ssa_pinjaman' => [
+                self::DASHBOARD_HARIAN_SNAPSHOT_TABLE => 'snapshot_period',
             ],
             'performance_pis_per_produk' => [
                 self::NEW_PAYROLL_SNAPSHOT_TABLE => 'snapshot_posisi',
@@ -373,6 +405,8 @@ class ReportDataSyncService
         match ($normalizedTable) {
             'daily_loan_dinamis' => $this->syncDailyLoan($normalizedPeriodHint, null, $source),
             'simpanan_multipn' => $this->syncSimpanan($normalizedPeriodHint, null, $source),
+            'ssa_simpanan' => $this->syncSsaSimpanan($normalizedPeriodHint, null, $source),
+            'ssa_pinjaman' => $this->syncSsaPinjaman($normalizedPeriodHint, null, $source),
             'performance_pis_per_produk' => $this->syncPerformanceNewPayroll($normalizedPeriodHint, null, $source),
             default => null,
         };

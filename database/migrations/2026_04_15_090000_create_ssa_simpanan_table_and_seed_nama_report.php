@@ -19,15 +19,11 @@ return new class extends Migration
                 $table->string('segmentasi', 50)->nullable();
                 $table->string('segmen_kategorisasi_bisnis', 100)->nullable();
                 $table->decimal('saldo', 20, 2)->nullable();
-                $table->unsignedTinyInteger('tgl')->nullable();
-                $table->string('bulan', 20)->nullable();
-                $table->unsignedSmallInteger('tahun')->nullable();
-                $table->string('bulan_tahun', 30)->nullable();
                 $table->timestamps();
 
                 $table->index(['Month_Day_Year_of_Posisi', 'nama_cabang'], 'idx_ssa_simpanan_posisi_cabang');
                 $table->index(['nama_uker', 'produk'], 'idx_ssa_simpanan_uker_produk');
-                $table->index(['bulan_tahun', 'segmentasi'], 'idx_ssa_simpanan_bulan_tahun_segmentasi');
+                $table->index(['segmentasi'], 'idx_ssa_simpanan_bulan_tahun_segmentasi');
             });
         }
 

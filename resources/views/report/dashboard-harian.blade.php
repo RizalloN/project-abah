@@ -4,245 +4,338 @@
 
 @section('styles')
 <style>
-    .daily-dashboard {
-        --daily-no-width: 64px;
+    :root {
+        --primary-blue: #1e40af; /* blue-800 */
+        --primary-blue-light: #3b82f6; /* blue-500 */
+        --primary-blue-dark: #1e3a8a; /* blue-900 */
+        --surface-color: #ffffff;
+        --bg-color: #f8fafc; /* slate-50 */
+        --border-color: #e2e8f0; /* slate-200 */
+        --text-main: #0f172a; /* slate-900 */
+        --text-muted: #64748b; /* slate-500 */
+        
+        --table-header-bg: var(--primary-blue-dark);
+        --table-header-text: #ffffff;
+        
+        --daily-no-width: 60px;
         --daily-label-width: 280px;
-        --daily-position-width: 142px;
-        --daily-delta-width: 122px;
-        --daily-rka-width: 142px;
-        --daily-border: rgba(8, 87, 195, 0.14);
-        --daily-muted: #5d7b9d;
-        --daily-nusantara: #0857c3;
-        --daily-nusantara-dark: #053b82;
-        --daily-nusantara-light: #307fe2;
+        --daily-position-width: 110px;
+        --daily-delta-width: 100px;
+        --daily-rka-width: 110px;
+    }
+
+    .daily-dashboard {
+        font-family: 'Inter', system-ui, -apple-system, sans-serif;
+        color: var(--text-main);
+    }
+
+    /* Surface & Cards */
+    .daily-surface {
+        background: var(--surface-color);
+        border: 1px solid var(--border-color);
+        border-radius: 16px;
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.01);
+        overflow: hidden;
+        transition: box-shadow 0.3s ease;
     }
 
     .daily-panel-head {
-        background: linear-gradient(180deg, #fbfdff 0%, #f6f9ff 100%);
+        background: linear-gradient(to right, #f8fafc, #ffffff);
+        border-bottom: 1px solid var(--border-color);
     }
 
     .daily-panel-title {
         margin: 0;
-        font-size: 1.15rem;
-        font-weight: 800;
-        line-height: 1.2;
-        color: #07356d;
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: var(--primary-blue-dark);
+        letter-spacing: -0.01em;
     }
 
     .daily-panel-desc {
-        margin: 0.4rem 0 0;
-        color: #5d7b9d;
+        margin: 0.5rem 0 0;
+        color: var(--text-muted);
         font-size: 0.9rem;
-        line-height: 1.5;
-        max-width: 760px;
+        line-height: 1.6;
     }
 
+    /* Chips & Badges */
     .daily-meta-chip {
         display: inline-flex;
         align-items: center;
         gap: 0.5rem;
-        border-radius: 999px;
-        padding: 0.45rem 0.8rem;
-        background: #f7fbff;
-        border: 1px solid rgba(8, 87, 195, 0.14);
-        color: #0b3b80;
+        border-radius: 9999px;
+        padding: 0.35rem 0.85rem;
+        background: #eff6ff; /* blue-50 */
+        border: 1px solid #bfdbfe; /* blue-200 */
+        color: var(--primary-blue);
         font-size: 0.8rem;
-        font-weight: 800;
-        white-space: nowrap;
-    }
-
-    .daily-surface {
-        border: 1px solid var(--daily-border);
-        border-radius: 1rem;
-        background: rgba(255, 255, 255, 0.94);
-        box-shadow: 0 18px 36px -28px rgba(4, 42, 95, 0.32);
-        overflow: visible;
-    }
-
-    .daily-filter-label {
-        font-size: 0.68rem;
-        letter-spacing: 0.16em;
-        text-transform: uppercase;
-        color: var(--daily-muted);
-        font-weight: 800;
-        margin-bottom: 0.35rem;
-    }
-
-    .daily-scope {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.5rem;
+        font-weight: 600;
     }
 
     .daily-scope-chip {
         display: inline-flex;
         align-items: center;
-        gap: 0.45rem;
-        border-radius: 999px;
-        padding: 0.45rem 0.8rem;
-        border: 1px solid rgba(8, 87, 195, 0.14);
-        background: #f7fbff;
-        color: #0b3b80;
+        gap: 0.5rem;
+        border-radius: 8px;
+        padding: 0.4rem 0.75rem;
+        background: #f1f5f9; /* slate-100 */
+        border: 1px solid var(--border-color);
+        color: var(--text-main);
         font-size: 0.8rem;
-        font-weight: 700;
+        font-weight: 500;
+        transition: all 0.2s ease;
+    }
+    .daily-scope-chip:hover {
+        background: #e2e8f0;
     }
 
+    /* Typography */
+    .daily-filter-label {
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-bottom: 0.5rem;
+        display: block;
+    }
+
+    /* KPIs */
     .daily-kpi-grid {
         display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 0.75rem;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 1rem;
     }
 
     .daily-kpi {
-        border-radius: 0.95rem;
-        background: linear-gradient(180deg, #ffffff 0%, #f4f9ff 100%);
-        border: 1px solid rgba(8, 87, 195, 0.12);
-        padding: 0.9rem 1rem;
+        background: #ffffff;
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        padding: 1.25rem;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        border-left: 4px solid var(--primary-blue-light);
+    }
+
+    .daily-kpi:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06);
     }
 
     .daily-kpi .label {
-        font-size: 0.7rem;
-        letter-spacing: 0.14em;
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: var(--text-muted);
         text-transform: uppercase;
-        color: var(--daily-muted);
-        font-weight: 800;
-        margin-bottom: 0.35rem;
+        letter-spacing: 0.05em;
+        margin-bottom: 0.5rem;
     }
 
     .daily-kpi .value {
-        font-size: 1.05rem;
+        font-size: 1.5rem;
         font-weight: 800;
-        color: #083974;
+        color: var(--text-main);
         line-height: 1.2;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
     }
 
+    /* Form Controls */
+    .select2-container--default .select2-selection--single {
+        border: 1px solid var(--border-color) !important;
+        border-radius: 8px !important;
+        height: 42px !important;
+        display: flex;
+        align-items: center;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+    .select2-container--default.select2-container--focus .select2-selection--single {
+        border-color: var(--primary-blue-light) !important;
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2) !important;
+    }
+    .select2-container--default .select2-selection--single .select2-selection__rendered {
+        color: var(--text-main) !important;
+        font-weight: 500;
+        line-height: normal !important;
+        padding-left: 12px !important;
+    }
+    .select2-container--default .select2-selection--single .select2-selection__arrow {
+        height: 40px !important;
+    }
+    
+    .btn-primary {
+        background-color: var(--primary-blue);
+        border-color: var(--primary-blue);
+        border-radius: 8px;
+        font-weight: 600;
+        padding: 0.6rem 1.25rem;
+        transition: all 0.2s ease;
+    }
+    .btn-primary:hover {
+        background-color: var(--primary-blue-dark);
+        border-color: var(--primary-blue-dark);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.4);
+    }
+    .btn-primary:focus {
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.4) !important;
+    }
+
+    /* Table Wrapper */
     .daily-table-wrap {
         overflow-x: auto;
         overflow-y: hidden;
-        border-top: 1px solid rgba(8, 87, 195, 0.08);
-        scrollbar-width: none;
-        -ms-overflow-style: none;
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        scrollbar-width: thin;
+        scrollbar-color: #cbd5e1 transparent;
     }
 
     .daily-table-wrap::-webkit-scrollbar {
-        width: 0;
-        height: 0;
+        height: 8px;
+    }
+    .daily-table-wrap::-webkit-scrollbar-track {
+        background: transparent;
+    }
+    .daily-table-wrap::-webkit-scrollbar-thumb {
+        background-color: #cbd5e1;
+        border-radius: 20px;
     }
 
     .daily-table {
-        min-width: 1846px;
         width: max-content;
+        min-width: 100%;
         border-collapse: separate;
         border-spacing: 0;
-        margin-bottom: 0;
-        table-layout: fixed;
+        margin: 0;
+        background: #ffffff;
     }
 
-    .daily-table th,
-    .daily-table td {
+    .daily-table th, .daily-table td {
+        padding: 0.75rem 1rem;
+        vertical-align: middle;
         white-space: nowrap;
-        vertical-align: middle;
-        box-sizing: border-box;
-        background-clip: padding-box;
+        border-bottom: 1px solid var(--border-color);
+        border-right: 1px solid var(--border-color);
+    }
+    .daily-table th:last-child, .daily-table td:last-child {
+        border-right: none;
+    }
+    .daily-table tbody tr:last-child td {
+        border-bottom: none;
     }
 
+    /* Table Headers */
     .daily-table thead th {
-        border-bottom: 1px solid rgba(8, 87, 195, 0.18);
-        background: linear-gradient(180deg, var(--daily-nusantara-dark), var(--daily-nusantara));
-        color: #ffffff;
-    }
-
-    .daily-table thead tr.group-row th {
-        font-size: 0.66rem;
-        letter-spacing: 0.12em;
+        background: var(--table-header-bg);
+        color: var(--table-header-text);
+        font-weight: 600;
         text-transform: uppercase;
-        font-weight: 800;
-        background: linear-gradient(180deg, #0a61db 0%, var(--daily-nusantara) 100%);
-        color: #ffffff;
-        padding-top: 0.8rem;
-        padding-bottom: 0.8rem;
-        vertical-align: middle;
-        border-right: 1px solid rgba(255, 255, 255, 0.14);
+        font-size: 0.7rem;
+        letter-spacing: 0.05em;
+        text-align: center;
+        border-bottom: 2px solid rgba(0,0,0,0.1);
+        border-right: 1px solid rgba(255,255,255,0.1);
     }
-
     .daily-table thead tr.column-row th {
-        font-size: 0.69rem;
-        letter-spacing: 0.04em;
-        text-transform: uppercase;
-        font-weight: 800;
-        background: linear-gradient(180deg, #0d68e5 0%, #0b5fd0 100%);
-        color: #ffffff;
-        padding-top: 0.72rem;
-        padding-bottom: 0.72rem;
-        vertical-align: middle;
-        border-right: 1px solid rgba(255, 255, 255, 0.12);
+        background: #274bba; /* Slightly lighter for sub-headers */
+        font-size: 0.65rem;
     }
 
-    .daily-table thead tr.group-row th.group-no {
+    /* Table Cells */
+    .daily-table tbody td {
+        font-size: 0.8rem;
+        color: var(--text-main);
+        text-align: right; /* Numeric columns usually right aligned */
+        font-variant-numeric: tabular-nums;
+    }
+
+    /* Specific Column Alignments */
+    .daily-table .sticky-no, .daily-table .group-no {
+        text-align: center !important;
         width: var(--daily-no-width);
         min-width: var(--daily-no-width);
-        max-width: var(--daily-no-width);
     }
-
-    .daily-table thead tr.group-row th.group-label {
+    .daily-table .sticky-label, .daily-table .group-label {
+        text-align: left !important;
         width: var(--daily-label-width);
         min-width: var(--daily-label-width);
-        max-width: var(--daily-label-width);
+        font-weight: 500;
     }
 
-    .daily-table thead tr.group-row th.group-position {
-        width: calc(var(--daily-position-width) * 6);
-        min-width: calc(var(--daily-position-width) * 6);
+    /* Column Widths */
+    .daily-table .position-col {
+        width: var(--daily-position-width);
+        min-width: var(--daily-position-width);
+    }
+    .daily-table .delta-col {
+        width: var(--daily-delta-width);
+        min-width: var(--daily-delta-width);
+    }
+    .daily-table .rka-col {
+        width: var(--daily-rka-width);
+        min-width: var(--daily-rka-width);
     }
 
-    .daily-table thead tr.group-row th.group-delta {
-        width: calc(var(--daily-delta-width) * 3);
-        min-width: calc(var(--daily-delta-width) * 3);
+    /* Sticky Columns */
+    .daily-table .sticky-no {
+        position: sticky;
+        left: 0;
+        z-index: 10;
+        background: #ffffff;
+        box-shadow: 2px 0 5px rgba(0,0,0,0.05);
+    }
+    .daily-table .sticky-label {
+        position: sticky;
+        left: var(--daily-no-width);
+        z-index: 10;
+        background: #ffffff;
+        box-shadow: 2px 0 5px rgba(0,0,0,0.05);
+    }
+    
+    .daily-table thead .sticky-no, 
+    .daily-table thead .sticky-label {
+        z-index: 15;
+        background: var(--table-header-bg);
+        box-shadow: none;
     }
 
-    .daily-table thead tr.group-row th.group-rka {
-        width: calc(var(--daily-rka-width) * 2);
-        min-width: calc(var(--daily-rka-width) * 2);
+    /* Row Hover and Striping */
+    .daily-table tbody tr {
+        transition: background-color 0.15s ease;
     }
-
-    .daily-table tbody td {
-        font-size: 0.72rem;
-        color: #17385c;
-        padding-top: 0.68rem;
-        padding-bottom: 0.68rem;
-        border-top: 1px solid rgba(8, 87, 195, 0.08);
-    }
-
     .daily-table tbody tr:hover {
-        background: rgba(113, 197, 232, 0.11);
+        background-color: #f1f5f9;
+    }
+    .daily-table tbody tr:hover .sticky-no,
+    .daily-table tbody tr:hover .sticky-label {
+        background-color: #f1f5f9;
     }
 
-    .daily-table tbody tr.metric-block-simpanan td,
-    .daily-table tbody tr.metric-block-os td,
-    .daily-table tbody tr.metric-block-sml td,
-    .daily-table tbody tr.metric-block-npl td,
-    .daily-table tbody tr.metric-block-casa td,
-    .daily-table tbody tr.metric-block-ldr td {
-        background: linear-gradient(90deg, rgba(5, 150, 105, 0.07), rgba(5, 150, 105, 0.03));
+    /* Hierarchical Rows Styling */
+    .daily-table .metric-block-simpanan td,
+    .daily-table .metric-block-os td,
+    .daily-table .metric-block-sml td,
+    .daily-table .metric-block-npl td,
+    .daily-table .metric-block-casa td,
+    .daily-table .metric-block-ldr td {
+        background-color: #e0e7ff; /* blue-100 for parent rows */
+        font-weight: 700;
+        color: var(--primary-blue-dark);
     }
-
-    .daily-table tbody tr.metric-block-simpanan .sticky-no,
-    .daily-table tbody tr.metric-block-simpanan .sticky-label,
-    .daily-table tbody tr.metric-block-os .sticky-no,
-    .daily-table tbody tr.metric-block-os .sticky-label,
-    .daily-table tbody tr.metric-block-sml .sticky-no,
-    .daily-table tbody tr.metric-block-sml .sticky-label,
-    .daily-table tbody tr.metric-block-npl .sticky-no,
-    .daily-table tbody tr.metric-block-npl .sticky-label,
-    .daily-table tbody tr.metric-block-casa .sticky-no,
-    .daily-table tbody tr.metric-block-casa .sticky-label,
-    .daily-table tbody tr.metric-block-ldr .sticky-no,
-    .daily-table tbody tr.metric-block-ldr .sticky-label {
-        background-color: #ffffff;
-        background-image: linear-gradient(90deg, rgba(5, 150, 105, 0.12), rgba(5, 150, 105, 0.05));
+    .daily-table .metric-block-simpanan .sticky-no,
+    .daily-table .metric-block-simpanan .sticky-label,
+    .daily-table .metric-block-os .sticky-no,
+    .daily-table .metric-block-os .sticky-label,
+    .daily-table .metric-block-sml .sticky-no,
+    .daily-table .metric-block-sml .sticky-label,
+    .daily-table .metric-block-npl .sticky-no,
+    .daily-table .metric-block-npl .sticky-label,
+    .daily-table .metric-block-casa .sticky-no,
+    .daily-table .metric-block-casa .sticky-label,
+    .daily-table .metric-block-ldr .sticky-no,
+    .daily-table .metric-block-ldr .sticky-label {
+        background-color: #e0e7ff;
     }
 
     .daily-table tbody tr.metric-block-simpanan:hover td,
@@ -251,181 +344,68 @@
     .daily-table tbody tr.metric-block-npl:hover td,
     .daily-table tbody tr.metric-block-casa:hover td,
     .daily-table tbody tr.metric-block-ldr:hover td {
-        filter: saturate(1.03);
+        background-color: #dbeafe; /* blue-200 */
+    }
+    .daily-table tbody tr.metric-block-simpanan:hover .sticky-no,
+    .daily-table tbody tr.metric-block-simpanan:hover .sticky-label,
+    .daily-table tbody tr.metric-block-os:hover .sticky-no,
+    .daily-table tbody tr.metric-block-os:hover .sticky-label,
+    .daily-table tbody tr.metric-block-sml:hover .sticky-no,
+    .daily-table tbody tr.metric-block-sml:hover .sticky-label,
+    .daily-table tbody tr.metric-block-npl:hover .sticky-no,
+    .daily-table tbody tr.metric-block-npl:hover .sticky-label,
+    .daily-table tbody tr.metric-block-casa:hover .sticky-no,
+    .daily-table tbody tr.metric-block-casa:hover .sticky-label,
+    .daily-table tbody tr.metric-block-ldr:hover .sticky-no,
+    .daily-table tbody tr.metric-block-ldr:hover .sticky-label {
+        background-color: #dbeafe;
     }
 
-    .daily-table .sticky-no {
-        position: sticky;
-        left: 0;
-        width: var(--daily-no-width);
-        min-width: var(--daily-no-width);
-        z-index: 10;
-        background: #ffffff;
-        box-shadow: 8px 0 16px -16px rgba(4, 42, 95, 0.35);
-        border-right: 1px solid rgba(8, 87, 195, 0.12);
-        text-align: center;
-    }
+    .daily-table .row-depth-1 .metric-label { padding-left: 1rem; font-weight: 600; color: var(--text-main); }
+    .daily-table .row-depth-2 .metric-label { padding-left: 2rem; color: var(--text-muted); font-weight: 500;}
+    .daily-table .row-depth-3 .metric-label { padding-left: 3rem; color: #94a3b8; font-size: 0.75rem; }
 
-    .daily-table .sticky-label {
-        position: sticky;
-        left: var(--daily-no-width);
-        width: var(--daily-label-width);
-        min-width: var(--daily-label-width);
-        z-index: 9;
-        background: #ffffff;
-        box-shadow: 8px 0 16px -16px rgba(4, 42, 95, 0.28);
-        border-right: 1px solid rgba(8, 87, 195, 0.12);
-        overflow: hidden;
-    }
-
-    .daily-table thead .sticky-no {
-        z-index: 15;
-    }
-
-    .daily-table thead .sticky-label {
-        z-index: 14;
-    }
-
-    .daily-table .header-subnote {
-        display: block;
-        margin-top: 0.2rem;
-        font-size: 0.65rem;
-        letter-spacing: 0;
-        text-transform: none;
-        color: rgba(255, 255, 255, 0.82);
-        font-weight: 700;
-    }
-
-    .daily-table th.value-col,
-    .daily-table td.value-col {
-        width: var(--daily-position-width);
-        min-width: var(--daily-position-width);
-        max-width: var(--daily-position-width);
-        font-variant-numeric: tabular-nums;
-        letter-spacing: 0.01em;
-        padding-left: 0.4rem;
-        padding-right: 0.4rem;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        text-align: right;
-        white-space: nowrap;
-    }
-
-    .daily-table td.value-col {
-        position: relative;
-        z-index: 1;
-    }
-
-    .daily-table .cell-text {
-        display: inline-block;
-        max-width: 100%;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        vertical-align: middle;
-    }
-
-    .daily-table th.value-col.delta-col,
-    .daily-table td.value-col.delta-col {
-        width: var(--daily-delta-width);
-        min-width: var(--daily-delta-width);
-        max-width: var(--daily-delta-width);
-    }
-
-    .daily-table th.value-col.rka-col,
-    .daily-table td.value-col.rka-col {
-        width: var(--daily-rka-width);
-        min-width: var(--daily-rka-width);
-        max-width: var(--daily-rka-width);
-    }
-
-    .daily-table .position-col-hidden {
-        display: none !important;
-    }
-
-    .daily-table .column-heading {
-        display: inline-flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 0.12rem;
-        line-height: 1.05;
-    }
-
-    .daily-table .column-heading .main {
-        font-size: 0.74rem;
-        font-weight: 800;
-        text-transform: none;
-        letter-spacing: 0.01em;
-    }
-
-    .daily-table .row-depth-0 .metric-label {
-        font-weight: 800;
-        color: #083974;
-    }
-
-    .daily-table .row-depth-1 .metric-label {
-        padding-left: 0.9rem;
-        font-weight: 700;
-    }
-
-    .daily-table .row-depth-2 .metric-label {
-        padding-left: 1.7rem;
-    }
-
-    .daily-table .row-depth-3 .metric-label {
-        padding-left: 2.5rem;
-        color: #537293;
-    }
-
-    .daily-table .metric-value {
-        font-weight: 800;
-        color: #0b3b80;
-    }
-
-    .daily-table tbody tr.metric-block-simpanan td.value-col .cell-text,
-    .daily-table tbody tr.metric-block-os td.value-col .cell-text,
-    .daily-table tbody tr.metric-block-sml td.value-col .cell-text,
-    .daily-table tbody tr.metric-block-npl td.value-col .cell-text,
-    .daily-table tbody tr.metric-block-casa td.value-col .cell-text,
-    .daily-table tbody tr.metric-block-ldr td.value-col .cell-text {
-        font-size: 0.66rem;
-    }
-
-    .daily-table .metric-label {
-        display: block;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        line-height: 1.18;
-        padding-right: 0.35rem;
-    }
-
-    .daily-table .delta-positive {
-        color: #0b7f40;
-        font-weight: 700;
-    }
-
-    .daily-table .delta-negative {
-        color: #a11d1d;
-        font-weight: 800;
-    }
-
-    .daily-table tbody tr:hover .sticky-no,
-    .daily-table tbody tr:hover .sticky-label {
-        background: #f4f9ff;
-    }
-
+    /* Utilities */
+    .delta-positive { color: #16a34a !important; font-weight: 700; } /* green-600 */
+    .delta-negative { color: #dc2626 !important; font-weight: 700; } /* red-600 */
+    
     .daily-empty {
-        padding: 2rem 1.25rem;
+        padding: 3rem;
         text-align: center;
-        color: #6782a4;
+        color: var(--text-muted);
+        font-size: 0.95rem;
     }
 
     .daily-loading {
-        opacity: 0.64;
+        position: relative;
         pointer-events: none;
     }
+    .daily-loading::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: rgba(255,255,255,0.6);
+        backdrop-filter: blur(2px);
+        z-index: 20;
+    }
 
+    .position-col-hidden {
+        display: none !important;
+    }
+
+    .header-subnote {
+        display: block;
+        font-size: 0.6rem;
+        opacity: 0.8;
+        margin-top: 2px;
+        font-weight: normal;
+    }
+
+    .daily-table tbody tr.row-hidden-by-scope {
+        display: none;
+    }
+
+    /* Scrollbar track below table */
     .daily-table-sticky-footer {
         position: sticky;
         bottom: 0;
@@ -434,18 +414,18 @@
         padding: 0.55rem 0.75rem 0.8rem;
         background: linear-gradient(180deg, rgba(247, 251, 255, 0.12), rgba(247, 251, 255, 0.95));
         backdrop-filter: blur(10px);
-        border-top: 1px solid rgba(8, 87, 195, 0.12);
+        border-top: 1px solid var(--border-color);
     }
-
     .daily-table-sticky-track {
         overflow-x: auto;
         overflow-y: hidden;
-        border: 1px solid rgba(8, 87, 195, 0.12);
+        border: 1px solid var(--border-color);
         border-radius: 999px;
         background: rgba(255, 255, 255, 0.9);
-        box-shadow: 0 12px 24px -20px rgba(4, 42, 95, 0.25);
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        scrollbar-width: thin;
+        scrollbar-color: #94a3b8 transparent;
     }
-
     .daily-table-sticky-spacer {
         min-width: 1846px;
         height: 1px;
@@ -460,13 +440,13 @@
     @media (max-width: 575.98px) {
         .daily-dashboard {
             --daily-label-width: 220px;
-            --daily-position-width: 114px;
-            --daily-delta-width: 110px;
-            --daily-rka-width: 114px;
+            --daily-position-width: 94px;
+            --daily-delta-width: 94px;
+            --daily-rka-width: 94px;
         }
 
         .daily-table col.numeric-col {
-            width: 114px !important;
+            width: 94px !important;
         }
 
         .daily-kpi-grid {
@@ -479,40 +459,40 @@
 @section('content')
 <div class="daily-dashboard" id="daily-dashboard-root">
     <div class="daily-surface mb-4" id="daily-surface">
-        <div class="daily-panel-head p-4 border-bottom">
+        <div class="daily-panel-head p-4">
             <div class="d-flex flex-column flex-lg-row justify-content-between align-items-start align-items-lg-center">
                 <div class="mb-3 mb-lg-0 pr-lg-4">
                     <span class="daily-meta-chip mb-2">
-                        <i class="fas fa-calendar-day"></i>
+                        <i class="fas fa-chart-line mr-1"></i>
                         Dashboard Harian Snapshot
                     </span>
-                    <h1 class="daily-panel-title">Perbandingan posisi, delta, dan RKA harian.</h1>
+                    <h1 class="daily-panel-title">Perbandingan Posisi, Delta, dan RKA Harian</h1>
                     <p class="daily-panel-desc">
-                        Data dibangun dari snapshot agregat `simpanan_multipn` dan `daily_loan_dinamis`.
+                        Data dibangun dari snapshot agregat <code>ssa_simpanan</code> dan <code>ssa_pinjaman</code>.
                     </p>
                 </div>
 
-                <div class="daily-meta-chip">
-                    <i class="fas fa-database"></i>
-                    <span data-source-label>{{ data_get($dashboardPage, 'initialData.summary.source', 'dashboard_harian_snapshots') }}</span>
+                <div class="daily-meta-chip bg-white border-0 shadow-sm">
+                    <i class="fas fa-database text-primary"></i>
+                    <span data-source-label class="text-dark">{{ data_get($dashboardPage, 'initialData.summary.source', 'dashboard_harian_snapshots') }}</span>
                 </div>
             </div>
         </div>
 
-        <div class="p-4 border-bottom">
-            <div class="d-flex flex-column flex-lg-row justify-content-between align-items-start align-items-lg-center mb-3">
+        <div class="p-4 border-bottom bg-white">
+            <div class="d-flex flex-column flex-lg-row justify-content-between align-items-start align-items-lg-center mb-4">
                 <div class="mb-3 mb-lg-0">
-                    <div class="daily-filter-label">Scope aktif</div>
+                    <div class="daily-filter-label">Scope Aktif</div>
                     <div class="daily-scope">
-                        <span class="daily-scope-chip"><i class="fas fa-map-marker-alt"></i> <span data-scope-kanca>{{ data_get($dashboardPage, 'initialData.summary.kanca_label', 'Semua Kanca') }}</span></span>
-                        <span class="daily-scope-chip"><i class="fas fa-sitemap"></i> <span data-scope-unit>{{ data_get($dashboardPage, 'initialData.summary.unit_label', 'Semua Unit Kerja') }}</span></span>
-                        <span class="daily-scope-chip"><i class="fas fa-clock"></i> <span data-scope-posisi>{{ data_get($dashboardPage, 'initialData.selected_period_label', 'Belum ada data') }}</span></span>
-                        <span class="daily-scope-chip"><i class="fas fa-bullseye"></i> <span data-scope-rka>{{ data_get($dashboardPage, 'initialData.selected_rka_label', 'Belum ada data') }}</span></span>
+                        <span class="daily-scope-chip"><i class="fas fa-map-marker-alt text-primary"></i> <span data-scope-kanca>{{ data_get($dashboardPage, 'initialData.summary.kanca_label', 'Semua Kanca') }}</span></span>
+                        <span class="daily-scope-chip"><i class="fas fa-sitemap text-primary"></i> <span data-scope-unit>{{ data_get($dashboardPage, 'initialData.summary.unit_label', 'Semua Unit Kerja') }}</span></span>
+                        <span class="daily-scope-chip"><i class="fas fa-clock text-primary"></i> <span data-scope-posisi>{{ data_get($dashboardPage, 'initialData.selected_period_label', 'Belum ada data') }}</span></span>
+                        <span class="daily-scope-chip"><i class="fas fa-bullseye text-primary"></i> <span data-scope-rka>{{ data_get($dashboardPage, 'initialData.selected_rka_label', 'Belum ada data') }}</span></span>
                     </div>
                 </div>
 
-                <div class="text-lg-right">
-                    <div class="daily-filter-label">Status data</div>
+                <div class="text-lg-right bg-light p-2 px-3 rounded shadow-sm">
+                    <div class="daily-filter-label mb-1">Status Data</div>
                     <div class="text-dark font-weight-bold" data-scope-summary>Filter belum dijalankan.</div>
                 </div>
             </div>
@@ -523,7 +503,7 @@
                     <div class="value" data-kpi-simpanan>-</div>
                 </div>
                 <div class="daily-kpi">
-                    <div class="label">OS Non Commercial</div>
+                    <div class="label">Total Pinjaman Non Commercial</div>
                     <div class="value" data-kpi-os>-</div>
                 </div>
                 <div class="daily-kpi">
@@ -534,55 +514,55 @@
 
             <div class="row">
                 <div class="col-lg-3 col-md-6 mb-3">
-                    <div class="daily-filter-label">Kanca</div>
+                    <label class="daily-filter-label" for="filter-kanca">Kanca</label>
                     <select id="filter-kanca" class="form-control select2"></select>
                 </div>
                 <div class="col-lg-3 col-md-6 mb-3">
-                    <div class="daily-filter-label">Unit Kerja</div>
+                    <label class="daily-filter-label" for="filter-unit">Unit Kerja</label>
                     <select id="filter-unit" class="form-control select2"></select>
                 </div>
                 <div class="col-lg-3 col-md-6 mb-3">
-                    <div class="daily-filter-label">Posisi Terakhir</div>
+                    <label class="daily-filter-label" for="filter-posisi-terakhir">Posisi Terakhir</label>
                     <select id="filter-posisi-terakhir" class="form-control select2"></select>
                 </div>
                 <div class="col-lg-3 col-md-6 mb-3">
-                    <div class="daily-filter-label">Posisi RKA</div>
+                    <label class="daily-filter-label" for="filter-posisi-rka">Posisi RKA</label>
                     <select id="filter-posisi-rka" class="form-control select2"></select>
                 </div>
             </div>
 
-            <div class="d-flex flex-wrap justify-content-between align-items-center mt-2">
+            <div class="d-flex flex-wrap justify-content-between align-items-center mt-3 pt-3 border-top">
                 <div class="text-muted small mb-2 mb-lg-0">
-                    Pilih filter lalu klik <strong>Terapkan Filter</strong> untuk menghitung snapshot.
+                    <i class="fas fa-info-circle mr-1"></i> Pilih filter lalu klik <strong>Terapkan Filter</strong> untuk menghitung snapshot terbaru.
                 </div>
                 <div class="d-flex align-items-center">
-                    <button type="button" class="btn btn-primary px-4" id="btn-apply-daily-filter">
-                        <i class="fas fa-filter mr-1"></i> Terapkan Filter
+                    <button type="button" class="btn btn-primary shadow-sm" id="btn-apply-daily-filter">
+                        <i class="fas fa-filter mr-2"></i> Terapkan Filter
                     </button>
                 </div>
             </div>
         </div>
 
-        <div class="p-4">
-        <div class="daily-table-wrap">
-            <table class="table table-bordered daily-table">
-                <colgroup>
-                    <col style="width: 64px;">
-                    <col style="width: 280px;">
-                    <col style="width: 142px;" class="numeric-col">
-                    <col style="width: 142px;" class="numeric-col">
-                    <col style="width: 142px;" class="numeric-col">
-                    <col style="width: 142px;" class="numeric-col">
-                    <col style="width: 142px;" class="numeric-col position-col-h1">
-                    <col style="width: 142px;" class="numeric-col">
-                    <col style="width: 122px;" class="numeric-col">
-                    <col style="width: 122px;" class="numeric-col">
-                    <col style="width: 122px;" class="numeric-col">
-                    <col style="width: 142px;" class="numeric-col">
-                    <col style="width: 142px;" class="numeric-col">
-                </colgroup>
-                <thead>
-                    <tr class="group-row text-center">
+        <div class="p-4 bg-white">
+            <div class="daily-table-wrap">
+                <table class="table daily-table">
+                    <colgroup>
+                        <col style="width: 60px;">
+                        <col style="width: 280px;">
+                        <col style="width: 110px;" class="numeric-col">
+                        <col style="width: 110px;" class="numeric-col">
+                        <col style="width: 110px;" class="numeric-col">
+                        <col style="width: 110px;" class="numeric-col">
+                        <col style="width: 110px;" class="numeric-col position-col-h1">
+                        <col style="width: 110px;" class="numeric-col">
+                        <col style="width: 100px;" class="numeric-col">
+                        <col style="width: 100px;" class="numeric-col">
+                        <col style="width: 100px;" class="numeric-col">
+                        <col style="width: 110px;" class="numeric-col">
+                        <col style="width: 110px;" class="numeric-col">
+                    </colgroup>
+                    <thead>
+                        <tr class="group-row text-center">
                             <th class="sticky-no group-no" rowspan="2">No</th>
                             <th class="sticky-label group-label text-left" rowspan="2">Keterangan</th>
                             <th class="group-position" colspan="6" data-position-group-colspan>Perbandingan Posisi</th>
@@ -590,21 +570,43 @@
                             <th class="group-rka" colspan="2">Perbandingan RKA</th>
                         </tr>
                         <tr class="column-row text-center">
-                            <th class="value-col position-col"><span class="column-heading"><span class="main" data-label-yoy>-</span></span></th>
-                            <th class="value-col position-col"><span class="column-heading"><span class="main" data-label-ytd>-</span></span></th>
-                            <th class="value-col position-col"><span class="column-heading"><span class="main" data-label-mtm>-</span></span></th>
-                            <th class="value-col position-col"><span class="column-heading"><span class="main" data-label-mtd>-</span></span></th>
-                            <th class="value-col position-col position-col-h1"><span class="column-heading"><span class="main" data-label-h1>-</span></span></th>
-                            <th class="value-col position-col"><span class="column-heading"><span class="main" data-label-current>-</span></span></th>
-                            <th class="value-col delta-col"><span class="column-heading"><span class="main" data-label-delta-yoy>Selisih</span><span class="header-subnote">YoY</span></span></th>
-                            <th class="value-col delta-col"><span class="column-heading"><span class="main" data-label-delta-ytd>Selisih</span><span class="header-subnote">YtD</span></span></th>
-                            <th class="value-col delta-col"><span class="column-heading"><span class="main" data-label-delta-dtd>Selisih</span><span class="header-subnote">DtD</span></span></th>
-                            <th class="value-col rka-col"><span class="column-heading"><span class="main" data-label-rka>-</span></span></th>
-                            <th class="value-col rka-col"><span class="column-heading"><span class="main" data-label-rka-dec>-</span></span></th>
+                            <th class="value-col position-col">
+                                <span class="column-heading"><span class="main" data-label-yoy>-</span></span>
+                            </th>
+                            <th class="value-col position-col">
+                                <span class="column-heading"><span class="main" data-label-ytd>-</span></span>
+                            </th>
+                            <th class="value-col position-col">
+                                <span class="column-heading"><span class="main" data-label-mtm>-</span></span>
+                            </th>
+                            <th class="value-col position-col">
+                                <span class="column-heading"><span class="main" data-label-mtd>-</span></span>
+                            </th>
+                            <th class="value-col position-col position-col-h1">
+                                <span class="column-heading"><span class="main" data-label-h1>-</span></span>
+                            </th>
+                            <th class="value-col position-col bg-primary border-primary">
+                                <span class="column-heading"><span class="main text-white" data-label-current>-</span></span>
+                            </th>
+                            <th class="value-col delta-col">
+                                <span class="column-heading"><span class="main" data-label-delta-yoy>-</span><span class="header-subnote text-white-50">YoY</span></span>
+                            </th>
+                            <th class="value-col delta-col">
+                                <span class="column-heading"><span class="main" data-label-delta-ytd>-</span><span class="header-subnote text-white-50">YtD</span></span>
+                            </th>
+                            <th class="value-col delta-col">
+                                <span class="column-heading"><span class="main" data-label-delta-dtd>-</span><span class="header-subnote text-white-50">DtD</span></span>
+                            </th>
+                            <th class="value-col rka-col">
+                                <span class="column-heading"><span class="main" data-label-rka>-</span></span>
+                            </th>
+                            <th class="value-col rka-col">
+                                <span class="column-heading"><span class="main" data-label-rka-dec>-</span></span>
+                            </th>
                         </tr>
                     </thead>
                     <tbody id="daily-dashboard-body">
-                        <tr><td colspan="13" class="daily-empty">Memuat data dashboard harian...</td></tr>
+                        <tr><td colspan="13" class="daily-empty"><i class="fas fa-spinner fa-spin mr-2"></i> Memuat data dashboard harian...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -649,6 +651,9 @@
             current: document.querySelector('[data-label-current]'),
             rka: document.querySelector('[data-label-rka]'),
             rkaDec: document.querySelector('[data-label-rka-dec]'),
+            deltaYoy: document.querySelector('[data-label-delta-yoy]'),
+            deltaYtd: document.querySelector('[data-label-delta-ytd]'),
+            deltaDtd: document.querySelector('[data-label-delta-dtd]'),
         };
         const positionGroupColspan = document.querySelector('[data-position-group-colspan]');
         const positionH1Header = document.querySelector('[data-label-h1]').closest('th');
@@ -662,6 +667,7 @@
             posisi_terakhir: document.getElementById('filter-posisi-terakhir'),
             posisi_rka: document.getElementById('filter-posisi-rka'),
         };
+        let latestFilters = initialFilters;
         const MILLION_UNIT = 1000000;
         const BILLION_UNIT = 1000000000;
         const TABLE_MONEY_UNIT = BILLION_UNIT;
@@ -672,11 +678,11 @@
         });
 
         const formatCurrency = function (value) {
-            return 'Rp ' + currencyFormatter.format(Number(value || 0) / TABLE_MONEY_UNIT) + ' ' + TABLE_MONEY_LABEL;
+            return currencyFormatter.format(Number(value || 0) / TABLE_MONEY_UNIT) + ' ' + TABLE_MONEY_LABEL;
         };
 
         const formatMiliar = function (value) {
-            return 'Rp ' + currencyFormatter.format(Number(value || 0) / BILLION_UNIT) + ' M';
+            return currencyFormatter.format(Number(value || 0) / BILLION_UNIT) + ' M';
         };
 
         const formatPercent = function (value) {
@@ -694,6 +700,22 @@
             }
 
             return parts[2] + '/' + parts[1] + '/' + parts[0];
+        };
+
+        const formatMonthYear = function (value) {
+            if (!value) {
+                return '-';
+            }
+
+            const raw = String(value).slice(0, 7);
+            if (!/^\d{4}-\d{2}$/.test(raw)) {
+                return String(value);
+            }
+
+            const [year, month] = raw.split('-');
+            const date = new Date(Number(year), Number(month) - 1, 1);
+
+            return new Intl.DateTimeFormat('id-ID', { month: 'short', year: 'numeric' }).format(date);
         };
 
         const formatValue = function (value, type) {
@@ -773,6 +795,29 @@
             $(select).trigger('change.select2');
         };
 
+        const scopedUnitOptions = function (filters, kancaValue) {
+            return (filters.unit_kerja || []).filter(function (option) {
+                if ((option.value || 'all') === 'all') {
+                    return true;
+                }
+
+                if (!kancaValue || kancaValue === 'all') {
+                    return true;
+                }
+
+                return String(option.kanca_value || '') === String(kancaValue);
+            });
+        };
+
+        const syncUnitSelect = function (filters, preferredUnit) {
+            const unitOptions = scopedUnitOptions(filters, selects.kanca.value || 'all');
+            const selectedUnit = unitOptions.some(function (option) {
+                return String(option.value || '') === String(preferredUnit || 'all');
+            }) ? (preferredUnit || 'all') : 'all';
+
+            populateSelect(selects.unit_kerja, unitOptions, selectedUnit);
+        };
+
         const currentState = function () {
             return {
                 kanca: selects.kanca.value || 'all',
@@ -780,6 +825,17 @@
                 posisi_terakhir: selects.posisi_terakhir.value || '',
                 posisi_rka: selects.posisi_rka.value || '',
             };
+        };
+
+        const isMicroUnitSelection = function () {
+            if (!selects.unit_kerja) {
+                return false;
+            }
+
+            const selectedOption = selects.unit_kerja.options[selects.unit_kerja.selectedIndex];
+            const label = selectedOption ? String(selectedOption.text || '').trim().toUpperCase() : '';
+
+            return /\bUNIT\b/.test(label);
         };
 
         const renderTable = function (payload) {
@@ -795,12 +851,38 @@
                 casa_pct: 'metric-block-casa',
                 ldr_non_commercial: 'metric-block-ldr',
             };
+            const sectionClassMap = {
+                simpanan_ritel: 'section-ritel',
+                simpanan_mikro: 'section-mikro',
+                simpanan_wholesale: 'section-wholesale',
+                commercial_os: 'section-commercial',
+                sme_os: 'section-ritel',
+                consumer_os: 'section-consumer',
+                micro_os: 'section-mikro',
+                commercial_sml: 'section-commercial',
+                sme_sml: 'section-ritel',
+                consumer_sml: 'section-consumer',
+                micro_sml: 'section-mikro',
+                commercial_npl: 'section-commercial',
+                sme_npl: 'section-ritel',
+                consumer_npl: 'section-consumer',
+                micro_npl: 'section-mikro',
+            };
+            const hiddenWhenUnitSelected = new Set([
+                'simpanan_ritel',
+                'giro_ritel',
+                'deposito_ritel',
+                'tabungan_ritel',
+                'casa_ritel',
+                'ldr_ritel_non_commercial',
+            ]);
+            const hideRitelRows = isMicroUnitSelection();
 
             togglePositionColumns(hasH1);
             syncStickyScrollbarWidth();
 
             if (!rows.length) {
-                body.innerHTML = '<tr><td colspan="' + emptyColspan + '" class="daily-empty">Tidak ada data untuk filter terpilih.</td></tr>';
+                body.innerHTML = '<tr><td colspan="' + emptyColspan + '" class="daily-empty"><i class="fas fa-box-open mr-2 text-muted"></i>Tidak ada data untuk filter terpilih.</td></tr>';
                 return;
             }
 
@@ -820,8 +902,8 @@
                     return 'text-muted';
                 };
 
-                rowCells.push('<td class="sticky-no text-center font-weight-bold">' + (index + 1) + '</td>');
-                rowCells.push('<td class="sticky-label text-left"><span class="metric-label" title="' + escapeHtml(row.label) + '">' + escapeHtml(row.label) + '</span></td>');
+                rowCells.push('<td class="sticky-no font-weight-bold text-center">' + (index + 1) + '</td>');
+                rowCells.push('<td class="sticky-label"><span class="metric-label" title="' + escapeHtml(row.label) + '">' + escapeHtml(row.label) + '</span></td>');
                 rowCells.push('<td class="value-col position-col"><span class="cell-text">' + formatValue(value.yoy, row.type) + '</span></td>');
                 rowCells.push('<td class="value-col position-col"><span class="cell-text">' + formatValue(value.ytd, row.type) + '</span></td>');
                 rowCells.push('<td class="value-col position-col"><span class="cell-text">' + formatValue(value.mtm, row.type) + '</span></td>');
@@ -831,7 +913,7 @@
                     rowCells.push('<td class="value-col position-col position-col-h1" data-position-col="h1"><span class="cell-text">' + formatValue(value.h1, row.type) + '</span></td>');
                 }
 
-                rowCells.push('<td class="value-col position-col metric-value"><span class="cell-text">' + formatValue(value.current, row.type) + '</span></td>');
+                rowCells.push('<td class="value-col position-col metric-value font-weight-bold bg-light"><span class="cell-text text-primary">' + formatValue(value.current, row.type) + '</span></td>');
                 rowCells.push('<td class="value-col delta-col ' + deltaClass(delta.yoy) + '"><span class="cell-text">' + formatValue(delta.yoy, row.type) + '</span></td>');
                 rowCells.push('<td class="value-col delta-col ' + deltaClass(delta.ytd) + '"><span class="cell-text">' + formatValue(delta.ytd, row.type) + '</span></td>');
                 rowCells.push('<td class="value-col delta-col ' + deltaClass(delta.dtd) + '"><span class="cell-text">' + formatValue(delta.dtd, row.type) + '</span></td>');
@@ -841,6 +923,12 @@
                 const rowClasses = ['row-depth-' + row.depth];
                 if (blockClassMap[row.key]) {
                     rowClasses.push(blockClassMap[row.key]);
+                }
+                if (sectionClassMap[row.key]) {
+                    rowClasses.push(sectionClassMap[row.key]);
+                }
+                if (hideRitelRows && hiddenWhenUnitSelected.has(row.key)) {
+                    rowClasses.push('row-hidden-by-scope');
                 }
 
                 return '<tr class="' + rowClasses.join(' ') + '">' + rowCells.join('') + '</tr>';
@@ -852,17 +940,19 @@
             const periods = payload.comparison_periods || {};
             const filters = payload.available_filters || initialFilters;
             const hasH1 = Boolean(periods.h1 && periods.h1.period);
+            latestFilters = filters;
+            const current = currentState();
 
-            populateSelect(selects.kanca, filters.kanca || [], currentState().kanca);
-            populateSelect(selects.unit_kerja, filters.unit_kerja || [], currentState().unit_kerja);
-            populateSelect(selects.posisi_terakhir, filters.posisi_terakhir || [], payload.selected_period || currentState().posisi_terakhir);
-            populateSelect(selects.posisi_rka, filters.posisi_rka || [], payload.selected_rka_period || currentState().posisi_rka);
+            populateSelect(selects.kanca, filters.kanca || [], current.kanca);
+            syncUnitSelect(filters, current.unit_kerja);
+            populateSelect(selects.posisi_terakhir, filters.posisi_terakhir || [], payload.selected_period || current.posisi_terakhir);
+            populateSelect(selects.posisi_rka, filters.posisi_rka || [], payload.selected_rka_period ? payload.selected_rka_period.slice(0, 7) : current.posisi_rka);
 
             scopeKanca.textContent = summary.kanca_label || 'Semua Kanca';
             scopeUnit.textContent = summary.unit_label || 'Semua Unit Kerja';
             scopePosisi.textContent = payload.selected_period_label || 'Belum ada data';
-            scopeRka.textContent = payload.selected_rka_label || 'Belum ada data';
-            scopeSummary.textContent = 'Baris tampil: ' + (summary.row_count || 0).toLocaleString('id-ID') + '. Data aktif berasal dari ' + (summary.source || 'source_fallback') + '.';
+            scopeRka.textContent = periods.rka ? formatMonthYear(periods.rka.period) : 'Belum ada data';
+            scopeSummary.innerHTML = '<i class="fas fa-list mr-1"></i> Baris tampil: ' + (summary.row_count || 0).toLocaleString('id-ID') + '. <br><small class="text-muted font-weight-normal mt-1 d-block">Data dari: ' + (summary.source || 'source_fallback') + '</small>';
             sourceLabel.textContent = summary.source || 'source_fallback';
             kpiSimpanan.textContent = formatMiliar(summary.current_total_simpanan || 0);
             kpiOs.textContent = formatMiliar(summary.current_total_os_non_commercial || 0);
@@ -874,8 +964,11 @@
             headerLabels.mtd.textContent = periods.mtd ? formatDateSlash(periods.mtd.period) : '-';
             headerLabels.h1.textContent = hasH1 ? formatDateSlash(periods.h1.period) : '-';
             headerLabels.current.textContent = payload.selected_period ? formatDateSlash(payload.selected_period) : '-';
-            headerLabels.rka.textContent = periods.rka ? formatDateSlash(periods.rka.period) : '-';
+            headerLabels.rka.textContent = periods.rka ? formatMonthYear(periods.rka.period) : '-';
             headerLabels.rkaDec.textContent = periods.rka_dec ? formatDateSlash(periods.rka_dec.period) : '-';
+            headerLabels.deltaYoy.textContent = periods.yoy ? formatDateSlash(periods.yoy.period) : '-';
+            headerLabels.deltaYtd.textContent = periods.ytd ? formatDateSlash(periods.ytd.period) : '-';
+            headerLabels.deltaDtd.textContent = hasH1 ? formatDateSlash(periods.h1.period) : '-';
 
             togglePositionColumns(hasH1);
             syncStickyScrollbarWidth();
@@ -892,7 +985,7 @@
             surface.classList.add('daily-loading');
             if (applyButton) {
                 applyButton.disabled = true;
-                applyButton.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Memuat...';
+                applyButton.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Memuat Data...';
             }
 
             fetch(dataUrl + '?' + params.toString(), {
@@ -908,22 +1001,47 @@
                 })
                 .catch(function () {
                     const hidden = positionH1Header && positionH1Header.classList.contains('position-col-hidden');
-                    body.innerHTML = '<tr><td colspan="' + (hidden ? 12 : 13) + '" class="daily-empty">Gagal memuat data dashboard harian.</td></tr>';
+                    body.innerHTML = '<tr><td colspan="' + (hidden ? 12 : 13) + '" class="daily-empty text-danger"><i class="fas fa-exclamation-triangle mr-2"></i>Gagal memuat data dashboard harian.</td></tr>';
                 })
                 .finally(function () {
                     surface.classList.remove('daily-loading');
                     if (applyButton) {
                         applyButton.disabled = false;
-                        applyButton.innerHTML = '<i class="fas fa-filter mr-1"></i> Terapkan Filter';
+                        applyButton.innerHTML = '<i class="fas fa-filter mr-2"></i> Terapkan Filter';
                     }
                 });
         };
 
+        const refreshUnitOptions = function () {
+            if (!dataUrl) {
+                syncUnitSelect(latestFilters, selects.unit_kerja.value || 'all');
+                return;
+            }
+
+            const params = new URLSearchParams(currentState());
+
+            fetch(dataUrl + '?' + params.toString(), {
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            })
+                .then(function (response) {
+                    return response.json();
+                })
+                .then(function (payload) {
+                    latestFilters = payload.available_filters || initialFilters;
+                    syncUnitSelect(latestFilters, selects.unit_kerja.value || 'all');
+                })
+                .catch(function () {
+                    syncUnitSelect(latestFilters, selects.unit_kerja.value || 'all');
+                });
+        };
+
         populateSelect(selects.kanca, initialFilters.kanca || [], initialSelected.kanca || 'all');
-        populateSelect(selects.unit_kerja, initialFilters.unit_kerja || [], initialSelected.unit_kerja || 'all');
+        syncUnitSelect(initialFilters, initialSelected.unit_kerja || 'all');
         populateSelect(selects.posisi_terakhir, initialFilters.posisi_terakhir || [], initialSelected.posisi_terakhir || '');
         populateSelect(selects.posisi_rka, initialFilters.posisi_rka || [], initialSelected.posisi_rka || '');
-        body.innerHTML = '<tr><td colspan="13" class="daily-empty">Filter belum dijalankan. Pilih parameter lalu klik Terapkan Filter.</td></tr>';
+        body.innerHTML = '<tr><td colspan="13" class="daily-empty"><i class="fas fa-filter mr-2 text-muted"></i>Filter belum dijalankan. Pilih parameter lalu klik Terapkan Filter.</td></tr>';
 
         if (initialData && Object.keys(initialData).length) {
             applyPayload(initialData);
@@ -933,6 +1051,12 @@
 
         if (applyButton) {
             applyButton.addEventListener('click', fetchData);
+        }
+
+        if (selects.kanca) {
+            selects.kanca.addEventListener('change', function () {
+                refreshUnitOptions();
+            });
         }
 
         if (tableWrap && stickyScrollbar) {
