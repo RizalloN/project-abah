@@ -285,33 +285,27 @@ class DashboardHarianSnapshotService
 
     public function resolveEffectiveRkaPeriod(?string $requestedMonth, ?string $fallbackPeriod = null): ?string
     {
-        $periods = $this->fetchPeriods()
-            ->map(fn ($value) => $this->normalizeDate($value))
-            ->filter()
-            ->values();
+        $availableYears = $this->availableRkaYears();
+        $fallbackYear = $fallbackPeriod ? (int) Carbon::parse($fallbackPeriod)->format('Y') : null;
+        $normalizedMonth = $this->normalizeMonthValue($requestedMonth);
+        $requestedYear = $normalizedMonth ? (int) substr($normalizedMonth, 0, 4) : null;
+        $resolvedYear = $this->resolveRkaYear($requestedYear, $fallbackYear, $availableYears);
 
-        if ($periods->isEmpty()) {
+        if ($resolvedYear === null) {
             return $this->resolveEffectivePeriod($fallbackPeriod);
         }
 
-        $normalizedMonth = $this->normalizeMonthValue($requestedMonth);
-        if ($normalizedMonth !== null) {
-            $matchedPeriod = $periods
-                ->filter(fn ($value) => str_starts_with($value, $normalizedMonth . '-'))
-                ->max();
+        $resolvedMonth = $normalizedMonth
+            ? (int) substr($normalizedMonth, 5, 2)
+            : (int) Carbon::parse($fallbackPeriod ?? now())->format('m');
 
-            if ($matchedPeriod) {
-                return $matchedPeriod;
-            }
-        }
-
-        return $this->resolveEffectivePeriod($fallbackPeriod);
+        return sprintf('%04d-%02d-01', $resolvedYear, $resolvedMonth);
     }
 
     public function resolveComparisonPeriods(string $selectedPeriod, ?string $rkaPeriod = null): array
     {
         $selected = Carbon::parse($selectedPeriod);
-        $resolvedRka = $this->resolveEffectivePeriod($rkaPeriod ?? $selectedPeriod);
+        $resolvedRka = $this->resolveEffectiveRkaPeriod($rkaPeriod ? substr($rkaPeriod, 0, 7) : null, $selectedPeriod);
 
         return [
             'current' => $selectedPeriod,
@@ -321,7 +315,7 @@ class DashboardHarianSnapshotService
             'mtd' => $this->resolveEffectivePeriod($selected->copy()->subMonthNoOverflow()->endOfMonth()->toDateString()),
             'h1' => $this->resolvePreviousPeriod($selectedPeriod),
             'rka' => $resolvedRka,
-            'rka_dec' => $resolvedRka ? Carbon::parse($resolvedRka)->endOfYear()->toDateString() : null,
+            'rka_dec' => $resolvedRka ? Carbon::parse($resolvedRka)->month(12)->startOfMonth()->toDateString() : null,
         ];
     }
 
@@ -334,7 +328,7 @@ class DashboardHarianSnapshotService
                 'label' => $this->formatPeriodLabel($value),
             ])
             ->all();
-        $monthOptions = $this->fetchMonthFilterOptions();
+        $monthOptions = $this->fetchMonthFilterOptions($effectivePeriod);
 
         if (!$effectivePeriod) {
             return [
@@ -752,31 +746,72 @@ class DashboardHarianSnapshotService
         return $final;
     }
 
-    private function buildRkaMetrics(?string $rkaPeriod, ?string $filterPeriod, ?string $kancaKey, ?string $unitKey, bool $useDecember): array
+    private function buildRkaMetrics(?string $rkaPeriod, ?string $filterPeriod, array|string|null $kancaKey, array|string|null $unitKey, bool $useDecember): array
     {
         if (!$rkaPeriod) {
             return $this->emptyMetrics();
         }
 
+        $rkaYear = (int) Carbon::parse($rkaPeriod)->format('Y');
         $monthColumn = $useDecember
             ? 'dec'
             : $this->rkaLookupService()->resolveMonthColumn(Carbon::parse($rkaPeriod));
 
-        $kancaLabel = $this->normalizeFilterValue($kancaKey) !== null
-            ? $this->displayFilterLabel($kancaKey, '', $filterPeriod ?? $rkaPeriod, 'kanca')
-            : null;
-        $unitLabel = $this->normalizeFilterValue($unitKey) !== null
-            ? $this->displayFilterLabel($unitKey, '', $filterPeriod ?? $rkaPeriod, 'unit_kerja')
-            : null;
+        $definitions = $this->dashboardRkaMetricDefinitions();
+        $normalizedKanca = $this->normalizeFilterValues($kancaKey);
+        $normalizedUnit = $this->normalizeFilterValues($unitKey);
 
-        $rawMetrics = $this->rkaLookupService()->aggregateForScope(
-            $this->dashboardRkaMetricDefinitions(),
-            $monthColumn,
-            $kancaLabel,
-            $unitLabel
-        );
+        if ($normalizedUnit !== []) {
+            $rawMetrics = $this->sumGroupedRkaMetrics(
+                $this->rkaLookupService()->aggregateByGroup(
+                    $definitions,
+                    $monthColumn,
+                    $normalizedKanca,
+                    $normalizedUnit,
+                    'uker',
+                    $rkaYear
+                )
+            );
+        } elseif (count($normalizedKanca) > 1) {
+            $rawMetrics = $this->sumGroupedRkaMetrics(
+                $this->rkaLookupService()->aggregateByGroup(
+                    $definitions,
+                    $monthColumn,
+                    $normalizedKanca,
+                    [],
+                    'kanca',
+                    $rkaYear
+                )
+            );
+        } else {
+            $kancaLabel = $normalizedKanca !== []
+                ? (string) ($normalizedKanca[0] ?? '')
+                : null;
+            $unitLabel = $normalizedUnit !== []
+                ? (string) ($normalizedUnit[0] ?? '')
+                : null;
+
+            $rawMetrics = $this->rkaLookupService()->aggregateForScope(
+                $definitions,
+                $monthColumn,
+                $kancaLabel,
+                $unitLabel,
+                $rkaYear
+            );
+        }
 
         return $this->finalizeRkaMetrics($rawMetrics);
+    }
+
+    private function sumGroupedRkaMetrics(array $groupedMetrics): array
+    {
+        $result = [];
+
+        foreach ($groupedMetrics as $metricKey => $groups) {
+            $result[$metricKey] = round((float) array_sum($groups), 2);
+        }
+
+        return $result;
     }
 
     private function dashboardRkaMetricDefinitions(): array
@@ -999,18 +1034,52 @@ class DashboardHarianSnapshotService
         return trim($clean);
     }
 
-    private function fetchMonthFilterOptions(): array
+    private function fetchMonthFilterOptions(?string $contextPeriod = null): array
     {
-        return $this->fetchPeriods()
-            ->map(fn ($value) => $this->normalizeDate($value))
-            ->filter()
-            ->unique(fn ($value) => Carbon::parse($value)->format('Y-m'))
-            ->map(fn ($value) => [
-                'value' => Carbon::parse($value)->format('Y-m'),
-                'label' => $this->formatMonthLabel($value),
-            ])
-            ->values()
+        $availableYears = $this->availableRkaYears();
+        $preferredYear = $contextPeriod ? (int) Carbon::parse($contextPeriod)->format('Y') : null;
+        $resolvedYear = $this->resolveRkaYear($preferredYear, null, $availableYears);
+
+        if ($resolvedYear === null) {
+            return [];
+        }
+
+        return collect(range(1, 12))
+            ->map(function (int $month) use ($resolvedYear) {
+                $date = Carbon::create($resolvedYear, $month, 1)->toDateString();
+
+                return [
+                    'value' => Carbon::parse($date)->format('Y-m'),
+                    'label' => $this->formatMonthLabel($date),
+                ];
+            })
             ->all();
+    }
+
+    private function availableRkaYears(): array
+    {
+        try {
+            if (!Schema::hasTable('rka')) {
+                return [];
+            }
+
+            return $this->rkaLookupService()->availableYears();
+        } catch (Throwable) {
+            return [];
+        }
+    }
+
+    private function resolveRkaYear(?int $preferredYear, ?int $fallbackYear, array $availableYears): ?int
+    {
+        $candidates = array_values(array_unique(array_filter([$preferredYear, $fallbackYear])));
+
+        foreach ($candidates as $candidate) {
+            if (in_array((int) $candidate, $availableYears, true)) {
+                return (int) $candidate;
+            }
+        }
+
+        return $availableYears[0] ?? null;
     }
 
     private function normalizeMonthValue(?string $value): ?string

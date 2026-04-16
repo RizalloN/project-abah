@@ -21,7 +21,7 @@
         --daily-label-width: 280px;
         --daily-position-width: 110px;
         --daily-delta-width: 100px;
-        --daily-rka-width: 110px;
+        --daily-rka-width: 120px;
     }
 
     .daily-dashboard {
@@ -161,6 +161,139 @@
     .select2-container--default .select2-selection--single .select2-selection__arrow {
         height: 40px !important;
     }
+
+    .daily-filter-native {
+        display: none !important;
+    }
+
+    .daily-dropdown {
+        position: relative;
+    }
+
+    .daily-dropdown-toggle {
+        width: 100%;
+        min-height: 42px;
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        background: #ffffff;
+        color: var(--text-main);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        padding: 0.65rem 0.85rem;
+        font-weight: 500;
+        text-align: left;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+    }
+
+    .daily-dropdown-toggle:hover {
+        border-color: var(--primary-blue-light);
+        background: #f8fbff;
+    }
+
+    .daily-dropdown.is-open .daily-dropdown-toggle,
+    .daily-dropdown-toggle:focus {
+        outline: none;
+        border-color: var(--primary-blue-light);
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+    }
+
+    .daily-dropdown-toggle-text {
+        flex: 1 1 auto;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+    }
+
+    .daily-dropdown-toggle-icon {
+        color: var(--text-muted);
+        font-size: 0.85rem;
+        transition: transform 0.2s ease;
+    }
+
+    .daily-dropdown.is-open .daily-dropdown-toggle-icon {
+        transform: rotate(180deg);
+    }
+
+    .daily-dropdown-menu {
+        position: absolute;
+        top: calc(100% + 0.45rem);
+        left: 0;
+        right: 0;
+        z-index: 30;
+        background: #ffffff;
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        box-shadow: 0 18px 36px -24px rgba(15, 23, 42, 0.25);
+        padding: 0.45rem;
+        display: none;
+        max-height: 260px;
+        overflow-y: auto;
+    }
+
+    .daily-dropdown.is-open .daily-dropdown-menu {
+        display: block;
+    }
+
+    .daily-dropdown-option {
+        width: 100%;
+        border: none;
+        background: transparent;
+        display: flex;
+        align-items: center;
+        gap: 0.7rem;
+        padding: 0.6rem 0.7rem;
+        border-radius: 9px;
+        color: var(--text-main);
+        text-align: left;
+        font-size: 0.92rem;
+        transition: background-color 0.15s ease, color 0.15s ease;
+    }
+
+    .daily-dropdown-option:hover {
+        background: #eff6ff;
+        color: var(--primary-blue-dark);
+    }
+
+    .daily-dropdown-option.is-active {
+        background: #dbeafe;
+        color: var(--primary-blue-dark);
+        font-weight: 600;
+    }
+
+    .daily-dropdown-check {
+        width: 16px;
+        height: 16px;
+        border-radius: 4px;
+        border: 1px solid #bfdbfe;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        background: #ffffff;
+        color: transparent;
+        font-size: 0.72rem;
+    }
+
+    .daily-dropdown-option.is-active .daily-dropdown-check {
+        background: var(--primary-blue);
+        border-color: var(--primary-blue);
+        color: #ffffff;
+    }
+
+    .daily-dropdown-label {
+        flex: 1 1 auto;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .daily-dropdown-empty {
+        padding: 0.7rem 0.8rem;
+        color: var(--text-muted);
+        font-size: 0.88rem;
+    }
     
     .btn-primary {
         background-color: var(--primary-blue);
@@ -275,6 +408,14 @@
     .daily-table .rka-col {
         width: var(--daily-rka-width);
         min-width: var(--daily-rka-width);
+    }
+
+    .daily-rka-subnote {
+        display: block;
+        margin-top: 0.2rem;
+        font-size: 0.68rem;
+        color: var(--text-muted);
+        font-weight: 600;
     }
 
     /* Sticky Columns */
@@ -515,11 +656,25 @@
             <div class="row">
                 <div class="col-lg-3 col-md-6 mb-3">
                     <label class="daily-filter-label" for="filter-kanca">Kanca</label>
-                    <select id="filter-kanca" class="form-control select2"></select>
+                    <div class="daily-dropdown" data-daily-dropdown="kanca">
+                        <button type="button" class="daily-dropdown-toggle" data-daily-dropdown-toggle="kanca" aria-haspopup="listbox" aria-expanded="false">
+                            <span class="daily-dropdown-toggle-text">Semua Kanca</span>
+                            <i class="fas fa-chevron-down daily-dropdown-toggle-icon"></i>
+                        </button>
+                        <div class="daily-dropdown-menu" data-daily-dropdown-menu="kanca"></div>
+                        <select id="filter-kanca" class="form-control daily-filter-native" multiple></select>
+                    </div>
                 </div>
                 <div class="col-lg-3 col-md-6 mb-3">
                     <label class="daily-filter-label" for="filter-unit">Unit Kerja</label>
-                    <select id="filter-unit" class="form-control select2"></select>
+                    <div class="daily-dropdown" data-daily-dropdown="unit">
+                        <button type="button" class="daily-dropdown-toggle" data-daily-dropdown-toggle="unit" aria-haspopup="listbox" aria-expanded="false">
+                            <span class="daily-dropdown-toggle-text">Semua Unit Kerja</span>
+                            <i class="fas fa-chevron-down daily-dropdown-toggle-icon"></i>
+                        </button>
+                        <div class="daily-dropdown-menu" data-daily-dropdown-menu="unit"></div>
+                        <select id="filter-unit" class="form-control daily-filter-native"></select>
+                    </div>
                 </div>
                 <div class="col-lg-3 col-md-6 mb-3">
                     <label class="daily-filter-label" for="filter-posisi-terakhir">Posisi Terakhir</label>
@@ -560,6 +715,8 @@
                         <col style="width: 100px;" class="numeric-col">
                         <col style="width: 110px;" class="numeric-col">
                         <col style="width: 110px;" class="numeric-col">
+                        <col style="width: 120px;" class="numeric-col">
+                        <col style="width: 120px;" class="numeric-col">
                     </colgroup>
                     <thead>
                         <tr class="group-row text-center">
@@ -567,7 +724,7 @@
                             <th class="sticky-label group-label text-left" rowspan="2">Keterangan</th>
                             <th class="group-position" colspan="6" data-position-group-colspan>Perbandingan Posisi</th>
                             <th class="group-delta" colspan="3">Delta Terhadap</th>
-                            <th class="group-rka" colspan="2">Perbandingan RKA</th>
+                            <th class="group-rka" colspan="4">Perbandingan RKA</th>
                         </tr>
                         <tr class="column-row text-center">
                             <th class="value-col position-col">
@@ -601,12 +758,18 @@
                                 <span class="column-heading"><span class="main" data-label-rka>-</span></span>
                             </th>
                             <th class="value-col rka-col">
+                                <span class="column-heading"><span class="main" data-label-rka-delta>-</span><span class="header-subnote text-white-50">Selisih / %</span></span>
+                            </th>
+                            <th class="value-col rka-col">
                                 <span class="column-heading"><span class="main" data-label-rka-dec>-</span></span>
+                            </th>
+                            <th class="value-col rka-col">
+                                <span class="column-heading"><span class="main" data-label-rka-dec-delta>-</span><span class="header-subnote text-white-50">Selisih / %</span></span>
                             </th>
                         </tr>
                     </thead>
                     <tbody id="daily-dashboard-body">
-                        <tr><td colspan="13" class="daily-empty"><i class="fas fa-spinner fa-spin mr-2"></i> Memuat data dashboard harian...</td></tr>
+                        <tr><td colspan="15" class="daily-empty"><i class="fas fa-spinner fa-spin mr-2"></i> Memuat data dashboard harian...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -651,6 +814,8 @@
             current: document.querySelector('[data-label-current]'),
             rka: document.querySelector('[data-label-rka]'),
             rkaDec: document.querySelector('[data-label-rka-dec]'),
+            rkaDelta: document.querySelector('[data-label-rka-delta]'),
+            rkaDecDelta: document.querySelector('[data-label-rka-dec-delta]'),
             deltaYoy: document.querySelector('[data-label-delta-yoy]'),
             deltaYtd: document.querySelector('[data-label-delta-ytd]'),
             deltaDtd: document.querySelector('[data-label-delta-dtd]'),
@@ -666,6 +831,18 @@
             unit_kerja: document.getElementById('filter-unit'),
             posisi_terakhir: document.getElementById('filter-posisi-terakhir'),
             posisi_rka: document.getElementById('filter-posisi-rka'),
+        };
+        const dropdowns = {
+            kanca: {
+                root: document.querySelector('[data-daily-dropdown="kanca"]'),
+                toggle: document.querySelector('[data-daily-dropdown-toggle="kanca"]'),
+                menu: document.querySelector('[data-daily-dropdown-menu="kanca"]'),
+            },
+            unit: {
+                root: document.querySelector('[data-daily-dropdown="unit"]'),
+                toggle: document.querySelector('[data-daily-dropdown-toggle="unit"]'),
+                menu: document.querySelector('[data-daily-dropdown-menu="unit"]'),
+            },
         };
         let latestFilters = initialFilters;
         const MILLION_UNIT = 1000000;
@@ -720,6 +897,18 @@
 
         const formatValue = function (value, type) {
             return type === 'percent' ? formatPercent(value) : formatCurrency(value);
+        };
+
+        const normalizeArraySelection = function (value) {
+            if (Array.isArray(value)) {
+                return value.map(String).filter(Boolean);
+            }
+
+            if (value === null || value === undefined || value === '' || value === 'all') {
+                return [];
+            }
+
+            return [String(value)];
         };
 
         const escapeHtml = function (value) {
@@ -795,54 +984,387 @@
             $(select).trigger('change.select2');
         };
 
+        const setNativeSelectOptions = function (select, options, selectedValues, multiple) {
+            if (!select) {
+                return;
+            }
+
+            const normalizedValues = multiple
+                ? normalizeArraySelection(selectedValues)
+                : [String(selectedValues || 'all')];
+
+            select.innerHTML = (options || []).map(function (option) {
+                const value = String(option.value || 'all');
+                const label = option.label || value;
+                const isSelected = multiple
+                    ? normalizedValues.includes(value)
+                    : value === normalizedValues[0];
+
+                return '<option value="' + escapeHtml(value) + '"' + (isSelected ? ' selected' : '') + '>' + escapeHtml(label) + '</option>';
+            }).join('');
+        };
+
+        const closeDropdown = function (key) {
+            const dropdown = dropdowns[key];
+            if (!dropdown || !dropdown.root || !dropdown.toggle) {
+                return;
+            }
+
+            dropdown.root.classList.remove('is-open');
+            dropdown.toggle.setAttribute('aria-expanded', 'false');
+        };
+
+        const openDropdown = function (key) {
+            Object.keys(dropdowns).forEach(function (name) {
+                if (name !== key) {
+                    closeDropdown(name);
+                }
+            });
+
+            const dropdown = dropdowns[key];
+            if (!dropdown || !dropdown.root || !dropdown.toggle) {
+                return;
+            }
+
+            dropdown.root.classList.add('is-open');
+            dropdown.toggle.setAttribute('aria-expanded', 'true');
+        };
+
+        const updateDropdownToggleText = function (key, text) {
+            const dropdown = dropdowns[key];
+            const textNode = dropdown && dropdown.toggle
+                ? dropdown.toggle.querySelector('.daily-dropdown-toggle-text')
+                : null;
+
+            if (textNode) {
+                textNode.textContent = text;
+                dropdown.toggle.setAttribute('title', text);
+            }
+        };
+
+        const getSelectedKancaValues = function () {
+            if (!selects.kanca) {
+                return [];
+            }
+
+            return Array.from(selects.kanca.selectedOptions || [])
+                .map(function (option) { return String(option.value || ''); })
+                .filter(function (value) { return value && value !== 'all'; });
+        };
+
+        const buildKancaToggleLabel = function (options, selectedValues) {
+            const normalized = normalizeArraySelection(selectedValues);
+            if (!normalized.length) {
+                return 'Semua Kanca';
+            }
+
+            const labels = (options || [])
+                .filter(function (option) {
+                    return normalized.includes(String(option.value || ''));
+                })
+                .map(function (option) {
+                    return option.label || option.value || '';
+                })
+                .filter(Boolean);
+
+            if (labels.length <= 2) {
+                return labels.join(', ');
+            }
+
+            return labels[0] + ' +' + (labels.length - 1) + ' lainnya';
+        };
+
+        const renderKancaDropdown = function (options, selectedValues) {
+            const dropdown = dropdowns.kanca;
+            if (!dropdown || !dropdown.menu || !selects.kanca) {
+                return;
+            }
+
+            const normalized = normalizeArraySelection(selectedValues);
+            setNativeSelectOptions(selects.kanca, options, normalized, true);
+
+            dropdown.menu.innerHTML = (options || []).map(function (option) {
+                const value = String(option.value || 'all');
+                const isAll = value === 'all';
+                const isActive = isAll ? normalized.length === 0 : normalized.includes(value);
+
+                return '<button type="button" class="daily-dropdown-option ' + (isActive ? 'is-active' : '') + '" data-kanca-option="' + escapeHtml(value) + '">' +
+                    '<span class="daily-dropdown-check"><i class="fas fa-check"></i></span>' +
+                    '<span class="daily-dropdown-label">' + escapeHtml(option.label || value) + '</span>' +
+                '</button>';
+            }).join('');
+
+            updateDropdownToggleText('kanca', buildKancaToggleLabel(options, normalized));
+        };
+
         const scopedUnitOptions = function (filters, kancaValue) {
             return (filters.unit_kerja || []).filter(function (option) {
                 if ((option.value || 'all') === 'all') {
                     return true;
                 }
 
-                if (!kancaValue || kancaValue === 'all') {
+                if (!Array.isArray(kancaValue) || !kancaValue.length) {
                     return true;
                 }
 
-                return String(option.kanca_value || '') === String(kancaValue);
+                return kancaValue.includes(String(option.kanca_value || ''));
             });
         };
 
         const syncUnitSelect = function (filters, preferredUnit) {
-            const unitOptions = scopedUnitOptions(filters, selects.kanca.value || 'all');
+            const unitOptions = scopedUnitOptions(filters, getSelectedKancaValues());
             const selectedUnit = unitOptions.some(function (option) {
                 return String(option.value || '') === String(preferredUnit || 'all');
             }) ? (preferredUnit || 'all') : 'all';
 
-            populateSelect(selects.unit_kerja, unitOptions, selectedUnit);
+            setNativeSelectOptions(selects.unit_kerja, unitOptions, selectedUnit, false);
+
+            const dropdown = dropdowns.unit;
+            if (dropdown && dropdown.menu) {
+                dropdown.menu.innerHTML = unitOptions.length
+                    ? unitOptions.map(function (option) {
+                        const value = String(option.value || 'all');
+                        const active = value === String(selectedUnit);
+
+                        return '<button type="button" class="daily-dropdown-option ' + (active ? 'is-active' : '') + '" data-unit-option="' + escapeHtml(value) + '">' +
+                            '<span class="daily-dropdown-label">' + escapeHtml(option.label || value) + '</span>' +
+                        '</button>';
+                    }).join('')
+                    : '<div class="daily-dropdown-empty">Tidak ada unit kerja.</div>';
+            }
+
+            const selectedOption = unitOptions.find(function (option) {
+                return String(option.value || 'all') === String(selectedUnit);
+            });
+
+            updateDropdownToggleText('unit', selectedOption ? (selectedOption.label || selectedOption.value || 'Semua Unit Kerja') : 'Semua Unit Kerja');
         };
 
         const currentState = function () {
             return {
-                kanca: selects.kanca.value || 'all',
+                kanca: getSelectedKancaValues(),
                 unit_kerja: selects.unit_kerja.value || 'all',
                 posisi_terakhir: selects.posisi_terakhir.value || '',
                 posisi_rka: selects.posisi_rka.value || '',
             };
         };
 
-        const isMicroUnitSelection = function () {
-            if (!selects.unit_kerja) {
-                return false;
+        const buildQueryParams = function () {
+            const state = currentState();
+            const params = new URLSearchParams();
+
+            (state.kanca || []).forEach(function (value) {
+                if (value) {
+                    params.append('kanca[]', value);
+                }
+            });
+
+            if (state.unit_kerja && state.unit_kerja !== 'all') {
+                params.set('unit_kerja', state.unit_kerja);
+            }
+
+            if (state.posisi_terakhir) {
+                params.set('posisi_terakhir', state.posisi_terakhir);
+            }
+
+            if (state.posisi_rka) {
+                params.set('posisi_rka', state.posisi_rka);
+            }
+
+            return params;
+        };
+
+        const zeroMetricGroup = function (target) {
+            ['values', 'deltas'].forEach(function (group) {
+                Object.keys(target[group] || {}).forEach(function (metricKey) {
+                    target[group][metricKey] = 0;
+                });
+            });
+        };
+
+        const clonePayload = function (payload) {
+            return JSON.parse(JSON.stringify(payload || {}));
+        };
+
+        const getUnitScopeMode = function () {
+            if (!selects.unit_kerja || !selects.unit_kerja.value || selects.unit_kerja.value === 'all') {
+                return 'all';
             }
 
             const selectedOption = selects.unit_kerja.options[selects.unit_kerja.selectedIndex];
             const label = selectedOption ? String(selectedOption.text || '').trim().toUpperCase() : '';
 
-            return /\bUNIT\b/.test(label);
+            if (/\bUNIT\b/.test(label)) {
+                return 'unit';
+            }
+
+            if (/\bKCP\b/.test(label) || /\bKC\b/.test(label)) {
+                return 'branch';
+            }
+
+            return 'all';
+        };
+
+        const sumMetric = function (rowsByKey, keys, group, metricName) {
+            return keys.reduce(function (total, key) {
+                return total + Number((((rowsByKey[key] || {})[group] || {})[metricName]) || 0);
+            }, 0);
+        };
+
+        const safePercent = function (value, base) {
+            const numerator = Number(value || 0);
+            const denominator = Number(base || 0);
+
+            if (!denominator) {
+                return 0;
+            }
+
+            return (numerator / denominator) * 100;
+        };
+
+        const isQualityTargetMetric = function (rowKey) {
+            const key = String(rowKey || '');
+
+            return key.includes('_sml')
+                || key.includes('_npl')
+                || key.startsWith('total_sml_')
+                || key.startsWith('total_npl_');
+        };
+
+        const formatAchievement = function (value) {
+            return Number(value || 0).toFixed(2).replace('.', ',') + '%';
+        };
+
+        const computeRkaComparison = function (row) {
+            const currentValue = Number(row?.values?.current || 0);
+            const rkaValue = Number(row?.values?.rka || 0);
+            const rkaDecValue = Number(row?.values?.rka_dec || 0);
+            const reverse = isQualityTargetMetric(row?.key);
+            const compare = function (targetValue) {
+                const delta = reverse ? (targetValue - currentValue) : (currentValue - targetValue);
+                let achievement = 0;
+
+                if (reverse) {
+                    if (currentValue <= 0) {
+                        achievement = 100;
+                    } else {
+                        achievement = (targetValue / currentValue) * 100;
+                    }
+                } else if (targetValue > 0) {
+                    achievement = (currentValue / targetValue) * 100;
+                }
+
+                return {
+                    delta: Number.isFinite(delta) ? delta : 0,
+                    achievement: Number.isFinite(achievement) ? achievement : 0,
+                };
+            };
+
+            return {
+                rka: compare(rkaValue),
+                rkaDec: compare(rkaDecValue),
+            };
+        };
+
+        const applyScopeToPayload = function (payload) {
+            const scopedPayload = clonePayload(payload);
+            const rows = scopedPayload.rows || [];
+            const scopeMode = getUnitScopeMode();
+
+            if (scopeMode === 'all' || !rows.length) {
+                return scopedPayload;
+            }
+
+            const rowsByKey = {};
+            rows.forEach(function (row) {
+                rowsByKey[row.key] = row;
+            });
+
+            const hiddenKeys = scopeMode === 'unit'
+                ? [
+                    'simpanan_ritel', 'giro_ritel', 'deposito_ritel', 'tabungan_ritel',
+                    'sme_os', 'kecil_os', 'kecil_non_cashcoll_os', 'cashcoll_os', 'medium_os',
+                    'consumer_os', 'briguna_konsumer_os', 'kpr_os', 'kkb_os',
+                    'sme_sml', 'kecil_sml', 'kecil_non_cashcoll_sml', 'cashcoll_sml', 'medium_sml',
+                    'consumer_sml', 'briguna_konsumer_sml', 'kpr_sml', 'kkb_sml',
+                    'sme_npl', 'kecil_npl', 'kecil_non_cashcoll_npl', 'cashcoll_npl', 'medium_npl',
+                    'consumer_npl', 'briguna_konsumer_npl', 'kpr_npl', 'kkb_npl',
+                    'casa_ritel', 'ldr_ritel_non_commercial'
+                ]
+                : [
+                    'simpanan_mikro', 'giro_mikro', 'deposito_mikro', 'tabungan_mikro',
+                    'micro_os', 'briguna_mikro_os', 'kupedes_os', 'kur_mikro_os', 'kur_kecil_os', 'kur_kpp_os',
+                    'micro_sml', 'briguna_mikro_sml', 'kupedes_sml', 'kur_mikro_sml', 'kur_kecil_sml', 'kur_kpp_sml',
+                    'micro_npl', 'briguna_mikro_npl', 'kupedes_npl', 'kur_mikro_npl', 'kur_kecil_npl', 'kur_kpp_npl',
+                    'casa_mikro', 'ldr_mikro_non_commercial'
+                ];
+
+            hiddenKeys.forEach(function (key) {
+                if (rowsByKey[key]) {
+                    rowsByKey[key].hiddenByScope = true;
+                    zeroMetricGroup(rowsByKey[key]);
+                }
+            });
+
+            ['values', 'deltas'].forEach(function (group) {
+                ['yoy', 'ytd', 'mtm', 'mtd', 'h1', 'current', 'rka', 'rka_dec'].forEach(function (metricName) {
+                    if (group === 'deltas' && metricName !== 'yoy' && metricName !== 'ytd' && metricName !== 'dtd') {
+                        return;
+                    }
+
+                    const smpanMetricName = metricName;
+                    rowsByKey.simpanan_ritel[group][smpanMetricName] = sumMetric(rowsByKey, ['giro_ritel', 'deposito_ritel', 'tabungan_ritel'], group, smpanMetricName);
+                    rowsByKey.simpanan_mikro[group][smpanMetricName] = sumMetric(rowsByKey, ['giro_mikro', 'deposito_mikro', 'tabungan_mikro'], group, smpanMetricName);
+                    rowsByKey.simpanan_wholesale[group][smpanMetricName] = sumMetric(rowsByKey, ['giro_wholesale', 'deposito_wholesale', 'tabungan_wholesale'], group, smpanMetricName);
+                    rowsByKey.total_simpanan[group][smpanMetricName] = sumMetric(rowsByKey, ['simpanan_ritel', 'simpanan_mikro', 'simpanan_wholesale'], group, smpanMetricName);
+                    rowsByKey.casa_ritel[group][smpanMetricName] = sumMetric(rowsByKey, ['giro_ritel', 'tabungan_ritel'], group, smpanMetricName);
+                    rowsByKey.casa_mikro[group][smpanMetricName] = sumMetric(rowsByKey, ['giro_mikro', 'tabungan_mikro'], group, smpanMetricName);
+                    rowsByKey.total_casa[group][smpanMetricName] = sumMetric(rowsByKey, ['casa_ritel', 'casa_mikro'], group, smpanMetricName);
+                    rowsByKey.sme_os[group][smpanMetricName] = sumMetric(rowsByKey, ['kecil_os', 'medium_os'], group, smpanMetricName);
+                    rowsByKey.consumer_os[group][smpanMetricName] = sumMetric(rowsByKey, ['briguna_konsumer_os', 'kpr_os', 'kkb_os'], group, smpanMetricName);
+                    rowsByKey.micro_os[group][smpanMetricName] = sumMetric(rowsByKey, ['briguna_mikro_os', 'kupedes_os', 'kur_mikro_os', 'kur_kecil_os', 'kur_kpp_os'], group, smpanMetricName);
+                    rowsByKey.total_os_non_commercial[group][smpanMetricName] = sumMetric(rowsByKey, ['sme_os', 'consumer_os', 'micro_os'], group, smpanMetricName);
+                    rowsByKey.total_os[group][smpanMetricName] = sumMetric(rowsByKey, ['commercial_os', 'sme_os', 'consumer_os', 'micro_os'], group, smpanMetricName);
+                    rowsByKey.sme_sml[group][smpanMetricName] = sumMetric(rowsByKey, ['kecil_sml', 'medium_sml'], group, smpanMetricName);
+                    rowsByKey.consumer_sml[group][smpanMetricName] = sumMetric(rowsByKey, ['briguna_konsumer_sml', 'kpr_sml', 'kkb_sml'], group, smpanMetricName);
+                    rowsByKey.micro_sml[group][smpanMetricName] = sumMetric(rowsByKey, ['briguna_mikro_sml', 'kupedes_sml', 'kur_mikro_sml', 'kur_kecil_sml', 'kur_kpp_sml'], group, smpanMetricName);
+                    rowsByKey.total_sml_abs_non_commercial[group][smpanMetricName] = sumMetric(rowsByKey, ['sme_sml', 'consumer_sml', 'micro_sml'], group, smpanMetricName);
+                    rowsByKey.sme_npl[group][smpanMetricName] = sumMetric(rowsByKey, ['kecil_npl', 'medium_npl'], group, smpanMetricName);
+                    rowsByKey.consumer_npl[group][smpanMetricName] = sumMetric(rowsByKey, ['briguna_konsumer_npl', 'kpr_npl', 'kkb_npl'], group, smpanMetricName);
+                    rowsByKey.micro_npl[group][smpanMetricName] = sumMetric(rowsByKey, ['briguna_mikro_npl', 'kupedes_npl', 'kur_mikro_npl', 'kur_kecil_npl', 'kur_kpp_npl'], group, smpanMetricName);
+                    rowsByKey.total_npl_abs_non_commercial[group][smpanMetricName] = sumMetric(rowsByKey, ['sme_npl', 'consumer_npl', 'micro_npl'], group, smpanMetricName);
+                });
+            });
+
+            ['values', 'deltas'].forEach(function (group) {
+                const metricNames = group === 'values'
+                    ? ['yoy', 'ytd', 'mtm', 'mtd', 'h1', 'current', 'rka', 'rka_dec']
+                    : ['yoy', 'ytd', 'dtd'];
+
+                metricNames.forEach(function (metricName) {
+                    rowsByKey.casa_pct[group][metricName] = safePercent(rowsByKey.total_casa[group][metricName], rowsByKey.total_simpanan[group][metricName]);
+                    rowsByKey.ldr_non_commercial[group][metricName] = safePercent(rowsByKey.total_simpanan[group][metricName], rowsByKey.total_os_non_commercial[group][metricName]);
+                    rowsByKey.ldr_ritel_non_commercial[group][metricName] = safePercent(rowsByKey.simpanan_ritel[group][metricName], rowsByKey.sme_os[group][metricName] + rowsByKey.consumer_os[group][metricName]);
+                    rowsByKey.ldr_mikro_non_commercial[group][metricName] = safePercent(rowsByKey.simpanan_mikro[group][metricName], rowsByKey.micro_os[group][metricName]);
+                    rowsByKey.total_sml_pct_non_commercial[group][metricName] = safePercent(rowsByKey.total_sml_abs_non_commercial[group][metricName], rowsByKey.total_os[group][metricName]);
+                    rowsByKey.total_npl_pct_non_commercial[group][metricName] = safePercent(rowsByKey.total_npl_abs_non_commercial[group][metricName], rowsByKey.total_os[group][metricName]);
+                });
+            });
+
+            scopedPayload.summary = scopedPayload.summary || {};
+            scopedPayload.summary.current_total_simpanan = Number(rowsByKey.total_simpanan?.values?.current || 0);
+            scopedPayload.summary.current_total_os_non_commercial = Number(rowsByKey.total_os_non_commercial?.values?.current || 0);
+            scopedPayload.summary.current_casa_pct = Number(rowsByKey.casa_pct?.values?.current || 0);
+
+            return scopedPayload;
         };
 
         const renderTable = function (payload) {
-            const rows = payload.rows || [];
+            const scopedPayload = applyScopeToPayload(payload);
+            const rows = scopedPayload.rows || [];
             const periods = payload.comparison_periods || {};
             const hasH1 = Boolean(periods.h1 && periods.h1.period);
-            const emptyColspan = hasH1 ? 13 : 12;
+            const emptyColspan = hasH1 ? 15 : 14;
             const blockClassMap = {
                 total_simpanan: 'metric-block-simpanan',
                 total_os: 'metric-block-os',
@@ -868,15 +1390,7 @@
                 consumer_npl: 'section-consumer',
                 micro_npl: 'section-mikro',
             };
-            const hiddenWhenUnitSelected = new Set([
-                'simpanan_ritel',
-                'giro_ritel',
-                'deposito_ritel',
-                'tabungan_ritel',
-                'casa_ritel',
-                'ldr_ritel_non_commercial',
-            ]);
-            const hideRitelRows = isMicroUnitSelection();
+            const scopeMode = getUnitScopeMode();
 
             togglePositionColumns(hasH1);
             syncStickyScrollbarWidth();
@@ -901,6 +1415,7 @@
 
                     return 'text-muted';
                 };
+                const rkaComparison = computeRkaComparison(row);
 
                 rowCells.push('<td class="sticky-no font-weight-bold text-center">' + (index + 1) + '</td>');
                 rowCells.push('<td class="sticky-label"><span class="metric-label" title="' + escapeHtml(row.label) + '">' + escapeHtml(row.label) + '</span></td>');
@@ -918,7 +1433,9 @@
                 rowCells.push('<td class="value-col delta-col ' + deltaClass(delta.ytd) + '"><span class="cell-text">' + formatValue(delta.ytd, row.type) + '</span></td>');
                 rowCells.push('<td class="value-col delta-col ' + deltaClass(delta.dtd) + '"><span class="cell-text">' + formatValue(delta.dtd, row.type) + '</span></td>');
                 rowCells.push('<td class="value-col rka-col"><span class="cell-text">' + formatValue(value.rka, row.type) + '</span></td>');
+                rowCells.push('<td class="value-col rka-col ' + deltaClass(rkaComparison.rka.delta) + '"><span class="cell-text">' + formatValue(rkaComparison.rka.delta, row.type) + '</span><span class="daily-rka-subnote">' + formatAchievement(rkaComparison.rka.achievement) + '</span></td>');
                 rowCells.push('<td class="value-col rka-col"><span class="cell-text">' + formatValue(value.rka_dec, row.type) + '</span></td>');
+                rowCells.push('<td class="value-col rka-col ' + deltaClass(rkaComparison.rkaDec.delta) + '"><span class="cell-text">' + formatValue(rkaComparison.rkaDec.delta, row.type) + '</span><span class="daily-rka-subnote">' + formatAchievement(rkaComparison.rkaDec.achievement) + '</span></td>');
 
                 const rowClasses = ['row-depth-' + row.depth];
                 if (blockClassMap[row.key]) {
@@ -927,7 +1444,7 @@
                 if (sectionClassMap[row.key]) {
                     rowClasses.push(sectionClassMap[row.key]);
                 }
-                if (hideRitelRows && hiddenWhenUnitSelected.has(row.key)) {
+                if (row.hiddenByScope || (scopeMode !== 'all' && row.hiddenByScope)) {
                     rowClasses.push('row-hidden-by-scope');
                 }
 
@@ -936,21 +1453,22 @@
         };
 
         const applyPayload = function (payload) {
-            const summary = payload.summary || {};
-            const periods = payload.comparison_periods || {};
-            const filters = payload.available_filters || initialFilters;
+            const scopedPayload = applyScopeToPayload(payload);
+            const summary = scopedPayload.summary || {};
+            const periods = scopedPayload.comparison_periods || {};
+            const filters = scopedPayload.available_filters || payload.available_filters || initialFilters;
             const hasH1 = Boolean(periods.h1 && periods.h1.period);
             latestFilters = filters;
             const current = currentState();
 
-            populateSelect(selects.kanca, filters.kanca || [], current.kanca);
+            renderKancaDropdown(filters.kanca || [], current.kanca);
             syncUnitSelect(filters, current.unit_kerja);
-            populateSelect(selects.posisi_terakhir, filters.posisi_terakhir || [], payload.selected_period || current.posisi_terakhir);
-            populateSelect(selects.posisi_rka, filters.posisi_rka || [], payload.selected_rka_period ? payload.selected_rka_period.slice(0, 7) : current.posisi_rka);
+            populateSelect(selects.posisi_terakhir, filters.posisi_terakhir || [], scopedPayload.selected_period || current.posisi_terakhir);
+            populateSelect(selects.posisi_rka, filters.posisi_rka || [], scopedPayload.selected_rka_period ? scopedPayload.selected_rka_period.slice(0, 7) : current.posisi_rka);
 
             scopeKanca.textContent = summary.kanca_label || 'Semua Kanca';
             scopeUnit.textContent = summary.unit_label || 'Semua Unit Kerja';
-            scopePosisi.textContent = payload.selected_period_label || 'Belum ada data';
+            scopePosisi.textContent = scopedPayload.selected_period_label || 'Belum ada data';
             scopeRka.textContent = periods.rka ? formatMonthYear(periods.rka.period) : 'Belum ada data';
             scopeSummary.innerHTML = '<i class="fas fa-list mr-1"></i> Baris tampil: ' + (summary.row_count || 0).toLocaleString('id-ID') + '. <br><small class="text-muted font-weight-normal mt-1 d-block">Data dari: ' + (summary.source || 'source_fallback') + '</small>';
             sourceLabel.textContent = summary.source || 'source_fallback';
@@ -963,9 +1481,11 @@
             headerLabels.mtm.textContent = periods.mtm ? formatDateSlash(periods.mtm.period) : '-';
             headerLabels.mtd.textContent = periods.mtd ? formatDateSlash(periods.mtd.period) : '-';
             headerLabels.h1.textContent = hasH1 ? formatDateSlash(periods.h1.period) : '-';
-            headerLabels.current.textContent = payload.selected_period ? formatDateSlash(payload.selected_period) : '-';
+            headerLabels.current.textContent = scopedPayload.selected_period ? formatDateSlash(scopedPayload.selected_period) : '-';
             headerLabels.rka.textContent = periods.rka ? formatMonthYear(periods.rka.period) : '-';
-            headerLabels.rkaDec.textContent = periods.rka_dec ? formatDateSlash(periods.rka_dec.period) : '-';
+            headerLabels.rkaDelta.textContent = periods.rka ? formatMonthYear(periods.rka.period) : '-';
+            headerLabels.rkaDec.textContent = periods.rka_dec ? formatMonthYear(periods.rka_dec.period) : '-';
+            headerLabels.rkaDecDelta.textContent = periods.rka_dec ? formatMonthYear(periods.rka_dec.period) : '-';
             headerLabels.deltaYoy.textContent = periods.yoy ? formatDateSlash(periods.yoy.period) : '-';
             headerLabels.deltaYtd.textContent = periods.ytd ? formatDateSlash(periods.ytd.period) : '-';
             headerLabels.deltaDtd.textContent = hasH1 ? formatDateSlash(periods.h1.period) : '-';
@@ -973,7 +1493,7 @@
             togglePositionColumns(hasH1);
             syncStickyScrollbarWidth();
 
-            renderTable(payload);
+            renderTable(scopedPayload);
         };
 
         const fetchData = function () {
@@ -981,7 +1501,7 @@
                 return;
             }
 
-            const params = new URLSearchParams(currentState());
+            const params = buildQueryParams();
             surface.classList.add('daily-loading');
             if (applyButton) {
                 applyButton.disabled = true;
@@ -1001,7 +1521,7 @@
                 })
                 .catch(function () {
                     const hidden = positionH1Header && positionH1Header.classList.contains('position-col-hidden');
-                    body.innerHTML = '<tr><td colspan="' + (hidden ? 12 : 13) + '" class="daily-empty text-danger"><i class="fas fa-exclamation-triangle mr-2"></i>Gagal memuat data dashboard harian.</td></tr>';
+                    body.innerHTML = '<tr><td colspan="' + (hidden ? 14 : 15) + '" class="daily-empty text-danger"><i class="fas fa-exclamation-triangle mr-2"></i>Gagal memuat data dashboard harian.</td></tr>';
                 })
                 .finally(function () {
                     surface.classList.remove('daily-loading');
@@ -1018,7 +1538,7 @@
                 return;
             }
 
-            const params = new URLSearchParams(currentState());
+            const params = buildQueryParams();
 
             fetch(dataUrl + '?' + params.toString(), {
                 headers: {
@@ -1037,11 +1557,11 @@
                 });
         };
 
-        populateSelect(selects.kanca, initialFilters.kanca || [], initialSelected.kanca || 'all');
+        renderKancaDropdown(initialFilters.kanca || [], initialSelected.kanca || []);
         syncUnitSelect(initialFilters, initialSelected.unit_kerja || 'all');
         populateSelect(selects.posisi_terakhir, initialFilters.posisi_terakhir || [], initialSelected.posisi_terakhir || '');
         populateSelect(selects.posisi_rka, initialFilters.posisi_rka || [], initialSelected.posisi_rka || '');
-        body.innerHTML = '<tr><td colspan="13" class="daily-empty"><i class="fas fa-filter mr-2 text-muted"></i>Filter belum dijalankan. Pilih parameter lalu klik Terapkan Filter.</td></tr>';
+        body.innerHTML = '<tr><td colspan="15" class="daily-empty"><i class="fas fa-filter mr-2 text-muted"></i>Filter belum dijalankan. Pilih parameter lalu klik Terapkan Filter.</td></tr>';
 
         if (initialData && Object.keys(initialData).length) {
             applyPayload(initialData);
@@ -1053,11 +1573,79 @@
             applyButton.addEventListener('click', fetchData);
         }
 
-        if (selects.kanca) {
-            selects.kanca.addEventListener('change', function () {
+        if (dropdowns.kanca && dropdowns.kanca.toggle) {
+            dropdowns.kanca.toggle.addEventListener('click', function () {
+                if (dropdowns.kanca.root.classList.contains('is-open')) {
+                    closeDropdown('kanca');
+                    return;
+                }
+
+                openDropdown('kanca');
+            });
+        }
+
+        if (dropdowns.unit && dropdowns.unit.toggle) {
+            dropdowns.unit.toggle.addEventListener('click', function () {
+                if (dropdowns.unit.root.classList.contains('is-open')) {
+                    closeDropdown('unit');
+                    return;
+                }
+
+                openDropdown('unit');
+            });
+        }
+
+        if (dropdowns.kanca && dropdowns.kanca.menu) {
+            dropdowns.kanca.menu.addEventListener('click', function (event) {
+                const option = event.target.closest('[data-kanca-option]');
+                if (!option || !selects.kanca) {
+                    return;
+                }
+
+                const value = String(option.getAttribute('data-kanca-option') || 'all');
+                let nextValues = getSelectedKancaValues();
+
+                if (value === 'all') {
+                    nextValues = [];
+                } else if (nextValues.includes(value)) {
+                    nextValues = nextValues.filter(function (item) { return item !== value; });
+                } else {
+                    nextValues.push(value);
+                }
+
+                Array.from(selects.kanca.options).forEach(function (nativeOption) {
+                    const nativeValue = String(nativeOption.value || '');
+                    nativeOption.selected = nativeValue !== 'all' && nextValues.includes(nativeValue);
+                });
+
+                renderKancaDropdown(latestFilters.kanca || [], nextValues);
+                syncUnitSelect(latestFilters, selects.unit_kerja.value || 'all');
                 refreshUnitOptions();
             });
         }
+
+        if (dropdowns.unit && dropdowns.unit.menu) {
+            dropdowns.unit.menu.addEventListener('click', function (event) {
+                const option = event.target.closest('[data-unit-option]');
+                if (!option || !selects.unit_kerja) {
+                    return;
+                }
+
+                const value = String(option.getAttribute('data-unit-option') || 'all');
+                selects.unit_kerja.value = value;
+                syncUnitSelect(latestFilters, value);
+                closeDropdown('unit');
+            });
+        }
+
+        document.addEventListener('click', function (event) {
+            Object.keys(dropdowns).forEach(function (key) {
+                const dropdown = dropdowns[key];
+                if (dropdown && dropdown.root && !dropdown.root.contains(event.target)) {
+                    closeDropdown(key);
+                }
+            });
+        });
 
         if (tableWrap && stickyScrollbar) {
             tableWrap.addEventListener('scroll', function () {
