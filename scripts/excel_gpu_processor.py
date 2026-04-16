@@ -154,7 +154,7 @@ def read_excel_table(file_path, header_index):
 # ─────────────────────────────────────────────────────────────────────────────
 
 EXCEL_EPOCH  = date(1899, 12, 30)
-DATE_COLUMNS = {'PERIODE', 'POSISI', 'MONTH_DAY_YEAR_OF_POSISI', 'TGL_REALISASI', 'TGL_JATUH_TEMPO', 'TANGGAL'}
+DATE_COLUMNS = {'PERIODE', 'POSISI', 'MONTH_DAY_YEAR_OF_POSISI', 'MONTH_DAY_YEAR_OF_PERIODE', 'TGL_REALISASI', 'TGL_JATUH_TEMPO', 'TANGGAL'}
 DECIMAL_COLUMNS = {'BAKI_DEBET', 'SALDO'}
 NULL_STRS    = {'', 'nan', 'none', 'nat', 'null', 'n/a', 'na'}
 INDONESIAN_MONTHS = {

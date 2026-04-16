@@ -153,12 +153,9 @@ class ExcelQueuedImportService
                         ? (
                             $tableName === 'daily_loan_dinamis'
                                 ? 'Menjalankan direct Daily Loan CSV import...'
-                                : ($tableName === 'ssa_simpanan'
-                                    ? 'Menjalankan direct SSA Simpanan CSV import...'
-                                    : ($tableName === 'ssa_pinjaman'
-                                        ? 'Menjalankan direct SSA Pinjaman CSV import...'
+                                : (in_array($tableName, ['ssa_simpanan', 'ssa_pinjaman'], true)
+                                    ? 'Menjalankan direct ' . ($tableName === 'ssa_pinjaman' ? 'SSA Pinjaman' : 'SSA Simpanan') . ' CSV import...'
                                     : 'Menjalankan direct CSV import...')
-                                    )
                         )
                         : ($mode === 'bulk_csv_filtered'
                             ? 'Menyiapkan CSV staging terfilter untuk bulk load MySQL...'

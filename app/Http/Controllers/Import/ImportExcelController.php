@@ -398,6 +398,7 @@ class ImportExcelController extends Controller
             'TEXTBOX21' => 'os_idr',
             'OS_IDR' => 'os_idr',
             'MONTH_DAY_YEAR_OF_POSISI' => 'month_day_year_of_posisi',
+            'MONTH_DAY_YEAR_OF_PERIODE' => 'month_day_year_of_periode',
             'NOREKENING' => 'no_rekening',
             'NOMORREKENING' => 'no_rekening',
             'NOMOR_REKENING' => 'no_rekening',
@@ -3985,9 +3986,9 @@ class ImportExcelController extends Controller
 
         return [
             'path' => $normalized['path'],
-            'cleanup' => (bool) ($normalized['cleanup'] ?? true),
-            'normalized' => (bool) ($normalized['normalized'] ?? true),
-            'backend' => (string) ($normalized['backend'] ?? 'php'),
+            'cleanup' => (bool) ($normalized['cleanup'] ?? false),
+            'normalized' => (bool) ($normalized['normalized'] ?? false),
+            'backend' => (string) ($normalized['backend'] ?? 'csv_stage'),
             'skipped_rows' => $normalized['skipped_rows'] ?? [],
             'skipped_count' => (int) ($normalized['skipped_count'] ?? 0),
             'duplicate_count' => (int) ($normalized['duplicate_count'] ?? 0),
@@ -4882,8 +4883,9 @@ class ImportExcelController extends Controller
         $isDailyLoanTable = $this->isDailyLoanTable($tableName);
         $isSsaSimpananTable = $this->isSsaSimpananTable($tableName);
         $isSsaPinjamanTable = $this->isSsaPinjamanTable($tableName);
+        $isSsaTable = $isSsaSimpananTable || $isSsaPinjamanTable;
 
-        if (!$isDailyLoanTable && !$isSsaSimpananTable && !$isSsaPinjamanTable) {
+        if (!$isDailyLoanTable && !$isSsaTable) {
             return false;
         }
 
@@ -4903,9 +4905,7 @@ class ImportExcelController extends Controller
                 'percent' => 18,
                 'message' => $isDailyLoanTable
                     ? 'Menyiapkan direct LOAD DATA untuk Daily Loan...'
-                    : ($isSsaSimpananTable
-                        ? 'Menyiapkan direct LOAD DATA untuk SSA Simpanan...'
-                        : 'Menyiapkan direct LOAD DATA untuk SSA Pinjaman...'),
+                    : 'Menyiapkan direct LOAD DATA untuk ' . ($isSsaPinjamanTable ? 'SSA Pinjaman' : 'SSA Simpanan') . '...',
                 'rows_done' => 0,
                 'total' => $estimatedTotalRows,
                 'speed' => 0,
@@ -4913,9 +4913,9 @@ class ImportExcelController extends Controller
 
             $loadSource = $isDailyLoanTable
                 ? $this->prepareDailyLoanDirectLoadSource($csvPath, $delimiter, $send)
-                : ($isSsaSimpananTable
-                    ? $this->prepareSsaSimpananDirectLoadSource($csvPath, $delimiter, $send)
-                    : $this->prepareSsaPinjamanDirectLoadSource($csvPath, $delimiter, $send));
+                : ($isSsaPinjamanTable
+                    ? $this->prepareSsaPinjamanDirectLoadSource($csvPath, $delimiter, $send)
+                    : $this->prepareSsaSimpananDirectLoadSource($csvPath, $delimiter, $send));
             $sourcePath = (string) ($loadSource['path'] ?? $csvPath);
             $sourceWasNormalized = !empty($loadSource['normalized']);
             $loadBackend = (string) ($loadSource['backend'] ?? 'php');
@@ -4941,9 +4941,7 @@ class ImportExcelController extends Controller
                     'percent' => 32,
                     'message' => $isDailyLoanTable
                         ? 'Load plan Daily Loan siap dijalankan.'
-                        : ($isSsaSimpananTable
-                            ? 'Load plan SSA Simpanan siap dijalankan.'
-                            : 'Load plan SSA Pinjaman siap dijalankan.'),
+                        : 'Load plan ' . ($isSsaPinjamanTable ? 'SSA Pinjaman' : 'SSA Simpanan') . ' siap dijalankan.',
                     'processed_rows' => 0,
                     'total_rows' => $baseTotal,
                     'total_success' => (int) ($job->total_success ?? 0),
@@ -4963,21 +4961,13 @@ class ImportExcelController extends Controller
                             : 'CSV Daily Loan diproses dengan ' . $loadBackend . '. Menjalankan direct LOAD DATA ke tabel final...'
                     )
                     : 'Direct LOAD DATA aktif. Memuat CSV langsung ke Daily Loan...')
-                    : ($isSsaSimpananTable
-                        ? ($sourceWasNormalized
-                            ? (
-                                $skippedCount > 0
-                                    ? 'CSV SSA Simpanan diproses dengan ' . $loadBackend . '. ' . $skippedCount . ' baris tidak valid di-skip, lalu direct LOAD DATA dijalankan...'
-                                    : 'CSV SSA Simpanan diproses dengan ' . $loadBackend . '. Menjalankan direct LOAD DATA ke tabel final...'
-                            )
-                            : 'Direct LOAD DATA aktif. Memuat CSV stage langsung ke tabel SSA Simpanan...')
-                        : ($sourceWasNormalized
-                            ? (
-                                $skippedCount > 0
-                                    ? 'CSV SSA Pinjaman diproses dengan ' . $loadBackend . '. ' . $skippedCount . ' baris tidak valid di-skip, lalu direct LOAD DATA dijalankan...'
-                                    : 'CSV SSA Pinjaman diproses dengan ' . $loadBackend . '. Menjalankan direct LOAD DATA ke tabel final...'
-                            )
-                            : 'Direct LOAD DATA aktif. Memuat CSV stage langsung ke tabel SSA Pinjaman...')),
+                    : ($sourceWasNormalized
+                    ? (
+                        $skippedCount > 0
+                            ? 'CSV ' . ($isSsaPinjamanTable ? 'SSA Pinjaman' : 'SSA Simpanan') . ' diproses dengan ' . $loadBackend . '. ' . $skippedCount . ' baris tidak valid di-skip, lalu direct LOAD DATA dijalankan...'
+                            : 'CSV ' . ($isSsaPinjamanTable ? 'SSA Pinjaman' : 'SSA Simpanan') . ' diproses dengan ' . $loadBackend . '. Menjalankan direct LOAD DATA ke tabel final...'
+                    )
+                    : 'Direct LOAD DATA aktif. Memuat CSV stage langsung ke tabel ' . ($isSsaPinjamanTable ? 'SSA Pinjaman' : 'SSA Simpanan') . '...'),
                 'rows_done' => 0,
                 'total' => $baseTotal,
                 'speed' => 0,
@@ -4998,16 +4988,8 @@ class ImportExcelController extends Controller
                     'phase' => 'loading',
                     'percent' => $status === 'completed' ? 98 : 96,
                     'message' => $status === 'completed'
-                        ? ($isDailyLoanTable
-                            ? 'Direct LOAD DATA Daily Loan selesai diproses.'
-                            : ($isSsaSimpananTable
-                                ? 'Direct LOAD DATA SSA Simpanan selesai diproses.'
-                                : 'Direct LOAD DATA SSA Pinjaman selesai diproses.'))
-                        : ($isDailyLoanTable
-                            ? 'Direct LOAD DATA Daily Loan selesai dengan kegagalan parsial.'
-                            : ($isSsaSimpananTable
-                                ? 'Direct LOAD DATA SSA Simpanan selesai dengan kegagalan parsial.'
-                                : 'Direct LOAD DATA SSA Pinjaman selesai dengan kegagalan parsial.')),
+                        ? ($isDailyLoanTable ? 'Direct LOAD DATA Daily Loan selesai diproses.' : 'Direct LOAD DATA ' . ($isSsaPinjamanTable ? 'SSA Pinjaman' : 'SSA Simpanan') . ' selesai diproses.')
+                        : ($isDailyLoanTable ? 'Direct LOAD DATA Daily Loan selesai dengan kegagalan parsial.' : 'Direct LOAD DATA ' . ($isSsaPinjamanTable ? 'SSA Pinjaman' : 'SSA Simpanan') . ' selesai dengan kegagalan parsial.'),
                     'processed_rows' => $inserted + $failed,
                     'total_rows' => $baseTotal,
                     'total_success' => $inserted,
@@ -5021,9 +5003,7 @@ class ImportExcelController extends Controller
                 'percent' => 98,
                 'message' => $isDailyLoanTable
                     ? 'Direct LOAD DATA Daily Loan selesai diproses.'
-                    : ($isSsaSimpananTable
-                        ? 'Direct LOAD DATA SSA Simpanan selesai diproses.'
-                        : 'Direct LOAD DATA SSA Pinjaman selesai diproses.'),
+                    : 'Direct LOAD DATA ' . ($isSsaPinjamanTable ? 'SSA Pinjaman' : 'SSA Simpanan') . ' selesai diproses.',
                 'rows_done' => $inserted,
                 'total' => $baseTotal,
                 'speed' => 0,
@@ -5764,6 +5744,8 @@ class ImportExcelController extends Controller
                 'JUMLAH_PN1',
                 'JUMLAH_PN_ALL1',
                 'RESTRUK_KE1',
+                'JUMLAH_DEBITUR_AKTIF',
+                'JUMLAH_REKENING_AKTIF',
             ], true);
         }
 
@@ -5819,6 +5801,7 @@ class ImportExcelController extends Controller
             'PERIODE',
             'POSISI',
             'MONTH_DAY_YEAR_OF_POSISI',
+            'MONTH_DAY_YEAR_OF_PERIODE',
             'TGL_REALISASI',
             'TGL_JATUH_TEMPO',
             'TANGGAL',

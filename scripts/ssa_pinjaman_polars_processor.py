@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 SSA Pinjaman CSV processor
-=========================
+==========================
 
 Flow:
   1. Parse CSV stage hasil konversi Excel dengan stdlib csv reader.
@@ -28,6 +28,7 @@ REQUIRED_HEADERS = {
     "nama_cabang",
     "nama_uker",
     "produk",
+    "baki_debet",
 }
 
 
@@ -59,11 +60,8 @@ def send_progress(
         },
     )
 
-
 def send_error(message: str) -> None:
     send_event("error", {"message": message})
-
-
 def load_config(config_path: str) -> dict:
     with open(config_path, "r", encoding="utf-8-sig") as handle:
         return json.load(handle)
@@ -233,19 +231,20 @@ def normalize_integer_value(value: object) -> str | None:
         return None
 
 
-def is_valid_ssa_row_values(values_by_header: dict[str, object]) -> bool:
+def is_valid_ssa_pinjaman_row_values(values_by_header: dict[str, object]) -> bool:
     periode = normalize_cell(values_by_header.get("month_day_year_of_periode"))
     nama_cabang = normalize_cell(values_by_header.get("nama_cabang"))
     nama_uker = normalize_cell(values_by_header.get("nama_uker"))
     produk = normalize_cell(values_by_header.get("produk"))
+    baki_debet = normalize_decimal_value(values_by_header.get("baki_debet"))
 
-    return periode != "" and nama_cabang != "" and nama_uker != "" and produk != ""
+    if periode == "" or nama_cabang == "" or nama_uker == "" or produk == "" or baki_debet is None:
+        return False
+
+    return True
 
 
-def sanitize_source(
-    source_path: str,
-    delimiter: str,
-) -> tuple[str, list[str], int, int, int, bool, list[int], int]:
+def sanitize_source(source_path: str, delimiter: str) -> tuple[str, list[str], int, int, int, bool, list[int], int]:
     temp_dir = Path(tempfile.gettempdir())
     fd, temp_path = tempfile.mkstemp(prefix="ssa_pinjaman_sanitized_", suffix=".csv", dir=str(temp_dir))
     os.close(fd)
@@ -278,7 +277,7 @@ def sanitize_source(
                 processed_rows = max(0, total_records - 1)
                 speed = int(processed_rows / elapsed)
                 send_progress(
-                    min(50, 5 + int((row_number / 400000) * 45)),
+                    min(50, 5 + int((row_number / 350000) * 45)),
                     "Menyiapkan sanitasi CSV SSA Pinjaman...",
                     processed_rows,
                     0,
@@ -312,7 +311,7 @@ def sanitize_source(
 
                 if header == "baki_debet":
                     normalized_value = normalize_decimal_value(raw_value)
-                elif header in {"jumlah_debitur_aktif", "jumlah_rekening_aktif", "tgl", "tahun"}:
+                elif header in {"tgl", "tahun", "jumlah_debitur_aktif", "jumlah_rekening_aktif"}:
                     normalized_value = normalize_integer_value(raw_value)
                 else:
                     normalized_value = raw_value if raw_value != "" else None
@@ -320,7 +319,7 @@ def sanitize_source(
                 values_by_header[header] = normalized_value
                 normalized_row.append("" if normalized_value is None else str(normalized_value))
 
-            if not is_valid_ssa_row_values(values_by_header):
+            if not is_valid_ssa_pinjaman_row_values(values_by_header):
                 validation_skipped += 1
                 skipped_rows.append(row_number)
                 rewrite_needed = True

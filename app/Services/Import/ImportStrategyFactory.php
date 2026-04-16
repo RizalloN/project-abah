@@ -21,6 +21,7 @@ class ImportStrategyFactory
         return [
             app(DailyLoanImportStrategy::class),
             app(SimpananMultiPnImportStrategy::class),
+            app(SsaPinjamanImportStrategy::class),
             app(SsaSimpananImportStrategy::class),
             app(SsaPinjamanImportStrategy::class),
             app(Lw325PhImportStrategy::class),
