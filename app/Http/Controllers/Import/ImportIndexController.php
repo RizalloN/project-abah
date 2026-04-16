@@ -1805,7 +1805,15 @@ class ImportIndexController extends Controller
         $deletedRows = max(0, (int) ($state['deleted_rows'] ?? 0));
         $stage = (string) ($state['stage'] ?? 'queued');
         $status = (string) ($state['status'] ?? 'running');
+        $message = (string) ($state['message'] ?? 'Memproses delete...');
+        $cleanupMode = (string) ($state['cleanup']['mode'] ?? '');
+        $successLikeMessage = $this->isSuccessLikeManagedDeleteMessage($message);
         $effectiveStatus = $status === 'failed' && $deletedRows > 0 ? 'warning' : $status;
+
+        if ($status === 'failed' && $successLikeMessage) {
+            $effectiveStatus = ($deletedRows > 0 || $cleanupMode === 'lightweight') ? 'warning' : 'completed';
+        }
+
         $isWaitingOnBatch = (bool) ($state['is_waiting_on_batch'] ?? false);
         $batchState = (string) ($state['batch_state'] ?? 'idle');
 
@@ -1847,7 +1855,7 @@ class ImportIndexController extends Controller
             'created_at' => $state['created_at'] ?? null,
             'updated_at' => $state['updated_at'] ?? null,
             'progress_percent' => $percent,
-            'message' => $state['message'] ?? 'Memproses delete...',
+            'message' => $message,
             'error' => $state['error'] ?? null,
             'error_code' => $state['error_code'] ?? null,
             'cleanup' => $state['cleanup'] ?? null,
@@ -1856,6 +1864,20 @@ class ImportIndexController extends Controller
             'can_process_fallback' => $this->shouldAllowManagedDeleteFallback($state),
             'fallback_stale_seconds' => self::DELETE_PROCESS_STALE_SECONDS,
         ], $overrides);
+    }
+
+    private function isSuccessLikeManagedDeleteMessage(string $message): bool
+    {
+        $normalized = strtolower(trim($message));
+
+        if ($normalized === '') {
+            return false;
+        }
+
+        return str_starts_with($normalized, 'delete selesai.')
+            || str_starts_with($normalized, 'delete sumber selesai')
+            || str_contains($normalized, 'statistik dan cache sudah disegarkan')
+            || str_contains($normalized, 'report ini tidak menggunakan snapshot/index');
     }
 
     private function getDeleteState(string $deleteId): ?array
@@ -3496,5 +3518,4 @@ LIMIT {$limit}
         };
     }
 }
-
 

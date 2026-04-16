@@ -226,7 +226,7 @@ class DashboardHarianSnapshotService
             'mtd' => $this->resolveEffectivePeriod($selected->copy()->subMonthNoOverflow()->endOfMonth()->toDateString()),
             'h1' => $this->resolvePreviousPeriod($selectedPeriod),
             'rka' => $resolvedRka,
-            'rka_dec' => $resolvedRka ? $this->resolveEffectivePeriod(Carbon::parse($resolvedRka)->endOfYear()->toDateString()) : null,
+            'rka_dec' => $resolvedRka ? Carbon::parse($resolvedRka)->endOfYear()->toDateString() : null,
         ];
     }
 
@@ -329,8 +329,8 @@ class DashboardHarianSnapshotService
         $mtmMetrics = $comparisonPeriods['mtm'] ? ($metricsByPeriod[$comparisonPeriods['mtm']] ?? $this->finalizeMetrics($this->emptyMetrics())) : $this->finalizeMetrics($this->emptyMetrics());
         $mtdMetrics = $comparisonPeriods['mtd'] ? ($metricsByPeriod[$comparisonPeriods['mtd']] ?? $this->finalizeMetrics($this->emptyMetrics())) : $this->finalizeMetrics($this->emptyMetrics());
         $h1Metrics = $comparisonPeriods['h1'] ? ($metricsByPeriod[$comparisonPeriods['h1']] ?? $this->finalizeMetrics($this->emptyMetrics())) : $this->finalizeMetrics($this->emptyMetrics());
-        $rkaMetrics = $comparisonPeriods['rka'] ? ($metricsByPeriod[$comparisonPeriods['rka']] ?? $this->finalizeMetrics($this->emptyMetrics())) : $this->finalizeMetrics($this->emptyMetrics());
-        $rkaDecMetrics = $comparisonPeriods['rka_dec'] ? ($metricsByPeriod[$comparisonPeriods['rka_dec']] ?? $this->finalizeMetrics($this->emptyMetrics())) : $this->finalizeMetrics($this->emptyMetrics());
+        $rkaMetrics = $this->buildRkaMetrics($comparisonPeriods['rka'], $selectedPeriod, $kancaKey, $unitKey, false);
+        $rkaDecMetrics = $this->buildRkaMetrics($comparisonPeriods['rka'], $selectedPeriod, $kancaKey, $unitKey, true);
 
         $rows = collect(self::ROW_DEFINITIONS)->map(function (array $definition) use (
             $currentMetrics,
@@ -622,6 +622,141 @@ class DashboardHarianSnapshotService
         return $final;
     }
 
+    private function buildRkaMetrics(?string $rkaPeriod, ?string $filterPeriod, ?string $kancaKey, ?string $unitKey, bool $useDecember): array
+    {
+        if (!$rkaPeriod) {
+            return $this->emptyMetrics();
+        }
+
+        $monthColumn = $useDecember
+            ? 'dec'
+            : $this->rkaLookupService()->resolveMonthColumn(Carbon::parse($rkaPeriod));
+
+        $kancaLabel = $this->normalizeFilterValue($kancaKey) !== null
+            ? $this->displayFilterLabel($kancaKey, '', $filterPeriod ?? $rkaPeriod, 'kanca')
+            : null;
+        $unitLabel = $this->normalizeFilterValue($unitKey) !== null
+            ? $this->displayFilterLabel($unitKey, '', $filterPeriod ?? $rkaPeriod, 'unit_kerja')
+            : null;
+
+        $rawMetrics = $this->rkaLookupService()->aggregateForScope(
+            $this->dashboardRkaMetricDefinitions(),
+            $monthColumn,
+            $kancaLabel,
+            $unitLabel
+        );
+
+        return $this->finalizeRkaMetrics($rawMetrics);
+    }
+
+    private function dashboardRkaMetricDefinitions(): array
+    {
+        return [
+            'total_simpanan' => ['mata_anggaran' => ['A.1. DPK Retail Funding Total']],
+            'simpanan_ritel' => ['mata_anggaran' => ['A.1. DPK Retail Funding Total'], 'uker_contains_any' => ['KC', 'KCP']],
+            'giro_ritel' => ['mata_anggaran' => ['Giro Retail Funding Total'], 'uker_contains_any' => ['KC', 'KCP']],
+            'deposito_ritel' => ['mata_anggaran' => ['Deposito Retail Funding Total'], 'uker_contains_any' => ['KC', 'KCP']],
+            'tabungan_ritel' => ['mata_anggaran' => ['Tabungan Retail Funding Total'], 'uker_contains_any' => ['KC', 'KCP']],
+            'simpanan_mikro' => ['mata_anggaran' => ['A.1. DPK Retail Funding Total'], 'uker_contains_any' => ['UNIT']],
+            'giro_mikro' => ['mata_anggaran' => ['Giro Retail Funding Total'], 'uker_contains_any' => ['UNIT']],
+            'deposito_mikro' => ['mata_anggaran' => ['Deposito Retail Funding Total'], 'uker_contains_any' => ['UNIT']],
+            'tabungan_mikro' => ['mata_anggaran' => ['Tabungan Retail Funding Total'], 'uker_contains_any' => ['UNIT']],
+            'total_os' => ['mata_anggaran' => ['B. KREDIT TOTAL']],
+            'kecil_non_cashcoll_os' => ['mata_anggaran' => ['B.2.a. Kredit Kecil Non Cash Collateral']],
+            'cashcoll_os' => ['mata_anggaran' => ['B.2.b. Kredit Kecil Cash Collateral']],
+            'medium_os' => ['mata_anggaran' => ['B.3. MEDIUM']],
+            'briguna_konsumer_os' => ['mata_anggaran' => ['B.5.a. Briguna']],
+            'kpr_os' => ['mata_anggaran' => ['B.5.b. KPR']],
+            'kkb_os' => ['mata_anggaran' => ['B.5.c. KKB']],
+            'micro_os' => ['mata_anggaran' => ['B.1. MIKRO']],
+            'briguna_mikro_os' => ['mata_anggaran' => ['B.1.b. Briguna Mikro']],
+            'kupedes_os' => ['mata_anggaran' => ['B.1.a. Kupedes Komersial']],
+            'kur_mikro_os' => ['mata_anggaran' => ['B.1.c. KUR Mikro']],
+            'kur_kecil_os' => ['mata_anggaran' => ['B.1.d. KUR Kecil']],
+            'kur_kpp_os' => ['mata_anggaran' => ['B.1.e. KPP']],
+            'total_sml_pct_non_commercial' => ['mata_anggaran' => ['DPK % Total']],
+            'sml_kecil_non_cashcoll_abs' => ['mata_anggaran' => ['DPK Rp Kecil Non Cash Collateral']],
+            'sml_cashcoll_abs' => ['mata_anggaran' => ['DPK Rp Kecil Cash Collateral']],
+            'sml_medium_abs' => ['mata_anggaran' => ['DPK Rp Medium']],
+            'sml_briguna_abs' => ['mata_anggaran' => ['DPK Rp Briguna']],
+            'sml_kpr_abs' => ['mata_anggaran' => ['DPK Rp KPR']],
+            'sml_kkb_abs' => ['mata_anggaran' => ['DPK Rp KKB']],
+            'sml_mikro_abs' => ['mata_anggaran' => ['DPK Rp Mikro']],
+            'npl_total_pct' => ['mata_anggaran' => ['DPK % Total']],
+            'npl_kecil_non_cashcoll_abs' => ['mata_anggaran' => ['DPK Rp Kecil Non Cash Collateral']],
+            'npl_cashcoll_abs' => ['mata_anggaran' => ['DPK Rp Kecil Cash Collateral']],
+            'npl_medium_abs' => ['mata_anggaran' => ['DPK Rp Medium']],
+            'npl_briguna_abs' => ['mata_anggaran' => ['DPK Rp Briguna']],
+            'npl_kpr_abs' => ['mata_anggaran' => ['DPK Rp KPR']],
+            'npl_kkb_abs' => ['mata_anggaran' => ['DPK Rp KKB']],
+            'npl_mikro_abs' => ['mata_anggaran' => ['DPK Rp Mikro']],
+        ];
+    }
+
+    private function finalizeRkaMetrics(array $metrics): array
+    {
+        $final = $this->emptyMetrics();
+
+        foreach ([
+            'total_simpanan',
+            'simpanan_ritel',
+            'giro_ritel',
+            'deposito_ritel',
+            'tabungan_ritel',
+            'simpanan_mikro',
+            'giro_mikro',
+            'deposito_mikro',
+            'tabungan_mikro',
+            'total_os',
+            'kecil_non_cashcoll_os',
+            'cashcoll_os',
+            'medium_os',
+            'briguna_konsumer_os',
+            'kpr_os',
+            'kkb_os',
+            'micro_os',
+            'briguna_mikro_os',
+            'kupedes_os',
+            'kur_mikro_os',
+            'kur_kecil_os',
+            'kur_kpp_os',
+            'total_sml_pct_non_commercial',
+        ] as $key) {
+            $final[$key] = (float) ($metrics[$key] ?? 0);
+        }
+
+        $final['casa_ritel'] = $final['giro_ritel'] + $final['tabungan_ritel'];
+        $final['casa_mikro'] = $final['giro_mikro'] + $final['tabungan_mikro'];
+        $final['total_casa'] = $final['casa_ritel'] + $final['casa_mikro'];
+        $final['commercial_os'] = 0.0;
+        $final['kecil_os'] = $final['kecil_non_cashcoll_os'] + $final['cashcoll_os'];
+        $final['sme_os'] = $final['kecil_os'] + $final['medium_os'];
+        $final['consumer_os'] = $final['briguna_konsumer_os'] + $final['kpr_os'] + $final['kkb_os'];
+        $final['micro_cashcoll_os'] = 0.0;
+        $final['total_os_non_commercial'] = $final['sme_os'] + $final['consumer_os'] + $final['micro_os'];
+        $final['total_sml_abs_non_commercial'] = (float) ($metrics['sml_kecil_non_cashcoll_abs'] ?? 0)
+            + (float) ($metrics['sml_cashcoll_abs'] ?? 0)
+            + (float) ($metrics['sml_medium_abs'] ?? 0)
+            + (float) ($metrics['sml_briguna_abs'] ?? 0)
+            + (float) ($metrics['sml_kpr_abs'] ?? 0)
+            + (float) ($metrics['sml_kkb_abs'] ?? 0)
+            + (float) ($metrics['sml_mikro_abs'] ?? 0);
+        $final['total_npl_pct_non_commercial'] = (float) ($metrics['npl_total_pct'] ?? 0);
+        $final['total_npl_abs_non_commercial'] = (float) ($metrics['npl_kecil_non_cashcoll_abs'] ?? 0)
+            + (float) ($metrics['npl_cashcoll_abs'] ?? 0)
+            + (float) ($metrics['npl_medium_abs'] ?? 0)
+            + (float) ($metrics['npl_briguna_abs'] ?? 0)
+            + (float) ($metrics['npl_kpr_abs'] ?? 0)
+            + (float) ($metrics['npl_kkb_abs'] ?? 0)
+            + (float) ($metrics['npl_mikro_abs'] ?? 0);
+        $final['casa_pct'] = $this->safePercent($final['total_casa'], $final['total_simpanan']);
+        $final['ldr_non_commercial'] = 0.0;
+        $final['ldr_ritel_non_commercial'] = 0.0;
+        $final['ldr_mikro_non_commercial'] = 0.0;
+
+        return $final;
+    }
+
     private function emptyMetrics(): array
     {
         $metrics = [
@@ -867,5 +1002,10 @@ class DashboardHarianSnapshotService
         }
 
         return ($value / $base) * 100;
+    }
+
+    private function rkaLookupService(): RkaLookupService
+    {
+        return app(RkaLookupService::class);
     }
 }

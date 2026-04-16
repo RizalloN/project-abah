@@ -575,6 +575,13 @@ document.addEventListener('DOMContentLoaded', function () {
                 throw new Error('<b>Server Error:</b> ' + (titleMatch ? titleMatch[1] : 'Unknown Error'));
             }
 
+            var initDuplicate = resInit.duplicate_detected || resInit.redirect_url || isDuplicateImportMessage(resInit.text || resInit.message || resInit.title);
+            if (initDuplicate) {
+                await showDuplicateImportModal(resInit.text || resInit.message || resInit.title || 'Data duplikat terdeteksi.', resInit.title || 'Data Duplikat');
+                resetSubmitBtn();
+                return;
+            }
+
             if (!resRaw.ok || resInit.status === 'error') {
                 throw new Error(resInit.text || resInit.message || 'Gagal menyiapkan fase Polars.');
             }
@@ -585,15 +592,15 @@ document.addEventListener('DOMContentLoaded', function () {
 
         } catch (err) {
             var errorHtml = String((err && err.message) || '');
-            var errorTitle = isDuplicateImportMessage(errorHtml)
+            var isDuplicate = isDuplicateImportMessage(errorHtml);
+            var errorTitle = isDuplicate
                 ? 'Data Duplikat'
                 : 'Gagal Menyiapkan Polars';
-            themedSwal({ icon: 'error', title: errorTitle, html: errorHtml, confirmButtonText: 'Tutup' })
-                .then(function () {
-                    if (isDuplicateImportMessage(errorHtml)) {
-                        redirectToImportIndex();
-                    }
-                });
+            if (isDuplicate) {
+                await showDuplicateImportModal(errorHtml, errorTitle);
+            } else {
+                themedSwal({ icon: 'error', title: errorTitle, html: errorHtml, confirmButtonText: 'Tutup' });
+            }
             resetSubmitBtn();
             return;
         }
@@ -611,24 +618,61 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         function isDuplicateImportMessage(message) {
-            var text = String(message || '').toLowerCase();
+            var text = String(message || '')
+                .replace(/<[^>]*>/g, ' ')
+                .replace(/&nbsp;/gi, ' ')
+                .replace(/\s+/g, ' ')
+                .toLowerCase();
             return text.indexOf('duplikat') !== -1
-                || text.indexOf('sudah ada di database') !== -1;
+                || text.indexOf('sudah ada di database') !== -1
+                || text.indexOf('sudah ada di tabel') !== -1
+                || text.indexOf('sudah pernah diunggah') !== -1
+                || text.indexOf('kombinasi periode + tid') !== -1
+                || text.indexOf('mencegah data dobel') !== -1
+                || text.indexOf('data dobel') !== -1
+                || text.indexOf('duplicate entry') !== -1
+                || text.indexOf('duplicate') !== -1;
         }
 
-        function redirectToImportIndex() {
-            window.location.href = '{{ route("import.index") }}';
+        function redirectToSelectFile() {
+            window.location.replace('{{ route("import.select") }}');
+        }
+
+        async function showDuplicateImportModal(message, title) {
+            await themedSwal({
+                icon: 'warning',
+                title: title || 'Data Duplikat',
+                html: message || 'Data duplikat terdeteksi.',
+                confirmButtonText: 'Kembali ke Import',
+                allowOutsideClick: false,
+                allowEscapeKey: false,
+                didClose: function () {
+                    redirectToSelectFile();
+                },
+            });
+            redirectToSelectFile();
         }
 
         function showImportFailure(message) {
             streamDone = true;
             if (evtSource) evtSource.close();
             var failureHtml = message || 'Import gagal dijalankan!';
-            var failureTitle = isDuplicateImportMessage(failureHtml) ? 'Data Duplikat' : 'Proses Terhenti';
-            themedSwal({ icon: 'error', title: failureTitle, html: failureHtml, confirmButtonText: 'Tutup' })
+            var failureIsDuplicate = isDuplicateImportMessage(failureHtml);
+            var failureTitle = failureIsDuplicate ? 'Data Duplikat' : 'Proses Terhenti';
+            themedSwal({
+                icon: failureIsDuplicate ? 'warning' : 'error',
+                title: failureTitle,
+                html: failureHtml,
+                confirmButtonText: failureIsDuplicate ? 'Kembali ke Import' : 'Tutup',
+                allowOutsideClick: false,
+                allowEscapeKey: false,
+                didClose: failureIsDuplicate ? function () {
+                    redirectToSelectFile();
+                } : null,
+            })
                 .then(function () {
-                    if (isDuplicateImportMessage(failureHtml)) {
-                        redirectToImportIndex();
+                    if (failureIsDuplicate) {
+                        redirectToSelectFile();
                     }
                 });
             resetSubmitBtn();

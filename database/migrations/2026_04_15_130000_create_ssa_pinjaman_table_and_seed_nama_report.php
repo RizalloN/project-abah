@@ -28,15 +28,10 @@ return new class extends Migration
                 $table->unsignedInteger('jumlah_rekening_aktif')->nullable();
                 $table->string('keterangan_uker', 50)->nullable();
                 $table->string('kualitas', 20)->nullable();
-                $table->unsignedTinyInteger('tgl')->nullable();
-                $table->string('bulan', 20)->nullable();
-                $table->unsignedSmallInteger('tahun')->nullable();
-                $table->string('bulan_tahun', 30)->nullable();
                 $table->timestamps();
 
                 $table->index(['Month_Day_Year_of_Periode', 'nama_cabang'], 'idx_ssa_pinjaman_periode_cabang');
                 $table->index(['nama_uker', 'produk'], 'idx_ssa_pinjaman_uker_produk');
-                $table->index(['bulan_tahun', 'segmen_dashboard'], 'idx_ssa_pinjaman_bulan_segmen');
             });
         }
 

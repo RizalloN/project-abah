@@ -179,7 +179,7 @@
             <div class="col-md-2">
                 <div class="form-group mb-0">
                     <label class="text-muted text-sm mb-1">Posisi RKA</label>
-                    <input type="text" class="form-control" disabled value="--------">
+                    <input type="text" id="filter_posisi_rka" class="form-control" disabled value="--------">
                 </div>
             </div>
         </div>
@@ -630,6 +630,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // 🔥 FIX FINAL: Variabel global untuk menampung request AJAX (Mencegah Race Condition)
     let brilinkXhr = null;
+    const filterPosisiRka = document.getElementById('filter_posisi_rka');
 
     function loadDataBrilink() {
         const bulanAktif = $('#filter_bulan').val();
@@ -664,6 +665,9 @@ document.addEventListener('DOMContentLoaded', function () {
                     
                     if (res.labels) {
                         $('.lbl-curr').text('Bulan Berjalan (' + res.labels.curr + ')');
+                        if (filterPosisiRka) {
+                            filterPosisiRka.value = res.labels.rka || '--------';
+                        }
                     }
                     updateGroupLabel(res.group_label);
 
@@ -699,22 +703,22 @@ document.addEventListener('DOMContentLoaded', function () {
                             <td>${formatGrowth(row.agen.mtd)}</td>
                             <td>${formatGrowth(row.agen.ytd)}</td>
                             <td>${formatGrowth(row.agen.yoy)}</td>
-                            <td class="rka-col text-muted">-</td>
-                            <td class="rka-col text-muted">-</td>
+                            <td class="rka-col">${formatNum(row.agen.rka)}</td>
+                            <td class="rka-col">${formatNum(row.agen.penc_pct)}%</td>
 
                             <td class="font-weight-bold">${formatNum(row.juragan.curr)}</td>
                             <td>${formatGrowth(row.juragan.mtd)}</td>
                             <td>${formatGrowth(row.juragan.ytd)}</td>
                             <td>${formatGrowth(row.juragan.yoy)}</td>
-                            <td class="rka-col text-muted">-</td>
-                            <td class="rka-col text-muted">-</td>
+                            <td class="rka-col">${formatNum(row.juragan.rka)}</td>
+                            <td class="rka-col">${formatNum(row.juragan.penc_pct)}%</td>
 
                             <td class="font-weight-bold">${formatNum(row.bep.curr)}</td>
                             <td>${formatGrowth(row.bep.mtd)}</td>
                             <td>${formatGrowth(row.bep.ytd)}</td>
                             <td>${formatGrowth(row.bep.yoy)}</td>
-                            <td class="rka-col text-muted">-</td>
-                            <td class="rka-col text-muted">-</td>
+                            <td class="rka-col">${formatNum(row.bep.rka)}</td>
+                            <td class="rka-col">${formatNum(row.bep.penc_pct)}%</td>
 
                             <td class="font-weight-bold">${formatNum(row.trx.curr)}</td>
                             <td>${formatGrowth(row.trx.mtd)}</td>
@@ -754,22 +758,22 @@ document.addEventListener('DOMContentLoaded', function () {
                             <td>${formatGrowth(total.agen.mtd)}</td>
                             <td>${formatGrowth(total.agen.ytd)}</td>
                             <td>${formatGrowth(total.agen.yoy)}</td>
-                            <td class="rka-col text-dark">-</td>
-                            <td class="rka-col text-dark">-</td>
+                            <td class="rka-col text-dark">${formatNum(total.agen.rka)}</td>
+                            <td class="rka-col text-dark">${formatNum(total.agen.penc_pct)}%</td>
 
                             <td>${formatNum(total.juragan.curr)}</td>
                             <td>${formatGrowth(total.juragan.mtd)}</td>
                             <td>${formatGrowth(total.juragan.ytd)}</td>
                             <td>${formatGrowth(total.juragan.yoy)}</td>
-                            <td class="rka-col text-dark">-</td>
-                            <td class="rka-col text-dark">-</td>
+                            <td class="rka-col text-dark">${formatNum(total.juragan.rka)}</td>
+                            <td class="rka-col text-dark">${formatNum(total.juragan.penc_pct)}%</td>
 
                             <td>${formatNum(total.bep.curr)}</td>
                             <td>${formatGrowth(total.bep.mtd)}</td>
                             <td>${formatGrowth(total.bep.ytd)}</td>
                             <td>${formatGrowth(total.bep.yoy)}</td>
-                            <td class="rka-col text-dark">-</td>
-                            <td class="rka-col text-dark">-</td>
+                            <td class="rka-col text-dark">${formatNum(total.bep.rka)}</td>
+                            <td class="rka-col text-dark">${formatNum(total.bep.penc_pct)}%</td>
 
                             <td>${formatNum(total.trx.curr)}</td>
                             <td>${formatGrowth(total.trx.mtd)}</td>

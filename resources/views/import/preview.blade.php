@@ -237,6 +237,50 @@
             return Swal.fire(Object.assign({}, swalTheme, options));
         }
 
+        function redirectToImportIndex() {
+            window.location.replace("{{ route('import.index') }}");
+        }
+
+        function redirectToSelectFile() {
+            window.location.replace("{{ route('import.select') }}");
+        }
+
+        function normalizeDuplicateMessage(message) {
+            return String(message || '')
+                .replace(/<[^>]*>/g, ' ')
+                .replace(/&nbsp;/gi, ' ')
+                .replace(/\s+/g, ' ')
+                .toLowerCase();
+        }
+
+        function isDuplicateImportMessage(message) {
+            const text = normalizeDuplicateMessage(message);
+            return text.includes('duplikat')
+                || text.includes('sudah ada di database')
+                || text.includes('sudah ada di tabel')
+                || text.includes('sudah pernah diunggah')
+                || text.includes('kombinasi periode + tid')
+                || text.includes('mencegah data dobel')
+                || text.includes('data dobel')
+                || text.includes('duplicate entry')
+                || text.includes('duplicate');
+        }
+
+        async function showDuplicateImportModal(title, message, redirectTarget = redirectToSelectFile) {
+            await themedSwal({
+                icon: 'warning',
+                title: title || 'Data Ditolak (Duplikat)!',
+                html: message || 'Data duplikat terdeteksi.',
+                confirmButtonText: 'Tutup',
+                allowOutsideClick: false,
+                allowEscapeKey: false,
+                didClose: function () {
+                    redirectTarget();
+                },
+            });
+            redirectTarget();
+        }
+
         function normalizeProgressStatus(message) {
             const text = String(message || '').trim();
             const speedMatch = text.match(/\(([\d.,]+)\s+baris\/detik\)$/i);
@@ -736,13 +780,26 @@
 
                     const result = await response.json();
 
+                    const duplicateDetected = result.duplicate_detected
+                        || result.redirect_url
+                        || isDuplicateImportMessage(result.title || result.text || result.message);
+
+                    if (duplicateDetected) {
+                        await showDuplicateImportModal(
+                            result.title || 'Data Ditolak (Duplikat)!',
+                            result.text || result.message || 'Data duplikat terdeteksi.'
+                        );
+                        resetImportButton();
+                        return;
+                    }
+
                     themedSwal({
                         icon: result.status || (response.ok ? 'success' : 'error'),
                         title: result.title || 'Selesai',
                         html: result.text || result.message || '',
                         confirmButtonText: 'Tutup'
                     }).then(() => {
-                        window.location.href = "{{ route('import.index') }}";
+                        redirectToImportIndex();
                     });
                 } catch (err) {
                     themedSwal({
@@ -828,6 +885,19 @@
 
                 const initResult = await initResponse.json();
 
+                const initDuplicate = initResult.duplicate_detected
+                    || initResult.redirect_url
+                    || isDuplicateImportMessage(initResult.title || initResult.text || initResult.message);
+
+                if (initDuplicate) {
+                    await showDuplicateImportModal(
+                        initResult.title || 'Data Ditolak (Duplikat)!',
+                        initResult.text || initResult.message || 'Data duplikat terdeteksi.'
+                    );
+                    resetImportButton();
+                    return;
+                }
+
                 if (!initResponse.ok || initResult.status !== 'success') {
                         themedSwal({
                             icon: initResult.status || 'error',
@@ -849,10 +919,21 @@
 
                 const showImportError = function (message) {
                     stopImportProgressTicker();
+                    const errorMessage = message || 'Import gagal dijalankan!';
+                    if (isDuplicateImportMessage(errorMessage)) {
+                        showDuplicateImportModal(
+                            'Data Ditolak (Duplikat)!',
+                            errorMessage,
+                            redirectToSelectFile
+                        );
+                        resetImportButton();
+                        return;
+                    }
+
                     themedSwal({
                         icon: 'error',
                         title: 'Proses Terhenti',
-                        html: message || 'Import gagal dijalankan!',
+                        html: errorMessage,
                         confirmButtonText: 'Tutup'
                     });
                     resetImportButton();
@@ -1250,4 +1331,3 @@
     }
 </style>
 @endsection
-

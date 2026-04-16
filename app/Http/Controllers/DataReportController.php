@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Support\RkaLookupService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
@@ -23,6 +24,8 @@ class DataReportController extends Controller
     public function fetchNewPayrollData(Request $request)
     {
         $selectedDate = Carbon::parse($request->input('posisi', date('Y-m-d')));
+        $rkaMonthColumn = $this->rkaLookupService()->resolveMonthColumn($selectedDate);
+        $rkaMonthLabel = $this->rkaLookupService()->resolveMonthLabel($selectedDate);
         $defaultBranches = ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'];
         $selectedBranches = collect((array) $request->input('branch_office', []))
             ->map(fn ($branch) => strtoupper(trim((string) $branch)))
@@ -42,15 +45,27 @@ class DataReportController extends Controller
         $totalLabel = $isBranchFiltered
             ? 'TOTAL ' . strtoupper(implode(', ', $selectedBranches))
             : 'TOTAL AREA 6';
+        $newPayrollRka = $this->rkaLookupService()->aggregateByGroup(
+            [
+                'rekening' => ['mata_anggaran' => ['New Rekening Payroll Ritel']],
+            ],
+            $rkaMonthColumn,
+            $branches,
+            $selectedUkers,
+            $isBranchFiltered ? 'uker' : 'kanca'
+        );
 
         $effectiveSnapshot = DB::table('performance_pis_per_produk')
             ->whereDate('posisi', '<=', $selectedDate->toDateString())
             ->max('posisi');
 
         if (!$effectiveSnapshot) {
+            $labels = $this->buildNewPayrollLabels($selectedDate);
+            $labels['rka'] = 'RKA ' . $rkaMonthLabel;
+
             return response()->json([
                 'status' => 'success',
-                'labels' => $this->buildNewPayrollLabels($selectedDate),
+                'labels' => $labels,
                 'effective_snapshot' => null,
                 'data' => [],
                 'total' => $this->buildEmptyNewPayrollTotal(),
@@ -92,9 +107,11 @@ class DataReportController extends Controller
             'saldo' => ['curr' => 0, 'prev' => 0, 'yoy_prev' => 0, 'rka' => null],
             'kualitas' => ['curr' => null, 'prev' => null, 'yoy_prev' => null, 'rka' => null],
         ];
+        $totalRekeningRka = 0.0;
 
         foreach ($displayKeys as $branch) {
             $row = $rows->get(strtoupper($branch));
+            $groupKey = strtoupper(trim((string) $branch));
 
             $rekeningCurr = (int) ($row->rekening_curr ?? 0);
             $rekeningPrev = (int) ($row->rekening_prev ?? 0);
@@ -103,10 +120,15 @@ class DataReportController extends Controller
             $saldoCurr = (float) ($row->saldo_curr ?? 0);
             $saldoPrev = (float) ($row->saldo_prev ?? 0);
             $saldoYoyPrev = (float) ($row->saldo_yoy_prev ?? 0);
+            $rekeningRka = round((float) ($newPayrollRka['rekening'][$groupKey] ?? 0), 2);
+
+            $rekeningMetric = $this->calculateNewPayrollMetrics($rekeningCurr, $rekeningPrev, $rekeningYoyPrev);
+            $rekeningMetric['rka'] = $rekeningRka;
+            $rekeningMetric['penc_pct'] = $rekeningRka > 0 ? (($rekeningCurr / $rekeningRka) * 100) : null;
 
             $data[] = [
                 'branch' => strtoupper($branch),
-                'rekening' => $this->calculateNewPayrollMetrics($rekeningCurr, $rekeningPrev, $rekeningYoyPrev),
+                'rekening' => $rekeningMetric,
                 'saldo' => $this->calculateNewPayrollMetrics($saldoCurr, $saldoPrev, $saldoYoyPrev),
                 'kualitas' => $this->emptyNewPayrollMetric(),
             ];
@@ -118,6 +140,7 @@ class DataReportController extends Controller
             $total['saldo']['curr'] += $saldoCurr;
             $total['saldo']['prev'] += $saldoPrev;
             $total['saldo']['yoy_prev'] += $saldoYoyPrev;
+            $totalRekeningRka += $rekeningRka;
         }
 
         $total['rekening'] = $this->calculateNewPayrollMetrics(
@@ -125,6 +148,8 @@ class DataReportController extends Controller
             $total['rekening']['prev'],
             $total['rekening']['yoy_prev']
         );
+        $total['rekening']['rka'] = round($totalRekeningRka, 2);
+        $total['rekening']['penc_pct'] = $totalRekeningRka > 0 ? (($total['rekening']['curr'] / $totalRekeningRka) * 100) : null;
 
         $total['saldo'] = $this->calculateNewPayrollMetrics(
             $total['saldo']['curr'],
@@ -132,9 +157,12 @@ class DataReportController extends Controller
             $total['saldo']['yoy_prev']
         );
 
+        $labels = $this->buildNewPayrollLabels($selectedDate);
+        $labels['rka'] = 'RKA ' . $rkaMonthLabel;
+
         return response()->json([
             'status' => 'success',
-            'labels' => $this->buildNewPayrollLabels($selectedDate),
+            'labels' => $labels,
             'effective_snapshot' => Carbon::parse($effectiveSnapshot)->toDateString(),
             'group_label' => $groupLabel,
             'data' => $data,
@@ -524,25 +552,40 @@ class DataReportController extends Controller
 
         if (!$posisi) $posisi = date('Y-m-d');
 
-        $dateCurr = Carbon::parse($posisi)->toDateString(); 
-        $dateMtD  = Carbon::parse($posisi)->subMonthNoOverflow()->endOfMonth()->toDateString(); 
-        $dateYtD  = Carbon::parse($posisi)->subYearNoOverflow()->endOfYear()->toDateString(); 
-        $dateYoY  = Carbon::parse($posisi)->subYearNoOverflow()->endOfMonth()->toDateString(); 
+        $selectedDate = Carbon::parse($posisi);
+        $rkaMonthColumn = $this->resolveRkaMonthColumn($selectedDate);
+        $rkaMonthLabel = $this->resolveRkaMonthLabel($selectedDate);
+
+        $dateCurr = $selectedDate->copy()->toDateString();
+        $dateMtD  = $selectedDate->copy()->subMonthNoOverflow()->endOfMonth()->toDateString();
+        $dateYtD  = $selectedDate->copy()->subYearNoOverflow()->endOfYear()->toDateString();
+        $dateYoY  = $selectedDate->copy()->subYearNoOverflow()->endOfMonth()->toDateString();
         
-        $datePrevMoM = Carbon::parse($posisi)->subMonthNoOverflow()->endOfMonth()->toDateString();
+        $datePrevMoM = $selectedDate->copy()->subMonthNoOverflow()->endOfMonth()->toDateString();
 
         $labels = [
-            'curr' => Carbon::parse($dateCurr)->translatedFormat('d F Y'), 
+            'curr' => Carbon::parse($dateCurr)->translatedFormat('d F Y'),
             'mtd'  => Carbon::parse($dateMtD)->translatedFormat('M\'y'),
             'ytd'  => Carbon::parse($dateYtD)->translatedFormat('M\'y'),
             'yoy'  => Carbon::parse($dateYoY)->translatedFormat('M\'y'),
-            'prev_mom' => Carbon::parse($datePrevMoM)->translatedFormat('d M Y'), 
+            'prev_mom' => Carbon::parse($datePrevMoM)->translatedFormat('d M Y'),
+            'rka' => $rkaMonthLabel,
         ];
 
         // =================================================================================
         // LOGIKA TAB 1: PERFORMANCE EDC
         // =================================================================================
         if ($tab === 'edc') {
+            $edcRkaGroups = $this->rkaLookupService()->aggregateByGroup(
+                [
+                    'prod' => ['mata_anggaran' => ['Jumlah Merchant (EDC) yang Produktif']],
+                    'sv' => ['mata_anggaran' => ['Jumlah Merchant (EDC) yang Produktif']],
+                ],
+                $rkaMonthColumn,
+                $upperBranches,
+                $upperSelectedUkers,
+                $isBranchFiltered ? 'uker' : 'kanca'
+            );
             
             $q = DB::table('jumlah_merchant_detail')
                 ->select(DB::raw("UPPER($groupColumn) as branch"))
@@ -576,8 +619,15 @@ class DataReportController extends Controller
                 'prod_curr'=>0,'prod_mtd'=>0,'prod_ytd'=>0,'prod_yoy'=>0,
                 'sv_curr'=>0,'sv_mtd'=>0,'sv_yoy'=>0
             ];
+            $totalProdRka = 0.0;
+            $totalSvRka = 0.0;
 
             foreach ($rows as $r) {
+                $branchKey = strtoupper(trim((string) ($r->branch ?? '')));
+                $prodRka = round((float) ($edcRkaGroups['prod'][$branchKey] ?? 0), 2);
+                $svRka = round((float) ($edcRkaGroups['sv'][$branchKey] ?? 0), 2);
+                $prodPencPct = $prodRka > 0 ? (($r->prod_curr / $prodRka) * 100) : 0;
+
                 $data[] = [
                     'branch'=>$r->branch,
                     'mid'=>[
@@ -588,19 +638,23 @@ class DataReportController extends Controller
                     'prod'=>[
                         'curr'=>$r->prod_curr, 'pct_tid'=>$r->mid_curr>0?($r->prod_curr/$r->mid_curr)*100:0,
                         'mtd_val'=>$r->prod_curr-$r->prod_mtd, 'mtd_pct'=>$r->prod_mtd>0?(($r->prod_curr-$r->prod_mtd)/$r->prod_mtd)*100:0,
-                        'ytd_val'=>$r->prod_curr-$r->prod_ytd, 'yoy_val'=>$r->prod_curr-$r->prod_yoy, 'rka'=>0,'penc_pct'=>0
+                        'ytd_val'=>$r->prod_curr-$r->prod_ytd, 'yoy_val'=>$r->prod_curr-$r->prod_yoy, 'rka'=>$prodRka,'penc_pct'=>round($prodPencPct, 2)
                     ],
                     'sv'=>[
                         'curr'=>round($r->sv_curr/1000000000,2), 'mtd_val'=>round(($r->sv_curr-$r->sv_mtd)/1000000000,2),
                         'mtd_pct'=>$r->sv_mtd>0?(($r->sv_curr-$r->sv_mtd)/$r->sv_mtd)*100:0,
-                        'yoy_val'=>round(($r->sv_curr-$r->sv_yoy)/1000000000,2), 'rka'=>0,'penc_pct'=>0
+                        'yoy_val'=>round(($r->sv_curr-$r->sv_yoy)/1000000000,2), 'rka'=>$svRka,'penc_pct'=>0
                     ]
                 ];
 
                 $total['mid_curr'] += $r->mid_curr; $total['mid_mtd'] += $r->mid_mtd; $total['mid_ytd'] += $r->mid_ytd; $total['mid_yoy'] += $r->mid_yoy;
                 $total['prod_curr'] += $r->prod_curr; $total['prod_mtd'] += $r->prod_mtd; $total['prod_ytd'] += $r->prod_ytd; $total['prod_yoy'] += $r->prod_yoy;
                 $total['sv_curr'] += $r->sv_curr; $total['sv_mtd'] += $r->sv_mtd; $total['sv_yoy'] += $r->sv_yoy;
+                $totalProdRka += $prodRka;
+                $totalSvRka += $svRka;
             }
+
+            $totalProdPencPct = $totalProdRka > 0 ? (($total['prod_curr'] / $totalProdRka) * 100) : 0;
 
             return response()->json([
                 'status'=>'success', 'labels'=>$labels, 'group_label' => $groupLabel, 'data'=>$data,
@@ -614,12 +668,12 @@ class DataReportController extends Controller
                     'prod'=>[
                         'curr'=>$total['prod_curr'], 'pct_tid'=>$total['mid_curr']>0?($total['prod_curr']/$total['mid_curr'])*100:0,
                         'mtd_val'=>$total['prod_curr']-$total['prod_mtd'], 'mtd_pct'=>$total['prod_mtd']>0?(($total['prod_curr']-$total['prod_mtd'])/$total['prod_mtd'])*100:0,
-                        'ytd_val'=>$total['prod_curr']-$total['prod_ytd'], 'yoy_val'=>$total['prod_curr']-$total['prod_yoy'], 'rka'=>0,'penc_pct'=>0
+                        'ytd_val'=>$total['prod_curr']-$total['prod_ytd'], 'yoy_val'=>$total['prod_curr']-$total['prod_yoy'], 'rka'=>$totalProdRka,'penc_pct'=>round($totalProdPencPct, 2)
                     ],
                     'sv'=>[
                         'curr'=>round($total['sv_curr']/1000000000,2), 'mtd_val'=>round(($total['sv_curr']-$total['sv_mtd'])/1000000000,2),
                         'mtd_pct'=>$total['sv_mtd']>0?(($total['sv_curr']-$total['sv_mtd'])/$total['sv_mtd'])*100:0,
-                        'yoy_val'=>round(($total['sv_curr']-$total['sv_yoy'])/1000000000,2), 'rka'=>0,'penc_pct'=>0
+                        'yoy_val'=>round(($total['sv_curr']-$total['sv_yoy'])/1000000000,2), 'rka'=>round($totalSvRka, 2),'penc_pct'=>0
                     ]
                 ]
             ]);
@@ -702,6 +756,16 @@ class DataReportController extends Controller
         // LOGIKA TAB 3: PRODUKTIVITAS EDC MoM
         // =================================================================================
         elseif ($tab === 'prod_mom') {
+            $edcRkaGroups = $this->rkaLookupService()->aggregateByGroup(
+                [
+                    'prod' => ['mata_anggaran' => ['Jumlah Merchant (EDC) yang Produktif']],
+                ],
+                $rkaMonthColumn,
+                $upperBranches,
+                $upperSelectedUkers,
+                $isBranchFiltered ? 'uker' : 'kanca'
+            );
+
             $q = DB::table('jumlah_merchant_detail')
                 ->select(DB::raw("UPPER($groupColumn) as branch"))
                 ->selectRaw("COUNT(DISTINCT CASE WHEN DATE(POSISI) = ? AND TIERING_SALES_VOLUME = '0' THEN MID END) as sv0_curr", [$dateCurr])
@@ -732,7 +796,12 @@ class DataReportController extends Controller
                 'sv_vol_curr' => 0, 'sv_vol_mtd' => 0
             ];
 
+            $totalProdRka = 0.0;
             foreach ($rawData as $row) {
+                $branchKey = strtoupper(trim((string) ($row->branch ?? '')));
+                $prodRka = round((float) ($edcRkaGroups['prod'][$branchKey] ?? 0), 2);
+                $prodGap = round($row->prod_curr - $prodRka, 2);
+                $prodPenc = $prodRka > 0 ? (($row->prod_curr / $prodRka) * 100) : 0;
                 $sv0_mom = $row->sv0_curr - $row->sv0_mtd; $sv0_pct = $row->sv0_mtd > 0 ? ($sv0_mom / $row->sv0_mtd) * 100 : 0;
                 $sv1_15_mom = $row->sv1_15_curr - $row->sv1_15_mtd; $sv1_15_pct = $row->sv1_15_mtd > 0 ? ($sv1_15_mom / $row->sv1_15_mtd) * 100 : 0;
                 $prod_mom = $row->prod_curr - $row->prod_mtd; $prod_pct = $row->prod_mtd > 0 ? ($prod_mom / $row->prod_mtd) * 100 : 0;
@@ -744,7 +813,7 @@ class DataReportController extends Controller
                     'branch' => $row->branch,
                     'sv0' => ['mtd' => $row->sv0_mtd, 'curr' => $row->sv0_curr, 'mom' => $sv0_mom, 'pct' => round($sv0_pct, 1)],
                     'sv1_15' => ['mtd' => $row->sv1_15_mtd, 'curr' => $row->sv1_15_curr, 'mom' => $sv1_15_mom, 'pct' => round($sv1_15_pct, 1)],
-                    'prod' => ['mtd' => $row->prod_mtd, 'curr' => $row->prod_curr, 'mom' => $prod_mom, 'pct' => round($prod_pct, 1), 'rka' => 0, 'gap' => 0, 'penc' => 0],
+                    'prod' => ['mtd' => $row->prod_mtd, 'curr' => $row->prod_curr, 'mom' => $prod_mom, 'pct' => round($prod_pct, 1), 'rka' => $prodRka, 'gap' => $prodGap, 'penc' => round($prodPenc, 2)],
                     'tid' => ['mtd' => $row->tid_mtd, 'curr' => $row->tid_curr, 'mom' => $tid_mom, 'pct' => round($tid_pct, 1)],
                     'sv_vol' => ['mtd' => round($sv_vol_mtd, 2), 'curr' => round($sv_vol_curr, 2), 'mom' => round($sv_vol_mom, 2), 'pct' => round($sv_vol_pct, 1)]
                 ];
@@ -754,6 +823,7 @@ class DataReportController extends Controller
                 $totals['prod_curr'] += $row->prod_curr; $totals['prod_mtd'] += $row->prod_mtd;
                 $totals['tid_curr'] += $row->tid_curr; $totals['tid_mtd'] += $row->tid_mtd;
                 $totals['sv_vol_curr'] += $sv_vol_curr; $totals['sv_vol_mtd'] += $sv_vol_mtd;
+                $totalProdRka += $prodRka;
             }
 
             $t_sv0_mom = $totals['sv0_curr'] - $totals['sv0_mtd']; $t_sv0_pct = $totals['sv0_mtd'] > 0 ? ($t_sv0_mom / $totals['sv0_mtd']) * 100 : 0;
@@ -761,12 +831,14 @@ class DataReportController extends Controller
             $t_prod_mom = $totals['prod_curr'] - $totals['prod_mtd']; $t_prod_pct = $totals['prod_mtd'] > 0 ? ($t_prod_mom / $totals['prod_mtd']) * 100 : 0;
             $t_tid_mom = $totals['tid_curr'] - $totals['tid_mtd']; $t_tid_pct = $totals['tid_mtd'] > 0 ? ($t_tid_mom / $totals['tid_mtd']) * 100 : 0;
             $t_vol_mom = $totals['sv_vol_curr'] - $totals['sv_vol_mtd']; $t_vol_pct = $totals['sv_vol_mtd'] > 0 ? ($t_vol_mom / $totals['sv_vol_mtd']) * 100 : 0;
+            $totalProdGap = round($totals['prod_curr'] - $totalProdRka, 2);
+            $totalProdPenc = $totalProdRka > 0 ? (($totals['prod_curr'] / $totalProdRka) * 100) : 0;
 
             $grandTotal = [
                 'branch' => $totalBranchLabel,
                 'sv0' => ['mtd' => $totals['sv0_mtd'], 'curr' => $totals['sv0_curr'], 'mom' => $t_sv0_mom, 'pct' => round($t_sv0_pct, 1)],
                 'sv1_15' => ['mtd' => $totals['sv1_15_mtd'], 'curr' => $totals['sv1_15_curr'], 'mom' => $t_sv1_mom, 'pct' => round($t_sv1_pct, 1)],
-                'prod' => ['mtd' => $totals['prod_mtd'], 'curr' => $totals['prod_curr'], 'mom' => $t_prod_mom, 'pct' => round($t_prod_pct, 1), 'rka' => 0, 'gap' => 0, 'penc' => 0],
+                'prod' => ['mtd' => $totals['prod_mtd'], 'curr' => $totals['prod_curr'], 'mom' => $t_prod_mom, 'pct' => round($t_prod_pct, 1), 'rka' => $totalProdRka, 'gap' => $totalProdGap, 'penc' => round($totalProdPenc, 2)],
                 'tid' => ['mtd' => $totals['tid_mtd'], 'curr' => $totals['tid_curr'], 'mom' => $t_tid_mom, 'pct' => round($t_tid_pct, 1)],
                 'sv_vol' => ['mtd' => round($totals['sv_vol_mtd'],2), 'curr' => round($totals['sv_vol_curr'],2), 'mom' => round($t_vol_mom,2), 'pct' => round($t_vol_pct, 1)]
             ];
@@ -784,6 +856,17 @@ class DataReportController extends Controller
             $qrisTotalLabel = !empty($selectedBranches)
                 ? 'TOTAL ' . strtoupper(implode(', ', $selectedBranches))
                 : 'TOTAL AREA 6';
+            $qrisRkaGroups = $this->rkaLookupService()->aggregateByGroup(
+                [
+                    'jml' => ['mata_anggaran' => ['User QRIS']],
+                    'prod' => ['mata_anggaran' => ['Jumlah QRIS yang Produktif']],
+                    'vol' => ['mata_anggaran' => ['Sales Volume QRIS']],
+                ],
+                $rkaMonthColumn,
+                $upperBranches,
+                $upperSelectedUkers,
+                $isQrisBranchFiltered ? 'uker' : 'kanca'
+            );
             
             $q1 = DB::table('merchant_qris')
                 ->select(DB::raw("UPPER($qrisGroupColumn) as branch"))
@@ -828,6 +911,9 @@ class DataReportController extends Controller
                 'prod_curr' => 0, 'prod_mtd' => 0, 'prod_ytd' => 0, 'prod_yoy' => 0,
                 'vol_curr' => 0, 'vol_mtd' => 0, 'vol_ytd' => 0, 'vol_yoy' => 0
             ];
+            $totalJmlRka = 0.0;
+            $totalProdRka = 0.0;
+            $totalVolRka = 0.0;
 
             $groupKeys = $isQrisBranchFiltered
                 ? $dataQris->keys()->merge($dataVol->keys())->unique()->values()->all()
@@ -845,6 +931,9 @@ class DataReportController extends Controller
                 $vol_mtd = ($rowV->vol_mtd ?? 0) / 1000000; 
                 $vol_ytd = ($rowV->vol_ytd ?? 0) / 1000000; 
                 $vol_yoy = ($rowV->vol_yoy ?? 0) / 1000000;
+                $jmlRka = round((float) ($qrisRkaGroups['jml'][$b] ?? 0), 2);
+                $prodRka = round((float) ($qrisRkaGroups['prod'][$b] ?? 0), 2);
+                $volRka = round(((float) ($qrisRkaGroups['vol'][$b] ?? 0)) / 1000000, 2);
 
                 $jml_mtd_val = $jml_curr - $jml_mtd; $jml_mtd_pct = $jml_mtd > 0 ? ($jml_mtd_val / $jml_mtd) * 100 : 0;
                 $prod_pct_jml = $jml_curr > 0 ? ($prod_curr / $jml_curr) * 100 : 0;
@@ -855,23 +944,28 @@ class DataReportController extends Controller
                     'branch' => $b,
                     'jml' => [
                         'curr' => $jml_curr, 'mtd_val' => $jml_mtd_val, 'mtd_pct' => round($jml_mtd_pct, 1),
-                        'ytd_val' => $jml_curr - $jml_ytd, 'yoy_val' => $jml_curr - $jml_yoy
+                        'ytd_val' => $jml_curr - $jml_ytd, 'yoy_val' => $jml_curr - $jml_yoy,
+                        'rka' => $jmlRka, 'penc_pct' => $jmlRka > 0 ? round(($jml_curr / $jmlRka) * 100, 2) : 0
                     ],
                     'prod' => [
                         'curr' => $prod_curr, 'pct_jml' => round($prod_pct_jml, 1),
                         'mtd_val' => $prod_mtd_val, 'mtd_pct' => round($prod_mtd_pct, 1),
                         'ytd_val' => $prod_curr - $prod_ytd, 'yoy_val' => $prod_curr - $prod_yoy,
-                        'rka' => 0, 'penc_pct' => 0
+                        'rka' => $prodRka, 'penc_pct' => $prodRka > 0 ? round(($prod_curr / $prodRka) * 100, 2) : 0
                     ],
                     'vol' => [
                         'curr' => round($vol_curr, 2), 'mtd_val' => round($vol_mtd_val, 2), 'mtd_pct' => round($vol_mtd_pct, 1),
-                        'ytd_val' => round($vol_curr - $vol_ytd, 2), 'yoy_val' => round($vol_curr - $vol_yoy, 2)
+                        'ytd_val' => round($vol_curr - $vol_ytd, 2), 'yoy_val' => round($vol_curr - $vol_yoy, 2),
+                        'rka' => $volRka, 'penc_pct' => $volRka > 0 ? round(($vol_curr / $volRka) * 100, 2) : 0
                     ]
                 ];
 
                 $totals['jml_curr'] += $jml_curr; $totals['jml_mtd'] += $jml_mtd; $totals['jml_ytd'] += $jml_ytd; $totals['jml_yoy'] += $jml_yoy;
                 $totals['prod_curr'] += $prod_curr; $totals['prod_mtd'] += $prod_mtd; $totals['prod_ytd'] += $prod_ytd; $totals['prod_yoy'] += $prod_yoy;
                 $totals['vol_curr'] += $vol_curr; $totals['vol_mtd'] += $vol_mtd; $totals['vol_ytd'] += $vol_ytd; $totals['vol_yoy'] += $vol_yoy;
+                $totalJmlRka += $jmlRka;
+                $totalProdRka += $prodRka;
+                $totalVolRka += $volRka;
             }
 
             $t_jml_mtd_val = $totals['jml_curr'] - $totals['jml_mtd']; $t_jml_mtd_pct = $totals['jml_mtd'] > 0 ? ($t_jml_mtd_val / $totals['jml_mtd']) * 100 : 0;
@@ -883,17 +977,19 @@ class DataReportController extends Controller
                 'branch' => $qrisTotalLabel,
                 'jml' => [
                     'curr' => $totals['jml_curr'], 'mtd_val' => $t_jml_mtd_val, 'mtd_pct' => round($t_jml_mtd_pct, 1),
-                    'ytd_val' => $totals['jml_curr'] - $totals['jml_ytd'], 'yoy_val' => $totals['jml_curr'] - $totals['jml_yoy']
+                    'ytd_val' => $totals['jml_curr'] - $totals['jml_ytd'], 'yoy_val' => $totals['jml_curr'] - $totals['jml_yoy'],
+                    'rka' => round($totalJmlRka, 2), 'penc_pct' => $totalJmlRka > 0 ? round(($totals['jml_curr'] / $totalJmlRka) * 100, 2) : 0
                 ],
                 'prod' => [
                     'curr' => $totals['prod_curr'], 'pct_jml' => round($t_prod_pct_jml, 1),
                     'mtd_val' => $t_prod_mtd_val, 'mtd_pct' => round($t_prod_mtd_pct, 1),
                     'ytd_val' => $totals['prod_curr'] - $totals['prod_ytd'], 'yoy_val' => $totals['prod_curr'] - $totals['prod_yoy'],
-                    'rka' => 0, 'penc_pct' => 0
+                    'rka' => round($totalProdRka, 2), 'penc_pct' => $totalProdRka > 0 ? round(($totals['prod_curr'] / $totalProdRka) * 100, 2) : 0
                 ],
                 'vol' => [
                     'curr' => round($totals['vol_curr'], 2), 'mtd_val' => round($t_vol_mtd_val, 2), 'mtd_pct' => round($t_vol_mtd_pct, 1),
-                    'ytd_val' => round($totals['vol_curr'] - $totals['vol_ytd'], 2), 'yoy_val' => round($totals['vol_curr'] - $totals['vol_yoy'], 2)
+                    'ytd_val' => round($totals['vol_curr'] - $totals['vol_ytd'], 2), 'yoy_val' => round($totals['vol_curr'] - $totals['vol_yoy'], 2),
+                    'rka' => round($totalVolRka, 2), 'penc_pct' => $totalVolRka > 0 ? round(($totals['vol_curr'] / $totalVolRka) * 100, 2) : 0
                 ]
             ];
 
@@ -910,6 +1006,15 @@ class DataReportController extends Controller
             $qrisTotalLabel = !empty($selectedBranches)
                 ? 'TOTAL ' . strtoupper(implode(', ', $selectedBranches))
                 : 'TOTAL AREA 6';
+            $qrisRkaGroups = $this->rkaLookupService()->aggregateByGroup(
+                [
+                    'prod' => ['mata_anggaran' => ['Jumlah QRIS yang Produktif']],
+                ],
+                $rkaMonthColumn,
+                $upperBranches,
+                $upperSelectedUkers,
+                $isQrisBranchFiltered ? 'uker' : 'kanca'
+            );
 
             $q1 = DB::table('merchant_qris')
                 ->select(DB::raw("UPPER($qrisGroupColumn) as branch"))
@@ -957,6 +1062,7 @@ class DataReportController extends Controller
                 'prod_curr' => 0, 'prod_prev' => 0,
                 'vol_curr' => 0, 'vol_prev' => 0
             ];
+            $totalProdRka = 0.0;
 
             $groupKeys = $isQrisBranchFiltered
                 ? $q1->keys()->merge($q2->keys())->unique()->values()->all()
@@ -979,6 +1085,7 @@ class DataReportController extends Controller
 
                 $vol_curr = ($rowV->vol_curr ?? 0) / 1000000; 
                 $vol_prev = ($rowV->vol_prev ?? 0) / 1000000;
+                $prodRka = round((float) ($qrisRkaGroups['prod'][$b] ?? 0), 2);
 
                 $data[] = [
                     'branch' => $b,
@@ -993,7 +1100,7 @@ class DataReportController extends Controller
                         'curr' => $prod_curr,
                         'mom' => $prod_curr - $prod_prev,
                         'pct' => $prod_prev > 0 ? round((($prod_curr - $prod_prev)/$prod_prev)*100, 1) : 0,
-                        'rka' => '-', 'gap' => '-', 'penc' => '-'
+                        'rka' => $prodRka, 'gap' => round($prod_curr - $prodRka, 2), 'penc' => $prodRka > 0 ? round(($prod_curr / $prodRka) * 100, 2) : 0
                     ],
                     'store' => [
                         'prev' => $store_prev,
@@ -1013,6 +1120,7 @@ class DataReportController extends Controller
                 $totals['sv0_curr'] += $sv0_curr;     $totals['sv0_prev'] += $sv0_prev;
                 $totals['prod_curr'] += $prod_curr;   $totals['prod_prev'] += $prod_prev;
                 $totals['vol_curr'] += $vol_curr;     $totals['vol_prev'] += $vol_prev;
+                $totalProdRka += $prodRka;
             }
 
             $t_sv0_mom = $totals['sv0_curr'] - $totals['sv0_prev']; 
@@ -1034,7 +1142,7 @@ class DataReportController extends Controller
                 ],
                 'prod' => [
                     'prev' => $totals['prod_prev'], 'curr' => $totals['prod_curr'], 'mom' => $t_prod_mom, 'pct' => round($t_prod_pct, 1),
-                    'rka' => '-', 'gap' => '-', 'penc' => '-'
+                    'rka' => round($totalProdRka, 2), 'gap' => round($totals['prod_curr'] - $totalProdRka, 2), 'penc' => $totalProdRka > 0 ? round(($totals['prod_curr'] / $totalProdRka) * 100, 2) : 0
                 ],
                 'store' => [
                     'prev' => $totals['store_prev'], 'curr' => $totals['store_curr'], 'mom' => $t_store_mom, 'pct' => round($t_store_pct, 1)
@@ -1101,6 +1209,19 @@ class DataReportController extends Controller
                 : ($isBranchFiltered ? $this->getBrilinkUkersForBranches($branches, $brilinkBranchUkerMap) : $branches);
             $displayColumn = $isBranchFiltered ? 'uker' : 'cabang';
             $casaDisplayColumn = $isBranchFiltered ? 'brdesc' : 'mbdesc';
+            $brilinkRkaMonthColumn = $this->rkaLookupService()->resolveMonthColumn($current);
+            $brilinkRkaMonthLabel = $this->rkaLookupService()->resolveMonthLabel($current);
+            $brilinkRkaGroups = $this->rkaLookupService()->aggregateByGroup(
+                [
+                    'agen' => ['mata_anggaran' => ['Jumlah Agen Brilink']],
+                    'juragan' => ['mata_anggaran' => ['Jumlah Agen Brilink Jawara', 'Jumlah Agen Brilink Juragan']],
+                    'bep' => ['mata_anggaran' => ['Jumlah Agen Brilink yang BEP']],
+                ],
+                $brilinkRkaMonthColumn,
+                $branches,
+                $selectedUkers,
+                $isBranchFiltered ? 'uker' : 'kanca'
+            );
 
             $selectedCasaDate = $current->copy()->endOfMonth();
             $latestCasaWeb = DB::table('casa_brilink_web')
@@ -1262,17 +1383,23 @@ class DataReportController extends Controller
                 $casa_mtd = $casa_has_curr ? ($casa_curr - $casa_prev) : 0;
                 $casa_ytd_val = $casa_has_curr ? ($casa_curr - $casa_ytd) : 0;
                 $casa_yoy_val = $casa_has_curr ? ($casa_curr - $casa_yoy) : 0;
+                $agenRka = round((float) ($brilinkRkaGroups['agen'][$branchKey] ?? 0), 2);
+                $juraganRka = round((float) ($brilinkRkaGroups['juragan'][$branchKey] ?? 0), 2);
+                $bepRka = round((float) ($brilinkRkaGroups['bep'][$branchKey] ?? 0), 2);
 
                 $data[] = [
                     'branch' => $branch,
                     'agen' => [
                         'curr' => $agen_curr, 'mtd' => $agen_mtd, 'ytd' => $agen_ytd_val, 'yoy' => $agen_yoy_val,
+                        'rka' => $agenRka, 'penc_pct' => $agenRka > 0 ? round(($agen_curr / $agenRka) * 100, 2) : 0,
                     ],
                     'juragan' => [
                         'curr' => $juragan_curr, 'mtd' => $juragan_mtd, 'ytd' => $juragan_ytd_val, 'yoy' => $juragan_yoy_val,
+                        'rka' => $juraganRka, 'penc_pct' => $juraganRka > 0 ? round(($juragan_curr / $juraganRka) * 100, 2) : 0,
                     ],
                     'bep' => [
                         'curr' => $bep_curr, 'mtd' => $bep_mtd, 'ytd' => $bep_ytd_val, 'yoy' => $bep_yoy_val,
+                        'rka' => $bepRka, 'penc_pct' => $bepRka > 0 ? round(($bep_curr / $bepRka) * 100, 2) : 0,
                     ],
                     'trx' => [
                         'curr' => $trx_curr, 'mtd' => $trx_mtd, 'ytd' => $trx_ytd_val, 'yoy' => $trx_yoy_val,
@@ -1292,7 +1419,14 @@ class DataReportController extends Controller
                 $totals['trx']['curr'] += $trx_curr; $totals['trx']['mtd'] += $trx_mtd; $totals['trx']['ytd'] += $trx_ytd_val; $totals['trx']['yoy'] += $trx_yoy_val;
                 $totals['volume']['curr'] += $vol_curr; $totals['volume']['mtd'] += $vol_mtd; $totals['volume']['yoy'] += $vol_yoy_val;
                 $totals['casa']['curr'] += $casa_curr; $totals['casa']['mtd'] += $casa_mtd; $totals['casa']['ytd'] += $casa_ytd_val; $totals['casa']['yoy'] += $casa_yoy_val;
+                $totals['agen']['rka'] = round((float) ($totals['agen']['rka'] ?? 0) + $agenRka, 2);
+                $totals['juragan']['rka'] = round((float) ($totals['juragan']['rka'] ?? 0) + $juraganRka, 2);
+                $totals['bep']['rka'] = round((float) ($totals['bep']['rka'] ?? 0) + $bepRka, 2);
             }
+
+            $totals['agen']['penc_pct'] = ($totals['agen']['rka'] ?? 0) > 0 ? round(($totals['agen']['curr'] / $totals['agen']['rka']) * 100, 2) : 0;
+            $totals['juragan']['penc_pct'] = ($totals['juragan']['rka'] ?? 0) > 0 ? round(($totals['juragan']['curr'] / $totals['juragan']['rka']) * 100, 2) : 0;
+            $totals['bep']['penc_pct'] = ($totals['bep']['rka'] ?? 0) > 0 ? round(($totals['bep']['curr'] / $totals['bep']['rka']) * 100, 2) : 0;
 
             return response()->json([
                 'status' => 'success',
@@ -1300,6 +1434,7 @@ class DataReportController extends Controller
                 'group_label' => $groupLabel,
                 'labels' => [
                     'curr' => $periodeCurr,
+                    'rka' => $brilinkRkaMonthLabel,
                     'casa_curr' => $effectiveCasaDate->translatedFormat("M'y"),
                     'casa_dec' => $casaYtdDate->translatedFormat("M'y"),
                     'casa_prev' => $casaPrevDate->translatedFormat('d-M'),
@@ -1623,6 +1758,21 @@ class DataReportController extends Controller
         }
 
         return $candidate;
+    }
+
+    private function rkaLookupService(): RkaLookupService
+    {
+        return app(RkaLookupService::class);
+    }
+
+    private function resolveRkaMonthColumn(Carbon $selectedDate): string
+    {
+        return $this->rkaLookupService()->resolveMonthColumn($selectedDate);
+    }
+
+    private function resolveRkaMonthLabel(Carbon $selectedDate): string
+    {
+        return $this->rkaLookupService()->resolveMonthLabel($selectedDate);
     }
 
     private function calculateNewPayrollMetrics($curr, $prev, $yoyPrev): array

@@ -231,9 +231,8 @@ def is_valid_ssa_row_values(values_by_header: dict[str, object]) -> bool:
     nama_cabang = normalize_cell(values_by_header.get("nama_cabang"))
     nama_uker = normalize_cell(values_by_header.get("nama_uker"))
     produk = normalize_cell(values_by_header.get("produk"))
-    saldo = normalize_decimal_value(values_by_header.get("saldo"))
 
-    if posisi == "" or nama_cabang == "" or nama_uker == "" or produk == "" or saldo is None:
+    if posisi == "" or nama_cabang == "" or nama_uker == "" or produk == "":
         return False
 
     return True

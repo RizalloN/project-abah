@@ -347,6 +347,32 @@
             return Swal.fire(Object.assign({}, swalTheme, options));
         }
 
+        function isDuplicateImportMessage(message) {
+            const text = String(message || '')
+                .replace(/<[^>]*>/g, ' ')
+                .replace(/&nbsp;/gi, ' ')
+                .replace(/\s+/g, ' ')
+                .toLowerCase();
+            return text.includes('duplikat')
+                || text.includes('sudah ada di database')
+                || text.includes('data ditolak (duplikat)')
+                || text.includes('duplicate entry');
+        }
+
+        function redirectToImportIndex() {
+            window.location.href = "{{ route('import.index') }}";
+        }
+
+        async function showDuplicateImportPopup(message, title = 'Data Duplikat') {
+            await themedSwal({
+                icon: 'warning',
+                title: title,
+                html: message || 'Data duplikat terdeteksi.',
+                confirmButtonText: 'Kembali ke Import',
+            });
+            redirectToImportIndex();
+        }
+
         function showDownloadToast(icon, title, text) {
             const stack = document.getElementById('download-toast-stack');
             if (!stack) {
@@ -594,6 +620,10 @@
 
             const initPayload = await initResponse.json().catch(() => ({}));
             if (!initResponse.ok || initPayload.status !== 'success' || !initPayload.upload_id) {
+                if (isDuplicateImportMessage(initPayload.message || initPayload.text || initPayload.title)) {
+                    await showDuplicateImportPopup(initPayload.text || initPayload.message || initPayload.title || 'Data duplikat terdeteksi.');
+                    return;
+                }
                 throw new Error(initPayload.message || 'Gagal memulai upload bertahap.');
             }
 
@@ -619,6 +649,10 @@
 
                 const chunkPayload = await chunkResponse.json().catch(() => ({}));
                 if (!chunkResponse.ok || chunkPayload.status !== 'success') {
+                    if (isDuplicateImportMessage(chunkPayload.message || chunkPayload.text || chunkPayload.title)) {
+                        await showDuplicateImportPopup(chunkPayload.text || chunkPayload.message || chunkPayload.title || 'Data duplikat terdeteksi.', chunkPayload.title || 'Data Duplikat');
+                        return;
+                    }
                     throw new Error(chunkPayload.message || ('Gagal upload potongan file ke-' + (index + 1) + '.'));
                 }
 
@@ -666,6 +700,10 @@
 
             const finalizePayload = await finalizeResponse.json().catch(() => ({}));
             if (!finalizeResponse.ok || finalizePayload.status !== 'success') {
+                if (isDuplicateImportMessage(finalizePayload.message || finalizePayload.text || finalizePayload.title)) {
+                    await showDuplicateImportPopup(finalizePayload.text || finalizePayload.message || finalizePayload.title || 'Data duplikat terdeteksi.');
+                    return;
+                }
                 throw new Error(finalizePayload.message || 'Gagal menyusun file final di server.');
             }
 
@@ -780,6 +818,34 @@
             renderManagementRows(payload.rows || []);
         }
 
+        function isSuccessLikeDeleteMessage(message) {
+            const normalized = String(message || '').trim().toLowerCase();
+            if (!normalized) return false;
+            return normalized.startsWith('delete selesai.')
+                || normalized.startsWith('delete sumber selesai')
+                || normalized.includes('statistik dan cache sudah disegarkan')
+                || normalized.includes('report ini tidak menggunakan snapshot/index');
+        }
+
+        function normalizeDeleteResponse(payload) {
+            if (!payload || typeof payload !== 'object') {
+                return payload;
+            }
+
+            const normalized = Object.assign({}, payload);
+            const deletedRows = Number(normalized.deleted_rows || 0);
+
+            if (normalized.status === 'failed' && isSuccessLikeDeleteMessage(normalized.message)) {
+                normalized.status = deletedRows > 0 ? 'warning' : 'completed';
+                if (!normalized.stage || normalized.stage === 'failed') {
+                    normalized.stage = 'completed';
+                }
+                normalized.progress_percent = 100;
+            }
+
+            return normalized;
+        }
+
         async function deleteManagedRow(button) {
             if (!reportManagementCard || !managementReportSelect || !managementReportSelect.value) {
                 return;
@@ -821,11 +887,12 @@
                 })
             });
 
-            const payload = await response.json();
+            const payload = normalizeDeleteResponse(await response.json());
             const deletedRows = Number(payload.deleted_rows || 0);
             const recoveredWarning = payload.status === 'failed' && deletedRows > 0;
             const outcomeStatus = recoveredWarning ? 'warning' : payload.status;
-            if ((!response.ok && !recoveredWarning) || !['success', 'warning', 'completed'].includes(outcomeStatus)) {
+            const successLikeDelete = isSuccessLikeDeleteMessage(payload.message) || ['completed', 'warning'].includes(outcomeStatus);
+            if ((!response.ok && !recoveredWarning && !successLikeDelete) || !['success', 'warning', 'completed'].includes(outcomeStatus)) {
                 throw new Error(payload.message || 'Gagal menghapus data report.');
             }
 
@@ -1880,9 +1947,11 @@
                     uploadRequest.addEventListener('load', function() {
                         if (uploadRequest.status < 200 || uploadRequest.status >= 300) {
                             let serverMessage = '';
+                            let serverTitle = 'Upload Error';
                             try {
                                 const errorPayload = JSON.parse(uploadRequest.responseText || '{}');
                                 serverMessage = errorPayload.message || '';
+                                serverTitle = errorPayload.title || serverTitle;
                             } catch (_) {
                             }
 
@@ -1890,9 +1959,15 @@
                                 serverMessage = 'Ukuran upload melebihi batas server. Silakan kecilkan file atau naikkan limit upload.';
                             }
 
+                            if (isDuplicateImportMessage(serverMessage) || isDuplicateImportMessage(serverTitle)) {
+                                showDuplicateImportPopup(serverMessage || serverTitle || 'Data duplikat terdeteksi.', serverTitle || 'Data Duplikat');
+                                resetSubmitButton();
+                                return;
+                            }
+
                             themedSwal({
                                 icon: 'error',
-                                title: 'Upload Error',
+                                title: serverTitle,
                                 text: serverMessage || ('Upload gagal: ' + (uploadRequest.statusText || 'Unknown error'))
                             });
                             resetSubmitButton();
@@ -1913,6 +1988,13 @@
                         }
 
                         if (data.status !== 'success') {
+                            const duplicateText = data.text || data.message || data.title || '';
+                            if (isDuplicateImportMessage(duplicateText)) {
+                                showDuplicateImportPopup(duplicateText || 'Data duplikat terdeteksi.', data.title || 'Data Duplikat');
+                                resetSubmitButton();
+                                return;
+                            }
+
                             themedSwal({
                                 icon: 'error',
                                 title: 'Upload Error',
@@ -2139,12 +2221,20 @@
         @endif
 
         @if(session('sweet_warning'))
-            themedSwal({
-                icon: 'warning',
-                title: '{!! session('sweet_warning')['title'] !!}',
-                html: '{!! session('sweet_warning')['text'] !!}',
-                confirmButtonText: 'Mengerti'
-            });
+            (async function () {
+                const warningTitle = {!! json_encode(session('sweet_warning')['title']) !!};
+                const warningText = {!! json_encode(session('sweet_warning')['text']) !!};
+                const isDuplicateWarning = isDuplicateImportMessage(warningTitle) || isDuplicateImportMessage(warningText);
+                await themedSwal({
+                    icon: 'warning',
+                    title: warningTitle,
+                    html: warningText,
+                    confirmButtonText: isDuplicateWarning ? 'Kembali ke Import' : 'Mengerti'
+                });
+                if (isDuplicateWarning) {
+                    redirectToImportIndex();
+                }
+            })();
         @endif
 
         @if(session('error'))

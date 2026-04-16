@@ -227,7 +227,7 @@
             <div class="col-md-2">
                 <div class="form-group mb-0">
                     <label class="text-muted text-sm mb-1">Posisi RKA</label>
-                    <input type="text" class="form-control" disabled value="--------">
+                    <input type="text" id="filter_posisi_rka" class="form-control" disabled value="--------">
                 </div>
             </div>
         </div>
@@ -347,6 +347,7 @@ document.addEventListener('DOMContentLoaded', function () {
     
     let activeTab = 'edc';
     const branchUkerMap = @json($branchUkerMap ?? []);
+    const filterPosisiRka = document.getElementById('filter_posisi_rka');
 
     function getSelectedBranches() {
         return $('.filter-branch-checkbox:checked').map(function () {
@@ -484,6 +485,9 @@ document.addEventListener('DOMContentLoaded', function () {
                     $('.lbl-ytd').text(res.labels.ytd);
                     $('.lbl-mtd').text(res.labels.mtd);
                     $('.lbl-curr').text(res.labels.curr);
+                    if (filterPosisiRka) {
+                        filterPosisiRka.value = res.labels.rka || '--------';
+                    }
 
                     let html = '';
 
