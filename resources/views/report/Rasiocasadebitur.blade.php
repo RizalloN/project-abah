@@ -4,16 +4,32 @@
 
 @section('content')
 <style>
+    :root {
+        --primary-blue: #1e40af; /* blue-800 */
+        --primary-blue-light: #3b82f6; /* blue-500 */
+        --primary-blue-dark: #1e3a8a; /* blue-900 */
+        --surface-color: #ffffff;
+        --bg-color: #f8fafc; /* slate-50 */
+        --border-color: #e2e8f0; /* slate-200 */
+        --text-main: #0f172a; /* slate-900 */
+        --text-muted: #64748b; /* slate-500 */
+        --table-header-bg: var(--primary-blue-dark);
+        --table-header-text: #ffffff;
+    }
+
     .casa-dashboard {
         padding-bottom: 1.5rem;
+        font-family: 'Inter', system-ui, -apple-system, sans-serif;
+        color: var(--text-main);
     }
 
     .casa-shell,
     .casa-table-shell {
-        border: 1px solid #dbe5ef;
-        border-radius: 18px;
-        background: #ffffff;
-        box-shadow: 0 14px 30px -24px rgba(15, 23, 42, 0.22);
+        border: 1px solid var(--border-color);
+        border-radius: 16px;
+        background: var(--surface-color);
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.01);
+        transition: box-shadow 0.3s ease;
     }
 
     .casa-shell {
@@ -23,43 +39,55 @@
     .casa-shell .card-body,
     .casa-table-shell .card-header,
     .casa-table-shell .card-body {
-        background: #ffffff;
+        background: var(--surface-color);
+        border-radius: 16px;
     }
 
     .casa-page-title {
-        font-size: clamp(1.7rem, 2.7vw, 2.4rem);
+        font-size: 1.5rem;
         font-weight: 800;
-        color: #0f172a;
+        color: var(--primary-blue-dark);
         margin-bottom: 0.35rem;
     }
 
     .casa-page-copy {
-        color: #64748b;
-        font-size: 0.92rem;
+        color: var(--text-muted);
+        font-size: 0.95rem;
         margin-bottom: 0;
     }
 
     .casa-filter-label {
-        font-size: 0.86rem;
-        font-weight: 700;
-        color: #0f172a;
-        margin-bottom: 0.45rem;
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-bottom: 0.5rem;
+        display: block;
     }
 
     .casa-filter-control {
-        border-radius: 14px !important;
-        min-height: 44px !important;
-        height: 44px !important;
-        border-color: #cfdae6 !important;
-        background: #ffffff !important;
+        border-radius: 8px !important;
+        min-height: 42px !important;
+        height: 42px !important;
+        border: 1px solid var(--border-color) !important;
+        background: var(--surface-color) !important;
         font-size: 0.94rem;
         display: flex;
         align-items: center;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .casa-filter-control:focus {
+        border-color: var(--primary-blue-light) !important;
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2) !important;
+        outline: none;
     }
 
     .casa-filter-control:disabled {
-        background: #edf2f7 !important;
-        color: #64748b !important;
+        background: #f1f5f9 !important; /* slate-100 */
+        color: var(--text-muted) !important;
+        cursor: not-allowed;
     }
 
     .branch-filter-dropdown,
@@ -72,13 +100,8 @@
         align-items: center;
         justify-content: space-between;
         text-align: left;
-        background: #fff;
-    }
-
-    .casa-dropdown-toggle:disabled {
-        background: #edf2f7;
-        cursor: not-allowed;
-        opacity: 1;
+        background: var(--surface-color);
+        font-weight: 500;
     }
 
     .casa-dropdown-label {
@@ -97,10 +120,10 @@
         width: 100%;
         max-height: 260px;
         overflow-y: auto;
-        background: #fff;
-        border: 1px solid #dee2e6;
-        border-radius: 12px;
-        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.12);
+        background: var(--surface-color);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
         padding: 8px 0;
     }
 
@@ -109,9 +132,14 @@
     }
 
     .casa-dropdown-menu .dropdown-item {
-        padding: 0.45rem 1rem;
+        padding: 0.5rem 1rem;
         cursor: pointer;
         margin-bottom: 0;
+        transition: background-color 0.2s ease;
+    }
+    
+    .casa-dropdown-menu .dropdown-item:hover {
+        background-color: #f1f5f9;
     }
 
     .casa-dropdown-menu .form-check {
@@ -123,6 +151,7 @@
     .casa-dropdown-menu .form-check-input {
         position: static;
         margin: 0;
+        cursor: pointer;
     }
 
     .casa-dropdown-menu .form-check-label {
@@ -135,17 +164,28 @@
         display: flex;
         flex-wrap: wrap;
         gap: 1rem;
-        color: #64748b;
-        font-size: 0.84rem;
-        margin-top: 0.85rem;
+        color: var(--text-muted);
+        font-size: 0.85rem;
+        margin-top: 1rem;
+        padding-top: 1rem;
+        border-top: 1px solid var(--border-color);
     }
 
     .casa-action {
         min-width: 150px;
-        min-height: 44px;
-        border-radius: 14px;
-        font-weight: 700;
-        box-shadow: 0 12px 24px -18px rgba(37, 99, 235, 0.75);
+        min-height: 42px;
+        border-radius: 8px;
+        font-weight: 600;
+        background-color: var(--primary-blue);
+        border-color: var(--primary-blue);
+        transition: all 0.2s ease;
+    }
+    
+    .casa-action:hover {
+        background-color: var(--primary-blue-dark);
+        border-color: var(--primary-blue-dark);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.4);
     }
 
     .casa-loading-chip {
@@ -153,26 +193,26 @@
         align-items: center;
         gap: 0.55rem;
         border-radius: 999px;
-        padding: 0.55rem 0.9rem;
-        background: linear-gradient(135deg, #eff6ff, #ecfeff);
-        color: #0f766e;
+        padding: 0.4rem 0.85rem;
+        background: #eff6ff; /* blue-50 */
+        color: var(--primary-blue);
         font-size: 0.8rem;
-        font-weight: 800;
+        font-weight: 700;
+        border: 1px solid #bfdbfe; /* blue-200 */
     }
 
     .casa-loading-dot {
-        width: 10px;
-        height: 10px;
+        width: 8px;
+        height: 8px;
         border-radius: 999px;
-        background: #14b8a6;
-        box-shadow: 0 0 0 rgba(20, 184, 166, 0.45);
+        background: var(--primary-blue-light);
         animation: casaPulse 1.6s infinite;
     }
 
     @keyframes casaPulse {
-        0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(20, 184, 166, 0.45); }
-        70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(20, 184, 166, 0); }
-        100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(20, 184, 166, 0); }
+        0% { transform: scale(0.95); opacity: 0.5; }
+        50% { transform: scale(1.1); opacity: 1; }
+        100% { transform: scale(0.95); opacity: 0.5; }
     }
 
     .casa-table-heading {
@@ -186,28 +226,28 @@
 
     .casa-table-heading h5 {
         margin: 0;
-        font-size: 1.05rem;
-        font-weight: 800;
-        color: #0f172a;
+        font-size: 1.15rem;
+        font-weight: 700;
+        color: var(--primary-blue-dark);
     }
 
     .casa-table-heading p {
         margin: 0.25rem 0 0;
-        color: #64748b;
-        font-size: 0.88rem;
+        color: var(--text-muted);
+        font-size: 0.9rem;
     }
 
     .casa-table-badge {
         display: inline-flex;
         align-items: center;
         gap: 0.4rem;
-        border-radius: 999px;
-        padding: 0.45rem 0.7rem;
+        border-radius: 8px;
+        padding: 0.45rem 0.75rem;
         background: #f8fafc;
-        border: 1px solid #e2e8f0;
-        color: #475569;
-        font-size: 0.79rem;
-        font-weight: 700;
+        border: 1px solid var(--border-color);
+        color: var(--text-main);
+        font-size: 0.8rem;
+        font-weight: 600;
     }
 
     .casa-table-stage {
@@ -218,16 +258,16 @@
     .casa-loading-overlay {
         position: absolute;
         inset: 0;
-        z-index: 5;
+        z-index: 20;
         display: flex;
         flex-direction: column;
         gap: 1rem;
         justify-content: center;
         align-items: center;
-        border-radius: 18px;
-        background: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 252, 0.97));
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.8);
         backdrop-filter: blur(4px);
-        transition: opacity 0.28s ease, visibility 0.28s ease;
+        transition: opacity 0.3s ease, visibility 0.3s ease;
     }
 
     .casa-loading-overlay.is-hidden {
@@ -237,121 +277,141 @@
     }
 
     .casa-loading-title {
-        font-size: 1rem;
-        font-weight: 800;
-        color: #0f172a;
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: var(--primary-blue-dark);
     }
 
     .casa-loading-copy {
         max-width: 520px;
         text-align: center;
-        color: #64748b;
+        color: var(--text-muted);
         font-size: 0.9rem;
         margin: 0;
-    }
-
-    .casa-skeleton-grid {
-        width: min(860px, 100%);
-        display: grid;
-        grid-template-columns: 220px repeat(7, 1fr);
-        gap: 0.75rem;
-    }
-
-    .casa-skeleton-cell {
-        height: 16px;
-        border-radius: 999px;
-        background: linear-gradient(90deg, #e2e8f0 25%, #f8fafc 50%, #e2e8f0 75%);
-        background-size: 220% 100%;
-        animation: casaShimmer 1.3s infinite linear;
-    }
-
-    .casa-skeleton-cell.is-wide {
-        height: 18px;
-    }
-
-    @keyframes casaShimmer {
-        0% { background-position: 200% 0; }
-        100% { background-position: -200% 0; }
     }
 
     .table-container {
         width: 100%;
         overflow-x: auto;
         -webkit-overflow-scrolling: touch;
+        border-radius: 12px;
+        border: 1px solid var(--border-color);
+        scrollbar-width: thin;
+        scrollbar-color: #cbd5e1 transparent;
+    }
+    
+    .table-container::-webkit-scrollbar {
+        height: 8px;
+    }
+    .table-container::-webkit-scrollbar-track {
+        background: transparent;
+    }
+    .table-container::-webkit-scrollbar-thumb {
+        background-color: #cbd5e1;
+        border-radius: 20px;
     }
 
     .table-report {
         border-collapse: separate;
         border-spacing: 0;
-        width: 100%;
+        width: max-content;
+        min-width: 100%;
         table-layout: auto;
         white-space: nowrap;
-        min-width: 920px;
+        margin: 0;
     }
 
     .table-report th,
     .table-report td {
         vertical-align: middle !important;
-        border-right: 1px solid rgba(255, 255, 255, 0.28);
-        border-bottom: 1px solid #e2e8f0;
+        border-right: 1px solid var(--border-color);
+        border-bottom: 1px solid var(--border-color);
+        padding: 0.75rem 1rem;
+    }
+    
+    .table-report th:last-child, .table-report td:last-child {
+        border-right: none;
     }
 
     .table-report th {
-        font-size: 0.72rem;
-        padding: 12px 8px;
+        font-size: 0.7rem;
         text-align: center;
-        font-weight: 800;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
     }
 
     .table-report td {
-        font-size: 0.76rem;
-        padding: 11px 10px;
+        font-size: 0.8rem;
         text-align: right;
-        background: #ffffff;
+        background: var(--surface-color);
+        font-variant-numeric: tabular-nums;
+        transition: background-color 0.15s ease;
     }
 
     .table-report td.text-left {
         text-align: left;
     }
 
+    /* Sticky First Column */
+    .table-report .sticky-col {
+        position: sticky;
+        left: 0;
+        background: #ffffff;
+        z-index: 8;
+        box-shadow: 2px 0 5px rgba(0,0,0,0.05);
+        font-weight: 600;
+        text-align: left;
+    }
+
     .bg-header-main {
-        background: linear-gradient(135deg, #1d4ed8, #1e3a8a) !important;
-        color: #ffffff !important;
-        border-color: rgba(255, 255, 255, 0.22) !important;
+        background: var(--table-header-bg) !important;
+        color: var(--table-header-text) !important;
+        border-bottom: 2px solid rgba(0,0,0,0.1) !important;
+        position: sticky;
+        top: 0;
+        z-index: 10;
+    }
+    
+    .bg-header-main.sticky-col {
+        z-index: 11;
+        box-shadow: none;
     }
 
     .bg-header-sub {
-        background: #64748b !important;
-        color: #ffffff !important;
-        font-weight: bold;
-        border-color: rgba(255, 255, 255, 0.22) !important;
+        background: #274bba !important; /* Lighter blue */
+        color: var(--table-header-text) !important;
+        border-bottom: 2px solid rgba(0,0,0,0.1) !important;
+        position: sticky;
+        top: 41px;
+        z-index: 9;
     }
 
     .bg-header-sub-light {
-        background: #e2e8f0 !important;
-        color: #334155 !important;
-        font-weight: bold;
-        border-color: #cbd5e1 !important;
+        background: #3b82f6 !important; /* Even lighter blue */
+        color: var(--table-header-text) !important;
+        border-bottom: 2px solid rgba(0,0,0,0.1) !important;
+        position: sticky;
+        top: 82px;
+        z-index: 9;
     }
 
-    .table-hover tbody tr:hover { background-color: #f1f7ff; }
-
-    .row-total {
-        background-color: #0f172a !important;
-        color: #ffffff !important;
-        font-weight: bold;
+    .table-hover tbody tr:hover td { 
+        background-color: #f1f5f9; 
+    }
+    .table-hover tbody tr:hover .sticky-col {
+        background-color: #f1f5f9;
     }
 
     .row-total td {
-        background-color: #0f172a !important;
-        color: #ffffff !important;
+        background-color: #e0e7ff !important; /* blue-100 */
+        color: var(--primary-blue-dark) !important;
+        font-weight: 700;
+        border-top: 2px solid var(--primary-blue-light) !important;
     }
 
-    .row-total .ratio-negative,
-    .row-total .ratio-positive,
-    .row-total .ratio-neutral {
-        background-color: #0f172a !important;
-        color: #ffffff !important;
+    .row-total:hover td {
+        background-color: #dbeafe !important;
     }
 
     .row-total .val-up,
@@ -361,9 +421,9 @@
 
     .loading-row td {
         text-align: center !important;
-        color: #6b7280;
+        color: var(--text-muted);
         font-style: italic;
-        padding: 18px 10px !important;
+        padding: 2.5rem 1rem !important;
     }
 
     .val-up { color: #198754; font-weight: bold; }
@@ -382,46 +442,46 @@
     }
 
     .ratio-neutral {
-        background-color: #f8fafc !important;
-        color: #111111 !important;
-        font-weight: bold;
+        color: var(--text-muted) !important;
+        font-weight: 600;
     }
 
     .nav-tabs.report-tabs {
-        border-bottom: 2px solid #dee2e6;
+        border-bottom: 1px solid var(--border-color);
         flex-wrap: nowrap;
         overflow-x: auto;
         overflow-y: hidden;
         white-space: nowrap;
         scrollbar-width: thin;
+        margin-bottom: 1rem;
     }
 
     .nav-tabs.report-tabs .nav-link {
         border: none;
-        font-weight: 700;
-        color: #64748b;
-        padding: 12px 18px;
-        font-size: 0.95rem;
+        font-weight: 600;
+        color: var(--text-muted);
+        padding: 0.75rem 1.25rem;
+        font-size: 0.9rem;
         background: transparent;
+        transition: all 0.2s ease;
+        border-bottom: 2px solid transparent;
     }
 
     .nav-tabs.report-tabs .nav-link.active {
-        border-bottom: 3px solid #2563eb;
-        color: #2563eb;
+        border-bottom: 2px solid var(--primary-blue-light);
+        color: var(--primary-blue-light);
         background: transparent;
     }
 
-    .nav-tabs.report-tabs .nav-link:hover {
-        border-bottom: 3px solid #93c5fd;
-        color: #2563eb;
-        background: transparent;
+    .nav-tabs.report-tabs .nav-link:hover:not(.active) {
+        border-bottom: 2px solid var(--border-color);
+        color: var(--text-main);
     }
 
     @media (max-width: 767.98px) {
         .casa-action {
             width: 100%;
         }
-
         .casa-filter-meta {
             gap: 0.45rem 0.9rem;
         }
@@ -429,11 +489,11 @@
 </style>
 
 <div class="casa-dashboard">
-    <div class="card card-outline card-primary shadow-sm mb-3 casa-shell">
-        <div class="card-body py-4 px-4">
-            <div class="d-flex flex-wrap align-items-start justify-content-between mb-3">
+    <div class="card card-outline card-primary shadow-sm mb-4 casa-shell">
+        <div class="card-body p-4">
+            <div class="d-flex flex-wrap align-items-center justify-content-between mb-4 pb-3 border-bottom">
                 <div>
-                    <h1 class="casa-page-title">Rasio CASA Debitur</h1>
+                    <h1 class="casa-page-title"><i class="fas fa-percentage text-primary mr-2"></i>Rasio CASA Debitur</h1>
                     <p class="casa-page-copy">Pilih periode akhir lalu klik <strong>Tampilkan</strong> untuk menjalankan query dan memuat ringkasan rasio CASA per branch.</p>
                 </div>
             </div>
@@ -450,7 +510,7 @@
                         <div class="form-group mb-3 mb-md-0">
                             <label class="casa-filter-label">Branch Office (Kanca)</label>
                             <div class="branch-filter-dropdown">
-                                <button type="button" class="form-control casa-filter-control casa-dropdown-toggle font-weight-bold" id="filterBranchDropdown" aria-haspopup="true" aria-expanded="false">
+                                <button type="button" class="form-control casa-filter-control casa-dropdown-toggle" id="filterBranchDropdown" aria-haspopup="true" aria-expanded="false">
                                     <span id="filter_branch_office_label" class="casa-dropdown-label">Area 6 - All</span>
                                     <i class="fas fa-chevron-down text-muted"></i>
                                 </button>
@@ -481,27 +541,27 @@
                             </div>
                         </div>
                     </div>
-                    <div class="col-md-2">
+                    <div class="col-md-3">
                         <button type="submit" id="submitButton" class="btn btn-primary btn-block casa-action">
-                            <i class="fas fa-play mr-1"></i> Tampilkan
+                            <i class="fas fa-play mr-2"></i> Tampilkan Data
                         </button>
                     </div>
                 </div>
             </form>
 
             <div class="casa-filter-meta">
-                <span><strong>Mode:</strong> manual query</span>
-                <span><strong>Area:</strong> KC Madiun, Magetan, Ngawi, Ponorogo</span>
-                <span id="filterMetaPeriod"><strong>Periode aktif:</strong> belum dijalankan</span>
+                <span><i class="fas fa-info-circle text-primary mr-1"></i> <strong>Mode:</strong> Manual Query</span>
+                <span><i class="fas fa-map-marker-alt text-primary mr-1"></i> <strong>Area:</strong> KC Madiun, Magetan, Ngawi, Ponorogo</span>
+                <span id="filterMetaPeriod"><i class="fas fa-clock text-primary mr-1"></i> <strong>Periode aktif:</strong> Belum dijalankan</span>
             </div>
         </div>
     </div>
 
     <div class="card shadow-sm border-0 mb-4 casa-table-shell">
-        <div class="card-body p-3 p-lg-4">
+        <div class="card-body p-4">
             <div class="casa-table-heading">
                 <div>
-                    <h5>Ringkasan Rasio CASA</h5>
+                    <h5><i class="fas fa-table text-primary mr-2"></i>Ringkasan Rasio CASA</h5>
                     <p>Query akan berjalan setelah filter dikirim. Data ditampilkan per branch dan dikelompokkan ke tab sesuai segmen.</p>
                 </div>
                 <div class="d-flex align-items-center flex-wrap justify-content-end" style="gap: 0.75rem;">
@@ -509,61 +569,44 @@
                         <span class="casa-loading-dot"></span>
                         Memproses query...
                     </span>
-                    <span id="summaryBadge" class="casa-table-badge">Belum ada data</span>
+                    <span id="summaryBadge" class="casa-table-badge"><i class="fas fa-info-circle text-muted"></i> Belum ada data</span>
                 </div>
             </div>
 
             <div class="casa-table-stage">
                 <div id="tableOverlay" class="casa-loading-overlay">
-                    <div class="casa-loading-title" id="overlayTitle">Siap Memuat Data</div>
-                    <p class="casa-loading-copy" id="overlayCopy">Pilih periode akhir lalu klik <strong>Tampilkan</strong> untuk menjalankan query rasio CASA debitur.</p>
-                    <div class="casa-skeleton-grid" aria-hidden="true">
-                        <span class="casa-skeleton-cell is-wide"></span>
-                        <span class="casa-skeleton-cell"></span>
-                        <span class="casa-skeleton-cell"></span>
-                        <span class="casa-skeleton-cell"></span>
-                        <span class="casa-skeleton-cell"></span>
-                        <span class="casa-skeleton-cell"></span>
-                        <span class="casa-skeleton-cell"></span>
-                        <span class="casa-skeleton-cell"></span>
-                        <span class="casa-skeleton-cell is-wide"></span>
-                        <span class="casa-skeleton-cell"></span>
-                        <span class="casa-skeleton-cell"></span>
-                        <span class="casa-skeleton-cell"></span>
-                        <span class="casa-skeleton-cell"></span>
-                        <span class="casa-skeleton-cell"></span>
-                        <span class="casa-skeleton-cell"></span>
-                        <span class="casa-skeleton-cell"></span>
+                    <div class="text-center mb-3">
+                        <i class="fas fa-chart-bar fa-3x text-primary opacity-50 mb-3"></i>
+                        <div class="casa-loading-title" id="overlayTitle">Siap Memuat Data</div>
+                        <p class="casa-loading-copy" id="overlayCopy">Pilih periode akhir lalu klik <strong>Tampilkan Data</strong> untuk menjalankan query rasio CASA debitur.</p>
                     </div>
                 </div>
 
-                <div class="card-header bg-white p-0 border-bottom-0">
-                    <ul class="nav nav-tabs report-tabs px-3 pt-2" role="tablist">
-                        <li class="nav-item">
-                            <a class="nav-link active" data-toggle="tab" href="#tab-total" role="tab">
-                                <i class="fas fa-chart-pie mr-1"></i> Total
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link" data-toggle="tab" href="#tab-briguna-kpr" role="tab">
-                                <i class="fas fa-home mr-1"></i> BRIGUNA & KPR
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link" data-toggle="tab" href="#tab-mikro-smc" role="tab">
-                                <i class="fas fa-store mr-1"></i> MIKRO & SMC
-                            </a>
-                        </li>
-                    </ul>
-                </div>
+                <ul class="nav nav-tabs report-tabs" role="tablist">
+                    <li class="nav-item">
+                        <a class="nav-link active" data-toggle="tab" href="#tab-total" role="tab">
+                            <i class="fas fa-chart-pie mr-1"></i> Total
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" data-toggle="tab" href="#tab-briguna-kpr" role="tab">
+                            <i class="fas fa-home mr-1"></i> BRIGUNA & KPR
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" data-toggle="tab" href="#tab-mikro-smc" role="tab">
+                            <i class="fas fa-store mr-1"></i> MIKRO & SMC
+                        </a>
+                    </li>
+                </ul>
 
                 <div class="tab-content">
                     <div class="tab-pane fade show active" id="tab-total" role="tabpanel">
                         <div class="table-container">
-                            <table class="table table-hover table-report m-0">
-                                <thead class="sticky-top" style="z-index: 2;">
+                            <table class="table table-report m-0">
+                                <thead>
                                     <tr>
-                                        <th rowspan="3" class="bg-header-main align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER" style="min-width: 170px;">BRANCH OFFICE</th>
+                                        <th rowspan="3" class="bg-header-main sticky-col align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER" style="min-width: 170px;">BRANCH OFFICE</th>
                                         <th colspan="7" class="bg-header-main">TOTAL</th>
                                     </tr>
                                     <tr class="bg-header-sub">
@@ -588,18 +631,18 @@
 
                     <div class="tab-pane fade" id="tab-briguna-kpr" role="tabpanel">
                         <div class="table-container">
-                            <table class="table table-hover table-report m-0">
-                                <thead class="sticky-top" style="z-index: 2;">
+                            <table class="table table-report m-0">
+                                <thead>
                                     <tr>
-                                        <th rowspan="3" class="bg-header-main align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER" style="min-width: 170px;">BRANCH OFFICE</th>
+                                        <th rowspan="3" class="bg-header-main sticky-col align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER" style="min-width: 170px;">BRANCH OFFICE</th>
                                         <th colspan="7" class="bg-header-main">BRIGUNA</th>
-                                        <th colspan="7" class="bg-header-main">KPR</th>
+                                        <th colspan="7" class="bg-header-main" style="border-left: 2px solid rgba(255,255,255,0.4) !important;">KPR</th>
                                     </tr>
                                     <tr class="bg-header-sub">
                                         <th colspan="2">Total OS</th>
                                         <th colspan="2">Total CASA</th>
                                         <th colspan="3">Rasio CASA/OS</th>
-                                        <th colspan="2">Total OS</th>
+                                        <th colspan="2" style="border-left: 2px solid rgba(255,255,255,0.4) !important;">Total OS</th>
                                         <th colspan="2">Total CASA</th>
                                         <th colspan="3">Rasio CASA/OS</th>
                                     </tr>
@@ -611,7 +654,7 @@
                                         <th class="lbl-prev-th">-</th>
                                         <th class="lbl-curr-th">-</th>
                                         <th>MtD</th>
-                                        <th class="lbl-prev-th">-</th>
+                                        <th class="lbl-prev-th" style="border-left: 2px solid rgba(255,255,255,0.4) !important;">-</th>
                                         <th class="lbl-curr-th">-</th>
                                         <th class="lbl-prev-th">-</th>
                                         <th class="lbl-curr-th">-</th>
@@ -627,18 +670,18 @@
 
                     <div class="tab-pane fade" id="tab-mikro-smc" role="tabpanel">
                         <div class="table-container">
-                            <table class="table table-hover table-report m-0">
-                                <thead class="sticky-top" style="z-index: 2;">
+                            <table class="table table-report m-0">
+                                <thead>
                                     <tr>
-                                        <th rowspan="3" class="bg-header-main align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER" style="min-width: 170px;">BRANCH OFFICE</th>
+                                        <th rowspan="3" class="bg-header-main sticky-col align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER" style="min-width: 170px;">BRANCH OFFICE</th>
                                         <th colspan="7" class="bg-header-main">MIKRO</th>
-                                        <th colspan="7" class="bg-header-main">SMC</th>
+                                        <th colspan="7" class="bg-header-main" style="border-left: 2px solid rgba(255,255,255,0.4) !important;">SMC</th>
                                     </tr>
                                     <tr class="bg-header-sub">
                                         <th colspan="2">Total OS</th>
                                         <th colspan="2">Total CASA</th>
                                         <th colspan="3">Rasio CASA/OS</th>
-                                        <th colspan="2">Total OS</th>
+                                        <th colspan="2" style="border-left: 2px solid rgba(255,255,255,0.4) !important;">Total OS</th>
                                         <th colspan="2">Total CASA</th>
                                         <th colspan="3">Rasio CASA/OS</th>
                                     </tr>
@@ -650,7 +693,7 @@
                                         <th class="lbl-prev-th">-</th>
                                         <th class="lbl-curr-th">-</th>
                                         <th>MtD</th>
-                                        <th class="lbl-prev-th">-</th>
+                                        <th class="lbl-prev-th" style="border-left: 2px solid rgba(255,255,255,0.4) !important;">-</th>
                                         <th class="lbl-curr-th">-</th>
                                         <th class="lbl-prev-th">-</th>
                                         <th class="lbl-curr-th">-</th>
@@ -797,19 +840,20 @@ document.addEventListener('DOMContentLoaded', function () {
         if (num === null || num === undefined || isNaN(parseFloat(num))) return '-';
         const val = parseFloat(num);
         const text = new Intl.NumberFormat('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val) + '%';
-        if (val > 0) return `<span class="val-up">+${text}</span>`;
-        if (val < 0) return `<span class="val-down">${text}</span>`;
+        if (val > 0) return `<span class="val-up"><i class="fas fa-arrow-up mr-1"></i>${text}</span>`;
+        if (val < 0) return `<span class="val-down"><i class="fas fa-arrow-down mr-1"></i>${text}</span>`;
         return text;
     }
 
-    function createDataCells(dt) {
+    function createDataCells(dt, isSeparator = false) {
         dt = dt || {};
         const rasioPrevClass = getRatioClass(dt.rasio_prev);
         const rasioCurrClass = getRatioClass(dt.rasio_curr);
         const mtdClass = getRatioClass(dt.mtd);
+        const sepStyle = isSeparator ? 'border-left: 2px solid rgba(0,0,0,0.1) !important;' : '';
 
         return `
-            <td>${formatNum(dt.os_prev)}</td>
+            <td style="${sepStyle}">${formatNum(dt.os_prev)}</td>
             <td style="background-color: #f8fafc;">${formatNum(dt.os_curr)}</td>
             <td>${formatNum(dt.casa_prev)}</td>
             <td style="background-color: #f8fafc;">${formatNum(dt.casa_curr)}</td>
@@ -833,7 +877,12 @@ document.addEventListener('DOMContentLoaded', function () {
     function renderMessage(message) {
         const html = `
             <tr class="loading-row">
-                <td colspan="15" class="text-center">${message}</td>
+                <td colspan="15" class="text-center">
+                    <div class="py-4">
+                        <i class="fas fa-inbox fa-2x text-muted mb-3 d-block opacity-50"></i>
+                        ${message}
+                    </div>
+                </td>
             </tr>`;
         $('#tbody-total').html(html.replace('15', '8'));
         $('#tbody-briguna-kpr').html(html);
@@ -846,16 +895,16 @@ document.addEventListener('DOMContentLoaded', function () {
         let htmlMikroSmc = '';
 
         dataList.forEach(function(row) {
-            const branchCell = `<td class="text-left font-weight-bold">${row.branch || '-'}</td>`;
+            const branchCell = `<td class="sticky-col text-left font-weight-bold">${row.branch || '-'}</td>`;
             htmlTotal += `<tr>${branchCell}${createDataCells(row.total)}</tr>`;
-            htmlBrigunaKpr += `<tr>${branchCell}${createDataCells(row.briguna)}${createDataCells(row.kpr)}</tr>`;
-            htmlMikroSmc += `<tr>${branchCell}${createDataCells(row.mikro)}${createDataCells(row.smc)}</tr>`;
+            htmlBrigunaKpr += `<tr>${branchCell}${createDataCells(row.briguna)}${createDataCells(row.kpr, true)}</tr>`;
+            htmlMikroSmc += `<tr>${branchCell}${createDataCells(row.mikro)}${createDataCells(row.smc, true)}</tr>`;
         });
 
-        const totalBranchCell = `<td class="text-left">${totalData.branch || 'TOTAL AREA 6'}</td>`;
+        const totalBranchCell = `<td class="sticky-col text-left">${totalData.branch || 'TOTAL AREA 6'}</td>`;
         htmlTotal += `<tr class="row-total">${totalBranchCell}${createDataCells(totalData.total)}</tr>`;
-        htmlBrigunaKpr += `<tr class="row-total">${totalBranchCell}${createDataCells(totalData.briguna)}${createDataCells(totalData.kpr)}</tr>`;
-        htmlMikroSmc += `<tr class="row-total">${totalBranchCell}${createDataCells(totalData.mikro)}${createDataCells(totalData.smc)}</tr>`;
+        htmlBrigunaKpr += `<tr class="row-total">${totalBranchCell}${createDataCells(totalData.briguna)}${createDataCells(totalData.kpr, true)}</tr>`;
+        htmlMikroSmc += `<tr class="row-total">${totalBranchCell}${createDataCells(totalData.mikro)}${createDataCells(totalData.smc, true)}</tr>`;
 
         $('#tbody-total').html(htmlTotal);
         $('#tbody-briguna-kpr').html(htmlBrigunaKpr);
@@ -867,10 +916,10 @@ document.addEventListener('DOMContentLoaded', function () {
         updateGroupLabel('BRANCH OFFICE');
         updateBranchLabel();
         updateUkerLabel();
-        summaryBadge.textContent = 'Belum ada data';
-        filterMetaPeriod.innerHTML = '<strong>Periode aktif:</strong> belum dijalankan';
-        renderMessage('Belum ada data. Klik <strong>Tampilkan</strong>.');
-        setOverlay('Siap Memuat Data', 'Pilih filter lalu klik Tampilkan.', true);
+        summaryBadge.innerHTML = '<i class="fas fa-info-circle text-muted mr-1"></i> Belum ada data';
+        filterMetaPeriod.innerHTML = '<i class="fas fa-clock text-primary mr-1"></i> <strong>Periode aktif:</strong> belum dijalankan';
+        renderMessage('Belum ada data. Klik <strong>Tampilkan Data</strong>.');
+        setOverlay('Siap Memuat Data', 'Pilih filter lalu klik Tampilkan Data.', true);
     }
 
     async function loadData() {
@@ -900,7 +949,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
             if (res.status !== 'success') {
                 renderMessage(res.message || 'Data tidak berhasil dimuat dari server.');
-                summaryBadge.textContent = 'Gagal memuat data';
+                summaryBadge.innerHTML = '<i class="fas fa-exclamation-triangle text-danger mr-1"></i> Gagal memuat data';
                 setOverlay('Gagal Memuat Data', res.message || 'Terjadi kendala saat memproses query. Silakan coba lagi.', true);
                 return;
             }
@@ -922,17 +971,17 @@ document.addEventListener('DOMContentLoaded', function () {
                 filterPosisi.value = currentDate;
             }
 
-            filterMetaPeriod.innerHTML = `<strong>Periode aktif:</strong> ${labels.curr || '-'} | <strong>Perbandingan:</strong> ${labels.prev || '-'}`;
+            filterMetaPeriod.innerHTML = `<i class="fas fa-clock text-primary mr-1"></i> <strong>Periode aktif:</strong> ${labels.curr || '-'} | <strong>Perbandingan:</strong> ${labels.prev || '-'}`;
 
             if (!hasAnyData) {
                 renderMessage(`Tidak ada data untuk tanggal ${currentDate}. Coba pilih tanggal lain.`);
-                summaryBadge.textContent = 'Data kosong';
+                summaryBadge.innerHTML = '<i class="fas fa-info-circle text-warning mr-1"></i> Data kosong';
                 setOverlay('Tidak Ada Data', `Tidak ada data untuk periode <strong>${currentDate}</strong>.`, true);
                 return;
             }
 
             renderRows(dataList, totalData);
-            summaryBadge.textContent = `${dataList.length} ${summaryLabel} | ${labels.curr || currentDate}`;
+            summaryBadge.innerHTML = `<i class="fas fa-check-circle text-success mr-1"></i> ${dataList.length} ${summaryLabel} | ${labels.curr || currentDate}`;
             setOverlay('Data Siap Ditampilkan', 'Data siap ditampilkan.', false);
         } catch (xhr) {
             if (xhr && xhr.statusText === 'abort') {
@@ -940,11 +989,11 @@ document.addEventListener('DOMContentLoaded', function () {
             }
 
             let errorMsg = 'Gagal memuat data. ';
-            if (xhr && xhr.status === 500) errorMsg += 'Server error. Periksa `storage/logs/laravel.log`.';
+            if (xhr && xhr.status === 500) errorMsg += 'Server error. Periksa log system.';
             else errorMsg += 'Silakan coba lagi.';
 
             renderMessage(errorMsg);
-            summaryBadge.textContent = 'Gagal memuat data';
+            summaryBadge.innerHTML = '<i class="fas fa-exclamation-triangle text-danger mr-1"></i> Gagal memuat data';
             setOverlay('Gagal Memuat Data', errorMsg, true);
         } finally {
             loadingChip.classList.add('d-none');

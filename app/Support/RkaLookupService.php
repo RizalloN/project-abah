@@ -59,12 +59,13 @@ class RkaLookupService
         string $monthColumn,
         array $kancas = [],
         array $units = [],
-        string $groupBy = 'kanca'
+        string $groupBy = 'kanca',
+        ?int $year = null
     ): array {
         $monthColumn = strtolower(trim($monthColumn));
         $normalizedKancas = $this->normalizeLookupValues($kancas);
         $normalizedUnits = $this->normalizeLookupValues($units);
-        $rows = $this->loadRows($normalizedKancas, [$monthColumn]);
+        $rows = $this->loadRows($normalizedKancas, [$monthColumn], $year);
 
         $groups = [];
         foreach ($definitions as $definitionKey => $definition) {
@@ -100,14 +101,16 @@ class RkaLookupService
         array $definitions,
         string $monthColumn,
         ?string $kanca = null,
-        ?string $unit = null
+        ?string $unit = null,
+        ?int $year = null
     ): array {
         $monthColumn = strtolower(trim($monthColumn));
         $normalizedKanca = $this->normalizeLookupValue($kanca);
         $normalizedUnit = $this->normalizeLookupValue($unit);
         $rows = $this->loadRows(
             $normalizedKanca !== null ? [$normalizedKanca] : [],
-            [$monthColumn]
+            [$monthColumn],
+            $year
         );
 
         $result = [];
@@ -135,7 +138,7 @@ class RkaLookupService
         return $result;
     }
 
-    private function loadRows(array $kancas, array $monthColumns): Collection
+    private function loadRows(array $kancas, array $monthColumns, ?int $year = null): Collection
     {
         $normalizedKancas = $this->normalizeLookupValues($kancas);
         $normalizedMonthColumns = collect($monthColumns)
@@ -152,6 +155,7 @@ class RkaLookupService
         $cacheKey = md5(json_encode([
             'kancas' => $normalizedKancas,
             'months' => $normalizedMonthColumns,
+            'year' => $year,
         ]));
 
         if (isset($this->loadedRowsCache[$cacheKey])) {
@@ -162,6 +166,9 @@ class RkaLookupService
             ->select(array_merge(['kanca', 'desc_uker', 'mata_anggaran'], $normalizedMonthColumns))
             ->when(!empty($normalizedKancas), function ($query) use ($normalizedKancas) {
                 $query->whereIn(DB::raw('UPPER(TRIM(`kanca`))'), $normalizedKancas);
+            })
+            ->when($year !== null, function ($query) use ($year) {
+                $query->whereYear('created_at', $year);
             })
             ->get()
             ->map(function ($row) use ($normalizedMonthColumns) {
@@ -179,6 +186,20 @@ class RkaLookupService
                     'months' => $months,
                 ];
             });
+    }
+
+    public function availableYears(): array
+    {
+        return DB::table('rka')
+            ->whereNotNull('created_at')
+            ->selectRaw('YEAR(created_at) as year')
+            ->distinct()
+            ->orderByDesc('year')
+            ->pluck('year')
+            ->map(fn ($value) => (int) $value)
+            ->filter(fn (int $value) => $value > 0)
+            ->values()
+            ->all();
     }
 
     private function extractUkerName(string $value): string
