@@ -542,7 +542,9 @@ class ImportFileBrimoController extends Controller
             $response = [
                 'status' => 'warning',
                 'title' => 'Data Ditolak (Duplikat)!',
-                'text' => $duplicateText
+                'text' => $duplicateText,
+                'duplicate_detected' => true,
+                'redirect_url' => route('import.index'),
             ];
             
             return $request->expectsJson()

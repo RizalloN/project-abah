@@ -288,11 +288,42 @@
             }
         }
 
+        function isSuccessLikeDeleteMessage(message) {
+            const normalized = String(message || '').trim().toLowerCase();
+            if (!normalized) return false;
+            return normalized.startsWith('delete selesai.')
+                || normalized.startsWith('delete sumber selesai')
+                || normalized.includes('statistik dan cache sudah disegarkan')
+                || normalized.includes('report ini tidak menggunakan snapshot/index');
+        }
+
+        function normalizeDeletePayload(payload) {
+            if (!payload || typeof payload !== 'object') {
+                return payload;
+            }
+
+            const normalized = Object.assign({}, payload);
+            const deletedRows = Number(normalized.deleted_rows || 0);
+            const successLikeMessage = isSuccessLikeDeleteMessage(normalized.message);
+
+            if (normalized.status === 'failed' && successLikeMessage) {
+                normalized.status = deletedRows > 0 ? 'warning' : 'completed';
+                normalized.progress_percent = 100;
+                if (!normalized.stage || normalized.stage === 'failed') {
+                    normalized.stage = 'completed';
+                }
+            }
+
+            return normalized;
+        }
+
         async function getJson(url) {
             const response = await fetch(url, { headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' } });
             let data = {};
             try { data = await response.json(); } catch (_) { data = {}; }
-            if (!response.ok && data.status !== 'warning') throw new Error(data.message || 'Gagal mengambil status proses.');
+            data = normalizeDeletePayload(data);
+            const successLikeDelete = isSuccessLikeDeleteMessage(data.message) || ['completed', 'warning'].includes(data.status);
+            if (!response.ok && data.status !== 'warning' && !successLikeDelete) throw new Error(data.message || 'Gagal mengambil status proses.');
             return data;
         }
 
@@ -332,9 +363,9 @@
                 while (true) {
                     if (!statusUrl && !processUrl) throw new Error('Endpoint progress delete tidak tersedia.');
                     if (statusUrl) {
-                        finalPayload = await getJson(statusUrl);
+                        finalPayload = normalizeDeletePayload(await getJson(statusUrl));
                     } else if (processUrl) {
-                        finalPayload = await postJson(processUrl, {});
+                        finalPayload = normalizeDeletePayload(await postJson(processUrl, {}));
                     }
                     const canUseFallback = !!processUrl
                         && !!finalPayload?.can_process_fallback
@@ -342,10 +373,11 @@
                         && !['completed', 'warning', 'failed'].includes(finalPayload?.status);
                     if (canUseFallback) {
                         lastProcessAttemptAt = Date.now();
-                        finalPayload = await postJson(processUrl, {});
+                        finalPayload = normalizeDeletePayload(await postJson(processUrl, {}));
                     }
                     updateDeleteProgressUi(finalPayload);
                     if (['completed', 'warning', 'failed', 'cancelled'].includes(finalPayload.status)) {
+                        finalPayload = normalizeDeletePayload(finalPayload);
                         Swal.close();
                         return finalPayload;
                     }
@@ -489,8 +521,10 @@
             });
             let data = {};
             try { data = await response.json(); } catch (_) { data = {}; }
+            data = normalizeDeletePayload(data);
             const recoveredWarning = data.status === 'failed' && Number(data.deleted_rows || 0) > 0;
-            if (!response.ok && data.status !== 'warning' && !recoveredWarning) throw new Error(data.message || 'Terjadi kesalahan pada server.');
+            const successLikeDelete = isSuccessLikeDeleteMessage(data.message) || ['completed', 'warning'].includes(data.status);
+            if (!response.ok && data.status !== 'warning' && !recoveredWarning && !successLikeDelete) throw new Error(data.message || 'Terjadi kesalahan pada server.');
             return data;
         }
 
@@ -628,20 +662,21 @@
                 cancelUrlTemplate ? buildDeleteUrl(cancelUrlTemplate, payload.delete_id) : '',
                 payload
             );
-            const deletedRows = Number(finalPayload.deleted_rows || 0);
-            const recoveredWarning = finalPayload.status === 'failed' && deletedRows > 0;
-            const outcomeStatus = recoveredWarning ? 'warning' : finalPayload.status;
+            const normalizedFinalPayload = normalizeDeletePayload(finalPayload);
+            const deletedRows = Number(normalizedFinalPayload.deleted_rows || 0);
+            const recoveredWarning = normalizedFinalPayload.status === 'failed' && deletedRows > 0;
+            const outcomeStatus = recoveredWarning ? 'warning' : normalizedFinalPayload.status;
             if (outcomeStatus === 'failed') {
-                const normalizedErrorCode = String(finalPayload.error_code ?? '').trim();
+                const normalizedErrorCode = String(normalizedFinalPayload.error_code ?? '').trim();
                 const errorCode = normalizedErrorCode && normalizedErrorCode !== '0' ? ` (${normalizedErrorCode})` : '';
-                throw new Error((finalPayload.error || finalPayload.message || 'Terjadi kesalahan saat menghapus data.') + errorCode);
+                throw new Error((normalizedFinalPayload.error || normalizedFinalPayload.message || 'Terjadi kesalahan saat menghapus data.') + errorCode);
             }
             scopes.forEach(function (scope) { managementState.selectedScopes.delete(createScopeKey(scope)); });
             await themedSwal({
                 icon: outcomeStatus === 'warning' ? 'warning' : 'success',
                 title: outcomeStatus === 'warning' ? 'Selesai dengan Catatan' : 'Berhasil',
                 text: outcomeStatus === 'warning'
-                    ? (finalPayload.error || finalPayload.message || `Data terhapus ${formatNumber(deletedRows)} baris, tetapi sinkronisasi lanjutan gagal.`)
+                    ? (normalizedFinalPayload.error || normalizedFinalPayload.message || `Data terhapus ${formatNumber(deletedRows)} baris, tetapi sinkronisasi lanjutan gagal.`)
                     : `Data terhapus ${formatNumber(deletedRows)} baris. Snapshot, cache index, dan statistik optimizer sudah diperbarui.`
             });
             await fetchManagementData(managementState.currentPage);

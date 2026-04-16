@@ -231,8 +231,10 @@ def is_valid_ssa_row_values(values_by_header: dict[str, object]) -> bool:
     nama_cabang = normalize_cell(values_by_header.get("nama_cabang"))
     nama_uker = normalize_cell(values_by_header.get("nama_uker"))
     produk = normalize_cell(values_by_header.get("produk"))
+    if posisi == "" or nama_cabang == "" or nama_uker == "" or produk == "":
+        return False
 
-    return posisi != "" and nama_cabang != "" and nama_uker != "" and produk != ""
+    return True
 
 
 def sanitize_source(

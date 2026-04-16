@@ -5538,6 +5538,8 @@ class ImportExcelController extends Controller
             return response()->json([
                 'status' => 'error',
                 'text' => $e->getMessage(),
+                'duplicate_detected' => true,
+                'redirect_url' => route('import.index'),
             ], 422);
         }
 

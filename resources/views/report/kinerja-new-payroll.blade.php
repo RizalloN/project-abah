@@ -439,8 +439,8 @@ document.addEventListener('DOMContentLoaded', function () {
             <td class="${blockClass}">${formatNumber(metric.curr, decimals)}</td>
             <td class="${negativeClass(metric.yoy_pct)}">${formatPercent(metric.yoy_pct)}</td>
             <td class="${negativeClass(metric.yoy)}">${formatSigned(metric.yoy, decimals)}</td>
-            <td class="rka-col text-muted">-</td>
-            <td class="rka-col text-muted">-</td>
+            <td class="rka-col">${formatNumber(metric.rka, decimals)}</td>
+            <td class="rka-col">${formatPercent(metric.penc_pct)}</td>
         `;
     }
 
@@ -451,8 +451,8 @@ document.addEventListener('DOMContentLoaded', function () {
             <td class="col-block">${formatNumber(metric.curr, decimals)}</td>
             <td class="${negativeClass(metric.yoy)}">${formatSigned(metric.yoy, decimals)}</td>
             <td class="${negativeClass(metric.yoy_pct)}">${formatPercent(metric.yoy_pct)}</td>
-            <td class="rka-col text-muted">-</td>
-            <td class="rka-col text-muted">-</td>
+            <td class="rka-col">${formatNumber(metric.rka, decimals)}</td>
+            <td class="rka-col">${formatPercent(metric.penc_pct)}</td>
         `;
     }
 

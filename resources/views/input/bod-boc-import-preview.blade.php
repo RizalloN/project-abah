@@ -170,6 +170,39 @@
             });
         }
 
+        function isDuplicateImportMessage(message) {
+            const text = String(message || '')
+                .replace(/<[^>]*>/g, ' ')
+                .replace(/&nbsp;/gi, ' ')
+                .replace(/\s+/g, ' ')
+                .toLowerCase();
+            return text.includes('duplikat')
+                || text.includes('sudah ada di database')
+                || text.includes('data ditolak (duplikat)')
+                || text.includes('duplicate entry');
+        }
+
+        function redirectToImportIndex() {
+            window.location.href = "{{ route('import.index') }}";
+        }
+
+        async function showDuplicateImportPopup(title, text) {
+            await Swal.fire({
+                icon: 'warning',
+                title: title || 'Data Duplikat',
+                html: text || 'Data duplikat terdeteksi.',
+                confirmButtonText: 'Kembali ke Import',
+                customClass: {
+                    popup: 'swal-modern-popup',
+                    title: 'swal-modern-title',
+                    htmlContainer: 'swal-modern-html',
+                    confirmButton: 'swal-modern-confirm',
+                },
+                buttonsStyling: false,
+            });
+            redirectToImportIndex();
+        }
+
         const headers = @json(array_keys($headers));
         const previewRows = @json($previewRows);
         const filterOptionsMap = @json($uniqueValues);
@@ -403,7 +436,15 @@
         @endif
 
         @if(session('sweet_warning'))
-        showPreviewToast('warning', @json(session('sweet_warning.title')), @json(session('sweet_warning.text')));
+        (async function () {
+            const warningTitle = @json(session('sweet_warning.title'));
+            const warningText = @json(session('sweet_warning.text'));
+            if (isDuplicateImportMessage(warningTitle) || isDuplicateImportMessage(warningText)) {
+                await showDuplicateImportPopup(warningTitle || 'Data Duplikat', warningText || 'Data duplikat terdeteksi.');
+                return;
+            }
+            showPreviewToast('warning', warningTitle, warningText);
+        })();
         @endif
 
         @if(session('error'))

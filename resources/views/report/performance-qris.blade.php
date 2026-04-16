@@ -182,7 +182,7 @@
             <div class="col-md-2">
                 <div class="form-group mb-0">
                     <label class="text-muted text-sm mb-1">Posisi RKA</label>
-                    <input type="text" class="form-control" disabled value="--------">
+                    <input type="text" id="filter_posisi_rka" class="form-control" disabled value="--------">
                 </div>
             </div>
         </div>
@@ -284,6 +284,7 @@ document.addEventListener('DOMContentLoaded', function () {
     
     let activeTab = 'qris';
     const branchUkerMap = @json($branchUkerMap ?? []);
+    const filterPosisiRka = document.getElementById('filter_posisi_rka');
 
     function getSelectedBranches() {
         return $('.filter-branch-checkbox:checked').map(function () {
@@ -450,6 +451,9 @@ document.addEventListener('DOMContentLoaded', function () {
                     
                     $('.lbl-curr').text(res.labels.curr);
                     if(res.labels.prev_mom) { $('.lbl-prev-mom').text(res.labels.prev_mom); }
+                    if (filterPosisiRka) {
+                        filterPosisiRka.value = res.labels.rka || '--------';
+                    }
 
                     let html = '';
 
@@ -514,7 +518,7 @@ document.addEventListener('DOMContentLoaded', function () {
                                 
                                 <td>${formatNum(row.prod.prev)}</td> <td>${formatNum(row.prod.curr)}</td>
                                 <td>${formatGrowth(row.prod.mom)}</td> ${formatCellPct(row.prod.pct)} 
-                                <td class="rka-col">${row.prod.rka}</td> <td class="rka-col">${row.prod.gap}</td> <td class="rka-col">${row.prod.penc}</td>
+                                <td class="rka-col">${formatNum(row.prod.rka)}</td> <td class="rka-col">${formatNum(row.prod.gap)}</td> <td class="rka-col">${formatPercent(row.prod.penc, 1)}</td>
                                 
                                 <td>${formatNum(row.store.prev)}</td> <td>${formatNum(row.store.curr)}</td>
                                 <td>${formatGrowth(row.store.mom)}</td> ${formatCellPct(row.store.pct)} 
@@ -533,7 +537,7 @@ document.addEventListener('DOMContentLoaded', function () {
                             
                             <td>${formatNum(total.prod.prev)}</td> <td>${formatNum(total.prod.curr)}</td>
                             <td>${formatGrowth(total.prod.mom)}</td> ${formatCellPct(total.prod.pct).replace(/bg-(good|bad)/, '')}
-                            <td class="rka-col text-dark">${total.prod.rka}</td> <td class="rka-col text-dark">${total.prod.gap}</td> <td class="rka-col text-dark">${total.prod.penc}</td>
+                            <td class="rka-col text-dark">${formatNum(total.prod.rka)}</td> <td class="rka-col text-dark">${formatNum(total.prod.gap)}</td> <td class="rka-col text-dark">${formatPercent(total.prod.penc, 1)}</td>
                             
                             <td>${formatNum(total.store.prev)}</td> <td>${formatNum(total.store.curr)}</td>
                             <td>${formatGrowth(total.store.mom)}</td> ${formatCellPct(total.store.pct).replace(/bg-(good|bad)/, '')}
