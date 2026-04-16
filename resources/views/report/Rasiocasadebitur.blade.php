@@ -354,6 +354,11 @@
         color: #ffffff !important;
     }
 
+    .row-total .val-up,
+    .row-total .val-down {
+        color: #ffffff !important;
+    }
+
     .loading-row td {
         text-align: center !important;
         color: #6b7280;
@@ -361,18 +366,18 @@
         padding: 18px 10px !important;
     }
 
-    .val-up { color: #111111; font-weight: bold; }
-    .val-down { color: #198754; font-weight: bold; }
+    .val-up { color: #198754; font-weight: bold; }
+    .val-down { color: #dc3545; font-weight: bold; }
 
     .ratio-positive {
         background-color: #dcfce7 !important;
-        color: #111111 !important;
+        color: #198754 !important;
         font-weight: bold;
     }
 
     .ratio-negative {
         background-color: #fee2e2 !important;
-        color: #198754 !important;
+        color: #dc3545 !important;
         font-weight: bold;
     }
 

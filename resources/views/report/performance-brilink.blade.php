@@ -293,7 +293,7 @@
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
                                 <th rowspan="2" class="bg-brilink-dark align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER">BRANCH OFFICE</th>
-                                <th colspan="10" class="bg-brilink-mid">Agen Juragan+Jawara</th>
+                                <th colspan="12" class="bg-brilink-mid">Agen Juragan+Jawara</th>
                             </tr>
                             <tr class="bg-header-sub">
                                 <th class="lbl-curr text-primary">Feb-26</th>
@@ -306,6 +306,8 @@
                                 <th>YtD (%)</th>
                                 <th>YoY</th>
                                 <th>YoY(%)</th>
+                                <th class="rka-col text-dark">RKA</th>
+                                <th class="rka-col text-dark">Penc(%)</th>
                             </tr>
                         </thead>
                         <tbody id="tbody-juragan"></tbody>
@@ -319,7 +321,7 @@
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
                                 <th rowspan="2" class="bg-brilink-dark align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER">BRANCH OFFICE</th>
-                                <th colspan="10" class="bg-brilink-mid">Agen BEP</th>
+                                <th colspan="12" class="bg-brilink-mid">Agen BEP</th>
                             </tr>
                             <tr class="bg-header-sub">
                                 <th class="lbl-curr text-primary">Feb-26</th>
@@ -332,6 +334,8 @@
                                 <th>YtD (%)</th>
                                 <th>YoY</th>
                                 <th>YoY(%)</th>
+                                <th class="rka-col text-dark">RKA</th>
+                                <th class="rka-col text-dark">Penc(%)</th>
                             </tr>
                         </thead>
                         <tbody id="tbody-bep-detail"></tbody>
@@ -400,6 +404,11 @@ document.addEventListener('DOMContentLoaded', function () {
     function formatNum(num) { 
         return (num === null || num === undefined || isNaN(num)) ? '-' : new Intl.NumberFormat('id-ID').format(num); 
     }
+
+    function formatRka(num) {
+        if (num === null || num === undefined || isNaN(parseFloat(num))) return '-';
+        return new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(Math.round(parseFloat(num)));
+    }
     
     function formatMilyar(num) { 
         if(num === null || num === undefined || isNaN(num)) return '-';
@@ -438,7 +447,7 @@ document.addEventListener('DOMContentLoaded', function () {
         return (safeNum(diff) / base) * 100;
     }
 
-    function renderMetricRow(label, metric, isMilyar = false) {
+    function renderMetricRow(label, metric, isMilyar = false, includeRka = false) {
         const curr = safeNum(metric.curr);
         const prev = calcPrev(metric.curr, metric.mtd);
         const dec = calcPrev(metric.curr, metric.ytd);
@@ -447,6 +456,11 @@ document.addEventListener('DOMContentLoaded', function () {
         const ytdPct = calcPct(metric.ytd, dec);
         const yoyPct = calcPct(metric.yoy, yoyPrev);
         const formatter = isMilyar ? formatMilyar : formatNum;
+        const trailingColumns = includeRka
+            ? `
+            <td class="rka-col">${formatRka(metric.rka)}</td>
+            <td class="rka-col">${formatNum(metric.penc_pct)}%</td>`
+            : '';
 
         return `<tr>
             <td class="text-left font-weight-bold text-dark">${label}</td>
@@ -460,6 +474,7 @@ document.addEventListener('DOMContentLoaded', function () {
             <td>${ytdPct === null ? '-' : formatGrowth(ytdPct)}</td>
             <td>${formatGrowth(metric.yoy, isMilyar)}</td>
             <td>${yoyPct === null ? '-' : formatGrowth(yoyPct)}</td>
+            ${trailingColumns}
         </tr>`;
     }
 
@@ -511,7 +526,7 @@ document.addEventListener('DOMContentLoaded', function () {
         </tr>`;
     }
 
-    function renderMetricTotalRow(label, metric, isMilyar = false) {
+    function renderMetricTotalRow(label, metric, isMilyar = false, includeRka = false) {
         const curr = safeNum(metric.curr);
         const prev = calcPrev(metric.curr, metric.mtd);
         const dec = calcPrev(metric.curr, metric.ytd);
@@ -520,6 +535,11 @@ document.addEventListener('DOMContentLoaded', function () {
         const yoyPrev = calcPrev(metric.curr, metric.yoy);
         const yoyPct = calcPct(metric.yoy, yoyPrev);
         const formatter = isMilyar ? formatMilyar : formatNum;
+        const trailingColumns = includeRka
+            ? `
+            <td class="rka-col text-dark">${formatRka(metric.rka)}</td>
+            <td class="rka-col text-dark">${formatNum(metric.penc_pct)}%</td>`
+            : '';
 
         return `<tr class="row-total">
             <td class="text-left">${label}</td>
@@ -533,6 +553,7 @@ document.addEventListener('DOMContentLoaded', function () {
             <td>${ytdPct === null ? '-' : formatGrowth(ytdPct)}</td>
             <td>${formatGrowth(metric.yoy, isMilyar)}</td>
             <td>${yoyPct === null ? '-' : formatGrowth(yoyPct)}</td>
+            ${trailingColumns}
         </tr>`;
     }
 
@@ -680,8 +701,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
                     res.data.forEach((row) => {
                         htmlAgenUser += renderMetricRow(row.branch, row.agen);
-                        htmlJuragan += renderMetricRow(row.branch, row.juragan);
-                        htmlBep += renderMetricRow(row.branch, row.bep);
+                        htmlJuragan += renderMetricRow(row.branch, row.juragan, false, true);
+                        htmlBep += renderMetricRow(row.branch, row.bep, false, true);
                         htmlCasa += renderCasaRow(row.branch, row.casa || { curr: 0, mtd: 0, ytd: 0, yoy: 0 });
 
                         const trxDec = calcPrev(row.trx.curr, row.trx.ytd);
@@ -703,21 +724,21 @@ document.addEventListener('DOMContentLoaded', function () {
                             <td>${formatGrowth(row.agen.mtd)}</td>
                             <td>${formatGrowth(row.agen.ytd)}</td>
                             <td>${formatGrowth(row.agen.yoy)}</td>
-                            <td class="rka-col">${formatNum(row.agen.rka)}</td>
+                            <td class="rka-col">${formatRka(row.agen.rka)}</td>
                             <td class="rka-col">${formatNum(row.agen.penc_pct)}%</td>
 
                             <td class="font-weight-bold">${formatNum(row.juragan.curr)}</td>
                             <td>${formatGrowth(row.juragan.mtd)}</td>
                             <td>${formatGrowth(row.juragan.ytd)}</td>
                             <td>${formatGrowth(row.juragan.yoy)}</td>
-                            <td class="rka-col">${formatNum(row.juragan.rka)}</td>
+                            <td class="rka-col">${formatRka(row.juragan.rka)}</td>
                             <td class="rka-col">${formatNum(row.juragan.penc_pct)}%</td>
 
                             <td class="font-weight-bold">${formatNum(row.bep.curr)}</td>
                             <td>${formatGrowth(row.bep.mtd)}</td>
                             <td>${formatGrowth(row.bep.ytd)}</td>
                             <td>${formatGrowth(row.bep.yoy)}</td>
-                            <td class="rka-col">${formatNum(row.bep.rka)}</td>
+                            <td class="rka-col">${formatRka(row.bep.rka)}</td>
                             <td class="rka-col">${formatNum(row.bep.penc_pct)}%</td>
 
                             <td class="font-weight-bold">${formatNum(row.trx.curr)}</td>
@@ -735,8 +756,8 @@ document.addEventListener('DOMContentLoaded', function () {
                     let total = res.total;
                     if (total) {
                         htmlAgenUser += renderMetricTotalRow(total.branch, total.agen);
-                        htmlJuragan += renderMetricTotalRow(total.branch, total.juragan);
-                        htmlBep += renderMetricTotalRow(total.branch, total.bep);
+                        htmlJuragan += renderMetricTotalRow(total.branch, total.juragan, false, true);
+                        htmlBep += renderMetricTotalRow(total.branch, total.bep, false, true);
                         htmlCasa += renderCasaTotalRow(total.branch, total.casa || { curr: 0, mtd: 0, ytd: 0, yoy: 0 });
 
                         const totalTrxDec = calcPrev(total.trx.curr, total.trx.ytd);
@@ -758,21 +779,21 @@ document.addEventListener('DOMContentLoaded', function () {
                             <td>${formatGrowth(total.agen.mtd)}</td>
                             <td>${formatGrowth(total.agen.ytd)}</td>
                             <td>${formatGrowth(total.agen.yoy)}</td>
-                            <td class="rka-col text-dark">${formatNum(total.agen.rka)}</td>
+                            <td class="rka-col text-dark">${formatRka(total.agen.rka)}</td>
                             <td class="rka-col text-dark">${formatNum(total.agen.penc_pct)}%</td>
 
                             <td>${formatNum(total.juragan.curr)}</td>
                             <td>${formatGrowth(total.juragan.mtd)}</td>
                             <td>${formatGrowth(total.juragan.ytd)}</td>
                             <td>${formatGrowth(total.juragan.yoy)}</td>
-                            <td class="rka-col text-dark">${formatNum(total.juragan.rka)}</td>
+                            <td class="rka-col text-dark">${formatRka(total.juragan.rka)}</td>
                             <td class="rka-col text-dark">${formatNum(total.juragan.penc_pct)}%</td>
 
                             <td>${formatNum(total.bep.curr)}</td>
                             <td>${formatGrowth(total.bep.mtd)}</td>
                             <td>${formatGrowth(total.bep.ytd)}</td>
                             <td>${formatGrowth(total.bep.yoy)}</td>
-                            <td class="rka-col text-dark">${formatNum(total.bep.rka)}</td>
+                            <td class="rka-col text-dark">${formatRka(total.bep.rka)}</td>
                             <td class="rka-col text-dark">${formatNum(total.bep.penc_pct)}%</td>
 
                             <td>${formatNum(total.trx.curr)}</td>
@@ -800,8 +821,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 } else if(res.status === 'error') {
                     $('#tbody-brilink').html(`<tr><td colspan="27" class="text-center text-danger py-5"><i class="fas fa-exclamation-triangle fa-2x mb-2"></i><br>${res.msg}</td></tr>`);
                     $('#tbody-agen-user').html(`<tr><td colspan="11" class="text-center text-danger py-5">${res.msg}</td></tr>`);
-                    $('#tbody-juragan').html(`<tr><td colspan="11" class="text-center text-danger py-5">${res.msg}</td></tr>`);
-                    $('#tbody-bep-detail').html(`<tr><td colspan="11" class="text-center text-danger py-5">${res.msg}</td></tr>`);
+                    $('#tbody-juragan').html(`<tr><td colspan="13" class="text-center text-danger py-5">${res.msg}</td></tr>`);
+                    $('#tbody-bep-detail').html(`<tr><td colspan="13" class="text-center text-danger py-5">${res.msg}</td></tr>`);
                     $('#tbody-transaksi').html(`<tr><td colspan="6" class="text-center text-danger py-5">${res.msg}</td></tr>`);
                     $('#tbody-casa').html(`<tr><td colspan="11" class="text-center text-danger py-5">${res.msg}</td></tr>`);
                 }
@@ -812,8 +833,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
                 $('#tbody-brilink').html('<tr><td colspan="27" class="text-center text-danger py-5"><i class="fas fa-exclamation-triangle fa-2x mb-2"></i><br>Gagal memuat data dari server.</td></tr>');
                 $('#tbody-agen-user').html('<tr><td colspan="11" class="text-center text-danger py-5">Gagal memuat data dari server.</td></tr>');
-                $('#tbody-juragan').html('<tr><td colspan="11" class="text-center text-danger py-5">Gagal memuat data dari server.</td></tr>');
-                $('#tbody-bep-detail').html('<tr><td colspan="11" class="text-center text-danger py-5">Gagal memuat data dari server.</td></tr>');
+                $('#tbody-juragan').html('<tr><td colspan="13" class="text-center text-danger py-5">Gagal memuat data dari server.</td></tr>');
+                $('#tbody-bep-detail').html('<tr><td colspan="13" class="text-center text-danger py-5">Gagal memuat data dari server.</td></tr>');
                 $('#tbody-transaksi').html('<tr><td colspan="6" class="text-center text-danger py-5">Gagal memuat data dari server.</td></tr>');
                 $('#tbody-casa').html('<tr><td colspan="11" class="text-center text-danger py-5">Gagal memuat data dari server.</td></tr>');
             },

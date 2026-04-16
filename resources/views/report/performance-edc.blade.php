@@ -149,6 +149,8 @@
     .bg-tab2-dark { background-color: #2b5cb5 !important; color: #ffffff !important; border-color: #214b99 !important; }
     .bg-tab2-light { background-color: #92c0f0 !important; color: #000000 !important; border-color: #8eb7e3 !important; font-weight: bold; }
     .bg-tab2-sublight { background-color: #dae8f9 !important; color: #000000 !important; border-color: #c8d9ea !important; font-weight: bold; }
+    .bg-sv-accum-dark { background-color: #7d7d7d !important; color: #ffffff !important; border-color: #6c6c6c !important; }
+    .bg-sv-accum-sub { background-color: #b6b6b6 !important; color: #ffffff !important; border-color: #a2a2a2 !important; font-weight: bold; }
     
     /* 🔥 Pewarnaan Header TAB 3 (Produktivitas MoM) */
     .bg-mom-sv0 { background-color: #2956a8 !important; color: white !important; }
@@ -248,6 +250,16 @@
                 </a>
             </li>
             <li class="nav-item">
+                <a class="nav-link" data-toggle="tab" href="#tab-merchant-prod" role="tab" data-tab="merchant_prod">
+                    <i class="fas fa-store mr-1"></i> Performance EDC Merchant Produktif
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" data-toggle="tab" href="#tab-sv-merchant" role="tab" data-tab="sv_merchant_accum">
+                    <i class="fas fa-chart-area mr-1"></i> Performance SV Merchant EDC Akumulasi
+                </a>
+            </li>
+            <li class="nav-item">
                 <a class="nav-link" data-toggle="tab" href="#tab-prod-mom" role="tab" data-tab="prod_mom">
                     <i class="fas fa-chart-bar mr-1"></i> Produktivitas EDC MoM
                 </a>
@@ -306,6 +318,58 @@
                             </tr>
                         </thead>
                         <tbody id="tbody-mid"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="tab-pane fade" id="tab-merchant-prod" role="tabpanel">
+                <div class="table-container">
+                    <table class="table table-hover table-report m-0">
+                        <thead class="sticky-top" style="z-index: 2;">
+                            <tr>
+                                <th rowspan="2" class="bg-mid-dark align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER">BRANCH OFFICE</th>
+                                <th colspan="11" class="bg-prod-dark">Performance EDC Merchant Produktif <br><small>SV &gt;= 15 Juta/Bulan</small></th>
+                            </tr>
+                            <tr class="bg-header-sub">
+                                <th class="merchant-label" id="merchant_feb_prev">Feb'25</th>
+                                <th class="merchant-label" id="merchant_dec_prev">Des'25</th>
+                                <th class="merchant-label" id="merchant_jan_prev">Jan'26</th>
+                                <th class="merchant-label" id="merchant_curr">28 Feb 26</th>
+                                <th>% TID Produktif</th>
+                                <th>MtD</th>
+                                <th>MtD(%)</th>
+                                <th>YtD</th>
+                                <th>YoY</th>
+                                <th class="rka-col text-dark merchant-label" id="merchant_rka">RKA Feb'26</th>
+                                <th class="rka-col text-dark">Penc(%)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbody-merchant-prod"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="tab-pane fade" id="tab-sv-merchant" role="tabpanel">
+                <div class="table-container">
+                    <table class="table table-hover table-report m-0">
+                        <thead class="sticky-top" style="z-index: 2;">
+                            <tr>
+                                <th rowspan="2" class="bg-mid-dark align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER">BRANCH OFFICE</th>
+                                <th colspan="9" class="bg-prod-dark">SV Merchant EDC Akumulasi <br><small>(Rp Milyar)</small></th>
+                            </tr>
+                            <tr class="bg-header-sub">
+                                <th class="sv-label" id="sv_feb_prev">Feb'25</th>
+                                <th class="sv-label" id="sv_dec_prev">Des'25</th>
+                                <th class="sv-label" id="sv_jan_prev">Jan'26</th>
+                                <th class="sv-label" id="sv_curr">28 Feb 26</th>
+                                <th>MtD</th>
+                                <th>MtD(%)</th>
+                                <th>YoY</th>
+                                <th class="rka-col text-dark sv-label" id="sv_rka">RKA Feb'26</th>
+                                <th class="rka-col text-dark">Penc(%)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbody-sv-merchant"></tbody>
                     </table>
                 </div>
             </div>
@@ -449,6 +513,18 @@ document.addEventListener('DOMContentLoaded', function () {
         return `${text} -`;
     }
 
+    function formatGrowthParen(val, isPct = false) {
+        let num = parseFloat(val);
+        if (isNaN(num)) return '-';
+
+        let text = isPct ? formatNum(Math.abs(num)) + '%' : formatNum(Math.abs(num));
+        if (num > 0) return `${text} <i class="fas fa-arrow-up val-up"></i>`;
+        if (num < 0) return isPct
+            ? `-${text} <i class="fas fa-arrow-down val-down"></i>`
+            : `(${text}) <i class="fas fa-arrow-down val-down"></i>`;
+        return `${text} -`;
+    }
+
     // Fungsi Khusus Formatting Cell % MoM (Good = Hijau, Bad = Merah)
     function formatCellPct(val, isInverse = false) {
         let num = parseFloat(val);
@@ -481,10 +557,20 @@ document.addEventListener('DOMContentLoaded', function () {
                 if(res.status === 'success') {
                     updateGroupLabel(res.group_label);
                     
-                    $('.lbl-yoy').text(res.labels.yoy);
-                    $('.lbl-ytd').text(res.labels.ytd);
-                    $('.lbl-mtd').text(res.labels.mtd);
-                    $('.lbl-curr').text(res.labels.curr);
+                    if (res.labels?.yoy) $('.lbl-yoy').text(res.labels.yoy);
+                    if (res.labels?.ytd) $('.lbl-ytd').text(res.labels.ytd);
+                    if (res.labels?.mtd) $('.lbl-mtd').text(res.labels.mtd);
+                    if (res.labels?.curr) $('.lbl-curr').text(res.labels.curr);
+                    if (res.labels?.merchant_feb_prev) $('#merchant_feb_prev').text(res.labels.merchant_feb_prev);
+                    if (res.labels?.merchant_dec_prev) $('#merchant_dec_prev').text(res.labels.merchant_dec_prev);
+                    if (res.labels?.merchant_jan_prev) $('#merchant_jan_prev').text(res.labels.merchant_jan_prev);
+                    if (res.labels?.merchant_curr) $('#merchant_curr').text(res.labels.merchant_curr);
+                    if (res.labels?.rka) $('#merchant_rka').text(res.labels.rka);
+                    if (res.labels?.merchant_sv_feb_prev) $('#sv_feb_prev').text(res.labels.merchant_sv_feb_prev);
+                    if (res.labels?.merchant_sv_dec_prev) $('#sv_dec_prev').text(res.labels.merchant_sv_dec_prev);
+                    if (res.labels?.merchant_sv_jan_prev) $('#sv_jan_prev').text(res.labels.merchant_sv_jan_prev);
+                    if (res.labels?.merchant_sv_curr) $('#sv_curr').text(res.labels.merchant_sv_curr);
+                    if (res.labels?.rka) $('#sv_rka').text(res.labels.rka);
                     if (filterPosisiRka) {
                         filterPosisiRka.value = res.labels.rka || '--------';
                     }
@@ -549,6 +635,76 @@ document.addEventListener('DOMContentLoaded', function () {
                             <td class="rka-col text-dark">${formatNum(total.tid.rka)}</td> <td class="rka-col text-dark">${formatNum(total.tid.penc_pct)}%</td>
                         </tr>`;
                         $('#tbody-mid').html(html);
+                    }
+                    else if (activeTab === 'merchant_prod') {
+                        res.data.forEach((row) => {
+                            const prod = row.prod || {};
+                            html += `<tr>
+                                <td class="text-left font-weight-bold text-dark">${row.branch}</td>
+                                <td>${formatNum(prod.feb_prev)}</td>
+                                <td>${formatNum(prod.dec_prev)}</td>
+                                <td>${formatNum(prod.jan_prev)}</td>
+                                <td class="font-weight-bold">${formatNum(prod.curr)}</td>
+                                <td class="font-weight-bold text-primary">${formatNum(prod.pct_tid)}%</td>
+                                <td>${formatGrowthParen(prod.mtd_val)}</td>
+                                <td>${formatGrowthParen(prod.mtd_pct, true)}</td>
+                                <td>${formatGrowthParen(prod.ytd_val)}</td>
+                                <td>${formatGrowthParen(prod.yoy_val)}</td>
+                                <td class="rka-col">${formatNum(prod.rka)}</td>
+                                <td class="rka-col">${formatNum(prod.penc_pct)}%</td>
+                            </tr>`;
+                        });
+
+                        let total = res.total;
+                        let prod = total.prod || {};
+                        html += `<tr class="row-total">
+                            <td class="text-left">${total.branch}</td>
+                            <td>${formatNum(prod.feb_prev)}</td>
+                            <td>${formatNum(prod.dec_prev)}</td>
+                            <td>${formatNum(prod.jan_prev)}</td>
+                            <td>${formatNum(prod.curr)}</td>
+                            <td>${formatNum(prod.pct_tid)}%</td>
+                            <td>${formatGrowthParen(prod.mtd_val)}</td>
+                            <td>${formatGrowthParen(prod.mtd_pct, true)}</td>
+                            <td>${formatGrowthParen(prod.ytd_val)}</td>
+                            <td>${formatGrowthParen(prod.yoy_val)}</td>
+                            <td class="rka-col text-dark">${formatNum(prod.rka)}</td>
+                            <td class="rka-col text-dark">${formatNum(prod.penc_pct)}%</td>
+                        </tr>`;
+                        $('#tbody-merchant-prod').html(html);
+                    }
+                    else if (activeTab === 'sv_merchant_accum') {
+                        res.data.forEach((row) => {
+                            const sv = row.sv || {};
+                            html += `<tr>
+                                <td class="text-left font-weight-bold text-dark">${row.branch}</td>
+                                <td>${formatNum(sv.feb_prev)}</td>
+                                <td>${formatNum(sv.dec_prev)}</td>
+                                <td>${formatNum(sv.jan_prev)}</td>
+                                <td class="font-weight-bold">${formatNum(sv.curr)}</td>
+                                <td>${formatGrowthParen(sv.mtd_val)}</td>
+                                <td>${formatGrowthParen(sv.mtd_pct, true)}</td>
+                                <td>${formatGrowthParen(sv.yoy_val)}</td>
+                                <td class="rka-col">${formatNum(sv.rka)}</td>
+                                <td class="rka-col">${formatNum(sv.penc_pct)}%</td>
+                            </tr>`;
+                        });
+
+                        let total = res.total;
+                        let sv = total.sv || {};
+                        html += `<tr class="row-total">
+                            <td class="text-left">${total.branch}</td>
+                            <td>${formatNum(sv.feb_prev)}</td>
+                            <td>${formatNum(sv.dec_prev)}</td>
+                            <td>${formatNum(sv.jan_prev)}</td>
+                            <td>${formatNum(sv.curr)}</td>
+                            <td>${formatGrowthParen(sv.mtd_val)}</td>
+                            <td>${formatGrowthParen(sv.mtd_pct, true)}</td>
+                            <td>${formatGrowthParen(sv.yoy_val)}</td>
+                            <td class="rka-col text-dark">${formatNum(sv.rka)}</td>
+                            <td class="rka-col text-dark">${formatNum(sv.penc_pct)}%</td>
+                        </tr>`;
+                        $('#tbody-sv-merchant').html(html);
                     }
                     
                     // TAB 3: PRODUKTIVITAS MoM

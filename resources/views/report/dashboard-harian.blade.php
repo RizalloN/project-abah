@@ -560,6 +560,7 @@
                         <col style="width: 100px;" class="numeric-col">
                         <col style="width: 110px;" class="numeric-col">
                         <col style="width: 110px;" class="numeric-col">
+                        <col style="width: 110px;" class="numeric-col">
                     </colgroup>
                     <thead>
                         <tr class="group-row text-center">
@@ -567,7 +568,7 @@
                             <th class="sticky-label group-label text-left" rowspan="2">Keterangan</th>
                             <th class="group-position" colspan="6" data-position-group-colspan>Perbandingan Posisi</th>
                             <th class="group-delta" colspan="3">Delta Terhadap</th>
-                            <th class="group-rka" colspan="2">Perbandingan RKA</th>
+                            <th class="group-rka" colspan="3">Perbandingan RKA</th>
                         </tr>
                         <tr class="column-row text-center">
                             <th class="value-col position-col">
@@ -603,10 +604,13 @@
                             <th class="value-col rka-col">
                                 <span class="column-heading"><span class="main" data-label-rka-dec>-</span></span>
                             </th>
+                            <th class="value-col rka-col">
+                                <span class="column-heading"><span class="main">Penc(%)</span></span>
+                            </th>
                         </tr>
                     </thead>
                     <tbody id="daily-dashboard-body">
-                        <tr><td colspan="13" class="daily-empty"><i class="fas fa-spinner fa-spin mr-2"></i> Memuat data dashboard harian...</td></tr>
+                        <tr><td colspan="14" class="daily-empty"><i class="fas fa-spinner fa-spin mr-2"></i> Memuat data dashboard harian...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -708,7 +712,7 @@
             }
 
             const raw = String(value).slice(0, 7);
-            if (!/^\d{4}-\d{2}$/.test(raw)) {
+       /*  */     if (!/^\d{4}-\d{2}$/.test(raw)) {
                 return String(value);
             }
 
@@ -842,7 +846,7 @@
             const rows = payload.rows || [];
             const periods = payload.comparison_periods || {};
             const hasH1 = Boolean(periods.h1 && periods.h1.period);
-            const emptyColspan = hasH1 ? 13 : 12;
+            const emptyColspan = hasH1 ? 14 : 13;
             const blockClassMap = {
                 total_simpanan: 'metric-block-simpanan',
                 total_os: 'metric-block-os',
@@ -919,6 +923,7 @@
                 rowCells.push('<td class="value-col delta-col ' + deltaClass(delta.dtd) + '"><span class="cell-text">' + formatValue(delta.dtd, row.type) + '</span></td>');
                 rowCells.push('<td class="value-col rka-col"><span class="cell-text">' + formatValue(value.rka, row.type) + '</span></td>');
                 rowCells.push('<td class="value-col rka-col"><span class="cell-text">' + formatValue(value.rka_dec, row.type) + '</span></td>');
+                rowCells.push('<td class="value-col rka-col"><span class="cell-text">' + formatPercent(value.penc_pct) + '</span></td>');
 
                 const rowClasses = ['row-depth-' + row.depth];
                 if (blockClassMap[row.key]) {
@@ -1001,7 +1006,7 @@
                 })
                 .catch(function () {
                     const hidden = positionH1Header && positionH1Header.classList.contains('position-col-hidden');
-                    body.innerHTML = '<tr><td colspan="' + (hidden ? 12 : 13) + '" class="daily-empty text-danger"><i class="fas fa-exclamation-triangle mr-2"></i>Gagal memuat data dashboard harian.</td></tr>';
+                    body.innerHTML = '<tr><td colspan="' + (hidden ? 13 : 14) + '" class="daily-empty text-danger"><i class="fas fa-exclamation-triangle mr-2"></i>Gagal memuat data dashboard harian.</td></tr>';
                 })
                 .finally(function () {
                     surface.classList.remove('daily-loading');
@@ -1041,7 +1046,7 @@
         syncUnitSelect(initialFilters, initialSelected.unit_kerja || 'all');
         populateSelect(selects.posisi_terakhir, initialFilters.posisi_terakhir || [], initialSelected.posisi_terakhir || '');
         populateSelect(selects.posisi_rka, initialFilters.posisi_rka || [], initialSelected.posisi_rka || '');
-        body.innerHTML = '<tr><td colspan="13" class="daily-empty"><i class="fas fa-filter mr-2 text-muted"></i>Filter belum dijalankan. Pilih parameter lalu klik Terapkan Filter.</td></tr>';
+        body.innerHTML = '<tr><td colspan="14" class="daily-empty"><i class="fas fa-filter mr-2 text-muted"></i>Filter belum dijalankan. Pilih parameter lalu klik Terapkan Filter.</td></tr>';
 
         if (initialData && Object.keys(initialData).length) {
             applyPayload(initialData);

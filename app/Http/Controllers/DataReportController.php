@@ -680,6 +680,226 @@ class DataReportController extends Controller
         }
 
         // =================================================================================
+        // LOGIKA TAB 1B: PERFORMANCE EDC MERCHANT PRODUKTIF
+        // =================================================================================
+        elseif ($tab === 'merchant_prod') {
+            $merchantRkaGroups = $this->rkaLookupService()->aggregateByGroup(
+                [
+                    'prod' => ['mata_anggaran' => ['Jumlah Merchant (EDC) yang Produktif']],
+                ],
+                $rkaMonthColumn,
+                $upperBranches,
+                $upperSelectedUkers,
+                $isBranchFiltered ? 'uker' : 'kanca'
+            );
+
+            $query = DB::table('jumlah_merchant_detail')
+                ->select(DB::raw("UPPER($groupColumn) as branch"))
+                ->selectRaw("COUNT(DISTINCT CASE WHEN DATE(POSISI) = ? THEN MID END) as mid_curr", [$dateCurr])
+                ->selectRaw("COUNT(CASE WHEN DATE(POSISI) = ? AND SALES_VOLUME >= 15000000 THEN 1 END) as prod_curr", [$dateCurr])
+                ->selectRaw("COUNT(CASE WHEN DATE(POSISI) = ? AND SALES_VOLUME >= 15000000 THEN 1 END) as prod_prev_month", [$datePrevMoM])
+                ->selectRaw("COUNT(CASE WHEN DATE(POSISI) = ? AND SALES_VOLUME >= 15000000 THEN 1 END) as prod_ytd", [$dateYtD])
+                ->selectRaw("COUNT(CASE WHEN DATE(POSISI) = ? AND SALES_VOLUME >= 15000000 THEN 1 END) as prod_yoy", [$dateYoY]);
+
+            $query->whereIn(DB::raw('UPPER(NAMA_KANCA)'), $upperBranches);
+            if ($isBranchFiltered) {
+                $query->whereNotNull('NAMA_UKER')
+                    ->whereRaw("TRIM(NAMA_UKER) <> ''");
+            }
+            if (!empty($selectedUkers)) {
+                $query->whereIn(DB::raw('UPPER(TRIM(NAMA_UKER))'), $upperSelectedUkers);
+            }
+
+            $rows = $query->groupBy('branch')->get();
+
+            $data = [];
+            $totals = [
+                'mid_curr' => 0,
+                'prod_curr' => 0,
+                'prod_prev_month' => 0,
+                'prod_ytd' => 0,
+                'prod_yoy' => 0,
+            ];
+            $totalProdRka = 0.0;
+
+            foreach ($rows as $row) {
+                $branchKey = strtoupper(trim((string) ($row->branch ?? '')));
+                $midCurr = (int) ($row->mid_curr ?? 0);
+                $prodCurr = (int) ($row->prod_curr ?? 0);
+                $prodPrevMonth = (int) ($row->prod_prev_month ?? 0);
+                $prodYtd = (int) ($row->prod_ytd ?? 0);
+                $prodYoy = (int) ($row->prod_yoy ?? 0);
+                $prodRka = round((float) ($merchantRkaGroups['prod'][$branchKey] ?? 0), 2);
+                $prodPencPct = $prodRka > 0 ? (($prodCurr / $prodRka) * 100) : 0;
+
+                $data[] = [
+                    'branch' => $row->branch,
+                    'prod' => [
+                        'feb_prev' => $prodYoy,
+                        'dec_prev' => $prodYtd,
+                        'jan_prev' => $prodPrevMonth,
+                        'curr' => $prodCurr,
+                        'pct_tid' => $midCurr > 0
+                            ? round(($prodCurr / $midCurr) * 100, 1)
+                            : 0,
+                        'mtd_val' => $prodCurr - $prodPrevMonth,
+                        'mtd_pct' => $prodPrevMonth > 0
+                            ? round((($prodCurr - $prodPrevMonth) / $prodPrevMonth) * 100, 1)
+                            : 0,
+                        'ytd_val' => $prodCurr - $prodYtd,
+                        'yoy_val' => $prodCurr - $prodYoy,
+                        'rka' => $prodRka,
+                        'penc_pct' => round($prodPencPct, 1),
+                    ],
+                ];
+
+                $totals['mid_curr'] += $midCurr;
+                $totals['prod_curr'] += $prodCurr;
+                $totals['prod_prev_month'] += $prodPrevMonth;
+                $totals['prod_ytd'] += $prodYtd;
+                $totals['prod_yoy'] += $prodYoy;
+                $totalProdRka += $prodRka;
+            }
+
+            $totalProdPencPct = $totalProdRka > 0 ? (($totals['prod_curr'] / $totalProdRka) * 100) : 0;
+
+            $labels = [
+                'merchant_feb_prev' => Carbon::parse($dateYoY)->translatedFormat("M'y"),
+                'merchant_dec_prev' => Carbon::parse($dateYtD)->translatedFormat("M'y"),
+                'merchant_jan_prev' => Carbon::parse($datePrevMoM)->translatedFormat("M'y"),
+                'merchant_curr' => Carbon::parse($dateCurr)->translatedFormat('d M y'),
+                'rka' => 'RKA ' . $rkaMonthLabel,
+            ];
+
+            return response()->json([
+                'status' => 'success',
+                'labels' => $labels,
+                'group_label' => $groupLabel,
+                'data' => $data,
+                'total' => [
+                    'branch' => $totalBranchLabel,
+                    'prod' => [
+                        'feb_prev' => $totals['prod_yoy'],
+                        'dec_prev' => $totals['prod_ytd'],
+                        'jan_prev' => $totals['prod_prev_month'],
+                        'curr' => $totals['prod_curr'],
+                        'pct_tid' => $totals['mid_curr'] > 0 ? round(($totals['prod_curr'] / $totals['mid_curr']) * 100, 1) : 0,
+                        'mtd_val' => $totals['prod_curr'] - $totals['prod_prev_month'],
+                        'mtd_pct' => $totals['prod_prev_month'] > 0 ? round((($totals['prod_curr'] - $totals['prod_prev_month']) / $totals['prod_prev_month']) * 100, 1) : 0,
+                        'ytd_val' => $totals['prod_curr'] - $totals['prod_ytd'],
+                        'yoy_val' => $totals['prod_curr'] - $totals['prod_yoy'],
+                        'rka' => round($totalProdRka, 2),
+                        'penc_pct' => round($totalProdPencPct, 1),
+                    ],
+                ],
+            ]);
+        }
+
+        // =================================================================================
+        // LOGIKA TAB 1C: PERFORMANCE SV MERCHANT EDC AKUMULASI
+        // =================================================================================
+        elseif ($tab === 'sv_merchant_accum') {
+            $svRkaGroups = $this->rkaLookupService()->aggregateByGroup(
+                [
+                    'sv' => ['mata_anggaran' => ['Sales Volume Merchant (EDC)']],
+                ],
+                $rkaMonthColumn,
+                $upperBranches,
+                $upperSelectedUkers,
+                $isBranchFiltered ? 'uker' : 'kanca'
+            );
+
+            $query = DB::table('jumlah_merchant_detail')
+                ->select(DB::raw("UPPER($groupColumn) as branch"))
+                ->selectRaw("SUM(CASE WHEN DATE(POSISI) = ? THEN SALES_VOLUME ELSE 0 END) as sv_curr", [$dateCurr])
+                ->selectRaw("SUM(CASE WHEN DATE(POSISI) = ? THEN SALES_VOLUME ELSE 0 END) as sv_dec_prev", [$dateYtD])
+                ->selectRaw("SUM(CASE WHEN DATE(POSISI) = ? THEN SALES_VOLUME ELSE 0 END) as sv_jan_prev", [$datePrevMoM])
+                ->selectRaw("SUM(CASE WHEN DATE(POSISI) = ? THEN SALES_VOLUME ELSE 0 END) as sv_feb_prev", [$dateYoY]);
+
+            $query->whereIn(DB::raw('UPPER(NAMA_KANCA)'), $upperBranches);
+            if ($isBranchFiltered) {
+                $query->whereNotNull('NAMA_UKER')
+                    ->whereRaw("TRIM(NAMA_UKER) <> ''");
+            }
+            if (!empty($selectedUkers)) {
+                $query->whereIn(DB::raw('UPPER(TRIM(NAMA_UKER))'), $upperSelectedUkers);
+            }
+
+            $rows = $query->groupBy('branch')->get();
+
+            $data = [];
+            $totals = [
+                'sv_curr' => 0,
+                'sv_dec_prev' => 0,
+                'sv_jan_prev' => 0,
+                'sv_feb_prev' => 0,
+            ];
+            $totalSvRka = 0.0;
+
+            foreach ($rows as $row) {
+                $branchKey = strtoupper(trim((string) ($row->branch ?? '')));
+                $svCurr = round(((float) ($row->sv_curr ?? 0)) / 1000000, 0);
+                $svDecPrev = round(((float) ($row->sv_dec_prev ?? 0)) / 1000000, 0);
+                $svJanPrev = round(((float) ($row->sv_jan_prev ?? 0)) / 1000000, 0);
+                $svFebPrev = round(((float) ($row->sv_feb_prev ?? 0)) / 1000000, 0);
+                $svRka = round((float) ($svRkaGroups['sv'][$branchKey] ?? 0) / 1000000, 0);
+                $svPencPct = $svRka > 0 ? (($svCurr / $svRka) * 100) : 0;
+
+                $data[] = [
+                    'branch' => $row->branch,
+                    'sv' => [
+                        'feb_prev' => $svFebPrev,
+                        'dec_prev' => $svDecPrev,
+                        'jan_prev' => $svJanPrev,
+                        'curr' => $svCurr,
+                        'mtd_val' => $svCurr - $svJanPrev,
+                        'mtd_pct' => $svJanPrev > 0 ? round((($svCurr - $svJanPrev) / $svJanPrev) * 100, 1) : 0,
+                        'yoy_val' => $svCurr - $svFebPrev,
+                        'rka' => $svRka,
+                        'penc_pct' => round($svPencPct, 1),
+                    ],
+                ];
+
+                $totals['sv_curr'] += $svCurr;
+                $totals['sv_dec_prev'] += $svDecPrev;
+                $totals['sv_jan_prev'] += $svJanPrev;
+                $totals['sv_feb_prev'] += $svFebPrev;
+                $totalSvRka += $svRka;
+            }
+
+            $totalSvPencPct = $totalSvRka > 0 ? (($totals['sv_curr'] / $totalSvRka) * 100) : 0;
+
+            $labels = [
+                'merchant_sv_feb_prev' => Carbon::parse($dateYoY)->translatedFormat("M'y"),
+                'merchant_sv_dec_prev' => Carbon::parse($dateYtD)->translatedFormat("M'y"),
+                'merchant_sv_jan_prev' => Carbon::parse($datePrevMoM)->translatedFormat("M'y"),
+                'merchant_sv_curr' => Carbon::parse($dateCurr)->translatedFormat('d M y'),
+                'rka' => 'RKA ' . Carbon::parse($dateCurr)->translatedFormat("M'y"),
+            ];
+
+            return response()->json([
+                'status' => 'success',
+                'labels' => $labels,
+                'group_label' => $groupLabel,
+                'data' => $data,
+                'total' => [
+                    'branch' => $totalBranchLabel,
+                    'sv' => [
+                        'feb_prev' => $totals['sv_feb_prev'],
+                        'dec_prev' => $totals['sv_dec_prev'],
+                        'jan_prev' => $totals['sv_jan_prev'],
+                        'curr' => $totals['sv_curr'],
+                        'mtd_val' => $totals['sv_curr'] - $totals['sv_jan_prev'],
+                        'mtd_pct' => $totals['sv_jan_prev'] > 0 ? round((($totals['sv_curr'] - $totals['sv_jan_prev']) / $totals['sv_jan_prev']) * 100, 1) : 0,
+                        'yoy_val' => $totals['sv_curr'] - $totals['sv_feb_prev'],
+                        'rka' => round($totalSvRka, 0),
+                        'penc_pct' => round($totalSvPencPct, 1),
+                    ],
+                ],
+            ]);
+        }
+
+        // =================================================================================
         // LOGIKA TAB 2: MID & TID (LAMA)
         // =================================================================================
         elseif ($tab === 'mid_tid') {

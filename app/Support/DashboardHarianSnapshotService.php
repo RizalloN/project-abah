@@ -134,7 +134,7 @@ class DashboardHarianSnapshotService
         ['key' => 'kur_mikro_sml', 'label' => 'KUR Mikro', 'type' => 'currency', 'depth' => 2, 'accent' => 'default'],
         ['key' => 'kur_kecil_sml', 'label' => 'KUR Kecil', 'type' => 'currency', 'depth' => 2, 'accent' => 'default'],
         ['key' => 'kur_kpp_sml', 'label' => 'KUR KPP', 'type' => 'currency', 'depth' => 2, 'accent' => 'default'],
-        ['key' => 'total_npl_pct_non_commercial', 'label' => '4. NPL', 'type' => 'percent', 'depth' => 0, 'accent' => 'strong'],
+        ['key' => 'total_npl_pct_non_commercial', 'label' => '4. Total NPL (%) Non Commercial', 'type' => 'percent', 'depth' => 0, 'accent' => 'strong'],
         ['key' => 'total_npl_abs_non_commercial', 'label' => 'Total NPL (ABS) Non Commercial', 'type' => 'currency', 'depth' => 1, 'accent' => 'section'],
         ['key' => 'commercial_npl', 'label' => 'A. Commercial', 'type' => 'currency', 'depth' => 1, 'accent' => 'default'],
         ['key' => 'sme_npl', 'label' => 'B. SME', 'type' => 'currency', 'depth' => 1, 'accent' => 'section'],
@@ -487,6 +487,10 @@ class DashboardHarianSnapshotService
                     'current' => (float) ($currentMetrics[$metricKey] ?? 0),
                     'rka' => (float) ($rkaMetrics[$metricKey] ?? 0),
                     'rka_dec' => (float) ($rkaDecMetrics[$metricKey] ?? 0),
+                    'penc_pct' => $this->safePercent(
+                        (float) ($currentMetrics[$metricKey] ?? 0),
+                        (float) ($rkaMetrics[$metricKey] ?? 0)
+                    ),
                 ],
                 'deltas' => [
                     'yoy' => (float) ($currentMetrics[$metricKey] ?? 0) - (float) ($yoyMetrics[$metricKey] ?? 0),
@@ -496,7 +500,7 @@ class DashboardHarianSnapshotService
             ];
         })->values()->all();
 
-        $source = collect(array_keys($metricsByPeriod))->count() === count($periodKeys) && Schema::hasTable(self::SNAPSHOT_TABLE)
+        $source = $this->canUseSnapshotMetrics() && $this->normalizeFilterValues($kancaKey) === [] && $this->normalizeFilterValues($unitKey) === []
             ? self::SNAPSHOT_TABLE
             : 'source_fallback';
 
@@ -537,9 +541,9 @@ class DashboardHarianSnapshotService
         $metricsByPeriod = [];
         $normalizedKanca = $this->normalizeFilterValues($kancaKey);
         $normalizedUnit = $this->normalizeFilterValues($unitKey);
-        $useSnapshot = $normalizedKanca === [] && $normalizedUnit === [];
+        $useSnapshot = $normalizedKanca === [] && $normalizedUnit === [] && $this->canUseSnapshotMetrics();
 
-        if ($useSnapshot && Schema::hasTable(self::SNAPSHOT_TABLE)) {
+        if ($useSnapshot) {
             $selects = collect(self::METRIC_COLUMNS)
                 ->map(fn (string $column) => "COALESCE(SUM({$column}), 0) as {$column}")
                 ->implode(",\n");
@@ -740,19 +744,19 @@ class DashboardHarianSnapshotService
         $final['sme_os'] = $final['kecil_os'];
         $final['sme_sml'] = $final['kecil_sml'];
         $final['sme_npl'] = $final['kecil_npl'];
-        $final['total_os'] = $final['commercial_os'] + $final['sme_os'] + $final['consumer_os'] + $final['micro_os'];
-        $final['total_os_non_commercial'] = $final['sme_os'] + $final['consumer_os'] + $final['micro_os'];
+        $final['total_os_non_commercial'] = $final['kecil_os'] + $final['medium_os'] + $final['consumer_os'] + $final['micro_os'];
+        $final['total_os'] = $final['commercial_os'] + $final['total_os_non_commercial'];
         $final['ldr_non_commercial'] = $this->safePercent($final['total_simpanan'], $final['total_os_non_commercial']);
         $final['ldr_ritel_non_commercial'] = $this->safePercent($final['simpanan_ritel'], $final['sme_os'] + $final['consumer_os']);
         $final['ldr_mikro_non_commercial'] = $this->safePercent($final['simpanan_mikro'], $final['micro_os']);
         $final['casa_pct'] = $this->safePercent($final['total_casa'], $final['total_simpanan']);
-        $final['total_sml_pct_non_commercial'] = $this->safePercent($final['total_sml_abs_non_commercial'], $final['total_os']);
-        $final['total_npl_pct_non_commercial'] = $this->safePercent($final['total_npl_abs_non_commercial'], $final['total_os']);
+        $final['total_sml_pct_non_commercial'] = $this->safePercent($final['total_sml_abs_non_commercial'], $final['total_os_non_commercial']);
+        $final['total_npl_pct_non_commercial'] = $this->safePercent($final['total_npl_abs_non_commercial'], $final['total_os_non_commercial']);
 
         return $final;
     }
 
-    private function buildRkaMetrics(?string $rkaPeriod, ?string $filterPeriod, ?string $kancaKey, ?string $unitKey, bool $useDecember): array
+    private function buildRkaMetrics(?string $rkaPeriod, ?string $filterPeriod, array|string|null $kancaKey, array|string|null $unitKey, bool $useDecember): array
     {
         if (!$rkaPeriod) {
             return $this->emptyMetrics();
@@ -805,21 +809,31 @@ class DashboardHarianSnapshotService
             'kur_kecil_os' => ['mata_anggaran' => ['B.1.d. KUR Kecil']],
             'kur_kpp_os' => ['mata_anggaran' => ['B.1.e. KPP']],
             'total_sml_pct_non_commercial' => ['mata_anggaran' => ['DPK % Total']],
-            'sml_kecil_non_cashcoll_abs' => ['mata_anggaran' => ['DPK Rp Kecil Non Cash Collateral']],
-            'sml_cashcoll_abs' => ['mata_anggaran' => ['DPK Rp Kecil Cash Collateral']],
-            'sml_medium_abs' => ['mata_anggaran' => ['DPK Rp Medium']],
-            'sml_briguna_abs' => ['mata_anggaran' => ['DPK Rp Briguna']],
-            'sml_kpr_abs' => ['mata_anggaran' => ['DPK Rp KPR']],
-            'sml_kkb_abs' => ['mata_anggaran' => ['DPK Rp KKB']],
-            'sml_mikro_abs' => ['mata_anggaran' => ['DPK Rp Mikro']],
-            'npl_total_pct' => ['mata_anggaran' => ['DPK % Total']],
-            'npl_kecil_non_cashcoll_abs' => ['mata_anggaran' => ['DPK Rp Kecil Non Cash Collateral']],
-            'npl_cashcoll_abs' => ['mata_anggaran' => ['DPK Rp Kecil Cash Collateral']],
-            'npl_medium_abs' => ['mata_anggaran' => ['DPK Rp Medium']],
-            'npl_briguna_abs' => ['mata_anggaran' => ['DPK Rp Briguna']],
-            'npl_kpr_abs' => ['mata_anggaran' => ['DPK Rp KPR']],
-            'npl_kkb_abs' => ['mata_anggaran' => ['DPK Rp KKB']],
-            'npl_mikro_abs' => ['mata_anggaran' => ['DPK Rp Mikro']],
+            'kecil_non_cashcoll_sml' => ['mata_anggaran' => ['DPK Rp Kecil Non Cash Collateral']],
+            'cashcoll_sml' => ['mata_anggaran' => ['DPK Rp Kecil Cash Collateral']],
+            'medium_sml' => ['mata_anggaran' => ['DPK Rp Medium']],
+            'briguna_konsumer_sml' => ['mata_anggaran' => ['DPK Rp Briguna']],
+            'kpr_sml' => ['mata_anggaran' => ['DPK Rp KPR']],
+            'kkb_sml' => ['mata_anggaran' => ['DPK Rp KKB']],
+            'micro_sml' => ['mata_anggaran' => ['DPK Rp Mikro']],
+            'briguna_mikro_sml' => ['mata_anggaran' => ['DPK Rp Briguna Mikro']],
+            'kupedes_sml' => ['mata_anggaran' => ['DPK Rp Kupedes Komersial']],
+            'kur_mikro_sml' => ['mata_anggaran' => ['DPK Rp KUR Mikro']],
+            'kur_kecil_sml' => ['mata_anggaran' => ['DPK Rp KUR Kecil']],
+            'kur_kpp_sml' => ['mata_anggaran' => ['DPK Rp KPP']],
+            'total_npl_pct_non_commercial' => ['mata_anggaran' => ['DPK % Total']],
+            'kecil_non_cashcoll_npl' => ['mata_anggaran' => ['DPK Rp Kecil Non Cash Collateral']],
+            'cashcoll_npl' => ['mata_anggaran' => ['DPK Rp Kecil Cash Collateral']],
+            'medium_npl' => ['mata_anggaran' => ['DPK Rp Medium']],
+            'briguna_konsumer_npl' => ['mata_anggaran' => ['DPK Rp Briguna']],
+            'kpr_npl' => ['mata_anggaran' => ['DPK Rp KPR']],
+            'kkb_npl' => ['mata_anggaran' => ['DPK Rp KKB']],
+            'micro_npl' => ['mata_anggaran' => ['DPK Rp Mikro']],
+            'briguna_mikro_npl' => ['mata_anggaran' => ['DPK Rp Briguna Mikro']],
+            'kupedes_npl' => ['mata_anggaran' => ['DPK Rp Kupedes Komersial']],
+            'kur_mikro_npl' => ['mata_anggaran' => ['DPK Rp KUR Mikro']],
+            'kur_kecil_npl' => ['mata_anggaran' => ['DPK Rp KUR Kecil']],
+            'kur_kpp_npl' => ['mata_anggaran' => ['DPK Rp KPP']],
         ];
     }
 
@@ -827,32 +841,10 @@ class DashboardHarianSnapshotService
     {
         $final = $this->emptyMetrics();
 
-        foreach ([
-            'total_simpanan',
-            'simpanan_ritel',
-            'giro_ritel',
-            'deposito_ritel',
-            'tabungan_ritel',
-            'simpanan_mikro',
-            'giro_mikro',
-            'deposito_mikro',
-            'tabungan_mikro',
-            'total_os',
-            'kecil_non_cashcoll_os',
-            'cashcoll_os',
-            'medium_os',
-            'briguna_konsumer_os',
-            'kpr_os',
-            'kkb_os',
-            'micro_os',
-            'briguna_mikro_os',
-            'kupedes_os',
-            'kur_mikro_os',
-            'kur_kecil_os',
-            'kur_kpp_os',
-            'total_sml_pct_non_commercial',
-        ] as $key) {
-            $final[$key] = (float) ($metrics[$key] ?? 0);
+        foreach ($metrics as $key => $value) {
+            if (array_key_exists($key, $final)) {
+                $final[$key] = (float) $value;
+            }
         }
 
         $final['casa_ritel'] = $final['giro_ritel'] + $final['tabungan_ritel'];
@@ -860,25 +852,18 @@ class DashboardHarianSnapshotService
         $final['total_casa'] = $final['casa_ritel'] + $final['casa_mikro'];
         $final['commercial_os'] = 0.0;
         $final['kecil_os'] = $final['kecil_non_cashcoll_os'] + $final['cashcoll_os'];
-        $final['sme_os'] = $final['kecil_os'] + $final['medium_os'];
+        $final['sme_os'] = $final['kecil_os'];
         $final['consumer_os'] = $final['briguna_konsumer_os'] + $final['kpr_os'] + $final['kkb_os'];
-        $final['micro_cashcoll_os'] = 0.0;
-        $final['total_os_non_commercial'] = $final['sme_os'] + $final['consumer_os'] + $final['micro_os'];
-        $final['total_sml_abs_non_commercial'] = (float) ($metrics['sml_kecil_non_cashcoll_abs'] ?? 0)
-            + (float) ($metrics['sml_cashcoll_abs'] ?? 0)
-            + (float) ($metrics['sml_medium_abs'] ?? 0)
-            + (float) ($metrics['sml_briguna_abs'] ?? 0)
-            + (float) ($metrics['sml_kpr_abs'] ?? 0)
-            + (float) ($metrics['sml_kkb_abs'] ?? 0)
-            + (float) ($metrics['sml_mikro_abs'] ?? 0);
-        $final['total_npl_pct_non_commercial'] = (float) ($metrics['npl_total_pct'] ?? 0);
-        $final['total_npl_abs_non_commercial'] = (float) ($metrics['npl_kecil_non_cashcoll_abs'] ?? 0)
-            + (float) ($metrics['npl_cashcoll_abs'] ?? 0)
-            + (float) ($metrics['npl_medium_abs'] ?? 0)
-            + (float) ($metrics['npl_briguna_abs'] ?? 0)
-            + (float) ($metrics['npl_kpr_abs'] ?? 0)
-            + (float) ($metrics['npl_kkb_abs'] ?? 0)
-            + (float) ($metrics['npl_mikro_abs'] ?? 0);
+        $final['total_os_non_commercial'] = $final['kecil_os'] + $final['medium_os'] + $final['consumer_os'] + $final['micro_os'];
+        $final['total_os'] = $final['commercial_os'] + $final['total_os_non_commercial'];
+        $final['kecil_sml'] = $final['kecil_non_cashcoll_sml'] + $final['cashcoll_sml'];
+        $final['sme_sml'] = $final['kecil_sml'];
+        $final['consumer_sml'] = $final['briguna_konsumer_sml'] + $final['kpr_sml'] + $final['kkb_sml'];
+        $final['total_sml_abs_non_commercial'] = $final['kecil_sml'] + $final['medium_sml'] + $final['consumer_sml'] + $final['micro_sml'];
+        $final['kecil_npl'] = $final['kecil_non_cashcoll_npl'] + $final['cashcoll_npl'];
+        $final['sme_npl'] = $final['kecil_npl'];
+        $final['consumer_npl'] = $final['briguna_konsumer_npl'] + $final['kpr_npl'] + $final['kkb_npl'];
+        $final['total_npl_abs_non_commercial'] = $final['kecil_npl'] + $final['medium_npl'] + $final['consumer_npl'] + $final['micro_npl'];
         $final['casa_pct'] = $this->safePercent($final['total_casa'], $final['total_simpanan']);
         $final['ldr_non_commercial'] = 0.0;
         $final['ldr_ritel_non_commercial'] = 0.0;
@@ -1103,6 +1088,18 @@ class DashboardHarianSnapshotService
         return DB::table($table)
             ->whereIn($this->sourcePeriodColumn($table), $this->sourcePeriodRawCandidates($table, $period))
             ->exists();
+    }
+
+    private function canUseSnapshotMetrics(): bool
+    {
+        if (!Schema::hasTable(self::SNAPSHOT_TABLE)) {
+            return false;
+        }
+
+        $columns = Schema::getColumnListing(self::SNAPSHOT_TABLE);
+        $requiredColumns = array_merge(['snapshot_period', 'source_row_count'], self::METRIC_COLUMNS);
+
+        return array_diff($requiredColumns, $columns) === [];
     }
 
     private function normalizeDate(?string $value): ?string
