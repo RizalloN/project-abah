@@ -209,6 +209,10 @@
         animation: casaPulse 1.6s infinite;
     }
 
+    .mtd-icon {
+        font-size: 0.8em;
+    }
+
     @keyframes casaPulse {
         0% { transform: scale(0.95); opacity: 0.5; }
         50% { transform: scale(1.1); opacity: 1; }
@@ -326,7 +330,7 @@
         vertical-align: middle !important;
         border-right: 1px solid var(--border-color);
         border-bottom: 1px solid var(--border-color);
-        padding: 0.75rem 1rem;
+        padding: 0.6rem 1rem; /* Compact padding */
     }
     
     .table-report th:last-child, .table-report td:last-child {
@@ -334,11 +338,11 @@
     }
 
     .table-report th {
-        font-size: 0.7rem;
+        font-size: 0.75rem; /* Slightly larger for clarity */
         text-align: center;
         font-weight: 600;
         text-transform: uppercase;
-        letter-spacing: 0.05em;
+        letter-spacing: 0.04em;
     }
 
     .table-report td {
@@ -383,7 +387,7 @@
         color: var(--table-header-text) !important;
         border-bottom: 2px solid rgba(0,0,0,0.1) !important;
         position: sticky;
-        top: 41px;
+        top: 38px; /* Adjusted for compact padding */
         z-index: 9;
     }
 
@@ -392,7 +396,7 @@
         color: var(--table-header-text) !important;
         border-bottom: 2px solid rgba(0,0,0,0.1) !important;
         position: sticky;
-        top: 82px;
+        top: 76px; /* Adjusted for compact padding */
         z-index: 9;
     }
 
@@ -414,11 +418,6 @@
         background-color: #dbeafe !important;
     }
 
-    .row-total .val-up,
-    .row-total .val-down {
-        color: #ffffff !important;
-    }
-
     .loading-row td {
         text-align: center !important;
         color: var(--text-muted);
@@ -426,8 +425,8 @@
         padding: 2.5rem 1rem !important;
     }
 
-    .val-up { color: #198754; font-weight: bold; }
-    .val-down { color: #dc3545; font-weight: bold; }
+    .val-up { color: #16a34a; /* green-600 */ font-weight: 600; }
+    .val-down { color: #dc2626; /* red-600 */ font-weight: 600; }
 
     .ratio-positive {
         background-color: #dcfce7 !important;
@@ -452,8 +451,8 @@
         overflow-x: auto;
         overflow-y: hidden;
         white-space: nowrap;
-        scrollbar-width: thin;
-        margin-bottom: 1rem;
+        scrollbar-width: none; /* Hide scrollbar but still scrollable */
+        -ms-overflow-style: none;
     }
 
     .nav-tabs.report-tabs .nav-link {
@@ -465,6 +464,7 @@
         background: transparent;
         transition: all 0.2s ease;
         border-bottom: 2px solid transparent;
+        margin-bottom: -1px; /* Seamless tab integration */
     }
 
     .nav-tabs.report-tabs .nav-link.active {
@@ -476,6 +476,10 @@
     .nav-tabs.report-tabs .nav-link:hover:not(.active) {
         border-bottom: 2px solid var(--border-color);
         color: var(--text-main);
+    }
+
+    .nav-tabs.report-tabs::-webkit-scrollbar {
+        display: none;
     }
 
     @media (max-width: 767.98px) {
@@ -840,8 +844,8 @@ document.addEventListener('DOMContentLoaded', function () {
         if (num === null || num === undefined || isNaN(parseFloat(num))) return '-';
         const val = parseFloat(num);
         const text = new Intl.NumberFormat('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val) + '%';
-        if (val > 0) return `<span class="val-up"><i class="fas fa-arrow-up mr-1"></i>${text}</span>`;
-        if (val < 0) return `<span class="val-down"><i class="fas fa-arrow-down mr-1"></i>${text}</span>`;
+        if (val > 0) return `<span class="val-up"><i class="fas fa-arrow-up mr-1 mtd-icon"></i>${text}</span>`;
+        if (val < 0) return `<span class="val-down"><i class="fas fa-arrow-down mr-1 mtd-icon"></i>${text}</span>`;
         return text;
     }
 

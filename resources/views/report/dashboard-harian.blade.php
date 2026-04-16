@@ -5,6 +5,8 @@
 @section('styles')
 <style>
     :root {
+        --bri-blue-dark: #004685;
+        --bri-blue-main: #00529C;
         --primary-blue: #1e40af; /* blue-800 */
         --primary-blue-light: #3b82f6; /* blue-500 */
         --primary-blue-dark: #1e3a8a; /* blue-900 */
@@ -14,7 +16,7 @@
         --text-main: #0f172a; /* slate-900 */
         --text-muted: #64748b; /* slate-500 */
         
-        --table-header-bg: var(--primary-blue-dark);
+        --table-header-bg: var(--bri-blue-dark);
         --table-header-text: #ffffff;
         
         --daily-no-width: 60px;
@@ -314,18 +316,22 @@
     }
 
     /* Table Wrapper */
+    .daily-table-region {
+        position: relative;
+        padding-bottom: 3.9rem;
+    }
+
     .daily-table-wrap {
         overflow-x: auto;
-        overflow-y: hidden;
+        overflow-y: visible;
         border: 1px solid var(--border-color);
         border-radius: 12px;
         box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-        scrollbar-width: thin;
-        scrollbar-color: #cbd5e1 transparent;
+        scrollbar-width: none;
     }
 
     .daily-table-wrap::-webkit-scrollbar {
-        height: 8px;
+        display: none;
     }
     .daily-table-wrap::-webkit-scrollbar-track {
         background: transparent;
@@ -373,6 +379,42 @@
     .daily-table thead tr.column-row th {
         background: #274bba; /* Slightly lighter for sub-headers */
         font-size: 0.65rem;
+    }
+    .daily-table thead th.rka-period-cell {
+        background: linear-gradient(180deg, #9ed85c, #86c949);
+        color: #173b09;
+        font-size: 0.86rem;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        border-right: 1px solid rgba(23, 59, 9, 0.18);
+        border-bottom: 1px solid rgba(23, 59, 9, 0.2);
+    }
+    .daily-table thead th.rka-period-cell:last-child {
+        border-right: none;
+    }
+    .daily-table thead tr.rka-sub-row th {
+        background: #8fd14f;
+        color: #153706;
+        font-size: 0.72rem;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+        border-right: 1px solid rgba(23, 59, 9, 0.16);
+    }
+    .daily-table thead .group-rka {
+        background: linear-gradient(90deg, #295f10, #34761a);
+        color: #f4ffe8;
+    }
+    .daily-table thead .rka-period-label {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 100%;
+    }
+    .daily-table thead .rka-sub-label {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 100%;
     }
 
     /* Table Cells */
@@ -445,12 +487,19 @@
     .daily-table tbody tr {
         transition: background-color 0.15s ease;
     }
+    .daily-table tbody tr:nth-child(even) > td {
+        background-color: #f8fafc; /* slate-50 */
+    }
+    .daily-table tbody tr:nth-child(even) > .sticky-no,
+    .daily-table tbody tr:nth-child(even) > .sticky-label {
+        background-color: #f8fafc;
+    }
     .daily-table tbody tr:hover {
         background-color: #f1f5f9;
     }
     .daily-table tbody tr:hover .sticky-no,
     .daily-table tbody tr:hover .sticky-label {
-        background-color: #f1f5f9;
+        background-color: #f1f5f9 !important;
     }
 
     /* Hierarchical Rows Styling */
@@ -548,7 +597,9 @@
 
     /* Scrollbar track below table */
     .daily-table-sticky-footer {
-        position: sticky;
+        position: absolute;
+        left: 0;
+        right: 0;
         bottom: 0;
         z-index: 16;
         margin-top: -1px;
@@ -556,6 +607,22 @@
         background: linear-gradient(180deg, rgba(247, 251, 255, 0.12), rgba(247, 251, 255, 0.95));
         backdrop-filter: blur(10px);
         border-top: 1px solid var(--border-color);
+    }
+    .daily-table-sticky-footer.is-floating {
+        position: fixed;
+        bottom: 0.75rem;
+        left: var(--sticky-scrollbar-left, 0);
+        width: var(--sticky-scrollbar-width, auto);
+        right: auto;
+        border: 1px solid rgba(226, 232, 240, 0.95);
+        border-radius: 14px;
+        background: rgba(248, 250, 252, 0.96);
+        box-shadow: 0 18px 40px -24px rgba(15, 23, 42, 0.45);
+    }
+    .daily-table-sticky-footer.is-hidden {
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
     }
     .daily-table-sticky-track {
         overflow-x: auto;
@@ -586,6 +653,18 @@
             --daily-rka-width: 94px;
         }
 
+        .daily-table-region {
+            padding-bottom: 4.5rem;
+        }
+
+        .daily-table-sticky-footer {
+            padding: 0.55rem 0.5rem 0.65rem;
+        }
+
+        .daily-table-sticky-footer.is-floating {
+            bottom: 0.5rem;
+        }
+
         .daily-table col.numeric-col {
             width: 94px !important;
         }
@@ -603,10 +682,6 @@
         <div class="daily-panel-head p-4">
             <div class="d-flex flex-column flex-lg-row justify-content-between align-items-start align-items-lg-center">
                 <div class="mb-3 mb-lg-0 pr-lg-4">
-                    <span class="daily-meta-chip mb-2">
-                        <i class="fas fa-chart-line mr-1"></i>
-                        Dashboard Harian Snapshot
-                    </span>
                     <h1 class="daily-panel-title">Perbandingan Posisi, Delta, dan RKA Harian</h1>
                     <p class="daily-panel-desc">
                         Data dibangun dari snapshot agregat <code>ssa_simpanan</code> dan <code>ssa_pinjaman</code>.
@@ -699,82 +774,93 @@
         </div>
 
         <div class="p-4 bg-white">
-            <div class="daily-table-wrap">
-                <table class="table daily-table">
-                    <colgroup>
-                        <col style="width: 60px;">
-                        <col style="width: 280px;">
-                        <col style="width: 110px;" class="numeric-col">
-                        <col style="width: 110px;" class="numeric-col">
-                        <col style="width: 110px;" class="numeric-col">
-                        <col style="width: 110px;" class="numeric-col">
-                        <col style="width: 110px;" class="numeric-col position-col-h1">
-                        <col style="width: 110px;" class="numeric-col">
-                        <col style="width: 100px;" class="numeric-col">
-                        <col style="width: 100px;" class="numeric-col">
-                        <col style="width: 100px;" class="numeric-col">
-                        <col style="width: 110px;" class="numeric-col">
-                        <col style="width: 110px;" class="numeric-col">
-                        <col style="width: 110px;" class="numeric-col">
-                    </colgroup>
-                    <thead>
-                        <tr class="group-row text-center">
-                            <th class="sticky-no group-no" rowspan="2">No</th>
-                            <th class="sticky-label group-label text-left" rowspan="2">Keterangan</th>
-                            <th class="group-position" colspan="6" data-position-group-colspan>Perbandingan Posisi</th>
-                            <th class="group-delta" colspan="3">Delta Terhadap</th>
-                            <th class="group-rka" colspan="3">Perbandingan RKA</th>
-                        </tr>
-                        <tr class="column-row text-center">
-                            <th class="value-col position-col">
-                                <span class="column-heading"><span class="main" data-label-yoy>-</span></span>
-                            </th>
-                            <th class="value-col position-col">
-                                <span class="column-heading"><span class="main" data-label-ytd>-</span></span>
-                            </th>
-                            <th class="value-col position-col">
-                                <span class="column-heading"><span class="main" data-label-mtm>-</span></span>
-                            </th>
-                            <th class="value-col position-col">
-                                <span class="column-heading"><span class="main" data-label-mtd>-</span></span>
-                            </th>
-                            <th class="value-col position-col position-col-h1">
-                                <span class="column-heading"><span class="main" data-label-h1>-</span></span>
-                            </th>
-                            <th class="value-col position-col bg-primary border-primary">
-                                <span class="column-heading"><span class="main text-white" data-label-current>-</span></span>
-                            </th>
-                            <th class="value-col delta-col">
-                                <span class="column-heading"><span class="main" data-label-delta-yoy>-</span><span class="header-subnote text-white-50">YoY</span></span>
-                            </th>
-                            <th class="value-col delta-col">
-                                <span class="column-heading"><span class="main" data-label-delta-ytd>-</span><span class="header-subnote text-white-50">YtD</span></span>
-                            </th>
-                            <th class="value-col delta-col">
-                                <span class="column-heading"><span class="main" data-label-delta-dtd>-</span><span class="header-subnote text-white-50">DtD</span></span>
-                            </th>
-                            <th class="value-col rka-col">
-                                <span class="column-heading"><span class="main" data-label-rka>-</span></span>
-                            </th>
-                            <th class="value-col rka-col">
-                                <span class="column-heading"><span class="main" data-label-rka-delta>-</span><span class="header-subnote text-white-50">Selisih / %</span></span>
-                            </th>
-                            <th class="value-col rka-col">
-                                <span class="column-heading"><span class="main" data-label-rka-dec>-</span></span>
-                            </th>
-                            <th class="value-col rka-col">
-                                <span class="column-heading"><span class="main">Penc(%)</span></span>
-                            </th>
-                        </tr>
-                    </thead>
-                    <tbody id="daily-dashboard-body">
-                        <tr><td colspan="14" class="daily-empty"><i class="fas fa-spinner fa-spin mr-2"></i> Memuat data dashboard harian...</td></tr>
-                    </tbody>
-                </table>
-            </div>
-            <div class="daily-table-sticky-footer">
-                <div class="daily-table-sticky-track" data-sticky-scrollbar>
-                    <div class="daily-table-sticky-spacer" aria-hidden="true"></div>
+            <div class="daily-table-region" data-table-region>
+                <div class="daily-table-wrap">
+                    <table class="table daily-table">
+                        <colgroup>
+                            <col style="width: 60px;">
+                            <col style="width: 280px;">
+                            <col style="width: 110px;" class="numeric-col">
+                            <col style="width: 120px;" class="numeric-col">
+                            <col style="width: 110px;" class="numeric-col">
+                            <col style="width: 120px;" class="numeric-col">
+                            <col style="width: 110px;" class="numeric-col">
+                            <col style="width: 110px;" class="numeric-col position-col-h1">
+                            <col style="width: 110px;" class="numeric-col">
+                            <col style="width: 100px;" class="numeric-col">
+                            <col style="width: 100px;" class="numeric-col">
+                            <col style="width: 100px;" class="numeric-col">
+                            <col style="width: 110px;" class="numeric-col">
+                            <col style="width: 110px;" class="numeric-col">
+                            <col style="width: 110px;" class="numeric-col">
+                        </colgroup>
+                        <thead>
+                            <tr class="group-row text-center">
+                                <th class="sticky-no group-no" rowspan="3">No</th>
+                                <th class="sticky-label group-label text-left" rowspan="3">Keterangan</th>
+                                <th class="group-position" colspan="6" data-position-group-colspan>Perbandingan Posisi</th>
+                                <th class="group-delta" colspan="3">Delta Terhadap</th>
+                                <th class="group-rka" colspan="4">Perbandingan RKA</th>
+                            </tr>
+                            <tr class="column-row text-center">
+                                <th class="value-col position-col" rowspan="2">
+                                    <span class="column-heading"><span class="main" data-label-yoy>-</span></span>
+                                </th>
+                                <th class="value-col position-col" rowspan="2">
+                                    <span class="column-heading"><span class="main" data-label-ytd>-</span></span>
+                                </th>
+                                <th class="value-col position-col" rowspan="2">
+                                    <span class="column-heading"><span class="main" data-label-mtm>-</span></span>
+                                </th>
+                                <th class="value-col position-col" rowspan="2">
+                                    <span class="column-heading"><span class="main" data-label-mtd>-</span></span>
+                                </th>
+                                <th class="value-col position-col position-col-h1" rowspan="2">
+                                    <span class="column-heading"><span class="main" data-label-h1>-</span></span>
+                                </th>
+                                <th class="value-col position-col" rowspan="2" style="background-color: var(--primary-blue-light);">
+                                    <span class="column-heading"><span class="main text-white" data-label-current>-</span></span>
+                                </th>
+                                <th class="value-col delta-col" rowspan="2">
+                                    <span class="column-heading"><span class="main" data-label-delta-yoy>-</span><span class="header-subnote text-white-50">YoY</span></span>
+                                </th>
+                                <th class="value-col delta-col" rowspan="2">
+                                    <span class="column-heading"><span class="main" data-label-delta-ytd>-</span><span class="header-subnote text-white-50">YtD</span></span>
+                                </th>
+                                <th class="value-col delta-col" rowspan="2">
+                                    <span class="column-heading"><span class="main" data-label-delta-dtd>-</span><span class="header-subnote text-white-50">DtD</span></span>
+                                </th>
+                                <th class="value-col rka-col rka-period-cell" colspan="2">
+                                    <span class="rka-period-label" data-label-rka-period>RKA</span>
+                                </th>
+                                <th class="value-col rka-col rka-period-cell" colspan="2">
+                                    <span class="rka-period-label" data-label-rka-dec-period>RKA Des</span>
+                                </th>
+                            </tr>
+                            <tr class="rka-sub-row text-center">
+                                <th class="value-col rka-col">
+                                    <span class="rka-sub-label">Rp</span>
+                                </th>
+                                <th class="value-col rka-col">
+                                    <span class="rka-sub-label">%</span>
+                                </th>
+                                <th class="value-col rka-col">
+                                    <span class="rka-sub-label">Rp</span>
+                                </th>
+                                <th class="value-col rka-col">
+                                    <span class="rka-sub-label">%</span>
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody id="daily-dashboard-body">
+                            <tr><td colspan="15" class="daily-empty"><i class="fas fa-spinner fa-spin mr-2"></i> Memuat data dashboard harian...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="daily-table-sticky-footer is-hidden" data-sticky-footer>
+                    <div class="daily-table-sticky-track" data-sticky-scrollbar>
+                        <div class="daily-table-sticky-spacer" aria-hidden="true"></div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -811,17 +897,17 @@
             mtd: document.querySelector('[data-label-mtd]'),
             h1: document.querySelector('[data-label-h1]'),
             current: document.querySelector('[data-label-current]'),
-            rka: document.querySelector('[data-label-rka]'),
-            rkaDec: document.querySelector('[data-label-rka-dec]'),
-            rkaDelta: document.querySelector('[data-label-rka-delta]'),
-            rkaDecDelta: document.querySelector('[data-label-rka-dec-delta]'),
+            rka: document.querySelector('[data-label-rka-period]'),
+            rkaDec: document.querySelector('[data-label-rka-dec-period]'),
             deltaYoy: document.querySelector('[data-label-delta-yoy]'),
             deltaYtd: document.querySelector('[data-label-delta-ytd]'),
             deltaDtd: document.querySelector('[data-label-delta-dtd]'),
         };
         const positionGroupColspan = document.querySelector('[data-position-group-colspan]');
         const positionH1Header = document.querySelector('[data-label-h1]').closest('th');
+        const tableRegion = document.querySelector('[data-table-region]');
         const tableWrap = document.querySelector('.daily-table-wrap');
+        const stickyFooter = document.querySelector('[data-sticky-footer]');
         const stickyScrollbar = document.querySelector('[data-sticky-scrollbar]');
         const stickySpacer = document.querySelector('.daily-table-sticky-spacer');
         const applyButton = document.getElementById('btn-apply-daily-filter');
@@ -945,7 +1031,7 @@
         };
 
         const syncStickyScrollbarWidth = function () {
-            if (!stickySpacer || !tableWrap) {
+            if (!stickySpacer || !tableWrap || !stickyFooter || !tableRegion) {
                 return;
             }
 
@@ -955,6 +1041,36 @@
             }
 
             stickySpacer.style.minWidth = table.scrollWidth + 'px';
+            const regionRect = tableRegion.getBoundingClientRect();
+            const viewportWidth = window.innerWidth || document.documentElement.clientWidth || regionRect.width;
+            const left = Math.max(regionRect.left, 0);
+            const right = Math.min(regionRect.right, viewportWidth);
+            const width = Math.max(right - left, 0);
+
+            stickyFooter.style.setProperty('--sticky-scrollbar-left', left + 'px');
+            stickyFooter.style.setProperty('--sticky-scrollbar-width', width + 'px');
+        };
+
+        const syncStickyScrollbarState = function () {
+            if (!stickyFooter || !tableRegion || !tableWrap) {
+                return;
+            }
+
+            const table = tableWrap.querySelector('.daily-table');
+            if (!table) {
+                stickyFooter.classList.add('is-hidden');
+                stickyFooter.classList.remove('is-floating');
+                return;
+            }
+
+            const hasOverflow = table.scrollWidth > tableWrap.clientWidth + 2;
+            const rect = tableRegion.getBoundingClientRect();
+            const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+            const shouldFloat = hasOverflow && rect.top < viewportHeight && rect.bottom > viewportHeight;
+            const shouldShow = hasOverflow && rect.bottom > 0 && rect.top < viewportHeight;
+
+            stickyFooter.classList.toggle('is-floating', shouldFloat);
+            stickyFooter.classList.toggle('is-hidden', !shouldShow);
         };
 
         const syncScrollLeft = function (source, target) {
@@ -1345,8 +1461,8 @@
                     rowsByKey.ldr_non_commercial[group][metricName] = safePercent(rowsByKey.total_simpanan[group][metricName], rowsByKey.total_os_non_commercial[group][metricName]);
                     rowsByKey.ldr_ritel_non_commercial[group][metricName] = safePercent(rowsByKey.simpanan_ritel[group][metricName], rowsByKey.sme_os[group][metricName] + rowsByKey.consumer_os[group][metricName]);
                     rowsByKey.ldr_mikro_non_commercial[group][metricName] = safePercent(rowsByKey.simpanan_mikro[group][metricName], rowsByKey.micro_os[group][metricName]);
-                    rowsByKey.total_sml_pct_non_commercial[group][metricName] = safePercent(rowsByKey.total_sml_abs_non_commercial[group][metricName], rowsByKey.total_os[group][metricName]);
-                    rowsByKey.total_npl_pct_non_commercial[group][metricName] = safePercent(rowsByKey.total_npl_abs_non_commercial[group][metricName], rowsByKey.total_os[group][metricName]);
+                    rowsByKey.total_sml_pct_non_commercial[group][metricName] = safePercent(rowsByKey.total_sml_abs_non_commercial[group][metricName], rowsByKey.total_os_non_commercial[group][metricName]);
+                    rowsByKey.total_npl_pct_non_commercial[group][metricName] = safePercent(rowsByKey.total_npl_abs_non_commercial[group][metricName], rowsByKey.total_os_non_commercial[group][metricName]);
                 });
             });
 
@@ -1361,9 +1477,9 @@
         const renderTable = function (payload) {
             const scopedPayload = applyScopeToPayload(payload);
             const rows = scopedPayload.rows || [];
-            const periods = payload.comparison_periods || {};
+            const periods = scopedPayload.comparison_periods || {};
             const hasH1 = Boolean(periods.h1 && periods.h1.period);
-            const emptyColspan = hasH1 ? 14 : 13;
+            const emptyColspan = hasH1 ? 15 : 14;
             const blockClassMap = {
                 total_simpanan: 'metric-block-simpanan',
                 total_os: 'metric-block-os',
@@ -1396,6 +1512,7 @@
 
             if (!rows.length) {
                 body.innerHTML = '<tr><td colspan="' + emptyColspan + '" class="daily-empty"><i class="fas fa-box-open mr-2 text-muted"></i>Tidak ada data untuk filter terpilih.</td></tr>';
+                syncStickyScrollbarState();
                 return;
             }
 
@@ -1434,7 +1551,7 @@
                 rowCells.push('<td class="value-col rka-col"><span class="cell-text">' + formatValue(value.rka, row.type) + '</span></td>');
                 rowCells.push('<td class="value-col rka-col ' + deltaClass(rkaComparison.rka.delta) + '"><span class="cell-text">' + formatValue(rkaComparison.rka.delta, row.type) + '</span><span class="daily-rka-subnote">' + formatAchievement(rkaComparison.rka.achievement) + '</span></td>');
                 rowCells.push('<td class="value-col rka-col"><span class="cell-text">' + formatValue(value.rka_dec, row.type) + '</span></td>');
-                rowCells.push('<td class="value-col rka-col"><span class="cell-text">' + formatPercent(value.penc_pct) + '</span></td>');
+                rowCells.push('<td class="value-col rka-col ' + deltaClass(rkaComparison.rkaDec.delta) + '"><span class="cell-text">' + formatValue(rkaComparison.rkaDec.delta, row.type) + '</span><span class="daily-rka-subnote">' + formatAchievement(rkaComparison.rkaDec.achievement) + '</span></td>');
 
                 const rowClasses = ['row-depth-' + row.depth];
                 if (blockClassMap[row.key]) {
@@ -1449,6 +1566,8 @@
 
                 return '<tr class="' + rowClasses.join(' ') + '">' + rowCells.join('') + '</tr>';
             }).join('');
+            syncStickyScrollbarWidth();
+            syncStickyScrollbarState();
         };
 
         const applyPayload = function (payload) {
@@ -1481,16 +1600,15 @@
             headerLabels.mtd.textContent = periods.mtd ? formatDateSlash(periods.mtd.period) : '-';
             headerLabels.h1.textContent = hasH1 ? formatDateSlash(periods.h1.period) : '-';
             headerLabels.current.textContent = scopedPayload.selected_period ? formatDateSlash(scopedPayload.selected_period) : '-';
-            headerLabels.rka.textContent = periods.rka ? formatMonthYear(periods.rka.period) : '-';
-            headerLabels.rkaDelta.textContent = periods.rka ? formatMonthYear(periods.rka.period) : '-';
-            headerLabels.rkaDec.textContent = periods.rka_dec ? formatMonthYear(periods.rka_dec.period) : '-';
-            headerLabels.rkaDecDelta.textContent = periods.rka_dec ? formatMonthYear(periods.rka_dec.period) : '-';
+            headerLabels.rka.textContent = periods.rka ? 'RKA ' + String(formatMonthYear(periods.rka.period)).toUpperCase() : 'RKA';
+            headerLabels.rkaDec.textContent = periods.rka_dec ? 'RKA ' + String(formatMonthYear(periods.rka_dec.period)).toUpperCase() : 'RKA Des';
             headerLabels.deltaYoy.textContent = periods.yoy ? formatDateSlash(periods.yoy.period) : '-';
             headerLabels.deltaYtd.textContent = periods.ytd ? formatDateSlash(periods.ytd.period) : '-';
             headerLabels.deltaDtd.textContent = hasH1 ? formatDateSlash(periods.h1.period) : '-';
 
             togglePositionColumns(hasH1);
             syncStickyScrollbarWidth();
+            syncStickyScrollbarState();
 
             renderTable(scopedPayload);
         };
@@ -1520,7 +1638,7 @@
                 })
                 .catch(function () {
                     const hidden = positionH1Header && positionH1Header.classList.contains('position-col-hidden');
-                    body.innerHTML = '<tr><td colspan="' + (hidden ? 13 : 14) + '" class="daily-empty text-danger"><i class="fas fa-exclamation-triangle mr-2"></i>Gagal memuat data dashboard harian.</td></tr>';
+                    body.innerHTML = '<tr><td colspan="' + (hidden ? 14 : 15) + '" class="daily-empty text-danger"><i class="fas fa-exclamation-triangle mr-2"></i>Gagal memuat data dashboard harian.</td></tr>';
                 })
                 .finally(function () {
                     surface.classList.remove('daily-loading');
@@ -1560,7 +1678,7 @@
         syncUnitSelect(initialFilters, initialSelected.unit_kerja || 'all');
         populateSelect(selects.posisi_terakhir, initialFilters.posisi_terakhir || [], initialSelected.posisi_terakhir || '');
         populateSelect(selects.posisi_rka, initialFilters.posisi_rka || [], initialSelected.posisi_rka || '');
-        body.innerHTML = '<tr><td colspan="14" class="daily-empty"><i class="fas fa-filter mr-2 text-muted"></i>Filter belum dijalankan. Pilih parameter lalu klik Terapkan Filter.</td></tr>';
+        body.innerHTML = '<tr><td colspan="15" class="daily-empty"><i class="fas fa-filter mr-2 text-muted"></i>Filter belum dijalankan. Pilih parameter lalu klik Terapkan Filter.</td></tr>';
 
         if (initialData && Object.keys(initialData).length) {
             applyPayload(initialData);
@@ -1656,8 +1774,13 @@
             });
         }
 
-        window.addEventListener('resize', syncStickyScrollbarWidth);
+        window.addEventListener('resize', function () {
+            syncStickyScrollbarWidth();
+            syncStickyScrollbarState();
+        });
+        window.addEventListener('scroll', syncStickyScrollbarState, { passive: true });
         syncStickyScrollbarWidth();
+        syncStickyScrollbarState();
     });
 </script>
 @endsection

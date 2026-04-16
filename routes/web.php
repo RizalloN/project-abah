@@ -135,6 +135,7 @@ Route::middleware(['auth', 'role:admin', 'release.session.lock'])->group(functio
     Route::post('/import/report-management/duplicates', [ImportIndexController::class, 'deleteManagedReportDuplicates'])->name('import.report-management.duplicates');
     Route::post('/import/report-management/delete/{deleteId}/process', [ImportIndexController::class, 'processManagedReportDelete'])->name('import.report-management.delete.process');
     Route::get('/import/report-management/delete/{deleteId}/status', [ImportIndexController::class, 'managedReportDeleteStatus'])->name('import.report-management.delete.status');
+    Route::post('/import/report-management/delete/{deleteId}/force-stop', [ImportIndexController::class, 'forceStopManagedReportDelete'])->name('import.report-management.delete.force-stop');
     Route::post('/import/report-management/delete/{deleteId}/cancel', [ImportIndexController::class, 'cancelManagedReportDelete'])->name('import.report-management.delete.cancel');
     Route::get('/import/jobs/{jobId}/status', ImportJobStatusController::class)->name('import.jobs.status');
     Route::post('/import/upload', [ImportFileController::class, 'upload'])->name('import.upload');

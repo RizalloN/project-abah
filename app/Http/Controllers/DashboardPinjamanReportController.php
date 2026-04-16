@@ -1126,6 +1126,7 @@ class DashboardPinjamanReportController extends Controller
     private function fetchKolekMismatchRows(string $selectedPeriod, string $selectedBranch, string $selectedUnit): array
     {
         $rows = [];
+        $excluded = ['created_at', 'updated_at'];
 
         foreach ($this->buildKolekMismatchBaseQuery($selectedPeriod, $selectedBranch, $selectedUnit)->cursor() as $row) {
             $actualKolek = $this->normalizeKolekValue($row->kol_adk1 ?? null);
@@ -1135,9 +1136,12 @@ class DashboardPinjamanReportController extends Controller
                 continue;
             }
 
-            $rows[] = collect((array) $row)
-                ->except(['created_at', 'updated_at'])
-                ->all();
+            // Use array_diff_key to avoid creating a Collection per row (P4)
+            $rowData = array_diff_key((array) $row, array_flip($excluded));
+            $rowData['kolek_seharusnya'] = $expectedKolek;
+            $rowData['keterangan'] = $this->determineKeterangan($row);
+
+            $rows[] = $rowData;
         }
 
         return $rows;
@@ -1145,9 +1149,13 @@ class DashboardPinjamanReportController extends Controller
 
     private function buildKolekMismatchBaseQuery(string $selectedPeriod, string $selectedBranch, ?string $selectedUnit = null): Builder
     {
-        $orderingColumn = Schema::hasColumn('daily_loan_dinamis', 'norek')
-            ? 'norek'
-            : $this->resolveIdentityColumn('daily_loan_dinamis');
+        // Cache schema check per request lifecycle to avoid repeated inspections (B4, B5, P1)
+        static $orderingColumn = null;
+        if ($orderingColumn === null) {
+            $orderingColumn = Schema::hasColumn('daily_loan_dinamis', 'norek')
+                ? 'norek'
+                : $this->resolveIdentityColumn('daily_loan_dinamis');
+        }
 
         $query = DB::table('daily_loan_dinamis')
             ->where('periode', $selectedPeriod)
@@ -1164,21 +1172,34 @@ class DashboardPinjamanReportController extends Controller
 
     private function collectKolekExportColumns(): array
     {
-        return collect(Schema::getColumnListing('daily_loan_dinamis'))
-            ->reject(fn (string $column) => in_array($column, ['created_at', 'updated_at', 'uniqueid_namareport'], true))
-            ->values()
-            ->all();
+        // Cache column listing for the duration of the request (P2)
+        static $cached = null;
+        if ($cached !== null) {
+            return $cached;
+        }
+
+        $excluded = ['created_at', 'updated_at', 'uniqueid_namareport'];
+        $cached = array_values(array_filter(
+            Schema::getColumnListing('daily_loan_dinamis'),
+            fn (string $col) => !in_array($col, $excluded, true)
+        ));
+        $cached[] = 'kolek_seharusnya';
+        $cached[] = 'keterangan';
+
+        return $cached;
     }
 
     private function normalizeKolekValue($value): ?int
     {
-        $normalized = strtoupper(trim((string) $value));
+        $normalized = trim((string) $value);
 
         if ($normalized === '') {
             return null;
         }
 
-        if (preg_match('/([1-5])/', $normalized, $matches)) {
+        // Match only a standalone single digit 1–5 to avoid false positives (B6)
+        // Examples: "1", "KOL 3", "Kolek-2" should work; "15" or "51" should not
+        if (preg_match('/^\D*([1-5])\D*$/', $normalized, $matches)) {
             return (int) $matches[1];
         }
 
@@ -1194,12 +1215,58 @@ class DashboardPinjamanReportController extends Controller
         }
 
         return match (true) {
-            $umurTunggakan <= 0 => 1,
+            $umurTunggakan <= 9 => 1,
             $umurTunggakan <= 90 => 2,
             $umurTunggakan <= 120 => 3,
             $umurTunggakan <= 180 => 4,
             default => 5,
         };
+    }
+
+    private function determineKeterangan($row): string
+    {
+        $periode = $row->periode ?? null;
+        $tglAkad = $row->tgl_akad_restruk ?? null;
+
+        $hasNoTunggakan = $this->isValueEmptyOrZero($row->tunggakan_pokok ?? null)
+            && $this->isValueEmptyOrZero($row->tunggakan_bunga ?? null)
+            && $this->isValueEmptyOrZero($row->tunggakan_penalti ?? null);
+
+        $isNplMethodN = strtoupper(trim((string) ($row->npl_method ?? ''))) === 'N';
+
+        if ($hasNoTunggakan && $isNplMethodN && $periode && $tglAkad) {
+            try {
+                // Hitung selisih hari: periode - tgl_akad_restruk (B1 fix: correct direction)
+                // Positif artinya periode lebih akhir dari tgl_akad (normal case)
+                $periodeDate = Carbon::parse($periode)->startOfDay();
+                $akadDate   = Carbon::parse($tglAkad)->startOfDay();
+                $days = $akadDate->diffInDays($periodeDate, false);
+
+                return $days > 90 ? 'kolek membaik' : 'belum waktunya penyesuaian';
+            } catch (\Throwable) {
+                // Fallback to memburuk on parse error
+            }
+        }
+
+        return 'memburuk';
+    }
+
+    /**
+     * Returns true when a field value represents zero / empty / null. (C8 refactor)
+     */
+    private function isValueEmptyOrZero($val): bool
+    {
+        if ($val === null || $val === '') {
+            return true;
+        }
+
+        if (is_numeric($val) && (float) $val == 0) {
+            return true;
+        }
+
+        $cleared = str_replace([',', '.'], '', trim((string) $val));
+
+        return is_numeric($cleared) && (float) $cleared == 0;
     }
 
     private function normalizeUmurTunggakanValue($value): ?int
@@ -1242,115 +1309,27 @@ class DashboardPinjamanReportController extends Controller
         return (int) Cache::get('report_cache_version:global', 1);
     }
 
-    private function buildTableWideVersionSignature(string $table): string
-    {
-        try {
-            $timestampExpression = $this->buildLatestTimestampExpression($table);
-            $identityColumn = $this->resolveIdentityColumn($table);
-            $row = DB::table($table)
-                ->selectRaw("
-                    COUNT(*) as total_rows,
-                    COALESCE(MAX({$identityColumn}), '') as max_identity,
-                    COALESCE(MAX({$timestampExpression}), '1970-01-01 00:00:00') as latest_change
-                ")
-                ->first();
-
-            return implode('|', [
-                (int) ($row->total_rows ?? 0),
-                (string) ($row->max_identity ?? ''),
-                (string) ($row->latest_change ?? '1970-01-01 00:00:00'),
-            ]);
-        } catch (Throwable) {
-            return $table . '|fallback';
-        }
-    }
-
-    private function buildTableVersionSignature(string $table, string $periodColumn, ?string $periodValue): string
-    {
-        if (!$periodValue) {
-            return 'null-period';
-        }
-
-        try {
-            $timestampExpression = $this->buildLatestTimestampExpression($table);
-            $identityColumn = $this->resolveIdentityColumn($table);
-            $row = DB::table($table)
-                ->where($periodColumn, $periodValue)
-                ->selectRaw("
-                    COUNT(*) as total_rows,
-                    COALESCE(MAX({$identityColumn}), '') as max_identity,
-                    COALESCE(MAX({$timestampExpression}), '1970-01-01 00:00:00') as latest_change
-                ")
-                ->first();
-
-            return implode('|', [
-                $periodValue,
-                (int) ($row->total_rows ?? 0),
-                (string) ($row->max_identity ?? ''),
-                (string) ($row->latest_change ?? '1970-01-01 00:00:00'),
-            ]);
-        } catch (Throwable) {
-            return $periodValue . '|fallback';
-        }
-    }
-
-    private function buildLatestTimestampExpression(string $table): string
-    {
-        $hasUpdated = Schema::hasColumn($table, 'updated_at');
-        $hasCreated = Schema::hasColumn($table, 'created_at');
-
-        if ($hasUpdated && $hasCreated) {
-            return 'COALESCE(updated_at, created_at)';
-        }
-
-        if ($hasUpdated) {
-            return 'updated_at';
-        }
-
-        if ($hasCreated) {
-            return 'created_at';
-        }
-
-        return $this->resolveIdentityColumn($table);
-    }
-
     private function resolveIdentityColumn(string $table): string
     {
-        if (Schema::hasColumn($table, 'uniqueid_dps')) {
-            return 'uniqueid_dps';
-        }
+        // Priority-ordered list of known identity columns
+        $candidates = [
+            'uniqueid_dps',
+            'uniqueid_rcds',
+            'uniqueid_rds',
+            'uniqueid_namareport',
+            'uniqueid_SMPN',
+            'id',
+        ];
 
-        if (Schema::hasColumn($table, 'uniqueid_rcds')) {
-            return 'uniqueid_rcds';
-        }
-
-        if (Schema::hasColumn($table, 'uniqueid_rds')) {
-            return 'uniqueid_rds';
-        }
-
-        if (Schema::hasColumn($table, 'uniqueid_namareport')) {
-            return 'uniqueid_namareport';
-        }
-
-        if (Schema::hasColumn($table, 'uniqueid_SMPN')) {
-            return 'uniqueid_SMPN';
-        }
-
-        if (Schema::hasColumn($table, 'id')) {
-            return 'id';
+        foreach ($candidates as $candidate) {
+            if (Schema::hasColumn($table, $candidate)) {
+                return $candidate;
+            }
         }
 
         $columns = Schema::getColumnListing($table);
-        if (!empty($columns)) {
-            return $columns[0];
-        }
 
-        return 'id';
-    }
-
-    private function normalizeAccountNumber($accountNumber): string
-    {
-        return trim((string) $accountNumber);
+        return $columns[0] ?? 'id';
     }
 
     private function normalizeFilterValues($value): array
@@ -1391,67 +1370,6 @@ class DashboardPinjamanReportController extends Controller
         }
     }
 
-    private function mapQualityBucket($kolekDetail, $umurTunggakan, $flagRestruk, $kolAdk1 = null, $kolek = null): string
-    {
-        return LoanQualityBucketMapper::map($kolekDetail, $umurTunggakan, $flagRestruk, $kolAdk1, $kolek);
-    }
-
-    private function normalizeDashboardBucket(string $bucket): string
-    {
-        $normalized = trim($bucket);
-        $value = strtoupper($normalized);
-
-        return match ($value) {
-            'L' => 'L',
-            'LR' => 'LR',
-            'DPK 1' => 'DPK 1',
-            'DPK 2' => 'DPK 2',
-            'DPK 3' => 'DPK 3',
-            'SML1' => 'DPK 1',
-            'SML2' => 'DPK 2',
-            'SML3' => 'DPK 3',
-            'KL' => 'KL',
-            'D1' => 'D1',
-            'D2' => 'D2',
-            'M' => 'M',
-            'NPL' => 'M',
-            'PH' => 'PH',
-            'PAY' => 'Pay',
-            default => $normalized,
-        };
-    }
-
-
-    private function amountToCents($amount): int
-    {
-        $normalized = trim((string) $amount);
-
-        if ($normalized === '') {
-            return 0;
-        }
-
-        $sign = 1;
-        if (str_starts_with($normalized, '-')) {
-            $sign = -1;
-            $normalized = substr($normalized, 1);
-        } elseif (str_starts_with($normalized, '+')) {
-            $normalized = substr($normalized, 1);
-        }
-
-        if ($normalized === '') {
-            return 0;
-        }
-
-        if (!str_contains($normalized, '.')) {
-            return $sign * ((int) $normalized * 100);
-        }
-
-        [$whole, $decimal] = array_pad(explode('.', $normalized, 2), 2, '0');
-        $whole = $whole === '' ? '0' : $whole;
-        $decimal = str_pad(substr($decimal, 0, 2), 2, '0');
-
-        return $sign * (((int) $whole * 100) + (int) $decimal);
-    }
 
     private function centsToAmount(int $cents): float
     {
@@ -1464,15 +1382,4 @@ class DashboardPinjamanReportController extends Controller
             ->sum(fn (array $metrics) => (int) ($metrics[$metric] ?? 0));
     }
 
-    private function isHealthyBucket(string $bucket): bool
-    {
-        return in_array($bucket, self::HEALTHY_BUCKETS, true);
-    }
-
-    private function qualityRank(string $bucket): ?int
-    {
-        $rank = array_search($bucket, self::QUALITY_BUCKETS, true);
-
-        return $rank === false ? null : $rank;
-    }
 }

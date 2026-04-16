@@ -856,19 +856,19 @@ class DashboardHarianSnapshotService
             'kur_mikro_sml' => ['mata_anggaran' => ['DPK Rp KUR Mikro']],
             'kur_kecil_sml' => ['mata_anggaran' => ['DPK Rp KUR Kecil']],
             'kur_kpp_sml' => ['mata_anggaran' => ['DPK Rp KPP']],
-            'total_npl_pct_non_commercial' => ['mata_anggaran' => ['DPK % Total']],
-            'kecil_non_cashcoll_npl' => ['mata_anggaran' => ['DPK Rp Kecil Non Cash Collateral']],
-            'cashcoll_npl' => ['mata_anggaran' => ['DPK Rp Kecil Cash Collateral']],
-            'medium_npl' => ['mata_anggaran' => ['DPK Rp Medium']],
-            'briguna_konsumer_npl' => ['mata_anggaran' => ['DPK Rp Briguna']],
-            'kpr_npl' => ['mata_anggaran' => ['DPK Rp KPR']],
-            'kkb_npl' => ['mata_anggaran' => ['DPK Rp KKB']],
-            'micro_npl' => ['mata_anggaran' => ['DPK Rp Mikro']],
-            'briguna_mikro_npl' => ['mata_anggaran' => ['DPK Rp Briguna Mikro']],
-            'kupedes_npl' => ['mata_anggaran' => ['DPK Rp Kupedes Komersial']],
-            'kur_mikro_npl' => ['mata_anggaran' => ['DPK Rp KUR Mikro']],
-            'kur_kecil_npl' => ['mata_anggaran' => ['DPK Rp KUR Kecil']],
-            'kur_kpp_npl' => ['mata_anggaran' => ['DPK Rp KPP']],
+            'total_npl_pct_non_commercial' => ['mata_anggaran' => ['NPL % Total', 'DPK % Total']],
+            'kecil_non_cashcoll_npl' => ['mata_anggaran' => ['NPL Rp Kecil Non Cash Collateral', 'DPK Rp Kecil Non Cash Collateral']],
+            'cashcoll_npl' => ['mata_anggaran' => ['NPL Rp Kecil Cash Collateral', 'DPK Rp Kecil Cash Collateral']],
+            'medium_npl' => ['mata_anggaran' => ['NPL Rp Medium', 'DPK Rp Medium']],
+            'briguna_konsumer_npl' => ['mata_anggaran' => ['NPL Rp Briguna', 'DPK Rp Briguna']],
+            'kpr_npl' => ['mata_anggaran' => ['NPL Rp KPR', 'DPK Rp KPR']],
+            'kkb_npl' => ['mata_anggaran' => ['NPL Rp KKB', 'DPK Rp KKB']],
+            'micro_npl' => ['mata_anggaran' => ['NPL Rp Mikro', 'DPK Rp Mikro']],
+            'briguna_mikro_npl' => ['mata_anggaran' => ['NPL Rp Briguna Mikro', 'DPK Rp Briguna Mikro']],
+            'kupedes_npl' => ['mata_anggaran' => ['NPL Rp Kupedes Komersial', 'DPK Rp Kupedes Komersial']],
+            'kur_mikro_npl' => ['mata_anggaran' => ['NPL Rp KUR Mikro', 'DPK Rp KUR Mikro']],
+            'kur_kecil_npl' => ['mata_anggaran' => ['NPL Rp KUR Kecil', 'DPK Rp KUR Kecil']],
+            'kur_kpp_npl' => ['mata_anggaran' => ['NPL Rp KPP', 'DPK Rp KPP']],
         ];
     }
 
@@ -890,7 +890,9 @@ class DashboardHarianSnapshotService
         $final['sme_os'] = $final['kecil_os'];
         $final['consumer_os'] = $final['briguna_konsumer_os'] + $final['kpr_os'] + $final['kkb_os'];
         $final['total_os_non_commercial'] = $final['kecil_os'] + $final['medium_os'] + $final['consumer_os'] + $final['micro_os'];
-        $final['total_os'] = $final['commercial_os'] + $final['total_os_non_commercial'];
+        if ((float) ($final['total_os'] ?? 0) <= 0) {
+            $final['total_os'] = $final['commercial_os'] + $final['total_os_non_commercial'];
+        }
         $final['kecil_sml'] = $final['kecil_non_cashcoll_sml'] + $final['cashcoll_sml'];
         $final['sme_sml'] = $final['kecil_sml'];
         $final['consumer_sml'] = $final['briguna_konsumer_sml'] + $final['kpr_sml'] + $final['kkb_sml'];

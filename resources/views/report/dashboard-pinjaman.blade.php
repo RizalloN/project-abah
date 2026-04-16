@@ -538,6 +538,69 @@
             grid-template-columns: 1fr;
         }
     }
+
+    /* ── Responsivitas ─────────────────────────────── */
+    @media (max-width: 767px) {
+        .loan-mismatch-audit {
+            grid-template-columns: repeat(2, 1fr);
+        }
+
+        .loan-page-title {
+            font-size: 1.5rem;
+        }
+
+        .loan-matrix {
+            font-size: 0.78rem;
+        }
+
+        .loan-matrix th,
+        .loan-matrix td {
+            padding: 8px 6px;
+        }
+
+        .loan-filter-grid .col-xl-2,
+        .loan-filter-grid .col-lg-4 {
+            margin-bottom: 0;
+        }
+    }
+
+    @media (max-width: 479px) {
+        .loan-mismatch-audit {
+            grid-template-columns: 1fr 1fr;
+        }
+
+        .loan-audit-value {
+            font-size: 1.1rem;
+        }
+
+        .loan-table-heading {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+    }
+
+    /* ── Scroll indicator untuk tabel horizontal ─── */
+    .loan-matrix-wrap {
+        position: relative;
+    }
+
+    .loan-matrix-scroll-hint {
+        display: none;
+        position: absolute;
+        right: 0;
+        top: 0;
+        bottom: 0;
+        width: 40px;
+        background: linear-gradient(to right, transparent, rgba(255,255,255,0.85));
+        pointer-events: none;
+        z-index: 4;
+    }
+
+    @media (max-width: 991.98px) {
+        .loan-matrix-scroll-hint {
+            display: block;
+        }
+    }
 </style>
 
 <div class="loan-dashboard">
@@ -674,6 +737,7 @@
                 </div>
 
                 <div class="loan-matrix-wrap">
+                    <div class="loan-matrix-scroll-hint" aria-hidden="true"></div>
                     <table class="loan-matrix">
                         <thead>
                             <tr>
@@ -748,7 +812,7 @@
                         <div>
                             <h5 class="mb-1 font-weight-bold text-dark">Filter Kolek Tidak Sesuai</h5>
                             <div class="loan-filter-meta">
-                                <span>Rule audit: <strong>1 <= 0 hari, 2 <= 90 hari, 3 <= 120 hari, 4 <= 180 hari, 5 &gt; 180 hari</strong></span>
+                                <span>Rule audit: <strong>1 <= 9 hari, 2 <= 90 hari, 3 <= 120 hari, 4 <= 180 hari, 5 &gt; 180 hari</strong></span>
                             </div>
                         </div>
                     </div>
@@ -835,8 +899,8 @@
                     </div>
                 </div>
 
-                <div class="table-responsive">
-                    <table class="table table-hover loan-mismatch-table mb-0">
+                <div class="table-responsive" style="overflow-x:auto;">
+                    <table class="table table-hover loan-mismatch-table mb-0" style="min-width:560px;">
                         <thead class="thead-light">
                             <tr>
                                 <th style="width: 72px;">No</th>
@@ -1011,6 +1075,12 @@
             });
         }
 
+        // Cache Intl formatter singleton to avoid object creation per cell (P5)
+        const intlNumberFormat = new Intl.NumberFormat('id-ID', {
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 0,
+        });
+
         function formatNumber(value) {
             if (value === null || value === undefined || value === '') {
                 return '-';
@@ -1022,10 +1092,7 @@
                 return '-';
             }
 
-            return new Intl.NumberFormat('id-ID', {
-                minimumFractionDigits: 0,
-                maximumFractionDigits: 0,
-            }).format(number);
+            return intlNumberFormat.format(number);
         }
 
         function formatDate(value) {
@@ -1604,6 +1671,15 @@
             return;
         }
 
+        // Reuse the shared formatDate from the matrix script block (C6 - avoid duplication)
+        // formatDate and intlNumberFormat are defined in the DOMContentLoaded above.
+        // However since each <script> block has its own DOMContentLoaded scope, we define
+        // lightweight wrappers here that mirror the same logic.
+        const _mismatchIntlFmt = new Intl.NumberFormat('id-ID', {
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 0,
+        });
+
         function formatDate(value) {
             if (!value) {
                 return '-';
@@ -1621,19 +1697,25 @@
             });
         }
 
+        // Unified, safe formatNumber using Intl singleton (B8 fix)
         function formatNumber(value) {
-            return Number(value || 0).toLocaleString('id-ID');
+            if (value === null || value === undefined || value === '') {
+                return '0';
+            }
+            const n = Number(value);
+            return Number.isNaN(n) ? '0' : _mismatchIntlFmt.format(n);
         }
 
         function resetMismatchState(message = 'Pilih periode dan cabang lalu klik <strong>Proses</strong>.') {
-            mismatchBody.innerHTML = `
-                <tr>
-                    <td colspan="4" class="loan-empty-state">
-                        <strong>Audit belum dijalankan</strong>
-                        ${message}
-                    </td>
-                </tr>
-            `;
+            // Build state row safely to avoid XSS (B7)
+            const tr = document.createElement('tr');
+            const td = document.createElement('td');
+            td.colSpan = 4;
+            td.className = 'loan-empty-state';
+            td.innerHTML = '<strong>Audit belum dijalankan</strong> ' + message;
+            tr.appendChild(td);
+            mismatchBody.innerHTML = '';
+            mismatchBody.appendChild(tr);
             mismatchScanned.textContent = '0';
             mismatchTotal.textContent = '0';
             mismatchMatched.textContent = '0';
@@ -1687,6 +1769,8 @@
             }
 
             mismatchFilterController = new AbortController();
+            // Hard timeout of 15 seconds to prevent requests hanging forever (B9)
+            const timeoutId = window.setTimeout(() => mismatchFilterController?.abort('timeout'), 15000);
             mismatchBranchSelect.disabled = true;
 
             try {
@@ -1716,6 +1800,7 @@
                     resetMismatchState('Daftar cabang gagal dimuat. Ulangi proses filter.');
                 }
             } finally {
+                window.clearTimeout(timeoutId);
                 mismatchFilterController = null;
             }
         }

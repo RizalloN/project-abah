@@ -994,6 +994,35 @@ class ImportIndexController extends Controller
         ]));
     }
 
+    public function forceStopManagedReportDelete(string $deleteId)
+    {
+        $state = $this->getDeleteState($deleteId);
+        if ($state === null) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Progress delete tidak ditemukan atau sudah kedaluwarsa.',
+            ], 404);
+        }
+
+        if (in_array($state['status'] ?? '', ['completed', 'warning', 'failed', 'cancelled'], true)) {
+            return response()->json($this->formatDeleteStateResponse($state));
+        }
+
+        $state['cancel_requested'] = true;
+        $state['status'] = 'cancelling';
+        $state['stage'] = 'cancelling';
+        $state['batch_state'] = 'cancel_requested';
+        $state['message'] = 'Force stop dikirim. Worker akan berhenti setelah batch aman selesai.';
+        $state['updated_at'] = now()->toIso8601String();
+        $this->putDeleteState($deleteId, $state);
+
+        $state = $this->finalizeManagedDeleteCancelled($deleteId, $state);
+
+        return response()->json($this->formatDeleteStateResponse($state, [
+            'message' => 'Delete dihentikan paksa dengan aman.',
+        ]));
+    }
+
     public function managedReportDeleteStatus(string $deleteId)
     {
         $state = $this->reconcileManagedReportDeleteState($deleteId);
@@ -1053,6 +1082,94 @@ class ImportIndexController extends Controller
         }
 
         return $reconciled;
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function resolveManagedReportDeleteJobs(): array
+    {
+        $syncService = app(ReportDataSyncService::class);
+        $deleteIds = [];
+
+        foreach ($this->activeManagedDeleteIds() as $deleteId) {
+            $deleteIds[$deleteId] = true;
+        }
+
+        $queueRows = $this->managedReportDeleteQueueRows();
+        foreach ($queueRows as $queueRow) {
+            $deleteId = trim((string) ($queueRow['delete_id'] ?? ''));
+            if ($deleteId !== '') {
+                $deleteIds[$deleteId] = true;
+            }
+        }
+
+        $queueRowsByDeleteId = collect($queueRows)->keyBy('delete_id');
+
+        return collect(array_keys($deleteIds))
+            ->map(function (string $deleteId) use ($syncService, $queueRowsByDeleteId): ?array {
+                $state = $this->reconcileManagedReportDeleteState($deleteId, $syncService);
+                $queueRow = $queueRowsByDeleteId->get($deleteId);
+                $state = $this->reconcileManagedDeleteStateWithQueueRow(
+                    $deleteId,
+                    $state,
+                    is_array($queueRow) ? $queueRow : null
+                );
+
+                if ($state === null) {
+                    return null;
+                }
+
+                $createdAt = $this->safeParseDate($state['created_at'] ?? null);
+                $updatedAt = $this->safeParseDate($state['updated_at'] ?? null);
+                $durationSeconds = ($createdAt && $updatedAt)
+                    ? max(0, $updatedAt->diffInSeconds($createdAt))
+                    : null;
+                $status = $this->mapManagedDeleteStatus(
+                    (string) ($state['status'] ?? 'queued'),
+                    (string) ($state['stage'] ?? 'queued')
+                );
+
+                return [
+                    'id' => (string) ($state['delete_id'] ?? $deleteId),
+                    'report_name' => 'Managed Report Delete',
+                    'table_name' => (string) ($state['table_name'] ?? ''),
+                    'file_name' => 'Delete Report Rows',
+                    'status' => $status,
+                    'status_label' => $this->statusLabel($status),
+                    'status_tone' => $this->statusTone($status),
+                    'percent' => max(0, min(100, (int) ($state['progress_percent'] ?? 0))),
+                    'processed_rows' => max(0, (int) ($state['deleted_rows'] ?? 0)),
+                    'total_rows' => max(1, (int) ($state['total_rows'] ?? 1)),
+                    'total_success' => max(0, (int) ($state['deleted_rows'] ?? 0)),
+                    'total_failed' => 0,
+                    'message' => (string) ($state['message'] ?? 'Delete sedang diproses.'),
+                    'phase' => (string) ($state['stage'] ?? ''),
+                    'mode' => 'managed_delete',
+                    'termination_requested' => (bool) ($state['cancel_requested'] ?? false),
+                    'can_terminate' => in_array($status, ['queued', 'processing'], true),
+                    'can_force_start' => false,
+                    'can_delete' => false,
+                    'created_by_name' => 'System',
+                    'created_at' => $createdAt?->toIso8601String(),
+                    'created_at_label' => $createdAt?->format('d M Y H:i:s'),
+                    'updated_at' => $updatedAt?->toIso8601String(),
+                    'updated_at_label' => $updatedAt?->format('d M Y H:i:s'),
+                    'duration_seconds' => $durationSeconds,
+                    'duration_label' => $this->formatDuration($durationSeconds),
+                    'kind' => 'managed_delete',
+                    'stage_label' => $this->managedDeleteStageLabel((string) ($state['stage'] ?? 'queued')),
+                    'scope_count' => count($this->extractDeleteScopesFromState($state)),
+                    'queue_name' => (string) (($queueRow['queue'] ?? '') ?: ''),
+                    'queue_reserved' => (bool) ($queueRow['reserved'] ?? false),
+                    'queue_job_id' => isset($queueRow['job_id']) ? (int) $queueRow['job_id'] : null,
+                    'can_cancel' => in_array($status, ['queued', 'processing'], true),
+                ];
+            })
+            ->filter()
+            ->sortByDesc('updated_at')
+            ->values()
+            ->all();
     }
 
     public function downloadTemplate(Request $request)
@@ -1161,13 +1278,6 @@ class ImportIndexController extends Controller
         $force = (bool) ($validated['force'] ?? false);
         $hardForce = (bool) ($validated['hard_force'] ?? false);
 
-        if ($periodColumn === null && $kancaColumn === null) {
-            return [null, response()->json([
-                'status' => 'error',
-                'message' => "Tabel `{$tableName}` tidak memiliki kolom periode/kanca yang bisa difilter, delete dibatalkan demi keamanan.",
-            ], 422)];
-        }
-
         [$baseQuery, $hasWhereClause] = $this->buildDeleteScopeQueryFromScopes(
             $tableName,
             $periodColumn,
@@ -1183,7 +1293,8 @@ class ImportIndexController extends Controller
         }
 
         $identityColumn = $this->resolveIdentityColumn($tableColumns);
-        if ($identityColumn === null && !$this->canDeleteScopesWithoutIdentity($tableName, $periodColumn, $kancaColumn, $scopes)) {
+        $supportsFullTableDelete = $periodColumn === null && $kancaColumn === null;
+        if ($identityColumn === null && !$supportsFullTableDelete && !$this->canDeleteScopesWithoutIdentity($tableName, $periodColumn, $kancaColumn, $scopes)) {
             return [null, response()->json([
                 'status' => 'error',
                 'message' => "Delete parsial untuk tabel `{$tableName}` membutuhkan kolom identity/unique yang stabil. Tambahkan kolom seperti `id`/`row_id` atau gunakan scope yang bisa dipangkas per partisi.",
@@ -2038,6 +2149,173 @@ class ImportIndexController extends Controller
         return self::DELETE_PROCESS_LOCK_PREFIX . trim($deleteId);
     }
 
+    private function managedReportDeleteQueueRows(): array
+    {
+        if (!Schema::hasTable('jobs')) {
+            return [];
+        }
+
+        $basename = class_basename(RunManagedReportDeleteJob::class);
+
+        return DB::table('jobs')
+            ->where('queue', self::DELETE_QUEUE)
+            ->where('payload', 'like', '%' . $basename . '%')
+            ->select(['id', 'queue', 'reserved_at', 'available_at', 'created_at', 'payload'])
+            ->orderByDesc('id')
+            ->get()
+            ->map(function ($job): array {
+                $payload = (string) ($job->payload ?? '');
+
+                return [
+                    'job_id' => (int) ($job->id ?? 0),
+                    'queue' => (string) ($job->queue ?? ''),
+                    'reserved' => $job->reserved_at !== null,
+                    'reserved_at' => $job->reserved_at,
+                    'reserved_age_seconds' => $this->queueTimestampAgeSeconds($job->reserved_at),
+                    'created_at' => $job->created_at,
+                    'created_age_seconds' => $this->queueTimestampAgeSeconds($job->created_at),
+                    'available_at' => $job->available_at,
+                    'payload' => $payload,
+                    'delete_id' => $this->extractManagedDeleteIdFromPayload($payload),
+                ];
+            })
+            ->filter(fn (array $row): bool => trim((string) ($row['delete_id'] ?? '')) !== '')
+            ->values()
+            ->all();
+    }
+
+    private function extractManagedDeleteIdFromPayload(string $payload): ?string
+    {
+        $candidate = '';
+
+        if (preg_match('/deleteId";s:\d+:"([0-9a-f\-]{36})"/i', $payload, $matches) === 1) {
+            $candidate = (string) ($matches[1] ?? '');
+        }
+
+        if ($candidate === '' && preg_match('/"deleteId":"([0-9a-f\-]{36})"/i', $payload, $matches) === 1) {
+            $candidate = (string) ($matches[1] ?? '');
+        }
+
+        $candidate = trim($candidate);
+
+        return $candidate !== '' ? $candidate : null;
+    }
+
+    private function reconcileManagedDeleteStateWithQueueRow(string $deleteId, ?array $state, ?array $queueRow): ?array
+    {
+        if ($state === null) {
+            return $queueRow ? $this->makeSyntheticManagedDeleteState($deleteId, $queueRow) : null;
+        }
+
+        $status = strtolower(trim((string) ($state['status'] ?? '')));
+        if (in_array($status, ['completed', 'warning', 'failed', 'cancelled'], true)) {
+            return $state;
+        }
+
+        if (
+            $queueRow === null
+            && $this->timestampOlderThan((string) ($state['updated_at'] ?? $state['created_at'] ?? ''), self::DELETE_PROCESS_STALE_SECONDS)
+        ) {
+            return $this->markManagedDeleteFailed(
+                $deleteId,
+                $state,
+                new \RuntimeException('Delete queue tidak lagi aktif dan state terlalu lama tidak bergerak.')
+            );
+        }
+
+        if ($queueRow !== null && (bool) ($queueRow['reserved'] ?? false) && $status === 'queued') {
+            $state['status'] = 'running';
+            $state['stage'] = in_array(strtolower(trim((string) ($state['stage'] ?? ''))), ['queued'], true) ? 'deleting' : ($state['stage'] ?? 'deleting');
+            $state['message'] = trim((string) ($state['message'] ?? '')) !== ''
+                ? (string) $state['message']
+                : 'Delete sedang diproses worker queue.';
+        }
+
+        return $state;
+    }
+
+    private function makeSyntheticManagedDeleteState(string $deleteId, array $queueRow): array
+    {
+        $timestamp = now()->toIso8601String();
+        $reserved = (bool) ($queueRow['reserved'] ?? false);
+        $createdAt = $this->queueTimestampToIso8601($queueRow['created_at'] ?? null) ?? $timestamp;
+        $updatedAt = $reserved
+            ? ($this->queueTimestampToIso8601($queueRow['reserved_at'] ?? null) ?? $createdAt)
+            : $createdAt;
+
+        return [
+            'delete_id' => $deleteId,
+            'status' => $reserved ? 'running' : 'queued',
+            'stage' => $reserved ? 'deleting' : 'queued',
+            'batch_state' => $reserved ? 'deleting_pending' : 'queued',
+            'table_name' => '',
+            'total_rows' => 1,
+            'deleted_rows' => 0,
+            'remaining_rows' => 1,
+            'chunk_size' => self::DELETE_CHUNK_SIZE,
+            'current_scope_index' => 0,
+            'is_waiting_on_batch' => false,
+            'active_batch_size' => 0,
+            'last_batch_deleted_rows' => 0,
+            'last_batch_started_at' => null,
+            'last_batch_finished_at' => null,
+            'created_at' => $createdAt,
+            'updated_at' => $updatedAt,
+            'progress_percent' => 0,
+            'message' => $reserved
+                ? 'Delete sedang diproses worker queue.'
+                : 'Delete masih menunggu worker queue.',
+            'cleanup' => null,
+            'cancel_requested' => false,
+        ];
+    }
+
+    private function mapManagedDeleteStatus(string $status, string $stage): string
+    {
+        $normalizedStatus = strtolower(trim($status));
+        $normalizedStage = strtolower(trim($stage));
+
+        if ($normalizedStatus === 'queued' || $normalizedStage === 'queued') {
+            return 'queued';
+        }
+
+        if (in_array($normalizedStatus, ['running', 'processing', 'cancelling'], true)) {
+            return 'processing';
+        }
+
+        if ($normalizedStatus === 'cancelled') {
+            return 'terminated';
+        }
+
+        if (in_array($normalizedStatus, ['completed', 'warning'], true)) {
+            return 'completed';
+        }
+
+        if ($normalizedStatus === 'failed') {
+            return 'failed';
+        }
+
+        if (in_array($normalizedStage, ['deleting', 'cleanup', 'syncing'], true)) {
+            return 'processing';
+        }
+
+        return 'processing';
+    }
+
+    private function managedDeleteStageLabel(string $stage): string
+    {
+        return match (strtolower(trim($stage))) {
+            'queued' => 'Queued',
+            'deleting' => 'Deleting',
+            'cleanup' => 'Cleanup',
+            'syncing' => 'Syncing',
+            'completed' => 'Completed',
+            'failed' => 'Failed',
+            'cancelled' => 'Cancelled',
+            default => ucfirst($stage !== '' ? $stage : 'unknown'),
+        };
+    }
+
     private function diffNowInSeconds(?string $timestamp): int
     {
         if (!is_string($timestamp) || trim($timestamp) === '') {
@@ -2608,6 +2886,11 @@ class ImportIndexController extends Controller
         array $scopes
     ): array {
         $query = DB::table($tableName);
+
+        if ($periodColumn === null && $kancaColumn === null) {
+            return [$query, true];
+        }
+
         $validScopes = [];
 
         foreach ($scopes as $scope) {
@@ -2808,7 +3091,9 @@ class ImportIndexController extends Controller
         }
 
         if ($identityColumn === null) {
-            return 'unsupported';
+            return ($periodColumn === null && $kancaColumn === null)
+                ? 'full_table_direct_delete'
+                : 'direct_delete';
         }
 
         foreach ($this->buildDeleteConstraintVariants($periodColumn, $kancaColumn, $scope) as $variant) {
@@ -2965,6 +3250,19 @@ class ImportIndexController extends Controller
                     if ($partitionAffected !== null) {
                         return $partitionAffected;
                     }
+                }
+
+                if ($identityColumn === null) {
+                    $deleted = (int) (clone $baseQuery)->count();
+                    if ($deleted <= 0) {
+                        return 0;
+                    }
+
+                    if ($deleteId !== null && $this->isManagedDeleteCancellationRequested($deleteId)) {
+                        return 0;
+                    }
+
+                    return (int) (clone $baseQuery)->delete();
                 }
 
                 if ($identityColumn !== null && Schema::hasColumn($tableName, $identityColumn)) {

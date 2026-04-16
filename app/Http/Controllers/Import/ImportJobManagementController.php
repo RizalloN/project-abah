@@ -20,7 +20,8 @@ class ImportJobManagementController extends Controller
     private const SNAPSHOT_RESERVED_STALE_SECONDS = 600;
 
     public function __construct(
-        private readonly ManagedReportSnapshotRebuildCoordinator $snapshotRebuildCoordinator
+        private readonly ManagedReportSnapshotRebuildCoordinator $snapshotRebuildCoordinator,
+        private readonly ImportIndexController $importIndexController
     ) {
     }
 
@@ -94,6 +95,8 @@ class ImportJobManagementController extends Controller
             ->orderByDesc('ij.updated_at')
             ->paginate($perPage);
 
+        $managedDeleteJobs = $this->importIndexController->resolveManagedReportDeleteJobs();
+
         $items = collect($jobs->items())->map(function ($job) use ($progressService) {
             $statusPayload = $progressService->getStatusPayload((int) $job->id);
             $createdAt = $this->safeParseDate($job->created_at);
@@ -157,6 +160,12 @@ class ImportJobManagementController extends Controller
             ],
             'queue_health' => $this->resolveQueueHealth(),
             'snapshot_jobs' => $snapshotJobs,
+            'managed_delete_jobs' => $managedDeleteJobs,
+            'managed_delete_summary' => [
+                'active_jobs' => collect($managedDeleteJobs)->whereIn('status', ['queued', 'processing'])->count(),
+                'queued_jobs' => collect($managedDeleteJobs)->where('status', 'queued')->count(),
+                'processing_jobs' => collect($managedDeleteJobs)->where('status', 'processing')->count(),
+            ],
             'active_jobs' => $items->filter(fn (array $job) => in_array($job['status'], ['queued', 'processing'], true))->values()->all(),
             'jobs' => $items->all(),
             'pagination' => [
@@ -750,14 +759,16 @@ class ImportJobManagementController extends Controller
                 'message' => 'Tabel queue `jobs` tidak tersedia.',
                 'configured_report_queue' => (string) config('queue.report_queue', 'default'),
                 'pending_report_jobs' => 0,
+                'pending_managed_delete_jobs' => 0,
                 'pending_snapshot_rebuilds' => 0,
                 'legacy_reports_low_pending' => 0,
             ];
         }
 
         $configuredReportQueue = trim((string) config('queue.report_queue', 'default')) ?: 'default';
-        $queues = array_values(array_unique(array_filter([$configuredReportQueue, 'default', 'reports-low'])));
+        $queues = array_values(array_unique(array_filter([$configuredReportQueue, 'default', 'reports-low', 'imports-high'])));
         $reportBasenames = $this->reportQueueBasenames();
+        $managedDeleteBasename = class_basename(\App\Jobs\RunManagedReportDeleteJob::class);
         $snapshotRebuildBasename = class_basename(\App\Jobs\RunManagedReportSnapshotRebuildJob::class);
         $reservedJobs = DB::table('jobs')
             ->whereNotNull('reserved_at')
@@ -765,8 +776,12 @@ class ImportJobManagementController extends Controller
             ->select(['id', 'queue', 'reserved_at', 'created_at', 'available_at', 'payload'])
             ->orderBy('id')
             ->get()
-            ->filter(function ($job) use ($reportBasenames) {
+            ->filter(function ($job) use ($reportBasenames, $managedDeleteBasename) {
                 $payload = (string) ($job->payload ?? '');
+
+                if ($managedDeleteBasename !== '' && str_contains($payload, $managedDeleteBasename)) {
+                    return true;
+                }
 
                 foreach ($reportBasenames as $basename) {
                     if ($basename !== '' && str_contains($payload, $basename)) {
@@ -808,8 +823,12 @@ class ImportJobManagementController extends Controller
             ->select(['id', 'queue', 'created_at', 'available_at', 'payload'])
             ->orderBy('id')
             ->get()
-            ->filter(function ($job) use ($reportBasenames) {
+            ->filter(function ($job) use ($reportBasenames, $managedDeleteBasename) {
                 $payload = (string) ($job->payload ?? '');
+
+                if ($managedDeleteBasename !== '' && str_contains($payload, $managedDeleteBasename)) {
+                    return true;
+                }
 
                 foreach ($reportBasenames as $basename) {
                     if ($basename !== '' && str_contains($payload, $basename)) {
@@ -821,19 +840,21 @@ class ImportJobManagementController extends Controller
             })
             ->values();
 
-        $pendingReportJobs = $jobs->count();
+        $pendingManagedDeleteJobs = $jobs->filter(fn ($job) => str_contains((string) ($job->payload ?? ''), $managedDeleteBasename))->count();
+        $pendingReportJobs = max(0, $jobs->count() - $pendingManagedDeleteJobs);
         $pendingSnapshotRebuilds = $jobs->filter(fn ($job) => str_contains((string) ($job->payload ?? ''), $snapshotRebuildBasename))->count();
         $legacyReportsLowPending = $jobs->where('queue', 'reports-low')->count();
         $configuredQueuePending = $jobs->where('queue', $configuredReportQueue)->count();
         $oldestPending = $jobs->first();
         $oldestAgeSeconds = $oldestPending ? $this->queueRowAgeSeconds($oldestPending) : null;
-        if ($pendingReportJobs === 0 && $staleReservedSnapshotJobs === 0) {
+        if ($pendingReportJobs === 0 && $pendingManagedDeleteJobs === 0 && $staleReservedSnapshotJobs === 0) {
             return [
                 'status' => 'ok',
                 'tone' => 'info',
-                'message' => 'Queue report sehat. Tidak ada job report yang menunggu.',
+                'message' => 'Queue report sehat. Tidak ada job report atau delete yang menunggu.',
                 'configured_report_queue' => $configuredReportQueue,
                 'pending_report_jobs' => 0,
+                'pending_managed_delete_jobs' => 0,
                 'pending_snapshot_rebuilds' => 0,
                 'legacy_reports_low_pending' => 0,
                 'oldest_pending_age_seconds' => 0,
@@ -842,16 +863,22 @@ class ImportJobManagementController extends Controller
             ];
         }
 
-        $message = $configuredQueuePending > 0
-            ? sprintf(
+        if ($pendingReportJobs > 0) {
+            $message = sprintf(
                 'Ada %d job report menunggu di queue `%s`%s.',
-                $configuredQueuePending,
+                $pendingReportJobs,
                 $configuredReportQueue,
                 $pendingSnapshotRebuilds > 0 ? " termasuk {$pendingSnapshotRebuilds} snapshot rebuild" : ''
-            )
-            : ($pendingReportJobs > 0
-                ? 'Ada job report yang masih menunggu di queue.'
-                : 'Ada job snapshot yang sudah di-reserve worker tetapi terlalu lama tidak selesai.');
+            );
+
+            if ($pendingManagedDeleteJobs > 0) {
+                $message .= sprintf(' Ada %d job managed delete menunggu di queue `imports-high`.', $pendingManagedDeleteJobs);
+            }
+        } elseif ($pendingManagedDeleteJobs > 0) {
+            $message = sprintf('Ada %d job managed delete yang masih menunggu di queue `imports-high`.', $pendingManagedDeleteJobs);
+        } else {
+            $message = 'Ada job snapshot yang sudah di-reserve worker tetapi terlalu lama tidak selesai.';
+        }
 
         if ($legacyReportsLowPending > 0 && $configuredReportQueue !== 'reports-low') {
             $message .= sprintf(' Masih ada %d job lama di queue `reports-low` yang perlu dikonsumsi worker lama atau dibersihkan.', $legacyReportsLowPending);
@@ -871,6 +898,7 @@ class ImportJobManagementController extends Controller
             'message' => $message,
             'configured_report_queue' => $configuredReportQueue,
             'pending_report_jobs' => $pendingReportJobs,
+            'pending_managed_delete_jobs' => $pendingManagedDeleteJobs,
             'pending_snapshot_rebuilds' => $pendingSnapshotRebuilds,
             'legacy_reports_low_pending' => $legacyReportsLowPending,
             'oldest_pending_age_seconds' => $oldestAgeSeconds ?? 0,
