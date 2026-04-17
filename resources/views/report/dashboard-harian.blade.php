@@ -813,7 +813,8 @@
 <script>
     document.addEventListener('DOMContentLoaded', function () {
         const page = window.dailyDashboardPage || {};
-        const dataUrl = page.routes ? page.routes.data : '';
+        const currentPath = window.location.pathname.replace(/\/$/, '');
+        const dataUrl = currentPath ? currentPath + '/data' : (page.routes ? page.routes.data : '');
         const initialFilters = page.filters || {};
         const initialSelected = page.selected || {};
         const initialData = page.initialData || {};
@@ -917,6 +918,12 @@
 
         const formatValue = function (value, type) {
             return type === 'percent' ? formatPercent(value) : formatCurrency(value);
+        };
+
+        const setTextContent = function (node, value) {
+            if (node) {
+                node.textContent = value;
+            }
         };
 
         const normalizeArraySelection = function (value) {
@@ -1370,11 +1377,9 @@
                     const totalSmlNonCommercialChildren = (scopeMode === 'kc' || scopeMode === 'kcp') ? ['sme_sml', 'consumer_sml'] : ['sme_sml', 'consumer_sml', 'micro_sml'];
                     rowsByKey.total_sml_abs_non_commercial[group][smpanMetricName] = sumMetric(rowsByKey, totalSmlNonCommercialChildren, group, smpanMetricName);
                     
-                    const microNplChildren = ['briguna_mikro_npl', 'kupedes_npl', 'kur_mikro_npl', 'kur_kecil_npl', 'kur_kpp_npl'];
-                    const smeNplChildren = (scopeMode === 'kc' || scopeMode === 'kcp') ? ['kecil_npl'] : ['kecil_npl', 'medium_npl'];
+                    const smeNplChildren = ['kecil_npl'];
                     rowsByKey.sme_npl[group][smpanMetricName] = sumMetric(rowsByKey, smeNplChildren, group, smpanMetricName);
                     rowsByKey.consumer_npl[group][smpanMetricName] = sumMetric(rowsByKey, ['briguna_konsumer_npl', 'kpr_npl', 'kkb_npl'], group, smpanMetricName);
-                    rowsByKey.micro_npl[group][smpanMetricName] = sumMetric(rowsByKey, microNplChildren, group, smpanMetricName);
                     
                     const totalNplNonCommercialChildren = (scopeMode === 'kc' || scopeMode === 'kcp') ? ['sme_npl', 'consumer_npl'] : ['sme_npl', 'consumer_npl', 'micro_npl'];
                     rowsByKey.total_npl_abs_non_commercial[group][smpanMetricName] = sumMetric(rowsByKey, totalNplNonCommercialChildren, group, smpanMetricName);
@@ -1391,8 +1396,6 @@
                     rowsByKey.ldr_non_commercial[group][metricName] = safePercent(rowsByKey.total_simpanan[group][metricName], rowsByKey.total_os_non_commercial[group][metricName]);
                     rowsByKey.ldr_ritel_non_commercial[group][metricName] = safePercent(rowsByKey.simpanan_ritel[group][metricName], rowsByKey.sme_os[group][metricName] + rowsByKey.consumer_os[group][metricName]);
                     rowsByKey.ldr_mikro_non_commercial[group][metricName] = safePercent(rowsByKey.simpanan_mikro[group][metricName], rowsByKey.micro_os[group][metricName]);
-                    rowsByKey.total_sml_pct_non_commercial[group][metricName] = safePercent(rowsByKey.total_sml_abs_non_commercial[group][metricName], rowsByKey.total_os_non_commercial[group][metricName]);
-                    rowsByKey.total_npl_pct_non_commercial[group][metricName] = safePercent(rowsByKey.total_npl_abs_non_commercial[group][metricName], rowsByKey.total_os_non_commercial[group][metricName]);
                 });
             });
 
@@ -1510,27 +1513,29 @@
             populateSelect(selects.posisi_terakhir, filters.posisi_terakhir || [], scopedPayload.selected_period || current.posisi_terakhir);
             populateSelect(selects.posisi_rka, filters.posisi_rka || [], scopedPayload.selected_rka_period ? scopedPayload.selected_rka_period.slice(0, 7) : current.posisi_rka);
 
-            scopeKanca.textContent = summary.kanca_label || 'Semua Kanca';
-            scopeUnit.textContent = summary.unit_label || 'Semua Unit Kerja';
-            scopePosisi.textContent = scopedPayload.selected_period_label || 'Belum ada data';
-            scopeRka.textContent = periods.rka ? formatMonthYear(periods.rka.period) : 'Belum ada data';
-            scopeSummary.innerHTML = '<i class="fas fa-list mr-1"></i> Baris tampil: ' + (summary.row_count || 0).toLocaleString('id-ID') + '. <br><small class="text-muted font-weight-normal mt-1 d-block">Data dari: ' + (summary.source || 'source_fallback') + '</small>';
-            sourceLabel.textContent = summary.source || 'source_fallback';
-            kpiSimpanan.textContent = formatMiliar(summary.current_total_simpanan || 0);
-            kpiOs.textContent = formatMiliar(summary.current_total_os_non_commercial || 0);
-            kpiCasa.textContent = formatPercent(summary.current_casa_pct || 0);
+            setTextContent(scopeKanca, summary.kanca_label || 'Semua Kanca');
+            setTextContent(scopeUnit, summary.unit_label || 'Semua Unit Kerja');
+            setTextContent(scopePosisi, scopedPayload.selected_period_label || 'Belum ada data');
+            setTextContent(scopeRka, periods.rka ? formatMonthYear(periods.rka.period) : 'Belum ada data');
+            if (scopeSummary) {
+                scopeSummary.innerHTML = '<i class="fas fa-list mr-1"></i> Baris tampil: ' + (summary.row_count || 0).toLocaleString('id-ID') + '. <br><small class="text-muted font-weight-normal mt-1 d-block">Data dari: ' + (summary.source || 'source_fallback') + '</small>';
+            }
+            setTextContent(sourceLabel, summary.source || 'source_fallback');
+            setTextContent(kpiSimpanan, formatMiliar(summary.current_total_simpanan || 0));
+            setTextContent(kpiOs, formatMiliar(summary.current_total_os_non_commercial || 0));
+            setTextContent(kpiCasa, formatPercent(summary.current_casa_pct || 0));
 
-            headerLabels.yoy.textContent = periods.yoy ? formatDateSlash(periods.yoy.period) : '-';
-            headerLabels.ytd.textContent = periods.ytd ? formatDateSlash(periods.ytd.period) : '-';
-            headerLabels.mtm.textContent = periods.mtm ? formatDateSlash(periods.mtm.period) : '-';
-            headerLabels.mtd.textContent = periods.mtd ? formatDateSlash(periods.mtd.period) : '-';
-            headerLabels.h1.textContent = hasH1 ? formatDateSlash(periods.h1.period) : '-';
-            headerLabels.current.textContent = scopedPayload.selected_period ? formatDateSlash(scopedPayload.selected_period) : '-';
-            headerLabels.rka.textContent = periods.rka ? 'RKA ' + String(formatMonthYear(periods.rka.period)).toUpperCase() : 'RKA';
-            headerLabels.rkaDec.textContent = periods.rka_dec ? 'RKA ' + String(formatMonthYear(periods.rka_dec.period)).toUpperCase() : 'RKA Des';
-            headerLabels.deltaYoy.textContent = periods.yoy ? formatDateSlash(periods.yoy.period) : '-';
-            headerLabels.deltaYtd.textContent = periods.ytd ? formatDateSlash(periods.ytd.period) : '-';
-            headerLabels.deltaDtd.textContent = hasH1 ? formatDateSlash(periods.h1.period) : '-';
+            setTextContent(headerLabels.yoy, periods.yoy ? formatDateSlash(periods.yoy.period) : '-');
+            setTextContent(headerLabels.ytd, periods.ytd ? formatDateSlash(periods.ytd.period) : '-');
+            setTextContent(headerLabels.mtm, periods.mtm ? formatDateSlash(periods.mtm.period) : '-');
+            setTextContent(headerLabels.mtd, periods.mtd ? formatDateSlash(periods.mtd.period) : '-');
+            setTextContent(headerLabels.h1, hasH1 ? formatDateSlash(periods.h1.period) : '-');
+            setTextContent(headerLabels.current, scopedPayload.selected_period ? formatDateSlash(scopedPayload.selected_period) : '-');
+            setTextContent(headerLabels.rka, periods.rka ? 'RKA ' + String(formatMonthYear(periods.rka.period)).toUpperCase() : 'RKA');
+            setTextContent(headerLabels.rkaDec, periods.rka_dec ? 'RKA ' + String(formatMonthYear(periods.rka_dec.period)).toUpperCase() : 'RKA Des');
+            setTextContent(headerLabels.deltaYoy, periods.yoy ? formatDateSlash(periods.yoy.period) : '-');
+            setTextContent(headerLabels.deltaYtd, periods.ytd ? formatDateSlash(periods.ytd.period) : '-');
+            setTextContent(headerLabels.deltaDtd, hasH1 ? formatDateSlash(periods.h1.period) : '-');
 
             togglePositionColumns(hasH1);
 
@@ -1555,12 +1560,26 @@
                 }
             })
                 .then(function (response) {
+                    if (!response.ok) {
+                        return response.text().then(function (text) {
+                            throw new Error('HTTP ' + response.status + ': ' + text.slice(0, 180));
+                        });
+                    }
+
+                    const contentType = response.headers.get('content-type') || '';
+                    if (contentType.indexOf('application/json') === -1) {
+                        return response.text().then(function (text) {
+                            throw new Error('Invalid content type: ' + contentType + ' :: ' + text.slice(0, 180));
+                        });
+                    }
+
                     return response.json();
                 })
                 .then(function (payload) {
                     applyPayload(payload);
                 })
-                .catch(function () {
+                .catch(function (error) {
+                    console.error('Gagal memuat data dashboard harian.', error);
                     const hidden = positionH1Header && positionH1Header.classList.contains('position-col-hidden');
                     body.innerHTML = '<tr><td colspan="' + (hidden ? 14 : 15) + '" class="daily-empty text-danger"><i class="fas fa-exclamation-triangle mr-2"></i>Gagal memuat data dashboard harian.</td></tr>';
                 })
@@ -1587,6 +1606,19 @@
                 }
             })
                 .then(function (response) {
+                    if (!response.ok) {
+                        return response.text().then(function (text) {
+                            throw new Error('HTTP ' + response.status + ': ' + text.slice(0, 180));
+                        });
+                    }
+
+                    const contentType = response.headers.get('content-type') || '';
+                    if (contentType.indexOf('application/json') === -1) {
+                        return response.text().then(function (text) {
+                            throw new Error('Invalid content type: ' + contentType + ' :: ' + text.slice(0, 180));
+                        });
+                    }
+
                     return response.json();
                 })
                 .then(function (payload) {

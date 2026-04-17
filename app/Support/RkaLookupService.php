@@ -63,9 +63,9 @@ class RkaLookupService
         ?int $year = null
     ): array {
         $monthColumn = strtolower(trim($monthColumn));
-        $normalizedKancas = $this->normalizeLookupValues($kancas);
-        $normalizedUnits = $this->normalizeLookupValues($units);
-        $rows = $this->loadRows($normalizedKancas, [$monthColumn], $year);
+        $normalizedKancas = $this->normalizeScopeValues($kancas);
+        $normalizedUnits = $this->normalizeScopeValues($units);
+        $rows = $this->loadRows([$monthColumn], $year);
 
         $groups = [];
         foreach ($definitions as $definitionKey => $definition) {
@@ -73,6 +73,10 @@ class RkaLookupService
         }
 
         foreach ($rows as $row) {
+            if (!empty($normalizedKancas) && !in_array($row['kanca_key'], $normalizedKancas, true)) {
+                continue;
+            }
+
             if (!empty($normalizedUnits) && !in_array($row['uker_key'], $normalizedUnits, true)) {
                 continue;
             }
@@ -105,13 +109,9 @@ class RkaLookupService
         ?int $year = null
     ): array {
         $monthColumn = strtolower(trim($monthColumn));
-        $normalizedKanca = $this->normalizeLookupValue($kanca);
-        $normalizedUnit = $this->normalizeLookupValue($unit);
-        $rows = $this->loadRows(
-            $normalizedKanca !== null ? [$normalizedKanca] : [],
-            [$monthColumn],
-            $year
-        );
+        $normalizedKanca = $this->normalizeScopeValue($kanca);
+        $normalizedUnit = $this->normalizeScopeValue($unit);
+        $rows = $this->loadRows([$monthColumn], $year);
 
         $result = [];
         foreach (array_keys($definitions) as $definitionKey) {
@@ -119,6 +119,10 @@ class RkaLookupService
         }
 
         foreach ($rows as $row) {
+            if ($normalizedKanca !== null && $row['kanca_key'] !== $normalizedKanca) {
+                continue;
+            }
+
             if ($normalizedUnit !== null && $row['uker_key'] !== $normalizedUnit) {
                 continue;
             }
@@ -138,9 +142,8 @@ class RkaLookupService
         return $result;
     }
 
-    private function loadRows(array $kancas, array $monthColumns, ?int $year = null): Collection
+    private function loadRows(array $monthColumns, ?int $year = null): Collection
     {
-        $normalizedKancas = $this->normalizeLookupValues($kancas);
         $normalizedMonthColumns = collect($monthColumns)
             ->map(fn ($column) => strtolower(trim((string) $column)))
             ->filter()
@@ -153,7 +156,6 @@ class RkaLookupService
         }
 
         $cacheKey = md5(json_encode([
-            'kancas' => $normalizedKancas,
             'months' => $normalizedMonthColumns,
             'year' => $year,
         ]));
@@ -164,15 +166,11 @@ class RkaLookupService
 
         return $this->loadedRowsCache[$cacheKey] = DB::table('rka')
             ->select(array_merge(['kanca', 'desc_uker', 'mata_anggaran'], $normalizedMonthColumns))
-            ->when(!empty($normalizedKancas), function ($query) use ($normalizedKancas) {
-                $query->whereIn(DB::raw('UPPER(TRIM(`kanca`))'), $normalizedKancas);
-            })
             ->when($year !== null, function ($query) use ($year) {
                 $query->whereYear('created_at', $year);
             })
             ->get()
             ->map(function ($row) use ($normalizedMonthColumns) {
-                $parsedUker = $this->extractUkerName((string) ($row->desc_uker ?? ''));
                 $months = [];
 
                 foreach ($normalizedMonthColumns as $monthColumn) {
@@ -180,8 +178,8 @@ class RkaLookupService
                 }
 
                 return [
-                    'kanca_key' => $this->normalizeLookupValue($row->kanca) ?? '',
-                    'uker_key' => $parsedUker,
+                    'kanca_key' => $this->normalizeScopeValue($row->kanca) ?? '',
+                    'uker_key' => $this->normalizeScopeValue($row->desc_uker) ?? '',
                     'mata_anggaran_key' => $this->normalizeLookupValue($row->mata_anggaran) ?? '',
                     'months' => $months,
                 ];
@@ -202,11 +200,36 @@ class RkaLookupService
             ->all();
     }
 
-    private function extractUkerName(string $value): string
+    private function normalizeScopeValues(array $values): array
     {
-        $parts = explode('-', trim($value), 2);
+        return collect($values)
+            ->map(fn ($value) => $this->normalizeScopeValue($value))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    }
 
-        return $this->normalizeLookupValue($parts[1] ?? $parts[0] ?? '') ?? '';
+    private function normalizeScopeValue($value): ?string
+    {
+        $normalized = strtoupper(trim((string) $value));
+
+        if ($normalized === '') {
+            return null;
+        }
+
+        if (in_array($normalized, ['ALL', 'ALL KANCA', 'ALL UKER'], true)) {
+            return null;
+        }
+
+        $normalized = ltrim($normalized, "'\" ");
+        $normalized = preg_replace('/^\d+\s*[\p{Pd}]+\s*/u', '', $normalized) ?? $normalized;
+        $normalized = preg_replace('/^\d+\s+/u', '', $normalized) ?? $normalized;
+        $normalized = preg_replace('/\s*\(([^)]*)\)\s*$/u', '', $normalized) ?? $normalized;
+        $normalized = preg_replace('/\s+/', ' ', $normalized) ?? $normalized;
+        $normalized = trim($normalized);
+
+        return $normalized !== '' ? $normalized : null;
     }
 
     private function matchesDefinition(array $row, array $definition): bool

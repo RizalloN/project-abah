@@ -21,19 +21,28 @@ class DashboardHarianController extends Controller
         $selectedUnit = $this->normalizeFilter($request->input('unit_kerja'));
         $selectedPeriod = $this->dashboardHarianSnapshotService->resolveEffectivePeriod($request->input('posisi_terakhir'));
         $selectedRka = $this->dashboardHarianSnapshotService->resolveEffectiveRkaPeriod($request->input('posisi_rka'), $selectedPeriod);
+        $baseUrl = rtrim($request->getSchemeAndHttpHost() . $request->getBaseUrl(), '/');
+        $dataUrl = $baseUrl . '/dashboard-harian/data';
+        $filters = $this->dashboardHarianSnapshotService->fetchFilterOptions($selectedPeriod, $selectedKanca, $selectedUnit);
+        $initialData = null;
+
+        if ($selectedPeriod) {
+            $initialData = $this->payload($selectedPeriod, $selectedRka, $selectedKanca, $selectedUnit)
+                + ['available_filters' => $filters];
+        }
 
         $dashboardPage = [
             'routes' => [
-                'data' => route('dashboard.harian.data'),
+                'data' => $dataUrl,
             ],
-            'filters' => $this->dashboardHarianSnapshotService->fetchFilterOptions($selectedPeriod, $selectedKanca, $selectedUnit),
+            'filters' => $filters,
             'selected' => [
                 'kanca' => $selectedKanca ?? [],
                 'unit_kerja' => $selectedUnit ?? 'all',
                 'posisi_terakhir' => $selectedPeriod,
                 'posisi_rka' => $selectedRka ? substr($selectedRka, 0, 7) : null,
             ],
-            'initialData' => null,
+            'initialData' => $initialData,
         ];
 
         return view('report.dashboard-harian', compact('dashboardPage'));

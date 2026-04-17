@@ -278,6 +278,45 @@
             width: var(--report-first-col-width) !important;
         }
 
+        .content-wrapper .table-container .table-report thead > tr:first-child > th:first-child,
+        .content-wrapper .table-container .table-report tbody td:first-child,
+        .content-wrapper .table-container .table-report tfoot td:first-child,
+        .content-wrapper .table-container .table-report tfoot th:first-child {
+            position: sticky;
+            left: 0;
+            background-clip: padding-box;
+            box-shadow: 10px 0 14px -14px rgba(15, 23, 42, 0.35);
+        }
+
+        .content-wrapper .table-container .table-report thead > tr:first-child > th:first-child {
+            z-index: 12;
+        }
+
+        .content-wrapper .table-container .table-report tbody td:first-child,
+        .content-wrapper .table-container .table-report tfoot td:first-child,
+        .content-wrapper .table-container .table-report tfoot th:first-child {
+            z-index: 4;
+            background-color: #ffffff;
+        }
+
+        .content-wrapper .table-container .table.table-hover tbody tr:hover > td:first-child,
+        .content-wrapper .table-container .table.table-hover tbody tr:hover > th:first-child {
+            background-color: rgba(113, 197, 232, 0.16) !important;
+        }
+
+        .content-wrapper .table-container .table.table-hover tbody tr.row-total > td:first-child,
+        .content-wrapper .table-container .table.table-hover tbody tr.row-total > th:first-child,
+        .content-wrapper .table-container .table.table-hover tbody tr.row-total:hover > td:first-child,
+        .content-wrapper .table-container .table.table-hover tbody tr.row-total:hover > th:first-child,
+        .content-wrapper .table-container .table.table-hover tbody tr.row-total-blue > td:first-child,
+        .content-wrapper .table-container .table.table-hover tbody tr.row-total-blue > th:first-child,
+        .content-wrapper .table-container .table.table-hover tbody tr.row-total-blue:hover > td:first-child,
+        .content-wrapper .table-container .table.table-hover tbody tr.row-total-blue:hover > th:first-child {
+            background-color: var(--row-total-bg, #0857c3) !important;
+            color: var(--row-total-color, #ffffff) !important;
+            border-color: var(--row-total-border, inherit) !important;
+        }
+
         @media (max-width: 575.98px) {
             .content-wrapper {
                 --report-first-col-width: 170px;
