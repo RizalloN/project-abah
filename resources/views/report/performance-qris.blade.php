@@ -254,6 +254,7 @@
     }
     @include('report.partials.sticky-table-viewport-style')
 </style>
+@include('report._bri-report-ui')
 
 <div class="card card-outline card-success shadow-sm mb-4 report-filter-card">
     <div class="card-body py-3">

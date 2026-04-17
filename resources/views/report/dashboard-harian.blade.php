@@ -121,8 +121,8 @@
         margin-bottom: 0.75rem;
         padding: 1rem 1.1rem 0.95rem;
         background:
-            radial-gradient(circle at top right, rgba(0, 82, 156, 0.09), transparent 30%),
-            linear-gradient(180deg, #f7fbff 0%, #ffffff 62%, #fdfefe 100%);
+            linear-gradient(180deg, rgba(236, 243, 255, 0.98) 0%, rgba(255, 255, 255, 0.98) 72%),
+            #ffffff;
         border-bottom: 1px solid rgba(219, 229, 239, 0.9);
     }
 
@@ -130,8 +130,7 @@
         content: '';
         position: absolute;
         inset: 0;
-        background:
-            linear-gradient(90deg, rgba(0, 82, 156, 0.05) 0%, transparent 26%, transparent 74%, rgba(0, 82, 156, 0.05) 100%);
+        background: linear-gradient(90deg, rgba(0, 82, 156, 0.06), rgba(255, 255, 255, 0) 25%, rgba(255, 255, 255, 0) 75%, rgba(0, 82, 156, 0.06));
         pointer-events: none;
     }
 
@@ -142,7 +141,7 @@
 
     .daily-filter-card {
         --daily-filter-accent: var(--bri-blue-main);
-        --daily-filter-tint: rgba(0, 82, 156, 0.05);
+        --daily-filter-tint: rgba(0, 82, 156, 0.03);
         --daily-filter-badge-bg: var(--loan-blue-soft);
         --daily-filter-badge-border: #d7e6fb;
         height: 100%;
@@ -151,7 +150,7 @@
         border: 1px solid rgba(219, 229, 239, 0.95);
         border-radius: 14px;
         background:
-            linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(243, 248, 255, 0.97)),
+            linear-gradient(180deg, rgba(235, 243, 255, 0.98) 0%, rgba(255, 255, 255, 0.98) 76%),
             rgba(255, 255, 255, 0.92);
         box-shadow: 0 14px 28px -26px rgba(15, 23, 42, 0.24);
         backdrop-filter: blur(8px);
@@ -169,20 +168,8 @@
         left: 0;
         right: 0;
         height: 3px;
-        background: linear-gradient(90deg, var(--daily-filter-accent), rgba(255, 255, 255, 0.88));
-        opacity: 0.7;
-    }
-
-    .daily-filter-card::after {
-        content: '';
-        position: absolute;
-        inset: auto 12px 12px auto;
-        width: 72px;
-        height: 72px;
-        border-radius: 999px;
-        background: var(--daily-filter-tint);
-        opacity: 0.9;
-        pointer-events: none;
+        background: linear-gradient(90deg, var(--daily-filter-accent), rgba(143, 180, 255, 0.72), rgba(255, 255, 255, 0.95));
+        opacity: 0.85;
     }
 
     .daily-filter-card:hover {
@@ -196,42 +183,43 @@
         display: flex;
         flex-direction: column;
         justify-content: space-between;
+        align-items: stretch;
         background:
-            linear-gradient(180deg, rgba(239, 245, 255, 0.99), rgba(255, 255, 255, 0.98)),
+            linear-gradient(180deg, rgba(234, 242, 255, 0.98), rgba(255, 255, 255, 0.98)),
             rgba(255, 255, 255, 0.96);
     }
 
     .daily-filter-card--kanca {
         --daily-filter-accent: #00529C;
-        --daily-filter-tint: rgba(0, 82, 156, 0.06);
+        --daily-filter-tint: rgba(0, 82, 156, 0.03);
         --daily-filter-badge-bg: #edf5ff;
         --daily-filter-badge-border: #d6e5fb;
     }
 
     .daily-filter-card--unit {
         --daily-filter-accent: #004685;
-        --daily-filter-tint: rgba(0, 70, 133, 0.06);
+        --daily-filter-tint: rgba(0, 70, 133, 0.03);
         --daily-filter-badge-bg: #eaf2ff;
         --daily-filter-badge-border: #d6e5fb;
     }
 
     .daily-filter-card--posisi {
         --daily-filter-accent: #1e40af;
-        --daily-filter-tint: rgba(30, 64, 175, 0.05);
+        --daily-filter-tint: rgba(30, 64, 175, 0.03);
         --daily-filter-badge-bg: #eef4ff;
         --daily-filter-badge-border: #dbe5ff;
     }
 
     .daily-filter-card--rka {
         --daily-filter-accent: #0f4c97;
-        --daily-filter-tint: rgba(15, 76, 151, 0.05);
+        --daily-filter-tint: rgba(15, 76, 151, 0.03);
         --daily-filter-badge-bg: #edf5ff;
         --daily-filter-badge-border: #d6e5fb;
     }
 
     .daily-filter-card--action {
         --daily-filter-accent: #0f4c97;
-        --daily-filter-tint: rgba(15, 76, 151, 0.06);
+        --daily-filter-tint: rgba(15, 76, 151, 0.03);
         --daily-filter-badge-bg: #edf5ff;
         --daily-filter-badge-border: #d6e5fb;
     }
@@ -246,7 +234,7 @@
 
     .daily-filter-control {
         position: relative;
-        margin-top: auto;
+        margin-top: 0.25rem;
         z-index: 6;
     }
 
@@ -599,6 +587,7 @@
         flex: 1 1 auto;
         position: relative;
         z-index: 1;
+        justify-content: flex-start;
     }
 
     .daily-filter-card .daily-filter-label {
@@ -607,6 +596,18 @@
         font-size: 0.7rem;
         letter-spacing: 0.06em;
         color: #4b6285;
+    }
+
+    .daily-filter-card--action .daily-filter-label {
+        margin-bottom: 0.55rem;
+    }
+
+    .daily-filter-card--action .daily-apply-button {
+        margin-top: 0.25rem;
+    }
+
+    .daily-filter-action-button-wrap {
+        margin-top: 0.2rem;
     }
     
     .btn-primary {
@@ -940,12 +941,6 @@
             padding: 0.72rem;
         }
 
-        .daily-filter-card::after {
-            inset: auto 10px 10px auto;
-            width: 58px;
-            height: 58px;
-        }
-
         .daily-filter-select,
         .daily-dropdown-toggle,
         .daily-apply-button {
@@ -1054,7 +1049,7 @@
                         <div class="daily-filter-action-body">
                             <label class="daily-filter-label">Tindakan</label>
                             <!-- <div class="daily-filter-note">Pilih kombinasi filter lalu jalankan pembaruan tabel tanpa mengubah flow data yang ada.</div> -->
-                            <div class="mt-auto pt-3">
+                            <div class="daily-filter-action-button-wrap">
                                 <button type="button" class="btn daily-apply-button d-flex justify-content-center align-items-center" id="btn-apply-daily-filter">
                                     <i class="fas fa-filter mr-2"></i> Terapkan
                                 </button>

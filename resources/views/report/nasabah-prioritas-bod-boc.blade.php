@@ -229,6 +229,7 @@
     .metric-negative { color: #dc2626 !important; font-weight: 700; } /* red-600 */
     .metric-neutral { color: var(--text-muted) !important; font-weight: 600; }
 </style>
+@include('report._bri-report-ui')
 
 <div class="report-wrapper">
     <div class="report-card mb-4">

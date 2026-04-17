@@ -284,6 +284,7 @@
         color: var(--text-main); 
     }
 </style>
+@include('report._bri-report-ui')
 
 <div class="report-wrapper">
     <div class="card card-outline card-primary shadow-sm mb-4 report-filter-card">
