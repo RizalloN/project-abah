@@ -8,10 +8,11 @@
     /* 🔥 PERBAIKAN UI: Tabel elastis dan cerdas menyesuaikan ukuran layar */
     .report-filter-card,
     .report-data-card {
-        border: 1px solid #e9ecef;
-        border-radius: 16px;
+        border: 1px solid #dbe5ef;
+        border-radius: 18px;
         overflow: visible;
-        box-shadow: 0 0.5rem 1rem rgba(15, 23, 42, 0.08) !important;
+        box-shadow: 0 14px 30px -24px rgba(15, 23, 42, 0.22) !important;
+        background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
     }
     .report-filter-card .card-body,
     .report-data-card .card-header,
@@ -20,10 +21,48 @@
     }
     .report-filter-card .card-body {
         overflow: visible;
+        padding: 1rem 1.1rem 1.05rem;
+    }
+    .report-filter-card .row {
+        row-gap: 0.85rem;
+    }
+    .report-filter-card .form-group {
+        position: relative;
+        height: 100%;
+        padding: 0.68rem 0.75rem 0.72rem;
+        border: 1px solid #dbe5ef;
+        border-radius: 14px;
+        background: linear-gradient(180deg, rgba(236, 243, 255, 0.96) 0%, rgba(255, 255, 255, 0.98) 78%);
+        box-shadow: 0 12px 24px -24px rgba(15, 23, 42, 0.24);
+        overflow: hidden;
+    }
+    .report-filter-card .form-group::before {
+        content: '';
+        position: absolute;
+        inset: 0 auto auto 0;
+        width: 100%;
+        height: 3px;
+        background: linear-gradient(90deg, #004685, #00529c, #8fb4ff, #ffffff);
+    }
+    .report-filter-card .form-group > label {
+        display: block;
+        margin-bottom: 0.38rem !important;
+        color: #516b91 !important;
+        font-size: 0.72rem !important;
+        font-weight: 800 !important;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
     }
     .report-filter-card .form-control {
-        border-radius: 10px;
+        border-radius: 12px;
         min-height: 40px;
+        border-color: #cbd8e8;
+        background: linear-gradient(180deg, #eaf2ff 0%, #ffffff 78%);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95), 0 12px 22px -20px rgba(15, 23, 42, 0.2);
+    }
+    .report-filter-card .form-control:focus {
+        border-color: #00529c;
+        box-shadow: 0 0 0 3px rgba(0, 82, 156, 0.14), 0 12px 22px -22px rgba(0, 70, 133, 0.18);
     }
     .branch-filter-dropdown {
         position: relative;
@@ -36,12 +75,33 @@
         align-items: center;
         justify-content: space-between;
         text-align: left;
-        background: #fff;
+        width: 100%;
+        min-height: 40px;
+        border: 1px solid #cbd8e8;
+        border-radius: 12px;
+        background: linear-gradient(180deg, #eaf2ff 0%, #ffffff 78%);
+        color: #334155;
+        padding: 0.55rem 0.85rem;
+        font-weight: 700;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95), 0 12px 22px -20px rgba(15, 23, 42, 0.2);
+        transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease, background-color 0.2s ease;
+    }
+    .branch-dropdown-toggle:hover:not(:disabled) {
+        border-color: rgba(0, 82, 156, 0.24);
+        background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
+    }
+    .branch-dropdown-toggle:focus {
+        outline: none;
+        border-color: #00529c;
+        box-shadow: 0 0 0 3px rgba(0, 82, 156, 0.14), 0 12px 22px -22px rgba(0, 70, 133, 0.18);
+        background: #ffffff;
     }
     .branch-dropdown-toggle:disabled {
-        background: #e9ecef;
+        background: linear-gradient(180deg, #edf4ff, #f8fbff);
         cursor: not-allowed;
         opacity: 1;
+        color: #64748b;
+        box-shadow: none;
     }
     .branch-dropdown-label {
         overflow: hidden;
@@ -50,7 +110,7 @@
     }
     .branch-dropdown-menu {
         position: absolute;
-        top: calc(100% + 6px);
+        top: calc(100% + 0.45rem);
         left: 0;
         right: 0;
         z-index: 1050;
@@ -58,11 +118,11 @@
         width: 100%;
         max-height: 260px;
         overflow-y: auto;
-        background: #fff;
-        border: 1px solid #dee2e6;
-        border-radius: 10px;
-        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.12);
-        padding: 8px 0;
+        background: rgba(255, 255, 255, 0.98);
+        border: 1px solid #dbe5ef;
+        border-radius: 14px;
+        box-shadow: 0 20px 34px -28px rgba(0, 70, 133, 0.22);
+        padding: 0.45rem;
     }
     .branch-dropdown-menu.show {
         display: block;
@@ -71,13 +131,14 @@
         display: block;
     }
     .branch-dropdown-menu .dropdown-item {
-        padding: 0.45rem 1rem;
+        padding: 0.62rem 0.72rem;
         cursor: pointer;
         margin-bottom: 0;
+        border-radius: 10px;
     }
     .uker-dropdown-menu {
         position: absolute;
-        top: calc(100% + 6px);
+        top: calc(100% + 0.45rem);
         left: 0;
         right: 0;
         z-index: 1050;
@@ -85,16 +146,17 @@
         width: 100%;
         max-height: 260px;
         overflow-y: auto;
-        background: #fff;
-        border: 1px solid #dee2e6;
-        border-radius: 10px;
-        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.12);
-        padding: 8px 0;
+        background: rgba(255, 255, 255, 0.98);
+        border: 1px solid #dbe5ef;
+        border-radius: 14px;
+        box-shadow: 0 20px 34px -28px rgba(0, 70, 133, 0.22);
+        padding: 0.45rem;
     }
     .uker-dropdown-menu .dropdown-item {
-        padding: 0.45rem 1rem;
+        padding: 0.62rem 0.72rem;
         cursor: pointer;
         margin-bottom: 0;
+        border-radius: 10px;
     }
     .branch-dropdown-menu .form-check {
         display: flex;
@@ -116,29 +178,121 @@
     }
     .branch-dropdown-menu .form-check-label {
         margin: 0;
-        font-weight: 500;
+        font-weight: 600;
+        color: #334155;
         cursor: pointer;
     }
     .uker-dropdown-menu .form-check-label {
         margin: 0;
-        font-weight: 500;
+        font-weight: 600;
+        color: #334155;
         cursor: pointer;
     }
-    .table-container { width: 100%; overflow-x: hidden; }
-    .table-report { 
-        border-collapse: collapse; 
-        width: 100%; 
-        table-layout: auto; 
+    .branch-dropdown-menu .dropdown-item:hover,
+    .uker-dropdown-menu .dropdown-item:hover {
+        background: linear-gradient(135deg, #edf5ff, #f8fbff);
     }
-    .table-report th, .table-report td { 
-        vertical-align: middle !important; 
-        border: 1px solid #dee2e6;
+    .branch-dropdown-menu .form-check-input,
+    .uker-dropdown-menu .form-check-input {
+        width: 1rem;
+        height: 1rem;
+        border-color: #b9cbe3;
+    }
+    .branch-dropdown-menu .form-check-input:checked,
+    .uker-dropdown-menu .form-check-input:checked {
+        background-color: #00529c;
+        border-color: #00529c;
+    }
+    #filter_posisi,
+    #filter_posisi_rka {
+        min-height: 40px;
+        border-radius: 12px;
+        border-color: #cbd8e8;
+        background: linear-gradient(180deg, #eaf2ff 0%, #ffffff 78%);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95), 0 12px 22px -20px rgba(15, 23, 42, 0.2);
+        color: #334155;
+        font-weight: 700;
+    }
+    #filter_posisi:focus {
+        border-color: #00529c;
+        box-shadow: 0 0 0 3px rgba(0, 82, 156, 0.14), 0 12px 22px -22px rgba(0, 70, 133, 0.18);
+    }
+    #filter_posisi_rka:disabled {
+        background: linear-gradient(180deg, #edf4ff, #f8fbff);
+        color: #64748b;
+        opacity: 1;
+        box-shadow: none;
+    }
+    .table-container {
+        width: 100%;
+        overflow-x: auto;
+        overflow-y: hidden;
+        border: 1px solid #dbe5ef;
+        border-radius: 16px;
+        background: #ffffff;
+        box-shadow: 0 14px 30px -24px rgba(15, 23, 42, 0.22);
+        scrollbar-color: #9aa8bd #eef3f9;
+    }
+    .table-container::-webkit-scrollbar {
+        height: 10px;
+    }
+    .table-container::-webkit-scrollbar-track {
+        background: #eef3f9;
+        border-radius: 999px;
+    }
+    .table-container::-webkit-scrollbar-thumb {
+        background: #9aa8bd;
+        border-radius: 999px;
+    }
+    .table-report {
+        border-collapse: separate;
+        border-spacing: 0;
+        width: 100%;
+        table-layout: auto;
+        margin-bottom: 0;
+    }
+    .table-report th,
+    .table-report td {
+        vertical-align: middle !important;
+        border: 1px solid #e4ebf3;
         word-wrap: break-word;
-        white-space: normal; /* Mencabut aturan Anti-Wrap agar bisa menyusut */
+        white-space: normal;
     }
-    .table-report th { font-size: 0.65rem; padding: 10px 4px; text-align: center; }
-    .table-report td { font-size: 0.70rem; padding: 6px 4px; text-align: right; }
-    .table-report td.text-left { text-align: left; }
+    .table-report thead th {
+        font-size: 0.68rem;
+        padding: 11px 6px;
+        text-align: center;
+        font-weight: 800;
+        letter-spacing: 0.02em;
+        border-color: rgba(255, 255, 255, 0.22);
+    }
+    .table-report thead tr:first-child th {
+        padding-top: 12px;
+        padding-bottom: 12px;
+    }
+    .table-report thead tr:last-child th {
+        box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.2);
+    }
+    .table-report tbody td {
+        font-size: 0.7rem;
+        padding: 7px 6px;
+        text-align: right;
+        background: #ffffff;
+    }
+    .table-report tbody tr:nth-child(even) td {
+        background: #fafcff;
+    }
+    .table-report tbody tr:hover td {
+        background: #eef5ff !important;
+    }
+    .table-report td.text-left {
+        text-align: left;
+    }
+    .table-report tbody td:first-child,
+    .table-report tbody td.text-left {
+        font-weight: 700;
+        color: #1f2937;
+    }
     
     /* Pewarnaan Header TAB 1 & 2 Sesuai Sebelumnya */
     .bg-mid-dark { background-color: #2b5cb5 !important; color: #ffffff !important; }
@@ -163,19 +317,54 @@
     .bg-good { background-color: #d4edda !important; color: #155724 !important; font-weight: bold;}
     .bg-bad { background-color: #f8d7da !important; color: #721c24 !important; font-weight: bold;}
 
-    .table-hover tbody tr:hover { background-color: #f1f7ff; }
-    .row-total { --row-total-bg: #003366; --row-total-color: #ffffff; background-color: #003366 !important; color: white !important; font-weight: bold; }
-    .row-total td { color: white !important; }
+    .table-hover tbody tr:hover { background-color: transparent; }
+    .row-total {
+        --row-total-bg: #003366;
+        --row-total-color: #ffffff;
+        background: #003366 !important;
+        color: #ffffff !important;
+        font-weight: bold;
+    }
+    .row-total td {
+        background: #003366 !important;
+        color: #ffffff !important;
+    }
     .val-up { color: #28a745; font-weight: bold; margin-left: 2px; }
     .val-down { color: #dc3545; font-weight: bold; margin-left: 2px; }
     
-    .rka-col { background-color: #fff3cd !important; color: #856404 !important; font-weight: 600; border-color: #f6e3a6 !important; }
-    .row-total .rka-col { background-color: #ffe8a1 !important; color: #856404 !important; }
+    .rka-col { background: linear-gradient(180deg, #fff3cd, #ffefba) !important; color: #856404 !important; font-weight: 600; border-color: #f6e3a6 !important; }
+    .row-total .rka-col {
+        background: #003366 !important;
+        color: #ffffff !important;
+        border-color: rgba(255, 255, 255, 0.12) !important;
+    }
     
-    .nav-tabs.report-tabs { border-bottom: 2px solid #dee2e6; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; white-space: nowrap; scrollbar-width: thin; }
-    .nav-tabs.report-tabs .nav-link { border: none; font-weight: 600; color: #6c757d; padding: 12px 18px; font-size: 0.95rem; background: transparent; }
-    .nav-tabs.report-tabs .nav-link.active { border-bottom: 3px solid #007bff; color: #007bff; background: transparent; }
-    .nav-tabs.report-tabs .nav-link:hover { border-bottom: 3px solid #9ec5fe; color: #007bff; background: transparent; }
+    .nav-tabs.report-tabs {
+        border-bottom: 1px solid #dbe5ef;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        overflow-y: hidden;
+        white-space: nowrap;
+        scrollbar-width: thin;
+    }
+    .nav-tabs.report-tabs .nav-link {
+        border: none;
+        font-weight: 700;
+        color: #6b7280;
+        padding: 12px 18px;
+        font-size: 0.95rem;
+        background: transparent;
+    }
+    .nav-tabs.report-tabs .nav-link.active {
+        border-bottom: 3px solid #00529c;
+        color: #00529c;
+        background: transparent;
+    }
+    .nav-tabs.report-tabs .nav-link:hover {
+        border-bottom: 3px solid #9ec5fe;
+        color: #00529c;
+        background: transparent;
+    }
 </style>
 
 <div class="card card-outline card-primary shadow-sm mb-3 report-filter-card">

@@ -124,6 +124,7 @@
     .nav-tabs.report-tabs .nav-link.active { border-bottom: 3px solid #007bff; color: #007bff; background: transparent; }
     .nav-tabs.report-tabs .nav-link:hover { border-bottom: 3px solid #9ec5fe; color: #007bff; background: transparent; }
 </style>
+@include('report._bri-report-ui')
 
 <div class="card card-outline card-warning shadow-sm mb-4 report-filter-card">
     <div class="card-body py-3">

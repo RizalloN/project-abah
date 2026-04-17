@@ -373,6 +373,7 @@
         font-size: 1.1rem;
     }
 </style>
+@include('report._bri-report-ui')
 
 <div class="dormant-dashboard">
 
