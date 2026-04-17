@@ -1,7 +1,5 @@
 @extends('layouts.admin')
 
-@section('title', 'Dashboard Harian')
-
 @section('styles')
 <style>
     :root {
@@ -39,6 +37,17 @@
         box-shadow: 0 14px 30px -24px rgba(15, 23, 42, 0.22); /* Deeper, softer shadow */
         overflow: hidden;
         transition: box-shadow 0.3s ease;
+        width: 100%;
+        max-width: 100%;
+        position: relative;
+    }
+
+    /* Table Wrapper */
+    .daily-table-region {
+        position: relative;
+        padding-bottom: 3.9rem;
+        width: 100%;
+        overflow: hidden; /* Ensure it contains its children during transitions */
     }
 
     .daily-panel-head {
@@ -157,8 +166,8 @@
     /* Form Controls */
     .select2-container--default .select2-selection--single {
         border: 1px solid var(--border-color) !important;
-        border-radius: 14px !important;
-        height: 44px !important;
+        border-radius: 6px !important;
+        height: 32px !important;
         display: flex;
         align-items: center;
         transition: border-color 0.2s ease, box-shadow 0.2s ease;
@@ -170,13 +179,13 @@
     }
     .select2-container--default .select2-selection--single .select2-selection__rendered {
         color: #475569 !important;
-        font-size: 0.94rem;
+        font-size: 0.85rem;
         font-weight: 500;
         line-height: normal !important;
-        padding-left: 12px !important;
+        padding-left: 8px !important;
     }
     .select2-container--default .select2-selection--single .select2-selection__arrow {
-        height: 44px !important;
+        height: 32px !important;
     }
 
     .daily-filter-native {
@@ -331,30 +340,31 @@
         box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.4) !important;
     }
 
-    /* Table Wrapper */
-    .daily-table-region {
-        position: relative;
-        padding-bottom: 3.9rem;
-    }
-
     .daily-table-wrap {
-        overflow-x: auto;
-        overflow-y: visible;
+        width: 100%;
+        max-height: calc(100vh - 230px); /* Required to keep the horizontal scrollbar visible on screen */
+        height: calc(100vh - 230px);
+        overflow-x: auto; 
+        overflow-y: auto; /* Enable native vertical scrolling inside the box */
         border: 1px solid var(--border-color);
         border-radius: 18px;
-        box-shadow: 0 10px 24px -12px rgba(15, 23, 42, 0.08); /* Sophisticated subtle inner drop outline */
-        scrollbar-width: none;
+        box-shadow: 0 10px 24px -12px rgba(15, 23, 42, 0.08);
     }
 
     .daily-table-wrap::-webkit-scrollbar {
-        display: none;
+        height: 10px;
     }
     .daily-table-wrap::-webkit-scrollbar-track {
-        background: transparent;
+        background: #f8fafc;
+        border-radius: 0 0 18px 18px;
     }
     .daily-table-wrap::-webkit-scrollbar-thumb {
         background-color: #cbd5e1;
-        border-radius: 20px;
+        border-radius: 10px;
+        border: 2px solid #f8fafc;
+    }
+    .daily-table-wrap::-webkit-scrollbar-thumb:hover {
+        background-color: #94a3b8;
     }
 
     .daily-table {
@@ -381,6 +391,11 @@
     }
 
     /* Table Headers */
+    .daily-table thead {
+        position: sticky;
+        top: 0;
+        z-index: 25;
+    }
     .daily-table thead th {
         background: var(--table-header-bg);
         color: var(--table-header-text);
@@ -611,50 +626,6 @@
         display: none;
     }
 
-    /* Scrollbar track below table */
-    .daily-table-sticky-footer {
-        position: absolute;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        z-index: 16;
-        margin-top: -1px;
-        padding: 0.55rem 0.75rem 0.8rem;
-        background: linear-gradient(180deg, rgba(247, 251, 255, 0.12), rgba(247, 251, 255, 0.95));
-        backdrop-filter: blur(10px);
-        border-top: 1px solid var(--border-color);
-    }
-    .daily-table-sticky-footer.is-floating {
-        position: fixed;
-        bottom: 0.75rem;
-        left: var(--sticky-scrollbar-left, 0);
-        width: var(--sticky-scrollbar-width, auto);
-        right: auto;
-        border: 1px solid rgba(226, 232, 240, 0.95);
-        border-radius: 14px;
-        background: rgba(248, 250, 252, 0.96);
-        box-shadow: 0 18px 40px -24px rgba(15, 23, 42, 0.45);
-    }
-    .daily-table-sticky-footer.is-hidden {
-        opacity: 0;
-        visibility: hidden;
-        pointer-events: none;
-    }
-    .daily-table-sticky-track {
-        overflow-x: auto;
-        overflow-y: hidden;
-        border: 1px solid var(--border-color);
-        border-radius: 999px;
-        background: rgba(255, 255, 255, 0.9);
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-        scrollbar-width: thin;
-        scrollbar-color: #94a3b8 transparent;
-    }
-    .daily-table-sticky-spacer {
-        min-width: 1846px;
-        height: 1px;
-    }
-
     @media (max-width: 991.98px) {
         .daily-kpi-grid {
             grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -670,15 +641,7 @@
         }
 
         .daily-table-region {
-            padding-bottom: 4.5rem;
-        }
-
-        .daily-table-sticky-footer {
-            padding: 0.55rem 0.5rem 0.65rem;
-        }
-
-        .daily-table-sticky-footer.is-floating {
-            bottom: 0.5rem;
+            padding-bottom: 2rem;
         }
 
         .daily-table col.numeric-col {
@@ -694,96 +657,60 @@
 
 @section('content')
 <div class="daily-dashboard" id="daily-dashboard-root">
-    <div class="daily-surface mb-4" id="daily-surface">
-        <div class="daily-panel-head p-4">
-            <div class="d-flex flex-column flex-lg-row justify-content-between align-items-start align-items-lg-center">
-                <div class="mb-3 mb-lg-0 pr-lg-4">
-                    <h1 class="daily-panel-title">Perbandingan Posisi, Delta, dan RKA Harian</h1>
-                    <p class="daily-panel-desc">
-                        Data dibangun dari snapshot agregat <code>ssa_simpanan</code> dan <code>ssa_pinjaman</code>.
-                    </p>
-                </div>
-
-                <div class="daily-meta-chip bg-white border-0 shadow-sm">
-                    <i class="fas fa-database text-primary"></i>
-                    <span data-source-label class="text-dark">{{ data_get($dashboardPage, 'initialData.summary.source', 'dashboard_harian_snapshots') }}</span>
-                </div>
+    <div class="daily-surface" id="daily-surface">
+        <div class="daily-panel-head px-3 py-2 d-flex flex-wrap justify-content-center align-items-center">
+            <h1 class="m-0 text-dark text-center" style="font-size: 1.15rem; font-weight: 700;">Perbandingan Posisi & RKA Harian</h1>
+            
+            <!-- Hidden elements to preserve JS functionality -->
+            <div class="d-none">
+                <span data-source-label></span>
+                <span data-scope-kanca></span>
+                <span data-scope-unit></span>
+                <span data-scope-posisi></span>
+                <span data-scope-rka></span>
+                <span data-scope-summary></span>
+                <span data-kpi-simpanan></span>
+                <span data-kpi-os></span>
+                <span data-kpi-casa></span>
             </div>
         </div>
 
-        <div class="p-4 border-bottom bg-white">
-            <div class="d-flex flex-column flex-lg-row justify-content-between align-items-start align-items-lg-center mb-4">
-                <div class="mb-3 mb-lg-0">
-                    <div class="daily-filter-label">Scope Aktif</div>
-                    <div class="daily-scope">
-                        <span class="daily-scope-chip"><i class="fas fa-map-marker-alt text-primary"></i> <span data-scope-kanca>{{ data_get($dashboardPage, 'initialData.summary.kanca_label', 'Semua Kanca') }}</span></span>
-                        <span class="daily-scope-chip"><i class="fas fa-sitemap text-primary"></i> <span data-scope-unit>{{ data_get($dashboardPage, 'initialData.summary.unit_label', 'Semua Unit Kerja') }}</span></span>
-                        <span class="daily-scope-chip"><i class="fas fa-clock text-primary"></i> <span data-scope-posisi>{{ data_get($dashboardPage, 'initialData.selected_period_label', 'Belum ada data') }}</span></span>
-                        <span class="daily-scope-chip"><i class="fas fa-bullseye text-primary"></i> <span data-scope-rka>{{ data_get($dashboardPage, 'initialData.selected_rka_label', 'Belum ada data') }}</span></span>
-                    </div>
-                </div>
-
-                <div class="text-lg-right bg-light p-2 px-3 rounded shadow-sm">
-                    <div class="daily-filter-label mb-1">Status Data</div>
-                    <div class="text-dark font-weight-bold" data-scope-summary>Filter belum dijalankan.</div>
-                </div>
-            </div>
-
-            <div class="daily-kpi-grid mb-4">
-                <div class="daily-kpi">
-                    <div class="label">Total Simpanan</div>
-                    <div class="value" data-kpi-simpanan>-</div>
-                </div>
-                <div class="daily-kpi">
-                    <div class="label">Total Pinjaman Non Commercial</div>
-                    <div class="value" data-kpi-os>-</div>
-                </div>
-                <div class="daily-kpi">
-                    <div class="label">% CASA</div>
-                    <div class="value" data-kpi-casa>-</div>
-                </div>
-            </div>
-
-            <div class="row">
-                <div class="col-lg-3 col-md-6 mb-3">
-                    <label class="daily-filter-label" for="filter-kanca">Kanca</label>
+        <div class="px-4 py-3 border-bottom bg-white" style="border-radius: 18px 18px 0 0; box-shadow: 0 4px 12px rgba(0,0,0,0.03);">
+            <div class="row align-items-end mx-n2">
+                <div class="col px-2 mb-2 mb-lg-0">
+                    <label class="text-muted font-weight-bold text-uppercase mb-1" style="font-size:0.65rem; letter-spacing:0.05em;" for="filter-kanca">Kanca</label>
                     <div class="daily-dropdown" data-daily-dropdown="kanca">
-                        <button type="button" class="daily-dropdown-toggle" data-daily-dropdown-toggle="kanca" aria-haspopup="listbox" aria-expanded="false">
-                            <span class="daily-dropdown-toggle-text">Semua Kanca</span>
-                            <i class="fas fa-chevron-down daily-dropdown-toggle-icon"></i>
+                        <button type="button" class="daily-dropdown-toggle p-1 px-3 border" style="min-height:36px; font-size:0.85rem; border-radius:8px; width:100%; box-shadow: 0 1px 2px rgba(0,0,0,0.02);" data-daily-dropdown-toggle="kanca" aria-haspopup="listbox" aria-expanded="false">
+                            <span class="daily-dropdown-toggle-text text-truncate">Semua Kanca</span>
+                            <i class="fas fa-chevron-down text-muted" style="font-size: 0.7rem;"></i>
                         </button>
-                        <div class="daily-dropdown-menu" data-daily-dropdown-menu="kanca"></div>
+                        <div class="daily-dropdown-menu shadow-sm" style="border-radius:8px;" data-daily-dropdown-menu="kanca"></div>
                         <select id="filter-kanca" class="form-control daily-filter-native" multiple></select>
                     </div>
                 </div>
-                <div class="col-lg-3 col-md-6 mb-3">
-                    <label class="daily-filter-label" for="filter-unit">Unit Kerja</label>
+                <div class="col px-2 mb-2 mb-lg-0">
+                    <label class="text-muted font-weight-bold text-uppercase mb-1" style="font-size:0.65rem; letter-spacing:0.05em;" for="filter-unit">Unit Kerja</label>
                     <div class="daily-dropdown" data-daily-dropdown="unit">
-                        <button type="button" class="daily-dropdown-toggle" data-daily-dropdown-toggle="unit" aria-haspopup="listbox" aria-expanded="false">
-                            <span class="daily-dropdown-toggle-text">Semua Unit Kerja</span>
-                            <i class="fas fa-chevron-down daily-dropdown-toggle-icon"></i>
+                        <button type="button" class="daily-dropdown-toggle p-1 px-3 border" style="min-height:36px; font-size:0.85rem; border-radius:8px; width:100%; box-shadow: 0 1px 2px rgba(0,0,0,0.02);" data-daily-dropdown-toggle="unit" aria-haspopup="listbox" aria-expanded="false">
+                            <span class="daily-dropdown-toggle-text text-truncate">Semua Unit Kerja</span>
+                            <i class="fas fa-chevron-down text-muted" style="font-size: 0.7rem;"></i>
                         </button>
-                        <div class="daily-dropdown-menu" data-daily-dropdown-menu="unit"></div>
+                        <div class="daily-dropdown-menu shadow-sm" style="border-radius:8px;" data-daily-dropdown-menu="unit"></div>
                         <select id="filter-unit" class="form-control daily-filter-native"></select>
                     </div>
                 </div>
-                <div class="col-lg-3 col-md-6 mb-3">
-                    <label class="daily-filter-label" for="filter-posisi-terakhir">Posisi Terakhir</label>
-                    <select id="filter-posisi-terakhir" class="form-control select2"></select>
+                <div class="col px-2 mb-2 mb-lg-0">
+                    <label class="text-muted font-weight-bold text-uppercase mb-1" style="font-size:0.65rem; letter-spacing:0.05em;" for="filter-posisi-terakhir">Posisi Terakhir</label>
+                    <select id="filter-posisi-terakhir" class="form-control border" style="height:36px; font-size:0.85rem; padding: 2px 12px; border-radius:8px; box-shadow: 0 1px 2px rgba(0,0,0,0.02);"></select>
                 </div>
-                <div class="col-lg-3 col-md-6 mb-3">
-                    <label class="daily-filter-label" for="filter-posisi-rka">Posisi RKA</label>
-                    <select id="filter-posisi-rka" class="form-control select2"></select>
+                <div class="col px-2 mb-2 mb-lg-0">
+                    <label class="text-muted font-weight-bold text-uppercase mb-1" style="font-size:0.65rem; letter-spacing:0.05em;" for="filter-posisi-rka">Posisi RKA</label>
+                    <select id="filter-posisi-rka" class="form-control border" style="height:36px; font-size:0.85rem; padding: 2px 12px; border-radius:8px; box-shadow: 0 1px 2px rgba(0,0,0,0.02);"></select>
                 </div>
-            </div>
-
-            <div class="d-flex flex-wrap justify-content-between align-items-center mt-3 pt-3 border-top">
-                <div class="text-muted small mb-2 mb-lg-0">
-                    <i class="fas fa-info-circle mr-1"></i> Pilih filter lalu klik <strong>Terapkan Filter</strong> untuk menghitung snapshot terbaru.
-                </div>
-                <div class="d-flex align-items-center">
-                    <button type="button" class="btn btn-primary shadow-sm" id="btn-apply-daily-filter">
-                        <i class="fas fa-filter mr-2"></i> Terapkan Filter
+                <div class="col px-2 mb-2 mb-lg-0">
+                    <label class="text-muted font-weight-bold text-uppercase mb-1" style="font-size:0.65rem; letter-spacing:0.05em;">Tindakan</label>
+                    <button type="button" class="btn text-white w-100 d-flex justify-content-center align-items-center " style="height:40px; padding:0 ; font-size:0.85rem; font-weight:600; border-radius:8px; background-color:#1e60d5; border-color:#1e60d5; outline:none; box-shadow: 0 2px 4px rgba(30,96,213,0.3);" id="btn-apply-daily-filter">
+                        <i class="fas fa-filter mr-2"></i> Terapkan
                     </button>
                 </div>
             </div>
@@ -792,7 +719,7 @@
         <div class="p-4 bg-white">
             <div class="daily-table-region" data-table-region>
                 <div class="daily-table-wrap">
-                    <table class="table daily-table">
+                    <table class="table table-hover daily-table">
                         <colgroup>
                             <col style="width: 60px;">
                             <col style="width: 280px;">
@@ -873,11 +800,6 @@
                         </tbody>
                     </table>
                 </div>
-                <div class="daily-table-sticky-footer is-hidden" data-sticky-footer>
-                    <div class="daily-table-sticky-track" data-sticky-scrollbar>
-                        <div class="daily-table-sticky-spacer" aria-hidden="true"></div>
-                    </div>
-                </div>
             </div>
         </div>
     </div>
@@ -923,9 +845,6 @@
         const positionH1Header = document.querySelector('[data-label-h1]').closest('th');
         const tableRegion = document.querySelector('[data-table-region]');
         const tableWrap = document.querySelector('.daily-table-wrap');
-        const stickyFooter = document.querySelector('[data-sticky-footer]');
-        const stickyScrollbar = document.querySelector('[data-sticky-scrollbar]');
-        const stickySpacer = document.querySelector('.daily-table-sticky-spacer');
         const applyButton = document.getElementById('btn-apply-daily-filter');
         const selects = {
             kanca: document.getElementById('filter-kanca'),
@@ -1045,58 +964,6 @@
                 positionGroupColspan.setAttribute('colspan', show ? '6' : '5');
             }
         };
-
-        const syncStickyScrollbarWidth = function () {
-            if (!stickySpacer || !tableWrap || !stickyFooter || !tableRegion) {
-                return;
-            }
-
-            const table = tableWrap.querySelector('.daily-table');
-            if (!table) {
-                return;
-            }
-
-            stickySpacer.style.minWidth = table.scrollWidth + 'px';
-            const regionRect = tableRegion.getBoundingClientRect();
-            const viewportWidth = window.innerWidth || document.documentElement.clientWidth || regionRect.width;
-            const left = Math.max(regionRect.left, 0);
-            const right = Math.min(regionRect.right, viewportWidth);
-            const width = Math.max(right - left, 0);
-
-            stickyFooter.style.setProperty('--sticky-scrollbar-left', left + 'px');
-            stickyFooter.style.setProperty('--sticky-scrollbar-width', width + 'px');
-        };
-
-        const syncStickyScrollbarState = function () {
-            if (!stickyFooter || !tableRegion || !tableWrap) {
-                return;
-            }
-
-            const table = tableWrap.querySelector('.daily-table');
-            if (!table) {
-                stickyFooter.classList.add('is-hidden');
-                stickyFooter.classList.remove('is-floating');
-                return;
-            }
-
-            const hasOverflow = table.scrollWidth > tableWrap.clientWidth + 2;
-            const rect = tableRegion.getBoundingClientRect();
-            const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
-            const shouldFloat = hasOverflow && rect.top < viewportHeight && rect.bottom > viewportHeight;
-            const shouldShow = hasOverflow && rect.bottom > 0 && rect.top < viewportHeight;
-
-            stickyFooter.classList.toggle('is-floating', shouldFloat);
-            stickyFooter.classList.toggle('is-hidden', !shouldShow);
-        };
-
-        const syncScrollLeft = function (source, target) {
-            if (!source || !target) {
-                return;
-            }
-
-            target.scrollLeft = source.scrollLeft;
-        };
-
         const populateSelect = function (select, options, selectedValue) {
             if (!select) {
                 return;
@@ -1329,11 +1196,15 @@
                 return 'unit';
             }
 
-            if (/\bKCP\b/.test(label) || /\bKC\b/.test(label)) {
-                return 'branch';
+            if (/\bKCP\b/.test(label)) {
+                return 'kcp';
             }
 
-            return 'all';
+            if (/\bKC\b/.test(label)) {
+                return 'kc';
+            }
+
+            return 'other';
         };
 
         const sumMetric = function (rowsByKey, keys, group, metricName) {
@@ -1411,24 +1282,51 @@
                 rowsByKey[row.key] = row;
             });
 
-            const hiddenKeys = scopeMode === 'unit'
-                ? [
-                    'simpanan_ritel', 'giro_ritel', 'deposito_ritel', 'tabungan_ritel',
-                    'sme_os', 'kecil_os', 'kecil_non_cashcoll_os', 'cashcoll_os', 'medium_os',
-                    'consumer_os', 'briguna_konsumer_os', 'kpr_os', 'kkb_os',
-                    'sme_sml', 'kecil_sml', 'kecil_non_cashcoll_sml', 'cashcoll_sml', 'medium_sml',
-                    'consumer_sml', 'briguna_konsumer_sml', 'kpr_sml', 'kkb_sml',
-                    'sme_npl', 'kecil_npl', 'kecil_non_cashcoll_npl', 'cashcoll_npl', 'medium_npl',
-                    'consumer_npl', 'briguna_konsumer_npl', 'kpr_npl', 'kkb_npl',
-                    'casa_ritel', 'ldr_ritel_non_commercial'
-                ]
-                : [
-                    'simpanan_mikro', 'giro_mikro', 'deposito_mikro', 'tabungan_mikro',
-                    'micro_os', 'briguna_mikro_os', 'kupedes_os', 'kur_mikro_os', 'kur_kecil_os', 'kur_kpp_os',
-                    'micro_sml', 'briguna_mikro_sml', 'kupedes_sml', 'kur_mikro_sml', 'kur_kecil_sml', 'kur_kpp_sml',
-                    'micro_npl', 'briguna_mikro_npl', 'kupedes_npl', 'kur_mikro_npl', 'kur_kecil_npl', 'kur_kpp_npl',
-                    'casa_mikro', 'ldr_mikro_non_commercial'
-                ];
+            let hiddenKeys = [];
+
+            const ritelKeys = [
+                'simpanan_ritel', 'giro_ritel', 'deposito_ritel', 'tabungan_ritel',
+                'sme_os', 'kecil_os', 'kecil_non_cashcoll_os', 'cashcoll_os', 'medium_os',
+                'consumer_os', 'briguna_konsumer_os', 'kpr_os', 'kkb_os',
+                'sme_sml', 'kecil_sml', 'kecil_non_cashcoll_sml', 'cashcoll_sml', 'medium_sml',
+                'consumer_sml', 'briguna_konsumer_sml', 'kpr_sml', 'kkb_sml',
+                'sme_npl', 'kecil_npl', 'kecil_non_cashcoll_npl', 'cashcoll_npl', 'medium_npl',
+                'consumer_npl', 'briguna_konsumer_npl', 'kpr_npl', 'kkb_npl',
+                'casa_ritel', 'ldr_ritel_non_commercial'
+            ];
+
+            let mikroKeys = [
+                'simpanan_mikro', 'giro_mikro', 'deposito_mikro', 'tabungan_mikro',
+                'micro_os', 'briguna_mikro_os', 'kupedes_os', 'kur_mikro_os', 'kur_kecil_os', 'kur_kpp_os',
+                'micro_sml', 'briguna_mikro_sml', 'kupedes_sml', 'kur_mikro_sml', 'kur_kecil_sml', 'kur_kpp_sml',
+                'micro_npl', 'briguna_mikro_npl', 'kupedes_npl', 'kur_mikro_npl', 'kur_kecil_npl', 'kur_kpp_npl',
+                'casa_mikro', 'ldr_mikro_non_commercial'
+            ];
+
+            if (scopeMode === 'kc' || scopeMode === 'kcp') {
+                mikroKeys = mikroKeys.filter(function(k) {
+                    return k !== 'kur_kecil_os' && k !== 'kur_kecil_sml' && k !== 'kur_kecil_npl' &&
+                           k !== 'micro_os' && k !== 'micro_sml' && k !== 'micro_npl';
+                });
+            }
+
+            const commercialKeys = [
+                'commercial_os', 'commercial_sml', 'commercial_npl'
+            ];
+
+            const wholesaleKeys = [
+                'simpanan_wholesale', 'giro_wholesale', 'deposito_wholesale', 'tabungan_wholesale'
+            ];
+
+            if (scopeMode === 'unit') {
+                hiddenKeys = hiddenKeys.concat(ritelKeys, commercialKeys, wholesaleKeys);
+            } else if (scopeMode === 'kcp') {
+                hiddenKeys = hiddenKeys.concat(mikroKeys, commercialKeys);
+            } else if (scopeMode === 'kc') {
+                hiddenKeys = hiddenKeys.concat(mikroKeys, commercialKeys);
+            } else {
+                hiddenKeys = hiddenKeys.concat(mikroKeys, commercialKeys, wholesaleKeys);
+            }
 
             hiddenKeys.forEach(function (key) {
                 if (rowsByKey[key]) {
@@ -1451,19 +1349,35 @@
                     rowsByKey.casa_ritel[group][smpanMetricName] = sumMetric(rowsByKey, ['giro_ritel', 'tabungan_ritel'], group, smpanMetricName);
                     rowsByKey.casa_mikro[group][smpanMetricName] = sumMetric(rowsByKey, ['giro_mikro', 'tabungan_mikro'], group, smpanMetricName);
                     rowsByKey.total_casa[group][smpanMetricName] = sumMetric(rowsByKey, ['casa_ritel', 'casa_mikro'], group, smpanMetricName);
-                    rowsByKey.sme_os[group][smpanMetricName] = sumMetric(rowsByKey, ['kecil_os', 'medium_os'], group, smpanMetricName);
+                    const microOsChildren = ['briguna_mikro_os', 'kupedes_os', 'kur_mikro_os', 'kur_kecil_os', 'kur_kpp_os'];
+                    const smeOsChildren = (scopeMode === 'kc' || scopeMode === 'kcp') ? ['kecil_os'] : ['kecil_os', 'medium_os'];
+                    rowsByKey.sme_os[group][smpanMetricName] = sumMetric(rowsByKey, smeOsChildren, group, smpanMetricName);
                     rowsByKey.consumer_os[group][smpanMetricName] = sumMetric(rowsByKey, ['briguna_konsumer_os', 'kpr_os', 'kkb_os'], group, smpanMetricName);
-                    rowsByKey.micro_os[group][smpanMetricName] = sumMetric(rowsByKey, ['briguna_mikro_os', 'kupedes_os', 'kur_mikro_os', 'kur_kecil_os', 'kur_kpp_os'], group, smpanMetricName);
-                    rowsByKey.total_os_non_commercial[group][smpanMetricName] = sumMetric(rowsByKey, ['sme_os', 'consumer_os', 'micro_os'], group, smpanMetricName);
-                    rowsByKey.total_os[group][smpanMetricName] = sumMetric(rowsByKey, ['commercial_os', 'sme_os', 'consumer_os', 'micro_os'], group, smpanMetricName);
-                    rowsByKey.sme_sml[group][smpanMetricName] = sumMetric(rowsByKey, ['kecil_sml', 'medium_sml'], group, smpanMetricName);
+                    rowsByKey.micro_os[group][smpanMetricName] = sumMetric(rowsByKey, microOsChildren, group, smpanMetricName);
+                    
+                    const totalOsNonCommercialChildren = (scopeMode === 'kc' || scopeMode === 'kcp') ? ['sme_os', 'consumer_os'] : ['sme_os', 'consumer_os', 'micro_os'];
+                    rowsByKey.total_os_non_commercial[group][smpanMetricName] = sumMetric(rowsByKey, totalOsNonCommercialChildren, group, smpanMetricName);
+                    
+                    const totalOsChildren = (scopeMode === 'kc' || scopeMode === 'kcp') ? ['commercial_os', 'sme_os', 'consumer_os'] : ['commercial_os', 'sme_os', 'consumer_os', 'micro_os'];
+                    rowsByKey.total_os[group][smpanMetricName] = sumMetric(rowsByKey, totalOsChildren, group, smpanMetricName);
+                    
+                    const microSmlChildren = ['briguna_mikro_sml', 'kupedes_sml', 'kur_mikro_sml', 'kur_kecil_sml', 'kur_kpp_sml'];
+                    const smeSmlChildren = (scopeMode === 'kc' || scopeMode === 'kcp') ? ['kecil_sml'] : ['kecil_sml', 'medium_sml'];
+                    rowsByKey.sme_sml[group][smpanMetricName] = sumMetric(rowsByKey, smeSmlChildren, group, smpanMetricName);
                     rowsByKey.consumer_sml[group][smpanMetricName] = sumMetric(rowsByKey, ['briguna_konsumer_sml', 'kpr_sml', 'kkb_sml'], group, smpanMetricName);
-                    rowsByKey.micro_sml[group][smpanMetricName] = sumMetric(rowsByKey, ['briguna_mikro_sml', 'kupedes_sml', 'kur_mikro_sml', 'kur_kecil_sml', 'kur_kpp_sml'], group, smpanMetricName);
-                    rowsByKey.total_sml_abs_non_commercial[group][smpanMetricName] = sumMetric(rowsByKey, ['sme_sml', 'consumer_sml', 'micro_sml'], group, smpanMetricName);
-                    rowsByKey.sme_npl[group][smpanMetricName] = sumMetric(rowsByKey, ['kecil_npl', 'medium_npl'], group, smpanMetricName);
+                    rowsByKey.micro_sml[group][smpanMetricName] = sumMetric(rowsByKey, microSmlChildren, group, smpanMetricName);
+                    
+                    const totalSmlNonCommercialChildren = (scopeMode === 'kc' || scopeMode === 'kcp') ? ['sme_sml', 'consumer_sml'] : ['sme_sml', 'consumer_sml', 'micro_sml'];
+                    rowsByKey.total_sml_abs_non_commercial[group][smpanMetricName] = sumMetric(rowsByKey, totalSmlNonCommercialChildren, group, smpanMetricName);
+                    
+                    const microNplChildren = ['briguna_mikro_npl', 'kupedes_npl', 'kur_mikro_npl', 'kur_kecil_npl', 'kur_kpp_npl'];
+                    const smeNplChildren = (scopeMode === 'kc' || scopeMode === 'kcp') ? ['kecil_npl'] : ['kecil_npl', 'medium_npl'];
+                    rowsByKey.sme_npl[group][smpanMetricName] = sumMetric(rowsByKey, smeNplChildren, group, smpanMetricName);
                     rowsByKey.consumer_npl[group][smpanMetricName] = sumMetric(rowsByKey, ['briguna_konsumer_npl', 'kpr_npl', 'kkb_npl'], group, smpanMetricName);
-                    rowsByKey.micro_npl[group][smpanMetricName] = sumMetric(rowsByKey, ['briguna_mikro_npl', 'kupedes_npl', 'kur_mikro_npl', 'kur_kecil_npl', 'kur_kpp_npl'], group, smpanMetricName);
-                    rowsByKey.total_npl_abs_non_commercial[group][smpanMetricName] = sumMetric(rowsByKey, ['sme_npl', 'consumer_npl', 'micro_npl'], group, smpanMetricName);
+                    rowsByKey.micro_npl[group][smpanMetricName] = sumMetric(rowsByKey, microNplChildren, group, smpanMetricName);
+                    
+                    const totalNplNonCommercialChildren = (scopeMode === 'kc' || scopeMode === 'kcp') ? ['sme_npl', 'consumer_npl'] : ['sme_npl', 'consumer_npl', 'micro_npl'];
+                    rowsByKey.total_npl_abs_non_commercial[group][smpanMetricName] = sumMetric(rowsByKey, totalNplNonCommercialChildren, group, smpanMetricName);
                 });
             });
 
@@ -1524,11 +1438,9 @@
             const scopeMode = getUnitScopeMode();
 
             togglePositionColumns(hasH1);
-            syncStickyScrollbarWidth();
 
             if (!rows.length) {
                 body.innerHTML = '<tr><td colspan="' + emptyColspan + '" class="daily-empty"><i class="fas fa-box-open mr-2 text-muted"></i>Tidak ada data untuk filter terpilih.</td></tr>';
-                syncStickyScrollbarState();
                 return;
             }
 
@@ -1582,8 +1494,6 @@
 
                 return '<tr class="' + rowClasses.join(' ') + '">' + rowCells.join('') + '</tr>';
             }).join('');
-            syncStickyScrollbarWidth();
-            syncStickyScrollbarState();
         };
 
         const applyPayload = function (payload) {
@@ -1623,8 +1533,6 @@
             headerLabels.deltaDtd.textContent = hasH1 ? formatDateSlash(periods.h1.period) : '-';
 
             togglePositionColumns(hasH1);
-            syncStickyScrollbarWidth();
-            syncStickyScrollbarState();
 
             renderTable(scopedPayload);
         };
@@ -1635,10 +1543,10 @@
             }
 
             const params = buildQueryParams();
-            surface.classList.add('daily-loading');
+            tableRegion.classList.add('daily-loading');
             if (applyButton) {
                 applyButton.disabled = true;
-                applyButton.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Memuat Data...';
+                applyButton.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Proses...';
             }
 
             fetch(dataUrl + '?' + params.toString(), {
@@ -1657,10 +1565,10 @@
                     body.innerHTML = '<tr><td colspan="' + (hidden ? 14 : 15) + '" class="daily-empty text-danger"><i class="fas fa-exclamation-triangle mr-2"></i>Gagal memuat data dashboard harian.</td></tr>';
                 })
                 .finally(function () {
-                    surface.classList.remove('daily-loading');
+                    tableRegion.classList.remove('daily-loading');
                     if (applyButton) {
                         applyButton.disabled = false;
-                        applyButton.innerHTML = '<i class="fas fa-filter mr-2"></i> Terapkan Filter';
+                        applyButton.innerHTML = '<i class="fas fa-filter mr-1"></i> Terapkan';
                     }
                 });
         };
@@ -1779,24 +1687,6 @@
                 }
             });
         });
-
-        if (tableWrap && stickyScrollbar) {
-            tableWrap.addEventListener('scroll', function () {
-                syncScrollLeft(tableWrap, stickyScrollbar);
-            });
-
-            stickyScrollbar.addEventListener('scroll', function () {
-                syncScrollLeft(stickyScrollbar, tableWrap);
-            });
-        }
-
-        window.addEventListener('resize', function () {
-            syncStickyScrollbarWidth();
-            syncStickyScrollbarState();
-        });
-        window.addEventListener('scroll', syncStickyScrollbarState, { passive: true });
-        syncStickyScrollbarWidth();
-        syncStickyScrollbarState();
     });
 </script>
 @endsection

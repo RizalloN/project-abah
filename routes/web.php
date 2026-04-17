@@ -7,6 +7,7 @@ use App\Http\Controllers\Import\ImportCasaBrilinkController;
 use App\Http\Controllers\Import\ImportCleanupController;
 use App\Http\Controllers\Import\ImportFileBrimoController;
 use App\Http\Controllers\Import\ImportFileController;
+use App\Http\Controllers\Import\Gi405RecDhImportExcelController;
 use App\Http\Controllers\Import\ImportIndexController;
 use App\Http\Controllers\Import\ImportJobStatusController;
 use App\Http\Controllers\Import\ImportJobManagementController;
@@ -187,6 +188,15 @@ Route::middleware(['auth', 'role:admin', 'release.session.lock'])->group(functio
         Route::post('/upload', [App\Http\Controllers\Import\ImportExcelController::class, 'uploadExcel'])->name('import.excel.upload');
         Route::get('/preview', [App\Http\Controllers\Import\ImportExcelController::class, 'previewExcel'])->name('import.excel.preview');
         Route::get('/prepare-preview', [App\Http\Controllers\Import\ImportExcelController::class, 'preparePreviewStream'])->name('import.excel.prepare-preview');
+    });
+
+    Route::prefix('import-excel/gi405-rec-dh')->group(function () {
+        Route::post('/upload', [Gi405RecDhImportExcelController::class, 'uploadExcel'])->name('import.gi405.upload');
+        Route::get('/preview', [Gi405RecDhImportExcelController::class, 'previewExcel'])->name('import.gi405.preview');
+        Route::get('/prepare-preview', [Gi405RecDhImportExcelController::class, 'preparePreviewStream'])->name('import.gi405.prepare-preview');
+        Route::post('/init', [Gi405RecDhImportExcelController::class, 'initExcelImport'])->name('import.gi405.init');
+        Route::get('/stream', [Gi405RecDhImportExcelController::class, 'processExcelStream'])->name('import.gi405.stream');
+        Route::post('/chunk', [Gi405RecDhImportExcelController::class, 'processExcelChunk'])->name('import.gi405.chunk');
     });
 
     Route::prefix('import-excel/daily-loan-dinamis')->group(function () {

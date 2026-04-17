@@ -3,6 +3,7 @@
 namespace Tests\Unit;
 
 use App\Services\Import\Strategies\DailyLoanImportStrategy;
+use App\Services\Import\Strategies\Gi405RecDhImportStrategy;
 use App\Services\Import\Strategies\GenericCsvImportStrategy;
 use App\Services\Import\Strategies\SimpananMultiPnImportStrategy;
 use App\Services\Import\Strategies\SsaPinjamanImportStrategy;
@@ -55,5 +56,13 @@ class ImportStrategiesTest extends TestCase
 
         $this->assertTrue($ssaPinjaman->supports(null, 'ssa_pinjaman'));
         $this->assertSame('bulk_csv_direct', $ssaPinjaman->importMode());
+    }
+
+    public function test_gi405_strategy_uses_staging_mode_for_safer_imports(): void
+    {
+        $strategy = new Gi405RecDhImportStrategy();
+
+        $this->assertTrue($strategy->supports(null, 'gi405_rec_dh'));
+        $this->assertSame('bulk_csv_staging', $strategy->importMode());
     }
 }

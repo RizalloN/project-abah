@@ -308,8 +308,9 @@ class ImportExecutionService
                 'total_rows' => (int) ($params['total_rows'] ?? 0),
             ]);
 
+            $controllerClass = $this->resolveControllerClass($job);
             /** @var ImportExcelController $controller */
-            $controller = app(ImportExcelController::class);
+            $controller = app($controllerClass);
             $result = $controller->executeQueuedImport([
                 'job_id' => $jobId,
                 'params' => $params,
@@ -454,5 +455,32 @@ class ImportExecutionService
             $success,
             $failed
         );
+    }
+
+    private function resolveControllerClass(?object $job): string
+    {
+        $default = ImportExcelController::class;
+        if (!$job) {
+            return $default;
+        }
+
+        $jobContext = $job->job_context ?? null;
+        if (is_string($jobContext) && $jobContext !== '') {
+            $decoded = json_decode($jobContext, true);
+            if (is_array($decoded)) {
+                $jobContext = $decoded;
+            }
+        }
+
+        $controller = is_array($jobContext) ? (string) ($jobContext['controller'] ?? '') : '';
+        if ($controller === '' || !class_exists($controller)) {
+            return $default;
+        }
+
+        if (!is_a($controller, ImportExcelController::class, true)) {
+            return $default;
+        }
+
+        return $controller;
     }
 }

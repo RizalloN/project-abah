@@ -429,6 +429,15 @@ def stage_ssa_pinjaman(config: dict) -> None:
         send_progress(86, "Menulis CSV bersih SSA Pinjaman untuk LOAD DATA...", written_rows, total_data_rows, 0, "", "polars")
         write_with_polars(df, output_csv_path, delimiter)
 
+        # Get distinct periods
+        periods = []
+        if "month_day_year_of_periode" in df.columns:
+            try:
+                periods = df["month_day_year_of_periode"].unique().to_list()
+                periods = [str(p) for p in periods if p is not None and str(p).strip() != ""]
+            except Exception:
+                pass
+
         send_event(
             "done",
             {
@@ -440,6 +449,7 @@ def stage_ssa_pinjaman(config: dict) -> None:
                 "skipped_rows": skipped_rows[:500],
                 "rewritten": bool(rewrite_needed or structural_skipped > 0 or validation_skipped > 0),
                 "backend": "polars",
+                "periods": periods,
             },
         )
     finally:

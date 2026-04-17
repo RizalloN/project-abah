@@ -23,5 +23,9 @@ return [
             'enabled' => env('IMPORT_DIRECT_LOAD_SSA_PINJAMAN_ENABLED', true),
             'max_rows' => env('IMPORT_DIRECT_LOAD_SSA_PINJAMAN_MAX_ROWS', 0),
         ],
+        'gi405_rec_dh' => [
+            'enabled' => env('IMPORT_DIRECT_LOAD_GI405_REC_DH_ENABLED', true),
+            'max_rows' => env('IMPORT_DIRECT_LOAD_GI405_REC_DH_MAX_ROWS', 0),
+        ],
     ],
 ];

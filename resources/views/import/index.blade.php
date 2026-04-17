@@ -1342,6 +1342,7 @@
             const isPerformancePis = reportName.includes('performance pis per produk');
             const isCasaBrilink = reportName.includes('casa brilink');
             const isReportPh = reportName.includes('report nominatif rekening pinjaman ph');
+            const isGi405RecDh = tableName === 'gi405_rec_dh' || importController.includes('Gi405RecDhImportExcelController');
             const isInputRekanan = tableName === 'input_rekanan';
             const isBodBoc = tableName === 'bod_boc';
             const isRka = tableName === 'rka';
@@ -1397,6 +1398,30 @@
                 inputExcel.setAttribute('accept', '.xlsx,.xls,.csv');
                 configurePeriodeInput({ visible: false });
                 applySimpananUploadMode();
+                updateReportSummary();
+                updateFileSelectionUI();
+                return;
+            }
+
+            if (isGi405RecDh) {
+                formExcel.style.display = 'block';
+                inputExcel.disabled = false;
+                inputExcel.required = true;
+                inputExcel.setAttribute('accept', '.xlsx,.xls');
+                formImport.action = "{{ route('import.gi405.upload') }}";
+                formImport.dataset.preparePreviewUrl = "{{ route('import.gi405.prepare-preview') }}";
+
+                if (excelLabel) {
+                    excelLabel.innerHTML = '<i class="fas fa-file-excel mr-1"></i> Upload File Excel GI405 - Rec. DH (.xlsx, .xls)';
+                }
+
+                if (excelHelp) {
+                    excelHelp.textContent = 'File Excel akan divalidasi dulu agar kombinasi tanggal dan kode unit tidak duplikat.';
+                }
+
+                configurePeriodeInput({ visible: false, required: false, type: 'date', label: 'Periode', help: 'Periode dibaca dari kolom Tanggal pada file.' });
+                configureKancaInput({ visible: false });
+                applyButtonState('excel', '<i class="fas fa-file-excel"></i> Upload Excel');
                 updateReportSummary();
                 updateFileSelectionUI();
                 return;

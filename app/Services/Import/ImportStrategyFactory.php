@@ -3,6 +3,7 @@
 namespace App\Services\Import;
 
 use App\Services\Import\Strategies\DailyLoanImportStrategy;
+use App\Services\Import\Strategies\Gi405RecDhImportStrategy;
 use App\Services\Import\Strategies\GenericCsvImportStrategy;
 use App\Services\Import\Strategies\ImportStrategyInterface;
 use App\Services\Import\Strategies\Lw325PhImportStrategy;
@@ -21,6 +22,7 @@ class ImportStrategyFactory
         return [
             app(DailyLoanImportStrategy::class),
             app(SimpananMultiPnImportStrategy::class),
+            app(Gi405RecDhImportStrategy::class),
             app(SsaPinjamanImportStrategy::class),
             app(SsaSimpananImportStrategy::class),
             app(SsaPinjamanImportStrategy::class),

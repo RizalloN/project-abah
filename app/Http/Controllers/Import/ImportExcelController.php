@@ -125,7 +125,7 @@ class ImportExcelController extends Controller
         return DB::table('nama_report')->where('id_report', $idReport)->first();
     }
 
-    private function resolveActiveTableName(string $default = 'daily_loan_dinamis'): string
+    protected function resolveActiveTableName(string $default = 'daily_loan_dinamis'): string
     {
         $reportData = $this->resolveActiveReport();
 
@@ -141,6 +141,7 @@ class ImportExcelController extends Controller
         return match ($tableName) {
             'daily_loan_dinamis' => 'Daily Loan Dinamis',
             'simpanan_multipn' => 'Simpanan MultiPN',
+            'gi405_rec_dh' => 'GI405 - Rec. DH',
             default => $this->resolveActiveReport()?->nama_report ?? 'Preview Data',
         };
     }
@@ -380,6 +381,43 @@ class ImportExcelController extends Controller
     private function isSsaPinjamanTable(?string $tableName = null): bool
     {
         return ($tableName ?? $this->resolveExcelTableName()) === 'ssa_pinjaman';
+    }
+
+    private function isGi405RecDhTable(?string $tableName = null): bool
+    {
+        return ($tableName ?? $this->resolveExcelTableName()) === 'gi405_rec_dh';
+    }
+
+    protected function normalizeGi405RecDhKodeValue($value): ?string
+    {
+        $value = trim((string) ($value ?? ''));
+        if ($value === '') {
+            return null;
+        }
+
+        if (is_numeric($value)) {
+            $value = (string) (int) round((float) $value);
+        }
+
+        $digits = preg_replace('/\D+/', '', $value);
+        if ($digits === null || $digits === '') {
+            return $value;
+        }
+
+        if (strlen($digits) <= 5) {
+            return str_pad($digits, 5, '0', STR_PAD_LEFT);
+        }
+
+        return $digits;
+    }
+
+    private function hasRequiredGi405RecDhImportData(array $row): bool
+    {
+        $kode = trim((string) ($row['kode'] ?? ''));
+        $tanggal = trim((string) ($row['tanggal'] ?? ''));
+        $uniqueId = trim((string) ($row['uniqueid_namareport'] ?? ''));
+
+        return $kode !== '' && $tanggal !== '' && $uniqueId !== '';
     }
 
     private function detectCsvDelimiter(string $path): string
@@ -2276,6 +2314,9 @@ class ImportExcelController extends Controller
             }
 
             $suffix = '_SMPN';
+        } elseif ($tableName === 'gi405_rec_dh' && isset($tableColumnsLookup['uniqueid_namareport'])) {
+            $uniqueIdCol = $tableColumnsByLower['uniqueid_namareport'] ?? 'uniqueid_namareport';
+            $suffix = '';
         } elseif (isset($tableColumnsLookup['uniqueid_namareport'])) {
             $uniqueIdCol = $tableColumnsByLower['uniqueid_namareport'] ?? 'uniqueid_namareport';
         }
@@ -2366,6 +2407,10 @@ class ImportExcelController extends Controller
             'row_sequence' => 0,
             'manual_column_values' => $this->resolveManualImportColumnValues($tableName, $tableColumnsLookup, $tableColumnsByLower, $importOptions),
         ];
+
+        if ($tableName === 'gi405_rec_dh') {
+            $context['unique_id_prefix'] = 'uuid_405RDH';
+        }
 
         $context = $this->resolveImportStrategy($tableName)->prepareContext($context);
 
@@ -3796,6 +3841,7 @@ class ImportExcelController extends Controller
             'skipped_count' => (int) ($normalized['skipped_count'] ?? 0),
             'duplicate_count' => (int) ($normalized['duplicate_count'] ?? 0),
             'written_rows' => (int) ($normalized['written_rows'] ?? 0),
+            'periods' => $normalized['periods'] ?? [],
         ];
     }
 
@@ -3993,6 +4039,207 @@ class ImportExcelController extends Controller
             'skipped_count' => (int) ($normalized['skipped_count'] ?? 0),
             'duplicate_count' => (int) ($normalized['duplicate_count'] ?? 0),
             'written_rows' => (int) ($normalized['written_rows'] ?? 0),
+            'periods' => $normalized['periods'] ?? [],
+        ];
+    }
+
+    private function stageGi405RecDhCsvWithPolars(?callable $send, string $csvPath, ?string $delimiter = null): ?array
+    {
+        $pythonExe = $this->findPython();
+        $scriptPath = base_path('scripts/gi405_rec_dh_polars_processor.py');
+
+        if (!$pythonExe || !file_exists($scriptPath)) {
+            return null;
+        }
+
+        $delimiter = ($delimiter !== null && $delimiter !== '')
+            ? $delimiter
+            : $this->detectCsvDelimiter($csvPath);
+
+        $tempDirectory = storage_path('app/temp');
+        if (!is_dir($tempDirectory)) {
+            @mkdir($tempDirectory, 0777, true);
+        }
+
+        $outputCsvPath = $tempDirectory . DIRECTORY_SEPARATOR . 'gi405_rec_dh_polars_' . Str::uuid()->toString() . '.csv';
+        $configFile = storage_path('app/gi405_rec_dh_polars_config_' . uniqid() . '.json');
+        file_put_contents($configFile, json_encode([
+            'file_path' => $csvPath,
+            'delimiter' => $delimiter,
+            'output_csv_path' => $outputCsvPath,
+        ], JSON_UNESCAPED_UNICODE));
+
+        $cmd = escapeshellarg($pythonExe)
+            . ' ' . escapeshellarg($scriptPath)
+            . ' --config ' . escapeshellarg($configFile)
+            . ' --mode stage';
+
+        $descriptors = [
+            0 => ['pipe', 'r'],
+            1 => ['pipe', 'w'],
+            2 => ['pipe', 'w'],
+        ];
+
+        $process = proc_open($cmd, $descriptors, $pipes);
+        if (!is_resource($process)) {
+            @unlink($configFile);
+            @unlink($outputCsvPath);
+            return null;
+        }
+
+        fclose($pipes[0]);
+        stream_set_blocking($pipes[1], false);
+        stream_set_blocking($pipes[2], false);
+
+        $buffer = '';
+        $donePayload = null;
+        $pythonError = null;
+        $pythonProducedOutput = false;
+        $lastKeepAlive = time();
+        $keepAliveEvery = 15;
+
+        $processLine = static function (string $line) use ($send, &$donePayload, &$pythonError, &$lastKeepAlive): void {
+            $line = trim($line);
+            if ($line === '') {
+                return;
+            }
+
+            $data = json_decode($line, true);
+            if (!is_array($data)) {
+                return;
+            }
+
+            $type = $data['type'] ?? 'progress';
+            unset($data['type']);
+
+            if ($type === 'progress') {
+                if ($send) {
+                    $send('progress', $data);
+                }
+                $lastKeepAlive = time();
+                return;
+            }
+
+            if ($type === 'done') {
+                $donePayload = $data;
+                $lastKeepAlive = time();
+                return;
+            }
+
+            if ($type === 'error') {
+                $pythonError = $data['message'] ?? 'Python GI405 - Rec. DH stage error tidak diketahui';
+                $lastKeepAlive = time();
+            }
+        };
+
+        try {
+            while (true) {
+                $status = proc_get_status($process);
+                $chunk = fread($pipes[1], 65536);
+
+                if ($chunk !== false && $chunk !== '') {
+                    $pythonProducedOutput = true;
+                    $buffer .= $chunk;
+                    while (($pos = strpos($buffer, "\n")) !== false) {
+                        $line = substr($buffer, 0, $pos);
+                        $buffer = substr($buffer, $pos + 1);
+                        $processLine($line);
+                    }
+                }
+
+                if ((time() - $lastKeepAlive) >= $keepAliveEvery && $send) {
+                    echo ": keepalive\n\n";
+                    if (ob_get_level() > 0) {
+                        ob_flush();
+                    }
+                    flush();
+                    $lastKeepAlive = time();
+                }
+
+                if (!$status['running']) {
+                    break;
+                }
+
+                usleep(50000);
+            }
+
+            $remaining = stream_get_contents($pipes[1]);
+            if ($remaining) {
+                $pythonProducedOutput = true;
+                $buffer .= $remaining;
+                foreach (explode("\n", $buffer) as $line) {
+                    $processLine($line);
+                }
+            }
+        } finally {
+            if (isset($pipes[1]) && is_resource($pipes[1])) {
+                fclose($pipes[1]);
+            }
+            if (isset($pipes[2]) && is_resource($pipes[2])) {
+                fclose($pipes[2]);
+            }
+
+            if (is_resource($process)) {
+                proc_close($process);
+            }
+
+            @unlink($configFile);
+        }
+
+        if (!$pythonProducedOutput || $pythonError !== null || !$donePayload || !file_exists($outputCsvPath)) {
+            @unlink($outputCsvPath);
+            return null;
+        }
+
+        return [
+            'path' => $outputCsvPath,
+            'cleanup' => true,
+            'normalized' => true,
+            'backend' => 'polars',
+            'skipped_rows' => array_values(array_map('intval', (array) ($donePayload['skipped_rows'] ?? []))),
+            'skipped_count' => (int) ($donePayload['skipped_count'] ?? 0),
+            'duplicate_count' => (int) ($donePayload['duplicate_count'] ?? 0),
+            'written_rows' => (int) ($donePayload['written_rows'] ?? 0),
+            'total_rows' => (int) ($donePayload['total_rows'] ?? 0),
+            'periods' => array_values((array) ($donePayload['dates'] ?? [])),
+        ];
+    }
+
+    protected function createNormalizedGi405RecDhDirectLoadCsv(string $csvPath, ?string $delimiter = null, ?callable $send = null): array
+    {
+        $polarsResult = $this->stageGi405RecDhCsvWithPolars($send, $csvPath, $delimiter);
+        if ($polarsResult !== null) {
+            return $polarsResult;
+        }
+
+        return [
+            'path' => $csvPath,
+            'cleanup' => false,
+            'normalized' => false,
+            'backend' => 'csv_stage',
+            'skipped_rows' => [],
+            'skipped_count' => 0,
+            'duplicate_count' => 0,
+            'written_rows' => 0,
+            'total_rows' => 0,
+            'periods' => [],
+        ];
+    }
+
+    protected function prepareGi405RecDhDirectLoadSource(string $csvPath, ?string $delimiter = null, ?callable $send = null): array
+    {
+        $normalized = $this->createNormalizedGi405RecDhDirectLoadCsv($csvPath, $delimiter, $send);
+
+        return [
+            'path' => $normalized['path'],
+            'cleanup' => (bool) ($normalized['cleanup'] ?? false),
+            'normalized' => (bool) ($normalized['normalized'] ?? false),
+            'backend' => (string) ($normalized['backend'] ?? 'csv_stage'),
+            'skipped_rows' => $normalized['skipped_rows'] ?? [],
+            'skipped_count' => (int) ($normalized['skipped_count'] ?? 0),
+            'duplicate_count' => (int) ($normalized['duplicate_count'] ?? 0),
+            'written_rows' => (int) ($normalized['written_rows'] ?? 0),
+            'periods' => $normalized['periods'] ?? [],
         ];
     }
 
@@ -4883,9 +5130,11 @@ class ImportExcelController extends Controller
         $isDailyLoanTable = $this->isDailyLoanTable($tableName);
         $isSsaSimpananTable = $this->isSsaSimpananTable($tableName);
         $isSsaPinjamanTable = $this->isSsaPinjamanTable($tableName);
+        $isGi405RecDhTable = $this->isGi405RecDhTable($tableName);
         $isSsaTable = $isSsaSimpananTable || $isSsaPinjamanTable;
+        $isDirectPolarsTable = $isSsaTable || $isGi405RecDhTable;
 
-        if (!$isDailyLoanTable && !$isSsaTable) {
+        if (!$isDailyLoanTable && !$isDirectPolarsTable) {
             return false;
         }
 
@@ -4905,7 +5154,7 @@ class ImportExcelController extends Controller
                 'percent' => 18,
                 'message' => $isDailyLoanTable
                     ? 'Menyiapkan direct LOAD DATA untuk Daily Loan...'
-                    : 'Menyiapkan direct LOAD DATA untuk ' . ($isSsaPinjamanTable ? 'SSA Pinjaman' : 'SSA Simpanan') . '...',
+                    : 'Menyiapkan direct LOAD DATA untuk ' . ($isGi405RecDhTable ? 'GI405 - Rec. DH' : ($isSsaPinjamanTable ? 'SSA Pinjaman' : 'SSA Simpanan')) . '...',
                 'rows_done' => 0,
                 'total' => $estimatedTotalRows,
                 'speed' => 0,
@@ -4913,9 +5162,30 @@ class ImportExcelController extends Controller
 
             $loadSource = $isDailyLoanTable
                 ? $this->prepareDailyLoanDirectLoadSource($csvPath, $delimiter, $send)
-                : ($isSsaPinjamanTable
+                : ($isGi405RecDhTable
+                    ? $this->prepareGi405RecDhDirectLoadSource($csvPath, $delimiter, $send)
+                    : ($isSsaPinjamanTable
                     ? $this->prepareSsaPinjamanDirectLoadSource($csvPath, $delimiter, $send)
-                    : $this->prepareSsaSimpananDirectLoadSource($csvPath, $delimiter, $send));
+                    : $this->prepareSsaSimpananDirectLoadSource($csvPath, $delimiter, $send)));
+
+            if ($isSsaTable && !empty($loadSource['periods'])) {
+                $periodColumn = $isSsaSimpananTable ? 'Month_Day_Year_of_Posisi' : 'Month_Day_Year_of_Periode';
+                $periods = (array) $loadSource['periods'];
+
+                if ($send) {
+                    $send('progress', [
+                        'status' => 'processing',
+                        'phase' => 'cleaning_old_data',
+                        'percent' => 38,
+                        'message' => 'Membersihkan data lama untuk periode: ' . implode(', ', $periods) . '...',
+                        'rows_done' => 0,
+                        'total' => $estimatedTotalRows,
+                        'speed' => 0,
+                    ]);
+                }
+
+                DB::table($tableName)->whereIn($periodColumn, $periods)->delete();
+            }
             $sourcePath = (string) ($loadSource['path'] ?? $csvPath);
             $sourceWasNormalized = !empty($loadSource['normalized']);
             $loadBackend = (string) ($loadSource['backend'] ?? 'php');
@@ -4941,7 +5211,7 @@ class ImportExcelController extends Controller
                     'percent' => 32,
                     'message' => $isDailyLoanTable
                         ? 'Load plan Daily Loan siap dijalankan.'
-                        : 'Load plan ' . ($isSsaPinjamanTable ? 'SSA Pinjaman' : 'SSA Simpanan') . ' siap dijalankan.',
+                        : 'Load plan ' . ($isGi405RecDhTable ? 'GI405 - Rec. DH' : ($isSsaPinjamanTable ? 'SSA Pinjaman' : 'SSA Simpanan')) . ' siap dijalankan.',
                     'processed_rows' => 0,
                     'total_rows' => $baseTotal,
                     'total_success' => (int) ($job->total_success ?? 0),
@@ -4964,10 +5234,10 @@ class ImportExcelController extends Controller
                     : ($sourceWasNormalized
                     ? (
                         $skippedCount > 0
-                            ? 'CSV ' . ($isSsaPinjamanTable ? 'SSA Pinjaman' : 'SSA Simpanan') . ' diproses dengan ' . $loadBackend . '. ' . $skippedCount . ' baris tidak valid di-skip, lalu direct LOAD DATA dijalankan...'
-                            : 'CSV ' . ($isSsaPinjamanTable ? 'SSA Pinjaman' : 'SSA Simpanan') . ' diproses dengan ' . $loadBackend . '. Menjalankan direct LOAD DATA ke tabel final...'
+                            ? 'CSV ' . ($isGi405RecDhTable ? 'GI405 - Rec. DH' : ($isSsaPinjamanTable ? 'SSA Pinjaman' : 'SSA Simpanan')) . ' diproses dengan ' . $loadBackend . '. ' . $skippedCount . ' baris tidak valid di-skip, lalu direct LOAD DATA dijalankan...'
+                            : 'CSV ' . ($isGi405RecDhTable ? 'GI405 - Rec. DH' : ($isSsaPinjamanTable ? 'SSA Pinjaman' : 'SSA Simpanan')) . ' diproses dengan ' . $loadBackend . '. Menjalankan direct LOAD DATA ke tabel final...'
                     )
-                    : 'Direct LOAD DATA aktif. Memuat CSV stage langsung ke tabel ' . ($isSsaPinjamanTable ? 'SSA Pinjaman' : 'SSA Simpanan') . '...'),
+                    : 'Direct LOAD DATA aktif. Memuat CSV stage langsung ke tabel ' . ($isGi405RecDhTable ? 'GI405 - Rec. DH' : ($isSsaPinjamanTable ? 'SSA Pinjaman' : 'SSA Simpanan')) . '...'),
                 'rows_done' => 0,
                 'total' => $baseTotal,
                 'speed' => 0,
@@ -4988,8 +5258,8 @@ class ImportExcelController extends Controller
                     'phase' => 'loading',
                     'percent' => $status === 'completed' ? 98 : 96,
                     'message' => $status === 'completed'
-                        ? ($isDailyLoanTable ? 'Direct LOAD DATA Daily Loan selesai diproses.' : 'Direct LOAD DATA ' . ($isSsaPinjamanTable ? 'SSA Pinjaman' : 'SSA Simpanan') . ' selesai diproses.')
-                        : ($isDailyLoanTable ? 'Direct LOAD DATA Daily Loan selesai dengan kegagalan parsial.' : 'Direct LOAD DATA ' . ($isSsaPinjamanTable ? 'SSA Pinjaman' : 'SSA Simpanan') . ' selesai dengan kegagalan parsial.'),
+                        ? ($isDailyLoanTable ? 'Direct LOAD DATA Daily Loan selesai diproses.' : 'Direct LOAD DATA ' . ($isGi405RecDhTable ? 'GI405 - Rec. DH' : ($isSsaPinjamanTable ? 'SSA Pinjaman' : 'SSA Simpanan')) . ' selesai diproses.')
+                        : ($isDailyLoanTable ? 'Direct LOAD DATA Daily Loan selesai dengan kegagalan parsial.' : 'Direct LOAD DATA ' . ($isGi405RecDhTable ? 'GI405 - Rec. DH' : ($isSsaPinjamanTable ? 'SSA Pinjaman' : 'SSA Simpanan')) . ' selesai dengan kegagalan parsial.'),
                     'processed_rows' => $inserted + $failed,
                     'total_rows' => $baseTotal,
                     'total_success' => $inserted,
@@ -5003,7 +5273,7 @@ class ImportExcelController extends Controller
                 'percent' => 98,
                 'message' => $isDailyLoanTable
                     ? 'Direct LOAD DATA Daily Loan selesai diproses.'
-                    : 'Direct LOAD DATA ' . ($isSsaPinjamanTable ? 'SSA Pinjaman' : 'SSA Simpanan') . ' selesai diproses.',
+                    : 'Direct LOAD DATA ' . ($isGi405RecDhTable ? 'GI405 - Rec. DH' : ($isSsaPinjamanTable ? 'SSA Pinjaman' : 'SSA Simpanan')) . ' selesai diproses.',
                 'rows_done' => $inserted,
                 'total' => $baseTotal,
                 'speed' => 0,
@@ -5489,6 +5759,9 @@ class ImportExcelController extends Controller
                 continue;
             }
             $resolvedColumn = $context['table_columns_by_lower'][$dbCol] ?? $dbCol;
+            if (($context['table_name'] ?? '') === 'gi405_rec_dh' && strtolower($resolvedColumn) === 'kode') {
+                $value = $this->normalizeGi405RecDhKodeValue($value);
+            }
             $finalRow[$resolvedColumn] = $this->normalizeValueForDatabaseColumn($resolvedColumn, $value, $context);
         }
 
@@ -5512,6 +5785,10 @@ class ImportExcelController extends Controller
         }
 
         if (($context['table_name'] ?? '') === 'daily_loan_dinamis' && !$this->hasRequiredDailyLoanImportData($finalRow)) {
+            return null;
+        }
+
+        if (($context['table_name'] ?? '') === 'gi405_rec_dh' && !$this->hasRequiredGi405RecDhImportData($finalRow)) {
             return null;
         }
 
@@ -5861,6 +6138,8 @@ class ImportExcelController extends Controller
             'BILLC',
             'SALDO',
             'SALDO_IDR',
+            'PENDAPATAN_KOREKSI_PPAP_DR_ANGSURAN_PH',
+            'RECOVERY_NON_KLAIM',
         ];
 
         return array_fill_keys($decimalColumns, true);
@@ -5994,7 +6273,7 @@ class ImportExcelController extends Controller
         ]);
     }
 
-    private function primeExcelPreviewCache(string $relativePath, string $path, string $cacheKey, ?callable $send = null): void
+    protected function primeExcelPreviewCache(string $relativePath, string $path, string $cacheKey, ?callable $send = null): void
     {
         if ($cacheKey === '') {
             return;
