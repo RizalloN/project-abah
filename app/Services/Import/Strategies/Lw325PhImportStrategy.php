@@ -32,6 +32,6 @@ class Lw325PhImportStrategy implements ImportStrategyInterface
 
     public function importMode(array $context = []): string
     {
-        return 'bulk_csv_staging';
+        return 'bulk_csv_direct';
     }
 }

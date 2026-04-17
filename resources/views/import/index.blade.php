@@ -1530,6 +1530,8 @@
             const isCognosPh = reportName.includes('cognos ph');
             const isCognosRecovery = reportName.includes('cognos recovery');
             const isGi405RecDh = tableName === 'gi405_rec_dh' || importController.includes('Gi405RecDhImportExcelController');
+            const isSsaSimpanan = tableName === 'ssa_simpanan';
+            const isSsaPinjaman = tableName === 'ssa_pinjaman';
             const isInputRekanan = tableName === 'input_rekanan';
             const isBodBoc = tableName === 'bod_boc';
             const isRka = tableName === 'rka';
@@ -1675,10 +1677,10 @@
                 inputCsv.disabled = false;
                 inputCsv.required = true;
                 inputCsv.setAttribute('accept', '.csv,.txt,.xlsx,.xls');
-                formImport.action = "{{ route('import.reportph.upload') }}";
-                formImport.dataset.preparePreviewUrl = "{{ route('import.reportph.prepare-preview') }}";
+                formImport.action = "{{ route('import.excel.upload') }}";
+                formImport.dataset.preparePreviewUrl = "{{ route('import.excel.prepare-preview') }}";
                 csvLabel.innerHTML = '<i class="fas fa-file-upload mr-1"></i> Upload File Report PH (.csv, .txt, .xlsx, .xls)';
-                csvHelp.textContent = 'CSV tetap didukung. File Excel akan distage dulu ke CSV lalu masuk ke jalur bulk import yang sama.';
+                csvHelp.textContent = 'Report ini diproses menggunakan Polars Fastpath (LOAD DATA INFILE) untuk performa maksimal.';
                 applyButtonState('csv', '<i class="fas fa-file-upload"></i> Upload File');
                 configurePeriodeInput({ visible: false });
                 configureKancaInput({ visible: false });
@@ -1738,6 +1740,26 @@
                     label: 'Tanggal Periode',
                     help: 'Wajib isi tanggal periode manual (YYYY-MM-DD) untuk Performance PIS per Produk.',
                 }));
+                configureKancaInput({ visible: false });
+                updateReportSummary();
+                updateFileSelectionUI();
+                return;
+            }
+
+            if (isSsaPinjaman || isSsaSimpanan) {
+                const label = isSsaPinjaman ? 'SSA Pinjaman' : 'SSA Simpanan';
+                formCsv.style.display = 'block';
+                inputCsv.disabled = false;
+                inputCsv.required = true;
+                inputCsv.setAttribute('accept', '.csv,.txt,.xlsx,.xls');
+                formImport.action = "{{ route('import.excel.upload') }}";
+                formImport.dataset.preparePreviewUrl = "{{ route('import.excel.prepare-preview') }}";
+                
+                csvLabel.innerHTML = `<i class="fas fa-file-upload mr-1"></i> Upload File ${label} (.csv, .txt, .xlsx, .xls)`;
+                csvHelp.textContent = `File CSV dan Excel didukung untuk ${label}.`;
+                
+                applyButtonState('csv', '<i class="fas fa-file-upload"></i> Upload File');
+                configurePeriodeInput({ visible: false });
                 configureKancaInput({ visible: false });
                 updateReportSummary();
                 updateFileSelectionUI();

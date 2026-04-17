@@ -388,6 +388,11 @@ class ImportExcelController extends Controller
         return ($tableName ?? $this->resolveExcelTableName()) === 'gi405_rec_dh';
     }
 
+    private function isLw325PhTable(?string $tableName = null): bool
+    {
+        return ($tableName ?? $this->resolveExcelTableName()) === 'lw325_ph';
+    }
+
     protected function normalizeGi405RecDhKodeValue($value): ?string
     {
         $value = trim((string) ($value ?? ''));
@@ -1922,7 +1927,7 @@ class ImportExcelController extends Controller
             return app(ImportSimpananMultiPnCsvController::class)->upload($request);
         }
 
-        return $this->uploadExcel($this->useSimpananMultiPnReport($request), ['xlsx', 'xls']);
+        return $this->uploadExcel($this->useSimpananMultiPnReport($request), ['xlsx', 'xls', 'csv', 'txt']);
     }
 
     public function previewSimpananMultiPnExcel(Request $request)
@@ -4377,6 +4382,207 @@ class ImportExcelController extends Controller
         ];
     }
 
+    private function stageLw325PhCsvWithPolars(?callable $send, string $csvPath, ?string $delimiter = null): ?array
+    {
+        $pythonExe = $this->findPython();
+        $scriptPath = base_path('scripts/lw325_ph_polars_processor.py');
+
+        if (!$pythonExe || !file_exists($scriptPath)) {
+            return null;
+        }
+
+        $delimiter = ($delimiter !== null && $delimiter !== '')
+            ? $delimiter
+            : $this->detectCsvDelimiter($csvPath);
+
+        $tempDirectory = storage_path('app/temp');
+        if (!is_dir($tempDirectory)) {
+            @mkdir($tempDirectory, 0777, true);
+        }
+
+        $outputCsvPath = $tempDirectory . DIRECTORY_SEPARATOR . 'lw325_ph_polars_' . Str::uuid()->toString() . '.csv';
+        $configFile = storage_path('app/lw325_ph_polars_config_' . uniqid() . '.json');
+        file_put_contents($configFile, json_encode([
+            'file_path' => $csvPath,
+            'delimiter' => $delimiter,
+            'output_csv_path' => $outputCsvPath,
+        ], JSON_UNESCAPED_UNICODE));
+
+        $cmd = escapeshellarg($pythonExe)
+            . ' ' . escapeshellarg($scriptPath)
+            . ' --config ' . escapeshellarg($configFile)
+            . ' --mode stage';
+
+        $descriptors = [
+            0 => ['pipe', 'r'],
+            1 => ['pipe', 'w'],
+            2 => ['pipe', 'w'],
+        ];
+
+        $process = proc_open($cmd, $descriptors, $pipes);
+        if (!is_resource($process)) {
+            @unlink($configFile);
+            @unlink($outputCsvPath);
+            return null;
+        }
+
+        fclose($pipes[0]);
+        stream_set_blocking($pipes[1], false);
+        stream_set_blocking($pipes[2], false);
+
+        $buffer = '';
+        $donePayload = null;
+        $pythonError = null;
+        $pythonProducedOutput = false;
+        $lastKeepAlive = time();
+        $keepAliveEvery = 15;
+
+        $processLine = static function (string $line) use ($send, &$donePayload, &$pythonError, &$lastKeepAlive): void {
+            $line = trim($line);
+            if ($line === '') {
+                return;
+            }
+
+            $data = json_decode($line, true);
+            if (!is_array($data)) {
+                return;
+            }
+
+            $type = $data['type'] ?? 'progress';
+            unset($data['type']);
+
+            if ($type === 'progress') {
+                if ($send) {
+                    $send('progress', $data);
+                }
+                $lastKeepAlive = time();
+                return;
+            }
+
+            if ($type === 'done') {
+                $donePayload = $data;
+                $lastKeepAlive = time();
+                return;
+            }
+
+            if ($type === 'error') {
+                $pythonError = $data['message'] ?? 'Python LW325_PH stage error tidak diketahui';
+                $lastKeepAlive = time();
+            }
+        };
+
+        try {
+            while (true) {
+                $status = proc_get_status($process);
+                $chunk = fread($pipes[1], 65536);
+
+                if ($chunk !== false && $chunk !== '') {
+                    $pythonProducedOutput = true;
+                    $buffer .= $chunk;
+                    while (($pos = strpos($buffer, "\n")) !== false) {
+                        $line = substr($buffer, 0, $pos);
+                        $buffer = substr($buffer, $pos + 1);
+                        $processLine($line);
+                    }
+                }
+
+                if ((time() - $lastKeepAlive) >= $keepAliveEvery && $send) {
+                    echo ": keepalive\n\n";
+                    if (ob_get_level() > 0) {
+                        ob_flush();
+                    }
+                    flush();
+                    $lastKeepAlive = time();
+                }
+
+                if (!$status['running']) {
+                    break;
+                }
+
+                usleep(50000);
+            }
+
+            $remaining = stream_get_contents($pipes[1]);
+            if ($remaining) {
+                $pythonProducedOutput = true;
+                $buffer .= $remaining;
+                foreach (explode("\n", $buffer) as $line) {
+                    $processLine($line);
+                }
+            }
+        } finally {
+            if (isset($pipes[1]) && is_resource($pipes[1])) {
+                fclose($pipes[1]);
+            }
+            if (isset($pipes[2]) && is_resource($pipes[2])) {
+                fclose($pipes[2]);
+            }
+
+            if (is_resource($process)) {
+                proc_close($process);
+            }
+
+            @unlink($configFile);
+        }
+
+        if (!$pythonProducedOutput || $pythonError !== null || !$donePayload || !file_exists($outputCsvPath)) {
+            @unlink($outputCsvPath);
+            return null;
+        }
+
+        return [
+            'path' => $outputCsvPath,
+            'cleanup' => true,
+            'normalized' => true,
+            'backend' => 'polars',
+            'skipped_rows' => array_values(array_map('intval', (array) ($donePayload['skipped_rows'] ?? []))),
+            'skipped_count' => (int) ($donePayload['skipped_count'] ?? 0),
+            'duplicate_count' => (int) ($donePayload['duplicate_count'] ?? 0),
+            'written_rows' => (int) ($donePayload['written_rows'] ?? 0),
+            'total_rows' => (int) ($donePayload['total_rows'] ?? 0),
+            'periods' => array_values((array) ($donePayload['dates'] ?? [])),
+        ];
+    }
+
+    protected function createNormalizedLw325PhDirectLoadCsv(string $csvPath, ?string $delimiter = null, ?callable $send = null): array
+    {
+        $polarsResult = $this->stageLw325PhCsvWithPolars($send, $csvPath, $delimiter);
+        if ($polarsResult !== null) {
+            return $polarsResult;
+        }
+
+        return [
+            'path' => $csvPath,
+            'cleanup' => false,
+            'normalized' => false,
+            'backend' => 'csv_stage',
+            'skipped_rows' => [],
+            'skipped_count' => 0,
+            'duplicate_count' => 0,
+            'written_rows' => 0,
+            'total_rows' => 0,
+            'periods' => [],
+        ];
+    }
+
+    protected function prepareLw325PhDirectLoadSource(string $csvPath, ?string $delimiter = null, ?callable $send = null): array
+    {
+        $normalized = $this->createNormalizedLw325PhDirectLoadCsv($csvPath, $delimiter, $send);
+
+        return [
+            'path' => $normalized['path'],
+            'cleanup' => (bool) ($normalized['cleanup'] ?? false),
+            'normalized' => (bool) ($normalized['normalized'] ?? false),
+            'backend' => (string) ($normalized['backend'] ?? 'csv_stage'),
+            'skipped_rows' => $normalized['skipped_rows'] ?? [],
+            'skipped_count' => (int) ($normalized['skipped_count'] ?? 0),
+            'duplicate_count' => (int) ($normalized['duplicate_count'] ?? 0),
+            'written_rows' => (int) ($normalized['written_rows'] ?? 0),
+            'periods' => $normalized['periods'] ?? [],
+        ];
+    }
+
+
     protected function createNormalizedGi405RecDhDirectLoadCsv(string $csvPath, ?string $delimiter = null, ?callable $send = null): array
     {
         $polarsResult = $this->stageGi405RecDhCsvWithPolars($send, $csvPath, $delimiter);
@@ -5374,8 +5580,9 @@ class ImportExcelController extends Controller
         $isSsaSimpananTable = $this->isSsaSimpananTable($tableName);
         $isSsaPinjamanTable = $this->isSsaPinjamanTable($tableName);
         $isGi405RecDhTable = $this->isGi405RecDhTable($tableName);
+        $isLw325PhTable = $this->isLw325PhTable($tableName);
         $isSsaTable = $isSsaSimpananTable || $isSsaPinjamanTable;
-        $isDirectPolarsTable = $isSsaTable || $isGi405RecDhTable;
+        $isDirectPolarsTable = $isSsaTable || $isGi405RecDhTable || $isLw325PhTable;
 
         if (!$isDailyLoanTable && !$isDirectPolarsTable) {
             return false;
@@ -5409,10 +5616,18 @@ class ImportExcelController extends Controller
                     ? $this->prepareGi405RecDhDirectLoadSource($csvPath, $delimiter, $send)
                     : ($isSsaPinjamanTable
                     ? $this->prepareSsaPinjamanDirectLoadSource($csvPath, $delimiter, $send)
-                    : $this->prepareSsaSimpananDirectLoadSource($csvPath, $delimiter, $send)));
+                    : ($isLw325PhTable
+                        ? $this->prepareLw325PhDirectLoadSource($csvPath, $delimiter, $send)
+                        : $this->prepareSsaSimpananDirectLoadSource($csvPath, $delimiter, $send))));
 
-            if ($isSsaTable && !empty($loadSource['periods'])) {
-                $periodColumn = $isSsaSimpananTable ? 'Month_Day_Year_of_Posisi' : 'Month_Day_Year_of_Periode';
+            if (($isSsaTable || $isLw325PhTable) && !empty($loadSource['periods'])) {
+                $periodColumn = 'periode';
+                if ($isSsaSimpananTable) {
+                    $periodColumn = 'Month_Day_Year_of_Posisi';
+                } elseif ($isSsaPinjamanTable) {
+                    $periodColumn = 'Month_Day_Year_of_Periode';
+                }
+                
                 $periods = (array) $loadSource['periods'];
 
                 if ($send) {
@@ -6401,7 +6616,7 @@ class ImportExcelController extends Controller
         return $normalized;
     }
 
-    public function uploadExcel(Request $request, array $allowedExtensions = ['xlsx', 'xls'])
+    public function uploadExcel(Request $request, array $allowedExtensions = ['xlsx', 'xls', 'csv', 'txt'])
     {
         $request->validate(['file' => 'required|file|mimes:' . implode(',', $allowedExtensions)]);
         $file = $request->file('file');
