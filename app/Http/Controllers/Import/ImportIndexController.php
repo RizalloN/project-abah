@@ -3341,6 +3341,37 @@ class ImportIndexController extends Controller
     private function deleteRowsByIdentityBatch(string $tableName, Builder $baseQuery, string $identityColumn, int $limit, $connection = null, ?string $deleteId = null): int
     {
         $connection = $connection ?: DB::connection();
+
+        if ($deleteId !== null && $this->isManagedDeleteCancellationRequested($deleteId)) {
+            return 0;
+        }
+
+        // 1. Secara aman prioritaskan penghapusan baris gagal import/korup (identity null/string kosong)
+        // karena baris ini menyangkut di query utama tapi akan skip di chunking identity
+        $danglingCacheKey = $deleteId ? "rm_delete_dgl_{$deleteId}_" . md5($tableName) : null;
+        if (!$danglingCacheKey || !\Illuminate\Support\Facades\Cache::has($danglingCacheKey)) {
+            $danglingQuery = (clone $baseQuery)->where(function ($query) use ($identityColumn) {
+                $query->whereNull($identityColumn)
+                      ->orWhere($identityColumn, '');
+            });
+
+            // DB builder default limit() delete aman digunakan di MySQL/MariaDB
+            $deletedDangling = (int) (clone $danglingQuery)->limit($limit)->delete();
+            
+            if ($deletedDangling > 0) {
+                return $deletedDangling;
+            }
+
+            if ($danglingCacheKey) {
+                \Illuminate\Support\Facades\Cache::put($danglingCacheKey, true, 86400);
+            }
+        }
+
+        if ($deleteId !== null && $this->isManagedDeleteCancellationRequested($deleteId)) {
+            return 0;
+        }
+
+        // 2. Normal batch delete untuk baris aktif (memiliki identity sah)
         $identityValues = (clone $baseQuery)
             ->select($identityColumn)
             ->whereNotNull($identityColumn)
