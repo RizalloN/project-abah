@@ -126,6 +126,7 @@ Route::middleware(['auth', 'role:admin', 'release.session.lock'])->group(functio
     Route::post('/job-management/{jobId}/terminate', [ImportJobManagementController::class, 'terminate'])->name('job-management.terminate');
     Route::delete('/job-management/{jobId}', [ImportJobManagementController::class, 'destroy'])->name('job-management.destroy');
     Route::delete('/job-management/queue-job/{queueJobId}', [ImportJobManagementController::class, 'destroyQueueJob'])->name('job-management.queue.destroy');
+    Route::post('/job-management/queue-job/{queueJobId}/force-run', [ImportJobManagementController::class, 'forceRunQueueJob'])->name('job-management.queue.force-run');
     Route::post('/job-management/queue-job/purge', [ImportJobManagementController::class, 'purgeQueueJobs'])->name('job-management.queue.purge');
     Route::get('/file-management', [FileManagementController::class, 'index'])->name('file-management.index');
     Route::post('/file-management/database-backup', [FileManagementController::class, 'backupDatabase'])->name('file-management.database-backup');

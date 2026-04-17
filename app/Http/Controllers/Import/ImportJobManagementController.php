@@ -920,6 +920,7 @@ class ImportJobManagementController extends Controller
                 'age_seconds' => $createdAt ? now()->diffInSeconds($createdAt) : 0,
                 'age_label' => $this->formatDuration($createdAt ? (int) now()->diffInSeconds($createdAt) : null),
                 'can_delete' => !$reserved,
+                'can_force_run' => !$reserved,
                 'kind' => 'raw_queue_job',
             ];
         })->values()->all();
