@@ -44,10 +44,10 @@
 
     /* Table Wrapper */
     .daily-table-region {
+        --daily-table-sticky-top: 0px;
         position: relative;
-        padding-bottom: 3.9rem;
         width: 100%;
-        overflow: hidden; /* Ensure it contains its children during transitions */
+        overflow: visible;
     }
 
     .daily-panel-head {
@@ -342,13 +342,17 @@
 
     .daily-table-wrap {
         width: 100%;
-        max-height: calc(100vh - 230px); /* Required to keep the horizontal scrollbar visible on screen */
-        height: calc(100vh - 230px);
+        max-height: none;
+        height: auto;
         overflow-x: auto; 
         overflow-y: auto; /* Enable native vertical scrolling inside the box */
         border: 1px solid var(--border-color);
         border-radius: 18px;
         box-shadow: 0 10px 24px -12px rgba(15, 23, 42, 0.08);
+        position: sticky;
+        top: var(--daily-table-sticky-top);
+        background: #ffffff;
+        z-index: 14;
     }
 
     .daily-table-wrap::-webkit-scrollbar {
@@ -846,6 +850,7 @@
         const positionH1Header = document.querySelector('[data-label-h1]').closest('th');
         const tableRegion = document.querySelector('[data-table-region]');
         const tableWrap = document.querySelector('.daily-table-wrap');
+        const mainHeader = document.querySelector('.main-header');
         const applyButton = document.getElementById('btn-apply-daily-filter');
         const selects = {
             kanca: document.getElementById('filter-kanca'),
@@ -870,6 +875,8 @@
         const BILLION_UNIT = 1000000000;
         const TABLE_MONEY_UNIT = BILLION_UNIT;
         const TABLE_MONEY_LABEL = 'M';
+        const TABLE_VISIBLE_ROW_LIMIT = 25;
+        const TABLE_STICKY_TOP_TRIM = 24;
         const currencyFormatter = new Intl.NumberFormat('id-ID', {
             minimumFractionDigits: 2,
             maximumFractionDigits: 2,
@@ -970,7 +977,53 @@
             if (positionGroupColspan) {
                 positionGroupColspan.setAttribute('colspan', show ? '6' : '5');
             }
+
+            scheduleTableViewportSync();
         };
+
+        const getStickyTopOffset = function () {
+            const headerHeight = mainHeader ? Math.ceil(mainHeader.getBoundingClientRect().height || 0) : 0;
+            return Math.max(0, headerHeight - TABLE_STICKY_TOP_TRIM);
+        };
+
+        const syncTableViewport = function () {
+            if (!tableWrap || !tableRegion || !body) {
+                return;
+            }
+
+            const stickyTop = getStickyTopOffset();
+            tableRegion.style.setProperty('--daily-table-sticky-top', stickyTop + 'px');
+
+            const headerRows = Array.from(tableWrap.querySelectorAll('.daily-table thead tr'));
+            const visibleRows = Array.from(body.querySelectorAll('tr')).filter(function (row) {
+                return !row.classList.contains('row-hidden-by-scope') && window.getComputedStyle(row).display !== 'none';
+            });
+
+            if (!visibleRows.length) {
+                tableWrap.style.height = 'auto';
+                tableWrap.style.maxHeight = 'none';
+                return;
+            }
+
+            const headerHeight = headerRows.reduce(function (total, row) {
+                return total + Math.ceil(row.getBoundingClientRect().height || 0);
+            }, 0);
+
+            const bodyHeight = visibleRows.slice(0, TABLE_VISIBLE_ROW_LIMIT).reduce(function (total, row) {
+                return total + Math.ceil(row.getBoundingClientRect().height || 0);
+            }, 0);
+
+            const viewportLimit = Math.max(360, window.innerHeight - stickyTop - 20);
+            const desiredHeight = Math.min(viewportLimit, headerHeight + bodyHeight + 2);
+
+            tableWrap.style.height = desiredHeight + 'px';
+            tableWrap.style.maxHeight = desiredHeight + 'px';
+        };
+
+        const scheduleTableViewportSync = function () {
+            requestAnimationFrame(syncTableViewport);
+        };
+
         const populateSelect = function (select, options, selectedValue) {
             if (!select) {
                 return;
@@ -1444,6 +1497,7 @@
 
             if (!rows.length) {
                 body.innerHTML = '<tr><td colspan="' + emptyColspan + '" class="daily-empty"><i class="fas fa-box-open mr-2 text-muted"></i>Tidak ada data untuk filter terpilih.</td></tr>';
+                scheduleTableViewportSync();
                 return;
             }
 
@@ -1497,6 +1551,8 @@
 
                 return '<tr class="' + rowClasses.join(' ') + '">' + rowCells.join('') + '</tr>';
             }).join('');
+
+            scheduleTableViewportSync();
         };
 
         const applyPayload = function (payload) {
@@ -1640,6 +1696,7 @@
             applyPayload(initialData);
         } else {
             sourceLabel.textContent = '-';
+            scheduleTableViewportSync();
         }
 
         if (applyButton) {
@@ -1719,6 +1776,9 @@
                 }
             });
         });
+
+        window.addEventListener('resize', scheduleTableViewportSync);
+        scheduleTableViewportSync();
     });
 </script>
 @endsection

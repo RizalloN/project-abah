@@ -5,6 +5,22 @@
 @section('content')
 
 <style>
+    :root {
+        --report-sticky-first-col: 220px;
+        --qris-blue-deep: #2f5b9a;
+        --qris-blue-mid: #5f97cd;
+        --qris-slate-mid: #8f9baa;
+        --qris-subhead-bg: #edf3fb;
+        --qris-subhead-text: #365b8c;
+        --qris-body-even: #f8fbff;
+        --qris-body-hover: #eef6ff;
+        --qris-sticky-hover: #dff0ff;
+        --qris-total-bg: #274d86;
+        --qris-total-border: #1f3f6d;
+        --qris-rka-bg: #fff4cc;
+        --qris-rka-border: #f2df96;
+        --qris-rka-text: #8b6a12;
+    }
     /* 🔥 UI Seragam yang Elastis dan Fit Screen */
     .report-filter-card,
     .report-data-card {
@@ -17,6 +33,13 @@
     .report-data-card .card-header,
     .report-data-card .card-body {
         background-color: #ffffff;
+    }
+    .report-data-card .card-header {
+        padding-top: 1.7rem !important;
+        padding-bottom: 0.1rem !important;
+    }
+    .report-data-card .card-body {
+        padding-top: 0.75rem !important;
     }
     .report-filter-card .card-body {
         overflow: visible;
@@ -90,45 +113,146 @@
         font-weight: 500;
         cursor: pointer;
     }
-    .table-container { width: 100%; overflow-x: hidden; }
-    .table-report { border-collapse: collapse; width: 100%; table-layout: auto; }
+    .table-container {
+        width: 100%;
+        overflow-x: auto;
+        scrollbar-width: thin;
+        scrollbar-color: #b9c9dd #eef3f9;
+    }
+    .table-container::-webkit-scrollbar {
+        height: 12px;
+    }
+    .table-container::-webkit-scrollbar-track {
+        background: linear-gradient(180deg, #eff4fa 0%, #e4ecf6 100%);
+        border-radius: 999px;
+    }
+    .table-container::-webkit-scrollbar-thumb {
+        background: linear-gradient(180deg, #c1d1e4 0%, #a9bfd7 100%);
+        border-radius: 999px;
+        border: 2px solid #eff4fa;
+    }
+    .table-container::-webkit-scrollbar-thumb:hover {
+        background: linear-gradient(180deg, #aec4dc 0%, #94b0ce 100%);
+    }
+    .table-report { border-collapse: separate; border-spacing: 0; width: max-content; min-width: 100%; table-layout: auto; }
     .table-report th, .table-report td { 
         vertical-align: middle !important; 
         border: 1px solid #dee2e6;
-        word-wrap: break-word;
-        white-space: normal; 
+        white-space: nowrap;
+        overflow: hidden;
+        background-clip: padding-box;
     }
-    .table-report th { font-size: 0.65rem; padding: 10px 4px; text-align: center; }
-    .table-report td { font-size: 0.70rem; padding: 6px 4px; text-align: right; }
+    .table-report th { font-size: 0.65rem; padding: 11px 8px; text-align: center; letter-spacing: 0.03em; }
+    .table-report td { font-size: 0.72rem; padding: 8px 10px; text-align: right; position: relative; z-index: 1; background: #ffffff; color: #334155; font-variant-numeric: tabular-nums; }
     .table-report td.text-left { text-align: left; }
+    .table-report tbody tr:nth-child(even):not(.row-total) > td {
+        background: var(--qris-body-even);
+    }
+    .content-wrapper .table-container .table-report .sticky-col {
+        position: sticky;
+        left: 0;
+        z-index: 20 !important;
+        min-width: var(--report-sticky-first-col);
+        max-width: var(--report-sticky-first-col);
+        background: #ffffff;
+        background-clip: padding-box;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        isolation: isolate;
+        contain: paint;
+        box-shadow: 10px 0 14px -14px rgba(15, 23, 42, 0.38);
+    }
+    .content-wrapper .table-container .table-report .sticky-col::before {
+        content: "";
+        position: absolute;
+        inset: -1px -16px -1px -1px;
+        background: inherit;
+        border-right: 1px solid #dee2e6;
+        z-index: -1;
+    }
+    .content-wrapper .table-container .table-report tbody .sticky-col::after {
+        content: "";
+        position: absolute;
+        top: -1px;
+        right: -1px;
+        bottom: -1px;
+        width: 12px;
+        pointer-events: none;
+        background: linear-gradient(to right, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.96) 70%, rgba(255, 255, 255, 1));
+    }
+    .content-wrapper .table-container .table-report thead .sticky-col {
+        z-index: 24 !important;
+        box-shadow: none;
+    }
+    .content-wrapper .table-container .table-report tbody tr:nth-child(even):not(.row-total) > .sticky-col {
+        background-color: var(--qris-body-even) !important;
+    }
     
     /* Pewarnaan Header Khas QRIS (TAB 1) */
-    .bg-qris-jml { background-color: #2F5597 !important; color: #ffffff !important; border-color: #203b6b !important; }
-    .bg-qris-prod { background-color: #5B9BD5 !important; color: #ffffff !important; border-color: #3f7bb5 !important; }
-    .bg-qris-vol { background-color: #A5A5A5 !important; color: #ffffff !important; border-color: #7b7b7b !important; }
-    .bg-header-sub { background-color: #E9EEF4 !important; color: #2F5597 !important; font-weight: bold; }
+    .bg-qris-jml { background: linear-gradient(180deg, #3a629f 0%, var(--qris-blue-deep) 100%) !important; color: #ffffff !important; border-color: #25497b !important; }
+    .bg-qris-prod { background: linear-gradient(180deg, #6ca6da 0%, var(--qris-blue-mid) 100%) !important; color: #ffffff !important; border-color: #4b81b4 !important; }
+    .bg-qris-vol { background: linear-gradient(180deg, #a3adba 0%, var(--qris-slate-mid) 100%) !important; color: #ffffff !important; border-color: #788391 !important; }
+    .bg-header-sub { background: var(--qris-subhead-bg) !important; color: var(--qris-subhead-text) !important; font-weight: 700; }
 
     /* Pewarnaan Header QRIS MoM (TAB 2) Sesuai Screenshot */
-    .bg-mom-blue { background-color: #2F5597 !important; color: #ffffff !important; border-color: #203b6b !important; }
+    .bg-mom-blue { background: linear-gradient(180deg, #3a629f 0%, var(--qris-blue-deep) 100%) !important; color: #ffffff !important; border-color: #25497b !important; }
 
     /* Conditional Formatting Latar Belakang Sel (%) */
-    .bg-good { background-color: #d4edda !important; color: #155724 !important; font-weight: bold;}
-    .bg-bad { background-color: #f8d7da !important; color: #721c24 !important; font-weight: bold;}
+    .bg-good { background-color: #dcf5e5 !important; color: #166534 !important; font-weight: 700;}
+    .bg-bad { background-color: #fde2e4 !important; color: #b42318 !important; font-weight: 700;}
 
-    .table-hover tbody tr:hover { background-color: #f0f4fa; }
-    .row-total { --row-total-bg: #2F5597; --row-total-color: #ffffff; --row-total-border: #203b6b; background-color: #2F5597 !important; color: white !important; font-weight: bold; }
-    .row-total td { color: white !important; border-color: #203b6b !important; }
+    .content-wrapper .table-container .table-report tbody tr:not(.row-total):hover > td { background-color: var(--qris-body-hover); }
+    .content-wrapper .table-container .table-report tbody tr:not(.row-total):hover > .sticky-col { background-color: var(--qris-sticky-hover) !important; }
+    .content-wrapper .table-container .table-report tbody tr:not(.row-total):hover > .sticky-col::after {
+        background: linear-gradient(to right, rgba(223, 240, 255, 0), rgba(223, 240, 255, 0.96) 70%, rgba(223, 240, 255, 1));
+    }
+    .row-total { --row-total-bg: var(--qris-total-bg); --row-total-color: #ffffff; --row-total-border: var(--qris-total-border); background: linear-gradient(180deg, #315992 0%, var(--qris-total-bg) 100%) !important; color: white !important; font-weight: 700; }
+    .row-total td,
+    .row-total th,
+    .row-total td *,
+    .row-total th * {
+        color: #ffffff !important;
+        border-color: var(--qris-total-border) !important;
+    }
+    .content-wrapper .table-container .table-report tbody tr.row-total:hover > td,
+    .content-wrapper .table-container .table-report tbody tr.row-total:hover > th {
+        background: linear-gradient(180deg, #315992 0%, var(--qris-total-bg) 100%) !important;
+    }
+    .content-wrapper .table-container .table-report .row-total .sticky-col { background-color: var(--qris-total-bg) !important; }
+    .content-wrapper .table-container .table-report .row-total .sticky-col::after {
+        background: linear-gradient(to right, rgba(39, 77, 134, 0), rgba(39, 77, 134, 0.96) 70%, rgba(39, 77, 134, 1));
+    }
     .val-up { color: #28a745; font-weight: bold; margin-left: 2px; }
     .val-down { color: #dc3545; font-weight: bold; margin-left: 2px; }
     
-    .rka-col { background-color: #fff3cd !important; color: #856404 !important; font-weight: 600; border-color: #f6e3a6 !important; }
-    .row-total .rka-col { background-color: #ffe8a1 !important; color: #856404 !important; }
+    .rka-col { background-color: var(--qris-rka-bg) !important; color: var(--qris-rka-text) !important; font-weight: 700; border-color: var(--qris-rka-border) !important; }
+    .row-total .rka-col { background-color: #355b91 !important; color: #ffffff !important; border-color: var(--qris-total-border) !important; }
     
     /* Nav Tabs Styling */
-    .nav-tabs.report-tabs { border-bottom: 2px solid #dee2e6; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; white-space: nowrap; scrollbar-width: thin; }
-    .nav-tabs.report-tabs .nav-link { border: none; font-weight: 600; color: #6c757d; padding: 12px 18px; font-size: 0.95rem; background: transparent; }
+    .nav-tabs.report-tabs { border-bottom: 2px solid #dee2e6; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; white-space: nowrap; scrollbar-width: thin; align-items: flex-end; min-height: 58px; margin-top: 0.2rem; }
+    .nav-tabs.report-tabs .nav-link { border: none; font-weight: 600; color: #6c757d; padding: 13px 18px 12px; font-size: 0.95rem; line-height: 1.2; background: transparent; }
     .nav-tabs.report-tabs .nav-link.active { border-bottom: 3px solid #007bff; color: #007bff; background: transparent; }
     .nav-tabs.report-tabs .nav-link:hover { border-bottom: 3px solid #9ec5fe; color: #007bff; background: transparent; }
+    @media (max-width: 767.98px) {
+        :root {
+            --report-sticky-first-col: 180px;
+        }
+        .report-data-card .card-header {
+            padding-top: 1rem !important;
+        }
+        .report-data-card .card-body {
+            padding-top: 0.55rem !important;
+        }
+        .nav-tabs.report-tabs {
+            min-height: 52px;
+            margin-top: 0.1rem;
+        }
+        .nav-tabs.report-tabs .nav-link {
+            padding: 11px 14px 10px;
+            font-size: 0.9rem;
+        }
+    }
+    @include('report.partials.sticky-table-viewport-style')
 </style>
 
 <div class="card card-outline card-success shadow-sm mb-4 report-filter-card">
@@ -220,7 +344,7 @@
                     <table class="table table-hover table-report m-0">
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
-                                <th rowspan="2" class="bg-qris-jml align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER" style="min-width: 140px;">BRANCH OFFICE</th>
+                                <th rowspan="2" class="bg-qris-jml align-middle col-group-label sticky-col" data-default-label="BRANCH OFFICE" data-filtered-label="UKER">BRANCH OFFICE</th>
                                 <th colspan="7" class="bg-qris-jml">Jumlah QRIS</th>
                                 <th colspan="8" class="bg-qris-prod">QRIS Produktif <br><small>(SV >= 50 Ribu/Bulan)</small></th>
                                 <th colspan="6" class="bg-qris-vol">Sales Volume QRIS Akumulasi <br><small>(Rp Milyar)</small></th>
@@ -247,7 +371,7 @@
                     <table class="table table-hover table-report m-0">
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
-                                <th rowspan="2" class="bg-mom-blue align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER" style="min-width: 140px;">BRANCH OFFICE</th>
+                                <th rowspan="2" class="bg-mom-blue align-middle col-group-label sticky-col" data-default-label="BRANCH OFFICE" data-filtered-label="UKER">BRANCH OFFICE</th>
                                 <th colspan="4" class="bg-mom-blue">SV 0</th>
                                 <th colspan="7" class="bg-mom-blue">Produktif (>=50 Ribu)</th>
                                 <th colspan="4" class="bg-mom-blue">Total Store ID</th>
@@ -279,12 +403,17 @@
 @endsection
 
 @section('scripts')
+@include('report.partials.sticky-table-viewport-script')
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     
     let activeTab = 'qris';
     const branchUkerMap = @json($branchUkerMap ?? []);
     const filterPosisiRka = document.getElementById('filter_posisi_rka');
+
+    function escapeHtml(value) {
+        return $('<div>').text(value ?? '').html();
+    }
 
     function getSelectedBranches() {
         return $('.filter-branch-checkbox:checked').map(function () {
@@ -463,7 +592,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     if (activeTab === 'qris') {
                         res.data.forEach((row) => {
                             html += `<tr>
-                                <td class="text-left font-weight-bold text-dark">${row.branch}</td>
+                                <td class="text-left font-weight-bold text-dark sticky-col">${escapeHtml(row.branch)}</td>
                                 
                                 <td class="font-weight-bold">${formatNum(row.jml.curr)}</td>
                                 <td>${formatGrowth(row.jml.mtd_val)}</td> ${formatCellPct(row.jml.mtd_pct)} 
@@ -484,7 +613,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
                         let total = res.total;
                         html += `<tr class="row-total">
-                            <td class="text-left">${total.branch}</td>
+                            <td class="text-left sticky-col">${escapeHtml(total.branch)}</td>
                             
                             <td>${formatNum(total.jml.curr)}</td>
                             <td>${formatGrowth(total.jml.mtd_val)}</td> ${formatCellPct(total.jml.mtd_pct).replace(/bg-(good|bad)/, '')} 
@@ -511,7 +640,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     else if (activeTab === 'qris_mom') {
                         res.data.forEach((row) => {
                             html += `<tr>
-                                <td class="text-left font-weight-bold text-dark">${row.branch}</td>
+                                <td class="text-left font-weight-bold text-dark sticky-col">${escapeHtml(row.branch)}</td>
                                 
                                 <td>${formatNum(row.sv0.prev)}</td> <td>${formatNum(row.sv0.curr)}</td>
                                 <td>${formatGrowth(row.sv0.mom)}</td> ${formatCellPctInverse(row.sv0.pct)} 
@@ -530,7 +659,7 @@ document.addEventListener('DOMContentLoaded', function () {
                         
                         let total = res.total;
                         html += `<tr class="row-total">
-                            <td class="text-left">${total.branch}</td>
+                            <td class="text-left sticky-col">${escapeHtml(total.branch)}</td>
                             
                             <td>${formatNum(total.sv0.prev)}</td> <td>${formatNum(total.sv0.curr)}</td>
                             <td>${formatGrowth(total.sv0.mom)}</td> ${formatCellPctInverse(total.sv0.pct).replace(/bg-(good|bad)/, '')}
