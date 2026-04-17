@@ -256,7 +256,7 @@ class RunManagedReportSnapshotRebuildJob implements ShouldQueue
             ]));
 
             $syncService->invalidateReportCaches($this->source ?? static::class);
-            WarmReportCacheJob::dispatch()->onQueue((string) config('queue.report_queue', 'default'));
+            WarmReportCacheJob::dispatchUnique();
 
             $hasErrors = $reportErrors !== [];
             $finalStatus = $hasErrors ? 'warning' : 'completed';

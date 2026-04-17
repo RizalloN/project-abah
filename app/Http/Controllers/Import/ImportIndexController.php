@@ -220,6 +220,113 @@ class ImportIndexController extends Controller
         return response()->json($resolved['payload'], (int) ($resolved['status_code'] ?? 200));
     }
 
+    public function getQueueStatus()
+    {
+        $connection = config('queue.default');
+        
+        $defaultCount = 0;
+        $importsHighCount = 0;
+        $failedCount = 0;
+        $recentJobs = [];
+        $failedJobsList = [];
+
+        if ($connection === 'database') {
+            $defaultCount = DB::table('jobs')->where('queue', 'default')->count();
+            $importsHighCount = DB::table('jobs')->where('queue', 'imports-high')->count();
+            $failedCount = DB::table('failed_jobs')->count();
+
+            // Fetch recent jobs (pending & processing)
+            $rawJobs = DB::table('jobs')
+                ->orderBy('created_at', 'desc')
+                ->take(15)
+                ->get();
+
+            foreach ($rawJobs as $job) {
+                $recentJobs[] = [
+                    'id' => $job->id,
+                    'queue' => $job->queue,
+                    'name' => $this->parseJobName($job->payload),
+                    'attempts' => $job->attempts,
+                    'status' => $job->reserved_at ? 'Processing' : 'Waiting',
+                    'created_at' => $job->created_at ? date('H:i:s', $job->created_at) : '-',
+                ];
+            }
+
+            // Fetch recent failed jobs
+            $rawFailed = DB::table('failed_jobs')
+                ->orderBy('failed_at', 'desc')
+                ->take(15)
+                ->get();
+
+            foreach ($rawFailed as $f) {
+                $failedJobsList[] = [
+                    'id' => $f->id,
+                    'queue' => $f->queue,
+                    'name' => $this->parseJobName($f->payload),
+                    'failed_at' => date('Y-m-d H:i:s', strtotime((string)$f->failed_at)),
+                    'error' => substr((string)$f->exception, 0, 150),
+                ];
+            }
+        }
+
+        $latestReservedDefault = $connection === 'database' 
+            ? DB::table('jobs')->where('queue', 'default')->whereNotNull('reserved_at')->max('reserved_at')
+            : null;
+        
+        $latestReservedHigh = $connection === 'database' 
+            ? DB::table('jobs')->where('queue', 'imports-high')->whereNotNull('reserved_at')->max('reserved_at')
+            : null;
+
+        $isWorkerStale = true;
+        $latestActivity = max((int)$latestReservedDefault, (int)$latestReservedHigh);
+        
+        if ($latestActivity > 0) {
+            $isWorkerStale = (time() - $latestActivity) > 300;
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'connection' => $connection,
+            'queues' => [
+                'default' => [
+                    'count' => $defaultCount,
+                    'label' => 'Report Queue',
+                ],
+                'imports-high' => [
+                    'count' => $importsHighCount,
+                    'label' => 'Managed Delete Queue',
+                ],
+            ],
+            'failed_jobs_count' => $failedCount,
+            'recent_jobs' => $recentJobs,
+            'detailed_failed_jobs' => $failedJobsList,
+            'worker_status' => [
+                'is_active' => !$isWorkerStale || ($defaultCount === 0 && $importsHighCount === 0),
+                'latest_activity' => $latestActivity > 0 ? date('Y-m-d H:i:s', $latestActivity) : null,
+            ]
+        ]);
+    }
+
+    private function parseJobName(?string $payload): string
+    {
+        if (!$payload) return 'Unknown Job';
+        
+        $data = json_decode($payload, true);
+        if (!$data) return 'Invalid Payload';
+        
+        if (isset($data['displayName'])) {
+            $name = $data['displayName'];
+            // Simplify App\Jobs\Name to just Name
+            return str_replace('App\\Jobs\\', '', $name);
+        }
+        
+        if (isset($data['data']['commandName'])) {
+            return str_replace('App\\Jobs\\', '', (string)$data['data']['commandName']);
+        }
+        
+        return 'Anonymous Job';
+    }
+
     public function startManagedReportLoad(Request $request)
     {
         $validated = $request->validate([
