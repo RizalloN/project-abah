@@ -6,6 +6,7 @@ use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Http\Exceptions\PostTooLargeException;
+use Illuminate\Queue\MaxAttemptsExceededException;
 use Symfony\Component\HttpFoundation\Response;
 
 return Application::configure(basePath: dirname(__DIR__))
@@ -72,5 +73,34 @@ return Application::configure(basePath: dirname(__DIR__))
             }
 
             return redirect()->back()->with('error', $message);
+        });
+
+        $exceptions->render(function (MaxAttemptsExceededException $e, Request $request) {
+            \Illuminate\Support\Facades\Log::error('Queue job melebihi batas percobaan maksimum.', [
+                'job' => $e->job?->resolveName() ?? 'unknown',
+                'message' => $e->getMessage(),
+            ]);
+
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Proses background gagal setelah percobaan maksimum. Silakan ulangi operasi.',
+                ], 500);
+            }
+
+            return null;
+        });
+
+        $exceptions->render(function (QueryException $e, Request $request) use ($renderDatabaseUnavailable, $isConnectionRefused) {
+            // Already handled connection refused above; this catches other DB errors for JSON clients
+            if ($request->expectsJson() || $request->ajax()) {
+                \Illuminate\Support\Facades\Log::error('Database query error pada request.', [
+                    'sql' => $e->getSql(),
+                    'message' => $e->getMessage(),
+                    'url' => $request->fullUrl(),
+                ]);
+            }
+
+            return null;
         });
     })->create();

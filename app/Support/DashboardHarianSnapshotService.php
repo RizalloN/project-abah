@@ -15,6 +15,12 @@ class DashboardHarianSnapshotService
     private const LOAN_TABLE = 'ssa_pinjaman';
     private const SAVINGS_TABLE = 'ssa_simpanan';
     private const METRIC_COLUMNS = [
+        'ph_tupok',
+        'ph_lunas',
+        'rec_dh_total',
+        'rec_dh_small',
+        'rec_dh_consumer',
+        'rec_dh_micro',
         'total_simpanan',
         'simpanan_ritel',
         'giro_ritel',
@@ -159,6 +165,10 @@ class DashboardHarianSnapshotService
         ['key' => 'ldr_non_commercial', 'label' => '6. LDR Non Commercial', 'type' => 'percent', 'depth' => 0, 'accent' => 'strong'],
         ['key' => 'ldr_ritel_non_commercial', 'label' => 'LDR Ritel Non Commercial', 'type' => 'percent', 'depth' => 1, 'accent' => 'default'],
         ['key' => 'ldr_mikro_non_commercial', 'label' => 'LDR Mikro Non Commercial', 'type' => 'percent', 'depth' => 1, 'accent' => 'default'],
+        ['key' => 'rec_dh_total', 'label' => '7. Rec DH per Segmen', 'type' => 'currency', 'depth' => 0, 'accent' => 'strong'],
+        ['key' => 'rec_dh_small', 'label' => 'Small', 'type' => 'currency', 'depth' => 1, 'accent' => 'section'],
+        ['key' => 'rec_dh_consumer', 'label' => 'Consumer', 'type' => 'currency', 'depth' => 1, 'accent' => 'section'],
+        ['key' => 'rec_dh_micro', 'label' => 'Micro', 'type' => 'currency', 'depth' => 1, 'accent' => 'section'],
     ];
 
     public function rebuild(?string $period = null, bool $force = false, ?callable $progress = null): array
@@ -195,6 +205,53 @@ class DashboardHarianSnapshotService
             'periods' => $periods,
             'total_units' => count($periods),
         ];
+    }
+
+    public function resolveAffectedSnapshotPeriodsForPh(?string $phPeriod = null): array
+    {
+        $sharedPeriods = $this->resolveSharedPeriods();
+        if ($sharedPeriods === []) {
+            return [];
+        }
+
+        $normalizedPhPeriod = $this->normalizeDate($phPeriod);
+        if ($normalizedPhPeriod === null) {
+            return $sharedPeriods;
+        }
+
+        $affected = [];
+        $sharedPeriodsAsc = $sharedPeriods;
+        sort($sharedPeriodsAsc);
+
+        if (in_array($normalizedPhPeriod, $sharedPeriodsAsc, true)) {
+            $affected[] = $normalizedPhPeriod;
+        }
+
+        foreach ($sharedPeriodsAsc as $sharedPeriod) {
+            if ($sharedPeriod > $normalizedPhPeriod) {
+                $affected[] = $sharedPeriod;
+                break;
+            }
+        }
+
+        if ($affected === []) {
+            return [];
+        }
+
+        rsort($affected);
+
+        return array_values(array_unique($affected));
+    }
+
+    public function rebuildAffectedByPhPeriod(?string $phPeriod = null, bool $force = false): array
+    {
+        $results = [];
+
+        foreach ($this->resolveAffectedSnapshotPeriodsForPh($phPeriod) as $snapshotPeriod) {
+            $results[$snapshotPeriod] = $this->buildPeriodSnapshot($snapshotPeriod, $force);
+        }
+
+        return $results;
     }
 
     public function buildPeriodSnapshot(string $period, bool $force = false): int
@@ -625,6 +682,25 @@ class DashboardHarianSnapshotService
             $sourceRowCount++;
         }
 
+        foreach ($this->fetchPhAggregates($period, $kancaKey, $unitKey) as $row) {
+            $kancaLabel = $this->normalizeKancaLabel($row->raw_kanca ?? $row->raw_unit ?? null);
+            if ($kancaLabel === '') {
+                continue;
+            }
+
+            $unitLabel = $this->normalizeUnitLabel($row->raw_unit ?? null, $kancaLabel);
+            $bucketKey = $this->makeBucketKey($kancaLabel, $unitLabel);
+            $this->initializeBucket($buckets, $bucketKey, $kancaLabel, $unitLabel);
+
+            $buckets[$bucketKey]['ph_tupok'] += (float) ($row->ph_tupok ?? 0);
+            $buckets[$bucketKey]['ph_lunas'] += (float) ($row->ph_lunas ?? 0);
+            $buckets[$bucketKey]['rec_dh_small'] += (float) ($row->rec_dh_small ?? 0);
+            $buckets[$bucketKey]['rec_dh_consumer'] += (float) ($row->rec_dh_consumer ?? 0);
+            $buckets[$bucketKey]['rec_dh_micro'] += (float) ($row->rec_dh_micro ?? 0);
+            $buckets[$bucketKey]['rec_dh_total'] += (float) ($row->rec_dh_total ?? 0);
+            $sourceRowCount++;
+        }
+
         $payload = [];
         foreach ($buckets as $row) {
             $metrics = $this->finalizeMetrics($row);
@@ -720,6 +796,118 @@ class DashboardHarianSnapshotService
             ->get();
     }
 
+    private function fetchPhAggregates(string $period, array|string|null $kancaKey = null, array|string|null $unitKey = null): Collection
+    {
+        if (!Schema::hasTable('lw325_ph')) {
+            return collect();
+        }
+
+        $normalizedCurrentPeriod = $this->normalizeDate($period);
+        if ($normalizedCurrentPeriod === null) {
+            return collect();
+        }
+
+        if (!DB::table('lw325_ph')->where('periode', $normalizedCurrentPeriod)->exists()) {
+            return collect();
+        }
+
+        $previousPhPeriod = $this->resolvePreviousPhPeriod($normalizedCurrentPeriod);
+        if ($previousPhPeriod === null) {
+            return collect();
+        }
+
+        $normalizedKanca = $this->normalizeFilterValues($kancaKey);
+        $normalizedUnit = $this->normalizeFilterValues($unitKey);
+
+        $tupok = DB::table('lw325_ph as n')
+            ->join('lw325_ph as o', function ($join) use ($previousPhPeriod, $normalizedCurrentPeriod) {
+                $join->on('n.acctno', '=', 'o.acctno')
+                    ->where('n.periode', '=', $normalizedCurrentPeriod)
+                    ->where('o.periode', '=', $previousPhPeriod);
+            })
+            ->whereRaw('(COALESCE(o.pokok, 0) - COALESCE(n.pokok, 0)) > 0')
+            ->whereNotNull('n.acctno')
+            ->where('n.acctno', '<>', '')
+            ->selectRaw("TRIM(COALESCE(n.kanca, '')) as raw_kanca")
+            ->selectRaw("TRIM(COALESCE(n.unit, '')) as raw_unit")
+            ->selectRaw("TRIM(COALESCE(n.segmen_dashboard, '')) as raw_segment")
+            ->selectRaw('SUM(COALESCE(n.pokok, 0)) as ph_tupok')
+            ->selectRaw('0 as ph_lunas')
+            ->selectRaw('SUM(COALESCE(n.pokok, 0)) as ph_amount')
+            ->groupBy('raw_kanca', 'raw_unit', 'raw_segment');
+
+        if ($normalizedKanca !== []) {
+            $tupok->whereIn(DB::raw("TRIM(COALESCE(n.kanca, ''))"), $normalizedKanca);
+        }
+
+        if ($normalizedUnit !== []) {
+            $tupok->whereIn(DB::raw("TRIM(COALESCE(n.unit, ''))"), $normalizedUnit);
+        }
+
+        $lunas = DB::table('lw325_ph as o')
+            ->leftJoin('lw325_ph as n', function ($join) use ($previousPhPeriod, $normalizedCurrentPeriod) {
+                $join->on('o.acctno', '=', 'n.acctno')
+                    ->where('o.periode', '=', $previousPhPeriod)
+                    ->where('n.periode', '=', $normalizedCurrentPeriod);
+            })
+            ->where('o.periode', $previousPhPeriod)
+            ->whereNull('n.acctno')
+            ->whereNotNull('o.acctno')
+            ->where('o.acctno', '<>', '')
+            ->selectRaw("TRIM(COALESCE(o.kanca, '')) as raw_kanca")
+            ->selectRaw("TRIM(COALESCE(o.unit, '')) as raw_unit")
+            ->selectRaw("TRIM(COALESCE(o.segmen_dashboard, '')) as raw_segment")
+            ->selectRaw('0 as ph_tupok')
+            ->selectRaw('SUM(COALESCE(o.pokok, 0)) as ph_lunas')
+            ->selectRaw('SUM(COALESCE(o.pokok, 0)) as ph_amount')
+            ->groupBy('raw_kanca', 'raw_unit', 'raw_segment');
+
+        if ($normalizedKanca !== []) {
+            $lunas->whereIn(DB::raw("TRIM(COALESCE(o.kanca, ''))"), $normalizedKanca);
+        }
+
+        if ($normalizedUnit !== []) {
+            $lunas->whereIn(DB::raw("TRIM(COALESCE(o.unit, ''))"), $normalizedUnit);
+        }
+
+        return DB::query()
+            ->fromSub($tupok->unionAll($lunas), 'ph_summary')
+            ->selectRaw("TRIM(COALESCE(ph_summary.raw_kanca, '')) as raw_kanca")
+            ->selectRaw("TRIM(COALESCE(ph_summary.raw_unit, '')) as raw_unit")
+            ->selectRaw('SUM(COALESCE(ph_summary.ph_tupok, 0)) as ph_tupok')
+            ->selectRaw('SUM(COALESCE(ph_summary.ph_lunas, 0)) as ph_lunas')
+            ->selectRaw("
+                SUM(
+                    CASE
+                        WHEN UPPER(TRIM(COALESCE(ph_summary.raw_segment, ''))) = 'SMALL'
+                        THEN COALESCE(ph_summary.ph_amount, 0)
+                        ELSE 0
+                    END
+                ) as rec_dh_small
+            ")
+            ->selectRaw("
+                SUM(
+                    CASE
+                        WHEN UPPER(TRIM(COALESCE(ph_summary.raw_segment, ''))) = 'CONSUMER'
+                        THEN COALESCE(ph_summary.ph_amount, 0)
+                        ELSE 0
+                    END
+                ) as rec_dh_consumer
+            ")
+            ->selectRaw("
+                SUM(
+                    CASE
+                        WHEN UPPER(TRIM(COALESCE(ph_summary.raw_segment, ''))) IN ('MICRO', 'MIKRO')
+                        THEN COALESCE(ph_summary.ph_amount, 0)
+                        ELSE 0
+                    END
+                ) as rec_dh_micro
+            ")
+            ->selectRaw('SUM(COALESCE(ph_summary.ph_amount, 0)) as rec_dh_total')
+            ->groupBy('raw_kanca', 'raw_unit')
+            ->get();
+    }
+
     private function finalizeMetrics(array $metrics): array
     {
         $final = $this->emptyMetrics();
@@ -744,6 +932,7 @@ class DashboardHarianSnapshotService
         $final['ldr_ritel_non_commercial'] = $this->safePercent($final['simpanan_ritel'], $final['sme_os'] + $final['consumer_os']);
         $final['ldr_mikro_non_commercial'] = $this->safePercent($final['simpanan_mikro'], $final['micro_os']);
         $final['casa_pct'] = $this->safePercent($final['total_casa'], $final['total_simpanan']);
+        $final['rec_dh_total'] = $final['rec_dh_small'] + $final['rec_dh_consumer'] + $final['rec_dh_micro'];
 
         return $final;
     }
@@ -903,6 +1092,7 @@ class DashboardHarianSnapshotService
         $final['ldr_non_commercial'] = 0.0;
         $final['ldr_ritel_non_commercial'] = 0.0;
         $final['ldr_mikro_non_commercial'] = 0.0;
+        $final['rec_dh_total'] = $final['rec_dh_small'] + $final['rec_dh_consumer'] + $final['rec_dh_micro'];
 
         return $final;
     }
@@ -1157,6 +1347,17 @@ class DashboardHarianSnapshotService
         return DB::table($table)
             ->whereIn($this->sourcePeriodColumn($table), $this->sourcePeriodRawCandidates($table, $period))
             ->exists();
+    }
+
+    private function resolvePreviousPhPeriod(string $period): ?string
+    {
+        try {
+            return DB::table('lw325_ph')
+                ->where('periode', '<', $period)
+                ->max('periode');
+        } catch (Throwable) {
+            return null;
+        }
     }
 
     private function canUseSnapshotMetrics(): bool

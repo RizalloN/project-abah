@@ -3,8 +3,11 @@
 namespace App\Support;
 
 use App\Jobs\RunManagedReportSnapshotRebuildJob;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Throwable;
 
@@ -13,8 +16,12 @@ class ManagedReportSnapshotRebuildCoordinator
     private const REBUILD_FALLBACK_LOCK_PREFIX = 'report_management_rebuild_lock:';
     private const REBUILD_FALLBACK_LOCK_SECONDS = 7200;
     private const REBUILD_FALLBACK_STALE_SECONDS = 15;
+    private const SLOT_RECOVERY_LOCK_KEY = 'report_management:rebuild:slot_recovery';
+    private const SLOT_RECOVERY_LOCK_SECONDS = 8;
     private const QUEUED_FAIL_SECONDS = 300;
     private const RUNNING_FAIL_SECONDS = 1800;
+    private const SNAPSHOT_QUEUELESS_STALE_SECONDS = 300;
+    private const SNAPSHOT_RESERVED_STALE_SECONDS = 600;
 
     public function queue(bool $forceRebuild, ?string $source = null): array
     {
@@ -32,18 +39,36 @@ class ManagedReportSnapshotRebuildCoordinator
             $activeState = $activeRebuildId ? ManagedReportSnapshotRebuildStore::getState($activeRebuildId) : null;
 
             if ($this->shouldRecoverManagedReportRebuildSlot($pendingValue, $activeRebuildId, $activeState)) {
-                Cache::forget(ManagedReportSnapshotRebuildStore::PENDING_KEY);
-                ManagedReportSnapshotRebuildStore::forgetActiveRebuildId();
+                $recoveryLock = Cache::lock(self::SLOT_RECOVERY_LOCK_KEY, self::SLOT_RECOVERY_LOCK_SECONDS);
 
-                if ($activeRebuildId) {
-                    ManagedReportSnapshotRebuildStore::forgetState($activeRebuildId);
+                if ($recoveryLock->get()) {
+                    try {
+                        // Re-read state under lock to prevent concurrent recovery race.
+                        $pendingValue = Cache::get(ManagedReportSnapshotRebuildStore::PENDING_KEY);
+                        $activeRebuildId = ManagedReportSnapshotRebuildStore::getActiveRebuildId()
+                            ?? $this->extractManagedReportRebuildId($pendingValue);
+                        $activeState = $activeRebuildId ? ManagedReportSnapshotRebuildStore::getState($activeRebuildId) : null;
+
+                        if ($this->shouldRecoverManagedReportRebuildSlot($pendingValue, $activeRebuildId, $activeState)) {
+                            Cache::forget(ManagedReportSnapshotRebuildStore::PENDING_KEY);
+                            ManagedReportSnapshotRebuildStore::forgetActiveRebuildId();
+
+                            if ($activeRebuildId) {
+                                ManagedReportSnapshotRebuildStore::forgetState($activeRebuildId);
+                            }
+
+                            if (Cache::add(ManagedReportSnapshotRebuildStore::PENDING_KEY, $rebuildId, ManagedReportSnapshotRebuildStore::ttl())) {
+                                $slotReserved = true;
+                                $activeRebuildId = null;
+                                $activeState = null;
+                            }
+                        }
+                    } finally {
+                        optional($recoveryLock)->release();
+                    }
                 }
 
-                if (Cache::add(ManagedReportSnapshotRebuildStore::PENDING_KEY, $rebuildId, ManagedReportSnapshotRebuildStore::ttl())) {
-                    $slotReserved = true;
-                    $activeRebuildId = null;
-                    $activeState = null;
-                } else {
+                if (!$slotReserved) {
                     $pendingValue = Cache::get(ManagedReportSnapshotRebuildStore::PENDING_KEY);
                     $activeRebuildId = ManagedReportSnapshotRebuildStore::getActiveRebuildId()
                         ?? $this->extractManagedReportRebuildId($pendingValue);
@@ -138,14 +163,15 @@ class ManagedReportSnapshotRebuildCoordinator
 
         return [
             'status_code' => 200,
-            'payload' => $this->maybeProcessFallback($state),
+            'payload' => $state,
         ];
     }
 
     public function forceStart(string $rebuildId): array
     {
         $rebuildId = trim($rebuildId);
-        $state = ManagedReportSnapshotRebuildStore::getState($rebuildId);
+        $queueRow = $this->findSnapshotQueueRow($rebuildId);
+        $state = $this->resolveOperationalState($rebuildId, $queueRow);
 
         if ($rebuildId === '' || $state === null) {
             return [
@@ -159,7 +185,27 @@ class ManagedReportSnapshotRebuildCoordinator
 
         $status = strtolower(trim((string) ($state['status'] ?? '')));
         $stage = strtolower(trim((string) ($state['stage'] ?? '')));
-        if (in_array($status, ['completed', 'failed'], true) || !in_array($stage, ['queued', 'planning'], true)) {
+        if ($status === 'completed') {
+            return [
+                'status_code' => 422,
+                'payload' => [
+                    'status' => 'error',
+                    'message' => 'Snapshot rebuild sudah selesai dan tidak bisa di-force start.',
+                ],
+            ];
+        }
+
+        if (in_array($status, ['failed', 'warning'], true)) {
+            return [
+                'status_code' => 422,
+                'payload' => [
+                    'status' => 'error',
+                    'message' => 'Snapshot rebuild berada pada state terminal atau tidak konsisten, sehingga tidak bisa di-force start.',
+                ],
+            ];
+        }
+
+        if (!in_array($stage, ['queued', 'planning'], true)) {
             return [
                 'status_code' => 422,
                 'payload' => [
@@ -169,7 +215,25 @@ class ManagedReportSnapshotRebuildCoordinator
             ];
         }
 
-        $executedState = $this->runInline($state);
+        if (ManagedReportSnapshotRebuildStore::getState($rebuildId) === null) {
+            $state = ManagedReportSnapshotRebuildStore::putState($state);
+        }
+
+        ManagedReportSnapshotRebuildStore::setActiveRebuildId($rebuildId);
+        Cache::put(ManagedReportSnapshotRebuildStore::PENDING_KEY, $rebuildId, ManagedReportSnapshotRebuildStore::ttl());
+
+        $deletedQueueRows = $queueRow ? $this->cleanupQueuedSnapshotJobs($rebuildId) : 0;
+        if ($queueRow !== null) {
+            Log::info('Managed report snapshot rebuild force start recovered queued job from queue row.', [
+                'rebuild_id' => $rebuildId,
+                'state_source' => $state['state_source'] ?? 'cache',
+                'queue_job_id' => $queueRow['job_id'] ?? null,
+                'queue_reserved' => (bool) ($queueRow['reserved'] ?? false),
+                'deleted_queue_rows' => $deletedQueueRows,
+            ]);
+        }
+
+        $executedState = $this->runInline($state, true);
 
         return [
             'status_code' => 200,
@@ -182,7 +246,7 @@ class ManagedReportSnapshotRebuildCoordinator
 
     public function reconcile(string $rebuildId): ?array
     {
-        $state = ManagedReportSnapshotRebuildStore::getState($rebuildId);
+        $state = $this->resolveOperationalState($rebuildId);
         if ($state === null) {
             return null;
         }
@@ -190,6 +254,165 @@ class ManagedReportSnapshotRebuildCoordinator
         $state = $this->maybeProcessFallback($state);
 
         return $this->reconcileStaleState($state);
+    }
+
+    public function resolveKnownRebuildIds(): array
+    {
+        $snapshotIds = [];
+        $activeRebuildId = ManagedReportSnapshotRebuildStore::getActiveRebuildId();
+        if ($activeRebuildId) {
+            $snapshotIds[] = $activeRebuildId;
+        }
+
+        $pendingValue = Cache::get(ManagedReportSnapshotRebuildStore::PENDING_KEY);
+        $pendingRebuildId = $this->extractManagedReportRebuildId($pendingValue);
+        if ($pendingRebuildId) {
+            $snapshotIds[] = $pendingRebuildId;
+        }
+
+        foreach ($this->snapshotQueueRows() as $queueRow) {
+            $rebuildId = trim((string) ($queueRow['rebuild_id'] ?? ''));
+            if ($rebuildId !== '') {
+                $snapshotIds[] = $rebuildId;
+            }
+        }
+
+        return array_values(array_unique($snapshotIds));
+    }
+
+    public function resolveOperationalState(string $rebuildId, ?array $queueRow = null): ?array
+    {
+        $rebuildId = trim($rebuildId);
+        if ($rebuildId === '') {
+            return null;
+        }
+
+        $state = ManagedReportSnapshotRebuildStore::getState($rebuildId);
+        $queueRow = $queueRow ?? $this->findSnapshotQueueRow($rebuildId);
+        $resolved = $this->reconcileStateWithQueueRow($rebuildId, $state, $queueRow);
+
+        if ($resolved !== null) {
+            return $resolved;
+        }
+
+        $hasTrackedMarker = ManagedReportSnapshotRebuildStore::getActiveRebuildId() === $rebuildId
+            || $this->extractManagedReportRebuildId(Cache::get(ManagedReportSnapshotRebuildStore::PENDING_KEY)) === $rebuildId;
+
+        if ($hasTrackedMarker) {
+            Log::warning('Managed report snapshot rebuild markers exist without cache state or queue row.', [
+                'rebuild_id' => $rebuildId,
+                'state_source' => 'markers_only',
+            ]);
+        }
+
+        return null;
+    }
+
+    public function snapshotQueueRows(): array
+    {
+        if (!Schema::hasTable('jobs')) {
+            return [];
+        }
+
+        $configuredReportQueue = trim((string) config('queue.report_queue', 'default')) ?: 'default';
+        $queues = array_values(array_unique(array_filter([$configuredReportQueue, 'default', 'reports-low'])));
+        $basename = class_basename(RunManagedReportSnapshotRebuildJob::class);
+
+        return DB::table('jobs')
+            ->whereIn('queue', $queues)
+            ->where('payload', 'like', '%' . $basename . '%')
+            ->select(['id', 'queue', 'reserved_at', 'available_at', 'created_at', 'payload'])
+            ->orderByDesc('id')
+            ->get()
+            ->map(function ($job): array {
+                $payload = (string) ($job->payload ?? '');
+
+                return [
+                    'job_id' => (int) ($job->id ?? 0),
+                    'queue' => (string) ($job->queue ?? ''),
+                    'reserved' => $job->reserved_at !== null,
+                    'reserved_at' => $job->reserved_at,
+                    'reserved_age_seconds' => $this->queueTimestampAgeSeconds($job->reserved_at),
+                    'created_at' => $job->created_at,
+                    'created_age_seconds' => $this->queueTimestampAgeSeconds($job->created_at),
+                    'available_at' => $job->available_at,
+                    'payload' => $payload,
+                    'rebuild_id' => $this->extractSnapshotRebuildIdFromPayload($payload),
+                ];
+            })
+            ->filter(fn (array $row): bool => trim((string) ($row['rebuild_id'] ?? '')) !== '')
+            ->values()
+            ->all();
+    }
+
+    public function findSnapshotQueueRow(string $rebuildId): ?array
+    {
+        $needle = trim($rebuildId);
+        if ($needle === '') {
+            return null;
+        }
+
+        foreach ($this->snapshotQueueRows() as $queueRow) {
+            if (trim((string) ($queueRow['rebuild_id'] ?? '')) === $needle) {
+                return $queueRow;
+            }
+        }
+
+        return null;
+    }
+
+    public function cleanupQueuedSnapshotJobs(string $rebuildId): int
+    {
+        $needle = trim($rebuildId);
+        if ($needle === '' || !Schema::hasTable('jobs')) {
+            return 0;
+        }
+
+        $basename = class_basename(RunManagedReportSnapshotRebuildJob::class);
+
+        return DB::table('jobs')
+            ->where('payload', 'like', '%' . $basename . '%')
+            ->where('payload', 'like', '%' . $needle . '%')
+            ->delete();
+    }
+
+    public function purgeStaleReservedQueueRows(): array
+    {
+        $purged = 0;
+        $stale = 0;
+
+        foreach ($this->snapshotQueueRows() as $queueRow) {
+            if (!(bool) ($queueRow['reserved'] ?? false)) {
+                continue;
+            }
+
+            if ((int) ($queueRow['reserved_age_seconds'] ?? 0) < self::SNAPSHOT_RESERVED_STALE_SECONDS) {
+                continue;
+            }
+
+            $rebuildId = trim((string) ($queueRow['rebuild_id'] ?? ''));
+            $state = $rebuildId !== '' ? ManagedReportSnapshotRebuildStore::getState($rebuildId) : null;
+            $status = strtolower(trim((string) ($state['status'] ?? '')));
+            if ($state !== null && !in_array($status, ['completed', 'failed', 'warning'], true)) {
+                $stale++;
+                continue;
+            }
+
+            DB::table('jobs')->where('id', (int) ($queueRow['job_id'] ?? 0))->delete();
+            $purged++;
+
+            Log::warning('Purged stale reserved managed report snapshot rebuild queue row without recoverable state.', [
+                'rebuild_id' => $rebuildId !== '' ? $rebuildId : null,
+                'queue_job_id' => $queueRow['job_id'] ?? null,
+                'queue_reserved' => true,
+                'state_source' => $state === null ? 'none' : 'terminal_cache',
+            ]);
+        }
+
+        return [
+            'purged_reserved_snapshot_jobs' => $purged,
+            'stale_reserved_snapshot_jobs' => $stale,
+        ];
     }
 
     public function sweepStaleStates(): int
@@ -219,7 +442,7 @@ class ManagedReportSnapshotRebuildCoordinator
         return $this->runInline($state);
     }
 
-    private function runInline(array $state): array
+    private function runInline(array $state, bool $forceExecution = false): array
     {
         $rebuildId = trim((string) ($state['rebuild_id'] ?? ''));
         if ($rebuildId === '') {
@@ -240,7 +463,7 @@ class ManagedReportSnapshotRebuildCoordinator
 
         try {
             $freshState = ManagedReportSnapshotRebuildStore::getState($rebuildId) ?? $state;
-            if (!$this->shouldAttemptFallback($freshState)) {
+            if (!$forceExecution && !$this->shouldAttemptFallback($freshState)) {
                 return $freshState;
             }
 
@@ -290,6 +513,147 @@ class ManagedReportSnapshotRebuildCoordinator
         $activeRebuildId = ManagedReportSnapshotRebuildStore::getActiveRebuildId();
 
         return $activeRebuildId === null || $activeRebuildId === $rebuildId;
+    }
+
+    private function reconcileStateWithQueueRow(string $rebuildId, ?array $state, ?array $queueRow): ?array
+    {
+        if ($state === null) {
+            if ($queueRow === null) {
+                return null;
+            }
+
+            $syntheticState = $this->makeSyntheticState($rebuildId, $queueRow);
+            Log::warning('Recovered managed report snapshot rebuild state from queue row without cache state.', [
+                'rebuild_id' => $rebuildId,
+                'state_source' => 'synthetic',
+                'queue_job_id' => $queueRow['job_id'] ?? null,
+                'queue_reserved' => (bool) ($queueRow['reserved'] ?? false),
+            ]);
+
+            return $syntheticState;
+        }
+
+        $status = strtolower(trim((string) ($state['status'] ?? '')));
+        if (in_array($status, ['completed', 'failed', 'warning'], true)) {
+            $state['state_source'] = 'cache';
+
+            return $state;
+        }
+
+        $updatedAt = (string) ($state['updated_at'] ?? $state['started_at'] ?? $state['created_at'] ?? '');
+
+        if ($queueRow === null && $this->timestampIsOlderThan($updatedAt, self::SNAPSHOT_QUEUELESS_STALE_SECONDS)) {
+            return $this->markStateAsFailed(
+                $state,
+                'Progress snapshot tidak lagi memiliki job queue aktif dan tidak bergerak terlalu lama. State dibersihkan otomatis.'
+            );
+        }
+
+        if (
+            $queueRow !== null
+            && (bool) ($queueRow['reserved'] ?? false)
+            && (int) ($queueRow['reserved_age_seconds'] ?? 0) >= self::SNAPSHOT_RESERVED_STALE_SECONDS
+            && $this->timestampIsOlderThan($updatedAt, self::SNAPSHOT_RESERVED_STALE_SECONDS)
+        ) {
+            if (isset($queueRow['job_id'])) {
+                DB::table('jobs')->where('id', $queueRow['job_id'])->delete();
+            }
+
+            return $this->markStateAsFailed(
+                $state,
+                'Job snapshot sudah di-reserve worker tetapi progress tidak bergerak terlalu lama. Kemungkinan worker berhenti di tengah proses.'
+            );
+        }
+
+        if ($queueRow !== null && (bool) ($queueRow['reserved'] ?? false) && $status === 'queued') {
+            $state['status'] = 'running';
+            $state['stage'] = in_array(strtolower(trim((string) ($state['stage'] ?? ''))), ['queued'], true)
+                ? 'planning'
+                : ($state['stage'] ?? 'planning');
+            $state['queued'] = false;
+            $state['message'] = trim((string) ($state['message'] ?? '')) !== ''
+                ? (string) $state['message']
+                : 'Snapshot rebuild sedang diproses worker queue.';
+        }
+
+        $state['state_source'] = 'cache';
+        if ($queueRow !== null) {
+            $state['queue_job_id'] = $queueRow['job_id'] ?? null;
+            $state['queue_reserved'] = (bool) ($queueRow['reserved'] ?? false);
+        }
+
+        return $state;
+    }
+
+    private function makeSyntheticState(string $rebuildId, array $queueRow): array
+    {
+        $timestamp = now()->toIso8601String();
+        $reserved = (bool) ($queueRow['reserved'] ?? false);
+        $createdAt = $this->queueTimestampToIso8601($queueRow['created_at'] ?? null) ?? $timestamp;
+        $updatedAt = $reserved
+            ? ($this->queueTimestampToIso8601($queueRow['reserved_at'] ?? null) ?? $createdAt)
+            : $createdAt;
+
+        return ManagedReportSnapshotRebuildStore::normalizeState([
+            'rebuild_id' => $rebuildId,
+            'status' => $reserved ? 'running' : 'queued',
+            'stage' => $reserved ? 'planning' : 'queued',
+            'queued' => !$reserved,
+            'force_rebuild' => true,
+            'source' => static::class,
+            'message' => $reserved
+                ? 'Snapshot rebuild sedang diproses worker queue.'
+                : 'Snapshot rebuild masih menunggu worker queue.',
+            'progress_percent' => 0,
+            'completed_units' => 0,
+            'total_units' => 1,
+            'build_units' => 0,
+            'current_report_key' => null,
+            'current_report_label' => null,
+            'current_period' => null,
+            'report_completed_units' => 0,
+            'report_total_units' => 0,
+            'reports' => [],
+            'results' => [],
+            'started_at' => $reserved ? $updatedAt : null,
+            'finished_at' => null,
+            'created_at' => $createdAt,
+            'updated_at' => $updatedAt,
+            'state_source' => 'synthetic',
+            'queue_job_id' => $queueRow['job_id'] ?? null,
+            'queue_reserved' => $reserved,
+        ], false);
+    }
+
+    private function markStateAsFailed(array $state, string $message): array
+    {
+        $rebuildId = trim((string) ($state['rebuild_id'] ?? ''));
+        $failedState = ManagedReportSnapshotRebuildStore::putState(array_merge($state, [
+            'status' => 'failed',
+            'stage' => 'failed',
+            'queued' => false,
+            'message' => $message,
+            'error' => $message,
+            'finished_at' => now()->toIso8601String(),
+            'state_source' => 'cache',
+        ]));
+
+        if ($rebuildId !== '' && ManagedReportSnapshotRebuildStore::getActiveRebuildId() === $rebuildId) {
+            ManagedReportSnapshotRebuildStore::forgetActiveRebuildId();
+        }
+
+        $pendingRebuildId = $this->extractManagedReportRebuildId(Cache::get(ManagedReportSnapshotRebuildStore::PENDING_KEY));
+        if ($rebuildId !== '' && $pendingRebuildId === $rebuildId) {
+            Cache::forget(ManagedReportSnapshotRebuildStore::PENDING_KEY);
+        }
+
+        Log::warning('Managed report snapshot rebuild state marked failed during reconciliation.', [
+            'rebuild_id' => $rebuildId !== '' ? $rebuildId : null,
+            'state_source' => 'cache',
+            'reason' => $message,
+        ]);
+
+        return $failedState;
     }
 
     private function reconcileStaleState(array $state): array
@@ -386,6 +750,73 @@ class ManagedReportSnapshotRebuildCoordinator
         try {
             return \Carbon\Carbon::parse($candidate)
                 ->addSeconds(max(0, $thresholdSeconds))
+                ->lessThanOrEqualTo(now());
+        } catch (Throwable) {
+            return true;
+        }
+    }
+
+    private function extractSnapshotRebuildIdFromPayload(string $payload): ?string
+    {
+        $candidate = '';
+
+        if (preg_match('/rebuildId";s:\d+:"([0-9a-f\-]{36})"/i', $payload, $matches) === 1) {
+            $candidate = (string) ($matches[1] ?? '');
+        }
+
+        if ($candidate === '' && preg_match('/"rebuildId":"([0-9a-f\-]{36})"/i', $payload, $matches) === 1) {
+            $candidate = (string) ($matches[1] ?? '');
+        }
+
+        $candidate = trim($candidate);
+
+        return $candidate !== '' ? $candidate : null;
+    }
+
+    private function queueTimestampAgeSeconds(mixed $value): int
+    {
+        if ($value === null || $value === '') {
+            return 0;
+        }
+
+        if (is_numeric($value)) {
+            return max(0, now()->timestamp - (int) $value);
+        }
+
+        try {
+            return max(0, now()->diffInSeconds(Carbon::parse($value)));
+        } catch (Throwable) {
+            return 0;
+        }
+    }
+
+    private function queueTimestampToIso8601(mixed $value): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        if (is_numeric($value)) {
+            return Carbon::createFromTimestamp((int) $value)->toIso8601String();
+        }
+
+        try {
+            return Carbon::parse($value)->toIso8601String();
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    private function timestampIsOlderThan(?string $value, int $seconds): bool
+    {
+        $candidate = trim((string) $value);
+        if ($candidate === '') {
+            return true;
+        }
+
+        try {
+            return Carbon::parse($candidate)
+                ->addSeconds(max(1, $seconds))
                 ->lessThanOrEqualTo(now());
         } catch (Throwable) {
             return true;

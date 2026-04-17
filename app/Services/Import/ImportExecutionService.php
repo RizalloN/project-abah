@@ -383,6 +383,14 @@ class ImportExecutionService
                 return;
             }
 
+            Log::error('ImportExecutionService: worker import crash tidak terduga.', [
+                'job_id' => $jobId,
+                'exception' => $e::class,
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+            ]);
+
             $job = $this->progressService->findJob($jobId);
             $this->progressService->markFailed(
                 $jobId,

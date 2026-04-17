@@ -138,6 +138,18 @@ class JobHealthService
                 ],
                 self::REPORT_QUEUE_STALE_SECONDS
             ),
+            'reserved_reports' => $this->deleteReservedQueueRows(
+                [$reportQueue, 'reports-low'],
+                [
+                    SyncImportedReportJob::class,
+                    WarmReportCacheJob::class,
+                    EnsureDashboardSnapshotJob::class,
+                    EnsureDashboardSimpananSnapshotJob::class,
+                    EnsureRasioCasaSnapshotJob::class,
+                    EnsureRekeningDormantSnapshotJob::class,
+                ],
+                self::REPORT_QUEUE_STALE_SECONDS
+            ),
         ];
     }
 
@@ -153,15 +165,49 @@ class JobHealthService
             return DB::table('jobs')
                 ->whereNull('reserved_at')
                 ->whereIn('queue', $queues)
-                ->where('created_at', '<=', $threshold)
+                // Use available_at: reflects the last time the job became runnable (initial queue or after retry backoff)
+                ->where('available_at', '<=', $threshold)
                 ->where(function ($query) use ($jobClasses): void {
                     foreach ($jobClasses as $jobClass) {
-                        $query->orWhere('payload', 'like', '%' . class_basename($jobClass) . '%');
+                        // Match full qualified class name in JSON payload for precise, collision-free detection
+                        $escapedClass = str_replace('\\', '\\\\', $jobClass);
+                        $query->orWhere('payload', 'like', '%"' . $escapedClass . '"%');
                     }
                 })
                 ->delete();
         } catch (\Throwable $e) {
             Log::warning('Gagal membersihkan row jobs stale dari queue monitor: ' . $e->getMessage(), [
+                'queues' => $queues,
+                'job_classes' => array_map(static fn (string $class): string => class_basename($class), $jobClasses),
+                'older_than_seconds' => $olderThanSeconds,
+            ]);
+
+            return 0;
+        }
+    }
+
+    private function deleteReservedQueueRows(array $queues, array $jobClasses, int $olderThanSeconds): int
+    {
+        if ($queues === [] || $jobClasses === []) {
+            return 0;
+        }
+
+        try {
+            $threshold = now()->subSeconds(max(1, $olderThanSeconds))->timestamp;
+
+            return DB::table('jobs')
+                ->whereNotNull('reserved_at')
+                ->whereIn('queue', $queues)
+                ->where('reserved_at', '<=', $threshold)
+                ->where(function ($query) use ($jobClasses): void {
+                    foreach ($jobClasses as $jobClass) {
+                        $escapedClass = str_replace('\\', '\\\\', $jobClass);
+                        $query->orWhere('payload', 'like', '%"' . $escapedClass . '"%');
+                    }
+                })
+                ->delete();
+        } catch (\Throwable $e) {
+            Log::warning('Gagal membersihkan reserved queue rows stale: ' . $e->getMessage(), [
                 'queues' => $queues,
                 'job_classes' => array_map(static fn (string $class): string => class_basename($class), $jobClasses),
                 'older_than_seconds' => $olderThanSeconds,

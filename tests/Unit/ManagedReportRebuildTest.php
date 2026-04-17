@@ -6,6 +6,7 @@ use App\Http\Controllers\Import\ImportIndexController;
 use App\Jobs\RunManagedReportSnapshotRebuildJob;
 use App\Jobs\WarmReportCacheJob;
 use App\Support\DashboardHarianSnapshotService;
+use App\Support\ManagedReportSnapshotRebuildCoordinator;
 use App\Support\ManagedReportSnapshotRebuildStore;
 use App\Support\PartitionMaintenanceService;
 use App\Support\ReportDataSyncService;
@@ -40,6 +41,14 @@ class ManagedReportRebuildTest extends TestCase
             $table->string('nama_report');
             $table->string('table_name');
             $table->boolean('active')->default(true);
+        });
+        Schema::create('jobs', function (Blueprint $table) {
+            $table->increments('id');
+            $table->string('queue')->index();
+            $table->integer('reserved_at')->nullable();
+            $table->integer('available_at')->nullable();
+            $table->integer('created_at')->nullable();
+            $table->longText('payload');
         });
     }
 
@@ -178,10 +187,73 @@ class ManagedReportRebuildTest extends TestCase
         app()->instance(DashboardHarianSnapshotService::class, $dashboardHarianSnapshotService);
         app()->instance(ReportDataSyncService::class, $syncService);
 
-        $resolved = app(\App\Support\ManagedReportSnapshotRebuildCoordinator::class)->forceStart($rebuildId);
+        $resolved = app(ManagedReportSnapshotRebuildCoordinator::class)->forceStart($rebuildId);
 
         $this->assertSame(200, $resolved['status_code']);
         $this->assertSame('completed', $resolved['payload']['status']);
         Queue::assertPushed(WarmReportCacheJob::class, 1);
+    }
+
+    public function test_reconcile_recovers_snapshot_state_from_queue_row_when_cache_state_missing(): void
+    {
+        $rebuildId = '123e4567-e89b-12d3-a456-426614174001';
+
+        DB::table('jobs')->insert([
+            'queue' => 'default',
+            'reserved_at' => null,
+            'available_at' => now()->timestamp,
+            'created_at' => now()->timestamp,
+            'payload' => 'a:1:{s:10:"rebuildId";s:36:"' . $rebuildId . '";s:10:"jobClass";s:46:"RunManagedReportSnapshotRebuildJob";}',
+        ]);
+
+        Cache::forget(ManagedReportSnapshotRebuildStore::stateKey($rebuildId));
+
+        $state = app(ManagedReportSnapshotRebuildCoordinator::class)->reconcile($rebuildId);
+
+        $this->assertIsArray($state);
+        $this->assertSame($rebuildId, $state['rebuild_id']);
+        $this->assertSame('queued', $state['status']);
+        $this->assertSame('synthetic', $state['state_source']);
+    }
+
+    public function test_reconcile_marks_stale_snapshot_state_failed_when_queue_row_missing(): void
+    {
+        $rebuildId = '123e4567-e89b-12d3-a456-426614174002';
+
+        Cache::put(
+            ManagedReportSnapshotRebuildStore::stateKey($rebuildId),
+            [
+                'rebuild_id' => $rebuildId,
+                'status' => 'queued',
+                'stage' => 'queued',
+                'queued' => true,
+                'force_rebuild' => true,
+                'source' => 'unit-test-stale',
+                'message' => 'Snapshot menunggu worker.',
+                'progress_percent' => 0,
+                'completed_units' => 0,
+                'total_units' => 1,
+                'build_units' => 0,
+                'current_report_key' => null,
+                'current_report_label' => null,
+                'current_period' => null,
+                'report_completed_units' => 0,
+                'report_total_units' => 0,
+                'reports' => [],
+                'results' => [],
+                'started_at' => null,
+                'finished_at' => null,
+                'created_at' => now()->subMinutes(20)->toIso8601String(),
+                'updated_at' => now()->subMinutes(20)->toIso8601String(),
+            ],
+            ManagedReportSnapshotRebuildStore::ttl()
+        );
+
+        $state = app(ManagedReportSnapshotRebuildCoordinator::class)->reconcile($rebuildId);
+
+        $this->assertIsArray($state);
+        $this->assertSame('failed', $state['status']);
+        $this->assertSame('failed', $state['stage']);
+        $this->assertStringContainsString('tidak lagi memiliki job queue aktif', $state['message']);
     }
 }

@@ -851,6 +851,51 @@ class ManagedReportDeleteTest extends TestCase
         Queue::assertNothingPushed();
     }
 
+    public function test_delete_management_matches_ssa_pinjaman_by_month_scope(): void
+    {
+        Schema::create('ssa_pinjaman', function (Blueprint $table) {
+            $table->string('uniqueid_namareport')->primary();
+            $table->string('month_day_year_of_periode')->nullable();
+            $table->string('nama_cabang')->nullable();
+            $table->string('nama_uker')->nullable();
+        });
+
+        DB::table('nama_report')->insert([
+            'id_report' => 18,
+            'nama_report' => 'SSA Pinjaman',
+            'table_name' => 'ssa_pinjaman',
+            'active' => 1,
+        ]);
+
+        DB::table('ssa_pinjaman')->insert([
+            ['uniqueid_namareport' => 'SSA-P-1', 'month_day_year_of_periode' => '2026-03-01', 'nama_cabang' => '00045 -- KC Madiun (Konsolidasi-MB)', 'nama_uker' => 'Unit A'],
+            ['uniqueid_namareport' => 'SSA-P-2', 'month_day_year_of_periode' => '2026-03-15', 'nama_cabang' => '00045 -- KC Madiun (Konsolidasi-MB)', 'nama_uker' => 'Unit B'],
+            ['uniqueid_namareport' => 'SSA-P-3', 'month_day_year_of_periode' => '2026-03-31', 'nama_cabang' => '00049 -- KC Magetan (Konsolidasi-MB)', 'nama_uker' => 'Unit C'],
+            ['uniqueid_namareport' => 'SSA-P-4', 'month_day_year_of_periode' => '2026-04-01', 'nama_cabang' => '00045 -- KC Madiun (Konsolidasi-MB)', 'nama_uker' => 'Unit D'],
+        ]);
+
+        $controller = app(ImportIndexController::class);
+        $request = Request::create('/import/report-management/delete', 'POST', [
+            'id_report' => 18,
+            'scopes' => [
+                ['period_filter' => '2026-03', 'kanca_filter' => '00045 -- KC Madiun (Konsolidasi-MB)'],
+            ],
+            'force' => true,
+            'hard_force' => true,
+        ]);
+
+        $response = $controller->deleteManagedReportRows($request);
+        $payload = $response->getData(true);
+
+        $this->assertSame(200, $response->status());
+        $this->assertSame('completed', $payload['status']);
+        $this->assertSame(2, $payload['deleted_rows']);
+        $this->assertSame(2, DB::table('ssa_pinjaman')->count());
+        $this->assertSame(0, DB::table('ssa_pinjaman')->where('month_day_year_of_periode', 'like', '2026-03%')->where('nama_cabang', '00045 -- KC Madiun (Konsolidasi-MB)')->count());
+        $this->assertSame(1, DB::table('ssa_pinjaman')->where('month_day_year_of_periode', 'like', '2026-03%')->where('nama_cabang', '00049 -- KC Magetan (Konsolidasi-MB)')->count());
+        $this->assertSame(1, DB::table('ssa_pinjaman')->where('month_day_year_of_periode', 'like', '2026-04%')->where('nama_cabang', '00045 -- KC Madiun (Konsolidasi-MB)')->count());
+    }
+
     public function test_delete_management_accepts_period_and_kanca_filters_from_scopes_payload(): void
     {
         Schema::create('user_brimo_rpt_v2', function (Blueprint $table) {
@@ -1136,6 +1181,33 @@ class ManagedReportDeleteTest extends TestCase
         }
 
         Queue::assertNothingPushed();
+    }
+
+    public function test_reconcile_managed_delete_state_marks_stale_state_failed_without_queue_row(): void
+    {
+        $deleteId = (string) \Illuminate\Support\Str::uuid();
+        $controller = app(ImportIndexController::class);
+
+        $method = new \ReflectionMethod($controller, 'reconcileManagedDeleteStateWithQueueRow');
+        $method->setAccessible(true);
+
+        $state = [
+            'delete_id' => $deleteId,
+            'status' => 'running',
+            'stage' => 'deleting',
+            'table_name' => 'daily_loan_dinamis',
+            'deleted_rows' => 0,
+            'period_hint' => '2026-04-30',
+            'created_at' => now()->subMinutes(2)->toIso8601String(),
+            'updated_at' => now()->subMinutes(2)->toIso8601String(),
+        ];
+
+        $resolved = $method->invoke($controller, $deleteId, $state, null);
+
+        $this->assertIsArray($resolved);
+        $this->assertSame('failed', $resolved['status']);
+        $this->assertSame('failed', $resolved['stage']);
+        $this->assertArrayHasKey('error', $resolved);
     }
 }
 

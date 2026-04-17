@@ -13,6 +13,7 @@ use App\Support\ManagedReportRecoveryCoordinator;
 use App\Support\ManagedReportSnapshotRebuildCoordinator;
 use App\Support\ReportDataSyncService;
 use App\Support\StrictDateParser;
+use Carbon\Carbon;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use App\Models\NamaReport;
@@ -2282,6 +2283,54 @@ class ImportIndexController extends Controller
         ];
     }
 
+    private function safeParseDate(mixed $value): ?Carbon
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        try {
+            return Carbon::parse($value);
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    private function queueTimestampAgeSeconds(mixed $value): int
+    {
+        if ($value === null || $value === '') {
+            return 0;
+        }
+
+        if (is_numeric($value)) {
+            return max(0, now()->timestamp - (int) $value);
+        }
+
+        $parsed = $this->safeParseDate($value);
+
+        return $parsed ? max(0, now()->diffInSeconds($parsed)) : 0;
+    }
+
+    private function queueTimestampToIso8601(mixed $value): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        if (is_numeric($value)) {
+            return Carbon::createFromTimestamp((int) $value)->toIso8601String();
+        }
+
+        return $this->safeParseDate($value)?->toIso8601String();
+    }
+
+    private function timestampOlderThan(?string $value, int $seconds): bool
+    {
+        $parsed = $this->safeParseDate($value);
+
+        return $parsed ? $parsed->addSeconds(max(1, $seconds))->lessThanOrEqualTo(now()) : true;
+    }
+
     private function mapManagedDeleteStatus(string $status, string $stage): string
     {
         $normalizedStatus = strtolower(trim($status));
@@ -2873,7 +2922,7 @@ class ImportIndexController extends Controller
                 $this->applyBlankValueConstraint($query, $periodColumn);
                 $hasWhereClause = true;
             } elseif ($periodFilter !== null && $periodFilter !== '') {
-                $query->where($periodColumn, $periodFilter);
+                $this->applyManagedPeriodFilterConstraint($query, $tableName, $periodColumn, $periodFilter);
                 $hasWhereClause = true;
             }
         }
@@ -2938,9 +2987,9 @@ class ImportIndexController extends Controller
             return [$query, false];
         }
 
-        $query->where(function ($outerQuery) use ($validScopes, $periodColumn, $kancaColumn) {
+        $query->where(function ($outerQuery) use ($validScopes, $tableName, $periodColumn, $kancaColumn) {
             foreach ($validScopes as $scope) {
-                $outerQuery->orWhere(function ($innerQuery) use ($scope, $periodColumn, $kancaColumn) {
+                $outerQuery->orWhere(function ($innerQuery) use ($scope, $tableName, $periodColumn, $kancaColumn) {
                     $applied = false;
 
                     if ($periodColumn !== null) {
@@ -2948,7 +2997,7 @@ class ImportIndexController extends Controller
                             $this->applyBlankValueConstraint($innerQuery, $periodColumn);
                             $applied = true;
                         } elseif (($scope['period_filter'] ?? null) !== null && $scope['period_filter'] !== '') {
-                            $innerQuery->where($periodColumn, (string) $scope['period_filter']);
+                            $this->applyManagedPeriodFilterConstraint($innerQuery, $tableName, $periodColumn, (string) $scope['period_filter']);
                             $applied = true;
                         }
                     }
@@ -2971,6 +3020,21 @@ class ImportIndexController extends Controller
         });
 
         return [$query, true];
+    }
+
+    private function applyManagedPeriodFilterConstraint($query, string $tableName, string $periodColumn, string $periodFilter): void
+    {
+        $normalizedFilter = trim($periodFilter);
+        if (
+            in_array($tableName, ['ssa_simpanan', 'ssa_pinjaman'], true)
+            && preg_match('/^\d{4}-\d{2}$/', $normalizedFilter) === 1
+        ) {
+            $safeColumn = str_replace('`', '``', $periodColumn);
+            $query->whereRaw("SUBSTR(CAST(`{$safeColumn}` AS CHAR), 1, 7) = ?", [$normalizedFilter]);
+            return;
+        }
+
+        $query->where($periodColumn, $periodFilter);
     }
 
     private function normalizeDeleteScopes(array $validated): array

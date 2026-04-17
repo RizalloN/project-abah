@@ -202,12 +202,38 @@ class RunManagedReportSnapshotRebuildJob implements ShouldQueue
                 ];
             };
 
-            $runRebuilder('dashboard', 'Dashboard Pinjaman', fn (?callable $progress = null) => $snapshotBuilder->rebuildDashboard(null, $this->force, $progress));
-            $runRebuilder('dashboard_simpanan', 'Dashboard Simpanan', fn (?callable $progress = null) => $snapshotBuilder->rebuildDashboardSimpanan(null, $this->force, $progress));
-            $runRebuilder('dashboard_harian', 'Dashboard Harian', fn (?callable $progress = null) => $dashboardHarianSnapshotService->rebuild(null, $this->force, $progress));
-            $runRebuilder('rasio', 'Rasio CASA Debitur', fn (?callable $progress = null) => $snapshotBuilder->rebuildRasioCasa(null, $this->force, $progress));
-            $runRebuilder('dormant', 'Rekening Dormant', fn (?callable $progress = null) => $snapshotBuilder->rebuildRekeningDormant(null, $this->force, $progress));
-            $runRebuilder('new_payroll', 'Performance New Payroll', fn (?callable $progress = null) => $snapshotBuilder->rebuildPerformanceNewPayroll(null, $this->force, $progress));
+            $reportErrors = [];
+
+            $safeRunRebuilder = function (string $key, string $label, callable $runner) use (
+                &$reportErrors,
+                &$state,
+                &$reports,
+                $reportIndex,
+                $runRebuilder
+            ): void {
+                try {
+                    $runRebuilder($key, $label, $runner);
+                } catch (Throwable $e) {
+                    $reportErrors[$key] = $e->getMessage();
+
+                    if (isset($reportIndex[$key])) {
+                        $reports[$reportIndex[$key]]['error'] = $e->getMessage();
+                    }
+
+                    Log::warning("Snapshot rebuild report '{$key}' gagal, dilanjutkan ke report berikutnya: " . $e->getMessage(), [
+                        'key' => $key,
+                        'label' => $label,
+                        'rebuild_id' => $state['rebuild_id'] ?? null,
+                    ]);
+                }
+            };
+
+            $safeRunRebuilder('dashboard', 'Dashboard Pinjaman', fn (?callable $progress = null) => $snapshotBuilder->rebuildDashboard(null, $this->force, $progress));
+            $safeRunRebuilder('dashboard_simpanan', 'Dashboard Simpanan', fn (?callable $progress = null) => $snapshotBuilder->rebuildDashboardSimpanan(null, $this->force, $progress));
+            $safeRunRebuilder('dashboard_harian', 'Dashboard Harian', fn (?callable $progress = null) => $dashboardHarianSnapshotService->rebuild(null, $this->force, $progress));
+            $safeRunRebuilder('rasio', 'Rasio CASA Debitur', fn (?callable $progress = null) => $snapshotBuilder->rebuildRasioCasa(null, $this->force, $progress));
+            $safeRunRebuilder('dormant', 'Rekening Dormant', fn (?callable $progress = null) => $snapshotBuilder->rebuildRekeningDormant(null, $this->force, $progress));
+            $safeRunRebuilder('new_payroll', 'Performance New Payroll', fn (?callable $progress = null) => $snapshotBuilder->rebuildPerformanceNewPayroll(null, $this->force, $progress));
 
             $completedBuildUnits = array_sum(array_map(
                 static fn (array $report): int => (int) ($report['completed_units'] ?? 0),
@@ -232,17 +258,37 @@ class RunManagedReportSnapshotRebuildJob implements ShouldQueue
             $syncService->invalidateReportCaches($this->source ?? static::class);
             WarmReportCacheJob::dispatch()->onQueue((string) config('queue.report_queue', 'default'));
 
-            $state = $this->writeState(array_merge($state, [
-                'status' => 'completed',
-                'stage' => 'completed',
-                'message' => $this->force
+            $hasErrors = $reportErrors !== [];
+            $finalStatus = $hasErrors ? 'warning' : 'completed';
+            $finalMessage = $hasErrors
+                ? sprintf(
+                    '%d dari %d report gagal direbuild (%s). Report lain tetap diperbarui.',
+                    count($reportErrors),
+                    count($reports),
+                    implode(', ', array_keys($reportErrors))
+                )
+                : ($this->force
                     ? 'Rebuild snapshot seluruh report dari awal selesai.'
-                    : 'Refresh snapshot seluruh report selesai.',
+                    : 'Refresh snapshot seluruh report selesai.');
+
+            $state = $this->writeState(array_merge($state, [
+                'status' => $finalStatus,
+                'stage' => 'completed',
+                'message' => $finalMessage,
                 'results' => $results,
+                'errors' => $reportErrors,
                 'completed_units' => $totalUnits,
                 'progress_percent' => 100,
                 'finished_at' => now()->toIso8601String(),
             ]));
+
+            if ($hasErrors) {
+                Log::warning('Rebuild snapshot report management selesai dengan sebagian error.', [
+                    'force' => $this->force,
+                    'rebuild_id' => $rebuildId,
+                    'failed_reports' => $reportErrors,
+                ]);
+            }
         } catch (Throwable $e) {
             $state = $this->writeState(array_merge($state, [
                 'status' => 'failed',
@@ -260,7 +306,10 @@ class RunManagedReportSnapshotRebuildJob implements ShouldQueue
 
             throw $e;
         } finally {
-            Cache::forget(ManagedReportSnapshotRebuildStore::PENDING_KEY);
+            $currentPending = Cache::get(ManagedReportSnapshotRebuildStore::PENDING_KEY);
+            if ($currentPending === $rebuildId) {
+                Cache::forget(ManagedReportSnapshotRebuildStore::PENDING_KEY);
+            }
 
             if (ManagedReportSnapshotRebuildStore::getActiveRebuildId() === $rebuildId) {
                 ManagedReportSnapshotRebuildStore::forgetActiveRebuildId();

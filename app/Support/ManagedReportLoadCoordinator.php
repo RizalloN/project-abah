@@ -13,7 +13,8 @@ class ManagedReportLoadCoordinator
     private const LOAD_QUEUE = 'imports-high';
     private const FALLBACK_LOCK_PREFIX = 'report_management:load:lock:';
     private const FALLBACK_LOCK_SECONDS = 1800;
-    private const FALLBACK_STALE_SECONDS = 1;
+    // Wait 30s before declaring a queued dispatch as failed — accounts for queue worker startup lag
+    private const FALLBACK_STALE_SECONDS = 30;
     private const QUEUED_FAIL_SECONDS = 120;
     private const RUNNING_FAIL_SECONDS = 300;
 
@@ -71,7 +72,7 @@ class ManagedReportLoadCoordinator
 
         return [
             'status_code' => 200,
-            'payload' => $this->maybeProcessFallback($state),
+            'payload' => $state,
         ];
     }
 
@@ -102,7 +103,28 @@ class ManagedReportLoadCoordinator
 
     private function maybeProcessFallback(array $state): array
     {
-        return $state;
+        if (!$this->shouldAttemptFallback($state)) {
+            return $state;
+        }
+
+        $loadId = trim((string) ($state['load_id'] ?? ''));
+        $reportId = (int) ($state['report_id'] ?? 0);
+
+        Log::warning('Load report management: dispatch queue gagal, menandai sebagai failed.', [
+            'load_id' => $loadId,
+            'report_id' => $reportId,
+            'queued' => $state['queued'] ?? null,
+            'error' => $state['error'] ?? null,
+        ]);
+
+        return ManagedReportLoadStore::putState(array_merge($state, [
+            'status' => 'failed',
+            'stage' => 'failed',
+            'queued' => false,
+            'message' => 'Queue tidak tersedia atau worker belum aktif. Pastikan queue worker berjalan lalu jalankan ulang proses.',
+            'error' => $state['error'] ?? 'Queue dispatch failed — worker tidak merespons dalam batas waktu.',
+            'finished_at' => now()->toIso8601String(),
+        ]));
     }
 
     private function shouldAttemptFallback(array $state): bool

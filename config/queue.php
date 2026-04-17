@@ -42,7 +42,8 @@ return [
             'connection' => env('DB_QUEUE_CONNECTION'),
             'table' => env('DB_QUEUE_TABLE', 'jobs'),
             'queue' => env('DB_QUEUE', 'default'),
-            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 90),
+            // 7200s (2 hours) — import jobs may process millions of rows; 90s would cause duplicate re-dispatch
+            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 7200),
             'after_commit' => false,
         ],
 

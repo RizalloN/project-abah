@@ -451,6 +451,13 @@
         justify-content: center;
         min-width: 100%;
     }
+    .daily-table thead .column-heading {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 100%;
+        text-align: center;
+    }
 
     /* Table Cells */
     .daily-table tbody td {
@@ -512,10 +519,12 @@
     }
     
     .daily-table thead .sticky-no, 
-    .daily-table thead .sticky-label {
+    .daily-table thead .sticky-label,
+    .daily-table thead .group-label {
         z-index: 15;
         background: var(--table-header-bg);
         box-shadow: none;
+        text-align: center !important;
     }
 
     /* Row Hover and Striping */
@@ -543,7 +552,8 @@
     .daily-table .metric-block-sml td,
     .daily-table .metric-block-npl td,
     .daily-table .metric-block-casa td,
-    .daily-table .metric-block-ldr td {
+    .daily-table .metric-block-ldr td,
+    .daily-table .metric-block-recdh td {
         background-color: #e0e7ff; /* blue-100 for parent rows */
         font-weight: 700;
         color: var(--primary-blue-dark);
@@ -559,7 +569,9 @@
     .daily-table .metric-block-casa .sticky-no,
     .daily-table .metric-block-casa .sticky-label,
     .daily-table .metric-block-ldr .sticky-no,
-    .daily-table .metric-block-ldr .sticky-label {
+    .daily-table .metric-block-ldr .sticky-label,
+    .daily-table .metric-block-recdh .sticky-no,
+    .daily-table .metric-block-recdh .sticky-label {
         background-color: #e0e7ff;
     }
 
@@ -568,7 +580,8 @@
     .daily-table tbody tr.metric-block-sml:hover td,
     .daily-table tbody tr.metric-block-npl:hover td,
     .daily-table tbody tr.metric-block-casa:hover td,
-    .daily-table tbody tr.metric-block-ldr:hover td {
+    .daily-table tbody tr.metric-block-ldr:hover td,
+    .daily-table tbody tr.metric-block-recdh:hover td {
         background-color: #dbeafe; /* blue-200 */
     }
     .daily-table tbody tr.metric-block-simpanan:hover .sticky-no,
@@ -582,7 +595,9 @@
     .daily-table tbody tr.metric-block-casa:hover .sticky-no,
     .daily-table tbody tr.metric-block-casa:hover .sticky-label,
     .daily-table tbody tr.metric-block-ldr:hover .sticky-no,
-    .daily-table tbody tr.metric-block-ldr:hover .sticky-label {
+    .daily-table tbody tr.metric-block-ldr:hover .sticky-label,
+    .daily-table tbody tr.metric-block-recdh:hover .sticky-no,
+    .daily-table tbody tr.metric-block-recdh:hover .sticky-label {
         background-color: #dbeafe;
     }
 
@@ -744,7 +759,7 @@
                         <thead>
                             <tr class="group-row text-center">
                                 <th class="sticky-no group-no" rowspan="3">No</th>
-                                <th class="sticky-label group-label text-left" rowspan="3">Keterangan</th>
+                                <th class="sticky-label group-label" rowspan="3">Keterangan</th>
                                 <th class="group-position" colspan="6" data-position-group-colspan>Perbandingan Posisi</th>
                                 <th class="group-delta" colspan="3">Delta Terhadap</th>
                                 <th class="group-rka" colspan="4">Perbandingan RKA</th>
@@ -1473,6 +1488,7 @@
                 total_npl_pct_non_commercial: 'metric-block-npl',
                 casa_pct: 'metric-block-casa',
                 ldr_non_commercial: 'metric-block-ldr',
+                rec_dh_total: 'metric-block-recdh',
             };
             const sectionClassMap = {
                 simpanan_ritel: 'section-ritel',
@@ -1490,6 +1506,9 @@
                 sme_npl: 'section-ritel',
                 consumer_npl: 'section-consumer',
                 micro_npl: 'section-mikro',
+                rec_dh_small: 'section-ritel',
+                rec_dh_consumer: 'section-consumer',
+                rec_dh_micro: 'section-mikro',
             };
             const scopeMode = getUnitScopeMode();
 
