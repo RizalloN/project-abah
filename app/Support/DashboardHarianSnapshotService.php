@@ -735,17 +735,15 @@ class DashboardHarianSnapshotService
         $final['casa_ritel'] = $final['giro_ritel'] + $final['tabungan_ritel'];
         $final['casa_mikro'] = $final['giro_mikro'] + $final['tabungan_mikro'];
         $final['total_casa'] = $final['casa_ritel'] + $final['casa_mikro'];
+        $final['commercial_os'] = 0.0;
         $final['sme_os'] = $final['kecil_os'];
         $final['sme_sml'] = $final['kecil_sml'];
         $final['sme_npl'] = $final['kecil_npl'];
         $final['total_os_non_commercial'] = $final['kecil_os'] + $final['medium_os'] + $final['consumer_os'] + $final['micro_os'];
-        $final['total_os'] = $final['commercial_os'] + $final['total_os_non_commercial'];
         $final['ldr_non_commercial'] = $this->safePercent($final['total_simpanan'], $final['total_os_non_commercial']);
         $final['ldr_ritel_non_commercial'] = $this->safePercent($final['simpanan_ritel'], $final['sme_os'] + $final['consumer_os']);
         $final['ldr_mikro_non_commercial'] = $this->safePercent($final['simpanan_mikro'], $final['micro_os']);
         $final['casa_pct'] = $this->safePercent($final['total_casa'], $final['total_simpanan']);
-        $final['total_sml_pct_non_commercial'] = $this->safePercent($final['total_sml_abs_non_commercial'], $final['total_os_non_commercial']);
-        $final['total_npl_pct_non_commercial'] = $this->safePercent($final['total_npl_abs_non_commercial'], $final['total_os_non_commercial']);
 
         return $final;
     }
@@ -900,7 +898,7 @@ class DashboardHarianSnapshotService
         $final['kecil_npl'] = $final['kecil_non_cashcoll_npl'] + $final['cashcoll_npl'];
         $final['sme_npl'] = $final['kecil_npl'];
         $final['consumer_npl'] = $final['briguna_konsumer_npl'] + $final['kpr_npl'] + $final['kkb_npl'];
-        $final['total_npl_abs_non_commercial'] = $final['kecil_npl'] + $final['medium_npl'] + $final['consumer_npl'] + $final['micro_npl'];
+        $final['total_npl_abs_non_commercial'] = $final['sme_npl'] + $final['consumer_npl'] + $final['micro_npl'];
         $final['casa_pct'] = $this->safePercent($final['total_casa'], $final['total_simpanan']);
         $final['ldr_non_commercial'] = 0.0;
         $final['ldr_ritel_non_commercial'] = 0.0;
