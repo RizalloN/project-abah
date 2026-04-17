@@ -13,6 +13,7 @@
         --border-color: #dbe5ef; /* harmonized with loan-dashboard */
         --text-main: #0f172a; /* slate-900 */
         --text-muted: #64748b; /* slate-500 */
+        --loan-blue-soft: #eaf2ff;
         
         --table-header-bg: var(--bri-blue-dark);
         --table-header-text: #ffffff;
@@ -35,7 +36,7 @@
         border: 1px solid var(--border-color);
         border-radius: 18px; /* Formal rounded edge */
         box-shadow: 0 14px 30px -24px rgba(15, 23, 42, 0.22); /* Deeper, softer shadow */
-        overflow: hidden;
+        overflow: visible;
         transition: box-shadow 0.3s ease;
         width: 100%;
         max-width: 100%;
@@ -48,6 +49,7 @@
         position: relative;
         width: 100%;
         overflow: visible;
+        z-index: 1;
     }
 
     .daily-panel-head {
@@ -78,9 +80,9 @@
         gap: 0.5rem;
         border-radius: 9999px;
         padding: 0.35rem 0.85rem;
-        background: #eff6ff; /* blue-50 */
-        border: 1px solid #bfdbfe; /* blue-200 */
-        color: var(--primary-blue);
+        background: linear-gradient(135deg, #eef5ff, #f8fbff);
+        border: 1px solid #cfe0f8;
+        color: var(--bri-blue-main);
         font-size: 0.8rem;
         font-weight: 600;
     }
@@ -99,18 +101,236 @@
         transition: all 0.2s ease;
     }
     .daily-scope-chip:hover {
-        background: #e2e8f0;
+        background: linear-gradient(135deg, #eaf2ff, #f5f9ff);
     }
 
     /* Typography */
     .daily-filter-label {
         font-size: 0.75rem;
-        font-weight: 600;
-        color: var(--text-muted);
+        font-weight: 700;
+        color: #4b6285;
         text-transform: uppercase;
         letter-spacing: 0.05em;
         margin-bottom: 0.5rem;
         display: block;
+    }
+
+    .daily-filter-shell {
+        position: relative;
+        z-index: 25;
+        margin-bottom: 0.75rem;
+        padding: 1rem 1.1rem 0.95rem;
+        background:
+            radial-gradient(circle at top right, rgba(0, 82, 156, 0.09), transparent 30%),
+            linear-gradient(180deg, #f7fbff 0%, #ffffff 62%, #fdfefe 100%);
+        border-bottom: 1px solid rgba(219, 229, 239, 0.9);
+    }
+
+    .daily-filter-shell::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background:
+            linear-gradient(90deg, rgba(0, 82, 156, 0.05) 0%, transparent 26%, transparent 74%, rgba(0, 82, 156, 0.05) 100%);
+        pointer-events: none;
+    }
+
+    .daily-filter-grid {
+        position: relative;
+        z-index: 1;
+    }
+
+    .daily-filter-card {
+        --daily-filter-accent: var(--bri-blue-main);
+        --daily-filter-tint: rgba(0, 82, 156, 0.05);
+        --daily-filter-badge-bg: var(--loan-blue-soft);
+        --daily-filter-badge-border: #d7e6fb;
+        height: 100%;
+        min-height: 118px;
+        padding: 0.75rem 0.8rem 0.72rem;
+        border: 1px solid rgba(219, 229, 239, 0.95);
+        border-radius: 14px;
+        background:
+            linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(243, 248, 255, 0.97)),
+            rgba(255, 255, 255, 0.92);
+        box-shadow: 0 14px 28px -26px rgba(15, 23, 42, 0.24);
+        backdrop-filter: blur(8px);
+        display: flex;
+        flex-direction: column;
+        transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+        overflow: visible;
+        position: relative;
+    }
+
+    .daily-filter-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 3px;
+        background: linear-gradient(90deg, var(--daily-filter-accent), rgba(255, 255, 255, 0.88));
+        opacity: 0.7;
+    }
+
+    .daily-filter-card::after {
+        content: '';
+        position: absolute;
+        inset: auto 12px 12px auto;
+        width: 72px;
+        height: 72px;
+        border-radius: 999px;
+        background: var(--daily-filter-tint);
+        opacity: 0.9;
+        pointer-events: none;
+    }
+
+    .daily-filter-card:hover {
+        transform: translateY(-1px);
+        border-color: rgba(0, 82, 156, 0.18);
+        box-shadow: 0 16px 30px -28px rgba(0, 82, 156, 0.22);
+        z-index: 5;
+    }
+
+    .daily-filter-card--action {
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        background:
+            linear-gradient(180deg, rgba(239, 245, 255, 0.99), rgba(255, 255, 255, 0.98)),
+            rgba(255, 255, 255, 0.96);
+    }
+
+    .daily-filter-card--kanca {
+        --daily-filter-accent: #00529C;
+        --daily-filter-tint: rgba(0, 82, 156, 0.06);
+        --daily-filter-badge-bg: #edf5ff;
+        --daily-filter-badge-border: #d6e5fb;
+    }
+
+    .daily-filter-card--unit {
+        --daily-filter-accent: #004685;
+        --daily-filter-tint: rgba(0, 70, 133, 0.06);
+        --daily-filter-badge-bg: #eaf2ff;
+        --daily-filter-badge-border: #d6e5fb;
+    }
+
+    .daily-filter-card--posisi {
+        --daily-filter-accent: #1e40af;
+        --daily-filter-tint: rgba(30, 64, 175, 0.05);
+        --daily-filter-badge-bg: #eef4ff;
+        --daily-filter-badge-border: #dbe5ff;
+    }
+
+    .daily-filter-card--rka {
+        --daily-filter-accent: #0f4c97;
+        --daily-filter-tint: rgba(15, 76, 151, 0.05);
+        --daily-filter-badge-bg: #edf5ff;
+        --daily-filter-badge-border: #d6e5fb;
+    }
+
+    .daily-filter-card--action {
+        --daily-filter-accent: #0f4c97;
+        --daily-filter-tint: rgba(15, 76, 151, 0.06);
+        --daily-filter-badge-bg: #edf5ff;
+        --daily-filter-badge-border: #d6e5fb;
+    }
+
+    .daily-filter-content {
+        display: flex;
+        flex-direction: column;
+        flex: 1 1 auto;
+        position: relative;
+        z-index: 2;
+    }
+
+    .daily-filter-control {
+        position: relative;
+        margin-top: auto;
+        z-index: 6;
+    }
+
+    .daily-filter-control-icon {
+        position: absolute;
+        left: 0.95rem;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 1rem;
+        text-align: center;
+        color: #5b78a8;
+        font-size: 0.78rem;
+        pointer-events: none;
+        z-index: 2;
+        transition: color 0.2s ease;
+        width: 1.5rem;
+        height: 1.5rem;
+        border-radius: 999px;
+        background: var(--daily-filter-badge-bg);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: inset 0 0 0 1px var(--daily-filter-badge-border);
+    }
+
+    .daily-filter-control:focus-within .daily-filter-control-icon,
+    .daily-filter-card:hover .daily-filter-control-icon {
+        color: var(--daily-filter-accent);
+    }
+
+    .daily-filter-select {
+        width: 100%;
+        min-height: 40px;
+        border: 1px solid rgba(198, 214, 236, 0.95);
+        border-radius: 12px;
+        background:
+            linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+        color: #334155;
+        font-size: 0.88rem;
+        font-weight: 600;
+        padding: 0.55rem 2.45rem 0.55rem 2.35rem;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.94), 0 8px 18px -20px rgba(15, 23, 42, 0.18);
+        transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease, background-color 0.2s ease;
+        appearance: none;
+        -webkit-appearance: none;
+        -moz-appearance: none;
+        cursor: pointer;
+    }
+
+    .daily-filter-select:hover,
+    .daily-dropdown-toggle:hover {
+        border-color: rgba(0, 82, 156, 0.24);
+        background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
+        box-shadow: 0 12px 24px -24px rgba(0, 82, 156, 0.18);
+    }
+
+    .daily-filter-select:focus {
+        outline: none;
+        border-color: var(--bri-blue-main);
+        box-shadow: 0 0 0 3px rgba(0, 82, 156, 0.14), 0 12px 22px -22px rgba(0, 70, 133, 0.16);
+        background: #ffffff;
+    }
+
+    .daily-filter-select:disabled {
+        cursor: not-allowed;
+        color: var(--loan-muted);
+        background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+        box-shadow: none;
+    }
+
+    .daily-filter-chevron {
+        position: absolute;
+        right: 0.85rem;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #7b93b6;
+        font-size: 0.72rem;
+        pointer-events: none;
+        transition: transform 0.2s ease, color 0.2s ease;
+    }
+
+    .daily-filter-control:focus-within .daily-filter-chevron,
+    .daily-filter-card:hover .daily-filter-chevron {
+        color: var(--daily-filter-accent);
     }
 
     /* KPIs */
@@ -174,8 +394,8 @@
         background: #ffffff !important;
     }
     .select2-container--default.select2-container--focus .select2-selection--single {
-        border-color: #cfdae6 !important;
-        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1) !important;
+        border-color: var(--bri-blue-main) !important;
+        box-shadow: 0 0 0 3px rgba(0, 82, 156, 0.14) !important;
     }
     .select2-container--default .select2-selection--single .select2-selection__rendered {
         color: #475569 !important;
@@ -194,36 +414,34 @@
 
     .daily-dropdown {
         position: relative;
+        z-index: 18;
     }
 
     .daily-dropdown-toggle {
         width: 100%;
-        min-height: 44px;
-        border: 1px solid var(--border-color);
-        border-radius: 14px;
-        background: #ffffff;
-        color: #475569;
+        min-height: 40px;
+        border: 1px solid rgba(203, 213, 225, 0.9);
+        border-radius: 12px;
+        background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+        color: #3d4c63;
         display: flex;
         align-items: center;
         justify-content: space-between;
         gap: 0.75rem;
-        padding: 0.65rem 0.85rem;
-        font-weight: 500;
-        font-size: 0.94rem;
+        padding: 0.55rem 0.85rem 0.55rem 2.35rem;
+        font-weight: 600;
+        font-size: 0.88rem;
         text-align: left;
-        transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
-    }
-
-    .daily-dropdown-toggle:hover {
-        border-color: var(--primary-blue-light);
-        background: #f8fbff;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.94), 0 8px 18px -20px rgba(15, 23, 42, 0.18);
+        transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease, transform 0.2s ease;
     }
 
     .daily-dropdown.is-open .daily-dropdown-toggle,
     .daily-dropdown-toggle:focus {
         outline: none;
-        border-color: #cfdae6;
-        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        border-color: var(--bri-blue-main);
+        box-shadow: 0 0 0 3px rgba(0, 82, 156, 0.14), 0 12px 22px -22px rgba(0, 70, 133, 0.18);
+        background: #ffffff;
     }
 
     .daily-dropdown-toggle-text {
@@ -234,13 +452,14 @@
     }
 
     .daily-dropdown-toggle-icon {
-        color: var(--text-muted);
-        font-size: 0.85rem;
-        transition: transform 0.2s ease;
+        color: #5b78a8;
+        font-size: 0.72rem;
+        transition: transform 0.2s ease, color 0.2s ease;
     }
 
     .daily-dropdown.is-open .daily-dropdown-toggle-icon {
         transform: rotate(180deg);
+        color: var(--bri-blue-main);
     }
 
     .daily-dropdown-menu {
@@ -248,19 +467,24 @@
         top: calc(100% + 0.45rem);
         left: 0;
         right: 0;
-        z-index: 30;
-        background: #ffffff;
-        border: 1px solid var(--border-color);
-        border-radius: 12px;
-        box-shadow: 0 18px 36px -24px rgba(15, 23, 42, 0.25);
+        z-index: 60;
+        background: rgba(255, 255, 255, 0.98);
+        border: 1px solid rgba(219, 229, 239, 0.95);
+        border-radius: 14px;
+        box-shadow: 0 20px 34px -28px rgba(0, 70, 133, 0.22);
         padding: 0.45rem;
         display: none;
         max-height: 260px;
         overflow-y: auto;
+        backdrop-filter: blur(10px);
     }
 
     .daily-dropdown.is-open .daily-dropdown-menu {
         display: block;
+    }
+
+    .daily-dropdown.is-open {
+        z-index: 80;
     }
 
     .daily-dropdown-option {
@@ -270,30 +494,31 @@
         display: flex;
         align-items: center;
         gap: 0.7rem;
-        padding: 0.6rem 0.7rem;
-        border-radius: 9px;
+        padding: 0.62rem 0.72rem;
+        border-radius: 10px;
         color: var(--text-main);
         text-align: left;
-        font-size: 0.92rem;
-        transition: background-color 0.15s ease, color 0.15s ease;
+        font-size: 0.86rem;
+        transition: background-color 0.15s ease, color 0.15s ease, transform 0.15s ease;
     }
 
     .daily-dropdown-option:hover {
-        background: #eff6ff;
-        color: var(--primary-blue-dark);
+        background: linear-gradient(135deg, #edf5ff, #f8fbff);
+        color: var(--bri-blue-dark);
+        transform: translateX(2px);
     }
 
     .daily-dropdown-option.is-active {
-        background: #dbeafe;
-        color: var(--primary-blue-dark);
+        background: linear-gradient(135deg, #dbeafe, #edf5ff);
+        color: var(--bri-blue-dark);
         font-weight: 600;
     }
 
     .daily-dropdown-check {
-        width: 16px;
-        height: 16px;
+        width: 15px;
+        height: 15px;
         border-radius: 4px;
-        border: 1px solid #bfdbfe;
+        border: 1px solid #c8daf5;
         display: inline-flex;
         align-items: center;
         justify-content: center;
@@ -304,8 +529,8 @@
     }
 
     .daily-dropdown-option.is-active .daily-dropdown-check {
-        background: var(--primary-blue);
-        border-color: var(--primary-blue);
+        background: var(--bri-blue-main);
+        border-color: var(--bri-blue-main);
         color: #ffffff;
     }
 
@@ -317,27 +542,89 @@
     }
 
     .daily-dropdown-empty {
-        padding: 0.7rem 0.8rem;
+        padding: 0.8rem 0.9rem;
         color: var(--text-muted);
         font-size: 0.88rem;
+        border-radius: 12px;
+        background: linear-gradient(180deg, #f8fbff, #f5f9ff);
+    }
+
+    .daily-apply-button {
+        width: 100%;
+        min-height: 40px;
+        padding: 0.58rem 0.95rem;
+        border: none;
+        border-radius: 12px;
+        background: linear-gradient(135deg, var(--bri-blue-dark) 0%, var(--bri-blue-main) 58%, #1d4ed8 100%);
+        color: #ffffff;
+        font-size: 0.88rem;
+        font-weight: 700;
+        letter-spacing: 0.01em;
+        box-shadow: 0 14px 24px -18px rgba(0, 82, 156, 0.48);
+        transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+    }
+
+    .daily-apply-button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 16px 28px -18px rgba(0, 82, 156, 0.54);
+        filter: saturate(1.05);
+        color: #ffffff;
+    }
+
+    .daily-apply-button:focus {
+        outline: none;
+        color: #ffffff;
+        box-shadow: 0 0 0 3px rgba(0, 82, 156, 0.14), 0 14px 24px -18px rgba(0, 82, 156, 0.5);
+    }
+
+    .daily-apply-button:disabled {
+        cursor: wait;
+        opacity: 0.86;
+        transform: none;
+        box-shadow: 0 12px 18px -16px rgba(0, 82, 156, 0.45);
+    }
+
+    .daily-filter-note {
+        margin-top: 0.2rem;
+        color: var(--text-muted);
+        font-size: 0.72rem;
+        line-height: 1.4;
+        min-height: 1.9rem;
+        max-width: 28ch;
+    }
+
+    .daily-filter-action-body {
+        display: flex;
+        flex-direction: column;
+        flex: 1 1 auto;
+        position: relative;
+        z-index: 1;
+    }
+
+    .daily-filter-card .daily-filter-label {
+        margin-bottom: 0.35rem;
+        min-height: 16px;
+        font-size: 0.7rem;
+        letter-spacing: 0.06em;
+        color: #4b6285;
     }
     
     .btn-primary {
-        background-color: var(--primary-blue);
-        border-color: var(--primary-blue);
+        background-color: var(--bri-blue-main);
+        border-color: var(--bri-blue-main);
         border-radius: 8px;
         font-weight: 600;
         padding: 0.6rem 1.25rem;
         transition: all 0.2s ease;
     }
     .btn-primary:hover {
-        background-color: var(--primary-blue-dark);
-        border-color: var(--primary-blue-dark);
+        background-color: var(--bri-blue-dark);
+        border-color: var(--bri-blue-dark);
         transform: translateY(-1px);
-        box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.4);
+        box-shadow: 0 4px 6px -1px rgba(0, 82, 156, 0.4);
     }
     .btn-primary:focus {
-        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.4) !important;
+        box-shadow: 0 0 0 3px rgba(0, 82, 156, 0.4) !important;
     }
 
     .daily-table-wrap {
@@ -644,6 +931,27 @@
             --daily-rka-width: 94px;
         }
 
+        .daily-filter-shell {
+            padding: 0.85rem;
+        }
+
+        .daily-filter-card {
+            min-height: 110px;
+            padding: 0.72rem;
+        }
+
+        .daily-filter-card::after {
+            inset: auto 10px 10px auto;
+            width: 58px;
+            height: 58px;
+        }
+
+        .daily-filter-select,
+        .daily-dropdown-toggle,
+        .daily-apply-button {
+            min-height: 40px;
+        }
+
         .daily-table-region {
             padding-bottom: 2rem;
         }
@@ -679,43 +987,80 @@
             </div>
         </div>
 
-        <div class="px-4 py-3 border-bottom bg-white" style="border-radius: 18px 18px 0 0; box-shadow: 0 4px 12px rgba(0,0,0,0.03);">
-            <div class="row align-items-end mx-n2">
-                <div class="col px-2 mb-2 mb-lg-0">
-                    <label class="text-muted font-weight-bold text-uppercase mb-1" style="font-size:0.65rem; letter-spacing:0.05em;" for="filter-kanca">Kanca</label>
-                    <div class="daily-dropdown" data-daily-dropdown="kanca">
-                        <button type="button" class="daily-dropdown-toggle p-1 px-3 border" style="min-height:36px; font-size:0.85rem; border-radius:8px; width:100%; box-shadow: 0 1px 2px rgba(0,0,0,0.02);" data-daily-dropdown-toggle="kanca" aria-haspopup="listbox" aria-expanded="false">
-                            <span class="daily-dropdown-toggle-text text-truncate">Semua Kanca</span>
-                            <i class="fas fa-chevron-down text-muted" style="font-size: 0.7rem;"></i>
-                        </button>
-                        <div class="daily-dropdown-menu shadow-sm" style="border-radius:8px;" data-daily-dropdown-menu="kanca"></div>
-                        <select id="filter-kanca" class="form-control daily-filter-native" multiple></select>
+        <div class="daily-filter-shell">
+            <div class="row align-items-stretch mx-n2 daily-filter-grid">
+                <div class="col-12 col-md-6 col-xl px-2 mb-3 mb-xl-0">
+                    <div class="daily-filter-card daily-filter-card--kanca">
+                        <div class="daily-filter-content">
+                            <label class="daily-filter-label" for="filter-kanca">Kanca</label>
+                            <div class="daily-filter-control">
+                                <span class="daily-filter-control-icon"><i class="fas fa-building"></i></span>
+                                <div class="daily-dropdown" data-daily-dropdown="kanca">
+                                    <button type="button" class="daily-dropdown-toggle" data-daily-dropdown-toggle="kanca" aria-haspopup="listbox" aria-expanded="false">
+                                        <span class="daily-dropdown-toggle-text text-truncate">Semua Kanca</span>
+                                        <i class="fas fa-chevron-down daily-dropdown-toggle-icon"></i>
+                                    </button>
+                                    <div class="daily-dropdown-menu" data-daily-dropdown-menu="kanca"></div>
+                                    <select id="filter-kanca" class="form-control daily-filter-native" multiple></select>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
-                <div class="col px-2 mb-2 mb-lg-0">
-                    <label class="text-muted font-weight-bold text-uppercase mb-1" style="font-size:0.65rem; letter-spacing:0.05em;" for="filter-unit">Unit Kerja</label>
-                    <div class="daily-dropdown" data-daily-dropdown="unit">
-                        <button type="button" class="daily-dropdown-toggle p-1 px-3 border" style="min-height:36px; font-size:0.85rem; border-radius:8px; width:100%; box-shadow: 0 1px 2px rgba(0,0,0,0.02);" data-daily-dropdown-toggle="unit" aria-haspopup="listbox" aria-expanded="false">
-                            <span class="daily-dropdown-toggle-text text-truncate">Semua Unit Kerja</span>
-                            <i class="fas fa-chevron-down text-muted" style="font-size: 0.7rem;"></i>
-                        </button>
-                        <div class="daily-dropdown-menu shadow-sm" style="border-radius:8px;" data-daily-dropdown-menu="unit"></div>
-                        <select id="filter-unit" class="form-control daily-filter-native"></select>
+                <div class="col-12 col-md-6 col-xl px-2 mb-3 mb-xl-0">
+                    <div class="daily-filter-card daily-filter-card--unit">
+                        <div class="daily-filter-content">
+                            <label class="daily-filter-label" for="filter-unit">Unit Kerja</label>
+                            <div class="daily-filter-control">
+                                <span class="daily-filter-control-icon"><i class="fas fa-sitemap"></i></span>
+                                <div class="daily-dropdown" data-daily-dropdown="unit">
+                                    <button type="button" class="daily-dropdown-toggle" data-daily-dropdown-toggle="unit" aria-haspopup="listbox" aria-expanded="false">
+                                        <span class="daily-dropdown-toggle-text text-truncate">Semua Unit Kerja</span>
+                                        <i class="fas fa-chevron-down daily-dropdown-toggle-icon"></i>
+                                    </button>
+                                    <div class="daily-dropdown-menu" data-daily-dropdown-menu="unit"></div>
+                                    <select id="filter-unit" class="form-control daily-filter-native"></select>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
-                <div class="col px-2 mb-2 mb-lg-0">
-                    <label class="text-muted font-weight-bold text-uppercase mb-1" style="font-size:0.65rem; letter-spacing:0.05em;" for="filter-posisi-terakhir">Posisi Terakhir</label>
-                    <select id="filter-posisi-terakhir" class="form-control border" style="height:36px; font-size:0.85rem; padding: 2px 12px; border-radius:8px; box-shadow: 0 1px 2px rgba(0,0,0,0.02);"></select>
+                <div class="col-12 col-md-6 col-xl px-2 mb-3 mb-xl-0">
+                    <div class="daily-filter-card daily-filter-card--posisi">
+                        <div class="daily-filter-content">
+                            <label class="daily-filter-label" for="filter-posisi-terakhir">Posisi Terakhir</label>
+                            <div class="daily-filter-control">
+                                <span class="daily-filter-control-icon"><i class="fas fa-calendar-day"></i></span>
+                                <select id="filter-posisi-terakhir" class="form-control daily-filter-select"></select>
+                                <span class="daily-filter-chevron"><i class="fas fa-chevron-down"></i></span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-                <div class="col px-2 mb-2 mb-lg-0">
-                    <label class="text-muted font-weight-bold text-uppercase mb-1" style="font-size:0.65rem; letter-spacing:0.05em;" for="filter-posisi-rka">Posisi RKA</label>
-                    <select id="filter-posisi-rka" class="form-control border" style="height:36px; font-size:0.85rem; padding: 2px 12px; border-radius:8px; box-shadow: 0 1px 2px rgba(0,0,0,0.02);"></select>
+                <div class="col-12 col-md-6 col-xl px-2 mb-3 mb-xl-0">
+                    <div class="daily-filter-card daily-filter-card--rka">
+                        <div class="daily-filter-content">
+                            <label class="daily-filter-label" for="filter-posisi-rka">Posisi RKA</label>
+                            <div class="daily-filter-control">
+                                <span class="daily-filter-control-icon"><i class="fas fa-bullseye"></i></span>
+                                <select id="filter-posisi-rka" class="form-control daily-filter-select"></select>
+                                <span class="daily-filter-chevron"><i class="fas fa-chevron-down"></i></span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-                <div class="col px-2 mb-2 mb-lg-0">
-                    <label class="text-muted font-weight-bold text-uppercase mb-1" style="font-size:0.65rem; letter-spacing:0.05em;">Tindakan</label>
-                    <button type="button" class="btn text-white w-100 d-flex justify-content-center align-items-center " style="height:40px; padding:0 ; font-size:0.85rem; font-weight:600; border-radius:8px; background-color:#1e60d5; border-color:#1e60d5; outline:none; box-shadow: 0 2px 4px rgba(30,96,213,0.3);" id="btn-apply-daily-filter">
-                        <i class="fas fa-filter mr-2"></i> Terapkan
-                    </button>
+                <div class="col-12 col-xl px-2 mb-0">
+                    <div class="daily-filter-card daily-filter-card--action">
+                        <div class="daily-filter-action-body">
+                            <label class="daily-filter-label">Tindakan</label>
+                            <!-- <div class="daily-filter-note">Pilih kombinasi filter lalu jalankan pembaruan tabel tanpa mengubah flow data yang ada.</div> -->
+                            <div class="mt-auto pt-3">
+                                <button type="button" class="btn daily-apply-button d-flex justify-content-center align-items-center" id="btn-apply-daily-filter">
+                                    <i class="fas fa-filter mr-2"></i> Terapkan
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>

@@ -4,21 +4,49 @@
 
 @section('content')
 <style>
+    :root {
+        --loan-surface: #ffffff;
+        --loan-surface-soft: #f8fbff;
+        --loan-border: #dbe5ef;
+        --loan-border-strong: #c9d6e6;
+        --loan-text: #0f172a;
+        --loan-muted: #64748b;
+        --loan-blue: #1d4ed8;
+        --loan-blue-deep: #0f4c97;
+        --loan-blue-soft: #eff6ff;
+    }
+
     .loan-dashboard {
         padding-bottom: 1.5rem;
+        color: var(--loan-text);
     }
 
     .loan-shell,
     .loan-table-shell {
-        border: 1px solid #dbe5ef;
+        position: relative;
+        border: 1px solid var(--loan-border);
         border-radius: 18px;
-        background: #ffffff;
+        background:
+            linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 251, 255, 0.96)),
+            var(--loan-surface);
         box-shadow: 0 14px 30px -24px rgba(15, 23, 42, 0.22);
+    }
+
+    .loan-shell::before,
+    .loan-table-shell::before {
+        content: '';
+        position: absolute;
+        inset: 0 auto auto 0;
+        width: 100%;
+        height: 4px;
+        border-radius: 18px 18px 0 0;
+        background: linear-gradient(90deg, var(--loan-blue-deep), var(--loan-blue), #3b82f6);
+        pointer-events: none;
     }
 
     .loan-shell .card-body,
     .loan-table-shell .card-body {
-        background: #ffffff;
+        background: transparent;
     }
 
     .loan-page-title {
@@ -29,47 +57,113 @@
     }
 
     .loan-filter-grid .form-group {
-        margin-bottom: 1rem;
+        margin-bottom: 0.85rem;
     }
 
     .loan-filter-label {
-        font-size: 0.86rem;
-        font-weight: 700;
-        color: #0f172a;
-        margin-bottom: 0.45rem;
+        display: block;
+        font-size: 0.72rem;
+        font-weight: 800;
+        color: #516b91;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        margin-bottom: 0.35rem;
     }
 
     .loan-filter-control,
     .loan-filter-control.select2-selection {
-        border-radius: 14px !important;
-        min-height: 44px !important;
-        height: 44px !important;
-        border-color: #cfdae6 !important;
-        background: #ffffff !important;
-        font-size: 0.94rem;
+        border-radius: 12px !important;
+        min-height: 40px !important;
+        height: 40px !important;
+        border-color: var(--loan-border-strong) !important;
+        background: linear-gradient(180deg, #ffffff 0%, var(--loan-surface-soft) 100%) !important;
+        font-size: 0.9rem;
         display: flex;
         align-items: center;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95), 0 10px 20px -18px rgba(15, 23, 42, 0.18);
+        transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease, transform 0.2s ease;
+    }
+
+    input.loan-filter-control {
+        padding: 0.5rem 0.8rem;
     }
 
     .loan-filter-control:disabled {
-        background: #edf2f7 !important;
-        color: #64748b !important;
+        background: linear-gradient(180deg, #f8fafc, #eef2f7) !important;
+        color: var(--loan-muted) !important;
+        box-shadow: none;
+        cursor: not-allowed;
     }
 
-    .select2-container--bootstrap4 .select2-selection--multiple.loan-filter-control {
-        min-height: 44px !important;
-        height: 44px !important;
-        padding: 0 2rem 0 0.75rem !important;
+    .loan-filter-control:focus,
+    .loan-filter-control:focus-visible {
+        border-color: var(--loan-blue) !important;
+        box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.14), 0 10px 22px -18px rgba(15, 23, 42, 0.2) !important;
+        outline: none !important;
+    }
+
+    .select2-container--bootstrap4 .select2-selection--single.loan-filter-control,
+    .select2-container--bootstrap4 .select2-selection--single,
+    .select2-container--bootstrap4 .select2-selection--multiple.loan-filter-control,
+    .select2-container--bootstrap4 .select2-selection--multiple {
+        min-height: 40px !important;
+        height: 40px !important;
+        border-radius: 12px !important;
+        border-color: var(--loan-border-strong) !important;
+        background: linear-gradient(180deg, #ffffff 0%, var(--loan-surface-soft) 100%) !important;
         display: flex !important;
         align-items: center !important;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95), 0 10px 20px -18px rgba(15, 23, 42, 0.18);
         overflow: hidden !important;
     }
 
-    .select2-container--bootstrap4 .select2-selection--multiple.loan-filter-control .select2-selection__choice {
+    .select2-container--bootstrap4.select2-container--focus .select2-selection--single,
+    .select2-container--bootstrap4.select2-container--focus .select2-selection--multiple,
+    .select2-container--bootstrap4.select2-container--open .select2-selection--single,
+    .select2-container--bootstrap4.select2-container--open .select2-selection--multiple {
+        border-color: var(--loan-blue) !important;
+        box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.14), 0 12px 24px -18px rgba(15, 23, 42, 0.22) !important;
+    }
+
+    .select2-container--bootstrap4 .select2-selection--single .select2-selection__rendered,
+    .select2-container--bootstrap4 .select2-selection--multiple .select2-selection__rendered {
+        color: #334155 !important;
+        font-size: 0.9rem !important;
+        font-weight: 600 !important;
+        line-height: 38px !important;
+    }
+
+    .select2-container--bootstrap4 .select2-selection--single .select2-selection__rendered {
+        padding-left: 0 !important;
+        padding-right: 0 !important;
+    }
+
+    .select2-container--bootstrap4 .select2-selection--single .select2-selection__arrow {
+        height: 38px !important;
+        right: 0.65rem !important;
+    }
+
+    .select2-container--bootstrap4 .select2-selection--single .select2-selection__arrow b {
+        border-color: #5b78a8 transparent transparent transparent !important;
+        border-width: 5px 4px 0 4px !important;
+    }
+
+    .select2-container--bootstrap4 .select2-selection--single:hover .select2-selection__arrow b {
+        border-color: var(--loan-blue) transparent transparent transparent !important;
+    }
+
+    .select2-container--bootstrap4 .select2-selection--multiple.loan-filter-control,
+    .select2-container--bootstrap4 .select2-selection--multiple {
+        padding: 0 2rem 0 0.8rem !important;
+    }
+
+    .select2-container--bootstrap4 .select2-selection--multiple.loan-filter-control .select2-selection__choice,
+    .select2-container--bootstrap4 .select2-selection--multiple .select2-selection__choice {
         display: none !important;
     }
 
-    .select2-container--bootstrap4 .select2-selection--multiple.loan-filter-control .select2-selection__rendered {
+    .select2-container--bootstrap4 .select2-selection--multiple.loan-filter-control .select2-selection__rendered,
+    .select2-container--bootstrap4 .select2-selection--multiple .select2-selection__rendered {
         display: block !important;
         width: 100% !important;
         padding: 0 !important;
@@ -77,13 +171,14 @@
         white-space: nowrap !important;
         overflow: hidden !important;
         text-overflow: ellipsis !important;
-        line-height: 44px !important;
-        color: #475569 !important;
-        font-size: 0.94rem !important;
+        line-height: 38px !important;
+        color: #334155 !important;
+        font-size: 0.9rem !important;
         transform: translateY(-1px);
     }
 
-    .select2-container--bootstrap4 .select2-selection--multiple.loan-filter-control .select2-search--inline {
+    .select2-container--bootstrap4 .select2-selection--multiple.loan-filter-control .select2-search--inline,
+    .select2-container--bootstrap4 .select2-selection--multiple .select2-search--inline {
         position: absolute !important;
         inset: 0 !important;
         width: 100% !important;
@@ -91,7 +186,8 @@
         margin: 0 !important;
     }
 
-    .select2-container--bootstrap4 .select2-selection--multiple.loan-filter-control .select2-search__field {
+    .select2-container--bootstrap4 .select2-selection--multiple.loan-filter-control .select2-search__field,
+    .select2-container--bootstrap4 .select2-selection--multiple .select2-search__field {
         width: 100% !important;
         height: 100% !important;
         margin: 0 !important;
@@ -99,24 +195,41 @@
         cursor: pointer !important;
     }
 
-    .select2-container--bootstrap4 .select2-selection--multiple.loan-filter-control .select2-selection__clear {
+    .select2-container--bootstrap4 .select2-selection--multiple.loan-filter-control .select2-selection__clear,
+    .select2-container--bootstrap4 .select2-selection--multiple .select2-selection__clear {
         position: absolute !important;
-        right: 0.75rem !important;
+        right: 0.8rem !important;
         top: 50% !important;
         margin: 0 !important;
         transform: translateY(-50%) !important;
         line-height: 1 !important;
     }
 
-    .select2-container--bootstrap4 .select2-selection--single.loan-filter-control {
-        height: 44px !important;
-        padding: 0 2rem 0 0.75rem !important;
-        display: flex !important;
-        align-items: center !important;
+    .loan-filter-summary-empty {
+        color: var(--loan-muted) !important;
     }
 
-    .loan-filter-summary-empty {
-        color: #64748b !important;
+    .select2-container--bootstrap4 .select2-dropdown {
+        border: 1px solid var(--loan-border);
+        border-radius: 14px;
+        overflow: hidden;
+        box-shadow: 0 24px 40px -30px rgba(15, 23, 42, 0.28);
+    }
+
+    .select2-container--bootstrap4 .select2-results__option {
+        padding: 0.6rem 0.8rem;
+        font-size: 0.88rem;
+    }
+
+    .select2-container--bootstrap4 .select2-results__option--highlighted[aria-selected] {
+        background: linear-gradient(135deg, #eaf2ff, #f8fbff) !important;
+        color: var(--loan-blue-deep) !important;
+    }
+
+    .select2-container--bootstrap4 .select2-results__option[aria-selected="true"] {
+        background: linear-gradient(135deg, #dbeafe, #eff6ff) !important;
+        color: var(--loan-blue-deep) !important;
+        font-weight: 700;
     }
 
     .loan-select2-option {
@@ -133,9 +246,193 @@
         display: flex;
         flex-wrap: wrap;
         gap: 1rem;
-        color: #64748b;
+        color: var(--loan-muted);
         font-size: 0.84rem;
         margin-top: 0.25rem;
+    }
+
+    #loanMismatchPanel .loan-shell,
+    #loanMismatchPanel .loan-table-shell {
+        background:
+            radial-gradient(circle at top right, rgba(0, 82, 156, 0.08), transparent 26%),
+            linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+    }
+
+    #loanMismatchPanel .loan-shell::before,
+    #loanMismatchPanel .loan-table-shell::before {
+        background: linear-gradient(90deg, var(--bri-blue-dark), var(--bri-blue-main), #3b82f6);
+    }
+
+    .loan-mismatch-shell {
+        overflow: visible;
+    }
+
+    .loan-mismatch-hero {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-bottom: 1.15rem;
+    }
+
+    .loan-mismatch-title {
+        margin: 0 0 0.35rem;
+        font-size: 1.1rem;
+        font-weight: 800;
+        color: #0f172a;
+    }
+
+    .loan-mismatch-copy {
+        margin: 0;
+        color: #51657f;
+        font-size: 0.88rem;
+        line-height: 1.55;
+    }
+
+    .loan-mismatch-hero-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        padding: 0.5rem 0.8rem;
+        border-radius: 999px;
+        border: 1px solid #d6e5fb;
+        background: linear-gradient(135deg, #eef5ff, #f8fbff);
+        color: #35517c;
+        font-size: 0.8rem;
+        font-weight: 800;
+        white-space: nowrap;
+        box-shadow: 0 10px 20px -18px rgba(0, 82, 156, 0.25);
+    }
+
+    .loan-mismatch-summary {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 0.85rem;
+        margin-top: 1rem;
+    }
+
+    .loan-mismatch-card {
+        position: relative;
+        border: 1px solid #dbe5ef;
+        border-radius: 16px;
+        padding: 1rem 1.05rem 0.95rem;
+        background:
+            linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(246, 250, 255, 0.97)),
+            #ffffff;
+        box-shadow: 0 12px 24px -22px rgba(15, 23, 42, 0.24);
+        overflow: hidden;
+        transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+    }
+
+    .loan-mismatch-card::before {
+        content: '';
+        position: absolute;
+        inset: 0 auto auto 0;
+        width: 100%;
+        height: 3px;
+        background: linear-gradient(90deg, var(--loan-blue-deep), var(--loan-blue), #3b82f6);
+    }
+
+    .loan-mismatch-card:hover {
+        transform: translateY(-2px);
+        border-color: rgba(0, 82, 156, 0.2);
+        box-shadow: 0 18px 28px -24px rgba(0, 82, 156, 0.25);
+    }
+
+    .loan-mismatch-card .loan-audit-label {
+        color: #51657f;
+        font-size: 0.74rem;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+    }
+
+    .loan-mismatch-card .loan-audit-value {
+        color: #0f172a;
+        font-size: 1.55rem;
+        margin-top: 0.1rem;
+    }
+
+    .loan-mismatch-card .loan-audit-note {
+        color: #64748b;
+        font-size: 0.78rem;
+        margin-top: 0.3rem;
+    }
+
+    .loan-mismatch-action-col {
+        display: flex;
+        align-items: flex-start;
+        justify-content: flex-start;
+        padding-top: 1.55rem;
+    }
+
+    .loan-mismatch-actions {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 0.75rem;
+        width: 100%;
+    }
+
+    .loan-mismatch-actions .btn {
+        min-height: 40px;
+        border-radius: 12px;
+        padding: 0.56rem 1rem;
+        font-weight: 700;
+        box-shadow: 0 10px 20px -18px rgba(15, 23, 42, 0.22);
+    }
+
+    .loan-mismatch-actions .btn-primary {
+        background: linear-gradient(135deg, var(--loan-blue-deep), var(--loan-blue), #3b82f6);
+        border-color: transparent;
+        color: #ffffff;
+        box-shadow: 0 16px 26px -18px rgba(29, 78, 216, 0.68);
+    }
+
+    .loan-mismatch-actions .btn-primary:hover {
+        background: linear-gradient(135deg, var(--loan-blue-deep), #2563eb);
+        transform: translateY(-1px);
+        color: #ffffff;
+        box-shadow: 0 18px 28px -18px rgba(29, 78, 216, 0.76);
+    }
+
+    .loan-mismatch-actions .btn-light {
+        background: linear-gradient(180deg, #ffffff, #f8fbff);
+        border-color: #cfdbee;
+        color: #334155;
+    }
+
+    .loan-mismatch-actions .btn-light:hover {
+        border-color: var(--bri-blue-main);
+        color: var(--bri-blue-dark);
+        background: #ffffff;
+    }
+
+    .loan-mismatch-actions .loan-loading-chip {
+        border: 1px solid #d6e5fb;
+    }
+
+    .loan-mismatch-panel {
+        overflow: visible;
+    }
+
+    .loan-mismatch-table-shell {
+        margin-top: 1.25rem;
+        overflow: hidden;
+    }
+
+    .loan-mismatch-table-shell .card-body {
+        padding: 1.15rem 1.25rem 1.25rem;
+    }
+
+    .loan-mismatch-table-wrap {
+        margin-top: 0.9rem;
+        border: 1px solid #dbe5ef;
+        border-radius: 16px;
+        overflow: hidden;
+        background: #ffffff;
+        box-shadow: 0 12px 24px -22px rgba(15, 23, 42, 0.22);
     }
 
     .loan-table-heading {
@@ -468,7 +765,7 @@
     }
 
     .loan-mode-shell {
-        border: 1px solid #dbe5ef;
+        border: 1px solid var(--loan-border);
         border-radius: 18px;
         background: linear-gradient(135deg, #f8fbff, #ffffff);
         box-shadow: 0 14px 30px -24px rgba(15, 23, 42, 0.18);
@@ -495,7 +792,7 @@
     }
 
     .loan-audit-card {
-        border: 1px solid #dbe5ef;
+        border: 1px solid var(--loan-border);
         border-radius: 16px;
         padding: 1rem 1.05rem;
         background: linear-gradient(180deg, #ffffff, #f8fafc);
@@ -528,6 +825,32 @@
         vertical-align: middle;
     }
 
+    .loan-mismatch-table thead th {
+        background: linear-gradient(180deg, #f4f7fb, #e9eef5);
+        color: #475569;
+        font-size: 0.8rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        padding-top: 0.95rem;
+        padding-bottom: 0.95rem;
+        border-bottom: 1px solid #d6e1ef;
+    }
+
+    .loan-mismatch-table tbody td {
+        padding-top: 1rem;
+        padding-bottom: 1rem;
+        border-top: 1px solid #e5ebf3;
+    }
+
+    .loan-mismatch-table tbody tr:nth-child(even) td {
+        background: #fafcff;
+    }
+
+    .loan-mismatch-table tbody tr:hover td {
+        background: #f1f7ff;
+    }
+
     .loan-mismatch-table td:last-child,
     .loan-mismatch-table th:last-child {
         text-align: right;
@@ -543,6 +866,10 @@
     @media (max-width: 767px) {
         .loan-mismatch-audit {
             grid-template-columns: repeat(2, 1fr);
+        }
+
+        .loan-mismatch-summary {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
         }
 
         .loan-page-title {
@@ -564,8 +891,49 @@
         }
     }
 
+    .loan-filter-actions {
+        gap: 0.6rem;
+    }
+
+    .loan-filter-actions .btn {
+        border-radius: 12px;
+        min-height: 40px;
+        padding: 0.55rem 0.95rem;
+        font-weight: 700;
+        box-shadow: 0 10px 20px -18px rgba(15, 23, 42, 0.22);
+    }
+
+    .loan-filter-actions .btn-primary {
+        background: linear-gradient(135deg, var(--loan-blue-deep), var(--loan-blue));
+        border-color: transparent;
+        color: #ffffff;
+        box-shadow: 0 16px 26px -18px rgba(29, 78, 216, 0.6);
+    }
+
+    .loan-filter-actions .btn-primary:hover {
+        transform: translateY(-1px);
+        color: #ffffff;
+        box-shadow: 0 18px 28px -18px rgba(29, 78, 216, 0.68);
+    }
+
+    .loan-filter-actions .btn-light {
+        background: linear-gradient(180deg, #ffffff, #f8fafc);
+        border-color: #cfdbee;
+        color: #334155;
+    }
+
+    .loan-filter-actions .btn-light:hover {
+        background: #ffffff;
+        border-color: var(--loan-blue);
+        color: var(--loan-blue-deep);
+    }
+
     @media (max-width: 479px) {
         .loan-mismatch-audit {
+            grid-template-columns: 1fr 1fr;
+        }
+
+        .loan-mismatch-summary {
             grid-template-columns: 1fr 1fr;
         }
 
@@ -576,6 +944,10 @@
         .loan-table-heading {
             flex-direction: column;
             align-items: flex-start;
+        }
+
+        .loan-mismatch-action-col {
+            padding-top: 0;
         }
     }
 
@@ -677,7 +1049,7 @@
                     </div>
                 </div>
 
-                <div class="d-flex flex-wrap align-items-center" style="gap: 0.75rem;">
+                <div class="d-flex flex-wrap align-items-center loan-filter-actions" style="gap: 0.75rem;">
                     <button id="loanSubmitButton" type="submit" class="btn btn-primary">
                         <i class="fas fa-filter mr-1"></i>
                         Tampilkan
@@ -804,16 +1176,17 @@
     @endif
 
     @if ($selectedMode === 'mismatch')
-    <div id="loanMismatchPanel">
-        <div class="card loan-shell mb-4">
+    <div id="loanMismatchPanel" class="loan-mismatch-panel">
+        <div class="card loan-shell loan-mismatch-shell mb-4">
             <div class="card-body p-4">
                 <form id="loanMismatchForm" method="GET" action="{{ route('report.dashboard-pinjaman.kolek-tidak-sesuai') }}">
-                    <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center mb-3">
+                    <div class="loan-mismatch-hero">
                         <div>
-                            <h5 class="mb-1 font-weight-bold text-dark">Filter Kolek Tidak Sesuai</h5>
-                            <div class="loan-filter-meta">
-                                <span>Rule audit: <strong>1 <= 9 hari, 2 <= 90 hari, 3 <= 120 hari, 4 <= 180 hari, 5 &gt; 180 hari</strong></span>
-                            </div>
+                            <h5 class="loan-mismatch-title">Filter Kolek Tidak Sesuai</h5>
+                        </div>
+                        <div class="loan-mismatch-hero-badge">
+                            <i class="fas fa-shield-alt"></i>
+                            Audit Cabang
                         </div>
                     </div>
 
@@ -839,8 +1212,8 @@
                                 </select>
                             </div>
                         </div>
-                        <div class="col-xl-5 col-lg-3 col-md-12 d-flex align-items-end">
-                            <div class="d-flex flex-wrap align-items-center w-100" style="gap: 0.75rem;">
+                        <div class="col-xl-5 col-lg-3 col-md-12 loan-mismatch-action-col">
+                            <div class="loan-mismatch-actions w-100">
                                 <button id="loanMismatchSubmitButton" type="submit" class="btn btn-primary">
                                     <i class="fas fa-search mr-1"></i>
                                     Proses
@@ -859,40 +1232,38 @@
             </div>
         </div>
 
-        <div class="card loan-table-shell">
+        <div class="card loan-table-shell loan-mismatch-table-shell">
             <div class="card-body p-4">
                 <div class="loan-table-heading">
                     <div>
                         <h5>Kolek Tidak Sesuai</h5>
-                        <div class="loan-table-note">
-                            Sistem membaca <strong>daily_loan_dinamis</strong> berdasarkan <strong>periode</strong> dan <strong>cabang1</strong>, lalu membandingkan <strong>kol_adk1</strong> terhadap <strong>umur_tunggakan</strong>. Ringkasan ditampilkan per <strong>unit1</strong>, dan detail mismatch dapat diexport ke Excel.
-                        </div>
+                        
                     </div>
                     <div class="loan-table-badge">
                         <i class="fas fa-file-excel"></i>
-                        <span id="loanMismatchPeriodBadge">
+                        <span id="loanMismatchPeriodBadge" class="loan-mismatch-hero-badge">
                             {{ $mismatchSelectedPeriod ? \Carbon\Carbon::parse($mismatchSelectedPeriod)->format('d/m/Y') : '-' }} | {{ $mismatchSelectedBranch ?: 'Belum pilih cabang' }}
                         </span>
                     </div>
                 </div>
 
-                <div class="loan-mismatch-audit">
-                    <div class="loan-audit-card">
+                <div class="loan-mismatch-summary">
+                    <div class="loan-audit-card loan-mismatch-card">
                         <div class="loan-audit-label">Baris Discanning</div>
                         <div id="loanMismatchScanned" class="loan-audit-value">0</div>
                         <div class="loan-audit-note">Semua row yang masuk filter audit</div>
                     </div>
-                    <div class="loan-audit-card">
+                    <div class="loan-audit-card loan-mismatch-card">
                         <div class="loan-audit-label">Mismatch</div>
                         <div id="loanMismatchTotal" class="loan-audit-value">0</div>
                         <div class="loan-audit-note">Jumlah row dengan kolek tidak sesuai</div>
                     </div>
-                    <div class="loan-audit-card">
+                    <div class="loan-audit-card loan-mismatch-card">
                         <div class="loan-audit-label">Sesuai</div>
                         <div id="loanMismatchMatched" class="loan-audit-value">0</div>
                         <div class="loan-audit-note">Jumlah row yang sesuai rule audit</div>
                     </div>
-                    <div class="loan-audit-card">
+                    <div class="loan-audit-card loan-mismatch-card">
                         <div class="loan-audit-label">Unit Bermasalah</div>
                         <div id="loanMismatchUnits" class="loan-audit-value">0</div>
                         <div class="loan-audit-note">Unit kerja yang memiliki mismatch</div>
@@ -900,7 +1271,8 @@
                 </div>
 
                 <div class="table-responsive" style="overflow-x:auto;">
-                    <table class="table table-hover loan-mismatch-table mb-0" style="min-width:560px;">
+                    <div class="loan-mismatch-table-wrap">
+                        <table class="table table-hover loan-mismatch-table mb-0" style="min-width:560px;">
                         <thead class="thead-light">
                             <tr>
                                 <th style="width: 72px;">No</th>
@@ -917,7 +1289,8 @@
                                 </td>
                             </tr>
                         </tbody>
-                    </table>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
