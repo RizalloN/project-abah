@@ -104,6 +104,10 @@ class ManagedReportManagementService
             'period_priority' => ['periode'],
             'kanca_priority' => ['mbdesc'],
         ],
+        'gi405_rec_dh' => [
+            'period_priority' => ['tanggal'],
+            'kanca_priority' => ['kc_konsol'],
+        ],
     ];
 
     public function resolveReportManagementData(

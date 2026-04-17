@@ -420,6 +420,48 @@ class ImportExcelController extends Controller
         return $kode !== '' && $tanggal !== '' && $uniqueId !== '';
     }
 
+    private function assertGi405RecDhNumericMapping(array $row, array $normalizedHeaders, array $finalRow): void
+    {
+        $checks = [
+            'Pendapatan Koreksi PPAP-dr Angsuran PH' => 'pendapatan_koreksi_ppap_dr_angsuran_ph',
+            'Recovery Non Klaim' => 'recovery_non_klaim',
+        ];
+
+        foreach ($checks as $headerLabel => $dbColumn) {
+            $headerIndex = $this->findNormalizedHeaderIndex($normalizedHeaders, $headerLabel);
+            if ($headerIndex === null) {
+                continue;
+            }
+
+            $rawValue = trim((string) ($row[$headerIndex] ?? ''));
+            if ($rawValue === '') {
+                continue;
+            }
+
+            if (($finalRow[$dbColumn] ?? null) !== null) {
+                continue;
+            }
+
+            throw new \RuntimeException(
+                "Nilai numerik GI405 tidak berhasil dipetakan untuk kolom `{$dbColumn}`. "
+                . "Header sumber: `{$headerLabel}`, contoh nilai: `{$rawValue}`."
+            );
+        }
+    }
+
+    private function findNormalizedHeaderIndex(array $headers, string $targetHeader): ?int
+    {
+        $target = $this->normalizeImportColumnName($targetHeader);
+
+        foreach ($headers as $index => $header) {
+            if ($this->normalizeImportColumnName((string) $header) === $target) {
+                return (int) $index;
+            }
+        }
+
+        return null;
+    }
+
     private function detectCsvDelimiter(string $path): string
     {
         return $this->smartDetectCsvDelimiter($path);
@@ -5790,6 +5832,10 @@ class ImportExcelController extends Controller
 
         if (($context['table_name'] ?? '') === 'gi405_rec_dh' && !$this->hasRequiredGi405RecDhImportData($finalRow)) {
             return null;
+        }
+
+        if (($context['table_name'] ?? '') === 'gi405_rec_dh') {
+            $this->assertGi405RecDhNumericMapping($row, $normalizedHeaders, $finalRow);
         }
 
         return count($finalRow) > $minimumColumns ? $finalRow : null;

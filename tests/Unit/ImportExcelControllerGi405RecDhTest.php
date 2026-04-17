@@ -70,6 +70,8 @@ class ImportExcelControllerGi405RecDhTest extends TestCase
         $this->assertSame('2026-01-19', $row['tanggal']);
         $this->assertNotEmpty($row['uniqueid_namareport']);
         $this->assertStringStartsWith('uuid_405RDH_', $row['uniqueid_namareport']);
+        $this->assertSame('-61806903.00', $row['pendapatan_koreksi_ppap_dr_angsuran_ph']);
+        $this->assertSame('61806903.00', $row['recovery_non_klaim']);
     }
 
     public function test_gi405_rows_without_business_key_are_rejected(): void

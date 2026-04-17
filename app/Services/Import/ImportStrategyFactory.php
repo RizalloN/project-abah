@@ -3,6 +3,8 @@
 namespace App\Services\Import;
 
 use App\Services\Import\Strategies\DailyLoanImportStrategy;
+use App\Services\Import\Strategies\CognosPhImportStrategy;
+use App\Services\Import\Strategies\CognosRecoveryImportStrategy;
 use App\Services\Import\Strategies\Gi405RecDhImportStrategy;
 use App\Services\Import\Strategies\GenericCsvImportStrategy;
 use App\Services\Import\Strategies\ImportStrategyInterface;
@@ -27,6 +29,8 @@ class ImportStrategyFactory
             app(SsaSimpananImportStrategy::class),
             app(SsaPinjamanImportStrategy::class),
             app(Lw325PhImportStrategy::class),
+            app(CognosPhImportStrategy::class),
+            app(CognosRecoveryImportStrategy::class),
             app(PerformancePisImportStrategy::class),
             app(GenericCsvImportStrategy::class),
         ];
