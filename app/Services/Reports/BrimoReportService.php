@@ -90,8 +90,8 @@ class BrimoReportService
         $data  = [];
         $total = [
             'branch'         => $totalLabel,
-            'ureg_rekening'  => ['curr' => 0, 'prev' => 0, 'dec' => 0, 'yoy_prev' => 0],
-            'ureg_finansial' => ['curr' => 0, 'prev' => 0, 'dec' => 0, 'yoy_prev' => 0],
+            'ureg_rekening'  => ['curr' => 0.0, 'prev' => 0.0, 'dec' => 0.0, 'yoy_prev' => 0.0],
+            'ureg_finansial' => ['curr' => 0.0, 'prev' => 0.0, 'dec' => 0.0, 'yoy_prev' => 0.0],
         ];
 
         foreach ($displayItems as $displayItem) {
