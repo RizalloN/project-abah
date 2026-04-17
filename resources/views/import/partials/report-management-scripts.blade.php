@@ -249,6 +249,8 @@
             const progressText = document.getElementById('delete-progress-text');
             const progressDesc = document.getElementById('delete-progress-desc');
             const progressMeta = document.getElementById('delete-progress-meta');
+            const deletePlan = String(payload?.delete_plan || 'normal');
+            const problemSignature = String(payload?.problem_signature || '');
             const percent = Math.max(0, Math.min(100, Number(payload?.progress_percent || 0)));
             const waitingOnBatch = !!payload?.is_waiting_on_batch;
             const currentScope = Math.min(Math.max(1, Number(payload?.scope_count || 1)), Math.max(1, Number(payload?.current_scope_index || 0) + 1));
@@ -273,13 +275,19 @@
                 } else if (isCancelled) {
                     progressMeta.innerText = 'Delete dibatalkan aman. Worker akan berhenti tanpa cleanup lanjutan.';
                 } else if ((payload?.stage || '') === 'queued') {
-                    progressMeta.innerText = 'Menunggu queue worker. Fallback controller akan mengambil alih bila progres tidak bergerak.';
+                    progressMeta.innerText = deletePlan === 'recovery_blank_scope'
+                        ? 'Plan B recovery aktif. Sistem akan beralih ke delete scope langsung bila worker queue tidak bergerak.'
+                        : 'Menunggu queue worker. Fallback controller akan mengambil alih bila progres tidak bergerak.';
                 } else if (waitingOnBatch) {
-                    progressMeta.innerText = `Memproses batch ${formatNumber(activeBatchSize)} baris - Grup ${formatNumber(currentScope)}/${formatNumber(payload?.scope_count || 1)}`;
+                    progressMeta.innerText = deletePlan === 'recovery_blank_scope'
+                        ? `Plan B recovery memproses batch ${formatNumber(activeBatchSize)} baris untuk scope blank/null.`
+                        : `Memproses batch ${formatNumber(activeBatchSize)} baris - Grup ${formatNumber(currentScope)}/${formatNumber(payload?.scope_count || 1)}`;
                 } else if ((payload?.stage || '') === 'cleanup') {
                     progressMeta.innerText = 'Delete sumber selesai, membersihkan snapshot...';
                 } else if ((payload?.stage || '') === 'syncing') {
                     progressMeta.innerText = 'Membersihkan snapshot turunan, statistik, dan cache...';
+                } else if (problemSignature) {
+                    progressMeta.innerText = 'Scope anomali terdeteksi. Sistem menjalankan recovery lane khusus agar delete tetap aman.';
                 } else if (lastBatchDeletedRows > 0) {
                     progressMeta.innerText = `Batch terakhir menghapus ${formatNumber(lastBatchDeletedRows)} baris.`;
                 } else {
@@ -363,7 +371,13 @@
                 while (true) {
                     if (!statusUrl && !processUrl) throw new Error('Endpoint progress delete tidak tersedia.');
                     if (statusUrl) {
-                        finalPayload = normalizeDeletePayload(await getJson(statusUrl));
+                        try {
+                            finalPayload = normalizeDeletePayload(await getJson(statusUrl));
+                        } catch (error) {
+                            if (!processUrl) throw error;
+                            lastProcessAttemptAt = Date.now();
+                            finalPayload = normalizeDeletePayload(await postJson(processUrl, {}));
+                        }
                     } else if (processUrl) {
                         finalPayload = normalizeDeletePayload(await postJson(processUrl, {}));
                     }

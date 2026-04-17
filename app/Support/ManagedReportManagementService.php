@@ -113,6 +113,18 @@ class ManagedReportManagementService
             'kanca_priority' => ['kanca'],
             'kanca_label_fallback_priority' => ['unit_kerja'],
         ],
+        'ssa_simpanan' => [
+            'period_priority' => ['Month_Day_Year_of_Posisi', 'month_day_year_of_posisi'],
+            'kanca_priority' => ['nama_cabang'],
+            'period_filter_mode' => 'month',
+            'normalize_kanca_whitespace' => true,
+        ],
+        'ssa_pinjaman' => [
+            'period_priority' => ['month_day_year_of_periode', 'Month_Day_Year_of_Periode'],
+            'kanca_priority' => ['nama_cabang'],
+            'period_filter_mode' => 'month',
+            'normalize_kanca_whitespace' => true,
+        ],
     ];
 
     public function resolveReportManagementData(
@@ -628,23 +640,67 @@ class ManagedReportManagementService
             $periodRaw = $periodColumn !== null ? ($item->period_value ?? null) : null;
             $kancaRaw = $kancaColumn !== null ? ($item->kanca_value ?? null) : null;
             $kancaFallbackRaw = $kancaLabelFallbackColumn !== null ? ($item->kanca_label_fallback_value ?? null) : null;
+            $normalizedPeriodFilter = $periodRaw === null || trim((string) $periodRaw) === ''
+                ? ''
+                : $this->normalizeManagementPeriodFilter($tableName, $periodRaw, $periodColumn);
             $periodLabel = $periodRaw === null || trim((string) $periodRaw) === ''
                 ? ($periodColumn !== null ? '(Blank)' : '(Tanpa Periode)')
                 : $this->formatManagementPeriodLabel($periodRaw, $periodColumn);
+            $normalizedKancaFilter = $kancaRaw === null || trim((string) $kancaRaw) === ''
+                ? ''
+                : $this->normalizeManagementKancaFilter($tableName, (string) $kancaRaw);
             $kancaLabel = $kancaRaw === null || trim((string) $kancaRaw) === ''
                 ? ($kancaColumn !== null ? '(Blank)' : '(Semua)')
                 : $this->resolveManagementKancaLabel($tableName, (string) $kancaRaw, $kancaFallbackRaw);
+            $periodIsNull = $periodRaw === null || trim((string) $periodRaw) === '';
+            $kancaIsNull = $kancaRaw === null || trim((string) $kancaRaw) === '';
+            $aggregateKey = json_encode([
+                $periodIsNull,
+                $periodIsNull ? '' : $normalizedPeriodFilter,
+                $kancaIsNull,
+                $kancaIsNull ? '' : $normalizedKancaFilter,
+            ]);
 
-            $rows[] = [
-                'period' => $periodRaw === null || trim((string) $periodRaw) === '' ? '' : (string) $periodRaw,
-                'period_label' => $periodLabel,
-                'kanca' => $kancaRaw === null || trim((string) $kancaRaw) === '' ? '' : (string) $kancaRaw,
-                'kanca_label' => $kancaLabel,
-                'row_count' => (int) ($item->row_count ?? 0),
-                'period_is_null' => $periodRaw === null || trim((string) $periodRaw) === '',
-                'kanca_is_null' => $kancaRaw === null || trim((string) $kancaRaw) === '',
-            ];
+            if ($aggregateKey === false || !isset($rows[$aggregateKey])) {
+                $rows[$aggregateKey] = [
+                    'period' => $periodIsNull ? '' : $normalizedPeriodFilter,
+                    'period_label' => $periodIsNull ? ($periodColumn !== null ? '(Blank)' : '(Tanpa Periode)') : $normalizedPeriodFilter,
+                    'kanca' => $kancaIsNull ? '' : $normalizedKancaFilter,
+                    'kanca_label' => $kancaLabel,
+                    'row_count' => 0,
+                    'period_is_null' => $periodIsNull,
+                    'kanca_is_null' => $kancaIsNull,
+                    '_raw_period_values' => [],
+                ];
+            }
+
+            $rows[$aggregateKey]['row_count'] += (int) ($item->row_count ?? 0);
+            if (!$periodIsNull && $periodRaw !== null) {
+                $rawPeriodValue = trim((string) $periodRaw);
+                if ($rawPeriodValue !== '' && count($rows[$aggregateKey]['_raw_period_values']) < 2) {
+                    $rows[$aggregateKey]['_raw_period_values'][$rawPeriodValue] = true;
+                }
+            }
         }
+
+        $rows = array_map(function (array $row) use ($tableName, $periodColumn) {
+            $rawPeriodValues = array_keys((array) ($row['_raw_period_values'] ?? []));
+            if (
+                !(bool) ($row['period_is_null'] ?? false)
+                && count($rawPeriodValues) === 1
+            ) {
+                $row['period_label'] = $this->resolveAggregatedPeriodLabel(
+                    $tableName,
+                    trim((string) $rawPeriodValues[0]),
+                    (string) ($row['period_label'] ?? ''),
+                    $periodColumn
+                );
+            }
+
+            unset($row['_raw_period_values']);
+
+            return $row;
+        }, array_values($rows));
 
         return [$rows, $truncated];
     }
@@ -682,6 +738,56 @@ class ManagedReportManagementService
         }
 
         return $kancaRaw;
+    }
+
+    private function normalizeManagementPeriodFilter(string $tableName, mixed $periodRaw, ?string $periodColumn = null): string
+    {
+        $formatted = $this->formatManagementPeriodLabel($periodRaw, $periodColumn);
+        $override = self::MANAGEMENT_SCOPE_COLUMN_OVERRIDES[$tableName] ?? null;
+        $mode = is_array($override) ? (string) ($override['period_filter_mode'] ?? '') : '';
+
+        if ($mode === 'month' && preg_match('/^\d{4}-\d{2}/', $formatted) === 1) {
+            return substr($formatted, 0, 7);
+        }
+
+        return $formatted;
+    }
+
+    private function normalizeManagementKancaFilter(string $tableName, string $kancaRaw): string
+    {
+        $normalized = trim($kancaRaw);
+        $override = self::MANAGEMENT_SCOPE_COLUMN_OVERRIDES[$tableName] ?? null;
+        $normalizeWhitespace = is_array($override) && (bool) ($override['normalize_kanca_whitespace'] ?? false);
+
+        if ($normalizeWhitespace) {
+            $normalized = preg_replace('/\s+/u', ' ', $normalized) ?? $normalized;
+        }
+
+        return $normalized;
+    }
+
+    private function resolveAggregatedPeriodLabel(string $tableName, string $singleRawPeriod, string $defaultLabel, ?string $periodColumn = null): string
+    {
+        if ($singleRawPeriod === '') {
+            return $defaultLabel;
+        }
+
+        if (!in_array($tableName, ['ssa_simpanan', 'ssa_pinjaman'], true)) {
+            return $defaultLabel;
+        }
+
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $singleRawPeriod) === 1) {
+            return $singleRawPeriod;
+        }
+
+        $strictNormalized = StrictDateParser::normalize($singleRawPeriod);
+        if ($strictNormalized !== null && preg_match('/^\d{4}-\d{2}-\d{2}$/', $strictNormalized) === 1) {
+            return $strictNormalized;
+        }
+
+        $formatted = $this->formatManagementPeriodLabel($singleRawPeriod, $periodColumn);
+
+        return preg_match('/^\d{4}-\d{2}-\d{2}$/', $formatted) === 1 ? $formatted : $defaultLabel;
     }
 
     private function paginateManagementPeriods(array $rows, int $page, int $perPage, bool $hasPeriodColumn): array

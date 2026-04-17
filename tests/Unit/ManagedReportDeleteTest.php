@@ -4,6 +4,7 @@ namespace Tests\Unit;
 
 use App\Http\Controllers\Import\ImportIndexController;
 use App\Services\Import\MySqlBulkLoadService;
+use App\Support\ManagedReportDeleteRecoveryService;
 use App\Support\ReportDataSyncService;
 use Illuminate\Contracts\Bus\Dispatcher as BusDispatcher;
 use Illuminate\Database\Schema\Blueprint;
@@ -851,6 +852,51 @@ class ManagedReportDeleteTest extends TestCase
         Queue::assertNothingPushed();
     }
 
+    public function test_delete_management_matches_ssa_pinjaman_by_month_scope(): void
+    {
+        Schema::create('ssa_pinjaman', function (Blueprint $table) {
+            $table->string('uniqueid_namareport')->primary();
+            $table->string('month_day_year_of_periode')->nullable();
+            $table->string('nama_cabang')->nullable();
+            $table->string('nama_uker')->nullable();
+        });
+
+        DB::table('nama_report')->insert([
+            'id_report' => 18,
+            'nama_report' => 'SSA Pinjaman',
+            'table_name' => 'ssa_pinjaman',
+            'active' => 1,
+        ]);
+
+        DB::table('ssa_pinjaman')->insert([
+            ['uniqueid_namareport' => 'SSA-P-1', 'month_day_year_of_periode' => '2026-03-01', 'nama_cabang' => '00045 -- KC Madiun (Konsolidasi-MB)', 'nama_uker' => 'Unit A'],
+            ['uniqueid_namareport' => 'SSA-P-2', 'month_day_year_of_periode' => '2026-03-15', 'nama_cabang' => '00045 -- KC Madiun (Konsolidasi-MB)', 'nama_uker' => 'Unit B'],
+            ['uniqueid_namareport' => 'SSA-P-3', 'month_day_year_of_periode' => '2026-03-31', 'nama_cabang' => '00049 -- KC Magetan (Konsolidasi-MB)', 'nama_uker' => 'Unit C'],
+            ['uniqueid_namareport' => 'SSA-P-4', 'month_day_year_of_periode' => '2026-04-01', 'nama_cabang' => '00045 -- KC Madiun (Konsolidasi-MB)', 'nama_uker' => 'Unit D'],
+        ]);
+
+        $controller = app(ImportIndexController::class);
+        $request = Request::create('/import/report-management/delete', 'POST', [
+            'id_report' => 18,
+            'scopes' => [
+                ['period_filter' => '2026-03', 'kanca_filter' => '00045 -- KC Madiun (Konsolidasi-MB)'],
+            ],
+            'force' => true,
+            'hard_force' => true,
+        ]);
+
+        $response = $controller->deleteManagedReportRows($request);
+        $payload = $response->getData(true);
+
+        $this->assertSame(200, $response->status());
+        $this->assertSame('completed', $payload['status']);
+        $this->assertSame(2, $payload['deleted_rows']);
+        $this->assertSame(2, DB::table('ssa_pinjaman')->count());
+        $this->assertSame(0, DB::table('ssa_pinjaman')->where('month_day_year_of_periode', 'like', '2026-03%')->where('nama_cabang', '00045 -- KC Madiun (Konsolidasi-MB)')->count());
+        $this->assertSame(1, DB::table('ssa_pinjaman')->where('month_day_year_of_periode', 'like', '2026-03%')->where('nama_cabang', '00049 -- KC Magetan (Konsolidasi-MB)')->count());
+        $this->assertSame(1, DB::table('ssa_pinjaman')->where('month_day_year_of_periode', 'like', '2026-04%')->where('nama_cabang', '00045 -- KC Madiun (Konsolidasi-MB)')->count());
+    }
+
     public function test_delete_management_accepts_period_and_kanca_filters_from_scopes_payload(): void
     {
         Schema::create('user_brimo_rpt_v2', function (Blueprint $table) {
@@ -962,6 +1008,62 @@ class ManagedReportDeleteTest extends TestCase
         $this->assertSame(1, $payload['deleted_rows']);
         $this->assertSame(2, DB::table('user_brimo_fin')->where('mbdesc', 'Unit Ngrayun')->count() + DB::table('user_brimo_fin')->where('mbdesc', 'Unit Ponorogo')->count());
         $this->assertSame(0, DB::table('user_brimo_fin')->where('mbdesc', 'Unit Sudirman')->count());
+        Queue::assertNothingPushed();
+    }
+
+    public function test_delete_management_matches_date_period_columns_with_month_scope_filters(): void
+    {
+        Schema::create('gi405_rec_dh', function (Blueprint $table) {
+            $table->string('uniqueid_namareport')->primary();
+            $table->date('tanggal')->nullable();
+            $table->string('kc_konsol')->nullable();
+            $table->string('kode')->nullable();
+        });
+
+        DB::table('nama_report')->insert([
+            'id_report' => 14,
+            'nama_report' => 'GI405 REC DH',
+            'table_name' => 'gi405_rec_dh',
+            'active' => 1,
+        ]);
+
+        DB::table('gi405_rec_dh')->insert([
+            ['uniqueid_namareport' => 'REC-1', 'tanggal' => '2026-04-04', 'kc_konsol' => 'KANWIL MALANG', 'kode' => '001'],
+            ['uniqueid_namareport' => 'REC-2', 'tanggal' => '2026-04-17', 'kc_konsol' => 'KC Banyuwangi', 'kode' => '002'],
+            ['uniqueid_namareport' => 'REC-3', 'tanggal' => '2026-05-01', 'kc_konsol' => 'KC Banyuwangi', 'kode' => '003'],
+        ]);
+
+        $syncService = \Mockery::mock(ReportDataSyncService::class);
+        $syncService->shouldReceive('resolvePostDeleteMaintenanceMode')->with('gi405_rec_dh')->andReturn('lightweight');
+        $syncService->shouldReceive('syncAfterDeleteLightweight')->once()->with('gi405_rec_dh', '2026-04', \Mockery::type('string'))->andReturnNull();
+        app()->instance(ReportDataSyncService::class, $syncService);
+
+        $controller = app(ImportIndexController::class);
+        $request = Request::create('/import/report-management/delete', 'POST', [
+            'id_report' => 14,
+            'scopes' => [
+                [
+                    'period_filter' => '2026-04',
+                    'period_label' => '2026-04',
+                    'kanca_filter' => 'KC Banyuwangi',
+                    'kanca_label' => 'KC Banyuwangi',
+                    'period_is_null' => false,
+                    'kanca_is_null' => false,
+                ],
+            ],
+            'force' => true,
+            'hard_force' => true,
+        ]);
+
+        $response = $controller->deleteManagedReportRows($request);
+        $payload = $response->getData(true);
+
+        $this->assertSame(200, $response->status());
+        $this->assertSame('completed', $payload['status']);
+        $this->assertSame(1, $payload['deleted_rows']);
+        $this->assertSame(0, DB::table('gi405_rec_dh')->where('tanggal', '2026-04-17')->where('kc_konsol', 'KC Banyuwangi')->count());
+        $this->assertSame(1, DB::table('gi405_rec_dh')->where('tanggal', '2026-04-04')->where('kc_konsol', 'KANWIL MALANG')->count());
+        $this->assertSame(1, DB::table('gi405_rec_dh')->where('tanggal', '2026-05-01')->where('kc_konsol', 'KC Banyuwangi')->count());
         Queue::assertNothingPushed();
     }
 
@@ -1136,6 +1238,190 @@ class ManagedReportDeleteTest extends TestCase
         }
 
         Queue::assertNothingPushed();
+    }
+
+    public function test_reconcile_managed_delete_state_marks_stale_state_failed_without_queue_row(): void
+    {
+        $deleteId = (string) \Illuminate\Support\Str::uuid();
+        $controller = app(ImportIndexController::class);
+
+        $method = new \ReflectionMethod($controller, 'reconcileManagedDeleteStateWithQueueRow');
+        $method->setAccessible(true);
+
+        $state = [
+            'delete_id' => $deleteId,
+            'status' => 'running',
+            'stage' => 'deleting',
+            'table_name' => 'daily_loan_dinamis',
+            'deleted_rows' => 0,
+            'period_hint' => '2026-04-30',
+            'created_at' => now()->subMinutes(20)->toIso8601String(),
+            'updated_at' => now()->subMinutes(20)->toIso8601String(),
+        ];
+
+        $resolved = $method->invoke($controller, $deleteId, $state, null);
+
+        $this->assertIsArray($resolved);
+        $this->assertSame('failed', $resolved['status']);
+        $this->assertSame('failed', $resolved['stage']);
+        $this->assertArrayHasKey('error', $resolved);
+    }
+
+    public function test_reconcile_managed_delete_state_with_missing_queue_row_keeps_recoverable_progress_alive(): void
+    {
+        $deleteId = (string) \Illuminate\Support\Str::uuid();
+        $controller = app(ImportIndexController::class);
+
+        $method = new \ReflectionMethod($controller, 'reconcileManagedDeleteStateWithQueueRow');
+        $method->setAccessible(true);
+
+        $state = [
+            'delete_id' => $deleteId,
+            'status' => 'running',
+            'stage' => 'deleting',
+            'batch_state' => 'deleting_committed',
+            'table_name' => 'daily_loan_dinamis',
+            'deleted_rows' => 20000,
+            'total_rows' => 40000,
+            'period_hint' => '2025-03-31',
+            'message' => 'Batch selesai, melanjutkan penghapusan berikutnya.',
+            'created_at' => now()->subMinutes(3)->toIso8601String(),
+            'updated_at' => now()->subSeconds(45)->toIso8601String(),
+        ];
+
+        $resolved = $method->invoke($controller, $deleteId, $state, null);
+
+        $this->assertIsArray($resolved);
+        $this->assertSame('running', $resolved['status']);
+        $this->assertSame('deleting', $resolved['stage']);
+        $this->assertSame(20000, $resolved['deleted_rows']);
+    }
+
+    public function test_resolve_managed_report_delete_jobs_exposes_status_labels_without_crashing(): void
+    {
+        $deleteId = (string) \Illuminate\Support\Str::uuid();
+        $controller = app(ImportIndexController::class);
+
+        $putState = new \ReflectionMethod($controller, 'putDeleteState');
+        $putState->setAccessible(true);
+        $putState->invoke($controller, $deleteId, [
+            'delete_id' => $deleteId,
+            'status' => 'running',
+            'stage' => 'deleting',
+            'batch_state' => 'deleting_pending',
+            'table_name' => 'daily_loan_dinamis',
+            'deleted_rows' => 12,
+            'total_rows' => 20,
+            'remaining_rows' => 8,
+            'progress_percent' => 60,
+            'message' => 'Delete sedang diproses.',
+            'created_at' => now()->subMinute()->toIso8601String(),
+            'updated_at' => now()->toIso8601String(),
+        ]);
+
+        $jobs = $controller->resolveManagedReportDeleteJobs();
+        $job = collect($jobs)->firstWhere('id', $deleteId);
+
+        $this->assertIsArray($job);
+        $this->assertSame('processing', $job['status']);
+        $this->assertSame('Processing', $job['status_label']);
+        $this->assertSame('info', $job['status_tone']);
+    }
+
+    public function test_classify_managed_delete_plan_keeps_normal_daily_loan_scope_on_plan_a(): void
+    {
+        $controller = app(ImportIndexController::class);
+        $method = new \ReflectionMethod($controller, 'classifyManagedDeletePlan');
+        $method->setAccessible(true);
+
+        $result = $method->invoke($controller, [
+            'table_name' => 'daily_loan_dinamis',
+            'period_column' => 'periode',
+            'kanca_column' => 'cabang1',
+            'candidate_rows' => 261684,
+            'scopes' => [[
+                'period_filter' => '2025-03-31',
+                'kanca_filter' => 'KC Madiun',
+                'period_is_null' => false,
+                'kanca_is_null' => false,
+            ]],
+        ]);
+
+        $this->assertSame('normal', $result['delete_plan']);
+        $this->assertNull($result['problem_signature']);
+    }
+
+    public function test_classify_managed_delete_plan_marks_large_blank_scope_as_plan_b(): void
+    {
+        $controller = app(ImportIndexController::class);
+        $method = new \ReflectionMethod($controller, 'classifyManagedDeletePlan');
+        $method->setAccessible(true);
+
+        $result = $method->invoke($controller, [
+            'table_name' => 'daily_loan_dinamis',
+            'period_column' => 'periode',
+            'kanca_column' => 'cabang1',
+            'candidate_rows' => 261684,
+            'scopes' => [[
+                'period_filter' => '2025-03-31',
+                'kanca_filter' => null,
+                'period_is_null' => false,
+                'kanca_is_null' => true,
+            ]],
+        ]);
+
+        $this->assertSame('recovery_blank_scope', $result['delete_plan']);
+        $this->assertSame('daily_loan_blank_kanca_large_scope', $result['problem_signature']);
+    }
+
+    public function test_delete_scoped_rows_uses_plan_b_recovery_service_for_large_blank_scope(): void
+    {
+        DB::table('daily_loan_dinamis')->insert([
+            ['uniqueid_namareport' => 'BLANK-1', 'periode' => '2025-03-31', 'cabang1' => null, 'payload' => 'row-1'],
+            ['uniqueid_namareport' => 'BLANK-2', 'periode' => '2025-03-31', 'cabang1' => '', 'payload' => 'row-2'],
+            ['uniqueid_namareport' => 'KEEP-1', 'periode' => '2025-03-31', 'cabang1' => 'KC Madiun', 'payload' => 'keep-1'],
+            ['uniqueid_namareport' => 'KEEP-2', 'periode' => '2025-12-31', 'cabang1' => null, 'payload' => 'keep-2'],
+        ]);
+
+        $recoveryService = \Mockery::mock(ManagedReportDeleteRecoveryService::class);
+        $recoveryService->shouldReceive('deleteBlankKancaPeriodScope')
+            ->once()
+            ->with(
+                'daily_loan_dinamis',
+                'periode',
+                'cabang1',
+                '2025-03-31',
+                10000,
+                null,
+                \Mockery::type('callable')
+            )
+            ->andReturn(['deleted_rows' => 2, 'batch_count' => 1]);
+        app()->instance(ManagedReportDeleteRecoveryService::class, $recoveryService);
+
+        $controller = app(ImportIndexController::class);
+        $method = new \ReflectionMethod($controller, 'deleteScopedRows');
+        $method->setAccessible(true);
+
+        $baseQuery = DB::table('daily_loan_dinamis')->where('periode', '2025-03-31');
+        $deleted = $method->invoke(
+            $controller,
+            'daily_loan_dinamis',
+            $baseQuery,
+            'uniqueid_namareport',
+            10000,
+            'periode',
+            'cabang1',
+            [
+                'period_filter' => '2025-03-31',
+                'kanca_filter' => null,
+                'period_is_null' => false,
+                'kanca_is_null' => true,
+            ],
+            'delete-plan-b-1',
+            'recovery_blank_scope'
+        );
+
+        $this->assertSame(2, $deleted);
     }
 }
 

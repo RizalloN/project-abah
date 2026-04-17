@@ -501,9 +501,13 @@ class ExcelQueuedImportService
                 'total_failed' => $totalFailed,
             ]);
 
-            $finalStatus = $totalFailed > 0
-                ? ($totalInserted > 0 ? 'failed_partial' : 'failed')
-                : 'completed';
+            // Edge case: no rows were inserted AND none failed means file had no valid data rows
+            $finalStatus = match (true) {
+                $totalFailed > 0 && $totalInserted > 0 => 'failed_partial',
+                $totalFailed > 0 => 'failed',
+                $totalInserted === 0 => 'failed',
+                default => 'completed',
+            };
 
             if ($jobId > 0) {
                 $updateJob($jobId, [
@@ -547,7 +551,13 @@ class ExcelQueuedImportService
 
             return array_merge(['status' => $finalStatus], $payload);
         } catch (\Throwable $e) {
-            Log::error('EXCEL QUEUED IMPORT ERROR: ' . $e->getMessage() . ' | ' . $e->getFile() . ':' . $e->getLine());
+            Log::error('EXCEL QUEUED IMPORT ERROR: ' . $e->getMessage(), [
+                'job_id' => $jobId,
+                'table' => $tableName,
+                'exception' => $e::class,
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+            ]);
 
             return $fail('Fatal Error: ' . $e->getMessage() . ' (line ' . $e->getLine() . ')');
         }

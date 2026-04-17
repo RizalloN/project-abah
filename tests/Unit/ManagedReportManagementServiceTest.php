@@ -57,4 +57,26 @@ class ManagedReportManagementServiceTest extends TestCase
 
         $this->assertSame('00070 -- KC Ponorogo (Konsolidasi-MB)', $label);
     }
+
+    public function test_ssa_pinjaman_management_period_filter_is_normalized_to_month(): void
+    {
+        $service = new ManagedReportManagementService();
+        $reflection = new ReflectionClass($service);
+        $method = $reflection->getMethod('normalizeManagementPeriodFilter');
+        $method->setAccessible(true);
+
+        $filter = $method->invoke($service, 'ssa_pinjaman', '2026-03-31', 'month_day_year_of_periode');
+
+        $this->assertSame('2026-03', $filter);
+    }
+
+    public function test_ssa_period_label_keeps_full_date_when_bucket_has_single_exact_date(): void
+    {
+        $service = new ManagedReportManagementService();
+        $reflection = new ReflectionClass($service);
+        $method = $reflection->getMethod('resolveAggregatedPeriodLabel');
+        $method->setAccessible(true);
+
+        $this->assertSame('2026-04-30', $method->invoke($service, 'ssa_pinjaman', '2026-04-30', '2026-04', 'month_day_year_of_periode'));
+    }
 }

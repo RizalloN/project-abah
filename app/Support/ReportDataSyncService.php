@@ -21,13 +21,14 @@ class ReportDataSyncService
     private const DORMANT_SNAPSHOT_TABLE = 'rekening_dormant_snapshots';
     private const NEW_PAYROLL_SNAPSHOT_TABLE = 'performance_new_payroll_snapshots';
     private const CACHE_VERSION_KEY = 'report_cache_version:global';
-    private const RASIO_REBUILD_LOCK_KEY = 'snapshot:rasio:rebuild:global';
+    private const RASIO_REBUILD_LOCK_PREFIX = 'snapshot:rasio:rebuild:';
     private const SIMPANAN_REBUILD_LOCK_PREFIX = 'snapshot:simpanan:rebuild:';
     private const POST_DELETE_SNAPSHOT_REPORTS = [
         'daily_loan_dinamis',
         'simpanan_multipn',
         'ssa_simpanan',
         'ssa_pinjaman',
+        'lw325_ph',
         'performance_pis_per_produk',
     ];
 
@@ -136,7 +137,7 @@ class ReportDataSyncService
             $this->refreshTableStatistics(self::DASHBOARD_HARIAN_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
         }
 
-        $this->runWithRasioSnapshotLock(function () use ($periodHint, $jobId, $source) {
+        $this->runWithRasioSnapshotLock($periodHint, function () use ($periodHint, $jobId, $source) {
             $this->runSnapshotAudit('daily_loan_dinamis', $periodHint, $jobId, $source, 'snapshot_rasio_casa', function () use ($periodHint) {
                 return $this->snapshotBuilder->rebuildRasioCasa($periodHint, true);
             });
@@ -175,7 +176,7 @@ class ReportDataSyncService
                 $this->refreshTableStatistics(self::DORMANT_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
             }
 
-            $this->runWithRasioSnapshotLock(function () use ($periodHint, $jobId, $source) {
+            $this->runWithRasioSnapshotLock($periodHint, function () use ($periodHint, $jobId, $source) {
                 $this->runSnapshotAudit('simpanan_multipn', $periodHint, $jobId, $source, 'snapshot_rasio_casa', function () use ($periodHint) {
                     return $this->snapshotBuilder->rebuildRasioCasa($periodHint, true);
                 });
@@ -190,11 +191,13 @@ class ReportDataSyncService
 
     private function syncReportPh(?string $periodHint, ?int $jobId, ?string $source): void
     {
-        // Dashboard pinjaman membaca PH langsung dari tabel sumber,
-        // jadi cukup refresh statistik optimizer + flush cache.
-        $this->writeAudit('lw325_ph', $periodHint, $jobId, $source, 'snapshot_sync', 'success', [
-            'message' => 'PH uses source table directly; only optimizer stats and cache refresh required.',
-        ]);
+        $this->runSnapshotAudit('lw325_ph', $periodHint, $jobId, $source, 'snapshot_dashboard_harian', function () use ($periodHint) {
+            return $this->dashboardHarianSnapshotService->rebuildAffectedByPhPeriod($periodHint, true);
+        });
+
+        if ($this->shouldRefreshDerivedSnapshotStatistics($periodHint)) {
+            $this->refreshTableStatistics(self::DASHBOARD_HARIAN_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
+        }
     }
 
     private function syncPerformanceNewPayroll(?string $periodHint, ?int $jobId, ?string $source): void
@@ -311,6 +314,9 @@ class ReportDataSyncService
             'ssa_pinjaman' => [
                 self::DASHBOARD_HARIAN_SNAPSHOT_TABLE => 'snapshot_period',
             ],
+            'lw325_ph' => [
+                self::DASHBOARD_HARIAN_SNAPSHOT_TABLE => 'snapshot_period',
+            ],
             'performance_pis_per_produk' => [
                 self::NEW_PAYROLL_SNAPSHOT_TABLE => 'snapshot_posisi',
             ],
@@ -329,6 +335,15 @@ class ReportDataSyncService
             try {
                 $query = DB::table($snapshotTable);
                 if ($periodHint !== null && $periodHint !== '' && Schema::hasColumn($snapshotTable, $periodColumn)) {
+                    if ($normalizedTable === 'lw325_ph' && $snapshotTable === self::DASHBOARD_HARIAN_SNAPSHOT_TABLE) {
+                        $affectedPeriods = $this->dashboardHarianSnapshotService->resolveAffectedSnapshotPeriodsForPh($periodHint);
+                        if ($affectedPeriods === []) {
+                            $deleted[$snapshotTable] = 0;
+                            continue;
+                        }
+
+                        $query->whereIn($periodColumn, $affectedPeriods);
+                    } else {
                     $partitionName = $this->partitionMaintenanceService->resolveSinglePartitionForValue(
                         $snapshotTable,
                         $periodColumn,
@@ -360,6 +375,7 @@ class ReportDataSyncService
                     }
 
                     $query->where($periodColumn, $periodHint);
+                    }
                 }
 
                 $affected = (int) $query->delete();
@@ -395,6 +411,11 @@ class ReportDataSyncService
         $normalizedPeriodHint = trim((string) $periodHint);
 
         if ($normalizedPeriodHint === '') {
+            if ($normalizedTable === 'lw325_ph') {
+                $this->syncReportPh(null, null, $source);
+                return;
+            }
+
             $this->writeAudit($normalizedTable, $periodHint, null, $source, 'snapshot_rebuild_after_delete', 'skipped', [
                 'message' => 'Snapshot rebuild after delete dilewati karena period hint tidak tersedia.',
             ]);
@@ -407,6 +428,7 @@ class ReportDataSyncService
             'simpanan_multipn' => $this->syncSimpanan($normalizedPeriodHint, null, $source),
             'ssa_simpanan' => $this->syncSsaSimpanan($normalizedPeriodHint, null, $source),
             'ssa_pinjaman' => $this->syncSsaPinjaman($normalizedPeriodHint, null, $source),
+            'lw325_ph' => $this->syncReportPh($normalizedPeriodHint, null, $source),
             'performance_pis_per_produk' => $this->syncPerformanceNewPayroll($normalizedPeriodHint, null, $source),
             default => null,
         };
@@ -436,17 +458,20 @@ class ReportDataSyncService
         }
     }
 
-    private function runWithRasioSnapshotLock(callable $callback): mixed
+    private function runWithRasioSnapshotLock(?string $periodHint, callable $callback): mixed
     {
-        $lock = Cache::lock(self::RASIO_REBUILD_LOCK_KEY, 120);
+        $scope = $this->normalizeSnapshotLockScope($periodHint);
+        $lock = Cache::lock(self::RASIO_REBUILD_LOCK_PREFIX . $scope, 120);
 
         try {
-            return $lock->block(10, $callback);
+            return $lock->block(60, $callback);
         } finally {
             try {
                 optional($lock)->release();
             } catch (Throwable $e) {
-                Log::warning('Gagal melepas lock rebuild rasio snapshot: ' . $e->getMessage());
+                Log::warning('Gagal melepas lock rebuild rasio snapshot: ' . $e->getMessage(), [
+                    'period_hint' => $periodHint,
+                ]);
             }
         }
     }
@@ -457,7 +482,7 @@ class ReportDataSyncService
         $lock = Cache::lock(self::SIMPANAN_REBUILD_LOCK_PREFIX . $scope, 180);
 
         try {
-            return $lock->block(10, $callback);
+            return $lock->block(60, $callback);
         } finally {
             try {
                 optional($lock)->release();
