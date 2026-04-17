@@ -104,9 +104,9 @@ class ManagedReportSnapshotRebuildStore
         $state['completed_units'] = max(0, (int) ($state['completed_units'] ?? 0));
         $state['total_units'] = max(1, (int) ($state['total_units'] ?? 1));
         $state['build_units'] = max(0, (int) ($state['build_units'] ?? 0));
-        $state['current_report_key'] = $state['current_report_key'] ?: null;
-        $state['current_report_label'] = $state['current_report_label'] ?: null;
-        $state['current_period'] = $state['current_period'] ?: null;
+        $state['current_report_key'] = ($state['current_report_key'] ?? null) ?: null;
+        $state['current_report_label'] = ($state['current_report_label'] ?? null) ?: null;
+        $state['current_period'] = ($state['current_period'] ?? null) ?: null;
         $state['report_completed_units'] = max(0, (int) ($state['report_completed_units'] ?? 0));
         $state['report_total_units'] = max(0, (int) ($state['report_total_units'] ?? 0));
         $state['reports'] = is_array($state['reports'] ?? null) ? array_values($state['reports']) : [];
