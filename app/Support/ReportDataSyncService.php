@@ -74,11 +74,15 @@ class ReportDataSyncService
         }
     }
 
-    public function syncImportedTable(string $tableName, ?string $periodHint = null, ?int $jobId = null, ?string $source = null): void
+    public function syncImportedTable(string $tableName, ?string $periodHint = null, ?int $jobId = null, ?string $source = null, ?string $deleteId = null): void
     {
         $normalizedTable = strtolower(trim($tableName));
         if ($normalizedTable === '') {
             return;
+        }
+
+        if ($deleteId) {
+            $this->heartbeat($deleteId, 'Starting report synchronization...');
         }
 
         $this->refreshTableStatistics($normalizedTable, $periodHint, $jobId, $source);
@@ -99,12 +103,12 @@ class ReportDataSyncService
 
         try {
             match ($normalizedTable) {
-                'daily_loan_dinamis' => $this->syncDailyLoan($periodHint, $jobId, $source),
-                'simpanan_multipn' => $this->syncSimpanan($periodHint, $jobId, $source),
-                'ssa_simpanan' => $this->syncSsaSimpanan($periodHint, $jobId, $source),
-                'ssa_pinjaman' => $this->syncSsaPinjaman($periodHint, $jobId, $source),
-                'lw325_ph' => $this->syncReportPh($periodHint, $jobId, $source),
-                'performance_pis_per_produk' => $this->syncPerformanceNewPayroll($periodHint, $jobId, $source),
+                'daily_loan_dinamis' => $this->syncDailyLoan($periodHint, $jobId, $source, $deleteId),
+                'simpanan_multipn' => $this->syncSimpanan($periodHint, $jobId, $source, $deleteId),
+                'ssa_simpanan' => $this->syncSsaSimpanan($periodHint, $jobId, $source, $deleteId),
+                'ssa_pinjaman' => $this->syncSsaPinjaman($periodHint, $jobId, $source, $deleteId),
+                'lw325_ph' => $this->syncReportPh($periodHint, $jobId, $source, $deleteId),
+                'performance_pis_per_produk' => $this->syncPerformanceNewPayroll($periodHint, $jobId, $source, $deleteId),
                 default => null,
             };
 
@@ -121,16 +125,17 @@ class ReportDataSyncService
         }
     }
 
-    private function syncDailyLoan(?string $periodHint, ?int $jobId, ?string $source): void
+    private function syncDailyLoan(?string $periodHint, ?int $jobId, ?string $source, ?string $deleteId = null): void
     {
-        $this->runSnapshotAudit('daily_loan_dinamis', $periodHint, $jobId, $source, 'snapshot_dashboard', function () use ($periodHint) {
-            return $this->snapshotBuilder->rebuildDashboard($periodHint, true);
+        $this->runSnapshotAudit('daily_loan_dinamis', $periodHint, $jobId, $source, 'snapshot_dashboard', function () use ($periodHint, $deleteId) {
+            return $this->snapshotBuilder->rebuildDashboard($periodHint, true, $this->makeHeartbeatCallback($deleteId, 'Rebuilding Dashboard snapshots...'));
         });
         if ($this->shouldRefreshDerivedSnapshotStatistics($periodHint)) {
             $this->refreshTableStatistics(self::DASHBOARD_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
         }
 
-        $this->runSnapshotAudit('daily_loan_dinamis', $periodHint, $jobId, $source, 'snapshot_dashboard_harian', function () use ($periodHint) {
+        $this->runSnapshotAudit('daily_loan_dinamis', $periodHint, $jobId, $source, 'snapshot_dashboard_harian', function () use ($periodHint, $deleteId) {
+            if ($deleteId) { $this->heartbeat($deleteId, 'Rebuilding Daily Dashboard snapshots...'); }
             return $this->dashboardHarianSnapshotService->rebuild($periodHint, true);
         });
         if ($this->shouldRefreshDerivedSnapshotStatistics($periodHint)) {
@@ -148,11 +153,11 @@ class ReportDataSyncService
         }
     }
 
-    private function syncSimpanan(?string $periodHint, ?int $jobId, ?string $source): void
+    private function syncSimpanan(?string $periodHint, ?int $jobId, ?string $source, ?string $deleteId = null): void
     {
-        $this->runWithSimpananSnapshotLock($periodHint, function () use ($periodHint, $jobId, $source) {
-            $this->runSnapshotAudit('simpanan_multipn', $periodHint, $jobId, $source, 'snapshot_dashboard_simpanan', function () use ($periodHint) {
-                return $this->snapshotBuilder->rebuildDashboardSimpanan($periodHint, true);
+        $this->runWithSimpananSnapshotLock($periodHint, function () use ($periodHint, $jobId, $source, $deleteId) {
+            $this->runSnapshotAudit('simpanan_multipn', $periodHint, $jobId, $source, 'snapshot_dashboard_simpanan', function () use ($periodHint, $deleteId) {
+                return $this->snapshotBuilder->rebuildDashboardSimpanan($periodHint, true, $this->makeHeartbeatCallback($deleteId, 'Rebuilding Simpanan snapshots...'));
             });
 
             if ($this->shouldRefreshDerivedSnapshotStatistics($periodHint)) {
@@ -200,12 +205,29 @@ class ReportDataSyncService
         }
     }
 
-    private function syncPerformanceNewPayroll(?string $periodHint, ?int $jobId, ?string $source): void
+    private function syncPerformanceNewPayroll(?string $periodHint, ?int $jobId, ?string $source, ?string $deleteId = null): void
     {
-        $this->runSnapshotAudit('performance_pis_per_produk', $periodHint, $jobId, $source, 'snapshot_new_payroll', function () use ($periodHint) {
-            return $this->snapshotBuilder->rebuildPerformanceNewPayroll($periodHint, true);
+        $this->runSnapshotAudit('performance_pis_per_produk', $periodHint, $jobId, $source, 'snapshot_new_payroll', function () use ($periodHint, $deleteId) {
+            return $this->snapshotBuilder->rebuildPerformanceNewPayroll($periodHint, true, $this->makeHeartbeatCallback($deleteId, 'Rebuilding New Payroll snapshots...'));
         });
         $this->refreshTableStatistics(self::NEW_PAYROLL_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
+    }
+
+    private function makeHeartbeatCallback(?string $deleteId, string $message): ?callable
+    {
+        if (!$deleteId) {
+            return null;
+        }
+
+        return function (array $progress) use ($deleteId, $message) {
+            $formattedMessage = sprintf(
+                '%s (%d/%d periods)',
+                $message,
+                $progress['completed_units'] ?? 0,
+                $progress['total_units'] ?? 0
+            );
+            $this->heartbeat($deleteId, $formattedMessage);
+        };
     }
 
     private function syncSsaSimpanan(?string $periodHint, ?int $jobId, ?string $source): void
@@ -230,7 +252,7 @@ class ReportDataSyncService
         }
     }
 
-    public function syncAfterDelete(string $tableName, ?string $periodHint = null, ?string $source = null): void
+    public function syncAfterDelete(string $tableName, ?string $periodHint = null, ?string $source = null, ?string $deleteId = null): void
     {
         $normalizedTable = strtolower(trim($tableName));
         if ($normalizedTable === '') {
@@ -241,20 +263,24 @@ class ReportDataSyncService
 
         if (in_array($normalizedTable, self::POST_DELETE_SNAPSHOT_REPORTS, true)) {
             $this->refreshTableStatistics($normalizedTable, $periodHint, null, $source);
-            $this->cleanupDerivedArtifactsAfterDelete($normalizedTable, $periodHint, $source);
-            $this->rebuildSnapshotsAfterDelete($normalizedTable, $periodHint, $source);
+            $this->cleanupDerivedArtifactsAfterDelete($normalizedTable, $periodHint, $source, $deleteId);
+            $this->rebuildSnapshotsAfterDelete($normalizedTable, $periodHint, $source, $deleteId);
 
             return;
         }
 
-        $this->syncAfterDeleteLightweight($normalizedTable, $periodHint, $source);
+        $this->syncAfterDeleteLightweight($normalizedTable, $periodHint, $source, $deleteId);
     }
 
-    public function syncAfterDeleteLightweight(string $tableName, ?string $periodHint = null, ?string $source = null): void
+    public function syncAfterDeleteLightweight(string $tableName, ?string $periodHint = null, ?string $source = null, ?string $deleteId = null): void
     {
         $normalizedTable = strtolower(trim($tableName));
         if ($normalizedTable === '') {
             return;
+        }
+
+        if ($deleteId) {
+            $this->heartbeat($deleteId, 'Refreshing table statistics...');
         }
 
         $this->refreshTableStatistics($normalizedTable, $periodHint, null, $source ?? static::class . '::syncAfterDeleteLightweight');
@@ -286,11 +312,15 @@ class ReportDataSyncService
             : 'lightweight';
     }
 
-    public function cleanupDerivedArtifactsAfterDelete(string $tableName, ?string $periodHint = null, ?string $source = null): array
+    public function cleanupDerivedArtifactsAfterDelete(string $tableName, ?string $periodHint = null, ?string $source = null, ?string $deleteId = null): array
     {
         $normalizedTable = strtolower(trim($tableName));
         if ($normalizedTable === '') {
             return [];
+        }
+
+        if ($deleteId) {
+            $this->heartbeat($deleteId, 'Cleaning up derived snapshot artifacts...');
         }
 
         $cleanupMap = match ($normalizedTable) {
@@ -344,11 +374,15 @@ class ReportDataSyncService
 
                         $query->whereIn($periodColumn, $affectedPeriods);
                     } else {
-                    $partitionName = $this->partitionMaintenanceService->resolveSinglePartitionForValue(
-                        $snapshotTable,
-                        $periodColumn,
-                        $periodHint
-                    );
+                    if ($periodHint !== null && $periodHint !== '') {
+                        $partitionName = $this->partitionMaintenanceService->resolveSinglePartitionForValue(
+                            $snapshotTable,
+                            $periodColumn,
+                            $periodHint
+                        );
+                    } else {
+                        $partitionName = null;
+                    }
 
                     if ($partitionName !== null) {
                         $affected = (int) DB::table($snapshotTable)
@@ -405,14 +439,14 @@ class ReportDataSyncService
         return $deleted;
     }
 
-    private function rebuildSnapshotsAfterDelete(string $tableName, ?string $periodHint = null, ?string $source = null): void
+    private function rebuildSnapshotsAfterDelete(string $tableName, ?string $periodHint = null, ?string $source = null, ?string $deleteId = null): void
     {
         $normalizedTable = strtolower(trim($tableName));
         $normalizedPeriodHint = trim((string) $periodHint);
 
         if ($normalizedPeriodHint === '') {
             if ($normalizedTable === 'lw325_ph') {
-                $this->syncReportPh(null, null, $source);
+                $this->syncReportPh(null, null, $source, $deleteId);
                 return;
             }
 
@@ -424,12 +458,12 @@ class ReportDataSyncService
         }
 
         match ($normalizedTable) {
-            'daily_loan_dinamis' => $this->syncDailyLoan($normalizedPeriodHint, null, $source),
-            'simpanan_multipn' => $this->syncSimpanan($normalizedPeriodHint, null, $source),
-            'ssa_simpanan' => $this->syncSsaSimpanan($normalizedPeriodHint, null, $source),
-            'ssa_pinjaman' => $this->syncSsaPinjaman($normalizedPeriodHint, null, $source),
-            'lw325_ph' => $this->syncReportPh($normalizedPeriodHint, null, $source),
-            'performance_pis_per_produk' => $this->syncPerformanceNewPayroll($normalizedPeriodHint, null, $source),
+            'daily_loan_dinamis' => $this->syncDailyLoan($normalizedPeriodHint, null, $source, $deleteId),
+            'simpanan_multipn' => $this->syncSimpanan($normalizedPeriodHint, null, $source, $deleteId),
+            'ssa_simpanan' => $this->syncSsaSimpanan($normalizedPeriodHint, null, $source, $deleteId),
+            'ssa_pinjaman' => $this->syncSsaPinjaman($normalizedPeriodHint, null, $source, $deleteId),
+            'lw325_ph' => $this->syncReportPh($normalizedPeriodHint, null, $source, $deleteId),
+            'performance_pis_per_produk' => $this->syncPerformanceNewPayroll($normalizedPeriodHint, null, $source, $deleteId),
             default => null,
         };
     }
@@ -609,6 +643,16 @@ class ReportDataSyncService
                 'action' => $action,
                 'status' => $status,
             ]);
+        }
+    }
+
+    private function heartbeat(string $deleteId, ?string $message = null): void
+    {
+        try {
+            // Use resolve to avoid circular dependencies if any
+            app(\App\Http\Controllers\Import\ImportIndexController::class)->heartbeatManagedDeleteState($deleteId, $message);
+        } catch (Throwable $e) {
+            Log::debug('Heartbeat failed (expected if not in managed delete context): ' . $e->getMessage());
         }
     }
 

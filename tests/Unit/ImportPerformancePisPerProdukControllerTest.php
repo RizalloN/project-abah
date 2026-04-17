@@ -125,6 +125,79 @@ class ImportPerformancePisPerProdukControllerTest extends TestCase
         }
     }
 
+    public function test_build_csv_context_detects_semicolon_delimiter_with_multiline_header(): void
+    {
+        $controller = new ImportPerformancePisPerProdukController();
+        $csvPath = tempnam(sys_get_temp_dir(), 'pnps_multiline_') . '.csv';
+        file_put_contents($csvPath, implode("\r\n", [
+            'No;Kode Kanwil;Kanwil;Kode Kanca;Kanca;Kode Uker;Uker;Corporate Code;Nama Perusahaan;Jenis Mitra;Jenis Perusahaan;Product Type;Nomor Rekening;Nama Rekening;Saldo Britama Kerjasama;Tanggal Pembuatan Rekening;"PN RM',
+            'Dana BRINETS";"PN RM',
+            'Dana PIS2";Nomor HP;Alamat Email;"Relasi Briguna',
+            '(Yes/No)";"Relasi Kartu Kredit',
+            '(Yes/No)"',
+            '1;R;KANWIL MALANG;7;KC Banyuwangi;7;KC Banyuwangi;184;PT ASABRI PERSERO;;;TN;7,01096E+11;DENY PUDJI PRADANA;39177,06;06/11/2020 00:00;;;81259533952;;Y;N',
+        ]) . "\r\n");
+
+        try {
+            $context = $this->invokeMethod($controller, 'buildCsvContext', [
+                $csvPath,
+                '2026-03-31',
+                1,
+            ]);
+
+            $this->assertSame(';', $context['delimiter']);
+            $this->assertSame(1, $context['header_line']);
+            $this->assertSame(12, $context['source_indexes']['nomor_rekening']);
+            $this->assertSame(16, $context['source_indexes']['pn_rm_dana_brinets']);
+            $this->assertSame(21, $context['source_indexes']['flag_cc']);
+        } finally {
+            @unlink($csvPath);
+        }
+    }
+
+    public function test_iterate_csv_data_rows_preserves_row_alignment_and_numeric_values_for_semicolon_csv(): void
+    {
+        $controller = new ImportPerformancePisPerProdukController();
+        $csvPath = tempnam(sys_get_temp_dir(), 'pnps_semicolon_') . '.csv';
+        file_put_contents($csvPath, implode("\r\n", [
+            'No;Kode Kanwil;Kanwil;Kode Kanca;Kanca;Kode Uker;Uker;Corporate Code;Nama Perusahaan;Jenis Mitra;Jenis Perusahaan;Product Type;Nomor Rekening;Nama Rekening;Saldo Britama Kerjasama;Tanggal Pembuatan Rekening;"PN RM',
+            'Dana BRINETS";"PN RM',
+            'Dana PIS2";Nomor HP;Alamat Email;"Relasi Briguna',
+            '(Yes/No)";"Relasi Kartu Kredit',
+            '(Yes/No)"',
+            '1;R;KANWIL MALANG;7;KC Banyuwangi;7;KC Banyuwangi;184;PT ASABRI PERSERO;;;TN;7,01096E+11;DENY PUDJI PRADANA;39177,06;06/11/2020 00:00;;;81259533952;;Y;N',
+        ]) . "\r\n");
+
+        try {
+            $context = $this->invokeMethod($controller, 'buildCsvContext', [
+                $csvPath,
+                '2026-03-31',
+                1,
+            ]);
+
+            $rows = [];
+            $this->invokeMethod($controller, 'iterateDataRows', [
+                $csvPath,
+                $context,
+                function (array $row) use (&$rows) {
+                    $rows[] = $row;
+                    return true;
+                },
+            ]);
+
+            $this->assertCount(1, $rows);
+            $this->assertSame('2026-03-31', $rows[0][0]);
+            $this->assertSame('7,01096E+11', $rows[0][12]);
+            $this->assertSame('39177.06', $rows[0][14]);
+            $this->assertSame('2020-11-06', $rows[0][15]);
+            $this->assertSame('81259533952', $rows[0][18]);
+            $this->assertSame('Y', $rows[0][20]);
+            $this->assertSame('N', $rows[0][21]);
+        } finally {
+            @unlink($csvPath);
+        }
+    }
+
     public function test_collect_preview_unique_values_scans_entire_file_for_filter_options(): void
     {
         $controller = new ImportPerformancePisPerProdukController();
