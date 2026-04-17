@@ -3,6 +3,9 @@
 use App\Http\Controllers\DashboardPinjamanReportController;
 use App\Http\Controllers\DashboardHarianController;
 use App\Http\Controllers\DashboardSimpananController;
+use App\Http\Controllers\Report\DigitalPerformanceController;
+use App\Http\Controllers\Report\KolaborasiReportController;
+use App\Http\Controllers\Report\NewPayrollReportController;
 use App\Http\Controllers\Import\ImportCasaBrilinkController;
 use App\Http\Controllers\Import\ImportCognosPhController;
 use App\Http\Controllers\Import\ImportCognosRecoveryController;
@@ -61,14 +64,19 @@ Route::middleware(['auth', 'release.session.lock', 'throttle:240,1'])->group(fun
     Route::get('/report/dashboard-pinjaman/kolek-tidak-sesuai/export', [DashboardPinjamanReportController::class, 'mismatchExport'])
         ->name('report.dashboard-pinjaman.kolek-tidak-sesuai.export');
 
-    Route::get('/report/optimalisasi-digital/edc', [App\Http\Controllers\DataReportController::class, 'performanceEdc'])->name('report.edc');
-    Route::get('/report/optimalisasi-digital/qris', [App\Http\Controllers\DataReportController::class, 'performanceQris'])->name('report.qris');
-    Route::get('/report/optimalisasi-digital/brilink', [App\Http\Controllers\DataReportController::class, 'performanceBrilink'])->name('report.brilink');
+    // Digital Performance Reports (EDC, QRIS, Brilink) — dihandle oleh DigitalPerformanceController
+    Route::get('/report/optimalisasi-digital/edc', [DigitalPerformanceController::class, 'performanceEdc'])->name('report.edc');
+    Route::get('/report/optimalisasi-digital/qris', [DigitalPerformanceController::class, 'performanceQris'])->name('report.qris');
+    Route::get('/report/optimalisasi-digital/brilink', [DigitalPerformanceController::class, 'performanceBrilink'])->name('report.brilink');
+    Route::post('/report/data', [DigitalPerformanceController::class, 'fetchData'])->name('report.data');
+
+    // BRIMO — menggunakan PerformanceBrimoController yang sudah di-fix N+1-nya
     Route::get('/report/optimalisasi-digital/brimo', [App\Http\Controllers\PerformanceBrimoController::class, 'index'])->name('report.brimo');
     Route::post('/report/data/brimo', [App\Http\Controllers\PerformanceBrimoController::class, 'fetchData'])->name('report.data.brimo');
 
-    Route::get('/report/kolaborasi-perusahaan-anak/program-referral-partner-perusahaan-anak', [App\Http\Controllers\DataReportController::class, 'programReferralPartnerPerusahaanAnak'])->name('report.kolaborasi.referral');
-    Route::get('/report/kolaborasi-perusahaan-anak/nasabah-prioritas-bod-boc', [App\Http\Controllers\DataReportController::class, 'nasabahPrioritasBodBoc'])->name('report.kolaborasi.bodboc');
+    // Kolaborasi Perusahaan Anak — dihandle oleh KolaborasiReportController
+    Route::get('/report/kolaborasi-perusahaan-anak/program-referral-partner-perusahaan-anak', [KolaborasiReportController::class, 'programReferralPartnerPerusahaanAnak'])->name('report.kolaborasi.referral');
+    Route::get('/report/kolaborasi-perusahaan-anak/nasabah-prioritas-bod-boc', [KolaborasiReportController::class, 'nasabahPrioritasBodBoc'])->name('report.kolaborasi.bodboc');
 
     Route::get('/report/rekening-transaksi-debitur', [RasioCasaDebiturController::class, 'index'])->name('report.rasiocasa.debitur');
     Route::post('/report/data/rasiocasa', [RasioCasaDebiturController::class, 'fetchData'])->name('report.data.rasiocasa');
@@ -76,9 +84,9 @@ Route::middleware(['auth', 'release.session.lock', 'throttle:240,1'])->group(fun
     Route::get('/report/rekening-transaksi-debitur/rekening-dormant/filters', [RekeningDormantController::class, 'filters'])->name('report.rekening-dormant.filters');
     Route::post('/report/data/rekening-dormant', [RekeningDormantController::class, 'fetchData'])->name('report.data.rekening-dormant');
 
-    Route::get('/report/peningkatan-payroll-berkualitas/kinerja-new-payroll', [App\Http\Controllers\DataReportController::class, 'performanceNewPayroll'])->name('report.kinerja.newpayroll');
-    Route::post('/report/data/newpayroll', [App\Http\Controllers\DataReportController::class, 'fetchNewPayrollData'])->name('report.data.newpayroll');
-    Route::post('/report/data', [App\Http\Controllers\DataReportController::class, 'fetchData'])->name('report.data');
+    // New Payroll — dihandle oleh NewPayrollReportController
+    Route::get('/report/peningkatan-payroll-berkualitas/kinerja-new-payroll', [NewPayrollReportController::class, 'index'])->name('report.kinerja.newpayroll');
+    Route::post('/report/data/newpayroll', [NewPayrollReportController::class, 'fetchData'])->name('report.data.newpayroll');
 });
 
 Route::middleware(['auth', 'role:admin', 'release.session.lock'])->group(function () {

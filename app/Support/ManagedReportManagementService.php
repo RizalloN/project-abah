@@ -108,6 +108,11 @@ class ManagedReportManagementService
             'period_priority' => ['tanggal'],
             'kanca_priority' => ['kc_konsol'],
         ],
+        'cognos_ph' => [
+            'period_priority' => ['periode'],
+            'kanca_priority' => ['kanca'],
+            'kanca_label_fallback_priority' => ['unit_kerja'],
+        ],
     ];
 
     public function resolveReportManagementData(
@@ -589,6 +594,7 @@ class ManagedReportManagementService
 
         $query = DB::table($tableName);
         $selects = ['COUNT(*) as row_count'];
+        $kancaLabelFallbackColumn = $this->resolveKancaLabelFallbackColumn($tableName);
 
         if ($periodColumn !== null) {
             $safePeriod = str_replace('`', '``', $periodColumn);
@@ -600,6 +606,11 @@ class ManagedReportManagementService
             $safeKanca = str_replace('`', '``', $kancaColumn);
             $selects[] = "`{$safeKanca}` as kanca_value";
             $query->groupBy($kancaColumn)->orderBy($kancaColumn);
+        }
+
+        if ($kancaLabelFallbackColumn !== null) {
+            $safeFallback = str_replace('`', '``', $kancaLabelFallbackColumn);
+            $selects[] = "MIN(`{$safeFallback}`) as kanca_label_fallback_value";
         }
 
         $result = $query
@@ -616,12 +627,13 @@ class ManagedReportManagementService
         foreach ($result as $item) {
             $periodRaw = $periodColumn !== null ? ($item->period_value ?? null) : null;
             $kancaRaw = $kancaColumn !== null ? ($item->kanca_value ?? null) : null;
+            $kancaFallbackRaw = $kancaLabelFallbackColumn !== null ? ($item->kanca_label_fallback_value ?? null) : null;
             $periodLabel = $periodRaw === null || trim((string) $periodRaw) === ''
                 ? ($periodColumn !== null ? '(Blank)' : '(Tanpa Periode)')
                 : $this->formatManagementPeriodLabel($periodRaw, $periodColumn);
             $kancaLabel = $kancaRaw === null || trim((string) $kancaRaw) === ''
                 ? ($kancaColumn !== null ? '(Blank)' : '(Semua)')
-                : (string) $kancaRaw;
+                : $this->resolveManagementKancaLabel($tableName, (string) $kancaRaw, $kancaFallbackRaw);
 
             $rows[] = [
                 'period' => $periodRaw === null || trim((string) $periodRaw) === '' ? '' : (string) $periodRaw,
@@ -635,6 +647,41 @@ class ManagedReportManagementService
         }
 
         return [$rows, $truncated];
+    }
+
+    private function resolveKancaLabelFallbackColumn(string $tableName): ?string
+    {
+        $override = self::MANAGEMENT_SCOPE_COLUMN_OVERRIDES[$tableName] ?? null;
+        if (!is_array($override)) {
+            return null;
+        }
+
+        $candidates = (array) ($override['kanca_label_fallback_priority'] ?? []);
+
+        return $candidates[0] ?? null;
+    }
+
+    private function resolveManagementKancaLabel(string $tableName, string $kancaRaw, mixed $fallbackRaw = null): string
+    {
+        $kancaRaw = trim($kancaRaw);
+        if ($kancaRaw === '') {
+            return '(Blank)';
+        }
+
+        if ($tableName !== 'cognos_ph') {
+            return $kancaRaw;
+        }
+
+        $fallback = trim((string) ($fallbackRaw ?? ''));
+        if (
+            preg_match('/^\d+$/', $kancaRaw) === 1
+            && $fallback !== ''
+            && preg_match('/^\d+\s*--\s*(KC|KCP)\b/i', $fallback) === 1
+        ) {
+            return $fallback;
+        }
+
+        return $kancaRaw;
     }
 
     private function paginateManagementPeriods(array $rows, int $page, int $perPage, bool $hasPeriodColumn): array

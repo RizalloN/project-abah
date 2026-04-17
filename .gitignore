@@ -25,3 +25,14 @@ Thumbs.db
 /.phpunit.cache
 /public/storage
 /storage/logs/*
+
+# File debug/temp sementara — jangan commit ke repo
+/debug_*.php
+/test_*.php
+/temp_*.php
+/.tmp_*
+/.codex_tmp_*
+*.tmp.php
+# Executable biner tidak boleh ada di root project web
+/*.exe
+/*.frm
