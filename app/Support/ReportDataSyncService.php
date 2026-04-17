@@ -39,11 +39,18 @@ class ReportDataSyncService
     ) {
     }
 
-    public function syncImportedJob(int $jobId, ?string $fallbackTableName = null, ?string $periodHint = null, ?string $source = null): void
+    public function syncImportedJob(int $jobId, ?string $fallbackTableName = null, ?string $periodHint = null, ?string $source = null, ?string $rebuildId = null): void
     {
         if ($jobId <= 0) {
             if ($fallbackTableName) {
-                $this->syncImportedTable($fallbackTableName, $periodHint, null, $source);
+                $this->syncImportedTable(
+                    tableName: $fallbackTableName,
+                    periodHint: $periodHint,
+                    jobId: null,
+                    source: $source,
+                    deleteId: null,
+                    rebuildId: $rebuildId
+                );
             }
 
             return;
@@ -70,11 +77,18 @@ class ReportDataSyncService
         }
 
         if ($tableName) {
-            $this->syncImportedTable($tableName, $periodHint, $jobId, $source);
+            $this->syncImportedTable(
+                tableName: $tableName,
+                periodHint: $periodHint,
+                jobId: $jobId,
+                source: $source,
+                deleteId: null,
+                rebuildId: $rebuildId
+            );
         }
     }
 
-    public function syncImportedTable(string $tableName, ?string $periodHint = null, ?int $jobId = null, ?string $source = null, ?string $deleteId = null): void
+    public function syncImportedTable(string $tableName, ?string $periodHint = null, ?int $jobId = null, ?string $source = null, ?string $deleteId = null, ?string $rebuildId = null): void
     {
         $normalizedTable = strtolower(trim($tableName));
         if ($normalizedTable === '') {
@@ -83,6 +97,10 @@ class ReportDataSyncService
 
         if ($deleteId) {
             $this->heartbeat($deleteId, 'Starting report synchronization...');
+        }
+
+        if ($rebuildId) {
+            $this->heartbeat($rebuildId, 'Starting report synchronization into snapshot...');
         }
 
         $this->refreshTableStatistics($normalizedTable, $periodHint, $jobId, $source);
@@ -646,13 +664,27 @@ class ReportDataSyncService
         }
     }
 
-    private function heartbeat(string $deleteId, ?string $message = null): void
+    private function heartbeat(string $trackingId, ?string $message = null): void
     {
         try {
-            // Use resolve to avoid circular dependencies if any
-            app(\App\Http\Controllers\Import\ImportIndexController::class)->heartbeatManagedDeleteState($deleteId, $message);
+            // Managed Delete Heartbeat
+            if (str_contains($trackingId, 'managed_delete:')) {
+                app(\App\Http\Controllers\Import\ImportIndexController::class)->heartbeatManagedDeleteState($trackingId, $message);
+                return;
+            }
+
+            // Snapshot Rebuild Heartbeat (UUID)
+            if (preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i', $trackingId)) {
+                $state = ManagedReportSnapshotRebuildStore::getState($trackingId);
+                if ($state) {
+                    $state['message'] = $message ?? 'Sedang mensinkronisasi data snapshot...';
+                    $state['status'] = 'running';
+                    $state['updated_at'] = now()->toIso8601String();
+                    ManagedReportSnapshotRebuildStore::putState($state);
+                }
+            }
         } catch (Throwable $e) {
-            Log::debug('Heartbeat failed (expected if not in managed delete context): ' . $e->getMessage());
+            Log::debug('Heartbeat failed: ' . $e->getMessage());
         }
     }
 

@@ -420,14 +420,51 @@ class ImportJobManagementController extends Controller
         }
 
         // Job generik (WarmReportCacheJob, SyncImportedReportJob, dll) → jalankan langsung via container
+        $rebuildId = (string) \Illuminate\Support\Str::uuid();
+        $isSnapshotRelated = property_exists($jobObject, 'rebuildId') || $jobObject instanceof \App\Jobs\WarmReportCacheJob || $jobObject instanceof \App\Jobs\SyncImportedReportJob;
+
+        if ($isSnapshotRelated) {
+            $label = class_basename($jobObject);
+            if ($jobObject instanceof \App\Jobs\SyncImportedReportJob) {
+                $label = 'Sync ' . ($jobObject->tableName ?: 'Data');
+                $jobObject->rebuildId = $rebuildId;
+            }
+            $this->snapshotRebuildCoordinator->registerStandaloneJob($rebuildId, $label, source: 'Force Run Monitor');
+        }
+
         DB::table('jobs')->where('id', $queueJobId)->delete();
         try {
             app()->call([$jobObject, 'handle']);
+
+            if ($isSnapshotRelated) {
+                $state = \App\Support\ManagedReportSnapshotRebuildStore::getState($rebuildId);
+                if ($state) {
+                    $state['status'] = 'completed';
+                    $state['stage'] = 'completed';
+                    $state['progress_percent'] = 100;
+                    $state['finished_at'] = now()->toIso8601String();
+                    $state['message'] = 'Job ' . class_basename($jobObject) . ' selesai dijalankan via force run.';
+                    \App\Support\ManagedReportSnapshotRebuildStore::putState($state);
+                }
+            }
+
             return response()->json([
                 'status' => 'success',
+                'rebuild_id' => $isSnapshotRelated ? $rebuildId : null,
                 'message' => class_basename($jobObject) . ' berhasil dijalankan langsung.',
             ]);
         } catch (\Throwable $e) {
+            if ($isSnapshotRelated) {
+                $state = \App\Support\ManagedReportSnapshotRebuildStore::getState($rebuildId);
+                if ($state) {
+                    $state['status'] = 'failed';
+                    $state['stage'] = 'failed';
+                    $state['error'] = $e->getMessage();
+                    $state['finished_at'] = now()->toIso8601String();
+                    \App\Support\ManagedReportSnapshotRebuildStore::putState($state);
+                }
+            }
+
             return response()->json([
                 'status' => 'warning',
                 'message' => class_basename($jobObject) . ' sudah dihapus dari queue namun gagal dijalankan inline: ' . $e->getMessage(),

@@ -148,6 +148,35 @@ class ManagedReportSnapshotRebuildCoordinator
         ];
     }
 
+    public function registerStandaloneJob(string $rebuildId, string $label, string $fileName = '', string $source = ''): array
+    {
+        $rebuildId = trim($rebuildId);
+        if ($rebuildId === '') {
+            $rebuildId = (string) Str::uuid();
+        }
+
+        $state = ManagedReportSnapshotRebuildStore::normalizeState([
+            'rebuild_id' => $rebuildId,
+            'status' => 'running',
+            'stage' => 'processing',
+            'queued' => false,
+            'force_rebuild' => false,
+            'source' => $source ?: static::class,
+            'message' => 'Standalone job dipicu langsung: ' . ($label ?: 'Sinkronisasi data'),
+            'current_report_label' => $label,
+            'file_name' => $fileName ?: $label,
+            'progress_percent' => 5,
+            'started_at' => now()->toIso8601String(),
+            'updated_at' => now()->toIso8601String(),
+        ], true);
+
+        ManagedReportSnapshotRebuildStore::putState($state);
+        // We don't set it as "ACTIVE_KEY" global because it's a standalone background task that shouldn't block future rebuilds.
+        // But we return it so the caller knows it succeeded.
+
+        return $state;
+    }
+
     public function status(string $rebuildId): array
     {
         $state = $this->reconcile($rebuildId);
