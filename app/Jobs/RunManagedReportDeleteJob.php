@@ -9,6 +9,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Log;
 
 class RunManagedReportDeleteJob implements ShouldQueue
 {
@@ -17,7 +18,11 @@ class RunManagedReportDeleteJob implements ShouldQueue
     use Queueable;
     use SerializesModels;
 
+    // No timeout: delete may process millions of rows across many batches
     public int $timeout = 0;
+
+    // Single attempt only — retrying a partial delete would corrupt row counts and audit state
+    public int $tries = 1;
 
     public function __construct(public readonly string $deleteId)
     {
@@ -28,6 +33,18 @@ class RunManagedReportDeleteJob implements ShouldQueue
         ImportIndexController $controller,
         ReportDataSyncService $syncService
     ): void {
-        $controller->runManagedReportDelete($this->deleteId, $syncService);
+        try {
+            $controller->runManagedReportDelete($this->deleteId, $syncService);
+        } catch (\Throwable $e) {
+            Log::error('RunManagedReportDeleteJob gagal tidak terduga.', [
+                'delete_id' => $this->deleteId,
+                'exception' => $e::class,
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+            ]);
+
+            throw $e;
+        }
     }
 }

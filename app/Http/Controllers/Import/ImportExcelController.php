@@ -494,6 +494,129 @@ class ImportExcelController extends Controller
         return strtolower($normalizedHeader);
     }
 
+    /**
+     * @return array<string, string>
+     */
+    private function dailyLoanSourceHeaderAliasMap(): array
+    {
+        return [
+            'PERIODE' => 'PERIODE',
+            'KODE_KANWIL' => 'KODE_KANWIL1',
+            'KODE_KANWIL1' => 'KODE_KANWIL1',
+            'KANWIL' => 'KANWIL1',
+            'KANWIL1' => 'KANWIL1',
+            'KODE_CABANG' => 'KODE_CABANG1',
+            'KODE_CABANG1' => 'KODE_CABANG1',
+            'CABANG' => 'CABANG1',
+            'CABANG1' => 'CABANG1',
+            'BRANCH' => 'BRANCH1',
+            'BRANCH1' => 'BRANCH1',
+            'UNIT' => 'UNIT1',
+            'UNIT1' => 'UNIT1',
+            'CURTYP' => 'CURTYP',
+            'AO_NAME' => 'AO_NAME',
+            'AO' => 'AO_NAME',
+            'CIFNO' => 'CIFNO',
+            'NOMOR_REKENING' => 'NOMOR_REKENING1',
+            'NOMOR_REKENING1' => 'NOMOR_REKENING1',
+            'STATUS_REKENING' => 'STATUS_REKENING1',
+            'STATUS_REKENING1' => 'STATUS_REKENING1',
+            'LN_TYPE' => 'LN_TYPE',
+            'NAMA_DEBITUR' => 'NAMA_DEBITUR1',
+            'NAMA_DEBITUR1' => 'NAMA_DEBITUR1',
+            'RATE' => 'RATE',
+            'JANGKA_WAKTU' => 'JANGKA_WAKTU1',
+            'JANGKA_WAKTU1' => 'JANGKA_WAKTU1',
+            'PLAFON' => 'PLAFON',
+            'BAKI_DEBET' => 'BAKI_DEBET1',
+            'BAKI_DEBET1' => 'BAKI_DEBET1',
+            'CKPN' => 'CKPN',
+            'NILAI_TERCATAT' => 'NILAI_TERCATAT1',
+            'NILAI_TERCATAT1' => 'NILAI_TERCATAT1',
+            'KOL_ADK' => 'KOL_ADK1',
+            'KOL_ADK1' => 'KOL_ADK1',
+            'JML_ANGSURAN' => 'JML_ANGSURAN1',
+            'JML_ANGSURAN1' => 'JML_ANGSURAN1',
+            'PN_NAME' => 'PN_NAME1',
+            'PN_NAME1' => 'PN_NAME1',
+            'PN_PEMRAKARSA' => 'PN_PEMRAKARSA1',
+            'PN_PEMRAKARSA1' => 'PN_PEMRAKARSA1',
+            'PN_REFERRAL' => 'PN_REFERRAL1',
+            'PN_REFERRAL1' => 'PN_REFERRAL1',
+            'PN_RESTRUK' => 'PN_RESTRUK1',
+            'PN_RESTRUK1' => 'PN_RESTRUK1',
+            'PN_PEMUTUS' => 'PN_PEMUTUS1',
+            'PN_PEMUTUS1' => 'PN_PEMUTUS1',
+            'PN_CRM' => 'PN_CRM1',
+            'PN_CRM1' => 'PN_CRM1',
+            'PN_REFERRAL_NAIK_KELAS' => 'PN_REFERRAL_NAIK_KELAS1',
+            'PN_REFERRAL_NAIK_KELAS1' => 'PN_REFERRAL_NAIK_KELAS1',
+            'JUMLAH_PN' => 'JUMLAH_PN1',
+            'JUMLAH_PN1' => 'JUMLAH_PN1',
+            'JUMLAH_PN_ALL' => 'JUMLAH_PN_ALL1',
+            'JUMLAH_PN_ALL1' => 'JUMLAH_PN_ALL1',
+            'RESTRUK_KE' => 'RESTRUK_KE1',
+            'RESTRUK_KE1' => 'RESTRUK_KE1',
+            'JENIS_RESTRUK' => 'JENIS_RESTRUK1',
+            'JENIS_RESTRUK1' => 'JENIS_RESTRUK1',
+            'FLAG_RESTRUK_COVID' => 'FLAG_RESTRUK_COVID1',
+            'FLAG_RESTRUK_COVID1' => 'FLAG_RESTRUK_COVID1',
+            'FLAG_COMMODITY_CHAIN' => 'FLAG_COMMODITY_CHAIN1',
+            'FLAG_COMMODITY_CHAIN1' => 'FLAG_COMMODITY_CHAIN1',
+            'FLAG_BRIGUNA_DIGITAL' => 'FLAG_BRIGUNA_DIGITAL1',
+            'FLAG_BRIGUNA_DIGITAL1' => 'FLAG_BRIGUNA_DIGITAL1',
+            'PMTAMT_BASE' => 'PMTAMT_Base',
+            'TEXTBOX20' => 'Textbox20',
+            'TEXTBOX21' => 'Textbox21',
+            'TAGIHAN_POKOK' => 'BILPRN',
+            'TAGIHAN_BUNGA' => 'BILINT',
+            'TAGIHAN_DENDA' => 'BILLC',
+            'TOTAL_DEFERRED_INTEREST_DITUNDA_DAN_BELUM_DIJADWALKAN' => 'LBDOTU',
+        ];
+    }
+
+    private function canonicalizeDailyLoanSourceHeaders(array $headers): array
+    {
+        if (!$this->isDailyLoanTable()) {
+            return array_values($headers);
+        }
+
+        $aliasMap = $this->dailyLoanSourceHeaderAliasMap();
+        $canonicalHeaders = [];
+        $matched = 0;
+
+        foreach (array_values($headers) as $index => $header) {
+            $header = trim((string) $header);
+            if ($header === '') {
+                $canonicalHeaders[$index] = 'COL_' . $index;
+                continue;
+            }
+
+            $normalizedHeader = preg_replace('/[^A-Z0-9]+/', '_', strtoupper($header));
+            $normalizedHeader = trim((string) $normalizedHeader, '_');
+
+            if (isset($aliasMap[$normalizedHeader])) {
+                $canonicalHeaders[$index] = $aliasMap[$normalizedHeader];
+                $matched++;
+                continue;
+            }
+
+            $canonicalHeaders[$index] = $header;
+        }
+
+        $hasCoreSignature = isset($canonicalHeaders[0], $canonicalHeaders[1], $canonicalHeaders[9], $canonicalHeaders[17])
+            && $canonicalHeaders[0] === 'PERIODE'
+            && $canonicalHeaders[1] === 'KODE_KANWIL1'
+            && $canonicalHeaders[9] === 'CIFNO'
+            && $canonicalHeaders[17] === 'BAKI_DEBET1';
+
+        if ($matched >= 12 || $hasCoreSignature) {
+            return $canonicalHeaders;
+        }
+
+        return array_values($headers);
+    }
+
     private function resolvePreviewHeaderLabel(string $headerName, string $tableName): string
     {
         if ($tableName !== 'daily_loan_dinamis') {
@@ -1276,6 +1399,7 @@ class ImportExcelController extends Controller
                     if ($currentIndex === $headerIndex) {
                         fclose($handle);
                         $row = $this->normalizeCsvRow($row, $delimiter);
+                        $row = $this->canonicalizeDailyLoanSourceHeaders($row);
 
                         return array_values(array_map(function ($headerValue, $index) {
                             $label = trim((string) $headerValue);
@@ -2155,6 +2279,8 @@ class ImportExcelController extends Controller
                 ];
             }
 
+            $header = $this->canonicalizeDailyLoanSourceHeaders((array) $header);
+
             if (!empty($header) && isset($header[0]) && is_string($header[0])) {
                 $header[0] = preg_replace('/^\xEF\xBB\xBF/', '', $header[0]);
             }
@@ -2312,6 +2438,10 @@ class ImportExcelController extends Controller
 
     private function buildImportContext(string $tableName, array $normalizedHeaders, array $activeFilters = [], array $importOptions = []): array
     {
+        if (strtolower(trim($tableName)) === 'daily_loan_dinamis') {
+            $normalizedHeaders = $this->canonicalizeDailyLoanSourceHeaders($normalizedHeaders);
+        }
+
         $cacheKey = $tableName . '|' . sha1(json_encode([
             'headers' => array_values($normalizedHeaders),
             'filters' => $activeFilters,
@@ -4318,6 +4448,8 @@ class ImportExcelController extends Controller
                 throw new \RuntimeException('Header CSV Daily Loan tidak ditemukan saat normalisasi direct load.');
             }
 
+            $header = $this->canonicalizeDailyLoanSourceHeaders((array) $header);
+
             if (!empty($header) && isset($header[0]) && is_string($header[0])) {
                 $header[0] = preg_replace('/^\xEF\xBB\xBF/', '', $header[0]);
             }
@@ -4392,6 +4524,22 @@ class ImportExcelController extends Controller
     private function prepareDailyLoanDirectLoadSource(string $csvPath, ?string $delimiter = null, ?callable $send = null): array
     {
         $normalized = $this->createNormalizedDailyLoanDirectLoadCsv($csvPath, $delimiter, $send);
+        $path = (string) ($normalized['path'] ?? '');
+        $resolvedDelimiter = ($delimiter !== null && $delimiter !== '')
+            ? $delimiter
+            : ($path !== '' ? $this->detectCsvDelimiter($path) : ',');
+
+        if ($path !== '' && file_exists($path)) {
+            $rewrittenHeaderPath = $this->rewriteDailyLoanCsvHeadersToCanonical($path, $resolvedDelimiter);
+            if ($rewrittenHeaderPath !== null && $rewrittenHeaderPath !== $path) {
+                if (!empty($normalized['cleanup']) && file_exists($path)) {
+                    @unlink($path);
+                }
+
+                $normalized['path'] = $rewrittenHeaderPath;
+                $normalized['cleanup'] = true;
+            }
+        }
 
         return [
             'path' => $normalized['path'],
@@ -4402,6 +4550,56 @@ class ImportExcelController extends Controller
             'skipped_count' => (int) ($normalized['skipped_count'] ?? 0),
             'written_rows' => (int) ($normalized['written_rows'] ?? 0),
         ];
+    }
+
+    private function rewriteDailyLoanCsvHeadersToCanonical(string $csvPath, string $delimiter): ?string
+    {
+        $inputHandle = @fopen($csvPath, 'rb');
+        if ($inputHandle === false) {
+            return null;
+        }
+
+        $header = fgetcsv($inputHandle, 0, $delimiter);
+        if ($header === false || empty($header)) {
+            fclose($inputHandle);
+            return null;
+        }
+
+        $canonicalHeader = $this->canonicalizeDailyLoanSourceHeaders((array) $header);
+        if (array_values($header) === array_values($canonicalHeader)) {
+            fclose($inputHandle);
+            return $csvPath;
+        }
+
+        $tempDirectory = storage_path('app/temp');
+        if (!is_dir($tempDirectory)) {
+            @mkdir($tempDirectory, 0777, true);
+        }
+
+        $tempPath = $tempDirectory . DIRECTORY_SEPARATOR . 'daily_loan_header_rewrite_' . Str::uuid()->toString() . '.csv';
+        $outputHandle = @fopen($tempPath, 'wb');
+        if ($outputHandle === false) {
+            fclose($inputHandle);
+            return null;
+        }
+
+        try {
+            fputcsv($outputHandle, $canonicalHeader, $delimiter, '"', '\\');
+
+            while (($row = fgetcsv($inputHandle, 0, $delimiter)) !== false) {
+                fputcsv($outputHandle, $row, $delimiter, '"', '\\');
+            }
+        } catch (\Throwable) {
+            fclose($inputHandle);
+            fclose($outputHandle);
+            @unlink($tempPath);
+            return null;
+        }
+
+        fclose($inputHandle);
+        fclose($outputHandle);
+
+        return $tempPath;
     }
 
     private function buildDirectLoadTextExpression(string $columnExpression): string
@@ -4522,6 +4720,9 @@ class ImportExcelController extends Controller
         if ($sourceHeaders === false || empty($sourceHeaders)) {
             throw new \RuntimeException('Header CSV Daily Loan tidak ditemukan.');
         }
+
+        $sourceHeaders = $this->canonicalizeDailyLoanSourceHeaders((array) $sourceHeaders);
+        $normalizedHeaders = $this->canonicalizeDailyLoanSourceHeaders($normalizedHeaders);
 
         $context = $this->buildImportContext('daily_loan_dinamis', $normalizedHeaders, []);
         $fieldVariables = [];

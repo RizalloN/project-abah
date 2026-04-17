@@ -1,6 +1,7 @@
 <?php
 
 use App\Services\JobHealthService;
+use App\Support\ManagedReportDeleteRecoveryService;
 use App\Support\ReportDataSyncService;
 use App\Support\ReportSnapshotBuilder;
 use Illuminate\Foundation\Inspiring;
@@ -169,3 +170,68 @@ Artisan::command('queue:health-sweep', function () {
 Schedule::command('queue:health-sweep')
     ->everyMinute()
     ->withoutOverlapping();
+
+Artisan::command('reports:delete-scope {table} {--period=} {--blank-kanca} {--chunk=10000}', function () {
+    $table = strtolower(trim((string) $this->argument('table')));
+    $period = trim((string) $this->option('period'));
+    $blankKanca = (bool) $this->option('blank-kanca');
+    $chunkSize = max(1, (int) $this->option('chunk'));
+
+    if ($table !== 'daily_loan_dinamis') {
+        $this->error('Command recovery ini hanya mendukung daily_loan_dinamis.');
+        return 1;
+    }
+
+    if ($period === '' || !$blankKanca) {
+        $this->error('Gunakan --period=YYYY-MM-DD dan --blank-kanca untuk recovery scope blank/null.');
+        return 1;
+    }
+
+    $candidateRows = (int) DB::table('daily_loan_dinamis')
+        ->where('periode', $period)
+        ->where(function ($query) {
+            $query->whereNull('cabang1')
+                ->orWhereRaw("TRIM(COALESCE(cabang1, '')) = ''");
+        })
+        ->count();
+
+    $this->info("Kandidat row: " . number_format($candidateRows, 0, ',', '.'));
+
+    $startedAt = microtime(true);
+    $service = app(ManagedReportDeleteRecoveryService::class);
+    $result = $service->deleteBlankKancaPeriodScope(
+        'daily_loan_dinamis',
+        'periode',
+        'cabang1',
+        $period,
+        $chunkSize,
+        function (int $affectedRows, int $totalDeleted, int $batchNumber): void {
+            $this->line(sprintf(
+                'Batch %d: hapus %s row (total %s)',
+                $batchNumber,
+                number_format($affectedRows, 0, ',', '.'),
+                number_format($totalDeleted, 0, ',', '.')
+            ));
+        }
+    );
+
+    app(ReportDataSyncService::class)->syncAfterDelete(
+        'daily_loan_dinamis',
+        $period,
+        'artisan:reports:delete-scope'
+    );
+
+    $remainingRows = (int) DB::table('daily_loan_dinamis')
+        ->where('periode', $period)
+        ->where(function ($query) {
+            $query->whereNull('cabang1')
+                ->orWhereRaw("TRIM(COALESCE(cabang1, '')) = ''");
+        })
+        ->count();
+
+    $this->info('Deleted rows: ' . number_format((int) ($result['deleted_rows'] ?? 0), 0, ',', '.'));
+    $this->info('Remaining rows: ' . number_format($remainingRows, 0, ',', '.'));
+    $this->info('Durasi: ' . number_format(microtime(true) - $startedAt, 2) . ' detik.');
+
+    return 0;
+})->purpose('Recovery delete untuk scope daily_loan_dinamis periode eksplisit dengan kanca blank/null');

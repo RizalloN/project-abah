@@ -136,7 +136,7 @@ class ImportPerformancePisPerProdukController extends Controller
     {
         $request->validate([
             'id_report' => 'required',
-            'file' => 'required|file|mimes:xlsx',
+            'file' => 'required|file|mimes:xlsx,csv,txt',
             'periode' => 'required|date_format:Y-m-d',
         ]);
 
@@ -201,12 +201,14 @@ class ImportPerformancePisPerProdukController extends Controller
 
                 $absolutePath = Storage::path($relativePath);
                 if (!file_exists($absolutePath)) {
-                    $send('error_msg', ['message' => 'File Excel Performance PIS tidak ditemukan di server.']);
+                    $send('error_msg', ['message' => 'File import Performance PIS tidak ditemukan di server.']);
                     return;
                 }
 
+                $workingPath = $absolutePath;
                 $stageState = $this->getStagedExcelState($relativePath);
                 $stagedCsvPath = (string) ($stageState['staged_csv_path'] ?? '');
+
                 if ($stagedCsvPath !== '' && file_exists($stagedCsvPath)) {
                     $send('progress', ['percent' => 82, 'message' => 'CSV staging siap. Menyiapkan halaman preview...']);
                     $send('ready', [
@@ -215,36 +217,41 @@ class ImportPerformancePisPerProdukController extends Controller
                     return;
                 }
 
-                $send('progress', ['percent' => 18, 'message' => 'Mendeteksi header Excel Performance PIS...']);
-                $excelContext = $this->buildExcelContext($absolutePath, session('performance_pis_periode'));
-                $send('progress', ['percent' => 35, 'message' => 'Struktur header ditemukan. Menyiapkan CSV staging...']);
+                if ($this->isExcelFile($absolutePath)) {
+                    $send('progress', ['percent' => 18, 'message' => 'Mendeteksi header Excel Performance PIS...']);
+                    $excelContext = $this->buildExcelContext($absolutePath, session('performance_pis_periode'));
+                    $send('progress', ['percent' => 35, 'message' => 'Struktur header ditemukan. Menyiapkan CSV staging...']);
 
-                $stagedCsvPath = $this->stagingService()->createStagedCsvPath(
-                    storage_path(self::BULK_LOAD_TEMP_DIR),
-                    'performance_pis'
-                );
+                    $stagedCsvPath = $this->stagingService()->createStagedCsvPath(
+                        storage_path(self::BULK_LOAD_TEMP_DIR),
+                        'performance_pis'
+                    );
 
-                $send('progress', ['percent' => 55, 'message' => 'Mengonversi Excel ke CSV staging Performance PIS...']);
-                $stageResult = $this->stagingService()->stageExcelToCsv(
-                    $send,
-                    $absolutePath,
-                    max(0, (int) ($excelContext['header_line'] ?? 1) - 1),
-                    array_map(fn ($value) => $this->normalizeHeader($value), (array) ($excelContext['source_headers'] ?? [])),
-                    $stagedCsvPath
-                );
+                    $send('progress', ['percent' => 55, 'message' => 'Mengonversi Excel ke CSV staging Performance PIS...']);
+                    $stageResult = $this->stagingService()->stageExcelToCsv(
+                        $send,
+                        $absolutePath,
+                        max(0, (int) ($excelContext['header_line'] ?? 1) - 1),
+                        array_map(fn ($value) => $this->normalizeHeader($value), (array) ($excelContext['source_headers'] ?? [])),
+                        $stagedCsvPath
+                    );
 
-                if ($stageResult === null) {
-                    $send('error_msg', ['message' => 'Gagal membuat CSV staging dari Excel Performance PIS.']);
-                    return;
+                    if ($stageResult === null) {
+                        $send('error_msg', ['message' => 'Gagal membuat CSV staging dari Excel Performance PIS.']);
+                        return;
+                    }
+
+                    $this->putStagedExcelState($relativePath, [
+                        'staged_csv_path' => $stageResult['staged_csv_path'],
+                        'total_rows' => (int) ($stageResult['total_rows'] ?? 0),
+                        'header_index' => max(0, (int) ($excelContext['header_line'] ?? 1) - 1),
+                        'headers' => array_values((array) ($stageResult['headers'] ?? [])),
+                    ]);
+                } else {
+                    $send('progress', ['percent' => 45, 'message' => 'Memvalidasi struktur CSV Performance PIS...']);
+                    $context = $this->buildCsvContext($absolutePath, session('performance_pis_periode'));
+                    $send('progress', ['percent' => 82, 'message' => 'Struktur CSV valid. Menyiapkan halaman preview...']);
                 }
-
-                $send('progress', ['percent' => 82, 'message' => 'CSV staging selesai. Menyiapkan halaman preview...']);
-                $this->putStagedExcelState($relativePath, [
-                    'staged_csv_path' => $stageResult['staged_csv_path'],
-                    'total_rows' => (int) ($stageResult['total_rows'] ?? 0),
-                    'header_index' => max(0, (int) ($excelContext['header_line'] ?? 1) - 1),
-                    'headers' => array_values((array) ($stageResult['headers'] ?? [])),
-                ]);
 
                 $send('ready', [
                     'redirect' => route('import.performancepis.preview', ['file_path' => $relativePath]),

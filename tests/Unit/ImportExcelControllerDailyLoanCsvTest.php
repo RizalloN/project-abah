@@ -171,6 +171,50 @@ class ImportExcelControllerDailyLoanCsvTest extends TestCase
         $this->assertSame(0, $result['skipped_count']);
     }
 
+    public function test_prepare_daily_loan_direct_load_source_rewrites_business_headers_to_canonical_headers(): void
+    {
+        $csvPath = storage_path('framework/testing/daily_loan_business_headers.csv');
+        if (!is_dir(dirname($csvPath))) {
+            @mkdir(dirname($csvPath), 0777, true);
+        }
+
+        file_put_contents($csvPath, implode("\n", [
+            'PERIODE;KODE KANWIL;KANWIL;KODE CABANG;CABANG;BRANCH;UNIT;CURTYP;AO NAME;CIFNO;NOMOR REKENING;STATUS REKENING;LN TYPE;NAMA DEBITUR;RATE;JANGKA WAKTU;PLAFON;BAKI DEBET',
+            '31/03/2025;R;KANWIL MALANG;45;KC Madiun;45;KC Madiun;IDR;Regional Office Malang;SDZJ380;5,01E+11;1;WL;SAMINGUN;0,0813;60M;150,000,000.00;89,939,319.00',
+        ]) . "\n");
+
+        $result = [];
+        try {
+            $result = $this->invokeMethod('prepareDailyLoanDirectLoadSource', [$csvPath, ';']);
+
+            $this->assertTrue($result['normalized']);
+            $this->assertSame(1, $result['written_rows']);
+            $this->assertNotEmpty($result['path']);
+
+            $handle = fopen((string) $result['path'], 'r');
+            $this->assertNotFalse($handle);
+            $header = fgetcsv($handle, 0, ';');
+            fclose($handle);
+
+            $this->assertSame('KODE_KANWIL1', $header[1] ?? null);
+            $this->assertSame('KANWIL1', $header[2] ?? null);
+            $this->assertSame('KODE_CABANG1', $header[3] ?? null);
+            $this->assertSame('CABANG1', $header[4] ?? null);
+            $this->assertSame('BRANCH1', $header[5] ?? null);
+            $this->assertSame('UNIT1', $header[6] ?? null);
+            $this->assertSame('NOMOR_REKENING1', $header[10] ?? null);
+            $this->assertSame('STATUS_REKENING1', $header[11] ?? null);
+            $this->assertSame('NAMA_DEBITUR1', $header[13] ?? null);
+            $this->assertSame('JANGKA_WAKTU1', $header[15] ?? null);
+            $this->assertSame('BAKI_DEBET1', $header[17] ?? null);
+        } finally {
+            @unlink($csvPath);
+            if (!empty($result['path'] ?? '') && file_exists((string) $result['path']) && ($result['cleanup'] ?? false)) {
+                @unlink((string) $result['path']);
+            }
+        }
+    }
+
     public function test_prepare_daily_loan_direct_load_source_skips_malformed_rows_when_normalizing(): void
     {
         $csvPath = storage_path('framework/testing/daily_loan_direct_load_malformed.csv');
@@ -353,6 +397,51 @@ class ImportExcelControllerDailyLoanCsvTest extends TestCase
                 Schema::drop('nama_report');
             }
         }
+    }
+
+    public function test_canonicalize_daily_loan_source_headers_maps_business_headers_to_internal_headers(): void
+    {
+        $sourceHeaders = [
+            'PERIODE', 'KODE KANWIL', 'KANWIL', 'KODE CABANG', 'CABANG', 'BRANCH', 'UNIT', 'CURTYP',
+            'AO NAME', 'CIFNO', 'NOMOR REKENING', 'STATUS REKENING', 'LN TYPE', 'NAMA DEBITUR', 'RATE', 'JANGKA WAKTU',
+            'PLAFON', 'BAKI DEBET', 'NILAI TERCATAT', 'KOL ADK', 'PN NAME', 'PN PEMRAKARSA', 'PN REFERRAL',
+            'PN RESTRUK', 'PN PEMUTUS', 'PN CRM', 'PN REFERRAL NAIK KELAS', 'JUMLAH PN', 'JUMLAH PN ALL',
+            'RESTRUK KE', 'JENIS RESTRUK', 'FLAG RESTRUK COVID', 'FLAG COMMODITY CHAIN', 'FLAG BRIGUNA DIGITAL',
+            'TOTAL DEFERRED INTEREST DITUNDA DAN BELUM DIJADWALKAN', 'TAGIHAN POKOK', 'TAGIHAN BUNGA', 'TAGIHAN DENDA',
+        ];
+        $canonical = $this->invokeMethod('canonicalizeDailyLoanSourceHeaders', [$sourceHeaders]);
+
+        $this->assertSame('KODE_KANWIL1', $canonical[1]);
+        $this->assertSame('KANWIL1', $canonical[2]);
+        $this->assertSame('KODE_CABANG1', $canonical[3]);
+        $this->assertSame('CABANG1', $canonical[4]);
+        $this->assertSame('BRANCH1', $canonical[5]);
+        $this->assertSame('UNIT1', $canonical[6]);
+        $this->assertSame('NOMOR_REKENING1', $canonical[10]);
+        $this->assertSame('STATUS_REKENING1', $canonical[11]);
+        $this->assertSame('NAMA_DEBITUR1', $canonical[13]);
+        $this->assertSame('JANGKA_WAKTU1', $canonical[15]);
+        $this->assertSame('BAKI_DEBET1', $canonical[17]);
+        $this->assertSame('NILAI_TERCATAT1', $canonical[18]);
+        $this->assertSame('KOL_ADK1', $canonical[19]);
+        $this->assertSame('PN_NAME1', $canonical[20]);
+        $this->assertSame('PN_PEMRAKARSA1', $canonical[21]);
+        $this->assertSame('PN_REFERRAL1', $canonical[22]);
+        $this->assertSame('PN_RESTRUK1', $canonical[23]);
+        $this->assertSame('PN_PEMUTUS1', $canonical[24]);
+        $this->assertSame('PN_CRM1', $canonical[25]);
+        $this->assertSame('PN_REFERRAL_NAIK_KELAS1', $canonical[26]);
+        $this->assertSame('JUMLAH_PN1', $canonical[27]);
+        $this->assertSame('JUMLAH_PN_ALL1', $canonical[28]);
+        $this->assertSame('RESTRUK_KE1', $canonical[29]);
+        $this->assertSame('JENIS_RESTRUK1', $canonical[30]);
+        $this->assertSame('FLAG_RESTRUK_COVID1', $canonical[31]);
+        $this->assertSame('FLAG_COMMODITY_CHAIN1', $canonical[32]);
+        $this->assertSame('FLAG_BRIGUNA_DIGITAL1', $canonical[33]);
+        $this->assertSame('LBDOTU', $canonical[34]);
+        $this->assertSame('BILPRN', $canonical[35]);
+        $this->assertSame('BILINT', $canonical[36]);
+        $this->assertSame('BILLC', $canonical[37]);
     }
 
     public function test_normalize_excel_value_uses_strict_day_first_date_parsing(): void

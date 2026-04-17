@@ -1537,19 +1537,15 @@
             }
 
             if (isPerformancePis) {
-                formExcel.style.display = 'block';
-                inputExcel.disabled = false;
-                inputExcel.required = true;
-                inputExcel.setAttribute('accept', '.xlsx,.xls');
+                formCsv.style.display = 'block';
+                inputCsv.disabled = false;
+                inputCsv.required = true;
+                inputCsv.setAttribute('accept', '.csv,.txt,.xlsx,.xls');
                 formImport.action = "{{ route('import.performancepis.upload') }}";
                 formImport.dataset.preparePreviewUrl = "{{ route('import.performancepis.prepare-preview') }}";
-                if (excelLabel) {
-                    excelLabel.innerHTML = '<i class="fas fa-file-upload mr-1"></i> Upload File Performance PIS (.xlsx, .xls)';
-                }
-                if (excelHelp) {
-                    excelHelp.textContent = 'Tanggal periode diisi manual pada form import Performance PIS per Produk.';
-                }
-                applyButtonState('excel', '<i class="fas fa-file-upload"></i> Upload File');
+                csvLabel.innerHTML = '<i class="fas fa-file-upload mr-1"></i> Upload File Performance PIS (.csv, .txt, .xlsx, .xls)';
+                csvHelp.textContent = 'File CSV dan Excel didukung. Tanggal periode wajib diisi manual di bawah.';
+                applyButtonState('csv', '<i class="fas fa-file-upload"></i> Upload File');
                 configurePeriodeInput(buildManualPeriodeOptions({
                     visible: true,
                     required: true,
