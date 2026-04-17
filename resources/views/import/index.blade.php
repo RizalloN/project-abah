@@ -1342,6 +1342,8 @@
             const isPerformancePis = reportName.includes('performance pis per produk');
             const isCasaBrilink = reportName.includes('casa brilink');
             const isReportPh = reportName.includes('report nominatif rekening pinjaman ph');
+            const isCognosPh = reportName.includes('cognos ph');
+            const isCognosRecovery = reportName.includes('cognos recovery');
             const isGi405RecDh = tableName === 'gi405_rec_dh' || importController.includes('Gi405RecDhImportExcelController');
             const isInputRekanan = tableName === 'input_rekanan';
             const isBodBoc = tableName === 'bod_boc';
@@ -1492,6 +1494,40 @@
                 formImport.dataset.preparePreviewUrl = "{{ route('import.reportph.prepare-preview') }}";
                 csvLabel.innerHTML = '<i class="fas fa-file-upload mr-1"></i> Upload File Report PH (.csv, .txt, .xlsx, .xls)';
                 csvHelp.textContent = 'CSV tetap didukung. File Excel akan distage dulu ke CSV lalu masuk ke jalur bulk import yang sama.';
+                applyButtonState('csv', '<i class="fas fa-file-upload"></i> Upload File');
+                configurePeriodeInput({ visible: false });
+                configureKancaInput({ visible: false });
+                updateReportSummary();
+                updateFileSelectionUI();
+                return;
+            }
+
+            if (isCognosRecovery) {
+                formCsv.style.display = 'block';
+                inputCsv.disabled = false;
+                inputCsv.required = true;
+                inputCsv.setAttribute('accept', '.csv,.txt,.xlsx,.xls');
+                formImport.action = "{{ route('import.cognos-recovery.upload') }}";
+                formImport.dataset.preparePreviewUrl = "{{ route('import.cognos-recovery.prepare-preview') }}";
+                csvLabel.innerHTML = '<i class="fas fa-file-upload mr-1"></i> Upload File Cognos Recovery (.csv, .txt, .xlsx, .xls)';
+                csvHelp.textContent = 'File CSV menjadi jalur utama. File Excel akan distage dulu ke CSV agar parser nominal dan rekening tetap aman.';
+                applyButtonState('csv', '<i class="fas fa-file-upload"></i> Upload File');
+                configurePeriodeInput({ visible: false });
+                configureKancaInput({ visible: false });
+                updateReportSummary();
+                updateFileSelectionUI();
+                return;
+            }
+
+            if (isCognosPh) {
+                formCsv.style.display = 'block';
+                inputCsv.disabled = false;
+                inputCsv.required = true;
+                inputCsv.setAttribute('accept', '.csv,.txt,.xlsx,.xls');
+                formImport.action = "{{ route('import.cognos-ph.upload') }}";
+                formImport.dataset.preparePreviewUrl = "{{ route('import.cognos-ph.prepare-preview') }}";
+                csvLabel.innerHTML = '<i class="fas fa-file-upload mr-1"></i> Upload File Cognos PH (.csv, .txt, .xlsx, .xls)';
+                csvHelp.textContent = 'File CSV menjadi jalur utama. File Excel akan distage dulu ke CSV agar parser ACCTNO dan nominal tetap aman.';
                 applyButtonState('csv', '<i class="fas fa-file-upload"></i> Upload File');
                 configurePeriodeInput({ visible: false });
                 configureKancaInput({ visible: false });

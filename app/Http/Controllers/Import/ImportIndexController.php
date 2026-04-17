@@ -66,6 +66,18 @@ class ImportIndexController extends Controller
             'kanca' => 'kanca',
             'identity' => 'uniqueid_namareport',
         ],
+        'cognos_recovery' => [
+            'index' => 'idx_cognos_recovery_delete_scope',
+            'period' => 'periode',
+            'kanca' => 'cabang',
+            'identity' => 'uniqueid_namareport',
+        ],
+        'cognos_ph' => [
+            'index' => 'idx_cognos_ph_delete_scope',
+            'period' => 'periode',
+            'kanca' => 'kanca',
+            'identity' => 'uniqueid_namareport',
+        ],
         'performance_pis_per_produk' => [
             'index' => 'idx_pppp_delete_scope',
             'period' => 'posisi',
