@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
 use Carbon\Carbon; 
 
 class ImportFileController extends Controller
@@ -42,7 +43,7 @@ class ImportFileController extends Controller
     private const PREVIEW_UNIQUE_LIMIT_PER_COLUMN = 400;
     private const LARGE_FILE_THRESHOLD_BYTES = 150 * 1024 * 1024;
     private const LARGE_FILE_PREVIEW_SAMPLE_LIMIT = 400;
-    private const LARGE_FILE_PREVIEW_UNIQUE_SCAN_LIMIT = 1200;
+    private const LARGE_FILE_PREVIEW_UNIQUE_SCAN_LIMIT = 800;
     private const LARGE_FILE_PREVIEW_UNIQUE_LIMIT_PER_COLUMN = 160;
     private const DAILY_LOAN_PREVIEW_SAMPLE_LIMIT = 150;
     private const DAILY_LOAN_PREVIEW_UNIQUE_SCAN_LIMIT = 150;
@@ -94,6 +95,11 @@ class ImportFileController extends Controller
         ini_set('memory_limit', self::SAFE_MEMORY_LIMIT);
         ini_set('auto_detect_line_endings', '1');
         ini_set('max_execution_time', $streaming ? '0' : '300');
+    }
+
+    private function previewFilterCacheKey(string $filePath, string $delimiter, int $columnIndex, string $tableName): string
+    {
+        return 'preview_filter_options:' . md5($filePath . '|' . $delimiter . '|' . $columnIndex . '|' . $tableName);
     }
 
     private const BRILINK_SUMMARY_HEADERS = [
@@ -485,6 +491,10 @@ class ImportFileController extends Controller
 
     private function resolveUniqueSuffix(string $tableName): string
     {
+        if ($tableName === 'jumlah_merchant_qris_detail') {
+            return '_JMQD';
+        }
+
         if ($tableName === 'sv_merchant') {
             return '_SVMer';
         }
@@ -2116,6 +2126,259 @@ class ImportFileController extends Controller
             'backRoute' => route('import.index'),
             'area6ColumnHints' => $area6ColumnHints,
             'initialArea6Selections' => $initialArea6Selections,
+            'filterOptionsRoute' => route('import.preview.filter-options'),
+            'prefetchFilterOptionsOnLoad' => false,
+        ]);
+    }
+
+    public function previewFilterOptions(Request $request)
+    {
+        $this->applySafeRuntimeLimits();
+
+        $request->validate([
+            'file_path' => 'required|string',
+            'delimiter' => 'nullable|string',
+            'column_index' => 'required|integer|min:0',
+            'display_filter_map_json' => 'nullable|string',
+            'preview_state_key' => 'nullable|string',
+        ]);
+
+        $filePath = (string) $request->input('file_path');
+        $currentDelimiter = (string) $request->input('delimiter', 'auto');
+        $columnIndex = (int) $request->input('column_index');
+        $previewStateKey = trim((string) $request->input('preview_state_key', ''));
+        $displayFilterMap = json_decode((string) $request->input('display_filter_map_json', ''), true);
+        if (!is_array($displayFilterMap)) {
+            $displayFilterMap = [];
+        }
+        $sourceColumnIndex = array_key_exists($columnIndex, $displayFilterMap)
+            ? (int) $displayFilterMap[$columnIndex]
+            : $columnIndex;
+
+        $previewState = $previewStateKey !== ''
+            ? app(\App\Services\Import\ExcelImportJobService::class)->getPreviewState($previewStateKey)
+            : [];
+        $previewMeta = !empty($previewState['previewMeta']) && is_array($previewState['previewMeta'])
+            ? (array) $previewState['previewMeta']
+            : (array) session('excel_preview_meta', []);
+
+        $resolvedFilePath = $filePath;
+        if (!file_exists($resolvedFilePath)) {
+            try {
+                $storageResolvedPath = Storage::path($filePath);
+                if (is_string($storageResolvedPath) && $storageResolvedPath !== '' && file_exists($storageResolvedPath)) {
+                    $resolvedFilePath = $storageResolvedPath;
+                }
+            } catch (\Throwable $e) {
+            }
+        }
+
+        $stagedCsvPath = (string) ($previewMeta['staged_csv_path'] ?? '');
+        if ($stagedCsvPath !== '' && file_exists($stagedCsvPath)) {
+            $resolvedFilePath = $stagedCsvPath;
+        }
+
+        if (!file_exists($resolvedFilePath)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'File tidak ditemukan di server.',
+            ], 404);
+        }
+
+        $extension = strtolower(pathinfo($resolvedFilePath, PATHINFO_EXTENSION));
+        if (!in_array($extension, ['csv', 'txt'], true)) {
+            $headerIndex = isset($previewMeta['header_index']) ? (int) $previewMeta['header_index'] : null;
+            $sourceHeaders = array_values((array) ($previewMeta['source_headers'] ?? []));
+            $previewPath = urldecode((string) ($previewMeta['path'] ?? ''));
+            $sourceExcelPath = $previewPath !== '' ? Storage::path($previewPath) : $resolvedFilePath;
+
+            if (
+                $previewStateKey !== ''
+                && $headerIndex !== null
+                && !empty($sourceHeaders)
+                && is_string($sourceExcelPath)
+                && $sourceExcelPath !== ''
+                && file_exists($sourceExcelPath)
+            ) {
+                try {
+                    $stagingService = app(\App\Services\Import\ExcelStagingService::class);
+                    $generatedStagedCsvPath = $stagingService->createStagedCsvPath(storage_path('app/import_preview_filters'), 'filter_preview');
+                    $stageResult = $stagingService->stageExcelToCsv(
+                        static function (string $event, array $payload): void {
+                        },
+                        $sourceExcelPath,
+                        $headerIndex,
+                        $sourceHeaders,
+                        $generatedStagedCsvPath,
+                        null,
+                        'excel_filter_preview_'
+                    );
+
+                    $candidateCsvPath = (string) ($stageResult['staged_csv_path'] ?? '');
+                    if ($candidateCsvPath !== '' && file_exists($candidateCsvPath)) {
+                        $resolvedFilePath = $candidateCsvPath;
+                        $extension = strtolower(pathinfo($resolvedFilePath, PATHINFO_EXTENSION));
+
+                        $previewMeta['staged_csv_path'] = $candidateCsvPath;
+                        session(['excel_preview_meta' => array_merge((array) session('excel_preview_meta', []), [
+                            'staged_csv_path' => $candidateCsvPath,
+                        ])]);
+
+                        if ($previewStateKey !== '') {
+                            app(\App\Services\Import\ExcelImportJobService::class)->putPreviewState(
+                                $previewStateKey,
+                                array_merge($previewState, ['previewMeta' => $previewMeta])
+                            );
+                        }
+                    }
+                } catch (\Throwable $e) {
+                }
+            }
+        }
+
+        if (!in_array($extension, ['csv', 'txt'], true)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Format file tidak didukung untuk opsi filter preview.',
+            ], 422);
+        }
+
+        $reportData = $this->getActiveReportData();
+        $tableName = $this->resolveTableName($reportData);
+        $isBrilinkSummary = $this->isBrilinkSummaryReport($reportData);
+        $isDailyLoan = $this->isDailyLoanReport($reportData);
+        $cacheKey = $this->previewFilterCacheKey($resolvedFilePath, $currentDelimiter, $sourceColumnIndex, $tableName);
+
+        $cached = Cache::get($cacheKey);
+        if (is_array($cached)) {
+            return response()->json([
+                'status' => 'success',
+                'values' => $cached,
+                'cached' => true,
+            ]);
+        }
+
+        $handle = fopen($resolvedFilePath, 'r');
+        if ($handle === false) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'File tidak dapat dibaca oleh server.',
+            ], 422);
+        }
+
+        $valuesMap = [];
+        $headers = [];
+        $resolvedDelimiter = ',';
+        $posisiIndex = -1;
+        $tahunIndex = -1;
+
+        try {
+            $resolvedDelimiter = $this->resolveDelimiter($handle, $currentDelimiter);
+            rewind($handle);
+
+            $rowCounter = 0;
+            while (($data = $this->readCsvRecord($handle, $resolvedDelimiter)) !== false) {
+                if (empty($data) || implode('', $data) === '') {
+                    continue;
+                }
+
+                if ($rowCounter === 0) {
+                    $headers = $this->formatCsvHeaders($data, $isBrilinkSummary);
+                    if (!isset($headers[$sourceColumnIndex])) {
+                        return response()->json([
+                            'status' => 'error',
+                            'message' => 'Kolom filter tidak valid.',
+                        ], 422);
+                    }
+
+                    if (!$isBrilinkSummary) {
+                        foreach ($headers as $i => $header) {
+                            if (stripos((string) $header, 'POSISI') !== false) {
+                                $posisiIndex = $i;
+                            }
+                            if (stripos((string) $header, 'TAHUN') !== false) {
+                                $tahunIndex = $i;
+                            }
+                        }
+                    }
+
+                    $rowCounter++;
+                    continue;
+                }
+
+                if (!$isDailyLoan && (trim((string) ($data[0] ?? '')) === 'TAHUN' || stripos(trim((string) ($data[0] ?? '')), 'textbox') !== false)) {
+                    continue;
+                }
+
+                if ($isBrilinkSummary) {
+                    $data = $this->transformBrilinkSummaryRow($data);
+                } elseif ($isDailyLoan) {
+                    if (count($data) < count($headers)) {
+                        $data = array_pad($data, count($headers), null);
+                    }
+
+                    if (count($data) > count($headers)) {
+                        continue;
+                    }
+
+                    foreach ($headers as $i => $header) {
+                        $normalizedColumn = $this->normalizeDailyLoanHeader((string) $header);
+                        $cellValue = isset($data[$i]) ? trim((string) $data[$i]) : '';
+
+                        if ($this->isDailyLoanDateColumn($normalizedColumn)) {
+                            $data[$i] = $this->normalizeDailyLoanDate($cellValue);
+                        } elseif ($this->isDailyLoanNumericColumn($normalizedColumn)) {
+                            $data[$i] = $this->normalizeDecimalValue($cellValue);
+                        } else {
+                            $data[$i] = $cellValue === '' ? null : $cellValue;
+                        }
+                    }
+                } else {
+                    if (count($data) < count($headers)) {
+                        $data = array_pad($data, count($headers), null);
+                    }
+
+                    if (count($data) > count($headers)) {
+                        continue;
+                    }
+
+                    if ($posisiIndex !== -1 && isset($data[$posisiIndex]) && trim((string) $data[$posisiIndex]) !== '') {
+                        $rawPosisi = trim((string) $data[$posisiIndex]);
+                        try {
+                            if (strpos($rawPosisi, '/') !== false) {
+                                $data[$posisiIndex] = StrictDateParser::normalize($rawPosisi);
+                            } else {
+                                if ($tahunIndex !== -1 && isset($data[$tahunIndex]) && trim((string) $data[$tahunIndex]) !== '') {
+                                    $rawTahun = trim((string) $data[$tahunIndex]);
+                                    if (preg_match('/^([a-zA-Z]+\s+\d+)/', $rawPosisi, $matches)) {
+                                        $data[$posisiIndex] = StrictDateParser::normalize($matches[1] . ' ' . $rawTahun);
+                                    } else {
+                                        $data[$posisiIndex] = StrictDateParser::normalize($rawPosisi);
+                                    }
+                                } else {
+                                    $data[$posisiIndex] = StrictDateParser::normalize($rawPosisi);
+                                }
+                            }
+                        } catch (\Throwable $e) {
+                        }
+                    }
+                }
+
+                $value = trim((string) ($data[$sourceColumnIndex] ?? ''));
+                $valuesMap[$value] = true;
+            }
+        } finally {
+            fclose($handle);
+        }
+
+        $values = array_keys($valuesMap);
+        sort($values);
+        Cache::put($cacheKey, $values, now()->addHours(4));
+
+        return response()->json([
+            'status' => 'success',
+            'values' => $values,
+            'cached' => false,
         ]);
     }
 

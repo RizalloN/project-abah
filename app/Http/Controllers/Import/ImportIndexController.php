@@ -69,6 +69,12 @@ class ImportIndexController extends Controller
             'kanca' => 'kanca',
             'identity' => 'uniqueid_namareport',
         ],
+        'jumlah_merchant_qris_detail' => [
+            'index' => 'idx_jmqd_delete_scope',
+            'period' => 'POSISI',
+            'kanca' => 'MBDESC',
+            'identity' => 'uniqueid_namareport',
+        ],
         'cognos_recovery' => [
             'index' => 'idx_cognos_recovery_delete_scope',
             'period' => 'periode',
