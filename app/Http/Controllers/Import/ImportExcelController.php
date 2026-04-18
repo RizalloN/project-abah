@@ -5975,10 +5975,18 @@ class ImportExcelController extends Controller
             ];
         }
 
+        if ($this->resolveActiveTableName() === 'jumlah_merchant_qris_detail') {
+            return [
+                'preview_limit' => 100,
+                'unique_scan_limit' => 150,
+                'max_unique_values_per_column' => 80,
+            ];
+        }
+
         return [
             'preview_limit' => 100,
-            'unique_scan_limit' => 5000,
-            'max_unique_values_per_column' => 300,
+            'unique_scan_limit' => 180,
+            'max_unique_values_per_column' => 100,
         ];
     }
 

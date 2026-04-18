@@ -69,6 +69,10 @@ class ManagedReportManagementService
         'jumlah_merchant_detail' => [
             'period_priority' => ['posisi', 'periode'],
         ],
+        'jumlah_merchant_qris_detail' => [
+            'period_priority' => ['POSISI', 'PERIODE'],
+            'kanca_priority' => ['MBDESC', 'BRDESC'],
+        ],
         'merchant_qris' => [
             'period_priority' => ['posisi', 'periode'],
             'kanca_priority' => ['NAMA_KCI', 'nama_kci'],

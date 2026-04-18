@@ -57,7 +57,7 @@
         </div>
         @endif
 
-        <form id="importForm" action="{{ $processRoute ?? route('import.process') }}" method="POST" data-init-url="{{ $initRoute ?? '' }}" data-stream-url="{{ $streamRoute ?? '' }}">
+        <form id="importForm" action="{{ $processRoute ?? route('import.process') }}" method="POST" data-init-url="{{ $initRoute ?? '' }}" data-stream-url="{{ $streamRoute ?? '' }}" data-filter-options-url="{{ $filterOptionsRoute ?? route('import.preview.filter-options') }}">
             @csrf
             <input type="hidden" name="file_path" value="{{ $filePath }}">
             <input type="hidden" name="delimiter" value="{{ $currentDelimiter }}">
@@ -156,7 +156,7 @@
                                                             </div>
                                                         </div>
                                                         <div class="p-2 bg-white" id="list_container_{{ $index }}" style="max-height: 250px; overflow-y: auto;" data-col="{{ $index }}">
-                                                            <div class="text-center text-muted py-2 small">Memuat opsi filter...</div>
+                                                            <div class="text-center text-muted py-2 small">Memuat opsi filter awal...</div>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -218,6 +218,12 @@
         const forceAllChecked = @json(!empty($forceAllFiltersCheckedOnLoad));
         const headers = @json($headers);
         const disableArea6AutoFilter = @json(!empty($disableArea6AutoFilter));
+        const importFormElement = document.getElementById('importForm');
+        const filterOptionsUrl = importFormElement?.dataset.filterOptionsUrl || '';
+        const filePathValue = importFormElement?.querySelector('input[name="file_path"]')?.value || '';
+        const previewStateKey = importFormElement?.querySelector('input[name="preview_state_key"]')?.value || '';
+        const delimiterValue = importFormElement?.querySelector('input[name="delimiter"]')?.value || 'auto';
+        const displayFilterMap = @json(session('import_display_to_source_map', []));
         const filterState = {};
         const searchTerms = {};
         const filterRenderLimit = 200;
@@ -330,6 +336,8 @@
             filterState[col] = {
                 allValues: values,
                 selectedValues: selectedValues,
+                fullOptionsLoaded: false,
+                isLoading: false,
             };
             searchTerms[col] = '';
         });
@@ -397,8 +405,14 @@
             let html = '';
 
             if (!filteredValues.length) {
-                html = '<div class="text-center text-muted py-2 small">Tidak ada opsi yang cocok.</div>';
+                html = state.isLoading
+                    ? '<div class="text-center text-muted py-2 small">Memuat opsi filter lengkap...</div>'
+                    : '<div class="text-center text-muted py-2 small">Tidak ada opsi yang cocok.</div>';
             } else {
+                if (state.isLoading) {
+                    html += '<div class="small text-muted mb-2">Memuat opsi lengkap dari file sumber...</div>';
+                }
+
                 if (filteredValues.length > filterRenderLimit) {
                     html += '<div class="small text-muted mb-2">Menampilkan ' + filterRenderLimit + ' dari ' + filteredValues.length + ' opsi. Gunakan pencarian untuk mempersempit.</div>';
                 }
@@ -416,6 +430,65 @@
 
             container.innerHTML = html;
             syncSelectAllCheckbox(col, filteredValues);
+        }
+
+        async function ensureFullFilterOptions(col) {
+            const state = filterState[col];
+            if (!state || state.fullOptionsLoaded || state.isLoading || !filterOptionsUrl || !filePathValue) {
+                return;
+            }
+
+            state.isLoading = true;
+            renderFilterList(col);
+
+            try {
+                const sourceCol = Object.prototype.hasOwnProperty.call(displayFilterMap, col)
+                    ? displayFilterMap[col]
+                    : col;
+                const url = new URL(filterOptionsUrl, window.location.origin);
+                url.searchParams.set('file_path', filePathValue);
+                url.searchParams.set('delimiter', delimiterValue);
+                url.searchParams.set('column_index', String(sourceCol));
+                url.searchParams.set('display_filter_map_json', JSON.stringify(displayFilterMap || {}));
+                if (previewStateKey) {
+                    url.searchParams.set('preview_state_key', previewStateKey);
+                }
+                url.searchParams.set('_', String(Date.now()));
+
+                const response = await fetch(url.toString(), {
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                    cache: 'no-store',
+                });
+
+                const payload = await response.json().catch(() => ({}));
+                if (!response.ok || payload.status !== 'success' || !Array.isArray(payload.values)) {
+                    throw new Error(payload.message || 'Gagal memuat opsi filter lengkap.');
+                }
+
+                const previousValues = Array.isArray(state.allValues) ? state.allValues.slice() : [];
+                const previousSelection = new Set(state.selectedValues || []);
+                const hadAllSelected = previousValues.length === 0 || previousSelection.size === previousValues.length;
+                const normalizedValues = payload.values.map(function (value) {
+                    return String(value).trim();
+                });
+
+                state.allValues = normalizedValues;
+                state.selectedValues = hadAllSelected
+                    ? new Set(normalizedValues)
+                    : new Set(normalizedValues.filter(function (value) {
+                        return previousSelection.has(value);
+                    }));
+                state.fullOptionsLoaded = true;
+            } catch (error) {
+                console.error(error);
+            } finally {
+                state.isLoading = false;
+                renderFilterList(col);
+                updatePreviewTable();
+            }
         }
 
         function updatePreviewTable() {
@@ -559,13 +632,15 @@
         });
 
         document.querySelectorAll('.dropdown').forEach(function (dropdown) {
-            dropdown.addEventListener('shown.bs.dropdown', function () {
+            dropdown.addEventListener('shown.bs.dropdown', async function () {
                 const container = dropdown.querySelector('[id^="list_container_"]');
                 if (!container) {
                     return;
                 }
 
-                renderFilterList(container.getAttribute('data-col'));
+                const col = container.getAttribute('data-col');
+                renderFilterList(col);
+                await ensureFullFilterOptions(col);
             });
         });
 

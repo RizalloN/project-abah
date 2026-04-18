@@ -20,12 +20,12 @@
                 <div class="alert alert-info border-0 bg-light text-dark">
                     <i class="fas fa-info-circle text-info"></i>
                     <strong>Smart Parser Aktif:</strong> Struktur kolom file import telah dinormalisasi dan siap difilter.
-                    Anda dapat memfilter tabel secara <i>realtime</i> (menampilkan maks 100 baris pertama).
+                    Opsi filter akan dimuat dari seluruh file saat dropdown dibuka, lalu tabel tetap menampilkan maks 100 baris pertama untuk evaluasi.
                 </div>
             </div>
         </div>
 
-        <form id="importForm" method="POST">
+        <form id="importForm" method="POST" data-filter-options-url="{{ $filterOptionsRoute ?? route('import.preview.filter-options') }}">
             @csrf
             <input type="hidden" name="path"                id="file_path"           value="{{ $path }}">
             <input type="hidden" name="active_filters_json" id="active_filters_json" value="{}">
@@ -149,6 +149,11 @@
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     const filterOptionsMap = @json($formattedUniqueValues);
+    const filterOptionsUrl = document.getElementById('importForm')?.dataset.filterOptionsUrl || '';
+    const filePathValue = document.getElementById('file_path')?.value || '';
+    const previewStateKey = document.querySelector('input[name="preview_state_key"]')?.value || '';
+    const delimiterValue = document.querySelector('input[name="delimiter"]')?.value || 'auto';
+    const displayFilterMap = @json(session('excel_display_filter_map', []));
     const filterState = {};
     const searchTerms = {};
     const filterRenderLimit = 200;
@@ -200,6 +205,8 @@ document.addEventListener('DOMContentLoaded', function () {
         filterState[col] = {
             allValues: values,
             selectedValues: new Set(values),
+            fullOptionsLoaded: false,
+            isLoading: false,
         };
         searchTerms[col] = '';
     });
@@ -267,8 +274,14 @@ document.addEventListener('DOMContentLoaded', function () {
         let html = '';
 
         if (!filteredValues.length) {
-            html = '<div class="text-center text-muted py-2 small">Tidak ada opsi yang cocok.</div>';
+            html = state.isLoading
+                ? '<div class="text-center text-muted py-2 small">Memuat opsi filter lengkap...</div>'
+                : '<div class="text-center text-muted py-2 small">Tidak ada opsi yang cocok.</div>';
         } else {
+            if (state.isLoading) {
+                html += '<div class="small text-muted mb-2">Memuat opsi lengkap dari file sumber...</div>';
+            }
+
             if (filteredValues.length > filterRenderLimit) {
                 html += '<div class="small text-muted mb-2">Menampilkan ' + filterRenderLimit + ' dari ' + filteredValues.length + ' opsi. Gunakan pencarian untuk mempersempit.</div>';
             }
@@ -285,6 +298,65 @@ document.addEventListener('DOMContentLoaded', function () {
 
         container.innerHTML = html;
         syncSelectAllCheckbox(col, filteredValues);
+    }
+
+    async function ensureFullFilterOptions(col) {
+        const state = filterState[col];
+        if (!state || state.fullOptionsLoaded || state.isLoading || !filterOptionsUrl || !filePathValue) {
+            return;
+        }
+
+        state.isLoading = true;
+        renderFilterList(col);
+
+        try {
+            const sourceCol = Object.prototype.hasOwnProperty.call(displayFilterMap, col)
+                ? displayFilterMap[col]
+                : col;
+            const url = new URL(filterOptionsUrl, window.location.origin);
+            url.searchParams.set('file_path', filePathValue);
+            url.searchParams.set('delimiter', delimiterValue);
+            url.searchParams.set('column_index', String(sourceCol));
+            url.searchParams.set('display_filter_map_json', JSON.stringify(displayFilterMap || {}));
+            if (previewStateKey) {
+                url.searchParams.set('preview_state_key', previewStateKey);
+            }
+            url.searchParams.set('_', String(Date.now()));
+
+            const response = await fetch(url.toString(), {
+                headers: {
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                cache: 'no-store',
+            });
+
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || payload.status !== 'success' || !Array.isArray(payload.values)) {
+                throw new Error(payload.message || 'Gagal memuat opsi filter lengkap.');
+            }
+
+            const previousValues = Array.isArray(state.allValues) ? state.allValues.slice() : [];
+            const previousSelection = new Set(state.selectedValues || []);
+            const hadAllSelected = previousValues.length === 0 || previousSelection.size === previousValues.length;
+            const normalizedValues = payload.values.map(function (value) {
+                return String(value).trim();
+            });
+
+            state.allValues = normalizedValues;
+            state.selectedValues = hadAllSelected
+                ? new Set(normalizedValues)
+                : new Set(normalizedValues.filter(function (value) {
+                    return previousSelection.has(value);
+                }));
+            state.fullOptionsLoaded = true;
+        } catch (error) {
+            console.error(error);
+        } finally {
+            state.isLoading = false;
+            renderFilterList(col);
+            updatePreviewTable();
+        }
     }
 
     /* =========================================================
@@ -424,13 +496,15 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     document.querySelectorAll('.dropdown').forEach(function (dropdown) {
-        dropdown.addEventListener('shown.bs.dropdown', function () {
+        dropdown.addEventListener('shown.bs.dropdown', async function () {
             var container = dropdown.querySelector('[id^="list_container_"]');
             if (!container) {
                 return;
             }
 
-            renderFilterList(container.getAttribute('data-col'));
+            var col = container.getAttribute('data-col');
+            renderFilterList(col);
+            await ensureFullFilterOptions(col);
         });
     });
 
