@@ -12,7 +12,7 @@ class PartitionMaintenanceService
         return in_array(strtolower((string) ($driverName ?: DB::connection()->getDriverName())), ['mysql', 'mariadb'], true);
     }
 
-    public function resolveSinglePartitionForValue(string $tableName, string $columnName, string $value): ?string
+    public function resolveSinglePartitionForValue(string $tableName, string $columnName, ?string $value): ?string
     {
         if (!$this->supportsPartitionDdl()) {
             return null;

@@ -24,7 +24,8 @@ class SyncImportedReportJob implements ShouldQueue
         public ?int $jobId = null,
         public ?string $tableName = null,
         public ?string $periodHint = null,
-        public ?string $source = null
+        public ?string $source = null,
+        public ?string $rebuildId = null
     ) {
     }
 
@@ -49,10 +50,11 @@ class SyncImportedReportJob implements ShouldQueue
         try {
             if ($this->jobId !== null && $this->jobId > 0) {
                 $syncService->syncImportedJob(
-                    $this->jobId,
-                    $this->tableName,
-                    $this->periodHint,
-                    $this->source ?? static::class
+                    $jobId: $this->jobId,
+                    fallbackTableName: $this->tableName,
+                    periodHint: $this->periodHint,
+                    source: $this->source ?? static::class,
+                    rebuildId: $this->rebuildId
                 );
 
                 return;
@@ -60,10 +62,12 @@ class SyncImportedReportJob implements ShouldQueue
 
             if ($this->tableName !== null && $this->tableName !== '') {
                 $syncService->syncImportedTable(
-                    $this->tableName,
-                    $this->periodHint,
-                    null,
-                    $this->source ?? static::class
+                    tableName: $this->tableName,
+                    periodHint: $this->periodHint,
+                    jobId: null,
+                    source: $this->source ?? static::class,
+                    deleteId: null,
+                    rebuildId: $this->rebuildId
                 );
             }
         } finally {

@@ -134,6 +134,7 @@ class ImportJobManagementController extends Controller
         $summarySource = DB::table('import_jobs');
         $todayStart = now()->startOfDay();
         $snapshotJobs = $this->resolveSnapshotJobs();
+        $rawQueueJobs = $this->resolveRawQueueJobs();
 
         return response()->json([
             'status' => 'success',
@@ -159,6 +160,12 @@ class ImportJobManagementController extends Controller
                 'active_jobs' => collect($managedDeleteJobs)->whereIn('status', ['queued', 'processing'])->count(),
                 'queued_jobs' => collect($managedDeleteJobs)->where('status', 'queued')->count(),
                 'processing_jobs' => collect($managedDeleteJobs)->where('status', 'processing')->count(),
+            ],
+            'raw_queue_jobs' => $rawQueueJobs,
+            'raw_queue_summary' => [
+                'total' => count($rawQueueJobs),
+                'pending' => collect($rawQueueJobs)->where('status', 'pending')->count(),
+                'reserved' => collect($rawQueueJobs)->where('status', 'reserved')->count(),
             ],
             'active_jobs' => $items->filter(fn (array $job) => in_array($job['status'], ['queued', 'processing'], true))->values()->all(),
             'jobs' => $items->all(),
@@ -322,6 +329,188 @@ class ImportJobManagementController extends Controller
             'status' => 'success',
             'message' => $deletedCount . ' job berhasil dihapus dari database.',
             'deleted_count' => $deletedCount,
+        ]);
+    }
+
+    public function destroyQueueJob(int $queueJobId): \Illuminate\Http\JsonResponse
+    {
+        if (!Schema::hasTable('jobs')) {
+            return response()->json(['status' => 'error', 'message' => 'Tabel queue tidak tersedia.'], 500);
+        }
+
+        $row = DB::table('jobs')->find($queueJobId);
+        if (!$row) {
+            return response()->json(['status' => 'error', 'message' => 'Queue job tidak ditemukan.'], 404);
+        }
+
+        if ($row->reserved_at !== null) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Job sedang di-reserve worker (processing). Tidak dapat dihapus saat sedang diproses.',
+            ], 422);
+        }
+
+        DB::table('jobs')->where('id', $queueJobId)->delete();
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Queue job berhasil dihapus dari antrian.',
+        ]);
+    }
+
+    public function forceRunQueueJob(int $queueJobId, ImportProgressService $progressService, ImportExecutionService $executionService): \Illuminate\Http\JsonResponse
+    {
+        if (!Schema::hasTable('jobs')) {
+            return response()->json(['status' => 'error', 'message' => 'Tabel queue tidak tersedia.'], 500);
+        }
+
+        $row = DB::table('jobs')->find($queueJobId);
+        if (!$row) {
+            return response()->json(['status' => 'error', 'message' => 'Queue job tidak ditemukan.'], 404);
+        }
+
+        if ($row->reserved_at !== null) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Job sedang di-reserve worker (sedang diproses). Tidak dapat di-force run.',
+            ], 422);
+        }
+
+        $payloadData = json_decode((string) ($row->payload ?? '{}'), true) ?? [];
+        $serializedCommand = (string) ($payloadData['data']['command'] ?? '');
+
+        if ($serializedCommand === '') {
+            return response()->json(['status' => 'error', 'message' => 'Payload job tidak valid atau kosong.'], 422);
+        }
+
+        try {
+            $jobObject = @unserialize($serializedCommand);
+        } catch (\Throwable) {
+            $jobObject = false;
+        }
+
+        if ($jobObject === false || !is_object($jobObject)) {
+            return response()->json(['status' => 'error', 'message' => 'Gagal membaca isi job dari queue. Class mungkin tidak ditemukan.'], 422);
+        }
+
+        // RunImportJob → gunakan flow force-start import yang sudah ada
+        if ($jobObject instanceof \App\Jobs\RunImportJob) {
+            $importJobId = (int) ($jobObject->jobId ?? 0);
+            if ($importJobId <= 0) {
+                return response()->json(['status' => 'error', 'message' => 'jobId tidak ditemukan di payload.'], 422);
+            }
+            DB::table('jobs')->where('id', $queueJobId)->delete();
+            $progressService->cleanupQueuedImportJobRowsForJob($importJobId);
+            $executionService->run($importJobId);
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Import job #' . $importJobId . ' dijalankan langsung (force start).',
+            ]);
+        }
+
+        // RunManagedReportSnapshotRebuildJob → pakai coordinator forceStart
+        if ($jobObject instanceof \App\Jobs\RunManagedReportSnapshotRebuildJob) {
+            $rebuildId = trim((string) ($jobObject->rebuildId ?? ''));
+            if ($rebuildId === '') {
+                return response()->json(['status' => 'error', 'message' => 'rebuildId tidak ditemukan di payload snapshot job ini.'], 422);
+            }
+            DB::table('jobs')->where('id', $queueJobId)->delete();
+            $resolved = $this->snapshotRebuildCoordinator->forceStart($rebuildId);
+            return response()->json($resolved['payload'], (int) ($resolved['status_code'] ?? 200));
+        }
+
+        // Job generik (WarmReportCacheJob, SyncImportedReportJob, dll) → jalankan langsung via container
+        $rebuildId = (string) \Illuminate\Support\Str::uuid();
+        $isSnapshotRelated = property_exists($jobObject, 'rebuildId') || $jobObject instanceof \App\Jobs\WarmReportCacheJob || $jobObject instanceof \App\Jobs\SyncImportedReportJob;
+
+        if ($isSnapshotRelated) {
+            $label = class_basename($jobObject);
+            if ($jobObject instanceof \App\Jobs\SyncImportedReportJob) {
+                $label = 'Sync ' . ($jobObject->tableName ?: 'Data');
+                $jobObject->rebuildId = $rebuildId;
+            }
+            $this->snapshotRebuildCoordinator->registerStandaloneJob($rebuildId, $label, source: 'Force Run Monitor');
+        }
+
+        DB::table('jobs')->where('id', $queueJobId)->delete();
+        try {
+            app()->call([$jobObject, 'handle']);
+
+            if ($isSnapshotRelated) {
+                $state = \App\Support\ManagedReportSnapshotRebuildStore::getState($rebuildId);
+                if ($state) {
+                    $state['status'] = 'completed';
+                    $state['stage'] = 'completed';
+                    $state['progress_percent'] = 100;
+                    $state['finished_at'] = now()->toIso8601String();
+                    $state['message'] = 'Job ' . class_basename($jobObject) . ' selesai dijalankan via force run.';
+                    \App\Support\ManagedReportSnapshotRebuildStore::putState($state);
+                }
+            }
+
+            return response()->json([
+                'status' => 'success',
+                'rebuild_id' => $isSnapshotRelated ? $rebuildId : null,
+                'message' => class_basename($jobObject) . ' berhasil dijalankan langsung.',
+            ]);
+        } catch (\Throwable $e) {
+            if ($isSnapshotRelated) {
+                $state = \App\Support\ManagedReportSnapshotRebuildStore::getState($rebuildId);
+                if ($state) {
+                    $state['status'] = 'failed';
+                    $state['stage'] = 'failed';
+                    $state['error'] = $e->getMessage();
+                    $state['finished_at'] = now()->toIso8601String();
+                    \App\Support\ManagedReportSnapshotRebuildStore::putState($state);
+                }
+            }
+
+            return response()->json([
+                'status' => 'warning',
+                'message' => class_basename($jobObject) . ' sudah dihapus dari queue namun gagal dijalankan inline: ' . $e->getMessage(),
+            ], 200);
+        }
+    }
+
+    public function purgeQueueJobs(Request $request): \Illuminate\Http\JsonResponse
+    {
+        if (!Schema::hasTable('jobs')) {
+            return response()->json(['status' => 'error', 'message' => 'Tabel queue tidak tersedia.'], 500);
+        }
+
+        $validated = $request->validate([
+            'class_name' => 'nullable|string|max:255',
+        ]);
+
+        $filterClass = trim((string) ($validated['class_name'] ?? ''));
+
+        $configuredReportQueue = trim((string) config('queue.report_queue', 'default')) ?: 'default';
+        $queues = array_values(array_unique(array_filter([
+            $configuredReportQueue, 'default', 'reports-low', 'imports-high', 'imports-daily-loan',
+        ])));
+
+        $allBasenames = $this->allKnownJobBasenames();
+
+        $query = DB::table('jobs')
+            ->whereNull('reserved_at')
+            ->whereIn('queue', $queues);
+
+        if ($filterClass !== '') {
+            $query->where('payload', 'like', '%' . $filterClass . '%');
+        } else {
+            $query->where(function ($q) use ($allBasenames) {
+                foreach ($allBasenames as $basename) {
+                    $q->orWhere('payload', 'like', '%' . $basename . '%');
+                }
+            });
+        }
+
+        $deleted = $query->delete();
+
+        return response()->json([
+            'status' => 'success',
+            'message' => $deleted . ' queue job berhasil dihapus dari antrian.',
+            'deleted_count' => $deleted,
         ]);
     }
 
@@ -587,13 +776,23 @@ class ImportJobManagementController extends Controller
         $pendingReportJobs = max(0, $jobs->count() - $pendingManagedDeleteJobs);
         $pendingSnapshotRebuilds = $jobs->filter(fn ($job) => str_contains((string) ($job->payload ?? ''), $snapshotRebuildBasename))->count();
         $legacyReportsLowPending = $jobs->where('queue', 'reports-low')->count();
-        $configuredQueuePending = $jobs->where('queue', $configuredReportQueue)->count();
         $oldestPending = $jobs->first();
         $oldestAgeSeconds = $oldestPending ? $this->queueRowAgeSeconds($oldestPending) : null;
+
+        // Build per-type breakdown for notification detail
+        $perTypeBreakdown = [];
+        foreach ($this->reportQueueBasenames() as $basename) {
+            $count = $jobs->filter(fn ($job) => str_contains((string) ($job->payload ?? ''), $basename))->count();
+            if ($count > 0) {
+                $perTypeBreakdown[] = $basename . ' (' . $count . ')';
+            }
+        }
+
         if ($pendingReportJobs === 0 && $pendingManagedDeleteJobs === 0 && $staleReservedSnapshotJobs === 0) {
             return [
                 'status' => 'ok',
                 'tone' => 'info',
+                'is_active' => true,
                 'message' => 'Queue report sehat. Tidak ada job report atau delete yang menunggu.',
                 'configured_report_queue' => $configuredReportQueue,
                 'pending_report_jobs' => 0,
@@ -603,17 +802,26 @@ class ImportJobManagementController extends Controller
                 'oldest_pending_age_seconds' => 0,
                 'stale_reserved_snapshot_jobs' => 0,
                 'purged_reserved_snapshot_jobs' => $purgedReservedSnapshotJobs,
+                'per_type_breakdown' => [],
             ];
         }
 
+        // Check if there's any job currently being processed (reserved)
+        $processingCount = DB::table('jobs')->whereNotNull('reserved_at')->count();
+        $isProcessing = $processingCount > 0;
+
         if ($pendingReportJobs > 0) {
             $message = sprintf(
-                'Ada %d job report menunggu di queue `%s`%s.',
+                'Ada %d job report menunggu di queue `%s`.',
                 $pendingReportJobs,
-                $configuredReportQueue,
-                $pendingSnapshotRebuilds > 0 ? " termasuk {$pendingSnapshotRebuilds} snapshot rebuild" : ''
+                $configuredReportQueue
             );
-
+            if (!empty($perTypeBreakdown)) {
+                $message .= ' Rincian: ' . implode(', ', $perTypeBreakdown) . '.';
+            }
+            if ($pendingSnapshotRebuilds > 0) {
+                $message .= sprintf(' Termasuk %d snapshot rebuild.', $pendingSnapshotRebuilds);
+            }
             if ($pendingManagedDeleteJobs > 0) {
                 $message .= sprintf(' Ada %d job managed delete menunggu di queue `imports-high`.', $pendingManagedDeleteJobs);
             }
@@ -631,13 +839,23 @@ class ImportJobManagementController extends Controller
             $message .= sprintf(' Terdeteksi %d snapshot rebuild reserved terlalu lama; progress bisa macet bila worker sudah berhenti.', $staleReservedSnapshotJobs);
         }
 
-        if (($oldestAgeSeconds ?? 0) >= 120) {
-            $message .= ' Indikasinya worker report tidak sedang mengonsumsi queue.';
+        // Indication of worker health
+        if (($oldestAgeSeconds ?? 0) >= 300) {
+            if (!$isProcessing) {
+                $message .= ' Indikasinya worker report tidak sedang mengonsumsi queue. Semua job ini dapat dipantau di bagian "Queue Jobs" di bawah.';
+                $status = 'warning';
+            } else {
+                $message .= ' Worker sedang memproses job berat, antrean bergerak lambat.';
+                $status = 'ok';
+            }
+        } else {
+            $status = 'ok';
         }
 
         return [
-            'status' => 'warning',
-            'tone' => 'warning',
+            'status' => $status,
+            'tone' => $status === 'warning' ? 'warning' : 'info',
+            'is_active' => $isProcessing,
             'message' => $message,
             'configured_report_queue' => $configuredReportQueue,
             'pending_report_jobs' => $pendingReportJobs,
@@ -647,6 +865,7 @@ class ImportJobManagementController extends Controller
             'oldest_pending_age_seconds' => $oldestAgeSeconds ?? 0,
             'stale_reserved_snapshot_jobs' => $staleReservedSnapshotJobs,
             'purged_reserved_snapshot_jobs' => $purgedReservedSnapshotJobs,
+            'per_type_breakdown' => $perTypeBreakdown,
         ];
     }
 
@@ -661,6 +880,138 @@ class ImportJobManagementController extends Controller
             \App\Jobs\EnsureRasioCasaSnapshotJob::class,
             \App\Jobs\EnsureRekeningDormantSnapshotJob::class,
         ]);
+    }
+
+    private function allKnownJobBasenames(): array
+    {
+        return array_values(array_unique(array_merge(
+            $this->reportQueueBasenames(),
+            array_map('class_basename', [
+                \App\Jobs\RunImportJob::class,
+                \App\Jobs\RunManagedReportLoadJob::class,
+                \App\Jobs\RunManagedReportDeleteJob::class,
+            ])
+        )));
+    }
+
+    private function resolveRawQueueJobs(): array
+    {
+        if (!Schema::hasTable('jobs')) {
+            return [];
+        }
+
+        $configuredReportQueue = trim((string) config('queue.report_queue', 'default')) ?: 'default';
+        $queues = array_values(array_unique(array_filter([
+            $configuredReportQueue, 'default', 'reports-low', 'imports-high', 'imports-daily-loan',
+        ])));
+        $allBasenames = $this->allKnownJobBasenames();
+
+        $rows = DB::table('jobs')
+            ->whereIn('queue', $queues)
+            ->select(['id', 'queue', 'payload', 'reserved_at', 'available_at', 'created_at', 'attempts'])
+            ->orderBy('id')
+            ->get()
+            ->filter(function ($job) use ($allBasenames) {
+                $payload = (string) ($job->payload ?? '');
+                foreach ($allBasenames as $basename) {
+                    if ($basename !== '' && str_contains($payload, $basename)) {
+                        return true;
+                    }
+                }
+                return false;
+            });
+
+        return $rows->map(function ($row) {
+            $payloadData = json_decode((string) ($row->payload ?? '{}'), true) ?? [];
+            $displayName = (string) ($payloadData['displayName'] ?? $payloadData['data']['commandName'] ?? '');
+            $className = class_basename($displayName);
+
+            $reserved = $row->reserved_at !== null;
+            $createdAt = is_numeric($row->created_at)
+                ? Carbon::createFromTimestamp((int) $row->created_at)
+                : $this->safeParseDate($row->created_at);
+            $reservedAt = $row->reserved_at
+                ? (is_numeric($row->reserved_at)
+                    ? Carbon::createFromTimestamp((int) $row->reserved_at)
+                    : $this->safeParseDate($row->reserved_at))
+                : null;
+
+            $serializedCommand = (string) ($payloadData['data']['command'] ?? '');
+            $jobData = $this->extractSerializedJobData($serializedCommand);
+            $jobDataLabel = $this->buildJobDataLabel($jobData);
+
+            return [
+                'id' => (int) $row->id,
+                'queue' => (string) ($row->queue ?? 'default'),
+                'class_name' => $className ?: 'UnknownJob',
+                'full_class' => $displayName,
+                'status' => $reserved ? 'reserved' : 'pending',
+                'status_label' => $reserved ? 'Reserved' : 'Pending',
+                'status_tone' => $reserved ? 'info' : 'warning',
+                'attempts' => (int) ($row->attempts ?? 0),
+                'job_data' => $jobData,
+                'job_data_label' => $jobDataLabel,
+                'created_at' => $createdAt?->toIso8601String(),
+                'created_at_label' => $createdAt?->format('d M Y H:i:s'),
+                'reserved_at_label' => $reservedAt?->format('d M Y H:i:s'),
+                'age_seconds' => $createdAt ? now()->diffInSeconds($createdAt) : 0,
+                'age_label' => $this->formatDuration($createdAt ? (int) now()->diffInSeconds($createdAt) : null),
+                'can_delete' => !$reserved,
+                'can_force_run' => !$reserved,
+                'kind' => 'raw_queue_job',
+            ];
+        })->values()->all();
+    }
+
+    private function extractSerializedJobData(string $serialized): array
+    {
+        if ($serialized === '') {
+            return [];
+        }
+
+        $data = [];
+        $knownProps = ['jobId', 'tableName', 'periodHint', 'period', 'source', 'rebuildId'];
+
+        foreach ($knownProps as $prop) {
+            $propLen = strlen($prop);
+            // Match public string property: s:{len}:"{prop}";s:{vlen}:"{value}";
+            $pattern = '/s:' . $propLen . ':"' . preg_quote($prop, '/') . '";s:\d+:"([^"]{0,200})"/';
+            if (preg_match($pattern, $serialized, $m)) {
+                $data[$prop] = $m[1];
+                continue;
+            }
+            // Match public int property: s:{len}:"{prop}";i:{value};
+            $pattern = '/s:' . $propLen . ':"' . preg_quote($prop, '/') . '";i:(\d+)/';
+            if (preg_match($pattern, $serialized, $m)) {
+                $data[$prop] = (int) $m[1];
+            }
+        }
+
+        return $data;
+    }
+
+    private function buildJobDataLabel(array $jobData): string
+    {
+        $parts = [];
+        $labelMap = [
+            'jobId' => 'Job',
+            'tableName' => 'Tabel',
+            'periodHint' => 'Periode',
+            'period' => 'Periode',
+            'source' => 'Source',
+            'rebuildId' => 'Rebuild',
+        ];
+
+        foreach ($labelMap as $key => $label) {
+            if (isset($jobData[$key]) && $jobData[$key] !== '' && $jobData[$key] !== null) {
+                $val = is_string($jobData[$key]) ? $jobData[$key] : (string) $jobData[$key];
+                if (strlen($val) <= 60) {
+                    $parts[] = $label . ': ' . $val;
+                }
+            }
+        }
+
+        return implode(' • ', $parts);
     }
 
     private function queueRowAgeSeconds(object $job): int

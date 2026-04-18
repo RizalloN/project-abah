@@ -29,4 +29,27 @@ class WarmReportCacheJob implements ShouldQueue
             throw $e;
         }
     }
+
+    /**
+     * Dispatch the job only if and only if there's no identical job pending.
+     */
+    public static function dispatchUnique(): void
+    {
+        try {
+            $queue = (string) config('queue.report_queue', 'default');
+            $jobName = self::class;
+
+            $exists = \Illuminate\Support\Facades\DB::table('jobs')
+                ->where('queue', $queue)
+                ->where('payload', 'like', '%' . str_replace('\\', '\\\\', $jobName) . '%')
+                ->exists();
+
+            if (!$exists) {
+                self::dispatch()->onQueue($queue);
+            }
+        } catch (\Throwable $e) {
+            // Fallback to normal dispatch if anything fails
+            self::dispatch()->onQueue((string) config('queue.report_queue', 'default'));
+        }
+    }
 }

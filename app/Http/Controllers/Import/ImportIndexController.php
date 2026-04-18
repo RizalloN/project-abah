@@ -39,7 +39,7 @@ class ImportIndexController extends Controller
     private const DELETE_PROGRESS_CACHE_PREFIX = 'report_management_delete:';
     private const DELETE_ACTIVE_IDS_CACHE_KEY = 'report_management_delete:active_ids';
     private const DELETE_PROCESS_LOCK_PREFIX = 'report_management_delete_lock:';
-    private const DELETE_PROCESS_LOCK_SECONDS = 120;
+    private const DELETE_PROCESS_LOCK_SECONDS = 300;
     private const DELETE_PROCESS_GRACE_SECONDS = 0;
     private const DELETE_PROCESS_STALE_SECONDS = 30;
     private const DELETE_FAIL_STALE_SECONDS = 900;
@@ -58,7 +58,7 @@ class ImportIndexController extends Controller
 
     private const DELETE_INDEX_HINTS = [
         'daily_loan_dinamis' => [
-            'index' => 'idx_dld_delete_scope',
+            'index' => 'idx_loan_periode_cab_unit',
             'period' => 'periode',
             'kanca' => 'cabang1',
             'identity' => 'uniqueid_namareport',
@@ -88,13 +88,13 @@ class ImportIndexController extends Controller
             'identity' => 'uniqueid_namareport',
         ],
         'performance_pis_per_produk' => [
-            'index' => 'idx_pppp_delete_scope',
+            'index' => 'idx_pis_delete_scope',
             'period' => 'posisi',
             'kanca' => 'kanca',
             'identity' => 'uniqueid_namareport',
         ],
         'simpanan_multipn' => [
-            'index' => 'idx_smp_delete_scope',
+            'index' => 'idx_smp_posisi_cab_unit',
             'period' => 'posisi',
             'kanca' => 'kantor_cabang',
             'identity' => 'uniqueid_SMPN',
@@ -224,6 +224,113 @@ class ImportIndexController extends Controller
         }
 
         return response()->json($resolved['payload'], (int) ($resolved['status_code'] ?? 200));
+    }
+
+    public function getQueueStatus()
+    {
+        $connection = config('queue.default');
+        
+        $defaultCount = 0;
+        $importsHighCount = 0;
+        $failedCount = 0;
+        $recentJobs = [];
+        $failedJobsList = [];
+
+        if ($connection === 'database') {
+            $defaultCount = DB::table('jobs')->where('queue', 'default')->count();
+            $importsHighCount = DB::table('jobs')->where('queue', 'imports-high')->count();
+            $failedCount = DB::table('failed_jobs')->count();
+
+            // Fetch recent jobs (pending & processing)
+            $rawJobs = DB::table('jobs')
+                ->orderBy('created_at', 'desc')
+                ->take(15)
+                ->get();
+
+            foreach ($rawJobs as $job) {
+                $recentJobs[] = [
+                    'id' => $job->id,
+                    'queue' => $job->queue,
+                    'name' => $this->parseJobName($job->payload),
+                    'attempts' => $job->attempts,
+                    'status' => $job->reserved_at ? 'Processing' : 'Waiting',
+                    'created_at' => $job->created_at ? date('H:i:s', $job->created_at) : '-',
+                ];
+            }
+
+            // Fetch recent failed jobs
+            $rawFailed = DB::table('failed_jobs')
+                ->orderBy('failed_at', 'desc')
+                ->take(15)
+                ->get();
+
+            foreach ($rawFailed as $f) {
+                $failedJobsList[] = [
+                    'id' => $f->id,
+                    'queue' => $f->queue,
+                    'name' => $this->parseJobName($f->payload),
+                    'failed_at' => date('Y-m-d H:i:s', strtotime((string)$f->failed_at)),
+                    'error' => substr((string)$f->exception, 0, 150),
+                ];
+            }
+        }
+
+        $latestReservedDefault = $connection === 'database' 
+            ? DB::table('jobs')->where('queue', 'default')->whereNotNull('reserved_at')->max('reserved_at')
+            : null;
+        
+        $latestReservedHigh = $connection === 'database' 
+            ? DB::table('jobs')->where('queue', 'imports-high')->whereNotNull('reserved_at')->max('reserved_at')
+            : null;
+
+        $isWorkerStale = true;
+        $latestActivity = max((int)$latestReservedDefault, (int)$latestReservedHigh);
+        
+        if ($latestActivity > 0) {
+            $isWorkerStale = (time() - $latestActivity) > 300;
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'connection' => $connection,
+            'queues' => [
+                'default' => [
+                    'count' => $defaultCount,
+                    'label' => 'Report Queue',
+                ],
+                'imports-high' => [
+                    'count' => $importsHighCount,
+                    'label' => 'Managed Delete Queue',
+                ],
+            ],
+            'failed_jobs_count' => $failedCount,
+            'recent_jobs' => $recentJobs,
+            'detailed_failed_jobs' => $failedJobsList,
+            'worker_status' => [
+                'is_active' => !$isWorkerStale || ($defaultCount === 0 && $importsHighCount === 0),
+                'latest_activity' => $latestActivity > 0 ? date('Y-m-d H:i:s', $latestActivity) : null,
+            ]
+        ]);
+    }
+
+    private function parseJobName(?string $payload): string
+    {
+        if (!$payload) return 'Unknown Job';
+        
+        $data = json_decode($payload, true);
+        if (!$data) return 'Invalid Payload';
+        
+        if (isset($data['displayName'])) {
+            $name = $data['displayName'];
+            // Simplify App\Jobs\Name to just Name
+            return str_replace('App\\Jobs\\', '', $name);
+        }
+        
+        if (isset($data['data']['commandName'])) {
+            return str_replace('App\\Jobs\\', '', (string)$data['data']['commandName']);
+        }
+        
+        return 'Anonymous Job';
     }
 
     public function startManagedReportLoad(Request $request)
@@ -1140,6 +1247,7 @@ class ImportIndexController extends Controller
                     $latestState = $this->getDeleteState($deleteId) ?? $state;
                     if (!in_array($latestState['status'] ?? '', ['completed', 'warning', 'failed', 'cancelled'], true)) {
                         $latestState = $this->advanceManagedReportDelete($deleteId, $syncService, $latestState);
+                        $this->putDeleteState($deleteId, $latestState);
                     }
                     $state = $latestState;
                 } catch (Throwable $e) {
@@ -1583,7 +1691,11 @@ class ImportIndexController extends Controller
                 $this->putDeleteState($deleteId, $state);
             }
 
-            return $state;
+            $stage = (string) ($state['stage'] ?? $stage);
+
+            if ($stage === 'deleting') {
+                return $state;
+            }
         }
 
         if ($stage === 'cleanup') {
@@ -1599,7 +1711,8 @@ class ImportIndexController extends Controller
                     $syncService->syncAfterDeleteLightweight(
                         (string) $state['table_name'],
                         $state['period_hint'] ?? null,
-                        $source
+                        $source,
+                        $deleteId
                     );
 
                     $state['cleanup'] = [
@@ -1618,7 +1731,7 @@ class ImportIndexController extends Controller
                     return $state;
                 }
 
-                $maintenance = $this->prepareManagedDeleteSnapshotMaintenance($state, $syncService, $source);
+                $maintenance = $this->prepareManagedDeleteSnapshotMaintenance($state, $syncService, $source, $deleteId);
                 $state['cleanup'] = $maintenance['cleanup'];
                 $state['sync_periods'] = $maintenance['sync_periods'];
 
@@ -1689,6 +1802,8 @@ class ImportIndexController extends Controller
 
                 return $state;
             }
+
+            $stage = (string) ($state['stage'] ?? $stage);
         }
 
         if ($stage === 'syncing') {
@@ -1708,7 +1823,8 @@ class ImportIndexController extends Controller
                     $syncService->syncAfterDeleteLightweight(
                         (string) $state['table_name'],
                         $state['period_hint'] ?? null,
-                        static::class . '::runManagedReportDelete'
+                        static::class . '::runManagedReportDelete',
+                        $deleteId
                     );
                 } elseif (!empty($syncPeriods)) {
                     $this->dispatchManagedDeleteSnapshotRefreshes(
@@ -1787,7 +1903,7 @@ class ImportIndexController extends Controller
     /**
      * @return array{cleanup:array<string,mixed>,sync_periods:array<int,string>,complete_without_sync:bool,final_message:string,sync_message:string}
      */
-    private function prepareManagedDeleteSnapshotMaintenance(array $context, ReportDataSyncService $syncService, string $source): array
+    private function prepareManagedDeleteSnapshotMaintenance(array $context, ReportDataSyncService $syncService, string $source, string $deleteId): array
     {
         $tableName = strtolower(trim((string) ($context['table_name'] ?? '')));
         $periodHint = $this->normalizeManagedDeletePeriod($context['period_hint'] ?? null);
@@ -1799,8 +1915,8 @@ class ImportIndexController extends Controller
         $skipSnapshotCleanup = (bool) ($context['skip_snapshot_cleanup'] ?? false);
 
         if ($fullTableScope) {
-            $deletedSnapshots = $syncService->cleanupDerivedArtifactsAfterDelete($tableName, null, $source);
-            $syncService->syncAfterDeleteLightweight($tableName, null, $source);
+            $deletedSnapshots = $syncService->cleanupDerivedArtifactsAfterDelete($tableName, null, $source, $deleteId);
+            $syncService->syncAfterDeleteLightweight($tableName, null, $source, $deleteId);
 
             return [
                 'cleanup' => [
@@ -1822,12 +1938,12 @@ class ImportIndexController extends Controller
 
         if (!empty($explicitPeriods)) {
             foreach ($explicitPeriods as $period) {
-                $cleanupSnapshots[$period] = $syncService->cleanupDerivedArtifactsAfterDelete($tableName, $period, $source);
+                $cleanupSnapshots[$period] = $syncService->cleanupDerivedArtifactsAfterDelete($tableName, $period, $source, $deleteId);
                 $cleanupPeriods[] = $period;
             }
         }
 
-        $syncService->syncAfterDeleteLightweight($tableName, $periodHint, $source);
+        $syncService->syncAfterDeleteLightweight($tableName, $periodHint, $source, $deleteId);
 
         $syncPeriods = $skipDerivedSync ? [] : $explicitPeriods;
         $completeWithoutSync = empty($syncPeriods);
@@ -2290,6 +2406,34 @@ class ImportIndexController extends Controller
         return is_array($state) ? $state : null;
     }
 
+    /**
+     * Update the 'updated_at' timestamp and optionally the message for a job
+     * to prevent it from being marked as stale during long operations.
+     */
+    public function heartbeatManagedDeleteState(string $deleteId, ?string $message = null): bool
+    {
+        $state = $this->getDeleteState($deleteId);
+        if (!$state) {
+            return false;
+        }
+
+        $state['updated_at'] = now()->toIso8601String();
+        if ($message !== null) {
+            $state['message'] = $message;
+        }
+
+        $this->putDeleteState($deleteId, $state);
+        
+        // Also extend the lock if we hold it
+        $this->deleteProgressStore()->put(
+            $this->managedDeleteProcessLockKey($deleteId),
+            now()->toIso8601String(),
+            now()->addSeconds(self::DELETE_PROCESS_LOCK_SECONDS)
+        );
+
+        return true;
+    }
+
     private function isManagedDeleteCancellationRequested(string $deleteId, ?array $state = null): bool
     {
         $state = $state ?? $this->getDeleteState($deleteId);
@@ -2392,16 +2536,52 @@ class ImportIndexController extends Controller
         $batchState = (string) ($state['batch_state'] ?? '');
         $reference = $state['updated_at'] ?? $state['created_at'] ?? null;
         $ageSeconds = $this->diffNowInSeconds($reference);
+        $deleteId = trim((string) ($state['delete_id'] ?? ''));
+        $queueRow = $deleteId !== '' ? $this->findManagedDeleteQueueRow($deleteId) : null;
+        $queuePendingWithoutWorker = $queueRow !== null
+            && !(bool) ($queueRow['reserved'] ?? false)
+            && max(
+                (int) ($queueRow['created_age_seconds'] ?? 0),
+                $this->queueTimestampAgeSeconds($queueRow['available_at'] ?? null)
+            ) >= 1;
 
         if ($stage === 'queued') {
+            if ($queuePendingWithoutWorker) {
+                return true;
+            }
+
             return $ageSeconds >= self::DELETE_PROCESS_GRACE_SECONDS;
         }
 
         if (in_array($batchState, ['deleting_pending', 'deleting_committed'], true)) {
+            if ($queuePendingWithoutWorker) {
+                return true;
+            }
+
             return $ageSeconds >= self::DELETE_PROCESS_STALE_SECONDS;
         }
 
+        if ($queuePendingWithoutWorker) {
+            return true;
+        }
+
         return $ageSeconds >= self::DELETE_PROCESS_STALE_SECONDS;
+    }
+
+    private function findManagedDeleteQueueRow(string $deleteId): ?array
+    {
+        $normalizedDeleteId = trim($deleteId);
+        if ($normalizedDeleteId === '' || !Schema::hasTable('jobs')) {
+            return null;
+        }
+
+        foreach ($this->managedReportDeleteQueueRows() as $row) {
+            if (trim((string) ($row['delete_id'] ?? '')) === $normalizedDeleteId) {
+                return $row;
+            }
+        }
+
+        return null;
     }
 
     private function reconcileStaleManagedDeleteState(string $deleteId, array $state): array
@@ -3653,7 +3833,7 @@ class ImportIndexController extends Controller
                 (string) $kancaColumn,
                 $periodValue,
                 max(1, (int) ($chunkSize ?? self::DELETE_CHUNK_SIZE)),
-                null,
+                $deleteId !== null ? fn ($aff, $tot, $batch) => $this->heartbeatManagedDeleteState($deleteId, "Recovering blank scope... Batch $batch ($tot rows deleted)") : null,
                 $deleteId !== null ? fn (): bool => $this->isManagedDeleteCancellationRequested($deleteId) : null
             );
 
@@ -4101,11 +4281,11 @@ class ImportIndexController extends Controller
         [$whereSql, $bindings] = $this->buildDeleteWhereSql($constraints);
 
         $wrappedTable = '`' . str_replace('`', '``', $tableName) . '`';
-        $wrappedIdentity = '`' . str_replace('`', '``', $identityColumn) . '`';
+        $wrappedIndex = '`' . str_replace('`', '``', $indexHint) . '`';
         $sql = "
 DELETE FROM {$wrappedTable}
+FORCE INDEX ({$wrappedIndex})
 WHERE {$whereSql}
-ORDER BY {$wrappedIdentity}
 LIMIT {$limit}
 ";
 

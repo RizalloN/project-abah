@@ -199,7 +199,47 @@
     .rm-progress-badge { display: inline-flex; padding: 0.35rem 0.85rem; border-radius: 999px; background: #dcfce7; color: #059669; font-size: 0.8rem; font-weight: 800; border: 1px solid #a7f3d0; text-transform: uppercase; letter-spacing: 0.05em; }
     .rm-progress-bar { height: 12px; border-radius: 999px; background: #e2e8f0; margin-bottom: 0.75rem; overflow: hidden; box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.08); }
     .rm-progress-fill { height: 100%; background: linear-gradient(90deg, #10b981, #059669); width: 100%; transition: width 0.3s ease; }
+
+    /* Queue Monitor Styles */
+    .queue-monitor { margin-bottom: 2rem; border-radius: 24px; background: #fff; border: 1px solid rgba(226,232,240,0.8); overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06); }
+    .queue-monitor__header { padding: 1rem 1.5rem; background: #f8fafc; border-bottom: 1px solid rgba(226,232,240,0.8); display: flex; align-items: center; justify-content: space-between; }
+    .queue-monitor__title { font-size: 0.85rem; font-weight: 800; color: #1e293b; text-transform: uppercase; letter-spacing: 0.05em; display: flex; align-items: center; gap: 0.5rem; }
+    .queue-monitor__status { display: flex; align-items: center; gap: 0.5rem; font-size: 0.75rem; font-weight: 700; padding: 0.25rem 0.75rem; border-radius: 999px; }
+    .queue-monitor__status--active { background: #dcfce7; color: #15803d; }
+    .queue-monitor__status--warning { background: #fef9c3; color: #a16207; }
+    .queue-monitor__status--danger { background: #fee2e2; color: #b91c1c; }
+    .queue-monitor__body { padding: 1.25rem 1.5rem; display: flex; gap: 1.5rem; flex-wrap: wrap; }
+    .queue-item { flex: 1; min-width: 200px; display: flex; align-items: center; gap: 1rem; padding: 1rem; border-radius: 16px; background: #f1f5f9; border: 1px solid rgba(226,232,240,0.5); }
+    .queue-item__icon { width: 40px; height: 40px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; background: #fff; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+    .queue-item__info { display: flex; flex-direction: column; }
+    .queue-item__label { font-size: 0.7rem; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.025em; margin-bottom: 0.15rem; }
+    .queue-item__value { font-size: 1.1rem; font-weight: 800; color: #0f172a; line-height: 1; }
+    .queue-item--high-load { background: #fff1f2; border-color: #fecaca; }
+    .queue-item--high-load .queue-item__icon { color: #e11d48; }
+
+    .pulse { width: 8px; height: 8px; background: currentColor; border-radius: 50%; display: inline-block; position: relative; }
+    .pulse::after { content: ''; width: 100%; height: 100%; background: currentColor; border-radius: 50%; position: absolute; top: 0; left: 0; animation: pulse-anim 2s infinite; opacity: 0.5; }
+    @keyframes pulse-anim { 0% { transform: scale(1); opacity: 0.5; } 100% { transform: scale(2.5); opacity: 0; } }
+
+    /* Detailed Job Tables */
+    .queue-monitor__nav { display: flex; padding: 0.5rem 1.5rem; background: #fdfdfe; border-bottom: 1px solid rgba(226,232,240,0.8); gap: 1rem; }
+    .queue-nav-item { padding: 0.4rem 0.8rem; font-size: 0.75rem; font-weight: 700; color: #64748b; cursor: pointer; border-radius: 8px; transition: 0.2s; }
+    .queue-nav-item:hover { background: #f1f5f9; color: #1e293b; }
+    .queue-nav-item.active { background: #eff6ff; color: #2563eb; }
+    
+    .queue-table-container { display: none; padding: 1rem 1.5rem; max-height: 400px; overflow-y: auto; }
+    .queue-table-container.active { display: block; }
+    .queue-table { width: 100%; font-size: 0.75rem; border-collapse: collapse; }
+    .queue-table th { text-align: left; padding: 0.6rem; color: #64748b; font-weight: 700; border-bottom: 1px solid #f1f5f9; text-transform: uppercase; letter-spacing: 0.025em; }
+    .queue-table td { padding: 0.6rem; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
+    .job-badge { padding: 0.15rem 0.5rem; border-radius: 6px; font-weight: 700; font-size: 0.65rem; }
+    .job-badge--waiting { background: #f1f5f9; color: #475569; }
+    .job-badge--processing { background: #dcfce7; color: #166534; }
+    .job-badge--queue { background: #fef9c3; color: #854d0e; }
+    .error-text { font-family: monospace; font-size: 0.7rem; color: #e11d48; display: block; max-width: 400px; white-space: pre-wrap; word-break: break-all; }
 </style>
+
+<div id="queue-monitor-container" data-status-url="{{ route('import.queue-status') }}"></div>
 
 <div class="rm-panel" id="report-management-card"
      data-fetch-url="{{ route('import.report-management.data') }}"
@@ -798,6 +838,151 @@
                 </tr>
             `;
 
+            // Function to fetch and render queue status
+            function updateQueueMonitor() {
+                const container = document.getElementById('queue-monitor-container');
+                if (!container) return;
+
+                fetch(container.dataset.statusUrl)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.status !== 'success') return;
+
+                        const isWorkerActive = data.worker_status.is_active;
+                        const hasJobs = data.queues.default.count > 0 || data.queues['imports-high'].count > 0;
+                        
+                        let statusClass = 'queue-monitor__status--active';
+                        let statusText = 'Worker Berjalan';
+                        let dotPulse = 'pulse';
+
+                        if (!isWorkerActive && hasJobs) {
+                            statusClass = 'queue-monitor__status--danger';
+                            statusText = 'Worker Berhenti (Backlog!)';
+                        } else if (data.failed_jobs_count > 0) {
+                            statusClass = 'queue-monitor__status--warning';
+                            statusText = 'Worker Aktif (Ada Error)';
+                        } else if (!isWorkerActive) {
+                            statusClass = 'queue-monitor__status--warning';
+                            statusText = 'Worker Idle/Off';
+                            dotPulse = '';
+                        }
+
+                        const defaultLoad = data.queues.default.count >= 20 ? 'queue-item--high-load' : '';
+                        const highLoad = data.queues['imports-high'].count >= 5 ? 'queue-item--high-load' : '';
+
+                        // Preserve active tab
+                        const activeTab = document.querySelector('.queue-nav-item.active')?.dataset.tab || 'summary';
+
+                        container.innerHTML = `
+                            <div class="queue-monitor">
+                                <div class="queue-monitor__header">
+                                    <div class="queue-monitor__title">
+                                        <i class="fas fa-microchip"></i> Monitoring Antrean Job
+                                    </div>
+                                    <div class="queue-monitor__status ${statusClass}">
+                                        <span class="${dotPulse}"></span> ${statusText}
+                                    </div>
+                                </div>
+                                <div class="queue-monitor__nav">
+                                    <div class="queue-nav-item ${activeTab === 'summary' ? 'active' : ''}" data-tab="summary">Ringkasan</div>
+                                    <div class="queue-nav-item ${activeTab === 'list' ? 'active' : ''}" data-tab="list">Daftar Antrean (${data.recent_jobs.length})</div>
+                                    <div class="queue-nav-item ${activeTab === 'failed' ? 'active' : ''}" data-tab="failed">Job Gagal (${data.failed_jobs_count})</div>
+                                </div>
+                                
+                                <div class="queue-table-container ${activeTab === 'summary' ? 'active' : ''}" id="tab-summary">
+                                    <div class="queue-monitor__body" style="padding:0">
+                                        <div class="queue-item ${defaultLoad}">
+                                            <div class="queue-item__icon"><i class="fas fa-file-import"></i></div>
+                                            <div class="queue-item__info">
+                                                <span class="queue-item__label">${data.queues.default.label}</span>
+                                                <span class="queue-item__value">${data.queues.default.count} <small class="text-muted font-weight-normal">menunggu</small></span>
+                                            </div>
+                                        </div>
+                                        <div class="queue-item ${highLoad}">
+                                            <div class="queue-item__icon"><i class="fas fa-eraser"></i></div>
+                                            <div class="queue-item__info">
+                                                <span class="queue-item__label">${data.queues['imports-high'].label}</span>
+                                                <span class="queue-item__value">${data.queues['imports-high'].count} <small class="text-muted font-weight-normal">menunggu</small></span>
+                                            </div>
+                                        </div>
+                                        <div class="queue-item ${data.failed_jobs_count > 0 ? 'queue-item--high-load' : ''}">
+                                            <div class="queue-item__icon"><i class="fas fa-exclamation-triangle"></i></div>
+                                            <div class="queue-item__info">
+                                                <span class="queue-item__label">Failed Jobs</span>
+                                                <span class="queue-item__value">${data.failed_jobs_count} <small class="text-muted font-weight-normal">error</small></span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="queue-table-container ${activeTab === 'list' ? 'active' : ''}" id="tab-list">
+                                    <table class="queue-table text-nowrap">
+                                        <thead>
+                                            <tr>
+                                                <th>ID</th>
+                                                <th>Nama Job</th>
+                                                <th>Queue</th>
+                                                <th>Status</th>
+                                                <th>Jam</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            ${data.recent_jobs.length === 0 ? '<tr><td colspan="5" class="text-center py-4 text-muted">Tidak ada job di antrean</td></tr>' : ''}
+                                            ${data.recent_jobs.map(job => `
+                                                <tr>
+                                                    <td>#${job.id}</td>
+                                                    <td class="font-weight-bold">${job.name}</td>
+                                                    <td><span class="job-badge job-badge--queue">${job.queue}</span></td>
+                                                    <td><span class="job-badge ${job.status === 'Processing' ? 'job-badge--processing' : 'job-badge--waiting'}">${job.status}</span></td>
+                                                    <td>${job.created_at}</td>
+                                                </tr>
+                                            `).join('')}
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                <div class="queue-table-container ${activeTab === 'failed' ? 'active' : ''}" id="tab-failed">
+                                    <table class="queue-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Job / Error</th>
+                                                <th class="text-right">Waktu</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            ${data.detailed_failed_jobs.length === 0 ? '<tr><td colspan="2" class="text-center py-4 text-muted">Tidak ada job gagal</td></tr>' : ''}
+                                            ${data.detailed_failed_jobs.map(f => `
+                                                <tr>
+                                                    <td>
+                                                        <div class="font-weight-bold mb-1">${f.name} <span class="badge badge-light border ml-1">${f.queue}</span></div>
+                                                        <code class="error-text">${f.error}...</code>
+                                                    </td>
+                                                    <td class="text-right text-muted" style="white-space:nowrap">${f.failed_at}</td>
+                                                </tr>
+                                            `).join('')}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        `;
+
+                        // Reattach tab listeners
+                        document.querySelectorAll('.queue-nav-item').forEach(nav => {
+                            nav.addEventListener('click', function() {
+                                document.querySelectorAll('.queue-nav-item').forEach(n => n.classList.remove('active'));
+                                document.querySelectorAll('.queue-table-container').forEach(c => c.classList.remove('active'));
+                                this.classList.add('active');
+                                document.getElementById('tab-' + this.dataset.tab).classList.add('active');
+                            });
+                        });
+                    })
+                    .catch(err => console.error('Gagal memuat status queue:', err));
+            }
+
+            updateQueueMonitor();
+            // Poll every 10 seconds
+            setInterval(updateQueueMonitor, 10000);
+
             const response = await fetch(fetchUrl, {
                 method: 'POST',
                 headers: {
@@ -1345,6 +1530,8 @@
             const isCognosPh = reportName.includes('cognos ph');
             const isCognosRecovery = reportName.includes('cognos recovery');
             const isGi405RecDh = tableName === 'gi405_rec_dh' || importController.includes('Gi405RecDhImportExcelController');
+            const isSsaSimpanan = tableName === 'ssa_simpanan';
+            const isSsaPinjaman = tableName === 'ssa_pinjaman';
             const isInputRekanan = tableName === 'input_rekanan';
             const isBodBoc = tableName === 'bod_boc';
             const isRka = tableName === 'rka';
@@ -1490,10 +1677,10 @@
                 inputCsv.disabled = false;
                 inputCsv.required = true;
                 inputCsv.setAttribute('accept', '.csv,.txt,.xlsx,.xls');
-                formImport.action = "{{ route('import.reportph.upload') }}";
-                formImport.dataset.preparePreviewUrl = "{{ route('import.reportph.prepare-preview') }}";
+                formImport.action = "{{ route('import.excel.upload') }}";
+                formImport.dataset.preparePreviewUrl = "{{ route('import.excel.prepare-preview') }}";
                 csvLabel.innerHTML = '<i class="fas fa-file-upload mr-1"></i> Upload File Report PH (.csv, .txt, .xlsx, .xls)';
-                csvHelp.textContent = 'CSV tetap didukung. File Excel akan distage dulu ke CSV lalu masuk ke jalur bulk import yang sama.';
+                csvHelp.textContent = 'Report ini diproses menggunakan Polars Fastpath (LOAD DATA INFILE) untuk performa maksimal.';
                 applyButtonState('csv', '<i class="fas fa-file-upload"></i> Upload File');
                 configurePeriodeInput({ visible: false });
                 configureKancaInput({ visible: false });
@@ -1553,6 +1740,26 @@
                     label: 'Tanggal Periode',
                     help: 'Wajib isi tanggal periode manual (YYYY-MM-DD) untuk Performance PIS per Produk.',
                 }));
+                configureKancaInput({ visible: false });
+                updateReportSummary();
+                updateFileSelectionUI();
+                return;
+            }
+
+            if (isSsaPinjaman || isSsaSimpanan) {
+                const label = isSsaPinjaman ? 'SSA Pinjaman' : 'SSA Simpanan';
+                formCsv.style.display = 'block';
+                inputCsv.disabled = false;
+                inputCsv.required = true;
+                inputCsv.setAttribute('accept', '.csv,.txt,.xlsx,.xls');
+                formImport.action = "{{ route('import.excel.upload') }}";
+                formImport.dataset.preparePreviewUrl = "{{ route('import.excel.prepare-preview') }}";
+                
+                csvLabel.innerHTML = `<i class="fas fa-file-upload mr-1"></i> Upload File ${label} (.csv, .txt, .xlsx, .xls)`;
+                csvHelp.textContent = `File CSV dan Excel didukung untuk ${label}.`;
+                
+                applyButtonState('csv', '<i class="fas fa-file-upload"></i> Upload File');
+                configurePeriodeInput({ visible: false });
                 configureKancaInput({ visible: false });
                 updateReportSummary();
                 updateFileSelectionUI();

@@ -792,7 +792,7 @@ class ImportPerformancePisPerProdukController extends Controller
                         $extraCleanupPaths[] = $previewStageCsv;
                     }
 
-                    $this->cleanupSuccessfulImportArtifacts($jobId, $relativePath, $request->input('periode'), $extraCleanupPaths);
+                    $this->cleanupSuccessfulImportArtifacts($jobId, $relativePath, $params['periode'] ?? null, $extraCleanupPaths);
                 }
 
                 $send('complete', [
@@ -883,6 +883,7 @@ class ImportPerformancePisPerProdukController extends Controller
 
         $headerLine = null;
         $sourceHeaders = [];
+        $delimiter = self::COLUMN_DELIMITER;
 
         try {
             $lineNumber = 0;
@@ -894,10 +895,23 @@ class ImportPerformancePisPerProdukController extends Controller
                 }
 
                 $headerLine = $lineNumber;
-                $sourceHeaders = array_map(
-                    fn ($value) => $this->normalizeHeader($value),
-                    $this->parseCsvLine($line, self::COLUMN_DELIMITER)
-                );
+                $delimiter = $this->detectCsvDelimiterFromLine($line);
+                rewind($handle);
+                $consumedLines = 0;
+                while ($consumedLines < $headerLine) {
+                    $row = fgetcsv($handle, 0, $delimiter);
+                    if ($row === false) {
+                        break;
+                    }
+
+                    $consumedLines++;
+                    if ($consumedLines === $headerLine) {
+                        $sourceHeaders = array_map(
+                            fn ($value) => $this->normalizeHeader($value),
+                            array_map(static fn ($value) => $value === null ? null : (string) $value, $row)
+                        );
+                    }
+                }
                 break;
             }
         } finally {
@@ -910,7 +924,7 @@ class ImportPerformancePisPerProdukController extends Controller
         }
 
         return [
-            'delimiter' => self::COLUMN_DELIMITER,
+            'delimiter' => $delimiter,
             'header_line' => $headerLine,
             'source_headers' => $sourceHeaders,
             'source_indexes' => $this->buildSourceIndexes($sourceHeaders),
@@ -946,13 +960,14 @@ class ImportPerformancePisPerProdukController extends Controller
 
         $lineNumber = 0;
         try {
-            while (($line = fgets($handle)) !== false) {
+            while (($data = fgetcsv($handle, 0, $context['delimiter'] ?? self::COLUMN_DELIMITER)) !== false) {
                 $lineNumber++;
                 if ($lineNumber <= (int) ($context['header_line'] ?? 1)) {
                     continue;
                 }
 
-                $row = $this->mapCsvRow($context, $this->parseCsvLine($line, $context['delimiter'] ?? self::COLUMN_DELIMITER));
+                $data = array_map(static fn ($value) => $value === null ? null : (string) $value, $data);
+                $row = $this->mapCsvRow($context, $data);
                 if ($row === null) {
                     continue;
                 }
@@ -1597,6 +1612,25 @@ class ImportPerformancePisPerProdukController extends Controller
         }
 
         return number_format((float) $value, 2, '.', '');
+    }
+
+    private function detectCsvDelimiterFromLine(string $line): string
+    {
+        $normalized = preg_replace('/^\xEF\xBB\xBF/', '', $line);
+        $candidates = [';', ',', "\t"];
+        $bestDelimiter = self::COLUMN_DELIMITER;
+        $bestScore = -1;
+
+        foreach ($candidates as $candidate) {
+            $fields = str_getcsv($normalized, $candidate);
+            $score = is_array($fields) ? count($fields) : 0;
+            if ($score > $bestScore) {
+                $bestScore = $score;
+                $bestDelimiter = $candidate;
+            }
+        }
+
+        return $bestDelimiter;
     }
 
     private function passesFilters(array $row, array $activeFilters): bool

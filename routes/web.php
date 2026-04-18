@@ -125,6 +125,9 @@ Route::middleware(['auth', 'role:admin', 'release.session.lock'])->group(functio
     Route::post('/job-management/snapshot/{rebuildId}/force-start', [ImportJobManagementController::class, 'forceStartSnapshot'])->name('job-management.snapshot.force-start');
     Route::post('/job-management/{jobId}/terminate', [ImportJobManagementController::class, 'terminate'])->name('job-management.terminate');
     Route::delete('/job-management/{jobId}', [ImportJobManagementController::class, 'destroy'])->name('job-management.destroy');
+    Route::delete('/job-management/queue-job/{queueJobId}', [ImportJobManagementController::class, 'destroyQueueJob'])->name('job-management.queue.destroy');
+    Route::post('/job-management/queue-job/{queueJobId}/force-run', [ImportJobManagementController::class, 'forceRunQueueJob'])->name('job-management.queue.force-run');
+    Route::post('/job-management/queue-job/purge', [ImportJobManagementController::class, 'purgeQueueJobs'])->name('job-management.queue.purge');
     Route::get('/file-management', [FileManagementController::class, 'index'])->name('file-management.index');
     Route::post('/file-management/database-backup', [FileManagementController::class, 'backupDatabase'])->name('file-management.database-backup');
     Route::get('/file-management/download', FileManagementDownloadController::class)->name('file-management.download');
@@ -136,6 +139,7 @@ Route::middleware(['auth', 'role:admin', 'release.session.lock'])->group(functio
     Route::get('/import/upload-limits', [ImportIndexController::class, 'uploadLimits'])->name('import.upload-limits');
     Route::get('/import/template', [ImportIndexController::class, 'downloadTemplate'])->name('import.template');
     Route::post('/import/report-management/data', [ImportIndexController::class, 'reportManagementData'])->name('import.report-management.data');
+    Route::get('/import/report-management/queue-status', [ImportIndexController::class, 'getQueueStatus'])->name('import.queue-status');
     Route::post('/import/report-management/load', [ImportIndexController::class, 'startManagedReportLoad'])->name('import.report-management.load');
     Route::get('/import/report-management/load/{loadId}/status', [ImportIndexController::class, 'managedReportLoadStatus'])->name('import.report-management.load.status');
     Route::post('/import/report-management/rebuild', [ImportIndexController::class, 'rebuildManagedReportSnapshots'])->name('import.report-management.rebuild');
