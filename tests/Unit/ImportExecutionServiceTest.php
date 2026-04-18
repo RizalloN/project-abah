@@ -8,6 +8,7 @@ use App\Services\Import\ImportProgressService;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Config;
 use Mockery;
 use Tests\TestCase;
 
@@ -243,7 +244,7 @@ class ImportExecutionServiceTest extends TestCase
         $progressService->shouldReceive('purgeStaleProcessingJobs')->once()->andReturn(0);
         $progressService->shouldReceive('isTerminationRequested')->once()->with(99)->andReturnFalse();
         $progressService->shouldReceive('findJob')
-            ->once()
+            ->twice()
             ->with(99)
             ->andReturn((object) [
                 'id' => 99,
@@ -270,6 +271,7 @@ class ImportExecutionServiceTest extends TestCase
     public function test_stream_status_aborts_stale_queued_job_even_when_payload_does_not_change(): void
     {
         Cache::flush();
+        Config::set('import.queue.inline_fallback_grace_seconds', 999);
 
         $progressService = Mockery::mock(ImportProgressService::class);
         $progressService->shouldReceive('getStatusPayload')
@@ -303,5 +305,19 @@ class ImportExecutionServiceTest extends TestCase
         $service = new ImportExecutionService($progressService);
         $response = $service->streamStatus(new \Illuminate\Http\Request(), 101);
         $response->sendContent();
+    }
+
+    public function test_inline_fallback_grace_seconds_uses_import_config_and_defaults_to_zero(): void
+    {
+        $progressService = Mockery::mock(ImportProgressService::class);
+        $service = new ImportExecutionService($progressService);
+        $method = new \ReflectionMethod($service, 'inlineFallbackGraceSeconds');
+        $method->setAccessible(true);
+
+        Config::set('import.queue.inline_fallback_grace_seconds', null);
+        $this->assertSame(0, $method->invoke($service));
+
+        Config::set('import.queue.inline_fallback_grace_seconds', 7);
+        $this->assertSame(7, $method->invoke($service));
     }
 }

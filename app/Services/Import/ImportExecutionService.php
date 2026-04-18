@@ -18,7 +18,6 @@ class ImportExecutionService
     private const DISPATCHED_KEY_PREFIX = 'import_excel_dispatched_job_';
     private const DISPATCHED_TTL_HOURS = 6;
     private const STALE_QUEUED_MINUTES = 10;
-    private const INLINE_FALLBACK_GRACE_SECONDS = 3;
     private const TERMINATION_EXCEPTION_PREFIX = 'import_job_terminated_by_request:';
 
     public function __construct(
@@ -128,9 +127,9 @@ class ImportExecutionService
         return [self::IMPORT_QUEUE];
     }
 
-    public function streamStatus(Request $request, int $jobId): StreamedResponse
+    public function streamStatus(Request $request, int $jobId, bool $startInlineImmediately = false): StreamedResponse
     {
-        return response()->stream(function () use ($request, $jobId) {
+        return response()->stream(function () use ($request, $jobId, $startInlineImmediately) {
             $send = static function (string $event, array $data): void {
                 echo "event: {$event}\n";
                 echo 'data: ' . json_encode($data) . "\n\n";
@@ -144,6 +143,14 @@ class ImportExecutionService
             $startedAt = time();
             $maxSeconds = 7200;
             $inlineFallbackAttempted = false;
+
+            if ($startInlineImmediately) {
+                $inlineFallbackAttempted = true;
+                $this->progressService->cleanupQueuedImportJobRowsForJob($jobId);
+                $this->run($jobId, function (string $event, array $streamPayload) use ($send): void {
+                    $send($event, $streamPayload);
+                }, 'inline_direct');
+            }
 
             while (true) {
                 if ($request->isMethod('GET') && function_exists('connection_aborted') && connection_aborted()) {
@@ -172,7 +179,7 @@ class ImportExecutionService
 
                     $this->run($jobId, function (string $event, array $streamPayload) use ($send): void {
                         $send($event, $streamPayload);
-                    });
+                    }, 'inline_fallback');
 
                     continue;
                 }
@@ -244,7 +251,7 @@ class ImportExecutionService
         ]);
     }
 
-    public function run(int $jobId, ?callable $streamSend = null): void
+    public function run(int $jobId, ?callable $streamSend = null, string $executionSource = 'worker'): void
     {
         $this->progressService->purgeStaleProcessingJobs();
 
@@ -303,7 +310,11 @@ class ImportExecutionService
                 'phase' => 'polars',
                 'mode' => 'polars',
                 'percent' => 8,
-                'message' => 'Worker queue masuk fase Polars.',
+                'message' => match ($executionSource) {
+                    'inline_direct' => 'Import dijalankan langsung dari request ini.',
+                    'inline_fallback' => 'Worker queue belum aktif. Fase Polars dijalankan langsung dari request ini.',
+                    default => 'Worker queue masuk fase Polars.',
+                },
                 'processed_rows' => 0,
                 'total_rows' => (int) ($params['total_rows'] ?? 0),
             ]);
@@ -415,7 +426,12 @@ class ImportExecutionService
             return false;
         }
 
-        return (time() - $startedAt) >= self::INLINE_FALLBACK_GRACE_SECONDS;
+        return (time() - $startedAt) >= $this->inlineFallbackGraceSeconds();
+    }
+
+    private function inlineFallbackGraceSeconds(): int
+    {
+        return max(0, (int) config('import.queue.inline_fallback_grace_seconds', 0));
     }
 
     private function dispatchedKey(int $jobId): string

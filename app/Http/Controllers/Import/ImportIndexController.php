@@ -45,6 +45,7 @@ class ImportIndexController extends Controller
     private const DELETE_FAIL_STALE_SECONDS = 900;
     private const DELETE_QUEUE = 'imports-high';
     private const DELETE_SYNC_QUEUE = 'imports-high';
+    private const LW325_BLANK_CREATED_AT_FALLBACK_MODE = 'lw325_blank_created_at';
     private const DELETE_TICK_TIME_BUDGET_MS = 2500;
     private const DELETE_MAX_BATCHES_PER_TICK = 8;
     private const DELETE_HARD_GUARD_RATIO = 0.85;
@@ -54,6 +55,8 @@ class ImportIndexController extends Controller
     private const REBUILD_FALLBACK_STALE_SECONDS = 15;
     private const FULL_TABLE_TRUNCATE_SHORTCUT_TABLES = [
         'simpanan_multipn',
+        'lw325_ph',
+        'daily_loan_dinamis',
     ];
 
     private const DELETE_INDEX_HINTS = [
@@ -62,12 +65,14 @@ class ImportIndexController extends Controller
             'period' => 'periode',
             'kanca' => 'cabang1',
             'identity' => 'uniqueid_namareport',
+            'chunk_size' => 25000,
         ],
         'lw325_ph' => [
             'index' => 'idx_lw325ph_delete_scope',
             'period' => 'periode',
             'kanca' => 'kanca',
             'identity' => 'uniqueid_namareport',
+            'chunk_size' => 25000,
         ],
         'cognos_recovery' => [
             'index' => 'idx_cognos_recovery_delete_scope',
@@ -958,7 +963,7 @@ class ImportIndexController extends Controller
                     'skip_derived_sync' => (bool) ($prepared['skip_derived_sync'] ?? false),
                     'skip_snapshot_cleanup' => false,
                     'full_table_scope' => true,
-                ], $syncService, $source);
+                ], $syncService, $source, null);
 
                 $cleanup = $maintenance['cleanup'];
                 $message = $maintenance['final_message'];
@@ -1131,7 +1136,7 @@ class ImportIndexController extends Controller
 
     public function cancelManagedReportDelete(string $deleteId)
     {
-        $state = $this->getDeleteState($deleteId);
+        [$state, $queueRow] = $this->resolveManagedDeleteControlState($deleteId);
         if ($state === null) {
             return response()->json([
                 'status' => 'error',
@@ -1150,6 +1155,7 @@ class ImportIndexController extends Controller
         $state['message'] = 'Pembatalan delete dikirim. Worker akan berhenti setelah batch aman selesai.';
         $state['updated_at'] = now()->toIso8601String();
         $this->putDeleteState($deleteId, $state);
+        $this->releaseManagedDeleteQueueRow($queueRow);
 
         $state = $this->finalizeManagedDeleteCancelled($deleteId, $state);
 
@@ -1160,7 +1166,7 @@ class ImportIndexController extends Controller
 
     public function forceStopManagedReportDelete(string $deleteId)
     {
-        $state = $this->getDeleteState($deleteId);
+        [$state, $queueRow] = $this->resolveManagedDeleteControlState($deleteId);
         if ($state === null) {
             return response()->json([
                 'status' => 'error',
@@ -1179,6 +1185,7 @@ class ImportIndexController extends Controller
         $state['message'] = 'Force stop dikirim. Worker akan berhenti setelah batch aman selesai.';
         $state['updated_at'] = now()->toIso8601String();
         $this->putDeleteState($deleteId, $state);
+        $this->releaseManagedDeleteQueueRow($queueRow);
 
         $state = $this->finalizeManagedDeleteCancelled($deleteId, $state);
 
@@ -1416,6 +1423,10 @@ class ImportIndexController extends Controller
             'scopes.*.kanca_label' => 'nullable|string|max:255',
             'scopes.*.period_is_null' => 'nullable|boolean',
             'scopes.*.kanca_is_null' => 'nullable|boolean',
+            'scopes.*.fallback_mode' => 'nullable|string|max:100',
+            'scopes.*.fallback_period_column' => 'nullable|string|max:100',
+            'scopes.*.fallback_period_filter' => 'nullable|string|max:100',
+            'scopes.*.fallback_period_label' => 'nullable|string|max:100',
             'force' => 'nullable|boolean',
             'hard_force' => 'nullable|boolean',
         ]);
@@ -1498,6 +1509,10 @@ class ImportIndexController extends Controller
             $hasNullPeriodScope = false;
 
             foreach ($scopes as $scope) {
+                if ($this->isLw325BlankCreatedAtFallbackScope($tableName, $scope)) {
+                    continue;
+                }
+
                 if ((bool) ($scope['period_is_null'] ?? false)) {
                     $hasNullPeriodScope = true;
                     continue;
@@ -1565,6 +1580,16 @@ class ImportIndexController extends Controller
         $kancaColumn = $context['kanca_column'] ?? null;
         $candidateRows = max(0, (int) ($context['candidate_rows'] ?? 0));
         $scopes = is_array($context['scopes'] ?? null) ? $context['scopes'] : [];
+
+        // Plan B: any scope with blank/null period → use direct chunked recovery to avoid
+        // Cartesian-variant explosion and poor index utilisation on IS NULL period queries.
+        if ($periodColumn !== null && !empty($scopes)) {
+            foreach ($scopes as $scope) {
+                if ((bool) ($scope['period_is_null'] ?? false)) {
+                    return ['delete_plan' => 'blank_period_scope', 'problem_signature' => 'blank_period_scope'];
+                }
+            }
+        }
 
         if ($tableName !== 'daily_loan_dinamis' || count($scopes) !== 1 || $periodColumn === null || $kancaColumn === null) {
             return ['delete_plan' => 'normal', 'problem_signature' => null];
@@ -1897,7 +1922,7 @@ class ImportIndexController extends Controller
     /**
      * @return array{cleanup:array<string,mixed>,sync_periods:array<int,string>,complete_without_sync:bool,final_message:string,sync_message:string}
      */
-    private function prepareManagedDeleteSnapshotMaintenance(array $context, ReportDataSyncService $syncService, string $source, string $deleteId): array
+    private function prepareManagedDeleteSnapshotMaintenance(array $context, ReportDataSyncService $syncService, string $source, ?string $deleteId = null): array
     {
         $tableName = strtolower(trim((string) ($context['table_name'] ?? '')));
         $periodHint = $this->normalizeManagedDeletePeriod($context['period_hint'] ?? null);
@@ -2576,6 +2601,38 @@ class ImportIndexController extends Controller
         }
 
         return null;
+    }
+
+    /**
+     * @return array{0: ?array, 1: ?array}
+     */
+    private function resolveManagedDeleteControlState(string $deleteId): array
+    {
+        $state = $this->getDeleteState($deleteId);
+        $queueRow = $this->findManagedDeleteQueueRow($deleteId);
+
+        if ($state === null && $queueRow !== null) {
+            $state = $this->makeSyntheticManagedDeleteState($deleteId, $queueRow);
+            $state['message'] = (bool) ($queueRow['reserved'] ?? false)
+                ? 'Delete sedang diproses worker queue. Stop paksa akan menutup progress dan menghentikan lanjutan batch.'
+                : 'Delete masih menunggu worker queue. Job akan dihentikan langsung dari antrean.';
+        }
+
+        return [$state, $queueRow];
+    }
+
+    private function releaseManagedDeleteQueueRow(?array $queueRow): void
+    {
+        if ($queueRow === null || !Schema::hasTable('jobs')) {
+            return;
+        }
+
+        $jobId = (int) ($queueRow['job_id'] ?? 0);
+        if ($jobId <= 0) {
+            return;
+        }
+
+        DB::table('jobs')->where('id', $jobId)->delete();
     }
 
     private function reconcileStaleManagedDeleteState(string $deleteId, array $state): array
@@ -3474,11 +3531,13 @@ class ImportIndexController extends Controller
                 : null;
             $periodIsNull = (bool) ($scope['period_is_null'] ?? false);
             $kancaIsNull = (bool) ($scope['kanca_is_null'] ?? false);
+            $isLw325Fallback = $this->isLw325BlankCreatedAtFallbackScope($tableName, $scope);
 
             $hasPeriodConstraint = $periodColumn !== null && ($periodIsNull || ($periodFilter !== null && $periodFilter !== ''));
             $hasKancaConstraint = $kancaColumn !== null && ($kancaIsNull || ($kancaFilter !== null && $kancaFilter !== ''));
+            $hasFallbackConstraint = $isLw325Fallback && (($scope['fallback_period_filter'] ?? null) !== null && trim((string) ($scope['fallback_period_filter'] ?? '')) !== '');
 
-            if (!$hasPeriodConstraint && !$hasKancaConstraint) {
+            if (!$hasPeriodConstraint && !$hasKancaConstraint && !$hasFallbackConstraint) {
                 continue;
             }
 
@@ -3487,6 +3546,10 @@ class ImportIndexController extends Controller
                 'kanca_filter' => $kancaFilter,
                 'period_is_null' => $periodIsNull,
                 'kanca_is_null' => $kancaIsNull,
+                'fallback_mode' => array_key_exists('fallback_mode', $scope) ? (string) ($scope['fallback_mode'] ?? '') : null,
+                'fallback_period_column' => array_key_exists('fallback_period_column', $scope) ? (string) ($scope['fallback_period_column'] ?? '') : null,
+                'fallback_period_filter' => array_key_exists('fallback_period_filter', $scope) ? (string) ($scope['fallback_period_filter'] ?? '') : null,
+                'fallback_period_label' => array_key_exists('fallback_period_label', $scope) ? (string) ($scope['fallback_period_label'] ?? '') : null,
             ];
         }
 
@@ -3499,23 +3562,42 @@ class ImportIndexController extends Controller
                 $outerQuery->orWhere(function ($innerQuery) use ($scope, $tableName, $periodColumn, $kancaColumn) {
                     $applied = false;
 
-                    if ($periodColumn !== null) {
-                        if ((bool) ($scope['period_is_null'] ?? false)) {
+                    if ($this->isLw325BlankCreatedAtFallbackScope($tableName, $scope)) {
+                        if ($periodColumn !== null) {
                             $this->applyBlankValueConstraint($innerQuery, $periodColumn);
                             $applied = true;
-                        } elseif (($scope['period_filter'] ?? null) !== null && $scope['period_filter'] !== '') {
-                            $this->applyManagedPeriodFilterConstraint($innerQuery, $tableName, $periodColumn, (string) $scope['period_filter']);
-                            $applied = true;
                         }
-                    }
 
-                    if ($kancaColumn !== null) {
-                        if ((bool) ($scope['kanca_is_null'] ?? false)) {
+                        if ($kancaColumn !== null) {
                             $this->applyBlankValueConstraint($innerQuery, $kancaColumn);
                             $applied = true;
-                        } elseif (($scope['kanca_filter'] ?? null) !== null && $scope['kanca_filter'] !== '') {
-                            $innerQuery->where($kancaColumn, (string) $scope['kanca_filter']);
+                        }
+
+                        $fallbackPeriodColumn = trim((string) ($scope['fallback_period_column'] ?? ''));
+                        $fallbackPeriodFilter = trim((string) ($scope['fallback_period_filter'] ?? ''));
+                        if ($fallbackPeriodColumn !== '' && $fallbackPeriodFilter !== '') {
+                            $innerQuery->where($fallbackPeriodColumn, $fallbackPeriodFilter);
                             $applied = true;
+                        }
+                    } else {
+                        if ($periodColumn !== null) {
+                            if ((bool) ($scope['period_is_null'] ?? false)) {
+                                $this->applyBlankValueConstraint($innerQuery, $periodColumn);
+                                $applied = true;
+                            } elseif (($scope['period_filter'] ?? null) !== null && $scope['period_filter'] !== '') {
+                                $this->applyManagedPeriodFilterConstraint($innerQuery, $tableName, $periodColumn, (string) $scope['period_filter']);
+                                $applied = true;
+                            }
+                        }
+
+                        if ($kancaColumn !== null) {
+                            if ((bool) ($scope['kanca_is_null'] ?? false)) {
+                                $this->applyBlankValueConstraint($innerQuery, $kancaColumn);
+                                $applied = true;
+                            } elseif (($scope['kanca_filter'] ?? null) !== null && $scope['kanca_filter'] !== '') {
+                                $innerQuery->where($kancaColumn, (string) $scope['kanca_filter']);
+                                $applied = true;
+                            }
                         }
                     }
 
@@ -3575,12 +3657,19 @@ class ImportIndexController extends Controller
                     : null);
             $periodIsNull = (bool) ($scope['period_is_null'] ?? false);
             $kancaIsNull = (bool) ($scope['kanca_is_null'] ?? false);
+            $fallbackMode = array_key_exists('fallback_mode', $scope) ? trim((string) ($scope['fallback_mode'] ?? '')) : null;
+            $fallbackPeriodColumn = array_key_exists('fallback_period_column', $scope) ? trim((string) ($scope['fallback_period_column'] ?? '')) : null;
+            $fallbackPeriodFilter = array_key_exists('fallback_period_filter', $scope) ? trim((string) ($scope['fallback_period_filter'] ?? '')) : null;
+            $fallbackPeriodLabel = array_key_exists('fallback_period_label', $scope) ? trim((string) ($scope['fallback_period_label'] ?? '')) : null;
 
             $scopeKey = json_encode([
                 $periodFilter,
                 $kancaFilter,
                 $periodIsNull,
                 $kancaIsNull,
+                $fallbackMode,
+                $fallbackPeriodColumn,
+                $fallbackPeriodFilter,
             ]);
 
             if ($scopeKey === false || isset($seen[$scopeKey])) {
@@ -3595,6 +3684,10 @@ class ImportIndexController extends Controller
                 'kanca_label' => array_key_exists('kanca_label', $scope) ? (string) ($scope['kanca_label'] ?? '') : null,
                 'period_is_null' => $periodIsNull,
                 'kanca_is_null' => $kancaIsNull,
+                'fallback_mode' => $fallbackMode,
+                'fallback_period_column' => $fallbackPeriodColumn,
+                'fallback_period_filter' => $fallbackPeriodFilter,
+                'fallback_period_label' => $fallbackPeriodLabel,
             ];
         }
 
@@ -3616,11 +3709,29 @@ class ImportIndexController extends Controller
                     'period_filter' => array_key_exists('period_filter', $scope)
                         ? (($scope['period_filter'] ?? '') !== '' ? (string) $scope['period_filter'] : null)
                         : null,
+                    'period_label' => array_key_exists('period_label', $scope)
+                        ? (($scope['period_label'] ?? '') !== '' ? (string) $scope['period_label'] : null)
+                        : null,
                     'kanca_filter' => array_key_exists('kanca_filter', $scope)
                         ? (($scope['kanca_filter'] ?? '') !== '' ? (string) $scope['kanca_filter'] : null)
                         : null,
+                    'kanca_label' => array_key_exists('kanca_label', $scope)
+                        ? (($scope['kanca_label'] ?? '') !== '' ? (string) $scope['kanca_label'] : null)
+                        : null,
                     'period_is_null' => (bool) ($scope['period_is_null'] ?? false),
                     'kanca_is_null' => (bool) ($scope['kanca_is_null'] ?? false),
+                    'fallback_mode' => array_key_exists('fallback_mode', $scope)
+                        ? (($scope['fallback_mode'] ?? '') !== '' ? (string) $scope['fallback_mode'] : null)
+                        : null,
+                    'fallback_period_column' => array_key_exists('fallback_period_column', $scope)
+                        ? (($scope['fallback_period_column'] ?? '') !== '' ? (string) $scope['fallback_period_column'] : null)
+                        : null,
+                    'fallback_period_filter' => array_key_exists('fallback_period_filter', $scope)
+                        ? (($scope['fallback_period_filter'] ?? '') !== '' ? (string) $scope['fallback_period_filter'] : null)
+                        : null,
+                    'fallback_period_label' => array_key_exists('fallback_period_label', $scope)
+                        ? (($scope['fallback_period_label'] ?? '') !== '' ? (string) $scope['fallback_period_label'] : null)
+                        : null,
                 ];
             }
         }
@@ -3633,11 +3744,29 @@ class ImportIndexController extends Controller
             'period_filter' => array_key_exists('period_filter', $state)
                 ? (($state['period_filter'] ?? '') !== '' ? (string) $state['period_filter'] : null)
                 : null,
+            'period_label' => array_key_exists('period_label', $state)
+                ? (($state['period_label'] ?? '') !== '' ? (string) $state['period_label'] : null)
+                : null,
             'kanca_filter' => array_key_exists('kanca_filter', $state)
                 ? (($state['kanca_filter'] ?? '') !== '' ? (string) $state['kanca_filter'] : null)
                 : null,
+            'kanca_label' => array_key_exists('kanca_label', $state)
+                ? (($state['kanca_label'] ?? '') !== '' ? (string) $state['kanca_label'] : null)
+                : null,
             'period_is_null' => (bool) ($state['period_is_null'] ?? false),
             'kanca_is_null' => (bool) ($state['kanca_is_null'] ?? false),
+            'fallback_mode' => array_key_exists('fallback_mode', $state)
+                ? (($state['fallback_mode'] ?? '') !== '' ? (string) $state['fallback_mode'] : null)
+                : null,
+            'fallback_period_column' => array_key_exists('fallback_period_column', $state)
+                ? (($state['fallback_period_column'] ?? '') !== '' ? (string) $state['fallback_period_column'] : null)
+                : null,
+            'fallback_period_filter' => array_key_exists('fallback_period_filter', $state)
+                ? (($state['fallback_period_filter'] ?? '') !== '' ? (string) $state['fallback_period_filter'] : null)
+                : null,
+            'fallback_period_label' => array_key_exists('fallback_period_label', $state)
+                ? (($state['fallback_period_label'] ?? '') !== '' ? (string) $state['fallback_period_label'] : null)
+                : null,
         ]];
     }
 
@@ -3667,6 +3796,10 @@ class ImportIndexController extends Controller
         array $scope,
         string $deletePlan = 'normal'
     ): string {
+        if ($this->isLw325BlankCreatedAtFallbackScope($tableName, $scope)) {
+            return 'lw325_created_at_blank_scope';
+        }
+
         if ($this->shouldUseBlankScopeRecoveryPlan($tableName, $periodColumn, $kancaColumn, $scope, $deletePlan)) {
             return 'blank_scope_direct_batch';
         }
@@ -3697,6 +3830,14 @@ class ImportIndexController extends Controller
         array $scope,
         string $deletePlan
     ): bool {
+        if ($this->isLw325BlankCreatedAtFallbackScope($tableName, $scope)) {
+            return false;
+        }
+
+        if ($deletePlan === 'blank_period_scope') {
+            return $periodColumn !== null && (bool) ($scope['period_is_null'] ?? false);
+        }
+
         if ($deletePlan !== 'recovery_blank_scope') {
             return false;
         }
@@ -3819,17 +3960,41 @@ class ImportIndexController extends Controller
         string $deletePlan = 'normal'
     ): int
     {
-        if ($this->shouldUseBlankScopeRecoveryPlan($tableName, $periodColumn, $kancaColumn, $scope, $deletePlan)) {
-            $periodValue = trim((string) ($scope['period_filter'] ?? ''));
-            $result = $this->managedReportDeleteRecoveryService()->deleteBlankKancaPeriodScope(
+        if ($this->isLw325BlankCreatedAtFallbackScope($tableName, $scope)) {
+            return $this->deleteLw325BlankCreatedAtScope(
                 $tableName,
-                (string) $periodColumn,
-                (string) $kancaColumn,
-                $periodValue,
-                max(1, (int) ($chunkSize ?? self::DELETE_CHUNK_SIZE)),
-                $deleteId !== null ? fn ($aff, $tot, $batch) => $this->heartbeatManagedDeleteState($deleteId, "Recovering blank scope... Batch $batch ($tot rows deleted)") : null,
-                $deleteId !== null ? fn (): bool => $this->isManagedDeleteCancellationRequested($deleteId) : null
+                $baseQuery,
+                $identityColumn,
+                $chunkSize,
+                $deleteId
             );
+        }
+
+        if ($this->shouldUseBlankScopeRecoveryPlan($tableName, $periodColumn, $kancaColumn, $scope, $deletePlan)) {
+            if ($deletePlan === 'blank_period_scope') {
+                $result = $this->managedReportDeleteRecoveryService()->deleteBlankPeriodScope(
+                    $tableName,
+                    (string) $periodColumn,
+                    $kancaColumn,
+                    $scope,
+                    $identityColumn,
+                    max(1, (int) ($chunkSize ?? self::DELETE_CHUNK_SIZE)),
+                    $deleteId !== null ? fn ($aff, $tot, $batch) => $this->heartbeatManagedDeleteState($deleteId, "Blank period delete... Batch $batch ($tot rows deleted)") : null,
+                    $deleteId !== null ? fn (): bool => $this->isManagedDeleteCancellationRequested($deleteId) : null
+                );
+            } else {
+                $periodValue = trim((string) ($scope['period_filter'] ?? ''));
+                $result = $this->managedReportDeleteRecoveryService()->deleteBlankKancaPeriodScope(
+                    $tableName,
+                    (string) $periodColumn,
+                    (string) $kancaColumn,
+                    $periodValue,
+                    $identityColumn,
+                    max(1, (int) ($chunkSize ?? self::DELETE_CHUNK_SIZE)),
+                    $deleteId !== null ? fn ($aff, $tot, $batch) => $this->heartbeatManagedDeleteState($deleteId, "Recovering blank scope... Batch $batch ($tot rows deleted)") : null,
+                    $deleteId !== null ? fn (): bool => $this->isManagedDeleteCancellationRequested($deleteId) : null
+                );
+            }
 
             return (int) ($result['deleted_rows'] ?? 0);
         }
@@ -3987,7 +4152,12 @@ class ImportIndexController extends Controller
             $deletedDangling = (int) (clone $danglingQuery)->limit($limit)->delete();
             
             if ($deletedDangling > 0) {
-                return $deletedDangling;
+                // Jangan langsung return jika baru menghapus sedikit baris dangling, 
+                // lanjutkan ke fase pencarian identity agar worker tetap produktif.
+                if ($deletedDangling >= $limit) {
+                    return $deletedDangling;
+                }
+                $deleted += $deletedDangling;
             }
 
             if ($danglingCacheKey) {
@@ -4015,7 +4185,7 @@ class ImportIndexController extends Controller
             return 0;
         }
 
-        $deleted = 0;
+        $deletedTotal = $deleted;
         $deleteBatchSize = 2000;
 
         foreach (array_chunk($identityValues, $deleteBatchSize) as $chunk) {
@@ -4024,7 +4194,7 @@ class ImportIndexController extends Controller
             }
 
             try {
-                $deleted += (int) $connection->table($tableName)
+                $batchCount = (int) $connection->table($tableName)
                     ->whereIn($identityColumn, $chunk)
                     ->delete();
             } catch (\Illuminate\Database\QueryException $chunkException) {
@@ -4036,16 +4206,17 @@ class ImportIndexController extends Controller
                         'table_name' => $tableName,
                         'identity_column' => $identityColumn,
                         'chunk_size' => count($chunk),
-                        'deleted_so_far' => $deleted,
+                        'deleted_so_far' => $deletedTotal,
                         'error_code' => $errorCode,
                     ]);
                 }
 
                 throw $chunkException;
             }
+            $deletedTotal += $batchCount;
         }
 
-        return $deleted;
+        return $deletedTotal;
     }
 
     private function buildDeleteConstraintVariants(?string $periodColumn, ?string $kancaColumn, array $scope): array
@@ -4539,6 +4710,17 @@ LIMIT {$limit}
     {
         $parts = [];
 
+        if (($scope['fallback_mode'] ?? null) === self::LW325_BLANK_CREATED_AT_FALLBACK_MODE) {
+            $fallbackLabel = trim((string) ($scope['fallback_period_label'] ?? ''));
+            $parts[] = 'Periode kosong';
+            $parts[] = 'Kanca kosong';
+            if ($fallbackLabel !== '') {
+                $parts[] = $fallbackLabel;
+            }
+
+            return implode(' | ', $parts);
+        }
+
         if ((bool) ($scope['period_is_null'] ?? false)) {
             $parts[] = 'Periode kosong';
         } elseif (($scope['period_filter'] ?? null) !== null && $scope['period_filter'] !== '') {
@@ -4552,6 +4734,77 @@ LIMIT {$limit}
         }
 
         return !empty($parts) ? implode(' | ', $parts) : 'scope aktif';
+    }
+
+    private function isLw325BlankCreatedAtFallbackScope(string $tableName, array $scope): bool
+    {
+        if (strtolower(trim($tableName)) !== 'lw325_ph') {
+            return false;
+        }
+
+        $fallbackMode = trim((string) ($scope['fallback_mode'] ?? ''));
+        $fallbackPeriodColumn = trim((string) ($scope['fallback_period_column'] ?? ''));
+        $fallbackPeriodFilter = trim((string) ($scope['fallback_period_filter'] ?? ''));
+
+        return $fallbackMode === self::LW325_BLANK_CREATED_AT_FALLBACK_MODE
+            && $fallbackPeriodColumn === 'created_at'
+            && $fallbackPeriodFilter !== ''
+            && (bool) ($scope['period_is_null'] ?? false)
+            && (bool) ($scope['kanca_is_null'] ?? false);
+    }
+
+    private function deleteLw325BlankCreatedAtScope(
+        string $tableName,
+        Builder $baseQuery,
+        ?string $identityColumn,
+        ?int $chunkSize,
+        ?string $deleteId
+    ): int {
+        $this->bulkLoadService()->assertTransactionalTable($tableName, 'delete data report');
+
+        return $this->bulkLoadService()->withTableWriteLock($tableName, function () use (
+            $tableName,
+            $baseQuery,
+            $identityColumn,
+            $chunkSize,
+            $deleteId
+        ): int {
+            $limit = max(1, (int) ($chunkSize ?? self::DELETE_CHUNK_SIZE));
+            $connection = $baseQuery->getConnection();
+            $driverName = $connection->getDriverName();
+            $shouldToggleSnapshotFlag = $this->shouldToggleSnapshotInvalidationFlag($driverName);
+
+            if ($shouldToggleSnapshotFlag) {
+                try {
+                    $connection->statement('SET @skip_snapshot_invalidation = 1');
+                } catch (Throwable) {
+                    $shouldToggleSnapshotFlag = false;
+                }
+            }
+
+            try {
+                if ($deleteId !== null && $this->isManagedDeleteCancellationRequested($deleteId)) {
+                    return 0;
+                }
+
+                if ($identityColumn !== null && Schema::hasColumn($tableName, $identityColumn)) {
+                    return $this->deleteRowsByIdentityBatch(
+                        $tableName,
+                        clone $baseQuery,
+                        $identityColumn,
+                        $limit,
+                        $connection,
+                        $deleteId
+                    );
+                }
+
+                return (int) (clone $baseQuery)->limit($limit)->delete();
+            } finally {
+                if ($shouldToggleSnapshotFlag) {
+                    $connection->statement('SET @skip_snapshot_invalidation = NULL');
+                }
+            }
+        });
     }
 
     private function parseIniSizeToBytes(string $value): int

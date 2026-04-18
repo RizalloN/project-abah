@@ -1,6 +1,14 @@
 <?php
 
 return [
+    'queue' => [
+        'inline_fallback_grace_seconds' => env('IMPORT_QUEUE_INLINE_FALLBACK_GRACE_SECONDS', 0),
+        'inline_start_tables' => array_values(array_filter(array_map(
+            static fn ($value): string => trim((string) $value),
+            explode(',', (string) env('IMPORT_QUEUE_INLINE_START_TABLES', 'lw325_ph'))
+        ), static fn (string $value): bool => $value !== '')),
+    ],
+
     'direct_load' => [
         'require_local_infile' => env('IMPORT_DIRECT_LOAD_REQUIRE_LOCAL_INFILE', true),
         'validation_sample_rows' => env('IMPORT_DIRECT_LOAD_VALIDATION_SAMPLE_ROWS', 5000),

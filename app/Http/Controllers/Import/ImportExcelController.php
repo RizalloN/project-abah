@@ -1966,6 +1966,7 @@ class ImportExcelController extends Controller
         $jobState = $this->excelImportJobService()->getImportJobState($jobId);
         $params = !empty($jobState['params']) ? (array) $jobState['params'] : $sessionParams;
         $normalizedHeaders = !empty($jobState['headers']) ? (array) $jobState['headers'] : session('excel_headers', []);
+        $activeFilters = (array) ($params['active_filters'] ?? []);
         $eligibility = $this->resolveDirectCsvFastPathEligibility('daily_loan', $params, $normalizedHeaders);
 
         if (!($eligibility['eligible'] ?? false)) {
@@ -1979,7 +1980,7 @@ class ImportExcelController extends Controller
 
         request()->session()->save();
 
-        return response()->stream(function () use ($jobId, $relativePath, $absolutePath, $totalRows, $normalizedHeaders) {
+        return response()->stream(function () use ($jobId, $relativePath, $absolutePath, $totalRows, $normalizedHeaders, $activeFilters) {
             $streamLock = null;
             $send = function (string $event, array $data) {
                 echo "event: {$event}\n";
@@ -2133,7 +2134,7 @@ class ImportExcelController extends Controller
                         $send,
                         $absolutePath,
                         'daily_loan_dinamis',
-                        [],
+                        $activeFilters,
                         $normalizedHeaders,
                         $jobId,
                         $totalRows
@@ -4547,22 +4548,15 @@ class ImportExcelController extends Controller
     protected function createNormalizedLw325PhDirectLoadCsv(string $csvPath, ?string $delimiter = null, ?callable $send = null): array
     {
         $polarsResult = $this->stageLw325PhCsvWithPolars($send, $csvPath, $delimiter);
-        if ($polarsResult !== null) {
+        if ($polarsResult !== null && $this->validateLw325NormalizedPeriods((string) ($polarsResult['path'] ?? ''))) {
             return $polarsResult;
         }
 
-        return [
-            'path' => $csvPath,
-            'cleanup' => false,
-            'normalized' => false,
-            'backend' => 'csv_stage',
-            'skipped_rows' => [],
-            'skipped_count' => 0,
-            'duplicate_count' => 0,
-            'written_rows' => 0,
-            'total_rows' => 0,
-            'periods' => [],
-        ];
+        if ($polarsResult !== null && !empty($polarsResult['cleanup'])) {
+            @unlink((string) ($polarsResult['path'] ?? ''));
+        }
+
+        return $this->normalizeLw325PhCsvForDirectLoad($csvPath, $delimiter);
     }
 
     protected function prepareLw325PhDirectLoadSource(string $csvPath, ?string $delimiter = null, ?callable $send = null): array
@@ -4580,6 +4574,185 @@ class ImportExcelController extends Controller
             'written_rows' => (int) ($normalized['written_rows'] ?? 0),
             'periods' => $normalized['periods'] ?? [],
         ];
+    }
+
+    private function normalizeLw325PhCsvForDirectLoad(string $csvPath, ?string $delimiter = null): array
+    {
+        $delimiter = ($delimiter !== null && $delimiter !== '')
+            ? $delimiter
+            : $this->detectCsvDelimiter($csvPath);
+
+        $tempDirectory = storage_path('app/temp');
+        if (!is_dir($tempDirectory)) {
+            @mkdir($tempDirectory, 0777, true);
+        }
+
+        $tempPath = $tempDirectory . DIRECTORY_SEPARATOR . 'lw325_ph_direct_' . Str::uuid()->toString() . '.csv';
+        $inputHandle = @fopen($csvPath, 'rb');
+        if ($inputHandle === false) {
+            throw new \RuntimeException('Gagal membuka file sumber LW325_PH untuk normalisasi direct load.');
+        }
+
+        $outputHandle = @fopen($tempPath, 'wb');
+        if ($outputHandle === false) {
+            fclose($inputHandle);
+            throw new \RuntimeException('Gagal membuat file sementara LW325_PH untuk direct load.');
+        }
+
+        $headerRow = null;
+        $writtenRows = 0;
+        $periods = [];
+
+        try {
+            while (($rawRow = fgetcsv($inputHandle, 0, $delimiter)) !== false) {
+                $row = $this->normalizeCsvRow((array) $rawRow, $delimiter);
+                if (empty(array_filter((array) $row, static fn ($value): bool => trim((string) $value) !== ''))) {
+                    continue;
+                }
+
+                if ($headerRow === null) {
+                    $joined = implode(',', array_map(static fn ($value): string => trim((string) $value), $row));
+                    $period = $this->extractLw325PhPeriodFromMetadata($joined);
+                    if ($period !== null) {
+                        $periods[$period] = true;
+                    }
+
+                    if (!$this->isLw325PhHeaderRow($row)) {
+                        continue;
+                    }
+
+                    $headerRow = array_values($row);
+                    $expectedColumns = count($headerRow);
+                    fputcsv($outputHandle, $headerRow, $delimiter, '"', '\\');
+                    continue;
+                }
+
+                $row = $this->padRow(array_values($row), $expectedColumns);
+                if (count($row) > $expectedColumns) {
+                    $row = array_slice($row, 0, $expectedColumns);
+                }
+
+                fputcsv($outputHandle, $row, $delimiter, '"', '\\');
+                $writtenRows++;
+            }
+        } catch (\Throwable $e) {
+            fclose($inputHandle);
+            fclose($outputHandle);
+            @unlink($tempPath);
+            throw $e;
+        }
+
+        fclose($inputHandle);
+        fclose($outputHandle);
+
+        if ($headerRow === null) {
+            @unlink($tempPath);
+            throw new \RuntimeException('Header CSV LW325_PH tidak ditemukan. Pastikan file memiliki baris header yang memuat PERIODE dan ACCTNO.');
+        }
+
+        return [
+            'path' => $tempPath,
+            'cleanup' => true,
+            'normalized' => true,
+            'backend' => 'php',
+            'skipped_rows' => [],
+            'skipped_count' => 0,
+            'duplicate_count' => 0,
+            'written_rows' => $writtenRows,
+            'total_rows' => $writtenRows,
+            'periods' => array_keys($periods),
+        ];
+    }
+
+    private function isLw325PhHeaderRow(array $row): bool
+    {
+        $normalized = [];
+        foreach ($row as $value) {
+            $header = $this->normalizeImportColumnName((string) $value);
+            if ($header !== '') {
+                $normalized[] = $header;
+            }
+        }
+
+        foreach (['periode', 'acctno', 'tgl_ph', 'pokok', 'bunga'] as $requiredHeader) {
+            if (!in_array($requiredHeader, $normalized, true)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private function extractLw325PhPeriodFromMetadata(string $line): ?string
+    {
+        if (preg_match('/periode\s*data\s*:\s*([0-9]{1,2}\/[0-9]{1,2}\/[0-9]{4})/i', $line, $matches) !== 1) {
+            return null;
+        }
+
+        return StrictDateParser::normalize($matches[1] ?? null);
+    }
+
+    private function validateLw325NormalizedPeriods(string $csvPath, int $sampleSize = 10): bool
+    {
+        if ($csvPath === '' || !is_file($csvPath)) {
+            return false;
+        }
+
+        $handle = @fopen($csvPath, 'rb');
+        if ($handle === false) {
+            return false;
+        }
+
+        try {
+            $header = fgetcsv($handle, 0, ',');
+            if (!is_array($header) || $header === []) {
+                return false;
+            }
+
+            $normalizedHeaders = array_map(
+                fn ($value): string => $this->normalizeImportColumnName((string) $value),
+                $header
+            );
+            $periodIndex = array_search('periode', $normalizedHeaders, true);
+
+            if ($periodIndex === false) {
+                return false;
+            }
+
+            $firstRows = [];
+            $lastRows = [];
+
+            while (($row = fgetcsv($handle, 0, ',')) !== false) {
+                if (!is_array($row) || empty(array_filter($row, static fn ($value): bool => trim((string) $value) !== ''))) {
+                    continue;
+                }
+
+                if (count($firstRows) < $sampleSize) {
+                    $firstRows[] = $row;
+                }
+
+                $lastRows[] = $row;
+                if (count($lastRows) > $sampleSize) {
+                    array_shift($lastRows);
+                }
+            }
+
+            $samples = array_merge($firstRows, $lastRows);
+            if ($samples === []) {
+                return false;
+            }
+
+            foreach ($samples as $row) {
+                $periodValue = isset($row[$periodIndex]) ? trim((string) $row[$periodIndex]) : '';
+                if ($periodValue === '' || StrictDateParser::normalize($periodValue) === null) {
+                    return false;
+                }
+            }
+
+            return true;
+        } finally {
+            fclose($handle);
+        }
     }
 
 
@@ -5604,7 +5777,7 @@ class ImportExcelController extends Controller
                 'percent' => 18,
                 'message' => $isDailyLoanTable
                     ? 'Menyiapkan direct LOAD DATA untuk Daily Loan...'
-                    : 'Menyiapkan direct LOAD DATA untuk ' . ($isGi405RecDhTable ? 'GI405 - Rec. DH' : ($isSsaPinjamanTable ? 'SSA Pinjaman' : 'SSA Simpanan')) . '...',
+                    : 'Menyiapkan direct LOAD DATA untuk ' . ($isGi405RecDhTable ? 'GI405 - Rec. DH' : ($isSsaPinjamanTable ? 'SSA Pinjaman' : ($isLw325PhTable ? 'LW325 - PH' : ($isSsaSimpananTable ? 'SSA Simpanan' : 'Data')))) . '...',
                 'rows_done' => 0,
                 'total' => $estimatedTotalRows,
                 'speed' => 0,
@@ -8217,9 +8390,33 @@ class ImportExcelController extends Controller
 
         request()->session()->save();
         $queueMessage = $request->attributes->get('queue_message');
-        $this->executionService()->dispatch($jobId, is_string($queueMessage) ? $queueMessage : null);
+        $startInlineImmediately = $this->shouldStartImportInlineImmediately($jobId);
 
-        return $this->executionService()->streamStatus($request, $jobId);
+        if (!$startInlineImmediately) {
+            $this->executionService()->dispatch($jobId, is_string($queueMessage) ? $queueMessage : null);
+        }
+
+        return $this->executionService()->streamStatus($request, $jobId, $startInlineImmediately);
+    }
+
+    private function shouldStartImportInlineImmediately(int $jobId): bool
+    {
+        if ($jobId <= 0) {
+            return false;
+        }
+
+        $state = $this->excelImportJobService()->getImportJobState($jobId);
+        $tableName = strtolower(trim((string) ($state['params']['table_name'] ?? '')));
+        if ($tableName === '') {
+            return false;
+        }
+
+        $inlineTables = array_values(array_filter(array_map(
+            static fn ($value): string => strtolower(trim((string) $value)),
+            (array) config('import.queue.inline_start_tables', [])
+        ), static fn (string $value): bool => $value !== ''));
+
+        return in_array($tableName, $inlineTables, true);
     }
 
     public function executeQueuedImport(array $state, ?callable $send = null): array

@@ -340,7 +340,7 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
 
         request()->session()->save();
 
-        return response()->stream(function () use ($jobId, $relativePath, $absolutePath, $totalRows, $normalizedHeaders, $selectedColumns) {
+        return response()->stream(function () use ($jobId, $relativePath, $absolutePath, $totalRows, $normalizedHeaders, $selectedColumns, $activeFilters) {
             $streamLock = null;
             $cleanupPaths = [];
             $send = function (string $event, array $data) {

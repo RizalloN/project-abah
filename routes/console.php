@@ -204,6 +204,7 @@ Artisan::command('reports:delete-scope {table} {--period=} {--blank-kanca} {--ch
         'periode',
         'cabang1',
         $period,
+        'uniqueid_namareport',
         $chunkSize,
         function (int $affectedRows, int $totalDeleted, int $batchNumber): void {
             $this->line(sprintf(

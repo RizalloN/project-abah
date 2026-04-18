@@ -45,6 +45,15 @@ class ManagedReportDeleteTest extends TestCase
             $table->string('cabang1')->nullable();
             $table->string('payload')->nullable();
         });
+
+        Schema::create('jobs', function (Blueprint $table) {
+            $table->increments('id');
+            $table->string('queue')->index();
+            $table->integer('reserved_at')->nullable();
+            $table->integer('available_at')->nullable();
+            $table->integer('created_at')->nullable();
+            $table->longText('payload');
+        });
     }
 
     protected function tearDown(): void
@@ -151,11 +160,11 @@ class ManagedReportDeleteTest extends TestCase
         $syncService->shouldReceive('resolvePostDeleteMaintenanceMode')->with('daily_loan_dinamis')->andReturn('snapshot');
         $syncService->shouldReceive('cleanupDerivedArtifactsAfterDelete')
             ->once()
-            ->with('daily_loan_dinamis', '2026-04-04', \Mockery::type('string'))
+            ->with('daily_loan_dinamis', '2026-04-04', \Mockery::type('string'), \Mockery::type('string'))
             ->andReturn([]);
         $syncService->shouldReceive('syncAfterDeleteLightweight')
             ->once()
-            ->with('daily_loan_dinamis', null, \Mockery::type('string'))
+            ->with('daily_loan_dinamis', null, \Mockery::type('string'), \Mockery::type('string'))
             ->andReturnNull();
         $firstPayload = $advanceMethod->invoke(
             $controller,
@@ -181,8 +190,8 @@ class ManagedReportDeleteTest extends TestCase
 
         $this->assertSame('running', $secondPayload['status']);
         $this->assertSame(5011, $secondPayload['deleted_rows']);
-        $this->assertSame('cleanup', $secondPayload['stage']);
-        $this->assertSame('deleting_committed', $secondPayload['batch_state']);
+        $this->assertSame('syncing', $secondPayload['stage']);
+        $this->assertSame('cleanup', $secondPayload['batch_state']);
         $this->assertFalse($secondPayload['is_waiting_on_batch']);
         $this->assertSame(0, DB::table('daily_loan_dinamis')->where('periode', '2026-04-04')->where('cabang1', 'KC Madiun')->count());
         $this->assertSame(0, DB::table('daily_loan_dinamis')->where('periode', '2026-04-04')->where('cabang1', 'KC Magetan')->count());
@@ -422,11 +431,11 @@ class ManagedReportDeleteTest extends TestCase
         $syncService->shouldReceive('resolvePostDeleteMaintenanceMode')->with('simpanan_multipn')->andReturn('snapshot');
         $syncService->shouldReceive('cleanupDerivedArtifactsAfterDelete')
             ->once()
-            ->with('simpanan_multipn', null, \Mockery::type('string'))
+            ->with('simpanan_multipn', null, \Mockery::type('string'), null)
             ->andReturn([]);
         $syncService->shouldReceive('syncAfterDeleteLightweight')
             ->once()
-            ->with('simpanan_multipn', null, \Mockery::type('string'))
+            ->with('simpanan_multipn', null, \Mockery::type('string'), null)
             ->andReturnNull();
         app()->instance(ReportDataSyncService::class, $syncService);
 
@@ -723,7 +732,7 @@ class ManagedReportDeleteTest extends TestCase
 
         $syncService = \Mockery::mock(ReportDataSyncService::class);
         $syncService->shouldReceive('resolvePostDeleteMaintenanceMode')->once()->with('lw325_ph')->andReturn('lightweight');
-        $syncService->shouldReceive('syncAfterDeleteLightweight')->once()->with('lw325_ph', null, \Mockery::type('string'))->andReturnNull();
+        $syncService->shouldReceive('syncAfterDeleteLightweight')->once()->with('lw325_ph', null, \Mockery::type('string'), 'delete-lightweight-1')->andReturnNull();
 
         $state = [
             'delete_id' => 'delete-lightweight-1',
@@ -817,6 +826,120 @@ class ManagedReportDeleteTest extends TestCase
         Queue::assertNothingPushed();
     }
 
+    public function test_lw325_report_management_groups_blank_period_and_blank_kanca_by_created_at(): void
+    {
+        Schema::create('lw325_ph', function (Blueprint $table) {
+            $table->string('uniqueid_namareport')->primary();
+            $table->date('periode')->nullable();
+            $table->string('kanca')->nullable();
+            $table->timestamp('created_at')->nullable();
+            $table->timestamp('updated_at')->nullable();
+        });
+
+        DB::table('nama_report')->insert([
+            'id_report' => 101,
+            'nama_report' => 'LW325 PH Blank Scope',
+            'table_name' => 'lw325_ph',
+            'active' => 1,
+        ]);
+
+        DB::table('lw325_ph')->insert([
+            ['uniqueid_namareport' => 'PH-BLANK-A1', 'periode' => null, 'kanca' => null, 'created_at' => '2026-04-18 09:31:22', 'updated_at' => '2026-04-18 09:31:22'],
+            ['uniqueid_namareport' => 'PH-BLANK-A2', 'periode' => '', 'kanca' => '', 'created_at' => '2026-04-18 09:31:22', 'updated_at' => '2026-04-18 09:31:22'],
+            ['uniqueid_namareport' => 'PH-BLANK-B1', 'periode' => null, 'kanca' => '', 'created_at' => '2026-04-18 10:41:10', 'updated_at' => '2026-04-18 10:41:10'],
+            ['uniqueid_namareport' => 'PH-NORMAL-1', 'periode' => '2026-04-30', 'kanca' => 'KC Madiun', 'created_at' => '2026-04-18 11:00:00', 'updated_at' => '2026-04-18 11:00:00'],
+        ]);
+
+        $controller = app(ImportIndexController::class);
+        $request = Request::create('/import/report-management/data', 'POST', [
+            'id_report' => 101,
+            'max_rows' => 100,
+            'page' => 1,
+            'per_page' => 8,
+        ]);
+
+        $response = $controller->reportManagementData($request);
+        $payload = $response->getData(true);
+
+        $this->assertSame(200, $response->status());
+        $this->assertSame('success', $payload['status']);
+
+        $blankBuckets = collect($payload['rows'])
+            ->filter(fn (array $row): bool => ($row['fallback_mode'] ?? null) === 'lw325_blank_created_at')
+            ->values();
+
+        $this->assertCount(2, $blankBuckets);
+        $this->assertSame('created_at', $blankBuckets[0]['fallback_period_column']);
+        $this->assertSame('2026-04-18 10:41:10', $blankBuckets[0]['fallback_period_filter']);
+        $this->assertSame('Import 2026-04-18 10:41:10', $blankBuckets[0]['period_label']);
+        $this->assertSame(1, $blankBuckets[0]['row_count']);
+        $this->assertSame('2026-04-18 09:31:22', $blankBuckets[1]['fallback_period_filter']);
+        $this->assertSame(2, $blankBuckets[1]['row_count']);
+    }
+
+    public function test_delete_management_lw325_blank_created_at_scope_only_deletes_selected_import_batch(): void
+    {
+        Schema::create('lw325_ph', function (Blueprint $table) {
+            $table->string('uniqueid_namareport')->primary();
+            $table->date('periode')->nullable();
+            $table->string('kanca')->nullable();
+            $table->timestamp('created_at')->nullable();
+            $table->timestamp('updated_at')->nullable();
+        });
+
+        DB::table('nama_report')->insert([
+            'id_report' => 102,
+            'nama_report' => 'LW325 PH Blank Delete',
+            'table_name' => 'lw325_ph',
+            'active' => 1,
+        ]);
+
+        DB::table('lw325_ph')->insert([
+            ['uniqueid_namareport' => 'PH-A1', 'periode' => null, 'kanca' => null, 'created_at' => '2026-04-18 09:31:22', 'updated_at' => '2026-04-18 09:31:22'],
+            ['uniqueid_namareport' => 'PH-A2', 'periode' => '', 'kanca' => '', 'created_at' => '2026-04-18 09:31:22', 'updated_at' => '2026-04-18 09:31:22'],
+            ['uniqueid_namareport' => 'PH-B1', 'periode' => null, 'kanca' => '', 'created_at' => '2026-04-18 10:41:10', 'updated_at' => '2026-04-18 10:41:10'],
+            ['uniqueid_namareport' => 'PH-C1', 'periode' => null, 'kanca' => 'KC Madiun', 'created_at' => '2026-04-18 09:31:22', 'updated_at' => '2026-04-18 09:31:22'],
+            ['uniqueid_namareport' => 'PH-D1', 'periode' => '2026-04-30', 'kanca' => null, 'created_at' => '2026-04-18 09:31:22', 'updated_at' => '2026-04-18 09:31:22'],
+        ]);
+
+        $syncService = \Mockery::mock(ReportDataSyncService::class);
+        $syncService->shouldReceive('resolvePostDeleteMaintenanceMode')->with('lw325_ph')->andReturn('lightweight');
+        $syncService->shouldReceive('syncAfterDeleteLightweight')->once()->with('lw325_ph', null, \Mockery::type('string'))->andReturnNull();
+        app()->instance(ReportDataSyncService::class, $syncService);
+
+        $controller = app(ImportIndexController::class);
+        $request = Request::create('/import/report-management/delete', 'POST', [
+            'id_report' => 102,
+            'scopes' => [[
+                'period_filter' => null,
+                'period_label' => 'Import 2026-04-18 09:31:22',
+                'kanca_filter' => null,
+                'kanca_label' => '(Blank)',
+                'period_is_null' => true,
+                'kanca_is_null' => true,
+                'fallback_mode' => 'lw325_blank_created_at',
+                'fallback_period_column' => 'created_at',
+                'fallback_period_filter' => '2026-04-18 09:31:22',
+                'fallback_period_label' => 'Import 2026-04-18 09:31:22',
+            ]],
+            'force' => true,
+            'hard_force' => true,
+        ]);
+
+        $response = $controller->deleteManagedReportRows($request);
+        $payload = $response->getData(true);
+
+        $this->assertSame(200, $response->status());
+        $this->assertSame('completed', $payload['status']);
+        $this->assertSame(2, $payload['deleted_rows']);
+        $this->assertSame(0, DB::table('lw325_ph')->where('created_at', '2026-04-18 09:31:22')->whereNull('periode')->whereNull('kanca')->count());
+        $this->assertSame(0, DB::table('lw325_ph')->where('created_at', '2026-04-18 09:31:22')->where('periode', '')->where('kanca', '')->count());
+        $this->assertSame(1, DB::table('lw325_ph')->where('created_at', '2026-04-18 10:41:10')->whereNull('periode')->where('kanca', '')->count());
+        $this->assertSame(1, DB::table('lw325_ph')->whereNull('periode')->where('kanca', 'KC Madiun')->count());
+        $this->assertSame(1, DB::table('lw325_ph')->where('periode', '2026-04-30')->whereNull('kanca')->count());
+        Queue::assertNothingPushed();
+    }
+
     public function test_delete_management_blocks_non_transactional_tables_before_processing(): void
     {
         DB::table('nama_report')->insert([
@@ -876,21 +999,42 @@ class ManagedReportDeleteTest extends TestCase
         ]);
 
         $controller = app(ImportIndexController::class);
-        $request = Request::create('/import/report-management/delete', 'POST', [
-            'id_report' => 18,
-            'scopes' => [
-                ['period_filter' => '2026-03', 'kanca_filter' => '00045 -- KC Madiun (Konsolidasi-MB)'],
-            ],
-            'force' => true,
-            'hard_force' => true,
-        ]);
+        $buildMethod = new \ReflectionMethod($controller, 'buildDeleteScopeQueryFromScopes');
+        $buildMethod->setAccessible(true);
+        [$scopeQuery, $hasWhereClause] = $buildMethod->invoke(
+            $controller,
+            'ssa_pinjaman',
+            'month_day_year_of_periode',
+            'nama_cabang',
+            [[
+                'period_filter' => '2026-03',
+                'kanca_filter' => '00045 -- KC Madiun (Konsolidasi-MB)',
+                'period_is_null' => false,
+                'kanca_is_null' => false,
+            ]]
+        );
 
-        $response = $controller->deleteManagedReportRows($request);
-        $payload = $response->getData(true);
+        $this->assertTrue($hasWhereClause);
 
-        $this->assertSame(200, $response->status());
-        $this->assertSame('completed', $payload['status']);
-        $this->assertSame(2, $payload['deleted_rows']);
+        $deleteMethod = new \ReflectionMethod($controller, 'deleteScopedRows');
+        $deleteMethod->setAccessible(true);
+        $deletedRows = $deleteMethod->invoke(
+            $controller,
+            'ssa_pinjaman',
+            $scopeQuery,
+            'uniqueid_namareport',
+            10000,
+            'month_day_year_of_periode',
+            'nama_cabang',
+            [
+                'period_filter' => '2026-03',
+                'kanca_filter' => '00045 -- KC Madiun (Konsolidasi-MB)',
+                'period_is_null' => false,
+                'kanca_is_null' => false,
+            ]
+        );
+
+        $this->assertSame(2, $deletedRows);
         $this->assertSame(2, DB::table('ssa_pinjaman')->count());
         $this->assertSame(0, DB::table('ssa_pinjaman')->where('month_day_year_of_periode', 'like', '2026-03%')->where('nama_cabang', '00045 -- KC Madiun (Konsolidasi-MB)')->count());
         $this->assertSame(1, DB::table('ssa_pinjaman')->where('month_day_year_of_periode', 'like', '2026-03%')->where('nama_cabang', '00049 -- KC Magetan (Konsolidasi-MB)')->count());
@@ -1182,14 +1326,22 @@ class ManagedReportDeleteTest extends TestCase
 
         $syncService = \Mockery::mock(ReportDataSyncService::class);
         $syncService->shouldReceive('resolvePostDeleteMaintenanceMode')->with('daily_loan_dinamis')->andReturn('snapshot');
+        $syncService->shouldReceive('cleanupDerivedArtifactsAfterDelete')
+            ->once()
+            ->with('daily_loan_dinamis', '2026-04-30', \Mockery::type('string'), $deleteId)
+            ->andReturn([]);
+        $syncService->shouldReceive('syncAfterDeleteLightweight')
+            ->once()
+            ->with('daily_loan_dinamis', '2026-04-30', \Mockery::type('string'), $deleteId)
+            ->andReturnNull();
 
         $controller = app(ImportIndexController::class);
         $response = $controller->processManagedReportDelete($deleteId, $syncService);
         $payload = $response->getData(true);
 
         $this->assertSame('running', $payload['status']);
-        $this->assertSame('cleanup', $payload['stage']);
-        $this->assertSame('deleting_committed', $payload['batch_state']);
+        $this->assertSame('syncing', $payload['stage']);
+        $this->assertSame('cleanup', $payload['batch_state']);
         $this->assertSame(2, $payload['deleted_rows']);
         $this->assertSame(0, DB::table('daily_loan_dinamis')->count());
     }
@@ -1328,6 +1480,39 @@ class ManagedReportDeleteTest extends TestCase
         $this->assertSame('info', $job['status_tone']);
     }
 
+    public function test_force_stop_managed_delete_terminates_queue_only_job_when_progress_cache_is_missing(): void
+    {
+        $deleteId = '123e4567-e89b-12d3-a456-426614174111';
+
+        DB::table('jobs')->insert([
+            'queue' => 'imports-high',
+            'reserved_at' => null,
+            'available_at' => now()->subMinute()->timestamp,
+            'created_at' => now()->subMinute()->timestamp,
+            'payload' => 'a:2:{s:7:"jobClass";s:24:"RunManagedReportDeleteJob";s:8:"deleteId";s:36:"' . $deleteId . '";}',
+        ]);
+
+        Cache::store('file')->forget('report_management_delete:' . $deleteId);
+
+        $controller = app(ImportIndexController::class);
+        $response = $controller->forceStopManagedReportDelete($deleteId);
+        $payload = $response->getData(true);
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame('warning', $payload['status']);
+        $this->assertSame('cancelled', $payload['stage']);
+        $this->assertSame('Delete dihentikan paksa dengan aman.', $payload['message']);
+        $this->assertSame(0, DB::table('jobs')->count());
+
+        $storedState = Cache::store('file')->get('report_management_delete:' . $deleteId);
+        $this->assertIsArray($storedState);
+        $this->assertSame('warning', $storedState['status']);
+        $this->assertSame('cancelled', $storedState['stage']);
+
+        $jobs = $controller->resolveManagedReportDeleteJobs();
+        $this->assertNull(collect($jobs)->firstWhere('id', $deleteId));
+    }
+
     public function test_classify_managed_delete_plan_keeps_normal_daily_loan_scope_on_plan_a(): void
     {
         $controller = app(ImportIndexController::class);
@@ -1391,8 +1576,9 @@ class ManagedReportDeleteTest extends TestCase
                 'periode',
                 'cabang1',
                 '2025-03-31',
+                'uniqueid_namareport',
                 10000,
-                null,
+                \Mockery::type('callable'),
                 \Mockery::type('callable')
             )
             ->andReturn(['deleted_rows' => 2, 'batch_count' => 1]);
@@ -1422,6 +1608,96 @@ class ManagedReportDeleteTest extends TestCase
         );
 
         $this->assertSame(2, $deleted);
+    }
+
+    public function test_delete_blank_period_scope_with_specific_kanca_only_deletes_matching_blank_period_rows(): void
+    {
+        DB::table('daily_loan_dinamis')->insert([
+            ['uniqueid_namareport' => 'BLANK-MADIUN-1', 'periode' => null, 'cabang1' => 'KC Madiun', 'payload' => 'delete-1'],
+            ['uniqueid_namareport' => 'BLANK-MADIUN-2', 'periode' => '', 'cabang1' => 'KC Madiun', 'payload' => 'delete-2'],
+            ['uniqueid_namareport' => 'BLANK-PONO-1', 'periode' => null, 'cabang1' => 'KC Ponorogo', 'payload' => 'keep-1'],
+            ['uniqueid_namareport' => 'FILLED-MADIUN-1', 'periode' => '2026-04-04', 'cabang1' => 'KC Madiun', 'payload' => 'keep-2'],
+        ]);
+
+        $service = app(ManagedReportDeleteRecoveryService::class);
+
+        $result = $service->deleteBlankPeriodScope(
+            'daily_loan_dinamis',
+            'periode',
+            'cabang1',
+            [
+                'period_is_null' => true,
+                'kanca_is_null' => false,
+                'kanca_filter' => 'KC Madiun',
+            ],
+            'uniqueid_namareport',
+            1
+        );
+
+        $this->assertSame(2, $result['deleted_rows']);
+        $this->assertGreaterThanOrEqual(2, $result['batch_count']);
+        $this->assertSame(0, DB::table('daily_loan_dinamis')->whereNull('periode')->where('cabang1', 'KC Madiun')->count());
+        $this->assertSame(0, DB::table('daily_loan_dinamis')->where('periode', '')->where('cabang1', 'KC Madiun')->count());
+        $this->assertSame(1, DB::table('daily_loan_dinamis')->whereNull('periode')->where('cabang1', 'KC Ponorogo')->count());
+        $this->assertSame(1, DB::table('daily_loan_dinamis')->where('periode', '2026-04-04')->where('cabang1', 'KC Madiun')->count());
+    }
+
+    public function test_delete_blank_period_scope_with_blank_kanca_only_deletes_blank_intersection(): void
+    {
+        DB::table('daily_loan_dinamis')->insert([
+            ['uniqueid_namareport' => 'BLANK-BLANK-1', 'periode' => null, 'cabang1' => null, 'payload' => 'delete-1'],
+            ['uniqueid_namareport' => 'BLANK-BLANK-2', 'periode' => '', 'cabang1' => '', 'payload' => 'delete-2'],
+            ['uniqueid_namareport' => 'BLANK-MADIUN-1', 'periode' => null, 'cabang1' => 'KC Madiun', 'payload' => 'keep-1'],
+            ['uniqueid_namareport' => 'FILLED-BLANK-1', 'periode' => '2026-04-04', 'cabang1' => null, 'payload' => 'keep-2'],
+        ]);
+
+        $service = app(ManagedReportDeleteRecoveryService::class);
+
+        $result = $service->deleteBlankPeriodScope(
+            'daily_loan_dinamis',
+            'periode',
+            'cabang1',
+            [
+                'period_is_null' => true,
+                'kanca_is_null' => true,
+            ],
+            'uniqueid_namareport',
+            10
+        );
+
+        $this->assertSame(2, $result['deleted_rows']);
+        $this->assertSame(0, DB::table('daily_loan_dinamis')->whereNull('periode')->whereNull('cabang1')->count());
+        $this->assertSame(0, DB::table('daily_loan_dinamis')->where('periode', '')->where('cabang1', '')->count());
+        $this->assertSame(1, DB::table('daily_loan_dinamis')->whereNull('periode')->where('cabang1', 'KC Madiun')->count());
+        $this->assertSame(1, DB::table('daily_loan_dinamis')->where('periode', '2026-04-04')->whereNull('cabang1')->count());
+    }
+
+    public function test_delete_blank_kanca_period_scope_only_deletes_target_period(): void
+    {
+        DB::table('daily_loan_dinamis')->insert([
+            ['uniqueid_namareport' => 'TARGET-1', 'periode' => '2026-04-04', 'cabang1' => null, 'payload' => 'delete-1'],
+            ['uniqueid_namareport' => 'TARGET-2', 'periode' => '2026-04-04', 'cabang1' => '', 'payload' => 'delete-2'],
+            ['uniqueid_namareport' => 'OTHER-PERIOD-1', 'periode' => '2026-04-05', 'cabang1' => null, 'payload' => 'keep-1'],
+            ['uniqueid_namareport' => 'TARGET-FILLED-1', 'periode' => '2026-04-04', 'cabang1' => 'KC Madiun', 'payload' => 'keep-2'],
+        ]);
+
+        $service = app(ManagedReportDeleteRecoveryService::class);
+
+        $result = $service->deleteBlankKancaPeriodScope(
+            'daily_loan_dinamis',
+            'periode',
+            'cabang1',
+            '2026-04-04',
+            'uniqueid_namareport',
+            1
+        );
+
+        $this->assertSame(2, $result['deleted_rows']);
+        $this->assertGreaterThanOrEqual(2, $result['batch_count']);
+        $this->assertSame(0, DB::table('daily_loan_dinamis')->where('periode', '2026-04-04')->whereNull('cabang1')->count());
+        $this->assertSame(0, DB::table('daily_loan_dinamis')->where('periode', '2026-04-04')->where('cabang1', '')->count());
+        $this->assertSame(1, DB::table('daily_loan_dinamis')->where('periode', '2026-04-05')->whereNull('cabang1')->count());
+        $this->assertSame(1, DB::table('daily_loan_dinamis')->where('periode', '2026-04-04')->where('cabang1', 'KC Madiun')->count());
     }
 }
 

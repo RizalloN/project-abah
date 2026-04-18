@@ -50,7 +50,7 @@ class SyncImportedReportJob implements ShouldQueue
         try {
             if ($this->jobId !== null && $this->jobId > 0) {
                 $syncService->syncImportedJob(
-                    $jobId: $this->jobId,
+                    jobId: $this->jobId,
                     fallbackTableName: $this->tableName,
                     periodHint: $this->periodHint,
                     source: $this->source ?? static::class,

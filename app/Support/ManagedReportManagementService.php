@@ -11,6 +11,7 @@ class ManagedReportManagementService
 {
     private const MANAGEMENT_MAX_GROUP_ROWS = 5000;
     private const MANAGEMENT_PERIODS_PER_PAGE = 8;
+    private const LW325_BLANK_CREATED_AT_FALLBACK_MODE = 'lw325_blank_created_at';
 
     private const PERIOD_COLUMN_CANDIDATES = [
         'periode',
@@ -604,6 +605,10 @@ class ManagedReportManagementService
             ], false];
         }
 
+        if ($this->supportsLw325BlankCreatedAtFallback($tableName, $periodColumn, $kancaColumn)) {
+            return $this->buildLw325ManagementRows($tableName, $periodColumn, $kancaColumn, $maxRows);
+        }
+
         $query = DB::table($tableName);
         $selects = ['COUNT(*) as row_count'];
         $kancaLabelFallbackColumn = $this->resolveKancaLabelFallbackColumn($tableName);
@@ -705,6 +710,190 @@ class ManagedReportManagementService
         return [$rows, $truncated];
     }
 
+    private function buildLw325ManagementRows(string $tableName, string $periodColumn, string $kancaColumn, int $maxRows): array
+    {
+        $rows = [];
+        $kancaLabelFallbackColumn = $this->resolveKancaLabelFallbackColumn($tableName);
+        $remainingLimit = max(1, $maxRows + 1);
+
+        $regularQuery = DB::table($tableName);
+        $this->applyNotBlankIntersectionConstraint($regularQuery, $periodColumn, $kancaColumn);
+
+        $regularSelects = ['COUNT(*) as row_count'];
+        $safePeriod = str_replace('`', '``', $periodColumn);
+        $safeKanca = str_replace('`', '``', $kancaColumn);
+        $regularSelects[] = "`{$safePeriod}` as period_value";
+        $regularSelects[] = "`{$safeKanca}` as kanca_value";
+        $regularQuery->groupBy($periodColumn)->orderByDesc($periodColumn);
+        $regularQuery->groupBy($kancaColumn)->orderBy($kancaColumn);
+
+        if ($kancaLabelFallbackColumn !== null) {
+            $safeFallback = str_replace('`', '``', $kancaLabelFallbackColumn);
+            $regularSelects[] = "MIN(`{$safeFallback}`) as kanca_label_fallback_value";
+        }
+
+        $regularRows = $regularQuery
+            ->selectRaw(implode(', ', $regularSelects))
+            ->limit($remainingLimit)
+            ->get();
+
+        foreach ($regularRows as $item) {
+            $periodRaw = $item->period_value ?? null;
+            $kancaRaw = $item->kanca_value ?? null;
+            $kancaFallbackRaw = $kancaLabelFallbackColumn !== null ? ($item->kanca_label_fallback_value ?? null) : null;
+            $normalizedPeriodFilter = $periodRaw === null || trim((string) $periodRaw) === ''
+                ? ''
+                : $this->normalizeManagementPeriodFilter($tableName, $periodRaw, $periodColumn);
+            $periodLabel = $periodRaw === null || trim((string) $periodRaw) === ''
+                ? '(Blank)'
+                : $this->formatManagementPeriodLabel($periodRaw, $periodColumn);
+            $normalizedKancaFilter = $kancaRaw === null || trim((string) $kancaRaw) === ''
+                ? ''
+                : $this->normalizeManagementKancaFilter($tableName, (string) $kancaRaw);
+            $kancaLabel = $kancaRaw === null || trim((string) $kancaRaw) === ''
+                ? '(Blank)'
+                : $this->resolveManagementKancaLabel($tableName, (string) $kancaRaw, $kancaFallbackRaw);
+            $periodIsNull = $periodRaw === null || trim((string) $periodRaw) === '';
+            $kancaIsNull = $kancaRaw === null || trim((string) $kancaRaw) === '';
+            $aggregateKey = json_encode([
+                $periodIsNull,
+                $periodIsNull ? '' : $normalizedPeriodFilter,
+                $kancaIsNull,
+                $kancaIsNull ? '' : $normalizedKancaFilter,
+            ]);
+
+            if ($aggregateKey === false || !isset($rows[$aggregateKey])) {
+                $rows[$aggregateKey] = [
+                    'period' => $periodIsNull ? '' : $normalizedPeriodFilter,
+                    'period_label' => $periodIsNull ? '(Blank)' : $normalizedPeriodFilter,
+                    'kanca' => $kancaIsNull ? '' : $normalizedKancaFilter,
+                    'kanca_label' => $kancaLabel,
+                    'row_count' => 0,
+                    'period_is_null' => $periodIsNull,
+                    'kanca_is_null' => $kancaIsNull,
+                    '_raw_period_values' => [],
+                ];
+            }
+
+            $rows[$aggregateKey]['row_count'] += (int) ($item->row_count ?? 0);
+            if (!$periodIsNull && $periodRaw !== null) {
+                $rawPeriodValue = trim((string) $periodRaw);
+                if ($rawPeriodValue !== '' && count($rows[$aggregateKey]['_raw_period_values']) < 2) {
+                    $rows[$aggregateKey]['_raw_period_values'][$rawPeriodValue] = true;
+                }
+            }
+        }
+
+        $specialRows = DB::table($tableName)
+            ->selectRaw('COUNT(*) as row_count, `created_at` as fallback_created_at')
+            ->where(function ($query) use ($periodColumn) {
+                $this->applyBlankValueConstraint($query, $periodColumn);
+            })
+            ->where(function ($query) use ($kancaColumn) {
+                $this->applyBlankValueConstraint($query, $kancaColumn);
+            })
+            ->whereNotNull('created_at')
+            ->groupBy('created_at')
+            ->orderByDesc('created_at')
+            ->limit($remainingLimit)
+            ->get();
+
+        foreach ($specialRows as $item) {
+            $createdAtRaw = $item->fallback_created_at ?? null;
+            $normalizedCreatedAt = $this->normalizeManagementCreatedAtFilter($createdAtRaw);
+            if ($normalizedCreatedAt === null) {
+                continue;
+            }
+
+            $aggregateKey = json_encode([
+                'fallback',
+                self::LW325_BLANK_CREATED_AT_FALLBACK_MODE,
+                $normalizedCreatedAt,
+            ]);
+
+            if ($aggregateKey === false) {
+                continue;
+            }
+
+            $rows[$aggregateKey] = [
+                'period' => '',
+                'period_label' => $this->formatLw325FallbackPeriodLabel($normalizedCreatedAt),
+                'kanca' => '',
+                'kanca_label' => '(Blank)',
+                'row_count' => (int) ($item->row_count ?? 0),
+                'period_is_null' => true,
+                'kanca_is_null' => true,
+                'fallback_mode' => self::LW325_BLANK_CREATED_AT_FALLBACK_MODE,
+                'fallback_period_column' => 'created_at',
+                'fallback_period_filter' => $normalizedCreatedAt,
+                'fallback_period_label' => $this->formatLw325FallbackPeriodLabel($normalizedCreatedAt),
+                'fallback_bucket_key' => self::LW325_BLANK_CREATED_AT_FALLBACK_MODE . ':' . $normalizedCreatedAt,
+            ];
+        }
+
+        $residualBlankRows = DB::table($tableName)
+            ->selectRaw('COUNT(*) as row_count')
+            ->where(function ($query) use ($periodColumn) {
+                $this->applyBlankValueConstraint($query, $periodColumn);
+            })
+            ->where(function ($query) use ($kancaColumn) {
+                $this->applyBlankValueConstraint($query, $kancaColumn);
+            })
+            ->whereNull('created_at')
+            ->first();
+
+        if (((int) ($residualBlankRows->row_count ?? 0)) > 0) {
+            $aggregateKey = json_encode(['residual_blank_blank_created_at_null']);
+            if ($aggregateKey !== false) {
+                $rows[$aggregateKey] = [
+                    'period' => '',
+                    'period_label' => '(Blank)',
+                    'kanca' => '',
+                    'kanca_label' => '(Blank)',
+                    'row_count' => (int) ($residualBlankRows->row_count ?? 0),
+                    'period_is_null' => true,
+                    'kanca_is_null' => true,
+                ];
+            }
+        }
+
+        $rows = array_map(function (array $row) use ($tableName, $periodColumn) {
+            $rawPeriodValues = array_keys((array) ($row['_raw_period_values'] ?? []));
+            if (
+                !(bool) ($row['period_is_null'] ?? false)
+                && count($rawPeriodValues) === 1
+            ) {
+                $row['period_label'] = $this->resolveAggregatedPeriodLabel(
+                    $tableName,
+                    trim((string) $rawPeriodValues[0]),
+                    (string) ($row['period_label'] ?? ''),
+                    $periodColumn
+                );
+            }
+
+            unset($row['_raw_period_values']);
+
+            return $row;
+        }, array_values($rows));
+
+        usort($rows, function (array $left, array $right): int {
+            $leftBucket = (string) ($left['fallback_bucket_key'] ?? '');
+            $rightBucket = (string) ($right['fallback_bucket_key'] ?? '');
+            if ($leftBucket !== '' || $rightBucket !== '') {
+                return strcmp($rightBucket, $leftBucket);
+            }
+
+            return strcmp((string) ($right['period_label'] ?? ''), (string) ($left['period_label'] ?? ''));
+        });
+
+        $truncated = count($rows) > $maxRows;
+        if ($truncated) {
+            $rows = array_slice($rows, 0, $maxRows);
+        }
+
+        return [$rows, $truncated];
+    }
+
     private function resolveKancaLabelFallbackColumn(string $tableName): ?string
     {
         $override = self::MANAGEMENT_SCOPE_COLUMN_OVERRIDES[$tableName] ?? null;
@@ -751,6 +940,61 @@ class ManagedReportManagementService
         }
 
         return $formatted;
+    }
+
+    private function normalizeManagementCreatedAtFilter(mixed $createdAtRaw): ?string
+    {
+        $value = trim((string) ($createdAtRaw ?? ''));
+        if ($value === '') {
+            return null;
+        }
+
+        try {
+            return Carbon::parse($value)->format('Y-m-d H:i:s');
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    private function formatLw325FallbackPeriodLabel(string $createdAt): string
+    {
+        return 'Import ' . $createdAt;
+    }
+
+    private function supportsLw325BlankCreatedAtFallback(string $tableName, ?string $periodColumn, ?string $kancaColumn): bool
+    {
+        return strtolower(trim($tableName)) === 'lw325_ph'
+            && $periodColumn !== null
+            && $kancaColumn !== null
+            && Schema::hasColumn($tableName, 'created_at');
+    }
+
+    private function applyNotBlankIntersectionConstraint($query, string $periodColumn, string $kancaColumn): void
+    {
+        $query->where(function ($innerQuery) use ($periodColumn, $kancaColumn) {
+            $innerQuery->where(function ($periodFilledQuery) use ($periodColumn) {
+                $safeColumn = str_replace('`', '``', $periodColumn);
+                $periodFilledQuery
+                    ->whereNotNull($periodColumn)
+                    ->whereRaw("TRIM(CAST(`{$safeColumn}` AS CHAR)) <> ''");
+            })->orWhere(function ($kancaFilledQuery) use ($kancaColumn) {
+                $safeColumn = str_replace('`', '``', $kancaColumn);
+                $kancaFilledQuery
+                    ->whereNotNull($kancaColumn)
+                    ->whereRaw("TRIM(CAST(`{$safeColumn}` AS CHAR)) <> ''");
+            });
+        });
+    }
+
+    private function applyBlankValueConstraint($query, string $column): void
+    {
+        $safeColumn = str_replace('`', '``', $column);
+
+        $query->where(function ($innerQuery) use ($column, $safeColumn) {
+            $innerQuery
+                ->whereNull($column)
+                ->orWhereRaw("TRIM(CAST(`{$safeColumn}` AS CHAR)) = ''");
+        });
     }
 
     private function normalizeManagementKancaFilter(string $tableName, string $kancaRaw): string
@@ -802,8 +1046,11 @@ class ManagedReportManagementService
 
             $periodLabel = (string) ($row['period_label'] ?? $row['period'] ?? ($hasPeriodColumn ? '(Blank)' : '(Tanpa Periode)'));
             $periodIsNull = (bool) ($row['period_is_null'] ?? false);
+            $fallbackBucketKey = trim((string) ($row['fallback_bucket_key'] ?? ''));
             $bucketKey = $hasPeriodColumn
-                ? ($periodIsNull ? '__blank__' : 'value:' . $periodLabel)
+                ? ($fallbackBucketKey !== ''
+                    ? 'fallback:' . $fallbackBucketKey
+                    : ($periodIsNull ? '__blank__' : 'value:' . $periodLabel))
                 : '__single_period__';
 
             if (!isset($periods[$bucketKey])) {

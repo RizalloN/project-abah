@@ -3,9 +3,13 @@
 namespace Tests\Unit;
 
 use App\Http\Controllers\Import\ImportExcelController;
+use App\Services\Import\ExcelImportJobService;
+use App\Services\Import\ImportExecutionService;
 use App\Services\Import\ImportProgressService;
 use App\Services\Import\MySqlBulkLoadService;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Config;
 use Mockery;
 use Tests\TestCase;
 
@@ -91,5 +95,86 @@ class ImportExcelQueuedFallbackTest extends TestCase
         $this->assertSame(1, $result['total_success']);
         $this->assertSame(0, $result['total_failed']);
         $this->assertSame(1, $result['total_rows']);
+    }
+
+    public function test_process_excel_stream_starts_lw325_inline_without_dispatching_queue(): void
+    {
+        Config::set('import.queue.inline_start_tables', ['lw325_ph']);
+
+        $jobId = 501;
+        $request = Request::create('/import/process', 'POST', ['job_id' => $jobId]);
+        $session = app('session.store');
+        $session->put('excel_import_params', ['job_id' => $jobId]);
+        $request->setLaravelSession($session);
+        app()->instance('request', $request);
+
+        $jobService = Mockery::mock(ExcelImportJobService::class);
+        $jobService->shouldReceive('getImportJobState')
+            ->once()
+            ->with($jobId)
+            ->andReturn([
+                'params' => [
+                    'table_name' => 'lw325_ph',
+                ],
+            ]);
+        $this->app->instance(ExcelImportJobService::class, $jobService);
+
+        $expectedResponse = response()->stream(function (): void {
+        });
+
+        $executionService = Mockery::mock(ImportExecutionService::class);
+        $executionService->shouldNotReceive('dispatch');
+        $executionService->shouldReceive('streamStatus')
+            ->once()
+            ->with(Mockery::type(Request::class), $jobId, true)
+            ->andReturn($expectedResponse);
+        $this->app->instance(ImportExecutionService::class, $executionService);
+
+        $controller = app(ImportExcelController::class);
+        $response = $controller->processExcelStream($request);
+
+        $this->assertSame($expectedResponse, $response);
+    }
+
+    public function test_process_excel_stream_keeps_queue_dispatch_for_non_lw325_reports(): void
+    {
+        Config::set('import.queue.inline_start_tables', ['lw325_ph']);
+
+        $jobId = 502;
+        $request = Request::create('/import/process', 'POST', ['job_id' => $jobId]);
+        $session = app('session.store');
+        $session->put('excel_import_params', ['job_id' => $jobId]);
+        $request->setLaravelSession($session);
+        app()->instance('request', $request);
+        $request->attributes->set('queue_message', 'Queue path');
+
+        $jobService = Mockery::mock(ExcelImportJobService::class);
+        $jobService->shouldReceive('getImportJobState')
+            ->once()
+            ->with($jobId)
+            ->andReturn([
+                'params' => [
+                    'table_name' => 'daily_loan_dinamis',
+                ],
+            ]);
+        $this->app->instance(ExcelImportJobService::class, $jobService);
+
+        $expectedResponse = response()->stream(function (): void {
+        });
+
+        $executionService = Mockery::mock(ImportExecutionService::class);
+        $executionService->shouldReceive('dispatch')
+            ->once()
+            ->with($jobId, 'Queue path');
+        $executionService->shouldReceive('streamStatus')
+            ->once()
+            ->with(Mockery::type(Request::class), $jobId, false)
+            ->andReturn($expectedResponse);
+        $this->app->instance(ImportExecutionService::class, $executionService);
+
+        $controller = app(ImportExcelController::class);
+        $response = $controller->processExcelStream($request);
+
+        $this->assertSame($expectedResponse, $response);
     }
 }

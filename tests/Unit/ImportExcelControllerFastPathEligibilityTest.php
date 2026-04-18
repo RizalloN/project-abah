@@ -12,6 +12,8 @@ class ImportExcelControllerFastPathEligibilityTest extends TestCase
     protected function tearDown(): void
     {
         @unlink(storage_path('app/testing/daily_loan_fast_path.csv'));
+        @unlink(storage_path('app/testing/lw325_validated.csv'));
+        @unlink(storage_path('app/testing/lw325_invalidated.csv'));
         @rmdir(storage_path('app/testing'));
         Mockery::close();
 
@@ -138,5 +140,48 @@ class ImportExcelControllerFastPathEligibilityTest extends TestCase
 
         $this->assertFalse($result['eligible']);
         $this->assertStringContainsString('melebihi batas fast import', $result['reason']);
+    }
+
+    public function test_lw325_period_guard_accepts_valid_first_and_last_samples(): void
+    {
+        $relativePath = 'testing/lw325_validated.csv';
+        $absolutePath = storage_path('app/' . $relativePath);
+        if (!is_dir(dirname($absolutePath))) {
+            @mkdir(dirname($absolutePath), 0777, true);
+        }
+
+        $lines = ['uniqueid_namareport,periode,acctno,kanca,nama_debitur'];
+        for ($i = 1; $i <= 25; $i++) {
+            $lines[] = sprintf('ROW-%02d,2026-01-31,%015d,KC Madiun,Nasabah %02d', $i, $i, $i);
+        }
+        file_put_contents($absolutePath, implode("\n", $lines));
+
+        $controller = app(ImportExcelController::class);
+        $method = new \ReflectionMethod($controller, 'validateLw325NormalizedPeriods');
+        $method->setAccessible(true);
+
+        $this->assertTrue($method->invoke($controller, $absolutePath, 10));
+    }
+
+    public function test_lw325_period_guard_rejects_blank_period_in_first_or_last_samples(): void
+    {
+        $relativePath = 'testing/lw325_invalidated.csv';
+        $absolutePath = storage_path('app/' . $relativePath);
+        if (!is_dir(dirname($absolutePath))) {
+            @mkdir(dirname($absolutePath), 0777, true);
+        }
+
+        $lines = ['uniqueid_namareport,periode,acctno,kanca,nama_debitur'];
+        for ($i = 1; $i <= 25; $i++) {
+            $period = $i === 25 ? '' : '2026-01-31';
+            $lines[] = sprintf('ROW-%02d,%s,%015d,KC Madiun,Nasabah %02d', $i, $period, $i, $i);
+        }
+        file_put_contents($absolutePath, implode("\n", $lines));
+
+        $controller = app(ImportExcelController::class);
+        $method = new \ReflectionMethod($controller, 'validateLw325NormalizedPeriods');
+        $method->setAccessible(true);
+
+        $this->assertFalse($method->invoke($controller, $absolutePath, 10));
     }
 }
