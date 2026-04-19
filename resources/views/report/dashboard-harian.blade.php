@@ -334,7 +334,6 @@
         border-radius: 16px;
         padding: 1.5rem;
         box-shadow: 0 4px 12px -8px rgba(15, 23, 42, 0.1);
-        transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1);
         position: relative;
         overflow: hidden;
     }
@@ -350,10 +349,7 @@
         border-radius: 4px 0 0 4px;
     }
 
-    .daily-kpi:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 12px 24px -12px rgba(15, 23, 42, 0.15);
-    }
+    /* Removed hover style because we use .hover-lift class */
 
     .daily-kpi .label {
         font-size: 0.84rem;
@@ -1009,7 +1005,7 @@
         <div class="daily-filter-shell">
             <div class="row align-items-stretch mx-n2 daily-filter-grid">
                 <div class="col-12 col-md-6 col-xl px-2 mb-3 mb-xl-0">
-                    <div class="daily-filter-card daily-filter-card--kanca">
+                    <div class="daily-filter-card daily-filter-card--kanca animate-reveal stagger-1">
                         <div class="daily-filter-content">
                             <label class="daily-filter-label" for="filter-kanca">Kanca</label>
                             <div class="daily-filter-control">
@@ -1027,7 +1023,7 @@
                     </div>
                 </div>
                 <div class="col-12 col-md-6 col-xl px-2 mb-3 mb-xl-0">
-                    <div class="daily-filter-card daily-filter-card--unit">
+                    <div class="daily-filter-card daily-filter-card--unit animate-reveal stagger-2">
                         <div class="daily-filter-content">
                             <label class="daily-filter-label" for="filter-unit">Unit Kerja</label>
                             <div class="daily-filter-control">
@@ -1045,7 +1041,7 @@
                     </div>
                 </div>
                 <div class="col-12 col-md-6 col-xl px-2 mb-3 mb-xl-0">
-                    <div class="daily-filter-card daily-filter-card--posisi">
+                    <div class="daily-filter-card daily-filter-card--posisi animate-reveal stagger-3">
                         <div class="daily-filter-content">
                             <label class="daily-filter-label" for="filter-posisi-terakhir">Posisi Terakhir</label>
                             <div class="daily-filter-control">
@@ -1057,7 +1053,7 @@
                     </div>
                 </div>
                 <div class="col-12 col-md-6 col-xl px-2 mb-3 mb-xl-0">
-                    <div class="daily-filter-card daily-filter-card--rka">
+                    <div class="daily-filter-card daily-filter-card--rka animate-reveal stagger-4">
                         <div class="daily-filter-content">
                             <label class="daily-filter-label" for="filter-posisi-rka">Posisi RKA</label>
                             <div class="daily-filter-control">
@@ -1069,7 +1065,7 @@
                     </div>
                 </div>
                 <div class="col-12 col-xl px-2 mb-0">
-                    <div class="daily-filter-card daily-filter-card--action">
+                    <div class="daily-filter-card daily-filter-card--action animate-reveal stagger-5">
                         <div class="daily-filter-action-body">
                             <label class="daily-filter-label">Tindakan</label>
                             <!-- <div class="daily-filter-note">Pilih kombinasi filter lalu jalankan pembaruan tabel tanpa mengubah flow data yang ada.</div> -->

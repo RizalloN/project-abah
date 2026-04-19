@@ -14,7 +14,19 @@
       "Bash(php -l app/Jobs/ExecuteBatchedSnapshotJob.php app/Console/Commands/FlushDueSnapshotBatches.php app/Console/Commands/ScheduleSnapshotBatchFlush.php app/Services/Import/ImportCleanupService.php)",
       "Bash(php -l app/Support/SnapshotAuditService.php app/Support/SnapshotAuditCoordinator.php app/Jobs/SmartPartialSnapshotRebuildJob.php app/Http/Controllers/Import/SnapshotAuditController.php)",
       "Bash(cd c:\\\\\\\\xampp\\\\\\\\htdocs\\\\\\\\project-ABAH)",
-      "Bash(php -d display_errors=0 -r ' *)"
+      "Bash(php -d display_errors=0 -r ' *)",
+      "Bash(php -l app/Support/SnapshotBatchConfig.php)",
+      "Bash(php -l app/Console/Commands/ManageSnapshotBatches.php)",
+      "Bash(php -l app/Console/Commands/EnsureQueueWorkerRunning.php)",
+      "Bash(php -l app/Console/Kernel.php)",
+      "Bash(php -l app/Support/SnapshotBatchAggregator.php)",
+      "Bash(echo \"Queue worker started \\(PID: $!\\)\")",
+      "Bash(php -l app/Jobs/ExecuteBatchedSnapshotJob.php)",
+      "Bash(php -l app/Services/Import/ImportCleanupService.php)",
+      "Bash(php -l app/Support/SnapshotAuditService.php)",
+      "Bash(php -l app/Support/SnapshotAuditCoordinator.php)",
+      "Bash(php -l app/Jobs/SmartPartialSnapshotRebuildJob.php)",
+      "Bash(php -l app/Http/Controllers/Import/SnapshotAuditController.php)"
     ],
     "additionalDirectories": [
       "\\tmp"

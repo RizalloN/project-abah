@@ -11,13 +11,13 @@
         @vite(['resources/css/app.css', 'resources/js/app.js'])
         <style>
             main {
-                transition: opacity 180ms ease, transform 220ms ease;
+                transition: opacity 250ms var(--ease-premium), transform 300ms var(--ease-premium);
                 will-change: opacity, transform;
             }
 
             body.page-transition-leaving main {
                 opacity: 0;
-                transform: translateY(4px);
+                transform: translateY(8px) scale(0.99);
                 pointer-events: none;
             }
 
@@ -30,16 +30,23 @@
                 width: 100%;
                 transform-origin: left;
                 transform: scaleX(0);
-                background: linear-gradient(90deg, #0f766e 0%, #14b8a6 100%);
-                box-shadow: 0 2px 10px rgba(15, 118, 110, 0.35);
+                background: linear-gradient(90deg, #00529C 0%, #3b82f6 50%, #60a5fa 100%);
+                box-shadow: 0 0 15px rgba(59, 130, 246, 0.5);
                 opacity: 0;
-                transition: transform 320ms ease-out, opacity 180ms ease;
+                transition: transform 400ms var(--ease-out-expo), opacity 200ms ease;
                 pointer-events: none;
+            }
+
+            @keyframes bar-pulse {
+                0% { filter: brightness(1); }
+                50% { filter: brightness(1.3); }
+                100% { filter: brightness(1); }
             }
 
             body.page-transition-active .page-transition-bar {
                 opacity: 1;
-                transform: scaleX(0.82);
+                transform: scaleX(0.75);
+                animation: bar-pulse 2s infinite ease-in-out;
             }
 
             body.page-transition-finishing .page-transition-bar {
@@ -51,6 +58,7 @@
                 main,
                 .page-transition-bar {
                     transition: none !important;
+                    animation: none !important;
                 }
             }
         </style>
@@ -70,7 +78,7 @@
             @endisset
 
             <!-- Page Content -->
-            <main>
+            <main class="animate-reveal">
                 <div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
                     <div class="space-y-6 [&_.bg-white]:rounded-[1.5rem] [&_.bg-white]:border [&_.bg-white]:border-slate-200/80 [&_.bg-white]:shadow-[0_20px_45px_-30px_rgba(15,23,42,0.24)] [&_input]:rounded-2xl [&_input]:border-slate-200 [&_input]:bg-slate-50 [&_input]:px-4 [&_input]:py-3 [&_input]:text-slate-900 [&_input]:shadow-none [&_input:focus]:border-emerald-500 [&_input:focus]:ring-emerald-100 [&_textarea]:rounded-2xl [&_textarea]:border-slate-200 [&_textarea]:bg-slate-50 [&_textarea]:shadow-none [&_textarea:focus]:border-emerald-500 [&_textarea:focus]:ring-emerald-100 [&_button]:rounded-2xl">
                         {{ $slot }}

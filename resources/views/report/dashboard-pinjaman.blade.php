@@ -346,7 +346,6 @@
             #ffffff;
         box-shadow: 0 12px 24px -22px rgba(15, 23, 42, 0.24);
         overflow: hidden;
-        transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
     }
 
     .loan-mismatch-card::before {
@@ -358,11 +357,7 @@
         background: linear-gradient(90deg, var(--loan-blue-deep), var(--loan-blue), #3b82f6);
     }
 
-    .loan-mismatch-card:hover {
-        transform: translateY(-2px);
-        border-color: rgba(0, 82, 156, 0.2);
-        box-shadow: 0 18px 28px -24px rgba(0, 82, 156, 0.25);
-    }
+    /* Hover style moved to .hover-lift class logic */
 
     .loan-mismatch-card .loan-audit-label {
         color: #51657f;
@@ -1020,7 +1015,7 @@
                 </div>
 
                 <div class="row loan-filter-grid">
-                    <div class="col-xl-2 col-lg-4 col-md-6">
+                    <div class="col-xl-2 col-lg-4 col-md-6 animate-reveal stagger-1">
                         <div class="form-group">
                             <label class="loan-filter-label">Periode</label>
                             <input
@@ -1033,7 +1028,7 @@
                             >
                         </div>
                     </div>
-                    <div class="col-xl-2 col-lg-4 col-md-6">
+                    <div class="col-xl-2 col-lg-4 col-md-6 animate-reveal stagger-2">
                         <div class="form-group">
                             <label class="loan-filter-label">Segmen</label>
                             <select id="loanSegmenSelect" name="segmen_dashboard[]" class="form-control select2 loan-filter-control loan-filter-multiselect" multiple data-placeholder="Semua Segmen" data-selected='@json($filters["segmen"] ?? [])'>
@@ -1041,7 +1036,7 @@
                             </select>
                         </div>
                     </div>
-                    <div class="col-xl-2 col-lg-4 col-md-6">
+                    <div class="col-xl-2 col-lg-4 col-md-6 animate-reveal stagger-3">
                         <div class="form-group">
                             <label class="loan-filter-label">Produk</label>
                             <select id="loanProdukSelect" name="produk_dashboard[]" class="form-control select2 loan-filter-control loan-filter-multiselect" multiple data-placeholder="Semua Produk" data-selected='@json($filters["produk"] ?? [])'>
@@ -1049,13 +1044,13 @@
                             </select>
                         </div>
                     </div>
-                    <div class="col-xl-2 col-lg-4 col-md-6">
+                    <div class="col-xl-2 col-lg-4 col-md-6 animate-reveal stagger-4">
                         <div class="form-group">
                             <label class="loan-filter-label">Regional Office</label>
                             <input type="text" class="form-control loan-filter-control" value="Area 6" disabled>
                         </div>
                     </div>
-                    <div class="col-xl-2 col-lg-4 col-md-6">
+                    <div class="col-xl-2 col-lg-4 col-md-6 animate-reveal stagger-5">
                         <div class="form-group">
                             <label class="loan-filter-label">Kantor Cabang</label>
                             <select id="loanCabangSelect" name="cabang1[]" class="form-control select2 loan-filter-control loan-filter-multiselect" multiple data-placeholder="Semua Kantor Cabang" data-selected='@json($filters["cabang"] ?? [])'>

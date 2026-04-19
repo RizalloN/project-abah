@@ -26,6 +26,12 @@ class ImportFileController extends Controller
 
     private ?array $dailyLoanColumnsCache = null;
     private array $timestampSupportCache = [];
+    
+    // OPTIMIZATION: Cache for expensive operations across import session
+    private array $decimalNormalizationCache = [];
+    private array $delimiterDetectionCache = [];
+    private array $headerIndexCache = [];
+    private ?bool $bomAlreadyStripped = null;
 
     private function schemaService(): SchemaIntrospectionService
     {
@@ -127,27 +133,22 @@ class ImportFileController extends Controller
 
     private function readCsvRecord($handle, string $delimiter)
     {
-        $row = fgetcsv($handle, 0, $delimiter);
-        if ($row === false) {
+        $line = fgets($handle);
+        if ($line === false) {
             return false;
         }
 
-        foreach ($row as $index => $value) {
-            $row[$index] = is_string($value) ? $this->smartNormalizeQuotedCsvCellValue($value) : $value;
-        }
-
-        if (count($row) === 1 && isset($row[0]) && is_string($row[0])) {
-            $parsed = $this->smartParseCsvLine((string) $row[0], $delimiter, true);
-            if (count($parsed) > 1) {
-                return $parsed;
-            }
-        }
-
-        if (!empty($row)) {
+        // Use smartParseCsvLine to avoid double-processing quotes (fgetcsv already unquotes)
+        $row = $this->smartParseCsvLine((string) $line, $delimiter, false);
+        
+        // OPTIMIZATION: Strip BOM only once per file on first record (tracked by bomAlreadyStripped)
+        if (!empty($row) && $this->bomAlreadyStripped !== true) {
             $row[0] = preg_replace('/^\xEF\xBB\xBF/', '', (string) ($row[0] ?? ''));
+            // Mark as processed so we don't check again
+            $this->bomAlreadyStripped = true;
         }
 
-        return $row;
+        return $row !== [] ? $row : false;
     }
 
     private function normalizeDailyLoanHeader(string $header): string
@@ -254,13 +255,21 @@ class ImportFileController extends Controller
 
             foreach (['F Y', 'M Y', 'F-Y', 'M-Y', 'Y-m'] as $format) {
                 try {
-                    return Carbon::createFromFormat($format, $normalized)->startOfMonth()->format('Y-m');
+                    $parsed = Carbon::createFromFormat($format, $normalized)->startOfMonth()->format('Y-m');
+                    // FIX #3: Validate output format before returning
+                    if (preg_match('/^\d{4}-\d{2}$/', $parsed) === 1) {
+                        return $parsed;
+                    }
                 } catch (\Throwable $e) {
                 }
             }
 
             try {
-                return Carbon::parse($normalized)->startOfMonth()->format('Y-m');
+                $parsed = Carbon::parse($normalized)->startOfMonth()->format('Y-m');
+                // Validate output format before returning
+                if (preg_match('/^\d{4}-\d{2}$/', $parsed) === 1) {
+                    return $parsed;
+                }
             } catch (\Throwable $e) {
             }
         }
@@ -268,14 +277,22 @@ class ImportFileController extends Controller
         $fallbackPosisi = trim((string) $fallbackPosisi);
         if ($fallbackPosisi !== '') {
             try {
-                return Carbon::parse($fallbackPosisi)->startOfMonth()->format('Y-m');
+                $parsed = Carbon::parse($fallbackPosisi)->startOfMonth()->format('Y-m');
+                // Validate output format before returning
+                if (preg_match('/^\d{4}-\d{2}$/', $parsed) === 1) {
+                    return $parsed;
+                }
             } catch (\Throwable $e) {
             }
         }
 
         $fallbackTahun = trim((string) $fallbackTahun);
         if (preg_match('/^\d{4}$/', $fallbackTahun) === 1) {
-            return $fallbackTahun . '-01';
+            $result = $fallbackTahun . '-01';
+            // Validate output format
+            if (preg_match('/^\d{4}-\d{2}$/', $result) === 1) {
+                return $result;
+            }
         }
 
         return null;
@@ -523,7 +540,11 @@ class ImportFileController extends Controller
         $meta = stream_get_meta_data($handle);
         $path = $meta['uri'] ?? null;
         if (is_string($path) && $path !== '' && is_file($path)) {
-            return $this->smartDetectCsvDelimiter($path, [',', ';', "\t", '|', '.']);
+            // OPTIMIZATION: Cache delimiter detection by file path to avoid re-scanning
+            if (!isset($this->delimiterDetectionCache[$path])) {
+                $this->delimiterDetectionCache[$path] = $this->smartDetectCsvDelimiter($path, [',', ';', "\t", '|', '.']);
+            }
+            return $this->delimiterDetectionCache[$path];
         }
 
         $firstLine = fgets($handle);
@@ -936,7 +957,7 @@ class ImportFileController extends Controller
             }
 
             $lastId = 0;
-            $chunkSize = 8000;
+            $chunkSize = 5000; // Reduced from 8000 for better balance
             $requiredIndexes = [];
             if ($isBrilinkSummary) {
                 $requiredIndexes = range(0, 14);
@@ -957,6 +978,17 @@ class ImportFileController extends Controller
                 ['id'],
                 array_map(static fn (int $idx): string => 'c' . $idx, $requiredIndexes)
             );
+
+            // Cache blueprint outside loop for performance (avoid rebuild per row)
+            $cachedBlueprint = !$isBrilinkSummary ? ($columnBlueprint ?? $this->buildColumnImportBlueprint($selectedColumns, $csvHeaders)) : null;
+            
+            // Pre-allocate row template to reduce per-row array operations
+            $rowTemplate = array_fill(0, $headerCount, null);
+            
+            // Static CSV formatter for bulk fputcsv operations
+            $csvFormatter = static function ($value): string {
+                return $value === null ? '\N' : $value;
+            };
 
             $sqlSafeFilterRules = [];
             foreach ($activeFilters as $filterIdx => $allowedValuesLookup) {
@@ -1033,10 +1065,13 @@ class ImportFileController extends Controller
 
                 foreach ($chunk as $record) {
                     $lastId = (int) $record->id;
-                    $row = [];
+                    
+                    // Copy template array instead of creating new one each iteration (reduced allocation)
+                    $row = $rowTemplate;
                     for ($i = 0; $i < $headerCount; $i++) {
                         $value = $record->{'c' . $i} ?? null;
-                        $row[] = is_string($value) ? rtrim($value, "\r") : $value;
+                        // Avoid nested ternary: store raw value, parser handles normalization
+                        $row[$i] = is_string($value) ? rtrim($value, "\r") : $value;
                     }
 
                     $parsedRow = $this->parseCsvRow($row, $isBrilinkSummary, $csvHeaders, $posisiIndex, $tahunIndex);
@@ -1044,13 +1079,15 @@ class ImportFileController extends Controller
                         continue;
                     }
 
+                    // Use cached blueprint for non-Brilink imports
+                    $blueprintToUse = !$isBrilinkSummary ? $cachedBlueprint : null;
                     $mappedRow = $this->mapRowForInsert(
                         $parsedRow,
                         $selectedColumns,
                         $csvHeaders,
                         $isBrilinkSummary,
                         $uniqueSuffix,
-                        $columnBlueprint,
+                        $blueprintToUse,
                         $posisiIndex,
                         $tahunIndex
                     );
@@ -1064,9 +1101,8 @@ class ImportFileController extends Controller
                     }
 
                     $bulkValues = $this->mapRowValuesForBulkLoad($mappedRow, $bulkColumns);
-                    fputcsv($bulkHandle, array_map(static function ($value) {
-                        return $value === null ? '\N' : $value;
-                    }, $bulkValues));
+                    // Use cached formatter (avoid closure creation per row)
+                    fputcsv($bulkHandle, array_map($csvFormatter, $bulkValues));
 
                     $rowsDone++;
                 }
@@ -1203,6 +1239,11 @@ class ImportFileController extends Controller
         $startTime = microtime(true);
         $progressStep = strtolower($tableName) === 'daily_loan_dinamis' ? 1000 : 2000;
 
+        // Cache CSV formatter to avoid closure creation per row
+        $csvFormatter = static function ($value): string {
+            return $value === null ? '\N' : $value;
+        };
+
         $shouldInsertRow = function (array $row) use ($tableName, &$duplicateLookup, &$duplicateSkipped) {
             if (!$this->isJumlahMerchantDetailTable($tableName)) {
                 return true;
@@ -1264,9 +1305,8 @@ class ImportFileController extends Controller
                 }
 
                 $bulkValues = $this->mapRowValuesForBulkLoad($mappedRow, $bulkColumns);
-                fputcsv($bulkHandle, array_map(static function ($value) {
-                    return $value === null ? '\N' : $value;
-                }, $bulkValues));
+                // Use cached formatter (avoid closure recreation per row)
+                fputcsv($bulkHandle, array_map($csvFormatter, $bulkValues));
 
                 $rowsDone++;
                 $rowCounter++;
@@ -1550,12 +1590,22 @@ class ImportFileController extends Controller
         int $tahunIndex = -1
     ): ?array {
         if ($isBrilinkSummary) {
+            // FIX #2: Add length validation for Brilink indices before access
+            if (count($sourceData) < 2) {
+                return null;  // Insufficient columns
+            }
+
             $rawPeriode = $sourceData[0] ?? '';
             $periode = strpos((string) $rawPeriode, ':') !== false
                 ? trim(explode(':', (string) $rawPeriode, 2)[1] ?? '')
                 : trim((string) $rawPeriode);
 
             $brilinkOffset = $this->hasManualNumberingColumn($sourceData) ? 1 : 0;
+            $minRequiredLength = 15 + $brilinkOffset;  // Indices 0-14 needed (or 1-15 with offset)
+            
+            if (count($sourceData) < $minRequiredLength) {
+                return null;  // Row too short for Brilink structure
+            }
 
             $rowData = [
                 'uniqueid_namareport' => uniqid() . '_BST',
@@ -1763,6 +1813,13 @@ class ImportFileController extends Controller
             return null;
         }
 
+        // OPTIMIZATION: Cache normalization results for repeated values (common in imports)
+        $cacheKey = 'decimal:' . $value;
+        if (isset($this->decimalNormalizationCache[$cacheKey])) {
+            return $this->decimalNormalizationCache[$cacheKey];
+        }
+
+        $originalValue = $value;
         $isNegative = false;
 
         if (preg_match('/^\((.*)\)$/', $value, $matches) === 1) {
@@ -1779,21 +1836,25 @@ class ImportFileController extends Controller
             if ($isNegative && str_starts_with($value, '-') === false) {
                 $value = '-' . $value;
             }
-            return $value . '.00';
+            $result = $value . '.00';
+            $this->decimalNormalizationCache[$cacheKey] = $result;
+            return $result;
         }
 
         if (preg_match('/^-?\d+\.\d+$/', $value) === 1) {
             if ($isNegative && str_starts_with($value, '-') === false) {
                 $value = '-' . $value;
             }
-            return number_format((float) $value, 2, '.', '');
+            $result = number_format((float) $value, 2, '.', '');
+            $this->decimalNormalizationCache[$cacheKey] = $result;
+            return $result;
         }
 
         $value = preg_replace('/\s+/', '', $value);
         $value = preg_replace('/[^0-9,\.\-]/', '', $value);
 
         if ($value === '' || $value === '-' || $value === null) {
-            return null;
+            return $this->decimalNormalizationCache[$cacheKey] = null;
         }
 
         $hasComma = str_contains($value, ',');
@@ -1825,14 +1886,16 @@ class ImportFileController extends Controller
         }
 
         if (!is_numeric($value)) {
-            return null;
+            return $this->decimalNormalizationCache[$cacheKey] = null;
         }
 
         if ($isNegative && (float) $value > 0) {
             $value = '-' . ltrim((string) $value, '+');
         }
 
-        return number_format((float) $value, 2, '.', '');
+        $result = number_format((float) $value, 2, '.', '');
+        $this->decimalNormalizationCache[$cacheKey] = $result;
+        return $result;
     }
 
     public function upload(Request $request)
@@ -2049,8 +2112,12 @@ class ImportFileController extends Controller
                         }
 
                         if ($collectUniqueValues) {
+                            // OPTIMIZATION: Pre-cache valid column indices to avoid repeated isset() calls
+                            $validIndices = array_keys($uniqueValues);
+                            $validIndicesSet = array_fill_keys($validIndices, true);
+                            
                             foreach ($data as $i => $val) {
-                                if (!isset($uniqueValues[$i])) {
+                                if (!isset($validIndicesSet[$i])) {
                                     continue;
                                 }
 
