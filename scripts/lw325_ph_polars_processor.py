@@ -98,19 +98,47 @@ def extract_metadata_period(text: str):
 
 
 def detect_header_row(source_path: str, delimiter: str):
-    """Scan baris awal untuk menemukan header dan periode metadata (cepat — max 200 baris)."""
+    """Scan baris awal untuk menemukan header dan periode metadata (cepat — max 100 baris)."""
     metadata_period = None
-    with open(source_path, "r", encoding="utf-8-sig", newline="") as fh:
+    is_excel = source_path.lower().endswith(('.xlsx', '.xls'))
+
+    if is_excel:
+        try:
+            # Gunakan Polars probing untuk Excel — jauh lebih cepat daripada scan binary sebagai teks
+            probe_df = pl.read_excel(source_path, n_rows=100, engine="fastexcel")
+            for idx, row_tuple in enumerate(probe_df.iter_rows()):
+                # Cek metadata periode di awal-awal baris
+                if idx < 20 and metadata_period is None:
+                    joined = ",".join(str(v).strip() for v in row_tuple if v is not None)
+                    metadata_period = extract_metadata_period(joined) or metadata_period
+                
+                normalized = [normalize_header(v) for v in row_tuple if v is not None]
+                if normalized and REQUIRED_HEADERS.issubset(set(normalized)):
+                    # Simpan raw headers untuk mapping kolom asli
+                    return idx + 1, metadata_period, [str(v) for v in row_tuple]
+            
+            # Jika tidak ketemu di data (mungkin ada di header fastexcel itu sendiri)
+            normalized_h = [normalize_header(c) for c in probe_df.columns]
+            if REQUIRED_HEADERS.issubset(set(normalized_h)):
+                return 0, metadata_period, probe_df.columns
+                
+        except Exception as e:
+            send_event("debug", message=f"Excel probe failed: {str(e)}")
+
+    # Fallback/Default untuk CSV
+    with open(source_path, "r", encoding="utf-8-sig", errors="replace", newline="") as fh:
         reader = csv.reader(fh, delimiter=delimiter)
         for idx, row in enumerate(reader):
             if idx < 20 and metadata_period is None:
                 joined = ",".join(str(v).strip() for v in row if str(v).strip())
                 metadata_period = extract_metadata_period(joined) or metadata_period
+            
             normalized = [normalize_header(v) for v in row if str(v).strip()]
             if normalized and REQUIRED_HEADERS.issubset(set(normalized)):
                 return idx, metadata_period, row
             if idx > 200:
                 break
+
     raise RuntimeError(
         "Header LW325_PH tidak ditemukan. "
         "Pastikan file memiliki baris header dengan PERIODE, ACCTNO, KANCA, NAMA_DEBITUR."
@@ -118,6 +146,9 @@ def detect_header_row(source_path: str, delimiter: str):
 
 
 def detect_delimiter(path: str, fallback: str = ",") -> str:
+    if path.lower().endswith(('.xlsx', '.xls')):
+        return ","  # Excel tidak butuh delimiter csv
+
     try:
         with open(path, "r", encoding="utf-8-sig", errors="replace", newline="") as fh:
             samples = []
@@ -236,25 +267,42 @@ def build_date_exprs(columns: list, prefer_month_first_set: set) -> list:
 
 
 def build_decimal_exprs(columns: list) -> list:
-    """Bangun list ekspresi normalisasi desimal untuk 1 with_columns call."""
+    """
+    Robust decimal normalization for Polars.
+    Handles: "219,000.00", "219.000,00", "(219,000.00)", "219000", etc.
+    """
     exprs = []
     for col in columns:
+        # 1. Pre-cleaning (strip, parents to negative, remove non-numeric junk)
         base = (
             pl.col(col).cast(pl.Utf8).str.strip_chars()
             .str.replace_all(r"^\((.+)\)$", r"-$1")
             .str.replace_all(r"\s+", "")
-            .str.replace_all(r",", "")              # koma = pemisah ribuan (format Indonesia/AS)
-            .str.replace_all(r"[^0-9.\-]", "")
         )
+
+        # 2. Logic: Jika ada titik DAN koma, atau jika ada titik/koma berulang, kita harus normalisasi.
+        # Strategi: Hapus SEMUA pemisah ribuan, sisakan hanya 1 titik desimal di akhir.
+        
+        # Step A: Jika ada format ribuan titik (1.234,56), ubah jadi format standar (1234.56)
+        # Kita deteksi jika ada titik diikuti oleh 3 angka DAN ada koma di belakangnya.
+        is_id_format = base.str.contains(r"\d\.\d{3}.*,")
+        
+        cleaned = (
+            pl.when(is_id_format)
+            .then(base.str.replace_all(r"\.", "").str.replace(r",", "."))
+            .otherwise(base.str.replace_all(r",", "")) # Assume US format or simple number
+            .str.replace_all(r"[^0-9.\-]", "") # Final safety sweep
+        )
+
         expr = (
-            pl.when(base.is_null() | (base == "") | (base == "-") | (base.str.to_lowercase() == "nan"))
+            pl.when(cleaned.is_null() | (cleaned == "") | (cleaned == "-") | (cleaned.str.to_lowercase() == "nan"))
             .then(pl.lit(None))
-            .when(base.str.contains(r"^-?\d+$"))
-            .then(base + ".00")
-            .when(base.str.contains(r"^-?\d+\.\d$"))
-            .then(base + "0")
-            .when(base.str.contains(r"^-?\d+\.\d+$"))
-            .then(base)
+            .when(cleaned.str.contains(r"^-?\d+$"))
+            .then(cleaned + ".00")
+            .when(cleaned.str.contains(r"^-?\d+\.\d$"))
+            .then(cleaned + "0")
+            .when(cleaned.str.contains(r"^-?\d+\.\d+$"))
+            .then(cleaned)
             .otherwise(pl.lit(None))
             .alias(col)
         )
@@ -320,11 +368,12 @@ def main():
     is_excel = source_path.lower().endswith(('.xlsx', '.xls'))
 
     # ------------------------------------------------------------------
-    # 2. Load data — TANPA Python sanitize loop
+    # 2. Load data
     # ------------------------------------------------------------------
     if is_excel:
         send_progress(15, "Membaca file Excel LW325_PH dengan fastexcel...")
-        df = pl.read_excel(source_path, engine="fastexcel")
+        # Gunakan read_excel dengan parameter header_row jika ditemukan
+        df = pl.read_excel(source_path, engine="fastexcel", read_options={"header_row": header_row_index} if header_row_index > 0 else None)
     else:
         send_progress(15, "Memuat CSV LW325_PH langsung dengan Polars (direct load)...")
         df = load_csv_polars(source_path, delimiter, header_row_index, raw_headers)
@@ -338,15 +387,22 @@ def main():
     df = df.rename(rename_map)
 
     # ------------------------------------------------------------------
-    # 4. Strip whitespace semua kolom — 1 with_columns call
+    # 4. Filter baris tanpa acctno (DILAKUKAN AWAL UNTUK SPEED)
     # ------------------------------------------------------------------
-    df = df.with_columns([
-        pl.when(pl.col(c).is_null())
-        .then(pl.lit(None))
-        .otherwise(pl.col(c).cast(pl.Utf8).str.strip_chars())
-        .alias(c)
-        for c in df.columns
-    ])
+    df = df.filter(
+        pl.col("acctno").is_not_null()
+    )
+
+    # ------------------------------------------------------------------
+    # 5. Strip whitespace HANYA untuk kolom String (Pl.Utf8)
+    #    Ini jauh lebih cepat daripada strip semua kolom.
+    # ------------------------------------------------------------------
+    string_cols = [c for c in df.columns if df.schema[c] == pl.Utf8]
+    if string_cols:
+        df = df.with_columns([
+            pl.col(c).str.strip_chars().alias(c)
+            for c in string_cols
+        ])
 
     # ------------------------------------------------------------------
     # 5. Validasi required headers
@@ -366,11 +422,8 @@ def main():
             sys.exit(1)
 
     # ------------------------------------------------------------------
-    # 6. Filter baris tanpa acctno
+    # 7. Terapkan active_filters (vectorized)
     # ------------------------------------------------------------------
-    df = df.filter(
-        pl.col("acctno").is_not_null() & (pl.col("acctno").str.strip_chars() != "")
-    )
 
     # ------------------------------------------------------------------
     # 7. Terapkan active_filters (vectorized)

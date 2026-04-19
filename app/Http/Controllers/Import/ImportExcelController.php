@@ -2052,11 +2052,12 @@ class ImportExcelController extends Controller
                     'speed' => 0,
                 ]);
 
-                $handled = $this->processDailyLoanDirectCsvStream(
+                $handled = $this->processFastPathBulkCsvStream(
                     $send,
                     $absolutePath,
                     'daily_loan_dinamis',
                     $normalizedHeaders,
+                    [],
                     $jobId,
                     $totalRows,
                     null,
@@ -5467,110 +5468,280 @@ class ImportExcelController extends Controller
         return (int) $affected;
     }
 
-    private function buildDailyLoanBulkImportSqlParts(array $context, string $stagingTable): array
+    private function buildLw325PhBulkImportSqlParts(array $context, string $stagingTable): array
     {
-        $insertColumns = [];
-        $selectClauses = [];
-        $selectedColumnsLookup = [];
+        $headerCount = (int) ($context['header_count'] ?? 0);
+        $insertColumns = ['uniqueid_namareport', 'created_at', 'updated_at'];
+        $selectClauses = [
+            $this->quoteSqlIdentifier('uniqueid_namareport'),
+            'NOW() AS `created_at`',
+            'NOW() AS `updated_at`',
+        ];
         $filterAliases = [];
 
-        if (!empty($context['unique_id_col'])) {
-            $insertColumns[] = $context['unique_id_col'];
-            $uniquePrefix = addslashes((string) ($context['unique_id_prefix'] ?? 'imp'));
-            $selectClauses[] = "CONCAT('{$uniquePrefix}_', CAST(`id` AS CHAR), '{$context['suffix']}') AS " . $this->quoteSqlIdentifier($context['unique_id_col']);
-            $selectedColumnsLookup[strtolower($context['unique_id_col'])] = true;
+        $mapping = [
+            'periode' => 'periode',
+            'acctno' => 'acctno',
+            'kanwil' => 'kanwil',
+            'kanca' => 'kanca',
+            'unit' => 'unit',
+            'nama_debitur' => 'nama_debitur',
+            'cif1' => 'cif1',
+            'fksegmen' => 'fksegmen',
+            'segmen_dashboard' => 'segmen_dashboard',
+            'description' => 'description',
+            'produk_dashboard' => 'produk_dashboard',
+            'tgl_ph' => 'tgl_ph',
+            'tgl_realisasi' => 'tgl_realisasi',
+            'curtyp' => 'curtyp',
+            'saldo_pertama_ph_pokok' => 'saldo_pertama_ph_pokok',
+            'saldo_pertama_ph_bunga' => 'saldo_pertama_ph_bunga',
+            'besar_realisasi' => 'besar_realisasi',
+            'plafon' => 'plafon',
+            'jw' => 'jw',
+            'at' => 'at',
+            'cif' => 'cif',
+            'pokok' => 'pokok',
+            'bunga' => 'bunga',
+            'angpok' => 'angpok',
+            'angbung' => 'angbung',
+            'sisapok' => 'sisapok',
+            'sisabun' => 'sisabun',
+            'clmamt1' => 'clmamt1',
+            'clmapr1' => 'clmapr1',
+            'os_penuh_berjalan1' => 'os_penuh_berjalan1',
+            'kecamatan_t_tinggal' => 'kecamatan_t_tinggal',
+            'kelurahan_t_tinggal' => 'kelurahan_t_tinggal',
+            'kodepos_t_tinggal' => 'kodepos_t_tinggal',
+            'kecamatan_t_usaha' => 'kecamatan_t_usaha',
+            'kelurahan_t_usaha' => 'kelurahan_t_usaha',
+            'kodepos_t_usaha' => 'kodepos_t_usaha',
+            'pn_pengelola' => 'pn_pengelola',
+            'pn_pemrakarsa' => 'pn_pemrakarsa',
+            'pn_referral' => 'pn_referral',
+            'pn_restruk' => 'pn_restruk',
+            'pn_pengelola2' => 'pn_pengelola2',
+            'pn_pemutus' => 'pn_pemutus',
+            'pn_crm' => 'pn_crm',
+            'pn_crr1' => 'pn_crr1',
+            'pn_referral_naik_kelas' => 'pn_referral_naik_kelas',
+            'jumlah_pn' => 'jumlah_pn',
+            'jumlah_pn_all' => 'jumlah_pn_all',
+            'saldo_pertama_kali_charge_off' => 'saldo_pertama_kali_charge_off',
+            'deffered_bunga' => 'deffered_bunga',
+            'sai_deffered' => 'sai_deffered',
+            'sai_tunggakan' => 'sai_tunggakan',
+            'deffered_bunga_ph' => 'deffered_bunga_ph',
+            'sai_tunggakan_ph' => 'sai_tunggakan_ph',
+            'sai_deffered_ph' => 'sai_deffered_ph',
+            'wcbal' => 'wcbal',
+            'waccint' => 'waccint',
+            'wadvpmt' => 'wadvpmt',
+            'wpenint' => 'wpenint',
+            'wmisc' => 'wmisc',
+            'wothchg' => 'wothchg',
+            'wpmtamt' => 'wpmtamt',
+            'wpstdt' => 'wpstdt',
+            'wpstdt6' => 'wpstdt6',
+            'wamount' => 'wamount',
+            'flag_klaim' => 'flag_klaim',
+            'clmamt' => 'clmamt',
+            'clmapr' => 'clmapr',
+        ];
+
+        $columnToIndex = $context['column_to_index'] ?? [];
+        $backend = $context['backend'] ?? '';
+        $uniqueSuffix = addslashes((string) ($context['unique_suffix'] ?? '_RPH'));
+
+        if ($backend === 'polars') {
+            // TARGET_COLS in lw325_ph_polars_processor.py:
+            // 0: uniqueid_namareport, 1: periode, 2: acctno, 3: kanwil, 4: kanca, 5: unit, ...
+            // staging COL_1=idx 0, COL_2=idx 1, COL_3=idx 2
+            $selectClauses[0] = "CONCAT(NULLIF(TRIM(COL_2), ''), '_', NULLIF(TRIM(COL_3), ''), '_', CAST(`id` AS CHAR), '{$uniqueSuffix}') AS `uniqueid_namareport`";
+        } else {
+            $selectClauses[0] = "CONCAT(NULLIF(TRIM(COL_" . ($columnToIndex['periode'] ?? 999) . "), ''), '_', NULLIF(TRIM(COL_" . ($columnToIndex['acctno'] ?? 999) . "), ''), '_', CAST(`id` AS CHAR), '{$uniqueSuffix}') AS `uniqueid_namareport`";
         }
 
-        $insertColumns[] = 'created_at';
-        $selectClauses[] = 'NOW() AS `created_at`';
-        $selectedColumnsLookup['created_at'] = true;
+        $polarsMap = [
+            'periode' => 2, 'acctno' => 3, 'kanwil' => 4, 'kanca' => 5, 'unit' => 6, 'nama_debitur' => 7,
+            'cif1' => 8, 'fksegmen' => 9, 'segmen_dashboard' => 10, 'description' => 11, 'produk_dashboard' => 12,
+            'tgl_ph' => 13, 'tgl_realisasi' => 14, 'curtyp' => 15, 'saldo_pertama_ph_pokok' => 16,
+            'saldo_pertama_ph_bunga' => 17, 'besar_realisasi' => 18, 'plafon' => 19, 'jw' => 20, 'at' => 21,
+            'cif' => 22, 'pokok' => 23, 'bunga' => 24, 'angpok' => 25, 'angbung' => 26, 'sisapok' => 27, 'sisabun' => 28,
+            'clmamt1' => 29, 'clmapr1' => 30, 'os_penuh_berjalan1' => 31, 'kecamatan_t_tinggal' => 32,
+            'kelurahan_t_tinggal' => 33, 'kodepos_t_tinggal' => 34, 'kecamatan_t_usaha' => 35,
+            'kelurahan_t_usaha' => 36, 'kodepos_t_usaha' => 37, 'pn_pengelola' => 38, 'pn_pemrakarsa' => 39,
+            'pn_referral' => 40, 'pn_restruk' => 41, 'pn_pengelola2' => 42, 'pn_pemutus' => 43, 'pn_crm' => 44,
+            'pn_crr1' => 45, 'pn_referral_naik_kelas' => 46, 'jumlah_pn' => 47, 'jumlah_pn_all' => 48,
+            'saldo_pertama_kali_charge_off' => 49, 'deffered_bunga' => 50, 'sai_deffered' => 51,
+            'sai_tunggakan' => 52, 'deffered_bunga_ph' => 53, 'sai_tunggakan_ph' => 54, 'sai_deffered_ph' => 55,
+            'wcbal' => 56, 'waccint' => 57, 'wadvpmt' => 58, 'wpenint' => 59, 'wmisc' => 60, 'wothchg' => 61,
+            'wpmtamt' => 62, 'wpstdt' => 63, 'wpstdt6' => 64, 'wamount' => 65, 'flag_klaim' => 66,
+            'clmamt' => 67, 'clmapr' => 68
+        ];
 
-        $insertColumns[] = 'updated_at';
-        $selectClauses[] = 'NOW() AS `updated_at`';
-        $selectedColumnsLookup['updated_at'] = true;
+        foreach ($mapping as $dbColumn => $headerKey) {
+            if ($backend === 'polars') {
+                $sourceIndex = $polarsMap[$dbColumn] ?? null;
+            } else {
+                $sourceIndex = $columnToIndex[$headerKey] ?? null;
+            }
 
-        foreach ($context['valid_indexes'] as $originalIndex) {
-            $rule = $context['header_rules'][$originalIndex] ?? null;
-            if (!$rule) {
+            if ($sourceIndex === null || $sourceIndex >= $headerCount) {
                 continue;
             }
 
-            $expression = $this->buildDirectLoadSqlExpression($rule, $this->quoteSqlIdentifier('c' . $originalIndex));
+            $sourceCol = $this->quoteSqlIdentifier('COL_' . $sourceIndex);
+            $expression = "NULLIF(TRIM({$sourceCol}), '')";
 
-            if (!empty($rule['filter_lookup'])) {
-                $filterAlias = '__flt_' . $originalIndex;
-                $selectClauses[] = "{$expression} AS " . $this->quoteSqlIdentifier($filterAlias);
-                $filterAliases[$originalIndex] = $filterAlias;
+            if (in_array($dbColumn, ['periode', 'tgl_ph', 'tgl_realisasi', 'wpstdt', 'wpstdt6'], true)) {
+                $expression = \App\Support\StrictDateParser::buildMySqlCaseExpression($expression);
             }
 
-            $dbColumn = '';
-            foreach ((array) ($rule['db_candidates'] ?? []) as $candidateColumn) {
-                $candidateLower = strtolower((string) $candidateColumn);
-                if (!isset($context['skip_columns_lookup'][$candidateLower])) {
-                    $dbColumn = (string) $candidateColumn;
-                    break;
-                }
-            }
-
-            if ($dbColumn === '') {
-                continue;
-            }
-
-            $dbColumnLower = strtolower($dbColumn);
-            if (isset($selectedColumnsLookup[$dbColumnLower])) {
-                continue;
-            }
-
-            $expression = $this->applySqlColumnConstraints($expression, $dbColumn, $context);
             $insertColumns[] = $dbColumn;
             $selectClauses[] = "{$expression} AS " . $this->quoteSqlIdentifier($dbColumn);
-            $selectedColumnsLookup[$dbColumnLower] = true;
+            $filterAliases[$dbColumn] = $dbColumn;
         }
 
         return [
-            'insert_columns' => array_values(array_unique($insertColumns)),
+            'insert_columns' => $insertColumns,
             'select_clauses' => $selectClauses,
             'filter_aliases' => $filterAliases,
         ];
     }
 
-    private function buildDailyLoanBulkWhereClauses(array $context, array $filterAliases): array
+    private function buildDailyLoanBulkImportSqlParts(array $context, string $stagingTable): array
     {
-        $whereClauses = [
-            'src.`periode` IS NOT NULL',
-            'src.`baki_debet1` IS NOT NULL',
-            'src.`nomor_rekening1` IS NOT NULL',
+        $headerCount = (int) ($context['header_count'] ?? 0);
+        $insertColumns = ['id_import_job', 'unique_id', 'created_at', 'updated_at'];
+        $selectClauses = [
+            $this->quoteSqlIdentifier('id_import_job'),
+            $this->quoteSqlIdentifier('unique_id'),
+            'NOW() AS `created_at`',
+            'NOW() AS `updated_at`',
+        ];
+        $filterAliases = [];
+
+        $mapping = [
+            'periode' => 'PERIODE',
+            'kode_kanwil' => 'KODE_KANWIL1',
+            'kanwil' => 'KANWIL',
+            'kode_kanca' => 'KODE_KANCA1',
+            'kanca' => 'KANCA',
+            'kode_unit' => 'KODE_UNIT1',
+            'unit' => 'UNIT',
+            'nomor_rekening' => 'NOMOR_REKENING1',
+            'nama_nasabah' => 'NAMA_NASABAH',
+            'alamat_nasabah' => 'ALAMAT_NASABAH',
+            'cif' => 'CIF',
+            'sub_segment' => 'SUB_SEGMENT',
+            'ao_code' => 'AO_CODE',
+            'nama_ao' => 'NAMA_AO',
+            'produk_id' => 'PRODUK_ID',
+            'kualitas' => 'KUALITAS',
+            'baki_debet' => 'BAKI_DEBET1',
+            'plafon' => 'PLAFON',
+            'besar_realisasi' => 'BESAR_REALISASI',
+            'tgl_realisasi' => 'TGL_REALISASI',
+            'tgl_jatuh_tempo' => 'TGL_JATUH_TEMPO',
+            'tgl_bayar_terakhir' => 'TGL_BAYAR_TERAKHIR',
+            'tunggakan_pokok' => 'TUNGGAKAN_POKOK1',
+            'tunggakan_bunga' => 'TUNGGAKAN_BUNGA1',
+            'jumlah_pembayaran_terakhir' => 'JUMLAH_PEMBAYARAN_TERAKHIR',
+            'segment_bisnis' => 'SEGMENT_BISNIS',
+            'tgl_terminate' => 'TGL_TERMINATE',
+            'sektor_ekonomi' => 'SEKTOR_EKONOMI',
+            'curtyp' => 'CURTYP',
         ];
 
-        foreach ($filterAliases as $originalIndex => $filterAlias) {
-            $rule = $context['header_rules'][$originalIndex] ?? null;
-            if (!$rule || empty($rule['filter_lookup'])) {
+        $columnToIndex = $context['column_to_index'] ?? [];
+        $backend = $context['backend'] ?? '';
+
+        $polarsMap = [
+            'periode' => 1, 'kode_kanwil' => 2, 'kanwil' => 3, 'kode_kanca' => 4, 'kanca' => 5, 'kode_unit' => 6,
+            'unit' => 7, 'nomor_rekening' => 8, 'nama_nasabah' => 9, 'alamat_nasabah' => 10, 'cif' => 11,
+            'sub_segment' => 12, 'ao_code' => 13, 'nama_ao' => 14, 'produk_id' => 15, 'kualitas' => 16,
+            'baki_debet' => 17, 'plafon' => 18, 'besar_realisasi' => 19, 'tgl_realisasi' => 20,
+            'tgl_jatuh_tempo' => 21, 'tgl_bayar_terakhir' => 22, 'tunggakan_pokok' => 23, 'tunggakan_bunga' => 24,
+            'jumlah_pembayaran_terakhir' => 25, 'segment_bisnis' => 26, 'tgl_terminate' => 27,
+            'sektor_ekonomi' => 28, 'curtyp' => 29
+        ];
+
+        foreach ($mapping as $dbColumn => $headerKey) {
+            if ($backend === 'polars') {
+                $sourceIndex = $polarsMap[$dbColumn] ?? null;
+            } else {
+                $sourceIndex = $columnToIndex[$headerKey] ?? null;
+            }
+
+            if ($sourceIndex === null || $sourceIndex >= $headerCount) {
                 continue;
             }
 
-            $filterValues = array_map(static fn ($v) => (string) $v, array_keys((array) $rule['filter_lookup']));
-            $includeBlank = in_array('(Blank)', $filterValues, true);
-            $filterValues = array_values(array_filter($filterValues, static fn (string $v): bool => $v !== '(Blank)'));
+            $sourceCol = $this->quoteSqlIdentifier('COL_' . $sourceIndex);
+            $expression = "NULLIF(TRIM({$sourceCol}), '')";
 
-            $conditions = [];
-            if (!empty($filterValues)) {
-                $quotedValues = implode(', ', array_map(fn (string $value): string => $this->quoteSqlStringLiteral($value), $filterValues));
-                $conditions[] = 'src.' . $this->quoteSqlIdentifier($filterAlias) . " IN ({$quotedValues})";
+            if (in_array(strtoupper($headerKey), self::DAILY_LOAN_DATE_COLUMNS, true)) {
+                $expression = \App\Support\StrictDateParser::buildMySqlCaseExpression($expression);
             }
 
-            if ($includeBlank) {
-                $conditions[] = 'src.' . $this->quoteSqlIdentifier($filterAlias) . ' IS NULL';
-            }
-
-            if (!empty($conditions)) {
-                $whereClauses[] = '(' . implode(' OR ', $conditions) . ')';
-            }
+            $insertColumns[] = $dbColumn;
+            $selectClauses[] = "{$expression} AS " . $this->quoteSqlIdentifier($dbColumn);
+            $filterAliases[$dbColumn] = $dbColumn;
         }
 
-        return $whereClauses;
+        return [
+            'insert_columns' => $insertColumns,
+            'select_clauses' => $selectClauses,
+            'filter_aliases' => $filterAliases,
+        ];
     }
 
-    private function processDailyLoanBulkCsvStream(
+    private function buildFastPathBulkImportSqlParts(array $context, string $stagingTable): array
+    {
+        $tableName = (string) ($context['table_name'] ?? '');
+
+        if ($this->isLw325PhTable($tableName)) {
+            return $this->buildLw325PhBulkImportSqlParts($context, $stagingTable);
+        }
+
+        return $this->buildDailyLoanBulkImportSqlParts($context, $stagingTable);
+    }
+
+    private function buildFastPathBulkWhereClauses(array $context, array $filterAliases): string
+    {
+        $tableName = (string) ($context['table_name'] ?? '');
+
+        if ($this->isLw325PhTable($tableName)) {
+            $activeFilters = $context['active_filters'] ?? [];
+            if (empty($activeFilters)) {
+                return '';
+            }
+
+            $clauses = [];
+            foreach ($activeFilters as $column => $allowedValues) {
+                if (empty($allowedValues)) {
+                    continue;
+                }
+
+                $quotedColumn = $this->quoteSqlIdentifier($column);
+                $quotedValues = array_map(fn ($v): string => DB::getPdo()->quote((string) $v), (array) $allowedValues);
+                $clauses[] = "{$quotedColumn} IN (" . implode(', ', $quotedValues) . ')';
+            }
+
+            return $clauses === [] ? '' : ('WHERE ' . implode(' AND ', $clauses));
+        }
+
+        $whereClauses = [
+            'src.`periode` IS NOT NULL',
+            'src.`nomor_rekening` IS NOT NULL',
+            'src.`baki_debet` IS NOT NULL',
+        ];
+
+        return 'WHERE ' . implode(' AND ', $whereClauses);
+    }
+
+    private function processFastPathBulkCsvStream(
         callable $send,
         string $csvPath,
         string $tableName,
@@ -5581,7 +5752,10 @@ class ImportExcelController extends Controller
         ?string $delimiter = null,
         array $importOptions = []
     ): bool {
-        if ($csvPath === '' || !file_exists($csvPath) || !$this->isDailyLoanTable($tableName)) {
+        $isDailyLoan = $this->isDailyLoanTable($tableName);
+        $isLw325Ph = $this->isLw325PhTable($tableName);
+
+        if ($csvPath === '' || !file_exists($csvPath) || (!$isDailyLoan && !$isLw325Ph)) {
             return false;
         }
 
@@ -5593,96 +5767,100 @@ class ImportExcelController extends Controller
             ? $delimiter
             : $this->detectCsvDelimiter($csvPath);
         $loadSource = null;
-        $sourcePath = $csvPath;
 
         $context = $this->buildImportContext($tableName, $normalizedHeaders, $activeFilters, $importOptions);
         $headerCount = max(1, count($normalizedHeaders));
         $stagingTable = null;
 
         try {
+            $label = $isLw325Ph ? 'LW325 - PH' : 'Daily Loan';
             $send('progress', [
                 'percent' => 18,
                 'message' => empty($activeFilters)
-                    ? 'Fast-path Daily Loan aktif. Memuat CSV ke staging table...'
-                    : 'Fast-path Daily Loan + filter aktif. Memuat CSV ke staging table...',
+                    ? "Fast-path {$label} aktif. Memuat CSV ke staging table..."
+                    : "Fast-path {$label} + filter aktif. Memuat CSV ke staging table...",
                 'rows_done' => 0,
                 'total' => $estimatedTotalRows,
                 'speed' => 0,
             ]);
 
-            $loadSource = $this->prepareDailyLoanDirectLoadSource($csvPath, $delimiter, $send);
+            if ($isLw325Ph) {
+                $loadSource = $this->prepareLw325PhDirectLoadSource($csvPath, $delimiter, $send);
+            } else {
+                $loadSource = $this->prepareDailyLoanDirectLoadSource($csvPath, $delimiter, $send);
+            }
+
             $sourcePath = (string) ($loadSource['path'] ?? $csvPath);
+            $backend = (string) ($loadSource['backend'] ?? 'csv_stage');
+            $context['backend'] = $backend;
 
-            $stagingTable = $this->createCsvStagingTable('tmp_daily_loan_csv_stage', $jobId, $headerCount);
-            $loadedRows = $this->loadCsvIntoStagingTable($sourcePath, $stagingTable, $headerCount, $delimiter, 1);
+            $stagingTable = $this->createCsvStagingTable('tmp_bulk_csv_stage', $jobId, $headerCount);
+            
+            // Polars output for bulk loading has no header, so skip 0 lines.
+            $skipLines = ($backend === 'polars') ? 0 : 1;
+            $loadedRows = $this->loadCsvIntoStagingTable($sourcePath, $stagingTable, $headerCount, $delimiter, $skipLines);
 
-            $sqlParts = $this->buildDailyLoanBulkImportSqlParts($context, $stagingTable);
+            $sqlParts = $this->buildFastPathBulkImportSqlParts($context, $stagingTable);
             $insertColumns = $sqlParts['insert_columns'];
             $selectClauses = $sqlParts['select_clauses'];
             $filterAliases = $sqlParts['filter_aliases'];
 
             if (count($insertColumns) <= (!empty($context['unique_id_col']) ? 3 : 2)) {
-                throw new \RuntimeException('Mapping kolom Daily Loan untuk fast import tidak valid.');
+                throw new \RuntimeException("Mapping kolom {$label} untuk fast import tidak valid.");
             }
 
             $quotedInsertColumns = implode(', ', array_map(fn (string $column): string => $this->quoteSqlIdentifier($column), $insertColumns));
             $outerSelectColumns = implode(', ', array_map(fn (string $column): string => 'src.' . $this->quoteSqlIdentifier($column), $insertColumns));
             $innerSelectSql = implode(",\n", $selectClauses);
-            $whereClauses = $this->buildDailyLoanBulkWhereClauses($context, $filterAliases);
+            $whereClauses = $this->buildFastPathBulkWhereClauses($context, $filterAliases);
 
             $baseTotal = $loadedRows > 0 ? $loadedRows : $estimatedTotalRows;
-
-            if ($jobId > 0) {
-                $job = $this->progressService()->findJob($jobId);
-                $this->progressService()->updateJob($jobId, [
-                    'total_files' => $baseTotal,
-                    'total_success' => (int) ($job->total_success ?? 0),
-                    'total_failed' => (int) ($job->total_failed ?? 0),
-                ]);
-            }
 
             $send('progress', [
                 'percent' => 56,
                 'message' => empty($activeFilters)
-                    ? 'Staging selesai. Menjalankan INSERT SELECT langsung ke Daily Loan...'
-                    : 'Staging selesai. Menjalankan INSERT SELECT terfilter langsung ke Daily Loan...',
+                    ? "Staging selesai. Menjalankan INSERT SELECT langsung ke {$tableName}..."
+                    : "Staging selesai. Menjalankan INSERT SELECT terfilter langsung ke {$tableName}...",
                 'rows_done' => 0,
                 'total' => $baseTotal,
                 'speed' => 0,
             ]);
 
-            $sql = "INSERT INTO " . $this->quoteSqlIdentifier($tableName) . " ({$quotedInsertColumns}) "
-                . "SELECT {$outerSelectColumns} FROM ("
-                . "SELECT {$innerSelectSql} FROM " . $this->quoteSqlIdentifier($stagingTable)
-                . ") AS src "
-                . 'WHERE ' . implode(' AND ', $whereClauses);
-            $eligibleCountSql = "SELECT COUNT(*) AS aggregate_count FROM ("
-                . "SELECT {$innerSelectSql} FROM " . $this->quoteSqlIdentifier($stagingTable)
-                . ") AS src "
-                . 'WHERE ' . implode(' AND ', $whereClauses);
+            $sql = "INSERT INTO `{$tableName}` ({$quotedInsertColumns})\n"
+                . "SELECT {$outerSelectColumns}\n"
+                . "FROM (\n"
+                . "  SELECT \n{$innerSelectSql},\n  `id`\n"
+                . "  FROM `{$stagingTable}`\n"
+                . ") AS src\n"
+                . $whereClauses;
 
-            $sessionSqlMode = null;
             $eligibleRows = null;
-            $aggregateRow = DB::selectOne($eligibleCountSql);
-            if ($aggregateRow) {
-                $eligibleRows = (int) ($aggregateRow->aggregate_count ?? $aggregateRow->AGGREGATE_COUNT ?? 0);
+            if ($whereClauses !== '') {
+                $countSql = "SELECT COUNT(*) AS aggregate_count FROM (\n"
+                    . "  SELECT \n{$innerSelectSql}\n"
+                    . "  FROM `{$stagingTable}`\n"
+                    . ") AS src\n"
+                    . $whereClauses;
+                $row = DB::selectOne($countSql);
+                $eligibleRows = (int) ($row->aggregate_count ?? $row->AGGREGATE_COUNT ?? 0);
+            } else {
+                $eligibleRows = $loadedRows;
             }
 
             if ($eligibleRows !== null && $eligibleRows >= 0) {
                 $baseTotal = $eligibleRows;
-
-                if ($jobId > 0) {
-                    $job = $this->progressService()->findJob($jobId);
-                    $this->progressService()->updateJob($jobId, [
-                        'total_files' => $baseTotal,
-                        'total_success' => (int) ($job->total_success ?? 0),
-                        'total_failed' => (int) ($job->total_failed ?? 0),
-                    ]);
-                }
             }
 
-            if (!$this->acquireMysqlAdvisoryLockOnDb(self::DAILY_LOAN_IMPORT_LOCK_NAME, 5)) {
-                throw new \RuntimeException('Import Daily Loan sedang berjalan. Tunggu proses sebelumnya selesai terlebih dahulu.');
+            if ($jobId > 0) {
+                $this->progressService()->updateJob($jobId, [
+                    'total_files' => $baseTotal,
+                ]);
+            }
+
+            $lockName = $isLw325Ph ? 'LW325_PH_IMPORT_LOCK' : self::DAILY_LOAN_IMPORT_LOCK_NAME;
+
+            if (!$this->acquireMysqlAdvisoryLockOnDb($lockName, 10)) {
+                throw new \RuntimeException("Import {$label} sedang berjalan di background. Silakan tunggu.");
             }
 
             $inserted = 0;
@@ -5722,7 +5900,7 @@ class ImportExcelController extends Controller
                     }
                 }
             } finally {
-                $this->releaseMysqlAdvisoryLockOnDb(self::DAILY_LOAN_IMPORT_LOCK_NAME);
+                $this->releaseMysqlAdvisoryLockOnDb($lockName);
             }
 
             $failed = max(0, $baseTotal - $inserted);
@@ -5737,8 +5915,8 @@ class ImportExcelController extends Controller
             $send('progress', [
                 'percent' => 98,
                 'message' => empty($activeFilters)
-                    ? 'Fast import Daily Loan selesai diproses.'
-                    : 'Fast import Daily Loan terfilter selesai diproses.',
+                    ? "Fast import {$label} selesai diproses."
+                    : "Fast import {$label} terfilter selesai diproses.",
                 'rows_done' => $inserted,
                 'total' => $baseTotal,
                 'speed' => 0,
@@ -8694,7 +8872,7 @@ class ImportExcelController extends Controller
             'resolve_csv_data_row_estimate' => fn(?int $totalRows, int $headerIndex) => $this->resolveCsvDataRowEstimate($totalRows, $headerIndex),
             'run_csv_pipeline' => fn(array $payload) => $this->pipelineService()->runCsvPipeline($payload),
             'process_daily_loan_direct_csv_stream' => fn($send, string $workingPath, string $tableName, array $normalizedHeaders, int $jobId, int $totalDataRows, ?string $delimiter, array $importOptions = []) => $this->processDailyLoanDirectCsvStream($send, $workingPath, $tableName, $normalizedHeaders, $jobId, $totalDataRows, $delimiter, $importOptions),
-            'process_daily_loan_bulk_csv_stream' => fn($send, string $workingPath, string $tableName, array $normalizedHeaders, array $activeFilters, int $jobId, int $totalDataRows, ?string $delimiter, array $importOptions = []) => $this->processDailyLoanBulkCsvStream($send, $workingPath, $tableName, $normalizedHeaders, $activeFilters, $jobId, $totalDataRows, $delimiter, $importOptions),
+            'process_daily_loan_bulk_csv_stream' => fn($send, string $workingPath, string $tableName, array $normalizedHeaders, array $activeFilters, int $jobId, int $totalDataRows, ?string $delimiter, array $importOptions = []) => $this->processFastPathBulkCsvStream($send, $workingPath, $tableName, $normalizedHeaders, $activeFilters, $jobId, $totalDataRows, $delimiter, $importOptions),
             'process_staged_csv_stream' => fn($send, string $workingPath, string $tableName, array $activeFilters, array $normalizedHeaders, int $jobId, ?int $estimatedTotalRows = null, ?string $delimiter = null, bool $forceDirectLoad = false, ?callable $beforeDirectLoad = null, array $importOptions = []) => $this->processStagedCsvStream($send, $workingPath, $tableName, $activeFilters, $normalizedHeaders, $jobId, $estimatedTotalRows, $delimiter, $forceDirectLoad, $beforeDirectLoad, $importOptions),
             'try_python_bulk_load' => fn($send, string $path, int $headerIndex, string $tableName, array $activeFilters, array $normalizedHeaders, int $jobId, array $importOptions = []) => $this->tryPythonBulkLoad($send, $path, $headerIndex, $tableName, $activeFilters, $normalizedHeaders, $jobId, $importOptions),
             'try_python_gpu' => fn($send, string $path, int $headerIndex, string $tableName, array $activeFilters, array $normalizedHeaders, int $jobId, array $importOptions = []) => $this->tryPythonGPU($send, $path, $headerIndex, $tableName, $activeFilters, $normalizedHeaders, $jobId, $importOptions),
