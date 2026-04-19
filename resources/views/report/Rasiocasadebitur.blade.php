@@ -601,6 +601,11 @@
                             <i class="fas fa-store mr-1"></i> MIKRO & SMC
                         </a>
                     </li>
+                    <li class="nav-item">
+                        <a class="nav-link" data-toggle="tab" href="#tab-per-rm" role="tab">
+                            <i class="fas fa-user-tie mr-1"></i> Per RM
+                        </a>
+                    </li>
                 </ul>
 
                 <div class="tab-content">
@@ -709,6 +714,62 @@
                             </table>
                         </div>
                     </div>
+
+                    <div class="tab-pane fade" id="tab-per-rm" role="tabpanel">
+                        <div class="mb-3 p-3 bg-light rounded" style="border: 1px solid #e2e8f0;">
+                            <form id="filterFormPerRm" class="row align-items-end" style="gap: 1rem;">
+                                <div class="col-md-3">
+                                    <label class="casa-filter-label">Cabang</label>
+                                    <select id="filter_cabang1_rm" name="cabang1" class="form-control casa-filter-control">
+                                        <option value="">Pilih Cabang</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="casa-filter-label">Unit Kerja</label>
+                                    <select id="filter_unit1_rm" name="unit1" class="form-control casa-filter-control">
+                                        <option value="">Pilih Unit Kerja</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-3">
+                                    <button type="button" id="submitButtonPerRm" class="btn btn-primary btn-block">
+                                        <i class="fas fa-play mr-2"></i> Proses
+                                    </button>
+                                </div>
+                                <div class="col-md-3">
+                                    <span id="loadingChipPerRm" class="casa-loading-chip d-none w-100 justify-content-center">
+                                        <span class="casa-loading-dot"></span>
+                                        Memproses...
+                                    </span>
+                                </div>
+                            </form>
+                        </div>
+
+                        <div class="table-container">
+                            <table class="table table-report m-0">
+                                <thead>
+                                    <tr>
+                                        <th rowspan="3" class="bg-header-main sticky-col align-middle col-group-label" style="min-width: 170px;">RM / MANTRI</th>
+                                        <th colspan="7" class="bg-header-main">TOTAL</th>
+                                    </tr>
+                                    <tr class="bg-header-sub">
+                                        <th colspan="2">Total OS</th>
+                                        <th colspan="2">Total CASA</th>
+                                        <th colspan="3">Rasio CASA/OS</th>
+                                    </tr>
+                                    <tr class="bg-header-sub-light">
+                                        <th class="lbl-prev-th">-</th>
+                                        <th class="lbl-curr-th">-</th>
+                                        <th class="lbl-prev-th">-</th>
+                                        <th class="lbl-curr-th">-</th>
+                                        <th class="lbl-prev-th">-</th>
+                                        <th class="lbl-curr-th">-</th>
+                                        <th>MtD</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tbody-per-rm"></tbody>
+                            </table>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -797,27 +858,36 @@ document.addEventListener('DOMContentLoaded', function () {
     function syncNamaUkerOptions() {
         const availableUkers = getAvailableUkers();
         const selectedUkers = getSelectedUkers();
-        const $ukerMenu = $('#filterUkerMenu');
-        $ukerMenu.empty();
+        const ukerMenuElement = document.getElementById('filterUkerMenu');
+        ukerMenuElement.innerHTML = '';
 
-        availableUkers.forEach(function (uker) {
+        // Use DocumentFragment untuk batch DOM insertion
+        const fragment = document.createDocumentFragment();
+        
+        availableUkers.forEach(function (uker, index) {
             const safeId = uker.toLowerCase().replace(/[^a-z0-9]+/g, '_');
             const isChecked = selectedUkers.includes(uker) ? 'checked' : '';
-            $ukerMenu.append(`
-                <label class="dropdown-item" for="uker_${safeId}">
-                    <div class="form-check">
-                        <input class="form-check-input filter-uker-checkbox" type="checkbox" value="${$('<div>').text(uker).html()}" id="uker_${safeId}" ${isChecked}>
-                        <span class="form-check-label">${$('<div>').text(uker).html()}</span>
-                    </div>
-                </label>
-            `);
+            
+            const label = document.createElement('label');
+            label.className = 'dropdown-item';
+            label.setAttribute('for', `uker_${safeId}`);
+            label.innerHTML = `
+                <div class="form-check">
+                    <input class="form-check-input filter-uker-checkbox" type="checkbox" value="${$('<div>').text(uker).html()}" id="uker_${safeId}" ${isChecked}>
+                    <span class="form-check-label">${$('<div>').text(uker).html()}</span>
+                </div>
+            `;
+            fragment.appendChild(label);
         });
+        
+        ukerMenuElement.appendChild(fragment);
 
         const shouldDisable = availableUkers.length === 0;
         if (shouldDisable) {
             closeUkerDropdown();
         }
-        $('#filterUkerDropdown').prop('disabled', shouldDisable).attr('aria-expanded', 'false');
+        document.getElementById('filterUkerDropdown').disabled = shouldDisable;
+        document.getElementById('filterUkerDropdown').setAttribute('aria-expanded', 'false');
         updateUkerLabel();
     }
 
@@ -893,25 +963,84 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function renderRows(dataList, totalData) {
-        let htmlTotal = '';
-        let htmlBrigunaKpr = '';
-        let htmlMikroSmc = '';
+        // Gunakan DocumentFragment untuk batch DOM insertion
+        const fragmentTotal = document.createDocumentFragment();
+        const fragmentBrigunaKpr = document.createDocumentFragment();
+        const fragmentMikroSmc = document.createDocumentFragment();
+        
+        const isLargeDataset = dataList.length > 50;
+        const chunkSize = Math.max(10, Math.ceil(dataList.length / 5)); // ~5 batches untuk large dataset
 
-        dataList.forEach(function(row) {
-            const branchCell = `<td class="sticky-col text-left font-weight-bold">${row.branch || '-'}</td>`;
-            htmlTotal += `<tr>${branchCell}${createDataCells(row.total)}</tr>`;
-            htmlBrigunaKpr += `<tr>${branchCell}${createDataCells(row.briguna)}${createDataCells(row.kpr, true)}</tr>`;
-            htmlMikroSmc += `<tr>${branchCell}${createDataCells(row.mikro)}${createDataCells(row.smc, true)}</tr>`;
-        });
+        // Render data rows
+        if (isLargeDataset) {
+            // Progressive rendering untuk dataset besar
+            dataList.forEach(function(row, index) {
+                const branchCell = `<td class="sticky-col text-left font-weight-bold">${row.branch || '-'}</td>`;
+                
+                const trTotal = document.createElement('tr');
+                trTotal.innerHTML = branchCell + createDataCells(row.total);
+                fragmentTotal.appendChild(trTotal);
+                
+                const trBrigunaKpr = document.createElement('tr');
+                trBrigunaKpr.innerHTML = branchCell + createDataCells(row.briguna) + createDataCells(row.kpr, true);
+                fragmentBrigunaKpr.appendChild(trBrigunaKpr);
+                
+                const trMikroSmc = document.createElement('tr');
+                trMikroSmc.innerHTML = branchCell + createDataCells(row.mikro) + createDataCells(row.smc, true);
+                fragmentMikroSmc.appendChild(trMikroSmc);
+                
+                // Batch append every chunkSize rows
+                if ((index + 1) % chunkSize === 0 || index === dataList.length - 1) {
+                    document.getElementById('tbody-total').appendChild(fragmentTotal);
+                    document.getElementById('tbody-briguna-kpr').appendChild(fragmentBrigunaKpr);
+                    document.getElementById('tbody-mikro-smc').appendChild(fragmentMikroSmc);
+                    
+                    // Clear fragments for next batch
+                    fragmentTotal.innerHTML = '';
+                    fragmentBrigunaKpr.innerHTML = '';
+                    fragmentMikroSmc.innerHTML = '';
+                }
+            });
+        } else {
+            // Direct rendering untuk dataset kecil
+            dataList.forEach(function(row) {
+                const branchCell = `<td class="sticky-col text-left font-weight-bold">${row.branch || '-'}</td>`;
+                
+                const trTotal = document.createElement('tr');
+                trTotal.innerHTML = branchCell + createDataCells(row.total);
+                fragmentTotal.appendChild(trTotal);
+                
+                const trBrigunaKpr = document.createElement('tr');
+                trBrigunaKpr.innerHTML = branchCell + createDataCells(row.briguna) + createDataCells(row.kpr, true);
+                fragmentBrigunaKpr.appendChild(trBrigunaKpr);
+                
+                const trMikroSmc = document.createElement('tr');
+                trMikroSmc.innerHTML = branchCell + createDataCells(row.mikro) + createDataCells(row.smc, true);
+                fragmentMikroSmc.appendChild(trMikroSmc);
+            });
+            
+            document.getElementById('tbody-total').appendChild(fragmentTotal);
+            document.getElementById('tbody-briguna-kpr').appendChild(fragmentBrigunaKpr);
+            document.getElementById('tbody-mikro-smc').appendChild(fragmentMikroSmc);
+        }
 
+        // Append total rows
         const totalBranchCell = `<td class="sticky-col text-left">${totalData.branch || 'TOTAL AREA 6'}</td>`;
-        htmlTotal += `<tr class="row-total">${totalBranchCell}${createDataCells(totalData.total)}</tr>`;
-        htmlBrigunaKpr += `<tr class="row-total">${totalBranchCell}${createDataCells(totalData.briguna)}${createDataCells(totalData.kpr, true)}</tr>`;
-        htmlMikroSmc += `<tr class="row-total">${totalBranchCell}${createDataCells(totalData.mikro)}${createDataCells(totalData.smc, true)}</tr>`;
-
-        $('#tbody-total').html(htmlTotal);
-        $('#tbody-briguna-kpr').html(htmlBrigunaKpr);
-        $('#tbody-mikro-smc').html(htmlMikroSmc);
+        
+        const trTotalRow = document.createElement('tr');
+        trTotalRow.className = 'row-total';
+        trTotalRow.innerHTML = totalBranchCell + createDataCells(totalData.total);
+        document.getElementById('tbody-total').appendChild(trTotalRow);
+        
+        const trBrigunaKprRow = document.createElement('tr');
+        trBrigunaKprRow.className = 'row-total';
+        trBrigunaKprRow.innerHTML = totalBranchCell + createDataCells(totalData.briguna) + createDataCells(totalData.kpr, true);
+        document.getElementById('tbody-briguna-kpr').appendChild(trBrigunaKprRow);
+        
+        const trMikroSmcRow = document.createElement('tr');
+        trMikroSmcRow.className = 'row-total';
+        trMikroSmcRow.innerHTML = totalBranchCell + createDataCells(totalData.mikro) + createDataCells(totalData.smc, true);
+        document.getElementById('tbody-mikro-smc').appendChild(trMikroSmcRow);
     }
 
     function resetTableState() {
@@ -1044,6 +1173,162 @@ document.addEventListener('DOMContentLoaded', function () {
     $(document).on('change', '.filter-uker-checkbox', function () {
         updateUkerLabel();
     });
+
+    // ============================================================
+    // Handler untuk Rasio CASA Per RM
+    // ============================================================
+    const cabang1Select = document.getElementById('filter_cabang1_rm');
+    const unit1Select = document.getElementById('filter_unit1_rm');
+    const submitButtonPerRm = document.getElementById('submitButtonPerRm');
+    const loadingChipPerRm = document.getElementById('loadingChipPerRm');
+    let activeRequestPerRm = null;
+
+    // Load periode pada pertama kali
+    function loadFiltersPerRm() {
+        $.ajax({
+            url: "{{ route('report.rasiocasa.filters-per-rm') }}",
+            type: 'GET',
+            data: {
+                cabang1: '',
+                unit1: '',
+                _token: '{{ csrf_token() }}'
+            },
+            dataType: 'json',
+        }).done(function(res) {
+            // Populate cabang
+            cabang1Select.innerHTML = '<option value="">Pilih Cabang</option>';
+            if (res.branches && Array.isArray(res.branches)) {
+                res.branches.forEach(function(branch) {
+                    const option = document.createElement('option');
+                    option.value = branch;
+                    option.textContent = branch;
+                    cabang1Select.appendChild(option);
+                });
+            }
+            cabang1Select.disabled = false;
+        });
+    }
+
+    // Load unit kerja ketika cabang berubah
+    cabang1Select.addEventListener('change', function() {
+        const selectedCabang = this.value;
+        unit1Select.innerHTML = '<option value="">Pilih Unit Kerja</option>';
+        unit1Select.disabled = !selectedCabang;
+
+        if (selectedCabang) {
+            $.ajax({
+                url: "{{ route('report.rasiocasa.filters-per-rm') }}",
+                type: 'GET',
+                data: {
+                    cabang1: selectedCabang,
+                    unit1: '',
+                    _token: '{{ csrf_token() }}'
+                },
+                dataType: 'json',
+            }).done(function(res) {
+                if (res.units && Array.isArray(res.units)) {
+                    res.units.forEach(function(unit) {
+                        const option = document.createElement('option');
+                        option.value = unit;
+                        option.textContent = unit;
+                        unit1Select.appendChild(option);
+                    });
+                }
+                unit1Select.disabled = false;
+            });
+        }
+    });
+
+    // Load data rasio CASA per RM
+    async function loadDataPerRm() {
+        const selectedCabang = cabang1Select.value;
+        const selectedUnit = unit1Select.value;
+
+        if (!selectedCabang || !selectedUnit) {
+            alert('Pilih cabang dan unit kerja terlebih dahulu.');
+            return;
+        }
+
+        if (activeRequestPerRm) {
+            activeRequestPerRm.abort();
+        }
+
+        loadingChipPerRm.classList.remove('d-none');
+        submitButtonPerRm.disabled = true;
+
+        activeRequestPerRm = $.ajax({
+            url: "{{ route('report.data.rasiocasa-per-rm') }}",
+            type: 'POST',
+            data: {
+                posisi: filterPosisi.value,
+                cabang1: selectedCabang,
+                unit1: selectedUnit,
+                _token: '{{ csrf_token() }}'
+            },
+            dataType: 'json',
+        });
+
+        try {
+            const res = await activeRequestPerRm;
+
+            if (res.status !== 'success') {
+                alert(res.message || 'Data tidak berhasil dimuat dari server.');
+                return;
+            }
+
+            const dataList = res.data || [];
+            const totalData = res.total || {};
+            const labels = res.labels || {};
+
+            // Update table labels
+            updateTableLabels(labels.prev || '-', labels.curr || '-');
+
+            // Render rows untuk tab per-rm
+            const tbodyPerRm = document.getElementById('tbody-per-rm');
+            tbodyPerRm.innerHTML = '';
+
+            if (dataList.length === 0) {
+                const tr = document.createElement('tr');
+                tr.innerHTML = '<td colspan="8" class="text-center text-muted">Tidak ada data untuk filter yang dipilih.</td>';
+                tbodyPerRm.appendChild(tr);
+            } else {
+                const fragment = document.createDocumentFragment();
+                
+                dataList.forEach(function(row) {
+                    const tr = document.createElement('tr');
+                    const branchCell = `<td class="sticky-col text-left font-weight-bold">${row.branch || '-'}</td>`;
+                    tr.innerHTML = branchCell + createDataCells(row.total);
+                    fragment.appendChild(tr);
+                });
+
+                tbodyPerRm.appendChild(fragment);
+            }
+
+            // Append total row
+            const trTotal = document.createElement('tr');
+            trTotal.className = 'row-total';
+            const totalBranchCell = `<td class="sticky-col text-left">${totalData.branch || 'TOTAL'}</td>`;
+            trTotal.innerHTML = totalBranchCell + createDataCells(totalData.total);
+            tbodyPerRm.appendChild(trTotal);
+
+        } catch (xhr) {
+            if (xhr && xhr.statusText === 'abort') {
+                return;
+            }
+            alert('Gagal memuat data per RM. Silakan coba lagi.');
+        } finally {
+            loadingChipPerRm.classList.add('d-none');
+            submitButtonPerRm.disabled = false;
+            activeRequestPerRm = null;
+        }
+    }
+
+    submitButtonPerRm.addEventListener('click', function() {
+        loadDataPerRm();
+    });
+
+    // Load initial filters
+    loadFiltersPerRm();
 
     resetTableState();
     syncNamaUkerOptions();

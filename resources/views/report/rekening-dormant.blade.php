@@ -492,47 +492,480 @@
 @section('scripts')
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-    const form=document.getElementById('dormantFilterForm'), periodInput=document.getElementById('dormantPeriodInput'), branchDropdown=document.getElementById('dormantBranchDropdown'), branchMenu=document.getElementById('dormantBranchMenu'), branchLabel=document.getElementById('dormantBranchLabel'), unitDropdown=document.getElementById('dormantUnitDropdown'), unitMenu=document.getElementById('dormantUnitMenu'), unitLabel=document.getElementById('dormantUnitLabel'), branchInputs=document.getElementById('dormantBranchInputs'), unitInputs=document.getElementById('dormantUnitInputs'), submitButton=document.getElementById('dormantSubmitButton'), resetButton=document.getElementById('dormantResetButton'), chip=document.getElementById('dormantLoadingChip'), overlay=document.getElementById('dormantLoadingOverlay'), tableBody=document.getElementById('dormantTableBody'), tableFoot=document.getElementById('dormantTableFoot'), activeMeta=document.getElementById('dormantActivePeriodMeta'), comparisonMeta=document.getElementById('dormantComparisonPeriodMeta'), badge=document.getElementById('dormantPeriodBadge'), currentHeader=document.getElementById('dormantHeaderCurrent'), mtdHeader=document.getElementById('dormantHeaderMtd'), ytdHeader=document.getElementById('dormantHeaderYtd'), yoyHeader=document.getElementById('dormantHeaderYoy');
-    const filtersUrl=@json(route('report.rekening-dormant.filters')), dataUrl=@json(route('report.data.rekening-dormant')), csrfToken=@json(csrf_token()), defaultPeriod=@json($defaultPeriod), initialBranches=@json($selectedBranches ?? []), initialUnits=@json($selectedUnits ?? []);
-    let activeController=null, activeFilterController=null, branchOptions=[], unitOptions=[], selectedBranches=Array.isArray(initialBranches)?initialBranches:[], selectedUnits=Array.isArray(initialUnits)?initialUnits:[];
+    // ────────────────────── Elements ──────────────────────
+    const form = document.getElementById('dormantFilterForm');
+    const periodInput = document.getElementById('dormantPeriodInput');
+    const branchDropdown = document.getElementById('dormantBranchDropdown');
+    const branchMenu = document.getElementById('dormantBranchMenu');
+    const branchLabel = document.getElementById('dormantBranchLabel');
+    const unitDropdown = document.getElementById('dormantUnitDropdown');
+    const unitMenu = document.getElementById('dormantUnitMenu');
+    const unitLabel = document.getElementById('dormantUnitLabel');
+    const branchInputs = document.getElementById('dormantBranchInputs');
+    const unitInputs = document.getElementById('dormantUnitInputs');
+    const submitButton = document.getElementById('dormantSubmitButton');
+    const resetButton = document.getElementById('dormantResetButton');
+    const chip = document.getElementById('dormantLoadingChip');
+    const overlay = document.getElementById('dormantLoadingOverlay');
+    const tableBody = document.getElementById('dormantTableBody');
+    const tableFoot = document.getElementById('dormantTableFoot');
+    const activeMeta = document.getElementById('dormantActivePeriodMeta');
+    const comparisonMeta = document.getElementById('dormantComparisonPeriodMeta');
+    const badge = document.getElementById('dormantPeriodBadge');
+    const currentHeader = document.getElementById('dormantHeaderCurrent');
+    const mtdHeader = document.getElementById('dormantHeaderMtd');
+    const ytdHeader = document.getElementById('dormantHeaderYtd');
+    const yoyHeader = document.getElementById('dormantHeaderYoy');
 
-    function appendArrayParams(params,key,values){values.forEach(value=>{if(value)params.append(`${key}[]`,value)})}
-    function formatDate(value){if(!value)return'-';return new Intl.DateTimeFormat('id-ID').format(new Date(value+'T00:00:00'))}
-    function formatNumber(value){if(value===null||value===undefined||value==='')return'-';const number=Number(value);return Number.isNaN(number)?'-':new Intl.NumberFormat('id-ID').format(number)}
-    function deltaText(value){const n=Number(value||0);return n>0?`+${formatNumber(n)}`:formatNumber(n)}
-    function cellClass(value,isCurrent=false){if(isCurrent)return'metric-current';const n=Number(value||0);if(n>0)return'metric-positive';if(n<0)return'metric-negative';return'metric-neutral'}
-    function renderRows(rows){
-        if(!rows||rows.length===0){
-            tableBody.innerHTML=`<tr><td colspan="5" class="dormant-empty-state"><i class="fas fa-inbox fa-2x text-muted mb-3 opacity-50"></i><strong>Data tidak ditemukan</strong>Coba ubah periode atau filter branch office agar hasil report tersedia.</td></tr>`;
+    // ────────────────────── Config ──────────────────────
+    const filtersUrl = @json(route('report.rekening-dormant.filters'));
+    const dataUrl = @json(route('report.data.rekening-dormant'));
+    const csrfToken = @json(csrf_token());
+    const defaultPeriod = @json($defaultPeriod);
+    const initialBranches = @json($selectedBranches ?? []);
+    const initialUnits = @json($selectedUnits ?? []);
+
+    // ────────────────────── State ──────────────────────
+    let activeController = null;
+    let activeFilterController = null;
+    let branchOptions = [];
+    let unitOptions = [];
+    let selectedBranches = Array.isArray(initialBranches) ? initialBranches : [];
+    let selectedUnits = Array.isArray(initialUnits) ? initialUnits : [];
+
+    // ────────────────────── Utilities ──────────────────────
+    function appendArrayParams(params, key, values) {
+        values.forEach(value => {
+            if (value) params.append(`${key}[]`, value);
+        });
+    }
+
+    function formatDate(value) {
+        if (!value) return '-';
+        return new Intl.DateTimeFormat('id-ID').format(new Date(value + 'T00:00:00'));
+    }
+
+    function formatNumber(value) {
+        if (value === null || value === undefined || value === '') return '-';
+        const number = Number(value);
+        return Number.isNaN(number) ? '-' : new Intl.NumberFormat('id-ID').format(number);
+    }
+
+    function deltaText(value) {
+        const n = Number(value || 0);
+        return n > 0 ? `+${formatNumber(n)}` : formatNumber(n);
+    }
+
+    function cellClass(value, isCurrent = false) {
+        if (isCurrent) return 'metric-current';
+        const n = Number(value || 0);
+        if (n > 0) return 'metric-positive';
+        if (n < 0) return 'metric-negative';
+        return 'metric-neutral';
+    }
+
+    // ────────────────────── Rendering ──────────────────────
+    function renderRows(rows) {
+        if (!rows || rows.length === 0) {
+            tableBody.innerHTML = `<tr><td colspan="5" class="dormant-empty-state"><i class="fas fa-inbox fa-2x text-muted mb-3 opacity-50"></i><strong>Data tidak ditemukan</strong>Coba ubah periode atau filter branch office agar hasil report tersedia.</td></tr>`;
             return;
         }
-        tableBody.innerHTML=rows.map(row=>`<tr><th>${row.branch||'-'}</th><td class="${cellClass(row.current,true)}">${formatNumber(row.current)}</td><td class="${cellClass(row.mtd)}">${deltaText(row.mtd)}</td><td class="${cellClass(row.ytd)}">${deltaText(row.ytd)}</td><td class="${cellClass(row.yoy)}">${deltaText(row.yoy)}</td></tr>`).join('');
+
+        const fragment = document.createDocumentFragment();
+        rows.forEach(row => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <th>${row.branch || '-'}</th>
+                <td class="${cellClass(row.current, true)}">${formatNumber(row.current)}</td>
+                <td class="${cellClass(row.mtd)}">${deltaText(row.mtd)}</td>
+                <td class="${cellClass(row.ytd)}">${deltaText(row.ytd)}</td>
+                <td class="${cellClass(row.yoy)}">${deltaText(row.yoy)}</td>
+            `;
+            fragment.appendChild(tr);
+        });
+        tableBody.appendChild(fragment);
     }
-    function renderFoot(total={}){tableFoot.innerHTML=`<th>Grand Total</th><td>${formatNumber(total.current??null)}</td><td>${deltaText(total.mtd??null)}</td><td>${deltaText(total.ytd??null)}</td><td>${deltaText(total.yoy??null)}</td>`}
-    function updateHeaders(labels={}){currentHeader.textContent=labels.curr&&labels.curr!=='-'?labels.curr:'Periode Terakhir';mtdHeader.textContent=labels.mtd&&labels.mtd!=='-'?`MtD vs ${labels.mtd}`:'MtD';ytdHeader.textContent=labels.ytd&&labels.ytd!=='-'?`YtD vs ${labels.ytd}`:'YtD';yoyHeader.textContent=labels.yoy&&labels.yoy!=='-'?`YoY vs ${labels.yoy}`:'YoY'}
-    function updateGroupLabel(groupLabel){document.querySelectorAll('.dormant-group-label').forEach(el=>{el.textContent=groupLabel==='UKER'?(el.dataset.filteredLabel||'UKER'):(el.dataset.defaultLabel||'Branch Office')})}
-    function setOverlay(title, copy){overlay.classList.remove('is-hidden');overlay.querySelector('.dormant-loading-title').textContent=title;overlay.querySelector('.dormant-loading-copy').textContent=copy}
-    function hideOverlay(){overlay.classList.add('is-hidden')}
-    function resetTableState(){updateGroupLabel('BRANCH OFFICE');tableBody.innerHTML=`<tr><td colspan="5" class="dormant-empty-state"><i class="fas fa-inbox fa-2x text-muted mb-3 opacity-50"></i><strong>Belum ada data</strong>Klik <strong>Tampilkan Data</strong>.</td></tr>`;renderFoot({});activeMeta.textContent='-';comparisonMeta.textContent='-';badge.textContent='-';updateHeaders({});setOverlay('Siap Memuat Data','Pilih filter lalu klik Tampilkan Data.')}
-    function renderHiddenInputs(container,name,values){container.innerHTML=values.map(value=>`<input type="hidden" name="${name}[]" value="${String(value).replace(/"/g,'&quot;')}">`).join('')}
-    function updateBranchLabel(){branchLabel.textContent=selectedBranches.length>0?selectedBranches.join(', '):'Area 6 - All'}
-    function updateUnitLabel(){unitLabel.textContent=selectedUnits.length>0?selectedUnits.join(', '):'ALL UKER'}
-    function closeMenus(except=null){if(except!=='branch'){branchMenu.classList.remove('show');branchDropdown.setAttribute('aria-expanded','false')}if(except!=='unit'){unitMenu.classList.remove('show');unitDropdown.setAttribute('aria-expanded','false')}}
-    function getCheckedValues(selector){return Array.from(document.querySelectorAll(selector)).filter(el=>el.checked).map(el=>String(el.value)).filter(Boolean)}
-    function renderBranchMenu(){if(branchOptions.length===0){branchMenu.innerHTML='<div class="dropdown-item text-muted small">Tidak ada opsi</div>';return}branchMenu.innerHTML=branchOptions.map((item,index)=>{const value=String(item.value??item), label=String(item.label??item), checked=selectedBranches.includes(value)?'checked':'';return `<label class="dropdown-item" for="dormant_branch_${index}"><div class="form-check"><input class="form-check-input dormant-branch-checkbox" type="checkbox" value="${value}" id="dormant_branch_${index}" ${checked}><span class="form-check-label">${label}</span></div></label>`}).join('');document.querySelectorAll('.dormant-branch-checkbox').forEach(checkbox=>{checkbox.addEventListener('change',function(){selectedBranches=getCheckedValues('.dormant-branch-checkbox');selectedUnits=[];renderHiddenInputs(branchInputs,'kantor_cabang',selectedBranches);renderHiddenInputs(unitInputs,'unit_kerja',selectedUnits);updateBranchLabel();updateUnitLabel();loadFilterOptions()})})}
-    function renderUnitMenu(){if(selectedBranches.length===0){unitDropdown.disabled=true;unitMenu.innerHTML='<div class="dropdown-item text-muted small">Pilih branch office</div>';selectedUnits=[];renderHiddenInputs(unitInputs,'unit_kerja',selectedUnits);updateUnitLabel();return}unitDropdown.disabled=false;if(unitOptions.length===0){unitMenu.innerHTML='<div class="dropdown-item text-muted small">Tidak ada opsi</div>';selectedUnits=[];renderHiddenInputs(unitInputs,'unit_kerja',selectedUnits);updateUnitLabel();return}unitMenu.innerHTML=unitOptions.map((item,index)=>{const value=String(item.value??item), label=String(item.label??item), checked=selectedUnits.includes(value)?'checked':'';return `<label class="dropdown-item" for="dormant_unit_${index}"><div class="form-check"><input class="form-check-input dormant-unit-checkbox" type="checkbox" value="${value}" id="dormant_unit_${index}" ${checked}><span class="form-check-label">${label}</span></div></label>`}).join('');document.querySelectorAll('.dormant-unit-checkbox').forEach(checkbox=>{checkbox.addEventListener('change',function(){selectedUnits=getCheckedValues('.dormant-unit-checkbox');renderHiddenInputs(unitInputs,'unit_kerja',selectedUnits);updateUnitLabel()})})}
-    function applyFilterPayload(payload){branchOptions=payload.branch_options||[];unitOptions=payload.unit_options||[];selectedBranches=payload.selected_branches||[];selectedUnits=payload.selected_units||[];renderHiddenInputs(branchInputs,'kantor_cabang',selectedBranches);renderHiddenInputs(unitInputs,'unit_kerja',selectedUnits);renderBranchMenu();renderUnitMenu();updateBranchLabel();updateUnitLabel();activeMeta.textContent=formatDate(payload.selected_period);comparisonMeta.textContent=formatDate(payload.comparison_period)}
-    async function loadFilterOptions(){if(activeFilterController)activeFilterController.abort();if(!periodInput.value){branchOptions=[];unitOptions=[];selectedBranches=[];selectedUnits=[];renderHiddenInputs(branchInputs,'kantor_cabang',selectedBranches);renderHiddenInputs(unitInputs,'unit_kerja',selectedUnits);renderBranchMenu();renderUnitMenu();activeMeta.textContent='-';comparisonMeta.textContent='-';return}activeFilterController=new AbortController();const timeoutId=window.setTimeout(()=>activeFilterController?.abort('timeout'),15000);branchDropdown.disabled=true;unitDropdown.disabled=true;branchMenu.innerHTML='<div class="dropdown-item text-muted small">Memuat opsi...</div>';unitMenu.innerHTML='<div class="dropdown-item text-muted small">Memuat opsi...</div>';const params=new URLSearchParams();params.set('posisi',periodInput.value);appendArrayParams(params,'kantor_cabang',selectedBranches);appendArrayParams(params,'unit_kerja',selectedUnits);try{const response=await fetch(`${filtersUrl}?${params.toString()}`,{headers:{'X-Requested-With':'XMLHttpRequest','Accept':'application/json'},signal:activeFilterController.signal});if(!response.ok)throw new Error('Gagal memuat opsi filter');const payload=await response.json();applyFilterPayload(payload)}catch(error){if(error.name!=='AbortError'){branchOptions=[];unitOptions=[];selectedBranches=[];selectedUnits=[];renderHiddenInputs(branchInputs,'kantor_cabang',selectedBranches);renderHiddenInputs(unitInputs,'unit_kerja',selectedUnits);renderBranchMenu();renderUnitMenu();activeMeta.textContent='-';comparisonMeta.textContent='-'}}finally{window.clearTimeout(timeoutId);branchDropdown.disabled=!periodInput.value;if(selectedBranches.length===0){unitDropdown.disabled=true}}}
 
-    async function loadReport(pushHistory=false){if(activeController)activeController.abort();activeController=new AbortController();const formData=new FormData(form), params=new URLSearchParams();for(const [key,value] of formData.entries()){if(value)params.append(key,value)}chip.classList.remove('d-none');submitButton.disabled=true;setOverlay('Sedang Mengolah','Memproses data rekening dormant.');try{const response=await fetch(dataUrl,{method:'POST',headers:{'X-Requested-With':'XMLHttpRequest','Accept':'application/json','X-CSRF-TOKEN':csrfToken,'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:params.toString(),signal:activeController.signal});if(!response.ok)throw new Error('Gagal memuat report');const payload=await response.json();updateGroupLabel(payload.group_label||'BRANCH OFFICE');renderRows(payload.data||[]);renderFoot(payload.total||{});updateHeaders(payload.labels||{});activeMeta.textContent=formatDate(payload.effective_dates?.curr);comparisonMeta.textContent=formatDate(payload.effective_dates?.mtd);badge.textContent=`${formatDate(payload.effective_dates?.curr)} | ${(payload.data||[]).length||0} row`;hideOverlay();if(pushHistory){const pageUrl=new URL(@json(route('report.rekening-dormant')),window.location.origin);params.forEach((value,key)=>pageUrl.searchParams.append(key,value));window.history.replaceState({},'',pageUrl.toString())}}catch(error){if(error.name!=='AbortError'){updateGroupLabel('BRANCH OFFICE');tableBody.innerHTML=`<tr><td colspan="5" class="dormant-empty-state"><i class="fas fa-exclamation-triangle fa-2x text-danger mb-3 opacity-50"></i><strong>Gagal memuat report</strong>Coba ulangi.</td></tr>`;renderFoot({});badge.textContent='-';setOverlay('Siap Memuat Data','Silakan coba lagi.')}}finally{chip.classList.add('d-none');submitButton.disabled=false}}
+    function renderFoot(total = {}) {
+        tableFoot.innerHTML = `
+            <th>Grand Total</th>
+            <td>${formatNumber(total.current ?? null)}</td>
+            <td>${deltaText(total.mtd ?? null)}</td>
+            <td>${deltaText(total.ytd ?? null)}</td>
+            <td>${deltaText(total.yoy ?? null)}</td>
+        `;
+    }
 
-    form.addEventListener('submit',function(event){event.preventDefault();loadReport(true)});
-    branchDropdown.addEventListener('click',function(event){event.preventDefault();if(branchDropdown.disabled)return;const willShow=!branchMenu.classList.contains('show');closeMenus();branchMenu.classList.toggle('show',willShow);branchDropdown.setAttribute('aria-expanded',willShow?'true':'false')});
-    unitDropdown.addEventListener('click',function(event){event.preventDefault();if(unitDropdown.disabled)return;const willShow=!unitMenu.classList.contains('show');closeMenus();unitMenu.classList.toggle('show',willShow);unitDropdown.setAttribute('aria-expanded',willShow?'true':'false')});
-    document.addEventListener('click',function(event){if(!event.target.closest('.dormant-filter-dropdown'))closeMenus()});
-    periodInput.addEventListener('change',function(){selectedBranches=[];selectedUnits=[];renderHiddenInputs(branchInputs,'kantor_cabang',selectedBranches);renderHiddenInputs(unitInputs,'unit_kerja',selectedUnits);updateBranchLabel();updateUnitLabel();resetTableState();loadFilterOptions()});
-    resetButton.addEventListener('click',function(){periodInput.value=defaultPeriod;selectedBranches=[];selectedUnits=[];renderHiddenInputs(branchInputs,'kantor_cabang',selectedBranches);renderHiddenInputs(unitInputs,'unit_kerja',selectedUnits);updateBranchLabel();updateUnitLabel();branchOptions=[];unitOptions=[];renderBranchMenu();renderUnitMenu();resetTableState();loadFilterOptions()});
-    resetTableState();loadFilterOptions();
+    function updateHeaders(labels = {}) {
+        currentHeader.textContent = labels.curr && labels.curr !== '-' ? labels.curr : 'Periode Terakhir';
+        mtdHeader.textContent = labels.mtd && labels.mtd !== '-' ? `MtD vs ${labels.mtd}` : 'MtD';
+        ytdHeader.textContent = labels.ytd && labels.ytd !== '-' ? `YtD vs ${labels.ytd}` : 'YtD';
+        yoyHeader.textContent = labels.yoy && labels.yoy !== '-' ? `YoY vs ${labels.yoy}` : 'YoY';
+    }
+
+    function updateGroupLabel(groupLabel) {
+        document.querySelectorAll('.dormant-group-label').forEach(el => {
+            el.textContent = groupLabel === 'UKER'
+                ? (el.dataset.filteredLabel || 'UKER')
+                : (el.dataset.defaultLabel || 'Branch Office');
+        });
+    }
+
+    function setOverlay(title, copy) {
+        overlay.classList.remove('is-hidden');
+        overlay.querySelector('.dormant-loading-title').textContent = title;
+        overlay.querySelector('.dormant-loading-copy').textContent = copy;
+    }
+
+    function hideOverlay() {
+        overlay.classList.add('is-hidden');
+    }
+
+    function resetTableState() {
+        updateGroupLabel('BRANCH OFFICE');
+        tableBody.innerHTML = `<tr><td colspan="5" class="dormant-empty-state"><i class="fas fa-inbox fa-2x text-muted mb-3 opacity-50"></i><strong>Belum ada data</strong>Klik <strong>Tampilkan Data</strong>.</td></tr>`;
+        renderFoot({});
+        activeMeta.textContent = '-';
+        comparisonMeta.textContent = '-';
+        badge.textContent = '-';
+        updateHeaders({});
+        setOverlay('Siap Memuat Data', 'Pilih filter lalu klik Tampilkan Data.');
+    }
+
+    function renderHiddenInputs(container, name, values) {
+        const fragment = document.createDocumentFragment();
+        values.forEach(value => {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = `${name}[]`;
+            input.value = String(value);
+            fragment.appendChild(input);
+        });
+        container.innerHTML = '';
+        container.appendChild(fragment);
+    }
+
+    function updateBranchLabel() {
+        branchLabel.textContent = selectedBranches.length > 0 ? selectedBranches.join(', ') : 'Area 6 - All';
+    }
+
+    function updateUnitLabel() {
+        unitLabel.textContent = selectedUnits.length > 0 ? selectedUnits.join(', ') : 'ALL UKER';
+    }
+
+    function closeMenus(except = null) {
+        if (except !== 'branch') {
+            branchMenu.classList.remove('show');
+            branchDropdown.setAttribute('aria-expanded', 'false');
+        }
+        if (except !== 'unit') {
+            unitMenu.classList.remove('show');
+            unitDropdown.setAttribute('aria-expanded', 'false');
+        }
+    }
+
+    function getCheckedValues(selector) {
+        return Array.from(document.querySelectorAll(selector))
+            .filter(el => el.checked)
+            .map(el => String(el.value))
+            .filter(Boolean);
+    }
+
+    function renderBranchMenu() {
+        if (branchOptions.length === 0) {
+            branchMenu.innerHTML = '<div class="dropdown-item text-muted small">Tidak ada opsi</div>';
+            return;
+        }
+
+        const fragment = document.createDocumentFragment();
+        branchOptions.forEach((item, index) => {
+            const value = String(item.value ?? item);
+            const label = String(item.label ?? item);
+            const checked = selectedBranches.includes(value) ? 'checked' : '';
+
+            const labelEl = document.createElement('label');
+            labelEl.className = 'dropdown-item';
+            labelEl.setAttribute('for', `dormant_branch_${index}`);
+            labelEl.innerHTML = `
+                <div class="form-check">
+                    <input class="form-check-input dormant-branch-checkbox" type="checkbox" value="${value}" id="dormant_branch_${index}" ${checked}>
+                    <span class="form-check-label">${label}</span>
+                </div>
+            `;
+            fragment.appendChild(labelEl);
+        });
+        branchMenu.innerHTML = '';
+        branchMenu.appendChild(fragment);
+
+        // Event delegation untuk checkbox changes
+        branchMenu.querySelectorAll('.dormant-branch-checkbox').forEach(checkbox => {
+            checkbox.addEventListener('change', function () {
+                selectedBranches = getCheckedValues('.dormant-branch-checkbox');
+                selectedUnits = [];
+                renderHiddenInputs(branchInputs, 'kantor_cabang', selectedBranches);
+                renderHiddenInputs(unitInputs, 'unit_kerja', selectedUnits);
+                updateBranchLabel();
+                updateUnitLabel();
+                loadFilterOptions();
+            });
+        });
+    }
+
+    function renderUnitMenu() {
+        if (selectedBranches.length === 0) {
+            unitDropdown.disabled = true;
+            unitMenu.innerHTML = '<div class="dropdown-item text-muted small">Pilih branch office</div>';
+            selectedUnits = [];
+            renderHiddenInputs(unitInputs, 'unit_kerja', selectedUnits);
+            updateUnitLabel();
+            return;
+        }
+
+        unitDropdown.disabled = false;
+
+        if (unitOptions.length === 0) {
+            unitMenu.innerHTML = '<div class="dropdown-item text-muted small">Tidak ada opsi</div>';
+            selectedUnits = [];
+            renderHiddenInputs(unitInputs, 'unit_kerja', selectedUnits);
+            updateUnitLabel();
+            return;
+        }
+
+        const fragment = document.createDocumentFragment();
+        unitOptions.forEach((item, index) => {
+            const value = String(item.value ?? item);
+            const label = String(item.label ?? item);
+            const checked = selectedUnits.includes(value) ? 'checked' : '';
+
+            const labelEl = document.createElement('label');
+            labelEl.className = 'dropdown-item';
+            labelEl.setAttribute('for', `dormant_unit_${index}`);
+            labelEl.innerHTML = `
+                <div class="form-check">
+                    <input class="form-check-input dormant-unit-checkbox" type="checkbox" value="${value}" id="dormant_unit_${index}" ${checked}>
+                    <span class="form-check-label">${label}</span>
+                </div>
+            `;
+            fragment.appendChild(labelEl);
+        });
+        unitMenu.innerHTML = '';
+        unitMenu.appendChild(fragment);
+
+        unitMenu.querySelectorAll('.dormant-unit-checkbox').forEach(checkbox => {
+            checkbox.addEventListener('change', function () {
+                selectedUnits = getCheckedValues('.dormant-unit-checkbox');
+                renderHiddenInputs(unitInputs, 'unit_kerja', selectedUnits);
+                updateUnitLabel();
+            });
+        });
+    }
+
+    function applyFilterPayload(payload) {
+        branchOptions = payload.branch_options || [];
+        unitOptions = payload.unit_options || [];
+        selectedBranches = payload.selected_branches || [];
+        selectedUnits = payload.selected_units || [];
+        renderHiddenInputs(branchInputs, 'kantor_cabang', selectedBranches);
+        renderHiddenInputs(unitInputs, 'unit_kerja', selectedUnits);
+        renderBranchMenu();
+        renderUnitMenu();
+        updateBranchLabel();
+        updateUnitLabel();
+        activeMeta.textContent = formatDate(payload.selected_period);
+        comparisonMeta.textContent = formatDate(payload.comparison_period);
+    }
+
+    // ────────────────────── API Calls ──────────────────────
+    async function loadFilterOptions() {
+        if (activeFilterController) {
+            activeFilterController.abort();
+        }
+
+        if (!periodInput.value) {
+            branchOptions = [];
+            unitOptions = [];
+            selectedBranches = [];
+            selectedUnits = [];
+            renderHiddenInputs(branchInputs, 'kantor_cabang', selectedBranches);
+            renderHiddenInputs(unitInputs, 'unit_kerja', selectedUnits);
+            renderBranchMenu();
+            renderUnitMenu();
+            activeMeta.textContent = '-';
+            comparisonMeta.textContent = '-';
+            return;
+        }
+
+        activeFilterController = new AbortController();
+        const timeoutId = window.setTimeout(() => {
+            activeFilterController?.abort('timeout');
+        }, 8000);  // Reduced dari 15000ms ke 8000ms untuk respons lebih cepat
+
+        branchDropdown.disabled = true;
+        unitDropdown.disabled = true;
+        branchMenu.innerHTML = '<div class="dropdown-item text-muted small">Memuat opsi...</div>';
+        unitMenu.innerHTML = '<div class="dropdown-item text-muted small">Memuat opsi...</div>';
+
+        const params = new URLSearchParams();
+        params.set('posisi', periodInput.value);
+        appendArrayParams(params, 'kantor_cabang', selectedBranches);
+        appendArrayParams(params, 'unit_kerja', selectedUnits);
+
+        try {
+            const response = await fetch(`${filtersUrl}?${params.toString()}`, {
+                method: 'GET',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Accept': 'application/json',
+                },
+                signal: activeFilterController.signal
+            });
+
+            if (!response.ok) throw new Error('Gagal memuat opsi filter');
+            const payload = await response.json();
+            applyFilterPayload(payload);
+        } catch (error) {
+            if (error.name !== 'AbortError') {
+                branchOptions = [];
+                unitOptions = [];
+                selectedBranches = [];
+                selectedUnits = [];
+                renderHiddenInputs(branchInputs, 'kantor_cabang', selectedBranches);
+                renderHiddenInputs(unitInputs, 'unit_kerja', selectedUnits);
+                renderBranchMenu();
+                renderUnitMenu();
+                activeMeta.textContent = '-';
+                comparisonMeta.textContent = '-';
+            }
+        } finally {
+            window.clearTimeout(timeoutId);
+            branchDropdown.disabled = !periodInput.value;
+            if (selectedBranches.length === 0) {
+                unitDropdown.disabled = true;
+            }
+        }
+    }
+
+    async function loadReport(pushHistory = false) {
+        if (activeController) {
+            activeController.abort();
+        }
+
+        activeController = new AbortController();
+        const formData = new FormData(form);
+        const params = new URLSearchParams();
+        for (const [key, value] of formData.entries()) {
+            if (value) params.append(key, value);
+        }
+
+        chip.classList.remove('d-none');
+        submitButton.disabled = true;
+        setOverlay('Sedang Mengolah', 'Memproses data rekening dormant.');
+
+        try {
+            const response = await fetch(dataUrl, {
+                method: 'POST',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': csrfToken,
+                    'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
+                },
+                body: params.toString(),
+                signal: activeController.signal
+            });
+
+            if (!response.ok) throw new Error('Gagal memuat report');
+            const payload = await response.json();
+
+            updateGroupLabel(payload.group_label || 'BRANCH OFFICE');
+            tableBody.innerHTML = '';  // Clear existing rows
+            renderRows(payload.data || []);
+            renderFoot(payload.total || {});
+            updateHeaders(payload.labels || {});
+            activeMeta.textContent = formatDate(payload.effective_dates?.curr);
+            comparisonMeta.textContent = formatDate(payload.effective_dates?.mtd);
+            badge.textContent = `${formatDate(payload.effective_dates?.curr)} | ${(payload.data || []).length || 0} row`;
+            hideOverlay();
+
+            if (pushHistory) {
+                const pageUrl = new URL(@json(route('report.rekening-dormant')), window.location.origin);
+                params.forEach((value, key) => pageUrl.searchParams.append(key, value));
+                window.history.replaceState({}, '', pageUrl.toString());
+            }
+        } catch (error) {
+            if (error.name !== 'AbortError') {
+                updateGroupLabel('BRANCH OFFICE');
+                tableBody.innerHTML = `<tr><td colspan="5" class="dormant-empty-state"><i class="fas fa-exclamation-triangle fa-2x text-danger mb-3 opacity-50"></i><strong>Gagal memuat report</strong>Coba ulangi.</td></tr>`;
+                renderFoot({});
+                badge.textContent = '-';
+                setOverlay('Siap Memuat Data', 'Silakan coba lagi.');
+            }
+        } finally {
+            chip.classList.add('d-none');
+            submitButton.disabled = false;
+        }
+    }
+
+    // ────────────────────── Event Listeners ──────────────────────
+    form.addEventListener('submit', function (event) {
+        event.preventDefault();
+        loadReport(true);
+    });
+
+    branchDropdown.addEventListener('click', function (event) {
+        event.preventDefault();
+        if (branchDropdown.disabled) return;
+        const willShow = !branchMenu.classList.contains('show');
+        closeMenus();
+        branchMenu.classList.toggle('show', willShow);
+        branchDropdown.setAttribute('aria-expanded', willShow ? 'true' : 'false');
+    });
+
+    unitDropdown.addEventListener('click', function (event) {
+        event.preventDefault();
+        if (unitDropdown.disabled) return;
+        const willShow = !unitMenu.classList.contains('show');
+        closeMenus();
+        unitMenu.classList.toggle('show', willShow);
+        unitDropdown.setAttribute('aria-expanded', willShow ? 'true' : 'false');
+    });
+
+    document.addEventListener('click', function (event) {
+        if (!event.target.closest('.dormant-filter-dropdown')) {
+            closeMenus();
+        }
+    });
+
+    periodInput.addEventListener('change', function () {
+        selectedBranches = [];
+        selectedUnits = [];
+        renderHiddenInputs(branchInputs, 'kantor_cabang', selectedBranches);
+        renderHiddenInputs(unitInputs, 'unit_kerja', selectedUnits);
+        updateBranchLabel();
+        updateUnitLabel();
+        resetTableState();
+        loadFilterOptions();
+    });
+
+    resetButton.addEventListener('click', function () {
+        periodInput.value = defaultPeriod;
+        selectedBranches = [];
+        selectedUnits = [];
+        renderHiddenInputs(branchInputs, 'kantor_cabang', selectedBranches);
+        renderHiddenInputs(unitInputs, 'unit_kerja', selectedUnits);
+        updateBranchLabel();
+        updateUnitLabel();
+        branchOptions = [];
+        unitOptions = [];
+        renderBranchMenu();
+        renderUnitMenu();
+        resetTableState();
+        loadFilterOptions();
+    });
+
+    // ────────────────────── Initialization ──────────────────────
+    resetTableState();
+    loadFilterOptions();
 });
 </script>
 @endsection

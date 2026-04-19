@@ -12,6 +12,8 @@ class MySqlBulkLoadService
 {
     private ?bool $supportsNativeBulkLoad = null;
     private array $tableEngineCache = [];
+    private ?DirectLargeFileLoadService $largeFileLoader = null;
+    private ?\PDO $persistentPdo = null;  // OPTIMASI: Reusable PDO connection
 
     public function supportsNativeBulkLoad(): bool
     {
@@ -307,6 +309,30 @@ class MySqlBulkLoadService
             $totalLines = $this->countFileLines($csvPath);
         }
 
+        // OPTIMASI: Gunakan DirectLargeFileLoadService untuk file besar
+        // Ini menghindari overhead multiple LOAD DATA calls
+        if (file_exists($csvPath) && filesize($csvPath) > 50 * 1024 * 1024) { // > 50MB
+            return $this->withTableWriteLock($tableName, function () use (
+                $csvPath,
+                $tableName,
+                $columns,
+                $onProgress,
+                $totalLines
+            ): int {
+                Log::info('Menggunakan optimasi DirectLargeFileLoadService untuk file besar', [
+                    'file' => $csvPath,
+                    'size_mb' => round(filesize($csvPath) / 1024 / 1024, 2),
+                ]);
+                return $this->getLargeFileLoader()->loadLargeFile(
+                    $csvPath,
+                    $tableName,
+                    $columns,
+                    $onProgress,
+                    $totalLines
+                );
+            });
+        }
+
         return $this->withTableWriteLock($tableName, function () use (
             $csvPath,
             $tableName,
@@ -454,6 +480,126 @@ class MySqlBulkLoadService
             || str_contains($message, 'packets out of order');
     }
 
+    /**
+     * OPTIMASI PHASE 2: Persistent PDO untuk chunked loads
+     * 
+     * Membuat PDO sekali dan reuse untuk semua chunks
+     * Saves: ~50ms per chunk × N chunks (untuk 50 chunks = 2.5 detik!)
+     */
+    public function createPersistentPdo(): \PDO
+    {
+        if ($this->persistentPdo !== null) {
+            // Validate connection is still alive
+            try {
+                $this->persistentPdo->query('SELECT 1');
+                return $this->persistentPdo;
+            } catch (\Throwable $e) {
+                Log::warning('Persistent PDO connection lost, creating new one: ' . $e->getMessage());
+                $this->persistentPdo = null;
+            }
+        }
+
+        [$dsn, $username, $password] = $this->resolvePdoCredentials();
+        $this->persistentPdo = new \PDO($dsn, $username, $password, [
+            \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
+            \PDO::MYSQL_ATTR_LOCAL_INFILE => true,
+            \PDO::ATTR_TIMEOUT => 120,
+        ]);
+
+        return $this->persistentPdo;
+    }
+
+    /**
+     * OPTIMASI PHASE 2: Use persistent PDO untuk load dengan retry
+     * 
+     * Menerima PDO dari luar (dari chunked loader)
+     * Tanpa create-destroy per chunk
+     */
+    public function loadCsvIntoMysqlWithPdo(
+        \PDO $pdo,
+        string $csvPath,
+        string $tableName,
+        array $columns,
+        bool $relaxSqlMode = false
+    ): int {
+        if (!file_exists($csvPath)) {
+            throw new \RuntimeException('File CSV sementara tidak ditemukan untuk bulk load.');
+        }
+
+        if ($columns === []) {
+            throw new \RuntimeException('Kolom bulk load kosong.');
+        }
+
+        $quotedColumns = implode(', ', array_map(static function (string $column): string {
+            return '`' . str_replace('`', '``', $column) . '`';
+        }, $columns));
+
+        $lastException = null;
+        $originalSqlMode = null;
+
+        try {
+            $pdo->beginTransaction();
+
+            if ($relaxSqlMode) {
+                $originalSqlMode = $pdo->query('SELECT @@SESSION.sql_mode')->fetchColumn();
+                $modes = array_values(array_filter(array_map('trim', explode(',', (string) $originalSqlMode))));
+                $filteredModes = array_values(array_filter($modes, static function (string $mode): bool {
+                    return !in_array(strtoupper($mode), ['STRICT_TRANS_TABLES', 'STRICT_ALL_TABLES'], true);
+                }));
+                $relaxedMode = implode(',', $filteredModes);
+                if ($relaxedMode !== $originalSqlMode) {
+                    $pdo->exec('SET SESSION sql_mode = ' . $pdo->quote($relaxedMode));
+                }
+            }
+
+            $normalizedPath = str_replace('\\', '/', realpath($csvPath) ?: $csvPath);
+            $quotedPath = $pdo->quote($normalizedPath);
+            $sql = "LOAD DATA LOCAL INFILE {$quotedPath} INTO TABLE `{$tableName}` "
+                . "CHARACTER SET utf8mb4 "
+                . "FIELDS TERMINATED BY ',' ENCLOSED BY '\"' "
+                . "LINES TERMINATED BY '\\n' "
+                . "({$quotedColumns})";
+
+            $pdo->exec('SET @skip_snapshot_invalidation = 1');
+            $affected = $pdo->exec($sql);
+            $pdo->exec('SET @skip_snapshot_invalidation = NULL');
+
+            $pdo->commit();
+
+            if ($affected === false) {
+                throw new \RuntimeException('LOAD DATA LOCAL INFILE gagal dieksekusi.');
+            }
+
+            if ($relaxSqlMode && $originalSqlMode !== null) {
+                try {
+                    $pdo->exec('SET SESSION sql_mode = ' . $pdo->quote((string) $originalSqlMode));
+                } catch (\Throwable $cleanupError) {
+                    Log::warning('Failed to restore sql_mode: ' . $cleanupError->getMessage());
+                }
+            }
+
+            return (int) $affected;
+        } catch (\Throwable $e) {
+            try {
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
+                $pdo->exec('SET @skip_snapshot_invalidation = NULL');
+            } catch (\Throwable $ignored) {
+            }
+
+            throw $e;
+        }
+    }
+
+    /**
+     * Close persistent PDO
+     */
+    public function closePersistentPdo(): void
+    {
+        $this->persistentPdo = null;
+    }
+
     private function resolvePdoCredentials(): array
     {
         $connection = config('database.default', 'mysql');
@@ -500,5 +646,13 @@ class MySqlBulkLoadService
     private function tableWriteLockName(string $tableName): string
     {
         return 'project_abah:table_write:' . strtolower(trim($tableName));
+    }
+
+    private function getLargeFileLoader(): DirectLargeFileLoadService
+    {
+        if ($this->largeFileLoader === null) {
+            $this->largeFileLoader = new DirectLargeFileLoadService($this);
+        }
+        return $this->largeFileLoader;
     }
 }

@@ -82,9 +82,6 @@ class DatabaseBackupService
     {
         $command = [
             $this->resolveDumpBinaryPath(),
-            '--host=' . (string) ($config['host'] ?? '127.0.0.1'),
-            '--port=' . (string) ($config['port'] ?? '3306'),
-            '--user=' . (string) ($config['username'] ?? ''),
             '--default-character-set=' . (string) ($config['charset'] ?? 'utf8mb4'),
             '--single-transaction',
             '--quick',
@@ -96,26 +93,49 @@ class DatabaseBackupService
             '--events',
         ];
 
+        // Handle connection parameters
+        $host = (string) ($config['host'] ?? '127.0.0.1');
+        $port = (string) ($config['port'] ?? '3306');
+        $socket = trim((string) ($config['unix_socket'] ?? ''));
+        
+        // On Windows XAMPP: prefer TCP/IP connection with protocol specification
+        if (strtoupper(substr(PHP_OS_FAMILY, 0, 3)) === 'WIN') {
+            // On Windows, use TCP protocol explicitly
+            $command[] = '--protocol=TCP';
+            $command[] = '--host=' . $host;
+            $command[] = '--port=' . $port;
+        } else {
+            // On Unix-like systems: prefer socket if available
+            if ($socket !== '') {
+                $command[] = '--socket=' . $socket;
+            } else {
+                $command[] = '--host=' . $host;
+                $command[] = '--port=' . $port;
+            }
+        }
+
+        $command[] = '--user=' . (string) ($config['username'] ?? '');
+
         if ($outputPath) {
             $command[] = '--result-file=' . $outputPath;
         }
 
+        $tableArgs = [];
         foreach ($extraArgs as $arg) {
+            if (is_string($arg) && $arg !== '' && $arg[0] !== '-') {
+                $tableArgs[] = $arg;
+                continue;
+            }
+
             $command[] = $arg;
         }
 
         if (!in_array('--databases', $extraArgs)) {
-            // If we are dumping specific tables, we don't use --databases database-name 
-            // but just database-name table-name
             $command[] = $database;
         }
 
-        return $command;
-    }
-
-        $socket = trim((string) ($config['unix_socket'] ?? ''));
-        if ($socket !== '') {
-            $command[] = '--socket=' . $socket;
+        foreach ($tableArgs as $table) {
+            $command[] = $table;
         }
 
         return $command;
@@ -150,7 +170,7 @@ class DatabaseBackupService
 
         $process = proc_open($command, $descriptors, $pipes, base_path(), array_merge($baseEnvironment, $environment), ['bypass_shell' => true]);
         if (!is_resource($process)) {
-            throw new RuntimeException('Gagal menjalankan proses backup database.');
+            throw new RuntimeException('Gagal menjalankan proses backup database. Pastikan mysqldump.exe tersedia.');
         }
 
         fclose($pipes[0]);
@@ -165,9 +185,20 @@ class DatabaseBackupService
             if ($outputPath) {
                 @unlink($outputPath);
             }
-            throw new RuntimeException(
-                'Backup database gagal dijalankan' . ($stderr !== '' ? ': ' . trim($stderr) : '.')
-            );
+            
+            $errorMsg = 'Backup database gagal dijalankan';
+            if ($stderr !== '') {
+                $errorMsg .= ': ' . trim($stderr);
+                
+                // Add helpful suggestions for common errors
+                if (strpos($stderr, 'socket') !== false || strpos($stderr, '2004') !== false || strpos($stderr, '10106') !== false) {
+                    $errorMsg .= ' | SOLUSI: Pastikan MySQL Server sudah berjalan di XAMPP Control Panel. Jika masih error, coba restart MySQL.';
+                } elseif (strpos($stderr, 'Access denied') !== false) {
+                    $errorMsg .= ' | SOLUSI: Cek konfigurasi DB_USERNAME dan DB_PASSWORD di file .env';
+                }
+            }
+            
+            throw new RuntimeException($errorMsg);
         }
 
         return [

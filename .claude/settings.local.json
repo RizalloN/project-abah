@@ -29,7 +29,9 @@
       "Bash(php -l app/Http/Controllers/Import/SnapshotAuditController.php)",
       "Bash(php check_csv_performance.php)",
       "Bash(git add *)",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "Bash(php -l app/Services/Import/DirectLargeFileLoadService.php)",
+      "Bash(php -l app/Services/Import/MySqlBulkLoadService.php)"
     ],
     "additionalDirectories": [
       "\\tmp"

@@ -209,14 +209,13 @@ class SnapshotAuditService
             $query->where($periodColumn, $periodHint);
         }
 
-        $selectColumns = ['period' => $periodColumn];
+        $selectParts = ["{$periodColumn} AS period"];
         foreach ($metrics as $alias => $expression) {
-            $selectColumns[] = DB::raw("{$expression} AS {$alias}");
+            $selectParts[] = "{$expression} AS {$alias}";
         }
 
         return $query
-            ->select(array_merge([$periodColumn], [DB::raw("1")]))
-            ->selectRaw(implode(', ', array_slice($selectColumns, 1)))
+            ->selectRaw(implode(', ', $selectParts))
             ->groupBy($periodColumn)
             ->get()
             ->map(fn($row) => (array) $row)
@@ -232,14 +231,13 @@ class SnapshotAuditService
             $query->where($periodColumn, $periodHint);
         }
 
-        $selectColumns = ['period' => $periodColumn];
+        $selectParts = ["{$periodColumn} AS period"];
         foreach ($metrics as $alias => $expression) {
-            $selectColumns[] = DB::raw("{$expression} AS {$alias}");
+            $selectParts[] = "{$expression} AS {$alias}";
         }
 
         return $query
-            ->select(array_merge([$periodColumn], [DB::raw("1")]))
-            ->selectRaw(implode(', ', array_slice($selectColumns, 1)))
+            ->selectRaw(implode(', ', $selectParts))
             ->groupBy($periodColumn)
             ->get()
             ->map(fn($row) => (array) $row)

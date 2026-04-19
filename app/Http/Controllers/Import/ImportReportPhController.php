@@ -242,8 +242,7 @@ class ImportReportPhController extends Controller
     private function stageDirectLoadCsvWithPolars(?callable $send, string $sourcePath, array $activeFilters, array $selectedColumns, ?string $delimiter = null): ?array
     {
         $loadColumns = $this->buildPolarsLoadColumns($selectedColumns);
-
-        return $this->runPolarsProcessor(
+        $result = $this->runPolarsProcessor(
             $send,
             $sourcePath,
             $activeFilters,
@@ -256,6 +255,21 @@ class ImportReportPhController extends Controller
             ],
             $delimiter
         );
+
+        if ($result === null) {
+            return null;
+        }
+
+        $outputPath = (string) ($result['path'] ?? '');
+        if ($outputPath === '' || !is_file($outputPath) || !$this->validatePolarsBulkLoadCsv($outputPath)) {
+            if ($outputPath !== '' && is_file($outputPath)) {
+                @unlink($outputPath);
+            }
+
+            return null;
+        }
+
+        return $result;
     }
 
     private function buildPolarsLoadColumns(array $selectedColumns): array
@@ -306,6 +320,49 @@ class ImportReportPhController extends Controller
         } finally {
             fclose($handle);
         }
+    }
+
+    private function validatePolarsBulkLoadCsv(string $csvPath): bool
+    {
+        $handle = @fopen($csvPath, 'rb');
+        if ($handle === false) {
+            return false;
+        }
+
+        try {
+            $checked = 0;
+
+            while (($row = fgetcsv($handle, 0, self::BULK_STAGE_DELIMITER, '"', '\\')) !== false) {
+                if (!is_array($row) || empty(array_filter($row, static fn ($value): bool => trim((string) $value) !== ''))) {
+                    continue;
+                }
+
+                $checked++;
+                $uniqueId = trim((string) ($row[0] ?? ''));
+                $periode = trim((string) ($row[3] ?? ''));
+                $acctno = trim((string) ($row[4] ?? ''));
+
+                if (
+                    $uniqueId === ''
+                    || str_starts_with(strtolower($uniqueId), 'unknown_')
+                    || $periode === ''
+                    || StrictDateParser::normalize($periode) === null
+                    || $acctno === ''
+                    || str_starts_with(strtolower($acctno), 'kelurahan ')
+                    || str_starts_with(strtolower($acctno), 'kecamatan ')
+                ) {
+                    return false;
+                }
+
+                if ($checked >= 5) {
+                    return true;
+                }
+            }
+        } finally {
+            fclose($handle);
+        }
+
+        return false;
     }
 
     private function runPolarsProcessor(
@@ -1972,6 +2029,20 @@ class ImportReportPhController extends Controller
         $row = fgetcsv($handle, 0, $delimiter, '"', '\\');
         if ($row === false) {
             return false;
+        }
+
+        // Beberapa export PH menyimpan satu record data sebagai satu field utuh
+        // sehingga `fgetcsv()` hanya melihat 1 kolom walaupun isi record masih
+        // berisi delimiter asli. Saat itu, fallback ke parser string yang lebih
+        // toleran agar preview/import tetap bisa membaca baris data.
+        if (count($row) === 1) {
+            $singleField = (string) ($row[0] ?? '');
+            if ($singleField !== '' && substr_count($singleField, $delimiter) >= 1) {
+                $fallbackRow = $this->smartParseCsvLine($singleField, $delimiter, true);
+                if (count($fallbackRow) > 1) {
+                    $row = $fallbackRow;
+                }
+            }
         }
 
         $normalizedRow = [];

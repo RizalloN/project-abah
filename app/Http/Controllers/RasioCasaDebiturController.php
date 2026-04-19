@@ -161,6 +161,195 @@ class RasioCasaDebiturController extends Controller
         }
     }
 
+    /**
+     * Fetch data rasio CASA per RM (Relationship Manager)
+     * Grouping: Branch Office > Unit Kerja > RM (pn_pengelola1)
+     */
+    public function fetchDataPerRm(Request $request)
+    {
+        @set_time_limit(0);
+        DB::connection()->disableQueryLog();
+
+        try {
+            $selectedBranch = strtoupper(trim((string) $request->input('cabang1', '')));
+            $selectedUker = strtoupper(trim((string) $request->input('unit1', '')));
+            $requestedDate = $request->input('posisi');
+            $currentPeriod = $this->resolveAvailableLoanPeriod($requestedDate);
+
+            if (!$currentPeriod || !$selectedBranch || !$selectedUker) {
+                return response()->json([
+                    'status' => 'success',
+                    'labels' => $this->buildLabels(null, null),
+                    'effective_dates' => [
+                        'prev' => null,
+                        'curr' => null,
+                        'casa_prev' => null,
+                        'casa_curr' => null,
+                    ],
+                    'meta' => [
+                        'has_rows' => false,
+                        'row_count_prev' => 0,
+                        'row_count_curr' => 0,
+                        'branch_count' => 0,
+                    ],
+                    'data' => [],
+                    'total' => [],
+                ]);
+            }
+
+            $currDate = Carbon::parse($currentPeriod);
+            $prevCandidate = $currDate->copy()->subMonthNoOverflow()->endOfMonth()->toDateString();
+            $previousPeriod = $this->resolveAvailableLoanPeriod($prevCandidate);
+
+            $forceRefresh = $request->boolean('refresh');
+            $responseCacheKey = 'rasio_casa_per_rm:fetch:v' . $this->reportCacheVersion() . ':' . md5(json_encode([
+                'curr' => $currentPeriod,
+                'prev' => $previousPeriod,
+                'cabang1' => $selectedBranch,
+                'unit1' => $selectedUker,
+            ]));
+
+            if (!$forceRefresh) {
+                $cachedResponse = Cache::get($responseCacheKey);
+                if (is_array($cachedResponse)) {
+                    return response()->json($cachedResponse);
+                }
+            }
+
+            $currentSummary = $this->computeRmSnapshot($currentPeriod, $selectedBranch, $selectedUker, $forceRefresh);
+            $previousSummary = $previousPeriod
+                ? $this->computeRmSnapshot($previousPeriod, $selectedBranch, $selectedUker, $forceRefresh)
+                : $this->emptySnapshot();
+
+            $rms = array_unique(array_merge(
+                array_keys($currentSummary['os'] ?? []),
+                array_keys($previousSummary['os'] ?? [])
+            ));
+            sort($rms);
+
+            [$rows, $total] = $this->assembleRmRows($rms, $previousSummary, $currentSummary, "{$selectedBranch} | {$selectedUker}");
+
+            $payload = [
+                'status' => 'success',
+                'labels' => $this->buildLabels($previousPeriod, $currentPeriod),
+                'group_label' => 'RM / MANTRI',
+                'effective_dates' => [
+                    'prev' => $previousPeriod,
+                    'curr' => $currentPeriod,
+                    'casa_prev' => $previousSummary['casa_date'],
+                    'casa_curr' => $currentSummary['casa_date'],
+                ],
+                'meta' => [
+                    'has_rows' => (($previousSummary['row_count'] ?? 0) + ($currentSummary['row_count'] ?? 0)) > 0,
+                    'row_count_prev' => (int) ($previousSummary['row_count'] ?? 0),
+                    'row_count_curr' => (int) ($currentSummary['row_count'] ?? 0),
+                    'branch_count' => count($rms),
+                ],
+                'data' => $rows,
+                'total' => $total,
+            ];
+
+            Cache::put($responseCacheKey, $payload, now()->addMinutes(3));
+
+            return response()->json($payload);
+        } catch (Throwable $e) {
+            Log::error('[RasioCasaPerRM] Critical Failure: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Gagal memuat data per RM. Server error. Periksa `storage/logs/laravel.log`',
+            ], 500);
+        }
+    }
+
+    /**
+     * Get filter options untuk rasio CASA per RM
+     */
+    public function filtersPerRm(Request $request)
+    {
+        try {
+            $loanPeriod = $this->resolveAvailableLoanPeriod(null);
+            if (!$loanPeriod) {
+                return response()->json([
+                    'branches' => [],
+                    'units' => [],
+                    'rms' => [],
+                ]);
+            }
+
+            $selectedBranch = strtoupper(trim((string) $request->input('cabang1', '')));
+            $selectedUnit = strtoupper(trim((string) $request->input('unit1', '')));
+
+            $branchColumn = $this->resolveExistingColumn('daily_loan_dinamis', ['cabang1', 'cabang'], 'cabang1');
+            $unitColumn = $this->resolveExistingColumn('daily_loan_dinamis', ['unit1', 'unit'], 'unit1');
+            $rmColumn = $this->resolveExistingColumn('daily_loan_dinamis', ['pn_pengelola1', 'pn_pengelola', 'rm'], 'pn_pengelola1');
+
+            $cacheKey = 'rasio_casa_per_rm_filters:v' . $this->reportCacheVersion() . ':' . $loanPeriod . ':' . md5($selectedBranch . '|' . $selectedUnit);
+
+            return Cache::remember($cacheKey, now()->addMinutes(10), function () use ($loanPeriod, $branchColumn, $unitColumn, $rmColumn, $selectedBranch, $selectedUnit) {
+                // Get branches
+                $branches = DB::table('daily_loan_dinamis')
+                    ->where('periode', $loanPeriod)
+                    ->whereNotNull($branchColumn)
+                    ->whereRaw("TRIM({$branchColumn}) <> ''")
+                    ->selectRaw("UPPER(TRIM({$branchColumn})) as branch_name")
+                    ->distinct()
+                    ->orderBy('branch_name')
+                    ->pluck('branch_name')
+                    ->filter()
+                    ->values()
+                    ->all();
+
+                // Get units untuk branch yang dipilih
+                $units = [];
+                if ($selectedBranch) {
+                    $units = DB::table('daily_loan_dinamis')
+                        ->where('periode', $loanPeriod)
+                        ->whereRaw("UPPER(TRIM({$branchColumn})) = ?", [$selectedBranch])
+                        ->whereNotNull($unitColumn)
+                        ->whereRaw("TRIM({$unitColumn}) <> ''")
+                        ->selectRaw("UPPER(TRIM({$unitColumn})) as unit_name")
+                        ->distinct()
+                        ->orderBy('unit_name')
+                        ->pluck('unit_name')
+                        ->filter()
+                        ->values()
+                        ->all();
+                }
+
+                // Get RMs untuk branch dan unit yang dipilih
+                $rms = [];
+                if ($selectedBranch && $selectedUnit) {
+                    $rms = DB::table('daily_loan_dinamis')
+                        ->where('periode', $loanPeriod)
+                        ->whereRaw("UPPER(TRIM({$branchColumn})) = ?", [$selectedBranch])
+                        ->whereRaw("UPPER(TRIM({$unitColumn})) = ?", [$selectedUnit])
+                        ->whereNotNull($rmColumn)
+                        ->whereRaw("TRIM({$rmColumn}) <> ''")
+                        ->selectRaw("UPPER(TRIM({$rmColumn})) as rm_name")
+                        ->distinct()
+                        ->orderBy('rm_name')
+                        ->pluck('rm_name')
+                        ->filter()
+                        ->values()
+                        ->all();
+                }
+
+                return compact('branches', 'units', 'rms');
+            });
+        } catch (Throwable $e) {
+            Log::error('[RasioCasaPerRM-Filters] Error: ' . $e->getMessage());
+
+            return response()->json([
+                'branches' => [],
+                'units' => [],
+                'rms' => [],
+            ]);
+        }
+    }
+
     private function buildSummarySnapshot(string $loanPeriod, bool $forceRefresh = false): array
     {
         $this->ensureRasioSnapshot($loanPeriod);
@@ -1361,6 +1550,266 @@ class RasioCasaDebiturController extends Controller
             'rasio_curr' => $osCurr > 0 ? $ratioCurr : null,
             'mtd' => ($osPrev > 0 || $osCurr > 0) ? ($ratioCurr - $ratioPrev) : null,
         ];
+    }
+
+    /**
+     * Compute snapshot rasio CASA per RM untuk branch dan unit tertentu
+     */
+    private function computeRmSnapshot(string $loanPeriod, string $selectedBranch, string $selectedUnit, bool $forceRefresh = false): array
+    {
+        $cacheKey = 'rasio_casa_per_rm_snapshot:v1:' . md5(json_encode([
+            'cache_version' => $this->reportCacheVersion(),
+            'loan_period' => $loanPeriod,
+            'branch' => $selectedBranch,
+            'unit' => $selectedUnit,
+            'loan_key' => $this->resolveLoanIdentityColumn(),
+            'casa_key' => $this->resolveCasaIdentityColumn(),
+        ]));
+        $lockKey = $cacheKey . ':lock';
+        $latestKey = $cacheKey . ':latest';
+
+        $cached = $forceRefresh ? null : Cache::get($cacheKey);
+        if ($cached) {
+            return $cached;
+        }
+
+        $lock = Cache::lock($lockKey, 30);
+
+        try {
+            return $lock->block(2, function () use ($cacheKey, $latestKey, $loanPeriod, $selectedBranch, $selectedUnit, $forceRefresh) {
+                if (!$forceRefresh) {
+                    $lockCached = Cache::get($cacheKey);
+                    if ($lockCached) {
+                        return $lockCached;
+                    }
+                }
+
+                $payload = $this->buildRmSnapshot($loanPeriod, $selectedBranch, $selectedUnit);
+
+                Cache::put($cacheKey, $payload, now()->addMinutes(3));
+                Cache::put($latestKey, $payload, now()->addMinutes(10));
+
+                return $payload;
+            });
+        } catch (LockTimeoutException) {
+            $latest = Cache::get($latestKey);
+            if ($latest) {
+                return $latest;
+            }
+
+            $cached = Cache::get($cacheKey);
+            if ($cached) {
+                return $cached;
+            }
+
+            $payload = $this->buildRmSnapshot($loanPeriod, $selectedBranch, $selectedUnit);
+            Cache::put($cacheKey, $payload, now()->addMinutes(3));
+            Cache::put($latestKey, $payload, now()->addMinutes(10));
+
+            return $payload;
+        } finally {
+            optional($lock)->release();
+        }
+    }
+
+    /**
+     * Build snapshot rasio CASA per RM dari source query
+     */
+    private function buildRmSnapshot(string $loanPeriod, string $selectedBranch, string $selectedUnit): array
+    {
+        $loanKeyColumn = $this->resolveLoanIdentityColumn();
+        $casaKeyColumn = $this->resolveCasaIdentityColumn();
+        $loanBranchColumn = $this->resolveExistingColumn('daily_loan_dinamis', ['cabang1', 'cabang'], 'cabang1');
+        $loanUnitColumn = $this->resolveExistingColumn('daily_loan_dinamis', ['unit1', 'unit'], 'unit1');
+        $loanRmColumn = $this->resolveExistingColumn('daily_loan_dinamis', ['pn_pengelola1', 'pn_pengelola', 'rm'], 'pn_pengelola1');
+        $loanSegmentColumn = $this->resolveExistingColumn('daily_loan_dinamis', ['segmen_dashboard'], 'segmen_dashboard');
+        $loanProductColumn = $this->resolveExistingColumn('daily_loan_dinamis', ['produk_dashboard'], 'produk_dashboard');
+        $loanBalanceColumn = $this->resolveExistingColumn('daily_loan_dinamis', ['baki_debet1', 'baki_debet'], 'baki_debet1');
+        $loanIdentitySql = "TRIM(d.{$loanKeyColumn})";
+
+        $casaDate = $this->resolveAvailableCasaPeriod($loanPeriod);
+
+        $brigunaFlagSql = $this->buildSegmentFlagExpression('d', $loanSegmentColumn, $loanProductColumn, 'briguna');
+        $kprFlagSql = $this->buildSegmentFlagExpression('d', $loanSegmentColumn, $loanProductColumn, 'kpr');
+        $mikroFlagSql = $this->buildSegmentFlagExpression('d', $loanSegmentColumn, $loanProductColumn, 'mikro');
+        $smcFlagSql = $this->buildSegmentFlagExpression('d', $loanSegmentColumn, $loanProductColumn, 'smc');
+
+        $loanBase = DB::table('daily_loan_dinamis as d')
+            ->where('d.periode', $loanPeriod)
+            ->whereRaw("UPPER(TRIM(d.{$loanBranchColumn})) = ?", [$selectedBranch])
+            ->whereRaw("UPPER(TRIM(d.{$loanUnitColumn})) = ?", [$selectedUnit])
+            ->whereNotNull("d.{$loanKeyColumn}")
+            ->where("d.{$loanKeyColumn}", '<>', '')
+            ->whereNotNull("d.{$loanRmColumn}")
+            ->where("d.{$loanRmColumn}", '<>', '')
+            ->selectRaw("
+                UPPER(TRIM(d.{$loanRmColumn})) as rm_key,
+                {$loanIdentitySql} as identity_key,
+                COALESCE(d.{$loanBalanceColumn}, 0) as loan_balance,
+                1 as has_total,
+                {$brigunaFlagSql} as has_briguna,
+                {$kprFlagSql} as has_kpr,
+                {$mikroFlagSql} as has_mikro,
+                {$smcFlagSql} as has_smc
+            ");
+
+        $loanPerCif = DB::query()
+            ->fromSub($loanBase, 'loan_base')
+            ->selectRaw("
+                rm_key,
+                identity_key,
+                SUM(loan_balance) as total_os,
+                SUM(CASE WHEN has_briguna = 1 THEN loan_balance ELSE 0 END) as briguna_os,
+                SUM(CASE WHEN has_kpr = 1 THEN loan_balance ELSE 0 END) as kpr_os,
+                SUM(CASE WHEN has_mikro = 1 THEN loan_balance ELSE 0 END) as mikro_os,
+                SUM(CASE WHEN has_smc = 1 THEN loan_balance ELSE 0 END) as smc_os,
+                MAX(has_total) as has_total,
+                MAX(has_briguna) as has_briguna,
+                MAX(has_kpr) as has_kpr,
+                MAX(has_mikro) as has_mikro,
+                MAX(has_smc) as has_smc
+            ")
+            ->groupBy('rm_key', 'identity_key');
+
+        $snapshot = $this->emptySnapshot();
+        $snapshot['loan_date'] = $loanPeriod;
+        $snapshot['casa_date'] = $casaDate;
+
+        $identityVariants = [];
+        $identityMappings = [];
+
+        $loanRows = $loanPerCif
+            ->orderBy('rm_key')
+            ->get();
+
+        foreach ($loanRows as $row) {
+            $rmKey = strtoupper(trim((string) ($row->rm_key ?? '')));
+            $identityKey = $this->normalizeIdentityKey($row->identity_key ?? null);
+
+            if ($rmKey === '' || $identityKey === '') {
+                continue;
+            }
+
+            $snapshot['row_count']++;
+            $snapshot['branch_labels'][$rmKey] = $rmKey;
+            $snapshot['os'][$rmKey] ??= ['total' => 0, 'briguna' => 0, 'kpr' => 0, 'mikro' => 0, 'smc' => 0];
+            $snapshot['casa'][$rmKey] ??= ['total' => 0, 'briguna' => 0, 'kpr' => 0, 'mikro' => 0, 'smc' => 0];
+
+            $snapshot['os'][$rmKey]['total'] += (float) ($row->total_os ?? 0);
+            $snapshot['os'][$rmKey]['briguna'] += (float) ($row->briguna_os ?? 0);
+            $snapshot['os'][$rmKey]['kpr'] += (float) ($row->kpr_os ?? 0);
+            $snapshot['os'][$rmKey]['mikro'] += (float) ($row->mikro_os ?? 0);
+            $snapshot['os'][$rmKey]['smc'] += (float) ($row->smc_os ?? 0);
+
+            $identityMappings[$identityKey][$rmKey] = [
+                'total' => ((int) ($row->has_total ?? 0)) === 1,
+                'briguna' => ((int) ($row->has_briguna ?? 0)) === 1,
+                'kpr' => ((int) ($row->has_kpr ?? 0)) === 1,
+                'mikro' => ((int) ($row->has_mikro ?? 0)) === 1,
+                'smc' => ((int) ($row->has_smc ?? 0)) === 1,
+            ];
+
+            foreach ($this->buildIdentityVariants($identityKey) as $variant) {
+                $identityVariants[$variant] = $identityKey;
+            }
+        }
+
+        if ($casaDate && !empty($identityVariants)) {
+            $applyCasaTypeFilter = $this->shouldApplyCasaTypeFilter($casaDate);
+            $casaBalances = [];
+
+            foreach (array_chunk(array_keys($identityVariants), 2000) as $chunk) {
+                $casaQuery = DB::table('simpanan_multipn')
+                    ->where('posisi', $casaDate)
+                    ->whereIn($casaKeyColumn, $chunk);
+
+                if ($applyCasaTypeFilter) {
+                    $casaQuery->where(function ($query) {
+                        $query->where('jenis_simpanan', 'like', 'GIRO%')
+                            ->orWhere('jenis_simpanan', 'like', 'TABUNGAN%');
+                    });
+                }
+
+                $casas = $casaQuery
+                    ->selectRaw("{$casaKeyColumn} as identity_key, SUM(COALESCE(saldo_idr, 0)) as casa_balance")
+                    ->groupBy($casaKeyColumn)
+                    ->get();
+
+                foreach ($casas as $casaRow) {
+                    $normalizedIdentity = $this->normalizeIdentityKey($casaRow->identity_key ?? null);
+                    if ($normalizedIdentity === '') {
+                        continue;
+                    }
+
+                    $casaBalances[$normalizedIdentity] = ($casaBalances[$normalizedIdentity] ?? 0) + (float) ($casaRow->casa_balance ?? 0);
+                }
+            }
+
+            foreach ($casaBalances as $identityKey => $balance) {
+                foreach (($identityMappings[$identityKey] ?? []) as $rmKey => $flags) {
+                    foreach ($flags as $segmentKey => $hasBucket) {
+                        if ($hasBucket) {
+                            $snapshot['casa'][$rmKey][$segmentKey] += $balance;
+                        }
+                    }
+                }
+            }
+        }
+
+        return $snapshot;
+    }
+
+    /**
+     * Assemble rows untuk display rasio CASA per RM
+     */
+    private function assembleRmRows(array $rms, array $previousSummary, array $currentSummary, string $totalLabel): array
+    {
+        $rows = [];
+        $total = ['branch' => $totalLabel];
+
+        foreach (self::SEGMENTS as $segment) {
+            $segmentKey = strtolower($segment);
+            $total[$segmentKey] = [
+                'os_prev' => 0,
+                'os_curr' => 0,
+                'casa_prev' => 0,
+                'casa_curr' => 0,
+            ];
+        }
+
+        foreach ($rms as $rmKey) {
+            $row = ['branch' => $rmKey];
+
+            foreach (self::SEGMENTS as $segment) {
+                $segmentKey = strtolower($segment);
+                $prevOs = (float) ($previousSummary['os'][$rmKey][$segmentKey] ?? 0);
+                $prevCasa = (float) ($previousSummary['casa'][$rmKey][$segmentKey] ?? 0);
+                $currOs = (float) ($currentSummary['os'][$rmKey][$segmentKey] ?? 0);
+                $currCasa = (float) ($currentSummary['casa'][$rmKey][$segmentKey] ?? 0);
+
+                $row[$segmentKey] = $this->calculateMetrics(
+                    ['os' => $prevOs, 'casa' => $prevCasa],
+                    ['os' => $currOs, 'casa' => $currCasa]
+                );
+
+                $total[$segmentKey]['os_prev'] += $prevOs;
+                $total[$segmentKey]['os_curr'] += $currOs;
+                $total[$segmentKey]['casa_prev'] += $prevCasa;
+                $total[$segmentKey]['casa_curr'] += $currCasa;
+            }
+
+            $rows[] = $row;
+        }
+
+        foreach (self::SEGMENTS as $segment) {
+            $segmentKey = strtolower($segment);
+            $total[$segmentKey] = $this->calculateMetrics(
+                ['os' => $total[$segmentKey]['os_prev'], 'casa' => $total[$segmentKey]['casa_prev']],
+                ['os' => $total[$segmentKey]['os_curr'], 'casa' => $total[$segmentKey]['casa_curr']]
+            );
+        }
+
+        return [$rows, $total];
     }
 
     private function reportCacheVersion(): int

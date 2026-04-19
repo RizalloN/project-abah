@@ -84,6 +84,8 @@ Route::middleware(['auth', 'release.session.lock', 'throttle:240,1'])->group(fun
 
     Route::get('/report/rekening-transaksi-debitur', [RasioCasaDebiturController::class, 'index'])->name('report.rasiocasa.debitur');
     Route::post('/report/data/rasiocasa', [RasioCasaDebiturController::class, 'fetchData'])->name('report.data.rasiocasa');
+    Route::post('/report/data/rasiocasa-per-rm', [RasioCasaDebiturController::class, 'fetchDataPerRm'])->name('report.data.rasiocasa-per-rm');
+    Route::get('/report/rekening-transaksi-debitur/filters-per-rm', [RasioCasaDebiturController::class, 'filtersPerRm'])->name('report.rasiocasa.filters-per-rm');
     Route::get('/report/rekening-transaksi-debitur/rekening-dormant', [RekeningDormantController::class, 'index'])->name('report.rekening-dormant');
     Route::get('/report/rekening-transaksi-debitur/rekening-dormant/filters', [RekeningDormantController::class, 'filters'])->name('report.rekening-dormant.filters');
     Route::post('/report/data/rekening-dormant', [RekeningDormantController::class, 'fetchData'])->name('report.data.rekening-dormant');

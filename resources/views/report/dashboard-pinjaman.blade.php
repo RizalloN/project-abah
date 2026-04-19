@@ -1431,38 +1431,37 @@
             }
 
             const $select = window.jQuery(select);
-            if ($select.data('select2')) {
-                $select.select2('destroy');
-            }
+            // Hanya inisialisasi jika belum ada, jangan destroy & recreate
+            if (!$select.data('select2')) {
+                $select.select2({
+                    theme: 'bootstrap4',
+                    width: '100%',
+                    placeholder,
+                    closeOnSelect: false,
+                    allowClear: true,
+                    language: {
+                        noResults: function () {
+                            const state = select.dataset.state || 'ready';
+                            if (state === 'loading') {
+                                return 'Memuat opsi...';
+                            }
 
-            $select.select2({
-                theme: 'bootstrap4',
-                width: '100%',
-                placeholder,
-                closeOnSelect: false,
-                allowClear: true,
-                language: {
-                    noResults: function () {
-                        const state = select.dataset.state || 'ready';
-                        if (state === 'loading') {
-                            return 'Memuat opsi...';
-                        }
+                            if (state === 'empty') {
+                                return 'Tidak ada opsi';
+                            }
 
-                        if (state === 'empty') {
                             return 'Tidak ada opsi';
-                        }
-
-                        return 'Tidak ada opsi';
+                        },
                     },
-                },
-                templateResult: buildOptionTemplate,
-                templateSelection: function (data) {
-                    return data.text;
-                },
-                escapeMarkup: function (markup) {
-                    return markup;
-                },
-            });
+                    templateResult: buildOptionTemplate,
+                    templateSelection: function (data) {
+                        return data.text;
+                    },
+                    escapeMarkup: function (markup) {
+                        return markup;
+                    },
+                });
+            }
         }
 
         // Cache Intl formatter singleton to avoid object creation per cell (P5)
@@ -1619,59 +1618,76 @@
                 return;
             }
 
-            const fragments = [];
-            const chunkSize = 2;
+            const fragment = document.createDocumentFragment();
+            const chunkSize = Math.max(12, Math.ceil(rows.length / 8)); // Optimal chunk: render dalam ~8 batches
+            const isSmallDataset = rows.length <= 15;
 
+            // Untuk dataset kecil, render sekaligus
+            if (isSmallDataset) {
+                rows.forEach((row) => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = buildRowHtml(row);
+                    fragment.appendChild(tr);
+                });
+                body.appendChild(fragment);
+                updateLoadingProgress(87, 'Render Tabel', `Merender ${rows.length} baris...`);
+                return;
+            }
+
+            // Untuk dataset besar, gunakan progressive rendering
+            let processedCount = 0;
             for (let index = 0; index < rows.length; index += 1) {
                 if (requestId !== activeMatrixRequestId || isNavigatingAway) {
                     return;
                 }
 
                 const row = rows[index];
-                const cells = row.values.map((value, columnIndex) => {
-                    let extraClass = '';
+                const tr = document.createElement('tr');
+                tr.innerHTML = buildRowHtml(row);
+                fragment.appendChild(tr);
+                processedCount++;
 
-                    if (value === null || value === undefined || value === '') {
-                        extraClass = 'matrix-empty';
-                    } else if (row.label === 'New Account') {
-                        extraClass = 'matrix-new-account';
-                    } else {
-                        const rowRank = qualityRanks[row.label];
-                        if (rowRank === columnIndex) {
-                            extraClass = 'matrix-stagnant';
-                        } else if (rowRank > columnIndex) {
-                            extraClass = 'matrix-up';
-                        } else {
-                            extraClass = 'matrix-down';
-                        }
-                    }
-
-                    return `<td class="${extraClass}">${formatNumber(value)}</td>`;
-                }).join('');
-
-                const metricCells = outputColumns.map((key) => {
-                    return `<td>${formatNumber(row.metrics?.[key] ?? null)}</td>`;
-                }).join('');
-
-                fragments.push(`
-                    <tr>
-                        <th>${row.label}</th>
-                        ${cells}
-                        <td class="matrix-total-col">${formatNumber(row.total)}</td>
-                        ${metricCells}
-                    </tr>
-                `);
-
-                const progress = 55 + Math.round(((index + 1) / rows.length) * 35);
-                updateLoadingProgress(progress, 'Render Tabel', `Merender baris ${index + 1} dari ${rows.length}...`);
-
-                const isChunkBoundary = ((index + 1) % chunkSize === 0) || index === rows.length - 1;
+                const isChunkBoundary = (processedCount % chunkSize === 0) || (index === rows.length - 1);
                 if (isChunkBoundary) {
-                    body.innerHTML = fragments.join('');
+                    body.appendChild(fragment);
+                    const progress = 55 + Math.round(((index + 1) / rows.length) * 35);
+                    updateLoadingProgress(progress, 'Render Tabel', `Merender baris ${index + 1} dari ${rows.length}...`);
                     await nextFrame();
-                    await idlePause();
                 }
             }
+        }
+
+        function buildRowHtml(row) {
+            const rowRank = row.label !== 'New Account' ? qualityRanks[row.label] : -1;
+            
+            const cells = row.values.map((value, columnIndex) => {
+                let extraClass = '';
+                
+                if (value === null || value === undefined || value === '') {
+                    extraClass = 'matrix-empty';
+                } else if (row.label === 'New Account') {
+                    extraClass = 'matrix-new-account';
+                } else if (rowRank === columnIndex) {
+                    extraClass = 'matrix-stagnant';
+                } else if (rowRank > columnIndex) {
+                    extraClass = 'matrix-up';
+                } else {
+                    extraClass = 'matrix-down';
+                }
+
+                return `<td class="${extraClass}">${formatNumber(value)}</td>`;
+            }).join('');
+
+            const metricCells = outputColumns.map((key) => {
+                return `<td>${formatNumber(row.metrics?.[key] ?? null)}</td>`;
+            }).join('');
+
+            return `
+                <th>${row.label}</th>
+                ${cells}
+                <td class="matrix-total-col">${formatNumber(row.total)}</td>
+                ${metricCells}
+            `;
         }
 
         function renderFoot(grandTotals, grandTotalValue) {
@@ -1711,13 +1727,16 @@
                 ? selectedValues.map(String)
                 : [];
 
+            // Gunakan DocumentFragment untuk batch DOM insertion
+            const fragment = document.createDocumentFragment();
             items.forEach((item) => {
                 const option = document.createElement('option');
                 option.value = item;
                 option.textContent = item;
                 option.selected = normalizedSelectedValues.includes(String(item));
-                select.appendChild(option);
+                fragment.appendChild(option);
             });
+            select.appendChild(fragment);
 
             select.disabled = !periodInput.value;
             select.dataset.selected = JSON.stringify(
@@ -1743,7 +1762,7 @@
             window.clearTimeout(filterReloadTimer);
             filterReloadTimer = window.setTimeout(function () {
                 loadFilterOptions();
-            }, 250);
+            }, 100);  // Reduced dari 250ms untuk performa lebih cepat
         }
 
         function refreshSelectUi(select) {
@@ -1751,7 +1770,10 @@
                 const placeholder = select.dataset.placeholder || '';
                 initMultiSelect(select, placeholder);
                 const selectedValues = parseSelectedDataset(select);
-                window.jQuery(select).val(selectedValues).trigger('change.select2');
+                const $select = window.jQuery(select);
+                
+                // Batch update: set data, trigger change, dan update summary sekaligus
+                $select.val(selectedValues).trigger('change.select2');
                 updateSelectSummary(select);
             }
         }
@@ -1815,7 +1837,7 @@
             activeFilterController = new AbortController();
             const timeoutId = window.setTimeout(function () {
                 activeFilterController?.abort('timeout');
-            }, 15000);
+            }, 8000);  // Reduced dari 15000ms ke 8000ms untuk respons lebih cepat
             setFilterLoadingState(true);
 
             const params = new URLSearchParams();
@@ -1828,12 +1850,10 @@
 
             try {
                 const response = await fetch(`${filtersUrl}?${params.toString()}`, {
-                    cache: 'no-store',
+                    method: 'GET',
                     headers: {
                         'X-Requested-With': 'XMLHttpRequest',
                         'Accept': 'application/json',
-                        'Cache-Control': 'no-cache',
-                        'Pragma': 'no-cache',
                     },
                     signal: activeFilterController.signal,
                 });
@@ -1903,12 +1923,10 @@
 
             try {
                 const response = await fetch(`${dataUrl}?${params.toString()}`, {
-                    cache: 'no-store',
+                    method: 'GET',
                     headers: {
                         'X-Requested-With': 'XMLHttpRequest',
                         'Accept': 'application/json',
-                        'Cache-Control': 'no-cache',
-                        'Pragma': 'no-cache',
                     },
                     signal: activeController.signal,
                 });

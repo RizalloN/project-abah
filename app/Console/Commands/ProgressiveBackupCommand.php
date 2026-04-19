@@ -102,9 +102,20 @@ class ProgressiveBackupCommand extends Command
             2 => ['pipe', 'w'],
         ];
 
-        $process = proc_open($command, $descriptors, $pipes, base_path(), $environment, ['bypass_shell' => true]);
+        // Merge system environment with backup-specific environment
+        $baseEnvironment = [];
+        foreach (array_merge($_ENV, $_SERVER) as $key => $value) {
+            if (!is_string($key) || $key === '' || is_array($value) || is_object($value)) {
+                continue;
+            }
+            $baseEnvironment[$key] = (string) $value;
+        }
+
+        $mergedEnvironment = array_merge($baseEnvironment, $environment);
+
+        $process = proc_open($command, $descriptors, $pipes, base_path(), $mergedEnvironment, ['bypass_shell' => true]);
         if (!is_resource($process)) {
-            throw new \RuntimeException('Gagal menjalankan proses mysqldump.');
+            throw new \RuntimeException('Gagal menjalankan proses mysqldump. Pastikan mysqldump.exe tersedia di PATH atau konfigurasi MYSQLDUMP_BINARY di .env.');
         }
 
         fclose($pipes[0]);
@@ -115,7 +126,14 @@ class ProgressiveBackupCommand extends Command
 
         $exitCode = proc_close($process);
         if ($exitCode !== 0) {
-            throw new \RuntimeException('mysqldump failed' . ($stderr !== '' ? ': ' . trim($stderr) : '.'));
+            $errorMsg = 'mysqldump failed' . ($stderr !== '' ? ': ' . trim($stderr) : '.');
+            
+            // Provide helpful error suggestions
+            if (strpos($stderr, 'socket') !== false || strpos($stderr, '2004') !== false || strpos($stderr, 'connect') !== false) {
+                $errorMsg .= ' | Saran: Pastikan MySQL server sudah berjalan. Cek di XAMPP Control Panel.';
+            }
+            
+            throw new \RuntimeException($errorMsg);
         }
 
         return ['stdout' => $stdout, 'stderr' => $stderr];
