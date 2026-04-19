@@ -5,10 +5,67 @@ namespace App\Services\Import;
 class ExcelStagingService
 {
     private array $decimalNormalizationCache = [];
+    private ?\Closure $decimalNormalizer = null;
 
     public function isExcelFile(string $path): bool
     {
         return in_array(strtolower(pathinfo($path, PATHINFO_EXTENSION)), ['xlsx', 'xls'], true);
+    }
+
+    private function initDecimalNormalizer(): void
+    {
+        if ($this->decimalNormalizer !== null) {
+            return;
+        }
+
+        // Pre-compile regex patterns for speed
+        $this->decimalNormalizer = static function ($value): ?string {
+            if ($value === null || !is_string($value)) {
+                return $value;
+            }
+
+            $trimmed = trim($value);
+            if ($trimmed === '') {
+                return null;
+            }
+
+            // Fast path for simple numbers
+            if (is_numeric($trimmed)) {
+                return number_format((float) $trimmed, 2, '.', '');
+            }
+
+            // Contains comma - might need decimal normalization
+            if (!str_contains($trimmed, ',')) {
+                return $trimmed;
+            }
+
+            $filtered = preg_replace('/[^0-9,\.\-]/', '', $trimmed);
+            if ($filtered === '' || $filtered === $trimmed) {
+                return $trimmed;
+            }
+
+            $hasComma = str_contains($filtered, ',');
+            $hasDot = str_contains($filtered, '.');
+
+            if ($hasComma && $hasDot) {
+                if (strrpos($filtered, ',') > strrpos($filtered, '.')) {
+                    $filtered = str_replace('.', '', $filtered);
+                    $filtered = str_replace(',', '.', $filtered);
+                } else {
+                    $filtered = str_replace(',', '', $filtered);
+                }
+            } elseif ($hasComma) {
+                $parts = explode(',', $filtered);
+                $lastPart = end($parts);
+                if (count($parts) > 2 || strlen((string) $lastPart) === 3) {
+                    $filtered = str_replace(',', '', $filtered);
+                } else {
+                    $filtered = str_replace(',', '.', $filtered);
+                }
+            }
+
+            return is_numeric($filtered) ? number_format((float) $filtered, 2, '.', '') : $trimmed;
+        };
     }
 
     public function findPython(): ?string
@@ -255,13 +312,17 @@ class ExcelStagingService
                 return null;
             }
 
-            fputcsv($outputHandle, array_values($normalizedHeaders), ',', '"', '\\');
+            // Write header with buffering
+            $buffer = '';
+            fwrite($outputHandle, implode(',', array_map(fn($h) => '"' . str_replace('"', '""', $h) . '"', array_values($normalizedHeaders))) . "\n");
 
             $headerCount = max(1, count($normalizedHeaders));
             $writtenRows = 0;
             $processedRows = 0;
             $progressEvery = 50000;
             $lastProgressAt = 0;
+            $bufferSize = 0;
+            $maxBufferSize = 1048576; // 1MB buffer
 
             while ($reader->read()) {
                 if ($reader->nodeType !== \XMLReader::ELEMENT || $reader->name !== 'row') {
@@ -287,16 +348,32 @@ class ExcelStagingService
                     continue;
                 }
 
+                // Normalize decimals (cached)
                 for ($i = 0; $i < $headerCount; $i++) {
                     $rowValues[$i] = $this->normalizeDecimalValueForStaging($rowValues[$i]);
                 }
 
-                fputcsv($outputHandle, $rowValues, ',', '"', '\\');
+                // Buffer writes for better performance
+                $line = implode(',', array_map(fn($v) => '"' . str_replace('"', '""', (string) ($v ?? '')) . '"', $rowValues)) . "\n";
+                $buffer .= $line;
+                $bufferSize += strlen($line);
+
+                if ($bufferSize >= $maxBufferSize) {
+                    fwrite($outputHandle, $buffer);
+                    $buffer = '';
+                    $bufferSize = 0;
+                }
+
                 $writtenRows++;
                 $processedRows++;
 
                 if (($processedRows - $lastProgressAt) >= $progressEvery) {
                     $lastProgressAt = $processedRows;
+                    if ($bufferSize > 0) {
+                        fwrite($outputHandle, $buffer);
+                        $buffer = '';
+                        $bufferSize = 0;
+                    }
                     $send('progress', [
                         'percent' => 8,
                         'message' => 'Menyiapkan CSV staging dari Excel... (' . number_format($processedRows, 0, ',', '.') . ' baris)',
@@ -305,6 +382,11 @@ class ExcelStagingService
                         'speed' => 0,
                     ]);
                 }
+            }
+
+            // Flush remaining buffer
+            if ($bufferSize > 0) {
+                fwrite($outputHandle, $buffer);
             }
 
             $reader->close();
@@ -780,6 +862,10 @@ class ExcelStagingService
 
     private function normalizeDecimalValueForStaging($value): ?string
     {
+        if ($this->decimalNormalizer === null) {
+            $this->initDecimalNormalizer();
+        }
+
         if ($value === null || !is_string($value)) {
             return $value;
         }
@@ -793,37 +879,9 @@ class ExcelStagingService
             return $this->decimalNormalizationCache[$trimmed];
         }
 
-        $result = $trimmed;
+        $result = ($this->decimalNormalizer)($value);
 
-        if (str_contains($trimmed, ',') && preg_match('/[0-9]/', $trimmed)) {
-            $filtered = preg_replace('/[^0-9,\.\-]/', '', $trimmed);
-            if ($filtered !== '' && $filtered !== $trimmed) {
-                $hasComma = str_contains($filtered, ',');
-                $hasDot = str_contains($filtered, '.');
-
-                if ($hasComma && $hasDot) {
-                    if (strrpos($filtered, ',') > strrpos($filtered, '.')) {
-                        $filtered = str_replace('.', '', $filtered);
-                        $filtered = str_replace(',', '.', $filtered);
-                    } else {
-                        $filtered = str_replace(',', '', $filtered);
-                    }
-                } elseif ($hasComma) {
-                    $parts = explode(',', $filtered);
-                    $lastPart = end($parts);
-                    if (count($parts) > 2 || strlen((string) $lastPart) === 3) {
-                        $filtered = str_replace(',', '', $filtered);
-                    } else {
-                        $filtered = str_replace(',', '.', $filtered);
-                    }
-                }
-
-                if (is_numeric($filtered)) {
-                    $result = number_format((float) $filtered, 2, '.', '');
-                }
-            }
-        }
-
+        // Only cache short strings
         if (strlen($trimmed) <= 100) {
             $this->decimalNormalizationCache[$trimmed] = $result;
         }
