@@ -221,4 +221,66 @@ class SnapshotBatchAggregator
             return false;
         }
     }
+
+    /**
+     * Record batch metrics for monitoring and analysis.
+     */
+    private function recordBatchMetric(string $batchKey, string $metric, mixed $value): void
+    {
+        try {
+            $metricsKey = self::BATCH_METRICS_PREFIX . $batchKey;
+            $metrics = Cache::get($metricsKey, []);
+            if (!is_array($metrics)) {
+                $metrics = [];
+            }
+
+            $metrics[$metric] = $value;
+            $metrics['updated_at'] = now()->toIso8601String();
+
+            Cache::put($metricsKey, $metrics, now()->addHours(1));
+        } catch (\Throwable $e) {
+            Log::debug('Failed to record batch metric: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Get batch statistics for monitoring and debugging.
+     */
+    public function getBatchStats(string $batchKey): ?array
+    {
+        try {
+            $metricsKey = self::BATCH_METRICS_PREFIX . $batchKey;
+            $metrics = Cache::get($metricsKey);
+
+            return is_array($metrics) ? $metrics : null;
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * Get all active batches (for monitoring).
+     */
+    public function getActiveBatches(): array
+    {
+        $batches = [];
+        try {
+            // Try to get all batch keys from cache
+            if (function_exists('apcu_cache_info') && ini_get('apc.enabled')) {
+                foreach (apcu_cache_info() as $entry) {
+                    $key = $entry['key'] ?? null;
+                    if (is_string($key) && str_starts_with($key, self::BATCH_CACHE_PREFIX)) {
+                        $batch = Cache::get($key);
+                        if (is_array($batch)) {
+                            $batches[$key] = $batch;
+                        }
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            Log::debug('Failed to get active batches: ' . $e->getMessage());
+        }
+
+        return $batches;
+    }
 }
