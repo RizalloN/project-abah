@@ -20,6 +20,12 @@ class StrictDateParserTest extends TestCase
         $this->assertSame('2024-04-20', StrictDateParser::normalize('04-20-2024'));
     }
 
+    public function test_it_accepts_textual_month_dates(): void
+    {
+        $this->assertSame('2026-04-14', StrictDateParser::normalize('14 April 2026'));
+        $this->assertSame('2026-04-14', StrictDateParser::normalize('14 Apr 2026'));
+    }
+
     public function test_it_normalizes_excel_serial_dates(): void
     {
         $serial = (string) ExcelDate::PHPToExcel(new \DateTimeImmutable('2026-04-04'));
@@ -31,5 +37,13 @@ class StrictDateParserTest extends TestCase
     {
         $this->assertNull(StrictDateParser::normalize('31/02/2026'));
         $this->assertNull(StrictDateParser::normalize('2026-13-04'));
+    }
+
+    public function test_it_builds_mysql_case_expression_for_textual_month_dates(): void
+    {
+        $expression = StrictDateParser::buildMySqlCaseExpression("NULLIF(TRIM(COALESCE(`month_day_year_of_posisi`, '')), '')");
+
+        $this->assertStringContainsString("%e %M %Y", $expression);
+        $this->assertStringContainsString("%e %b %Y", $expression);
     }
 }

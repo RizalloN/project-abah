@@ -375,18 +375,15 @@
 </style>
 @include('report._bri-report-ui')
 
-<div class="dormant-dashboard">
+<div class="dormant-dashboard pt-4">
 
     <div class="card dormant-shell mb-4">
         <div class="card-body p-4">
             <form id="dormantFilterForm" method="GET" action="{{ route('report.rekening-dormant') }}">
-                <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center mb-4 pb-3 border-bottom">
-                    <div>
-                        <h2 class="dormant-page-title"><i class="fas fa-bed text-primary mr-2"></i>Rekening Dormant</h2>
-                        <div class="dormant-filter-meta">
-                            <span><i class="fas fa-clock text-primary mr-1"></i> Periode aktif: <strong id="dormantActivePeriodMeta">-</strong></span>
-                            <span><i class="fas fa-history text-primary mr-1"></i> M-1: <strong id="dormantComparisonPeriodMeta">-</strong></span>
-                        </div>
+                <div class="d-flex flex-wrap align-items-center justify-content-end mb-4 pb-3 border-bottom">
+                    <div class="dormant-filter-meta">
+                        <span><i class="fas fa-clock text-primary mr-1"></i> Periode aktif: <strong id="dormantActivePeriodMeta">-</strong></span>
+                        <span><i class="fas fa-history text-primary mr-1"></i> M-1: <strong id="dormantComparisonPeriodMeta">-</strong></span>
                     </div>
                 </div>
 

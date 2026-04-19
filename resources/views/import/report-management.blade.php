@@ -11,7 +11,7 @@
             <div class="report-management-hero__title"><i class="fas fa-layer-group mr-2"></i> Kelola Data Report</div>
             <p class="report-management-hero__text mb-0">Pilih report, lalu hapus data per grup dengan mudah.</p>
         </div>
-        <div class="report-management-hero__badge mt-3 mt-md-0"><i class="fas fa-shield-alt mr-2 text-primary"></i> Guard Aktif</div>
+        <div class="report-management-hero__badge mt-3 mt-md-0 status-pulse"><i class="fas fa-shield-alt mr-2 text-primary"></i> Guard Aktif</div>
     </div>
 </div>
 
@@ -38,54 +38,58 @@
     <div class="card-body import-upload-card__body">
         <div class="report-management-top-shell mb-4">
             <div class="row report-management-top-grid">
-                <div class="col-lg-5 mb-3 mb-lg-0">
+                <!-- Source Data Panel -->
+                <div class="col-lg-4 mb-3 mb-lg-0">
                     <div class="report-management-field-panel h-100">
-                        <div class="report-management-field-panel__eyebrow">Sumber Data</div>
-                        <label class="report-management-field-panel__label" for="management-report-select">Pilih Report</label>
+                        <div class="report-management-field-panel__eyebrow">
+                            <i class="fas fa-database mr-1"></i> Input
+                        </div>
+                        <label class="report-management-field-panel__label" for="management-report-select">Pilih Report Utama</label>
                         <select id="management-report-select" class="form-control select2">
                             <option value="">-- Pilih Report --</option>
                             @foreach($reports as $report)
                                 <option value="{{ $report->id_report }}" data-table-name="{{ $report->table_name }}">{{ $report->nama_report }} ({{ $report->table_name }})</option>
                             @endforeach
                         </select>
+                        <div class="report-management-rebuild-hint mt-3">Silakan pilih jenis data report yang ingin dikelola atau ditinjau datanya.</div>
                     </div>
                 </div>
+
+                <!-- Recovery Panel -->
                 <div class="col-lg-4 mb-3 mb-lg-0">
                     <div class="report-management-recover-panel h-100">
-                        <div class="report-management-rebuild-panel__topline mb-2">Recover Dari Backup</div>
-                        <label class="report-management-field-panel__label mb-2" for="management-backup-select">File Backup SQL</label>
+                        <div class="report-management-rebuild-panel__topline mb-2">
+                            <i class="fas fa-undo-alt mr-1"></i> Data Recovery
+                        </div>
+                        <label class="report-management-field-panel__label mb-2" for="management-backup-select">Gunakan File Backup SQL</label>
                         <select id="management-backup-select" class="form-control">
                             <option value="">-- Pilih Backup --</option>
                             @foreach($backupFiles as $backup)
-                                <option value="{{ $backup['path'] }}">{{ $backup['name'] }} ({{ $backup['size_human'] }} · {{ $backup['modified_at'] }})</option>
+                                <option value="{{ $backup['path'] }}">{{ $backup['name'] }} ({{ $backup['size_human'] }})</option>
                             @endforeach
                         </select>
-                        <div class="report-management-rebuild-hint mt-2 mb-3">Recovery hanya menimpa tabel report yang dipilih. Sistem mengekstrak tabel terkait dari backup full agar lebih aman dan lebih cepat.</div>
+                        <div class="report-management-rebuild-hint mt-2 mb-3">Memulihkan data tabel spesifik dari file backup sistem secara parsial dan aman.</div>
                         <button type="button" id="btn-management-recover" class="btn btn-outline-success report-management-filter-btn report-management-filter-btn--secondary mt-auto" {{ empty($backupFiles) ? 'disabled' : '' }}>
-                            <i class="fas fa-life-ring mr-2"></i> <span id="management-recover-label">Recover Backup</span>
+                            <i class="fas fa-life-ring mr-2"></i> <span id="management-recover-label">Jalankan Recovery</span>
                         </button>
                     </div>
                 </div>
-                <div class="col-lg-3">
+
+                <!-- Rebuild Panel -->
+                <div class="col-lg-4">
                     <div class="report-management-rebuild-panel h-100">
-                        <div>
-                            <div class="report-management-rebuild-panel__topline mb-2">Sinkronisasi Snapshot</div>
-                            <div class="custom-control custom-switch report-management-rebuild-switch mb-1">
+                        <div class="report-management-rebuild-panel__topline mb-2">
+                            <i class="fas fa-sync-alt mr-1"></i> Pembersihan
+                        </div>
+                        <div class="d-flex flex-column gap-2 mb-3">
+                            <div class="custom-control custom-switch report-management-rebuild-switch">
                                 <input type="checkbox" class="custom-control-input" id="management-rebuild-force">
-                                <label class="custom-control-label" for="management-rebuild-force">Mulai dari awal</label>
+                                <label class="custom-control-label" for="management-rebuild-force">Mode Full Rebuild</label>
                             </div>
-                            <div class="report-management-rebuild-hint mb-3">Bangun ulang seluruh snapshot untuk semua report dengan mode penuh bila diperlukan.</div>
+                            <div class="report-management-rebuild-hint">Membangun kembali seluruh snapshot dari nol untuk memastikan konsistensi data absolut.</div>
                         </div>
                         <button type="button" id="btn-management-rebuild" class="btn btn-outline-primary report-management-filter-btn report-management-filter-btn--secondary mt-auto">
-                            <i class="fas fa-sync-alt mr-2"></i> <span id="management-rebuild-label">Refresh Snapshot</span>
-                            <div class="custom-control custom-switch report-management-rebuild-switch mb-1">
-                                <input type="checkbox" class="custom-control-input" id="management-rebuild-force">
-                                <label class="custom-control-label" for="management-rebuild-force">Mulai dari awal</label>
-                            </div>
-                            <div class="report-management-rebuild-hint mb-3">Bangun ulang seluruh snapshot untuk semua report dengan mode penuh bila diperlukan.</div>
-                        </div>
-                        <button type="button" id="btn-management-rebuild" class="btn btn-outline-primary report-management-filter-btn report-management-filter-btn--secondary mt-auto">
-                            <i class="fas fa-sync-alt mr-2"></i> <span id="management-rebuild-label">Refresh Snapshot</span>
+                            <i class="fas fa-microchip mr-2"></i> <span id="management-rebuild-label">Pembaruan Snapshot</span>
                         </button>
                     </div>
                 </div>
@@ -94,7 +98,7 @@
 
         <div class="row report-management-stat-row mb-4">
             <div class="col-md-4 mb-3 mb-md-0 animate-reveal stagger-1">
-                <div class="report-management-stat hover-lift">
+                <div class="report-management-stat hover-lift hover-shine">
                     <div class="report-management-stat__icon"><i class="fas fa-file-alt"></i></div>
                     <div class="report-management-stat__content">
                         <small>Report Aktif</small>
@@ -103,7 +107,7 @@
                 </div>
             </div>
             <div class="col-md-4 mb-3 mb-md-0 animate-reveal stagger-2">
-                <div class="report-management-stat hover-lift">
+                <div class="report-management-stat hover-lift hover-shine">
                     <div class="report-management-stat__icon report-management-stat__icon--info"><i class="fas fa-users"></i></div>
                     <div class="report-management-stat__content">
                         <small>Jumlah Grup</small>
@@ -112,7 +116,7 @@
                 </div>
             </div>
             <div class="col-md-4 animate-reveal stagger-3">
-                <div class="report-management-stat hover-lift">
+                <div class="report-management-stat hover-lift hover-shine">
                     <div class="report-management-stat__icon report-management-stat__icon--success"><i class="fas fa-table"></i></div>
                     <div class="report-management-stat__content">
                         <small>Grand Total Baris</small>
@@ -638,6 +642,24 @@
 
     .report-management-rebuild-panel, .report-management-recover-panel { display:flex; flex-direction:column; justify-content:space-between; padding:1.5rem; border-radius:12px; background:#ffffff; border:1px solid rgba(226,232,240,0.8); box-shadow:0 4px 6px -1px rgba(0,0,0,0.02); }
     .report-management-progress__meta { display:block; color:#94a3b8; font-size: 0.85rem; font-weight:500; min-height:1.2rem; }
+
+    .report-management-notice { padding:1.25rem 1.5rem; border-radius:12px; background:#f0f9ff; border:1px solid #bae6fd; color:#0369a1; font-size:0.9rem; font-weight:600; line-height:1.5; box-shadow:0 4px 6px -1px rgba(0,0,0,0.05); }
+
+    .report-management-load-card { padding:1.5rem; border-radius:16px; background:#ffffff; border:1px solid rgba(226,232,240,0.8); box-shadow:0 10px 15px -3px rgba(0,0,0,0.05); overflow:hidden; position:relative; }
+    .report-management-load-card::before { content:""; position:absolute; left:0; top:0; bottom:0; width:4px; background:#2563eb; }
+    .report-management-load-card__header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:1.25rem; }
+    .report-management-load-card__eyebrow { font-size:0.7rem; font-weight:800; letter-spacing:0.05em; text-transform:uppercase; color:#64748b; margin-bottom:0.25rem; }
+    .report-management-load-card__title { font-size:1.1rem; font-weight:700; color:#0f172a; line-height:1.2; }
+    .report-management-load-card__stage { padding:0.35rem 0.85rem; border-radius:999px; background:#eff6ff; color:#2563eb; font-size:0.75rem; font-weight:700; letter-spacing:0.02em; border:1px solid #bfdbfe; }
+    
+    .report-management-progress { height:10px; background:#f1f5f9; border-radius:999px; overflow:hidden; margin:1.25rem 0 0.75rem; }
+    .report-management-progress__bar { background:linear-gradient(90deg, #2563eb 0%, #60a5fa 100%); transition:width 0.4s cubic-bezier(0.4, 0, 0.2, 1); border-radius:999px; }
+    .report-management-progress__bar--indeterminate { background: linear-gradient(90deg, #2563eb 25%, #60a5fa 50%, #2563eb 75%); background-size: 200% 100%; animation: reportManagementProgressShift 1.5s infinite linear; }
+
+    .report-management-load-card__meta-row { display:flex; justify-content:space-between; align-items:center; }
+    .report-management-progress__value { font-size:1.25rem; font-weight:800; color:#0f172a; }
+    .report-management-load-card__units { font-size:0.85rem; font-weight:600; color:#64748b; }
+    .report-management-progress__text { color:#475569; font-size:0.9rem; font-weight:500; }
 
     .report-management-bulkbar { display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap; padding:1rem 1.25rem; border-radius:12px; background:#f8fafc; border:1px solid rgba(226,232,240,0.8); }
     .report-management-bulkbar .form-check-label { font-weight:600; color:#1e293b; cursor: pointer; }

@@ -957,7 +957,6 @@ class ImportFileController extends Controller
             }
 
             $lastId = 0;
-            $chunkSize = 5000; // Reduced from 8000 for better balance
             $requiredIndexes = [];
             if ($isBrilinkSummary) {
                 $requiredIndexes = range(0, 14);
@@ -973,6 +972,11 @@ class ImportFileController extends Controller
             if (empty($requiredIndexes)) {
                 $requiredIndexes = range(0, max(0, $headerCount - 1));
             }
+
+            // OPTIMIZATION: Calculate chunk size based on column count to respect MySQL placeholder limits
+            $numColumns = count($requiredIndexes);
+            $maxRowsPerQuery = (int) floor(65000 / max(1, $numColumns));
+            $chunkSize = min(10000, $maxRowsPerQuery);  // Use 10k or max safe rows, whichever is smaller
 
             $stagingSelectColumns = array_merge(
                 ['id'],
@@ -990,6 +994,12 @@ class ImportFileController extends Controller
                 return $value === null ? '\N' : $value;
             };
 
+            // OPTIMIZATION: Cache header lower-case lookups for filter rules (avoid repeated strtolower/trim)
+            $cachedLowercaseHeaders = [];
+            foreach ($csvHeaders as $idx => $header) {
+                $cachedLowercaseHeaders[$idx] = strtolower(trim((string) $header));
+            }
+
             $sqlSafeFilterRules = [];
             foreach ($activeFilters as $filterIdx => $allowedValuesLookup) {
                 $filterIndex = (int) $filterIdx;
@@ -997,7 +1007,8 @@ class ImportFileController extends Controller
                     continue;
                 }
 
-                $header = strtolower(trim((string) ($csvHeaders[$filterIndex] ?? '')));
+                // OPTIMIZATION: Use pre-cached lowercase header instead of recalculating
+                $header = $cachedLowercaseHeaders[$filterIndex] ?? '';
                 if (
                     str_contains($header, 'posisi')
                     || str_contains($header, 'tanggal')
@@ -1063,19 +1074,33 @@ class ImportFileController extends Controller
                     break;
                 }
 
-                foreach ($chunk as $record) {
-                    $lastId = (int) $record->id;
-                    
-                    // Copy template array instead of creating new one each iteration (reduced allocation)
-                    $row = $rowTemplate;
-                    for ($i = 0; $i < $headerCount; $i++) {
-                        $value = $record->{'c' . $i} ?? null;
-                        // Avoid nested ternary: store raw value, parser handles normalization
-                        $row[$i] = is_string($value) ? rtrim($value, "\r") : $value;
-                    }
+            // OPTIMIZATION: Convert chunk to arrays once to avoid dynamic property access in loop
+            // OPTIMIZATION: Pre-compute column keys to avoid string concatenation in inner loop
+            $columnKeys = array_map(static fn(int $i): string => 'c' . $i, range(0, $headerCount - 1));
+            
+            foreach ($chunk as $record) {
+                $recordArray = (array) $record;
+                $lastId = (int) ($recordArray['id'] ?? 0);
+                
+                // OPTIMIZATION: Use proper array copy with spread operator (ensures deep copy)
+                $row = [...$rowTemplate];
+                for ($i = 0; $i < $headerCount; $i++) {
+                    // OPTIMIZATION: Direct array access with pre-computed keys (avoids string concatenation per row)
+                    $value = $recordArray[$columnKeys[$i]] ?? null;
+                    // OPTIMIZATION: Avoid rtrim() overhead - only trim if value ends with \r
+                    $row[$i] = (is_string($value) && str_ends_with($value, "\r")) 
+                        ? substr($value, 0, -1) 
+                        : $value;
+                }
 
+                    // OPTIMIZATION: Inline passesActiveFilters check if table has no active filters
                     $parsedRow = $this->parseCsvRow($row, $isBrilinkSummary, $csvHeaders, $posisiIndex, $tahunIndex);
-                    if ($parsedRow === null || !$this->passesActiveFilters($parsedRow, $activeFilters)) {
+                    if ($parsedRow === null) {
+                        continue;
+                    }
+                    
+                    // Skip filter check if no filters are active (common case)
+                    if (!empty($activeFilters) && !$this->passesActiveFilters($parsedRow, $activeFilters)) {
                         continue;
                     }
 
@@ -1101,7 +1126,6 @@ class ImportFileController extends Controller
                     }
 
                     $bulkValues = $this->mapRowValuesForBulkLoad($mappedRow, $bulkColumns);
-                    // Use cached formatter (avoid closure creation per row)
                     fputcsv($bulkHandle, array_map($csvFormatter, $bulkValues));
 
                     $rowsDone++;

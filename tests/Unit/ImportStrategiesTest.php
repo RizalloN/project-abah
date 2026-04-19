@@ -46,16 +46,16 @@ class ImportStrategiesTest extends TestCase
         $this->assertSame('bulk_csv_staging', $strategy->importMode());
     }
 
-    public function test_ssa_strategies_use_direct_csv_mode(): void
+    public function test_ssa_strategies_use_staging_mode_for_raw_fast_imports(): void
     {
         $ssaSimpanan = new SsaSimpananImportStrategy();
         $ssaPinjaman = new SsaPinjamanImportStrategy();
 
         $this->assertTrue($ssaSimpanan->supports(null, 'ssa_simpanan'));
-        $this->assertSame('bulk_csv_direct', $ssaSimpanan->importMode());
+        $this->assertSame('bulk_csv_staging', $ssaSimpanan->importMode());
 
         $this->assertTrue($ssaPinjaman->supports(null, 'ssa_pinjaman'));
-        $this->assertSame('bulk_csv_direct', $ssaPinjaman->importMode());
+        $this->assertSame('bulk_csv_staging', $ssaPinjaman->importMode());
     }
 
     public function test_gi405_strategy_uses_staging_mode_for_safer_imports(): void

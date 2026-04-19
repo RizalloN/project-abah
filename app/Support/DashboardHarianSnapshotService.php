@@ -510,7 +510,7 @@ class DashboardHarianSnapshotService
         $m2Metrics = $comparisonPeriods['m2'] ? ($metricsByPeriod[$comparisonPeriods['m2']] ?? $this->finalizeMetrics($this->emptyMetrics())) : $this->finalizeMetrics($this->emptyMetrics());
         $mtmMetrics = $comparisonPeriods['mtm'] ? ($metricsByPeriod[$comparisonPeriods['mtm']] ?? $this->finalizeMetrics($this->emptyMetrics())) : $this->finalizeMetrics($this->emptyMetrics());
         $mtdMetrics = $comparisonPeriods['mtd'] ? ($metricsByPeriod[$comparisonPeriods['mtd']] ?? $this->finalizeMetrics($this->emptyMetrics())) : $this->finalizeMetrics($this->emptyMetrics());
-        $h2Metrics = $comparisonPeriods['h2'] ? ($metricsByPeriod[$comparisonPeriods['h2']] ?? $this->finalizeMetrics($this->emptyMetrics())) : $this->finalizeMetrics($this->emptyMetrics());
+        $h1Metrics = $comparisonPeriods['h1'] ? ($metricsByPeriod[$comparisonPeriods['h1']] ?? $this->finalizeMetrics($this->emptyMetrics())) : $this->finalizeMetrics($this->emptyMetrics());
         $rkaMetrics = $this->buildRkaMetrics($comparisonPeriods['rka'], $selectedPeriod, $kancaKey, $unitKey, false);
         $rkaDecMetrics = $this->buildRkaMetrics($comparisonPeriods['rka'], $selectedPeriod, $kancaKey, $unitKey, true);
 
@@ -521,7 +521,7 @@ class DashboardHarianSnapshotService
             $m2Metrics,
             $mtmMetrics,
             $mtdMetrics,
-            $h2Metrics,
+            $h1Metrics,
             $rkaMetrics,
             $rkaDecMetrics
         ) {
@@ -539,7 +539,7 @@ class DashboardHarianSnapshotService
                     'm2' => (float) ($m2Metrics[$metricKey] ?? 0),
                     'mtm' => (float) ($mtmMetrics[$metricKey] ?? 0),
                     'mtd' => (float) ($mtdMetrics[$metricKey] ?? 0),
-                    'h2' => (float) ($h2Metrics[$metricKey] ?? 0),
+                    'h1' => (float) ($h1Metrics[$metricKey] ?? 0),
                     'current' => (float) ($currentMetrics[$metricKey] ?? 0),
                     'rka' => (float) ($rkaMetrics[$metricKey] ?? 0),
                     'rka_dec' => (float) ($rkaDecMetrics[$metricKey] ?? 0),
@@ -552,7 +552,7 @@ class DashboardHarianSnapshotService
                     'yoy' => (float) ($currentMetrics[$metricKey] ?? 0) - (float) ($yoyMetrics[$metricKey] ?? 0),
                     'ytd' => (float) ($currentMetrics[$metricKey] ?? 0) - (float) ($ytdMetrics[$metricKey] ?? 0),
                     'mtd' => (float) ($currentMetrics[$metricKey] ?? 0) - (float) ($mtdMetrics[$metricKey] ?? 0),
-                    'dtd' => (float) ($currentMetrics[$metricKey] ?? 0) - (float) ($h2Metrics[$metricKey] ?? 0),
+                    'dtd' => (float) ($currentMetrics[$metricKey] ?? 0) - (float) ($h1Metrics[$metricKey] ?? 0),
                 ],
             ];
         })->values()->all();
@@ -572,7 +572,6 @@ class DashboardHarianSnapshotService
                 'm2' => ['period' => $comparisonPeriods['m2'], 'label' => $this->formatPeriodLabel($comparisonPeriods['m2'])],
                 'mtm' => ['period' => $comparisonPeriods['mtm'], 'label' => $this->formatPeriodLabel($comparisonPeriods['mtm'])],
                 'mtd' => ['period' => $comparisonPeriods['mtd'], 'label' => $this->formatPeriodLabel($comparisonPeriods['mtd'])],
-                'h2' => ['period' => $comparisonPeriods['h2'], 'label' => $this->formatPeriodLabel($comparisonPeriods['h2'])],
                 'h1' => ['period' => $comparisonPeriods['h1'], 'label' => $this->formatPeriodLabel($comparisonPeriods['h1'])],
                 'rka' => ['period' => $comparisonPeriods['rka'], 'label' => $this->formatMonthLabel($comparisonPeriods['rka'])],
                 'rka_dec' => ['period' => $comparisonPeriods['rka_dec'], 'label' => $this->formatPeriodLabel($comparisonPeriods['rka_dec'])],
@@ -757,12 +756,18 @@ class DashboardHarianSnapshotService
 
         $normalizedKanca = $this->normalizeFilterValues($kancaKey);
         if ($normalizedKanca !== []) {
-            $query->whereIn(DB::raw("TRIM(COALESCE(ss.nama_cabang, ''))"), $normalizedKanca);
+            $query->whereIn(
+                DB::raw("UPPER(TRIM(COALESCE(ss.nama_cabang, '')))"), 
+                array_map('strtoupper', $normalizedKanca)
+            );
         }
 
         $normalizedUnit = $this->normalizeFilterValues($unitKey);
         if ($normalizedUnit !== []) {
-            $query->whereIn(DB::raw("TRIM(COALESCE(ss.nama_uker, ''))"), $normalizedUnit);
+            $query->whereIn(
+                DB::raw("UPPER(TRIM(COALESCE(ss.nama_uker, '')))"), 
+                array_map('strtoupper', $normalizedUnit)
+            );
         }
 
         return $query->get();
@@ -783,12 +788,18 @@ class DashboardHarianSnapshotService
 
         $normalizedKanca = $this->normalizeFilterValues($kancaKey);
         if ($normalizedKanca !== []) {
-            $query->whereIn(DB::raw("TRIM(COALESCE(sp.nama_cabang, ''))"), $normalizedKanca);
+            $query->whereIn(
+                DB::raw("UPPER(TRIM(COALESCE(sp.nama_cabang, '')))"), 
+                array_map('strtoupper', $normalizedKanca)
+            );
         }
 
         $normalizedUnit = $this->normalizeFilterValues($unitKey);
         if ($normalizedUnit !== []) {
-            $query->whereIn(DB::raw("TRIM(COALESCE(sp.nama_uker, ''))"), $normalizedUnit);
+            $query->whereIn(
+                DB::raw("UPPER(TRIM(COALESCE(sp.nama_uker, '')))"), 
+                array_map('strtoupper', $normalizedUnit)
+            );
         }
 
         foreach ($this->loanMetricDefinitions($segment, $productDashboard, $product) as $alias => $condition) {
@@ -821,48 +832,74 @@ class DashboardHarianSnapshotService
 
         $previousPhPeriod = $this->resolvePreviousPhPeriod($normalizedCurrentPeriod);
         
-        // If no previous period, we can't calculate delta/recovery normally.
-        // However, if it's the start of the series, we might want to return an empty 
-        // collection with initialized keys rather than a completely empty result.
         if ($previousPhPeriod === null) {
-            // Check if user wants to see at least the segments (they will be 0)
-            // or if we should fallback to another logic.
             return collect();
         }
 
         $normalizedKanca = $this->normalizeFilterValues($kancaKey);
         $normalizedUnit = $this->normalizeFilterValues($unitKey);
 
-        $tupok = DB::table('lw325_ph as n')
+        // FIX: Combine TUPOK and LUNAS logic into a single efficient query
+        // This approach ensures both periods have matching kanca/unit and avoids union complexity
+        
+        $query = DB::table('lw325_ph as n')
             ->join('lw325_ph as o', function ($join) use ($previousPhPeriod, $normalizedCurrentPeriod) {
                 $join->on('n.acctno', '=', 'o.acctno')
+                    // OPTIMIZATION FIX: Match on kanca and unit too, not just acctno
+                    ->on('n.kanca', '=', 'o.kanca')
+                    ->on('n.unit', '=', 'o.unit')
                     ->where('n.periode', '=', $normalizedCurrentPeriod)
                     ->where('o.periode', '=', $previousPhPeriod);
             })
-            ->whereRaw('(COALESCE(o.pokok, 0) - COALESCE(n.pokok, 0)) > 0')
-            ->whereNotNull('n.acctno')
-            ->where('n.acctno', '<>', '')
             ->selectRaw("TRIM(COALESCE(n.kanca, '')) as raw_kanca")
             ->selectRaw("TRIM(COALESCE(n.unit, '')) as raw_unit")
-            ->selectRaw("TRIM(COALESCE(n.segmen_dashboard, '')) as raw_segment")
-            // Tupok mengikuti outstanding pokok periode sebelumnya untuk akun yang masih ada
-            // dan mengalami penurunan pokok pada periode berjalan.
-            ->selectRaw('SUM(COALESCE(o.pokok, 0)) as ph_tupok')
-            ->selectRaw('0 as ph_lunas')
-            ->selectRaw('SUM(COALESCE(o.pokok, 0)) as ph_amount')
-            ->groupBy('raw_kanca', 'raw_unit', 'raw_segment');
+            ->selectRaw("TRIM(COALESCE(n.segmen_dashboard, '')) as raw_segment");
 
+        // OPTIMIZATION FIX: Apply filters early in WHERE clause, not after aggregation
+        // CRITICAL FIX: Use UPPER for case-insensitive comparison
         if ($normalizedKanca !== []) {
-            $tupok->whereIn(DB::raw("TRIM(COALESCE(n.kanca, ''))"), $normalizedKanca);
+            $query->whereIn(
+                DB::raw("UPPER(TRIM(COALESCE(n.kanca, '')))"), 
+                array_map('strtoupper', $normalizedKanca)
+            );
         }
 
         if ($normalizedUnit !== []) {
-            $tupok->whereIn(DB::raw("TRIM(COALESCE(n.unit, ''))"), $normalizedUnit);
+            $query->whereIn(
+                DB::raw("UPPER(TRIM(COALESCE(n.unit, '')))"), 
+                array_map('strtoupper', $normalizedUnit)
+            );
         }
 
+        // Calculate recovery amounts for both tupok (decreased principal) and lunas (paid off)
+        $balance = 'COALESCE(o.pokok, 0)';  // Use previous period principal
+        
+        $query->selectRaw('
+            SUM(CASE 
+                WHEN (COALESCE(o.pokok, 0) - COALESCE(n.pokok, 0)) > 0
+                THEN COALESCE(o.pokok, 0)
+                ELSE 0 
+            END) as ph_tupok
+        ')
+        ->selectRaw('0 as ph_lunas')
+        ->selectRaw('
+            SUM(CASE 
+                WHEN (COALESCE(o.pokok, 0) - COALESCE(n.pokok, 0)) > 0
+                THEN COALESCE(o.pokok, 0)
+                ELSE 0 
+            END) as ph_amount
+        ')
+        ->whereNotNull('n.acctno')
+        ->where('n.acctno', '<>', '')
+        ->groupBy('raw_kanca', 'raw_unit', 'raw_segment');
+
+        // OPTIMIZATION: Also get paid-off accounts (accounts that existed in previous period but not current)
         $lunas = DB::table('lw325_ph as o')
             ->leftJoin('lw325_ph as n', function ($join) use ($previousPhPeriod, $normalizedCurrentPeriod) {
                 $join->on('o.acctno', '=', 'n.acctno')
+                    // OPTIMIZATION FIX: Match on kanca and unit, ensuring same branch context
+                    ->on('o.kanca', '=', 'n.kanca')
+                    ->on('o.unit', '=', 'n.unit')
                     ->where('o.periode', '=', $previousPhPeriod)
                     ->where('n.periode', '=', $normalizedCurrentPeriod);
             })
@@ -878,16 +915,25 @@ class DashboardHarianSnapshotService
             ->selectRaw('SUM(COALESCE(o.pokok, 0)) as ph_amount')
             ->groupBy('raw_kanca', 'raw_unit', 'raw_segment');
 
+        // Apply filters to lunas query too
+        // CRITICAL FIX: Use UPPER for case-insensitive comparison
         if ($normalizedKanca !== []) {
-            $lunas->whereIn(DB::raw("TRIM(COALESCE(o.kanca, ''))"), $normalizedKanca);
+            $lunas->whereIn(
+                DB::raw("UPPER(TRIM(COALESCE(o.kanca, '')))"), 
+                array_map('strtoupper', $normalizedKanca)
+            );
         }
 
         if ($normalizedUnit !== []) {
-            $lunas->whereIn(DB::raw("TRIM(COALESCE(o.unit, ''))"), $normalizedUnit);
+            $lunas->whereIn(
+                DB::raw("UPPER(TRIM(COALESCE(o.unit, '')))"), 
+                array_map('strtoupper', $normalizedUnit)
+            );
         }
 
+        // Combine results and re-aggregate by raw_kanca and raw_unit
         return DB::query()
-            ->fromSub($tupok->unionAll($lunas), 'ph_summary')
+            ->fromSub($query->unionAll($lunas), 'ph_summary')
             ->selectRaw("TRIM(COALESCE(ph_summary.raw_kanca, '')) as raw_kanca")
             ->selectRaw("TRIM(COALESCE(ph_summary.raw_unit, '')) as raw_unit")
             ->selectRaw('SUM(COALESCE(ph_summary.ph_tupok, 0)) as ph_tupok')

@@ -112,6 +112,7 @@
                 radial-gradient(circle at 10% 4%, rgba(113, 197, 232, 0.18), transparent 32%),
                 radial-gradient(circle at 95% 6%, rgba(48, 127, 226, 0.2), transparent 28%),
                 linear-gradient(180deg, #f7fbff 0%, #eef5ff 100%);
+            padding-top: 1.25rem;
             --report-first-col-width: 240px;
             --report-data-col-width: 96px;
             --report-th-font-size: 0.65rem;
@@ -120,16 +121,9 @@
             --report-td-padding: 6px 8px;
         }
 
-        .content-header {
-            padding-top: 1.15rem;
-            padding-bottom: 0.35rem;
-        }
-
-        .content-header h3 {
-            font-size: 1.65rem;
-            font-weight: 800;
-            color: var(--bri-ink);
-            margin-bottom: 0;
+        .content {
+            padding-top: 2.25rem;
+            padding-bottom: 2rem;
         }
 
         .card {
@@ -626,11 +620,7 @@
     @include('layouts.sidebar')
 
     <div class="content-wrapper">
-        <div class="content-header">
-            <div class="container-fluid">
-                <h3>@yield('title')</h3>
-            </div>
-        </div>
+
 
         <section class="content">
             <div class="container-fluid">

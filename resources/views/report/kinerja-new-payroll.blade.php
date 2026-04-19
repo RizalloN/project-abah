@@ -286,12 +286,14 @@
 </style>
 @include('report._bri-report-ui')
 
-<div class="report-wrapper">
+<div class="report-wrapper pt-4">
     <div class="card card-outline card-primary shadow-sm mb-4 report-filter-card">
         <div class="card-body p-4">
-            <h2 class="mb-4 pb-3 border-bottom" style="font-size: 1.5rem; font-weight: 800; color: var(--primary-blue-dark);">
-                <i class="fas fa-money-check-alt text-primary mr-2"></i> Kinerja New Payroll
-            </h2>
+            <div class="d-none">
+                <h2 class="mb-4 pb-3 border-bottom" style="font-size: 1.5rem; font-weight: 800; color: var(--primary-blue-dark);">
+                    <i class="fas fa-money-check-alt text-primary mr-2"></i> Kinerja New Payroll
+                </h2>
+            </div>
 
             <div class="row align-items-end">
                 <div class="col-md-3 mb-3 mb-md-0">

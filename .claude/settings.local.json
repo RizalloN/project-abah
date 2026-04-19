@@ -26,7 +26,10 @@
       "Bash(php -l app/Support/SnapshotAuditService.php)",
       "Bash(php -l app/Support/SnapshotAuditCoordinator.php)",
       "Bash(php -l app/Jobs/SmartPartialSnapshotRebuildJob.php)",
-      "Bash(php -l app/Http/Controllers/Import/SnapshotAuditController.php)"
+      "Bash(php -l app/Http/Controllers/Import/SnapshotAuditController.php)",
+      "Bash(php check_csv_performance.php)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)"
     ],
     "additionalDirectories": [
       "\\tmp"

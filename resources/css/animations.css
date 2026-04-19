@@ -41,6 +41,31 @@
     100% { background-position: 200% 0; }
 }
 
+@keyframes shine-sweep {
+    0% { left: -100%; opacity: 0; }
+    20% { opacity: 0.5; }
+    50% { opacity: 0.5; }
+    100% { left: 100%; opacity: 0; }
+}
+
+@keyframes soft-pulse {
+    0% { opacity: 0.8; transform: scale(1); }
+    50% { opacity: 1; transform: scale(1.05); }
+    100% { opacity: 0.8; transform: scale(1); }
+}
+
+@keyframes float {
+    0% { transform: translateY(0); }
+    50% { transform: translateY(-2px); }
+    100% { transform: translateY(0); }
+}
+
+@keyframes pulse-glow {
+    0% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.4); }
+    70% { box-shadow: 0 0 0 10px rgba(37, 99, 235, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0); }
+}
+
 .animate-reveal {
     animation: fade-in-up 0.5s var(--ease-out-expo) both;
 }
@@ -65,6 +90,39 @@
 .hover-lift:hover {
     transform: translateY(-4px);
     box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+
+.hover-shine {
+    position: relative;
+    overflow: hidden !important;
+}
+
+.hover-shine::after {
+    content: "";
+    position: absolute;
+    top: -50%;
+    left: -100%;
+    width: 200%;
+    height: 200%;
+    background: linear-gradient(
+        to bottom right,
+        rgba(255, 255, 255, 0) 0%,
+        rgba(255, 255, 255, 0) 40%,
+        rgba(255, 255, 255, 0.3) 50%,
+        rgba(255, 255, 255, 0) 60%,
+        rgba(255, 255, 255, 0) 100%
+    );
+    transform: rotate(25deg);
+    pointer-events: none;
+    z-index: 10;
+}
+
+.hover-shine:hover::after {
+    animation: shine-sweep 0.75s var(--ease-out-expo) forwards;
+}
+
+.status-pulse {
+    animation: soft-pulse 2s infinite ease-in-out;
 }
 
 .active-shrink {

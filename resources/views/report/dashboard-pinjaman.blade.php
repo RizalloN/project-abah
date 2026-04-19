@@ -994,10 +994,8 @@
     }
 </style>
 
-<div class="loan-dashboard">
-    <div class="mb-4">
-        <h2 class="loan-page-title">Dashboard Pinjaman</h2>
-    </div>
+<div class="loan-dashboard pt-4">
+
 
     @if ($selectedMode === 'matrix')
     <div id="loanMatrixPanel">

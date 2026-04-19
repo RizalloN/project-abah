@@ -68,18 +68,11 @@
         <div class="min-h-screen bg-[linear-gradient(180deg,_#f8fafc_0%,_#edf4f6_100%)]">
             @include('layouts.navigation')
 
-            <!-- Page Heading -->
-            @isset($header)
-                <header class="border-b border-slate-200/70 bg-white/75 shadow-sm backdrop-blur">
-                    <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-                        {{ $header }}
-                    </div>
-                </header>
-            @endisset
+
 
             <!-- Page Content -->
             <main class="animate-reveal">
-                <div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+                <div class="mx-auto max-w-7xl px-4 pt-12 pb-10 sm:px-6 lg:px-8">
                     <div class="space-y-6 [&_.bg-white]:rounded-[1.5rem] [&_.bg-white]:border [&_.bg-white]:border-slate-200/80 [&_.bg-white]:shadow-[0_20px_45px_-30px_rgba(15,23,42,0.24)] [&_input]:rounded-2xl [&_input]:border-slate-200 [&_input]:bg-slate-50 [&_input]:px-4 [&_input]:py-3 [&_input]:text-slate-900 [&_input]:shadow-none [&_input:focus]:border-emerald-500 [&_input:focus]:ring-emerald-100 [&_textarea]:rounded-2xl [&_textarea]:border-slate-200 [&_textarea]:bg-slate-50 [&_textarea]:shadow-none [&_textarea:focus]:border-emerald-500 [&_textarea:focus]:ring-emerald-100 [&_button]:rounded-2xl">
                         {{ $slot }}
                     </div>

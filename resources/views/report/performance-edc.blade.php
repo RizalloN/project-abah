@@ -367,16 +367,17 @@
     }
 </style>
 
-<div class="card card-outline card-primary shadow-sm mb-3 report-filter-card">
+<div class="pt-4">
+    <div class="card card-outline card-primary shadow-sm mb-3 report-filter-card">
     <div class="card-body py-3">
         <div class="row align-items-end">
-            <div class="col-md-3">
+            <div class="d-none">
                 <div class="form-group mb-0">
                     <label class="text-muted text-sm mb-1">Nama Report</label>
                     <input type="text" class="form-control font-weight-bold" value="Performance EDC" disabled>
                 </div>
             </div>
-            <div class="col-md-3">
+            <div class="col-md-4">
                 <div class="form-group mb-0">
                     <label class="text-muted text-sm mb-1">Branch Office (Kanca)</label>
                     <div class="branch-filter-dropdown">
@@ -397,7 +398,7 @@
                     </div>
                 </div>
             </div>
-            <div class="col-md-2">
+            <div class="col-md-3">
                 <div class="form-group mb-0">
                     <label class="text-muted text-sm mb-1">Nama Uker</label>
                     <div class="uker-filter-dropdown">
@@ -409,7 +410,7 @@
                     </div>
                 </div>
             </div>
-            <div class="col-md-2">
+            <div class="col-md-3">
                 <div class="form-group mb-0">
                     <label class="text-dark text-sm font-weight-bold mb-1">Posisi Terakhir <i class="fas fa-edit text-primary ml-1"></i></label>
                     <input type="date" id="filter_posisi" class="form-control border-primary shadow-sm filter-trigger" value="{{ date('Y-m-d') }}">
@@ -592,6 +593,7 @@
     </div>
 </div>
 
+</div>
 @endsection
 
 @section('scripts')

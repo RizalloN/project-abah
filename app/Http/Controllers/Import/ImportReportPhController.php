@@ -73,6 +73,7 @@ class ImportReportPhController extends Controller
     private const EXCEL_HEADER_ALIASES = [
         'no' => 'textbox3',
         'nomor_rekening' => 'acctno',
+        'nomor_rekening_1' => 'acctno',
         'nomor_rekening1' => 'acctno',
         'segmen' => 'segmen_dashboard',
         'deskripsi_segmen' => 'description',
@@ -101,12 +102,6 @@ class ImportReportPhController extends Controller
         'deffered_bunga_cutoff_ph' => 'deffered_bunga_ph',
         'sai_tunggakan_cutoff_ph' => 'sai_tunggakan_ph',
         'sai_deffered_cutoff_ph' => 'sai_deffered_ph',
-    ];
-    private const EXCEL_HEADER_OCCURRENCE_ALIASES = [
-        'cif' => [
-            1 => 'cif1',
-            2 => 'cif',
-        ],
     ];
     private const STAGED_CSV_TEMP_DIR = 'app/report_ph_stage';
     private const FILTERED_CSV_TEMP_DIR = 'app/report_ph_filtered';
@@ -285,8 +280,32 @@ class ImportReportPhController extends Controller
             return 0;
         }
 
-        $totalLines = $this->bulkLoadService()->countFileLines($path);
-        return max(0, $totalLines - max(1, $headerLine));
+        $handle = fopen($path, 'r');
+        if ($handle === false) {
+            return 0;
+        }
+
+        try {
+            $recordNumber = 0;
+            $dataRows = 0;
+
+            while (($row = $this->readCsvRecord($handle, self::COLUMN_DELIMITER)) !== false) {
+                $recordNumber++;
+                if ($recordNumber <= max(1, $headerLine)) {
+                    continue;
+                }
+
+                if ($this->isEmptyCsvRow($row)) {
+                    continue;
+                }
+
+                $dataRows++;
+            }
+
+            return $dataRows;
+        } finally {
+            fclose($handle);
+        }
     }
 
     private function runPolarsProcessor(
@@ -1015,13 +1034,13 @@ class ImportReportPhController extends Controller
         $fullColumns = [];  // Track columns that reached limit
         
         try {
-            while (($line = fgets($handle)) !== false) {
+            while (($row = $this->readCsvRecord($handle, $context['delimiter'])) !== false) {
                 $lineNumber++;
                 if ($lineNumber <= $context['header_line']) {
                     continue;
                 }
 
-                $row = $this->mapCsvRow($context, $this->parseCsvLine($line, $context['delimiter']));
+                $row = $this->mapCsvRow($context, $row);
                 if ($row === null) {
                     continue;
                 }
@@ -1445,13 +1464,13 @@ class ImportReportPhController extends Controller
         $lineNumber = 0;
 
         try {
-            while (($line = fgets($handle)) !== false) {
+            while (($row = $this->readCsvRecord($handle, $context['delimiter'])) !== false) {
                 $lineNumber++;
                 if ($lineNumber <= $context['header_line']) {
                     continue;
                 }
 
-                $row = $this->mapCsvRow($context, $this->parseCsvLine($line, $context['delimiter']));
+                $row = $this->mapCsvRow($context, $row);
                 if ($row === null || !$this->passesFilters($row, $activeFilters)) {
                     continue;
                 }
@@ -1688,17 +1707,16 @@ class ImportReportPhController extends Controller
         }
 
         try {
-            $lineNumber = 0;
-            while (($line = fgets($handle)) !== false && $lineNumber < 20) {
-                $lineNumber++;
-                $trimmed = trim(preg_replace('/^\xEF\xBB\xBF/', '', $line));
-                if ($trimmed === '') {
+            $recordNumber = 0;
+            while (($row = $this->readCsvRecord($handle, $delimiter)) !== false && $recordNumber < 20) {
+                $recordNumber++;
+                if ($this->isEmptyCsvRow($row)) {
                     continue;
                 }
 
                 $sampleRows[] = [
-                    'line' => $trimmed,
-                    'line_number' => $lineNumber,
+                    'record' => $row,
+                    'record_number' => $recordNumber,
                 ];
             }
         } finally {
@@ -1714,12 +1732,12 @@ class ImportReportPhController extends Controller
             throw new \RuntimeException('Baris header CSV ' . self::REPORT_LABEL . ' tidak ditemukan.');
         }
 
-        $periode = $this->findPeriodeValue($path, $structure['header_row']['line_number'], $structure['parsed_headers'], $delimiter)
-            ?? $this->findPeriodeValueFromMetadata($sampleRows, $structure['header_row']['line_number']);
+        $periode = $this->findPeriodeValue($path, $structure['header_row']['record_number'], $structure['parsed_headers'], $delimiter)
+            ?? $this->findPeriodeValueFromMetadata($sampleRows, $structure['header_row']['record_number']);
 
         return [
             'delimiter' => $delimiter,
-            'header_line' => $structure['header_row']['line_number'],
+            'header_line' => $structure['header_row']['record_number'],
             'source_headers' => $structure['parsed_headers'],
             'source_indexes' => $this->buildSourceIndexes($structure['parsed_headers']),
             'headers' => self::TARGET_COLUMNS,
@@ -1738,12 +1756,11 @@ class ImportReportPhController extends Controller
         $bestCandidate = null;
 
         foreach ($sampleRows as $row) {
-            $parsedHeaders = array_map(
-                fn ($value) => $this->normalizeHeader($value),
-                $this->parseCsvLine($row['line'], $delimiter)
-            );
-
-            $parsedHeaders = array_values(array_filter($parsedHeaders, fn ($value) => $value !== ''));
+            $sourceHeaders = array_values((array) ($row['record'] ?? []));
+            $parsedHeaders = array_values(array_filter(
+                $this->normalizeHeadersWithAliases($sourceHeaders),
+                fn ($value) => $value !== ''
+            ));
             if (empty($parsedHeaders)) {
                 continue;
             }
@@ -1821,14 +1838,13 @@ class ImportReportPhController extends Controller
         }
 
         try {
-            $lineNumber = 0;
-            while (($line = fgets($handle)) !== false) {
-                $lineNumber++;
-                if ($lineNumber <= $headerLineNumber) {
+            $recordNumber = 0;
+            while (($row = $this->readCsvRecord($handle, $delimiter)) !== false) {
+                $recordNumber++;
+                if ($recordNumber <= $headerLineNumber) {
                     continue;
                 }
 
-                $row = $this->parseCsvLine($line, $delimiter);
                 if ($this->isEmptyCsvRow($row)) {
                     continue;
                 }
@@ -1850,15 +1866,16 @@ class ImportReportPhController extends Controller
     private function findPeriodeValueFromMetadata(array $sampleRows, int $headerLineNumber): ?string
     {
         foreach ($sampleRows as $row) {
-            if (($row['line_number'] ?? 0) >= $headerLineNumber) {
+            if (($row['record_number'] ?? 0) >= $headerLineNumber) {
                 continue;
             }
 
-            $line = (string) ($row['line'] ?? '');
-            if ($line === '') {
+            $record = array_values((array) ($row['record'] ?? []));
+            if ($record === []) {
                 continue;
             }
 
+            $line = implode(',', array_map(static fn ($value): string => trim((string) $value), $record));
             if (preg_match('/periode\s*data\s*:\s*([^,]+)/i', $line, $matches) !== 1) {
                 continue;
             }
@@ -1880,13 +1897,13 @@ class ImportReportPhController extends Controller
         $lineNumber = 0;
 
         try {
-            while (($line = fgets($handle)) !== false) {
+            while (($row = $this->readCsvRecord($handle, $context['delimiter'])) !== false) {
                 $lineNumber++;
                 if ($lineNumber <= $context['header_line']) {
                     continue;
                 }
 
-                $row = $this->mapCsvRow($context, $this->parseCsvLine($line, $context['delimiter']));
+                $row = $this->mapCsvRow($context, $row);
                 if ($row === null || !$this->passesFilters($row, $activeFilters)) {
                     continue;
                 }
@@ -1919,6 +1936,50 @@ class ImportReportPhController extends Controller
         $header = strtolower($header);
         $header = preg_replace('/[^a-z0-9]+/', '_', $header);
         return trim($header, '_');
+    }
+
+    /**
+     * Normalize a CSV header row into the canonical lw325_ph shape.
+     */
+    private function normalizeHeadersWithAliases(array $headers): array
+    {
+        $normalizedHeaders = [];
+        $cifOccurrence = 0;
+
+        foreach (array_values($headers) as $index => $header) {
+            $label = trim((string) $header);
+            if ($label === '') {
+                $normalizedHeaders[] = 'col_' . $index;
+                continue;
+            }
+
+            $normalized = $this->normalizeHeader($label);
+
+            if (in_array($normalized, ['cif', 'cif_1', 'cif1'], true)) {
+                $cifOccurrence++;
+                $normalizedHeaders[] = $cifOccurrence === 1 ? 'cif1' : 'cif';
+                continue;
+            }
+
+            $normalizedHeaders[] = self::EXCEL_HEADER_ALIASES[$normalized] ?? $normalized;
+        }
+
+        return $normalizedHeaders;
+    }
+
+    private function readCsvRecord($handle, string $delimiter): array|false
+    {
+        $row = fgetcsv($handle, 0, $delimiter, '"', '\\');
+        if ($row === false) {
+            return false;
+        }
+
+        $normalizedRow = [];
+        foreach ($row as $value) {
+            $normalizedRow[] = $this->smartNormalizeQuotedCsvCellValue($value);
+        }
+
+        return $this->trimTrailingEmptyCells($normalizedRow);
     }
 
     private function mapCsvRow(array $context, array $data): ?array

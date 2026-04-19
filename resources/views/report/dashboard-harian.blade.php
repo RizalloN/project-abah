@@ -983,10 +983,10 @@
 @endsection
 
 @section('content')
-<div class="daily-dashboard" id="daily-dashboard-root">
+<div class="daily-dashboard pt-4" id="daily-dashboard-root">
     <div class="daily-surface" id="daily-surface">
-        <div class="daily-panel-head px-3 py-2 d-flex flex-wrap justify-content-center align-items-center">
-            <h1 class="m-0 text-dark text-center" style="font-size: 1.15rem; font-weight: 700;">Perbandingan Posisi & RKA Harian</h1>
+        <div class="daily-panel-head px-3 py-4 d-flex flex-wrap justify-content-center align-items-center">
+                         <!-- Judul disembunyikan sesuai request user untuk minimalist design -->
             
             <!-- Hidden elements to preserve JS functionality -->
             <div class="d-none">
@@ -1005,7 +1005,7 @@
         <div class="daily-filter-shell">
             <div class="row align-items-stretch mx-n2 daily-filter-grid">
                 <div class="col-12 col-md-6 col-xl px-2 mb-3 mb-xl-0">
-                    <div class="daily-filter-card daily-filter-card--kanca animate-reveal stagger-1">
+                    <div class="daily-filter-card hover-lift hover-shine daily-filter-card--kanca animate-reveal stagger-1">
                         <div class="daily-filter-content">
                             <label class="daily-filter-label" for="filter-kanca">Kanca</label>
                             <div class="daily-filter-control">
@@ -1023,7 +1023,7 @@
                     </div>
                 </div>
                 <div class="col-12 col-md-6 col-xl px-2 mb-3 mb-xl-0">
-                    <div class="daily-filter-card daily-filter-card--unit animate-reveal stagger-2">
+                    <div class="daily-filter-card hover-lift hover-shine daily-filter-card--unit animate-reveal stagger-2">
                         <div class="daily-filter-content">
                             <label class="daily-filter-label" for="filter-unit">Unit Kerja</label>
                             <div class="daily-filter-control">
@@ -1041,7 +1041,7 @@
                     </div>
                 </div>
                 <div class="col-12 col-md-6 col-xl px-2 mb-3 mb-xl-0">
-                    <div class="daily-filter-card daily-filter-card--posisi animate-reveal stagger-3">
+                    <div class="daily-filter-card hover-lift hover-shine daily-filter-card--posisi animate-reveal stagger-3">
                         <div class="daily-filter-content">
                             <label class="daily-filter-label" for="filter-posisi-terakhir">Posisi Terakhir</label>
                             <div class="daily-filter-control">
@@ -1053,7 +1053,7 @@
                     </div>
                 </div>
                 <div class="col-12 col-md-6 col-xl px-2 mb-3 mb-xl-0">
-                    <div class="daily-filter-card daily-filter-card--rka animate-reveal stagger-4">
+                    <div class="daily-filter-card hover-lift hover-shine daily-filter-card--rka animate-reveal stagger-4">
                         <div class="daily-filter-content">
                             <label class="daily-filter-label" for="filter-posisi-rka">Posisi RKA</label>
                             <div class="daily-filter-control">
@@ -1065,12 +1065,12 @@
                     </div>
                 </div>
                 <div class="col-12 col-xl px-2 mb-0">
-                    <div class="daily-filter-card daily-filter-card--action animate-reveal stagger-5">
+                    <div class="daily-filter-card hover-lift hover-shine daily-filter-card--action animate-reveal stagger-5">
                         <div class="daily-filter-action-body">
                             <label class="daily-filter-label">Tindakan</label>
                             <!-- <div class="daily-filter-note">Pilih kombinasi filter lalu jalankan pembaruan tabel tanpa mengubah flow data yang ada.</div> -->
                             <div class="daily-filter-action-button-wrap">
-                                <button type="button" class="btn daily-apply-button d-flex justify-content-center align-items-center" id="btn-apply-daily-filter">
+                                <button type="button" class="btn daily-apply-button active-shrink d-flex justify-content-center align-items-center" id="btn-apply-daily-filter">
                                     <i class="fas fa-filter mr-2"></i> Terapkan
                                 </button>
                             </div>
@@ -1093,7 +1093,7 @@
                             <col style="width: 110px;" class="numeric-col">
                             <col style="width: 120px;" class="numeric-col">
                             <col style="width: 110px;" class="numeric-col">
-                            <col style="width: 110px;" class="numeric-col position-col-h2">
+                            <col style="width: 110px;" class="numeric-col position-col-h1">
                             <col style="width: 110px;" class="numeric-col">
                             <col style="width: 100px;" class="numeric-col">
                             <col style="width: 100px;" class="numeric-col">
@@ -1127,8 +1127,8 @@
                                 <th class="value-col position-col" rowspan="2">
                                     <span class="column-heading"><span class="main" data-label-mtd>-</span><span class="header-subnote text-white-50">M-1 (MtD)</span></span>
                                 </th>
-                                <th class="value-col position-col position-col-h2" rowspan="2">
-                                    <span class="column-heading"><span class="main" data-label-h2>-</span><span class="header-subnote text-white-50">h-2 (DtD)</span></span>
+                                <th class="value-col position-col position-col-h1" rowspan="2">
+                                    <span class="column-heading"><span class="main" data-label-h1>-</span><span class="header-subnote text-white-50">h-1 (DtD)</span></span>
                                 </th>
                                 <th class="value-col position-col" rowspan="2" style="background-color: var(--primary-blue-light);">
                                     <span class="column-heading"><span class="main text-white" data-label-current>-</span><span class="header-subnote text-white-50">Posisi</span></span>
@@ -1207,7 +1207,7 @@
             m2: document.querySelector('[data-label-m2]'),
             mtm: document.querySelector('[data-label-mtm]'),
             mtd: document.querySelector('[data-label-mtd]'),
-            h2: document.querySelector('[data-label-h2]'),
+            h1: document.querySelector('[data-label-h1]'),
             current: document.querySelector('[data-label-current]'),
             rka: document.querySelector('[data-label-rka-period]'),
             rkaDec: document.querySelector('[data-label-rka-dec-period]'),
@@ -1217,7 +1217,7 @@
             deltaDtd: document.querySelector('[data-label-delta-dtd]'),
         };
         const positionGroupColspan = document.querySelector('[data-position-group-colspan]');
-        const positionH2Header = document.querySelector('[data-label-h2]').closest('th');
+        const positionH1Header = document.querySelector('[data-label-h1]').closest('th');
         const tableRegion = document.querySelector('[data-table-region]');
         const tableWrap = document.querySelector('.daily-table-wrap');
         const mainHeader = document.querySelector('.main-header');
@@ -1328,7 +1328,7 @@
             const show = Boolean(visible);
             const hiddenClass = 'position-col-hidden';
 
-            [positionH2Header].forEach(function (node) {
+            [positionH1Header].forEach(function (node) {
                 if (!node) {
                     return;
                 }
@@ -1336,11 +1336,11 @@
                 node.classList.toggle(hiddenClass, !show);
             });
 
-            document.querySelectorAll('[data-position-col="h2"]').forEach(function (cell) {
+            document.querySelectorAll('[data-position-col="h1"]').forEach(function (cell) {
                 cell.classList.toggle(hiddenClass, !show);
             });
 
-            document.querySelectorAll('col.position-col-h2').forEach(function (cell) {
+            document.querySelectorAll('col.position-col-h1').forEach(function (cell) {
                 cell.classList.toggle(hiddenClass, !show);
             });
 
@@ -1766,7 +1766,7 @@
             });
 
             ['values', 'deltas'].forEach(function (group) {
-                ['yoy', 'ytd', 'm2', 'mtm', 'mtd', 'h2', 'current', 'rka', 'rka_dec'].forEach(function (metricName) {
+                ['yoy', 'ytd', 'm2', 'mtm', 'mtd', 'h1', 'current', 'rka', 'rka_dec'].forEach(function (metricName) {
                     if (group === 'deltas' && metricName !== 'yoy' && metricName !== 'ytd' && metricName !== 'mtd' && metricName !== 'dtd') {
                         return;
                     }
@@ -1811,7 +1811,7 @@
 
             ['values', 'deltas'].forEach(function (group) {
                 const metricNames = group === 'values'
-                    ? ['yoy', 'ytd', 'm2', 'mtm', 'mtd', 'h2', 'current', 'rka', 'rka_dec']
+                    ? ['yoy', 'ytd', 'm2', 'mtm', 'mtd', 'h1', 'current', 'rka', 'rka_dec']
                     : ['yoy', 'ytd', 'mtd', 'dtd'];
 
                 metricNames.forEach(function (metricName) {
@@ -1834,8 +1834,8 @@
             const scopedPayload = applyScopeToPayload(payload);
             const rows = scopedPayload.rows || [];
             const periods = scopedPayload.comparison_periods || {};
-            const hasH2 = Boolean(periods.h2 && periods.h2.period);
-            const emptyColspan = hasH2 ? 16 : 15;
+            const hasH1 = Boolean(periods.h1 && periods.h1.period);
+            const emptyColspan = hasH1 ? 16 : 15;
             const blockClassMap = {
                 total_simpanan: 'metric-block-simpanan',
                 total_os: 'metric-block-os',
@@ -1867,7 +1867,7 @@
             };
             const scopeMode = getUnitScopeMode();
 
-            togglePositionColumns(hasH2);
+            togglePositionColumns(hasH1);
 
             if (!rows.length) {
                 body.innerHTML = '<tr><td colspan="' + emptyColspan + '" class="daily-empty"><i class="fas fa-box-open mr-2 text-muted"></i>Tidak ada data untuk filter terpilih.</td></tr>';
@@ -1900,8 +1900,8 @@
                 rowCells.push('<td class="value-col position-col"><span class="cell-text">' + formatValue(value.mtm, row.type) + '</span></td>');
                 rowCells.push('<td class="value-col position-col"><span class="cell-text">' + formatValue(value.mtd, row.type) + '</span></td>');
 
-                if (hasH2) {
-                    rowCells.push('<td class="value-col position-col position-col-h2" data-position-col="h2"><span class="cell-text">' + formatValue(value.h2, row.type) + '</span></td>');
+                if (hasH1) {
+                    rowCells.push('<td class="value-col position-col position-col-h1" data-position-col="h1"><span class="cell-text">' + formatValue(value.h1, row.type) + '</span></td>');
                 }
 
                 rowCells.push('<td class="value-col position-col metric-value font-weight-bold bg-light"><span class="cell-text text-primary">' + formatValue(value.current, row.type) + '</span></td>');
@@ -1936,7 +1936,7 @@
             const summary = scopedPayload.summary || {};
             const periods = scopedPayload.comparison_periods || {};
             const filters = scopedPayload.available_filters || payload.available_filters || initialFilters;
-            const hasH2 = Boolean(periods.h2 && periods.h2.period);
+            const hasH1 = Boolean(periods.h1 && periods.h1.period);
             latestFilters = filters;
             const current = currentState();
 
@@ -1962,16 +1962,16 @@
             setTextContent(headerLabels.m2, periods.m2 ? formatDateSlash(periods.m2.period) : '-');
             setTextContent(headerLabels.mtm, periods.mtm ? formatDateSlash(periods.mtm.period) : '-');
             setTextContent(headerLabels.mtd, periods.mtd ? formatDateSlash(periods.mtd.period) : '-');
-            setTextContent(headerLabels.h2, hasH2 ? formatDateSlash(periods.h2.period) : '-');
+            setTextContent(headerLabels.h1, hasH1 ? formatDateSlash(periods.h1.period) : '-');
             setTextContent(headerLabels.current, scopedPayload.selected_period ? formatDateSlash(scopedPayload.selected_period) : '-');
             setTextContent(headerLabels.rka, periods.rka ? 'RKA ' + String(formatMonthYear(periods.rka.period)).toUpperCase() : 'RKA');
             setTextContent(headerLabels.rkaDec, periods.rka_dec ? 'RKA ' + String(formatMonthYear(periods.rka_dec.period)).toUpperCase() : 'RKA Des');
             setTextContent(headerLabels.deltaYoy, periods.yoy ? formatDateSlash(periods.yoy.period) : '-');
             setTextContent(headerLabels.deltaYtd, periods.ytd ? formatDateSlash(periods.ytd.period) : '-');
             setTextContent(headerLabels.deltaMtd, periods.mtd ? formatDateSlash(periods.mtd.period) : '-');
-            setTextContent(headerLabels.deltaDtd, hasH2 ? formatDateSlash(periods.h2.period) : '-');
+            setTextContent(headerLabels.deltaDtd, hasH1 ? formatDateSlash(periods.h1.period) : '-');
 
-            togglePositionColumns(hasH2);
+            togglePositionColumns(hasH1);
 
             renderTable(scopedPayload);
         };
@@ -2014,7 +2014,7 @@
                 })
                 .catch(function (error) {
                     console.error('Gagal memuat data dashboard harian.', error);
-                    const hidden = positionH2Header && positionH2Header.classList.contains('position-col-hidden');
+                    const hidden = positionH1Header && positionH1Header.classList.contains('position-col-hidden');
                     body.innerHTML = '<tr><td colspan="' + (hidden ? 15 : 16) + '" class="daily-empty text-danger"><i class="fas fa-exclamation-triangle mr-2"></i>Gagal memuat data dashboard harian.</td></tr>';
                 })
                 .finally(function () {

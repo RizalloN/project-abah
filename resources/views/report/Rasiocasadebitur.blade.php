@@ -493,14 +493,12 @@
 </style>
 @include('report._bri-report-ui')
 
-<div class="casa-dashboard">
+<div class="casa-dashboard pt-4">
     <div class="card card-outline card-primary shadow-sm mb-4 casa-shell">
         <div class="card-body p-4">
-            <div class="d-flex flex-wrap align-items-center justify-content-between mb-4 pb-3 border-bottom">
-                <div>
-                    <h1 class="casa-page-title"><i class="fas fa-percentage text-primary mr-2"></i>Rasio CASA Debitur</h1>
-                    <p class="casa-page-copy">Pilih periode akhir lalu klik <strong>Tampilkan</strong> untuk menjalankan query dan memuat ringkasan rasio CASA per branch.</p>
-                </div>
+            <div class="d-none">
+                <h1 class="casa-page-title"><i class="fas fa-percentage text-primary mr-2"></i>Rasio CASA Debitur</h1>
+                <p class="casa-page-copy">Pilih periode akhir lalu klik <strong>Tampilkan</strong> untuk menjalankan query dan memuat ringkasan rasio CASA per branch.</p>
             </div>
 
             <form id="filterForm">

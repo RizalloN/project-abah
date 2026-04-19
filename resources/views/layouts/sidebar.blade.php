@@ -79,6 +79,7 @@
         font-size: 1rem;
         text-align: center;
         color: #1f63ba;
+        transition: transform 0.25s var(--ease-out-back);
     }
 
     .main-sidebar .nav-sidebar > .nav-item > .nav-link p .right {
@@ -86,14 +87,23 @@
         margin-left: auto;
         padding-top: 0.18rem;
         flex-shrink: 0;
+        transition: transform 0.25s var(--ease-out-back);
     }
 
     .main-sidebar .nav-sidebar > .nav-item > .nav-link:hover {
         background: linear-gradient(125deg, #0857c3 0%, #307fe2 100%);
         border-color: rgba(8, 87, 195, 0.72);
         color: #ffffff;
-        transform: translateX(3px);
+        transform: translateX(4px);
         box-shadow: 0 14px 24px -16px rgba(4, 42, 95, 0.76);
+    }
+
+    .main-sidebar .nav-sidebar > .nav-item > .nav-link:hover .nav-icon {
+        transform: scale(1.18) translateY(-1px);
+    }
+
+    .main-sidebar .nav-sidebar > .nav-item > .nav-link:hover p .right {
+        transform: translateX(2px);
     }
 
     .main-sidebar .nav-sidebar > .nav-item > .nav-link:hover::after {
@@ -278,6 +288,8 @@
         white-space: nowrap;
     }
 
+
+
     body.sidebar-hover-open.sidebar-mini.sidebar-collapse .main-sidebar .nav-sidebar .nav-treeview {
         padding-left: 1.1rem;
     }
@@ -285,6 +297,8 @@
     body.sidebar-hover-open.sidebar-mini.sidebar-collapse .main-sidebar .nav-sidebar .report-digital-treeview {
         padding-left: 1.05rem;
     }
+
+
 
     .main-sidebar .nav-link.active {
         background: linear-gradient(125deg, #0857c3 0%, #307fe2 100%) !important;
@@ -372,8 +386,8 @@
                     </a>
                 </li>
 
-                <li class="nav-item {{ request()->routeIs('report.dashboard-pinjaman', 'report.dashboard-pinjaman.matrix', 'report.dashboard-pinjaman.kolek-tidak-sesuai', 'report.dashboard-pinjaman.filters', 'report.dashboard-pinjaman.data', 'report.dashboard-pinjaman.kolek-tidak-sesuai.*') ? 'menu-open' : '' }}">
-                    <a href="#" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman', 'report.dashboard-pinjaman.matrix', 'report.dashboard-pinjaman.kolek-tidak-sesuai', 'report.dashboard-pinjaman.filters', 'report.dashboard-pinjaman.data', 'report.dashboard-pinjaman.kolek-tidak-sesuai.*') ? 'active' : '' }}">
+                <li class="nav-item {{ request()->routeIs('report.dashboard-pinjaman', 'report.dashboard-pinjaman.matrix', 'report.dashboard-pinjaman.kolek-tidak-sesuai', 'report.dashboard-pinjaman.kejar-laba', 'report.dashboard-pinjaman.filters', 'report.dashboard-pinjaman.data', 'report.dashboard-pinjaman.kolek-tidak-sesuai.*') ? 'menu-open' : '' }}">
+                    <a href="#" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman', 'report.dashboard-pinjaman.matrix', 'report.dashboard-pinjaman.kolek-tidak-sesuai', 'report.dashboard-pinjaman.kejar-laba', 'report.dashboard-pinjaman.filters', 'report.dashboard-pinjaman.data', 'report.dashboard-pinjaman.kolek-tidak-sesuai.*') ? 'active' : '' }}">
                         <i class="nav-icon fas fa-chart-line"></i>
                         <p>
                             Dashboard Pinjaman
@@ -391,6 +405,12 @@
                             <a href="{{ route('report.dashboard-pinjaman.kolek-tidak-sesuai') }}" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman.kolek-tidak-sesuai') ? 'active' : '' }}">
                                 <i class="far fa-circle nav-icon"></i>
                                 <p>Kolek Tidak Sesuai</p>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="{{ route('report.dashboard-pinjaman.kejar-laba') }}" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman.kejar-laba') ? 'active' : '' }}">
+                                <i class="far fa-circle nav-icon"></i>
+                                <p>Report Kejar Laba</p>
                             </a>
                         </li>
                     </ul>

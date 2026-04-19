@@ -126,16 +126,17 @@
 </style>
 @include('report._bri-report-ui')
 
-<div class="card card-outline card-warning shadow-sm mb-4 report-filter-card">
+<div class="pt-4">
+    <div class="card card-outline card-warning shadow-sm mb-4 report-filter-card">
     <div class="card-body py-3">
         <div class="row align-items-end">
-            <div class="col-md-3">
+            <div class="d-none">
                 <div class="form-group mb-0">
                     <label class="text-muted text-sm mb-1">Nama Report</label>
                     <input type="text" class="form-control font-weight-bold" value="Performance Brilink" disabled>
                 </div>
             </div>
-            <div class="col-md-3">
+            <div class="col-md-4">
                 <div class="form-group mb-0">
                     <label class="text-muted text-sm mb-1">Branch Office (Kanca)</label>
                     <div class="branch-filter-dropdown">
@@ -158,7 +159,7 @@
                     </div>
                 </div>
             </div>
-            <div class="col-md-2">
+            <div class="col-md-3">
                 <div class="form-group mb-0">
                     <label class="text-muted text-sm mb-1">Nama Uker</label>
                     <div class="uker-filter-dropdown">
@@ -170,7 +171,7 @@
                     </div>
                 </div>
             </div>
-            <div class="col-md-2">
+            <div class="col-md-3">
                 <div class="form-group mb-0">
                     <label class="text-dark text-sm font-weight-bold mb-1">Periode Bulan <i class="fas fa-edit text-warning ml-1"></i></label>
                     <!-- 🔥 FIX 1 FRONTEND: MENGGUNAKAN INPUT BULAN -->
@@ -396,6 +397,7 @@
     </div>
 </div>
 
+</div>
 @endsection
 
 @section('scripts')

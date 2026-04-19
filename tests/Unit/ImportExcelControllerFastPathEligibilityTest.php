@@ -14,6 +14,7 @@ class ImportExcelControllerFastPathEligibilityTest extends TestCase
         @unlink(storage_path('app/testing/daily_loan_fast_path.csv'));
         @unlink(storage_path('app/testing/lw325_validated.csv'));
         @unlink(storage_path('app/testing/lw325_invalidated.csv'));
+        @unlink(storage_path('app/testing/ssa_simpanan_alignment.csv'));
         @rmdir(storage_path('app/testing'));
         Mockery::close();
 
@@ -183,5 +184,41 @@ class ImportExcelControllerFastPathEligibilityTest extends TestCase
         $method->setAccessible(true);
 
         $this->assertFalse($method->invoke($controller, $absolutePath, 10));
+    }
+
+    public function test_ssa_simpanan_direct_load_rejects_leading_id_column(): void
+    {
+        $relativePath = 'testing/ssa_simpanan_alignment.csv';
+        $absolutePath = storage_path('app/' . $relativePath);
+        if (!is_dir(dirname($absolutePath))) {
+            @mkdir(dirname($absolutePath), 0777, true);
+        }
+
+        file_put_contents(
+            $absolutePath,
+            "id,Month_Day_Year_of_Posisi,Nama Cabang,Nama Uker,Produk,Saldo\n"
+            . "1,2026-04-14,00045 -- KC Madiun (Konsolidasi-MB),00045 -- KC Madiun,Tabungan,1000\n"
+        );
+
+        $controller = app(ImportExcelController::class);
+        $method = new \ReflectionMethod(ImportExcelController::class, 'buildDirectGenericCsvLoadPlan');
+        $method->setAccessible(true);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('kolom ekstra `id`');
+
+        $method->invoke(
+            $controller,
+            'ssa_simpanan',
+            $absolutePath,
+            [
+                'Month_Day_Year_of_Posisi',
+                'Nama Cabang',
+                'Nama Uker',
+                'Produk',
+                'Saldo',
+            ],
+            []
+        );
     }
 }

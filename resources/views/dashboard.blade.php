@@ -445,7 +445,7 @@
     }
 </style>
 
-<div class="row">
+<div class="row pt-5">
     <div class="col-12">
         <div class="dashboard-hero p-4 p-md-5 mb-4 dash-entrance" data-enter-order="0">
             <div class="row align-items-center">
