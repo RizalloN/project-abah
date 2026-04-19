@@ -114,7 +114,7 @@ class ExcelQueuedImportService
                     : ($callbacks['detect_csv_delimiter'])($workingPath);
                 $resolvedTotalRows = $workingEstimatedTotalRows;
                 if ($resolvedTotalRows === null || $resolvedTotalRows <= 0) {
-                    $resolvedTotalRows = ($callbacks['count_csv_data_rows'])($workingPath) + ($workingHeaderIndex + 1);
+                    $resolvedTotalRows = ($callbacks['count_csv_data_rows'])($workingPath, $tableName) + ($workingHeaderIndex + 1);
                 }
 
                 $totalDataRows = ($callbacks['resolve_csv_data_row_estimate'])($resolvedTotalRows, $workingHeaderIndex);

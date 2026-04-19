@@ -639,51 +639,58 @@ class ReportSnapshotBuilder
         $yoyStart = $snapshotDate->copy()->subYearNoOverflow()->startOfMonth()->toDateString();
         $yoyEnd = Carbon::parse($yoyStart)->endOfMonth()->toDateString();
 
-        $rows = DB::table('performance_pis_per_produk')
-            ->selectRaw('UPPER(kanca) as branch')
-            ->selectRaw('COUNT(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN 1 END) as rekening_curr', [$currStart, $currEnd])
-            ->selectRaw('COUNT(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN 1 END) as rekening_prev', [$prevStart, $prevEnd])
-            ->selectRaw('COUNT(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN 1 END) as rekening_yoy_prev', [$yoyStart, $yoyEnd])
-            ->selectRaw('SUM(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN saldo_britama_kerjasama ELSE 0 END) as saldo_curr', [$currStart, $currEnd])
-            ->selectRaw('SUM(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN saldo_britama_kerjasama ELSE 0 END) as saldo_prev', [$prevStart, $prevEnd])
-            ->selectRaw('SUM(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN saldo_britama_kerjasama ELSE 0 END) as saldo_yoy_prev', [$yoyStart, $yoyEnd])
-            ->whereDate('posisi', $snapshotPosisi)
-            ->whereIn(DB::raw('UPPER(kanca)'), self::NEW_PAYROLL_BRANCHES)
-            ->groupBy(DB::raw('UPPER(kanca)'))
-            ->get()
-            ->keyBy('branch');
+        // Use single INSERT ... SELECT ... ON DUPLICATE KEY UPDATE
+        $branchList = implode("','", self::NEW_PAYROLL_BRANCHES);
 
-        $payload = [];
-        foreach (self::NEW_PAYROLL_BRANCHES as $branch) {
-            $row = $rows->get($branch);
+        DB::statement(
+            "INSERT INTO " . self::NEW_PAYROLL_SNAPSHOT_TABLE . " (
+                uniqueid_pnps, snapshot_posisi, branch, rekening_curr, rekening_prev, rekening_yoy_prev,
+                saldo_curr, saldo_prev, saldo_yoy_prev, created_at, updated_at
+            )
+            SELECT
+                MD5(CONCAT_WS('|', 'pnps', ?, TRIM(UPPER(kanca)))) as uniqueid_pnps,
+                ? as snapshot_posisi,
+                TRIM(UPPER(kanca)) as branch,
+                SUM(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN 1 ELSE 0 END) as rekening_curr,
+                SUM(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN 1 ELSE 0 END) as rekening_prev,
+                SUM(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN 1 ELSE 0 END) as rekening_yoy_prev,
+                SUM(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN saldo_britama_kerjasama ELSE 0 END) as saldo_curr,
+                SUM(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN saldo_britama_kerjasama ELSE 0 END) as saldo_prev,
+                SUM(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN saldo_britama_kerjasama ELSE 0 END) as saldo_yoy_prev,
+                NOW() as created_at,
+                NOW() as updated_at
+            FROM performance_pis_per_produk
+            WHERE posisi = ?
+                AND UPPER(TRIM(kanca)) IN ('{$branchList}')
+            GROUP BY TRIM(UPPER(kanca))
+            ON DUPLICATE KEY UPDATE
+                rekening_curr = VALUES(rekening_curr),
+                rekening_prev = VALUES(rekening_prev),
+                rekening_yoy_prev = VALUES(rekening_yoy_prev),
+                saldo_curr = VALUES(saldo_curr),
+                saldo_prev = VALUES(saldo_prev),
+                saldo_yoy_prev = VALUES(saldo_yoy_prev),
+                updated_at = VALUES(updated_at)",
+            [
+                $snapshotPosisi, // for MD5
+                $snapshotPosisi, // snapshot_posisi
+                $currStart, $currEnd,
+                $prevStart, $prevEnd,
+                $yoyStart, $yoyEnd,
+                $currStart, $currEnd,
+                $prevStart, $prevEnd,
+                $yoyStart, $yoyEnd,
+                $snapshotPosisi, // WHERE posisi = ?
+            ]
+        );
 
-            $payload[] = [
-                'uniqueid_pnps' => $this->makeNewPayrollSnapshotId($snapshotPosisi, $branch),
-                'snapshot_posisi' => $snapshotPosisi,
-                'branch' => $branch,
-                'rekening_curr' => (int) ($row->rekening_curr ?? 0),
-                'rekening_prev' => (int) ($row->rekening_prev ?? 0),
-                'rekening_yoy_prev' => (int) ($row->rekening_yoy_prev ?? 0),
-                'saldo_curr' => (float) ($row->saldo_curr ?? 0),
-                'saldo_prev' => (float) ($row->saldo_prev ?? 0),
-                'saldo_yoy_prev' => (float) ($row->saldo_yoy_prev ?? 0),
-                'created_at' => now(),
-                'updated_at' => now(),
-            ];
-        }
-
+        // Remove any orphan rows not in the fixed branch list
         DB::table(self::NEW_PAYROLL_SNAPSHOT_TABLE)
             ->where('snapshot_posisi', $snapshotPosisi)
             ->whereNotIn('branch', self::NEW_PAYROLL_BRANCHES)
             ->delete();
 
-        DB::table(self::NEW_PAYROLL_SNAPSHOT_TABLE)->upsert(
-            $payload,
-            ['snapshot_posisi', 'branch'],
-            ['rekening_curr', 'rekening_prev', 'rekening_yoy_prev', 'saldo_curr', 'saldo_prev', 'saldo_yoy_prev', 'updated_at']
-        );
-
-        return count($payload);
+        return count(self::NEW_PAYROLL_BRANCHES);
     }
 
     private function computeRasioSummary(string $loanPeriod): array

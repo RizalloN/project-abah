@@ -4,6 +4,8 @@ namespace App\Services\Import;
 
 class ExcelStagingService
 {
+    private array $decimalNormalizationCache = [];
+
     public function isExcelFile(string $path): bool
     {
         return in_array(strtolower(pathinfo($path, PATHINFO_EXTENSION)), ['xlsx', 'xls'], true);
@@ -258,7 +260,7 @@ class ExcelStagingService
             $headerCount = max(1, count($normalizedHeaders));
             $writtenRows = 0;
             $processedRows = 0;
-            $progressEvery = 5000;
+            $progressEvery = 50000;
             $lastProgressAt = 0;
 
             while ($reader->read()) {
@@ -267,22 +269,29 @@ class ExcelStagingService
                 }
 
                 $rowNumber = max(1, (int) $reader->getAttribute('r'));
+                if ($rowNumber - 1 <= $headerIndex) {
+                    continue;
+                }
+
                 $rowValues = $this->extractWorksheetRowValues($reader, $sharedStrings, $headerCount);
-                $zeroBasedRowIndex = $rowNumber - 1;
 
-                if ($zeroBasedRowIndex <= $headerIndex) {
+                $hasData = false;
+                foreach ($rowValues as $value) {
+                    if ($value !== null && trim((string) $value) !== '') {
+                        $hasData = true;
+                        break;
+                    }
+                }
+
+                if (!$hasData) {
                     continue;
                 }
 
-                if ($this->rowIsEmpty($rowValues)) {
-                    continue;
+                for ($i = 0; $i < $headerCount; $i++) {
+                    $rowValues[$i] = $this->normalizeDecimalValueForStaging($rowValues[$i]);
                 }
 
-                $normalizedRowValues = array_map(function ($value) {
-                    return $this->normalizeDecimalValueForStaging($value);
-                }, $rowValues);
-
-                fputcsv($outputHandle, $normalizedRowValues, ',', '"', '\\');
+                fputcsv($outputHandle, $rowValues, ',', '"', '\\');
                 $writtenRows++;
                 $processedRows++;
 
@@ -444,14 +453,21 @@ class ExcelStagingService
                 }
 
                 $rowNumber = max(1, (int) $reader->getAttribute('r'));
-                $rowValues = $this->extractWorksheetRowValues($reader, $sharedStrings, $headerCount);
-                $zeroBasedRowIndex = $rowNumber - 1;
-
-                if ($zeroBasedRowIndex <= $headerIndex) {
+                if ($rowNumber - 1 <= $headerIndex) {
                     continue;
                 }
 
-                if ($this->rowIsEmpty($rowValues)) {
+                $rowValues = $this->extractWorksheetRowValues($reader, $sharedStrings, $headerCount);
+
+                $hasData = false;
+                foreach ($rowValues as $value) {
+                    if ($value !== null && trim((string) $value) !== '') {
+                        $hasData = true;
+                        break;
+                    }
+                }
+
+                if (!$hasData) {
                     continue;
                 }
 
@@ -472,6 +488,86 @@ class ExcelStagingService
                 'header_index' => $headerIndex,
                 'headers' => $headers,
                 'preview_rows' => $previewRows,
+                'total_rows' => (int) ($headerMeta['total_rows'] ?? 0),
+            ];
+        } finally {
+            $zip->close();
+        }
+    }
+
+    public function extractIndexedPreviewViaNativeXlsx(string $path, int $maxPreviewRows = 100): ?array
+    {
+        if (!$this->supportsNativeXlsxStreaming($path)) {
+            return null;
+        }
+
+        $headerMeta = $this->detectExcelHeaderViaNativeXlsx($path);
+        if ($headerMeta === null) {
+            return null;
+        }
+
+        $headerIndex = (int) ($headerMeta['header_index'] ?? 0);
+        $headers = array_values((array) ($headerMeta['header_values'] ?? []));
+        if ($headers === []) {
+            return null;
+        }
+
+        $zip = new \ZipArchive();
+        if ($zip->open($path) !== true) {
+            return null;
+        }
+
+        try {
+            $worksheetEntry = $this->resolveFirstWorksheetEntry($zip);
+            if ($worksheetEntry === null) {
+                return null;
+            }
+
+            $sharedStrings = $this->readSharedStrings($zip);
+            $reader = new \XMLReader();
+            if (!$reader->open('zip://' . str_replace('\\', '/', $path) . '#' . $worksheetEntry, null, LIBXML_NONET | LIBXML_COMPACT)) {
+                return null;
+            }
+
+            $headerCount = count($headers);
+            $previewRows = [];
+
+            while ($reader->read()) {
+                if ($reader->nodeType !== \XMLReader::ELEMENT || $reader->name !== 'row') {
+                    continue;
+                }
+
+                $rowNumber = max(1, (int) $reader->getAttribute('r'));
+                if ($rowNumber - 1 <= $headerIndex) {
+                    continue;
+                }
+
+                $rowValues = $this->extractWorksheetRowValues($reader, $sharedStrings, $headerCount);
+
+                $hasData = false;
+                foreach ($rowValues as $value) {
+                    if ($value !== null && trim((string) $value) !== '') {
+                        $hasData = true;
+                        break;
+                    }
+                }
+
+                if (!$hasData) {
+                    continue;
+                }
+
+                $previewRows[] = array_values($rowValues);
+                if (count($previewRows) >= $maxPreviewRows) {
+                    break;
+                }
+            }
+
+            $reader->close();
+
+            return [
+                'header_index' => $headerIndex,
+                'headers' => $headers,
+                'preview_rows_indexed' => $previewRows,
                 'total_rows' => (int) ($headerMeta['total_rows'] ?? 0),
             ];
         } finally {
@@ -558,24 +654,23 @@ class ExcelStagingService
         }
 
         $strings = [];
+        $textBuffer = '';
+
         while ($reader->read()) {
-            if ($reader->nodeType !== \XMLReader::ELEMENT || $reader->name !== 'si') {
+            if ($reader->nodeType === \XMLReader::ELEMENT && $reader->name === 'si') {
+                $textBuffer = '';
                 continue;
             }
 
-            $node = $reader->expand();
-            if (!$node) {
-                $strings[] = '';
+            if ($reader->nodeType === \XMLReader::ELEMENT && $reader->name === 't') {
+                $textBuffer .= $reader->readString();
                 continue;
             }
 
-            $text = '';
-            $textNodes = $node->getElementsByTagName('t');
-            foreach ($textNodes as $textNode) {
-                $text .= $textNode->textContent;
+            if ($reader->nodeType === \XMLReader::END_ELEMENT && $reader->name === 'si') {
+                $strings[] = $textBuffer;
+                $textBuffer = '';
             }
-
-            $strings[] = $text;
         }
 
         $reader->close();
@@ -586,7 +681,7 @@ class ExcelStagingService
     private function extractWorksheetRowValues(\XMLReader $reader, array $sharedStrings, int $headerCount): array
     {
         $rowDepth = $reader->depth;
-        $rowValues = array_fill(0, $headerCount, null);
+        $rowValues = [];
 
         while ($reader->read()) {
             if ($reader->nodeType === \XMLReader::END_ELEMENT && $reader->depth === $rowDepth && $reader->name === 'row') {
@@ -609,7 +704,7 @@ class ExcelStagingService
             $rowValues[$columnIndex] = $this->readCellValue($reader, $cellType, $sharedStrings);
         }
 
-        return $rowValues;
+        return array_pad($rowValues, $headerCount, null);
     }
 
     private function consumeCellNode(\XMLReader $reader): void
@@ -694,50 +789,46 @@ class ExcelStagingService
             return null;
         }
 
-        // Cek apakah terlihat seperti angka dengan ribuan (misal "219,000.00" atau "219.000,00")
-        // Minimal mengandung satu koma dan angka
+        if (array_key_exists($trimmed, $this->decimalNormalizationCache)) {
+            return $this->decimalNormalizationCache[$trimmed];
+        }
+
+        $result = $trimmed;
+
         if (str_contains($trimmed, ',') && preg_match('/[0-9]/', $trimmed)) {
             $filtered = preg_replace('/[^0-9,\.\-]/', '', $trimmed);
-            if ($filtered === '') {
-                return $trimmed;
-            }
+            if ($filtered !== '' && $filtered !== $trimmed) {
+                $hasComma = str_contains($filtered, ',');
+                $hasDot = str_contains($filtered, '.');
 
-            $hasComma = str_contains($filtered, ',');
-            $hasDot = str_contains($filtered, '.');
-
-            if ($hasComma && $hasDot) {
-                if (strrpos($filtered, ',') > strrpos($filtered, '.')) {
-                    $filtered = str_replace('.', '', $filtered);
-                    $filtered = str_replace(',', '.', $filtered);
-                } else {
-                    $filtered = str_replace(',', '', $filtered);
+                if ($hasComma && $hasDot) {
+                    if (strrpos($filtered, ',') > strrpos($filtered, '.')) {
+                        $filtered = str_replace('.', '', $filtered);
+                        $filtered = str_replace(',', '.', $filtered);
+                    } else {
+                        $filtered = str_replace(',', '', $filtered);
+                    }
+                } elseif ($hasComma) {
+                    $parts = explode(',', $filtered);
+                    $lastPart = end($parts);
+                    if (count($parts) > 2 || strlen((string) $lastPart) === 3) {
+                        $filtered = str_replace(',', '', $filtered);
+                    } else {
+                        $filtered = str_replace(',', '.', $filtered);
+                    }
                 }
-            } elseif ($hasComma) {
-                $parts = explode(',', $filtered);
-                $lastPart = end($parts);
-                if (count($parts) > 2 || strlen((string) $lastPart) === 3) {
-                    $filtered = str_replace(',', '', $filtered);
-                } else {
-                    $filtered = str_replace(',', '.', $filtered);
-                }
-            }
 
-            if (is_numeric($filtered)) {
-                return number_format((float) $filtered, 2, '.', '');
+                if (is_numeric($filtered)) {
+                    $result = number_format((float) $filtered, 2, '.', '');
+                }
             }
         }
 
-        return $value;
-    }
-
-    private function rowIsEmpty(array $rowValues): bool
-    {
-        foreach ($rowValues as $value) {
-            if ($value !== null && trim((string) $value) !== '') {
-                return false;
-            }
+        if (strlen($trimmed) <= 100) {
+            $this->decimalNormalizationCache[$trimmed] = $result;
         }
 
-        return true;
+        return $result;
     }
+
 }

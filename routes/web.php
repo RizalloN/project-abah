@@ -19,6 +19,7 @@ use App\Http\Controllers\Import\ImportJobManagementController;
 use App\Http\Controllers\Import\ImportPerformancePisPerProdukController;
 use App\Http\Controllers\Import\ImportReportPhController;
 use App\Http\Controllers\Import\ImportSimpananMultiPnCsvController;
+use App\Http\Controllers\Import\SnapshotAuditController;
 use App\Http\Controllers\Input\BodBocController;
 use App\Http\Controllers\Input\InputRekananController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
@@ -153,6 +154,14 @@ Route::middleware(['auth', 'role:admin', 'release.session.lock'])->group(functio
     Route::get('/import/report-management/delete/{deleteId}/status', [ImportIndexController::class, 'managedReportDeleteStatus'])->name('import.report-management.delete.status');
     Route::post('/import/report-management/delete/{deleteId}/force-stop', [ImportIndexController::class, 'forceStopManagedReportDelete'])->name('import.report-management.delete.force-stop');
     Route::post('/import/report-management/delete/{deleteId}/cancel', [ImportIndexController::class, 'cancelManagedReportDelete'])->name('import.report-management.delete.cancel');
+
+    // Snapshot Audit & Smart Sync Routes
+    Route::post('/import/snapshot-audit/run', [SnapshotAuditController::class, 'runAudit'])->name('snapshot-audit.run');
+    Route::get('/import/snapshot-audit/{auditId}/result', [SnapshotAuditController::class, 'getAuditResult'])->name('snapshot-audit.result');
+    Route::post('/import/snapshot-audit/{auditId}/rebuild', [SnapshotAuditController::class, 'triggerSmartRebuild'])->name('snapshot-audit.rebuild');
+    Route::post('/import/snapshot-audit/compare', [SnapshotAuditController::class, 'compareAudits'])->name('snapshot-audit.compare');
+    Route::get('/import/snapshot-audit/action/{tableName}', [SnapshotAuditController::class, 'getRecommendedAction'])->name('snapshot-audit.action');
+
     Route::get('/import/jobs/{jobId}/status', ImportJobStatusController::class)->name('import.jobs.status');
     Route::post('/import/upload', [ImportFileController::class, 'upload'])->name('import.upload');
 

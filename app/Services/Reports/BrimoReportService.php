@@ -169,24 +169,32 @@ class BrimoReportService
 
     private function getBrimoUkersForBranches(array $selectedBranches): array
     {
-        return collect([
-            DB::table('user_brimo_rpt_v2')
-                ->selectRaw('TRIM(COALESCE(mbdesc, branch)) as branch_name')
-                ->selectRaw('TRIM(COALESCE(brdesc, branch)) as uker_name')
-                ->get(),
-            DB::table('user_brimo_fin')
-                ->selectRaw('TRIM(COALESCE(mbdesc, branch)) as branch_name')
-                ->selectRaw('TRIM(COALESCE(brdesc, branch)) as uker_name')
-                ->get(),
-        ])->flatten(1)
-            ->filter(fn ($row) => !empty(trim((string) ($row->branch_name ?? ''))) && !empty(trim((string) ($row->uker_name ?? ''))))
-            ->map(function ($row) {
-                $row->branch_name = strtoupper(trim((string) $row->branch_name));
-                $row->uker_name   = strtoupper(trim((string) $row->uker_name));
-                return $row;
-            })
-            ->filter(fn ($row) => in_array($row->branch_name, $selectedBranches, true))
-            ->pluck('uker_name')
-            ->filter()->unique()->values()->all();
+        // Use UNION query to fetch branch/uker combinations from both tables in one SQL roundtrip
+        $branchUkerRows = DB::select("
+            SELECT DISTINCT
+                UPPER(TRIM(COALESCE(mbdesc, branch))) as branch_name,
+                UPPER(TRIM(COALESCE(brdesc, branch))) as uker_name
+            FROM user_brimo_rpt_v2
+            WHERE mbdesc IS NOT NULL AND mbdesc <> '' 
+                AND brdesc IS NOT NULL AND brdesc <> ''
+            UNION
+            SELECT DISTINCT
+                UPPER(TRIM(COALESCE(mbdesc, branch))) as branch_name,
+                UPPER(TRIM(COALESCE(brdesc, branch))) as uker_name
+            FROM user_brimo_fin
+            WHERE mbdesc IS NOT NULL AND mbdesc <> '' 
+                AND brdesc IS NOT NULL AND brdesc <> ''
+        ");
+
+        // Filter to selected branches and extract unique uker names
+        $selectedBranchesUpper = array_map('strtoupper', $selectedBranches);
+        $ukers = [];
+        foreach ($branchUkerRows as $row) {
+            if (in_array($row->branch_name, $selectedBranchesUpper, true) && !empty($row->uker_name)) {
+                $ukers[$row->uker_name] = true;
+            }
+        }
+        
+        return array_keys($ukers);
     }
 }

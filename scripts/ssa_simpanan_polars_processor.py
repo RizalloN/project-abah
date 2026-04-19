@@ -21,6 +21,8 @@ import re
 import sys
 import tempfile
 import time
+import subprocess
+import shutil
 from pathlib import Path
 
 
@@ -240,6 +242,7 @@ def is_valid_ssa_row_values(values_by_header: dict[str, object]) -> bool:
 def sanitize_source(
     source_path: str,
     delimiter: str,
+    max_rows: int | None = None,
 ) -> tuple[str, list[str], int, int, int, bool, list[int], int]:
     temp_dir = Path(tempfile.gettempdir())
     fd, temp_path = tempfile.mkstemp(prefix="ssa_simpanan_sanitized_", suffix=".csv", dir=str(temp_dir))
@@ -324,6 +327,10 @@ def sanitize_source(
             writer.writerow(normalized_row)
             valid_rows += 1
 
+            if max_rows is not None and valid_rows >= max_rows:
+                # Stop early when preview size reached.
+                break
+
     if not headers:
         raise RuntimeError("Header CSV SSA Simpanan tidak ditemukan.")
 
@@ -397,15 +404,126 @@ def write_with_polars(df, path: str, delimiter: str) -> None:
     raise RuntimeError(f"Gagal menulis CSV hasil Polars SSA Simpanan: {last_error}")
 
 
+def write_with_polars_bulk(df, path: str, delimiter: str, load_columns: list[str] | None = None) -> None:
+    import polars as pl
+
+    cols = list(load_columns) if load_columns else list(df.columns)
+
+    # Ensure all expected columns exist on DataFrame
+    for c in cols:
+        if c not in df.columns:
+            df = df.with_columns(pl.lit(None).cast(pl.Utf8).alias(c))
+
+    final_select = []
+    for c in cols:
+        if df.schema.get(c) == pl.Utf8:
+            expr = (
+                pl.when(pl.col(c).is_null() | (pl.col(c).cast(pl.Utf8).str.strip_chars() == ""))
+                .then(pl.lit(None))
+                .otherwise(pl.col(c).cast(pl.Utf8).str.replace_all(r"\\", r"\\\\"))
+                .alias(c)
+            )
+        else:
+            expr = pl.col(c)
+        final_select.append(expr)
+
+    final_df = df.select(final_select)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    try:
+        final_df.write_csv(
+            path,
+            separator=delimiter,
+            include_header=False,
+            null_value=r"\N",
+            quote_char='"',
+            line_terminator="\n",
+        )
+    except Exception as exc:
+        raise RuntimeError(f"Gagal menulis CSV bulk SSA Simpanan: {exc}")
+
+
+def execute_mysql_load(file_path: str, db_config: dict, table: str, columns: list[str], delimiter: str = ',') -> bool:
+    """Attempt to run LOAD DATA LOCAL INFILE using pymysql or mysql client.
+
+    Returns True on success, False otherwise and emits events.
+    """
+    send_progress(92, "Memulai LOAD DATA ke database...", 0, 0, 0, "", "db")
+
+    cols_sql = ", ".join([f"`{c}`" for c in columns])
+    safe_path = file_path.replace("'", "\\'")
+    sql = (
+        "SET SESSION local_infile=1; "
+        f"LOAD DATA LOCAL INFILE '{safe_path}' INTO TABLE `{table}` "
+        f"FIELDS TERMINATED BY '{delimiter}' OPTIONALLY ENCLOSED BY '\"' ESCAPED BY '\\\\' "
+        "LINES TERMINATED BY '\n' "
+        f"({cols_sql});"
+    )
+
+    # Try pymysql first (preferred, avoids CLI exposure of passwords)
+    try:
+        import pymysql
+
+        conn = pymysql.connect(
+            host=db_config.get("host", "127.0.0.1"),
+            port=int(db_config.get("port", 3306)),
+            user=db_config.get("user"),
+            password=db_config.get("password", ""),
+            database=db_config.get("database"),
+            local_infile=1,
+            charset="utf8mb4",
+        )
+        with conn.cursor() as cur:
+            cur.execute("SET SESSION local_infile=1;")
+            cur.execute(sql)
+        conn.commit()
+        conn.close()
+        send_event("debug", {"message": "LOAD DATA executed via pymysql"})
+        return True
+    except Exception as exc_pymysql:
+        # Fallback to mysql client if available
+        mysql_cmd = shutil.which("mysql")
+        if not mysql_cmd:
+            send_event("error", {"message": "pymysql import failed and mysql client not found: " + str(exc_pymysql)})
+            return False
+
+        env = os.environ.copy()
+        if "password" in db_config:
+            env["MYSQL_PWD"] = str(db_config.get("password", ""))
+
+        cmd = [
+            mysql_cmd,
+            "-h",
+            db_config.get("host", "127.0.0.1"),
+            "-P",
+            str(db_config.get("port", 3306)),
+            "-u",
+            db_config.get("user"),
+            db_config.get("database"),
+            "-e",
+            sql,
+        ]
+
+        try:
+            subprocess.run(cmd, check=True, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            send_event("debug", {"message": "LOAD DATA executed via mysql client"})
+            return True
+        except subprocess.CalledProcessError as cpe:
+            stderr = cpe.stderr.decode(errors="ignore") if cpe.stderr else str(cpe)
+            send_event("error", {"message": f"mysql client import failed: {stderr}"})
+            return False
+
+
 def stage_ssa_simpanan(config: dict) -> None:
     import polars as pl
 
     source_path = config["file_path"]
     output_csv_path = config["output_csv_path"]
     delimiter = config.get("delimiter") or detect_delimiter(source_path, ",")
+    mode = config.get("mode") or config.get("_cli_mode") or "stage"
+    preview_max_rows = int(config.get("preview_max_rows", 1000)) if mode == "preview" else None
 
     send_progress(5, "Membaca dan menyiapkan CSV SSA Simpanan dengan Polars...", 0, 0, 0, "", "polars")
-    temp_sanitized_path, headers, total_records, structural_skipped, validation_skipped, rewrite_needed, skipped_rows, valid_rows = sanitize_source(source_path, delimiter)
+    temp_sanitized_path, headers, total_records, structural_skipped, validation_skipped, rewrite_needed, skipped_rows, valid_rows = sanitize_source(source_path, delimiter, max_rows=preview_max_rows)
     total_data_rows = max(0, total_records - 1)
 
     try:
@@ -423,8 +541,25 @@ def stage_ssa_simpanan(config: dict) -> None:
         written_rows = int(df.height)
         skipped_total = int(structural_skipped + validation_skipped)
 
-        send_progress(86, "Menulis CSV bersih SSA Simpanan untuk LOAD DATA...", written_rows, total_data_rows, 0, "", "polars")
-        write_with_polars(df, output_csv_path, delimiter)
+        if mode == "preview":
+            send_progress(86, "Menulis preview CSV SSA Simpanan...", written_rows, total_data_rows, 0, "", "polars")
+            write_with_polars(df, output_csv_path, delimiter)
+        elif mode in ("bulk_load", "import"):
+            load_cols = [c for c in (config.get("load_columns") or list(df.columns))]
+            send_progress(86, "Menulis CSV bulk load SSA Simpanan...", written_rows, total_data_rows, 0, "", "polars")
+            write_with_polars_bulk(df, output_csv_path, delimiter, load_columns=load_cols)
+
+            if mode == "import":
+                db_cfg = config.get("db") or {}
+                table = config.get("table") or config.get("target_table") or ""
+                if not db_cfg or not table:
+                    send_event("error", {"message": "DB config atau nama tabel tidak disediakan untuk mode import"})
+                else:
+                    ok = execute_mysql_load(output_csv_path, db_cfg, table, load_cols, delimiter)
+                    send_event("debug", {"import_executed": bool(ok)})
+        else:
+            send_progress(86, "Menulis CSV bersih SSA Simpanan untuk LOAD DATA...", written_rows, total_data_rows, 0, "", "polars")
+            write_with_polars(df, output_csv_path, delimiter)
 
         # Get distinct periods
         periods = []
@@ -459,11 +594,14 @@ def stage_ssa_simpanan(config: dict) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description="SSA Simpanan CSV stage processor")
     parser.add_argument("--config", required=True, help="Path to JSON config file")
-    parser.add_argument("--mode", default="stage", choices=["stage"], help="Processing mode")
+    parser.add_argument("--mode", default="stage", choices=["stage", "preview", "bulk_load", "import"], help="Processing mode")
     args = parser.parse_args()
 
     try:
         config = load_config(args.config)
+        # Allow CLI mode to override/configure behavior
+        if "mode" not in config:
+            config["_cli_mode"] = args.mode
         stage_ssa_simpanan(config)
         return 0
     except Exception as exc:

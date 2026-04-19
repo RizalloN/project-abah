@@ -24,11 +24,37 @@ class MySqlBulkLoadService
 
         try {
             $row = DB::selectOne("SHOW VARIABLES LIKE 'local_infile'");
-            return $this->supportsNativeBulkLoad = strtoupper((string) ($row->Value ?? $row->value ?? 'OFF')) === 'ON';
+            $mysqlValue = strtoupper((string) ($row->Value ?? $row->value ?? 'OFF'));
+
+            // Check PHP-side permission via mysqli setting
+            $phpValue = strtoupper((string) ini_get('mysqli.allow_local_infile'));
+
+            if ($mysqlValue !== 'ON') {
+                Log::info('MySQL Bulk Load: local_infile is OFF on MySQL server. Fallback used.');
+                return $this->supportsNativeBulkLoad = false;
+            }
+
+            if ($phpValue !== 'ON' && $phpValue !== '1') {
+                Log::warning('MySQL Bulk Load: local_infile is ON in MySQL but OFF in php.ini. Fallback used.');
+                return $this->supportsNativeBulkLoad = false;
+            }
+
+            return $this->supportsNativeBulkLoad = true;
         } catch (\Throwable $e) {
             Log::warning('Unable to verify local_infile support: ' . $e->getMessage());
             return $this->supportsNativeBulkLoad = false;
         }
+    }
+
+    public function fallbackInsertBatchSize(int $columnCount = 1): int
+    {
+        // MySQL limit for placeholders is ~65,535. 
+        // We use 60,000 as a safe limit for 1 INSERT query.
+        $safePlaceholderLimit = 60000;
+        $calculatedBatch = (int) floor($safePlaceholderLimit / max(1, $columnCount));
+        
+        // Cap it between 100 and 5000
+        return (int) max(100, min(5000, $calculatedBatch));
     }
 
     public function assertTransactionalTable(string $tableName, string $operation = 'operasi tulis database'): void
@@ -232,24 +258,37 @@ class MySqlBulkLoadService
 
     public function countFileLines(string $path): int
     {
-        $handle = @fopen($path, 'r');
-        if ($handle === false) {
+        if (!file_exists($path)) {
             return 0;
         }
 
-        $lines = 0;
+        $fileSize = filesize($path);
+        if ($fileSize === false || $fileSize === 0) {
+            return 0;
+        }
+
+        $sampleSize = min(65536, (int) ($fileSize / 2));
+        $handle = @fopen($path, 'r');
+        if ($handle === false) {
+            return (int) max(1, ceil($fileSize / 100));
+        }
+
         try {
-            while (!feof($handle)) {
-                $line = fgets($handle);
-                if ($line !== false) {
-                    $lines++;
-                }
+            $sampleData = fread($handle, $sampleSize);
+            if ($sampleData === false) {
+                return (int) max(1, ceil($fileSize / 100));
             }
+
+            $sampleLines = substr_count($sampleData, "\n");
+            if ($sampleLines === 0) {
+                return 1;
+            }
+
+            $estimatedLines = (int) ceil($sampleLines * ($fileSize / $sampleSize));
+            return max(1, $estimatedLines);
         } finally {
             fclose($handle);
         }
-
-        return $lines;
     }
 
     public function loadCsvIntoMysqlChunked(
@@ -262,6 +301,10 @@ class MySqlBulkLoadService
         bool $relaxSqlMode = false
     ): int {
         $this->assertTransactionalTable($tableName, 'bulk import');
+
+        if ($totalLines === null && file_exists($csvPath)) {
+            $totalLines = $this->countFileLines($csvPath);
+        }
 
         return $this->withTableWriteLock($tableName, function () use (
             $csvPath,
@@ -319,7 +362,7 @@ class MySqlBulkLoadService
             throw new \RuntimeException('Gagal membuka file CSV untuk fallback bulk load.');
         }
 
-        $batchSize = max(1, (int) config('import.direct_load.fallback_insert_batch_size', 2000));
+        $batchSize = $this->fallbackInsertBatchSize(count($columns));
         $batch = [];
         $insertedTotal = 0;
         $failedTotal = 0;

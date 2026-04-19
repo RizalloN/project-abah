@@ -3,7 +3,21 @@
     "allow": [
       "Bash(git -C /c/xampp/htdocs/project-ABAH diff HEAD -- tests/Unit/ManagedReportDeleteTest.php)",
       "Bash(git -C /c/xampp/htdocs/project-ABAH diff HEAD -- tests/Unit/ManagedReportManagementServiceTest.php)",
-      "Bash(php artisan *)"
+      "Bash(php artisan *)",
+      "Bash(cat)",
+      "Read(//tmp/**)",
+      "Bash(php -r \"echo 'PHP version: ' . phpversion\\(\\) . PHP_EOL; echo 'pdo_mysql.allow_local_infile: ' . ini_get\\('pdo_mysql.allow_local_infile'\\) . PHP_EOL;\")",
+      "Bash(php -r \"echo 'pdo_mysql.allow_local_infile: ' . ini_get\\('pdo_mysql.allow_local_infile'\\) . PHP_EOL;\")",
+      "Bash(php -r \"echo 'Value: [' . ini_get\\('pdo_mysql.allow_local_infile'\\) . ']' . PHP_EOL;\")",
+      "Bash(php -i)",
+      "Bash(php -l app/Support/SnapshotBatchAggregator.php app/Jobs/ExecuteBatchedSnapshotJob.php app/Console/Commands/FlushDueSnapshotBatches.php)",
+      "Bash(php -l app/Jobs/ExecuteBatchedSnapshotJob.php app/Console/Commands/FlushDueSnapshotBatches.php app/Console/Commands/ScheduleSnapshotBatchFlush.php app/Services/Import/ImportCleanupService.php)",
+      "Bash(php -l app/Support/SnapshotAuditService.php app/Support/SnapshotAuditCoordinator.php app/Jobs/SmartPartialSnapshotRebuildJob.php app/Http/Controllers/Import/SnapshotAuditController.php)",
+      "Bash(cd c:\\\\\\\\xampp\\\\\\\\htdocs\\\\\\\\project-ABAH)",
+      "Bash(php -d display_errors=0 -r ' *)"
+    ],
+    "additionalDirectories": [
+      "\\tmp"
     ]
   }
 }

@@ -509,7 +509,7 @@ class ImportExecutionService
             return $default;
         }
 
-        if (!is_a($controller, ImportExcelController::class, true)) {
+        if (!method_exists($controller, 'executeQueuedImport')) {
             return $default;
         }
 

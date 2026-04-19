@@ -1686,10 +1686,10 @@
                 inputCsv.disabled = false;
                 inputCsv.required = true;
                 inputCsv.setAttribute('accept', '.csv,.txt,.xlsx,.xls');
-                formImport.action = "{{ route('import.excel.upload') }}";
-                formImport.dataset.preparePreviewUrl = "{{ route('import.excel.prepare-preview') }}";
+                formImport.action = "{{ route('import.reportph.upload') }}";
+                formImport.dataset.preparePreviewUrl = "{{ route('import.reportph.prepare-preview') }}";
                 csvLabel.innerHTML = '<i class="fas fa-file-upload mr-1"></i> Upload File Report PH (.csv, .txt, .xlsx, .xls)';
-                csvHelp.textContent = 'Report ini diproses menggunakan Polars Fastpath (LOAD DATA INFILE) untuk performa maksimal.';
+                csvHelp.textContent = 'File CSV atau Excel akan masuk ke flow khusus LW325 PH, termasuk staging Excel dan Polars Fastpath (LOAD DATA INFILE).';
                 applyButtonState('csv', '<i class="fas fa-file-upload"></i> Upload File');
                 configurePeriodeInput({ visible: false });
                 configureKancaInput({ visible: false });
@@ -2437,7 +2437,31 @@
                             resetSubmitButton();
                         });
 
+                        // Add heartbeat timeout detection (if no message for 90 sec, something is wrong)
+                        var heartbeatTimeout = null;
+                        const resetHeartbeatTimeout = () => {
+                            if (heartbeatTimeout) clearTimeout(heartbeatTimeout);
+                            heartbeatTimeout = setTimeout(() => {
+                                eventSource.close();
+                                themedSwal({
+                                    icon: 'error',
+                                    title: 'Timeout',
+                                    text: 'Server tidak merespons selama 90 detik. Silakan coba lagi.'
+                                });
+                                resetSubmitButton();
+                            }, 90000); // 90 second timeout
+                        };
+                        resetHeartbeatTimeout();
+
+                        // Reset heartbeat timeout on any message
+                        eventSource.addEventListener('open', resetHeartbeatTimeout);
+                        eventSource.addEventListener('progress', resetHeartbeatTimeout);
+                        eventSource.addEventListener('heartbeat', resetHeartbeatTimeout);
+                        eventSource.addEventListener('ready', resetHeartbeatTimeout);
+                        eventSource.addEventListener('error_msg', resetHeartbeatTimeout);
+
                         eventSource.onerror = function() {
+                            if (heartbeatTimeout) clearTimeout(heartbeatTimeout);
                             eventSource.close();
                             themedSwal({
                                 icon: 'error',

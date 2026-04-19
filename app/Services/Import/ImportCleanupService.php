@@ -4,13 +4,18 @@ namespace App\Services\Import;
 
 use App\Jobs\SyncImportedReportJob;
 use App\Support\ReportDataSyncService;
+use App\Support\SnapshotBatchAggregator;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 
 class ImportCleanupService
 {
     private const SYNC_PENDING_TTL_MINUTES = 15;
     private const SYNC_COORDINATOR_LOCK_SECONDS = 5;
     private const DEFAULT_SYNC_QUEUE = 'default';
+    private const USE_BATCHING = true;
+
+    private ?SnapshotBatchAggregator $batchAggregator = null;
 
     public function cleanupPaths(array $paths): void
     {
@@ -36,17 +41,66 @@ class ImportCleanupService
             return;
         }
 
-        $resolvedQueue = $this->resolveSyncQueue($queue);
         $normalizedTableName = $this->normalizeSyncScopeValue($tableName);
         if ($normalizedTableName === null) {
             SyncImportedReportJob::dispatch($jobId > 0 ? $jobId : null, $tableName, $periodHint, $source)
-                ->onQueue($resolvedQueue);
+                ->onQueue($this->resolveSyncQueue($queue));
             return;
         }
 
-        $pendingKey = $this->syncPendingKey($normalizedTableName, $periodHint);
-        $rerunKey = $this->syncRerunKey($normalizedTableName, $periodHint);
-        $lock = Cache::lock($this->syncCoordinatorLockKey($normalizedTableName, $periodHint), self::SYNC_COORDINATOR_LOCK_SECONDS);
+        if (self::USE_BATCHING) {
+            $this->dispatchWithBatching($jobId, $tableName, $periodHint, $source);
+
+            return;
+        }
+
+        $this->dispatchWithoutBatching($jobId, $tableName, $periodHint, $source, $queue);
+    }
+
+    private function dispatchWithBatching(int $jobId, ?string $tableName, ?string $periodHint, ?string $source): void
+    {
+        try {
+            $aggregator = $this->getBatchAggregator();
+            $result = $aggregator->registerSyncRequest(
+                tableName: (string) $tableName,
+                periodHint: $periodHint,
+                jobId: $jobId > 0 ? $jobId : null,
+                source: $source ?? static::class
+            );
+
+            if ($result['batched'] ?? false) {
+                Log::debug('Snapshot sync request batched.', [
+                    'batch_key' => $result['batch_key'] ?? null,
+                    'batch_size' => $result['batch_size'] ?? 0,
+                ]);
+
+                return;
+            }
+
+            Log::warning('Failed to batch snapshot sync, falling back to direct dispatch.', [
+                'table_name' => $tableName,
+                'reason' => $result['reason'] ?? 'unknown',
+            ]);
+
+            $this->dispatchWithoutBatching($jobId, $tableName, $periodHint, $source, null);
+        } catch (\Throwable $e) {
+            Log::warning('Error during batching attempt, falling back to direct dispatch: ' . $e->getMessage(), [
+                'table_name' => $tableName,
+                'exception' => $e::class,
+            ]);
+
+            $this->dispatchWithoutBatching($jobId, $tableName, $periodHint, $source, null);
+        }
+    }
+
+    private function dispatchWithoutBatching(int $jobId, ?string $tableName, ?string $periodHint, ?string $source, ?string $queue): void
+    {
+        $resolvedQueue = $this->resolveSyncQueue($queue);
+        $normalizedTableName = $this->normalizeSyncScopeValue($tableName);
+
+        $pendingKey = $this->syncPendingKey((string) $normalizedTableName, $periodHint);
+        $rerunKey = $this->syncRerunKey((string) $normalizedTableName, $periodHint);
+        $lock = Cache::lock($this->syncCoordinatorLockKey((string) $normalizedTableName, $periodHint), self::SYNC_COORDINATOR_LOCK_SECONDS);
 
         try {
             $lock->block(2, function () use ($jobId, $tableName, $periodHint, $source, $pendingKey, $rerunKey, $resolvedQueue): void {
@@ -104,6 +158,11 @@ class ImportCleanupService
         } finally {
             optional($lock)->release();
         }
+    }
+
+    private function getBatchAggregator(): SnapshotBatchAggregator
+    {
+        return $this->batchAggregator ??= app(SnapshotBatchAggregator::class);
     }
 
     private function normalizeSyncScopeValue(?string $value): ?string

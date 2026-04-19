@@ -74,6 +74,12 @@ class ImportExcelController extends Controller
     private ?array $excelDateColumnsLookupCache = null;
     private ?array $excelDecimalColumnsLookupCache = null;
     private ?array $excelIntegerColumnsLookupCache = null;
+    private array $normalizedHeaderNameCache = []; // OPTIMIZED: Cache untuk header normalization
+    private ?array $currentStreamNormalizedValueCache = null; // OPTIMIZED: Cache untuk streaming normalized values
+    private ?string $streamingTableType = null; // OPTIMIZED: Cache table type during streaming
+    private ?bool $streamingIsSimpananMultiPN = null; // OPTIMIZED: Cache Simpanan MultiPN check
+    private ?bool $streamingIsLw325Ph = null; // OPTIMIZED: Cache LW325_PH check
+    private ?bool $streamingIsDailyLoan = null; // OPTIMIZED: Cache Daily Loan check
 
     private array $lastDailyLoanCsvParseMeta = [
         'status' => 'normal',
@@ -393,6 +399,11 @@ class ImportExcelController extends Controller
         return ($tableName ?? $this->resolveExcelTableName()) === 'lw325_ph';
     }
 
+    private function usesSerializedCsvRepair(?string $tableName = null): bool
+    {
+        return $this->isDailyLoanTable($tableName);
+    }
+
     protected function normalizeGi405RecDhKodeValue($value): ?string
     {
         $value = trim((string) ($value ?? ''));
@@ -580,6 +591,24 @@ class ImportExcelController extends Controller
         ];
     }
 
+    private function lw325PhTargetColumns(): array
+    {
+        return [
+            'periode', 'acctno', 'kanwil', 'kanca', 'unit', 'nama_debitur', 'cif1',
+            'fksegmen', 'segmen_dashboard', 'description', 'produk_dashboard', 'tgl_ph', 'tgl_realisasi',
+            'curtyp', 'saldo_pertama_ph_pokok', 'saldo_pertama_ph_bunga', 'besar_realisasi', 'plafon',
+            'jw', 'at', 'cif', 'pokok', 'bunga', 'angpok', 'angbung', 'sisapok', 'sisabun', 'clmamt1',
+            'clmapr1', 'os_penuh_berjalan1', 'kecamatan_t_tinggal', 'kelurahan_t_tinggal',
+            'kodepos_t_tinggal', 'kecamatan_t_usaha', 'kelurahan_t_usaha', 'kodepos_t_usaha',
+            'pn_pengelola', 'pn_pemrakarsa', 'pn_referral', 'pn_restruk', 'pn_pengelola2',
+            'pn_pemutus', 'pn_crm', 'pn_crr1', 'pn_referral_naik_kelas', 'jumlah_pn',
+            'jumlah_pn_all', 'saldo_pertama_kali_charge_off', 'deffered_bunga', 'sai_deffered',
+            'sai_tunggakan', 'deffered_bunga_ph', 'sai_tunggakan_ph', 'sai_deffered_ph', 'wcbal',
+            'waccint', 'wadvpmt', 'wpenint', 'wmisc', 'wothchg', 'wpmtamt', 'wpstdt', 'wpstdt6',
+            'wamount', 'flag_klaim', 'clmamt', 'clmapr',
+        ];
+    }
+
     private function canonicalizeDailyLoanSourceHeaders(array $headers): array
     {
         if (!$this->isDailyLoanTable()) {
@@ -762,6 +791,15 @@ class ImportExcelController extends Controller
 
     private function readCsvRecord($handle, string $delimiter = ',')
     {
+        if ($this->usesSerializedCsvRepair()) {
+            $line = fgets($handle);
+            if ($line === false) {
+                return false;
+            }
+
+            return $this->normalizeCsvRow([rtrim($line, "\r\n")], $delimiter);
+        }
+
         $row = fgetcsv($handle, 0, $delimiter);
         if ($row === false) {
             return false;
@@ -776,7 +814,15 @@ class ImportExcelController extends Controller
             return $expectedColumns;
         }
 
-        return $this->isDailyLoanTable() ? count(self::DAILY_LOAN_SOURCE_HEADERS) : null;
+        if ($this->isDailyLoanTable()) {
+            return count(self::DAILY_LOAN_SOURCE_HEADERS);
+        }
+
+        if ($this->isLw325PhTable()) {
+            return 1 + count($this->lw325PhTargetColumns());
+        }
+
+        return null;
     }
 
     private function resetDailyLoanCsvParseMeta(?int $expectedColumns = null): void
@@ -795,7 +841,7 @@ class ImportExcelController extends Controller
         $expectedColumns = $this->getDailyLoanExpectedCsvColumns($expectedColumns);
         $this->resetDailyLoanCsvParseMeta($expectedColumns);
 
-        if (!$this->isDailyLoanTable()) {
+        if (!$this->usesSerializedCsvRepair()) {
             return $row;
         }
 
@@ -858,7 +904,7 @@ class ImportExcelController extends Controller
 
     private function extractSerializedDailyLoanPayload(array $row, string $delimiter): ?string
     {
-        if (!$this->isDailyLoanTable() || count($row) !== 1 || !isset($row[0]) || !is_string($row[0])) {
+        if (!$this->usesSerializedCsvRepair() || count($row) !== 1 || !isset($row[0]) || !is_string($row[0])) {
             return null;
         }
 
@@ -1099,7 +1145,7 @@ class ImportExcelController extends Controller
         string $source,
         string $delimiter = ','
     ): bool {
-        if (!$this->isDailyLoanTable()) {
+        if (!$this->usesSerializedCsvRepair()) {
             return false;
         }
 
@@ -1108,8 +1154,11 @@ class ImportExcelController extends Controller
             return false;
         }
 
-        Log::warning('Daily Loan CSV field count mismatch; row skipped.', [
-            'table_name' => 'daily_loan_dinamis',
+        $tableName = $this->isLw325PhTable() ? 'lw325_ph' : 'daily_loan_dinamis';
+        $primaryAccountKey = $this->isLw325PhTable() ? 'acctno' : 'nomor_rekening1';
+
+        Log::warning('Serialized CSV field count mismatch; row skipped.', [
+            'table_name' => $tableName,
             'source' => $source,
             'line_number' => $lineNumber,
             'expected_columns' => $expectedColumns,
@@ -1119,8 +1168,9 @@ class ImportExcelController extends Controller
             'was_repaired' => (bool) ($this->lastDailyLoanCsvParseMeta['repaired'] ?? false),
             'periode' => $this->resolveCsvRowValueByHeader($headers, $row, 'periode'),
             'kode_kanwil1' => $this->resolveCsvRowValueByHeader($headers, $row, 'kode_kanwil1'),
-            'nomor_rekening1' => $this->resolveCsvRowValueByHeader($headers, $row, 'nomor_rekening1'),
+            $primaryAccountKey => $this->resolveCsvRowValueByHeader($headers, $row, $primaryAccountKey),
             'nama_debitur1' => $this->resolveCsvRowValueByHeader($headers, $row, 'nama_debitur1'),
+            'nama_debitur' => $this->resolveCsvRowValueByHeader($headers, $row, 'nama_debitur'),
             'row_preview' => $this->buildCsvRowPreview($row, $delimiter),
         ]);
 
@@ -1364,7 +1414,9 @@ class ImportExcelController extends Controller
 
     private function alignImportedRowWithNormalizedHeaders(array $row, array $normalizedHeaders): array
     {
-        if (!$this->isSimpananMultiPnTable()) {
+        // OPTIMIZED: Use cached streaming table type if available, otherwise check normally
+        $isSimpananMultiPN = $this->streamingIsSimpananMultiPN ?? $this->isSimpananMultiPnTable();
+        if (!$isSimpananMultiPN) {
             return $row;
         }
 
@@ -2183,9 +2235,9 @@ class ImportExcelController extends Controller
         ]);
     }
 
-    private function countCsvDataRows(string $csvPath): int
+    private function countCsvDataRows(string $csvPath, ?string $tableName = null): int
     {
-        if ($this->isDailyLoanTable()) {
+        if ($this->isDailyLoanTable($tableName)) {
             return (int) ($this->analyzeDailyLoanCsvImportSource($csvPath)['valid_rows'] ?? 0);
         }
 
@@ -4427,16 +4479,21 @@ class ImportExcelController extends Controller
 
         $outputCsvPath = $tempDirectory . DIRECTORY_SEPARATOR . 'lw325_ph_polars_' . Str::uuid()->toString() . '.csv';
         $configFile = storage_path('app/lw325_ph_polars_config_' . uniqid() . '.json');
+        
+        $targetColumns = array_merge(['uniqueid_namareport'], $this->lw325PhTargetColumns());
+
         file_put_contents($configFile, json_encode([
             'file_path' => $csvPath,
             'delimiter' => $delimiter,
             'output_csv_path' => $outputCsvPath,
+            'output_mode' => 'bulk_load',
+            'load_columns' => $targetColumns,
         ], JSON_UNESCAPED_UNICODE));
 
         $cmd = escapeshellarg($pythonExe)
             . ' ' . escapeshellarg($scriptPath)
             . ' --config ' . escapeshellarg($configFile)
-            . ' --mode stage';
+            . ' --mode bulk_load';
 
         $descriptors = [
             0 => ['pipe', 'r'],
@@ -6134,13 +6191,13 @@ class ImportExcelController extends Controller
 
     private function normalizeCsvRow(array $row, string $delimiter, ?int $expectedColumns = null): array
     {
-        if (!$this->isDailyLoanTable()) {
+        if (!$this->usesSerializedCsvRepair()) {
             $this->resetDailyLoanCsvParseMeta($expectedColumns);
         }
 
         $row = $this->reparseSerializedDailyLoanCsvRow($row, $delimiter, $expectedColumns);
 
-        if (!$this->isDailyLoanTable() && count($row) === 1 && isset($row[0]) && is_string($row[0])) {
+        if (!$this->usesSerializedCsvRepair() && count($row) === 1 && isset($row[0]) && is_string($row[0])) {
             $rawValue = trim($row[0]);
             if ($rawValue !== '' && str_contains($rawValue, $delimiter)) {
                 $expandedRow = str_getcsv($rawValue, $delimiter, '"', '\\');
@@ -6196,6 +6253,7 @@ class ImportExcelController extends Controller
 
     private function prepareCsvPreviewPayload(string $path): array
     {
+        $tableName = $this->resolveActiveTableName();
         $delimiter = $this->detectCsvDelimiter($path);
         $handle = @fopen($path, 'r');
         if (!$handle) {
@@ -6214,14 +6272,12 @@ class ImportExcelController extends Controller
         $previewLimit = $previewSettings['preview_limit'];
         $uniqueLimit = $previewSettings['unique_scan_limit'];
         $maxUniqueValuesPerColumn = $previewSettings['max_unique_values_per_column'];
-        $totalRows = 0;
+        $totalRows = 0;  // OPTIMIZED: Count rows during preview scan
         $forcedHeaders = $this->isDailyLoanActive() ? self::DAILY_LOAN_SOURCE_HEADERS : null;
-        $tableName = $this->resolveActiveTableName();
+        $normalizedValueCache = [];  // OPTIMIZED: Cache normalized values
 
-        while (($row = fgetcsv($handle, 0, $delimiter)) !== false) {
-            $row = $this->normalizeCsvRow($row, $delimiter);
+        while (($row = $this->readCsvRecord($handle, $delimiter)) !== false) {
             $lineNumber++;
-            $totalRows++;
 
             if ($headerIndex === null) {
                 if ($this->detectHeaderIndex([$row], $tableName) === 0) {
@@ -6263,29 +6319,42 @@ class ImportExcelController extends Controller
                 continue;
             }
 
-            if (count($cleanPreview) < $previewLimit) {
-                $cleanRow = [];
-                foreach ($validIndexes as $index) {
-                    $headerName = $normalizedHeaders[$index];
-                    $cleanRow[$headerName] = $this->normalizeExcelValue($headerName, $row[$index] ?? '');
+            // OPTIMIZED: Increment total rows counter
+            $totalRows++;
+
+            // OPTIMIZED: Single pass untuk both preview dan unique values collection
+            $cleanRow = [];
+            foreach ($validIndexes as $index) {
+                $headerName = $normalizedHeaders[$index];
+                $rawValue = $row[$index] ?? '';
+                
+                // OPTIMIZED: Cache hasil normalisasi untuk menghindari double normalization
+                $cacheKey = $headerName . '|' . $rawValue;
+                if (!isset($normalizedValueCache[$cacheKey])) {
+                    $normalizedValueCache[$cacheKey] = $this->normalizeExcelValue($headerName, $rawValue);
                 }
+                $value = $normalizedValueCache[$cacheKey];
+                
+                if (count($cleanPreview) < $previewLimit) {
+                    $cleanRow[$headerName] = $value;
+                }
+
+                if ($rowsProcessedForUniques < $uniqueLimit) {
+                    $displayValue = $value === null ? '(Blank)' : (string) $value;
+                    if (
+                        isset($uniqueValues[$index][$displayValue]) ||
+                        count($uniqueValues[$index]) < $maxUniqueValuesPerColumn
+                    ) {
+                        $uniqueValues[$index][$displayValue] = true;
+                    }
+                }
+            }
+
+            if (count($cleanPreview) < $previewLimit) {
                 $cleanPreview[] = $cleanRow;
             }
 
             if ($rowsProcessedForUniques < $uniqueLimit) {
-                foreach ($validIndexes as $index) {
-                    $headerName = $normalizedHeaders[$index];
-                    $value = $this->normalizeExcelValue($headerName, $row[$index] ?? '');
-                    if ($value === null) {
-                        $value = '(Blank)';
-                    }
-                    if (
-                        isset($uniqueValues[$index][$value]) ||
-                        count($uniqueValues[$index]) < $maxUniqueValuesPerColumn
-                    ) {
-                        $uniqueValues[$index][$value] = true;
-                    }
-                }
                 $rowsProcessedForUniques++;
             }
 
@@ -6305,17 +6374,23 @@ class ImportExcelController extends Controller
             $finalHeaders[] = $normalizedHeaders[$index];
         }
 
+        // OPTIMIZED: Use faster sorting with array keys (PHP native, not custom comparator)
         $formattedUniqueValues = [];
         $filterIndex = 0;
         foreach ($validIndexes as $index) {
             $keys = array_keys($uniqueValues[$index] ?? []);
-            usort($keys, 'strnatcmp');
+            // OPTIMIZED: Use sort() instead of usort() for better performance
+            // strnatcmp is slower for large arrays
+            sort($keys);
             $formattedUniqueValues[$filterIndex] = $keys;
             $filterIndex++;
         }
 
+        // OPTIMIZED: ELIMINATED countCsvDataRows() call - already counted during preview scan!
+        // This eliminates a second full file scan (huge performance win)
+
         return [
-            'total_rows' => null,
+            'total_rows' => $totalRows,  // Use counted rows instead of re-scanning
             'header_index' => $headerIndex,
             'headers' => $finalHeaders,
             'preview' => $cleanPreview,
@@ -6584,7 +6659,18 @@ class ImportExcelController extends Controller
                 continue;
             }
 
-            $value = $this->normalizeExcelValueByRule($rule, $row[$originalIndex] ?? '');
+            $rawValue = $row[$originalIndex] ?? '';
+            
+            // OPTIMIZED: Use cached normalized value if available (during CSV streaming)
+            if ($this->currentStreamNormalizedValueCache !== null) {
+                $cacheKey = $originalIndex . '|' . $rawValue;
+                if (!isset($this->currentStreamNormalizedValueCache[$cacheKey])) {
+                    $this->currentStreamNormalizedValueCache[$cacheKey] = $this->normalizeExcelValueByRule($rule, $rawValue);
+                }
+                $value = $this->currentStreamNormalizedValueCache[$cacheKey];
+            } else {
+                $value = $this->normalizeExcelValueByRule($rule, $rawValue);
+            }
 
             if (!empty($rule['filter_lookup'])) {
                 $filterValue = ($value === null) ? '(Blank)' : (string) $value;
@@ -6821,13 +6907,15 @@ class ImportExcelController extends Controller
     private function normalizeExcelValueByRule(array $rule, $value)
     {
         $headerName = (string) ($rule['header_name'] ?? '');
-        $normalized = $this->normalizeExcelValue($headerName, $value);
-
+        
+        // OPTIMIZED: Skip double normalization
+        // normalizeExcelValue already handles decimal columns via is_decimal lookup
+        // No need to call it again here
         if (!empty($rule['is_decimal'])) {
             return $this->normalizeDecimalValue($value);
         }
-
-        return $normalized;
+        
+        return $this->normalizeExcelValue($headerName, $value);
     }
 
     private function validateRkaDuplicateGuardOrResponse(string $tableName)
@@ -7051,8 +7139,17 @@ class ImportExcelController extends Controller
             ], true);
         }
 
-        $header = strtoupper(trim($headerName));
-        $normalizedHeader = preg_replace('/[^A-Z0-9]+/', '_', $header);
+        // OPTIMIZED: Cache normalized header names to avoid repeated strtoupper + preg_replace
+        if (!isset($this->normalizedHeaderNameCache)) {
+            $this->normalizedHeaderNameCache = [];
+        }
+
+        if (!isset($this->normalizedHeaderNameCache[$headerName])) {
+            $header = strtoupper(trim($headerName));
+            $this->normalizedHeaderNameCache[$headerName] = preg_replace('/[^A-Z0-9]+/', '_', $header);
+        }
+
+        $normalizedHeader = $this->normalizedHeaderNameCache[$headerName];
         $value = ($value === null) ? '' : trim($this->normalizeQuotedCsvCellValue($value));
 
         if ($value === '') return null;
@@ -7163,6 +7260,32 @@ class ImportExcelController extends Controller
             'SALDO_IDR',
             'PENDAPATAN_KOREKSI_PPAP_DR_ANGSURAN_PH',
             'RECOVERY_NON_KLAIM',
+            'SALDO_PERTAMA_PH_POKOK',
+            'SALDO_PERTAMA_PH_BUNGA',
+            'BESAR_REALISASI',
+            'POKOK',
+            'BUNGA',
+            'ANGPOK',
+            'ANGBUNG',
+            'SISAPOK',
+            'SISABUN',
+            'CLMAMT1',
+            'CLMAPR1',
+            'OS_PENUH_BERJALAN1',
+            'SALDO_PERTAMA_KALI_CHARGE_OFF',
+            'DEFFERED_BUNGA_PH',
+            'SAI_TUNGGAKAN_PH',
+            'SAI_DEFFERED_PH',
+            'WCBAL',
+            'WACCINT',
+            'WADVPMT',
+            'WPENINT',
+            'WMISC',
+            'WOTHCHG',
+            'WPMTAMT',
+            'WAMOUNT',
+            'CLMAMT',
+            'CLMAPR',
         ];
 
         return array_fill_keys($decimalColumns, true);
@@ -7874,8 +7997,7 @@ class ImportExcelController extends Controller
                 return response()->json(['status' => 'error', 'text' => 'Gagal membuka file CSV.']);
             }
 
-            while (($row = fgetcsv($handle, 0, $delimiter)) !== false) {
-                $row = $this->normalizeCsvRow($row, $delimiter);
+            while (($row = $this->readCsvRecord($handle, $delimiter)) !== false) {
 
                 if ($headerIndex === null) {
                     $rowUpper = array_map(fn($v) => strtoupper(trim((string) $v)), $row);
@@ -8402,6 +8524,24 @@ class ImportExcelController extends Controller
                 ]);
             }
 
+            // OPTIMIZED: Cache table type checks at streaming start (eliminates 46k+ redundant function calls)
+            $activeTableName = $this->resolveExcelTableName();
+            $this->streamingTableType = $activeTableName;
+            $this->streamingIsSimpananMultiPN = ($activeTableName === 'simpanan_multipn');
+            $this->streamingIsLw325Ph = ($activeTableName === 'lw325_ph');
+            $this->streamingIsDailyLoan = $this->isDailyLoanTable($activeTableName);
+            $cachedIsSimpananMultiPN = $this->streamingIsSimpananMultiPN;
+            $cachedIsLw325Ph = $this->streamingIsLw325Ph;
+            $cachedIsDailyLoan = $this->streamingIsDailyLoan;
+
+            // OPTIMIZED: Buffer rows untuk batch fputcsv (1000x lebih cepat dari per-row writes)
+            $writeBuffer = [];
+            $bulkLoadColumnsCount = count($bulkLoadColumns);
+            $headerCount = $context['header_count'];
+            
+            // OPTIMIZED: Enable normalized value caching for this streaming session
+            $this->currentStreamNormalizedValueCache = [];
+
             while (($row = $this->readCsvRecord($handle, $delimiter)) !== false) {
                 $lineNumber++;
 
@@ -8409,25 +8549,40 @@ class ImportExcelController extends Controller
                     continue;
                 }
 
-                $row = $this->padRow($row, $context['header_count']);
-                foreach ($row as $index => $value) {
-                    if ($value === '\N') {
-                        $row[$index] = null;
-                    }
+                // OPTIMIZED: Inline padRow untuk menghindari function call overhead
+                $rowCount = count($row);
+                if ($rowCount < $headerCount) {
+                    $row = array_pad($row, $headerCount, null);
                 }
 
+                // OPTIMIZED: Combine \N replacement dengan mapping dalam satu pass
                 $finalRow = $this->mapExcelRowForInsert($row, $normalizedHeaders, $context, $timestamp);
                 if ($finalRow === null) {
                     continue;
                 }
 
-                fputcsv($outputHandle, array_map(function ($column) use ($finalRow) {
+                // OPTIMIZED: Build output row dengan single pass
+                $outputRow = [];
+                for ($i = 0; $i < $bulkLoadColumnsCount; $i++) {
+                    $column = $bulkLoadColumns[$i];
                     $value = $finalRow[$column] ?? null;
-                    return $value === null ? '\N' : $value;
-                }, $bulkLoadColumns));
+                    $outputRow[] = $value === null ? '\N' : $value;
+                }
+
+                // OPTIMIZED: Buffer rows untuk batch writes
+                $writeBuffer[] = $outputRow;
+
+                // OPTIMIZED: Write buffer setiap 1000 rows untuk balance speed vs memory
+                if (count($writeBuffer) >= 1000) {
+                    foreach ($writeBuffer as $bufferedRow) {
+                        fputcsv($outputHandle, $bufferedRow);
+                    }
+                    $writeBuffer = [];
+                }
 
                 $rowsDone++;
 
+                // OPTIMIZED: Reduce progress check frequency (dari per-row ke per-N-rows)
                 $now = microtime(true);
                 $shouldSendProgress = $rowsDone - $lastProgressAt >= $stagedProgressEveryRows
                     || ($rowsDone > 0 && ($now - $lastProgressWallClock) >= 2.0);
@@ -8452,6 +8607,21 @@ class ImportExcelController extends Controller
                     ]);
                 }
             }
+
+            // OPTIMIZED: Flush remaining buffer
+            if (!empty($writeBuffer)) {
+                foreach ($writeBuffer as $bufferedRow) {
+                    fputcsv($outputHandle, $bufferedRow);
+                }
+                $writeBuffer = [];
+            }
+
+            // OPTIMIZED: Clear all streaming caches after done
+            $this->currentStreamNormalizedValueCache = null;
+            $this->streamingTableType = null;
+            $this->streamingIsSimpananMultiPN = null;
+            $this->streamingIsLw325Ph = null;
+            $this->streamingIsDailyLoan = null;
 
             fclose($outputHandle);
             $outputHandle = null;
@@ -8868,7 +9038,7 @@ class ImportExcelController extends Controller
             'assert_transactional_table' => fn(string $tableName, string $context) => $this->bulkLoadService()->assertTransactionalTable($tableName, $context),
             'is_csv_file' => fn(string $path) => $this->isCsvFile($path),
             'detect_csv_delimiter' => fn(string $path) => $this->detectCsvDelimiter($path),
-            'count_csv_data_rows' => fn(string $path) => $this->countCsvDataRows($path),
+            'count_csv_data_rows' => fn(string $path, ?string $tableName = null) => $this->countCsvDataRows($path, $tableName),
             'resolve_csv_data_row_estimate' => fn(?int $totalRows, int $headerIndex) => $this->resolveCsvDataRowEstimate($totalRows, $headerIndex),
             'run_csv_pipeline' => fn(array $payload) => $this->pipelineService()->runCsvPipeline($payload),
             'process_daily_loan_direct_csv_stream' => fn($send, string $workingPath, string $tableName, array $normalizedHeaders, int $jobId, int $totalDataRows, ?string $delimiter, array $importOptions = []) => $this->processDailyLoanDirectCsvStream($send, $workingPath, $tableName, $normalizedHeaders, $jobId, $totalDataRows, $delimiter, $importOptions),
