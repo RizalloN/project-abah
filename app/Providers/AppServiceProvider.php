@@ -14,7 +14,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->registerCustomQueueExtensions();
     }
 
     /**
@@ -37,5 +37,43 @@ class AppServiceProvider extends ServiceProvider
 
             $view->with('activeImportJobCount', $activeImportJobCount);
         });
+    }
+
+    private function registerCustomQueueExtensions(): void
+    {
+        // 1. Extend Database Queue Connection to support ID REUSE
+        // This must happen after the queue service is registered, so boot() or booted() is appropriate.
+        $this->app->booted(function () {
+            if ($this->app->bound('queue')) {
+                $queue = $this->app['queue'];
+                $queue->addConnector('database', function () {
+                    return new \App\Queue\Connectors\CustomDatabaseConnector($this->app['db']);
+                });
+            }
+        });
+
+        // 2. Override Failed Job Provider to support ID REUSE
+        $this->app->extend('queue.failer', function ($failer, $app) {
+            $config = $app['config']['queue.failed'];
+            if (!isset($config['database'], $config['table'])) {
+                return $failer;
+            }
+
+            return new \App\Queue\CustomFailedJobProvider(
+                $app['db'], $config['database'], $config['table']
+            );
+        });
+
+        // 3. Override Batch Repository to support ID REUSE (Numeric IDs)
+        $batchRepoResolver = function ($repo, $app) {
+            return new \App\Queue\CustomBatchRepository(
+                $app->make(\Illuminate\Bus\BatchFactory::class),
+                $app->make(\Illuminate\Database\ConnectionInterface::class),
+                $app['config']['queue.batching.table'] ?? 'job_batches'
+            );
+        };
+
+        $this->app->extend(\Illuminate\Bus\BatchRepository::class, $batchRepoResolver);
+        $this->app->extend(\Illuminate\Bus\DatabaseBatchRepository::class, $batchRepoResolver);
     }
 }

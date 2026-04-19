@@ -3,7 +3,9 @@
 namespace App\Services;
 
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Schema;
 use RuntimeException;
 
 class DatabaseBackupService
@@ -12,22 +14,9 @@ class DatabaseBackupService
 
     public function createFullBackup(): array
     {
-        $connectionName = Config::get('database.default');
-        $config = Config::get("database.connections.{$connectionName}");
-
-        if (!is_array($config)) {
-            throw new RuntimeException('Konfigurasi database aktif tidak ditemukan.');
-        }
-
-        $driver = strtolower((string) ($config['driver'] ?? ''));
-        if (!in_array($driver, ['mysql', 'mariadb'], true)) {
-            throw new RuntimeException('Backup database penuh saat ini hanya didukung untuk MySQL/MariaDB.');
-        }
-
-        $database = trim((string) ($config['database'] ?? ''));
-        if ($database === '') {
-            throw new RuntimeException('Nama database tidak tersedia.');
-        }
+        $tables = $this->getTables();
+        $config = $this->getDatabaseConfig();
+        $database = $config['database'];
 
         $backupDirectory = storage_path('app/' . self::BACKUP_DIRECTORY);
         if (!is_dir($backupDirectory)) {
@@ -41,11 +30,19 @@ class DatabaseBackupService
         );
         $absolutePath = $backupDirectory . DIRECTORY_SEPARATOR . $filename;
 
-        $command = $this->buildDumpCommand($config, $database, $absolutePath);
+        // Step 1: Dump Schema for all tables
+        $schemaCommand = $this->buildDumpCommand($config, $database, $absolutePath, ['--no-data']);
         $environment = $this->buildDumpEnvironment($config);
-        $result = $this->runDumpProcess($command, $absolutePath, $environment);
+        $this->runDumpProcess($schemaCommand, $absolutePath, $environment);
 
-        $this->assertDumpLooksClean($absolutePath, $result['stderr']);
+        // Step 2: Dump Data for each table (appending)
+        foreach ($tables as $table) {
+            $dataCommand = $this->buildDumpCommand($config, $database, null, ['--no-create-info', $table]);
+            // We need to append, so runDumpProcess needs for support for appending or we do it manually
+            $this->appendTableData($dataCommand, $absolutePath, $environment);
+        }
+
+        $this->assertDumpLooksClean($absolutePath);
 
         return [
             'filename' => $filename,
@@ -55,7 +52,33 @@ class DatabaseBackupService
         ];
     }
 
-    private function buildDumpCommand(array $config, string $database, string $outputPath): array
+    public function getTables(): array
+    {
+        $connectionName = Config::get('database.default');
+        $config = Config::get("database.connections.{$connectionName}");
+        $database = $config['database'];
+
+        $tables = DB::select('SHOW TABLES');
+        $key = "Tables_in_{$database}";
+
+        return collect($tables)->map(function ($table) use ($key) {
+            return $table->$key ?? current((array) $table);
+        })->toArray();
+    }
+
+    public function getDatabaseConfig(): array
+    {
+        $connectionName = Config::get('database.default');
+        $config = Config::get("database.connections.{$connectionName}");
+
+        if (!is_array($config)) {
+            throw new RuntimeException('Konfigurasi database aktif tidak ditemukan.');
+        }
+
+        return $config;
+    }
+
+    public function buildDumpCommand(array $config, string $database, ?string $outputPath, array $extraArgs = []): array
     {
         $command = [
             $this->resolveDumpBinaryPath(),
@@ -71,10 +94,24 @@ class DatabaseBackupService
             '--routines',
             '--triggers',
             '--events',
-            '--result-file=' . $outputPath,
-            '--databases',
-            $database,
         ];
+
+        if ($outputPath) {
+            $command[] = '--result-file=' . $outputPath;
+        }
+
+        foreach ($extraArgs as $arg) {
+            $command[] = $arg;
+        }
+
+        if (!in_array('--databases', $extraArgs)) {
+            // If we are dumping specific tables, we don't use --databases database-name 
+            // but just database-name table-name
+            $command[] = $database;
+        }
+
+        return $command;
+    }
 
         $socket = trim((string) ($config['unix_socket'] ?? ''));
         if ($socket !== '') {
@@ -94,7 +131,7 @@ class DatabaseBackupService
         return ['MYSQL_PWD' => $password];
     }
 
-    private function runDumpProcess(array $command, string $outputPath, array $environment = []): array
+    private function runDumpProcess(array $command, ?string $outputPath, array $environment = []): array
     {
         $descriptors = [
             0 => ['pipe', 'r'],
@@ -117,6 +154,7 @@ class DatabaseBackupService
         }
 
         fclose($pipes[0]);
+        $stdout = stream_get_contents($pipes[1]);
         fclose($pipes[1]);
 
         $stderr = stream_get_contents($pipes[2]);
@@ -124,16 +162,27 @@ class DatabaseBackupService
 
         $exitCode = proc_close($process);
         if ($exitCode !== 0) {
-            @unlink($outputPath);
+            if ($outputPath) {
+                @unlink($outputPath);
+            }
             throw new RuntimeException(
                 'Backup database gagal dijalankan' . ($stderr !== '' ? ': ' . trim($stderr) : '.')
             );
         }
 
         return [
+            'stdout' => (string) $stdout,
             'stderr' => (string) $stderr,
             'exit_code' => $exitCode,
         ];
+    }
+
+    private function appendTableData(array $command, string $outputPath, array $environment): void
+    {
+        $result = $this->runDumpProcess($command, null, $environment);
+        if ($result['stdout'] !== '') {
+            File::append($outputPath, "\n" . $result['stdout']);
+        }
     }
 
     private function assertDumpLooksClean(string $outputPath, string $stderr = ''): void

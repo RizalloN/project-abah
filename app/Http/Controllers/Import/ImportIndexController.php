@@ -36,9 +36,9 @@ class ImportIndexController extends Controller
     private const DELETE_CHUNK_SIZE = 10000;
     private const DELETE_CHUNK_SIZE_WITH_IDENTITY = 50000;
     private const DELETE_PROGRESS_TTL_MINUTES = 60;
-    private const DELETE_PROGRESS_CACHE_PREFIX = 'report_management_delete:';
+    private const DELETE_PROGRESS_CACHE_PREFIX = 'report_management_delete';
     private const DELETE_ACTIVE_IDS_CACHE_KEY = 'report_management_delete:active_ids';
-    private const DELETE_PROCESS_LOCK_PREFIX = 'report_management_delete_lock:';
+    private const DELETE_PROCESS_LOCK_PREFIX = 'report_management_delete_lock';
     private const DELETE_PROCESS_LOCK_SECONDS = 300;
     private const DELETE_PROCESS_GRACE_SECONDS = 0;
     private const DELETE_PROCESS_STALE_SECONDS = 30;
@@ -1195,9 +1195,7 @@ class ImportIndexController extends Controller
 
         $state = $this->finalizeManagedDeleteCancelled($deleteId, $state);
 
-        return response()->json($this->formatDeleteStateResponse($state, [
-            'message' => 'Delete dihentikan paksa dengan aman.',
-        ]));
+        return response()->json($this->formatDeleteStateResponse($state));
     }
 
     public function managedReportDeleteStatus(string $deleteId)
@@ -2428,6 +2426,10 @@ class ImportIndexController extends Controller
     {
         $state = $this->deleteProgressStore()->get($this->deleteProgressCacheKey($deleteId));
 
+        if (!is_array($state)) {
+            $state = $this->deleteProgressStore()->get($this->legacyDeleteProgressCacheKey($deleteId));
+        }
+
         return is_array($state) ? $state : null;
     }
 
@@ -2507,12 +2509,17 @@ class ImportIndexController extends Controller
 
     private function deleteProgressCacheKey(string $deleteId): string
     {
-        return self::DELETE_PROGRESS_CACHE_PREFIX . trim($deleteId);
+        return $this->managedDeleteCacheNamespace() . ':' . self::DELETE_PROGRESS_CACHE_PREFIX . ':' . trim($deleteId);
+    }
+
+    private function legacyDeleteProgressCacheKey(string $deleteId): string
+    {
+        return self::DELETE_PROGRESS_CACHE_PREFIX . ':' . trim($deleteId);
     }
 
     private function activeManagedDeleteIds(): array
     {
-        $value = $this->deleteProgressStore()->get(self::DELETE_ACTIVE_IDS_CACHE_KEY);
+        $value = $this->deleteProgressStore()->get($this->managedDeleteActiveIdsCacheKey());
         if (!is_array($value)) {
             return [];
         }
@@ -2540,12 +2547,12 @@ class ImportIndexController extends Controller
         }
 
         if ($ids === []) {
-            $this->deleteProgressStore()->forget(self::DELETE_ACTIVE_IDS_CACHE_KEY);
+            $this->deleteProgressStore()->forget($this->managedDeleteActiveIdsCacheKey());
             return;
         }
 
         $this->deleteProgressStore()->put(
-            self::DELETE_ACTIVE_IDS_CACHE_KEY,
+            $this->managedDeleteActiveIdsCacheKey(),
             array_values($ids),
             now()->addMinutes(self::DELETE_PROGRESS_TTL_MINUTES)
         );
@@ -2563,12 +2570,30 @@ class ImportIndexController extends Controller
         $ageSeconds = $this->diffNowInSeconds($reference);
         $deleteId = trim((string) ($state['delete_id'] ?? ''));
         $queueRow = $deleteId !== '' ? $this->findManagedDeleteQueueRow($deleteId) : null;
+        $queueReserved = $queueRow !== null && (bool) ($queueRow['reserved'] ?? false);
         $queuePendingWithoutWorker = $queueRow !== null
-            && !(bool) ($queueRow['reserved'] ?? false)
+            && !$queueReserved
             && max(
                 (int) ($queueRow['created_age_seconds'] ?? 0),
                 $this->queueTimestampAgeSeconds($queueRow['available_at'] ?? null)
             ) >= 1;
+
+        // Setelah satu batch berhasil commit, fallback controller boleh langsung melanjutkan
+        // selama tidak ada worker queue aktif yang sedang memegang job delete ini.
+        if (
+            $stage === 'deleting'
+            && $batchState === 'deleting_committed'
+            && !$queueReserved
+        ) {
+            return true;
+        }
+
+        if (
+            in_array($stage, ['cleanup', 'syncing'], true)
+            && !$queueReserved
+        ) {
+            return true;
+        }
 
         if ($stage === 'queued') {
             if ($queuePendingWithoutWorker) {
@@ -2675,7 +2700,21 @@ class ImportIndexController extends Controller
 
     private function managedDeleteProcessLockKey(string $deleteId): string
     {
-        return self::DELETE_PROCESS_LOCK_PREFIX . trim($deleteId);
+        return $this->managedDeleteCacheNamespace() . ':' . self::DELETE_PROCESS_LOCK_PREFIX . ':' . trim($deleteId);
+    }
+
+    private function managedDeleteActiveIdsCacheKey(): string
+    {
+        return $this->managedDeleteCacheNamespace() . ':' . self::DELETE_ACTIVE_IDS_CACHE_KEY;
+    }
+
+    private function managedDeleteCacheNamespace(): string
+    {
+        $environment = strtolower(trim((string) app()->environment()));
+        $environment = preg_replace('/[^a-z0-9_-]+/', '_', $environment) ?? $environment;
+        $environment = trim($environment, '_');
+
+        return 'env:' . ($environment !== '' ? $environment : 'production');
     }
 
     private function managedReportDeleteQueueRows(): array
@@ -3268,7 +3307,6 @@ class ImportIndexController extends Controller
             || str_contains($columnName, 'posisi')
             || str_contains($columnName, 'tanggal')
             || str_contains($columnName, 'tgl');
-        $preferMonthLabel = $looksLikePeriodColumn;
 
         if (preg_match('/^\d{4}-\d{2}$/', $value) === 1) {
             return $value;
@@ -3290,10 +3328,6 @@ class ImportIndexController extends Controller
 
         $strictNormalized = StrictDateParser::normalize($value);
         if ($strictNormalized !== null) {
-            if ($preferMonthLabel && preg_match('/^\d{4}-\d{2}(-\d{2})?/', $strictNormalized) === 1) {
-                return substr($strictNormalized, 0, 7);
-            }
-
             return $strictNormalized;
         }
 
@@ -3312,19 +3346,19 @@ class ImportIndexController extends Controller
                 'd/m/Y',
             ] as $format) {
                 try {
-                    return Carbon::createFromFormat($format, $normalized)->format('Y-m');
+                    return Carbon::createFromFormat($format, $normalized)->format('Y-m-d');
                 } catch (\Throwable) {
                 }
             }
 
             try {
-                return Carbon::parse($normalized)->format('Y-m');
+                return Carbon::parse($normalized)->format('Y-m-d');
             } catch (\Throwable) {
             }
         }
 
         if (preg_match('/^\d{4}-\d{2}-\d{2}/', $value) === 1) {
-            return substr($value, 0, 7);
+            return substr($value, 0, 10);
         }
 
         return $value;
@@ -4140,6 +4174,7 @@ class ImportIndexController extends Controller
     private function deleteRowsByIdentityBatch(string $tableName, Builder $baseQuery, string $identityColumn, int $limit, $connection = null, ?string $deleteId = null): int
     {
         $connection = $connection ?: DB::connection();
+        $deleted = 0;
 
         if ($deleteId !== null && $this->isManagedDeleteCancellationRequested($deleteId)) {
             return 0;
@@ -4450,17 +4485,64 @@ class ImportIndexController extends Controller
         }
 
         [$whereSql, $bindings] = $this->buildDeleteWhereSql($constraints);
-
         $wrappedTable = '`' . str_replace('`', '``', $tableName) . '`';
+        $wrappedIdentity = '`' . str_replace('`', '``', $identityColumn) . '`';
         $wrappedIndex = '`' . str_replace('`', '``', $indexHint) . '`';
-        $sql = "
-DELETE FROM {$wrappedTable}
-FORCE INDEX ({$wrappedIndex})
+        $deleted = 0;
+
+        // Hapus dulu baris dangling yang tidak punya identity agar scope tidak tertahan.
+        $danglingDeleted = (int) $this->makeDeleteVariantQuery($tableName, $constraints)
+            ->where(function ($query) use ($identityColumn) {
+                $query->whereNull($identityColumn)
+                    ->orWhere($identityColumn, '');
+            })
+            ->limit($limit)
+            ->delete();
+
+        if ($danglingDeleted > 0) {
+            if ($danglingDeleted >= $limit) {
+                return $danglingDeleted;
+            }
+
+            $deleted += $danglingDeleted;
+        }
+
+        if ($deleteId !== null && $this->isManagedDeleteCancellationRequested($deleteId)) {
+            return $deleted;
+        }
+
+        $selectSql = "
+SELECT {$wrappedIdentity}
+FROM {$wrappedTable} FORCE INDEX ({$wrappedIndex})
 WHERE {$whereSql}
+  AND {$wrappedIdentity} IS NOT NULL
+  AND {$wrappedIdentity} <> ''
+ORDER BY {$wrappedIdentity}
 LIMIT {$limit}
 ";
 
-        return (int) $connection->affectingStatement($sql, $bindings);
+        $rows = $connection->select($selectSql, $bindings);
+        $identityValues = collect($rows)
+            ->map(static fn ($row) => is_object($row) ? ($row->{$identityColumn} ?? null) : ($row[$identityColumn] ?? null))
+            ->filter(static fn ($value) => $value !== null && $value !== '')
+            ->values()
+            ->all();
+
+        if (empty($identityValues)) {
+            return $deleted;
+        }
+
+        foreach (array_chunk($identityValues, 2000) as $chunk) {
+            if ($deleteId !== null && $this->isManagedDeleteCancellationRequested($deleteId)) {
+                break;
+            }
+
+            $deleted += (int) $connection->table($tableName)
+                ->whereIn($identityColumn, $chunk)
+                ->delete();
+        }
+
+        return $deleted;
     }
 
     private function shouldUseMonthPrefixDeleteConstraint(string $column, string $value): bool

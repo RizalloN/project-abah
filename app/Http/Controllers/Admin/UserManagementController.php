@@ -8,6 +8,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
@@ -31,12 +32,12 @@ class UserManagementController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
-        $data = $request->validate([
+        $data = Validator::make($request->all(), [
             'name' => ['required', 'string', 'max:255'],
             'pn' => ['required', 'string', 'max:32', 'regex:/^[A-Za-z0-9._-]+$/', 'unique:users,pn'],
             'role' => ['required', Rule::in(['admin', 'user'])],
             'password' => ['required', 'string', 'min:6'],
-        ]);
+        ])->validateWithBag('createUser');
 
         User::create([
             'name' => trim($data['name']),
@@ -52,12 +53,22 @@ class UserManagementController extends Controller
 
     public function update(Request $request, User $user): RedirectResponse
     {
-        $data = $request->validate([
+        $validator = Validator::make($request->all(), [
             'name' => ['required', 'string', 'max:255'],
             'pn' => ['required', 'string', 'max:32', 'regex:/^[A-Za-z0-9._-]+$/', Rule::unique('users', 'pn')->ignore($user->getKey())],
             'role' => ['required', Rule::in(['admin', 'user'])],
             'password' => ['nullable', 'string', 'min:6'],
         ]);
+
+        if ($validator->fails()) {
+            return redirect()
+                ->route('user-management.index')
+                ->withErrors($validator, 'updateUser')
+                ->withInput()
+                ->with('open_edit_user', $user->getKey());
+        }
+
+        $data = $validator->validated();
 
         $user->name = trim($data['name']);
         $user->pn = trim($data['pn']);
@@ -71,7 +82,9 @@ class UserManagementController extends Controller
         if ($currentUser && (int) $currentUser->getKey() === (int) $user->getKey() && $data['role'] !== 'admin') {
             return redirect()
                 ->route('user-management.index')
-                ->withErrors(['user_management' => 'Akun admin yang sedang aktif tidak boleh diturunkan menjadi user biasa.']);
+                ->withErrors(['user_management' => 'Akun admin yang sedang aktif tidak boleh diturunkan menjadi user biasa.'], 'updateUser')
+                ->withInput()
+                ->with('open_edit_user', $user->getKey());
         }
 
         $user->save();

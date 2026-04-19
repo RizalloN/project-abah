@@ -44,7 +44,7 @@ return new class extends Migration
 
         // 3. Rencana Kerja Anggaran (RKA)
         Schema::create('rka', function (Blueprint $table) {
-            $table->id();
+            $table->string('uniqueid_namareport', 255)->primary();
             $table->unsignedInteger('tahun')->nullable()->index();
             $table->string('kanca', 150)->nullable()->index();
             $table->string('desc_uker', 180)->nullable()->index();

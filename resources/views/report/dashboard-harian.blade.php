@@ -740,11 +740,14 @@
         min-width: 100%;
     }
     .daily-table thead .column-heading {
-        display: inline-flex;
+        display: flex;
+        flex-direction: column;
         align-items: center;
         justify-content: center;
         min-width: 100%;
         text-align: center;
+        height: 100%;
+        padding: 4px 0;
     }
 
     /* Table Cells */
@@ -923,10 +926,16 @@
 
     .header-subnote {
         display: block;
-        font-size: 0.6rem;
-        opacity: 0.8;
-        margin-top: 2px;
-        font-weight: normal;
+        width: 100%;
+        font-size: 0.63rem;
+        opacity: 0.9;
+        margin-top: 4px;
+        padding-top: 4px;
+        font-weight: 700;
+        border-top: 1px solid rgba(255, 255, 255, 0.25);
+        color: rgba(255, 255, 255, 0.8) !important;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
     }
 
     .daily-table tbody tr.row-hidden-by-scope {
@@ -1085,10 +1094,12 @@
                             <col style="width: 110px;" class="numeric-col">
                             <col style="width: 120px;" class="numeric-col">
                             <col style="width: 110px;" class="numeric-col">
+                            <col style="width: 110px;" class="numeric-col">
                             <col style="width: 120px;" class="numeric-col">
                             <col style="width: 110px;" class="numeric-col">
-                            <col style="width: 110px;" class="numeric-col position-col-h1">
+                            <col style="width: 110px;" class="numeric-col position-col-h2">
                             <col style="width: 110px;" class="numeric-col">
+                            <col style="width: 100px;" class="numeric-col">
                             <col style="width: 100px;" class="numeric-col">
                             <col style="width: 100px;" class="numeric-col">
                             <col style="width: 100px;" class="numeric-col">
@@ -1100,34 +1111,40 @@
                             <tr class="group-row text-center">
                                 <th class="sticky-no group-no" rowspan="3">No</th>
                                 <th class="sticky-label group-label" rowspan="3">Keterangan</th>
-                                <th class="group-position" colspan="6" data-position-group-colspan>Perbandingan Posisi</th>
-                                <th class="group-delta" colspan="3">Delta Terhadap</th>
+                                <th class="group-position" colspan="7" data-position-group-colspan>Perbandingan Posisi</th>
+                                <th class="group-delta" colspan="4">Delta Terhadap</th>
                                 <th class="group-rka" colspan="4">Perbandingan RKA</th>
                             </tr>
                             <tr class="column-row text-center">
                                 <th class="value-col position-col" rowspan="2">
-                                    <span class="column-heading"><span class="main" data-label-yoy>-</span></span>
+                                    <span class="column-heading"><span class="main" data-label-yoy>-</span><span class="header-subnote text-white-50">M-12 (YoY)</span></span>
                                 </th>
                                 <th class="value-col position-col" rowspan="2">
-                                    <span class="column-heading"><span class="main" data-label-ytd>-</span></span>
+                                    <span class="column-heading"><span class="main" data-label-ytd>-</span><span class="header-subnote text-white-50">Des (YtD)</span></span>
                                 </th>
                                 <th class="value-col position-col" rowspan="2">
-                                    <span class="column-heading"><span class="main" data-label-mtm>-</span></span>
+                                    <span class="column-heading"><span class="main" data-label-m2>-</span><span class="header-subnote text-white-50">M-2</span></span>
                                 </th>
                                 <th class="value-col position-col" rowspan="2">
-                                    <span class="column-heading"><span class="main" data-label-mtd>-</span></span>
+                                    <span class="column-heading"><span class="main" data-label-mtm>-</span><span class="header-subnote text-white-50">MtM</span></span>
                                 </th>
-                                <th class="value-col position-col position-col-h1" rowspan="2">
-                                    <span class="column-heading"><span class="main" data-label-h1>-</span></span>
+                                <th class="value-col position-col" rowspan="2">
+                                    <span class="column-heading"><span class="main" data-label-mtd>-</span><span class="header-subnote text-white-50">M-1 (MtD)</span></span>
+                                </th>
+                                <th class="value-col position-col position-col-h2" rowspan="2">
+                                    <span class="column-heading"><span class="main" data-label-h2>-</span><span class="header-subnote text-white-50">h-2 (DtD)</span></span>
                                 </th>
                                 <th class="value-col position-col" rowspan="2" style="background-color: var(--primary-blue-light);">
-                                    <span class="column-heading"><span class="main text-white" data-label-current>-</span></span>
+                                    <span class="column-heading"><span class="main text-white" data-label-current>-</span><span class="header-subnote text-white-50">Posisi</span></span>
                                 </th>
                                 <th class="value-col delta-col" rowspan="2">
                                     <span class="column-heading"><span class="main" data-label-delta-yoy>-</span><span class="header-subnote text-white-50">YoY</span></span>
                                 </th>
                                 <th class="value-col delta-col" rowspan="2">
                                     <span class="column-heading"><span class="main" data-label-delta-ytd>-</span><span class="header-subnote text-white-50">YtD</span></span>
+                                </th>
+                                <th class="value-col delta-col" rowspan="2">
+                                    <span class="column-heading"><span class="main" data-label-delta-mtd>-</span><span class="header-subnote text-white-50">MtD</span></span>
                                 </th>
                                 <th class="value-col delta-col" rowspan="2">
                                     <span class="column-heading"><span class="main" data-label-delta-dtd>-</span><span class="header-subnote text-white-50">DtD</span></span>
@@ -1155,7 +1172,7 @@
                             </tr>
                         </thead>
                         <tbody id="daily-dashboard-body">
-                            <tr><td colspan="15" class="daily-empty"><i class="fas fa-spinner fa-spin mr-2"></i> Memuat data dashboard harian...</td></tr>
+                            <tr><td colspan="16" class="daily-empty"><i class="fas fa-spinner fa-spin mr-2"></i> Memuat data dashboard harian...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -1191,18 +1208,20 @@
         const headerLabels = {
             yoy: document.querySelector('[data-label-yoy]'),
             ytd: document.querySelector('[data-label-ytd]'),
+            m2: document.querySelector('[data-label-m2]'),
             mtm: document.querySelector('[data-label-mtm]'),
             mtd: document.querySelector('[data-label-mtd]'),
-            h1: document.querySelector('[data-label-h1]'),
+            h2: document.querySelector('[data-label-h2]'),
             current: document.querySelector('[data-label-current]'),
             rka: document.querySelector('[data-label-rka-period]'),
             rkaDec: document.querySelector('[data-label-rka-dec-period]'),
             deltaYoy: document.querySelector('[data-label-delta-yoy]'),
             deltaYtd: document.querySelector('[data-label-delta-ytd]'),
+            deltaMtd: document.querySelector('[data-label-delta-mtd]'),
             deltaDtd: document.querySelector('[data-label-delta-dtd]'),
         };
         const positionGroupColspan = document.querySelector('[data-position-group-colspan]');
-        const positionH1Header = document.querySelector('[data-label-h1]').closest('th');
+        const positionH2Header = document.querySelector('[data-label-h2]').closest('th');
         const tableRegion = document.querySelector('[data-table-region]');
         const tableWrap = document.querySelector('.daily-table-wrap');
         const mainHeader = document.querySelector('.main-header');
@@ -1313,7 +1332,7 @@
             const show = Boolean(visible);
             const hiddenClass = 'position-col-hidden';
 
-            [positionH1Header].forEach(function (node) {
+            [positionH2Header].forEach(function (node) {
                 if (!node) {
                     return;
                 }
@@ -1321,16 +1340,16 @@
                 node.classList.toggle(hiddenClass, !show);
             });
 
-            document.querySelectorAll('[data-position-col="h1"]').forEach(function (cell) {
+            document.querySelectorAll('[data-position-col="h2"]').forEach(function (cell) {
                 cell.classList.toggle(hiddenClass, !show);
             });
 
-            document.querySelectorAll('col.position-col-h1').forEach(function (cell) {
+            document.querySelectorAll('col.position-col-h2').forEach(function (cell) {
                 cell.classList.toggle(hiddenClass, !show);
             });
 
             if (positionGroupColspan) {
-                positionGroupColspan.setAttribute('colspan', show ? '6' : '5');
+                positionGroupColspan.setAttribute('colspan', show ? '7' : '6');
             }
 
             scheduleTableViewportSync();
@@ -1751,8 +1770,8 @@
             });
 
             ['values', 'deltas'].forEach(function (group) {
-                ['yoy', 'ytd', 'mtm', 'mtd', 'h1', 'current', 'rka', 'rka_dec'].forEach(function (metricName) {
-                    if (group === 'deltas' && metricName !== 'yoy' && metricName !== 'ytd' && metricName !== 'dtd') {
+                ['yoy', 'ytd', 'm2', 'mtm', 'mtd', 'h2', 'current', 'rka', 'rka_dec'].forEach(function (metricName) {
+                    if (group === 'deltas' && metricName !== 'yoy' && metricName !== 'ytd' && metricName !== 'mtd' && metricName !== 'dtd') {
                         return;
                     }
 
@@ -1796,8 +1815,8 @@
 
             ['values', 'deltas'].forEach(function (group) {
                 const metricNames = group === 'values'
-                    ? ['yoy', 'ytd', 'mtm', 'mtd', 'h1', 'current', 'rka', 'rka_dec']
-                    : ['yoy', 'ytd', 'dtd'];
+                    ? ['yoy', 'ytd', 'm2', 'mtm', 'mtd', 'h2', 'current', 'rka', 'rka_dec']
+                    : ['yoy', 'ytd', 'mtd', 'dtd'];
 
                 metricNames.forEach(function (metricName) {
                     rowsByKey.casa_pct[group][metricName] = safePercent(rowsByKey.total_casa[group][metricName], rowsByKey.total_simpanan[group][metricName]);
@@ -1819,8 +1838,8 @@
             const scopedPayload = applyScopeToPayload(payload);
             const rows = scopedPayload.rows || [];
             const periods = scopedPayload.comparison_periods || {};
-            const hasH1 = Boolean(periods.h1 && periods.h1.period);
-            const emptyColspan = hasH1 ? 15 : 14;
+            const hasH2 = Boolean(periods.h2 && periods.h2.period);
+            const emptyColspan = hasH2 ? 16 : 15;
             const blockClassMap = {
                 total_simpanan: 'metric-block-simpanan',
                 total_os: 'metric-block-os',
@@ -1852,7 +1871,7 @@
             };
             const scopeMode = getUnitScopeMode();
 
-            togglePositionColumns(hasH1);
+            togglePositionColumns(hasH2);
 
             if (!rows.length) {
                 body.innerHTML = '<tr><td colspan="' + emptyColspan + '" class="daily-empty"><i class="fas fa-box-open mr-2 text-muted"></i>Tidak ada data untuk filter terpilih.</td></tr>';
@@ -1881,16 +1900,18 @@
                 rowCells.push('<td class="sticky-label"><span class="metric-label" title="' + escapeHtml(row.label) + '">' + escapeHtml(row.label) + '</span></td>');
                 rowCells.push('<td class="value-col position-col"><span class="cell-text">' + formatValue(value.yoy, row.type) + '</span></td>');
                 rowCells.push('<td class="value-col position-col"><span class="cell-text">' + formatValue(value.ytd, row.type) + '</span></td>');
+                rowCells.push('<td class="value-col position-col"><span class="cell-text">' + formatValue(value.m2, row.type) + '</span></td>');
                 rowCells.push('<td class="value-col position-col"><span class="cell-text">' + formatValue(value.mtm, row.type) + '</span></td>');
                 rowCells.push('<td class="value-col position-col"><span class="cell-text">' + formatValue(value.mtd, row.type) + '</span></td>');
 
-                if (hasH1) {
-                    rowCells.push('<td class="value-col position-col position-col-h1" data-position-col="h1"><span class="cell-text">' + formatValue(value.h1, row.type) + '</span></td>');
+                if (hasH2) {
+                    rowCells.push('<td class="value-col position-col position-col-h2" data-position-col="h2"><span class="cell-text">' + formatValue(value.h2, row.type) + '</span></td>');
                 }
 
                 rowCells.push('<td class="value-col position-col metric-value font-weight-bold bg-light"><span class="cell-text text-primary">' + formatValue(value.current, row.type) + '</span></td>');
                 rowCells.push('<td class="value-col delta-col ' + deltaClass(delta.yoy) + '"><span class="cell-text">' + formatValue(delta.yoy, row.type) + '</span></td>');
                 rowCells.push('<td class="value-col delta-col ' + deltaClass(delta.ytd) + '"><span class="cell-text">' + formatValue(delta.ytd, row.type) + '</span></td>');
+                rowCells.push('<td class="value-col delta-col ' + deltaClass(delta.mtd) + '"><span class="cell-text">' + formatValue(delta.mtd, row.type) + '</span></td>');
                 rowCells.push('<td class="value-col delta-col ' + deltaClass(delta.dtd) + '"><span class="cell-text">' + formatValue(delta.dtd, row.type) + '</span></td>');
                 rowCells.push('<td class="value-col rka-col"><span class="cell-text">' + formatValue(value.rka, row.type) + '</span></td>');
                 rowCells.push('<td class="value-col rka-col ' + deltaClass(rkaComparison.rka.delta) + '"><span class="cell-text">' + formatValue(rkaComparison.rka.delta, row.type) + '</span><span class="daily-rka-subnote">' + formatAchievement(rkaComparison.rka.achievement) + '</span></td>');
@@ -1919,7 +1940,7 @@
             const summary = scopedPayload.summary || {};
             const periods = scopedPayload.comparison_periods || {};
             const filters = scopedPayload.available_filters || payload.available_filters || initialFilters;
-            const hasH1 = Boolean(periods.h1 && periods.h1.period);
+            const hasH2 = Boolean(periods.h2 && periods.h2.period);
             latestFilters = filters;
             const current = currentState();
 
@@ -1942,17 +1963,19 @@
 
             setTextContent(headerLabels.yoy, periods.yoy ? formatDateSlash(periods.yoy.period) : '-');
             setTextContent(headerLabels.ytd, periods.ytd ? formatDateSlash(periods.ytd.period) : '-');
+            setTextContent(headerLabels.m2, periods.m2 ? formatDateSlash(periods.m2.period) : '-');
             setTextContent(headerLabels.mtm, periods.mtm ? formatDateSlash(periods.mtm.period) : '-');
             setTextContent(headerLabels.mtd, periods.mtd ? formatDateSlash(periods.mtd.period) : '-');
-            setTextContent(headerLabels.h1, hasH1 ? formatDateSlash(periods.h1.period) : '-');
+            setTextContent(headerLabels.h2, hasH2 ? formatDateSlash(periods.h2.period) : '-');
             setTextContent(headerLabels.current, scopedPayload.selected_period ? formatDateSlash(scopedPayload.selected_period) : '-');
             setTextContent(headerLabels.rka, periods.rka ? 'RKA ' + String(formatMonthYear(periods.rka.period)).toUpperCase() : 'RKA');
             setTextContent(headerLabels.rkaDec, periods.rka_dec ? 'RKA ' + String(formatMonthYear(periods.rka_dec.period)).toUpperCase() : 'RKA Des');
             setTextContent(headerLabels.deltaYoy, periods.yoy ? formatDateSlash(periods.yoy.period) : '-');
             setTextContent(headerLabels.deltaYtd, periods.ytd ? formatDateSlash(periods.ytd.period) : '-');
-            setTextContent(headerLabels.deltaDtd, hasH1 ? formatDateSlash(periods.h1.period) : '-');
+            setTextContent(headerLabels.deltaMtd, periods.mtd ? formatDateSlash(periods.mtd.period) : '-');
+            setTextContent(headerLabels.deltaDtd, hasH2 ? formatDateSlash(periods.h2.period) : '-');
 
-            togglePositionColumns(hasH1);
+            togglePositionColumns(hasH2);
 
             renderTable(scopedPayload);
         };
@@ -1995,8 +2018,8 @@
                 })
                 .catch(function (error) {
                     console.error('Gagal memuat data dashboard harian.', error);
-                    const hidden = positionH1Header && positionH1Header.classList.contains('position-col-hidden');
-                    body.innerHTML = '<tr><td colspan="' + (hidden ? 14 : 15) + '" class="daily-empty text-danger"><i class="fas fa-exclamation-triangle mr-2"></i>Gagal memuat data dashboard harian.</td></tr>';
+                    const hidden = positionH2Header && positionH2Header.classList.contains('position-col-hidden');
+                    body.innerHTML = '<tr><td colspan="' + (hidden ? 15 : 16) + '" class="daily-empty text-danger"><i class="fas fa-exclamation-triangle mr-2"></i>Gagal memuat data dashboard harian.</td></tr>';
                 })
                 .finally(function () {
                     tableRegion.classList.remove('daily-loading');

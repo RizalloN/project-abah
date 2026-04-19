@@ -153,9 +153,11 @@ class ExcelQueuedImportService
                         ? (
                             $tableName === 'daily_loan_dinamis'
                                 ? 'Menjalankan direct Daily Loan CSV import...'
+                                : ($tableName === 'lw325_ph'
+                                    ? 'Menjalankan direct LW325 - PH CSV import...'
                                 : (in_array($tableName, ['ssa_simpanan', 'ssa_pinjaman'], true)
                                     ? 'Menjalankan direct ' . ($tableName === 'ssa_pinjaman' ? 'SSA Pinjaman' : 'SSA Simpanan') . ' CSV import...'
-                                    : 'Menjalankan direct CSV import...')
+                                    : 'Menjalankan direct CSV import...'))
                         )
                         : ($mode === 'bulk_csv_filtered'
                             ? 'Menyiapkan CSV staging terfilter untuk bulk load MySQL...'
@@ -177,7 +179,8 @@ class ExcelQueuedImportService
                         $normalizedHeaders,
                         $jobId,
                         $totalDataRows,
-                        $delimiter
+                        $delimiter,
+                        $params
                     ): array {
                         try {
                             return [
@@ -188,7 +191,8 @@ class ExcelQueuedImportService
                                     $normalizedHeaders,
                                     $jobId,
                                     $totalDataRows,
-                                    $delimiter
+                                    $delimiter,
+                                    $params
                                 ),
                             ];
                         } catch (\Throwable $e) {
@@ -209,7 +213,8 @@ class ExcelQueuedImportService
                         $activeFilters,
                         $jobId,
                         $totalDataRows,
-                        $delimiter
+                        $delimiter,
+                        $params
                     ): array {
                         try {
                             return [
@@ -221,7 +226,8 @@ class ExcelQueuedImportService
                                     $activeFilters,
                                     $jobId,
                                     max(0, $totalDataRows),
-                                    $delimiter
+                                    $delimiter,
+                                    $params
                                 ),
                             ];
                         } catch (\Throwable $e) {
@@ -243,9 +249,10 @@ class ExcelQueuedImportService
                         $jobId,
                         $resolvedTotalRows,
                         $totalDataRows,
-                        $delimiter
+                        $delimiter,
+                        $params
                     ): array {
-                        $forceDirectLoad = $tableName === 'simpanan_multipn';
+                        $forceDirectLoad = in_array($tableName, ['simpanan_multipn', 'lw325_ph'], true);
 
                         return [
                             'handled' => ($callbacks['process_staged_csv_stream'])(
@@ -257,7 +264,9 @@ class ExcelQueuedImportService
                                 $jobId,
                                 $resolvedTotalRows !== null ? $totalDataRows : null,
                                 $delimiter,
-                                $forceDirectLoad
+                                $forceDirectLoad,
+                                null,
+                                $params
                             ),
                         ];
                     },

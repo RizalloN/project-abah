@@ -366,11 +366,13 @@ class DashboardHarianSnapshotService
 
         return [
             'current' => $selectedPeriod,
-            'yoy' => $this->resolveEffectivePeriod($selected->copy()->subYearNoOverflow()->toDateString()),
-            'ytd' => $this->resolveEffectivePeriod($selected->copy()->subYearNoOverflow()->endOfYear()->toDateString()),
-            'mtm' => $this->resolveEffectivePeriod($selected->copy()->subMonthNoOverflow()->toDateString()),
-            'mtd' => $this->resolveEffectivePeriod($selected->copy()->subMonthNoOverflow()->endOfMonth()->toDateString()),
+            'yoy' => $this->resolveEffectivePeriod($selected->copy()->subYearsNoOverflow(1)->endOfMonth()->toDateString()),
+            'ytd' => $this->resolveEffectivePeriod($selected->copy()->subYearsNoOverflow(1)->endOfYear()->toDateString()),
+            'm2' => $this->resolveEffectivePeriod($selected->copy()->subMonthsNoOverflow(2)->endOfMonth()->toDateString()),
+            'mtm' => $this->resolveEffectivePeriod($selected->copy()->subMonthsNoOverflow(1)->toDateString()),
+            'mtd' => $this->resolveEffectivePeriod($selected->copy()->subMonthsNoOverflow(1)->endOfMonth()->toDateString()),
             'h1' => $this->resolvePreviousPeriod($selectedPeriod),
+            'h2' => $this->resolvePreviousNthPeriod($selectedPeriod, 2),
             'rka' => $resolvedRka,
             'rka_dec' => $resolvedRka ? Carbon::parse($resolvedRka)->month(12)->startOfMonth()->toDateString() : null,
         ];
@@ -505,9 +507,10 @@ class DashboardHarianSnapshotService
         $currentMetrics = $metricsByPeriod[$comparisonPeriods['current']] ?? $this->finalizeMetrics($this->emptyMetrics());
         $yoyMetrics = $comparisonPeriods['yoy'] ? ($metricsByPeriod[$comparisonPeriods['yoy']] ?? $this->finalizeMetrics($this->emptyMetrics())) : $this->finalizeMetrics($this->emptyMetrics());
         $ytdMetrics = $comparisonPeriods['ytd'] ? ($metricsByPeriod[$comparisonPeriods['ytd']] ?? $this->finalizeMetrics($this->emptyMetrics())) : $this->finalizeMetrics($this->emptyMetrics());
+        $m2Metrics = $comparisonPeriods['m2'] ? ($metricsByPeriod[$comparisonPeriods['m2']] ?? $this->finalizeMetrics($this->emptyMetrics())) : $this->finalizeMetrics($this->emptyMetrics());
         $mtmMetrics = $comparisonPeriods['mtm'] ? ($metricsByPeriod[$comparisonPeriods['mtm']] ?? $this->finalizeMetrics($this->emptyMetrics())) : $this->finalizeMetrics($this->emptyMetrics());
         $mtdMetrics = $comparisonPeriods['mtd'] ? ($metricsByPeriod[$comparisonPeriods['mtd']] ?? $this->finalizeMetrics($this->emptyMetrics())) : $this->finalizeMetrics($this->emptyMetrics());
-        $h1Metrics = $comparisonPeriods['h1'] ? ($metricsByPeriod[$comparisonPeriods['h1']] ?? $this->finalizeMetrics($this->emptyMetrics())) : $this->finalizeMetrics($this->emptyMetrics());
+        $h2Metrics = $comparisonPeriods['h2'] ? ($metricsByPeriod[$comparisonPeriods['h2']] ?? $this->finalizeMetrics($this->emptyMetrics())) : $this->finalizeMetrics($this->emptyMetrics());
         $rkaMetrics = $this->buildRkaMetrics($comparisonPeriods['rka'], $selectedPeriod, $kancaKey, $unitKey, false);
         $rkaDecMetrics = $this->buildRkaMetrics($comparisonPeriods['rka'], $selectedPeriod, $kancaKey, $unitKey, true);
 
@@ -515,9 +518,10 @@ class DashboardHarianSnapshotService
             $currentMetrics,
             $yoyMetrics,
             $ytdMetrics,
+            $m2Metrics,
             $mtmMetrics,
             $mtdMetrics,
-            $h1Metrics,
+            $h2Metrics,
             $rkaMetrics,
             $rkaDecMetrics
         ) {
@@ -532,9 +536,10 @@ class DashboardHarianSnapshotService
                 'values' => [
                     'yoy' => (float) ($yoyMetrics[$metricKey] ?? 0),
                     'ytd' => (float) ($ytdMetrics[$metricKey] ?? 0),
+                    'm2' => (float) ($m2Metrics[$metricKey] ?? 0),
                     'mtm' => (float) ($mtmMetrics[$metricKey] ?? 0),
                     'mtd' => (float) ($mtdMetrics[$metricKey] ?? 0),
-                    'h1' => (float) ($h1Metrics[$metricKey] ?? 0),
+                    'h2' => (float) ($h2Metrics[$metricKey] ?? 0),
                     'current' => (float) ($currentMetrics[$metricKey] ?? 0),
                     'rka' => (float) ($rkaMetrics[$metricKey] ?? 0),
                     'rka_dec' => (float) ($rkaDecMetrics[$metricKey] ?? 0),
@@ -546,7 +551,8 @@ class DashboardHarianSnapshotService
                 'deltas' => [
                     'yoy' => (float) ($currentMetrics[$metricKey] ?? 0) - (float) ($yoyMetrics[$metricKey] ?? 0),
                     'ytd' => (float) ($currentMetrics[$metricKey] ?? 0) - (float) ($ytdMetrics[$metricKey] ?? 0),
-                    'dtd' => (float) ($currentMetrics[$metricKey] ?? 0) - (float) ($h1Metrics[$metricKey] ?? 0),
+                    'mtd' => (float) ($currentMetrics[$metricKey] ?? 0) - (float) ($mtdMetrics[$metricKey] ?? 0),
+                    'dtd' => (float) ($currentMetrics[$metricKey] ?? 0) - (float) ($h2Metrics[$metricKey] ?? 0),
                 ],
             ];
         })->values()->all();
@@ -563,8 +569,10 @@ class DashboardHarianSnapshotService
             'comparison_periods' => [
                 'yoy' => ['period' => $comparisonPeriods['yoy'], 'label' => $this->formatPeriodLabel($comparisonPeriods['yoy'])],
                 'ytd' => ['period' => $comparisonPeriods['ytd'], 'label' => $this->formatPeriodLabel($comparisonPeriods['ytd'])],
+                'm2' => ['period' => $comparisonPeriods['m2'], 'label' => $this->formatPeriodLabel($comparisonPeriods['m2'])],
                 'mtm' => ['period' => $comparisonPeriods['mtm'], 'label' => $this->formatPeriodLabel($comparisonPeriods['mtm'])],
                 'mtd' => ['period' => $comparisonPeriods['mtd'], 'label' => $this->formatPeriodLabel($comparisonPeriods['mtd'])],
+                'h2' => ['period' => $comparisonPeriods['h2'], 'label' => $this->formatPeriodLabel($comparisonPeriods['h2'])],
                 'h1' => ['period' => $comparisonPeriods['h1'], 'label' => $this->formatPeriodLabel($comparisonPeriods['h1'])],
                 'rka' => ['period' => $comparisonPeriods['rka'], 'label' => $this->formatMonthLabel($comparisonPeriods['rka'])],
                 'rka_dec' => ['period' => $comparisonPeriods['rka_dec'], 'label' => $this->formatPeriodLabel($comparisonPeriods['rka_dec'])],
@@ -812,7 +820,13 @@ class DashboardHarianSnapshotService
         }
 
         $previousPhPeriod = $this->resolvePreviousPhPeriod($normalizedCurrentPeriod);
+        
+        // If no previous period, we can't calculate delta/recovery normally.
+        // However, if it's the start of the series, we might want to return an empty 
+        // collection with initialized keys rather than a completely empty result.
         if ($previousPhPeriod === null) {
+            // Check if user wants to see at least the segments (they will be 0)
+            // or if we should fallback to another logic.
             return collect();
         }
 
@@ -831,9 +845,11 @@ class DashboardHarianSnapshotService
             ->selectRaw("TRIM(COALESCE(n.kanca, '')) as raw_kanca")
             ->selectRaw("TRIM(COALESCE(n.unit, '')) as raw_unit")
             ->selectRaw("TRIM(COALESCE(n.segmen_dashboard, '')) as raw_segment")
-            ->selectRaw('SUM(COALESCE(n.pokok, 0)) as ph_tupok')
+            // Tupok mengikuti outstanding pokok periode sebelumnya untuk akun yang masih ada
+            // dan mengalami penurunan pokok pada periode berjalan.
+            ->selectRaw('SUM(COALESCE(o.pokok, 0)) as ph_tupok')
             ->selectRaw('0 as ph_lunas')
-            ->selectRaw('SUM(COALESCE(n.pokok, 0)) as ph_amount')
+            ->selectRaw('SUM(COALESCE(o.pokok, 0)) as ph_amount')
             ->groupBy('raw_kanca', 'raw_unit', 'raw_segment');
 
         if ($normalizedKanca !== []) {
@@ -1329,17 +1345,33 @@ class DashboardHarianSnapshotService
 
     private function resolvePreviousPeriod(string $period): ?string
     {
+        return $this->resolvePreviousNthPeriod($period, 1);
+    }
+
+    private function resolvePreviousNthPeriod(string $period, int $n = 1): ?string
+    {
         try {
             if (Schema::hasTable(self::SNAPSHOT_TABLE) && DB::table(self::SNAPSHOT_TABLE)->exists()) {
-                return DB::table(self::SNAPSHOT_TABLE)
+                $periods = DB::table(self::SNAPSHOT_TABLE)
                     ->where('snapshot_period', '<', $period)
-                    ->max('snapshot_period');
+                    ->select('snapshot_period')
+                    ->distinct()
+                    ->orderByDesc('snapshot_period')
+                    ->limit($n)
+                    ->pluck('snapshot_period');
+
+                return $periods->get($n - 1);
             }
         } catch (Throwable) {
             // Fall through to shared periods.
         }
 
-        return $this->resolveEffectivePeriod(Carbon::parse($period)->subDay()->toDateString());
+        $shared = $this->resolveSharedPeriods();
+        $filtered = array_filter($shared, fn ($p) => $p < $period);
+        rsort($filtered);
+        $values = array_values($filtered);
+
+        return $values[$n - 1] ?? null;
     }
 
     private function sourcePeriodExists(string $table, string $period): bool

@@ -426,6 +426,14 @@ class ImportExecutionService
             return false;
         }
 
+        $jobId = (int) ($payload['job_id'] ?? 0);
+        if ($jobId > 0) {
+            $state = $this->progressService->getJobState($jobId);
+            if ((bool) (($state['params']['disable_inline_fallback'] ?? false))) {
+                return false;
+            }
+        }
+
         return (time() - $startedAt) >= $this->inlineFallbackGraceSeconds();
     }
 

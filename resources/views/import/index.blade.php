@@ -1521,7 +1521,16 @@
             updateReportSummary();
         }
         function toggleForm() {
-            const { reportName, tableName, importController } = getSelectedReportMeta();
+            const meta = getSelectedReportMeta();
+            const { 
+                reportName, 
+                tableName, 
+                importController, 
+                requiresManualPeriode, 
+                manualPeriodeType, 
+                manualPeriodeLabel, 
+                manualPeriodeHelp 
+            } = meta;
             const isDailyLoan = reportName.includes('daily loan');
             const isSimpanan = reportName.includes('simpanan multipn');
             const isPerformancePis = reportName.includes('performance pis per produk');
@@ -1770,12 +1779,19 @@
                 formExcel.style.display = 'block';
                 inputExcel.disabled = false;
                 inputExcel.required = true;
-                inputExcel.setAttribute('accept', '.xlsx,.xls');
+                
+                // RKA support CSV as per user request
+                const accept = isRka ? '.xlsx,.xls,.csv' : '.xlsx,.xls';
+                inputExcel.setAttribute('accept', accept);
+                
                 formImport.action = "{{ route('import.excel.upload') }}";
                 formImport.dataset.preparePreviewUrl = "{{ route('import.excel.prepare-preview') }}";
 
                 if (excelLabel) {
-                    excelLabel.innerHTML = '<i class="fas fa-file-excel mr-1"></i> Upload File Excel (.xlsx, .xls)';
+                    const labelText = isRka 
+                        ? '<i class="fas fa-file-excel mr-1"></i> Upload File RKA (.xlsx, .xls, .csv)'
+                        : '<i class="fas fa-file-excel mr-1"></i> Upload File Excel (.xlsx, .xls)';
+                    excelLabel.innerHTML = labelText;
                 }
 
                 if (excelHelp) {
@@ -1783,19 +1799,20 @@
                 }
 
                 configurePeriodeInput(buildManualPeriodeOptions({
-                    visible: false,
-                    required: false,
-                    type: 'date',
-                    label: 'Periode',
-                    help: 'Pilih periode manual sesuai kebutuhan report.',
+                    visible: requiresManualPeriode,
+                    required: requiresManualPeriode,
+                    type: manualPeriodeType || 'date',
+                    label: manualPeriodeLabel || 'Periode',
+                    help: manualPeriodeHelp || 'Pilih periode manual sesuai kebutuhan report.',
                 }));
+
                 configureKancaInput({
                     visible: isRka,
                     required: isRka,
-                    label: 'Kanca',
-                    help: 'Pilih Kanca untuk mengisi kolom `kanca` pada semua baris import RKA.',
+                    label: 'Pilih Cabang (Kanca)',
+                    help: 'Pilih Cabang untuk mengisi kolom `kanca` pada semua baris import RKA.',
                 });
-                applyButtonState('excel', '<i class="fas fa-file-excel"></i> Upload Excel');
+                applyButtonState('excel', '<i class="fas fa-file-excel"></i> Upload File');
                 updateReportSummary();
                 updateFileSelectionUI();
                 return;

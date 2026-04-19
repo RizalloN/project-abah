@@ -29,6 +29,7 @@ class ImportExcelControllerRkaManualKancaTest extends TestCase
             $table->string('uniqueid_namareport')->primary();
             $table->string('desc_kanwil')->nullable();
             $table->string('desc_uker')->nullable();
+            $table->unsignedInteger('tahun')->nullable();
             $table->string('kanca')->nullable();
             $table->timestamp('created_at')->nullable();
             $table->timestamp('updated_at')->nullable();
@@ -79,11 +80,12 @@ class ImportExcelControllerRkaManualKancaTest extends TestCase
     public function test_build_import_context_uses_manual_kanca_from_queue_state_when_session_is_unavailable(): void
     {
         session()->forget('excel_manual_kanca');
+        session()->forget('excel_manual_periode');
 
         $controller = new class extends ImportExcelController {
             protected function schemaColumnsForBulkImport(string $tableName): array
             {
-                return ['uniqueid_namareport', 'desc_kanwil', 'desc_uker', 'kanca', 'created_at', 'updated_at'];
+                return ['uniqueid_namareport', 'desc_kanwil', 'desc_uker', 'tahun', 'kanca', 'created_at', 'updated_at'];
             }
 
             protected function tableColumnMetadataForBulkImport(string $tableName): array
@@ -96,14 +98,43 @@ class ImportExcelControllerRkaManualKancaTest extends TestCase
         $method->setAccessible(true);
         $context = $method->invoke($controller, 'rka', ['DESC_KANWIL', 'DESC_UKER'], [], [
             'manual_kanca' => 'KC Madiun',
+            'manual_periode' => '2026',
         ]);
 
-        $this->assertSame(['kanca' => 'KC Madiun'], $context['manual_column_values']);
+        $this->assertSame(['kanca' => 'KC Madiun', 'tahun' => 2026], $context['manual_column_values']);
+    }
+
+    public function test_build_import_context_uses_derived_rka_values_when_manual_values_missing(): void
+    {
+        session()->forget('excel_manual_kanca');
+        session()->forget('excel_manual_periode');
+
+        $controller = new class extends ImportExcelController {
+            protected function schemaColumnsForBulkImport(string $tableName): array
+            {
+                return ['uniqueid_namareport', 'desc_kanwil', 'desc_uker', 'tahun', 'kanca', 'created_at', 'updated_at'];
+            }
+
+            protected function tableColumnMetadataForBulkImport(string $tableName): array
+            {
+                return [];
+            }
+        };
+
+        $method = new ReflectionMethod(ImportExcelController::class, 'buildImportContext');
+        $method->setAccessible(true);
+        $context = $method->invoke($controller, 'rka', ['DESC_KANWIL', 'DESC_UKER'], [], [
+            'derived_kanca' => 'KC Madiun',
+            'derived_tahun' => 2026,
+        ]);
+
+        $this->assertSame(['kanca' => 'KC Madiun', 'tahun' => 2026], $context['manual_column_values']);
     }
 
     public function test_manual_kanca_is_injected_into_rka_preview_payload_and_source_headers(): void
     {
         session(['excel_manual_kanca' => 'KC Ponorogo']);
+        session(['excel_manual_periode' => '2026']);
 
         $controller = new class extends ImportExcelController {
             protected function schemaColumnsForBulkImport(string $tableName): array
@@ -111,6 +142,7 @@ class ImportExcelControllerRkaManualKancaTest extends TestCase
                 return [
                     'uniqueid_namareport',
                     'desc_kanwil',
+                    'tahun',
                     'kanca',
                     'desc_uker',
                     'rka_key',
@@ -137,9 +169,10 @@ class ImportExcelControllerRkaManualKancaTest extends TestCase
             ]],
         ], ['desc_kanwil', 'desc_uker']);
 
-        $this->assertSame(['desc_kanwil', 'kanca', 'desc_uker'], array_map('strtolower', $payload['headers']));
+        $this->assertSame(['desc_kanwil', 'tahun', 'kanca', 'desc_uker'], array_map('strtolower', $payload['headers']));
         $this->assertSame('KC Ponorogo', $payload['preview'][0]['kanca']);
-        $this->assertSame(['desc_kanwil', 'kanca', 'desc_uker'], array_map('strtolower', $payload['sourceHeaders']));
+        $this->assertSame(2026, $payload['preview'][0]['tahun']);
+        $this->assertSame(['desc_kanwil', 'tahun', 'kanca', 'desc_uker'], array_map('strtolower', $payload['sourceHeaders']));
     }
 
     public function test_rka_manual_kanca_can_be_applied_after_load_using_batch_prefix(): void
@@ -147,7 +180,7 @@ class ImportExcelControllerRkaManualKancaTest extends TestCase
         $controller = new class extends ImportExcelController {
             protected function schemaColumnsForBulkImport(string $tableName): array
             {
-                return ['uniqueid_namareport', 'desc_kanwil', 'kanca', 'desc_uker', 'created_at', 'updated_at'];
+                return ['uniqueid_namareport', 'desc_kanwil', 'tahun', 'kanca', 'desc_uker', 'created_at', 'updated_at'];
             }
 
             protected function tableColumnMetadataForBulkImport(string $tableName): array
@@ -205,7 +238,7 @@ class ImportExcelControllerRkaManualKancaTest extends TestCase
         $controller = new class extends ImportExcelController {
             protected function schemaColumnsForBulkImport(string $tableName): array
             {
-                return ['uniqueid_namareport', 'desc_kanwil', 'kanca', 'desc_uker', 'created_at', 'updated_at'];
+                return ['uniqueid_namareport', 'desc_kanwil', 'tahun', 'kanca', 'desc_uker', 'created_at', 'updated_at'];
             }
 
             protected function tableColumnMetadataForBulkImport(string $tableName): array
@@ -218,6 +251,7 @@ class ImportExcelControllerRkaManualKancaTest extends TestCase
         $contextMethod->setAccessible(true);
         $context = $contextMethod->invoke($controller, 'rka', ['DESC_KANWIL', 'DESC_UKER'], [], [
             'manual_kanca' => 'KC Ponorogo',
+            'manual_periode' => '2026',
         ]);
 
         $mapMethod = new ReflectionMethod(ImportExcelController::class, 'mapExcelRowForInsert');
@@ -229,8 +263,41 @@ class ImportExcelControllerRkaManualKancaTest extends TestCase
 
         $this->assertIsArray($row);
         $this->assertSame('KC Ponorogo', $row['kanca']);
+        $this->assertSame(2026, $row['tahun']);
         $this->assertNotEmpty($row['uniqueid_namareport']);
-        $this->assertStringStartsWith($context['unique_id_prefix'] . '_', $row['uniqueid_namareport']);
-        $this->assertStringEndsWith('_DLD', $row['uniqueid_namareport']);
+        $this->assertStringStartsWith('uuid_rka_', $row['uniqueid_namareport']);
+        $this->assertStringNotContainsString('_DLD', $row['uniqueid_namareport']);
+    }
+
+    public function test_rka_row_derived_kanca_uses_desc_uker_when_manual_kanca_is_missing(): void
+    {
+        session()->forget('excel_manual_kanca');
+        session(['excel_manual_periode' => '2026']);
+
+        $controller = new class extends ImportExcelController {
+            protected function schemaColumnsForBulkImport(string $tableName): array
+            {
+                return ['uniqueid_namareport', 'desc_kanwil', 'tahun', 'kanca', 'desc_uker', 'created_at', 'updated_at'];
+            }
+
+            protected function tableColumnMetadataForBulkImport(string $tableName): array
+            {
+                return [];
+            }
+        };
+
+        $contextMethod = new ReflectionMethod(ImportExcelController::class, 'buildImportContext');
+        $contextMethod->setAccessible(true);
+        $context = $contextMethod->invoke($controller, 'rka', ['DESC_KANWIL', 'DESC_UKER'], [], []);
+
+        $mapMethod = new ReflectionMethod(ImportExcelController::class, 'mapExcelRowForInsert');
+        $mapMethod->setAccessible(true);
+        $row = $mapMethod->invoke($controller, [
+            'R-KANWIL MALANG',
+            '45-KC Madiun',
+        ], ['DESC_KANWIL', 'DESC_UKER'], $context, '2026-04-15 10:00:00');
+
+        $this->assertSame('KC Madiun', $row['kanca']);
+        $this->assertSame(2026, $row['tahun']);
     }
 }

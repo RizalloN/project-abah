@@ -237,8 +237,8 @@
 
         function getVisibleCheckboxes() {
             return getCheckboxes().filter((checkbox) => {
-                const row = checkbox.closest('.file-management-row');
-                return row && !row.classList.contains('d-none');
+                const row = checkbox.closest('.fm-table-row');
+                return row && !row.classList.contains('d-none') && !checkbox.disabled;
             });
         }
 
@@ -258,7 +258,7 @@
         function applySearch() {
             const keyword = String(searchInput?.value || '').trim().toLowerCase();
             getCheckboxes().forEach((checkbox) => {
-                const row = checkbox.closest('.file-management-row');
+                const row = checkbox.closest('.fm-table-row');
                 if (!row) return;
                 const haystack = String(row.getAttribute('data-search') || '');
                 row.classList.toggle('d-none', keyword && !haystack.includes(keyword));
@@ -326,7 +326,9 @@
         selectAll?.addEventListener('change', function () {
             const visible = getVisibleCheckboxes();
             visible.forEach((checkbox) => {
-                checkbox.checked = !!selectAll.checked;
+                if (!checkbox.disabled) {
+                    checkbox.checked = !!selectAll.checked;
+                }
             });
             updateSelectionState();
         });
@@ -408,34 +410,109 @@
                 cancelButtonText: 'Batal',
             });
 
-            if (!confirm.isConfirmed) {
-                return;
-            }
+            if (!confirm.isConfirmed) return;
 
             btnBackup.disabled = true;
             try {
-                const payload = await postJson(backupUrl, {});
-                const downloadUrl = String(payload?.file?.download_url || '').trim();
+                const startPayload = await postJson(backupUrl, {});
+                const backupId = startPayload.backup_id;
 
-                await themedSwal({
-                    icon: 'success',
-                    title: 'Backup Selesai',
-                    html: `File <b>${escapeHtml(payload?.file?.name || 'backup.sql')}</b> berhasil dibuat.`,
+                if (!backupId) throw new Error('Gagal menginisialisasi proses backup.');
+
+                let polling = true;
+                const statusUrlTemplate = '{{ route("file-management.database-backup.status", ["backupId" => ":id"]) }}';
+
+                Swal.fire({
+                    title: 'Memproses Backup...',
+                    html: `
+                        <div class="mb-3">
+                            <div class="progress" style="height: 25px; border-radius: 12px; overflow: hidden; background: #f1f5f9; border: 1px solid #e2e8f0;">
+                                <div id="backup-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" 
+                                    role="progressbar" style="width: 0%; background: linear-gradient(90deg, #0857c3, #307fe2); transition: width 0.4s ease; font-weight: 800; font-size: 0.85rem; text-shadow: 0 1px 2px rgba(0,0,0,0.2);">
+                                    0%
+                                </div>
+                            </div>
+                        </div>
+                        <div id="backup-status-text" class="text-muted small fw-bold" style="letter-spacing: 0.02em;">Menyiapkan database...</div>
+                    `,
+                    allowOutsideClick: false,
+                    allowEscapeKey: false,
+                    showConfirmButton: false,
+                    didOpen: () => {
+                        const poll = async () => {
+                            if (!polling) return;
+                            try {
+                                const statusUrl = statusUrlTemplate.replace(':id', backupId);
+                                const response = await fetch(statusUrl);
+                                if (!response.ok) throw new Error('Gagal mengambil status backup.');
+                                
+                                const status = await response.json();
+
+                                if (status.status === 'processing' || status.status === 'starting') {
+                                    const percent = status.progress_percent || 0;
+                                    const bar = document.getElementById('backup-progress-bar');
+                                    const text = document.getElementById('backup-status-text');
+                                    
+                                    if (bar) {
+                                        bar.style.width = percent + '%';
+                                        bar.innerText = percent + '%';
+                                    }
+                                    if (text) text.innerText = status.message || 'Mencadangkan data...';
+
+                                    setTimeout(poll, 700);
+                                } else if (status.status === 'completed') {
+                                    polling = false;
+                                    Swal.close();
+                                    
+                                    await themedSwal({
+                                        icon: 'success',
+                                        title: 'Backup Selesai',
+                                        html: `File <b>${escapeHtml(status.file.name)}</b> berhasil dibuat.`,
+                                    });
+
+                                    if (status.file.download_url) {
+                                        window.location.assign(status.file.download_url);
+                                    }
+                                    window.setTimeout(() => window.location.reload(), 700);
+                                } else if (status.status === 'failed') {
+                                    polling = false;
+                                    throw new Error(status.message || 'Backup gagal diproses.');
+                                } else {
+                                    setTimeout(poll, 1000);
+                                }
+                            } catch (error) {
+                                polling = false;
+                                Swal.close();
+                                themedSwal({
+                                    icon: 'error',
+                                    title: 'Backup Gagal',
+                                    text: error.message
+                                });
+                                btnBackup.disabled = false;
+                            }
+                        };
+                        poll();
+                    }
                 });
 
-                if (downloadUrl) {
-                    window.location.assign(downloadUrl);
-                }
-
-                window.setTimeout(() => window.location.reload(), 700);
             } catch (error) {
-                await themedSwal({
-                    icon: 'error',
-                    title: 'Backup Gagal',
-                    text: error.message || 'Terjadi kesalahan saat membuat backup database.',
-                });
-            } finally {
                 btnBackup.disabled = false;
+                themedSwal({
+                    icon: 'error',
+                    title: 'Kesalahan',
+                    text: error.message
+                });
+            }
+        });
+
+        tableBody?.addEventListener('click', function (event) {
+            const row = event.target.closest('.fm-table-row');
+            if (!row || event.target.closest('button, input, a')) return;
+
+            const checkbox = row.querySelector('.management-file-checkbox');
+            if (checkbox && !checkbox.disabled) {
+                checkbox.checked = !checkbox.checked;
+                updateSelectionState();
             }
         });
 
@@ -531,7 +608,7 @@
     .fm-table thead th { background: #f8fafc; border-bottom: 1px solid var(--fm-border-color, #e2e8f0); color: #334155; font-size: 0.8rem; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; padding: 1.15rem 1rem; }
     .fm-table tbody td { padding: 1.15rem 1rem; border-top: 1px solid #f1f5f9; vertical-align: middle; }
     .file-management-col-check { width: 60px; }
-    .fm-table-row { transition: background-color 0.18s ease; }
+    .fm-table-row { transition: background-color 0.18s ease; cursor: pointer; }
     .fm-table-row:hover { background-color: #f8fafc; }
     .file-management-filecell { display: flex; align-items: center; gap: 1rem; }
     .file-management-filecell__icon { display: inline-flex; align-items: center; justify-content: center; width: 48px; height: 48px; border-radius: 16px; background: linear-gradient(140deg, #0857c3, #307fe2); color: #fff; font-size: 1.25rem; box-shadow: 0 14px 30px -18px rgba(8,87,195,0.55); }

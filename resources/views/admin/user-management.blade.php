@@ -43,35 +43,35 @@
 
                     <div class="form-group">
                         <label class="font-weight-bold text-dark" for="name">Nama</label>
-                        <input type="text" id="name" name="name" class="form-control user-management-input @error('name') is-invalid @enderror" value="{{ old('name') }}" required>
-                        @error('name')
+                        <input type="text" id="name" name="name" class="form-control user-management-input @error('name', 'createUser') is-invalid @enderror" value="{{ old('name') }}" required>
+                        @error('name', 'createUser')
                             <div class="invalid-feedback">{{ $message }}</div>
                         @enderror
                     </div>
 
                     <div class="form-group">
                         <label class="font-weight-bold text-dark" for="pn">PN</label>
-                        <input type="text" id="pn" name="pn" class="form-control user-management-input @error('pn') is-invalid @enderror" value="{{ old('pn') }}" required>
-                        @error('pn')
+                        <input type="text" id="pn" name="pn" class="form-control user-management-input @error('pn', 'createUser') is-invalid @enderror" value="{{ old('pn') }}" required>
+                        @error('pn', 'createUser')
                             <div class="invalid-feedback">{{ $message }}</div>
                         @enderror
                     </div>
 
                     <div class="form-group">
                         <label class="font-weight-bold text-dark" for="role">Role</label>
-                        <select id="role" name="role" class="form-control user-management-input @error('role') is-invalid @enderror" required>
+                        <select id="role" name="role" class="form-control user-management-input @error('role', 'createUser') is-invalid @enderror" required>
                             <option value="user" {{ old('role') === 'user' ? 'selected' : '' }}>User</option>
                             <option value="admin" {{ old('role') === 'admin' ? 'selected' : '' }}>Admin</option>
                         </select>
-                        @error('role')
+                        @error('role', 'createUser')
                             <div class="invalid-feedback">{{ $message }}</div>
                         @enderror
                     </div>
 
                     <div class="form-group">
                         <label class="font-weight-bold text-dark" for="password">Password Awal</label>
-                        <input type="password" id="password" name="password" class="form-control user-management-input @error('password') is-invalid @enderror" required>
-                        @error('password')
+                        <input type="password" id="password" name="password" class="form-control user-management-input @error('password', 'createUser') is-invalid @enderror" required>
+                        @error('password', 'createUser')
                             <div class="invalid-feedback">{{ $message }}</div>
                         @enderror
                     </div>
@@ -180,7 +180,7 @@
 </div>
 
 @foreach ($users as $userItem)
-    <div class="modal fade" id="editUserModal-{{ $userItem->id }}" tabindex="-1" aria-hidden="true">
+    <div class="modal fade user-management-edit-modal" id="editUserModal-{{ $userItem->id }}" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-lg modal-dialog-centered">
             <div class="modal-content user-management-modal">
                 <div class="modal-header border-0 pb-0">
@@ -196,32 +196,76 @@
                     @csrf
                     @method('PUT')
                     <div class="modal-body pt-3">
+                        @if (session('open_edit_user') == $userItem->id && ($errors->updateUser->any() || $errors->updateUser->has('user_management')))
+                            <div class="user-management-flash user-management-flash--danger mb-3">
+                                <i class="fas fa-exclamation-triangle mr-2"></i>
+                                {{ $errors->updateUser->first('user_management') ?: 'Periksa kembali data yang diisi.' }}
+                            </div>
+                        @endif
                         <div class="row">
                             <div class="col-md-6">
                                 <div class="form-group">
                                     <label class="font-weight-bold text-dark">Nama</label>
-                                    <input type="text" name="name" class="form-control user-management-input" value="{{ $userItem->name }}" required>
+                                    <input
+                                        type="text"
+                                        name="name"
+                                        class="form-control user-management-input @if (session('open_edit_user') == $userItem->id && $errors->updateUser->has('name')) is-invalid @endif"
+                                        value="{{ session('open_edit_user') == $userItem->id ? old('name', $userItem->name) : $userItem->name }}"
+                                        required
+                                    >
+                                    @if (session('open_edit_user') == $userItem->id)
+                                        @error('name', 'updateUser')
+                                            <div class="invalid-feedback">{{ $message }}</div>
+                                        @enderror
+                                    @endif
                                 </div>
                             </div>
                             <div class="col-md-6">
                                 <div class="form-group">
                                     <label class="font-weight-bold text-dark">PN</label>
-                                    <input type="text" name="pn" class="form-control user-management-input" value="{{ $userItem->pn }}" required>
+                                    <input
+                                        type="text"
+                                        name="pn"
+                                        class="form-control user-management-input @if (session('open_edit_user') == $userItem->id && $errors->updateUser->has('pn')) is-invalid @endif"
+                                        value="{{ session('open_edit_user') == $userItem->id ? old('pn', $userItem->pn) : $userItem->pn }}"
+                                        required
+                                    >
+                                    @if (session('open_edit_user') == $userItem->id)
+                                        @error('pn', 'updateUser')
+                                            <div class="invalid-feedback">{{ $message }}</div>
+                                        @enderror
+                                    @endif
                                 </div>
                             </div>
                             <div class="col-md-6">
                                 <div class="form-group">
                                     <label class="font-weight-bold text-dark">Role</label>
-                                    <select name="role" class="form-control user-management-input" required>
-                                        <option value="user" {{ $userItem->role === 'user' ? 'selected' : '' }}>User</option>
-                                        <option value="admin" {{ $userItem->role === 'admin' ? 'selected' : '' }}>Admin</option>
+                                    <select name="role" class="form-control user-management-input @if (session('open_edit_user') == $userItem->id && $errors->updateUser->has('role')) is-invalid @endif" required>
+                                        @php($editRole = session('open_edit_user') == $userItem->id ? old('role', $userItem->role) : $userItem->role)
+                                        <option value="user" {{ $editRole === 'user' ? 'selected' : '' }}>User</option>
+                                        <option value="admin" {{ $editRole === 'admin' ? 'selected' : '' }}>Admin</option>
                                     </select>
+                                    @if (session('open_edit_user') == $userItem->id)
+                                        @error('role', 'updateUser')
+                                            <div class="invalid-feedback d-block">{{ $message }}</div>
+                                        @enderror
+                                    @endif
                                 </div>
                             </div>
                             <div class="col-md-6">
                                 <div class="form-group mb-0">
                                     <label class="font-weight-bold text-dark">Password Baru</label>
-                                    <input type="password" name="password" class="form-control user-management-input" placeholder="Kosongkan jika tidak diubah">
+                                    <input
+                                        type="password"
+                                        name="password"
+                                        class="form-control user-management-input @if (session('open_edit_user') == $userItem->id && $errors->updateUser->has('password')) is-invalid @endif"
+                                        placeholder="Kosongkan jika tidak diubah"
+                                    >
+                                    @if (session('open_edit_user') == $userItem->id)
+                                        @error('password', 'updateUser')
+                                            <div class="invalid-feedback d-block">{{ $message }}</div>
+                                        @enderror
+                                    @endif
                                     <small class="text-muted d-block mt-2">Isi hanya jika ingin reset password user ini.</small>
                                 </div>
                             </div>
@@ -283,6 +327,8 @@
     .user-management-pill--user { background: rgba(226,232,240,0.8); color: #475569; }
     .user-management-action { border-radius: 14px; font-weight: 800; transition: transform 0.2s ease, box-shadow 0.2s ease; }
     .user-management-action:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+    .modal.user-management-edit-modal { z-index: 2055; }
+    .modal-backdrop.user-management-edit-backdrop { z-index: 2050; }
     .user-management-modal { border: 1px solid rgba(226,232,240,0.95); border-radius: 28px; padding: 1.4rem 1.4rem 1.2rem; box-shadow: 0 30px 80px -35px rgba(15,23,42,0.35); }
     .user-management-pagination .page-item .page-link { border-radius: 12px; margin: 0 4px; color: #475569; font-weight: 700; border: 1px solid transparent; background: transparent; transition: all 0.2s ease; }
     .user-management-pagination .page-item:not(.active):not(.disabled) .page-link:hover { background: rgba(37,99,235,0.08); color: #1d4ed8; border-color: rgba(37,99,235,0.1); transform: translateY(-1px); }
@@ -296,4 +342,54 @@
         .user-management-directory-column { min-height: auto; }
     }
 </style>
+@endsection
+
+@section('scripts')
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    if (typeof window.jQuery !== 'undefined') {
+        const $ = window.jQuery;
+
+        $('.user-management-edit-modal').each(function () {
+            const $modal = $(this);
+
+            // Move modal out of page layout containers to avoid stacking issues with AdminLTE wrappers.
+            if (!$modal.parent().is('body')) {
+                $modal.appendTo(document.body);
+            }
+
+            $modal.on('show.bs.modal', function () {
+                const $currentModal = $(this);
+
+                if (!$currentModal.parent().is('body')) {
+                    $currentModal.appendTo(document.body);
+                }
+
+                window.setTimeout(function () {
+                    $('.modal-backdrop').last().addClass('user-management-edit-backdrop');
+                }, 0);
+            });
+
+            $modal.on('hidden.bs.modal', function () {
+                if (!$('.modal.show').length) {
+                    $('body').removeClass('modal-open').css('padding-right', '');
+                    $('.modal-backdrop.user-management-edit-backdrop').remove();
+                }
+            });
+        });
+    }
+
+    const modalId = @json(session('open_edit_user'));
+    if (!modalId || typeof window.jQuery === 'undefined') {
+        return;
+    }
+
+    const modalEl = document.getElementById('editUserModal-' + modalId);
+    if (!modalEl) {
+        return;
+    }
+
+    window.jQuery(modalEl).modal('show');
+});
+</script>
 @endsection

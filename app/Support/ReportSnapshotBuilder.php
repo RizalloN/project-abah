@@ -336,8 +336,11 @@ class ReportSnapshotBuilder
 
     private function buildRasioPeriodSnapshot(string $loanPeriod, bool $force): int
     {
-        if (!$force && DB::table(self::RASIO_SNAPSHOT_TABLE)->where('loan_period', $loanPeriod)->exists()) {
-            return (int) DB::table(self::RASIO_SNAPSHOT_TABLE)->where('loan_period', $loanPeriod)->count();
+        if (!$force) {
+            $existingCount = (int) DB::table(self::RASIO_SNAPSHOT_TABLE)->where('loan_period', $loanPeriod)->count();
+            if ($existingCount > 0) {
+                return $existingCount;
+            }
         }
 
         $snapshot = $this->computeRasioSummary($loanPeriod);
@@ -380,8 +383,11 @@ class ReportSnapshotBuilder
             return 0;
         }
 
-        if (!$force && DB::table(self::RASIO_UKER_SNAPSHOT_TABLE)->where('loan_period', $loanPeriod)->exists()) {
-            return (int) DB::table(self::RASIO_UKER_SNAPSHOT_TABLE)->where('loan_period', $loanPeriod)->count();
+        if (!$force) {
+            $existingCount = (int) DB::table(self::RASIO_UKER_SNAPSHOT_TABLE)->where('loan_period', $loanPeriod)->count();
+            if ($existingCount > 0) {
+                return $existingCount;
+            }
         }
 
         $rows = $this->computeRasioUkerSnapshotRows($loanPeriod);

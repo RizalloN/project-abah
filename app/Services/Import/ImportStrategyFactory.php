@@ -27,7 +27,6 @@ class ImportStrategyFactory
             app(Gi405RecDhImportStrategy::class),
             app(SsaPinjamanImportStrategy::class),
             app(SsaSimpananImportStrategy::class),
-            app(SsaPinjamanImportStrategy::class),
             app(Lw325PhImportStrategy::class),
             app(CognosPhImportStrategy::class),
             app(CognosRecoveryImportStrategy::class),

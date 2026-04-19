@@ -31,12 +31,12 @@ class ReportDataSyncServiceTest extends TestCase
 
         Cache::shouldReceive('lock')
             ->once()
-            ->with('snapshot:rasio:rebuild:global', 120)
+            ->with('snapshot:rasio:rebuild:__all__', 120)
             ->andReturn($lock);
 
         $lock->shouldReceive('block')
             ->once()
-            ->with(10, Mockery::type('callable'))
+            ->with(60, Mockery::type('callable'))
             ->andReturnUsing(function (int $seconds, callable $callback) {
                 return $callback();
             });
@@ -45,7 +45,7 @@ class ReportDataSyncServiceTest extends TestCase
         $reflection = new \ReflectionMethod($service, 'runWithRasioSnapshotLock');
         $reflection->setAccessible(true);
 
-        $result = $reflection->invoke($service, function () use ($builder) {
+        $result = $reflection->invoke($service, null, function () use ($builder) {
             $builder->shouldReceive('rebuildRasioCasa')
                 ->once()
                 ->with('2026-04', true)
@@ -74,7 +74,7 @@ class ReportDataSyncServiceTest extends TestCase
 
         $simpananLock->shouldReceive('block')
             ->once()
-            ->with(10, Mockery::type('callable'))
+            ->with(60, Mockery::type('callable'))
             ->andReturnUsing(function (int $seconds, callable $callback) {
                 return $callback();
             });
@@ -82,12 +82,12 @@ class ReportDataSyncServiceTest extends TestCase
 
         Cache::shouldReceive('lock')
             ->once()
-            ->with('snapshot:rasio:rebuild:global', 120)
+            ->with('snapshot:rasio:rebuild:2026-04-04', 120)
             ->andReturn($lock);
 
         $lock->shouldReceive('block')
             ->once()
-            ->with(10, Mockery::type('callable'))
+            ->with(60, Mockery::type('callable'))
             ->andReturnUsing(function (int $seconds, callable $callback) {
                 return $callback();
             });
@@ -100,7 +100,7 @@ class ReportDataSyncServiceTest extends TestCase
 
         $builder->shouldReceive('rebuildDashboardSimpanan')
             ->once()
-            ->with('2026-04-04', true)
+            ->with('2026-04-04', true, null)
             ->andReturn(['2026-04-04' => 1]);
         $builder->shouldReceive('rebuildRekeningDormant')
             ->once()
@@ -132,12 +132,13 @@ class ReportDataSyncServiceTest extends TestCase
 
         Cache::shouldReceive('lock')
             ->once()
-            ->with('snapshot:rasio:rebuild:global', 120)
+            ->with('snapshot:rasio:rebuild:2026-04-04', 120)
             ->andReturn($lock);
+        Cache::shouldReceive('add')->andReturn(true);
 
         $lock->shouldReceive('block')
             ->once()
-            ->with(10, Mockery::type('callable'))
+            ->with(60, Mockery::type('callable'))
             ->andReturnUsing(function (int $seconds, callable $callback) {
                 return $callback();
             });
@@ -145,12 +146,12 @@ class ReportDataSyncServiceTest extends TestCase
 
         $service->shouldReceive('cleanupDerivedArtifactsAfterDelete')
             ->once()
-            ->with('daily_loan_dinamis', '2026-04-04', 'unit-test')
+            ->with('daily_loan_dinamis', '2026-04-04', 'unit-test', null)
             ->andReturn(['dashboard_pinjaman_snapshots' => 0]);
 
         $builder->shouldReceive('rebuildDashboard')
             ->once()
-            ->with('2026-04-04', true)
+            ->with('2026-04-04', true, null)
             ->andReturn(['2026-04-04' => 0]);
         $dashboardHarianSnapshotService->shouldReceive('rebuild')
             ->once()
@@ -177,7 +178,7 @@ class ReportDataSyncServiceTest extends TestCase
 
         $builder->shouldReceive('rebuildPerformanceNewPayroll')
             ->once()
-            ->with('2026-04-30', true)
+            ->with('2026-04-30', true, null)
             ->andReturn(['2026-04-30' => 4]);
 
         $reflection = new \ReflectionMethod($service, 'syncPerformanceNewPayroll');

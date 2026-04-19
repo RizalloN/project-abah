@@ -2453,6 +2453,9 @@ class ImportExcelController extends Controller
             'filters' => $activeFilters,
             'import_options' => [
                 'manual_kanca' => $importOptions['manual_kanca'] ?? null,
+                'manual_periode' => $importOptions['manual_periode'] ?? null,
+                'derived_kanca' => $importOptions['derived_kanca'] ?? null,
+                'derived_tahun' => $importOptions['derived_tahun'] ?? null,
             ],
         ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
 
@@ -2480,6 +2483,7 @@ class ImportExcelController extends Controller
 
         $uniqueIdCol = null;
         $suffix = '_DLD';
+        $uniqueIdPrefix = str_replace('.', '', uniqid('imp', true));
 
         if ($tableName === 'simpanan_multipn') {
             $simpananUniqueCandidates = ['uniqueid_SMPN', 'uniqueid_SimoPN'];
@@ -2492,9 +2496,14 @@ class ImportExcelController extends Controller
             }
 
             $suffix = '_SMPN';
+        } elseif ($tableName === 'rka' && isset($tableColumnsLookup['uniqueid_namareport'])) {
+            $uniqueIdCol = $tableColumnsByLower['uniqueid_namareport'] ?? 'uniqueid_namareport';
+            $suffix = '';
+            $uniqueIdPrefix = 'uuid_rka';
         } elseif ($tableName === 'gi405_rec_dh' && isset($tableColumnsLookup['uniqueid_namareport'])) {
             $uniqueIdCol = $tableColumnsByLower['uniqueid_namareport'] ?? 'uniqueid_namareport';
             $suffix = '';
+            $uniqueIdPrefix = 'uuid_405RDH';
         } elseif (isset($tableColumnsLookup['uniqueid_namareport'])) {
             $uniqueIdCol = $tableColumnsByLower['uniqueid_namareport'] ?? 'uniqueid_namareport';
         }
@@ -2581,14 +2590,10 @@ class ImportExcelController extends Controller
             'filter_lookups' => $filterLookups,
             'header_rules' => $headerRules,
             'has_filters' => $hasFilters,
-            'unique_id_prefix' => str_replace('.', '', uniqid('imp', true)),
+            'unique_id_prefix' => $uniqueIdPrefix,
             'row_sequence' => 0,
             'manual_column_values' => $this->resolveManualImportColumnValues($tableName, $tableColumnsLookup, $tableColumnsByLower, $importOptions),
         ];
-
-        if ($tableName === 'gi405_rec_dh') {
-            $context['unique_id_prefix'] = 'uuid_405RDH';
-        }
 
         $context = $this->resolveImportStrategy($tableName)->prepareContext($context);
 
@@ -2601,9 +2606,27 @@ class ImportExcelController extends Controller
 
         if ($tableName === 'rka') {
             $manualKanca = trim((string) ($importOptions['manual_kanca'] ?? session('excel_manual_kanca', '')));
+            if ($manualKanca === '') {
+                $manualKanca = trim((string) ($importOptions['derived_kanca'] ?? session('excel_derived_kanca', '')));
+            }
             if ($manualKanca !== '' && isset($tableColumnsLookup['kanca'])) {
                 $resolvedColumn = $tableColumnsByLower['kanca'] ?? 'kanca';
                 $manualValues[$resolvedColumn] = $manualKanca;
+            }
+
+            $manualPeriode = trim((string) ($importOptions['manual_periode'] ?? session('excel_manual_periode', '')));
+            if ($manualPeriode === '' && !empty($importOptions['derived_tahun'])) {
+                $manualPeriode = (string) $importOptions['derived_tahun'];
+            }
+            if ($manualPeriode === '') {
+                $manualPeriode = trim((string) session('excel_derived_tahun', ''));
+            }
+            if ($manualPeriode !== '' && isset($tableColumnsLookup['tahun'])) {
+                $year = $this->extractRkaYearValue($manualPeriode);
+                if ($year !== null) {
+                    $resolvedColumn = $tableColumnsByLower['tahun'] ?? 'tahun';
+                    $manualValues[$resolvedColumn] = $year;
+                }
             }
         }
 
@@ -2826,9 +2849,9 @@ class ImportExcelController extends Controller
         return $this->bulkLoadService()->supportsNativeBulkLoad();
     }
 
-    private function buildBulkLoadColumns(string $tableName, array $normalizedHeaders, array $activeFilters = []): array
+    private function buildBulkLoadColumns(string $tableName, array $normalizedHeaders, array $activeFilters = [], array $importOptions = []): array
     {
-        $context = $this->buildImportContext($tableName, $normalizedHeaders, $activeFilters);
+        $context = $this->buildImportContext($tableName, $normalizedHeaders, $activeFilters, $importOptions);
         $columns = [];
 
         if (!empty($context['unique_id_col'])) {
@@ -5082,7 +5105,7 @@ class ImportExcelController extends Controller
         return true;
     }
 
-    private function buildDirectDailyLoanCsvLoadPlan(string $absolutePath, array $normalizedHeaders): array
+    private function buildDirectDailyLoanCsvLoadPlan(string $absolutePath, array $normalizedHeaders, array $importOptions = []): array
     {
         $delimiter = $this->detectCsvDelimiter($absolutePath);
         $handle = fopen($absolutePath, 'r');
@@ -5103,7 +5126,7 @@ class ImportExcelController extends Controller
         $sourceHeaders = $this->canonicalizeDailyLoanSourceHeaders((array) $sourceHeaders);
         $normalizedHeaders = $this->canonicalizeDailyLoanSourceHeaders($normalizedHeaders);
 
-        $context = $this->buildImportContext('daily_loan_dinamis', $normalizedHeaders, []);
+        $context = $this->buildImportContext('daily_loan_dinamis', $normalizedHeaders, [], $importOptions);
         $fieldVariables = [];
         $setClauses = [
             "`created_at` = NOW()",
@@ -5161,7 +5184,7 @@ class ImportExcelController extends Controller
         ];
     }
 
-    private function buildDirectGenericCsvLoadPlan(string $tableName, string $absolutePath, array $normalizedHeaders): array
+    private function buildDirectGenericCsvLoadPlan(string $tableName, string $absolutePath, array $normalizedHeaders, array $importOptions = []): array
     {
         $delimiter = $this->detectCsvDelimiter($absolutePath);
         $handle = fopen($absolutePath, 'r');
@@ -5179,7 +5202,7 @@ class ImportExcelController extends Controller
             throw new \RuntimeException("Header CSV {$tableName} tidak ditemukan.");
         }
 
-        $context = $this->buildImportContext($tableName, $normalizedHeaders, []);
+        $context = $this->buildImportContext($tableName, $normalizedHeaders, [], $importOptions);
         $fieldVariables = [];
         $setClauses = [
             "`created_at` = NOW()",
@@ -5555,7 +5578,8 @@ class ImportExcelController extends Controller
         array $activeFilters,
         int $jobId,
         int $estimatedTotalRows,
-        ?string $delimiter = null
+        ?string $delimiter = null,
+        array $importOptions = []
     ): bool {
         if ($csvPath === '' || !file_exists($csvPath) || !$this->isDailyLoanTable($tableName)) {
             return false;
@@ -5571,7 +5595,7 @@ class ImportExcelController extends Controller
         $loadSource = null;
         $sourcePath = $csvPath;
 
-        $context = $this->buildImportContext($tableName, $normalizedHeaders, $activeFilters);
+        $context = $this->buildImportContext($tableName, $normalizedHeaders, $activeFilters, $importOptions);
         $headerCount = max(1, count($normalizedHeaders));
         $stagingTable = null;
 
@@ -5743,7 +5767,8 @@ class ImportExcelController extends Controller
         int $jobId,
         int $estimatedTotalRows,
         ?string $delimiter = null,
-        bool $emitComplete = true
+        bool $emitComplete = true,
+        array $importOptions = []
     ): bool {
         if ($csvPath === '' || !file_exists($csvPath)) {
             return false;
@@ -5771,13 +5796,14 @@ class ImportExcelController extends Controller
         $loadSource = null;
 
         try {
+            $directTableLabel = $this->resolveDirectLoadTableLabel($tableName);
             $send('progress', [
                 'status' => 'processing',
                 'phase' => 'preparing_load_plan',
                 'percent' => 18,
                 'message' => $isDailyLoanTable
                     ? 'Menyiapkan direct LOAD DATA untuk Daily Loan...'
-                    : 'Menyiapkan direct LOAD DATA untuk ' . ($isGi405RecDhTable ? 'GI405 - Rec. DH' : ($isSsaPinjamanTable ? 'SSA Pinjaman' : ($isLw325PhTable ? 'LW325 - PH' : ($isSsaSimpananTable ? 'SSA Simpanan' : 'Data')))) . '...',
+                    : 'Menyiapkan direct LOAD DATA untuk ' . $directTableLabel . '...',
                 'rows_done' => 0,
                 'total' => $estimatedTotalRows,
                 'speed' => 0,
@@ -5824,8 +5850,8 @@ class ImportExcelController extends Controller
             $skippedCount = (int) ($loadSource['skipped_count'] ?? count($skippedRows));
 
             $loadPlan = $isDailyLoanTable
-                ? $this->buildDirectDailyLoanCsvLoadPlan($sourcePath, $normalizedHeaders)
-                : $this->buildDirectGenericCsvLoadPlan($tableName, $sourcePath, $normalizedHeaders);
+                ? $this->buildDirectDailyLoanCsvLoadPlan($sourcePath, $normalizedHeaders, $importOptions)
+                : $this->buildDirectGenericCsvLoadPlan($tableName, $sourcePath, $normalizedHeaders, $importOptions);
             $baseTotal = !empty($loadSource['written_rows'])
                 ? max(0, (int) $loadSource['written_rows'])
                 : max(0, $estimatedTotalRows - $skippedCount);
@@ -5842,7 +5868,7 @@ class ImportExcelController extends Controller
                     'percent' => 32,
                     'message' => $isDailyLoanTable
                         ? 'Load plan Daily Loan siap dijalankan.'
-                        : 'Load plan ' . ($isGi405RecDhTable ? 'GI405 - Rec. DH' : ($isSsaPinjamanTable ? 'SSA Pinjaman' : 'SSA Simpanan')) . ' siap dijalankan.',
+                        : 'Load plan ' . $directTableLabel . ' siap dijalankan.',
                     'processed_rows' => 0,
                     'total_rows' => $baseTotal,
                     'total_success' => (int) ($job->total_success ?? 0),
@@ -5865,10 +5891,10 @@ class ImportExcelController extends Controller
                     : ($sourceWasNormalized
                     ? (
                         $skippedCount > 0
-                            ? 'CSV ' . ($isGi405RecDhTable ? 'GI405 - Rec. DH' : ($isSsaPinjamanTable ? 'SSA Pinjaman' : 'SSA Simpanan')) . ' diproses dengan ' . $loadBackend . '. ' . $skippedCount . ' baris tidak valid di-skip, lalu direct LOAD DATA dijalankan...'
-                            : 'CSV ' . ($isGi405RecDhTable ? 'GI405 - Rec. DH' : ($isSsaPinjamanTable ? 'SSA Pinjaman' : 'SSA Simpanan')) . ' diproses dengan ' . $loadBackend . '. Menjalankan direct LOAD DATA ke tabel final...'
+                            ? 'CSV ' . $directTableLabel . ' diproses dengan ' . $loadBackend . '. ' . $skippedCount . ' baris tidak valid di-skip, lalu direct LOAD DATA dijalankan...'
+                            : 'CSV ' . $directTableLabel . ' diproses dengan ' . $loadBackend . '. Menjalankan direct LOAD DATA ke tabel final...'
                     )
-                    : 'Direct LOAD DATA aktif. Memuat CSV stage langsung ke tabel ' . ($isGi405RecDhTable ? 'GI405 - Rec. DH' : ($isSsaPinjamanTable ? 'SSA Pinjaman' : 'SSA Simpanan')) . '...'),
+                    : 'Direct LOAD DATA aktif. Memuat CSV stage langsung ke tabel ' . $directTableLabel . '...'),
                 'rows_done' => 0,
                 'total' => $baseTotal,
                 'speed' => 0,
@@ -5889,8 +5915,8 @@ class ImportExcelController extends Controller
                     'phase' => 'loading',
                     'percent' => $status === 'completed' ? 98 : 96,
                     'message' => $status === 'completed'
-                        ? ($isDailyLoanTable ? 'Direct LOAD DATA Daily Loan selesai diproses.' : 'Direct LOAD DATA ' . ($isGi405RecDhTable ? 'GI405 - Rec. DH' : ($isSsaPinjamanTable ? 'SSA Pinjaman' : 'SSA Simpanan')) . ' selesai diproses.')
-                        : ($isDailyLoanTable ? 'Direct LOAD DATA Daily Loan selesai dengan kegagalan parsial.' : 'Direct LOAD DATA ' . ($isGi405RecDhTable ? 'GI405 - Rec. DH' : ($isSsaPinjamanTable ? 'SSA Pinjaman' : 'SSA Simpanan')) . ' selesai dengan kegagalan parsial.'),
+                        ? ($isDailyLoanTable ? 'Direct LOAD DATA Daily Loan selesai diproses.' : 'Direct LOAD DATA ' . $directTableLabel . ' selesai diproses.')
+                        : ($isDailyLoanTable ? 'Direct LOAD DATA Daily Loan selesai dengan kegagalan parsial.' : 'Direct LOAD DATA ' . $directTableLabel . ' selesai dengan kegagalan parsial.'),
                     'processed_rows' => $inserted + $failed,
                     'total_rows' => $baseTotal,
                     'total_success' => $inserted,
@@ -5904,7 +5930,7 @@ class ImportExcelController extends Controller
                 'percent' => 98,
                 'message' => $isDailyLoanTable
                     ? 'Direct LOAD DATA Daily Loan selesai diproses.'
-                    : 'Direct LOAD DATA ' . ($isGi405RecDhTable ? 'GI405 - Rec. DH' : ($isSsaPinjamanTable ? 'SSA Pinjaman' : 'SSA Simpanan')) . ' selesai diproses.',
+                    : 'Direct LOAD DATA ' . $directTableLabel . ' selesai diproses.',
                 'rows_done' => $inserted,
                 'total' => $baseTotal,
                 'speed' => 0,
@@ -6252,8 +6278,10 @@ class ImportExcelController extends Controller
             ];
         }
 
-        $manualKanca = trim((string) session('excel_manual_kanca', ''));
-        if ($manualKanca === '') {
+        $manualKanca = trim((string) session('excel_manual_kanca', session('excel_derived_kanca', '')));
+        $manualTahun = $this->extractRkaYearValue((string) session('excel_manual_periode', session('excel_derived_tahun', '')));
+
+        if ($manualKanca === '' && $manualTahun === null) {
             return [
                 'headers' => $headers,
                 'formattedUniqueValues' => $formattedUniqueValues,
@@ -6267,26 +6295,43 @@ class ImportExcelController extends Controller
             $headers
         );
         $kancaIndex = array_search('kanca', $headerLookup, true);
+        $tahunIndex = array_search('tahun', $headerLookup, true);
 
-        if ($kancaIndex === false) {
+        if ($manualKanca !== '' && $kancaIndex === false) {
             $headers[] = 'kanca';
             $formattedUniqueValues[] = [];
-        } else {
+        } elseif ($kancaIndex !== false) {
             $formattedUniqueValues[$kancaIndex] = [];
+        }
+
+        if ($manualTahun !== null && $tahunIndex === false) {
+            $headers[] = 'tahun';
+            $formattedUniqueValues[] = [];
+        } elseif ($tahunIndex !== false) {
+            $formattedUniqueValues[$tahunIndex] = [];
         }
 
         foreach ($preview as &$row) {
             $rowData = is_array($row) ? $row : (array) $row;
-            $rowData['kanca'] = $manualKanca;
+            if ($manualKanca !== '') {
+                $rowData['kanca'] = $manualKanca;
+            }
+            if ($manualTahun !== null) {
+                $rowData['tahun'] = $manualTahun;
+            }
             $row = $rowData;
         }
         unset($row);
 
-        if (!in_array('kanca', array_map(
+        $sourceHeaderLookup = array_map(
             fn ($header) => strtolower(trim((string) $header)),
             $resolvedSourceHeaders
-        ), true)) {
+        );
+        if ($manualKanca !== '' && !in_array('kanca', $sourceHeaderLookup, true)) {
             $resolvedSourceHeaders[] = 'kanca';
+        }
+        if ($manualTahun !== null && !in_array('tahun', $sourceHeaderLookup, true)) {
+            $resolvedSourceHeaders[] = 'tahun';
         }
 
         $reordered = $this->reorderPreviewPayload(
@@ -6417,6 +6462,10 @@ class ImportExcelController extends Controller
             $finalRow[$resolvedColumn] = $this->normalizeValueForDatabaseColumn($resolvedColumn, $manualValue, $context);
         }
 
+        if (($context['table_name'] ?? '') === 'rka') {
+            $finalRow = $this->applyDerivedRkaValues($finalRow, $context);
+        }
+
         $minimumColumns = !empty($context['unique_id_col']) ? 3 : 2;
 
         if (($context['table_name'] ?? '') === 'simpanan_multipn' && !$this->hasRequiredSimpananMultiPnImportData($finalRow)) {
@@ -6436,6 +6485,159 @@ class ImportExcelController extends Controller
         }
 
         return count($finalRow) > $minimumColumns ? $finalRow : null;
+    }
+
+    private function applyDerivedRkaValues(array $finalRow, array $context): array
+    {
+        $tableColumnsLookup = (array) ($context['table_columns_lookup'] ?? []);
+        $tableColumnsByLower = (array) ($context['table_columns_by_lower'] ?? []);
+
+        if (
+            isset($tableColumnsLookup['kanca'])
+            && (!array_key_exists('kanca', $finalRow) || trim((string) ($finalRow['kanca'] ?? '')) === '')
+        ) {
+            $derivedKanca = $this->extractRkaKancaValue($finalRow['desc_uker'] ?? null);
+            if ($derivedKanca !== null) {
+                $resolvedColumn = $tableColumnsByLower['kanca'] ?? 'kanca';
+                $finalRow[$resolvedColumn] = $this->normalizeValueForDatabaseColumn($resolvedColumn, $derivedKanca, $context);
+            }
+        }
+
+        if (
+            isset($tableColumnsLookup['tahun'])
+            && (!array_key_exists('tahun', $finalRow) || $finalRow['tahun'] === null || trim((string) $finalRow['tahun']) === '')
+        ) {
+            $derivedYear = $this->extractRkaYearValue(
+                (string) session('excel_manual_periode', session('excel_derived_tahun', ''))
+            );
+            if ($derivedYear !== null) {
+                $resolvedColumn = $tableColumnsByLower['tahun'] ?? 'tahun';
+                $finalRow[$resolvedColumn] = $derivedYear;
+            }
+        }
+
+        return $finalRow;
+    }
+
+    private function extractRkaYearValue(?string $value): ?int
+    {
+        $normalized = trim((string) $value);
+        if ($normalized === '') {
+            return null;
+        }
+
+        if (preg_match('/(?<!\d)(20\d{2}|19\d{2})(?!\d)/', $normalized, $matches) === 1) {
+            return (int) $matches[1];
+        }
+
+        return null;
+    }
+
+    private function extractRkaKancaValue($value): ?string
+    {
+        $normalized = trim((string) ($value ?? ''));
+        if ($normalized === '') {
+            return null;
+        }
+
+        $normalized = preg_replace('/\s+/', ' ', $normalized) ?? $normalized;
+        $normalized = trim($normalized);
+
+        if (preg_match('/(?:^|[\s\-_])((?:KC|KCP)\s*[A-Z0-9][A-Z0-9 .\/()-]*)$/iu', $normalized, $matches) === 1) {
+            return $this->normalizeRkaKancaLabel((string) ($matches[1] ?? ''));
+        }
+
+        if (preg_match('/^\d+\s*[-–—]\s*((?:KC|KCP)\b.+)$/iu', $normalized, $matches) === 1) {
+            $candidate = trim((string) ($matches[1] ?? ''));
+            if ($candidate !== '') {
+                return $this->normalizeRkaKancaLabel($candidate);
+            }
+        }
+
+        return null;
+    }
+
+    private function normalizeRkaKancaLabel(string $value): string
+    {
+        $normalized = strtoupper(trim($value));
+        $normalized = preg_replace('/\s+/', ' ', $normalized) ?? $normalized;
+        $words = preg_split('/\s+/', $normalized) ?: [];
+        $formattedWords = array_map(static function (string $word): string {
+            if (in_array($word, ['KC', 'KCP'], true)) {
+                return $word;
+            }
+
+            return function_exists('mb_convert_case')
+                ? mb_convert_case(mb_strtolower($word, 'UTF-8'), MB_CASE_TITLE, 'UTF-8')
+                : ucwords(strtolower($word));
+        }, $words);
+
+        return trim(implode(' ', $formattedWords));
+    }
+
+    private function deriveRkaImportMetadataFromFile(?string $path, ?string $originalName = null): array
+    {
+        $derived = [
+            'kanca' => $this->extractRkaKancaValue($originalName),
+            'tahun' => $this->extractRkaYearValue($originalName),
+        ];
+
+        if (!is_string($path) || trim($path) === '' || !is_file($path)) {
+            return $derived;
+        }
+
+        try {
+            $reader = IOFactory::createReaderForFile($path);
+            $reader->setReadDataOnly(true);
+            $spreadsheet = $reader->load($path);
+            $sheet = $spreadsheet->getActiveSheet();
+            $highestRow = min(25, (int) $sheet->getHighestRow());
+            $highestColumnIndex = min(12, \PhpOffice\PhpSpreadsheet\Cell\Coordinate::columnIndexFromString($sheet->getHighestColumn()));
+
+            $rows = [];
+            for ($rowIndex = 1; $rowIndex <= $highestRow; $rowIndex++) {
+                $rowValues = [];
+                for ($columnIndex = 1; $columnIndex <= $highestColumnIndex; $columnIndex++) {
+                    $coordinate = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($columnIndex) . $rowIndex;
+                    $rowValues[] = $sheet->getCell($coordinate)->getCalculatedValue();
+                }
+                $rows[] = $rowValues;
+            }
+
+            $headerIndex = $this->detectHeaderIndex($rows, 'rka');
+            if ($headerIndex === null) {
+                $spreadsheet->disconnectWorksheets();
+                unset($spreadsheet);
+                return $derived;
+            }
+
+            $headers = array_map(
+                fn ($header) => $this->normalizeImportColumnName((string) $header),
+                $rows[$headerIndex] ?? []
+            );
+            $descUkerIndex = array_search('desc_uker', $headers, true);
+
+            if ($descUkerIndex !== false) {
+                for ($rowIndex = $headerIndex + 1, $rowCount = count($rows); $rowIndex < $rowCount; $rowIndex++) {
+                    $candidate = $this->extractRkaKancaValue($rows[$rowIndex][$descUkerIndex] ?? null);
+                    if ($candidate !== null) {
+                        $derived['kanca'] = $candidate;
+                        break;
+                    }
+                }
+            }
+
+            $spreadsheet->disconnectWorksheets();
+            unset($spreadsheet);
+        } catch (\Throwable $e) {
+            Log::warning('Gagal menurunkan metadata RKA dari file upload.', [
+                'path' => $path,
+                'original_name' => $originalName,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        return $derived;
     }
 
     private function normalizeExcelValueByRule(array $rule, $value)
@@ -6805,9 +7007,26 @@ class ImportExcelController extends Controller
         $reportId = (int) $request->input('id_report');
         $tableName = strtolower(trim((string) DB::table('nama_report')->where('id_report', $reportId)->value('table_name')));
         $manualKanca = trim((string) $request->input('kanca_manual', ''));
+        $manualPeriode = trim((string) $request->input('periode', ''));
+        $derivedRkaMetadata = ['kanca' => null, 'tahun' => null];
 
-        if ($tableName === 'rka' && $manualKanca === '') {
-            $message = 'Kanca wajib dipilih untuk import RKA.';
+        if ($tableName === 'rka' && $file && $file->isValid()) {
+            $derivedRkaMetadata = $this->deriveRkaImportMetadataFromFile(
+                $file->getRealPath(),
+                $file->getClientOriginalName()
+            );
+
+            if ($manualKanca === '') {
+                $manualKanca = trim((string) ($derivedRkaMetadata['kanca'] ?? ''));
+            }
+
+            if ($manualPeriode === '' && !empty($derivedRkaMetadata['tahun'])) {
+                $manualPeriode = (string) $derivedRkaMetadata['tahun'];
+            }
+        }
+
+        if ($tableName === 'rka' && ($manualKanca === '' || $manualPeriode === '')) {
+            $message = 'Kanca dan Tahun wajib dipilih untuk import RKA.';
             if ($request->ajax() || $request->wantsJson()) {
                 return response()->json(['status' => 'error', 'message' => $message], 422);
             }
@@ -6834,6 +7053,9 @@ class ImportExcelController extends Controller
             'active_id_report'  => $request->id_report,
             'excel_preview_key' => $cacheKey,
             'excel_manual_kanca' => $tableName === 'rka' ? $manualKanca : null,
+            'excel_manual_periode' => $manualPeriode !== '' ? $manualPeriode : null,
+            'excel_derived_kanca' => $tableName === 'rka' ? ($derivedRkaMetadata['kanca'] ?? null) : null,
+            'excel_derived_tahun' => $tableName === 'rka' ? ($derivedRkaMetadata['tahun'] ?? null) : null,
         ]);
 
         $activeIdReport = (int) $request->id_report;
@@ -7336,6 +7558,7 @@ class ImportExcelController extends Controller
         $previewMeta = !empty($previewState['previewMeta'])
             ? (array) $previewState['previewMeta']
             : session('excel_preview_meta', []);
+        $disableInlineFallback = $tableName === 'lw325_ph';
         $previewPath = urldecode((string) ($previewMeta['path'] ?? ''));
         $stagedCsvPath = (string) ($previewMeta['staged_csv_path'] ?? '');
         $previewHeaders = (array) ($previewMeta['normalized_headers'] ?? []);
@@ -7401,6 +7624,8 @@ class ImportExcelController extends Controller
                     'total_rows'     => $previewTotalRows,
                     'delimiter'      => $previewDelimiter,
                     'manual_kanca'   => $tableName === 'rka' ? trim((string) session('excel_manual_kanca', '')) : null,
+                    'manual_periode' => trim((string) session('excel_manual_periode', '')),
+                    'disable_inline_fallback' => $disableInlineFallback,
                 ],
             ]);
 
@@ -7429,6 +7654,8 @@ class ImportExcelController extends Controller
                     'total_rows'     => $previewTotalRows,
                     'delimiter'      => $previewDelimiter,
                     'manual_kanca'   => $tableName === 'rka' ? trim((string) session('excel_manual_kanca', '')) : null,
+                    'manual_periode' => trim((string) session('excel_manual_periode', '')),
+                    'disable_inline_fallback' => $disableInlineFallback,
                     'job_id'         => $jobId,
                 ],
                 'headers' => $sourceHeaders,
@@ -7621,6 +7848,10 @@ class ImportExcelController extends Controller
                 'total_rows'     => $totalRows,
                 'delimiter'      => $delimiter ?? null,
                 'manual_kanca'   => $tableName === 'rka' ? trim((string) session('excel_manual_kanca', '')) : null,
+                'manual_periode' => $tableName === 'rka' ? trim((string) session('excel_manual_periode', '')) : null,
+                'derived_kanca'  => $tableName === 'rka' ? trim((string) session('excel_derived_kanca', '')) : null,
+                'derived_tahun'  => $tableName === 'rka' ? trim((string) session('excel_derived_tahun', '')) : null,
+                'disable_inline_fallback' => $disableInlineFallback,
                 'job_id'         => $jobId,
             ],
         ]);
@@ -7634,6 +7865,10 @@ class ImportExcelController extends Controller
                 'total_rows'     => $totalRows,
                 'delimiter'      => $delimiter ?? null,
                 'manual_kanca'   => $tableName === 'rka' ? trim((string) session('excel_manual_kanca', '')) : null,
+                'manual_periode' => $tableName === 'rka' ? trim((string) session('excel_manual_periode', '')) : null,
+                'derived_kanca'  => $tableName === 'rka' ? trim((string) session('excel_derived_kanca', '')) : null,
+                'derived_tahun'  => $tableName === 'rka' ? trim((string) session('excel_derived_tahun', '')) : null,
+                'disable_inline_fallback' => $disableInlineFallback,
                 'job_id'         => $jobId,
             ],
             'headers' => $normalizedHeadersForSession,
@@ -7693,7 +7928,8 @@ class ImportExcelController extends Controller
         string $tableName,
         array $activeFilters,
         array $normalizedHeaders,
-        int $jobId
+        int $jobId,
+        array $importOptions = []
     ): bool {
         $pythonExe = $this->findPython();
         $scriptPath = base_path('scripts/excel_gpu_processor.py');
@@ -7702,8 +7938,8 @@ class ImportExcelController extends Controller
             return false;
         }
 
-        $importContext = $this->buildImportContext($tableName, $normalizedHeaders, $activeFilters);
-        $bulkLoadColumns = $this->buildBulkLoadColumns($tableName, $normalizedHeaders, $activeFilters);
+        $importContext = $this->buildImportContext($tableName, $normalizedHeaders, $activeFilters, $importOptions);
+        $bulkLoadColumns = $this->buildBulkLoadColumns($tableName, $normalizedHeaders, $activeFilters, $importOptions);
         $csvTempPath = $this->createBulkLoadTempCsvPath($tableName, $jobId);
 
         $configData = [
@@ -7924,7 +8160,8 @@ class ImportExcelController extends Controller
         ?int $estimatedTotalRows = null,
         ?string $delimiter = null,
         bool $forceDirectLoad = false,
-        ?callable $beforeDirectLoad = null
+        ?callable $beforeDirectLoad = null,
+        array $importOptions = []
     ): bool {
         if ($csvPath === '' || !file_exists($csvPath)) {
             return false;
@@ -7941,7 +8178,7 @@ class ImportExcelController extends Controller
             ? max(0, $estimatedTotalRows)
             : $this->countCsvDataRows($csvPath);
 
-        $bulkLoadColumns = $this->buildBulkLoadColumns($tableName, $normalizedHeaders, $activeFilters);
+        $bulkLoadColumns = $this->buildBulkLoadColumns($tableName, $normalizedHeaders, $activeFilters, $importOptions);
         $outputCsvPath = $this->createBulkLoadTempCsvPath($tableName, $jobId);
         $outputHandle = fopen($outputCsvPath, 'w');
         $cleanupPaths = [$outputCsvPath];
@@ -7957,7 +8194,7 @@ class ImportExcelController extends Controller
                 return false;
             }
 
-            $context = $this->buildImportContext($tableName, $normalizedHeaders, $activeFilters);
+            $context = $this->buildImportContext($tableName, $normalizedHeaders, $activeFilters, $importOptions);
             $send('progress', [
                 'percent' => 18,
                 'message' => $forceDirectLoad
@@ -8071,7 +8308,7 @@ class ImportExcelController extends Controller
                     $outputCsvPath,
                     $tableName,
                     $bulkLoadColumns,
-                    function (int $processedLines, int $totalLines) use ($send, $rowsDone, $estimatedTotalRows): void {
+                    function (int $processedLines, int $totalLines) use ($send, $rowsDone, $estimatedTotalRows, $forceDirectLoad): void {
                         $ratio = $totalLines > 0 ? min(1, $processedLines / $totalLines) : 1;
                         $percent = 96 + (int) floor($ratio * 3);
                         $send('progress', [
@@ -8120,6 +8357,17 @@ class ImportExcelController extends Controller
         }
     }
 
+    private function resolveDirectLoadTableLabel(string $tableName): string
+    {
+        return match (strtolower(trim($tableName))) {
+            'gi405_rec_dh' => 'GI405 - Rec. DH',
+            'ssa_pinjaman' => 'SSA Pinjaman',
+            'ssa_simpanan' => 'SSA Simpanan',
+            'lw325_ph' => 'LW325 - PH',
+            default => 'Data',
+        };
+    }
+
     /**
      * Coba jalankan Python GPU processor.
      * Return true jika Python berhasil menangani proses, false jika tidak tersedia.
@@ -8131,7 +8379,8 @@ class ImportExcelController extends Controller
         string   $tableName,
         array    $activeFilters,
         array    $normalizedHeaders,
-        int      $jobId
+        int      $jobId,
+        array    $importOptions = []
     ): bool {
         if ($this->isCsvFile($path)) {
             return false;
@@ -8145,7 +8394,7 @@ class ImportExcelController extends Controller
         }
 
         // ── Siapkan info tabel untuk Python (Python tidak perlu koneksi DB) ──
-        $importContext   = $this->buildImportContext($tableName, $normalizedHeaders, $activeFilters);
+        $importContext   = $this->buildImportContext($tableName, $normalizedHeaders, $activeFilters, $importOptions);
 
         // Config untuk Python: tidak ada 'db' — Python hanya baca Excel & output JSON
         $configData = [
@@ -8414,6 +8663,10 @@ class ImportExcelController extends Controller
         }
 
         $state = $this->excelImportJobService()->getImportJobState($jobId);
+        if ((bool) (($state['params']['disable_inline_fallback'] ?? false))) {
+            return false;
+        }
+
         $tableName = strtolower(trim((string) ($state['params']['table_name'] ?? '')));
         if ($tableName === '') {
             return false;
@@ -8440,13 +8693,25 @@ class ImportExcelController extends Controller
             'count_csv_data_rows' => fn(string $path) => $this->countCsvDataRows($path),
             'resolve_csv_data_row_estimate' => fn(?int $totalRows, int $headerIndex) => $this->resolveCsvDataRowEstimate($totalRows, $headerIndex),
             'run_csv_pipeline' => fn(array $payload) => $this->pipelineService()->runCsvPipeline($payload),
-            'process_daily_loan_direct_csv_stream' => fn($send, string $workingPath, string $tableName, array $normalizedHeaders, int $jobId, int $totalDataRows, ?string $delimiter) => $this->processDailyLoanDirectCsvStream($send, $workingPath, $tableName, $normalizedHeaders, $jobId, $totalDataRows, $delimiter),
-            'process_daily_loan_bulk_csv_stream' => fn($send, string $workingPath, string $tableName, array $normalizedHeaders, array $activeFilters, int $jobId, int $totalDataRows, ?string $delimiter) => $this->processDailyLoanBulkCsvStream($send, $workingPath, $tableName, $normalizedHeaders, $activeFilters, $jobId, $totalDataRows, $delimiter),
-            'process_staged_csv_stream' => fn($send, string $workingPath, string $tableName, array $activeFilters, array $normalizedHeaders, int $jobId, ?int $estimatedTotalRows = null, ?string $delimiter = null, bool $forceDirectLoad = false) => $this->processStagedCsvStream($send, $workingPath, $tableName, $activeFilters, $normalizedHeaders, $jobId, $estimatedTotalRows, $delimiter, $forceDirectLoad),
-            'try_python_bulk_load' => fn($send, string $path, int $headerIndex, string $tableName, array $activeFilters, array $normalizedHeaders, int $jobId) => $this->tryPythonBulkLoad($send, $path, $headerIndex, $tableName, $activeFilters, $normalizedHeaders, $jobId),
-            'try_python_gpu' => fn($send, string $path, int $headerIndex, string $tableName, array $activeFilters, array $normalizedHeaders, int $jobId) => $this->tryPythonGPU($send, $path, $headerIndex, $tableName, $activeFilters, $normalizedHeaders, $jobId),
+            'process_daily_loan_direct_csv_stream' => fn($send, string $workingPath, string $tableName, array $normalizedHeaders, int $jobId, int $totalDataRows, ?string $delimiter, array $importOptions = []) => $this->processDailyLoanDirectCsvStream($send, $workingPath, $tableName, $normalizedHeaders, $jobId, $totalDataRows, $delimiter, $importOptions),
+            'process_daily_loan_bulk_csv_stream' => fn($send, string $workingPath, string $tableName, array $normalizedHeaders, array $activeFilters, int $jobId, int $totalDataRows, ?string $delimiter, array $importOptions = []) => $this->processDailyLoanBulkCsvStream($send, $workingPath, $tableName, $normalizedHeaders, $activeFilters, $jobId, $totalDataRows, $delimiter, $importOptions),
+            'process_staged_csv_stream' => fn($send, string $workingPath, string $tableName, array $activeFilters, array $normalizedHeaders, int $jobId, ?int $estimatedTotalRows = null, ?string $delimiter = null, bool $forceDirectLoad = false, ?callable $beforeDirectLoad = null, array $importOptions = []) => $this->processStagedCsvStream($send, $workingPath, $tableName, $activeFilters, $normalizedHeaders, $jobId, $estimatedTotalRows, $delimiter, $forceDirectLoad, $beforeDirectLoad, $importOptions),
+            'try_python_bulk_load' => fn($send, string $path, int $headerIndex, string $tableName, array $activeFilters, array $normalizedHeaders, int $jobId, array $importOptions = []) => $this->tryPythonBulkLoad($send, $path, $headerIndex, $tableName, $activeFilters, $normalizedHeaders, $jobId, $importOptions),
+            'try_python_gpu' => fn($send, string $path, int $headerIndex, string $tableName, array $activeFilters, array $normalizedHeaders, int $jobId, array $importOptions = []) => $this->tryPythonGPU($send, $path, $headerIndex, $tableName, $activeFilters, $normalizedHeaders, $jobId, $importOptions),
             'assert_duplicate_guard' => fn(string $tableName) => $this->assertDuplicateGuard($tableName),
-            'build_import_context' => fn(string $tableName, array $normalizedHeaders, array $activeFilters = [], array $importOptions = []) => $this->buildImportContext($tableName, $normalizedHeaders, $activeFilters, $importOptions),
+            'build_import_context' => function (string $tableName, array $normalizedHeaders, array $activeFilters = [], array $importOptions = []) use ($send) {
+                $context = $this->buildImportContext($tableName, $normalizedHeaders, $activeFilters, $importOptions);
+                if ($send !== null) {
+                    $send('progress', [
+                        'rollback_metadata' => [
+                            'table_name' => $tableName,
+                            'unique_id_col' => $context['unique_id_col'] ?? '',
+                            'unique_id_prefix' => $context['unique_id_prefix'] ?? '',
+                        ],
+                    ]);
+                }
+                return $context;
+            },
             'map_excel_row_for_insert' => fn(array $row, array $normalizedHeaders, array $context, string $timestamp) => $this->mapExcelRowForInsert($row, $normalizedHeaders, $context, $timestamp),
             'fallback_insert_batch_size' => fn(): int => $this->fallbackInsertBatchSize(),
             'insert_batch_with_fallback' => function (array $batch, string $tableName, int &$totalInserted, int &$totalFailed): void {
@@ -8486,7 +8751,11 @@ class ImportExcelController extends Controller
             }
             $this->releaseSessionLockIfNeeded();
 
-            $importContext = $this->buildImportContext($tableName, $normalizedHeaders, $activeFilters);
+            $importOptions = [
+                'manual_kanca' => session('excel_manual_kanca'),
+                'manual_periode' => session('excel_manual_periode'),
+            ];
+            $importContext = $this->buildImportContext($tableName, $normalizedHeaders, $activeFilters, $importOptions);
 
             if ($this->isCsvFile($path)) {
                 $delimiter = $this->detectCsvDelimiter($path);

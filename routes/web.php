@@ -130,6 +130,7 @@ Route::middleware(['auth', 'role:admin', 'release.session.lock'])->group(functio
     Route::post('/job-management/queue-job/purge', [ImportJobManagementController::class, 'purgeQueueJobs'])->name('job-management.queue.purge');
     Route::get('/file-management', [FileManagementController::class, 'index'])->name('file-management.index');
     Route::post('/file-management/database-backup', [FileManagementController::class, 'backupDatabase'])->name('file-management.database-backup');
+    Route::get('/file-management/database-backup/{backupId}/status', [FileManagementController::class, 'getBackupStatus'])->name('file-management.database-backup.status');
     Route::get('/file-management/download', FileManagementDownloadController::class)->name('file-management.download');
     Route::post('/file-management/delete', [FileManagementController::class, 'destroy'])->name('file-management.destroy');
     Route::get('/user-management', [UserManagementController::class, 'index'])->name('user-management.index');

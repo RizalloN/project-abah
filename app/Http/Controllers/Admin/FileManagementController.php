@@ -11,6 +11,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\View\View;
 use App\Services\Import\ImportProgressService;
@@ -115,41 +116,52 @@ class FileManagementController extends Controller
         return view('admin.file-management', compact('directories', 'files', 'totals'));
     }
 
-    public function backupDatabase(DatabaseBackupService $backupService): JsonResponse|RedirectResponse
+    public function backupDatabase(DatabaseBackupService $backupService): JsonResponse
     {
         try {
-            $backup = $backupService->createFullBackup();
-        } catch (\Throwable $e) {
-            if (request()->expectsJson() || request()->ajax()) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => $e->getMessage(),
-                ], 500);
+            $backupId = 'backup_' . uniqid();
+            $tables = $backupService->getTables();
+            
+            Cache::put("backup_progress:{$backupId}", [
+                'status' => 'starting',
+                'progress_percent' => 0,
+                'current_table_index' => 0,
+                'total_tables' => count($tables),
+                'message' => 'Menyiapkan backup database...',
+            ], now()->addHours(1));
+
+            $command = "php artisan db:backup-progressive {$backupId}";
+            
+            if (strncasecmp(PHP_OS, 'WIN', 3) === 0) {
+                pclose(popen("start /B {$command}", "r"));
+            } else {
+                exec("{$command} > /dev/null 2>&1 &");
             }
 
-            return redirect()
-                ->route('file-management.index')
-                ->withErrors([$e->getMessage()]);
-        }
-
-        $message = 'Backup database full berhasil dibuat dan siap diunduh.';
-
-        if (request()->expectsJson() || request()->ajax()) {
             return response()->json([
                 'status' => 'success',
-                'message' => $message,
-                'file' => [
-                    'name' => $backup['filename'],
-                    'path' => $backup['relative_path'],
-                    'size' => $backup['size'],
-                    'download_url' => route('file-management.download', ['path' => $backup['relative_path']]),
-                ],
+                'backup_id' => $backupId,
             ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function getBackupStatus(string $backupId): JsonResponse
+    {
+        $status = Cache::get("backup_progress:{$backupId}");
+
+        if (!$status) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Status backup tidak ditemukan.',
+            ], 404);
         }
 
-        return redirect()
-            ->route('file-management.index')
-            ->with('success', $message);
+        return response()->json($status);
     }
 
     public function destroy(Request $request): JsonResponse|RedirectResponse
@@ -233,6 +245,10 @@ class FileManagementController extends Controller
             $absolutePath = $file->getPathname();
             $resolvedPath = realpath($absolutePath) ?: $absolutePath;
             if (!$this->isWithinManagedRoots($resolvedPath)) {
+                return null;
+            }
+
+            if (!file_exists($absolutePath)) {
                 return null;
             }
 

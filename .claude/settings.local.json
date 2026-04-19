@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C /c/xampp/htdocs/project-ABAH diff HEAD -- tests/Unit/ManagedReportDeleteTest.php)",
+      "Bash(git -C /c/xampp/htdocs/project-ABAH diff HEAD -- tests/Unit/ManagedReportManagementServiceTest.php)",
+      "Bash(php artisan *)"
+    ]
+  }
+}

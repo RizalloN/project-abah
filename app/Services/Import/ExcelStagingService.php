@@ -278,7 +278,11 @@ class ExcelStagingService
                     continue;
                 }
 
-                fputcsv($outputHandle, $rowValues, ',', '"', '\\');
+                $normalizedRowValues = array_map(function ($value) {
+                    return $this->normalizeDecimalValueForStaging($value);
+                }, $rowValues);
+
+                fputcsv($outputHandle, $normalizedRowValues, ',', '"', '\\');
                 $writtenRows++;
                 $processedRows++;
 
@@ -677,6 +681,53 @@ class ExcelStagingService
         }
 
         return max(-1, $index - 1);
+    }
+
+    private function normalizeDecimalValueForStaging($value): ?string
+    {
+        if ($value === null || !is_string($value)) {
+            return $value;
+        }
+
+        $trimmed = trim($value);
+        if ($trimmed === '') {
+            return null;
+        }
+
+        // Cek apakah terlihat seperti angka dengan ribuan (misal "219,000.00" atau "219.000,00")
+        // Minimal mengandung satu koma dan angka
+        if (str_contains($trimmed, ',') && preg_match('/[0-9]/', $trimmed)) {
+            $filtered = preg_replace('/[^0-9,\.\-]/', '', $trimmed);
+            if ($filtered === '') {
+                return $trimmed;
+            }
+
+            $hasComma = str_contains($filtered, ',');
+            $hasDot = str_contains($filtered, '.');
+
+            if ($hasComma && $hasDot) {
+                if (strrpos($filtered, ',') > strrpos($filtered, '.')) {
+                    $filtered = str_replace('.', '', $filtered);
+                    $filtered = str_replace(',', '.', $filtered);
+                } else {
+                    $filtered = str_replace(',', '', $filtered);
+                }
+            } elseif ($hasComma) {
+                $parts = explode(',', $filtered);
+                $lastPart = end($parts);
+                if (count($parts) > 2 || strlen((string) $lastPart) === 3) {
+                    $filtered = str_replace(',', '', $filtered);
+                } else {
+                    $filtered = str_replace(',', '.', $filtered);
+                }
+            }
+
+            if (is_numeric($filtered)) {
+                return number_format((float) $filtered, 2, '.', '');
+            }
+        }
+
+        return $value;
     }
 
     private function rowIsEmpty(array $rowValues): bool

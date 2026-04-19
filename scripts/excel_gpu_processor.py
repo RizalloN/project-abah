@@ -155,7 +155,14 @@ def read_excel_table(file_path, header_index):
 
 EXCEL_EPOCH  = date(1899, 12, 30)
 DATE_COLUMNS = {'PERIODE', 'POSISI', 'MONTH_DAY_YEAR_OF_POSISI', 'MONTH_DAY_YEAR_OF_PERIODE', 'TGL_REALISASI', 'TGL_JATUH_TEMPO', 'TANGGAL'}
-DECIMAL_COLUMNS = {'BAKI_DEBET', 'SALDO'}
+DECIMAL_COLUMNS = {
+    'BAKI_DEBET', 'SALDO', 'POKOK', 'BUNGA', 'PLAFON', 'BESAR_REALISASI',
+    'ANGPOK', 'ANGBUNG', 'SISAPOK', 'SISABUN', 'OS_PENUH_BERJALAN',
+    'SALDO_PERTAMA_PH_POKOK', 'SALDO_PERTAMA_PH_BUNGA', 'ANGR_POKOK',
+    'ANGR_BUNGA', 'OS', 'TOTAL_FEE', 'TOTAL_NOMINAL', 'JUMLAH', 'NILAI',
+    'BAKI_DEBET1', 'CKPN', 'BAP', 'BILPRN', 'BILINT', 'BILLC', 'PMTAMT',
+    'TUNGGAKAN_POKOK', 'TUNGGAKAN_BUNGA'
+}
 NULL_STRS    = {'', 'nan', 'none', 'nat', 'null', 'n/a', 'na'}
 INDONESIAN_MONTHS = {
     'januari': 'january',
@@ -237,11 +244,8 @@ def normalize_value(header_name, value):
     if isinstance(value, float) and math.isnan(value):
         return None
 
-    if isinstance(value, datetime):
+    if isinstance(value, (datetime, date)):
         return value.strftime('%Y-%m-%d') if header in DATE_COLUMNS else value.strftime('%Y-%m-%d %H:%M:%S')
-
-    if isinstance(value, date):
-        return value.strftime('%Y-%m-%d')
 
     value_str = str(value).strip()
     if value_str.lower() in NULL_STRS:
@@ -263,6 +267,12 @@ def normalize_value(header_name, value):
 
     if header in DECIMAL_COLUMNS:
         return normalize_decimal_value(value)
+
+    # Fallback: jika nilainya terlihat seperti angka dengan ribuan (misal "219,000.00")
+    if isinstance(value_str, str) and ',' in value_str and any(c.isdigit() for c in value_str):
+        normalized = normalize_decimal_value(value_str)
+        if normalized is not None:
+            return normalized
 
     try:
         num = float(value_str)

@@ -7,6 +7,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Carbon;
 
 class ImportProgressService
@@ -22,6 +23,11 @@ class ImportProgressService
 
     public function cacheProgress(int $jobId, array $payload): array
     {
+        $existing = Cache::get($this->cacheKey($jobId));
+        if (is_array($existing)) {
+            $payload = array_merge($existing, $payload);
+        }
+
         $payload['job_id'] = $jobId;
         $payload['updated_at'] = now()->toIso8601String();
         Cache::put($this->cacheKey($jobId), $payload, now()->addHours(6));
@@ -54,8 +60,14 @@ class ImportProgressService
             return $existingJobId;
         }
 
+        // Manually assign the smallest available ID to fill holes and avoid standard auto-increment behavior
+        $nextId = $this->findSmallestAvailableJobId();
+        $attributes['id'] = $nextId;
+
         try {
-            return (int) DB::table('import_jobs')->insertGetId($attributes);
+            DB::table('import_jobs')->insert($attributes);
+
+            return $nextId;
         } catch (QueryException $e) {
             if (!$this->isDuplicateFingerprintException($e)) {
                 throw $e;
@@ -177,14 +189,65 @@ class ImportProgressService
         $this->updateTotals($jobId, $success, $failed, $totalRows, 'completed', $progressPayload);
     }
 
-    public function markTerminated(int $jobId, string $message, int $success = 0, int $failed = 0): void
+    public function markTerminated(int $jobId, string $message, int $success = 0, int $failed = 0, ?array $rollbackMetadata = null): void
     {
+        $this->rollbackPartiallyImportedData($jobId, $rollbackMetadata);
+
         $this->updateTotals($jobId, $success, $failed, null, 'terminated', [
             'status' => 'terminated',
             'message' => $message,
             'total_success' => $success,
             'total_failed' => $failed,
         ]);
+    }
+
+    private function rollbackPartiallyImportedData(int $jobId, ?array $passedMetadata = null): void
+    {
+        $metadata = $passedMetadata;
+
+        if ($metadata === null) {
+            $progress = Cache::get($this->cacheKey($jobId));
+            if (is_array($progress) && !empty($progress['rollback_metadata'])) {
+                $metadata = $progress['rollback_metadata'];
+            }
+        }
+
+        if (empty($metadata)) {
+            Log::info("Rollback: No metadata found for job #{$jobId}. Skipping data cleanup.");
+            return;
+        }
+
+        $tableName = trim((string) ($metadata['table_name'] ?? ''));
+        $uniqueIdCol = trim((string) ($metadata['unique_id_col'] ?? ''));
+        $prefix = trim((string) ($metadata['unique_id_prefix'] ?? ''));
+
+        if ($tableName === '' || $uniqueIdCol === '' || $prefix === '') {
+            Log::warning("Rollback: Incomplete metadata for job #{$jobId}. Table: {$tableName}, Col: {$uniqueIdCol}, Prefix: {$prefix}");
+            return;
+        }
+
+        if (!Schema::hasTable($tableName)) {
+            Log::warning("Rollback: Table `{$tableName}` does not exist.");
+            return;
+        }
+
+        try {
+            $deletedCount = DB::table($tableName)
+                ->where($uniqueIdCol, 'like', $prefix . '%')
+                ->delete();
+
+            if ($deletedCount > 0) {
+                Log::info("Rollback SUCCESS: Deleted {$deletedCount} rows from `{$tableName}` for terminated job #{$jobId} (prefix: {$prefix}).");
+            } else {
+                Log::info("Rollback: No rows found to delete in `{$tableName}` for terminated job #{$jobId} (prefix: {$prefix}).");
+            }
+        } catch (\Throwable $e) {
+            Log::error("Rollback FAILED for job #{$jobId}: " . $e->getMessage(), [
+                'table' => $tableName,
+                'col' => $uniqueIdCol,
+                'prefix' => $prefix
+            ]);
+        }
     }
 
     public function markFailed(int $jobId, string $message, int $success = 0, int $failed = 0, ?string $status = null): void
@@ -444,6 +507,27 @@ class ImportProgressService
             'termination_requested' => $terminationRequested,
             'termination_requested_at' => $terminationRequest['requested_at'] ?? null,
         ];
+    }
+
+    private function findSmallestAvailableJobId(): int
+    {
+        // 1. Check if ID 1 is available
+        $exists1 = DB::table('import_jobs')->where('id', 1)->exists();
+        if (!$exists1) {
+            return 1;
+        }
+
+        // 2. Find the first "hole" in the ID sequence using a self-join style logic.
+        // We look for an existing ID (t1) where no ID exists for (t1 + 1).
+        $hole = DB::table('import_jobs as t1')
+            ->whereNotExists(function ($query) {
+                $query->select(DB::raw(1))
+                    ->from('import_jobs as t2')
+                    ->whereRaw('t2.id = t1.id + 1');
+            })
+            ->min(DB::raw('t1.id + 1'));
+
+        return (int) ($hole ?? 1);
     }
 
     private function cacheKey(int $jobId): string

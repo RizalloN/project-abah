@@ -121,13 +121,11 @@ class ManagedReportManagementService
         'ssa_simpanan' => [
             'period_priority' => ['Month_Day_Year_of_Posisi', 'month_day_year_of_posisi'],
             'kanca_priority' => ['nama_cabang'],
-            'period_filter_mode' => 'month',
             'normalize_kanca_whitespace' => true,
         ],
         'ssa_pinjaman' => [
             'period_priority' => ['month_day_year_of_periode', 'Month_Day_Year_of_Periode'],
             'kanca_priority' => ['nama_cabang'],
-            'period_filter_mode' => 'month',
             'normalize_kanca_whitespace' => true,
         ],
     ];
@@ -530,7 +528,6 @@ class ManagedReportManagementService
             || str_contains($columnName, 'posisi')
             || str_contains($columnName, 'tanggal')
             || str_contains($columnName, 'tgl');
-        $preferMonthLabel = $looksLikePeriodColumn;
 
         if (preg_match('/^\d{4}-\d{2}$/', $value) === 1) {
             return $value;
@@ -553,10 +550,6 @@ class ManagedReportManagementService
 
         $strictNormalized = StrictDateParser::normalize($value);
         if ($strictNormalized !== null) {
-            if ($preferMonthLabel && preg_match('/^\d{4}-\d{2}(-\d{2})?/', $strictNormalized) === 1) {
-                return substr($strictNormalized, 0, 7);
-            }
-
             return $strictNormalized;
         }
 
@@ -575,19 +568,19 @@ class ManagedReportManagementService
                 'd/m/Y',
             ] as $format) {
                 try {
-                    return Carbon::createFromFormat($format, $normalized)->format('Y-m');
+                    return Carbon::createFromFormat($format, $normalized)->format('Y-m-d');
                 } catch (\Throwable) {
                 }
             }
 
             try {
-                return Carbon::parse($normalized)->format('Y-m');
+                return Carbon::parse($normalized)->format('Y-m-d');
             } catch (\Throwable) {
             }
         }
 
         if (preg_match('/^\d{4}-\d{2}-\d{2}/', $value) === 1) {
-            return substr($value, 0, 7);
+            return substr($value, 0, 10);
         }
 
         return $value;
@@ -935,15 +928,7 @@ class ManagedReportManagementService
 
     private function normalizeManagementPeriodFilter(string $tableName, mixed $periodRaw, ?string $periodColumn = null): string
     {
-        $formatted = $this->formatManagementPeriodLabel($periodRaw, $periodColumn);
-        $override = self::MANAGEMENT_SCOPE_COLUMN_OVERRIDES[$tableName] ?? null;
-        $mode = is_array($override) ? (string) ($override['period_filter_mode'] ?? '') : '';
-
-        if ($mode === 'month' && preg_match('/^\d{4}-\d{2}/', $formatted) === 1) {
-            return substr($formatted, 0, 7);
-        }
-
-        return $formatted;
+        return $this->formatManagementPeriodLabel($periodRaw, $periodColumn);
     }
 
     private function normalizeManagementCreatedAtFilter(mixed $createdAtRaw): ?string

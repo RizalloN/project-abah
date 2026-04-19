@@ -5,6 +5,10 @@ namespace App\Http\Controllers\Import;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Import\Concerns\AllocatesGapIds;
 use App\Http\Controllers\Import\Concerns\SmartCsvImportSupport;
+use App\Services\Import\ExcelImportJobService;
+use App\Services\Import\ImportExecutionService;
+use App\Services\Import\ImportProgressService;
+use App\Services\Import\MySqlBulkLoadService;
 use App\Support\ReportDataSyncService;
 use App\Support\StrictDateParser;
 use Carbon\Carbon;
@@ -65,6 +69,10 @@ class ImportReportPhController extends Controller
         'wpmtamt', 'wamount', 'clmamt', 'clmapr',
     ];
     private const STAGED_CSV_TEMP_DIR = 'app/report_ph_stage';
+    private const FILTERED_CSV_TEMP_DIR = 'app/report_ph_filtered';
+    private const BULK_LOAD_TEMP_DIR = 'app/report_ph_bulk_stage';
+    private const BULK_STAGE_DELIMITER = ',';
+    private const INSERT_BATCH_SIZE = 1000;
 
     public function upload(Request $request)
     {
@@ -137,6 +145,254 @@ class ImportReportPhController extends Controller
         }
 
         return $directory . DIRECTORY_SEPARATOR . 'lw325_ph_' . Str::random(12) . '.csv';
+    }
+
+    private function createFilteredCsvPath(): string
+    {
+        $directory = storage_path(self::FILTERED_CSV_TEMP_DIR);
+        if (!is_dir($directory)) {
+            @mkdir($directory, 0777, true);
+        }
+
+        return $directory . DIRECTORY_SEPARATOR . 'lw325_ph_filtered_' . Str::random(12) . '.csv';
+    }
+
+    private function normalizeActiveFiltersForPolars(array $activeFilters): array
+    {
+        $normalizedFilters = [];
+
+        foreach ($activeFilters as $columnIndex => $allowedValues) {
+            $column = self::TARGET_COLUMNS[(int) $columnIndex] ?? null;
+            if ($column === null) {
+                continue;
+            }
+
+            $values = [];
+            foreach ((array) $allowedValues as $value) {
+                $normalizedValue = $this->normalizeCellValue($column, $value);
+                if ($normalizedValue === null) {
+                    $normalizedValue = trim((string) $value);
+                }
+
+                $normalizedValue = trim((string) $normalizedValue);
+                if ($normalizedValue === '') {
+                    continue;
+                }
+
+                $values[$normalizedValue] = true;
+            }
+
+            if ($values !== []) {
+                $normalizedFilters[$column] = array_keys($values);
+            }
+        }
+
+        return $normalizedFilters;
+    }
+
+    private function stageFilteredCsvWithPolars(?callable $send, string $sourcePath, array $activeFilters, ?string $delimiter = null): ?array
+    {
+        return $this->runPolarsProcessor(
+            $send,
+            $sourcePath,
+            $activeFilters,
+            [
+                'output_mode' => 'preview',
+                'output_csv_path' => $this->createFilteredCsvPath(),
+            ],
+            $delimiter
+        );
+    }
+
+    private function stageDirectLoadCsvWithPolars(?callable $send, string $sourcePath, array $activeFilters, array $selectedColumns, ?string $delimiter = null): ?array
+    {
+        $loadColumns = $this->buildPolarsLoadColumns($selectedColumns);
+
+        return $this->runPolarsProcessor(
+            $send,
+            $sourcePath,
+            $activeFilters,
+            [
+                'output_mode' => 'bulk_load',
+                'output_csv_path' => $this->createBulkLoadTempCsvPath((int) (microtime(true) * 1000)),
+                'load_columns' => $loadColumns,
+                'timestamp' => now()->toDateTimeString(),
+                'unique_suffix' => self::UNIQUE_SUFFIX,
+            ],
+            $delimiter
+        );
+    }
+
+    private function buildPolarsLoadColumns(array $selectedColumns): array
+    {
+        $loadColumns = ['uniqueid_namareport', 'created_at', 'updated_at'];
+
+        foreach ($selectedColumns as $index) {
+            $column = self::TARGET_COLUMNS[(int) $index] ?? null;
+            if ($column === null || in_array($column, ['id', 'uniqueid_namareport'], true)) {
+                continue;
+            }
+
+            $loadColumns[] = $column;
+        }
+
+        return array_values(array_unique($loadColumns));
+    }
+
+    private function estimateImportRows(string $path, int $headerLine = 1): int
+    {
+        if ($path === '' || !file_exists($path)) {
+            return 0;
+        }
+
+        $totalLines = $this->bulkLoadService()->countFileLines($path);
+        return max(0, $totalLines - max(1, $headerLine));
+    }
+
+    private function runPolarsProcessor(
+        ?callable $send,
+        string $sourcePath,
+        array $activeFilters,
+        array $extraConfig,
+        ?string $delimiter = null
+    ): ?array {
+        $pythonExe = $this->findPython();
+        $scriptPath = base_path('scripts/lw325_ph_polars_processor.py');
+
+        if (!$pythonExe || !file_exists($scriptPath)) {
+            return null;
+        }
+
+        $outputCsvPath = (string) ($extraConfig['output_csv_path'] ?? '');
+        if ($outputCsvPath === '') {
+            return null;
+        }
+
+        $configFile = storage_path('app/report_ph_polars_filter_' . uniqid() . '.json');
+        $delimiter = $delimiter !== null && $delimiter !== '' ? $delimiter : $this->smartDetectCsvDelimiter($sourcePath);
+
+        file_put_contents($configFile, json_encode(array_merge([
+            'file_path' => $sourcePath,
+            'delimiter' => $delimiter,
+            'output_csv_path' => $outputCsvPath,
+            'active_filters' => $this->normalizeActiveFiltersForPolars($activeFilters),
+        ], $extraConfig), JSON_UNESCAPED_UNICODE));
+
+        $cmd = escapeshellarg($pythonExe)
+            . ' ' . escapeshellarg($scriptPath)
+            . ' --config ' . escapeshellarg($configFile)
+            . ' --mode stage';
+
+        $descriptors = [
+            0 => ['pipe', 'r'],
+            1 => ['pipe', 'w'],
+            2 => ['pipe', 'w'],
+        ];
+
+        $process = proc_open($cmd, $descriptors, $pipes);
+        if (!is_resource($process)) {
+            @unlink($configFile);
+            @unlink($outputCsvPath);
+            return null;
+        }
+
+        fclose($pipes[0]);
+        stream_set_blocking($pipes[1], false);
+        stream_set_blocking($pipes[2], false);
+
+        $buffer = '';
+        $donePayload = null;
+        $pythonError = null;
+        $pythonProducedOutput = false;
+
+        $processLine = static function (string $line) use ($send, &$donePayload, &$pythonError): void {
+            $line = trim($line);
+            if ($line === '') {
+                return;
+            }
+
+            $data = json_decode($line, true);
+            if (!is_array($data)) {
+                return;
+            }
+
+            $type = $data['type'] ?? 'progress';
+            unset($data['type']);
+
+            if ($type === 'progress') {
+                if ($send !== null) {
+                    $send('progress', $data);
+                }
+                return;
+            }
+
+            if ($type === 'done') {
+                $donePayload = $data;
+                return;
+            }
+
+            if ($type === 'error') {
+                $pythonError = $data['message'] ?? 'Polars filter LW325_PH gagal.';
+            }
+        };
+
+        try {
+            while (true) {
+                $status = proc_get_status($process);
+                $chunk = fread($pipes[1], 65536);
+
+                if ($chunk !== false && $chunk !== '') {
+                    $pythonProducedOutput = true;
+                    $buffer .= $chunk;
+                    while (($pos = strpos($buffer, "\n")) !== false) {
+                        $line = substr($buffer, 0, $pos);
+                        $buffer = substr($buffer, $pos + 1);
+                        $processLine($line);
+                    }
+                }
+
+                if (!$status['running']) {
+                    break;
+                }
+
+                usleep(50000);
+            }
+
+            $remaining = stream_get_contents($pipes[1]);
+            if ($remaining) {
+                $pythonProducedOutput = true;
+                $buffer .= $remaining;
+                foreach (explode("\n", $buffer) as $line) {
+                    $processLine($line);
+                }
+            }
+        } finally {
+            if (isset($pipes[1]) && is_resource($pipes[1])) {
+                fclose($pipes[1]);
+            }
+            if (isset($pipes[2]) && is_resource($pipes[2])) {
+                fclose($pipes[2]);
+            }
+            if (is_resource($process)) {
+                proc_close($process);
+            }
+
+            @unlink($configFile);
+        }
+
+        if (!$pythonProducedOutput || $pythonError !== null || !$donePayload || !file_exists($outputCsvPath)) {
+            @unlink($outputCsvPath);
+            return null;
+        }
+
+        return [
+            'path' => $outputCsvPath,
+            'cleanup' => true,
+            'written_rows' => (int) ($donePayload['written_rows'] ?? $donePayload['total_rows'] ?? 0),
+            'periods' => array_values((array) ($donePayload['dates'] ?? [])),
+            'load_columns' => array_values((array) ($extraConfig['load_columns'] ?? [])),
+            'backend' => 'polars',
+        ];
     }
 
     private function detectExcelHeaderViaPython(string $path): ?array
@@ -541,7 +797,6 @@ class ImportReportPhController extends Controller
 
         try {
             $context = $this->buildCsvContext($workingPath);
-            $totalRows = $this->countFilteredRows($workingPath, $context, $activeFilters, $selectedColumns);
         } catch (\Throwable $e) {
             return response()->json([
                 'status' => 'error',
@@ -558,14 +813,6 @@ class ImportReportPhController extends Controller
             ], 422);
         }
 
-        if ($totalRows === 0) {
-            return response()->json([
-                'status' => 'warning',
-                'title' => 'Tidak Ada Data',
-                'text' => 'Tidak ada baris yang lolos filter untuk diimport.',
-            ], 422);
-        }
-
         if (DB::table(self::TABLE_NAME)->whereDate('periode', $context['periode'])->exists()) {
             $this->cleanupUploadedFile($relativePath);
 
@@ -576,235 +823,98 @@ class ImportReportPhController extends Controller
             ], 422);
         }
 
-        $jobId = app(\App\Services\Import\ImportProgressService::class)->createJob([
-            'id_report' => session('active_id_report'),
-            'file_name' => basename($absolutePath),
-            'folder_path' => dirname($absolutePath),
-            'status' => 'processing',
-            'total_files' => $totalRows,
-            'total_success' => 0,
-            'total_failed' => 0,
-            'created_by' => auth()->id() ?? 1,
-            'job_context' => [
+        $filteredCsvPath = null;
+        $filterBackend = 'pending_polars';
+        $bulkLoadColumns = $this->buildPolarsLoadColumns($selectedColumns);
+        $totalRows = $this->estimateImportRows($workingPath, (int) ($context['header_line'] ?? 1));
+        $headerIndex = max(0, ((int) ($context['header_line'] ?? 1)) - 1);
+        $queueHeaders = array_values((array) ($context['headers'] ?? self::TARGET_COLUMNS));
+        $sourceTotalRows = $totalRows + $headerIndex + 1;
+
+        if ($totalRows === 0) {
+            return response()->json([
+                'status' => 'warning',
+                'title' => 'Tidak Ada Data',
+                'text' => 'Tidak ada baris data untuk diproses.',
+            ], 422);
+        }
+
+        $jobId = $this->excelImportJobService()->createImportJobRecord(
+            (int) session('active_id_report'),
+            $absolutePath,
+            $sourceTotalRows,
+            [
                 'controller' => static::class,
                 'mode' => 'report_ph_import',
-                'table_name' => 'lw325_ph',
-                'file_hash' => sha1($absolutePath),
-                'total_rows' => (int) $totalRows,
+                'table_name' => self::TABLE_NAME,
+                'file_path' => $relativePath,
+                'header_index' => $headerIndex,
+                'active_filters_hash' => sha1(json_encode($activeFilters)),
+                'normalized_headers_hash' => sha1(json_encode($queueHeaders)),
             ],
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+            auth()->id() ?? 1
+        );
 
         $importParams = [
             'job_id' => $jobId,
             'file_path' => $relativePath,
+            'periode' => $context['periode'],
             'selected_columns' => $selectedColumns,
             'active_filters' => $activeFilters,
-            'total_rows' => $totalRows,
+            'total_rows' => $sourceTotalRows,
+            'header_index' => $headerIndex,
+            'delimiter' => (string) ($context['delimiter'] ?? self::COLUMN_DELIMITER),
+            'table_name' => self::TABLE_NAME,
+            'staged_csv_path' => $workingPath !== $absolutePath ? $workingPath : null,
+            'disable_inline_fallback' => true,
+            'filtered_csv_path' => $filteredCsvPath,
+            'bulk_load_columns' => $bulkLoadColumns,
+            'filter_backend' => $filterBackend,
         ];
         session(['report_ph_import_params' => $importParams]);
         Cache::put('report_ph_import_params_' . $jobId, $importParams, now()->addHours(4));
+        $this->excelImportJobService()->putImportJobState($jobId, [
+            'params' => $importParams,
+            'headers' => $queueHeaders,
+        ]);
+        $this->progressService()->markQueued($jobId, [
+            'status' => 'queued',
+            'phase' => 'polars',
+            'mode' => 'polars',
+            'percent' => 0,
+            'message' => 'Fase Polars LW325 - PH siap diproses lewat worker imports-high.',
+            'total_rows' => $sourceTotalRows,
+            'processed_rows' => 0,
+            'queue' => 'imports-high',
+        ]);
 
         return response()->json([
             'status' => 'success',
             'job_id' => $jobId,
-            'total_rows' => $totalRows,
+            'total_rows' => $sourceTotalRows,
         ]);
     }
 
     public function processImportStream(Request $request)
     {
-        ini_set('memory_limit', '1024M');
-        set_time_limit(0);
-        DB::disableQueryLog();
-
         $sessionParams = session('report_ph_import_params', []);
         $jobId = (int) ($sessionParams['job_id'] ?? $request->query('job_id', 0));
-        $params = Cache::get('report_ph_import_params_' . $jobId, $sessionParams);
+        if ($jobId <= 0) {
+            return response()->stream(function (): void {
+                echo "event: error\n";
+                echo 'data: ' . json_encode(['message' => 'Job import tidak ditemukan.']) . "\n\n";
+            }, 422, [
+                'Content-Type' => 'text/event-stream',
+                'Cache-Control' => 'no-cache, no-store',
+                'X-Accel-Buffering' => 'no',
+                'Connection' => 'keep-alive',
+            ]);
+        }
 
         request()->session()->save();
+        $this->executionService()->dispatch($jobId, 'Fase Polars LW325 - PH dimulai. Menyiapkan import fresh.');
 
-        return response()->stream(function () use ($params, $jobId) {
-            $streamLock = null;
-            $send = function (string $event, array $data) {
-                echo "event: {$event}\n";
-                echo 'data: ' . json_encode($data) . "\n\n";
-                if (ob_get_level() > 0) {
-                    ob_flush();
-                }
-                flush();
-            };
-
-            try {
-                if ($jobId > 0) {
-                    $streamLock = Cache::lock('import_report_ph_stream_job_' . $jobId, 7200);
-
-                    if (!$streamLock->get()) {
-                        $job = DB::table('import_jobs')->where('id', $jobId)->first();
-
-                        if ($job && in_array($job->status, ['completed', 'failed', 'failed_partial'], true)) {
-                            $send('complete', [
-                                'total_success' => (int) ($job->total_success ?? 0),
-                                'total_failed' => (int) ($job->total_failed ?? 0),
-                                'total_rows' => (int) ($job->total_files ?? 0),
-                                'skipped_count' => 0,
-                                'skipped_rows' => [],
-                                'skip_reasons_summary' => [],
-                            ]);
-                        } else {
-                            $send('error', ['message' => 'Job import ' . self::REPORT_LABEL . ' ini sudah sedang diproses pada koneksi lain.']);
-                        }
-                        return;
-                    }
-                }
-
-                $relativePath = $params['file_path'] ?? '';
-                $absolutePath = Storage::path($relativePath);
-                $workingPath = $this->resolveWorkingImportPath($relativePath);
-                $selectedColumns = array_map('intval', $params['selected_columns'] ?? []);
-                $activeFilters = $params['active_filters'] ?? [];
-                $totalRows = (int) ($params['total_rows'] ?? 0);
-
-                if ($relativePath === '' || !file_exists($absolutePath)) {
-                    if ($jobId > 0) {
-                        $progressService = app(\App\Services\Import\ImportProgressService::class);
-                        $progressService->markFailed($jobId, 'File tidak ditemukan di server. Silakan upload ulang.', 0, 0, 'failed');
-                        $progressService->cleanupQueuedImportJobRowsForJob($jobId);
-                    }
-
-                    $send('error', ['message' => 'File CSV ' . self::REPORT_LABEL . ' tidak ditemukan di server.']);
-                    return;
-                }
-
-                if (!file_exists($workingPath)) {
-                    $send('error', ['message' => 'File staging Excel ' . self::REPORT_LABEL . ' tidak ditemukan di server.']);
-                    return;
-                }
-
-                $context = $this->buildCsvContext($workingPath);
-                $handle = fopen($workingPath, 'r');
-                if ($handle === false) {
-                    $send('error', ['message' => 'Gagal membuka file CSV ' . self::REPORT_LABEL . '.']);
-                    return;
-                }
-
-                $rows = [];
-                $rowsDone = 0;
-                $totalSuccess = 0;
-                $totalFailed = 0;
-                $lastErrorMsg = '';
-                $lineNumber = 0;
-                $startTime = microtime(true);
-                $lastProgressAt = 0;
-
-                $send('progress', [
-                    'percent' => 5,
-                    'message' => 'Menyiapkan stream import ' . self::REPORT_LABEL . '...',
-                    'rows_done' => 0,
-                    'total' => $totalRows,
-                    'speed' => 0,
-                ]);
-
-                try {
-                    while (($line = fgets($handle)) !== false) {
-                        $lineNumber++;
-                        if ($lineNumber <= $context['header_line']) {
-                            continue;
-                        }
-
-                        $row = $this->mapCsvRow($context, $this->parseCsvLine($line, $context['delimiter']));
-                        if ($row === null || !$this->passesFilters($row, $activeFilters)) {
-                            continue;
-                        }
-
-                        $insertRow = $this->buildInsertRow($context['headers'], $row, $selectedColumns);
-                        if ($insertRow === null) {
-                            continue;
-                        }
-
-                        $rows[] = $insertRow;
-                        $rowsDone++;
-
-                        if (count($rows) >= 1000) {
-                            $this->insertBatch($rows, $totalSuccess, $totalFailed, $lastErrorMsg);
-                            $rows = [];
-                        }
-
-                        if ($rowsDone - $lastProgressAt >= 500) {
-                            $lastProgressAt = $rowsDone;
-                            $elapsed = max(microtime(true) - $startTime, 0.001);
-                            $speed = (int) ($rowsDone / $elapsed);
-                            $percent = $totalRows > 0 ? min(95, 12 + (int) (($rowsDone / $totalRows) * 83)) : 80;
-
-                            $send('progress', [
-                                'percent' => $percent,
-                                'message' => "Menyimpan data " . self::REPORT_LABEL . "... ({$speed} baris/detik)",
-                                'rows_done' => $rowsDone,
-                                'total' => $totalRows,
-                                'speed' => $speed,
-                            ]);
-                        }
-                    }
-                } finally {
-                    fclose($handle);
-                }
-
-                if (!empty($rows)) {
-                    $this->insertBatch($rows, $totalSuccess, $totalFailed, $lastErrorMsg);
-                }
-
-                DB::table('import_jobs')->where('id', $jobId)->update([
-                    'status' => $totalFailed > 0 ? ($totalSuccess > 0 ? 'failed_partial' : 'failed') : 'completed',
-                    'total_files' => $rowsDone,
-                    'total_success' => $totalSuccess,
-                    'total_failed' => $totalFailed,
-                    'updated_at' => now(),
-                ]);
-
-                $extraPaths = $workingPath !== $absolutePath ? [$workingPath] : [];
-                $this->cleanupSuccessfulImportArtifacts($jobId, $relativePath, $context['periode'] ?? null, $extraPaths);
-
-                $send('progress', [
-                    'percent' => 98,
-                    'message' => 'Finalisasi status import ' . self::REPORT_LABEL . '...',
-                    'rows_done' => $rowsDone,
-                    'total' => $totalRows,
-                    'speed' => 0,
-                ]);
-
-                $send('complete', [
-                    'total_success' => $totalSuccess,
-                    'total_failed' => $totalFailed,
-                    'total_rows' => $rowsDone,
-                    'error_message' => $lastErrorMsg,
-                    'skipped_count' => 0,
-                    'skipped_rows' => [],
-                    'skip_reasons_summary' => [],
-                ]);
-            } catch (\Throwable $e) {
-                Log::error(self::REPORT_LABEL . ' STREAM ERROR: ' . $e->getMessage() . ' | ' . $e->getFile() . ':' . $e->getLine());
-                if ($jobId > 0) {
-                    DB::table('import_jobs')->where('id', $jobId)->update([
-                        'status' => 'failed',
-                        'updated_at' => now(),
-                    ]);
-                }
-                $send('error', ['message' => 'Fatal Error: ' . $e->getMessage()]);
-            } finally {
-                if ($streamLock) {
-                    try {
-                        $streamLock->release();
-                    } catch (\Throwable $e) {
-                        Log::warning('Failed to release ' . self::REPORT_LABEL . ' import lock for job ' . $jobId . ': ' . $e->getMessage());
-                    }
-                }
-            }
-        }, 200, [
-            'Content-Type' => 'text/event-stream',
-            'Cache-Control' => 'no-cache, no-transform',
-            'X-Accel-Buffering' => 'no',
-        ]);
+        return $this->executionService()->streamStatus($request, $jobId, false);
     }
 
     public function processImport(Request $request)
@@ -880,6 +990,74 @@ class ImportReportPhController extends Controller
             ], 422);
         }
 
+        $filteredCsvPath = null;
+        $bulkLoadColumns = [];
+        $polarsResult = $this->stageDirectLoadCsvWithPolars(null, $workingPath, $activeFilters, $selectedColumns, $context['delimiter'] ?? null);
+        if ($polarsResult !== null) {
+            $filteredCsvPath = (string) ($polarsResult['path'] ?? '');
+            $bulkLoadColumns = array_values((array) ($polarsResult['load_columns'] ?? []));
+        }
+
+        if ($filteredCsvPath !== null && file_exists($filteredCsvPath)) {
+            $stagingPath = $filteredCsvPath;
+            $loadColumns = $bulkLoadColumns !== [] ? $bulkLoadColumns : $this->buildPolarsLoadColumns($selectedColumns);
+            $preparedRows = (int) ($polarsResult['written_rows'] ?? 0);
+
+            if ($preparedRows === 0) {
+                $extraPaths = [$filteredCsvPath];
+                $this->cleanupUploadedFile($relativePath, $extraPaths);
+
+                return response()->json([
+                    'status' => 'warning',
+                    'title' => 'Tidak Ada Data',
+                    'text' => 'Tidak ada baris data yang lolos filter untuk diimport.',
+                ], 422);
+            }
+
+            $totalSuccess = 0;
+            $totalFailed = 0;
+            $lastErrorMsg = '';
+
+            try {
+                if ($this->supportsNativeBulkLoad()) {
+                    $totalSuccess = $this->loadCsvIntoMysqlChunked(
+                        $stagingPath,
+                        self::TABLE_NAME,
+                        $loadColumns,
+                        null,
+                        8000,
+                        $preparedRows
+                    );
+                    $totalFailed = max(0, $preparedRows - $totalSuccess);
+                } else {
+                    throw new \RuntimeException('LOAD DATA LOCAL INFILE tidak tersedia pada koneksi aktif.');
+                }
+            } catch (\Throwable $e) {
+                $lastErrorMsg = Str::limit($e->getMessage(), 800, '...');
+                Log::warning(self::REPORT_LABEL . ' bulk load fallback: ' . $e->getMessage());
+
+                $fallback = $this->insertStagedCsvInBatches($stagingPath, $loadColumns);
+                $totalSuccess = $fallback['total_success'];
+                $totalFailed = $fallback['total_failed'];
+                if ($fallback['last_error'] !== '') {
+                    $lastErrorMsg = $fallback['last_error'];
+                }
+            }
+
+            if ($totalFailed === 0) {
+                $extraPaths = [$filteredCsvPath];
+                $this->cleanupUploadedFile($relativePath, $extraPaths);
+            }
+
+            return response()->json([
+                'status' => $totalFailed > 0 ? 'warning' : 'success',
+                'title' => $totalFailed > 0 ? 'Import Memiliki Kendala!' : 'Berhasil!',
+                'text' => $totalFailed > 0
+                    ? "Berhasil: {$totalSuccess} baris.<br>Gagal: {$totalFailed} baris." . ($lastErrorMsg !== '' ? "<br><br><b>Info MySQL:</b><br><small class='text-danger'>" . htmlspecialchars($lastErrorMsg, ENT_QUOTES) . '</small>' : '')
+                    : "Sebanyak {$totalSuccess} baris data telah sukses masuk ke tabel <b class='text-uppercase'>" . self::TABLE_NAME . '</b>.',
+            ]);
+        }
+
         $handle = fopen($workingPath, 'r');
         if ($handle === false) {
             return response()->json([
@@ -928,7 +1106,8 @@ class ImportReportPhController extends Controller
         }
 
         if ($totalFailed === 0) {
-            $this->cleanupUploadedFile($relativePath);
+            $extraPaths = $filteredCsvPath !== null && file_exists($filteredCsvPath) ? [$filteredCsvPath] : [];
+            $this->cleanupUploadedFile($relativePath, $extraPaths);
         }
 
         return response()->json([
@@ -1422,6 +1601,315 @@ class ImportReportPhController extends Controller
             : null;
     }
 
+    private function buildInsertRowFromPolarsRecord(array $rowByColumn, array $selectedColumns): ?array
+    {
+        $insertRow = [
+            'uniqueid_namareport' => (string) Str::uuid() . self::UNIQUE_SUFFIX,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ];
+
+        foreach ($selectedColumns as $index) {
+            $column = self::TARGET_COLUMNS[$index] ?? null;
+            if ($column === null || in_array($column, ['id', 'uniqueid_namareport'], true)) {
+                continue;
+            }
+
+            $value = $rowByColumn[$column] ?? null;
+            if (is_string($value)) {
+                $value = trim($value);
+                if ($value === '') {
+                    $value = null;
+                }
+            }
+
+            $insertRow[$column] = $value;
+        }
+
+        return $this->hasMeaningfulImportData($insertRow, ['uniqueid_namareport', 'created_at', 'updated_at', 'periode'])
+            ? $insertRow
+            : null;
+    }
+
+    private function bulkLoadService(): MySqlBulkLoadService
+    {
+        return app(MySqlBulkLoadService::class);
+    }
+
+    private function excelImportJobService(): ExcelImportJobService
+    {
+        return app(ExcelImportJobService::class);
+    }
+
+    private function progressService(): ImportProgressService
+    {
+        return app(ImportProgressService::class);
+    }
+
+    private function executionService(): ImportExecutionService
+    {
+        return app(ImportExecutionService::class);
+    }
+
+    private function supportsNativeBulkLoad(): bool
+    {
+        return $this->bulkLoadService()->supportsNativeBulkLoad();
+    }
+
+
+    private function loadCsvIntoMysqlChunked(
+        string $csvPath,
+        string $tableName,
+        array $columns,
+        ?callable $onProgress = null,
+        int $chunkLines = 8000,
+        ?int $totalLines = null
+    ): int {
+        return $this->bulkLoadService()->loadCsvIntoMysqlChunked(
+            $csvPath,
+            $tableName,
+            $columns,
+            $onProgress,
+            $chunkLines,
+            $totalLines
+        );
+    }
+
+    private function createBulkLoadTempCsvPath(int $jobId): string
+    {
+        return $this->bulkLoadService()->createBulkLoadTempCsvPath(
+            storage_path(self::BULK_LOAD_TEMP_DIR),
+            self::TABLE_NAME,
+            $jobId
+        );
+    }
+
+    private function createFilteredPolarsCsvStage(
+        string $filteredCsvPath,
+        array $selectedColumns,
+        ?int $totalRows = null,
+        ?callable $send = null
+    ): array {
+        $stagingPath = $this->createBulkLoadTempCsvPath((int) (microtime(true) * 1000));
+        $outputHandle = fopen($stagingPath, 'w');
+        if ($outputHandle === false) {
+            throw new \RuntimeException('Gagal membuat file staging ' . self::REPORT_LABEL . '.');
+        }
+
+        $handle = fopen($filteredCsvPath, 'r');
+        if ($handle === false) {
+            fclose($outputHandle);
+            throw new \RuntimeException('Gagal membuka file hasil filter Polars ' . self::REPORT_LABEL . '.');
+        }
+
+        $headerRow = fgetcsv($handle, 0, self::COLUMN_DELIMITER);
+        $headers = array_map(fn ($value) => $this->normalizeHeader((string) $value), (array) $headerRow);
+        $expectedColumns = count($headers);
+
+        $loadColumns = ['uniqueid_namareport', 'created_at', 'updated_at'];
+        foreach ($selectedColumns as $index) {
+            $column = self::TARGET_COLUMNS[$index] ?? null;
+            if ($column === null || in_array($column, ['id', 'uniqueid_namareport'], true)) {
+                continue;
+            }
+            $loadColumns[] = $column;
+        }
+        $loadColumns = array_values(array_unique($loadColumns));
+
+        $rowsDone = 0;
+        $sourceRowsScanned = 0;
+        $lastProgressAt = 0;
+        $startTime = microtime(true);
+        $timestamp = now()->toDateTimeString();
+
+        try {
+            while (($row = fgetcsv($handle, 0, self::COLUMN_DELIMITER)) !== false) {
+                if (empty(array_filter((array) $row, fn ($value) => trim((string) $value) !== ''))) {
+                    continue;
+                }
+
+                if (count($row) < $expectedColumns) {
+                    $row = array_pad($row, $expectedColumns, '');
+                } elseif (count($row) > $expectedColumns) {
+                    $row = array_slice($row, 0, $expectedColumns);
+                }
+
+                $sourceRowsScanned++;
+                $rowByColumn = [];
+                foreach ($headers as $index => $column) {
+                    $rowByColumn[$column] = $row[$index] ?? null;
+                }
+
+                $insertRow = $this->buildInsertRowFromPolarsRecord($rowByColumn, $selectedColumns);
+                if ($insertRow === null) {
+                    continue;
+                }
+
+                $insertRow['created_at'] = $timestamp;
+                $insertRow['updated_at'] = $timestamp;
+
+                $stagedRow = [];
+                foreach ($loadColumns as $column) {
+                    $value = $insertRow[$column] ?? null;
+                    $stagedRow[] = $this->encodeBulkStageValue($value);
+                }
+                fputcsv($outputHandle, $stagedRow, self::BULK_STAGE_DELIMITER, '"', '\\');
+                $rowsDone++;
+
+                if ($send !== null && ($sourceRowsScanned - $lastProgressAt) >= 500) {
+                    $lastProgressAt = $sourceRowsScanned;
+                    $elapsed = max(microtime(true) - $startTime, 0.001);
+                    $speed = (int) ($sourceRowsScanned / $elapsed);
+                    $percent = $totalRows !== null && $totalRows > 0
+                        ? min(92, 10 + (int) (($sourceRowsScanned / max($totalRows, 1)) * 82))
+                        : 92;
+
+                    $send('progress', [
+                        'percent' => $percent,
+                        'message' => "Menyusun CSV staging " . self::REPORT_LABEL . " dari hasil filter Polars... ({$speed} baris sumber/detik)",
+                        'rows_done' => $sourceRowsScanned,
+                        'total' => $totalRows ?? $sourceRowsScanned,
+                        'speed' => $speed,
+                    ]);
+                }
+            }
+        } finally {
+            fclose($handle);
+            fclose($outputHandle);
+        }
+
+        return [
+            'path' => $stagingPath,
+            'rows_done' => $rowsDone,
+            'columns' => $loadColumns,
+        ];
+    }
+
+    private function insertStagedCsvInBatches(string $csvPath, array $columns): array
+    {
+        $handle = fopen($csvPath, 'r');
+        if ($handle === false) {
+            throw new \RuntimeException('Gagal membuka file staging CSV untuk fallback insert.');
+        }
+
+        $rows = [];
+        $totalSuccess = 0;
+        $totalFailed = 0;
+        $lastError = '';
+
+        try {
+            while (($data = fgetcsv($handle, 0, self::BULK_STAGE_DELIMITER)) !== false) {
+                if (empty($data)) {
+                    continue;
+                }
+
+                $row = [];
+                foreach ($columns as $index => $column) {
+                    $value = $data[$index] ?? null;
+                    $row[$column] = $this->decodeBulkStageValue($value);
+                }
+
+                $rows[] = $row;
+                if (count($rows) >= self::INSERT_BATCH_SIZE) {
+                    $this->insertBatch($rows, $totalSuccess, $totalFailed, $lastError);
+                    $rows = [];
+                }
+            }
+        } finally {
+            fclose($handle);
+        }
+
+        if (!empty($rows)) {
+            $this->insertBatch($rows, $totalSuccess, $totalFailed, $lastError);
+        }
+
+        return [
+            'total_success' => $totalSuccess,
+            'total_failed' => $totalFailed,
+            'last_error' => $lastError,
+        ];
+    }
+
+    private function insertStagedCsvInBatchesWithProgress(string $csvPath, array $columns, int $totalRows, callable $send): array
+    {
+        $handle = fopen($csvPath, 'r');
+        if ($handle === false) {
+            throw new \RuntimeException('Gagal membuka file staging CSV untuk fallback insert.');
+        }
+
+        $rows = [];
+        $totalSuccess = 0;
+        $totalFailed = 0;
+        $lastError = '';
+        $processedRows = 0;
+        $startTime = microtime(true);
+
+        try {
+            while (($data = fgetcsv($handle, 0, self::BULK_STAGE_DELIMITER)) !== false) {
+                if (empty($data)) {
+                    continue;
+                }
+
+                $row = [];
+                foreach ($columns as $index => $column) {
+                    $value = $data[$index] ?? null;
+                    $row[$column] = $this->decodeBulkStageValue($value);
+                }
+
+                $rows[] = $row;
+                if (count($rows) >= self::INSERT_BATCH_SIZE) {
+                    $this->insertBatch($rows, $totalSuccess, $totalFailed, $lastError);
+                    $rows = [];
+                    $processedRows = $totalSuccess + $totalFailed;
+                    $elapsed = max(microtime(true) - $startTime, 0.001);
+                    $speed = (int) round($processedRows / $elapsed);
+                    $percent = $totalRows > 0 ? min(99, 97 + (int) floor(($processedRows / max($totalRows, 1)) * 2)) : 99;
+                    $send('progress', [
+                        'percent' => $percent,
+                        'message' => "Fallback insert " . self::REPORT_LABEL . "... ({$speed} baris/detik)",
+                        'rows_done' => $processedRows,
+                        'total' => $totalRows,
+                        'speed' => $speed,
+                    ]);
+                }
+            }
+        } finally {
+            fclose($handle);
+        }
+
+        if (!empty($rows)) {
+            $this->insertBatch($rows, $totalSuccess, $totalFailed, $lastError);
+        }
+
+        return [
+            'total_success' => $totalSuccess,
+            'total_failed' => $totalFailed,
+            'last_error' => $lastError,
+        ];
+    }
+
+    private function encodeBulkStageValue(mixed $value): string
+    {
+        if ($value === null) {
+            return '\N';
+        }
+
+        return str_replace('\\', '\\\\', (string) $value);
+    }
+
+    private function decodeBulkStageValue(mixed $value): mixed
+    {
+        if ($value === '\N') {
+            return null;
+        }
+
+        if (!is_string($value)) {
+            return $value;
+        }
+
+        return str_replace('\\\\', '\\', $value);
+    }
+
     private function insertBatch(array $rows, int &$totalSuccess, int &$totalFailed, string &$lastErrorMsg): void
     {
         foreach (array_chunk($rows, 500) as $batch) {
@@ -1447,7 +1935,7 @@ class ImportReportPhController extends Controller
         }
     }
 
-    private function cleanupUploadedFile(string $relativePath): void
+    private function cleanupUploadedFile(string $relativePath, array $extraPaths = []): void
     {
         try {
             Storage::delete($relativePath);
@@ -1455,6 +1943,12 @@ class ImportReportPhController extends Controller
             $stagedCsvPath = (string) ($stageState['staged_csv_path'] ?? '');
             if ($stagedCsvPath !== '' && file_exists($stagedCsvPath)) {
                 @unlink($stagedCsvPath);
+            }
+            foreach ($extraPaths as $extraPath) {
+                $extraPath = (string) $extraPath;
+                if ($extraPath !== '' && file_exists($extraPath)) {
+                    @unlink($extraPath);
+                }
             }
             $this->clearStagedExcelState($relativePath);
         } catch (\Throwable $e) {
