@@ -43,6 +43,10 @@ Route::get('/', function () {
 Route::middleware(['auth', 'release.session.lock', 'throttle:240,1'])->group(function () {
     Route::get('/dashboard-harian', [DashboardHarianController::class, 'index'])
         ->name('dashboard.harian');
+    Route::get('/dashboard-harian/timeseries', [DashboardHarianController::class, 'timeseries'])
+        ->name('dashboard.harian.timeseries');
+    Route::get('/dashboard-harian/timeseries/data', [DashboardHarianController::class, 'timeseriesData'])
+        ->name('dashboard.harian.timeseries.data');
     Route::get('/dashboard-harian/data', [DashboardHarianController::class, 'data'])
         ->name('dashboard.harian.data');
 

@@ -48,6 +48,84 @@ class DashboardHarianController extends Controller
         return view('report.dashboard-harian', compact('dashboardPage'));
     }
 
+    public function timeseries(Request $request): View
+    {
+        $selectedKanca = $this->normalizeFilter($request->input('kanca'));
+        $selectedUnit = $this->normalizeFilter($request->input('unit_kerja'));
+        $selectedCategory = $request->input('category', 'simpanan'); // Default to simpanan
+
+        // Default to Area 6 (Madiun, Ngawi, Magetan, Ponorogo) if no kanca selected
+        if (!$selectedKanca && !$selectedUnit) {
+            $selectedKanca = ['KC Madiun', 'KC Ngawi', 'KC Magetan', 'KC Ponorogo'];
+        }
+
+        $filters = $this->dashboardHarianSnapshotService->fetchFilterOptions(null, $selectedKanca, $selectedUnit);
+
+        $dashboardPage = [
+            'routes' => [
+                'data' => route('dashboard.harian.timeseries.data'),
+            ],
+            'filters' => $filters,
+            'selected' => [
+                'kanca' => $selectedKanca ?? [],
+                'unit_kerja' => $selectedUnit ?? 'all',
+                'category' => $selectedCategory,
+            ],
+        ];
+
+        return view('report.dashboard-harian-timeseries', compact('dashboardPage'));
+    }
+
+    public function timeseriesData(Request $request): JsonResponse
+    {
+        $selectedKanca = $this->normalizeFilter($request->input('kanca'));
+        $selectedUnit = $this->normalizeFilter($request->input('unit_kerja'));
+        $category = $request->input('category', 'simpanan');
+
+        // Default to Area 6 if nothing selected
+        if (!$selectedKanca && !$selectedUnit) {
+            $selectedKanca = ['KC Madiun', 'KC Ngawi', 'KC Magetan', 'KC Ponorogo'];
+        }
+
+        // Fetch last 4 months available in snapshots
+        $periods = $this->dashboardHarianSnapshotService->fetchPeriods()->take(120);
+
+        if ($periods->isEmpty()) {
+            return response()->json([
+                'months' => [],
+                'series' => [],
+                'labels' => range(1, 31),
+                'area_total' => []
+            ]);
+        }
+
+        // Group by month and sort chronologically (oldest to newest)
+        $months = $periods->map(fn($p) => substr($p, 0, 7))->unique()->take(4)->values()->reverse()->values();
+
+        if ($months->isEmpty()) {
+            return response()->json([
+                'months' => [],
+                'series' => [],
+                'labels' => range(1, 31),
+                'area_total' => []
+            ]);
+        }
+
+        $data = $this->dashboardHarianSnapshotService->fetchTimeseriesTrend(
+            $months->toArray(),
+            $category,
+            $selectedKanca,
+            $selectedUnit
+        );
+
+        return response()->json([
+            'months' => $months->toArray(),
+            'series' => $data['series'],
+            'labels' => range(1, 31),
+            'area_total' => $data['area_total']
+        ]);
+    }
+
     public function data(Request $request): JsonResponse
     {
         $selectedKanca = $this->normalizeFilter($request->input('kanca'));

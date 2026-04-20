@@ -372,11 +372,28 @@
 
         <nav>
             <ul class="nav nav-pills nav-sidebar flex-column" data-widget="treeview" role="menu" data-accordion="false">
-                <li class="nav-item">
-                    <a href="{{ route('dashboard.harian') }}" class="nav-link {{ request()->routeIs('dashboard.harian') ? 'active' : '' }}">
+                <li class="nav-item {{ request()->is('dashboard-harian*') ? 'menu-open' : '' }}">
+                    <a href="#" class="nav-link {{ request()->is('dashboard-harian*') ? 'active' : '' }}">
                         <i class="nav-icon fas fa-calendar-day"></i>
-                        <p>Dashboard Harian</p>
+                        <p>
+                            Dashboard Harian
+                            <i class="right fas fa-angle-left"></i>
+                        </p>
                     </a>
+                    <ul class="nav nav-treeview">
+                        <li class="nav-item">
+                            <a href="{{ route('dashboard.harian') }}" class="nav-link {{ request()->routeIs('dashboard.harian') ? 'active' : '' }}">
+                                <i class="far fa-circle nav-icon"></i>
+                                <p>Keragaan Harian</p>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="{{ route('dashboard.harian.timeseries') }}" class="nav-link {{ request()->routeIs('dashboard.harian.timeseries') ? 'active' : '' }}">
+                                <i class="far fa-circle nav-icon"></i>
+                                <p>Timeseries</p>
+                            </a>
+                        </li>
+                    </ul>
                 </li>
 
                 <li class="nav-item">

@@ -18,11 +18,11 @@
         --table-header-bg: var(--bri-blue-dark);
         --table-header-text: #ffffff;
         
-        --daily-no-width: 60px;
-        --daily-label-width: 280px;
-        --daily-position-width: 110px;
-        --daily-delta-width: 100px;
-        --daily-rka-width: 120px;
+        --daily-no-width: 45px;
+        --daily-label-width: 240px;
+        --daily-position-width: 95px;
+        --daily-delta-width: 85px;
+        --daily-rka-width: 100px;
     }
 
     .daily-dashboard {
@@ -665,7 +665,7 @@
     }
 
     .daily-table th, .daily-table td {
-        padding: 0.75rem 1rem;
+        padding: 0.35rem 0.5rem;
         vertical-align: middle;
         white-space: nowrap;
         border-bottom: 1px solid var(--border-color);
@@ -748,7 +748,7 @@
 
     /* Table Cells */
     .daily-table tbody td {
-        font-size: 0.8rem;
+        font-size: 0.75rem;
         color: var(--text-main);
         text-align: right; /* Numeric columns usually right aligned */
         font-variant-numeric: tabular-nums;
@@ -888,9 +888,9 @@
         background-color: #dbeafe;
     }
 
-    .daily-table .row-depth-1 .metric-label { padding-left: 1rem; font-weight: 600; color: var(--text-main); }
-    .daily-table .row-depth-2 .metric-label { padding-left: 2rem; color: var(--text-muted); font-weight: 500;}
-    .daily-table .row-depth-3 .metric-label { padding-left: 3rem; color: #94a3b8; font-size: 0.75rem; }
+    .daily-table .row-depth-1 .metric-label { padding-left: 0.5rem; font-weight: 600; color: var(--text-main); }
+    .daily-table .row-depth-2 .metric-label { padding-left: 1.25rem; color: var(--text-muted); font-weight: 500;}
+    .daily-table .row-depth-3 .metric-label { padding-left: 2rem; color: #94a3b8; font-size: 0.7rem; }
 
     /* Utilities */
     .delta-positive { color: #16a34a !important; font-weight: 700; } /* green-600 */
@@ -1081,27 +1081,37 @@
         </div>
 
         <div class="p-4 bg-white">
-            <div class="daily-table-region" data-table-region>
-                <div class="daily-table-wrap">
+        <div class="row mb-3 align-items-center">
+            <div class="col">
+                <!-- Data metrics summary would go here if needed -->
+            </div>
+            <div class="col-auto">
+                <span class="daily-meta-chip py-1 px-2 border-primary-soft" style="background: rgba(0, 82, 156, 0.05); color: var(--bri-blue-main); font-size: 0.75rem;">
+                    <i class="fas fa-coins mr-1"></i> Satuan: Dalam <strong>Rp Miliar (Rp M)</strong>
+                </span>
+            </div>
+        </div>
+        <div class="daily-table-region" data-table-region>
+            <div class="daily-table-wrap">
                     <table class="table table-hover daily-table">
                         <colgroup>
-                            <col style="width: 60px;">
-                            <col style="width: 280px;">
-                            <col style="width: 110px;" class="numeric-col">
-                            <col style="width: 120px;" class="numeric-col">
-                            <col style="width: 110px;" class="numeric-col">
-                            <col style="width: 110px;" class="numeric-col">
-                            <col style="width: 120px;" class="numeric-col">
-                            <col style="width: 110px;" class="numeric-col">
-                            <col style="width: 110px;" class="numeric-col position-col-h1">
-                            <col style="width: 110px;" class="numeric-col">
+                            <col style="width: 45px;">
+                            <col style="width: 240px;">
+                            <col style="width: 95px;" class="numeric-col">
                             <col style="width: 100px;" class="numeric-col">
+                            <col style="width: 95px;" class="numeric-col">
+                            <col style="width: 95px;" class="numeric-col">
                             <col style="width: 100px;" class="numeric-col">
-                            <col style="width: 100px;" class="numeric-col">
-                            <col style="width: 100px;" class="numeric-col">
-                            <col style="width: 110px;" class="numeric-col">
-                            <col style="width: 110px;" class="numeric-col">
-                            <col style="width: 110px;" class="numeric-col">
+                            <col style="width: 95px;" class="numeric-col">
+                            <col style="width: 95px;" class="numeric-col position-col-h1">
+                            <col style="width: 95px;" class="numeric-col">
+                            <col style="width: 85px;" class="numeric-col">
+                            <col style="width: 85px;" class="numeric-col">
+                            <col style="width: 85px;" class="numeric-col">
+                            <col style="width: 85px;" class="numeric-col">
+                            <col style="width: 95px;" class="numeric-col">
+                            <col style="width: 95px;" class="numeric-col">
+                            <col style="width: 95px;" class="numeric-col">
                         </colgroup>
                         <thead>
                             <tr class="group-row text-center">
@@ -1244,7 +1254,7 @@
         const MILLION_UNIT = 1000000;
         const BILLION_UNIT = 1000000000;
         const TABLE_MONEY_UNIT = BILLION_UNIT;
-        const TABLE_MONEY_LABEL = 'M';
+        const TABLE_MONEY_LABEL = '';
         const TABLE_VISIBLE_ROW_LIMIT = 25;
         const TABLE_STICKY_TOP_TRIM = 24;
         const currencyFormatter = new Intl.NumberFormat('id-ID', {

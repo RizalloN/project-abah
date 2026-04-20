@@ -89,6 +89,8 @@ class DashboardHarianSnapshotService
         'kur_mikro_npl',
         'kur_kecil_npl',
         'kur_kpp_npl',
+        'total_sml_pct_non_commercial',
+        'total_npl_pct_non_commercial',
     ];
     private const ROW_DEFINITIONS = [
         ['key' => 'total_simpanan', 'label' => '1. Simpanan', 'type' => 'currency', 'depth' => 0, 'accent' => 'strong'],
@@ -1105,15 +1107,23 @@ class DashboardHarianSnapshotService
         }
 
         foreach ($this->loanMetricDefinitions($segment, $productDashboard, $product, $segmen_2025) as $alias => $condition) {
-            $query->selectRaw("SUM(CASE WHEN {$condition} THEN {$balance} ELSE 0 END) as {$alias}_os");
-            $query->selectRaw("SUM(CASE WHEN {$condition} AND {$kol} = 2 THEN {$balance} ELSE 0 END) as {$alias}_sml");
-            $query->selectRaw("SUM(CASE WHEN {$condition} AND {$kol} > 2 THEN {$balance} ELSE 0 END) as {$alias}_npl");
+            // Handle metrics with multiple conditions (array) vs single condition (string)
+            if (is_array($condition)) {
+                // Multiple conditions: combine them with CASE statements
+                $orConditions = implode(' OR ', $condition);
+                $combinedCondition = "({$orConditions})";
+            } else {
+                // Single condition
+                $combinedCondition = $condition;
+            }
+            
+            $query->selectRaw("SUM(CASE WHEN {$combinedCondition} THEN {$balance} ELSE 0 END) as {$alias}_os");
+            $query->selectRaw("SUM(CASE WHEN {$combinedCondition} AND {$kol} = 2 THEN {$balance} ELSE 0 END) as {$alias}_sml");
+            $query->selectRaw("SUM(CASE WHEN {$combinedCondition} AND {$kol} > 2 THEN {$balance} ELSE 0 END) as {$alias}_npl");
         }
 
+        // NOTE: total_os, total_sml_abs_non_commercial, total_npl_abs_non_commercial are computed in finalizeMetrics
         return $query
-            ->selectRaw("SUM(CASE WHEN {$segment} IN ('SMALL', 'MEDIUM', 'CONSUMER', 'MICRO', 'MIKRO') AND {$kol} = 2 THEN {$balance} ELSE 0 END) as total_sml_abs_non_commercial")
-            ->selectRaw("SUM(CASE WHEN {$segment} IN ('SMALL', 'MEDIUM', 'CONSUMER', 'MICRO', 'MIKRO') AND {$kol} > 2 THEN {$balance} ELSE 0 END) as total_npl_abs_non_commercial")
-            ->selectRaw("SUM({$balance}) as total_os")
             ->groupBy('raw_cabang', 'raw_unit')
             ->get();
     }
@@ -1342,16 +1352,37 @@ class DashboardHarianSnapshotService
         $final['casa_ritel'] = $final['giro_ritel'] + $final['tabungan_ritel'];
         $final['casa_mikro'] = $final['giro_mikro'] + $final['tabungan_mikro'];
         $final['total_casa'] = $final['casa_ritel'] + $final['casa_mikro'];
-        $final['commercial_os'] = 0.0;
+        
+        // Compute KECIL from subsegments (kecil_non_cashcoll + cashcoll)
+        $final['kecil_os'] = $final['kecil_non_cashcoll_os'] + $final['cashcoll_os'];
+        $final['kecil_sml'] = $final['kecil_non_cashcoll_sml'] + $final['cashcoll_sml'];
+        $final['kecil_npl'] = $final['kecil_non_cashcoll_npl'] + $final['cashcoll_npl'];
+        
+        // Compute CONSUMER from subsegments (briguna_konsumer + kpr + kkb)
+        $final['consumer_os'] = $final['briguna_konsumer_os'] + $final['kpr_os'] + $final['kkb_os'];
+        $final['consumer_sml'] = $final['briguna_konsumer_sml'] + $final['kpr_sml'] + $final['kkb_sml'];
+        $final['consumer_npl'] = $final['briguna_konsumer_npl'] + $final['kpr_npl'] + $final['kkb_npl'];
+        
+        // Compute MICRO from subsegments (briguna_mikro + kupedes + kur_mikro + kur_kecil + kur_kpp)
+        $final['micro_os'] = $final['briguna_mikro_os'] + $final['kupedes_os'] + $final['kur_mikro_os'] + $final['kur_kecil_os'] + $final['kur_kpp_os'];
+        $final['micro_sml'] = $final['briguna_mikro_sml'] + $final['kupedes_sml'] + $final['kur_mikro_sml'] + $final['kur_kecil_sml'] + $final['kur_kpp_sml'];
+        $final['micro_npl'] = $final['briguna_mikro_npl'] + $final['kupedes_npl'] + $final['kur_mikro_npl'] + $final['kur_kecil_npl'] + $final['kur_kpp_npl'];
+        
+        // Compute SME from KECIL only (not including MEDIUM)
         $final['sme_os'] = $final['kecil_os'];
         $final['sme_sml'] = $final['kecil_sml'];
         $final['sme_npl'] = $final['kecil_npl'];
-        $final['total_os_non_commercial'] = $final['kecil_os'] + $final['medium_os'] + $final['consumer_os'] + $final['micro_os'];
         
-        // Ensure total_os reflects the raw database total if it's higher than the filtered segment sum
-        if ($final['total_os'] < $final['total_os_non_commercial']) {
-            $final['total_os'] = $final['total_os_non_commercial'];
-        }
+        $final['commercial_os'] = 0.0;
+        // Compute TOTALS from subsegments (not queried directly)
+        $final['total_os_non_commercial'] = $final['kecil_os'] + $final['medium_os'] + $final['consumer_os'] + $final['micro_os'];
+        $final['total_os'] = $final['commercial_os'] + $final['total_os_non_commercial'];
+        $final['total_sml_abs_non_commercial'] = $final['kecil_sml'] + $final['medium_sml'] + $final['consumer_sml'] + $final['micro_sml'];
+        $final['total_npl_abs_non_commercial'] = $final['kecil_npl'] + $final['medium_npl'] + $final['consumer_npl'] + $final['micro_npl'];
+        
+        // Compute percentages from totals
+        $final['total_sml_pct_non_commercial'] = $this->safePercent($final['total_sml_abs_non_commercial'], $final['total_os_non_commercial']);
+        $final['total_npl_pct_non_commercial'] = $this->safePercent($final['total_npl_abs_non_commercial'], $final['total_os_non_commercial']);
 
         $final['ldr_non_commercial'] = $this->safePercent($final['total_simpanan'], $final['total_os_non_commercial']);
         $final['ldr_ritel_non_commercial'] = $this->safePercent($final['simpanan_ritel'], $final['sme_os'] + $final['consumer_os']);
@@ -2038,24 +2069,24 @@ class DashboardHarianSnapshotService
 
         return [
             'commercial' => "{$segment} = 'COMMERCIAL'",
-            'sme' => "{$segment} = 'SMALL'",
-            'kecil' => "{$segment} = 'SMALL'",
-            'kecil_non_cashcoll' => "({$segment} = 'SMALL' AND {$productDashboard} = 'COMMERCIAL') OR ({$segmen_2025} = 'SMALL' AND {$productDashboard} = 'COMMERCIAL')",
-            'cashcoll' => "({$segment} = 'SMALL' AND {$productDashboard} IN ('CASHCALL', 'CASHCOLL')) OR ({$segmen_2025} = 'SMALL' AND {$productDashboard} IN ('CASHCALL', 'CASHCOLL'))",
-            'medium' => "({$segment} = 'MEDIUM') OR ({$segmen_2025} = 'MEDIUM' AND {$segment} = 'SMALL')",
-            'consumer' => "{$segment} = 'CONSUMER'",
+            // NOTE: 'sme' and 'kecil' are computed in finalizeMetrics from subsegments, not queried
+            'kecil_non_cashcoll' => "{$segment} = 'SMALL' AND {$productDashboard} = 'COMMERCIAL' AND {$segmen_2025} = 'SMALL'",
+            'cashcoll' => "{$segment} = 'SMALL' AND {$productDashboard} IN ('CASHCALL', 'CASHCOLL') AND {$segmen_2025} = 'SMALL'",
+            'medium' => [
+                "{$segment} = 'MEDIUM' AND {$productDashboard} = 'MEDIUM'",
+                "{$segment} = 'SMALL' AND {$segmen_2025} = 'MEDIUM'",
+                "{$segment} = 'MEDIUM' AND {$segmen_2025} = 'COMMERCIAL'"
+            ],
+            // NOTE: 'consumer' is computed in finalizeMetrics from subsegments, not queried
             'briguna_konsumer' => "{$segment} = 'CONSUMER' AND {$productDashboard} = 'BRIGUNA-KONSUMER'",
             'kpr' => "{$segment} = 'CONSUMER' AND {$productDashboard} = 'KPR'",
             'kkb' => "{$segment} = 'CONSUMER' AND {$productDashboard} = 'KKB'",
-            'micro' => "{$microSegment} AND (
-                {$productDashboard} = 'BRIGUNA-MIKRO'
-                OR {$product} = 'KUPEDES'
-                OR ({$productDashboard} = 'KUR-MIKRO' AND {$product} = 'KUR MIKRO')
-                OR ({$productDashboard} = 'KUR-MIKRO' AND {$product} IN ('KUR KECIL', 'KREDIT MIKRO - KUR RITEL 2015'))
-                OR {$productDashboard} = 'KPR'
-            )",
+            // NOTE: 'micro' is computed in finalizeMetrics from subsegments, not queried
             'briguna_mikro' => "{$microSegment} AND {$productDashboard} = 'BRIGUNA-MIKRO'",
-            'kupedes' => "({$microSegment} AND {$product} = 'KUPEDES') OR ({$productDashboard} = 'CASH COLLATERAL' AND {$microSegment_2025})",
+            'kupedes' => [
+                "{$microSegment} AND {$product} = 'KUPEDES'",
+                "{$microSegment} AND {$productDashboard} = 'CASH COLLATERAL'"
+            ],
             'kur_mikro' => "{$microSegment} AND {$productDashboard} = 'KUR-MIKRO' AND {$product} = 'KUR MIKRO'",
             'kur_kecil' => "{$microSegment} AND {$productDashboard} = 'KUR-MIKRO' AND {$product} IN ('KUR KECIL', 'KREDIT MIKRO - KUR RITEL 2015')",
             'kur_kpp' => "{$microSegment} AND {$productDashboard} = 'KPR'",
@@ -2189,5 +2220,90 @@ class DashboardHarianSnapshotService
     private function rkaLookupService(): RkaLookupService
     {
         return app(RkaLookupService::class);
+    }
+
+    public function fetchTimeseriesTrend(array $months, string $category, array|string|null $kancaKey = null, array|string|null $unitKey = null): array
+    {
+        $columnMap = [
+            'simpanan' => 'total_simpanan',
+            'pinjaman' => 'total_os_non_commercial',
+            'sml' => 'total_sml_abs_non_commercial',
+            'npl' => 'total_npl_abs_non_commercial',
+        ];
+
+        $metric = $columnMap[$category] ?? 'total_simpanan';
+        $normalizedKanca = $this->normalizeFilterValues($kancaKey);
+        $normalizedUnit = $this->normalizeFilterValues($unitKey);
+
+        $query = DB::table(self::SNAPSHOT_TABLE)
+            ->selectRaw('snapshot_period')
+            ->selectRaw('kanca_label')
+            ->selectRaw("SUM({$metric}) as value")
+            ->where(function ($q) use ($months) {
+                foreach ($months as $month) {
+                    $q->orWhere('snapshot_period', 'like', "{$month}%");
+                }
+            });
+
+        if ($normalizedUnit !== []) {
+            // Filter by specific units
+            $query->whereIn('unit_key', array_map([$this, 'slugKey'], $normalizedUnit));
+        } elseif ($normalizedKanca !== []) {
+            // Filter by kanca, but only take the kanca-level summary row (kanca_key == unit_key)
+            $query->whereIn('kanca_key', array_map([$this, 'slugKey'], $normalizedKanca))
+                  ->whereRaw('kanca_key = unit_key');
+        } else {
+            // Total Area (All Kanca) - Only take summary rows to avoid double counting
+            $query->whereRaw('kanca_key = unit_key');
+        }
+
+        $results = $query->groupBy('snapshot_period', 'kanca_label')
+            ->orderBy('snapshot_period')
+            ->get();
+
+        $series = [];
+        $areaTotal = [];
+
+        foreach ($results as $row) {
+            $month = substr($row->snapshot_period, 0, 7);
+            $day = (int) substr($row->snapshot_period, 8, 2);
+            $kanca = $row->kanca_label;
+
+            if ($day < 1 || $day > 31) continue;
+
+            if (!isset($series[$kanca])) {
+                $series[$kanca] = [];
+            }
+            if (!isset($series[$kanca][$month])) {
+                $series[$kanca][$month] = array_fill(1, 31, null);
+            }
+            // Scale to Billions (Rp M)
+            $scaledValue = (float) $row->value / 1000000000;
+            $series[$kanca][$month][$day] = $scaledValue;
+
+            if (!isset($areaTotal[$month])) {
+                $areaTotal[$month] = array_fill(1, 31, 0);
+            }
+            $areaTotal[$month][$day] += $scaledValue;
+        }
+
+        // Convert series to flat 0-indexed arrays [0...30] for Chart.js
+        $finalSeries = [];
+        foreach ($series as $kanca => $monthData) {
+            $finalSeries[$kanca] = [];
+            foreach ($monthData as $month => $days) {
+                $finalSeries[$kanca][$month] = array_values($days);
+            }
+        }
+
+        $finalAreaTotal = [];
+        foreach ($areaTotal as $month => $days) {
+            $finalAreaTotal[$month] = array_values($days);
+        }
+
+        return [
+            'series' => $finalSeries,
+            'area_total' => $finalAreaTotal,
+        ];
     }
 }
