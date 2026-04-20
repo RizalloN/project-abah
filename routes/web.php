@@ -87,6 +87,7 @@ Route::middleware(['auth', 'release.session.lock', 'throttle:240,1'])->group(fun
     Route::get('/report/optimalisasi-digital/qris', [DigitalPerformanceController::class, 'performanceQris'])->name('report.qris');
     Route::get('/report/optimalisasi-digital/brilink', [DigitalPerformanceController::class, 'performanceBrilink'])->name('report.brilink');
     Route::post('/report/data', [DigitalPerformanceController::class, 'fetchData'])->name('report.data');
+    Route::post('/report/data/qris/ukers', [DigitalPerformanceController::class, 'fetchQrisUkers'])->name('report.qris.ukers');
 
     // BRIMO — menggunakan PerformanceBrimoController yang sudah di-fix N+1-nya
     Route::get('/report/optimalisasi-digital/brimo', [App\Http\Controllers\PerformanceBrimoController::class, 'index'])->name('report.brimo');

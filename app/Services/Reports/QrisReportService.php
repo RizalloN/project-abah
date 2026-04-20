@@ -141,18 +141,12 @@ class QrisReportService
                 $ctx['isQrisBranchFiltered'] ? 'uker' : 'kanca'
             );
 
-            $q1 = DB::table('jumlah_merchant_qris_detail')
+            $dataRows = DB::table('jumlah_merchant_qris_detail')
                 ->select(DB::raw("UPPER({$ctx['qrisGroupColumn']}) as branch"))
                 ->selectRaw('COUNT(DISTINCT CASE WHEN POSISI = ? THEN STOREID END) as jml_curr', [$ctx['dateCurr']])
                 ->selectRaw('COUNT(DISTINCT CASE WHEN POSISI = ? THEN STOREID END) as jml_mtd', [$ctx['dateMtD']])
                 ->selectRaw('COUNT(DISTINCT CASE WHEN POSISI = ? THEN STOREID END) as jml_ytd', [$ctx['dateYtD']])
-                ->selectRaw('COUNT(DISTINCT CASE WHEN POSISI = ? THEN STOREID END) as jml_yoy', [$ctx['dateYoY']]);
-            $this->applyQrisFilter($q1, $ctx, 'BRDESC');
-            $this->applyQrisDateScope($q1, [$ctx['dateCurr'], $ctx['dateMtD'], $ctx['dateYtD'], $ctx['dateYoY']]);
-            $dataQris = $q1->groupByRaw("UPPER({$ctx['qrisGroupColumn']})")->get()->keyBy('branch');
-
-            $q2 = DB::table('jumlah_merchant_qris_detail')
-                ->select(DB::raw("UPPER({$ctx['qrisGroupColumn']}) as branch"))
+                ->selectRaw('COUNT(DISTINCT CASE WHEN POSISI = ? THEN STOREID END) as jml_yoy', [$ctx['dateYoY']])
                 ->selectRaw("COUNT(DISTINCT CASE WHEN POSISI = ? AND CAST(REPLACE(AKUMULASI_SV_TOTAL, ',', '') AS DECIMAL(20,2)) >= 50000 THEN STOREID END) as prod_curr", [$ctx['dateCurr']])
                 ->selectRaw("COUNT(DISTINCT CASE WHEN POSISI = ? AND CAST(REPLACE(AKUMULASI_SV_TOTAL, ',', '') AS DECIMAL(20,2)) >= 50000 THEN STOREID END) as prod_mtd", [$ctx['dateMtD']])
                 ->selectRaw("COUNT(DISTINCT CASE WHEN POSISI = ? AND CAST(REPLACE(AKUMULASI_SV_TOTAL, ',', '') AS DECIMAL(20,2)) >= 50000 THEN STOREID END) as prod_ytd", [$ctx['dateYtD']])
@@ -161,9 +155,9 @@ class QrisReportService
                 ->selectRaw("SUM(CASE WHEN POSISI = ? THEN CAST(REPLACE(AKUMULASI_SV_TOTAL, ',', '') AS DECIMAL(20,2)) ELSE 0 END) as vol_mtd", [$ctx['dateMtD']])
                 ->selectRaw("SUM(CASE WHEN POSISI = ? THEN CAST(REPLACE(AKUMULASI_SV_TOTAL, ',', '') AS DECIMAL(20,2)) ELSE 0 END) as vol_ytd", [$ctx['dateYtD']])
                 ->selectRaw("SUM(CASE WHEN POSISI = ? THEN CAST(REPLACE(AKUMULASI_SV_TOTAL, ',', '') AS DECIMAL(20,2)) ELSE 0 END) as vol_yoy", [$ctx['dateYoY']]);
-            $this->applyQrisFilter($q2, $ctx, 'BRDESC');
-            $this->applyQrisDateScope($q2, [$ctx['dateCurr'], $ctx['dateMtD'], $ctx['dateYtD'], $ctx['dateYoY']]);
-            $dataVol = $q2->groupByRaw("UPPER({$ctx['qrisGroupColumn']})")->get()->keyBy('branch');
+            $this->applyQrisFilter($dataRows, $ctx, 'BRDESC');
+            $this->applyQrisDateScope($dataRows, [$ctx['dateCurr'], $ctx['dateMtD'], $ctx['dateYtD'], $ctx['dateYoY']]);
+            $dataRows = $dataRows->groupByRaw("UPPER({$ctx['qrisGroupColumn']})")->get()->keyBy('branch');
 
             $data   = [];
             $totals = ['jml_curr' => 0, 'jml_mtd' => 0, 'jml_ytd' => 0, 'jml_yoy' => 0, 'prod_curr' => 0, 'prod_mtd' => 0, 'prod_ytd' => 0, 'prod_yoy' => 0, 'vol_curr' => 0, 'vol_mtd' => 0, 'vol_ytd' => 0, 'vol_yoy' => 0];
@@ -171,17 +165,12 @@ class QrisReportService
             $totalProdRka = 0.0;
             $totalVolRka  = 0.0;
 
-            $groupKeys = $dataQris->keys()->merge($dataVol->keys())->unique()->values()->all();
-
-            foreach ($groupKeys as $branchRaw) {
+            foreach ($dataRows as $branchRaw => $row) {
                 $b      = strtoupper($branchRaw);
-                $rowQ   = $dataQris->get($b);
-                $rowV   = $dataVol->get($b);
-
-                $jml_curr  = $rowQ->jml_curr ?? 0; $jml_mtd = $rowQ->jml_mtd ?? 0; $jml_ytd = $rowQ->jml_ytd ?? 0; $jml_yoy = $rowQ->jml_yoy ?? 0;
-                $prod_curr = $rowV->prod_curr ?? 0; $prod_mtd = $rowV->prod_mtd ?? 0; $prod_ytd = $rowV->prod_ytd ?? 0; $prod_yoy = $rowV->prod_yoy ?? 0;
-                $vol_curr  = ($rowV->vol_curr ?? 0) / 1000000; $vol_mtd = ($rowV->vol_mtd ?? 0) / 1000000;
-                $vol_ytd   = ($rowV->vol_ytd ?? 0) / 1000000; $vol_yoy = ($rowV->vol_yoy ?? 0) / 1000000;
+                $jml_curr  = $row->jml_curr ?? 0; $jml_mtd = $row->jml_mtd ?? 0; $jml_ytd = $row->jml_ytd ?? 0; $jml_yoy = $row->jml_yoy ?? 0;
+                $prod_curr = $row->prod_curr ?? 0; $prod_mtd = $row->prod_mtd ?? 0; $prod_ytd = $row->prod_ytd ?? 0; $prod_yoy = $row->prod_yoy ?? 0;
+                $vol_curr  = ($row->vol_curr ?? 0) / 1000000; $vol_mtd = ($row->vol_mtd ?? 0) / 1000000;
+                $vol_ytd   = ($row->vol_ytd ?? 0) / 1000000; $vol_yoy = ($row->vol_yoy ?? 0) / 1000000;
 
                 $jmlRka  = round((float) ($qrisRkaGroups['jml'][$b] ?? 0), 2);
                 $prodRka = round((float) ($qrisRkaGroups['prod'][$b] ?? 0), 2);
@@ -239,42 +228,31 @@ class QrisReportService
                 $ctx['isQrisBranchFiltered'] ? 'uker' : 'kanca'
             );
 
-            $q1 = DB::table('jumlah_merchant_qris_detail')
+            $dataRows = DB::table('jumlah_merchant_qris_detail')
                 ->select(DB::raw("UPPER({$ctx['qrisGroupColumn']}) as branch"))
                 ->selectRaw('COUNT(DISTINCT CASE WHEN POSISI = ? THEN STOREID END) as store_curr', [$ctx['dateCurr']])
-                ->selectRaw('COUNT(DISTINCT CASE WHEN POSISI = ? THEN STOREID END) as store_prev', [$ctx['datePrevMoM']]);
-            $this->applyQrisFilter($q1, $ctx, 'BRDESC');
-            $this->applyQrisDateScope($q1, [$ctx['dateCurr'], $ctx['datePrevMoM']]);
-            $q1 = $q1->groupByRaw("UPPER({$ctx['qrisGroupColumn']})")->get()->keyBy('branch');
-
-            $q2 = DB::table('jumlah_merchant_qris_detail')
-                ->select(DB::raw("UPPER({$ctx['qrisGroupColumn']}) as branch"))
+                ->selectRaw('COUNT(DISTINCT CASE WHEN POSISI = ? THEN STOREID END) as store_prev', [$ctx['datePrevMoM']])
                 ->selectRaw("COUNT(DISTINCT CASE WHEN POSISI=? AND CAST(REPLACE(AKUMULASI_SV_TOTAL, ',', '') AS DECIMAL(20,2)) = 0 THEN STOREID END) as sv0_curr", [$ctx['dateCurr']])
                 ->selectRaw("COUNT(DISTINCT CASE WHEN POSISI=? AND CAST(REPLACE(AKUMULASI_SV_TOTAL, ',', '') AS DECIMAL(20,2)) = 0 THEN STOREID END) as sv0_prev", [$ctx['datePrevMoM']])
                 ->selectRaw("COUNT(DISTINCT CASE WHEN POSISI=? AND CAST(REPLACE(AKUMULASI_SV_TOTAL, ',', '') AS DECIMAL(20,2)) >= 50000 THEN STOREID END) as prod_curr", [$ctx['dateCurr']])
                 ->selectRaw("COUNT(DISTINCT CASE WHEN POSISI=? AND CAST(REPLACE(AKUMULASI_SV_TOTAL, ',', '') AS DECIMAL(20,2)) >= 50000 THEN STOREID END) as prod_prev", [$ctx['datePrevMoM']])
                 ->selectRaw("SUM(CASE WHEN POSISI=? THEN CAST(REPLACE(AKUMULASI_SV_TOTAL, ',', '') AS DECIMAL(20,2)) ELSE 0 END) as vol_curr", [$ctx['dateCurr']])
                 ->selectRaw("SUM(CASE WHEN POSISI=? THEN CAST(REPLACE(AKUMULASI_SV_TOTAL, ',', '') AS DECIMAL(20,2)) ELSE 0 END) as vol_prev", [$ctx['datePrevMoM']]);
-            $this->applyQrisFilter($q2, $ctx, 'BRDESC');
-            $this->applyQrisDateScope($q2, [$ctx['dateCurr'], $ctx['datePrevMoM']]);
-            $q2 = $q2->groupByRaw("UPPER({$ctx['qrisGroupColumn']})")->get()->keyBy('branch');
+            $this->applyQrisFilter($dataRows, $ctx, 'BRDESC');
+            $this->applyQrisDateScope($dataRows, [$ctx['dateCurr'], $ctx['datePrevMoM']]);
+            $dataRows = $dataRows->groupByRaw("UPPER({$ctx['qrisGroupColumn']})")->get()->keyBy('branch');
 
             $data   = [];
             $totals = ['store_curr' => 0, 'store_prev' => 0, 'sv0_curr' => 0, 'sv0_prev' => 0, 'prod_curr' => 0, 'prod_prev' => 0, 'vol_curr' => 0, 'vol_prev' => 0];
             $totalProdRka = 0.0;
 
-            $groupKeys = $q1->keys()->merge($q2->keys())->unique()->values()->all();
-
-            foreach ($groupKeys as $branchRaw) {
+            foreach ($dataRows as $branchRaw => $row) {
                 $b         = strtoupper($branchRaw);
-                $rowStore  = $q1->get($b);
-                $rowV      = $q2->get($b);
-
-                $store_curr = $rowStore->store_curr ?? 0; $store_prev = $rowStore->store_prev ?? 0;
-                $sv0_curr   = $rowV->sv0_curr ?? 0;       $sv0_prev   = $rowV->sv0_prev ?? 0;
-                $prod_curr  = $rowV->prod_curr ?? 0;      $prod_prev  = $rowV->prod_prev ?? 0;
-                $vol_curr   = ($rowV->vol_curr ?? 0) / 1000000;
-                $vol_prev   = ($rowV->vol_prev ?? 0) / 1000000;
+                $store_curr = $row->store_curr ?? 0; $store_prev = $row->store_prev ?? 0;
+                $sv0_curr   = $row->sv0_curr ?? 0;    $sv0_prev   = $row->sv0_prev ?? 0;
+                $prod_curr  = $row->prod_curr ?? 0;    $prod_prev  = $row->prod_prev ?? 0;
+                $vol_curr   = ($row->vol_curr ?? 0) / 1000000;
+                $vol_prev   = ($row->vol_prev ?? 0) / 1000000;
                 $prodRka    = round((float) ($qrisRkaGroups['prod'][$b] ?? 0), 2);
 
                 $data[] = [

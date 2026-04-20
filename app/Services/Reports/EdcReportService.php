@@ -110,7 +110,8 @@ class EdcReportService
         $edcRkaGroups = $this->rkaLookup->aggregateByGroup(
             [
                 'prod' => ['mata_anggaran' => ['Jumlah Merchant (EDC) yang Produktif']],
-                'sv'   => ['mata_anggaran' => ['Jumlah Merchant (EDC) yang Produktif']],
+                'sv'   => ['mata_anggaran' => ['Sales Volume Merchant (EDC)']],
+                'tid'  => ['mata_anggaran' => ['Populasi Merchant (TID)']],
             ],
             $ctx['rkaMonthColumn'],
             $ctx['upperBranches'],
@@ -143,12 +144,15 @@ class EdcReportService
         ];
         $totalProdRka = 0.0;
         $totalSvRka   = 0.0;
+        $totalTidRka  = 0.0;
 
         foreach ($rows as $r) {
             $branchKey   = strtoupper(trim((string) ($r->branch ?? '')));
-            $prodRka     = round((float) ($edcRkaGroups['prod'][$branchKey] ?? 0), 2);
-            $svRka       = round((float) ($edcRkaGroups['sv'][$branchKey] ?? 0), 2);
+            $prodRka     = round((float) ($edcRkaGroups['prod'][$branchKey] ?? 0), 0);
+            $svRka       = round((float) ($edcRkaGroups['sv'][$branchKey] ?? 0) / 1000000000, 0);
+            $tidRka      = round((float) ($edcRkaGroups['tid'][$branchKey] ?? 0), 0);
             $prodPencPct = $prodRka > 0 ? (($r->prod_curr / $prodRka) * 100) : 0;
+            $svPencPct   = $svRka > 0 ? (((float) $r->sv_curr / 1000000000) / $svRka) * 100 : 0;
 
             $data[] = [
                 'branch' => $r->branch,
@@ -168,7 +172,7 @@ class EdcReportService
                     'mtd_val' => round(($r->sv_curr - $r->sv_mtd) / 1000000000, 2),
                     'mtd_pct' => $r->sv_mtd > 0 ? (($r->sv_curr - $r->sv_mtd) / $r->sv_mtd) * 100 : 0,
                     'yoy_val' => round(($r->sv_curr - $r->sv_yoy) / 1000000000, 2),
-                    'rka'     => $svRka, 'penc_pct' => 0,
+                    'rka'     => $svRka, 'penc_pct' => round($svPencPct, 2),
                 ],
             ];
 
@@ -199,7 +203,7 @@ class EdcReportService
                 'sv'     => [
                     'curr' => round($total['sv_curr'] / 1000000000, 2), 'mtd_val' => round(($total['sv_curr'] - $total['sv_mtd']) / 1000000000, 2),
                     'mtd_pct' => $total['sv_mtd'] > 0 ? (($total['sv_curr'] - $total['sv_mtd']) / $total['sv_mtd']) * 100 : 0,
-                    'yoy_val' => round(($total['sv_curr'] - $total['sv_yoy']) / 1000000000, 2), 'rka' => round($totalSvRka, 2), 'penc_pct' => 0,
+                    'yoy_val' => round(($total['sv_curr'] - $total['sv_yoy']) / 1000000000, 2), 'rka' => round($totalSvRka, 0), 'penc_pct' => $totalSvRka > 0 ? round((($total['sv_curr'] / 1000000000) / $totalSvRka) * 100, 2) : 0,
                 ],
             ],
         ]);
@@ -237,7 +241,7 @@ class EdcReportService
             $prodPrevMonth = (int) ($row->prod_prev_month ?? 0);
             $prodYtd     = (int) ($row->prod_ytd ?? 0);
             $prodYoy     = (int) ($row->prod_yoy ?? 0);
-            $prodRka     = round((float) ($merchantRkaGroups['prod'][$branchKey] ?? 0), 2);
+            $prodRka     = round((float) ($merchantRkaGroups['prod'][$branchKey] ?? 0), 0);
             $prodPencPct = $prodRka > 0 ? (($prodCurr / $prodRka) * 100) : 0;
 
             $data[] = [
@@ -279,7 +283,7 @@ class EdcReportService
                     'mtd_val'  => $totals['prod_curr'] - $totals['prod_prev_month'],
                     'mtd_pct'  => $totals['prod_prev_month'] > 0 ? round((($totals['prod_curr'] - $totals['prod_prev_month']) / $totals['prod_prev_month']) * 100, 1) : 0,
                     'ytd_val'  => $totals['prod_curr'] - $totals['prod_ytd'], 'yoy_val' => $totals['prod_curr'] - $totals['prod_yoy'],
-                    'rka' => round($totalProdRka, 2), 'penc_pct' => round($totalProdPencPct, 1),
+                    'rka' => round($totalProdRka, 0), 'penc_pct' => round($totalProdPencPct, 1),
                 ],
             ],
         ]);
@@ -359,6 +363,14 @@ class EdcReportService
 
     private function handleMidTid(array $ctx): JsonResponse
     {
+        $midTidRkaGroups = $this->rkaLookup->aggregateByGroup(
+            ['tid' => ['mata_anggaran' => ['Populasi Merchant (TID)']]],
+            $ctx['rkaMonthColumn'],
+            $ctx['upperBranches'],
+            $ctx['upperSelectedUkers'],
+            $ctx['isBranchFiltered'] ? 'uker' : 'kanca'
+        );
+
         $query = DB::table('jumlah_merchant_detail')
             ->select(DB::raw("UPPER({$ctx['groupColumn']}) as branch"))
             ->selectRaw('COUNT(DISTINCT CASE WHEN DATE(POSISI) = ? THEN MID END) as mid_curr', [$ctx['dateCurr']])
@@ -375,8 +387,12 @@ class EdcReportService
 
         $data   = [];
         $totals = ['mid_curr' => 0, 'mid_mtd' => 0, 'mid_ytd' => 0, 'mid_yoy' => 0, 'tid_curr' => 0, 'tid_mtd' => 0, 'tid_ytd' => 0, 'tid_yoy' => 0];
+        $totalTidRka = 0.0;
 
         foreach ($rawData as $row) {
+            $branchKey = strtoupper(trim((string) ($row->branch ?? '')));
+            $tidRka    = round((float) ($midTidRkaGroups['tid'][$branchKey] ?? 0), 0);
+
             $data[] = [
                 'branch' => $row->branch,
                 'mid'    => [
@@ -390,11 +406,12 @@ class EdcReportService
                     'mtd_val' => $row->tid_curr - $row->tid_mtd,
                     'mtd_pct' => $row->tid_mtd > 0 ? round(($row->tid_curr - $row->tid_mtd) / $row->tid_mtd * 100, 1) : 0,
                     'ytd_val' => $row->tid_curr - $row->tid_ytd, 'yoy_val' => $row->tid_curr - $row->tid_yoy,
-                    'rka' => 0, 'penc_pct' => 0,
+                    'rka' => $tidRka, 'penc_pct' => $tidRka > 0 ? round(($row->tid_curr / $tidRka) * 100, 2) : 0,
                 ],
             ];
             $totals['mid_curr'] += $row->mid_curr; $totals['mid_mtd'] += $row->mid_mtd; $totals['mid_ytd'] += $row->mid_ytd; $totals['mid_yoy'] += $row->mid_yoy;
             $totals['tid_curr'] += $row->tid_curr; $totals['tid_mtd'] += $row->tid_mtd; $totals['tid_ytd'] += $row->tid_ytd; $totals['tid_yoy'] += $row->tid_yoy;
+            $totalTidRka += $tidRka;
         }
 
         $grandTotal = [
@@ -410,7 +427,7 @@ class EdcReportService
                 'mtd_val' => $totals['tid_curr'] - $totals['tid_mtd'],
                 'mtd_pct' => $totals['tid_mtd'] > 0 ? round(($totals['tid_curr'] - $totals['tid_mtd']) / $totals['tid_mtd'] * 100, 1) : 0,
                 'ytd_val' => $totals['tid_curr'] - $totals['tid_ytd'], 'yoy_val' => $totals['tid_curr'] - $totals['tid_yoy'],
-                'rka' => 0, 'penc_pct' => 0,
+                'rka' => round($totalTidRka, 0), 'penc_pct' => $totalTidRka > 0 ? round(($totals['tid_curr'] / $totalTidRka) * 100, 2) : 0,
             ],
         ];
 
@@ -449,7 +466,7 @@ class EdcReportService
 
         foreach ($rawData as $row) {
             $branchKey  = strtoupper(trim((string) ($row->branch ?? '')));
-            $prodRka    = round((float) ($edcRkaGroups['prod'][$branchKey] ?? 0), 2);
+            $prodRka    = round((float) ($edcRkaGroups['prod'][$branchKey] ?? 0), 0);
             $prodGap    = round($row->prod_curr - $prodRka, 2);
             $prodPenc   = $prodRka > 0 ? (($row->prod_curr / $prodRka) * 100) : 0;
             $svVolCurr  = $row->sv_vol_curr / 1000000000;
@@ -479,7 +496,7 @@ class EdcReportService
             'branch'  => $ctx['totalBranchLabel'],
             'sv0'     => ['mtd' => $totals['sv0_mtd'], 'curr' => $totals['sv0_curr'], 'mom' => $totals['sv0_curr'] - $totals['sv0_mtd'], 'pct' => $totals['sv0_mtd'] > 0 ? round(($totals['sv0_curr'] - $totals['sv0_mtd']) / $totals['sv0_mtd'] * 100, 1) : 0],
             'sv1_15'  => ['mtd' => $totals['sv1_15_mtd'], 'curr' => $totals['sv1_15_curr'], 'mom' => $totals['sv1_15_curr'] - $totals['sv1_15_mtd'], 'pct' => $totals['sv1_15_mtd'] > 0 ? round(($totals['sv1_15_curr'] - $totals['sv1_15_mtd']) / $totals['sv1_15_mtd'] * 100, 1) : 0],
-            'prod'    => ['mtd' => $totals['prod_mtd'], 'curr' => $totals['prod_curr'], 'mom' => $totals['prod_curr'] - $totals['prod_mtd'], 'pct' => $totals['prod_mtd'] > 0 ? round(($totals['prod_curr'] - $totals['prod_mtd']) / $totals['prod_mtd'] * 100, 1) : 0, 'rka' => $totalProdRka, 'gap' => $totalProdGap, 'penc' => round($totalProdPenc, 2)],
+            'prod'    => ['mtd' => $totals['prod_mtd'], 'curr' => $totals['prod_curr'], 'mom' => $totals['prod_curr'] - $totals['prod_mtd'], 'pct' => $totals['prod_mtd'] > 0 ? round(($totals['prod_curr'] - $totals['prod_mtd']) / $totals['prod_mtd'] * 100, 1) : 0, 'rka' => round($totalProdRka, 0), 'gap' => $totalProdGap, 'penc' => round($totalProdPenc, 2)],
             'tid'     => ['mtd' => $totals['tid_mtd'], 'curr' => $totals['tid_curr'], 'mom' => $totals['tid_curr'] - $totals['tid_mtd'], 'pct' => $totals['tid_mtd'] > 0 ? round(($totals['tid_curr'] - $totals['tid_mtd']) / $totals['tid_mtd'] * 100, 1) : 0],
             'sv_vol'  => ['mtd' => round($totals['sv_vol_mtd'], 2), 'curr' => round($totals['sv_vol_curr'], 2), 'mom' => round($totals['sv_vol_curr'] - $totals['sv_vol_mtd'], 2), 'pct' => $totals['sv_vol_mtd'] > 0 ? round(($totals['sv_vol_curr'] - $totals['sv_vol_mtd']) / $totals['sv_vol_mtd'] * 100, 1) : 0],
         ];

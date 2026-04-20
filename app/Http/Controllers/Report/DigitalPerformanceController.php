@@ -42,13 +42,28 @@ class DigitalPerformanceController extends Controller
     public function performanceQris(): \Illuminate\View\View
     {
         $branches = ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'];
-        ['branchOptions' => $branchOptions, 'branchUkerMap' => $branchUkerMap] = $this->filterService->buildBranchUkerFilterOptions(
+        ['branchOptions' => $branchOptions] = $this->filterService->buildBranchOptions(
             'jumlah_merchant_qris_detail',
             'MBDESC',
-            'BRDESC'
         );
 
-        return view('report.performance-qris', compact('branches', 'branchOptions', 'branchUkerMap'));
+        return view('report.performance-qris', compact('branches', 'branchOptions'));
+    }
+
+    public function fetchQrisUkers(Request $request): JsonResponse
+    {
+        $selectedBranches = (array) $request->input('branch_office', []);
+        $ukers = $this->filterService->getUkersForBranches(
+            'jumlah_merchant_qris_detail',
+            'MBDESC',
+            'BRDESC',
+            $selectedBranches
+        );
+
+        return response()->json([
+            'status' => 'success',
+            'ukers' => $ukers,
+        ]);
     }
 
     public function performanceBrilink(): \Illuminate\View\View

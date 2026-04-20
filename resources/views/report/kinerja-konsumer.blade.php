@@ -6,10 +6,12 @@
 <style>
     .kinerja-konsumer-shell {
         border: 1px solid #cfe0f4;
-        border-radius: 16px;
+        border-radius: 18px;
         overflow: hidden;
-        background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
-        box-shadow: 0 18px 32px -26px rgba(15, 23, 42, 0.24);
+        background:
+            radial-gradient(circle at top right, rgba(47, 111, 216, 0.07), transparent 24%),
+            linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+        box-shadow: 0 20px 36px -28px rgba(15, 23, 42, 0.26);
     }
 
     .kinerja-konsumer-header {
@@ -22,16 +24,16 @@
 
     .kinerja-konsumer-title {
         margin: 0;
-        font-size: 1.45rem;
-        font-weight: 800;
-        color: #083a75;
+        font-size: 1.55rem;
+        font-weight: 900;
+        color: #09386f;
         letter-spacing: 0.01em;
     }
 
     .kinerja-konsumer-subtitle {
-        margin-top: 0.25rem;
-        color: #5f7189;
-        font-size: 0.9rem;
+        margin-top: 0.3rem;
+        color: #50647f;
+        font-size: 0.92rem;
     }
 
     .kinerja-konsumer-badges {
@@ -44,9 +46,9 @@
     .kinerja-konsumer-filters {
         display: grid;
         grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 0.75rem;
+        gap: 0.85rem;
         margin-top: 1rem;
-        padding: 0.85rem;
+        padding: 0.95rem;
         border: 1px solid #d8e7f7;
         border-radius: 14px;
         background: linear-gradient(135deg, #ffffff, #f3f8ff);
@@ -70,7 +72,7 @@
         width: 100%;
         border: 1px solid #bfd2ea;
         border-radius: 10px;
-        padding: 0.55rem 0.7rem;
+        padding: 0.6rem 0.75rem;
         background: #ffffff;
         color: #16355c;
         font-size: 0.86rem;
@@ -125,7 +127,7 @@
 
     .kinerja-konsumer-table {
         width: 100%;
-        min-width: 1180px;
+        min-width: 1320px;
         border-collapse: separate;
         border-spacing: 0;
     }
@@ -140,25 +142,30 @@
     }
 
     .kinerja-konsumer-table thead th {
-        padding: 0.34rem 0.42rem;
-        font-size: 0.66rem;
+        padding: 0.42rem 0.5rem;
+        font-size: 0.68rem;
         font-weight: 800;
         line-height: 1.1;
     }
 
     .kinerja-konsumer-table tbody td {
-        padding: 0.35rem 0.45rem;
-        font-size: 0.72rem;
+        padding: 0.42rem 0.5rem;
+        font-size: 0.74rem;
         font-weight: 700;
         color: #20324a;
+        line-height: 1.12;
     }
 
     .kinerja-konsumer-table tbody tr:nth-child(even) td {
         background: #f6faff;
     }
 
+    .kinerja-konsumer-table tbody tr:hover td {
+        background: #eef5ff !important;
+    }
+
     .bg-kpr-main {
-        background: linear-gradient(180deg, #2e6ed8 0%, #0f5ec7 100%) !important;
+        background: linear-gradient(180deg, #2b69cf 0%, #0d56b8 100%) !important;
         color: #ffffff !important;
         border-color: #0f4da1 !important;
     }
@@ -182,16 +189,24 @@
     }
 
     .bg-kpr-subhead {
-        background: #f0f8ff !important;
-        color: #2e4f7f !important;
+        background: #edf5ff !important;
+        color: #264b7b !important;
         font-weight: 800 !important;
     }
 
     .row-total td {
-        background: #0f5ec7 !important;
+        background: linear-gradient(180deg, #0f5ec7 0%, #0c4fa8 100%) !important;
         color: #ffffff !important;
         border-color: #0f4da1 !important;
         font-weight: 800 !important;
+    }
+
+    .row-total td:first-child {
+        border-radius: 0 0 0 12px;
+    }
+
+    .row-total td:last-child {
+        border-radius: 0 0 12px 0;
     }
 
     .row-total .cell-rka,
@@ -205,39 +220,39 @@
     }
 
     .cell-no {
-        width: 42px;
+        width: 48px;
     }
 
     .cell-segmen {
-        width: 72px;
+        width: 92px;
     }
 
     .cell-cabang {
-        min-width: 180px;
+        min-width: 190px;
     }
 
     .cell-product {
-        min-width: 138px;
+        min-width: 152px;
     }
 
     .cell-branch {
-        min-width: 220px;
+        min-width: 240px;
     }
 
     .cell-os {
-        min-width: 102px;
+        min-width: 112px;
     }
 
     .cell-delta {
-        min-width: 86px;
+        min-width: 92px;
     }
 
     .cell-rka {
-        min-width: 98px;
+        min-width: 104px;
     }
 
     .cell-pct {
-        min-width: 84px;
+        min-width: 88px;
     }
 
     .delta-pos {
@@ -304,6 +319,7 @@
                 <span class="kinerja-konsumer-badge"><i class="fas fa-bolt"></i> Periode terakhir {{ $latestPeriodLabel }}</span>
                 <span class="kinerja-konsumer-badge"><i class="fas fa-calendar-alt"></i> Posisi {{ $selectedPeriodLabel }}</span>
                 <span class="kinerja-konsumer-badge"><i class="fas fa-building"></i> Cabang {{ $selectedCabangLabel }}</span>
+                <span class="kinerja-konsumer-badge"><i class="fas fa-layer-group"></i> Segmen {{ $selectedSegmenLabel }}</span>
                 <span class="kinerja-konsumer-badge"><i class="fas fa-history"></i> MtD {{ $mtdLabel }}</span>
                 <span class="kinerja-konsumer-badge"><i class="fas fa-undo-alt"></i> YtD {{ $ytdLabel }}</span>
                 <span class="kinerja-konsumer-badge"><i class="fas fa-flag-checkered"></i> RKA {{ $currentMonthLabel }} / {{ $nextMonthLabel }}</span>
@@ -331,9 +347,19 @@
                     </select>
                 </div>
 
+                <div class="kinerja-filter-group">
+                    <label for="kinerjaSegmen" class="kinerja-filter-label">Segmen</label>
+                    <select id="kinerjaSegmen" name="segmen" class="kinerja-filter-control" onchange="this.form.submit()">
+                        @foreach($availableSegments as $value => $label)
+                            <option value="{{ $value }}" @selected($selectedSegmen === $value)>{{ $label }}</option>
+                        @endforeach
+                    </select>
+                </div>
+
                 <div class="kinerja-filter-meta">
                     <span class="kinerja-filter-chip"><i class="fas fa-filter"></i> Filter aktif: periode {{ $selectedPeriodLabel }}</span>
                     <span class="kinerja-filter-chip"><i class="fas fa-sitemap"></i> {{ $selectedCabangLabel }}</span>
+                    <span class="kinerja-filter-chip"><i class="fas fa-layer-group"></i> {{ $selectedSegmenLabel }}</span>
                 </div>
             </form>
         </div>
@@ -370,25 +396,6 @@
                     </tr>
                 </thead>
                 <tbody>
-                    <tr class="row-total">
-                        <td class="cell-no"></td>
-                        <td class="cell-left cell-cabang">{{ $total['cabang'] }}</td>
-                        <td class="cell-left cell-branch">{{ $total['rm'] }}</td>
-                        <td class="cell-segmen">{{ $total['segmen'] }}</td>
-                        <td class="cell-os">{{ $fmt($total['mtd']) }}</td>
-                        <td class="cell-os">{{ $fmt($total['prev_day']) }}</td>
-                        <td class="cell-os">{{ $fmt($total['curr']) }}</td>
-                        <td class="cell-delta">{!! $formatSigned($total['delta_ytd']) !!}</td>
-                        <td class="cell-delta">{!! $formatSigned($total['delta_mtd']) !!}</td>
-                        <td class="cell-delta">{!! $formatSigned($total['delta_dtd']) !!}</td>
-                        <td class="cell-rka">{{ $fmt($total['rka_current']) }}</td>
-                        <td class="cell-rka">{{ $fmt($total['rka_next']) }}</td>
-                        <td class="cell-rka">{!! $formatSigned($total['curr'] - $total['rka_current']) !!}</td>
-                        <td class="cell-pct">{!! $formatPct($total['penc_current']) !!}</td>
-                        <td class="cell-rka">{!! $formatSigned($total['curr'] - $total['rka_next']) !!}</td>
-                        <td class="cell-pct">{!! $formatPct($total['penc_next']) !!}</td>
-                    </tr>
-
                     @forelse($rows as $groupIndex => $group)
                         @foreach($group['items'] as $itemIndex => $row)
                             <tr>
@@ -421,6 +428,27 @@
                             <td colspan="16" class="py-4 text-center text-muted">Belum ada data Briguna-Konsumer/KPR untuk periode ini.</td>
                         </tr>
                     @endforelse
+
+                    @if(!empty($rows))
+                        <tr class="row-total">
+                            <td class="cell-no"></td>
+                            <td class="cell-left cell-cabang">{{ $total['cabang'] }}</td>
+                            <td class="cell-left cell-branch">{{ $total['rm'] }}</td>
+                            <td class="cell-segmen">{{ $total['segmen'] }}</td>
+                            <td class="cell-os">{{ $fmt($total['mtd']) }}</td>
+                            <td class="cell-os">{{ $fmt($total['prev_day']) }}</td>
+                            <td class="cell-os">{{ $fmt($total['curr']) }}</td>
+                            <td class="cell-delta">{!! $formatSigned($total['delta_ytd']) !!}</td>
+                            <td class="cell-delta">{!! $formatSigned($total['delta_mtd']) !!}</td>
+                            <td class="cell-delta">{!! $formatSigned($total['delta_dtd']) !!}</td>
+                            <td class="cell-rka">{{ $fmt($total['rka_current']) }}</td>
+                            <td class="cell-rka">{{ $fmt($total['rka_next']) }}</td>
+                            <td class="cell-rka">{!! $formatSigned($total['curr'] - $total['rka_current']) !!}</td>
+                            <td class="cell-pct">{!! $formatPct($total['penc_current']) !!}</td>
+                            <td class="cell-rka">{!! $formatSigned($total['curr'] - $total['rka_next']) !!}</td>
+                            <td class="cell-pct">{!! $formatPct($total['penc_next']) !!}</td>
+                        </tr>
+                    @endif
                 </tbody>
             </table>
         </div>

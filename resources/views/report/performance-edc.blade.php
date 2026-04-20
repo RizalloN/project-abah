@@ -695,6 +695,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function formatNum(num) { return new Intl.NumberFormat('id-ID').format(num); }
+    function formatRka(num) { return formatNum(Math.round(parseFloat(num) || 0)); }
     
     function formatGrowth(val, isPct = false) {
         let num = parseFloat(val);
@@ -777,11 +778,11 @@ document.addEventListener('DOMContentLoaded', function () {
                                 
                                 <td class="font-weight-bold" style="background: #f4f8ff;">${formatNum(row.prod.curr)}</td> <td class="font-weight-bold text-primary" style="background: #e1e9f5;">${formatNum(row.prod.pct_tid)}%</td>
                                 <td>${formatGrowth(row.prod.mtd_val)}</td> <td>${formatGrowth(row.prod.mtd_pct, true)}</td> <td>${formatGrowth(row.prod.ytd_val)}</td> <td>${formatGrowth(row.prod.yoy_val)}</td>
-                                <td class="rka-col">${formatNum(row.prod.rka)}</td> <td class="rka-col">${formatNum(row.prod.penc_pct)}%</td>
+                                <td class="rka-col">${formatRka(row.prod.rka)}</td> <td class="rka-col">${formatNum(row.prod.penc_pct)}%</td>
 
                                 <td class="font-weight-bold" style="background: #f8f9fa;">${formatNum(row.sv.curr)}</td>
                                 <td>${formatGrowth(row.sv.mtd_val)}</td> <td>${formatGrowth(row.sv.mtd_pct, true)}</td> <td>${formatGrowth(row.sv.yoy_val)}</td>
-                                <td class="rka-col">${formatNum(row.sv.rka)}</td> <td class="rka-col">${formatNum(row.sv.penc_pct)}%</td>
+                                <td class="rka-col">${formatRka(row.sv.rka)}</td> <td class="rka-col">${formatNum(row.sv.penc_pct)}%</td>
                             </tr>`;
                         });
 
@@ -793,11 +794,11 @@ document.addEventListener('DOMContentLoaded', function () {
                             
                             <td>${formatNum(total.prod.curr)}</td> <td>${formatNum(total.prod.pct_tid)}%</td>
                             <td>${formatGrowth(total.prod.mtd_val)}</td> <td>${formatGrowth(total.prod.mtd_pct, true)}</td> <td>${formatGrowth(total.prod.ytd_val)}</td> <td>${formatGrowth(total.prod.yoy_val)}</td>
-                            <td class="rka-col text-dark">${formatNum(total.prod.rka)}</td> <td class="rka-col text-dark">${formatNum(total.prod.penc_pct)}%</td>
+                            <td class="rka-col text-dark">${formatRka(total.prod.rka)}</td> <td class="rka-col text-dark">${formatNum(total.prod.penc_pct)}%</td>
 
                             <td>${formatNum(total.sv.curr)}</td>
                             <td>${formatGrowth(total.sv.mtd_val)}</td> <td>${formatGrowth(total.sv.mtd_pct, true)}</td> <td>${formatGrowth(total.sv.yoy_val)}</td>
-                            <td class="rka-col text-dark">${formatNum(total.sv.rka)}</td> <td class="rka-col text-dark">${formatNum(total.sv.penc_pct)}%</td>
+                            <td class="rka-col text-dark">${formatRka(total.sv.rka)}</td> <td class="rka-col text-dark">${formatNum(total.sv.penc_pct)}%</td>
                         </tr>`;
                         $('#tbody-edc').html(html);
 
@@ -811,7 +812,7 @@ document.addEventListener('DOMContentLoaded', function () {
                                 
                                 <td>${formatNum(row.tid.yoy)}</td> <td>${formatNum(row.tid.ytd)}</td> <td>${formatNum(row.tid.mtd)}</td> <td class="font-weight-bold">${formatNum(row.tid.curr)}</td>
                                 <td>${formatGrowth(row.tid.mtd_val)}</td> <td>${formatGrowth(row.tid.mtd_pct, true)}</td> <td>${formatGrowth(row.tid.ytd_val)}</td> <td>${formatGrowth(row.tid.yoy_val)}</td>
-                                <td class="rka-col">${formatNum(row.tid.rka)}</td> <td class="rka-col font-weight-bold" style="color:#d99900;">${formatNum(row.tid.penc_pct)}%</td>
+                                <td class="rka-col">${formatRka(row.tid.rka)}</td> <td class="rka-col font-weight-bold" style="color:#d99900;">${formatNum(row.tid.penc_pct)}%</td>
                             </tr>`;
                         });
                         
@@ -823,7 +824,7 @@ document.addEventListener('DOMContentLoaded', function () {
                             
                             <td>${formatNum(total.tid.yoy)}</td> <td>${formatNum(total.tid.ytd)}</td> <td>${formatNum(total.tid.mtd)}</td> <td>${formatNum(total.tid.curr)}</td>
                             <td>${formatGrowth(total.tid.mtd_val)}</td> <td>${formatGrowth(total.tid.mtd_pct, true)}</td> <td>${formatGrowth(total.tid.ytd_val)}</td> <td>${formatGrowth(total.tid.yoy_val)}</td>
-                            <td class="rka-col text-dark">${formatNum(total.tid.rka)}</td> <td class="rka-col text-dark">${formatNum(total.tid.penc_pct)}%</td>
+                            <td class="rka-col text-dark">${formatRka(total.tid.rka)}</td> <td class="rka-col text-dark">${formatNum(total.tid.penc_pct)}%</td>
                         </tr>`;
                         $('#tbody-mid').html(html);
                     }
@@ -841,7 +842,7 @@ document.addEventListener('DOMContentLoaded', function () {
                                 <td>${formatGrowthParen(prod.mtd_pct, true)}</td>
                                 <td>${formatGrowthParen(prod.ytd_val)}</td>
                                 <td>${formatGrowthParen(prod.yoy_val)}</td>
-                                <td class="rka-col">${formatNum(prod.rka)}</td>
+                                <td class="rka-col">${formatRka(prod.rka)}</td>
                                 <td class="rka-col">${formatNum(prod.penc_pct)}%</td>
                             </tr>`;
                         });
@@ -859,7 +860,7 @@ document.addEventListener('DOMContentLoaded', function () {
                             <td>${formatGrowthParen(prod.mtd_pct, true)}</td>
                             <td>${formatGrowthParen(prod.ytd_val)}</td>
                             <td>${formatGrowthParen(prod.yoy_val)}</td>
-                            <td class="rka-col text-dark">${formatNum(prod.rka)}</td>
+                            <td class="rka-col text-dark">${formatRka(prod.rka)}</td>
                             <td class="rka-col text-dark">${formatNum(prod.penc_pct)}%</td>
                         </tr>`;
                         $('#tbody-merchant-prod').html(html);
@@ -876,7 +877,7 @@ document.addEventListener('DOMContentLoaded', function () {
                                 <td>${formatGrowthParen(sv.mtd_val)}</td>
                                 <td>${formatGrowthParen(sv.mtd_pct, true)}</td>
                                 <td>${formatGrowthParen(sv.yoy_val)}</td>
-                                <td class="rka-col">${formatNum(sv.rka)}</td>
+                                <td class="rka-col">${formatRka(sv.rka)}</td>
                                 <td class="rka-col">${formatNum(sv.penc_pct)}%</td>
                             </tr>`;
                         });
@@ -892,7 +893,7 @@ document.addEventListener('DOMContentLoaded', function () {
                             <td>${formatGrowthParen(sv.mtd_val)}</td>
                             <td>${formatGrowthParen(sv.mtd_pct, true)}</td>
                             <td>${formatGrowthParen(sv.yoy_val)}</td>
-                            <td class="rka-col text-dark">${formatNum(sv.rka)}</td>
+                            <td class="rka-col text-dark">${formatRka(sv.rka)}</td>
                             <td class="rka-col text-dark">${formatNum(sv.penc_pct)}%</td>
                         </tr>`;
                         $('#tbody-sv-merchant').html(html);
@@ -912,7 +913,7 @@ document.addEventListener('DOMContentLoaded', function () {
                                 
                                 <td>${formatNum(row.prod.mtd)}</td> <td>${formatNum(row.prod.curr)}</td>
                                 <td>${formatGrowth(row.prod.mom)}</td> ${formatCellPct(row.prod.pct, false)} 
-                                <td class="rka-col">${formatNum(row.prod.rka)}</td> <td class="rka-col">${formatNum(row.prod.gap)}</td> <td class="rka-col">${formatNum(row.prod.penc)}%</td>
+                                <td class="rka-col">${formatRka(row.prod.rka)}</td> <td class="rka-col">${formatNum(row.prod.gap)}</td> <td class="rka-col">${formatNum(row.prod.penc)}%</td>
                                 
                                 <td>${formatNum(row.tid.mtd)}</td> <td>${formatNum(row.tid.curr)}</td>
                                 <td>${formatGrowth(row.tid.mom)}</td> ${formatCellPct(row.tid.pct, false)} 
@@ -934,7 +935,7 @@ document.addEventListener('DOMContentLoaded', function () {
                             
                             <td>${formatNum(total.prod.mtd)}</td> <td>${formatNum(total.prod.curr)}</td>
                             <td>${formatGrowth(total.prod.mom)}</td> <td class="text-white">${formatGrowth(total.prod.pct, true)}</td>
-                            <td class="rka-col text-dark">${formatNum(total.prod.rka)}</td> <td class="rka-col text-dark">${formatNum(total.prod.gap)}</td> <td class="rka-col text-dark">${formatNum(total.prod.penc)}%</td>
+                            <td class="rka-col text-dark">${formatRka(total.prod.rka)}</td> <td class="rka-col text-dark">${formatNum(total.prod.gap)}</td> <td class="rka-col text-dark">${formatNum(total.prod.penc)}%</td>
                             
                             <td>${formatNum(total.tid.mtd)}</td> <td>${formatNum(total.tid.curr)}</td>
                             <td>${formatGrowth(total.tid.mom)}</td> <td class="text-white">${formatGrowth(total.tid.pct, true)}</td>

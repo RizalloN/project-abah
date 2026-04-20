@@ -411,14 +411,26 @@
 document.addEventListener('DOMContentLoaded', function () {
     
     let activeTab = 'qris';
-    const branchUkerMap = @json($branchUkerMap ?? []);
     const filterPosisiRka = document.getElementById('filter_posisi_rka');
+    const numberFormatter = new Intl.NumberFormat('id-ID');
+    const percentFormatter = new Intl.NumberFormat('id-ID', {
+        minimumFractionDigits: 1,
+        maximumFractionDigits: 1
+    });
+    const milyarFormatter = new Intl.NumberFormat('id-ID', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+    });
+    const htmlEscapeNode = document.createElement('div');
+    const availableUkerCache = new Map();
     let activeRequest = null;
     let loadTimer = null;
     let requestSeq = 0;
+    let currentAvailableUkers = [];
 
     function escapeHtml(value) {
-        return $('<div>').text(value ?? '').html();
+        htmlEscapeNode.textContent = value ?? '';
+        return htmlEscapeNode.innerHTML;
     }
 
     function getSelectedBranches() {
@@ -431,26 +443,6 @@ document.addEventListener('DOMContentLoaded', function () {
         return $('.filter-uker-checkbox:checked').map(function () {
             return $(this).val();
         }).get();
-    }
-
-    function getAvailableUkers() {
-        const selectedBranches = getSelectedBranches();
-        if (!selectedBranches.length) {
-            return [];
-        }
-
-        const ukerSet = new Set();
-        selectedBranches.forEach(function (branch) {
-            (branchUkerMap[branch] || []).forEach(function (uker) {
-                if (uker) {
-                    ukerSet.add(uker);
-                }
-            });
-        });
-
-        return Array.from(ukerSet).sort(function (a, b) {
-            return a.localeCompare(b, 'id');
-        });
     }
 
     function updateBranchLabel() {
@@ -473,15 +465,23 @@ document.addEventListener('DOMContentLoaded', function () {
         $('#filterUkerDropdown').attr('aria-expanded', 'false');
     }
 
-    function syncNamaUkerOptions() {
-        const availableUkers = getAvailableUkers();
+    function getBranchCacheKey(selectedBranches) {
+        return selectedBranches
+            .slice()
+            .sort(function (a, b) {
+                return a.localeCompare(b, 'id');
+            })
+            .join('||');
+    }
+
+    function renderNamaUkerOptions(availableUkers) {
         const selectedUkers = getSelectedUkers();
         const $ukerMenu = $('#filterUkerMenu');
         $ukerMenu.empty();
 
         availableUkers.forEach(function (uker) {
             const slug = uker.toLowerCase().replace(/[^a-z0-9]+/g, '_');
-            const escapedUker = $('<div>').text(uker).html();
+            const escapedUker = escapeHtml(uker).replace(/"/g, '&quot;');
             const isChecked = selectedUkers.includes(uker) ? 'checked' : '';
             $ukerMenu.append(`
                 <label class="dropdown-item" for="uker_${slug}">
@@ -502,6 +502,46 @@ document.addEventListener('DOMContentLoaded', function () {
         updateUkerLabel();
     }
 
+    function syncNamaUkerOptions() {
+        renderNamaUkerOptions(currentAvailableUkers);
+    }
+
+    function loadNamaUkerOptions() {
+        const selectedBranches = getSelectedBranches();
+
+        if (!selectedBranches.length) {
+            currentAvailableUkers = [];
+            renderNamaUkerOptions(currentAvailableUkers);
+            return $.Deferred().resolve().promise();
+        }
+
+        const cacheKey = getBranchCacheKey(selectedBranches);
+        if (availableUkerCache.has(cacheKey)) {
+            currentAvailableUkers = availableUkerCache.get(cacheKey) || [];
+            renderNamaUkerOptions(currentAvailableUkers);
+            return $.Deferred().resolve().promise();
+        }
+
+        return $.ajax({
+            url: "{{ route('report.qris.ukers') }}",
+            type: "POST",
+            dataType: "json",
+            data: {
+                branch_office: selectedBranches,
+                _token: '{{ csrf_token() }}'
+            }
+        }).then(function (res) {
+            currentAvailableUkers = res.status === 'success' && Array.isArray(res.ukers) ? res.ukers : [];
+            availableUkerCache.set(cacheKey, currentAvailableUkers);
+            renderNamaUkerOptions(currentAvailableUkers);
+            return currentAvailableUkers;
+        }, function () {
+            currentAvailableUkers = [];
+            renderNamaUkerOptions(currentAvailableUkers);
+            return currentAvailableUkers;
+        });
+    }
+
     function updateGroupLabel(label) {
         const normalizedLabel = (label || 'BRANCH OFFICE').toUpperCase();
         $('.col-group-label').each(function () {
@@ -518,9 +558,13 @@ document.addEventListener('DOMContentLoaded', function () {
         return Number.isFinite(parsed) ? parsed : fallback;
     }
 
-    function formatNum(num) { return new Intl.NumberFormat('id-ID').format(safeNumber(num)); }
+    function formatNum(num) { return numberFormatter.format(safeNumber(num)); }
 
     function formatPercent(num, digits = 1) {
+        if (digits === 1) {
+            return percentFormatter.format(safeNumber(num)) + '%';
+        }
+
         return new Intl.NumberFormat('id-ID', {
             minimumFractionDigits: digits,
             maximumFractionDigits: digits
@@ -528,7 +572,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
     
     function formatMilyar(num) {
-        return new Intl.NumberFormat('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(num);
+        return milyarFormatter.format(safeNumber(num));
     }
     
     function formatGrowth(val, isMilyar = false) {
@@ -600,14 +644,14 @@ document.addEventListener('DOMContentLoaded', function () {
                         filterPosisiRka.value = res.labels.rka || '--------';
                     }
 
-                    let html = '';
+                    const rows = [];
 
                     // ============================================
                     // RENDER TAB 1: QRIS UTAMA
                     // ============================================
                     if (activeTab === 'qris') {
                         res.data.forEach((row) => {
-                            html += `<tr>
+                            rows.push(`<tr>
                                 <td class="text-left font-weight-bold text-dark sticky-col">${escapeHtml(row.branch)}</td>
                                 
                                 <td class="font-weight-bold">${formatNum(row.jml.curr)}</td>
@@ -624,11 +668,11 @@ document.addEventListener('DOMContentLoaded', function () {
                                 <td>${formatGrowth(row.vol.mtd_val, true)}</td> ${formatCellPct(row.vol.mtd_pct)} 
                                 <td>${formatGrowth(row.vol.yoy_val, true)}</td>
                                 <td class="rka-col">${formatMilyar(row.vol.rka)}</td> <td class="rka-col">${formatNum(row.vol.penc_pct)}%</td>
-                            </tr>`;
+                            </tr>`);
                         });
 
                         let total = res.total;
-                        html += `<tr class="row-total">
+                        rows.push(`<tr class="row-total">
                             <td class="text-left sticky-col">${escapeHtml(total.branch)}</td>
                             
                             <td>${formatNum(total.jml.curr)}</td>
@@ -645,9 +689,9 @@ document.addEventListener('DOMContentLoaded', function () {
                             <td>${formatGrowth(total.vol.mtd_val, true)}</td> ${formatCellPct(total.vol.mtd_pct).replace(/bg-(good|bad)/, '')} 
                             <td>${formatGrowth(total.vol.yoy_val, true)}</td>
                             <td class="rka-col text-dark">${formatMilyar(total.vol.rka)}</td> <td class="rka-col text-dark">${formatNum(total.vol.penc_pct)}%</td>
-                        </tr>`;
+                        </tr>`);
 
-                        $('#tbody-qris').html(html);
+                        $('#tbody-qris').html(rows.join(''));
                     }
                     
                     // ============================================
@@ -655,7 +699,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     // ============================================
                     else if (activeTab === 'qris_mom') {
                         res.data.forEach((row) => {
-                            html += `<tr>
+                            rows.push(`<tr>
                                 <td class="text-left font-weight-bold text-dark sticky-col">${escapeHtml(row.branch)}</td>
                                 
                                 <td>${formatNum(row.sv0.prev)}</td> <td>${formatNum(row.sv0.curr)}</td>
@@ -670,11 +714,11 @@ document.addEventListener('DOMContentLoaded', function () {
                                 
                                 <td>${formatMilyar(row.vol.prev)}</td> <td>${formatMilyar(row.vol.curr)}</td>
                                 <td>${formatGrowth(row.vol.mom, true)}</td> ${formatCellPct(row.vol.pct)} 
-                            </tr>`;
+                            </tr>`);
                         });
                         
                         let total = res.total;
-                        html += `<tr class="row-total">
+                        rows.push(`<tr class="row-total">
                             <td class="text-left sticky-col">${escapeHtml(total.branch)}</td>
                             
                             <td>${formatNum(total.sv0.prev)}</td> <td>${formatNum(total.sv0.curr)}</td>
@@ -686,12 +730,12 @@ document.addEventListener('DOMContentLoaded', function () {
                             
                             <td>${formatNum(total.store.prev)}</td> <td>${formatNum(total.store.curr)}</td>
                             <td>${formatGrowth(total.store.mom)}</td> ${formatCellPct(total.store.pct).replace(/bg-(good|bad)/, '')}
-                            
+
                             <td>${formatMilyar(total.vol.prev)}</td> <td>${formatMilyar(total.vol.curr)}</td>
                             <td>${formatGrowth(total.vol.mom, true)}</td> ${formatCellPct(total.vol.pct).replace(/bg-(good|bad)/, '')}
-                        </tr>`;
+                        </tr>`);
 
-                        $('#tbody-qris-mom').html(html);
+                        $('#tbody-qris-mom').html(rows.join(''));
                     }
                 }
                 $('#loadingIndicator').stop(true, true).fadeOut('fast');
@@ -734,8 +778,9 @@ document.addEventListener('DOMContentLoaded', function () {
     });
     $('.filter-branch-checkbox').on('change', function () {
         updateBranchLabel();
-        syncNamaUkerOptions();
-        scheduleLoadData();
+        loadNamaUkerOptions().always(function () {
+            scheduleLoadData();
+        });
     });
     $(document).on('change', '.filter-uker-checkbox', function () {
         updateUkerLabel();
@@ -757,7 +802,7 @@ document.addEventListener('DOMContentLoaded', function () {
     });
     
     // Initial Load
-    syncNamaUkerOptions();
+    loadNamaUkerOptions();
     updateBranchLabel();
     loadData();
 });

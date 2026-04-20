@@ -14,7 +14,13 @@ use Illuminate\View\View;
 class KinerjaKonsumerReportController extends Controller
 {
     private const DEFAULT_TITLE = 'OutstandingKonsumer - Briguna & KPR';
-    private const SEGMENT_LABEL = 'KPR';
+    private const SEGMENT_DEFAULT = 'ALL';
+
+    private const AVAILABLE_SEGMENTS = [
+        'ALL' => 'Semua Segmen',
+        'BRIGUNA-KONSUMER' => 'Briguna-Konsumer',
+        'KPR' => 'KPR',
+    ];
 
     public function __construct(
         private readonly RkaLookupService $rkaLookup
@@ -24,6 +30,7 @@ class KinerjaKonsumerReportController extends Controller
     {
         $availablePeriods = $this->fetchAvailablePeriods();
         $availableCabangs = $this->fetchAvailableCabangs();
+        $selectedSegmen = $this->resolveSelectedSegmen($request->input('segmen'));
         $selectedPeriod = $this->resolveSelectedPeriod($availablePeriods, $request->input('periode'))
             ?? $availablePeriods->first()
             ?? Carbon::now()->toDateString();
@@ -43,16 +50,19 @@ class KinerjaKonsumerReportController extends Controller
             $currentDate->copy()->subYearNoOverflow()->endOfYear()
         ) ?? $selectedPeriod;
 
-        $branchRows = $this->fetchBranchRows($selectedPeriod, $previousDayPeriod, $mtdPeriod, $ytdPeriod, $selectedCabang);
+        $branchRows = $this->fetchBranchRows($selectedPeriod, $previousDayPeriod, $mtdPeriod, $ytdPeriod, $selectedCabang, $selectedSegmen);
         $nextMonth = $currentDate->copy()->addMonthNoOverflow();
 
         return view('report.kinerja-konsumer', [
             'title' => self::DEFAULT_TITLE,
+            'availableSegments' => self::AVAILABLE_SEGMENTS,
             'availablePeriods' => $availablePeriods,
             'latestPeriodLabel' => $availablePeriods->first()
                 ? Carbon::parse($availablePeriods->first())->translatedFormat('d M Y')
                 : '-',
             'availableCabangs' => $availableCabangs,
+            'selectedSegmen' => $selectedSegmen,
+            'selectedSegmenLabel' => self::AVAILABLE_SEGMENTS[$selectedSegmen ?? self::SEGMENT_DEFAULT] ?? self::AVAILABLE_SEGMENTS[self::SEGMENT_DEFAULT],
             'selectedPeriod' => $selectedPeriod,
             'selectedPeriodLabel' => $currentDate->translatedFormat('d M Y'),
             'selectedPeriodShortLabel' => $currentDate->translatedFormat('d M y'),
@@ -140,6 +150,14 @@ class KinerjaKonsumerReportController extends Controller
         return $cabangs->contains($value) ? $value : null;
     }
 
+    private function resolveSelectedSegmen(?string $requestedSegmen): string
+    {
+        $value = strtoupper(trim((string) $requestedSegmen));
+        $value = $value !== '' ? $value : self::SEGMENT_DEFAULT;
+
+        return array_key_exists($value, self::AVAILABLE_SEGMENTS) ? $value : self::SEGMENT_DEFAULT;
+    }
+
     private function resolveClosestPeriod(Collection $periods, Carbon $target): ?string
     {
         $targetDate = $target->toDateString();
@@ -150,7 +168,7 @@ class KinerjaKonsumerReportController extends Controller
             });
     }
 
-    private function fetchBranchRows(string $selectedPeriod, string $previousDayPeriod, string $mtdPeriod, string $ytdPeriod, ?string $selectedCabang = null): array
+    private function fetchBranchRows(string $selectedPeriod, string $previousDayPeriod, string $mtdPeriod, string $ytdPeriod, ?string $selectedCabang = null, string $selectedSegmen = self::SEGMENT_DEFAULT): array
     {
         $periods = array_values(array_unique(array_filter([
             $selectedPeriod,
@@ -186,6 +204,13 @@ class KinerjaKonsumerReportController extends Controller
             ->whereRaw("UPPER(TRIM(COALESCE(segmen_dashboard, ''))) = 'CONSUMER'")
             ->whereRaw("REPLACE(UPPER(TRIM(COALESCE({$productColumn}, ''))), '-', ' ') IN ('BRIGUNA KONSUMER', 'KPR')")
             ->whereRaw("TRIM(COALESCE({$rmColumn}, '')) <> ''")
+            ->when($selectedSegmen !== self::SEGMENT_DEFAULT, function ($query) use ($productColumn, $selectedSegmen) {
+                if ($selectedSegmen === 'BRIGUNA-KONSUMER') {
+                    $query->whereRaw("REPLACE(UPPER(TRIM(COALESCE({$productColumn}, ''))), '-', ' ') = 'BRIGUNA KONSUMER'");
+                } elseif ($selectedSegmen === 'KPR') {
+                    $query->whereRaw("REPLACE(UPPER(TRIM(COALESCE({$productColumn}, ''))), '-', ' ') = 'KPR'");
+                }
+            })
             ->when($selectedCabang !== null, function ($query) use ($cabangColumn, $selectedCabang) {
                 $query->whereRaw("UPPER(TRIM(COALESCE({$cabangColumn}, ''))) = ?", [$selectedCabang]);
             })
@@ -270,7 +295,7 @@ class KinerjaKonsumerReportController extends Controller
             }
 
             $groupedRows[$groupKey]['items'][] = [
-                'segmen' => self::SEGMENT_LABEL,
+                'segmen' => $productLabel,
                 'product' => $productLabel,
                 'rm' => $rm,
                 'curr' => $curr,
