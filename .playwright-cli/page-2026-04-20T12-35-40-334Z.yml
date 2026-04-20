@@ -1,0 +1,36 @@
+- generic [ref=e3]:
+  - generic [ref=e4]:
+    - generic [ref=e5]:
+      - link "Logo A-Six Dashboard A-Six" [ref=e6] [cursor=pointer]:
+        - /url: http://localhost/project-ABAH
+        - img "Logo A-Six" [ref=e8]
+        - text: Dashboard A-Six
+      - paragraph [ref=e9]: A-Six Analytics Suite
+      - heading "Dashboard A-Six" [level=1] [ref=e10]
+      - paragraph [ref=e11]: Akses ringkas ke laporan utama dalam satu portal kerja dengan identitas visual A-Six yang lebih tegas dan modern.
+    - generic [ref=e12]:
+      - article [ref=e13]:
+        - paragraph [ref=e14]: Identitas A-Six Konsisten
+        - paragraph [ref=e15]: Nama, logo, dan warna portal kini seragam di seluruh halaman utama.
+      - article [ref=e16]:
+        - paragraph [ref=e17]: Akses Internal Aman
+        - paragraph [ref=e18]: Masuk dengan PN dan password.
+  - generic [ref=e19]:
+    - paragraph [ref=e20]: Selamat Datang
+    - heading "Masuk ke akun" [level=2] [ref=e21]
+    - paragraph [ref=e22]: Masuk dengan PN dan password.
+    - generic [ref=e23]:
+      - generic [ref=e24]:
+        - generic [ref=e25]: PN
+        - textbox "PN" [active] [ref=e26]:
+          - /placeholder: PN Anda
+      - generic [ref=e27]:
+        - generic [ref=e28]: Password
+        - textbox "Password" [ref=e29]:
+          - /placeholder: Password Anda
+      - generic [ref=e30]:
+        - generic [ref=e31]:
+          - checkbox "Ingat saya" [ref=e32]
+          - generic [ref=e33]: Ingat saya
+        - generic [ref=e34]: A-Six Internal
+      - button "Masuk" [ref=e36] [cursor=pointer]

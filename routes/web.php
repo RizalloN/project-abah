@@ -53,10 +53,13 @@ Route::middleware(['auth', 'release.session.lock', 'throttle:240,1'])->group(fun
     Route::get('/dashboard', [DashboardSimpananController::class, 'index'])
         ->name('dashboard');
 
-    Route::get('/report/dashboard-pinjaman', [DashboardPinjamanReportController::class, 'index'])
+    Route::get('/report/dashboard-pinjaman', [DashboardPinjamanReportController::class, 'summaryIndex'])
         ->name('report.dashboard-pinjaman');
+    Route::get('/report/dashboard-pinjaman/summary', [DashboardPinjamanReportController::class, 'summaryIndex'])
+        ->name('report.dashboard-pinjaman.summary');
     Route::get('/report/dashboard-pinjaman/matrix-pergeseran-kolek', [DashboardPinjamanReportController::class, 'matrixIndex'])
         ->name('report.dashboard-pinjaman.matrix');
+
     Route::get('/report/dashboard-pinjaman/kolek-tidak-sesuai', [DashboardPinjamanReportController::class, 'mismatchIndex'])
         ->name('report.dashboard-pinjaman.kolek-tidak-sesuai');
     Route::get('/report/dashboard-pinjaman/filters', [DashboardPinjamanReportController::class, 'filters'])
@@ -69,6 +72,10 @@ Route::middleware(['auth', 'release.session.lock', 'throttle:240,1'])->group(fun
         ->name('report.dashboard-pinjaman.kolek-tidak-sesuai.data');
     Route::get('/report/dashboard-pinjaman/kolek-tidak-sesuai/export', [DashboardPinjamanReportController::class, 'mismatchExport'])
         ->name('report.dashboard-pinjaman.kolek-tidak-sesuai.export');
+    Route::get('/report/dashboard-pinjaman/kredit', [DashboardPinjamanReportController::class, 'kreditIndex'])
+        ->name('report.dashboard-pinjaman.kredit');
+    Route::get('/report/dashboard-pinjaman/kredit/data', [DashboardPinjamanReportController::class, 'kreditData'])
+        ->name('report.dashboard-pinjaman.kredit.data');
     Route::get('/report/dashboard-pinjaman/kejar-laba', [KejarLabaReportController::class, 'index'])
         ->name('report.dashboard-pinjaman.kejar-laba');
 

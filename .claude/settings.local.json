@@ -50,7 +50,8 @@
       "Bash(php /tmp/count.php)",
       "Bash(php /tmp/test_accum.php)",
       "Bash(php /tmp/compare.php)",
-      "Bash(php /tmp/count2.php)"
+      "Bash(php /tmp/count2.php)",
+      "Read(//c/Users/uzuma/AppData/Local/Temp/claude/c--xampp-htdocs-project-ABAH/05b4fd94-c1aa-4fd3-a3c5-258c1a31630e/tasks//**)"
     ],
     "additionalDirectories": [
       "\\tmp",

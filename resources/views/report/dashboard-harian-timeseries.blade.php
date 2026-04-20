@@ -111,26 +111,27 @@
     }
 
     .chart-body {
-        padding: 1rem;
+        padding: 1.25rem;
         flex: 1;
         position: relative;
-        display: flex;
-        align-items: stretch;
-        justify-content: stretch;
-        min-height: 0;
+        overflow: hidden; /* Prevent internal content from expanding the card */
+    }
+
+    /* Fixed heights to prevent vertical stretching */
+    .summary-chart-body {
+        height: 380px !important;
+        max-height: 380px !important;
+    }
+
+    .branch-chart-body {
+        height: 280px !important;
+        max-height: 280px !important;
     }
 
     .chart-body canvas {
         width: 100% !important;
         height: 100% !important;
-    }
-
-    .summary-chart-card .chart-body {
-        min-height: 380px;
-    }
-
-    .col-lg-6 .chart-body {
-        min-height: 280px;
+        display: block !important; /* Prevents descender spacing issues */
     }
 
     .summary-chart-card {
@@ -254,7 +255,7 @@
                     <h5 class="chart-title"><i class="fas fa-chart-area mr-2 text-primary"></i>Total Tren Area</h5>
                     <div class="unit-badge">Total Konsolidasi Selected Branches</div>
                 </div>
-                <div class="chart-body">
+                <div class="chart-body summary-chart-body">
                     <div class="loading-overlay" id="summaryLoading">
                         <div class="loading-spinner"></div>
                     </div>
@@ -286,11 +287,12 @@
         }
 
         // Color palettes for months
+        // High-contrast palette for distinct month series
         const monthColors = [
-            { border: 'rgba(8, 87, 195, 1)', bg: 'rgba(8, 87, 195, 0.1)' },    // Blue (Current)
-            { border: 'rgba(48, 127, 226, 0.8)', bg: 'rgba(48, 127, 226, 0.05)' }, // Light Blue
-            { border: 'rgba(113, 197, 232, 0.8)', bg: 'rgba(113, 197, 232, 0.05)' }, // Cyan
-            { border: 'rgba(148, 163, 184, 0.6)', bg: 'rgba(148, 163, 184, 0.05)' }, // Gray
+            { border: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.05)' }, // Purple (Oldest)
+            { border: '#f59e0b', bg: 'rgba(245, 158, 11, 0.05)' }, // Amber
+            { border: '#10b981', bg: 'rgba(16, 185, 129, 0.05)' }, // Emerald
+            { border: '#0857c3', bg: 'rgba(8, 87, 195, 0.1)' },    // Royal Blue (Latest)
         ];
 
         function initSelect2() {
@@ -372,28 +374,32 @@
             `;
         }
 
-        function createChartConfig(title, months, datasets) {
+        function createChartConfig(title, months, datasets, isSummary = false) {
             return {
                 type: 'line',
                 data: {
                     labels: Array.from({length: 31}, (_, i) => i + 1),
-                    datasets: datasets.map((d, i) => ({
-                        label: d.label,
-                        data: d.data,
-                        borderColor: monthColors[i % monthColors.length].border,
-                        backgroundColor: monthColors[i % monthColors.length].bg,
-                        borderWidth: i === 0 ? 3 : 2,
-                        pointRadius: 3,
-                        pointHoverRadius: 6,
-                        tension: 0.3,
-                        fill: i === 0,
-                        hidden: false,
-                        spanGaps: true
-                    }))
+                    datasets: datasets.map((d, i) => {
+                        const isLatest = i === datasets.length - 1;
+                        return {
+                            label: d.label,
+                            data: d.data,
+                            borderColor: monthColors[i % monthColors.length].border,
+                            backgroundColor: monthColors[i % monthColors.length].bg,
+                            borderWidth: isLatest ? 3.5 : 2,
+                            pointRadius: isLatest ? 4 : 1.5,
+                            pointHoverRadius: 7,
+                            tension: 0.35,
+                            fill: isLatest, 
+                            hidden: false,
+                            borderDash: isLatest ? [] : [4, 2] // Dash historical lines for even more contrast
+                        };
+                    })
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
+                    aspectRatio: isSummary ? 2.5 : 2,
                     interaction: {
                         intersect: false,
                         mode: 'index'
@@ -486,7 +492,7 @@
                     data: data.area_total[month] || new Array(31).fill(null)
                 }));
 
-                charts['summary'] = new Chart(summaryCtx.getContext('2d'), createChartConfig('Total Area', data.months, summaryDatasets));
+                charts['summary'] = new Chart(summaryCtx.getContext('2d'), createChartConfig('Total Area', data.months, summaryDatasets, true));
                 console.log('Summary chart rendered');
             } catch (error) {
                 console.error('Error rendering summary chart:', error);
@@ -530,7 +536,7 @@
                                     <h5 class="chart-title">${branch}</h5>
                                     <span class="unit-badge">Daily Trend</span>
                                 </div>
-                                <div class="chart-body">
+                                <div class="chart-body branch-chart-body">
                                     <canvas id="${canvasId}"></canvas>
                                 </div>
                             </div>

@@ -3,8 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Jobs\EnsureDashboardSnapshotJob;
+use App\Support\DashboardHarianSnapshotService;
 use App\Support\ReportIndexHintResolver;
 use App\Support\LoanQualityBucketMapper;
+use App\Support\DashboardSmeSegmentService;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Http\Request;
@@ -38,9 +40,9 @@ class DashboardPinjamanReportController extends Controller
     private const OUTPUT_COLUMNS = ['Turunan Pokok', 'Suplesi', 'PH', 'Lunas'];
     private const KOLEK_MISMATCH_RULE_LABEL = 'kol_adk1_vs_umur_tunggakan_v1';
 
-    public function index(Request $request)
+    public function summaryIndex(Request $request)
     {
-        return redirect()->route('report.dashboard-pinjaman.matrix', $request->query());
+        return $this->renderIndex($request, 'summary');
     }
 
     public function matrixIndex(Request $request)
@@ -51,6 +53,82 @@ class DashboardPinjamanReportController extends Controller
     public function mismatchIndex(Request $request)
     {
         return $this->renderIndex($request, 'mismatch');
+    }
+
+    public function kreditIndex(Request $request)
+    {
+        $periods = $this->fetchKreditPeriods();
+        $selectedPeriod = $this->resolveKreditEffectivePeriod($request->input('periode'));
+        $selectedCategory = $request->input('kategori', 'SME');
+
+        return view('report.dashboard-pinjaman.kredit', [
+            'periods' => $periods,
+            'selectedPeriod' => $selectedPeriod,
+            'selectedCategory' => $selectedCategory,
+            'categories' => ['SME', 'Consumer', 'Mikro'],
+        ]);
+    }
+
+    public function kreditData(Request $request)
+    {
+        $this->releaseSessionLockIfNeeded();
+
+        $selectedPeriod = $this->resolveKreditEffectivePeriod($request->input('periode'));
+        $selectedCategory = $request->input('kategori', 'SME');
+        $forceRefresh = $request->boolean('refresh');
+
+        if (!$selectedPeriod) {
+            return response()->json([
+                'selected_period' => null,
+                'category' => $selectedCategory,
+                'os' => [],
+                'sml' => [],
+                'npl' => [],
+            ]);
+        }
+
+        $cacheKey = 'dashboard_pinjaman_kredit_unified:v3:' . md5(json_encode([
+            'cache_version' => $this->reportCacheVersion(),
+            'periode' => $selectedPeriod,
+            'kategori' => $selectedCategory,
+        ]));
+
+        $data = $this->rememberPayload(
+            $cacheKey,
+            now()->addMinutes(10),
+            fn () => app(DashboardSmeSegmentService::class)->getUnifiedSegmentData($selectedPeriod, $selectedCategory),
+            $forceRefresh
+        );
+
+        return response()->json(array_merge([
+            'selected_period' => $selectedPeriod,
+            'category' => $selectedCategory,
+        ], $data));
+    }
+
+    private function fetchKreditPeriods(): Collection
+    {
+        $cacheKey = 'dashboard_pinjaman_kredit_periods:v2' . $this->reportCacheVersion();
+
+        return Cache::remember($cacheKey, now()->addMinutes(30), function () {
+            return DB::table('dashboard_harian_snapshots')
+                ->select('snapshot_period')
+                ->distinct()
+                ->orderByDesc('snapshot_period')
+                ->pluck('snapshot_period')
+                ->map(fn ($p) => (string) $p)
+                ->values();
+        });
+    }
+
+    private function resolveKreditEffectivePeriod(?string $requestedPeriod): ?string
+    {
+        if ($requestedPeriod) {
+            return $requestedPeriod;
+        }
+
+        $periods = $this->fetchKreditPeriods();
+        return $periods->first() ?? null;
     }
 
     private function renderIndex(Request $request, string $mode)
@@ -68,7 +146,7 @@ class DashboardPinjamanReportController extends Controller
             'unit' => $this->normalizeFilterValues($request->input('unit1')),
         ];
 
-        return view('report.dashboard-pinjaman', [
+        return view("report.dashboard-pinjaman.{$mode}", [
             'periods' => $periods,
             'filters' => $filters,
             'selectedPeriod' => $selectedPeriod,
@@ -1316,7 +1394,7 @@ class DashboardPinjamanReportController extends Controller
         return $sanitized !== '' ? $sanitized : 'export';
     }
 
-    private function reportCacheVersion(): int
+    protected function reportCacheVersion(): int
     {
         return (int) Cache::get('report_cache_version:global', 1);
     }

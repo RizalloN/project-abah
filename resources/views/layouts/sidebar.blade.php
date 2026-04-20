@@ -403,8 +403,8 @@
                     </a>
                 </li>
 
-                <li class="nav-item {{ request()->routeIs('report.dashboard-pinjaman', 'report.dashboard-pinjaman.matrix', 'report.dashboard-pinjaman.kolek-tidak-sesuai', 'report.dashboard-pinjaman.kejar-laba', 'report.dashboard-pinjaman.filters', 'report.dashboard-pinjaman.data', 'report.dashboard-pinjaman.kolek-tidak-sesuai.*') ? 'menu-open' : '' }}">
-                    <a href="#" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman', 'report.dashboard-pinjaman.matrix', 'report.dashboard-pinjaman.kolek-tidak-sesuai', 'report.dashboard-pinjaman.kejar-laba', 'report.dashboard-pinjaman.filters', 'report.dashboard-pinjaman.data', 'report.dashboard-pinjaman.kolek-tidak-sesuai.*') ? 'active' : '' }}">
+                <li class="nav-item {{ request()->routeIs('report.dashboard-pinjaman*', 'report.dashboard-pinjaman.kredit', 'report.dashboard-pinjaman.summary', 'report.dashboard-pinjaman.matrix', 'report.dashboard-pinjaman.kolek-tidak-sesuai', 'report.dashboard-pinjaman.kejar-laba') ? 'menu-open' : '' }}">
+                    <a href="#" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman*', 'report.dashboard-pinjaman.kredit', 'report.dashboard-pinjaman.summary', 'report.dashboard-pinjaman.matrix', 'report.dashboard-pinjaman.kolek-tidak-sesuai', 'report.dashboard-pinjaman.kejar-laba') ? 'active' : '' }}">
                         <i class="nav-icon fas fa-chart-line"></i>
                         <p>
                             Dashboard Pinjaman
@@ -412,6 +412,12 @@
                         </p>
                     </a>
                     <ul class="nav nav-treeview">
+                        <li class="nav-item">
+                            <a href="{{ route('report.dashboard-pinjaman.kredit') }}" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman.kredit') ? 'active' : '' }}">
+                                <i class="far fa-circle nav-icon"></i>
+                                <p>Dashboard Pinjaman Kredit</p>
+                            </a>
+                        </li>
                         <li class="nav-item">
                             <a href="{{ route('report.dashboard-pinjaman.matrix') }}" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman.matrix') ? 'active' : '' }}">
                                 <i class="far fa-circle nav-icon"></i>
@@ -432,6 +438,7 @@
                         </li>
                     </ul>
                 </li>
+
 
                 @if(Auth::user()?->isAdmin())
                 <li class="nav-header text-uppercase">MANAGEMENT</li>

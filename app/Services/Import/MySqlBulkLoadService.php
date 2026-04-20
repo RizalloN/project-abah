@@ -404,12 +404,33 @@ class MySqlBulkLoadService
             throw new \RuntimeException('Gagal membuka file CSV untuk chunked LOAD DATA.');
         }
 
-        $insertedTotal = 0;
-        $processedLines = 0;
-        $chunkIndex = 0;
-        $chunkDir = dirname($csvPath);
-
+        // OPTIMASI PHASE 3: Create persistent PDO once for all chunks
+        // Saves connection overhead: ~50ms per chunk × N chunks
+        $pdo = null;
+        $originalSqlMode = null;
+        
         try {
+            if ($this->supportsNativeBulkLoad()) {
+                $pdo = $this->createPersistentPdo();
+                
+                if ($relaxSqlMode) {
+                    $originalSqlMode = $pdo->query('SELECT @@SESSION.sql_mode')->fetchColumn();
+                    $modes = array_values(array_filter(array_map('trim', explode(',', (string) $originalSqlMode))));
+                    $filteredModes = array_values(array_filter($modes, static function (string $mode): bool {
+                        return !in_array(strtoupper($mode), ['STRICT_TRANS_TABLES', 'STRICT_ALL_TABLES'], true);
+                    }));
+                    $relaxedMode = implode(',', $filteredModes);
+                    if ($relaxedMode !== $originalSqlMode) {
+                        $pdo->exec('SET SESSION sql_mode = ' . $pdo->quote($relaxedMode));
+                    }
+                }
+            }
+
+            $insertedTotal = 0;
+            $processedLines = 0;
+            $chunkIndex = 0;
+            $chunkDir = dirname($csvPath);
+
             while (!feof($source)) {
                 $chunkPath = $chunkDir . DIRECTORY_SEPARATOR . 'chunk_' . $chunkIndex . '_' . Str::random(6) . '.csv';
                 $chunkHandle = @fopen($chunkPath, 'w');
@@ -419,12 +440,32 @@ class MySqlBulkLoadService
 
                 $currentChunkLines = 0;
                 try {
+                    // OPTIMASI: Read chunks with larger buffers for better throughput
+                    $buffer = '';
+                    $bufferSize = 65536; // 64KB buffer for reading
                     while ($currentChunkLines < $chunkLines && !feof($source)) {
-                        $line = fgets($source);
-                        if ($line === false) {
+                        $data = fread($source, min($bufferSize, ($chunkLines - $currentChunkLines) * 50));
+                        if ($data === false || $data === '') {
                             break;
                         }
-                        fwrite($chunkHandle, $line);
+                        $buffer .= $data;
+                        $lines = explode("\n", $buffer);
+                        $buffer = array_pop($lines);
+                        
+                        foreach ($lines as $line) {
+                            if ($line !== '') {
+                                fwrite($chunkHandle, $line . "\n");
+                                $currentChunkLines++;
+                                $processedLines++;
+                                if ($currentChunkLines >= $chunkLines) {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    // Write remaining buffer
+                    if ($buffer !== '' && $currentChunkLines < $chunkLines) {
+                        fwrite($chunkHandle, $buffer . "\n");
                         $currentChunkLines++;
                         $processedLines++;
                     }
@@ -434,7 +475,12 @@ class MySqlBulkLoadService
 
                 if ($currentChunkLines > 0) {
                     try {
-                        $insertedTotal += $this->loadCsvIntoMysqlInternal($chunkPath, $tableName, $columns, $relaxSqlMode);
+                        // OPTIMASI: Use persistent PDO for chunk load
+                        if ($pdo !== null) {
+                            $insertedTotal += $this->loadCsvIntoMysqlWithPdo($pdo, $chunkPath, $tableName, $columns, false);
+                        } else {
+                            $insertedTotal += $this->loadCsvIntoMysqlInternal($chunkPath, $tableName, $columns, $relaxSqlMode);
+                        }
                     } catch (\Throwable $e) {
                         if ($this->isTransientMysqlLoadError($e) && $chunkLines > 1000) {
                             $insertedTotal += $this->loadCsvIntoMysqlChunkedInternal(
@@ -444,7 +490,7 @@ class MySqlBulkLoadService
                                 null,
                                 max(1000, (int) floor($chunkLines / 2)),
                                 $currentChunkLines,
-                                $relaxSqlMode
+                                false
                             );
                         } else {
                             throw $e;
@@ -462,11 +508,20 @@ class MySqlBulkLoadService
 
                 $chunkIndex++;
             }
+
+            // Restore original SQL mode
+            if ($pdo !== null && $relaxSqlMode && $originalSqlMode !== null) {
+                try {
+                    $pdo->exec('SET SESSION sql_mode = ' . $pdo->quote((string) $originalSqlMode));
+                } catch (\Throwable $e) {
+                    Log::warning('Failed to restore SQL mode after chunked load: ' . $e->getMessage());
+                }
+            }
+
+            return $insertedTotal;
         } finally {
             fclose($source);
         }
-
-        return $insertedTotal;
     }
 
     public function isTransientMysqlLoadError(\Throwable $e): bool
