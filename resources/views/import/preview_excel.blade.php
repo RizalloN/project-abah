@@ -207,9 +207,94 @@ document.addEventListener('DOMContentLoaded', function () {
             selectedValues: new Set(values),
             fullOptionsLoaded: false,
             isLoading: false,
+            loadedSignature: '',
+            pendingSignature: '',
+            needsRefresh: false,
         };
         searchTerms[col] = '';
     });
+
+    function buildActiveFilterContext(excludeCol) {
+        const filters = {};
+        Object.keys(filterState)
+            .map(function (key) { return String(key); })
+            .sort(function (a, b) { return Number(a) - Number(b); })
+            .forEach(function (col) {
+                if (String(col) === String(excludeCol)) {
+                    return;
+                }
+
+                const state = filterState[col];
+                if (!state) {
+                    return;
+                }
+
+                if (state.selectedValues.size === 0 || state.selectedValues.size === state.allValues.length) {
+                    return;
+                }
+
+                filters[col] = Array.from(state.selectedValues);
+            });
+
+        return filters;
+    }
+
+    function buildActiveFilterSignature(filters) {
+        const ordered = {};
+        Object.keys(filters)
+            .map(function (key) { return String(key); })
+            .sort(function (a, b) { return Number(a) - Number(b); })
+            .forEach(function (key) {
+                ordered[key] = Array.isArray(filters[key]) ? filters[key].slice() : [];
+            });
+
+        return JSON.stringify(ordered);
+    }
+
+    function rowMatchesActiveFilters(row, activeFilters) {
+        const filterEntries = Object.keys(activeFilters || {});
+        if (!filterEntries.length) {
+            return true;
+        }
+
+        for (let i = 0; i < filterEntries.length; i++) {
+            const col = filterEntries[i];
+            const allowed = Array.isArray(activeFilters[col]) ? activeFilters[col] : [];
+            if (!allowed.length) {
+                return false;
+            }
+
+            const cell = row.children[parseInt(col, 10) + 1];
+            if (!cell) {
+                return false;
+            }
+
+            const cellVal = (cell.getAttribute('data-val') || '').trim();
+            if (!allowed.includes(cellVal)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    function collectPreviewValuesForColumn(col, activeFilters) {
+        const values = new Set();
+        document.querySelectorAll('.preview-row').forEach(function (row) {
+            if (!rowMatchesActiveFilters(row, activeFilters)) {
+                return;
+            }
+
+            const cell = row.children[parseInt(col, 10) + 1];
+            if (!cell) {
+                return;
+            }
+
+            values.add((cell.getAttribute('data-val') || '').trim());
+        });
+
+        return values;
+    }
 
     function escapeHtml(value) {
         return String(value)
@@ -226,12 +311,26 @@ document.addEventListener('DOMContentLoaded', function () {
             return [];
         }
 
-        const term = (searchTerms[col] || '').toLowerCase();
-        if (!term) {
-            return state.allValues.slice();
+        const activeFilters = buildActiveFilterContext(col);
+        const previewValues = Object.keys(activeFilters).length > 0
+            ? collectPreviewValuesForColumn(col, activeFilters)
+            : null;
+        if (previewValues && previewValues.size === 0) {
+            return [];
         }
 
-        return state.allValues.filter(function (value) {
+        const effectiveValues = previewValues && previewValues.size > 0
+            ? state.allValues.filter(function (value) {
+                return previewValues.has(value);
+            })
+            : state.allValues.slice();
+
+        const term = (searchTerms[col] || '').toLowerCase();
+        if (!term) {
+            return effectiveValues;
+        }
+
+        return effectiveValues.filter(function (value) {
             return value.toLowerCase().includes(term);
         });
     }
@@ -302,22 +401,51 @@ document.addEventListener('DOMContentLoaded', function () {
 
     async function ensureFullFilterOptions(col) {
         const state = filterState[col];
-        if (!state || state.fullOptionsLoaded || state.isLoading || !filterOptionsUrl || !filePathValue) {
+        if (!state || state.isLoading || !filterOptionsUrl || !filePathValue) {
+            if (state && state.isLoading) {
+                const activeFilters = buildActiveFilterContext(col);
+                const signature = buildActiveFilterSignature(activeFilters);
+                if (state.pendingSignature !== signature) {
+                    state.needsRefresh = true;
+                }
+            }
+            return;
+        }
+
+        const sourceCol = Object.prototype.hasOwnProperty.call(displayFilterMap, col)
+            ? displayFilterMap[col]
+            : col;
+        const activeFilters = buildActiveFilterContext(col);
+        const signature = buildActiveFilterSignature(activeFilters);
+        const previewDerivedValues = Object.keys(activeFilters).length > 0
+            ? collectPreviewValuesForColumn(col, activeFilters)
+            : new Set();
+
+        if (state.fullOptionsLoaded && state.loadedSignature === signature) {
+            renderFilterList(col);
+            return;
+        }
+
+        if (previewDerivedValues.size > 0) {
+            state.fullOptionsLoaded = true;
+            state.loadedSignature = signature;
+            renderFilterList(col);
             return;
         }
 
         state.isLoading = true;
+        state.pendingSignature = signature;
+        state.needsRefresh = false;
         renderFilterList(col);
+        let shouldRender = false;
 
         try {
-            const sourceCol = Object.prototype.hasOwnProperty.call(displayFilterMap, col)
-                ? displayFilterMap[col]
-                : col;
             const url = new URL(filterOptionsUrl, window.location.origin);
             url.searchParams.set('file_path', filePathValue);
             url.searchParams.set('delimiter', delimiterValue);
             url.searchParams.set('column_index', String(sourceCol));
             url.searchParams.set('display_filter_map_json', JSON.stringify(displayFilterMap || {}));
+            url.searchParams.set('active_filters_json', JSON.stringify(activeFilters || {}));
             if (previewStateKey) {
                 url.searchParams.set('preview_state_key', previewStateKey);
             }
@@ -343,6 +471,10 @@ document.addEventListener('DOMContentLoaded', function () {
                 return String(value).trim();
             });
 
+            if (state.pendingSignature !== signature || state.needsRefresh) {
+                return;
+            }
+
             state.allValues = normalizedValues;
             state.selectedValues = hadAllSelected
                 ? new Set(normalizedValues)
@@ -350,13 +482,33 @@ document.addEventListener('DOMContentLoaded', function () {
                     return previousSelection.has(value);
                 }));
             state.fullOptionsLoaded = true;
+            state.loadedSignature = signature;
+            shouldRender = true;
         } catch (error) {
             console.error(error);
         } finally {
             state.isLoading = false;
-            renderFilterList(col);
-            updatePreviewTable();
+            if (state.needsRefresh) {
+                state.needsRefresh = false;
+                ensureFullFilterOptions(col);
+                return;
+            }
+
+            if (shouldRender) {
+                renderFilterList(col);
+                updatePreviewTable();
+            }
         }
+    }
+
+    function refreshDependentFilterOptions(excludeCol) {
+        Object.keys(filterState).forEach(function (key) {
+            if (String(key) === String(excludeCol)) {
+                return;
+            }
+
+            ensureFullFilterOptions(key);
+        });
     }
 
     /* =========================================================
@@ -455,8 +607,15 @@ document.addEventListener('DOMContentLoaded', function () {
             state.selectedValues.delete(e.target.value.trim());
         }
 
+        Object.keys(filterState).forEach(function (key) {
+            if (String(key) !== String(colIndex) && filterState[key]) {
+                filterState[key].loadedSignature = '';
+            }
+        });
+
         syncSelectAllCheckbox(colIndex, getFilteredValues(colIndex));
         updatePreviewTable();
+        refreshDependentFilterOptions(colIndex);
     });
 
     /* =========================================================
@@ -479,8 +638,15 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
             });
 
+            Object.keys(filterState).forEach(function (key) {
+                if (String(key) !== String(colIndex) && filterState[key]) {
+                    filterState[key].loadedSignature = '';
+                }
+            });
+
             renderFilterList(colIndex);
             updatePreviewTable();
+            refreshDependentFilterOptions(colIndex);
         });
     });
 

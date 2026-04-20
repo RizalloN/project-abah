@@ -11,6 +11,21 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (
+            !Schema::hasTable('lw325_ph')
+            || (
+                Schema::hasColumn('lw325_ph', 'clmamt1')
+                && Schema::hasColumn('lw325_ph', 'clmapr1')
+                && Schema::hasColumn('lw325_ph', 'pn_pengelola')
+                && Schema::hasColumn('lw325_ph', 'pn_referral_naik_kelas')
+                && Schema::hasColumn('lw325_ph', 'saldo_pertama_kali_charge_off')
+                && Schema::hasColumn('lw325_ph', 'wpstdt6')
+                && Schema::hasColumn('lw325_ph', 'clmapr')
+            )
+        ) {
+            return;
+        }
+
         Schema::table('lw325_ph', function (Blueprint $table) {
             // Amounts / Decimals
             $table->decimal('clmamt1', 20, 2)->nullable()->after('sisabun');
@@ -69,6 +84,10 @@ return new class extends Migration
      */
     public function down(): void
     {
+        if (!Schema::hasTable('lw325_ph')) {
+            return;
+        }
+
         Schema::table('lw325_ph', function (Blueprint $table) {
             $table->dropColumn([
                 'clmamt1', 'clmapr1', 'kecamatan_t_tinggal', 'kelurahan_t_tinggal', 'kodepos_t_tinggal',

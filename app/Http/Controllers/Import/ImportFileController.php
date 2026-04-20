@@ -103,9 +103,9 @@ class ImportFileController extends Controller
         ini_set('max_execution_time', $streaming ? '0' : '300');
     }
 
-    private function previewFilterCacheKey(string $filePath, string $delimiter, int $columnIndex, string $tableName): string
+    private function previewFilterCacheKey(string $filePath, string $delimiter, int $columnIndex, string $tableName, string $contextSignature = ''): string
     {
-        return 'preview_filter_options:' . md5($filePath . '|' . $delimiter . '|' . $columnIndex . '|' . $tableName);
+        return 'preview_filter_options:' . md5($filePath . '|' . $delimiter . '|' . $columnIndex . '|' . $tableName . '|' . $contextSignature);
     }
 
     private const BRILINK_SUMMARY_HEADERS = [
@@ -2291,6 +2291,7 @@ class ImportFileController extends Controller
             'column_index' => 'required|integer|min:0',
             'display_filter_map_json' => 'nullable|string',
             'preview_state_key' => 'nullable|string',
+            'active_filters_json' => 'nullable|string',
         ]);
 
         $filePath = (string) $request->input('file_path');
@@ -2301,9 +2302,35 @@ class ImportFileController extends Controller
         if (!is_array($displayFilterMap)) {
             $displayFilterMap = [];
         }
+        $activeFilters = json_decode((string) $request->input('active_filters_json', ''), true);
+        if (!is_array($activeFilters)) {
+            $activeFilters = [];
+        }
         $sourceColumnIndex = array_key_exists($columnIndex, $displayFilterMap)
             ? (int) $displayFilterMap[$columnIndex]
             : $columnIndex;
+
+        $normalizedActiveFilters = [];
+        foreach ($activeFilters as $displayIndex => $values) {
+            $sourceIndex = array_key_exists((int) $displayIndex, $displayFilterMap)
+                ? (int) $displayFilterMap[(int) $displayIndex]
+                : (int) $displayIndex;
+
+            if ($sourceIndex === $sourceColumnIndex) {
+                continue;
+            }
+
+            $normalizedValues = array_values(array_unique(array_map(static function ($value): string {
+                return trim((string) $value);
+            }, (array) $values)));
+
+            if ($normalizedValues !== []) {
+                $normalizedActiveFilters[$sourceIndex] = array_fill_keys($normalizedValues, true);
+            }
+        }
+
+        ksort($normalizedActiveFilters);
+        $contextSignature = sha1(json_encode($normalizedActiveFilters));
 
         $previewState = $previewStateKey !== ''
             ? app(\App\Services\Import\ExcelImportJobService::class)->getPreviewState($previewStateKey)
@@ -2397,7 +2424,7 @@ class ImportFileController extends Controller
         $tableName = $this->resolveTableName($reportData);
         $isBrilinkSummary = $this->isBrilinkSummaryReport($reportData);
         $isDailyLoan = $this->isDailyLoanReport($reportData);
-        $cacheKey = $this->previewFilterCacheKey($resolvedFilePath, $currentDelimiter, $sourceColumnIndex, $tableName);
+        $cacheKey = $this->previewFilterCacheKey($resolvedFilePath, $currentDelimiter, $sourceColumnIndex, $tableName, $contextSignature);
 
         $cached = Cache::get($cacheKey);
         if (is_array($cached)) {
@@ -2512,6 +2539,10 @@ class ImportFileController extends Controller
                         } catch (\Throwable $e) {
                         }
                     }
+                }
+
+                if (!$this->passesActiveFilters($data, $normalizedActiveFilters)) {
+                    continue;
                 }
 
                 $value = trim((string) ($data[$sourceColumnIndex] ?? ''));

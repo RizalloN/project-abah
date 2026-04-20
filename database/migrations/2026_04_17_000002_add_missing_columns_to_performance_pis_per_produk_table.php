@@ -11,6 +11,20 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (
+            !Schema::hasTable('performance_pis_per_produk')
+            || (
+                Schema::hasColumn('performance_pis_per_produk', 'pn_rm_dana_brinets')
+                && Schema::hasColumn('performance_pis_per_produk', 'pn_rm_dana_pis2')
+                && Schema::hasColumn('performance_pis_per_produk', 'nomor_hp')
+                && Schema::hasColumn('performance_pis_per_produk', 'email')
+                && Schema::hasColumn('performance_pis_per_produk', 'flag_briguna')
+                && Schema::hasColumn('performance_pis_per_produk', 'flag_cc')
+            )
+        ) {
+            return;
+        }
+
         Schema::table('performance_pis_per_produk', function (Blueprint $table) {
             $table->string('pn_rm_dana_brinets', 50)->nullable()->after('tanggal_pembuatan_rekening');
             $table->string('pn_rm_dana_pis2', 50)->nullable()->after('pn_rm_dana_brinets');
@@ -26,6 +40,10 @@ return new class extends Migration
      */
     public function down(): void
     {
+        if (!Schema::hasTable('performance_pis_per_produk')) {
+            return;
+        }
+
         Schema::table('performance_pis_per_produk', function (Blueprint $table) {
             $table->dropColumn([
                 'pn_rm_dana_brinets',

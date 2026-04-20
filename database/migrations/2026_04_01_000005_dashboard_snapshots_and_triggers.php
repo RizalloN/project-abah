@@ -10,7 +10,8 @@ return new class extends Migration
     public function up(): void
     {
         // 1. Dashboard Harian Snapshots (Main Dashboard)
-        Schema::create('dashboard_harian_snapshots', function (Blueprint $table) {
+        if (!Schema::hasTable('dashboard_harian_snapshots')) {
+            Schema::create('dashboard_harian_snapshots', function (Blueprint $table) {
             $table->string('uniqueid_dhs', 255)->primary();
             $table->date('snapshot_period')->index();
             $table->string('branch_label', 150)->nullable();
@@ -94,12 +95,13 @@ return new class extends Migration
             $table->decimal('kur_kpp_npl', 20, 2)->default(0);
             
             $table->timestamps();
-
-            $table->index(['snapshot_period', 'scope'], 'idx_dhs_period_scope');
-        });
+                $table->index(['snapshot_period', 'scope'], 'idx_dhs_period_scope');
+            });
+        }
 
         // 2. Dashboard Pinjaman Snapshots
-        Schema::create('dashboard_pinjaman_snapshots', function (Blueprint $table) {
+        if (!Schema::hasTable('dashboard_pinjaman_snapshots')) {
+            Schema::create('dashboard_pinjaman_snapshots', function (Blueprint $table) {
             $table->string('uniqueid_dps', 255)->primary();
             $table->date('periode')->index();
             $table->string('account_number', 50)->nullable();
@@ -110,12 +112,13 @@ return new class extends Migration
             $table->string('cabang1', 150)->nullable();
             $table->string('unit1', 150)->nullable();
             $table->timestamps();
-
-            $table->index(['periode', 'cabang1', 'unit1'], 'idx_dps_period_cab_unit');
-        });
+                $table->index(['periode', 'cabang1', 'unit1'], 'idx_dps_period_cab_unit');
+            });
+        }
 
         // 3. Dashboard Simpanan Snapshots
-        Schema::create('dashboard_simpanan_snapshots', function (Blueprint $table) {
+        if (!Schema::hasTable('dashboard_simpanan_snapshots')) {
+            Schema::create('dashboard_simpanan_snapshots', function (Blueprint $table) {
             $table->string('uniqueid_dss', 255)->primary();
             $table->date('snapshot_period')->index();
             $table->decimal('total_balance', 20, 2)->default(0);
@@ -129,21 +132,25 @@ return new class extends Migration
             $table->string('top_branch_label', 150)->nullable();
             $table->decimal('top_branch_balance', 20, 2)->default(0);
             $table->integer('source_row_count')->default(0);
-            $table->timestamp('source_updated_at')->nullable();
-            $table->timestamps();
-        });
+                $table->timestamp('source_updated_at')->nullable();
+                $table->timestamps();
+            });
+        }
 
-        Schema::create('dashboard_simpanan_branch_snapshots', function (Blueprint $table) {
-            $table->string('uniqueid_dsbs', 255)->primary();
-            $table->date('snapshot_period')->index();
-            $table->string('kantor_cabang', 150)->index();
-            $table->decimal('total_balance', 20, 2)->default(0);
-            $table->integer('rank_order')->default(0);
-            $table->timestamps();
-        });
+        if (!Schema::hasTable('dashboard_simpanan_branch_snapshots')) {
+            Schema::create('dashboard_simpanan_branch_snapshots', function (Blueprint $table) {
+                $table->string('uniqueid_dsbs', 255)->primary();
+                $table->date('snapshot_period')->index();
+                $table->string('kantor_cabang', 150)->index();
+                $table->decimal('total_balance', 20, 2)->default(0);
+                $table->integer('rank_order')->default(0);
+                $table->timestamps();
+            });
+        }
 
         // 4. Rasio CASA Snapshots
-        Schema::create('rasio_casa_debitur_snapshots', function (Blueprint $table) {
+        if (!Schema::hasTable('rasio_casa_debitur_snapshots')) {
+            Schema::create('rasio_casa_debitur_snapshots', function (Blueprint $table) {
             $table->string('uniqueid_rcds', 255)->primary();
             $table->date('loan_period')->index();
             $table->date('casa_period')->nullable();
@@ -154,55 +161,62 @@ return new class extends Migration
             $table->decimal('casa_amount', 20, 2)->default(0);
             $table->integer('source_row_count')->default(0);
             $table->timestamps();
+                $table->unique(['loan_period', 'branch_key', 'segment_key'], 'uk_rcds_period_branch_segment');
+            });
+        }
 
-            $table->unique(['loan_period', 'branch_key', 'segment_key'], 'uk_rcds_period_branch_segment');
-        });
+        if (!Schema::hasTable('rasio_casa_debitur_uker_snapshots')) {
+            Schema::create('rasio_casa_debitur_uker_snapshots', function (Blueprint $table) {
+                $table->string('uniqueid_rcdus', 255)->primary();
+                $table->date('loan_period')->index();
+                $table->date('casa_period')->nullable();
+                $table->string('source_branch_key', 100)->nullable();
+                $table->string('uker_key', 100)->nullable();
+                $table->string('uker_label', 150)->nullable();
+                $table->string('segment_key', 50)->nullable();
+                $table->decimal('os_amount', 20, 2)->default(0);
+                $table->decimal('casa_amount', 20, 2)->default(0);
+                $table->integer('source_row_count')->default(0);
+                $table->timestamps();
 
-        Schema::create('rasio_casa_debitur_uker_snapshots', function (Blueprint $table) {
-            $table->string('uniqueid_rcdus', 255)->primary();
-            $table->date('loan_period')->index();
-            $table->date('casa_period')->nullable();
-            $table->string('source_branch_key', 100)->nullable();
-            $table->string('uker_key', 100)->nullable();
-            $table->string('uker_label', 150)->nullable();
-            $table->string('segment_key', 50)->nullable();
-            $table->decimal('os_amount', 20, 2)->default(0);
-            $table->decimal('casa_amount', 20, 2)->default(0);
-            $table->integer('source_row_count')->default(0);
-            $table->timestamps();
-
-            $table->unique(['loan_period', 'source_branch_key', 'uker_key', 'segment_key'], 'uk_rcdus_period_branch_uker_segment');
-        });
+                $table->unique(['loan_period', 'source_branch_key', 'uker_key', 'segment_key'], 'uk_rcdus_period_branch_uker_segment');
+            });
+        }
 
         // 5. Rekening Dormant Snapshots
-        Schema::create('rekening_dormant_snapshots', function (Blueprint $table) {
-            $table->string('uniqueid_rds', 255)->primary();
-            $table->date('posisi')->index();
-            $table->string('branch_label', 150)->nullable();
-            $table->string('raw_branch', 150)->nullable();
-            $table->string('unit_kerja', 150)->nullable();
-            $table->integer('dormant_count')->default(0);
-            $table->timestamps();
-        });
+        if (!Schema::hasTable('rekening_dormant_snapshots')) {
+            Schema::create('rekening_dormant_snapshots', function (Blueprint $table) {
+                $table->string('uniqueid_rds', 255)->primary();
+                $table->date('posisi')->index();
+                $table->string('branch_label', 150)->nullable();
+                $table->string('raw_branch', 150)->nullable();
+                $table->string('unit_kerja', 150)->nullable();
+                $table->integer('dormant_count')->default(0);
+                $table->timestamps();
+            });
+        }
 
         // 6. Performance New Payroll Snapshots
-        Schema::create('performance_new_payroll_snapshots', function (Blueprint $table) {
-            $table->string('uniqueid_pnps', 255)->primary();
-            $table->date('snapshot_posisi')->index();
-            $table->string('branch', 150)->index();
-            $table->integer('rekening_curr')->default(0);
-            $table->integer('rekening_prev')->default(0);
-            $table->integer('rekening_yoy_prev')->default(0);
-            $table->decimal('saldo_curr', 20, 2)->default(0);
-            $table->decimal('saldo_prev', 20, 2)->default(0);
-            $table->decimal('saldo_yoy_prev', 20, 2)->default(0);
-            $table->timestamps();
-        });
+        if (!Schema::hasTable('performance_new_payroll_snapshots')) {
+            Schema::create('performance_new_payroll_snapshots', function (Blueprint $table) {
+                $table->string('uniqueid_pnps', 255)->primary();
+                $table->date('snapshot_posisi')->index();
+                $table->string('branch', 150)->index();
+                $table->integer('rekening_curr')->default(0);
+                $table->integer('rekening_prev')->default(0);
+                $table->integer('rekening_yoy_prev')->default(0);
+                $table->decimal('saldo_curr', 20, 2)->default(0);
+                $table->decimal('saldo_prev', 20, 2)->default(0);
+                $table->decimal('saldo_yoy_prev', 20, 2)->default(0);
+                $table->timestamps();
+            });
+        }
 
         // 7. TRIGGERS Logic (Using raw SQL for performance and precision)
         // Invalidates snapshots when source tables are updated via imports
         
         // Simpanan MultiPn Triggers
+        DB::unprepared("DROP TRIGGER IF EXISTS trg_simpanan_after_insert");
         DB::unprepared("
             CREATE TRIGGER trg_simpanan_after_insert AFTER INSERT ON simpanan_multipn
             FOR EACH ROW BEGIN
@@ -215,6 +229,7 @@ return new class extends Migration
         ");
 
         // Daily Loan Dinamis Triggers
+        DB::unprepared("DROP TRIGGER IF EXISTS trg_daily_loan_after_insert");
         DB::unprepared("
             CREATE TRIGGER trg_daily_loan_after_insert AFTER INSERT ON daily_loan_dinamis
             FOR EACH ROW BEGIN
@@ -225,6 +240,7 @@ return new class extends Migration
         ");
 
         // SSA reports - affects daily dashboard
+        DB::unprepared("DROP TRIGGER IF EXISTS trg_ssa_simpanan_after_insert");
         DB::unprepared("
             CREATE TRIGGER trg_ssa_simpanan_after_insert AFTER INSERT ON ssa_simpanan
             FOR EACH ROW BEGIN
@@ -232,6 +248,7 @@ return new class extends Migration
             END;
         ");
 
+        DB::unprepared("DROP TRIGGER IF EXISTS trg_ssa_pinjaman_after_insert");
         DB::unprepared("
             CREATE TRIGGER trg_ssa_pinjaman_after_insert AFTER INSERT ON ssa_pinjaman
             FOR EACH ROW BEGIN
@@ -239,6 +256,7 @@ return new class extends Migration
             END;
         ");
 
+        DB::unprepared("DROP TRIGGER IF EXISTS trg_lw325_ph_after_insert");
         DB::unprepared("
             CREATE TRIGGER trg_lw325_ph_after_insert AFTER INSERT ON lw325_ph
             FOR EACH ROW BEGIN
@@ -247,6 +265,7 @@ return new class extends Migration
         ");
 
         // Merchant/EDC Detail Trigger
+        DB::unprepared("DROP TRIGGER IF EXISTS trg_merchant_detail_after_insert");
         DB::unprepared("
             CREATE TRIGGER trg_merchant_detail_after_insert AFTER INSERT ON jumlah_merchant_detail
             FOR EACH ROW BEGIN
@@ -255,6 +274,7 @@ return new class extends Migration
         ");
 
         // PIS Performance Trigger (affects payroll snapshots)
+        DB::unprepared("DROP TRIGGER IF EXISTS trg_pis_after_insert");
         DB::unprepared("
             CREATE TRIGGER trg_pis_after_insert AFTER INSERT ON performance_pis_per_produk
             FOR EACH ROW BEGIN

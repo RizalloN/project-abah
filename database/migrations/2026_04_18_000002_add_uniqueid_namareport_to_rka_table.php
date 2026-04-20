@@ -13,19 +13,21 @@ return new class extends Migration
             return;
         }
 
+        $hasLegacyId = Schema::hasColumn('rka', 'id');
+
         if (!Schema::hasColumn('rka', 'uniqueid_namareport')) {
             Schema::table('rka', function (Blueprint $table) {
                 $table->string('uniqueid_namareport', 255)->nullable()->after('id');
             });
         }
 
-        if (DB::getDriverName() === 'mysql') {
+        if ($hasLegacyId && DB::getDriverName() === 'mysql') {
             DB::statement("
                 UPDATE `rka`
                 SET `uniqueid_namareport` = CONCAT('uuid_rka_', LPAD(CAST(`id` AS CHAR), 10, '0'))
                 WHERE `uniqueid_namareport` IS NULL OR TRIM(`uniqueid_namareport`) = ''
             ");
-        } else {
+        } elseif ($hasLegacyId) {
             DB::table('rka')
                 ->select(['id', 'uniqueid_namareport'])
                 ->orderBy('id')
@@ -42,6 +44,14 @@ return new class extends Migration
                             'uniqueid_namareport' => 'uuid_rka_' . str_pad((string) $row->id, 10, '0', STR_PAD_LEFT),
                         ]);
                 });
+        }
+
+        if (!$hasLegacyId && $this->isUniqueIdAlreadyPrimaryKey()) {
+            if ($this->hasIndex('rka', 'rka_uniqueid_namareport_unique')) {
+                DB::statement("ALTER TABLE `rka` DROP INDEX `rka_uniqueid_namareport_unique`");
+            }
+
+            return;
         }
 
         if (!$this->hasIndex('rka', 'rka_uniqueid_namareport_unique')) {
@@ -150,5 +160,27 @@ return new class extends Migration
         }
 
         DB::statement("ALTER TABLE `rka` ADD PRIMARY KEY (`uniqueid_namareport`)");
+    }
+
+    private function isUniqueIdAlreadyPrimaryKey(): bool
+    {
+        if (DB::getDriverName() !== 'mysql' || !Schema::hasColumn('rka', 'uniqueid_namareport')) {
+            return false;
+        }
+
+        $primaryKey = DB::selectOne("
+            SELECT kcu.COLUMN_NAME AS column_name
+            FROM information_schema.TABLE_CONSTRAINTS tc
+            INNER JOIN information_schema.KEY_COLUMN_USAGE kcu
+                ON tc.CONSTRAINT_SCHEMA = kcu.CONSTRAINT_SCHEMA
+                AND tc.TABLE_NAME = kcu.TABLE_NAME
+                AND tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME
+            WHERE tc.CONSTRAINT_SCHEMA = DATABASE()
+                AND tc.TABLE_NAME = 'rka'
+                AND tc.CONSTRAINT_TYPE = 'PRIMARY KEY'
+            LIMIT 1
+        ");
+
+        return strtolower((string) ($primaryKey->column_name ?? '')) === 'uniqueid_namareport';
     }
 };
