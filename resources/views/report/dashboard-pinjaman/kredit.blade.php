@@ -57,7 +57,7 @@
     <div id="dashboardContent" class="animate-reveal">
         
         <!-- OS Section -->
-        <div class="loan-section-block mb-5">
+        <div class="loan-section-block mb-4">
             <div class="loan-section-header">
                 <h3 id="osTitle">A. OUTSTANDING (OS)</h3>
                 <div class="legend-box ml-auto">
@@ -71,7 +71,7 @@
         </div>
 
         <!-- SML Section -->
-        <div class="loan-section-block mb-5">
+        <div class="loan-section-block mb-4">
             <div class="loan-section-header">
                 <h3 id="smlTitle">B. SPECIAL MENTION LOAN (SML)</h3>
                 <div class="legend-box ml-auto">
@@ -85,7 +85,7 @@
         </div>
 
         <!-- NPL Section -->
-        <div class="loan-section-block mb-5">
+        <div class="loan-section-block mb-4">
             <div class="loan-section-header">
                 <h3 id="nplTitle">C. NON-PERFORMING LOAN (NPL)</h3>
                 <div class="legend-box ml-auto">

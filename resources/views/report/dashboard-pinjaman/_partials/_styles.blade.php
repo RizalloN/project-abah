@@ -135,7 +135,7 @@
 
     .loan-summary-table-wrap { 
         width: 100%;
-        margin-bottom: 2.5rem; 
+        margin-bottom: 1.25rem; 
         border-radius: 12px; 
         overflow: hidden; 
         border: 1px solid var(--loan-border); 
@@ -252,7 +252,7 @@
         display: flex;
         align-items: center;
         gap: 1rem;
-        margin: 2.5rem 0 1rem;
+        margin: 1.5rem 0 0.8rem;
         padding-left: 0.5rem;
         border-left: 5px solid #00529c;
     }
