@@ -1374,11 +1374,11 @@ class DashboardHarianSnapshotService
         $final['sme_npl'] = $final['kecil_npl'];
         
         $final['commercial_os'] = 0.0;
-        // Compute TOTALS from subsegments (not queried directly)
-        $final['total_os_non_commercial'] = $final['kecil_os'] + $final['medium_os'] + $final['consumer_os'] + $final['micro_os'];
+        // Compute TOTALS from subsegments (kecil, consumer, micro ONLY - medium excluded)
+        $final['total_os_non_commercial'] = $final['kecil_os'] + $final['consumer_os'] + $final['micro_os'];
         $final['total_os'] = $final['commercial_os'] + $final['total_os_non_commercial'];
-        $final['total_sml_abs_non_commercial'] = $final['kecil_sml'] + $final['medium_sml'] + $final['consumer_sml'] + $final['micro_sml'];
-        $final['total_npl_abs_non_commercial'] = $final['kecil_npl'] + $final['medium_npl'] + $final['consumer_npl'] + $final['micro_npl'];
+        $final['total_sml_abs_non_commercial'] = $final['kecil_sml'] + $final['consumer_sml'] + $final['micro_sml'];
+        $final['total_npl_abs_non_commercial'] = $final['kecil_npl'] + $final['consumer_npl'] + $final['micro_npl'];
         
         // Compute percentages from totals
         $final['total_sml_pct_non_commercial'] = $this->safePercent($final['total_sml_abs_non_commercial'], $final['total_os_non_commercial']);

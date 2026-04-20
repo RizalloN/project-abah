@@ -99,7 +99,19 @@
         padding: 1.5rem;
         flex: 1;
         position: relative;
-        min-height: 320px;
+        height: 300px;
+        display: flex;
+        align-items: stretch;
+        justify-content: stretch;
+    }
+
+    .chart-body canvas {
+        width: 100% !important;
+        height: 100% !important;
+    }
+
+    #summaryChart {
+        min-height: 350px;
     }
 
     .summary-chart-card {
@@ -223,11 +235,11 @@
                     <h5 class="chart-title"><i class="fas fa-chart-area mr-2 text-primary"></i>Total Tren Area</h5>
                     <div class="unit-badge">Total Konsolidasi Selected Branches</div>
                 </div>
-                <div class="chart-body">
+                <div class="chart-body" style="height: 350px;">
                     <div class="loading-overlay" id="summaryLoading">
                         <div class="loading-spinner"></div>
                     </div>
-                    <canvas id="summaryChart"></canvas>
+                    <canvas id="summaryChart" style="width: 100%; height: 100%;"></canvas>
                 </div>
             </div>
         </div>
@@ -241,7 +253,7 @@
 @endsection
 
 @section('scripts')
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="{{ asset('vendor/chartjs/chart.min.js') }}"></script>
 <script>
     document.addEventListener('DOMContentLoaded', function() {
         const routes = @json($dashboardPage['routes']);
@@ -249,6 +261,10 @@
         let charts = {};
 
         console.log('Timeseries Dashboard Init', { endpoint: routes.data, category: currentCategory });
+        console.log('Chart.js available:', typeof Chart !== 'undefined');
+        if (typeof Chart === 'undefined') {
+            console.error('Chart.js NOT loaded! Please check script source.');
+        }
 
         // Color palettes for months
         const monthColors = [
@@ -351,8 +367,9 @@
                         pointRadius: 3,
                         pointHoverRadius: 6,
                         tension: 0.3,
-                        fill: i === 0, // Only fill the latest month
-                        hidden: false
+                        fill: i === 0,
+                        hidden: false,
+                        spanGaps: true
                     }))
                 },
                 options: {
