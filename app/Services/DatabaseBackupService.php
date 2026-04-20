@@ -37,9 +37,16 @@ class DatabaseBackupService
 
         // Step 2: Dump Data for each table (appending)
         foreach ($tables as $table) {
-            $dataCommand = $this->buildDumpCommand($config, $database, null, ['--no-create-info', $table]);
-            // We need to append, so runDumpProcess needs for support for appending or we do it manually
-            $this->appendTableData($dataCommand, $absolutePath, $environment);
+            $tempPath = $this->createTemporaryDumpPath($database, $table);
+            try {
+                $dataCommand = $this->buildDumpCommand($config, $database, $tempPath, ['--no-create-info', $table]);
+                $this->runDumpProcess($dataCommand, $tempPath, $environment);
+                $this->appendDumpFile($tempPath, $absolutePath);
+            } finally {
+                if (is_file($tempPath)) {
+                    @unlink($tempPath);
+                }
+            }
         }
 
         $this->assertDumpLooksClean($absolutePath);
@@ -208,12 +215,38 @@ class DatabaseBackupService
         ];
     }
 
-    private function appendTableData(array $command, string $outputPath, array $environment): void
+    private function appendTableData(array $command, string $tempPath, string $outputPath, array $environment): void
     {
-        $result = $this->runDumpProcess($command, null, $environment);
-        if ($result['stdout'] !== '') {
-            File::append($outputPath, "\n" . $result['stdout']);
+        $this->runDumpProcess($command, $tempPath, $environment);
+        $this->appendDumpFile($tempPath, $outputPath);
+    }
+
+    private function appendDumpFile(string $sourcePath, string $outputPath): void
+    {
+        $source = fopen($sourcePath, 'rb');
+        if (!is_resource($source)) {
+            throw new RuntimeException('Gagal membaca file dump sementara.');
         }
+
+        $destination = fopen($outputPath, 'ab');
+        if (!is_resource($destination)) {
+            fclose($source);
+            throw new RuntimeException('Gagal membuka file backup untuk append.');
+        }
+
+        try {
+            fwrite($destination, "\n");
+            stream_copy_to_stream($source, $destination);
+        } finally {
+            fclose($source);
+            fclose($destination);
+        }
+    }
+
+    private function createTemporaryDumpPath(string $database, string $table): string
+    {
+        $safeName = preg_replace('/[^A-Za-z0-9_-]+/', '_', $database . '_' . $table) ?: 'backup';
+        return sys_get_temp_dir() . DIRECTORY_SEPARATOR . $safeName . '_' . uniqid('', true) . '.sql';
     }
 
     private function assertDumpLooksClean(string $outputPath, string $stderr = ''): void

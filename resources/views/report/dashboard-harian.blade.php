@@ -1754,8 +1754,10 @@
                 hiddenKeys = hiddenKeys.concat(mikroKeys, commercialKeys);
             } else if (scopeMode === 'kc') {
                 hiddenKeys = hiddenKeys.concat(mikroKeys, commercialKeys);
+            } else if (scopeMode === 'all') {
+                hiddenKeys = hiddenKeys.concat(commercialKeys);
             } else {
-                hiddenKeys = hiddenKeys.concat(mikroKeys, commercialKeys, wholesaleKeys);
+                hiddenKeys = hiddenKeys.concat(commercialKeys);
             }
 
             hiddenKeys.forEach(function (key) {

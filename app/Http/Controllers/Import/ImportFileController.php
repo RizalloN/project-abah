@@ -48,9 +48,9 @@ class ImportFileController extends Controller
     private const PREVIEW_UNIQUE_SCAN_LIMIT = 4000;
     private const PREVIEW_UNIQUE_LIMIT_PER_COLUMN = 400;
     private const LARGE_FILE_THRESHOLD_BYTES = 150 * 1024 * 1024;
-    private const LARGE_FILE_PREVIEW_SAMPLE_LIMIT = 400;
-    private const LARGE_FILE_PREVIEW_UNIQUE_SCAN_LIMIT = 800;
-    private const LARGE_FILE_PREVIEW_UNIQUE_LIMIT_PER_COLUMN = 160;
+    private const LARGE_FILE_PREVIEW_SAMPLE_LIMIT = 100;
+    private const LARGE_FILE_PREVIEW_UNIQUE_SCAN_LIMIT = 100;
+    private const LARGE_FILE_PREVIEW_UNIQUE_LIMIT_PER_COLUMN = 80;
     private const DAILY_LOAN_PREVIEW_SAMPLE_LIMIT = 150;
     private const DAILY_LOAN_PREVIEW_UNIQUE_SCAN_LIMIT = 150;
     private const DAILY_LOAN_PREVIEW_UNIQUE_LIMIT_PER_COLUMN = 40;
@@ -2048,25 +2048,51 @@ class ImportFileController extends Controller
 
         if (in_array($extension, ['csv', 'txt'], true)) {
             if (($handle = fopen($filePath, "r")) !== FALSE) {
-                $firstLine = fgets($handle);
-                if ($currentDelimiter === 'auto') {
-                    $delimiters = [',' => 0, ';' => 0, '|' => 0, "\t" => 0, '.' => 0];
-                    foreach ($delimiters as $delim => &$count) { $count = substr_count($firstLine, $delim); }
-                    arsort($delimiters); $delimiter = key($delimiters); 
-                } else { $delimiter = $currentDelimiter; }
-                rewind($handle); 
+                // OPTIMIZATION 1: Cache delimiter detection results
+                $delimiterCacheKey = "import_csv_delimiter:" . md5($filePath . filesize($filePath));
+                $delimiter = Cache::get($delimiterCacheKey);
                 
+                if ($delimiter === null) {
+                    $firstLine = fgets($handle);
+                    if ($currentDelimiter === 'auto') {
+                        $delimiters = [',' => 0, ';' => 0, '|' => 0, "\t" => 0, '.' => 0];
+                        foreach ($delimiters as $delim => &$count) { $count = substr_count($firstLine, $delim); }
+                        arsort($delimiters); $delimiter = key($delimiters); 
+                    } else { $delimiter = $currentDelimiter; }
+                    Cache::put($delimiterCacheKey, $delimiter, now()->addHours(24));
+                    rewind($handle);
+                } else {
+                    // Delimiter dari cache, skip firstLine reading
+                    rewind($handle);
+                }
+                
+                // OPTIMIZATION 2: Prepare data for efficient batch processing
                 $rowCounter = 0;
                 $savedRows = 0;
                 $scannedRows = 0;
                 $collectUniqueValues = true;
+                
+                // Pre-allocate for non-daily-loan date parsing
+                $posisiCache = [];
+                $tahunCache = [];
+                
+                // OPTIMIZATION 3: Process rows with minimal trim operations
                 while (($data = $this->readCsvRecord($handle, $delimiter)) !== FALSE) {
-                    if (empty($data) || implode('', $data) === '') continue;
+                    // OPTIMIZATION 4: Skip empty rows BEFORE any processing
+                    $hasContent = false;
+                    foreach ($data as $val) {
+                        if ($val !== null && $val !== '' && trim((string) $val) !== '') {
+                            $hasContent = true;
+                            break;
+                        }
+                    }
+                    if (!$hasContent) continue;
                     
                     if ($rowCounter == 0) {
                         $headers = $this->formatCsvHeaders($data, $isBrilinkSummary);
 
                         if (!$isBrilinkSummary) {
+                            // OPTIMIZATION 5: Find posisi/tahun indices once, cache them
                             foreach ($headers as $i => $h) { 
                                 if (stripos($h, 'POSISI') !== false) { $posisiIndex = $i; }
                                 if (stripos($h, 'TAHUN') !== false) { $tahunIndex = $i; }
@@ -2078,53 +2104,91 @@ class ImportFileController extends Controller
                         }
 
                     } else {
-                        if (!$isDailyLoan && (trim((string) $data[0]) === 'TAHUN' || stripos(trim((string) $data[0]), 'textbox') !== false)) continue;
+                        // OPTIMIZATION 6: Defer expensive operations, only process needed data
+                        if (!$isDailyLoan) {
+                            $firstCell = trim((string) ($data[0] ?? ''));
+                            if ($firstCell === 'TAHUN' || stripos($firstCell, 'textbox') !== false) {
+                                continue;
+                            }
+                        }
 
                         if ($isBrilinkSummary) {
                             $data = $this->transformBrilinkSummaryRow($data);
                         } elseif ($isDailyLoan) {
-                            if (count($data) < count($headers)) {
-                                $data = array_pad($data, count($headers), null);
+                            // OPTIMIZATION 7: Minimal array operations for daily loan
+                            $headerCount = count($headers);
+                            $dataCount = count($data);
+                            
+                            if ($dataCount < $headerCount) {
+                                // Only pad if necessary
+                                for ($j = $dataCount; $j < $headerCount; $j++) {
+                                    $data[$j] = null;
+                                }
+                            } elseif ($dataCount > $headerCount) {
+                                continue;
                             }
-                            if (count($data) > count($headers)) continue;
 
+                            // OPTIMIZATION 8: Batch normalize values in single pass
+                            $normalized = [];
                             foreach ($headers as $i => $header) {
                                 $normalizedColumn = $this->normalizeDailyLoanHeader($header);
-                                $cellValue = isset($data[$i]) ? trim((string) $data[$i]) : '';
-
+                                $cellValue = $data[$i] ?? '';
+                                
                                 if ($this->isDailyLoanDateColumn($normalizedColumn)) {
-                                    $data[$i] = $this->normalizeDailyLoanDate($cellValue);
+                                    $normalized[$i] = $this->normalizeDailyLoanDate(is_string($cellValue) ? trim($cellValue) : $cellValue);
                                 } elseif ($this->isDailyLoanNumericColumn($normalizedColumn)) {
-                                    $data[$i] = $this->normalizeDecimalValue($cellValue);
+                                    $normalized[$i] = $this->normalizeDecimalValue(is_string($cellValue) ? trim($cellValue) : $cellValue);
                                 } else {
-                                    $data[$i] = $cellValue === '' ? null : $cellValue;
+                                    $normalized[$i] = is_string($cellValue) && $cellValue !== '' ? trim($cellValue) : null;
                                 }
                             }
+                            $data = $normalized;
                         } else {
-                            if (count($data) < count($headers)) {
-                                $data = array_pad($data, count($headers), null);
+                            // OPTIMIZATION 9: Minimal array operations for other reports
+                            $headerCount = count($headers);
+                            $dataCount = count($data);
+                            
+                            if ($dataCount < $headerCount) {
+                                for ($j = $dataCount; $j < $headerCount; $j++) {
+                                    $data[$j] = null;
+                                }
+                            } elseif ($dataCount > $headerCount) {
+                                continue;
                             }
-                            if (count($data) > count($headers)) continue; 
 
-                            if ($posisiIndex !== -1 && isset($data[$posisiIndex]) && trim($data[$posisiIndex]) !== '') {
-                                $rawPosisi = trim($data[$posisiIndex]);
-                                try {
-                                    if (strpos($rawPosisi, '/') !== false) {
-                                        $data[$posisiIndex] = StrictDateParser::normalize($rawPosisi);
-                                    } else {
-                                        if ($tahunIndex !== -1 && isset($data[$tahunIndex]) && trim($data[$tahunIndex]) !== '') {
-                                            $rawTahun = trim($data[$tahunIndex]);
-                                            if (preg_match('/^([a-zA-Z]+\s+\d+)/', $rawPosisi, $matches)) {
-                                                $fixedDateStr = $matches[1] . ' ' . $rawTahun; 
-                                                $data[$posisiIndex] = StrictDateParser::normalize($fixedDateStr);
+                            // OPTIMIZATION 10: Defer date parsing - only parse when needed for preview/unique
+                            if ($posisiIndex !== -1 && isset($data[$posisiIndex])) {
+                                $rawPosisi = is_string($data[$posisiIndex]) ? trim($data[$posisiIndex]) : '';
+                                if ($rawPosisi !== '') {
+                                    // Cache hasil parsing untuk rows yang sama
+                                    $cacheKey = "parsed_date:" . $rawPosisi;
+                                    if (!isset($posisiCache[$cacheKey])) {
+                                        try {
+                                            if (strpos($rawPosisi, '/') !== false) {
+                                                $posisiCache[$cacheKey] = StrictDateParser::normalize($rawPosisi);
                                             } else {
-                                                $data[$posisiIndex] = StrictDateParser::normalize($rawPosisi);
+                                                if ($tahunIndex !== -1 && isset($data[$tahunIndex])) {
+                                                    $rawTahun = is_string($data[$tahunIndex]) ? trim($data[$tahunIndex]) : '';
+                                                    if ($rawTahun !== '') {
+                                                        if (preg_match('/^([a-zA-Z]+\s+\d+)/', $rawPosisi, $matches)) {
+                                                            $fixedDateStr = $matches[1] . ' ' . $rawTahun; 
+                                                            $posisiCache[$cacheKey] = StrictDateParser::normalize($fixedDateStr);
+                                                        } else {
+                                                            $posisiCache[$cacheKey] = StrictDateParser::normalize($rawPosisi);
+                                                        }
+                                                    } else {
+                                                        $posisiCache[$cacheKey] = StrictDateParser::normalize($rawPosisi);
+                                                    }
+                                                } else {
+                                                    $posisiCache[$cacheKey] = StrictDateParser::normalize($rawPosisi);
+                                                }
                                             }
-                                        } else {
-                                            $data[$posisiIndex] = StrictDateParser::normalize($rawPosisi);
+                                        } catch (\Exception $e) {
+                                            $posisiCache[$cacheKey] = $rawPosisi;
                                         }
                                     }
-                                } catch (\Exception $e) {}
+                                    $data[$posisiIndex] = $posisiCache[$cacheKey];
+                                }
                             }
                         }
 
@@ -2136,32 +2200,27 @@ class ImportFileController extends Controller
                         }
 
                         if ($collectUniqueValues) {
-                            // OPTIMIZATION: Pre-cache valid column indices to avoid repeated isset() calls
+                            // OPTIMIZATION 11: Batch unique value collection
                             $validIndices = array_keys($uniqueValues);
-                            $validIndicesSet = array_fill_keys($validIndices, true);
+                            $validIndicesSet = array_flip($validIndices);  // Use flip for faster lookup
                             
-                            foreach ($data as $i => $val) {
-                                if (!isset($validIndicesSet[$i])) {
-                                    continue;
-                                }
-
-                                $cleanVal = trim((string) $val);
+                            foreach ($validIndices as $i) {
+                                $val = $data[$i] ?? '';
+                                $cleanVal = is_string($val) ? trim($val) : (string) $val;
+                                
                                 if (count($uniqueValues[$i]) < $previewUniqueLimitPerColumn || isset($uniqueValues[$i][$cleanVal])) {
                                     $uniqueValues[$i][$cleanVal] = true;
                                 }
                             }
 
-                            $allColumnsFilled = !empty($uniqueValues);
-                            foreach ($uniqueValues as $valuesMap) {
-                                if (count($valuesMap) < $previewUniqueLimitPerColumn) {
-                                    $allColumnsFilled = false;
-                                    break;
-                                }
-                            }
-
-                            if ($scannedRows >= $previewUniqueScanLimit || $allColumnsFilled) {
+                            if ($scannedRows >= $previewUniqueScanLimit) {
                                 $collectUniqueValues = false;
                             }
+                        }
+
+                        // Early exit untuk file besar
+                        if (!$collectUniqueValues && count($previewData) >= $previewSampleLimit) {
+                            break;
                         }
                     }
                     $rowCounter++;
@@ -2471,6 +2530,161 @@ class ImportFileController extends Controller
             'values' => $values,
             'cached' => false,
         ]);
+    }
+
+    /**
+     * Dynamic filter options loading untuk merchant QRIS detail
+     * Load complete unique values dari SELURUH file tanpa batasan
+     */
+    public function previewDynamicFilterOptions(Request $request)
+    {
+        $this->applySafeRuntimeLimits();
+
+        $request->validate([
+            'file_path' => 'required|string',
+            'delimiter' => 'nullable|string',
+            'column_index' => 'required|integer|min:0',
+            'column_name' => 'nullable|string',
+        ]);
+
+        $filePath = (string) $request->input('file_path');
+        $currentDelimiter = (string) $request->input('delimiter', 'auto');
+        $columnIndex = (int) $request->input('column_index');
+        $columnName = (string) $request->input('column_name', '');
+
+        $resolvedFilePath = $filePath;
+        if (!file_exists($resolvedFilePath)) {
+            try {
+                $storageResolvedPath = Storage::path($filePath);
+                if (is_string($storageResolvedPath) && file_exists($storageResolvedPath)) {
+                    $resolvedFilePath = $storageResolvedPath;
+                }
+            } catch (\Throwable $e) {
+            }
+        }
+
+        if (!file_exists($resolvedFilePath)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'File tidak ditemukan.',
+            ], 422);
+        }
+
+        // OPTIMIZATION 1: Cached dynamic options (same cache key strategy)
+        $cacheKey = "import_dynamic_filter:".md5($filePath . $columnIndex . $currentDelimiter);
+        $cached = Cache::get($cacheKey);
+
+        if (is_array($cached)) {
+            return response()->json([
+                'status' => 'success',
+                'values' => $cached,
+                'total_unique' => count($cached),
+                'from_cache' => true,
+            ]);
+        }
+
+        $handle = fopen($resolvedFilePath, 'r');
+        if ($handle === false) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'File tidak dapat dibaca.',
+            ], 422);
+        }
+
+        // OPTIMIZATION 2: Cache delimiter detection
+        $delimiterCacheKey = "import_csv_delimiter:" . md5($resolvedFilePath . filesize($resolvedFilePath));
+        $delimiter = Cache::get($delimiterCacheKey);
+        
+        if ($delimiter === null) {
+            $delimiter = $currentDelimiter === 'auto' ? $this->detectCsvDelimiter($resolvedFilePath) : $currentDelimiter;
+            Cache::put($delimiterCacheKey, $delimiter, now()->addHours(24));
+        }
+
+        $uniqueValues = [];
+        $headers = [];
+        $rowCounter = 0;
+        
+        // OPTIMIZATION 3: Max unique values limit untuk file besar
+        $maxUniqueValues = 5000;  // Cap di 5000 unique values
+        $uniqueCollected = 0;
+        $stopCollecting = false;
+
+        try {
+            while (($row = $this->readCsvRecord($handle, $delimiter)) !== false) {
+                // OPTIMIZATION 4: Skip empty rows early
+                if (empty($row)) {
+                    continue;
+                }
+
+                if ($rowCounter === 0) {
+                    $headers = $this->formatCsvHeaders($row);
+                    if (!isset($row[$columnIndex])) {
+                        fclose($handle);
+                        return response()->json([
+                            'status' => 'error',
+                            'message' => 'Kolom filter tidak valid pada index ' . $columnIndex,
+                        ], 422);
+                    }
+                    $rowCounter++;
+                    continue;
+                }
+
+                // Collect value dari column
+                if (isset($row[$columnIndex]) && !$stopCollecting) {
+                    $value = is_string($row[$columnIndex]) ? trim($row[$columnIndex]) : (string) $row[$columnIndex];
+                    
+                    if ($value !== '' && !isset($uniqueValues[$value])) {
+                        $uniqueValues[$value] = true;
+                        $uniqueCollected++;
+                        
+                        // OPTIMIZATION 5: Stop jika sudah reached limit
+                        if ($uniqueCollected >= $maxUniqueValues) {
+                            $stopCollecting = true;
+                        }
+                    }
+                }
+
+                $rowCounter++;
+                
+                // OPTIMIZATION 6: For very large files, add safety check every 10000 rows
+                if ($rowCounter % 10000 === 0) {
+                    if (memory_get_usage(true) > 256 * 1024 * 1024) {  // 256MB limit
+                        break;  // Stop if memory usage too high
+                    }
+                }
+                
+                // Stop early if both unique collected and some rows scanned
+                if ($stopCollecting && $rowCounter > 50000) {
+                    break;
+                }
+            }
+
+            fclose($handle);
+
+            $values = array_keys($uniqueValues);
+            sort($values);
+
+            // Cache untuk 8 jam
+            Cache::put($cacheKey, $values, now()->addHours(8));
+
+            return response()->json([
+                'status' => 'success',
+                'values' => $values,
+                'total_unique' => count($values),
+                'total_rows_scanned' => $rowCounter - 1, // Exclude header
+                'from_cache' => false,
+                'capped_at_limit' => count($values) >= $maxUniqueValues,
+            ]);
+
+        } catch (\Throwable $e) {
+            if (is_resource($handle)) {
+                fclose($handle);
+            }
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Gagal memproses file: ' . $e->getMessage(),
+            ], 422);
+        }
     }
 
     public function initImport(Request $request)

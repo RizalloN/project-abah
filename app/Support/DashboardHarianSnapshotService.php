@@ -207,6 +207,63 @@ class DashboardHarianSnapshotService
         ];
     }
 
+    /**
+     * Sync missing snapshots - automatically rebuild periods that exist in SSA tables
+     * but are missing from snapshot cache. This is called periodically by the scheduler.
+     * 
+     * @return array Results with 'built' count and 'failed' count
+     */
+    public function syncMissingPeriods(): array
+    {
+        try {
+            // Get all shared periods from SSA tables
+            $sharedPeriods = $this->resolveSharedPeriods();
+            
+            if (empty($sharedPeriods)) {
+                return ['built' => 0, 'failed' => 0, 'missing' => []];
+            }
+
+            // Get existing snapshots
+            $existingSnapshots = DB::table(self::SNAPSHOT_TABLE)
+                ->select('snapshot_period')
+                ->distinct()
+                ->pluck('snapshot_period')
+                ->map(fn ($val) => (string) $val)
+                ->all();
+
+            // Find missing periods
+            $missingPeriods = array_diff($sharedPeriods, $existingSnapshots);
+
+            if (empty($missingPeriods)) {
+                return ['built' => 0, 'failed' => 0, 'missing' => []];
+            }
+
+            // Rebuild missing periods
+            $built = 0;
+            $failed = 0;
+
+            foreach ($missingPeriods as $period) {
+                try {
+                    $count = $this->buildPeriodSnapshot($period, false);
+                    if ($count > 0) {
+                        $built++;
+                    }
+                } catch (Throwable $e) {
+                    $failed++;
+                }
+            }
+
+            return [
+                'built' => $built,
+                'failed' => $failed,
+                'missing' => array_values($missingPeriods),
+            ];
+        } catch (Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('Failed to sync missing snapshots', ['error' => $e->getMessage()]);
+            return ['built' => 0, 'failed' => count($this->resolveSharedPeriods() ?? []), 'missing' => []];
+        }
+    }
+
     public function resolveAffectedSnapshotPeriodsForPh(?string $phPeriod = null): array
     {
         $sharedPeriods = $this->resolveSharedPeriods();
@@ -274,6 +331,8 @@ class DashboardHarianSnapshotService
         }
 
         [$payload] = $this->buildAggregatedRowsForPeriod($period);
+
+        $payload = $this->deduplicateSnapshotPayload($payload);
 
         if ($payload === []) {
             DB::table(self::SNAPSHOT_TABLE)->where('snapshot_period', $period)->delete();
@@ -447,6 +506,7 @@ class DashboardHarianSnapshotService
                 ->values();
 
             $units = collect($payload)
+                ->filter(fn (array $row) => !$this->isSummaryScopeRow($row))
                 ->map(fn (array $row) => ['value' => $row['unit_key'], 'label' => $row['unit_label'], 'kanca_value' => $row['kanca_key']])
                 ->unique(fn (array $row) => $row['kanca_value'] . '|' . $row['value'])
                 ->sortBy('label')
@@ -608,6 +668,7 @@ class DashboardHarianSnapshotService
 
             $query = DB::table(self::SNAPSHOT_TABLE)
                 ->whereIn('snapshot_period', $normalizedPeriods)
+                ->whereColumn('kanca_key', 'unit_key')
                 ->groupBy('snapshot_period')
                 ->orderBy('snapshot_period')
                 ->selectRaw('snapshot_period')
@@ -631,6 +692,7 @@ class DashboardHarianSnapshotService
     private function buildMetricsFromSource(string $period, array|string|null $kancaKey, array|string|null $unitKey): array
     {
         [$payload] = $this->buildAggregatedRowsForPeriod($period, $kancaKey, $unitKey);
+        $payload = $this->filterPayloadForMetricRollup($payload, $kancaKey, $unitKey);
         $metrics = $this->emptyMetrics();
 
         foreach ($payload as $row) {
@@ -709,9 +771,32 @@ class DashboardHarianSnapshotService
         }
 
         $payload = [];
+        $detailByKanca = [];
+
+        // First pass: collect all rows and group detail rows by kanca
         foreach ($buckets as $row) {
+            $payload[] = $row;
+            if ($row['kanca_key'] !== $row['unit_key']) {
+                if (!isset($detailByKanca[$row['kanca_key']])) {
+                    $detailByKanca[$row['kanca_key']] = [];
+                }
+                $detailByKanca[$row['kanca_key']][] = $row;
+            }
+        }
+
+        // Second pass: build final payload with only DETAIL rows (skip rows that would be summary rows)
+        // Summary rows will be created explicitly in the third pass to ensure proper aggregation
+        $finalPayload = [];
+        $summaryRowsAdded = [];
+
+        foreach ($payload as $row) {
+            // Skip any rows where kanca_key === unit_key; those will be created in third pass
+            if (($row['kanca_key'] ?? '') === ($row['unit_key'] ?? '')) {
+                continue;
+            }
+
             $metrics = $this->finalizeMetrics($row);
-            $payload[] = array_merge(
+            $finalPayload[] = array_merge(
                 [
                     'uniqueid_dhs' => md5(implode('|', ['dhs', $period, $row['kanca_key'], $row['unit_key']])),
                     'snapshot_period' => $period,
@@ -729,7 +814,95 @@ class DashboardHarianSnapshotService
             );
         }
 
-        return [$payload, $sourceRowCount];
+        // Third pass: create summary rows by aggregating all detail rows
+        foreach ($detailByKanca as $kancaKey => $detailRows) {
+            $aggregated = $this->emptyMetrics();
+            $aggregated['kanca_key'] = $kancaKey;
+
+            $firstDetail = $detailRows[0];
+            $aggregated['kanca_label'] = $firstDetail['kanca_label'];
+            $aggregated['unit_key'] = $kancaKey;
+            $aggregated['unit_label'] = $firstDetail['kanca_label'];
+
+            foreach ($detailRows as $detail) {
+                $this->accumulateMetrics($aggregated, $detail);
+            }
+
+            $metrics = $this->finalizeMetrics($aggregated);
+
+            $finalPayload[] = array_merge(
+                [
+                    'uniqueid_dhs' => md5(implode('|', ['dhs', $period, $aggregated['kanca_key'], $aggregated['unit_key']])),
+                    'snapshot_period' => $period,
+                    'kanca_key' => $aggregated['kanca_key'],
+                    'kanca_label' => $aggregated['kanca_label'],
+                    'unit_key' => $aggregated['unit_key'],
+                    'unit_label' => $aggregated['unit_label'],
+                ],
+                collect(self::METRIC_COLUMNS)->mapWithKeys(fn (string $metric) => [$metric => (float) ($metrics[$metric] ?? 0)])->all(),
+                [
+                    'source_row_count' => $sourceRowCount,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]
+            );
+        }
+
+        return [$finalPayload, $sourceRowCount];
+    }
+
+    private function filterPayloadForMetricRollup(array $payload, array|string|null $kancaKey, array|string|null $unitKey): array
+    {
+        $normalizedUnit = $this->normalizeFilterValues($unitKey);
+
+        if ($normalizedUnit !== []) {
+            return array_values(array_filter(
+                $payload,
+                fn (array $row) => !$this->isSummaryScopeRow($row)
+            ));
+        }
+
+        return array_values(array_filter(
+            $payload,
+            fn (array $row) => $this->isSummaryScopeRow($row)
+        ));
+    }
+
+    private function deduplicateSnapshotPayload(array $payload): array
+    {
+        $deduplicated = [];
+
+        foreach ($payload as $row) {
+            $compositeKey = implode('|', [
+                (string) ($row['snapshot_period'] ?? ''),
+                (string) ($row['kanca_key'] ?? ''),
+                (string) ($row['unit_key'] ?? ''),
+            ]);
+
+            if (!isset($deduplicated[$compositeKey])) {
+                $deduplicated[$compositeKey] = $row;
+                continue;
+            }
+
+            foreach (self::METRIC_COLUMNS as $metric) {
+                $deduplicated[$compositeKey][$metric] = (float) ($deduplicated[$compositeKey][$metric] ?? 0)
+                    + (float) ($row[$metric] ?? 0);
+            }
+
+            $deduplicated[$compositeKey]['source_row_count'] = max(
+                (int) ($deduplicated[$compositeKey]['source_row_count'] ?? 0),
+                (int) ($row['source_row_count'] ?? 0)
+            );
+            $deduplicated[$compositeKey]['updated_at'] = $row['updated_at'] ?? $deduplicated[$compositeKey]['updated_at'] ?? now();
+        }
+
+        return array_values($deduplicated);
+    }
+
+    private function isSummaryScopeRow(array $row): bool
+    {
+        return (string) ($row['kanca_key'] ?? '') !== ''
+            && (string) ($row['kanca_key'] ?? '') === (string) ($row['unit_key'] ?? '');
     }
 
     private function fetchSavingsAggregates(string $period, array|string|null $kancaKey = null, array|string|null $unitKey = null): Collection

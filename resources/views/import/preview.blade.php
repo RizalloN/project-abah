@@ -83,8 +83,8 @@
                 
                 <div class="card-body p-0">
                     <div class="alert alert-info m-3 border-0 bg-light text-dark">
-                        <i class="fas fa-info-circle text-info"></i> <strong>Petunjuk:</strong> 
-                        Klik ikon <i class="fas fa-filter text-muted mx-1"></i> di sebelah nama kolom untuk memfilter baris data. Tabel akan bereaksi secara realtime dan menampilkan <strong>maksimal 100 baris teratas</strong> sebagai bahan evaluasi.
+                        <i class="fas fa-info-circle text-info"></i> <strong>Petunjuk Filter:</strong> 
+                        Klik ikon <i class="fas fa-filter text-muted mx-1"></i> di sebelah nama kolom untuk memfilter baris data. Tabel preview menampilkan <strong>sampel dari berbagai bagian file</strong> (max 100 baris) untuk evaluasi visual. <strong>Saat Anda membuka dropdown filter, sistem akan memuat SEMUA nilai unik dari file sumber</strong> - sehingga Anda dapat memilih dengan filter data yang paling lengkap.
                     </div>
 
                     @if(!empty($manualPeriodeLabel))
@@ -445,15 +445,35 @@
                 const sourceCol = Object.prototype.hasOwnProperty.call(displayFilterMap, col)
                     ? displayFilterMap[col]
                     : col;
-                const url = new URL(filterOptionsUrl, window.location.origin);
-                url.searchParams.set('file_path', filePathValue);
-                url.searchParams.set('delimiter', delimiterValue);
-                url.searchParams.set('column_index', String(sourceCol));
-                url.searchParams.set('display_filter_map_json', JSON.stringify(displayFilterMap || {}));
-                if (previewStateKey) {
-                    url.searchParams.set('preview_state_key', previewStateKey);
+                
+                // IMPROVEMENT: Gunakan dynamic filter options endpoint untuk loading lengkap
+                const dynamicFilterUrl = '{{ route("import.preview.dynamic-filter-options") }}';
+                const columnName = headers && headers[sourceCol] ? headers[sourceCol] : 'Column_' + sourceCol;
+                
+                // Try dynamic endpoint first (more comprehensive), fallback ke regular endpoint
+                let url;
+                let useDynamicEndpoint = false;
+                
+                try {
+                    url = new URL(dynamicFilterUrl, window.location.origin);
+                    url.searchParams.set('file_path', filePathValue);
+                    url.searchParams.set('delimiter', delimiterValue);
+                    url.searchParams.set('column_index', String(sourceCol));
+                    url.searchParams.set('column_name', columnName);
+                    url.searchParams.set('_', String(Date.now()));
+                    useDynamicEndpoint = true;
+                } catch (e) {
+                    // Fallback ke regular endpoint
+                    url = new URL(filterOptionsUrl, window.location.origin);
+                    url.searchParams.set('file_path', filePathValue);
+                    url.searchParams.set('delimiter', delimiterValue);
+                    url.searchParams.set('column_index', String(sourceCol));
+                    url.searchParams.set('display_filter_map_json', JSON.stringify(displayFilterMap || {}));
+                    if (previewStateKey) {
+                        url.searchParams.set('preview_state_key', previewStateKey);
+                    }
+                    url.searchParams.set('_', String(Date.now()));
                 }
-                url.searchParams.set('_', String(Date.now()));
 
                 const response = await fetch(url.toString(), {
                     headers: {
@@ -482,8 +502,13 @@
                         return previousSelection.has(value);
                     }));
                 state.fullOptionsLoaded = true;
+                
+                // Log informasi jika menggunakan dynamic endpoint
+                if (useDynamicEndpoint && payload.total_unique) {
+                    console.log(`Dynamic filter loaded: ${payload.total_unique} unique values, scanned ${payload.total_rows_scanned} rows`);
+                }
             } catch (error) {
-                console.error(error);
+                console.error('Error loading filter options:', error);
             } finally {
                 state.isLoading = false;
                 renderFilterList(col);

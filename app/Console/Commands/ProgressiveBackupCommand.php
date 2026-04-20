@@ -61,11 +61,24 @@ class ProgressiveBackupCommand extends Command
                     'message' => "Mencadangkan tabel: {$table} ({$progress}%)",
                 ], now()->addHours(1));
 
-                $dataCommand = $backupService->buildDumpCommand($config, $database, null, ['--no-create-info', $table]);
-                $result = $this->runProcess($dataCommand, $environment);
-                
-                if ($result['stdout'] !== '') {
-                    File::append($absolutePath, "\n" . $result['stdout']);
+                $tempPath = $this->createTemporaryDumpPath($database, $table);
+                try {
+                    $dataCommand = $backupService->buildDumpCommand($config, $database, $tempPath, ['--no-create-info', $table]);
+                    $this->runProcess($dataCommand, $environment, function () use ($cacheKey, $progress, $index, $totalTables, $table): void {
+                        Cache::put($cacheKey, [
+                            'status' => 'processing',
+                            'progress_percent' => $progress,
+                            'current_table_index' => $index + 1,
+                            'total_tables' => $totalTables,
+                            'current_table' => $table,
+                            'message' => "Mencadangkan tabel: {$table} ({$progress}%)",
+                        ], now()->addHours(1));
+                    });
+                    $this->appendDumpFile($tempPath, $absolutePath);
+                } finally {
+                    if (is_file($tempPath)) {
+                        @unlink($tempPath);
+                    }
                 }
             }
 
@@ -94,7 +107,7 @@ class ProgressiveBackupCommand extends Command
         }
     }
 
-    private function runProcess(array $command, array $environment): array
+    private function runProcess(array $command, array $environment, ?callable $heartbeat = null): array
     {
         $descriptors = [
             0 => ['pipe', 'r'],
@@ -119,6 +132,23 @@ class ProgressiveBackupCommand extends Command
         }
 
         fclose($pipes[0]);
+        $lastHeartbeat = time();
+        $heartbeatInterval = 15;
+
+        while (true) {
+            $status = proc_get_status($process);
+            if (!$status['running']) {
+                break;
+            }
+
+            if ($heartbeat !== null && (time() - $lastHeartbeat) >= $heartbeatInterval) {
+                $heartbeat();
+                $lastHeartbeat = time();
+            }
+
+            usleep(500000);
+        }
+
         $stdout = stream_get_contents($pipes[1]);
         fclose($pipes[1]);
         $stderr = stream_get_contents($pipes[2]);
@@ -137,5 +167,33 @@ class ProgressiveBackupCommand extends Command
         }
 
         return ['stdout' => $stdout, 'stderr' => $stderr];
+    }
+
+    private function appendDumpFile(string $sourcePath, string $outputPath): void
+    {
+        $source = fopen($sourcePath, 'rb');
+        if (!is_resource($source)) {
+            throw new \RuntimeException('Gagal membaca file dump sementara.');
+        }
+
+        $destination = fopen($outputPath, 'ab');
+        if (!is_resource($destination)) {
+            fclose($source);
+            throw new \RuntimeException('Gagal membuka file backup untuk append.');
+        }
+
+        try {
+            fwrite($destination, "\n");
+            stream_copy_to_stream($source, $destination);
+        } finally {
+            fclose($source);
+            fclose($destination);
+        }
+    }
+
+    private function createTemporaryDumpPath(string $database, string $table): string
+    {
+        $safeName = preg_replace('/[^A-Za-z0-9_-]+/', '_', $database . '_' . $table) ?: 'backup';
+        return sys_get_temp_dir() . DIRECTORY_SEPARATOR . $safeName . '_' . uniqid('', true) . '.sql';
     }
 }

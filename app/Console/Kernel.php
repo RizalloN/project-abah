@@ -20,6 +20,15 @@ class Kernel extends ConsoleKernel
                 \Illuminate\Support\Facades\Log::warning('Snapshot batch flush failed');
             });
 
+        // Sync Dashboard Harian snapshots with SSA data every 5 minutes
+        // This automatically rebuilds missing snapshots when new periods are added to SSA tables
+        $schedule->command('snapshot:sync-harian-dashboard')
+            ->everyFiveMinutes()
+            ->withoutOverlapping(10)
+            ->onFailure(function () {
+                \Illuminate\Support\Facades\Log::warning('Dashboard Harian snapshot sync failed');
+            });
+
         // Monitor queue and ensure worker is running (check every 30 seconds)
         // Note: This is a fallback; queue workers should be managed by supervisor/systemd in production
         // Uncomment to enable automatic queue worker restart:

@@ -31,10 +31,30 @@
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
       "Bash(php -l app/Services/Import/DirectLargeFileLoadService.php)",
-      "Bash(php -l app/Services/Import/MySqlBulkLoadService.php)"
+      "Bash(php -l app/Services/Import/MySqlBulkLoadService.php)",
+      "Bash(php debug_mikro.php)",
+      "Bash(php check_simpanan.php)",
+      "Bash(php debug_query.php)",
+      "Bash(php test_conditions.php)",
+      "Bash(php debug_kc_madiun.php)",
+      "Bash(php debug_correct_kanca.php)",
+      "Bash(php debug_aggregated.php)",
+      "Bash(php debug_aggregated2.php)",
+      "Bash(php test_normalize.php)",
+      "Bash(php check_snapshot_data.php)",
+      "Bash(php debug_fetch_loan.php)",
+      "Bash(php /tmp/test_upper.php)",
+      "Bash(php verify_fix.php)",
+      "Bash(php debug_buckets.php)",
+      "Bash(php /tmp/test_direct.php)",
+      "Bash(php /tmp/count.php)",
+      "Bash(php /tmp/test_accum.php)",
+      "Bash(php /tmp/compare.php)",
+      "Bash(php /tmp/count2.php)"
     ],
     "additionalDirectories": [
-      "\\tmp"
+      "\\tmp",
+      "C:\\xampp\\htdocs\\project-ABAH"
     ]
   }
 }

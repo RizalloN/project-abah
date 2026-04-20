@@ -6282,8 +6282,10 @@ class ImportExcelController extends Controller
         if ($this->resolveActiveTableName() === 'jumlah_merchant_qris_detail') {
             return [
                 'preview_limit' => 100,
-                'unique_scan_limit' => 150,
-                'max_unique_values_per_column' => 80,
+                'unique_scan_limit' => 5000,  // Scan lebih banyak untuk merchant QRIS (file besar dengan data repetitif)
+                'max_unique_values_per_column' => 500,  // Allow lebih banyak unique values untuk better filtering
+                'enable_stratified_sampling' => true,    // Ambil sample dari berbagai bagian file
+                'enable_dynamic_filter_loading' => true, // Load filter options on-demand dari server
             ];
         }
 
@@ -6291,13 +6293,23 @@ class ImportExcelController extends Controller
             'preview_limit' => 100,
             'unique_scan_limit' => 180,
             'max_unique_values_per_column' => 100,
+            'enable_stratified_sampling' => false,
+            'enable_dynamic_filter_loading' => false,
         ];
     }
 
     private function prepareCsvPreviewPayload(string $path): array
     {
         $tableName = $this->resolveActiveTableName();
-        $delimiter = $this->detectCsvDelimiter($path);
+        
+        // OPTIMIZATION 1: Cache delimiter detection (expensive operation)
+        $cacheKey = "csv_delimiter:" . md5($path . filesize($path));
+        $delimiter = Cache::get($cacheKey);
+        if ($delimiter === null) {
+            $delimiter = $this->detectCsvDelimiter($path);
+            Cache::put($cacheKey, $delimiter, now()->addHours(24));
+        }
+        
         $handle = @fopen($path, 'r');
         if (!$handle) {
             throw new \RuntimeException('Gagal membuka file CSV.');
@@ -6315,11 +6327,20 @@ class ImportExcelController extends Controller
         $previewLimit = $previewSettings['preview_limit'];
         $uniqueLimit = $previewSettings['unique_scan_limit'];
         $maxUniqueValuesPerColumn = $previewSettings['max_unique_values_per_column'];
-        $totalRows = 0;  // OPTIMIZED: Count rows during preview scan
+        $enableStratifiedSampling = $previewSettings['enable_stratified_sampling'] ?? false;
+        $totalRows = 0;
         $forcedHeaders = $this->isDailyLoanActive() ? self::DAILY_LOAN_SOURCE_HEADERS : null;
-        $normalizedValueCache = [];  // OPTIMIZED: Cache normalized values
+        $normalizedValueCache = [];
 
-        while (($row = $this->readCsvRecord($handle, $delimiter)) !== false) {
+        // OPTIMIZATION 2: Use generator untuk lazy-load rows (memory efficient)
+        $rowGenerator = $this->generateCsvRows($handle, $delimiter, $tableName);
+        
+        // OPTIMIZATION 3: Two-phase processing
+        // Phase 1: Collect unique values dan determine sampling points
+        $samplingPoints = [];
+        $previewRows = [];
+        
+        foreach ($rowGenerator as $row) {
             $lineNumber++;
 
             if ($headerIndex === null) {
@@ -6332,7 +6353,8 @@ class ImportExcelController extends Controller
                         }
                     } else {
                         foreach ($row as $colIdx => $header) {
-                            $normalizedHeaders[$colIdx] = !empty(trim((string) $header)) ? trim((string) $header) : 'COL_' . $colIdx;
+                            $headerValue = trim((string) $header);
+                            $normalizedHeaders[$colIdx] = !empty($headerValue) ? $headerValue : 'COL_' . $colIdx;
                         }
                     }
 
@@ -6348,7 +6370,8 @@ class ImportExcelController extends Controller
                 continue;
             }
 
-            if (empty(array_filter($row, fn ($value) => trim((string) $value) !== ''))) {
+            // OPTIMIZATION 4: Skip empty rows early (before any processing)
+            if (empty(array_filter($row, fn ($v) => ($v !== '' && $v !== null)))) {
                 continue;
             }
 
@@ -6362,51 +6385,82 @@ class ImportExcelController extends Controller
                 continue;
             }
 
-            // OPTIMIZED: Increment total rows counter
             $totalRows++;
 
-            // OPTIMIZED: Single pass untuk both preview dan unique values collection
-            $cleanRow = [];
-            foreach ($validIndexes as $index) {
-                $headerName = $normalizedHeaders[$index];
-                $rawValue = $row[$index] ?? '';
-                
-                // OPTIMIZED: Cache hasil normalisasi untuk menghindari double normalization
-                $cacheKey = $headerName . '|' . $rawValue;
-                if (!isset($normalizedValueCache[$cacheKey])) {
-                    $normalizedValueCache[$cacheKey] = $this->normalizeExcelValue($headerName, $rawValue);
-                }
-                $value = $normalizedValueCache[$cacheKey];
-                
-                if (count($cleanPreview) < $previewLimit) {
-                    $cleanRow[$headerName] = $value;
-                }
-
-                if ($rowsProcessedForUniques < $uniqueLimit) {
-                    $displayValue = $value === null ? '(Blank)' : (string) $value;
-                    if (
-                        isset($uniqueValues[$index][$displayValue]) ||
-                        count($uniqueValues[$index]) < $maxUniqueValuesPerColumn
-                    ) {
-                        $uniqueValues[$index][$displayValue] = true;
-                    }
-                }
+            // Store baris untuk stratified sampling
+            if ($enableStratifiedSampling) {
+                $samplingPoints[] = $totalRows;
             }
 
-            if (count($cleanPreview) < $previewLimit) {
-                $cleanPreview[] = $cleanRow;
-            }
-
+            // Collect unique values
             if ($rowsProcessedForUniques < $uniqueLimit) {
+                // OPTIMIZATION 5: Batch collect unique values
+                $this->collectUniqueValuesFromRow($row, $validIndexes, $uniqueValues, $maxUniqueValuesPerColumn, $normalizedHeaders, $normalizedValueCache);
                 $rowsProcessedForUniques++;
             }
 
-            if (count($cleanPreview) >= $previewLimit && $rowsProcessedForUniques >= $uniqueLimit) {
-                break;
+            // Hentikan jika sudah cukup data untuk preview
+            if ($enableStratifiedSampling && $totalRows > ($previewLimit * 10)) {
+                break;  // Cukup sample, jangan load semua row ke memory
             }
         }
 
         fclose($handle);
+
+        // OPTIMIZATION 6: Load preview rows hanya untuk sampling yang dibutuhkan
+        if ($enableStratifiedSampling && !empty($samplingPoints)) {
+            $samplingInterval = max(1, (int) ceil(count($samplingPoints) / $previewLimit));
+            
+            // Reopen dan skip langsung ke row yang dibutuhkan
+            $handle = fopen($path, 'r');
+            if ($handle) {
+                $rowGen = $this->generateCsvRows($handle, $delimiter, $tableName);
+                $currentRow = 0;
+                $previewCount = 0;
+                
+                foreach ($rowGen as $row) {
+                    $currentRow++;
+                    
+                    if ($currentRow === 1) continue; // Skip header
+                    
+                    if (($currentRow - 1) % $samplingInterval === 0) {
+                        if (count($cleanPreview) >= $previewLimit) {
+                            break;
+                        }
+                        
+                        if (!empty(array_filter($row, fn ($v) => ($v !== '' && $v !== null)))) {
+                            $cleanPreview[] = $row;
+                            $previewCount++;
+                        }
+                    }
+                }
+                
+                fclose($handle);
+            }
+        } else {
+            // Fallback: Reopen dan load first N rows untuk preview
+            $handle = fopen($path, 'r');
+            if ($handle) {
+                $rowGen = $this->generateCsvRows($handle, $delimiter, $tableName);
+                $currentRow = 0;
+                
+                foreach ($rowGen as $row) {
+                    $currentRow++;
+                    
+                    if ($currentRow === 1) continue; // Skip header
+                    
+                    if (count($cleanPreview) >= $previewLimit) {
+                        break;
+                    }
+                    
+                    if (!empty(array_filter($row, fn ($v) => ($v !== '' && $v !== null)))) {
+                        $cleanPreview[] = $row;
+                    }
+                }
+                
+                fclose($handle);
+            }
+        }
 
         if ($headerIndex === null) {
             throw new \RuntimeException($this->headerNotFoundMessage($tableName));
@@ -6417,28 +6471,34 @@ class ImportExcelController extends Controller
             $finalHeaders[] = $normalizedHeaders[$index];
         }
 
-        // OPTIMIZED: Use faster sorting with array keys (PHP native, not custom comparator)
+        // Format unique values untuk frontend
         $formattedUniqueValues = [];
         $filterIndex = 0;
         foreach ($validIndexes as $index) {
             $keys = array_keys($uniqueValues[$index] ?? []);
-            // OPTIMIZED: Use sort() instead of usort() for better performance
-            // strnatcmp is slower for large arrays
             sort($keys);
             $formattedUniqueValues[$filterIndex] = $keys;
             $filterIndex++;
         }
 
-        // OPTIMIZED: ELIMINATED countCsvDataRows() call - already counted during preview scan!
-        // This eliminates a second full file scan (huge performance win)
-
         return [
-            'total_rows' => $totalRows,  // Use counted rows instead of re-scanning
+            'total_rows' => $totalRows,
             'header_index' => $headerIndex,
             'headers' => $finalHeaders,
             'preview' => $cleanPreview,
             'formattedUniqueValues' => $formattedUniqueValues,
         ];
+    }
+
+    /**
+     * OPTIMIZATION: Generator untuk lazy-load CSV rows (memory efficient)
+     * Yield rows satu per satu instead of loading semua ke memory
+     */
+    private function generateCsvRows($handle, string $delimiter, string $tableName)
+    {
+        while (($row = $this->readCsvRecord($handle, $delimiter)) !== false) {
+            yield $row;
+        }
     }
 
     private function normalizeHeaderForDatabase(string $header): string
