@@ -295,7 +295,7 @@ class RekeningDormantController extends Controller
     {
         $cacheKey = 'rekening_dormant_latest_period:v' . $this->reportCacheVersion();
 
-        return Cache::remember($cacheKey, now()->addMinutes(10), function () {
+        return Cache::remember($cacheKey, now()->addMinutes(60), function () {
             return DB::table('simpanan_multipn')->max('posisi');
         });
     }
@@ -331,7 +331,7 @@ class RekeningDormantController extends Controller
                 'branches' => $branches->values()->all(),
             ]));
 
-            return $this->rememberPayload($cacheKey, now()->addMinutes(10), function () use ($period, $branches) {
+            return $this->rememberPayload($cacheKey, now()->addMinutes(60), function () use ($period, $branches) {
                 return DB::table(self::SNAPSHOT_TABLE)
                     ->where('posisi', $period)
                     ->whereIn('branch_label', $branches->all())
@@ -358,7 +358,7 @@ class RekeningDormantController extends Controller
             'raw_branches' => $rawBranches->values()->all(),
         ]));
 
-        return $this->rememberPayload($cacheKey, now()->addMinutes(10), function () use ($period, $rawBranches) {
+        return $this->rememberPayload($cacheKey, now()->addMinutes(60), function () use ($period, $rawBranches) {
             return $this->baseDormantQuery($period, self::DORMANT_UNIT_INDEX)
                 ->whereIn('kantor_cabang', $rawBranches->all())
                 ->whereNotNull('unit_kerja')
@@ -407,7 +407,7 @@ class RekeningDormantController extends Controller
             }
         }
 
-        $cacheKey = 'rekening_dormant_v4_counts_summary:' . md5(json_encode([
+        $cacheKey = 'rekening_dormant_v5_counts_summary:' . md5(json_encode([
             'cache_version' => $this->reportCacheVersion(),
             'periods' => $periods->all(),
             'branches' => $selectedBranchLabels,
@@ -415,7 +415,7 @@ class RekeningDormantController extends Controller
         ]));
 
         if ($this->hasDormantSnapshots($periods->all())) {
-            return $this->rememberPayload($cacheKey, now()->addMinutes(10), function () use (
+            return $this->rememberPayload($cacheKey, now()->addMinutes(30), function () use (
                 $periods,
                 $selectedBranchLabels,
                 $units,
@@ -432,46 +432,11 @@ class RekeningDormantController extends Controller
                     ->groupBy('posisi', 'branch_label')
                     ->get();
 
-                $counts = [];
-
-                foreach ($rows as $row) {
-                    $branchLabel = trim((string) ($row->branch_label ?? ''));
-
-                    if ($branchLabel === '') {
-                        continue;
-                    }
-
-                    $counts[$branchLabel] ??= [
-                        'current' => 0,
-                        'mtd_base' => 0,
-                        'ytd_base' => 0,
-                        'yoy_base' => 0,
-                    ];
-
-                    $count = (int) ($row->dormant_count ?? 0);
-
-                    if ($row->posisi === $currentPeriod) {
-                        $counts[$branchLabel]['current'] += $count;
-                    }
-
-                    if ($mtdPeriod && $row->posisi === $mtdPeriod) {
-                        $counts[$branchLabel]['mtd_base'] += $count;
-                    }
-
-                    if ($ytdPeriod && $row->posisi === $ytdPeriod) {
-                        $counts[$branchLabel]['ytd_base'] += $count;
-                    }
-
-                    if ($yoyPeriod && $row->posisi === $yoyPeriod) {
-                        $counts[$branchLabel]['yoy_base'] += $count;
-                    }
-                }
-
-                return $counts;
+                return $this->formatDormantSummaryCounts($rows, 'branch_label', $currentPeriod, $mtdPeriod, $ytdPeriod, $yoyPeriod);
             }, $forceRefresh);
         }
 
-        return $this->rememberPayload($cacheKey, now()->addMinutes(10), function () use (
+        return $this->rememberPayload($cacheKey, now()->addMinutes(30), function () use (
             $periods,
             $selectedRawBranches,
             $rawBranchLookup,
@@ -495,13 +460,9 @@ class RekeningDormantController extends Controller
                 ->get();
 
             $counts = [];
-
             foreach ($rows as $row) {
                 $branchLabel = $rawBranchLookup[$row->kantor_cabang] ?? null;
-
-                if (!$branchLabel) {
-                    continue;
-                }
+                if (!$branchLabel) continue;
 
                 $counts[$branchLabel] ??= [
                     'current' => 0,
@@ -511,26 +472,38 @@ class RekeningDormantController extends Controller
                 ];
 
                 $count = (int) ($row->dormant_count ?? 0);
-
-                if ($row->posisi === $currentPeriod) {
-                    $counts[$branchLabel]['current'] += $count;
-                }
-
-                if ($mtdPeriod && $row->posisi === $mtdPeriod) {
-                    $counts[$branchLabel]['mtd_base'] += $count;
-                }
-
-                if ($ytdPeriod && $row->posisi === $ytdPeriod) {
-                    $counts[$branchLabel]['ytd_base'] += $count;
-                }
-
-                if ($yoyPeriod && $row->posisi === $yoyPeriod) {
-                    $counts[$branchLabel]['yoy_base'] += $count;
-                }
+                if ($row->posisi === $currentPeriod) $counts[$branchLabel]['current'] += $count;
+                if ($mtdPeriod && $row->posisi === $mtdPeriod) $counts[$branchLabel]['mtd_base'] += $count;
+                if ($ytdPeriod && $row->posisi === $ytdPeriod) $counts[$branchLabel]['ytd_base'] += $count;
+                if ($yoyPeriod && $row->posisi === $yoyPeriod) $counts[$branchLabel]['yoy_base'] += $count;
             }
 
             return $counts;
         }, $forceRefresh);
+    }
+
+    private function formatDormantSummaryCounts($rows, string $groupField, string $currentPeriod, ?string $mtdPeriod, ?string $ytdPeriod, ?string $yoyPeriod): array
+    {
+        $counts = [];
+        foreach ($rows as $row) {
+            $groupValue = trim((string) ($row->{$groupField} ?? ''));
+            if ($groupValue === '') continue;
+
+            $counts[$groupValue] ??= [
+                'current' => 0,
+                'mtd_base' => 0,
+                'ytd_base' => 0,
+                'yoy_base' => 0,
+            ];
+
+            $count = (int) ($row->dormant_count ?? 0);
+            if ($row->posisi === $currentPeriod) $counts[$groupValue]['current'] += $count;
+            if ($mtdPeriod && $row->posisi === $mtdPeriod) $counts[$groupValue]['mtd_base'] += $count;
+            if ($ytdPeriod && $row->posisi === $ytdPeriod) $counts[$groupValue]['ytd_base'] += $count;
+            if ($yoyPeriod && $row->posisi === $yoyPeriod) $counts[$groupValue]['yoy_base'] += $count;
+        }
+
+        return $counts;
     }
 
     private function fetchDormantCountsByUnit(
@@ -559,7 +532,7 @@ class RekeningDormantController extends Controller
             return [];
         }
 
-        $cacheKey = 'rekening_dormant_v8_counts_by_unit:' . md5(json_encode([
+        $cacheKey = 'rekening_dormant_v9_counts_by_unit:' . md5(json_encode([
             'cache_version' => $this->reportCacheVersion(),
             'periods' => $periods->all(),
             'branches' => $selectedBranchLabels,
@@ -567,7 +540,7 @@ class RekeningDormantController extends Controller
         ]));
 
         if ($this->hasDormantSnapshots($periods->all())) {
-            return $this->rememberPayload($cacheKey, now()->addMinutes(10), function () use (
+            return $this->rememberPayload($cacheKey, now()->addMinutes(30), function () use (
                 $periods,
                 $selectedBranchLabels,
                 $units,
@@ -590,7 +563,7 @@ class RekeningDormantController extends Controller
             }, $forceRefresh);
         }
 
-        return $this->rememberPayload($cacheKey, now()->addMinutes(10), function () use (
+        return $this->rememberPayload($cacheKey, now()->addMinutes(60), function () use (
             $periods,
             $selectedRawBranches,
             $units,
@@ -677,7 +650,7 @@ class RekeningDormantController extends Controller
     {
         $cacheKey = 'rekening_dormant_v6_branch_map:v' . $this->reportCacheVersion() . ':' . $period;
 
-        return $this->rememberPayload($cacheKey, now()->addMinutes(30), function () use ($period) {
+        return $this->rememberPayload($cacheKey, now()->addMinutes(120), function () use ($period) {
             if ($this->hasDormantSnapshots([$period])) {
                 $map = collect(self::AREA_BRANCHES)
                     ->mapWithKeys(fn (string $label) => [$label => []])

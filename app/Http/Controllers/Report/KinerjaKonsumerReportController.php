@@ -4,17 +4,20 @@ namespace App\Http\Controllers\Report;
 
 use App\Http\Controllers\Controller;
 use App\Support\RkaLookupService;
+use App\Support\StrictDateParser;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\View\View;
 
 class KinerjaKonsumerReportController extends Controller
 {
-    private const DEFAULT_TITLE = 'OutstandingKonsumer - Briguna & KPR';
+    private const DEFAULT_TITLE = 'Outstanding Konsumer - Briguna & KPF';
     private const SEGMENT_LABEL = 'KPR';
+    private const PRODUCT_OPTIONS = ['BRIGUNA-KONSUMER', 'KPR'];
 
     public function __construct(
         private readonly RkaLookupService $rkaLookup
@@ -28,6 +31,7 @@ class KinerjaKonsumerReportController extends Controller
             ?? $availablePeriods->first()
             ?? Carbon::now()->toDateString();
         $selectedCabang = $this->resolveSelectedCabang($availableCabangs, $request->input('cabang1'));
+        $selectedProduct = $this->resolveSelectedProduct($request->input('produk'));
 
         $currentDate = Carbon::parse($selectedPeriod);
         $previousDayPeriod = $this->resolveClosestPeriod(
@@ -43,21 +47,24 @@ class KinerjaKonsumerReportController extends Controller
             $currentDate->copy()->subYearNoOverflow()->endOfYear()
         ) ?? $selectedPeriod;
 
-        $branchRows = $this->fetchBranchRows($selectedPeriod, $previousDayPeriod, $mtdPeriod, $ytdPeriod, $selectedCabang);
+        $branchRows = $this->fetchBranchRows($selectedPeriod, $previousDayPeriod, $mtdPeriod, $ytdPeriod, $selectedCabang, $selectedProduct);
         $nextMonth = $currentDate->copy()->addMonthNoOverflow();
 
-        return view('report.kinerja-konsumer', [
+        $viewData = [
             'title' => self::DEFAULT_TITLE,
             'availablePeriods' => $availablePeriods,
             'latestPeriodLabel' => $availablePeriods->first()
                 ? Carbon::parse($availablePeriods->first())->translatedFormat('d M Y')
                 : '-',
             'availableCabangs' => $availableCabangs,
+            'availableProducts' => self::PRODUCT_OPTIONS,
             'selectedPeriod' => $selectedPeriod,
             'selectedPeriodLabel' => $currentDate->translatedFormat('d M Y'),
             'selectedPeriodShortLabel' => $currentDate->translatedFormat('d M y'),
             'selectedCabang' => $selectedCabang,
             'selectedCabangLabel' => $selectedCabang !== null ? $selectedCabang : 'Semua Cabang',
+            'selectedProduct' => $selectedProduct,
+            'selectedProductLabel' => $selectedProduct ?? 'Semua Produk',
             'previousDayPeriod' => $previousDayPeriod,
             'previousDayLabel' => Carbon::parse($previousDayPeriod)->translatedFormat('d M y'),
             'mtdPeriod' => $mtdPeriod,
@@ -68,51 +75,51 @@ class KinerjaKonsumerReportController extends Controller
             'nextMonthLabel' => $nextMonth->format('M-y'),
             'rows' => $branchRows['rows'],
             'total' => $branchRows['total'],
-        ]);
+        ];
+
+        if ($request->ajax()) {
+            return view('report.kinerja-konsumer-table', $viewData);
+        }
+
+        return view('report.kinerja-konsumer', $viewData);
     }
 
     private function fetchAvailablePeriods(): Collection
     {
-        $productColumn = $this->resolveExistingColumn(
-            'daily_loan_dinamis',
-            ['produk_dashboard', 'produk'],
-            'produk_dashboard'
-        );
+        return Cache::remember('kinerja_konsumer_periods', 600, function () {
+            $productColumn = $this->resolveProductColumn();
 
-        return DB::table('daily_loan_dinamis')
-            ->whereRaw("UPPER(TRIM(COALESCE(segmen_dashboard, ''))) = 'CONSUMER'")
-            ->whereRaw("REPLACE(UPPER(TRIM(COALESCE({$productColumn}, ''))), '-', ' ') IN ('BRIGUNA KONSUMER', 'KPR')")
-            ->select('periode')
-            ->distinct()
-            ->orderByDesc('periode')
-            ->pluck('periode')
-            ->map(fn ($value) => Carbon::parse($value)->toDateString())
-            ->values();
+            return DB::table('daily_loan_dinamis')
+                ->whereRaw("UPPER(TRIM(segmen_dashboard)) = 'CONSUMER'")
+                ->whereIn(DB::raw($this->normalizedColumnExpression($productColumn)), self::PRODUCT_OPTIONS)
+                ->select('periode')
+                ->distinct()
+                ->orderByDesc('periode')
+                ->pluck('periode')
+                ->map(fn ($value) => Carbon::parse($value)->toDateString())
+                ->values();
+        });
     }
 
     private function fetchAvailableCabangs(): Collection
     {
-        $cabangColumn = $this->resolveExistingColumn(
-            'daily_loan_dinamis',
-            ['cabang1', 'cabang'],
-            'cabang1'
-        );
-        $productColumn = $this->resolveExistingColumn(
-            'daily_loan_dinamis',
-            ['produk_dashboard', 'produk'],
-            'produk_dashboard'
-        );
+        return Cache::remember('kinerja_konsumer_cabangs', 1800, function () {
+            $cabangColumn = $this->resolveCabangColumn();
+            $productColumn = $this->resolveProductColumn();
 
-        return DB::table('daily_loan_dinamis')
-            ->whereRaw("UPPER(TRIM(COALESCE(segmen_dashboard, ''))) = 'CONSUMER'")
-            ->whereRaw("REPLACE(UPPER(TRIM(COALESCE({$productColumn}, ''))), '-', ' ') IN ('BRIGUNA KONSUMER', 'KPR')")
-            ->whereRaw("TRIM(COALESCE({$cabangColumn}, '')) <> ''")
-            ->selectRaw("UPPER(TRIM(COALESCE({$cabangColumn}, ''))) as cabang")
-            ->distinct()
-            ->orderBy('cabang')
-            ->pluck('cabang')
-            ->filter()
-            ->values();
+            return DB::table('daily_loan_dinamis')
+                ->whereRaw("UPPER(TRIM(segmen_dashboard)) = 'CONSUMER'")
+                ->whereIn(DB::raw($this->normalizedColumnExpression($productColumn)), self::PRODUCT_OPTIONS)
+                ->whereNotNull($cabangColumn)
+                ->where($cabangColumn, '<>', '')
+                ->select($cabangColumn . ' as cabang')
+                ->orderBy('cabang')
+                ->pluck('cabang')
+                ->map(fn ($cabang) => $this->sanitizeCabangLabel($cabang))
+                ->filter(fn ($cabang) => $cabang !== '')
+                ->unique(fn ($cabang) => $this->normalizeCabangKey($cabang))
+                ->values();
+        });
     }
 
     private function resolveSelectedPeriod(Collection $periods, ?string $requestedPeriod): ?string
@@ -131,13 +138,18 @@ class KinerjaKonsumerReportController extends Controller
 
     private function resolveSelectedCabang(Collection $cabangs, ?string $requestedCabang): ?string
     {
-        $value = strtoupper(trim((string) $requestedCabang));
+        $value = $this->normalizeCabangKey($requestedCabang);
 
         if ($value === '' || in_array($value, ['SEMUA CABANG', 'ALL', 'ALL CABANG'], true)) {
             return null;
         }
 
-        return $cabangs->contains($value) ? $value : null;
+        return $cabangs->first(fn ($cabang) => $this->normalizeCabangKey($cabang) === $value);
+    }
+
+    private function resolveSelectedProduct(?string $requestedProduct): ?string
+    {
+        return $this->normalizeProductLabel($requestedProduct);
     }
 
     private function resolveClosestPeriod(Collection $periods, Carbon $target): ?string
@@ -150,8 +162,18 @@ class KinerjaKonsumerReportController extends Controller
             });
     }
 
-    private function fetchBranchRows(string $selectedPeriod, string $previousDayPeriod, string $mtdPeriod, string $ytdPeriod, ?string $selectedCabang = null): array
+    private function fetchBranchRows(string $selectedPeriod, string $previousDayPeriod, string $mtdPeriod, string $ytdPeriod, ?string $selectedCabang = null, ?string $selectedProduct = null): array
     {
+        $cacheKey = 'kinerja_konsumer_rows:v5:' . md5(json_encode([
+            'selected' => $selectedPeriod,
+            'prev_day' => $previousDayPeriod,
+            'mtd' => $mtdPeriod,
+            'ytd' => $ytdPeriod,
+            'cabang' => $selectedCabang,
+            'produk' => $selectedProduct,
+        ]));
+
+        return Cache::remember($cacheKey, 300, function () use ($selectedPeriod, $previousDayPeriod, $mtdPeriod, $ytdPeriod, $selectedCabang, $selectedProduct) {
         $periods = array_values(array_unique(array_filter([
             $selectedPeriod,
             $previousDayPeriod,
@@ -164,166 +186,227 @@ class KinerjaKonsumerReportController extends Controller
             ['pn_pengelola1', 'pn_pengelola', 'rm'],
             'pn_pengelola1'
         );
-        $cabangColumn = $this->resolveExistingColumn(
+        $cabangColumn = $this->resolveCabangColumn();
+        $productColumn = $this->resolveProductColumn();
+        $debiturColumn = $this->resolveExistingColumn(
             'daily_loan_dinamis',
-            ['cabang1', 'cabang'],
-            'cabang1'
+            ['nomor_rekening1', 'nomor_rekening', 'no_rekening', 'rekening', 'account_number', 'cifno', 'nocif'],
+            'nomor_rekening1'
         );
-        $productColumn = $this->resolveExistingColumn(
+        $balanceColumn = $this->resolveExistingColumn(
             'daily_loan_dinamis',
-            ['produk_dashboard', 'produk'],
-            'produk_dashboard'
+            ['baki_debet1', 'baki_debet'],
+            'baki_debet1'
         );
+        $realisasiColumn = $this->resolveExistingColumn(
+            'daily_loan_dinamis',
+            ['tgl_realisasi'],
+            'tgl_realisasi'
+        );
+        $debiturExpression = "NULLIF(TRIM(CAST({$debiturColumn} AS CHAR)), '')";
+        $realisasiDateExpression = StrictDateParser::buildMySqlCaseExpression("NULLIF(TRIM(CAST({$realisasiColumn} AS CHAR)), '')");
+        $normalizedProductExpression = $this->normalizedColumnExpression($productColumn);
+        $normalizedCabangExpression = $this->normalizedColumnExpression($cabangColumn);
+        $monthStart = Carbon::parse($selectedPeriod)->startOfMonth()->toDateString();
+        $monthEnd = Carbon::parse($selectedPeriod)->endOfMonth()->toDateString();
 
-        $rows = DB::table('daily_loan_dinamis')
-            ->selectRaw("UPPER(TRIM(COALESCE({$rmColumn}, ''))) as rm")
-            ->selectRaw("UPPER(TRIM(COALESCE({$cabangColumn}, ''))) as cabang")
-            ->selectRaw("UPPER(TRIM(COALESCE({$productColumn}, ''))) as produk_raw")
-            ->selectRaw("SUM(CASE WHEN DATE(periode) = ? THEN COALESCE(baki_debet1, 0) ELSE 0 END) as curr", [$selectedPeriod])
-            ->selectRaw("SUM(CASE WHEN DATE(periode) = ? THEN COALESCE(baki_debet1, 0) ELSE 0 END) as prev_day", [$previousDayPeriod])
-            ->selectRaw("SUM(CASE WHEN DATE(periode) = ? THEN COALESCE(baki_debet1, 0) ELSE 0 END) as mtd", [$mtdPeriod])
-            ->selectRaw("SUM(CASE WHEN DATE(periode) = ? THEN COALESCE(baki_debet1, 0) ELSE 0 END) as ytd", [$ytdPeriod])
-            ->whereRaw("UPPER(TRIM(COALESCE(segmen_dashboard, ''))) = 'CONSUMER'")
-            ->whereRaw("REPLACE(UPPER(TRIM(COALESCE({$productColumn}, ''))), '-', ' ') IN ('BRIGUNA KONSUMER', 'KPR')")
-            ->whereRaw("TRIM(COALESCE({$rmColumn}, '')) <> ''")
-            ->when($selectedCabang !== null, function ($query) use ($cabangColumn, $selectedCabang) {
-                $query->whereRaw("UPPER(TRIM(COALESCE({$cabangColumn}, ''))) = ?", [$selectedCabang]);
+        $dbRows = DB::table('daily_loan_dinamis')
+            ->selectRaw("{$rmColumn} as rm")
+            ->selectRaw("{$cabangColumn} as cabang")
+            ->selectRaw("{$productColumn} as produk_raw")
+            ->selectRaw("SUM(CASE WHEN periode = ? THEN COALESCE({$balanceColumn}, 0) ELSE 0 END) as curr", [$selectedPeriod])
+            ->selectRaw("COUNT(DISTINCT CASE WHEN periode = ? THEN {$debiturExpression} END) as curr_deb", [$selectedPeriod])
+            ->selectRaw("SUM(CASE WHEN periode = ? THEN COALESCE({$balanceColumn}, 0) ELSE 0 END) as prev_day", [$previousDayPeriod])
+            ->selectRaw("SUM(CASE WHEN periode = ? THEN COALESCE({$balanceColumn}, 0) ELSE 0 END) as mtd", [$mtdPeriod])
+            ->selectRaw("SUM(CASE WHEN periode = ? THEN COALESCE({$balanceColumn}, 0) ELSE 0 END) as ytd", [$ytdPeriod])
+            ->selectRaw("COUNT(DISTINCT CASE WHEN periode = ? AND {$realisasiDateExpression} BETWEEN ? AND ? THEN {$debiturExpression} END) as realisasi_deb", [$selectedPeriod, $monthStart, $monthEnd])
+            ->selectRaw("SUM(CASE WHEN periode = ? AND {$realisasiDateExpression} BETWEEN ? AND ? THEN COALESCE({$balanceColumn}, 0) ELSE 0 END) as realisasi_os", [$selectedPeriod, $monthStart, $monthEnd])
+            ->whereRaw("UPPER(TRIM(segmen_dashboard)) = 'CONSUMER'")
+            ->when($selectedProduct === null, function ($query) use ($normalizedProductExpression) {
+                $query->whereIn(DB::raw($normalizedProductExpression), self::PRODUCT_OPTIONS);
             })
-            ->where(function ($query) use ($periods) {
-                foreach ($periods as $period) {
-                    $query->orWhereDate('periode', $period);
-                }
+            ->when($selectedProduct !== null, function ($query) use ($normalizedProductExpression, $selectedProduct) {
+                $query->whereRaw($normalizedProductExpression . ' = ?', [$selectedProduct]);
             })
-            ->groupByRaw("UPPER(TRIM(COALESCE({$rmColumn}, ''))), UPPER(TRIM(COALESCE({$cabangColumn}, ''))), UPPER(TRIM(COALESCE({$productColumn}, '')))")
-            ->orderBy('cabang')
-            ->orderBy('rm')
-            ->orderBy('produk_raw')
+            ->whereNotNull($rmColumn)
+            ->where($rmColumn, '<>', '')
+            ->when($selectedCabang !== null, function ($query) use ($normalizedCabangExpression, $selectedCabang) {
+                $query->whereRaw($normalizedCabangExpression . ' = ?', [$this->normalizeCabangKey($selectedCabang)]);
+            })
+            ->whereIn('periode', $periods)
+            ->groupBy($rmColumn, $cabangColumn, $productColumn)
+            ->orderBy($cabangColumn)
+            ->orderBy($rmColumn)
             ->get();
 
-        $currentMonth = Carbon::parse($selectedPeriod);
-        $nextMonth = $currentMonth->copy()->addMonthNoOverflow();
-        $currentMonthColumn = $this->rkaLookup->resolveMonthColumn($currentMonth);
-        $nextMonthColumn = $this->rkaLookup->resolveMonthColumn($nextMonth);
-        $currentYear = (int) $currentMonth->format('Y');
-        $nextYear = (int) $nextMonth->format('Y');
-
-        $rkaCurrent = $this->rkaLookup->aggregateByGroup(
-            [
-                'briguna_konsumer' => ['mata_anggaran' => ['B.5.a. Briguna']],
-                'kpr' => ['mata_anggaran' => ['B.5.b. KPR']],
-            ],
-            $currentMonthColumn,
-            [],
-            [],
-            'kanca',
-            $currentYear
-        );
-        $rkaNext = $this->rkaLookup->aggregateByGroup(
-            [
-                'briguna_konsumer' => ['mata_anggaran' => ['B.5.a. Briguna']],
-                'kpr' => ['mata_anggaran' => ['B.5.b. KPR']],
-            ],
-            $nextMonthColumn,
-            [],
-            [],
-            'kanca',
-            $nextYear
-        );
-
-        $data = [];
-        $totals = [
+        $manualTargets = $this->getManualJgTargets();
+        $branches = [];
+        $grandTotals = [
             'curr' => 0.0,
+            'curr_deb' => 0,
             'prev_day' => 0.0,
             'mtd' => 0.0,
             'ytd' => 0.0,
+            'target_jg_deb' => 0,
+            'target_jg_os' => 0.0,
         ];
 
-        $groupedRows = [];
-
-        foreach ($rows as $row) {
-            $rm = trim((string) ($row->rm ?? ''));
-            $cabang = trim((string) ($row->cabang ?? ''));
+        foreach ($dbRows as $row) {
+            $cabangName = trim((string) ($row->cabang ?? ''));
+            $rmOriginal = trim((string) ($row->rm ?? ''));
+            $rmName = $this->mapRmName($rmOriginal);
             $productLabel = $this->normalizeProductLabel($row->produk_raw ?? null);
-            if ($rm === '') {
-                continue;
-            }
-            if ($productLabel === null) {
+
+            if ($rmName === '' || $productLabel === null) {
                 continue;
             }
 
-            $curr = (float) ($row->curr ?? 0);
-            $prevDay = (float) ($row->prev_day ?? 0);
-            $mtd = (float) ($row->mtd ?? 0);
-            $ytd = (float) ($row->ytd ?? 0);
-            $cabangKey = strtoupper($cabang);
-            $rkaKey = $this->resolveRkaProductKey($productLabel);
-            $rkaCurr = (float) ($rkaCurrent[$rkaKey][$cabangKey] ?? 0);
-            $rkaNextVal = (float) ($rkaNext[$rkaKey][$cabangKey] ?? 0);
-
-            $groupKey = $cabangKey . '|' . $rm;
-            if (!isset($groupedRows[$groupKey])) {
-                $groupedRows[$groupKey] = [
-                    'cabang' => $cabang !== '' ? $cabang : '-',
-                    'rm' => $rm,
-                    'items' => [],
+            $cabangKey = $this->normalizeCabangKey($cabangName);
+            if (!isset($branches[$cabangKey])) {
+                $branches[$cabangKey] = [
+                    'cabang' => $this->sanitizeCabangLabel($cabangName) ?: '-',
+                    'rms' => [],
+                    'subtotal' => [
+                        'curr' => 0.0, 'curr_deb' => 0, 'prev_day' => 0.0, 'mtd' => 0.0, 'ytd' => 0.0,
+                        'target_jg_deb' => 0, 'target_jg_os' => 0.0,
+                    ],
+                    'branch_rowspan' => 0,
                 ];
             }
 
-            $groupedRows[$groupKey]['items'][] = [
+            if (!isset($branches[$cabangKey]['rms'][$rmName])) {
+                $branches[$cabangKey]['rms'][$rmName] = [
+                    'rm' => $rmName,
+                    'items' => [],
+                    'rm_rowspan' => 0,
+                ];
+            }
+
+            $curr = (float) ($row->curr ?? 0);
+            $currDeb = (int) ($row->curr_deb ?? 0);
+            $prevDay = (float) ($row->prev_day ?? 0);
+            $mtd = (float) ($row->mtd ?? 0);
+            $ytd = (float) ($row->ytd ?? 0);
+            $realisasiDeb = (int) ($row->realisasi_deb ?? 0);
+            $realisasiOs = (float) ($row->realisasi_os ?? 0);
+
+            // Fetch Manual JG Target
+            $nameOnly = strtoupper(trim(explode('-', $rmName)[1] ?? $rmName));
+            $target = $manualTargets[$productLabel][$nameOnly] ?? null;
+            $tDeb = $target['deb'] ?? 0;
+            $tOs = $target['os'] ?? 0.0;
+
+            $item = [
                 'segmen' => self::SEGMENT_LABEL,
                 'product' => $productLabel,
-                'rm' => $rm,
                 'curr' => $curr,
+                'curr_deb' => $currDeb,
                 'prev_day' => $prevDay,
                 'mtd' => $mtd,
                 'ytd' => $ytd,
-                'delta_dtd' => round($curr - $prevDay, 0),
-                'delta_mtd' => round($curr - $mtd, 0),
-                'delta_ytd' => round($curr - $ytd, 0),
-                'rka_current' => $rkaCurr,
-                'rka_next' => $rkaNextVal,
-                'penc_current' => $rkaCurr > 0 ? round(($curr / $rkaCurr) * 100, 2) : 0,
-                'penc_next' => $rkaNextVal > 0 ? round(($curr / $rkaNextVal) * 100, 2) : 0,
+                'delta_dtd' => $curr - $prevDay,
+                'delta_mtd' => $curr - $mtd,
+                'delta_ytd' => $curr - $ytd,
+                'target_jg_deb' => $tDeb,
+                'target_jg_os' => $tOs,
+                'ach_deb' => $realisasiDeb,
+                'ach_os' => $realisasiOs,
             ];
 
-            $totals['curr'] += $curr;
-            $totals['prev_day'] += $prevDay;
-            $totals['mtd'] += $mtd;
-            $totals['ytd'] += $ytd;
+            $branches[$cabangKey]['rms'][$rmName]['items'][] = $item;
+            $branches[$cabangKey]['rms'][$rmName]['rm_rowspan']++;
+            $branches[$cabangKey]['branch_rowspan']++;
+
+            // Update Branch Subtotal
+            $branches[$cabangKey]['subtotal']['curr'] += $curr;
+            $branches[$cabangKey]['subtotal']['curr_deb'] += $currDeb;
+            $branches[$cabangKey]['subtotal']['prev_day'] += $prevDay;
+            $branches[$cabangKey]['subtotal']['mtd'] += $mtd;
+            $branches[$cabangKey]['subtotal']['ytd'] += $ytd;
+            $branches[$cabangKey]['subtotal']['target_jg_deb'] += $tDeb;
+            $branches[$cabangKey]['subtotal']['target_jg_os'] += $tOs;
+            $branches[$cabangKey]['subtotal']['ach_deb'] = ($branches[$cabangKey]['subtotal']['ach_deb'] ?? 0) + $realisasiDeb;
+            $branches[$cabangKey]['subtotal']['ach_os'] = ($branches[$cabangKey]['subtotal']['ach_os'] ?? 0.0) + $realisasiOs;
+
+            // Update Grand Totals
+            $grandTotals['curr'] += $curr;
+            $grandTotals['curr_deb'] += $currDeb;
+            $grandTotals['prev_day'] += $prevDay;
+            $grandTotals['mtd'] += $mtd;
+            $grandTotals['ytd'] += $ytd;
+            $grandTotals['target_jg_deb'] += $tDeb;
+            $grandTotals['target_jg_os'] += $tOs;
+            $grandTotals['ach_deb'] = ($grandTotals['ach_deb'] ?? 0) + $realisasiDeb;
+            $grandTotals['ach_os'] = ($grandTotals['ach_os'] ?? 0.0) + $realisasiOs;
         }
 
-        $totals['rka_current'] = $this->sumRkaValuesByProducts($rkaCurrent, $selectedCabang);
-        $totals['rka_next'] = $this->sumRkaValuesByProducts($rkaNext, $selectedCabang);
-
-        $data = [];
-        foreach ($groupedRows as $group) {
-            $groupItems = array_values($group['items']);
-            $group['rowspan'] = count($groupItems);
-            $group['items'] = $groupItems;
-            $data[] = $group;
+        // Add 1 to branch_rowspan for the subtotal row
+        foreach ($branches as $key => $branch) {
+            $branches[$key]['branch_rowspan'] += 1;
+            
+            $b_curr = $branches[$key]['subtotal']['curr'];
+            $branches[$key]['subtotal']['delta_dtd'] = $b_curr - $branches[$key]['subtotal']['prev_day'];
+            $branches[$key]['subtotal']['delta_mtd'] = $b_curr - $branches[$key]['subtotal']['mtd'];
+            $branches[$key]['subtotal']['delta_ytd'] = $b_curr - $branches[$key]['subtotal']['ytd'];
+            
+            $branches[$key]['subtotal']['ach_deb'] = $branches[$key]['subtotal']['ach_deb'] ?? 0;
+            $branches[$key]['subtotal']['ach_os'] = $branches[$key]['subtotal']['ach_os'] ?? 0.0;
         }
 
-        $total = [
+        $totalRecord = [
             'segmen' => 'Total',
-            'cabang' => $selectedCabang !== null ? $selectedCabang : 'SEMUA CABANG',
+            'cabang' => $selectedCabang ?? 'SEMUA CABANG',
             'rm' => 'TOTAL',
-            'curr' => round($totals['curr'], 0),
-            'prev_day' => round($totals['prev_day'], 0),
-            'mtd' => round($totals['mtd'], 0),
-            'ytd' => round($totals['ytd'], 0),
-            'delta_dtd' => round($totals['curr'] - $totals['prev_day'], 0),
-            'delta_mtd' => round($totals['curr'] - $totals['mtd'], 0),
-            'delta_ytd' => round($totals['curr'] - $totals['ytd'], 0),
-            'rka_current' => round($totals['rka_current'], 0),
-            'rka_next' => round($totals['rka_next'], 0),
-            'penc_current' => $totals['rka_current'] > 0 ? round(($totals['curr'] / $totals['rka_current']) * 100, 2) : 0,
-            'penc_next' => $totals['rka_next'] > 0 ? round(($totals['curr'] / $totals['rka_next']) * 100, 2) : 0,
+            'curr' => $grandTotals['curr'],
+            'curr_deb' => $grandTotals['curr_deb'],
+            'prev_day' => $grandTotals['prev_day'],
+            'mtd' => $grandTotals['mtd'],
+            'ytd' => $grandTotals['ytd'],
+            'delta_dtd' => $grandTotals['curr'] - $grandTotals['prev_day'],
+            'delta_mtd' => $grandTotals['curr'] - $grandTotals['mtd'],
+            'delta_ytd' => $grandTotals['curr'] - $grandTotals['ytd'],
+            'target_jg_deb' => $grandTotals['target_jg_deb'],
+            'target_jg_os' => $grandTotals['target_jg_os'],
+            'ach_deb' => $grandTotals['ach_deb'] ?? 0,
+            'ach_os' => $grandTotals['ach_os'] ?? 0.0,
         ];
 
         return [
-            'rows' => $data,
-            'total' => $total,
+            'rows' => array_values($branches),
+            'total' => $totalRecord,
         ];
+        });
+    }
+
+    private function getManualJgTargets(): array
+    {
+        return [
+            'BRIGUNA-KONSUMER' => [
+                'BAGUS PRASETYO' => ['deb' => 20, 'os' => 3750000000],
+                'ARIANI SETYO PALUPI' => ['deb' => 20, 'os' => 3750000000],
+                'RONA ROHANA TALIBATA' => ['deb' => 20, 'os' => 3750000000],
+                'RATNA DWI SISWIYANTORO' => ['deb' => 19, 'os' => 3700000000],
+                'ARIS SULISTYAWAN' => ['deb' => 19, 'os' => 3700000000],
+                'TITIN OKTAVIA' => ['deb' => 20, 'os' => 3850000000],
+                'FARID ROMADLONI' => ['deb' => 19, 'os' => 3700000000],
+                'ZULFA ENDY CRISMANA' => ['deb' => 19, 'os' => 3700000000],
+                'ARDINI' => ['deb' => 20, 'os' => 3850000000],
+                'NOVAN YOGA PRATAMA' => ['deb' => 16, 'os' => 1900000000],
+            ],
+            'KPR' => [
+                'VIVIN SRIHARDILA TANTIAYUDHA' => ['deb' => 7, 'os' => 3300000000],
+                'ABDUL HALIM MUZAKKI' => ['deb' => 7, 'os' => 3500000000],
+                'GLAGAH MAHESTYA YAHYA' => ['deb' => 6, 'os' => 2800000000],
+            ],
+        ];
+    }
+
+    private function mapRmName(string $rmName): string
+    {
+        if (str_contains(strtoupper($rmName), '00385844 -')) {
+            return '00385844 - Glagah Mahestya Yahya';
+        }
+        return $rmName;
     }
 
     private function resolveExistingColumn(string $table, array $candidates, string $fallback): string
@@ -337,9 +420,27 @@ class KinerjaKonsumerReportController extends Controller
         return $fallback;
     }
 
-    private function sumRkaValuesByProducts(array $values, ?string $selectedCabang = null): float
+    private function resolveCabangColumn(): string
     {
-        $productKeys = ['briguna_konsumer', 'kpr'];
+        return $this->resolveExistingColumn(
+            'daily_loan_dinamis',
+            ['cabang1', 'cabang'],
+            'cabang1'
+        );
+    }
+
+    private function resolveProductColumn(): string
+    {
+        return $this->resolveExistingColumn(
+            'daily_loan_dinamis',
+            ['produk_dashboard', 'produk'],
+            'produk_dashboard'
+        );
+    }
+
+    private function sumRkaValuesByProducts(array $values, ?string $selectedCabang = null, ?string $selectedProduct = null): float
+    {
+        $productKeys = $selectedProduct ? [$this->resolveRkaProductKey($selectedProduct)] : ['briguna_konsumer', 'kpr'];
 
         if ($selectedCabang !== null) {
             $cabangKey = strtoupper($selectedCabang);
@@ -381,6 +482,24 @@ class KinerjaKonsumerReportController extends Controller
         }
 
         return null;
+    }
+
+    private function normalizedColumnExpression(string $column): string
+    {
+        return "UPPER(TRIM(REPLACE(REPLACE(CAST({$column} AS CHAR), '_', '-'), ' ', '-')))";
+    }
+
+    private function normalizeCabangKey(?string $value): string
+    {
+        $normalized = strtoupper(trim((string) $value));
+        $normalized = preg_replace('/\s+/', ' ', $normalized) ?? $normalized;
+
+        return $normalized;
+    }
+
+    private function sanitizeCabangLabel(?string $value): string
+    {
+        return trim((string) $value);
     }
 
     private function resolveRkaProductKey(string $productLabel): string

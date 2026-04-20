@@ -892,7 +892,40 @@
     .daily-table .row-depth-2 .metric-label { padding-left: 1.25rem; color: var(--text-muted); font-weight: 500;}
     .daily-table .row-depth-3 .metric-label { padding-left: 2rem; color: #94a3b8; font-size: 0.7rem; }
 
-    /* Utilities */
+    /* Sub-Segment Highlights (Contrast but pleasant) */
+    .section-ritel td, 
+    .section-mikro td, 
+    .section-wholesale td, 
+    .section-consumer td, 
+    .section-commercial td {
+        background: linear-gradient(90deg, #fdfdff 0%, #f0f7ff 100%) !important;
+        border-top: 1px solid #cbd5e1 !important;
+        border-bottom: 1px solid #cbd5e1 !important;
+    }
+
+    .section-ritel .sticky-label, 
+    .section-mikro .sticky-label, 
+    .section-wholesale .sticky-label, 
+    .section-consumer .sticky-label, 
+    .section-commercial .sticky-label {
+        background: linear-gradient(90deg, #f0f7ff 0%, #ffffff 100%) !important;
+        border-left: 5px solid var(--primary-blue-main) !important;
+        color: var(--primary-blue-dark) !important;
+        font-weight: 800 !important;
+        text-transform: uppercase;
+    }
+
+    .section-ritel .metric-label, 
+    .section-mikro .metric-label, 
+    .section-wholesale .metric-label, 
+    .section-consumer .metric-label, 
+    .section-commercial .metric-label {
+        font-weight: 800 !important;
+        color: var(--primary-blue-dark) !important;
+        letter-spacing: 0.01em;
+    }
+
+    /* Row Hover and Striping */
     .delta-positive { color: #16a34a !important; font-weight: 700; } /* green-600 */
     .delta-negative { color: #dc2626 !important; font-weight: 700; } /* red-600 */
     

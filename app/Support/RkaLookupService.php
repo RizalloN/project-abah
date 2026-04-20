@@ -282,4 +282,51 @@ class RkaLookupService
 
         return $normalized !== '' ? $normalized : null;
     }
+
+    /**
+     * Aggregate RKA data by regional filter (matches regional names in desc_uker)
+     * Used for branches like KC Madiun, KC Ngawi, KC Magetan stored as sub-units under KC Ponorogo
+     */
+    public function aggregateByGroupWithRegionalFilter(
+        array $definitions,
+        string $monthColumn,
+        array $regionPatterns = [],  // ['MADIUN', 'NGAWI', 'MAGETAN']
+        ?int $year = null
+    ): array {
+        // Normalize month column
+        $normalizedMonth = strtolower(trim((string) $monthColumn));
+        
+        // Load all rows for this period
+        $loadedRows = $this->loadRows([$normalizedMonth], $year);
+        
+        $groups = [];
+        foreach ($definitions as $definitionKey => $definition) {
+            $groups[$definitionKey] = [];
+        }
+
+        // Process each row and group by regional pattern match
+        foreach ($loadedRows as $row) {
+            foreach ($definitions as $definitionKey => $definition) {
+                if (!$this->matchesDefinition($row, $definition)) {
+                    continue;
+                }
+
+                // For each region pattern, check if it matches this row's uker_key (desc_uker)
+                foreach ($regionPatterns as $region) {
+                    $regionUpper = strtoupper(trim($region));
+                    if ($regionUpper !== '' && str_contains($row['uker_key'], $regionUpper)) {
+                        // Found a match - aggregate by this region
+                        if (!isset($groups[$definitionKey][$region])) {
+                            $groups[$definitionKey][$region] = 0;
+                        }
+                        // Access month value from nested 'months' array
+                        $monthValue = $row['months'][$normalizedMonth] ?? 0;
+                        $groups[$definitionKey][$region] += (float) $monthValue;
+                    }
+                }
+            }
+        }
+
+        return $groups;
+    }
 }

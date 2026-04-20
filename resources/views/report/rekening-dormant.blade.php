@@ -533,11 +533,13 @@ document.addEventListener('DOMContentLoaded', function () {
     let unitOptions = [];
     let selectedBranches = Array.isArray(initialBranches) ? initialBranches : [];
     let selectedUnits = Array.isArray(initialUnits) ? initialUnits : [];
-    
+
     // Pagination state
     let allRows = [];
     const ROWS_PER_PAGE = 25;
     let currentPage = 1;
+    let lastRequestParams = null;
+    let cachedFilterResponse = {};
 
     // ────────────────────── Utilities ──────────────────────
     function appendArrayParams(params, key, values) {
@@ -574,7 +576,7 @@ document.addEventListener('DOMContentLoaded', function () {
     function renderRowsPage(rows, pageNum = 1) {
         allRows = rows;
         currentPage = Math.max(1, Math.min(pageNum, Math.ceil((rows.length / ROWS_PER_PAGE) || 1)));
-        
+
         if (!rows || rows.length === 0) {
             tableBody.innerHTML = `<tr><td colspan="5" class="dormant-empty-state"><i class="fas fa-inbox fa-2x text-muted mb-3 opacity-50"></i><strong>Data tidak ditemukan</strong>Coba ubah periode atau filter branch office agar hasil report tersedia.</td></tr>`;
             renderPagination(0);
@@ -585,21 +587,24 @@ document.addEventListener('DOMContentLoaded', function () {
         const endIdx = Math.min(startIdx + ROWS_PER_PAGE, rows.length);
         const pageRows = rows.slice(startIdx, endIdx);
 
-        const fragment = document.createDocumentFragment();
+        // Fast path for small datasets (< 50 rows total)
+        const isSmallDataset = rows.length < 50;
+        let html = '';
         pageRows.forEach(row => {
-            const tr = document.createElement('tr');
-            tr.innerHTML = `
+            html += `<tr>
                 <th>${row.branch || '-'}</th>
                 <td class="${cellClass(row.current, true)}">${formatNumber(row.current)}</td>
                 <td class="${cellClass(row.mtd)}">${deltaText(row.mtd)}</td>
                 <td class="${cellClass(row.ytd)}">${deltaText(row.ytd)}</td>
                 <td class="${cellClass(row.yoy)}">${deltaText(row.yoy)}</td>
-            `;
-            fragment.appendChild(tr);
+            </tr>`;
         });
-        tableBody.innerHTML = '';
-        tableBody.appendChild(fragment);
-        renderPagination(rows.length);
+        tableBody.innerHTML = html;
+
+        // Lazy render pagination only if needed
+        if (!isSmallDataset || Math.ceil(rows.length / ROWS_PER_PAGE) > 1) {
+            setTimeout(() => renderPagination(rows.length), 0);
+        }
     }
 
     function renderRows(rows) {
@@ -893,23 +898,34 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
         }
 
+        const params = new URLSearchParams();
+        params.set('posisi', periodInput.value);
+        appendArrayParams(params, 'kantor_cabang', selectedBranches);
+        appendArrayParams(params, 'unit_kerja', selectedUnits);
+        const cacheKey = params.toString();
+
+        // Check cache first
+        if (cachedFilterResponse[cacheKey]) {
+            applyFilterPayload(cachedFilterResponse[cacheKey]);
+            branchDropdown.disabled = !periodInput.value;
+            if (selectedBranches.length === 0) {
+                unitDropdown.disabled = true;
+            }
+            return;
+        }
+
         activeFilterController = new AbortController();
         const timeoutId = window.setTimeout(() => {
             activeFilterController?.abort('timeout');
-        }, 8000);  // Reduced dari 15000ms ke 8000ms untuk respons lebih cepat
+        }, 3500);
 
         branchDropdown.disabled = true;
         unitDropdown.disabled = true;
         branchMenu.innerHTML = '<div class="dropdown-item text-muted small">Memuat opsi...</div>';
         unitMenu.innerHTML = '<div class="dropdown-item text-muted small">Memuat opsi...</div>';
 
-        const params = new URLSearchParams();
-        params.set('posisi', periodInput.value);
-        appendArrayParams(params, 'kantor_cabang', selectedBranches);
-        appendArrayParams(params, 'unit_kerja', selectedUnits);
-
         try {
-            const response = await fetch(`${filtersUrl}?${params.toString()}`, {
+            const response = await fetch(`${filtersUrl}?${cacheKey}`, {
                 method: 'GET',
                 headers: {
                     'X-Requested-With': 'XMLHttpRequest',
@@ -920,6 +936,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
             if (!response.ok) throw new Error('Gagal memuat opsi filter');
             const payload = await response.json();
+            cachedFilterResponse[cacheKey] = payload;
             applyFilterPayload(payload);
         } catch (error) {
             if (error.name !== 'AbortError') {
@@ -955,6 +972,10 @@ document.addEventListener('DOMContentLoaded', function () {
             if (value) params.append(key, value);
         }
 
+        const paramStr = params.toString();
+        if (lastRequestParams === paramStr) return;
+        lastRequestParams = paramStr;
+
         chip.classList.remove('d-none');
         submitButton.disabled = true;
         setOverlay('Sedang Mengolah', 'Memproses data rekening dormant.');
@@ -968,7 +989,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     'X-CSRF-TOKEN': csrfToken,
                     'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
                 },
-                body: params.toString(),
+                body: paramStr,
                 signal: activeController.signal
             });
 
@@ -976,7 +997,6 @@ document.addEventListener('DOMContentLoaded', function () {
             const payload = await response.json();
 
             updateGroupLabel(payload.group_label || 'BRANCH OFFICE');
-            tableBody.innerHTML = '';  // Clear existing rows
             renderRows(payload.data || []);
             renderFoot(payload.total || {});
             updateHeaders(payload.labels || {});
