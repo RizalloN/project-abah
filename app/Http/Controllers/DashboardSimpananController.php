@@ -18,6 +18,7 @@ class DashboardSimpananController extends Controller
     private const SUMMARY_CACHE_MINUTES = 5;
     private const SUMMARY_LATEST_CACHE_MINUTES = 30;
     private const TOP_BRANCH_CACHE_MINUTES = 5;
+    private const DIGITAL_PERFORMANCE_CACHE_MINUTES = 10;
     private const LOAN_SNAPSHOT_TABLE = 'dashboard_pinjaman_snapshots';
     private const CACHE_LOCK_SECONDS = 20;
     private const SNAPSHOT_SUMMARY_TABLE = 'dashboard_simpanan_snapshots';
@@ -858,35 +859,39 @@ class DashboardSimpananController extends Controller
 
     private function buildDigitalPerformance(): array
     {
-        $cards = array_values(array_filter([
-            $this->buildEdcPerformanceCard(),
-            $this->buildQrisPerformanceCard(),
-            $this->buildBrimoPerformanceCard(),
-            $this->buildBrilinkPerformanceCard(),
-            $this->buildPayrollPerformanceCard(),
-        ]));
+        $cacheKey = 'dashboard_simpanan:digital_performance:v' . $this->reportCacheVersion();
 
-        $latestSource = collect($cards)
-            ->pluck('source_updated_at')
-            ->filter()
-            ->map(function ($value) {
-                try {
-                    return Carbon::parse($value)->timestamp;
-                } catch (Throwable) {
-                    return null;
-                }
-            })
-            ->filter()
-            ->max();
+        return Cache::remember($cacheKey, now()->addMinutes(self::DIGITAL_PERFORMANCE_CACHE_MINUTES), function () {
+            $cards = array_values(array_filter([
+                $this->buildEdcPerformanceCard(),
+                $this->buildQrisPerformanceCard(),
+                $this->buildBrimoPerformanceCard(),
+                $this->buildBrilinkPerformanceCard(),
+                $this->buildPayrollPerformanceCard(),
+            ]));
 
-        return [
-            'title' => 'Performance Digital Area 6',
-            'subtitle' => 'Snapshot realtime untuk EDC, QRIS, BRIMO, BRILink, dan payroll agar pemantauan channel digital tetap cepat terbaca.',
-            'updated_at' => $latestSource
-                ? Carbon::createFromTimestamp($latestSource)->timezone(config('app.timezone', 'Asia/Jakarta'))->format('d M Y H:i')
-                : null,
-            'cards' => $cards,
-        ];
+            $latestSource = collect($cards)
+                ->pluck('source_updated_at')
+                ->filter()
+                ->map(function ($value) {
+                    try {
+                        return Carbon::parse($value)->timestamp;
+                    } catch (Throwable) {
+                        return null;
+                    }
+                })
+                ->filter()
+                ->max();
+
+            return [
+                'title' => 'Performance Digital Area 6',
+                'subtitle' => 'Snapshot realtime untuk EDC, QRIS, BRIMO, BRILink, dan payroll agar pemantauan channel digital tetap cepat terbaca.',
+                'updated_at' => $latestSource
+                    ? Carbon::createFromTimestamp($latestSource)->timezone(config('app.timezone', 'Asia/Jakarta'))->format('d M Y H:i')
+                    : null,
+                'cards' => $cards,
+            ];
+        });
     }
 
     private function buildEdcPerformanceCard(): ?array
@@ -1331,16 +1336,16 @@ class DashboardSimpananController extends Controller
 
     private function buildTrendDatePeriods(string $latestPeriod, int $points = 4): array
     {
-        $current = Carbon::parse($latestPeriod)->toDateString();
+        $current = Carbon::parse($latestPeriod)->startOfDay();
         $periods = [];
 
         for ($offset = $points - 1; $offset >= 0; $offset--) {
             if ($offset === 0) {
-                $periods[] = $current;
+                $periods[] = $current->toDateString();
                 continue;
             }
 
-            $periods[] = Carbon::parse($current)->subMonthsNoOverflow($offset)->endOfMonth()->toDateString();
+            $periods[] = $current->copy()->subMonthsNoOverflow($offset)->endOfMonth()->toDateString();
         }
 
         return array_values(array_unique($periods));
@@ -1406,7 +1411,9 @@ class DashboardSimpananController extends Controller
 
     private function dashboardBranchNames(): array
     {
-        return ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'];
+        static $branches = ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'];
+
+        return $branches;
     }
 
     private function percentChange(float|int $current, float|int $previous): float
@@ -1512,4 +1519,3 @@ class DashboardSimpananController extends Controller
         return (int) Cache::get('report_cache_version:global', 1);
     }
 }
-

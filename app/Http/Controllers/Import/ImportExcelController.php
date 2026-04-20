@@ -236,7 +236,7 @@ class ImportExcelController extends Controller
         return 'Header utama file tidak ditemukan.';
     }
 
-    private const DB_INSERT_BATCH_SIZE = 2000;
+    private const DB_INSERT_BATCH_SIZE = 5000; // Increased from 2000 for better throughput
     private const STREAM_PROGRESS_EVERY = 1000;
     private const FALLBACK_SPLIT_THRESHOLD = 25;
     private const INSERT_BUFFER_FLUSH_SIZE = 2000;
@@ -2605,15 +2605,10 @@ class ImportExcelController extends Controller
                 }
             }
 
-            $dbCandidates = $this->getHeaderDatabaseCandidates($headerName);
-            $mappedDbCandidates = [];
-            foreach ($dbCandidates as $candidateColumn) {
-                $lowerCandidate = strtolower((string) $candidateColumn);
-                if (isset($tableColumnsLookup[$lowerCandidate]) && !isset($skipColumnsLookup[$lowerCandidate])) {
-                    $mappedDbCandidates[] = $tableColumnsByLower[$lowerCandidate] ?? $candidateColumn;
-                }
-            }
-            $mappedDbCandidates = array_values(array_unique($mappedDbCandidates));
+            $mappedDbCandidates = array_values(array_filter(
+                $this->resolveMappedDatabaseCandidates($headerName, $tableColumnsLookup, $tableColumnsByLower),
+                static fn ($candidateColumn): bool => !isset($skipColumnsLookup[strtolower((string) $candidateColumn)])
+            ));
 
             $filterLookup = $filterLookups[$filterIdx] ?? null;
 
@@ -4134,10 +4129,14 @@ class ImportExcelController extends Controller
 
         $outputCsvPath = $tempDirectory . DIRECTORY_SEPARATOR . 'ssa_pinjaman_polars_' . Str::uuid()->toString() . '.csv';
         $configFile = storage_path('app/ssa_pinjaman_polars_config_' . uniqid() . '.json');
+        $normalizedCsvPath = str_replace('\\', '/', $csvPath);
+        $normalizedStageDir = str_replace('\\', '/', storage_path(self::STAGED_CSV_TEMP_DIR));
         file_put_contents($configFile, json_encode([
             'file_path' => $csvPath,
             'delimiter' => $delimiter,
             'output_csv_path' => $outputCsvPath,
+            'trusted_staged_csv' => str_starts_with($normalizedCsvPath, $normalizedStageDir . '/')
+                || $normalizedCsvPath === $normalizedStageDir,
         ], JSON_UNESCAPED_UNICODE));
 
         $cmd = escapeshellarg($pythonExe)
@@ -6506,9 +6505,8 @@ class ImportExcelController extends Controller
         $normalized = strtolower(trim($header));
         $normalized = preg_replace('/[^a-z0-9]+/', '_', $normalized);
         $normalized = trim((string) $normalized, '_');
-        $normalized = preg_replace('/\d+$/', '', (string) $normalized);
 
-        return trim((string) $normalized, '_');
+        return $normalized;
     }
 
     private function getHeaderDatabaseCandidates(string $header): array
@@ -6529,6 +6527,11 @@ class ImportExcelController extends Controller
             $candidates[] = $raw;
         }
 
+        $rawWithoutNumericSuffix = trim((string) preg_replace('/(?:_)?\d+$/', '', $raw), '_');
+        if ($rawWithoutNumericSuffix !== '' && $rawWithoutNumericSuffix !== $raw) {
+            $candidates[] = $rawWithoutNumericSuffix;
+        }
+
         if ($normalized !== '' && $normalized !== $raw) {
             $candidates[] = $normalized;
         }
@@ -6547,6 +6550,30 @@ class ImportExcelController extends Controller
         }
 
         return array_values(array_unique($candidates));
+    }
+
+    private function resolveMappedDatabaseCandidates(string $header, array $tableColumnsLookup, array $tableColumnsByLower): array
+    {
+        $raw = strtolower(trim($header));
+        $raw = preg_replace('/[^a-z0-9]+/', '_', $raw);
+        $raw = trim((string) $raw, '_');
+        $normalized = $this->normalizeHeaderForDatabase($header);
+        $normalizedImportName = $this->normalizeImportColumnName($header);
+
+        foreach (array_values(array_unique([$raw, $normalized, $normalizedImportName])) as $preferredCandidate) {
+            if ($preferredCandidate !== '' && isset($tableColumnsLookup[$preferredCandidate])) {
+                return [$tableColumnsByLower[$preferredCandidate] ?? $preferredCandidate];
+            }
+        }
+
+        foreach ($this->getHeaderDatabaseCandidates($header) as $candidateColumn) {
+            $lowerCandidate = strtolower((string) $candidateColumn);
+            if (isset($tableColumnsLookup[$lowerCandidate])) {
+                return [$tableColumnsByLower[$lowerCandidate] ?? $candidateColumn];
+            }
+        }
+
+        return [];
     }
 
     protected function reorderPreviewPayload(array $headers, array $formattedUniqueValues, array $preview, array $dbColumns): array
@@ -7953,6 +7980,318 @@ class ImportExcelController extends Controller
         ], 422);
     }
 
+    /**
+     * Initialize queued import job dengan deteksi header, estimasi baris, dan staging CSV.
+     * Method ini dipanggil DARI DALAM job execution (async) supaya tidak blocking response ke user.
+     * 
+     * @param int $jobId
+     * @return bool True jika initialization berhasil, false jika gagal
+     */
+    public function initializeQueuedImportJobForExecution(int $jobId): bool
+    {
+        ini_set('memory_limit', '512M');
+        set_time_limit(0);
+
+        try {
+            $job = $this->progressService()->findJob($jobId);
+            if (!$job) {
+                Log::error('initializeQueuedImportJobForExecution: Job tidak ditemukan', ['job_id' => $jobId]);
+                return false;
+            }
+
+            $state = $this->excelImportJobService()->getImportJobState($jobId);
+            $minimalParams = (array) ($state['params'] ?? []);
+
+            // Ambil minimal params yang sudah di-set saat queue
+            $filePath = (string) ($minimalParams['file_path'] ?? '');
+            $tableName = (string) ($minimalParams['table_name'] ?? '');
+            $idReport = (int) ($job->id_report ?? 0);
+            $disableInlineFallback = (bool) ($minimalParams['disable_inline_fallback'] ?? false);
+
+            if ($filePath === '' || $tableName === '') {
+                Log::error('initializeQueuedImportJobForExecution: Params tidak lengkap', [
+                    'job_id' => $jobId,
+                    'file_path' => $filePath,
+                    'table_name' => $tableName,
+                ]);
+                return false;
+            }
+
+            $relativePath = $filePath;
+            $path = Storage::path($relativePath);
+            if (!file_exists($path)) {
+                Log::error('initializeQueuedImportJobForExecution: File tidak ditemukan', [
+                    'job_id' => $jobId,
+                    'path' => $path,
+                    'relative_path' => $relativePath,
+                ]);
+                return false;
+            }
+
+            // ── Deteksi Header ──────────────────────────────────────────
+            $headerIndex = null;
+            $totalRows = 0;
+            $sheet = null;
+            $delimiter = null;
+
+            if ($this->isCsvFile($path)) {
+                try {
+                    $delimiter = $this->detectCsvDelimiter($path);
+                    $handle = @fopen($path, 'r');
+
+                    if (!$handle) {
+                        Log::error('initializeQueuedImportJobForExecution: Gagal membuka CSV file', [
+                            'job_id' => $jobId,
+                            'path' => $path,
+                        ]);
+                        return false;
+                    }
+
+                    while (($row = $this->readCsvRecord($handle, $delimiter)) !== false) {
+                        if ($headerIndex === null) {
+                            if ($this->detectHeaderIndex([$row], $tableName) === 0) {
+                                $headerIndex = $totalRows;
+                                $sheet = [];
+                                $sheet[$headerIndex] = $this->isDailyLoanActive()
+                                    ? self::DAILY_LOAN_SOURCE_HEADERS
+                                    : $row;
+                            }
+                        }
+                        $totalRows++;
+                    }
+                    fclose($handle);
+                } catch (\Throwable $e) {
+                    Log::error('initializeQueuedImportJobForExecution: Gagal scan CSV', [
+                        'job_id' => $jobId,
+                        'path' => $path,
+                        'exception' => $e::class,
+                        'message' => $e->getMessage(),
+                    ]);
+                    return false;
+                }
+            } else {
+                // Excel file: coba Python dulu (openpyxl read-only, lebih cepat)
+                try {
+                    $pythonResult = $this->detectHeaderViaPython($path);
+
+                    if ($pythonResult !== null) {
+                        $headerIndex = $pythonResult['header_index'];
+                        $totalRows = $pythonResult['total_rows'];
+                        $headerValues = $pythonResult['header_values'];
+                        $sheet = [];
+                        $sheet[$headerIndex] = $headerValues;
+                    } else {
+                        // Fallback: PhpSpreadsheet
+                        Log::info('initializeQueuedImportJobForExecution: Python tidak tersedia, fallback ke PhpSpreadsheet', [
+                            'job_id' => $jobId,
+                        ]);
+
+                        $reader = IOFactory::createReaderForFile($path);
+                        $reader->setReadDataOnly(true);
+                        $reader->setReadEmptyCells(false);
+
+                        $chunkFilter = new ChunkReadFilter();
+                        $chunkFilter->setRows(1, 200);
+                        $reader->setReadFilter($chunkFilter);
+
+                        $spreadsheet = $reader->load($path);
+                        $sheet = $spreadsheet->getActiveSheet()->toArray(null, true, true, false);
+                        $spreadsheet->disconnectWorksheets();
+                        unset($spreadsheet);
+
+                        $headerIndex = $this->detectHeaderIndex($sheet, $tableName);
+                        if ($headerIndex === null) {
+                            Log::error('initializeQueuedImportJobForExecution: Header tidak ditemukan di Excel', [
+                                'job_id' => $jobId,
+                                'path' => $path,
+                                'table_name' => $tableName,
+                            ]);
+                            return false;
+                        }
+
+                        $worksheetInfo = $reader->listWorksheetInfo($path);
+                        $totalRows = $worksheetInfo[0]['totalRows'];
+                    }
+                } catch (\Throwable $e) {
+                    Log::error('initializeQueuedImportJobForExecution: Gagal membaca Excel file', [
+                        'job_id' => $jobId,
+                        'path' => $path,
+                        'exception' => $e::class,
+                        'message' => $e->getMessage(),
+                        'trace' => $e->getTraceAsString(),
+                    ]);
+                    return false;
+                }
+            }
+
+            if ($headerIndex === null) {
+                Log::error('initializeQueuedImportJobForExecution: Header tetap null setelah semua detection method', [
+                    'job_id' => $jobId,
+                    'path' => $path,
+                    'table_name' => $tableName,
+                ]);
+                return false;
+            }
+
+            // ── Estimasi Total Rows ─────────────────────────────────────
+            if ($this->isCsvFile($path)) {
+                $totalRows = $this->estimateCsvImportTotalRows($path, (int) $headerIndex);
+            }
+
+            $dataRowsCount = max(0, $totalRows - ($headerIndex + 1));
+
+            // ── Normalize Headers ───────────────────────────────────────
+            $rawHeaders = $sheet[$headerIndex] ?? [];
+            $normalizedHeadersForSession = [];
+            foreach ($rawHeaders as $i => $h) {
+                $normalizedHeadersForSession[$i] = !empty(trim((string) $h)) 
+                    ? trim((string) $h) 
+                    : 'COL_' . $i;
+            }
+
+            try {
+                $normalizedHeadersForSession = array_values(
+                    $this->resolveImportStrategy($tableName)->transformHeaders($normalizedHeadersForSession)
+                );
+            } catch (\Throwable $e) {
+                Log::error('initializeQueuedImportJobForExecution: Gagal transform headers', [
+                    'job_id' => $jobId,
+                    'table_name' => $tableName,
+                    'exception' => $e::class,
+                    'message' => $e->getMessage(),
+                ]);
+                return false;
+            }
+
+            // ── Staging Excel to CSV (jika perlu) ───────────────────────
+            $stagedCsvPath = '';
+            $mustRefreshStagedCsv = $this->isSsaSimpananTable($tableName) || $this->isSsaPinjamanTable($tableName);
+
+            if (
+                !$this->isCsvFile($path)
+                && ($mustRefreshStagedCsv || !$this->shouldDeferExcelStagingToQueue($tableName, $path))
+            ) {
+                try {
+                    $stageResult = $this->stageExcelToCsv(
+                        static function (string $event, array $data): void {
+                            // init phase does not stream progress
+                        },
+                        $path,
+                        $headerIndex,
+                        $normalizedHeadersForSession,
+                        $tableName
+                    );
+
+                    if (!empty($stageResult['staged_csv_path']) && file_exists((string) $stageResult['staged_csv_path'])) {
+                        $stagedCsvPath = (string) $stageResult['staged_csv_path'];
+                        $totalRows = max(1, ((int) ($stageResult['total_rows'] ?? 0)) + 1);
+                        $delimiter = ',';
+                    }
+                } catch (\Throwable $e) {
+                    Log::error('initializeQueuedImportJobForExecution: Gagal staging Excel to CSV', [
+                        'job_id' => $jobId,
+                        'table_name' => $tableName,
+                        'path' => $path,
+                        'exception' => $e::class,
+                        'message' => $e->getMessage(),
+                    ]);
+                    return false;
+                }
+            }
+
+            // ── Ambil active filters dan manual params dari session ─────
+            $activeFilters = json_decode(session('excel_active_filters_json', '{}'), true) ?: [];
+            $displayFilterMap = session('excel_display_filter_map', []);
+            $normalizedActiveFilters = [];
+
+            foreach ($activeFilters as $displayIndex => $values) {
+                $mappedIndex = $displayFilterMap[$displayIndex] ?? $displayIndex;
+                $normalizedActiveFilters[(int) $mappedIndex] = array_values((array) $values);
+            }
+
+            ksort($normalizedActiveFilters);
+
+            // ── Update job state dengan full params dan headers ────────
+            try {
+                $this->excelImportJobService()->putImportJobState($jobId, [
+                    'params' => [
+                        'header_index' => $headerIndex,
+                        'table_name' => $tableName,
+                        'file_path' => $relativePath,
+                        'staged_csv_path' => $stagedCsvPath !== '' && file_exists($stagedCsvPath) ? $stagedCsvPath : null,
+                        'active_filters' => $normalizedActiveFilters,
+                        'total_rows' => $totalRows,
+                        'delimiter' => $delimiter ?? null,
+                        'manual_kanca' => $tableName === 'rka' ? trim((string) session('excel_manual_kanca', '')) : null,
+                        'manual_periode' => $tableName === 'rka' ? trim((string) session('excel_manual_periode', '')) : null,
+                        'derived_kanca' => $tableName === 'rka' ? trim((string) session('excel_derived_kanca', '')) : null,
+                        'derived_tahun' => $tableName === 'rka' ? trim((string) session('excel_derived_tahun', '')) : null,
+                        'disable_inline_fallback' => $disableInlineFallback,
+                        'job_id' => $jobId,
+                    ],
+                    'headers' => $normalizedHeadersForSession,
+                ]);
+            } catch (\Throwable $e) {
+                Log::error('initializeQueuedImportJobForExecution: Gagal update job state', [
+                    'job_id' => $jobId,
+                    'exception' => $e::class,
+                    'message' => $e->getMessage(),
+                ]);
+                return false;
+            }
+
+            // ── Update job total_files dengan data rows count ──────────
+            try {
+                $this->progressService()->updateJob($jobId, ['total_files' => $dataRowsCount]);
+            } catch (\Throwable $e) {
+                Log::error('initializeQueuedImportJobForExecution: Gagal update job total_files', [
+                    'job_id' => $jobId,
+                    'data_rows_count' => $dataRowsCount,
+                    'exception' => $e::class,
+                    'message' => $e->getMessage(),
+                ]);
+                return false;
+            }
+
+            // ── Update progress status ────────────────────────────────
+            try {
+                $this->progressService()->markQueued($jobId, [
+                    'status' => 'queued',
+                    'phase' => 'polars',
+                    'mode' => 'polars',
+                    'percent' => 2,
+                    'message' => 'Fase Polars siap diproses.',
+                    'total_rows' => (int) $totalRows,
+                    'processed_rows' => 0,
+                ]);
+            } catch (\Throwable $e) {
+                Log::error('initializeQueuedImportJobForExecution: Gagal update progress', [
+                    'job_id' => $jobId,
+                    'exception' => $e::class,
+                    'message' => $e->getMessage(),
+                ]);
+                return false;
+            }
+
+            Log::info('initializeQueuedImportJobForExecution: Berhasil', [
+                'job_id' => $jobId,
+                'table_name' => $tableName,
+                'header_index' => $headerIndex,
+                'total_rows' => $totalRows,
+            ]);
+
+            return true;
+        } catch (\Throwable $e) {
+            Log::error('initializeQueuedImportJobForExecution: Exception tidak terduga', [
+                'job_id' => $jobId,
+                'exception' => $e::class,
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            return false;
+        }
+    }
+
     public function initExcelImport(Request $request)
     {
         ini_set('memory_limit', '512M');
@@ -7982,229 +8321,8 @@ class ImportExcelController extends Controller
             return $schemaValidationResponse;
         }
 
-        $previewState = $this->excelImportJobService()->getPreviewState($request->input('preview_state_key'));
-        $previewMeta = !empty($previewState['previewMeta'])
-            ? (array) $previewState['previewMeta']
-            : session('excel_preview_meta', []);
-        $disableInlineFallback = $tableName === 'lw325_ph';
-        $previewPath = urldecode((string) ($previewMeta['path'] ?? ''));
-        $stagedCsvPath = (string) ($previewMeta['staged_csv_path'] ?? '');
-        $previewHeaders = (array) ($previewMeta['normalized_headers'] ?? []);
-        $sourceHeaders = (array) ($previewMeta['source_headers'] ?? $previewHeaders);
-        $previewTotalRows = isset($previewMeta['total_rows']) ? (int) $previewMeta['total_rows'] : null;
-        $previewDelimiter = isset($previewMeta['delimiter']) ? (string) $previewMeta['delimiter'] : null;
-
-        if ($previewPath === $relativePath && !empty($previewHeaders) && array_key_exists('header_index', $previewMeta)) {
-            $headerIndex = (int) $previewMeta['header_index'];
-            $sourceHeaders = $this->resolveSourceHeadersForImport($path, $headerIndex, $sourceHeaders);
-            $activeFilters = json_decode($request->active_filters_json ?? '{}', true) ?: [];
-            $displayFilterMap = !empty($previewState['displayFilterMap'])
-                ? (array) $previewState['displayFilterMap']
-                : session('excel_display_filter_map', []);
-            $normalizedActiveFilters = [];
-
-            foreach ($activeFilters as $displayIndex => $values) {
-                $mappedIndex = $displayFilterMap[$displayIndex] ?? $displayIndex;
-                $normalizedActiveFilters[(int) $mappedIndex] = array_values((array) $values);
-            }
-
-            ksort($normalizedActiveFilters);
-
-            if (($this->isSsaSimpananTable($tableName) || $this->isSsaPinjamanTable($tableName)) && !$this->isCsvFile($path)) {
-                if ($stagedCsvPath !== '' && file_exists($stagedCsvPath)) {
-                    @unlink($stagedCsvPath);
-                }
-
-                $stageResult = $this->stageExcelToCsv(
-                    static function (string $event, array $data): void {
-                        // preview-init phase does not stream progress
-                    },
-                    $path,
-                    $headerIndex,
-                    $sourceHeaders,
-                    $tableName
-                );
-
-                if (!empty($stageResult['staged_csv_path']) && file_exists((string) $stageResult['staged_csv_path'])) {
-                    $stagedCsvPath = (string) $stageResult['staged_csv_path'];
-                    $previewTotalRows = max(1, ((int) ($stageResult['total_rows'] ?? 0)) + 1);
-                    $previewDelimiter = ',';
-                }
-            }
-
-            session([
-                'excel_headers'        => $sourceHeaders,
-                'excel_preview_meta'   => [
-                    'path' => $relativePath,
-                    'staged_csv_path' => $stagedCsvPath !== '' && file_exists($stagedCsvPath) ? $stagedCsvPath : null,
-                    'header_index' => $headerIndex,
-                    'normalized_headers' => $previewHeaders,
-                    'source_headers' => $sourceHeaders,
-                    'total_rows' => $previewTotalRows,
-                    'delimiter' => $previewDelimiter,
-                ],
-                'excel_import_params'  => [
-                    'header_index'   => $headerIndex,
-                    'table_name'     => $tableName,
-                    'file_path'      => $relativePath,
-                    'staged_csv_path' => $stagedCsvPath !== '' && file_exists($stagedCsvPath) ? $stagedCsvPath : null,
-                    'active_filters' => $normalizedActiveFilters,
-                    'total_rows'     => $previewTotalRows,
-                    'delimiter'      => $previewDelimiter,
-                    'manual_kanca'   => $tableName === 'rka' ? trim((string) session('excel_manual_kanca', '')) : null,
-                    'manual_periode' => trim((string) session('excel_manual_periode', '')),
-                    'disable_inline_fallback' => $disableInlineFallback,
-                ],
-            ]);
-
-            $jobId = $this->excelImportJobService()->createImportJobRecord((int) $idReport, $path, 0, [
-                'controller' => static::class,
-                'mode' => 'preview_init',
-                'table_name' => $tableName,
-                'header_index' => $headerIndex,
-                'selected_columns' => $normalizedActiveFilters,
-                'file_path' => $relativePath,
-            ]);
-
-            session([
-                'excel_import_params' => array_merge(session('excel_import_params', []), [
-                    'job_id' => $jobId,
-                ]),
-            ]);
-
-            $this->excelImportJobService()->putImportJobState($jobId, [
-                'params' => [
-                    'header_index'   => $headerIndex,
-                    'table_name'     => $tableName,
-                    'file_path'      => $relativePath,
-                    'staged_csv_path' => $stagedCsvPath !== '' && file_exists($stagedCsvPath) ? $stagedCsvPath : null,
-                    'active_filters' => $normalizedActiveFilters,
-                    'total_rows'     => $previewTotalRows,
-                    'delimiter'      => $previewDelimiter,
-                    'manual_kanca'   => $tableName === 'rka' ? trim((string) session('excel_manual_kanca', '')) : null,
-                    'manual_periode' => trim((string) session('excel_manual_periode', '')),
-                    'disable_inline_fallback' => $disableInlineFallback,
-                    'job_id'         => $jobId,
-                ],
-                'headers' => $sourceHeaders,
-            ]);
-            $this->progressService()->markQueued($jobId, [
-                'status' => 'queued',
-                'phase' => 'polars',
-                'mode' => 'polars',
-                'percent' => 0,
-                'message' => 'Fase Polars siap diproses.',
-                'total_rows' => (int) ($previewTotalRows ?? 0),
-                'processed_rows' => 0,
-            ]);
-
-            return response()->json([
-                'status'       => 'success',
-                'job_id'       => $jobId,
-                'total_rows'   => 0,
-                'header_index' => $headerIndex,
-                'table_name'   => $tableName,
-                'file_path'    => $relativePath,
-            ]);
-        }
-
-        // ── Coba Python dulu (openpyxl read-only, jauh lebih cepat) ──────────
-        $headerIndex = null;
-        $totalRows   = 0;
-        $sheet       = null;
-        $delimiter   = null;
-
-        if ($this->isCsvFile($path)) {
-            $delimiter = $previewDelimiter !== null && $previewDelimiter !== ''
-                ? $previewDelimiter
-                : $this->detectCsvDelimiter($path);
-            $handle = @fopen($path, 'r');
-
-            if (!$handle) {
-                return response()->json(['status' => 'error', 'text' => 'Gagal membuka file CSV.']);
-            }
-
-            while (($row = $this->readCsvRecord($handle, $delimiter)) !== false) {
-
-                if ($headerIndex === null) {
-                    $rowUpper = array_map(fn($v) => strtoupper(trim((string) $v)), $row);
-                    if ($this->detectHeaderIndex([$row], $tableName) === 0) {
-                        $headerIndex = $totalRows;
-                        $sheet = [];
-                        $sheet[$headerIndex] = $this->isDailyLoanActive()
-                            ? self::DAILY_LOAN_SOURCE_HEADERS
-                            : $row;
-                    }
-                }
-
-                $totalRows++;
-            }
-
-            fclose($handle);
-        } else {
-            $pythonResult = $this->detectHeaderViaPython($path);
-
-            if ($pythonResult !== null) {
-                // ── Python berhasil: TIDAK perlu buka file dengan PhpSpreadsheet sama sekali ──
-                $headerIndex  = $pythonResult['header_index'];
-                $totalRows    = $pythonResult['total_rows'];
-                $headerValues = $pythonResult['header_values'];  // array nama kolom dari Python
-
-                // Bangun $sheet[$headerIndex] dari header_values yang dikembalikan Python
-                // agar kompatibel dengan kode di bawah yang membaca $sheet[$headerIndex]
-                $sheet = [];
-                $sheet[$headerIndex] = $headerValues;
-
-            } else {
-                // ── Fallback: PhpSpreadsheet (untuk file kecil / Python tidak tersedia) ──
-                Log::info('initExcelImport: Python tidak tersedia, fallback ke PhpSpreadsheet.');
-
-                $reader = IOFactory::createReaderForFile($path);
-                $reader->setReadDataOnly(true);
-                $reader->setReadEmptyCells(false);
-
-                $chunkFilter = new ChunkReadFilter();
-                $chunkFilter->setRows(1, 200);
-                $reader->setReadFilter($chunkFilter);
-
-                $spreadsheet = $reader->load($path);
-                $sheet = $spreadsheet->getActiveSheet()->toArray(null, true, true, false);
-                $spreadsheet->disconnectWorksheets();
-                unset($spreadsheet);
-
-                $headerIndex = $this->detectHeaderIndex($sheet, $tableName);
-
-                if ($headerIndex === null) {
-                    return response()->json(['status' => 'error', 'text' => $this->headerNotFoundMessage($tableName)]);
-                }
-
-                $worksheetInfo = $reader->listWorksheetInfo($path);
-                $totalRows     = $worksheetInfo[0]['totalRows'];
-            }
-        }
-
-        if ($headerIndex === null) {
-            return response()->json(['status' => 'error', 'text' => $this->headerNotFoundMessage($tableName)]);
-        }
-
-        if ($this->isCsvFile($path)) {
-            $totalRows = $this->estimateCsvImportTotalRows($path, (int) $headerIndex);
-        }
-
-        $dataRowsCount = max(0, $totalRows - ($headerIndex + 1));
-
-        // Ambil nama kolom dari baris header
-        $rawHeaders = $sheet[$headerIndex] ?? [];
-        $normalizedHeadersForSession = [];
-        foreach ($rawHeaders as $i => $h) {
-            $normalizedHeadersForSession[$i] = !empty(trim((string)$h)) ? trim((string)$h) : 'COL_' . $i;
-        }
-        $normalizedHeadersForSession = array_values($this->resolveImportStrategy($tableName)->transformHeaders($normalizedHeadersForSession));
-
         $activeFilters = json_decode($request->active_filters_json ?? '{}', true) ?: [];
-        $displayFilterMap = !empty($previewState['displayFilterMap'])
-            ? (array) $previewState['displayFilterMap']
-            : session('excel_display_filter_map', []);
+        $displayFilterMap = session('excel_display_filter_map', []);
         $normalizedActiveFilters = [];
 
         foreach ($activeFilters as $displayIndex => $values) {
@@ -8214,39 +8332,49 @@ class ImportExcelController extends Controller
 
         ksort($normalizedActiveFilters);
 
-        $mustRefreshStagedCsv = $this->isSsaSimpananTable($tableName) || $this->isSsaPinjamanTable($tableName);
+        $disableInlineFallback = $tableName === 'lw325_ph';
 
-        if (!$this->isCsvFile($path) && ($mustRefreshStagedCsv || $stagedCsvPath === '' || !file_exists($stagedCsvPath))) {
-            if ($mustRefreshStagedCsv && $stagedCsvPath !== '' && file_exists($stagedCsvPath)) {
-                @unlink($stagedCsvPath);
-                $stagedCsvPath = '';
-            }
+        // ────────────────────────────────────────────────────────────────
+        // UNIFIED ASYNC OPTIMIZATION: Deteksi header dilakukan di job execution
+        // Berlaku untuk SEMUA table: Simpanan, Pinjaman, Daily Loan, dll
+        // ────────────────────────────────────────────────────────────────
 
-            $stageResult = $this->stageExcelToCsv(
-                static function (string $event, array $data): void {
-                    // init phase does not stream progress
-                },
-                $path,
-                $headerIndex,
-                $normalizedHeadersForSession,
-                $tableName
-            );
-
-            if (!empty($stageResult['staged_csv_path']) && file_exists((string) $stageResult['staged_csv_path'])) {
-                $stagedCsvPath = (string) $stageResult['staged_csv_path'];
-                $totalRows = max(1, ((int) ($stageResult['total_rows'] ?? 0)) + 1);
-                $delimiter = ',';
-            }
-        }
-
-        $jobId = $this->excelImportJobService()->createImportJobRecord((int) $idReport, $path, $dataRowsCount, [
+        // Create job record dengan status 'queued' dan MINIMAL params
+        $jobId = $this->excelImportJobService()->createImportJobRecord((int) $idReport, $path, 0, [
             'controller' => static::class,
-            'mode' => 'previews',
+            'mode' => 'import_optimized',
             'table_name' => $tableName,
             'file_path' => $relativePath,
-            'header_index' => $headerIndex,
-            'active_filters_hash' => sha1(json_encode($normalizedActiveFilters)),
-            'normalized_headers_hash' => sha1(json_encode($normalizedHeadersForSession)),
+        ]);
+
+        // Set minimal job state untuk digunakan di import execution
+        $this->excelImportJobService()->putImportJobState($jobId, [
+            'params' => [
+                'table_name' => $tableName,
+                'file_path' => $relativePath,
+                'active_filters' => $normalizedActiveFilters,
+                'manual_kanca' => $tableName === 'rka' ? trim((string) session('excel_manual_kanca', '')) : null,
+                'manual_periode' => $tableName === 'rka' ? trim((string) session('excel_manual_periode', '')) : null,
+                'derived_kanca' => $tableName === 'rka' ? trim((string) session('excel_derived_kanca', '')) : null,
+                'derived_tahun' => $tableName === 'rka' ? trim((string) session('excel_derived_tahun', '')) : null,
+                'disable_inline_fallback' => $disableInlineFallback,
+                'job_id' => $jobId,
+            ],
+            'headers' => [], // Will be populated during initialization
+        ]);
+
+        // Store active filters di session untuk diambil saat initialization
+        session(['excel_active_filters_json' => $request->active_filters_json ?? '{}']);
+
+        // Queue job dengan status 'queued' tanpa menunggu header detection
+        $this->progressService()->markQueued($jobId, [
+            'status' => 'queued',
+            'phase' => 'polars',
+            'mode' => 'polars',
+            'percent' => 0,
+            'message' => 'Job masuk antrian. Menyiapkan import...',
+            'total_rows' => 0,
+            'processed_rows' => 0,
         ]);
 
         session([
@@ -8255,68 +8383,11 @@ class ImportExcelController extends Controller
             ]),
         ]);
 
-        session([
-            'excel_headers'        => $normalizedHeadersForSession,
-            'excel_preview_meta'   => [
-                'path' => $relativePath,
-                'staged_csv_path' => $stagedCsvPath !== '' && file_exists($stagedCsvPath) ? $stagedCsvPath : null,
-                'header_index' => $headerIndex,
-                'normalized_headers' => $normalizedHeadersForSession,
-                'source_headers' => $normalizedHeadersForSession,
-                'total_rows' => $totalRows,
-                'delimiter' => $delimiter ?? null,
-            ],
-            'excel_import_params'  => [
-                'header_index'   => $headerIndex,
-                'table_name'     => $tableName,
-                'file_path'      => $relativePath,
-                'staged_csv_path' => $stagedCsvPath !== '' && file_exists($stagedCsvPath) ? $stagedCsvPath : null,
-                'active_filters' => $normalizedActiveFilters,
-                'total_rows'     => $totalRows,
-                'delimiter'      => $delimiter ?? null,
-                'manual_kanca'   => $tableName === 'rka' ? trim((string) session('excel_manual_kanca', '')) : null,
-                'manual_periode' => $tableName === 'rka' ? trim((string) session('excel_manual_periode', '')) : null,
-                'derived_kanca'  => $tableName === 'rka' ? trim((string) session('excel_derived_kanca', '')) : null,
-                'derived_tahun'  => $tableName === 'rka' ? trim((string) session('excel_derived_tahun', '')) : null,
-                'disable_inline_fallback' => $disableInlineFallback,
-                'job_id'         => $jobId,
-            ],
-        ]);
-        $this->excelImportJobService()->putImportJobState($jobId, [
-            'params' => [
-                'header_index'   => $headerIndex,
-                'table_name'     => $tableName,
-                'file_path'      => $relativePath,
-                'staged_csv_path' => $stagedCsvPath !== '' && file_exists($stagedCsvPath) ? $stagedCsvPath : null,
-                'active_filters' => $normalizedActiveFilters,
-                'total_rows'     => $totalRows,
-                'delimiter'      => $delimiter ?? null,
-                'manual_kanca'   => $tableName === 'rka' ? trim((string) session('excel_manual_kanca', '')) : null,
-                'manual_periode' => $tableName === 'rka' ? trim((string) session('excel_manual_periode', '')) : null,
-                'derived_kanca'  => $tableName === 'rka' ? trim((string) session('excel_derived_kanca', '')) : null,
-                'derived_tahun'  => $tableName === 'rka' ? trim((string) session('excel_derived_tahun', '')) : null,
-                'disable_inline_fallback' => $disableInlineFallback,
-                'job_id'         => $jobId,
-            ],
-            'headers' => $normalizedHeadersForSession,
-        ]);
-        $this->progressService()->markQueued($jobId, [
-            'status' => 'queued',
-            'phase' => 'polars',
-            'mode' => 'polars',
-            'percent' => 0,
-            'message' => 'Fase Polars siap diproses.',
-            'total_rows' => (int) $totalRows,
-            'processed_rows' => 0,
-        ]);
-
+        // Return response IMMEDIATELY dengan job_id, tanpa menunggu header detection
         return response()->json([
-            'status'       => 'success',
-            'job_id'       => $jobId,
-            'total_rows'   => $totalRows,
-            'header_index' => $headerIndex,
-            'table_name'   => $tableName,
-            'file_path'    => $relativePath,
+            'status' => 'success',
+            'job_id' => $jobId,
+            'message' => 'Job import berhasil di-queue. Siap diproses.',
         ]);
     }
 
@@ -8346,6 +8417,15 @@ class ImportExcelController extends Controller
             null,
             'excel_stage_config_'
         );
+    }
+
+    private function shouldDeferExcelStagingToQueue(string $tableName, string $path): bool
+    {
+        if ($this->isCsvFile($path)) {
+            return false;
+        }
+
+        return $this->isSsaSimpananTable($tableName) || $this->isSsaPinjamanTable($tableName);
     }
 
     private function tryPythonBulkLoad(
@@ -8709,8 +8789,8 @@ class ImportExcelController extends Controller
                 // OPTIMIZED: Buffer rows for ID allocation and then batch writes
                 $batchFinalRows[] = $finalRow;
 
-                // OPTIMIZED: Process batch every 1000 rows
-                if (count($batchFinalRows) >= 1000) {
+                // OPTIMIZED: Process batch every 5000 rows (5x increase for better throughput)
+                if (count($batchFinalRows) >= 5000) {
                     $this->flushStagedCsvWriteBuffer(
                         $outputHandle,
                         $batchFinalRows,
@@ -8724,10 +8804,10 @@ class ImportExcelController extends Controller
 
                 $rowsDone++;
 
-                // OPTIMIZED: Reduce progress check frequency (dari per-row ke per-N-rows)
+                // OPTIMIZED: Reduce progress check frequency (from per-500-rows to per-2000-rows)
                 $now = microtime(true);
-                $shouldSendProgress = $rowsDone - $lastProgressAt >= $stagedProgressEveryRows
-                    || ($rowsDone > 0 && ($now - $lastProgressWallClock) >= 2.0);
+                $shouldSendProgress = $rowsDone - $lastProgressAt >= max(2000, $stagedProgressEveryRows * 4)
+                    || ($rowsDone > 0 && ($now - $lastProgressWallClock) >= 3.0);
 
                 if ($shouldSendProgress) {
                     $lastProgressAt = $rowsDone;
@@ -9249,6 +9329,7 @@ class ImportExcelController extends Controller
             'detect_csv_delimiter' => fn(string $path) => $this->detectCsvDelimiter($path),
             'count_csv_data_rows' => fn(string $path, ?string $tableName = null) => $this->countCsvDataRows($path, $tableName),
             'resolve_csv_data_row_estimate' => fn(?int $totalRows, int $headerIndex) => $this->resolveCsvDataRowEstimate($totalRows, $headerIndex),
+            'stage_excel_to_csv' => fn($send, string $sourcePath, int $headerIndex, array $normalizedHeaders, string $tableName) => $this->stageExcelToCsv($send, $sourcePath, $headerIndex, $normalizedHeaders, $tableName),
             'run_csv_pipeline' => fn(array $payload) => $this->pipelineService()->runCsvPipeline($payload),
             'process_daily_loan_direct_csv_stream' => fn($send, string $workingPath, string $tableName, array $normalizedHeaders, int $jobId, int $totalDataRows, ?string $delimiter, array $importOptions = []) => $this->processDailyLoanDirectCsvStream($send, $workingPath, $tableName, $normalizedHeaders, $jobId, $totalDataRows, $delimiter, $importOptions),
             'process_daily_loan_bulk_csv_stream' => fn($send, string $workingPath, string $tableName, array $normalizedHeaders, array $activeFilters, int $jobId, int $totalDataRows, ?string $delimiter, array $importOptions = []) => $this->processFastPathBulkCsvStream($send, $workingPath, $tableName, $normalizedHeaders, $activeFilters, $jobId, $totalDataRows, $delimiter, $importOptions),

@@ -483,6 +483,7 @@
                         </tfoot>
                     </table>
                 </div>
+                <div id="dormantPaginationContainer" style="margin-top: 1.5rem;"></div>
             </div>
         </div>
     </div>
@@ -532,6 +533,11 @@ document.addEventListener('DOMContentLoaded', function () {
     let unitOptions = [];
     let selectedBranches = Array.isArray(initialBranches) ? initialBranches : [];
     let selectedUnits = Array.isArray(initialUnits) ? initialUnits : [];
+    
+    // Pagination state
+    let allRows = [];
+    const ROWS_PER_PAGE = 25;
+    let currentPage = 1;
 
     // ────────────────────── Utilities ──────────────────────
     function appendArrayParams(params, key, values) {
@@ -565,14 +571,22 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     // ────────────────────── Rendering ──────────────────────
-    function renderRows(rows) {
+    function renderRowsPage(rows, pageNum = 1) {
+        allRows = rows;
+        currentPage = Math.max(1, Math.min(pageNum, Math.ceil((rows.length / ROWS_PER_PAGE) || 1)));
+        
         if (!rows || rows.length === 0) {
             tableBody.innerHTML = `<tr><td colspan="5" class="dormant-empty-state"><i class="fas fa-inbox fa-2x text-muted mb-3 opacity-50"></i><strong>Data tidak ditemukan</strong>Coba ubah periode atau filter branch office agar hasil report tersedia.</td></tr>`;
+            renderPagination(0);
             return;
         }
 
+        const startIdx = (currentPage - 1) * ROWS_PER_PAGE;
+        const endIdx = Math.min(startIdx + ROWS_PER_PAGE, rows.length);
+        const pageRows = rows.slice(startIdx, endIdx);
+
         const fragment = document.createDocumentFragment();
-        rows.forEach(row => {
+        pageRows.forEach(row => {
             const tr = document.createElement('tr');
             tr.innerHTML = `
                 <th>${row.branch || '-'}</th>
@@ -583,7 +597,87 @@ document.addEventListener('DOMContentLoaded', function () {
             `;
             fragment.appendChild(tr);
         });
+        tableBody.innerHTML = '';
         tableBody.appendChild(fragment);
+        renderPagination(rows.length);
+    }
+
+    function renderRows(rows) {
+        renderRowsPage(rows, 1);
+    }
+
+    function renderPagination(totalRows) {
+        if (totalRows === 0) {
+            const paginationContainer = document.getElementById('dormantPaginationContainer');
+            if (paginationContainer) {
+                paginationContainer.innerHTML = '';
+            }
+            return;
+        }
+
+        const totalPages = Math.ceil(totalRows / ROWS_PER_PAGE);
+        if (totalPages <= 1) {
+            const paginationContainer = document.getElementById('dormantPaginationContainer');
+            if (paginationContainer) {
+                paginationContainer.innerHTML = '';
+            }
+            return;
+        }
+
+        const paginationContainer = document.getElementById('dormantPaginationContainer');
+        if (!paginationContainer) return;
+
+        let paginationHtml = '<nav aria-label="Table Pagination" style="margin-top: 1rem;"><ul class="pagination mb-0" style="justify-content: center;">';
+        
+        // Previous button
+        paginationHtml += `<li class="page-item ${currentPage <= 1 ? 'disabled' : ''}">
+            <a class="page-link" href="#" data-page="${currentPage - 1}" ${currentPage <= 1 ? 'disabled' : ''}>← Sebelumnya</a>
+        </li>`;
+
+        // Page buttons
+        const maxPagesToShow = 5;
+        const startPage = Math.max(1, currentPage - Math.floor(maxPagesToShow / 2));
+        const endPage = Math.min(totalPages, startPage + maxPagesToShow - 1);
+
+        if (startPage > 1) {
+            paginationHtml += '<li class="page-item"><a class="page-link" href="#" data-page="1">1</a></li>';
+            if (startPage > 2) paginationHtml += '<li class="page-item disabled"><span class="page-link">...</span></li>';
+        }
+
+        for (let i = startPage; i <= endPage; i++) {
+            paginationHtml += `<li class="page-item ${i === currentPage ? 'active' : ''}">
+                <a class="page-link" href="#" data-page="${i}" ${i === currentPage ? 'aria-current="page"' : ''}>${i}</a>
+            </li>`;
+        }
+
+        if (endPage < totalPages) {
+            if (endPage < totalPages - 1) paginationHtml += '<li class="page-item disabled"><span class="page-link">...</span></li>';
+            paginationHtml += `<li class="page-item"><a class="page-link" href="#" data-page="${totalPages}">${totalPages}</a></li>`;
+        }
+
+        // Next button
+        paginationHtml += `<li class="page-item ${currentPage >= totalPages ? 'disabled' : ''}">
+            <a class="page-link" href="#" data-page="${currentPage + 1}" ${currentPage >= totalPages ? 'disabled' : ''}>Berikutnya →</a>
+        </li>`;
+
+        paginationHtml += '</ul></nav>';
+        paginationContainer.innerHTML = paginationHtml;
+
+        // Attach click handlers
+        paginationContainer.querySelectorAll('[data-page]').forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                if (e.target.closest('.disabled')) return;
+                const page = parseInt(e.target.dataset.page);
+                renderRowsPage(allRows, page);
+                renderPagination(allRows.length);
+                // Update badge with current page
+                const totalPages = Math.ceil(allRows.length / ROWS_PER_PAGE) || 1;
+                badge.textContent = `${badge.textContent.split('|')[0].trim()} | ${allRows.length} row${allRows.length !== 1 ? 's' : ''} (hal. ${currentPage}/${totalPages})`;
+                // Scroll to table
+                document.getElementById('dormantTableBody')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            });
+        });
     }
 
     function renderFoot(total = {}) {
@@ -630,6 +724,10 @@ document.addEventListener('DOMContentLoaded', function () {
         badge.textContent = '-';
         updateHeaders({});
         setOverlay('Siap Memuat Data', 'Pilih filter lalu klik Tampilkan Data.');
+        const paginationContainer = document.getElementById('dormantPaginationContainer');
+        if (paginationContainer) paginationContainer.innerHTML = '';
+        allRows = [];
+        currentPage = 1;
     }
 
     function renderHiddenInputs(container, name, values) {
@@ -884,7 +982,9 @@ document.addEventListener('DOMContentLoaded', function () {
             updateHeaders(payload.labels || {});
             activeMeta.textContent = formatDate(payload.effective_dates?.curr);
             comparisonMeta.textContent = formatDate(payload.effective_dates?.mtd);
-            badge.textContent = `${formatDate(payload.effective_dates?.curr)} | ${(payload.data || []).length || 0} row`;
+            const dataLength = (payload.data || []).length;
+            const totalPages = Math.ceil(dataLength / ROWS_PER_PAGE) || 1;
+            badge.textContent = `${formatDate(payload.effective_dates?.curr)} | ${dataLength} row${dataLength !== 1 ? 's' : ''} (hal. 1/${totalPages})`;
             hideOverlay();
 
             if (pushHistory) {

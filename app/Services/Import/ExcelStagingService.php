@@ -319,10 +319,10 @@ class ExcelStagingService
             $headerCount = max(1, count($normalizedHeaders));
             $writtenRows = 0;
             $processedRows = 0;
-            $progressEvery = 50000;
+            $progressEvery = 100000;
             $lastProgressAt = 0;
             $bufferSize = 0;
-            $maxBufferSize = 1048576; // 1MB buffer
+            $maxBufferSize = 4194304; // 4MB buffer (quadrupled for better throughput)
 
             while ($reader->read()) {
                 if ($reader->nodeType !== \XMLReader::ELEMENT || $reader->name !== 'row') {

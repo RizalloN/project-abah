@@ -415,7 +415,7 @@ class RekeningDormantController extends Controller
         ]));
 
         if ($this->hasDormantSnapshots($periods->all())) {
-            return $this->rememberPayload($cacheKey, now()->addMinutes(3), function () use (
+            return $this->rememberPayload($cacheKey, now()->addMinutes(10), function () use (
                 $periods,
                 $selectedBranchLabels,
                 $units,
@@ -471,7 +471,7 @@ class RekeningDormantController extends Controller
             }, $forceRefresh);
         }
 
-        return $this->rememberPayload($cacheKey, now()->addMinutes(3), function () use (
+        return $this->rememberPayload($cacheKey, now()->addMinutes(10), function () use (
             $periods,
             $selectedRawBranches,
             $rawBranchLookup,
@@ -567,7 +567,7 @@ class RekeningDormantController extends Controller
         ]));
 
         if ($this->hasDormantSnapshots($periods->all())) {
-            return $this->rememberPayload($cacheKey, now()->addMinutes(3), function () use (
+            return $this->rememberPayload($cacheKey, now()->addMinutes(10), function () use (
                 $periods,
                 $selectedBranchLabels,
                 $units,
@@ -590,7 +590,7 @@ class RekeningDormantController extends Controller
             }, $forceRefresh);
         }
 
-        return $this->rememberPayload($cacheKey, now()->addMinutes(3), function () use (
+        return $this->rememberPayload($cacheKey, now()->addMinutes(10), function () use (
             $periods,
             $selectedRawBranches,
             $units,
@@ -746,27 +746,48 @@ class RekeningDormantController extends Controller
 
         sort($periods);
 
-        $missingPeriods = collect($periods)
-            ->filter(function (string $period) {
-                return !DB::table(self::SNAPSHOT_TABLE)
-                    ->where('posisi', $period)
-                    ->exists();
-            })
-            ->values();
+        // OPTIMIZED: Batch check instead of individual queries
+        $cacheKey = 'rekening_dormant:snapshot_batch_check:v' . $this->reportCacheVersion() . ':' . md5(json_encode($periods));
+        $cachedResult = Cache::get($cacheKey);
+        
+        if ($cachedResult !== null) {
+            return (bool) $cachedResult;
+        }
 
+        // Single query to get all available periods at once
+        $availablePeriods = DB::table(self::SNAPSHOT_TABLE)
+            ->whereIn('posisi', $periods)
+            ->distinct('posisi')
+            ->pluck('posisi')
+            ->all();
+
+        $availablePeriodSet = array_flip($availablePeriods);
+        $missingPeriods = collect($periods)
+            ->filter(fn (string $p) => !isset($availablePeriodSet[$p]))
+            ->values()
+            ->all();
+
+        // If no missing periods, cache result and return true
+        if (empty($missingPeriods)) {
+            Cache::put($cacheKey, true, now()->addMinutes(30));
+            return true;
+        }
+
+        // Only process missing periods for auto-rebuild
         foreach ($missingPeriods as $missingPeriod) {
-            $cacheKey = 'rekening_dormant:snapshot_exists:v' . $this->reportCacheVersion() . ':' . $missingPeriod;
-            if (Cache::get($cacheKey) === true) {
+            $periodCacheKey = 'rekening_dormant:snapshot_exists:v' . $this->reportCacheVersion() . ':' . $missingPeriod;
+            if (Cache::get($periodCacheKey) === true) {
                 continue;
             }
 
             $hasSourceRows = DB::table('simpanan_multipn')
                 ->where('posisi', $missingPeriod)
                 ->where('status', '9')
+                ->limit(1)
                 ->exists();
 
             if (!$hasSourceRows) {
-                Cache::put($cacheKey, false, now()->addSeconds(30));
+                Cache::put($periodCacheKey, false, now()->addSeconds(30));
                 continue;
             }
 
@@ -795,13 +816,12 @@ class RekeningDormantController extends Controller
                 'job_dispatched' => $jobDispatched,
             ]);
 
-            Cache::put($cacheKey, false, now()->addSeconds(30));
+            Cache::put($periodCacheKey, false, now()->addSeconds(30));
         }
 
-        return DB::table(self::SNAPSHOT_TABLE)
-            ->whereIn('posisi', $periods)
-            ->distinct()
-            ->count('posisi') === count($periods);
+        $allExist = count($availablePeriods) === count($periods);
+        Cache::put($cacheKey, (int) $allExist, now()->addMinutes(5)); // Short TTL for incomplete sets
+        return $allExist;
     }
 
     private function buildLabels(?string $currentPeriod, ?string $mtdPeriod, ?string $ytdPeriod, ?string $yoyPeriod): array

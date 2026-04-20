@@ -298,7 +298,7 @@ def sanitize_source(
                 continue
 
             total_records += 1
-            if row_number % 25000 == 0:
+            if row_number % 50000 == 0:
                 send_progress(min(50, 5 + int((row_number / 250000) * 45)), f"Menyiapkan sanitasi CSV Daily Loan... ({row_number} record)")
 
             if not headers:

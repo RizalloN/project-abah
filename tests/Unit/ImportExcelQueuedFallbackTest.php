@@ -4,8 +4,10 @@ namespace Tests\Unit;
 
 use App\Http\Controllers\Import\ImportExcelController;
 use App\Services\Import\ExcelImportJobService;
+use App\Services\Import\ExcelQueuedImportService;
 use App\Services\Import\ImportExecutionService;
 use App\Services\Import\ImportProgressService;
+use App\Services\Import\SchemaIntrospectionService;
 use App\Services\Import\MySqlBulkLoadService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -18,6 +20,8 @@ class ImportExcelQueuedFallbackTest extends TestCase
     protected function tearDown(): void
     {
         Storage::disk('local')->delete('testing/queued_fallback_daily_loan.csv');
+        Storage::disk('local')->delete('testing/queued_fallback_ssa_pinjaman.xlsx');
+        Storage::disk('local')->delete('testing/queued_fallback_ssa_pinjaman_staged.csv');
         @rmdir(storage_path('app/private/testing'));
         Mockery::close();
 
@@ -301,5 +305,188 @@ class ImportExcelQueuedFallbackTest extends TestCase
 
         $this->assertTrue($controller->capturedForceDirectLoad);
         $this->assertSame('completed', $result['status']);
+    }
+
+    public function test_execute_queued_import_for_ssa_pinjaman_stages_excel_inside_worker_when_staged_csv_is_missing(): void
+    {
+        $relativePath = 'testing/queued_fallback_ssa_pinjaman.xlsx';
+        Storage::disk('local')->put($relativePath, 'placeholder excel payload');
+
+        $jobObject = (object) [
+            'id' => 99,
+            'status' => 'completed',
+            'total_success' => 1,
+            'total_failed' => 0,
+            'total_files' => 1,
+        ];
+
+        $service = new ExcelQueuedImportService();
+        $events = [];
+        $stageExcelToCsvCalled = false;
+        $stagedCsvStreamCalled = false;
+        $capturedStageSourcePath = '';
+        $capturedStagedCsvPath = '';
+
+        $result = $service->execute([
+            'job_id' => 99,
+            'params' => [
+                'job_id' => 99,
+                'file_path' => $relativePath,
+                'table_name' => 'ssa_pinjaman',
+                'header_index' => 0,
+                'active_filters' => [],
+                'total_rows' => 1,
+            ],
+            'headers' => ['SEGMENTASI', 'BAKI_DEBET'],
+        ], [
+            'resolve_import_strategy' => fn(string $tableName) => new class {
+                public function importMode(array $context = []): string
+                {
+                    return 'bulk_csv_staging';
+                }
+            },
+            'mark_failed' => function (int $jobId, string $message, int $success = 0, int $failed = 0): void {
+                $this->fail('Queued SSA staging should not fail: ' . $message);
+            },
+            'find_job' => fn(int $jobId) => $jobObject,
+            'update_job' => fn(int $jobId, array $attributes, ?array $progressPayload = null) => null,
+            'assert_transactional_table' => fn(string $tableName, string $context) => null,
+            'assert_duplicate_guard' => fn(string $tableName) => null,
+            'is_csv_file' => fn(string $path) => str_ends_with(strtolower($path), '.csv'),
+            'detect_csv_delimiter' => fn(string $path) => ',',
+            'count_csv_data_rows' => fn(string $path, ?string $tableName = null) => 1,
+            'resolve_csv_data_row_estimate' => fn(?int $totalRows, int $headerIndex) => max(0, (int) $totalRows - ($headerIndex + 1)),
+            'stage_excel_to_csv' => function (callable $send, string $path, int $headerIndex, array $normalizedHeaders, string $tableName) use (&$stageExcelToCsvCalled, &$capturedStageSourcePath): array {
+                $stageExcelToCsvCalled = true;
+                $capturedStageSourcePath = $path;
+                $generatedStagedCsvPath = storage_path('app/testing/queued_fallback_ssa_pinjaman_staged.csv');
+                file_put_contents($generatedStagedCsvPath, "SEGMENTASI,BAKI_DEBET\nKONSUMER,1000\n");
+
+                return [
+                    'staged_csv_path' => $generatedStagedCsvPath,
+                    'total_rows' => 1,
+                ];
+            },
+            'run_csv_pipeline' => fn(array $payload) => (new \App\Services\Import\ImportPipelineService())->runCsvPipeline($payload),
+            'process_daily_loan_direct_csv_stream' => fn($send, string $workingPath, string $tableName, array $normalizedHeaders, int $jobId, int $totalDataRows, ?string $delimiter, array $importOptions = []) => false,
+            'process_daily_loan_bulk_csv_stream' => fn($send, string $workingPath, string $tableName, array $normalizedHeaders, array $activeFilters, int $jobId, int $totalDataRows, ?string $delimiter, array $importOptions = []) => false,
+            'process_staged_csv_stream' => function (
+                callable $send,
+                string $csvPath,
+                string $tableName,
+                array $activeFilters,
+                array $normalizedHeaders,
+                int $jobId,
+                ?int $estimatedTotalRows = null,
+                ?string $delimiter = null,
+                bool $forceDirectLoad = false,
+                ?callable $beforeDirectLoad = null,
+                array $importOptions = []
+            ) use (&$stagedCsvStreamCalled, &$capturedStagedCsvPath): bool {
+                $stagedCsvStreamCalled = true;
+                $capturedStagedCsvPath = $csvPath;
+
+                $send('complete', [
+                    'total_success' => 1,
+                    'total_failed' => 0,
+                    'total_rows' => 1,
+                ]);
+
+                return true;
+            },
+            'try_python_bulk_load' => fn($send, string $path, int $headerIndex, string $tableName, array $activeFilters, array $normalizedHeaders, int $jobId, array $importOptions = []) => false,
+            'try_python_gpu' => fn($send, string $path, int $headerIndex, string $tableName, array $activeFilters, array $normalizedHeaders, int $jobId, array $importOptions = []) => false,
+            'build_import_context' => fn(string $tableName, array $normalizedHeaders, array $activeFilters = [], array $importOptions = []) => [],
+            'map_excel_row_for_insert' => fn(array $row, array $normalizedHeaders, array $context, string $timestamp) => [],
+            'fallback_insert_batch_size' => fn(): int => 1000,
+            'insert_batch_with_fallback' => function (array $batch, string $tableName, int &$totalInserted, int &$totalFailed): void {
+            },
+            'cleanup_successful_import_artifacts' => fn(int $jobId, string $relativePath, string $path, array $extraPaths = []) => null,
+            'cleanup_service_dispatch_imported_job_sync' => fn(int $jobId, string $status) => null,
+        ], function (string $event, array $payload) use (&$events): void {
+            $events[] = [$event, $payload];
+        });
+
+        $this->assertTrue($stageExcelToCsvCalled);
+        $this->assertTrue($stagedCsvStreamCalled);
+        $this->assertSame(Storage::path($relativePath), $capturedStageSourcePath);
+        $this->assertStringEndsWith('queued_fallback_ssa_pinjaman_staged.csv', $capturedStagedCsvPath);
+        $this->assertSame('progress', $events[0][0] ?? null);
+        $this->assertStringContainsString('Menyiapkan CSV staging dari Excel', (string) ($events[0][1]['message'] ?? ''));
+        $this->assertSame('completed', $result['status']);
+        $this->assertSame(1, $result['total_success']);
+        $this->assertSame(0, $result['total_failed']);
+    }
+
+    public function test_initialize_queued_import_job_for_execution_uses_import_job_state_service_for_ssa_pinjaman_csv(): void
+    {
+        $relativePath = 'testing/queued_init_ssa_pinjaman.csv';
+        Storage::disk('local')->put(
+            $relativePath,
+            "Month_Day_Year_of_Periode,Nama Cabang,Nama Uker,Produk,Produk_Dashboard,Segmen,Segmen Lama,Segmen_2025,Segmen_Dashboard,Kolektabilitas One Obligor,Flag Restruk,Baki Debet,Jumlah Debitur Aktif,Jumlah Rekening Aktif\n" .
+            "2026-04-14,00045 -- KC Madiun (Konsolidasi-MB),00045 -- KC Madiun,Kecil Komersial,Commercial,SME,Ritel,Medium,Small,1,Y,30266179892.41,9,11\n"
+        );
+
+        $schemaService = Mockery::mock(SchemaIntrospectionService::class);
+        $schemaService->shouldReceive('hasTable')->with('ssa_pinjaman')->andReturn(true);
+        $schemaService->shouldReceive('getColumnListing')->with('ssa_pinjaman')->andReturn([
+            'id',
+            'month_day_year_of_periode',
+            'nama_cabang',
+            'nama_uker',
+            'produk',
+            'produk_dashboard',
+            'segmen',
+            'segmen_lama',
+            'segmen_2025',
+            'segmen_dashboard',
+            'kolektabilitas_one_obligor',
+            'flag_restruk',
+            'baki_debet',
+            'jumlah_debitur_aktif',
+            'jumlah_rekening_aktif',
+        ]);
+        $this->app->instance(SchemaIntrospectionService::class, $schemaService);
+
+        $jobObject = new class {
+            public int $id = 123;
+            public int $status = 0;
+            public int $total_success = 0;
+            public int $total_failed = 0;
+            public int $total_files = 0;
+
+            public function update(array $attributes): void
+            {
+                foreach ($attributes as $key => $value) {
+                    $this->{$key} = $value;
+                }
+            }
+        };
+
+        $progressService = Mockery::mock(ImportProgressService::class);
+        $progressService->shouldReceive('findJob')->once()->with(123)->andReturn($jobObject);
+        $progressService->shouldReceive('markQueued')->once();
+        $this->app->instance(ImportProgressService::class, $progressService);
+
+        $jobService = Mockery::mock(ExcelImportJobService::class);
+        $jobService->shouldReceive('getImportJobState')
+            ->once()
+            ->with(123)
+            ->andReturn([
+                'params' => [
+                    'file_path' => $relativePath,
+                    'table_name' => 'ssa_pinjaman',
+                    'disable_inline_fallback' => false,
+                ],
+            ]);
+        $jobService->shouldReceive('putImportJobState')->once();
+        $this->app->instance(ExcelImportJobService::class, $jobService);
+
+        $controller = new ImportExcelController();
+
+        $result = $controller->initializeQueuedImportJobForExecution(123);
+
+        $this->assertTrue($result);
+        $this->assertSame(0, $jobObject->status);
     }
 }

@@ -281,8 +281,59 @@ class ImportExecutionService
         $params = (array) ($state['params'] ?? []);
         $headers = array_values((array) ($state['headers'] ?? []));
 
+        // ── OPTIMIZATION: Initialize job jika belum sepenuhnya ready ──────
+        // Deteksi header dan staging CSV dilakukan ASYNC (dalam job execution)
+        // Berlaku untuk SEMUA table: Simpanan, Pinjaman, Daily Loan, dll
+        if ((empty($headers) || empty($params['header_index'] ?? null)) && !empty($params['file_path'])) {
+            $controllerClass = $this->resolveControllerClass($job);
+            /** @var ImportExcelController $controller */
+            $controller = app($controllerClass);
+
+            try {
+                $initResult = $controller->initializeQueuedImportJobForExecution($jobId);
+                
+                if (!$initResult) {
+                    Log::error('ImportExecutionService::run() initialization gagal', [
+                        'job_id' => $jobId,
+                        'table_name' => $params['table_name'] ?? 'unknown',
+                        'file_path' => $params['file_path'] ?? 'unknown',
+                    ]);
+
+                    $errorMsg = 'Gagal menginisialisasi import job. '
+                        . 'Kemungkinan: file tidak ditemukan, format header tidak sesuai, atau akses file ditolak. '
+                        . 'Silakan cek log untuk detail. (Job ID: ' . $jobId . ')';
+                    
+                    $this->progressService->markFailed($jobId, $errorMsg);
+                    $this->releaseDispatchMarker($jobId);
+                    return;
+                }
+            } catch (\Throwable $e) {
+                Log::error('ImportExecutionService::run() initialization exception', [
+                    'job_id' => $jobId,
+                    'exception' => $e::class,
+                    'message' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString(),
+                ]);
+
+                $errorMsg = 'Initialization error: ' . $e->getMessage() . ' (Job ID: ' . $jobId . ')';
+                $this->progressService->markFailed($jobId, $errorMsg);
+                $this->releaseDispatchMarker($jobId);
+                return;
+            }
+
+            // Refresh state setelah initialization
+            $state = $this->progressService->getJobState($jobId);
+            $params = (array) ($state['params'] ?? []);
+            $headers = array_values((array) ($state['headers'] ?? []));
+        }
+
         if ($params === [] || $headers === []) {
-            $this->progressService->markFailed($jobId, 'State import job hilang. Silakan ulangi import dari awal.');
+            Log::error('ImportExecutionService::run() state tidak lengkap setelah initialization', [
+                'job_id' => $jobId,
+                'has_params' => !empty($params),
+                'has_headers' => !empty($headers),
+            ]);
+            $this->progressService->markFailed($jobId, 'State import job hilang atau tidak valid. Silakan ulangi import dari awal.');
             $this->releaseDispatchMarker($jobId);
             return;
         }

@@ -271,7 +271,7 @@ def sanitize_source(
                 continue
 
             total_records += 1
-            if row_number % 25000 == 0:
+            if row_number % 50000 == 0:
                 elapsed = max(time.perf_counter() - start_time, 0.001)
                 processed_rows = max(0, total_records - 1)
                 speed = int(processed_rows / elapsed)

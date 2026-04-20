@@ -373,7 +373,11 @@ class ImportReportPhController extends Controller
         ?string $delimiter = null
     ): ?array {
         $pythonExe = $this->findPython();
-        $scriptPath = base_path('scripts/lw325_ph_polars_processor.py');
+        // OPTIMIZATION: Use optimized v3 script if available, fallback to v2
+        $scriptPath = base_path('scripts/lw325_ph_polars_processor_v3.py');
+        if (!file_exists($scriptPath)) {
+            $scriptPath = base_path('scripts/lw325_ph_polars_processor.py');
+        }
 
         if (!$pythonExe || !file_exists($scriptPath)) {
             return null;
@@ -420,8 +424,11 @@ class ImportReportPhController extends Controller
         $donePayload = null;
         $pythonError = null;
         $pythonProducedOutput = false;
+        // OPTIMIZATION: Track last update time to throttle progress updates
+        $lastProgressUpdate = microtime(true);
+        $progressThrottle = 0.1; // seconds
 
-        $processLine = static function (string $line) use ($send, &$donePayload, &$pythonError): void {
+        $processLine = static function (string $line) use ($send, &$donePayload, &$pythonError, &$lastProgressUpdate, $progressThrottle): void {
             $line = trim($line);
             if ($line === '') {
                 return;
@@ -437,7 +444,12 @@ class ImportReportPhController extends Controller
 
             if ($type === 'progress') {
                 if ($send !== null) {
-                    $send('progress', $data);
+                    // OPTIMIZATION: Throttle progress updates
+                    $now = microtime(true);
+                    if ($now - $lastProgressUpdate >= $progressThrottle) {
+                        $send('progress', $data);
+                        $lastProgressUpdate = $now;
+                    }
                 }
                 return;
             }
@@ -453,9 +465,12 @@ class ImportReportPhController extends Controller
         };
 
         try {
+            // OPTIMIZATION: Reduced sleep interval for faster response
+            $sleepInterval = 25000; // microseconds (reduced from 50000)
+            
             while (true) {
                 $status = proc_get_status($process);
-                $chunk = fread($pipes[1], 65536);
+                $chunk = fread($pipes[1], 131072); // Increased from 65536
 
                 if ($chunk !== false && $chunk !== '') {
                     $pythonProducedOutput = true;
@@ -471,7 +486,7 @@ class ImportReportPhController extends Controller
                     break;
                 }
 
-                usleep(50000);
+                usleep($sleepInterval);
             }
 
             $remaining = stream_get_contents($pipes[1]);

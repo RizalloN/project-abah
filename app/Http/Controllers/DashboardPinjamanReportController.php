@@ -364,11 +364,19 @@ class DashboardPinjamanReportController extends Controller
 
         $startedAt = microtime(true);
         $phPeriod = $this->resolvePhPeriod($selectedPeriod);
+        $useCurrentSnapshot = $this->shouldUseSnapshot($selectedPeriod, $filters);
+        $useComparisonSnapshot = $comparisonPeriod ? $this->shouldUseSnapshot($comparisonPeriod, $filters) : false;
         $bucketMap = [];
         $metricMap = [];
 
         // Movement comparison must stay database-side so large portfolios do not require PHP in-memory joins.
-        $matrixRowsRaw = $this->buildMovementMatrixAggregateQuery($selectedPeriod, $comparisonPeriod, $filters)->get();
+        $matrixRowsRaw = $this->buildMovementMatrixAggregateQuery(
+            $selectedPeriod,
+            $comparisonPeriod,
+            $filters,
+            $useCurrentSnapshot,
+            $useComparisonSnapshot
+        )->get();
         foreach ($matrixRowsRaw as $row) {
             $before = (string) ($row->before_bucket ?? 'New Account');
             $after = (string) ($row->after_bucket ?? '');
@@ -381,7 +389,14 @@ class DashboardPinjamanReportController extends Controller
             $bucketMap[$before][$after] = $amountCents;
         }
 
-        $metricRowsRaw = $this->buildMovementMetricAggregateQuery($selectedPeriod, $comparisonPeriod, $phPeriod, $filters)->get();
+        $metricRowsRaw = $this->buildMovementMetricAggregateQuery(
+            $selectedPeriod,
+            $comparisonPeriod,
+            $phPeriod,
+            $filters,
+            $useCurrentSnapshot,
+            $useComparisonSnapshot
+        )->get();
         foreach ($metricRowsRaw as $row) {
             $before = (string) ($row->before_bucket ?? 'New Account');
             $metric = (string) ($row->metric_type ?? '');
@@ -395,72 +410,54 @@ class DashboardPinjamanReportController extends Controller
         }
 
         $matrixRows = [];
+        $matrixGrandTotals = array_fill(0, count(self::QUALITY_BUCKETS), 0);
+        $metricNames = ['principal_reduction', 'suplesi', 'ph', 'lunas'];
+        $metricTotals = array_fill_keys($metricNames, 0);
+        $grandTotalCents = 0;
+
         foreach (self::BEFORE_ROWS as $beforeLabel) {
             $values = [];
-            foreach (self::QUALITY_BUCKETS as $afterLabel) {
-                $valueCents = $bucketMap[$beforeLabel][$afterLabel] ?? null;
-                $values[] = $valueCents !== null ? $this->centsToAmount($valueCents) : null;
+            $rowTotalCents = 0;
+            $rowMetrics = [];
+
+            foreach (self::QUALITY_BUCKETS as $index => $afterLabel) {
+                $valueCents = (int) ($bucketMap[$beforeLabel][$afterLabel] ?? 0);
+                $rowTotalCents += $valueCents;
+                $matrixGrandTotals[$index] += $valueCents;
+                $values[] = $valueCents > 0 ? $this->centsToAmount($valueCents) : null;
             }
 
-            $rowTotalCents = collect(self::QUALITY_BUCKETS)
-                ->sum(fn (string $afterLabel) => (int) ($bucketMap[$beforeLabel][$afterLabel] ?? 0));
+            foreach ($metricNames as $metricName) {
+                $metricCents = (int) ($metricMap[$beforeLabel][$metricName] ?? 0);
+                $metricTotals[$metricName] += $metricCents;
+                $rowMetrics[$metricName] = $metricCents > 0 ? $this->centsToAmount($metricCents) : null;
+            }
+
+            $grandTotalCents += $rowTotalCents;
 
             $matrixRows[] = [
                 'label' => $beforeLabel,
                 'values' => $values,
-                'metrics' => [
-                    'principal_reduction' => (($metricMap[$beforeLabel]['principal_reduction'] ?? 0) > 0)
-                        ? $this->centsToAmount((int) $metricMap[$beforeLabel]['principal_reduction'])
-                        : null,
-                    'suplesi' => (($metricMap[$beforeLabel]['suplesi'] ?? 0) > 0)
-                        ? $this->centsToAmount((int) $metricMap[$beforeLabel]['suplesi'])
-                        : null,
-                    'ph' => (($metricMap[$beforeLabel]['ph'] ?? 0) > 0)
-                        ? $this->centsToAmount((int) $metricMap[$beforeLabel]['ph'])
-                        : null,
-                    'lunas' => (($metricMap[$beforeLabel]['lunas'] ?? 0) > 0)
-                        ? $this->centsToAmount((int) $metricMap[$beforeLabel]['lunas'])
-                        : null,
-                ],
+                'metrics' => $rowMetrics,
                 'total' => $rowTotalCents > 0 ? $this->centsToAmount($rowTotalCents) : null,
             ];
         }
 
-        $matrixGrandTotals = [];
-        foreach (self::QUALITY_BUCKETS as $index => $unusedBucket) {
-            $columnTotalCents = collect(self::BEFORE_ROWS)
-                ->sum(fn (string $beforeLabel) => (int) ($bucketMap[$beforeLabel][self::QUALITY_BUCKETS[$index]] ?? 0));
-
-            $matrixGrandTotals[] = $columnTotalCents > 0 ? $this->centsToAmount($columnTotalCents) : null;
-        }
-
         $grandTotals = [
-            'matrix' => $matrixGrandTotals,
-            'metrics' => [
-                'principal_reduction' => ($this->sumMetricCents($metricMap, 'principal_reduction') > 0)
-                    ? $this->centsToAmount($this->sumMetricCents($metricMap, 'principal_reduction'))
-                    : null,
-                'suplesi' => ($this->sumMetricCents($metricMap, 'suplesi') > 0)
-                    ? $this->centsToAmount($this->sumMetricCents($metricMap, 'suplesi'))
-                    : null,
-                'ph' => ($this->sumMetricCents($metricMap, 'ph') > 0)
-                    ? $this->centsToAmount($this->sumMetricCents($metricMap, 'ph'))
-                    : null,
-                'lunas' => ($this->sumMetricCents($metricMap, 'lunas') > 0)
-                    ? $this->centsToAmount($this->sumMetricCents($metricMap, 'lunas'))
-                    : null,
-            ],
+            'matrix' => array_map(
+                fn (int $columnTotalCents) => $columnTotalCents > 0 ? $this->centsToAmount($columnTotalCents) : null,
+                $matrixGrandTotals
+            ),
+            'metrics' => array_map(
+                fn (int $metricCents) => $metricCents > 0 ? $this->centsToAmount($metricCents) : null,
+                $metricTotals
+            ),
         ];
-
-        $grandTotalCents = collect(self::BEFORE_ROWS)
-            ->sum(fn (string $beforeLabel) => collect(self::QUALITY_BUCKETS)
-                ->sum(fn (string $afterLabel) => (int) ($bucketMap[$beforeLabel][$afterLabel] ?? 0)));
 
         Log::info('Dashboard pinjaman matrix query aggregated.', [
             'selected_period' => $selectedPeriod,
             'comparison_period' => $comparisonPeriod,
-            'uses_snapshot' => $this->shouldUseSnapshot($selectedPeriod, $filters)
-                && (!$comparisonPeriod || $this->shouldUseSnapshot($comparisonPeriod, $filters)),
+            'uses_snapshot' => $useCurrentSnapshot && (!$comparisonPeriod || $useComparisonSnapshot),
             'matrix_row_count' => $matrixRowsRaw->count(),
             'metric_row_count' => $metricRowsRaw->count(),
             'duration_ms' => (int) round((microtime(true) - $startedAt) * 1000),
@@ -469,11 +466,17 @@ class DashboardPinjamanReportController extends Controller
         return [$matrixRows, $grandTotals, $grandTotalCents > 0 ? $this->centsToAmount($grandTotalCents) : null];
     }
 
-    private function buildMovementMatrixAggregateQuery(string $selectedPeriod, ?string $comparisonPeriod, array $filters)
+    private function buildMovementMatrixAggregateQuery(
+        string $selectedPeriod,
+        ?string $comparisonPeriod,
+        array $filters,
+        ?bool $useCurrentSnapshot = null,
+        ?bool $useComparisonSnapshot = null
+    )
     {
-        $currentSnapshot = $this->buildAggregatedLoanSnapshotQuery($selectedPeriod, $filters, 'curr');
+        $currentSnapshot = $this->buildAggregatedLoanSnapshotQuery($selectedPeriod, $filters, 'curr', $useCurrentSnapshot);
         $previousSnapshot = $comparisonPeriod
-            ? $this->buildAggregatedLoanSnapshotQuery($comparisonPeriod, $filters, 'prev')
+            ? $this->buildAggregatedLoanSnapshotQuery($comparisonPeriod, $filters, 'prev', $useComparisonSnapshot)
             : $this->buildEmptyAggregatedLoanSnapshotQuery();
 
         $joinedCurrent = DB::query()
@@ -496,11 +499,18 @@ class DashboardPinjamanReportController extends Controller
             ->groupBy('before_bucket', 'after_bucket');
     }
 
-    private function buildMovementMetricAggregateQuery(string $selectedPeriod, ?string $comparisonPeriod, ?string $phPeriod, array $filters)
+    private function buildMovementMetricAggregateQuery(
+        string $selectedPeriod,
+        ?string $comparisonPeriod,
+        ?string $phPeriod,
+        array $filters,
+        ?bool $useCurrentSnapshot = null,
+        ?bool $useComparisonSnapshot = null
+    )
     {
-        $currentSnapshot = $this->buildAggregatedLoanSnapshotQuery($selectedPeriod, $filters, 'curr');
+        $currentSnapshot = $this->buildAggregatedLoanSnapshotQuery($selectedPeriod, $filters, 'curr', $useCurrentSnapshot);
         $previousSnapshot = $comparisonPeriod
-            ? $this->buildAggregatedLoanSnapshotQuery($comparisonPeriod, $filters, 'prev')
+            ? $this->buildAggregatedLoanSnapshotQuery($comparisonPeriod, $filters, 'prev', $useComparisonSnapshot)
             : $this->buildEmptyAggregatedLoanSnapshotQuery();
 
         $principalReductionQuery = DB::query()
@@ -576,9 +586,9 @@ class DashboardPinjamanReportController extends Controller
             ->groupBy('before_bucket', 'metric_type');
     }
 
-    private function buildAggregatedLoanSnapshotQuery(string $period, array $filters, string $alias)
+    private function buildAggregatedLoanSnapshotQuery(string $period, array $filters, string $alias, ?bool $useSnapshot = null)
     {
-        $baseQuery = $this->buildLoanSnapshotQuery($period, $filters, $alias);
+        $baseQuery = $this->buildLoanSnapshotQuery($period, $filters, $alias, $useSnapshot);
         $balanceColumn = $alias === 'curr' ? 'current_balance' : 'previous_balance';
         $bucketColumn = $alias === 'curr' ? 'after_bucket' : 'before_bucket';
         $bucketRankExpression = $this->buildMovementBucketRankExpression("base.{$bucketColumn}");
@@ -652,9 +662,11 @@ class DashboardPinjamanReportController extends Controller
             ->groupBy('before_bucket');
     }
 
-    private function buildLoanSnapshotQuery(string $period, array $filters, string $alias)
+    private function buildLoanSnapshotQuery(string $period, array $filters, string $alias, ?bool $useSnapshot = null)
     {
-        if ($this->shouldUseSnapshot($period, $filters)) {
+        $shouldUseSnapshot = $useSnapshot ?? $this->shouldUseSnapshot($period, $filters);
+
+        if ($shouldUseSnapshot) {
             $query = DB::table(self::SNAPSHOT_TABLE . " as {$alias}")
                 ->where("{$alias}.periode", $period)
                 ->whereNotNull("{$alias}.account_number")
@@ -1374,12 +1386,6 @@ class DashboardPinjamanReportController extends Controller
     private function centsToAmount(int $cents): float
     {
         return $cents / 100;
-    }
-
-    private function sumMetricCents(array $metricMap, string $metric): int
-    {
-        return (int) collect($metricMap)
-            ->sum(fn (array $metrics) => (int) ($metrics[$metric] ?? 0));
     }
 
 }

@@ -101,6 +101,37 @@ class ExcelQueuedImportService
                 return $fail($e->getMessage());
             }
 
+            $shouldStageBeforeQueueProcessing = !($callbacks['is_csv_file'])($path)
+                && $stagedCsvPath === ''
+                && in_array($tableName, ['ssa_simpanan', 'ssa_pinjaman'], true)
+                && isset($callbacks['stage_excel_to_csv']);
+
+            if ($shouldStageBeforeQueueProcessing) {
+                $send('progress', [
+                    'percent' => 7,
+                    'message' => 'Job queue dimulai. Menyiapkan CSV staging dari Excel...',
+                    'rows_done' => 0,
+                    'total' => 0,
+                    'speed' => 0,
+                    'processed_rows' => 0,
+                ]);
+
+                $stageResult = ($callbacks['stage_excel_to_csv'])(
+                    $send,
+                    $path,
+                    $headerIndex,
+                    $normalizedHeaders,
+                    $tableName
+                );
+
+                if (!empty($stageResult['staged_csv_path']) && file_exists((string) $stageResult['staged_csv_path'])) {
+                    $stagedCsvPath = (string) $stageResult['staged_csv_path'];
+                    $workingEstimatedTotalRows = max(1, ((int) ($stageResult['total_rows'] ?? 0)) + 1);
+                    $workingCsvDelimiter = ',';
+                    $cleanupExtraPaths[] = $stagedCsvPath;
+                }
+            }
+
             if (!($callbacks['is_csv_file'])($path) && $stagedCsvPath !== '' && file_exists($stagedCsvPath)) {
                 $workingPath = $stagedCsvPath;
                 $workingHeaderIndex = 0;

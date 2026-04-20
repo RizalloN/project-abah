@@ -678,7 +678,20 @@ class DashboardHarianSnapshotService
 
             // If kanca filter applied, filter by kanca_key (use slug format)
             if ($hasKancaFilter) {
-                $query->whereIn('kanca_key', $normalizedKanca);
+                // Convert both raw and normalized kanca values to slugified keys
+                $slugifiedKanca = collect($normalizedKanca)
+                    ->map(function (string $value) {
+                        // First try to normalize as a kanca label (handles raw db values)
+                        $normalized = $this->normalizeKancaLabel($value);
+                        if ($normalized !== '') {
+                            return $this->slugKey($normalized);
+                        }
+                        // If that doesn't work, just slugify the value directly
+                        return $this->slugKey($value);
+                    })
+                    ->unique()
+                    ->all();
+                $query->whereIn('kanca_key', $slugifiedKanca);
             }
 
             $query->groupBy('snapshot_period')
@@ -704,7 +717,7 @@ class DashboardHarianSnapshotService
     private function buildMetricsFromSource(string $period, array|string|null $kancaKey, array|string|null $unitKey): array
     {
         [$payload] = $this->buildAggregatedRowsForPeriod($period, $kancaKey, $unitKey);
-        $payload = $this->filterPayloadForMetricRollup($payload, $unitKey, null);
+        $payload = $this->filterPayloadForMetricRollup($payload, $kancaKey, $unitKey);
         $metrics = $this->emptyMetrics();
 
         foreach ($payload as $row) {
@@ -745,6 +758,7 @@ class DashboardHarianSnapshotService
                 'giro_wholesale',
                 'deposito_wholesale',
                 'tabungan_wholesale',
+                'total_simpanan',
             ] as $metric) {
                 $buckets[$bucketKey][$metric] += (float) ($row->{$metric} ?? 0);
             }
@@ -789,7 +803,7 @@ class DashboardHarianSnapshotService
             $sourceRowCount++;
         }
 
-        foreach ($this->fetchPhAggregates($period, $kancaKey, $unitKey) as $row) {
+        foreach ($this->fetchRecoveryAggregates($period, $kancaKey, $unitKey) as $row) {
             $kancaLabel = $this->normalizeKancaLabel($row->raw_kanca ?? $row->raw_unit ?? null);
             if ($kancaLabel === '') {
                 continue;
@@ -812,16 +826,15 @@ class DashboardHarianSnapshotService
         $detailByKanca = [];
         $payloadRitelTotal = 0;
 
-        // First pass: collect all rows and group detail rows by kanca
+        // First pass: collect all rows and group them by kanca
         foreach ($buckets as $row) {
             $payload[] = $row;
-            $payloadRitelTotal += ($row['giro_ritel'] ?? 0) + ($row['deposito_ritel'] ?? 0) + ($row['tabungan_ritel'] ?? 0);
-            if ($row['kanca_key'] !== $row['unit_key']) {
-                if (!isset($detailByKanca[$row['kanca_key']])) {
-                    $detailByKanca[$row['kanca_key']] = [];
-                }
-                $detailByKanca[$row['kanca_key']][] = $row;
+            
+            // Track all rows for each kanca (including the kanca's own summary bucket)
+            if (!isset($detailByKanca[$row['kanca_key']])) {
+                $detailByKanca[$row['kanca_key']] = [];
             }
+            $detailByKanca[$row['kanca_key']][] = $row;
         }
 
         if ($period === '2026-04-18' && !$kancaKey) {
@@ -986,22 +999,41 @@ class DashboardHarianSnapshotService
             ->selectRaw("SUM(CASE WHEN {$segment} = 'WHOLESALE' AND {$product} = 'GIRO' THEN COALESCE(ss.saldo, 0) ELSE 0 END) as giro_wholesale")
             ->selectRaw("SUM(CASE WHEN {$segment} = 'WHOLESALE' AND {$product} = 'DEPOSITO' THEN COALESCE(ss.saldo, 0) ELSE 0 END) as deposito_wholesale")
             ->selectRaw("SUM(CASE WHEN {$segment} = 'WHOLESALE' AND {$product} = 'TABUNGAN' THEN COALESCE(ss.saldo, 0) ELSE 0 END) as tabungan_wholesale")
+            ->selectRaw("SUM(COALESCE(ss.saldo, 0)) as total_simpanan")
             ->groupBy('raw_kantor_cabang', 'raw_unit_kerja');
 
         $normalizedKanca = $this->normalizeFilterValues($kancaKey);
         if ($normalizedKanca !== []) {
-            $query->whereIn(
-                DB::raw("UPPER(TRIM(COALESCE(ss.nama_cabang, '')))"), 
-                array_map('strtoupper', $normalizedKanca)
-            );
+            // Build WHERE clauses that match raw db values against normalized filter values
+            $kancaConditions = collect($normalizedKanca)
+                ->map(fn (string $value) => $this->buildFilterCondition('ss.nama_cabang', $value))
+                ->filter()
+                ->all();
+            
+            if (!empty($kancaConditions)) {
+                $query->where(function ($q) use ($kancaConditions) {
+                    foreach ($kancaConditions as $condition) {
+                        $q->orWhereRaw($condition);
+                    }
+                });
+            }
         }
 
         $normalizedUnit = $this->normalizeFilterValues($unitKey);
         if ($normalizedUnit !== []) {
-            $query->whereIn(
-                DB::raw("UPPER(TRIM(COALESCE(ss.nama_uker, '')))"), 
-                array_map('strtoupper', $normalizedUnit)
-            );
+            // Build WHERE clauses that match raw db values against normalized filter values
+            $unitConditions = collect($normalizedUnit)
+                ->map(fn (string $value) => $this->buildFilterCondition('ss.nama_uker', $value))
+                ->filter()
+                ->all();
+            
+            if (!empty($unitConditions)) {
+                $query->where(function ($q) use ($unitConditions) {
+                    foreach ($unitConditions as $condition) {
+                        $q->orWhereRaw($condition);
+                    }
+                });
+            }
         }
 
         return $query->get();
@@ -1012,6 +1044,7 @@ class DashboardHarianSnapshotService
         $segment = "UPPER(TRIM(COALESCE(sp.segmen_dashboard, '')))";
         $productDashboard = "UPPER(TRIM(COALESCE(sp.produk_dashboard, '')))";
         $product = "UPPER(TRIM(COALESCE(sp.produk, '')))";
+        $segmen_2025 = "UPPER(TRIM(COALESCE(sp.segmen_2025, '')))";
         $balance = 'COALESCE(sp.baki_debet, 0)';
         $kol = "CAST(NULLIF(TRIM(COALESCE(sp.kolektabilitas_one_obligor, '')), '') AS UNSIGNED)";
 
@@ -1022,21 +1055,56 @@ class DashboardHarianSnapshotService
 
         $normalizedKanca = $this->normalizeFilterValues($kancaKey);
         if ($normalizedKanca !== []) {
-            $query->whereIn(
-                DB::raw("UPPER(TRIM(COALESCE(sp.nama_cabang, '')))"), 
-                array_map('strtoupper', $normalizedKanca)
-            );
+            // Build WHERE clauses that match raw db values against normalized filter values
+            $kancaConditions = collect($normalizedKanca)
+                ->map(fn (string $value) => $this->buildFilterCondition('sp.nama_cabang', $value))
+                ->filter()
+                ->all();
+            
+            if (!empty($kancaConditions)) {
+                $query->where(function ($q) use ($kancaConditions) {
+                    foreach ($kancaConditions as $condition) {
+                        $q->orWhereRaw($condition);
+                    }
+                });
+            }
         }
 
         $normalizedUnit = $this->normalizeFilterValues($unitKey);
         if ($normalizedUnit !== []) {
-            $query->whereIn(
-                DB::raw("UPPER(TRIM(COALESCE(sp.nama_uker, '')))"), 
-                array_map('strtoupper', $normalizedUnit)
-            );
+            // Build WHERE clauses that match raw db values against normalized filter values
+            $unitConditions = collect($normalizedUnit)
+                ->map(fn (string $value) => $this->buildFilterCondition('sp.nama_uker', $value))
+                ->filter()
+                ->all();
+            
+            if (!empty($unitConditions)) {
+                $query->where(function ($q) use ($unitConditions) {
+                    foreach ($unitConditions as $condition) {
+                        $q->orWhereRaw($condition);
+                    }
+                });
+            }
         }
 
-        foreach ($this->loanMetricDefinitions($segment, $productDashboard, $product) as $alias => $condition) {
+        $normalizedUnit = $this->normalizeFilterValues($unitKey);
+        if ($normalizedUnit !== []) {
+            // Build WHERE clauses that match raw db values against normalized filter values
+            $unitConditions = collect($normalizedUnit)
+                ->map(fn (string $value) => $this->buildFilterCondition('sp.nama_uker', $value))
+                ->filter()
+                ->all();
+            
+            if (!empty($unitConditions)) {
+                $query->where(function ($q) use ($unitConditions) {
+                    foreach ($unitConditions as $condition) {
+                        $q->orWhereRaw($condition);
+                    }
+                });
+            }
+        }
+
+        foreach ($this->loanMetricDefinitions($segment, $productDashboard, $product, $segmen_2025) as $alias => $condition) {
             $query->selectRaw("SUM(CASE WHEN {$condition} THEN {$balance} ELSE 0 END) as {$alias}_os");
             $query->selectRaw("SUM(CASE WHEN {$condition} AND {$kol} = 2 THEN {$balance} ELSE 0 END) as {$alias}_sml");
             $query->selectRaw("SUM(CASE WHEN {$condition} AND {$kol} > 2 THEN {$balance} ELSE 0 END) as {$alias}_npl");
@@ -1045,7 +1113,59 @@ class DashboardHarianSnapshotService
         return $query
             ->selectRaw("SUM(CASE WHEN {$segment} IN ('SMALL', 'MEDIUM', 'CONSUMER', 'MICRO', 'MIKRO') AND {$kol} = 2 THEN {$balance} ELSE 0 END) as total_sml_abs_non_commercial")
             ->selectRaw("SUM(CASE WHEN {$segment} IN ('SMALL', 'MEDIUM', 'CONSUMER', 'MICRO', 'MIKRO') AND {$kol} > 2 THEN {$balance} ELSE 0 END) as total_npl_abs_non_commercial")
+            ->selectRaw("SUM({$balance}) as total_os")
             ->groupBy('raw_cabang', 'raw_unit')
+            ->get();
+    }
+
+    private function fetchRecoveryAggregates(string $period, array|string|null $kancaKey = null, array|string|null $unitKey = null): Collection
+    {
+        $normalizedPeriod = $this->normalizeDate($period);
+
+        // Tier 1: Check Cognos Recovery Table
+        if ($normalizedPeriod && Schema::hasTable('cognos_recovery')) {
+            $exists = DB::table('cognos_recovery')->where('periode', $normalizedPeriod)->exists();
+            if ($exists) {
+                return $this->fetchCognosRecoveryAggregates($normalizedPeriod, $kancaKey, $unitKey);
+            }
+        }
+
+        // Tier 2: Fallback to DH Recovery logic (PH-based)
+        return $this->fetchPhAggregates($period, $kancaKey, $unitKey);
+    }
+
+    private function fetchCognosRecoveryAggregates(string $normalizedPeriod, array|string|null $kancaKey = null, array|string|null $unitKey = null): Collection
+    {
+        $normalizedKanca = $this->normalizeFilterValues($kancaKey);
+        $normalizedUnit = $this->normalizeFilterValues($unitKey);
+
+        $query = DB::table('cognos_recovery')
+            ->where('periode', $normalizedPeriod);
+
+        if ($normalizedKanca !== []) {
+            $query->whereIn(
+                DB::raw("UPPER(TRIM(COALESCE(cabang, '')))"), 
+                array_map('strtoupper', $normalizedKanca)
+            );
+        }
+
+        if ($normalizedUnit !== []) {
+            $query->whereIn(
+                DB::raw("UPPER(TRIM(COALESCE(unit_kerja, '')))"), 
+                array_map('strtoupper', $normalizedUnit)
+            );
+        }
+
+        return $query
+            ->selectRaw("TRIM(COALESCE(cabang, '')) as raw_kanca")
+            ->selectRaw("TRIM(COALESCE(unit_kerja, '')) as raw_unit")
+            ->selectRaw("SUM(CASE WHEN UPPER(TRIM(COALESCE(segmen_bisnis_2025, ''))) = 'SMALL' THEN COALESCE(total_recovery, 0) ELSE 0 END) as rec_dh_small")
+            ->selectRaw("SUM(CASE WHEN UPPER(TRIM(COALESCE(segmen_bisnis_2025, ''))) = 'CONSUMER' THEN COALESCE(total_recovery, 0) ELSE 0 END) as rec_dh_consumer")
+            ->selectRaw("SUM(CASE WHEN UPPER(TRIM(COALESCE(segmen_bisnis_2025, ''))) IN ('MICRO', 'MIKRO') THEN COALESCE(total_recovery, 0) ELSE 0 END) as rec_dh_micro")
+            ->selectRaw("SUM(COALESCE(total_recovery, 0)) as rec_dh_total")
+            ->selectRaw("0 as ph_tupok")
+            ->selectRaw("0 as ph_lunas")
+            ->groupBy('raw_kanca', 'raw_unit')
             ->get();
     }
 
@@ -1215,7 +1335,10 @@ class DashboardHarianSnapshotService
         $final['simpanan_ritel'] = $final['giro_ritel'] + $final['deposito_ritel'] + $final['tabungan_ritel'];
         $final['simpanan_mikro'] = $final['giro_mikro'] + $final['deposito_mikro'] + $final['tabungan_mikro'];
         $final['simpanan_wholesale'] = $final['giro_wholesale'] + $final['deposito_wholesale'] + $final['tabungan_wholesale'];
-        $final['total_simpanan'] = $final['simpanan_ritel'] + $final['simpanan_mikro'] + $final['simpanan_wholesale'];
+        $calcTotalSimpanan = $final['simpanan_ritel'] + $final['simpanan_mikro'] + $final['simpanan_wholesale'];
+        if ($final['total_simpanan'] < $calcTotalSimpanan) {
+            $final['total_simpanan'] = $calcTotalSimpanan;
+        }
         $final['casa_ritel'] = $final['giro_ritel'] + $final['tabungan_ritel'];
         $final['casa_mikro'] = $final['giro_mikro'] + $final['tabungan_mikro'];
         $final['total_casa'] = $final['casa_ritel'] + $final['casa_mikro'];
@@ -1224,6 +1347,12 @@ class DashboardHarianSnapshotService
         $final['sme_sml'] = $final['kecil_sml'];
         $final['sme_npl'] = $final['kecil_npl'];
         $final['total_os_non_commercial'] = $final['kecil_os'] + $final['medium_os'] + $final['consumer_os'] + $final['micro_os'];
+        
+        // Ensure total_os reflects the raw database total if it's higher than the filtered segment sum
+        if ($final['total_os'] < $final['total_os_non_commercial']) {
+            $final['total_os'] = $final['total_os_non_commercial'];
+        }
+
         $final['ldr_non_commercial'] = $this->safePercent($final['total_simpanan'], $final['total_os_non_commercial']);
         $final['ldr_ritel_non_commercial'] = $this->safePercent($final['simpanan_ritel'], $final['sme_os'] + $final['consumer_os']);
         $final['ldr_mikro_non_commercial'] = $this->safePercent($final['simpanan_mikro'], $final['micro_os']);
@@ -1503,6 +1632,65 @@ class DashboardHarianSnapshotService
         $clean = preg_replace('/\s+/', ' ', $clean) ?? $clean;
 
         return trim($clean);
+    }
+
+    private function buildFilterCondition(string $column, string $filterValue): ?string
+    {
+        // filterValue can be:
+        // 1. Raw db value: "00070 -- KC PONOROGO (Konsolidasi-MB)"
+        // 2. Slugified key: "kc-ponorogo" or "unit-babadan-ponorogo"
+        // 3. Clean name: "KC Ponorogo" or "UNIT Babadan Ponorogo"
+        
+        $filterValue = trim($filterValue);
+        if ($filterValue === '') {
+            return null;
+        }
+
+        // Try to extract meaningful parts from the filter value
+        $parts = [];
+        
+        // If it looks like a slug (contains hyphens), un-slug it
+        if (str_contains($filterValue, '-')) {
+            // "kc-ponorogo" -> "ponorogo", "unit-babadan-ponorogo" -> "babadan ponorogo"
+            $unsluggedParts = explode('-', $filterValue);
+            if (str_starts_with($filterValue, 'unit-')) {
+                // Remove 'unit' prefix for extraction
+                $parts = array_slice($unsluggedParts, 1);
+            } else {
+                $parts = array_slice($unsluggedParts, 1); // Skip 'kc'
+            }
+        } else {
+            // Clean the value and extract parts
+            $cleaned = $this->cleanBranchValue($filterValue);
+            
+            // Extract keywords: branch names, unit keywords
+            foreach (['PONOROGO', 'MADIUN', 'MAGETAN', 'NGAWI'] as $branch) {
+                if (str_contains(strtoupper($cleaned), $branch)) {
+                    $parts[] = strtolower($branch);
+                }
+            }
+            
+            // Extract unit names
+            if (preg_match('/UNIT\s+(\w+)/i', $cleaned, $matches)) {
+                $parts[] = strtolower($matches[1]);
+            }
+            
+            // If no parts extracted yet, use the cleaned value
+            if (empty($parts)) {
+                $parts = array_map('strtolower', array_filter(explode(' ', $cleaned)));
+            }
+        }
+
+        // Build a WHERE clause that matches if any part is found in the column
+        if (empty($parts)) {
+            return null;
+        }
+
+        $conditions = collect($parts)
+            ->map(fn (string $part) => "UPPER({$column}) LIKE '%" . strtoupper($part) . "%'")
+            ->implode(' OR ');
+
+        return "({$conditions})";
     }
 
     private function fetchMonthFilterOptions(?string $contextPeriod = null): array
@@ -1843,17 +2031,18 @@ class DashboardHarianSnapshotService
         return $translated;
     }
 
-    private function loanMetricDefinitions(string $segment, string $productDashboard, string $product): array
+    private function loanMetricDefinitions(string $segment, string $productDashboard, string $product, string $segmen_2025): array
     {
         $microSegment = "{$segment} IN ('MICRO', 'MIKRO')";
+        $microSegment_2025 = "{$segmen_2025} IN ('MICRO', 'MIKRO')";
 
         return [
             'commercial' => "{$segment} = 'COMMERCIAL'",
             'sme' => "{$segment} = 'SMALL'",
             'kecil' => "{$segment} = 'SMALL'",
-            'kecil_non_cashcoll' => "{$segment} = 'SMALL' AND {$productDashboard} = 'COMMERCIAL'",
-            'cashcoll' => "{$segment} = 'SMALL' AND {$productDashboard} IN ('CASHCALL', 'CASHCOLL')",
-            'medium' => "{$segment} = 'MEDIUM'",
+            'kecil_non_cashcoll' => "({$segment} = 'SMALL' AND {$productDashboard} = 'COMMERCIAL') OR ({$segmen_2025} = 'SMALL' AND {$productDashboard} = 'COMMERCIAL')",
+            'cashcoll' => "({$segment} = 'SMALL' AND {$productDashboard} IN ('CASHCALL', 'CASHCOLL')) OR ({$segmen_2025} = 'SMALL' AND {$productDashboard} IN ('CASHCALL', 'CASHCOLL'))",
+            'medium' => "({$segment} = 'MEDIUM') OR ({$segmen_2025} = 'MEDIUM' AND {$segment} = 'SMALL')",
             'consumer' => "{$segment} = 'CONSUMER'",
             'briguna_konsumer' => "{$segment} = 'CONSUMER' AND {$productDashboard} = 'BRIGUNA-KONSUMER'",
             'kpr' => "{$segment} = 'CONSUMER' AND {$productDashboard} = 'KPR'",
@@ -1866,7 +2055,7 @@ class DashboardHarianSnapshotService
                 OR {$productDashboard} = 'KPR'
             )",
             'briguna_mikro' => "{$microSegment} AND {$productDashboard} = 'BRIGUNA-MIKRO'",
-            'kupedes' => "{$microSegment} AND {$product} = 'KUPEDES'",
+            'kupedes' => "({$microSegment} AND {$product} = 'KUPEDES') OR ({$productDashboard} = 'CASH COLLATERAL' AND {$microSegment_2025})",
             'kur_mikro' => "{$microSegment} AND {$productDashboard} = 'KUR-MIKRO' AND {$product} = 'KUR MIKRO'",
             'kur_kecil' => "{$microSegment} AND {$productDashboard} = 'KUR-MIKRO' AND {$product} IN ('KUR KECIL', 'KREDIT MIKRO - KUR RITEL 2015')",
             'kur_kpp' => "{$microSegment} AND {$productDashboard} = 'KPR'",
@@ -1926,6 +2115,7 @@ class DashboardHarianSnapshotService
             'kur_kecil_npl',
             'kur_kpp_npl',
             'total_npl_abs_non_commercial',
+            'total_os',
         ];
     }
 

@@ -221,4 +221,28 @@ class ImportExcelControllerFastPathEligibilityTest extends TestCase
             []
         );
     }
+
+    public function test_header_normalization_preserves_distinct_numeric_suffix_columns(): void
+    {
+        $controller = app(ImportExcelController::class);
+
+        $normalizeMethod = new \ReflectionMethod(ImportExcelController::class, 'normalizeHeaderForDatabase');
+        $normalizeMethod->setAccessible(true);
+
+        $candidateMethod = new \ReflectionMethod(ImportExcelController::class, 'getHeaderDatabaseCandidates');
+        $candidateMethod->setAccessible(true);
+
+        $this->assertSame('segmen', $normalizeMethod->invoke($controller, 'Segmen'));
+        $this->assertSame('segmen_2025', $normalizeMethod->invoke($controller, 'SEGMEN_2025'));
+        $this->assertNotSame(
+            $normalizeMethod->invoke($controller, 'Segmen'),
+            $normalizeMethod->invoke($controller, 'SEGMEN_2025')
+        );
+
+        $candidates = $candidateMethod->invoke($controller, 'SEGMEN_2025');
+
+        $this->assertSame('segmen_2025', $candidates[0] ?? null);
+        $this->assertContains('segmen_2025', $candidates);
+        $this->assertContains('segmen', $candidates);
+    }
 }

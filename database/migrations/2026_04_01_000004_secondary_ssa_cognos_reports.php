@@ -38,9 +38,12 @@ return new class extends Migration
             $table->string('nama_uker', 150)->nullable()->index();
             $table->string('cif', 50)->nullable()->index();
             $table->string('nominatif', 50)->nullable();
-            $table->string('segmen_dashboard', 100)->nullable();
-            $table->string('produk_dashboard', 100)->nullable();
             $table->string('produk', 100)->nullable();
+            $table->string('produk_dashboard', 100)->nullable();
+            $table->string('segmen', 100)->nullable();
+            $table->string('segmen_lama', 100)->nullable();
+            $table->string('segmen_2025', 100)->nullable();
+            $table->string('segmen_dashboard', 100)->nullable();
             $table->decimal('baki_debet', 20, 2)->nullable();
             $table->unsignedTinyInteger('kolektabilitas_one_obligor')->nullable();
             $table->timestamps();

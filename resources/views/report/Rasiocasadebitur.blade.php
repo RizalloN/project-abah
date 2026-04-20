@@ -1181,62 +1181,43 @@ document.addEventListener('DOMContentLoaded', function () {
     const unit1Select = document.getElementById('filter_unit1_rm');
     const submitButtonPerRm = document.getElementById('submitButtonPerRm');
     const loadingChipPerRm = document.getElementById('loadingChipPerRm');
+    const branchOptionsPerRm = @json($branchOptions ?? []);
     let activeRequestPerRm = null;
 
-    // Load periode pada pertama kali
-    function loadFiltersPerRm() {
-        $.ajax({
-            url: "{{ route('report.rasiocasa.filters-per-rm') }}",
-            type: 'GET',
-            data: {
-                cabang1: '',
-                unit1: '',
-                _token: '{{ csrf_token() }}'
-            },
-            dataType: 'json',
-        }).done(function(res) {
-            // Populate cabang
-            cabang1Select.innerHTML = '<option value="">Pilih Cabang</option>';
-            if (res.branches && Array.isArray(res.branches)) {
-                res.branches.forEach(function(branch) {
-                    const option = document.createElement('option');
-                    option.value = branch;
-                    option.textContent = branch;
-                    cabang1Select.appendChild(option);
-                });
-            }
-            cabang1Select.disabled = false;
+    function populatePerRmBranches() {
+        cabang1Select.innerHTML = '<option value="">Pilih Cabang</option>';
+
+        branchOptionsPerRm.forEach(function(branch) {
+            const option = document.createElement('option');
+            option.value = branch;
+            option.textContent = branch;
+            cabang1Select.appendChild(option);
         });
+
+        cabang1Select.disabled = branchOptionsPerRm.length === 0;
     }
 
-    // Load unit kerja ketika cabang berubah
-    cabang1Select.addEventListener('change', function() {
-        const selectedCabang = this.value;
+    function populatePerRmUnits(selectedCabang) {
         unit1Select.innerHTML = '<option value="">Pilih Unit Kerja</option>';
-        unit1Select.disabled = !selectedCabang;
 
-        if (selectedCabang) {
-            $.ajax({
-                url: "{{ route('report.rasiocasa.filters-per-rm') }}",
-                type: 'GET',
-                data: {
-                    cabang1: selectedCabang,
-                    unit1: '',
-                    _token: '{{ csrf_token() }}'
-                },
-                dataType: 'json',
-            }).done(function(res) {
-                if (res.units && Array.isArray(res.units)) {
-                    res.units.forEach(function(unit) {
-                        const option = document.createElement('option');
-                        option.value = unit;
-                        option.textContent = unit;
-                        unit1Select.appendChild(option);
-                    });
-                }
-                unit1Select.disabled = false;
-            });
+        if (!selectedCabang) {
+            unit1Select.disabled = true;
+            return;
         }
+
+        const units = Array.isArray(branchUkerMap[selectedCabang]) ? branchUkerMap[selectedCabang] : [];
+        units.forEach(function(unit) {
+            const option = document.createElement('option');
+            option.value = unit;
+            option.textContent = unit;
+            unit1Select.appendChild(option);
+        });
+
+        unit1Select.disabled = units.length === 0;
+    }
+
+    cabang1Select.addEventListener('change', function() {
+        populatePerRmUnits(this.value);
     });
 
     // Load data rasio CASA per RM
@@ -1327,8 +1308,9 @@ document.addEventListener('DOMContentLoaded', function () {
         loadDataPerRm();
     });
 
-    // Load initial filters
-    loadFiltersPerRm();
+    // Populate initial Per RM filters from data already rendered on the page
+    populatePerRmBranches();
+    populatePerRmUnits('');
 
     resetTableState();
     syncNamaUkerOptions();

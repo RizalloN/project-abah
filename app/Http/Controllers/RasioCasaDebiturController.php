@@ -23,6 +23,15 @@ class RasioCasaDebiturController extends Controller
     private const LOAN_CIF_BRANCH_INDEX = 'idx_dld_periode_cif_cabang';
     private const CASA_CIF_TYPE_INDEX = 'idx_smp_posisi_cif_jenis';
 
+    /** @var array<string, string|null> */
+    private array $availableLoanPeriodMemo = [];
+
+    /** @var array<string, string|null> */
+    private array $availableCasaPeriodMemo = [];
+
+    /** @var array<string, string> */
+    private array $resolvedColumnMemo = [];
+
     public function index()
     {
         $defaultPeriod = $this->resolveAvailableLoanPeriod(null) ?: now()->toDateString();
@@ -285,60 +294,11 @@ class RasioCasaDebiturController extends Controller
             $branchColumn = $this->resolveExistingColumn('daily_loan_dinamis', ['cabang1', 'cabang'], 'cabang1');
             $unitColumn = $this->resolveExistingColumn('daily_loan_dinamis', ['unit1', 'unit'], 'unit1');
             $rmColumn = $this->resolveExistingColumn('daily_loan_dinamis', ['pn_pengelola1', 'pn_pengelola', 'rm'], 'pn_pengelola1');
+            $branches = $this->getPerRmBranchOptions($loanPeriod, $branchColumn);
+            $units = $this->getPerRmUnitOptions($loanPeriod, $branchColumn, $selectedBranch, $unitColumn);
+            $rms = $this->getPerRmRmOptions($loanPeriod, $branchColumn, $unitColumn, $rmColumn, $selectedBranch, $selectedUnit);
 
-            $cacheKey = 'rasio_casa_per_rm_filters:v' . $this->reportCacheVersion() . ':' . $loanPeriod . ':' . md5($selectedBranch . '|' . $selectedUnit);
-
-            return Cache::remember($cacheKey, now()->addMinutes(10), function () use ($loanPeriod, $branchColumn, $unitColumn, $rmColumn, $selectedBranch, $selectedUnit) {
-                // Get branches
-                $branches = DB::table('daily_loan_dinamis')
-                    ->where('periode', $loanPeriod)
-                    ->whereNotNull($branchColumn)
-                    ->whereRaw("TRIM({$branchColumn}) <> ''")
-                    ->selectRaw("UPPER(TRIM({$branchColumn})) as branch_name")
-                    ->distinct()
-                    ->orderBy('branch_name')
-                    ->pluck('branch_name')
-                    ->filter()
-                    ->values()
-                    ->all();
-
-                // Get units untuk branch yang dipilih
-                $units = [];
-                if ($selectedBranch) {
-                    $units = DB::table('daily_loan_dinamis')
-                        ->where('periode', $loanPeriod)
-                        ->whereRaw("UPPER(TRIM({$branchColumn})) = ?", [$selectedBranch])
-                        ->whereNotNull($unitColumn)
-                        ->whereRaw("TRIM({$unitColumn}) <> ''")
-                        ->selectRaw("UPPER(TRIM({$unitColumn})) as unit_name")
-                        ->distinct()
-                        ->orderBy('unit_name')
-                        ->pluck('unit_name')
-                        ->filter()
-                        ->values()
-                        ->all();
-                }
-
-                // Get RMs untuk branch dan unit yang dipilih
-                $rms = [];
-                if ($selectedBranch && $selectedUnit) {
-                    $rms = DB::table('daily_loan_dinamis')
-                        ->where('periode', $loanPeriod)
-                        ->whereRaw("UPPER(TRIM({$branchColumn})) = ?", [$selectedBranch])
-                        ->whereRaw("UPPER(TRIM({$unitColumn})) = ?", [$selectedUnit])
-                        ->whereNotNull($rmColumn)
-                        ->whereRaw("TRIM({$rmColumn}) <> ''")
-                        ->selectRaw("UPPER(TRIM({$rmColumn})) as rm_name")
-                        ->distinct()
-                        ->orderBy('rm_name')
-                        ->pluck('rm_name')
-                        ->filter()
-                        ->values()
-                        ->all();
-                }
-
-                return compact('branches', 'units', 'rms');
-            });
+            return response()->json(compact('branches', 'units', 'rms'));
         } catch (Throwable $e) {
             Log::error('[RasioCasaPerRM-Filters] Error: ' . $e->getMessage());
 
@@ -348,6 +308,74 @@ class RasioCasaDebiturController extends Controller
                 'rms' => [],
             ]);
         }
+    }
+
+    private function getPerRmBranchOptions(string $loanPeriod, string $branchColumn): array
+    {
+        $cacheKey = 'rasio_casa_per_rm_filters:branches:v' . $this->reportCacheVersion() . ':' . $loanPeriod;
+
+        return Cache::remember($cacheKey, now()->addMinutes(10), function () use ($loanPeriod, $branchColumn) {
+            return DB::table('daily_loan_dinamis')
+                ->where('periode', $loanPeriod)
+                ->whereNotNull($branchColumn)
+                ->whereRaw("TRIM({$branchColumn}) <> ''")
+                ->selectRaw("UPPER(TRIM({$branchColumn})) as branch_name")
+                ->distinct()
+                ->orderBy('branch_name')
+                ->pluck('branch_name')
+                ->filter()
+                ->values()
+                ->all();
+        });
+    }
+
+    private function getPerRmUnitOptions(string $loanPeriod, string $branchColumn, string $selectedBranch, string $unitColumn): array
+    {
+        if ($selectedBranch === '') {
+            return [];
+        }
+
+        $cacheKey = 'rasio_casa_per_rm_filters:units:v' . $this->reportCacheVersion() . ':' . $loanPeriod . ':' . md5($selectedBranch);
+
+        return Cache::remember($cacheKey, now()->addMinutes(10), function () use ($loanPeriod, $branchColumn, $selectedBranch, $unitColumn) {
+            return DB::table('daily_loan_dinamis')
+                ->where('periode', $loanPeriod)
+                ->whereRaw("UPPER(TRIM({$branchColumn})) = ?", [$selectedBranch])
+                ->whereNotNull($unitColumn)
+                ->whereRaw("TRIM({$unitColumn}) <> ''")
+                ->selectRaw("UPPER(TRIM({$unitColumn})) as unit_name")
+                ->distinct()
+                ->orderBy('unit_name')
+                ->pluck('unit_name')
+                ->filter()
+                ->values()
+                ->all();
+        });
+    }
+
+    private function getPerRmRmOptions(string $loanPeriod, string $branchColumn, string $unitColumn, string $rmColumn, string $selectedBranch, string $selectedUnit): array
+    {
+        if ($selectedBranch === '' || $selectedUnit === '') {
+            return [];
+        }
+
+        $cacheKey = 'rasio_casa_per_rm_filters:rms:v' . $this->reportCacheVersion() . ':' . $loanPeriod . ':' . md5($selectedBranch . '|' . $selectedUnit);
+
+        return Cache::remember($cacheKey, now()->addMinutes(10), function () use ($loanPeriod, $branchColumn, $unitColumn, $rmColumn, $selectedBranch, $selectedUnit) {
+            return DB::table('daily_loan_dinamis')
+                ->where('periode', $loanPeriod)
+                ->whereRaw("UPPER(TRIM({$branchColumn})) = ?", [$selectedBranch])
+                ->whereRaw("UPPER(TRIM({$unitColumn})) = ?", [$selectedUnit])
+                ->whereNotNull($rmColumn)
+                ->whereRaw("TRIM({$rmColumn}) <> ''")
+                ->selectRaw("UPPER(TRIM({$rmColumn})) as rm_name")
+                ->distinct()
+                ->orderBy('rm_name')
+                ->pluck('rm_name')
+                ->filter()
+                ->values()
+                ->all();
+        });
     }
 
     private function buildSummarySnapshot(string $loanPeriod, bool $forceRefresh = false): array
@@ -1160,31 +1188,56 @@ class RasioCasaDebiturController extends Controller
 
     private function resolveAvailableLoanPeriod(?string $targetDate): ?string
     {
+        $cacheKey = $targetDate ? 'target:' . $this->normalizeDate($targetDate) : 'latest';
+        if (array_key_exists($cacheKey, $this->availableLoanPeriodMemo)) {
+            return $this->availableLoanPeriodMemo[$cacheKey];
+        }
+
         try {
             $query = DB::table('daily_loan_dinamis');
 
             if ($targetDate) {
-                $query->where('periode', '<=', Carbon::parse($targetDate)->toDateString());
+                $normalizedTarget = Carbon::parse($targetDate)->toDateString();
+                $query->where('periode', '<=', $normalizedTarget);
+                return $this->availableLoanPeriodMemo[$cacheKey] = $query->max('periode');
             } else {
-                $cacheKey = 'rasio_casa_latest_loan_period:v' . $this->reportCacheVersion();
-
-                return Cache::remember($cacheKey, now()->addMinutes(10), function () {
+                $cacheKeyExternal = 'rasio_casa_latest_loan_period:v' . $this->reportCacheVersion();
+                $period = Cache::remember($cacheKeyExternal, now()->addMinutes(10), function () {
                     return DB::table('daily_loan_dinamis')->max('periode');
                 });
-            }
 
-            return $query->max('periode');
+                return $this->availableLoanPeriodMemo[$cacheKey] = $period;
+            }
         } catch (Throwable) {
-            return null;
+            return $this->availableLoanPeriodMemo[$cacheKey] = null;
         }
     }
 
     private function resolveAvailableCasaPeriod(string $targetDate): ?string
     {
+        $cacheKey = $this->normalizeDate($targetDate) ?: $targetDate;
+        if (array_key_exists($cacheKey, $this->availableCasaPeriodMemo)) {
+            return $this->availableCasaPeriodMemo[$cacheKey];
+        }
+
         try {
-            return DB::table('simpanan_multipn')
+            return $this->availableCasaPeriodMemo[$cacheKey] = DB::table('simpanan_multipn')
                 ->where('posisi', '<=', $targetDate)
                 ->max('posisi');
+        } catch (Throwable) {
+            return $this->availableCasaPeriodMemo[$cacheKey] = null;
+        }
+    }
+
+    private function normalizeDate(?string $value): ?string
+    {
+        $trimmed = trim((string) $value);
+        if ($trimmed === '') {
+            return null;
+        }
+
+        try {
+            return Carbon::parse($trimmed)->toDateString();
         } catch (Throwable) {
             return null;
         }
@@ -1502,6 +1555,11 @@ class RasioCasaDebiturController extends Controller
 
     private function resolveColumnName(string $table, array $candidates, string $fallback): string
     {
+        $cacheKey = $table . '|' . implode(',', $candidates) . '|' . $fallback;
+        if (array_key_exists($cacheKey, $this->resolvedColumnMemo)) {
+            return $this->resolvedColumnMemo[$cacheKey];
+        }
+
         $columns = Schema::getColumnListing($table);
         $map = [];
 
@@ -1512,11 +1570,11 @@ class RasioCasaDebiturController extends Controller
         foreach ($candidates as $candidate) {
             $matched = $map[strtolower($candidate)] ?? null;
             if ($matched) {
-                return $matched;
+                return $this->resolvedColumnMemo[$cacheKey] = $matched;
             }
         }
 
-        return $map[strtolower($fallback)] ?? $fallback;
+        return $this->resolvedColumnMemo[$cacheKey] = ($map[strtolower($fallback)] ?? $fallback);
     }
 
     private function calculateMetrics($prev, $curr)

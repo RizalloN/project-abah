@@ -18,10 +18,10 @@ use PDO;
  */
 class OptimizedCsvImporter
 {
-    private const BUFFER_SIZE = 4194304; // 4MB (doubled from 2MB for faster I/O)
-    private const MAX_BATCH_SIZE = 8000; // Rows per INSERT (increased from 5000)
+    private const BUFFER_SIZE = 8388608; // 8MB (doubled for faster streaming)
+    private const MAX_BATCH_SIZE = 15000; // Rows per INSERT (doubled for better throughput)
     private const PLACEHOLDER_LIMIT = 65000; // MySQL limit
-    private const PROGRESS_INTERVAL = 50000; // Update progress every 50k rows
+    private const PROGRESS_INTERVAL = 100000; // Update progress every 100k rows (reduced frequency)
 
     private int $processedRows = 0;
     private int $lastProgressRow = 0;
