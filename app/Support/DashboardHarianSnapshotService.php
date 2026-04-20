@@ -659,7 +659,13 @@ class DashboardHarianSnapshotService
         $metricsByPeriod = [];
         $normalizedKanca = $this->normalizeFilterValues($kancaKey);
         $normalizedUnit = $this->normalizeFilterValues($unitKey);
-        $useSnapshot = $normalizedKanca === [] && $normalizedUnit === [] && $this->canUseSnapshotMetrics();
+
+        // Use snapshot when:
+        // 1. No filters at all, OR
+        // 2. Kanca filter only (no unit filter)
+        $hasKancaFilter = $normalizedKanca !== [];
+        $hasUnitFilter = $normalizedUnit !== [];
+        $useSnapshot = $this->canUseSnapshotMetrics() && !$hasUnitFilter;
 
         if ($useSnapshot) {
             $selects = collect(self::METRIC_COLUMNS)
@@ -668,8 +674,14 @@ class DashboardHarianSnapshotService
 
             $query = DB::table(self::SNAPSHOT_TABLE)
                 ->whereIn('snapshot_period', $normalizedPeriods)
-                ->whereColumn('kanca_key', 'unit_key')
-                ->groupBy('snapshot_period')
+                ->whereColumn('kanca_key', 'unit_key');
+
+            // If kanca filter applied, filter by kanca_key (use slug format)
+            if ($hasKancaFilter) {
+                $query->whereIn('kanca_key', $normalizedKanca);
+            }
+
+            $query->groupBy('snapshot_period')
                 ->orderBy('snapshot_period')
                 ->selectRaw('snapshot_period')
                 ->selectRaw($selects)
@@ -692,7 +704,7 @@ class DashboardHarianSnapshotService
     private function buildMetricsFromSource(string $period, array|string|null $kancaKey, array|string|null $unitKey): array
     {
         [$payload] = $this->buildAggregatedRowsForPeriod($period, $kancaKey, $unitKey);
-        $payload = $this->filterPayloadForMetricRollup($payload, $kancaKey, $unitKey);
+        $payload = $this->filterPayloadForMetricRollup($payload, $unitKey, null);
         $metrics = $this->emptyMetrics();
 
         foreach ($payload as $row) {
