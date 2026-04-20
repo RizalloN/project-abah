@@ -719,6 +719,8 @@ class DashboardHarianSnapshotService
         $buckets = [];
         $sourceRowCount = 0;
 
+        $savingsCount = 0;
+        $savingsRitelTotal = 0;
         foreach ($this->fetchSavingsAggregates($period, $kancaKey, $unitKey) as $row) {
             $kancaLabel = $this->normalizeKancaLabel($row->raw_kantor_cabang ?? $row->raw_unit_kerja ?? null);
             if ($kancaLabel === '') {
@@ -728,6 +730,10 @@ class DashboardHarianSnapshotService
             $unitLabel = $this->normalizeUnitLabel($row->raw_unit_kerja ?? null, $kancaLabel);
             $bucketKey = $this->makeBucketKey($kancaLabel, $unitLabel);
             $this->initializeBucket($buckets, $bucketKey, $kancaLabel, $unitLabel);
+
+            $ritelInThisRow = ($row->giro_ritel ?? 0) + ($row->deposito_ritel ?? 0) + ($row->tabungan_ritel ?? 0);
+            $savingsRitelTotal += $ritelInThisRow;
+            $savingsCount++;
 
             foreach ([
                 'giro_ritel',
@@ -744,6 +750,26 @@ class DashboardHarianSnapshotService
             }
 
             $sourceRowCount++;
+        }
+
+        if ($period === '2026-04-18' && !$kancaKey) {
+            // Debug: breakdown ritel by kanca in buckets
+            $ritelByKanca = [];
+            foreach ($buckets as $bucketKey => $row) {
+                $kanca = $row['kanca_key'] ?? 'unknown';
+                $ritel = ($row['giro_ritel'] ?? 0) + ($row['deposito_ritel'] ?? 0) + ($row['tabungan_ritel'] ?? 0);
+                if (!isset($ritelByKanca[$kanca])) {
+                    $ritelByKanca[$kanca] = 0;
+                }
+                $ritelByKanca[$kanca] += $ritel;
+            }
+
+            \Log::info("Savings aggregation debug", [
+                'savingsCount' => $savingsCount,
+                'savingsRitelTotal' => $savingsRitelTotal,
+                'bucketsCount' => count($buckets),
+                'ritelByKanca' => array_map(fn($v) => number_format($v, 0), $ritelByKanca),
+            ]);
         }
 
         foreach ($this->fetchLoanAggregates($period, $kancaKey, $unitKey) as $row) {
@@ -784,10 +810,12 @@ class DashboardHarianSnapshotService
 
         $payload = [];
         $detailByKanca = [];
+        $payloadRitelTotal = 0;
 
         // First pass: collect all rows and group detail rows by kanca
         foreach ($buckets as $row) {
             $payload[] = $row;
+            $payloadRitelTotal += ($row['giro_ritel'] ?? 0) + ($row['deposito_ritel'] ?? 0) + ($row['tabungan_ritel'] ?? 0);
             if ($row['kanca_key'] !== $row['unit_key']) {
                 if (!isset($detailByKanca[$row['kanca_key']])) {
                     $detailByKanca[$row['kanca_key']] = [];
@@ -796,16 +824,29 @@ class DashboardHarianSnapshotService
             }
         }
 
+        if ($period === '2026-04-18' && !$kancaKey) {
+            \Log::info("First pass result", [
+                'payloadCount' => count($payload),
+                'payloadRitelTotal' => $payloadRitelTotal,
+                'detailByKancaCount' => count($detailByKanca),
+            ]);
+        }
+
         // Second pass: build final payload with only DETAIL rows (skip rows that would be summary rows)
         // Summary rows will be created explicitly in the third pass to ensure proper aggregation
         $finalPayload = [];
         $summaryRowsAdded = [];
+        $detailRowsAdded = 0;
+        $detailRitelTotal = 0;
 
         foreach ($payload as $row) {
             // Skip any rows where kanca_key === unit_key; those will be created in third pass
             if (($row['kanca_key'] ?? '') === ($row['unit_key'] ?? '')) {
                 continue;
             }
+
+            $detailRowsAdded++;
+            $detailRitelTotal += ($row['giro_ritel'] ?? 0) + ($row['deposito_ritel'] ?? 0) + ($row['tabungan_ritel'] ?? 0);
 
             $metrics = $this->finalizeMetrics($row);
             $finalPayload[] = array_merge(
@@ -824,6 +865,14 @@ class DashboardHarianSnapshotService
                     'updated_at' => now(),
                 ]
             );
+        }
+
+        if ($period === '2026-04-18' && !$kancaKey) {
+            \Log::info("Second pass result", [
+                'detailRowsAdded' => $detailRowsAdded,
+                'detailRitelTotal' => $detailRitelTotal,
+                'finalPayloadCount' => count($finalPayload),
+            ]);
         }
 
         // Third pass: create summary rows by aggregating all detail rows
