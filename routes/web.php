@@ -5,6 +5,7 @@ use App\Http\Controllers\DashboardHarianController;
 use App\Http\Controllers\DashboardSimpananController;
 use App\Http\Controllers\Report\DigitalPerformanceController;
 use App\Http\Controllers\Report\KejarLabaReportController;
+use App\Http\Controllers\Report\KinerjaKonsumerReportController;
 use App\Http\Controllers\Report\KolaborasiReportController;
 use App\Http\Controllers\Report\NewPayrollReportController;
 use App\Http\Controllers\Import\ImportCasaBrilinkController;
@@ -78,6 +79,8 @@ Route::middleware(['auth', 'release.session.lock', 'throttle:240,1'])->group(fun
         ->name('report.dashboard-pinjaman.kredit.data');
     Route::get('/report/dashboard-pinjaman/kejar-laba', [KejarLabaReportController::class, 'index'])
         ->name('report.dashboard-pinjaman.kejar-laba');
+    Route::get('/report/dashboard-pinjaman/kinerja-konsumer', [KinerjaKonsumerReportController::class, 'index'])
+        ->name('report.dashboard-pinjaman.kinerja-konsumer');
 
     // Digital Performance Reports (EDC, QRIS, Brilink) — dihandle oleh DigitalPerformanceController
     Route::get('/report/optimalisasi-digital/edc', [DigitalPerformanceController::class, 'performanceEdc'])->name('report.edc');

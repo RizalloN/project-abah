@@ -43,9 +43,9 @@ class DigitalPerformanceController extends Controller
     {
         $branches = ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'];
         ['branchOptions' => $branchOptions, 'branchUkerMap' => $branchUkerMap] = $this->filterService->buildBranchUkerFilterOptions(
-            'merchant_qris',
-            'NAMA_KCI',
-            'NAMA_BRANCH'
+            'jumlah_merchant_qris_detail',
+            'MBDESC',
+            'BRDESC'
         );
 
         return view('report.performance-qris', compact('branches', 'branchOptions', 'branchUkerMap'));

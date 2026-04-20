@@ -1474,18 +1474,18 @@ class DashboardHarianSnapshotService
             'deposito_mikro' => ['mata_anggaran' => ['Deposito Retail Funding Total'], 'uker_contains_any' => ['UNIT']],
             'tabungan_mikro' => ['mata_anggaran' => ['Tabungan Retail Funding Total'], 'uker_contains_any' => ['UNIT']],
             'total_os' => ['mata_anggaran' => ['B. KREDIT TOTAL']],
-            'kecil_non_cashcoll_os' => ['mata_anggaran' => ['B.2.a. Kredit Kecil Non Cash Collateral']],
-            'cashcoll_os' => ['mata_anggaran' => ['B.2.b. Kredit Kecil Cash Collateral']],
+            'kecil_non_cashcoll_os' => ['mata_anggaran' => ['B.2.a. Kredit Kecil Non Cash Collateral'], 'uker_contains_any' => ['KC', 'KCP']],
+            'cashcoll_os' => ['mata_anggaran' => ['B.2.b. Kredit Kecil Cash Collateral'], 'uker_contains_any' => ['KC', 'KCP']],
             'medium_os' => ['mata_anggaran' => ['B.3. MEDIUM']],
-            'briguna_konsumer_os' => ['mata_anggaran' => ['B.5.a. Briguna']],
-            'kpr_os' => ['mata_anggaran' => ['B.5.b. KPR']],
-            'kkb_os' => ['mata_anggaran' => ['B.5.c. KKB']],
-            'micro_os' => ['mata_anggaran' => ['B.1. MIKRO']],
-            'briguna_mikro_os' => ['mata_anggaran' => ['B.1.b. Briguna Mikro']],
-            'kupedes_os' => ['mata_anggaran' => ['B.1.a. Kupedes Komersial']],
-            'kur_mikro_os' => ['mata_anggaran' => ['B.1.c. KUR Mikro']],
-            'kur_kecil_os' => ['mata_anggaran' => ['B.1.d. KUR Kecil']],
-            'kur_kpp_os' => ['mata_anggaran' => ['B.1.e. KPP']],
+            'briguna_konsumer_os' => ['mata_anggaran' => ['B.5.a. Briguna'], 'uker_contains_any' => ['KC', 'KCP']],
+            'kpr_os' => ['mata_anggaran' => ['B.5.b. KPR'], 'uker_contains_any' => ['KC', 'KCP']],
+            'kkb_os' => ['mata_anggaran' => ['B.5.c. KKB'], 'uker_contains_any' => ['KC', 'KCP']],
+            'micro_os' => ['mata_anggaran' => ['B.1. MIKRO'], 'uker_contains_any' => ['UNIT']],
+            'briguna_mikro_os' => ['mata_anggaran' => ['B.1.b. Briguna Mikro'], 'uker_contains_any' => ['UNIT']],
+            'kupedes_os' => ['mata_anggaran' => ['B.1.a. Kupedes Komersial'], 'uker_contains_any' => ['UNIT']],
+            'kur_mikro_os' => ['mata_anggaran' => ['B.1.c. KUR Mikro'], 'uker_contains_any' => ['UNIT']],
+            'kur_kecil_os' => ['mata_anggaran' => ['B.1.d. KUR Kecil'], 'uker_contains_any' => ['UNIT']],
+            'kur_kpp_os' => ['mata_anggaran' => ['B.1.e. KPP'], 'uker_contains_any' => ['UNIT']],
             'total_sml_pct_non_commercial' => ['mata_anggaran' => ['DPK % Total']],
             'kecil_non_cashcoll_sml' => ['mata_anggaran' => ['DPK Rp Kecil Non Cash Collateral']],
             'cashcoll_sml' => ['mata_anggaran' => ['DPK Rp Kecil Cash Collateral']],
@@ -1544,10 +1544,19 @@ class DashboardHarianSnapshotService
         $final['sme_npl'] = $final['kecil_npl'];
         $final['consumer_npl'] = $final['briguna_konsumer_npl'] + $final['kpr_npl'] + $final['kkb_npl'];
         $final['total_npl_abs_non_commercial'] = $final['sme_npl'] + $final['consumer_npl'] + $final['micro_npl'];
+        $final['simpanan_ritel'] = $final['giro_ritel'] + $final['deposito_ritel'] + $final['tabungan_ritel'];
+        $final['simpanan_mikro'] = $final['giro_mikro'] + $final['deposito_mikro'] + $final['tabungan_mikro'];
+        $final['simpanan_wholesale'] = $final['giro_wholesale'] + $final['deposito_wholesale'] + $final['tabungan_wholesale'];
+        $final['total_simpanan'] = $final['simpanan_ritel'] + $final['simpanan_mikro'] + $final['simpanan_wholesale'];
+        $final['casa_ritel'] = $final['giro_ritel'] + $final['tabungan_ritel'];
+        $final['casa_mikro'] = $final['giro_mikro'] + $final['tabungan_mikro'];
+        $final['total_casa'] = $final['casa_ritel'] + $final['casa_mikro'];
+        $final['commercial_os'] = 0.0;
         $final['casa_pct'] = $this->safePercent($final['total_casa'], $final['total_simpanan']);
-        $final['ldr_non_commercial'] = 0.0;
-        $final['ldr_ritel_non_commercial'] = 0.0;
-        $final['ldr_mikro_non_commercial'] = 0.0;
+        // RKA LDR follows loan / savings, consistent with the live snapshot metrics.
+        $final['ldr_non_commercial'] = $this->safePercent($final['total_os'], $final['total_simpanan']);
+        $final['ldr_ritel_non_commercial'] = $this->safePercent($final['sme_os'] + $final['consumer_os'], $final['simpanan_ritel']);
+        $final['ldr_mikro_non_commercial'] = $this->safePercent($final['micro_os'], $final['simpanan_mikro']);
         $final['rec_dh_total'] = $final['rec_dh_small'] + $final['rec_dh_consumer'] + $final['rec_dh_micro'];
 
         return $final;

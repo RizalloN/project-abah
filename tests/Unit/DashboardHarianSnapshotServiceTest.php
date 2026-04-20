@@ -17,6 +17,14 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         $definitions = $reflection->invoke($service);
 
         $this->assertSame(['NPL % Total', 'DPK % Total'], $definitions['total_npl_pct_non_commercial']['mata_anggaran']);
+        $this->assertSame(['A.1. DPK Retail Funding Total'], $definitions['total_simpanan']['mata_anggaran']);
+        $this->assertSame(['KC', 'KCP'], $definitions['simpanan_ritel']['uker_contains_any']);
+        $this->assertSame(['UNIT'], $definitions['simpanan_mikro']['uker_contains_any']);
+        $this->assertSame(['KC', 'KCP'], $definitions['kecil_non_cashcoll_os']['uker_contains_any']);
+        $this->assertSame(['KC', 'KCP'], $definitions['briguna_konsumer_os']['uker_contains_any']);
+        $this->assertSame(['KC', 'KCP'], $definitions['kpr_os']['uker_contains_any']);
+        $this->assertSame(['KC', 'KCP'], $definitions['kkb_os']['uker_contains_any']);
+        $this->assertSame(['UNIT'], $definitions['micro_os']['uker_contains_any']);
         $this->assertSame(['NPL Rp Kecil Non Cash Collateral', 'DPK Rp Kecil Non Cash Collateral'], $definitions['kecil_non_cashcoll_npl']['mata_anggaran']);
         $this->assertSame(['NPL Rp Kecil Cash Collateral', 'DPK Rp Kecil Cash Collateral'], $definitions['cashcoll_npl']['mata_anggaran']);
         $this->assertSame(['NPL Rp Medium', 'DPK Rp Medium'], $definitions['medium_npl']['mata_anggaran']);
@@ -73,6 +81,9 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         $this->assertSame(500.0, $result['casa_ritel']);
         $this->assertSame(300.0, $result['casa_mikro']);
         $this->assertSame(800.0, $result['total_casa']);
-        $this->assertSame(40.0, $result['casa_pct']);
+        $this->assertSame(100.0, $result['casa_pct']);
+        $this->assertSame(1543.125, $result['ldr_non_commercial']);
+        $this->assertSame(34.0, $result['ldr_ritel_non_commercial']);
+        $this->assertEqualsWithDelta(6.6666666667, $result['ldr_mikro_non_commercial'], 0.0001);
     }
 }

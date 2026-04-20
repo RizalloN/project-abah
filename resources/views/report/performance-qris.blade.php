@@ -413,6 +413,9 @@ document.addEventListener('DOMContentLoaded', function () {
     let activeTab = 'qris';
     const branchUkerMap = @json($branchUkerMap ?? []);
     const filterPosisiRka = document.getElementById('filter_posisi_rka');
+    let activeRequest = null;
+    let loadTimer = null;
+    let requestSeq = 0;
 
     function escapeHtml(value) {
         return $('<div>').text(value ?? '').html();
@@ -563,8 +566,14 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function loadData() {
-        $('#loadingIndicator').fadeIn('fast');
-        
+        const seq = ++requestSeq;
+
+        if (activeRequest && activeRequest.readyState !== 4) {
+            activeRequest.abort();
+        }
+
+        $('#loadingIndicator').stop(true, true).show();
+
         let payload = {
             posisi: $('#filter_posisi').val(),
             tab: activeTab,
@@ -573,11 +582,15 @@ document.addEventListener('DOMContentLoaded', function () {
             _token: '{{ csrf_token() }}'
         };
 
-        $.ajax({
+        activeRequest = $.ajax({
             url: "{{ route('report.data') }}", 
             type: "POST",
             data: payload,
             success: function(res) {
+                if (seq !== requestSeq) {
+                    return;
+                }
+
                 if(res.status === 'success') {
                     updateGroupLabel(res.group_label);
                     
@@ -677,16 +690,31 @@ document.addEventListener('DOMContentLoaded', function () {
                             <td>${formatMilyar(total.vol.prev)}</td> <td>${formatMilyar(total.vol.curr)}</td>
                             <td>${formatGrowth(total.vol.mom, true)}</td> ${formatCellPct(total.vol.pct).replace(/bg-(good|bad)/, '')}
                         </tr>`;
-                        
+
                         $('#tbody-qris-mom').html(html);
                     }
                 }
-                $('#loadingIndicator').fadeOut('fast');
+                $('#loadingIndicator').stop(true, true).fadeOut('fast');
+            },
+            error: function(xhr, status) {
+                if (status === 'abort') {
+                    return;
+                }
+                $('#loadingIndicator').stop(true, true).fadeOut('fast');
             }
         });
     }
 
-    $('.filter-trigger').on('change', function() { loadData(); });
+    function scheduleLoadData(delayMs = 180) {
+        if (loadTimer) {
+            clearTimeout(loadTimer);
+        }
+        loadTimer = setTimeout(function () {
+            loadData();
+        }, delayMs);
+    }
+
+    $('.filter-trigger').on('change', function() { scheduleLoadData(); });
     $('#filterBranchDropdown').on('click', function (e) {
         e.preventDefault();
         e.stopPropagation();
@@ -707,11 +735,11 @@ document.addEventListener('DOMContentLoaded', function () {
     $('.filter-branch-checkbox').on('change', function () {
         updateBranchLabel();
         syncNamaUkerOptions();
-        loadData();
+        scheduleLoadData();
     });
     $(document).on('change', '.filter-uker-checkbox', function () {
         updateUkerLabel();
-        loadData();
+        scheduleLoadData();
     });
     $(document).on('click', function (e) {
         if (!$(e.target).closest('.branch-filter-dropdown').length) {
@@ -725,9 +753,9 @@ document.addEventListener('DOMContentLoaded', function () {
     // Trigger load data when tab is changed
     $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) { 
         activeTab = $(e.target).data('tab'); 
-        loadData(); 
+        scheduleLoadData(50); 
     });
-
+    
     // Initial Load
     syncNamaUkerOptions();
     updateBranchLabel();

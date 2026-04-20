@@ -33,6 +33,7 @@ Thumbs.db
 /.tmp_*
 /.codex_tmp_*
 *.tmp.php
+/$dest/
 # Executable biner tidak boleh ada di root project web
 /*.exe
 /*.frm

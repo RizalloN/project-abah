@@ -131,6 +131,15 @@ class ImportFileController extends Controller
             || str_contains(strtolower((string) ($reportData->nama_report ?? '')), 'daily loan');
     }
 
+    private function isJumlahMerchantQrisDetailReport($reportData): bool
+    {
+        if (!$reportData) {
+            return false;
+        }
+
+        return strtolower((string) ($reportData->table_name ?? '')) === 'jumlah_merchant_qris_detail';
+    }
+
     private function readCsvRecord($handle, string $delimiter)
     {
         $line = fgets($handle);
@@ -1670,6 +1679,8 @@ class ImportFileController extends Controller
                 $cellValue = $this->normalizeDailyLoanDate($cellValue);
             } elseif ($columnMeta['type'] === 'numeric') {
                 $cellValue = $this->normalizeDecimalValue($cellValue);
+            } else {
+                $cellValue = $this->normalizeImportedString($cellValue);
             }
 
             $rowData[$columnMeta['column']] = ($cellValue === '') ? null : $cellValue;
@@ -1804,21 +1815,21 @@ class ImportFileController extends Controller
         $baseIndex = 1 + $offset;
 
         return [
-            $periode,
-            $row[$baseIndex] ?? null,
-            trim((string) ($row[$baseIndex + 1] ?? '')) ?: null,
-            $row[$baseIndex + 2] ?? null,
-            trim((string) ($row[$baseIndex + 3] ?? '')) ?: null,
-            $row[$baseIndex + 4] ?? null,
-            trim((string) ($row[$baseIndex + 5] ?? '')) ?: null,
-            trim((string) ($row[$baseIndex + 6] ?? '')) ?: null,
-            $row[$baseIndex + 7] ?? null,
-            trim((string) ($row[$baseIndex + 8] ?? '')) ?: null,
-            $row[$baseIndex + 9] ?? null,
-            $row[$baseIndex + 10] ?? null,
-            $row[$baseIndex + 11] ?? null,
-            $row[$baseIndex + 12] ?? null,
-            $row[$baseIndex + 13] ?? null,
+            $this->normalizeImportedString($periode),
+            $this->normalizeImportedString($row[$baseIndex] ?? null),
+            $this->normalizeImportedString($row[$baseIndex + 1] ?? null),
+            $this->normalizeImportedString($row[$baseIndex + 2] ?? null),
+            $this->normalizeImportedString($row[$baseIndex + 3] ?? null),
+            $this->normalizeImportedString($row[$baseIndex + 4] ?? null),
+            $this->normalizeImportedString($row[$baseIndex + 5] ?? null),
+            $this->normalizeImportedString($row[$baseIndex + 6] ?? null),
+            $this->normalizeImportedString($row[$baseIndex + 7] ?? null),
+            $this->normalizeImportedString($row[$baseIndex + 8] ?? null),
+            $this->normalizeImportedString($row[$baseIndex + 9] ?? null),
+            $this->normalizeImportedString($row[$baseIndex + 10] ?? null),
+            $this->normalizeImportedString($row[$baseIndex + 11] ?? null),
+            $this->normalizeImportedString($row[$baseIndex + 12] ?? null),
+            $this->normalizeImportedString($row[$baseIndex + 13] ?? null),
         ];
     }
 
@@ -1920,6 +1931,52 @@ class ImportFileController extends Controller
         $result = number_format((float) $value, 2, '.', '');
         $this->decimalNormalizationCache[$cacheKey] = $result;
         return $result;
+    }
+
+    private function normalizeImportedString($value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        if (is_bool($value)) {
+            return $value ? '1' : '0';
+        }
+
+        if (is_int($value) || is_float($value)) {
+            return trim((string) $value);
+        }
+
+        $value = trim((string) $value);
+        if ($value === '') {
+            return null;
+        }
+
+        if (!preg_match('//u', $value)) {
+            foreach (['Windows-1252', 'ISO-8859-1', 'ISO-8859-15'] as $encoding) {
+                $converted = @mb_convert_encoding($value, 'UTF-8', $encoding);
+                if (is_string($converted) && $converted !== '' && preg_match('//u', $converted)) {
+                    $value = $converted;
+                    break;
+                }
+            }
+
+            if (!preg_match('//u', $value)) {
+                $converted = @iconv('Windows-1252', 'UTF-8//IGNORE', $value);
+                if (is_string($converted) && $converted !== '') {
+                    $value = $converted;
+                } else {
+                    $converted = @iconv('ISO-8859-1', 'UTF-8//IGNORE', $value);
+                    if (is_string($converted) && $converted !== '') {
+                        $value = $converted;
+                    }
+                }
+            }
+        }
+
+        $value = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', '', $value);
+
+        return $value === '' ? null : $value;
     }
 
     public function upload(Request $request)
@@ -2025,6 +2082,7 @@ class ImportFileController extends Controller
         $this->releaseSessionLockIfNeeded();
         $isDailyLoan = $this->isDailyLoanReport($reportData);
         $tableName = $this->resolveTableName($reportData);
+        $isJumlahMerchantQrisDetail = $this->isJumlahMerchantQrisDetailReport($reportData) || $tableName === 'jumlah_merchant_qris_detail';
         $disableArea6AutoFilter = $isDailyLoan || in_array($tableName, [
             'sv_merchant',
             'merchant_qris',
@@ -2039,6 +2097,14 @@ class ImportFileController extends Controller
         $previewUniqueScanLimit = $isDailyLoan ? self::DAILY_LOAN_PREVIEW_UNIQUE_SCAN_LIMIT : self::PREVIEW_UNIQUE_SCAN_LIMIT;
         $previewUniqueLimitPerColumn = $isDailyLoan ? self::DAILY_LOAN_PREVIEW_UNIQUE_LIMIT_PER_COLUMN : self::PREVIEW_UNIQUE_LIMIT_PER_COLUMN;
         $fileSizeBytes = (int) @filesize($filePath);
+
+        if ($isJumlahMerchantQrisDetail) {
+            // QRIS detail files are much wider and bigger than the standard reports.
+            // Keep preview snappy by sampling fewer rows while still retaining branch filters.
+            $previewSampleLimit = min($previewSampleLimit, 100);
+            $previewUniqueScanLimit = min($previewUniqueScanLimit, 250);
+            $previewUniqueLimitPerColumn = min($previewUniqueLimitPerColumn, 80);
+        }
 
         if (!$isDailyLoan && $fileSizeBytes > self::LARGE_FILE_THRESHOLD_BYTES) {
             $previewSampleLimit = min($previewSampleLimit, self::LARGE_FILE_PREVIEW_SAMPLE_LIMIT);
@@ -2071,6 +2137,9 @@ class ImportFileController extends Controller
                 $savedRows = 0;
                 $scannedRows = 0;
                 $collectUniqueValues = true;
+                $previewFilterableHeaders = $isJumlahMerchantQrisDetail
+                    ? array_fill_keys(['MBDESC', 'BRDESC'], true)
+                    : [];
                 
                 // Pre-allocate for non-daily-loan date parsing
                 $posisiCache = [];
@@ -2100,6 +2169,13 @@ class ImportFileController extends Controller
                         }
 
                         foreach ($headers as $i => $h) {
+                            if ($isJumlahMerchantQrisDetail) {
+                                $normalizedHeader = strtoupper(trim((string) $h));
+                                if (!isset($previewFilterableHeaders[$normalizedHeader])) {
+                                    continue;
+                                }
+                            }
+
                             $uniqueValues[$i] = [];
                         }
 
@@ -2202,12 +2278,10 @@ class ImportFileController extends Controller
                         if ($collectUniqueValues) {
                             // OPTIMIZATION 11: Batch unique value collection
                             $validIndices = array_keys($uniqueValues);
-                            $validIndicesSet = array_flip($validIndices);  // Use flip for faster lookup
-                            
                             foreach ($validIndices as $i) {
                                 $val = $data[$i] ?? '';
                                 $cleanVal = is_string($val) ? trim($val) : (string) $val;
-                                
+
                                 if (count($uniqueValues[$i]) < $previewUniqueLimitPerColumn || isset($uniqueValues[$i][$cleanVal])) {
                                     $uniqueValues[$i][$cleanVal] = true;
                                 }
@@ -3490,14 +3564,14 @@ class ImportFileController extends Controller
                         'uniqueid_namareport' => uniqid() . '_BST',
                         'periode' => $periode,
 
-                        'kanwil' => trim($data[2 + $brilinkOffset] ?? null),
-                        'cabang' => trim($data[4 + $brilinkOffset] ?? null),
-                        'uker' => trim($data[6 + $brilinkOffset] ?? null),
+                        'kanwil' => $this->normalizeImportedString($data[2 + $brilinkOffset] ?? null),
+                        'cabang' => $this->normalizeImportedString($data[4 + $brilinkOffset] ?? null),
+                        'uker' => $this->normalizeImportedString($data[6 + $brilinkOffset] ?? null),
 
-                        'merchant_name' => trim($data[7 + $brilinkOffset] ?? null),
-                        'merchant_code' => trim($data[8 + $brilinkOffset] ?? null),
-                        'outlet_name' => trim($data[9 + $brilinkOffset] ?? null),
-                        'outlet_code' => trim($data[10 + $brilinkOffset] ?? null),
+                        'merchant_name' => $this->normalizeImportedString($data[7 + $brilinkOffset] ?? null),
+                        'merchant_code' => $this->normalizeImportedString($data[8 + $brilinkOffset] ?? null),
+                        'outlet_name' => $this->normalizeImportedString($data[9 + $brilinkOffset] ?? null),
+                        'outlet_code' => $this->normalizeImportedString($data[10 + $brilinkOffset] ?? null),
 
                         'total_transaksi' => (int) preg_replace('/[^0-9]/', '', $data[11 + $brilinkOffset] ?? 0),
 
@@ -3524,6 +3598,8 @@ class ImportFileController extends Controller
                             $cellValue = $this->normalizeDailyLoanDate($cellValue);
                         } elseif ($columnMeta['type'] === 'numeric') {
                             $cellValue = $this->normalizeDecimalValue($cellValue);
+                        } else {
+                            $cellValue = $this->normalizeImportedString($cellValue);
                         }
 
                         $rowData[$columnMeta['column']] = ($cellValue === '') ? null : $cellValue;

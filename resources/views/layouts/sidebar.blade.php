@@ -403,8 +403,8 @@
                     </a>
                 </li>
 
-                <li class="nav-item {{ request()->routeIs('report.dashboard-pinjaman*', 'report.dashboard-pinjaman.kredit', 'report.dashboard-pinjaman.summary', 'report.dashboard-pinjaman.matrix', 'report.dashboard-pinjaman.kolek-tidak-sesuai', 'report.dashboard-pinjaman.kejar-laba') ? 'menu-open' : '' }}">
-                    <a href="#" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman*', 'report.dashboard-pinjaman.kredit', 'report.dashboard-pinjaman.summary', 'report.dashboard-pinjaman.matrix', 'report.dashboard-pinjaman.kolek-tidak-sesuai', 'report.dashboard-pinjaman.kejar-laba') ? 'active' : '' }}">
+                <li class="nav-item {{ request()->routeIs('report.dashboard-pinjaman*', 'report.dashboard-pinjaman.kinerja-konsumer', 'report.dashboard-pinjaman.kolek-tidak-sesuai.*') ? 'menu-open' : '' }}">
+                    <a href="#" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman*', 'report.dashboard-pinjaman.kinerja-konsumer', 'report.dashboard-pinjaman.kolek-tidak-sesuai.*') ? 'active' : '' }}">
                         <i class="nav-icon fas fa-chart-line"></i>
                         <p>
                             Dashboard Pinjaman
@@ -434,6 +434,12 @@
                             <a href="{{ route('report.dashboard-pinjaman.kejar-laba') }}" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman.kejar-laba') ? 'active' : '' }}">
                                 <i class="far fa-circle nav-icon"></i>
                                 <p>Report Kejar Laba</p>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="{{ route('report.dashboard-pinjaman.kinerja-konsumer') }}" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman.kinerja-konsumer') ? 'active' : '' }}">
+                                <i class="far fa-circle nav-icon"></i>
+                                <p>Kinerja Konsumer</p>
                             </a>
                         </li>
                     </ul>
