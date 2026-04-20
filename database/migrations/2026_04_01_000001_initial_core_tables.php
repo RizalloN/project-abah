@@ -10,130 +10,152 @@ return new class extends Migration
     public function up(): void
     {
         // 1. Framework: Users
-        Schema::create('users', function (Blueprint $table) {
-            $table->id();
-            $table->string('name');
-            $table->string('pn', 20)->unique();
-            $table->string('email')->nullable()->unique();
-            $table->timestamp('email_verified_at')->nullable();
-            $table->string('password');
-            $table->string('role', 20)->default('user');
-            $table->rememberToken();
-            $table->timestamps();
-        });
+        if (!Schema::hasTable('users')) {
+            Schema::create('users', function (Blueprint $table) {
+                $table->id();
+                $table->string('name');
+                $table->string('pn', 20)->unique();
+                $table->string('email')->nullable()->unique();
+                $table->timestamp('email_verified_at')->nullable();
+                $table->string('password');
+                $table->string('role', 20)->default('user');
+                $table->rememberToken();
+                $table->timestamps();
+            });
+        }
 
         // 2. Framework: Sessions
-        Schema::create('sessions', function (Blueprint $table) {
-            $table->string('id')->primary();
-            $table->foreignId('user_id')->nullable()->index();
-            $table->string('ip_address', 45)->nullable();
-            $table->text('user_agent')->nullable();
-            $table->longText('payload');
-            $table->integer('last_activity')->index();
-        });
+        if (!Schema::hasTable('sessions')) {
+            Schema::create('sessions', function (Blueprint $table) {
+                $table->string('id')->primary();
+                $table->foreignId('user_id')->nullable()->index();
+                $table->string('ip_address', 45)->nullable();
+                $table->text('user_agent')->nullable();
+                $table->longText('payload');
+                $table->integer('last_activity')->index();
+            });
+        }
 
         // 3. Framework: Jobs & Queues
-        Schema::create('jobs', function (Blueprint $table) {
-            $table->id();
-            $table->string('queue')->index();
-            $table->longText('payload');
-            $table->unsignedTinyInteger('attempts');
-            $table->unsignedInteger('reserved_at')->nullable();
-            $table->unsignedInteger('available_at');
-            $table->unsignedInteger('created_at');
-        });
+        if (!Schema::hasTable('jobs')) {
+            Schema::create('jobs', function (Blueprint $table) {
+                $table->id();
+                $table->string('queue')->index();
+                $table->longText('payload');
+                $table->unsignedTinyInteger('attempts');
+                $table->unsignedInteger('reserved_at')->nullable();
+                $table->unsignedInteger('available_at');
+                $table->unsignedInteger('created_at');
+            });
+        }
 
-        Schema::create('job_batches', function (Blueprint $table) {
-            $table->string('id')->primary();
-            $table->string('name');
-            $table->integer('total_jobs');
-            $table->integer('pending_jobs');
-            $table->integer('failed_jobs');
-            $table->longText('failed_job_ids');
-            $table->mediumText('options')->nullable();
-            $table->integer('cancelled_at')->nullable();
-            $table->integer('created_at');
-            $table->integer('finished_at')->nullable();
-        });
+        if (!Schema::hasTable('job_batches')) {
+            Schema::create('job_batches', function (Blueprint $table) {
+                $table->string('id')->primary();
+                $table->string('name');
+                $table->integer('total_jobs');
+                $table->integer('pending_jobs');
+                $table->integer('failed_jobs');
+                $table->longText('failed_job_ids');
+                $table->mediumText('options')->nullable();
+                $table->integer('cancelled_at')->nullable();
+                $table->integer('created_at');
+                $table->integer('finished_at')->nullable();
+            });
+        }
 
-        Schema::create('failed_jobs', function (Blueprint $table) {
-            $table->id();
-            $table->string('uuid')->unique();
-            $table->text('connection');
-            $table->text('queue');
-            $table->longText('payload');
-            $table->longText('exception');
-            $table->timestamp('failed_at')->useCurrent();
-        });
+        if (!Schema::hasTable('failed_jobs')) {
+            Schema::create('failed_jobs', function (Blueprint $table) {
+                $table->id();
+                $table->string('uuid')->unique();
+                $table->text('connection');
+                $table->text('queue');
+                $table->longText('payload');
+                $table->longText('exception');
+                $table->timestamp('failed_at')->useCurrent();
+            });
+        }
 
         // 4. Framework: Cache
-        Schema::create('cache', function (Blueprint $table) {
-            $table->string('key')->primary();
-            $table->mediumText('value');
-            $table->integer('expiration');
-        });
+        if (!Schema::hasTable('cache')) {
+            Schema::create('cache', function (Blueprint $table) {
+                $table->string('key')->primary();
+                $table->mediumText('value');
+                $table->integer('expiration');
+            });
+        }
 
-        Schema::create('cache_locks', function (Blueprint $table) {
-            $table->string('key')->primary();
-            $table->string('owner');
-            $table->integer('expiration');
-        });
+        if (!Schema::hasTable('cache_locks')) {
+            Schema::create('cache_locks', function (Blueprint $table) {
+                $table->string('key')->primary();
+                $table->string('owner');
+                $table->integer('expiration');
+            });
+        }
 
         // 5. Framework: Password Resets
-        Schema::create('password_reset_tokens', function (Blueprint $table) {
-            $table->string('email')->primary();
-            $table->string('token');
-            $table->timestamp('created_at')->nullable();
-        });
+        if (!Schema::hasTable('password_reset_tokens')) {
+            Schema::create('password_reset_tokens', function (Blueprint $table) {
+                $table->string('email')->primary();
+                $table->string('token');
+                $table->timestamp('created_at')->nullable();
+            });
+        }
 
         // 6. System Metadata: Nama Report
-        Schema::create('nama_report', function (Blueprint $table) {
-            $table->id('id_report');
-            $table->string('nama_report');
-            $table->string('table_name');
-            $table->boolean('active')->default(true);
-            $table->string('import_controller', 150)->nullable();
-            $table->boolean('requires_manual_periode')->default(false);
-            $table->string('manual_periode_type', 20)->nullable();
-            $table->string('manual_periode_label', 100)->nullable();
-            $table->string('manual_periode_help', 255)->nullable();
-            $table->timestamps();
-        });
+        if (!Schema::hasTable('nama_report')) {
+            Schema::create('nama_report', function (Blueprint $table) {
+                $table->id('id_report');
+                $table->string('nama_report');
+                $table->string('table_name');
+                $table->boolean('active')->default(true);
+                $table->string('import_controller', 150)->nullable();
+                $table->boolean('requires_manual_periode')->default(false);
+                $table->string('manual_periode_type', 20)->nullable();
+                $table->string('manual_periode_label', 100)->nullable();
+                $table->string('manual_periode_help', 255)->nullable();
+                $table->timestamps();
+            });
+        }
 
         // 7. System Metadata: Import Jobs
-        Schema::create('import_jobs', function (Blueprint $table) {
-            $table->id();
-            $table->unsignedBigInteger('id_report');
-            $table->string('file_name');
-            $table->text('folder_path');
-            $table->string('status')->default('uploaded');
-            $table->integer('total_files')->nullable();
-            $table->unsignedInteger('total_success')->default(0);
-            $table->unsignedInteger('total_failed')->default(0);
-            $table->unsignedBigInteger('created_by');
-            $table->longText('job_context')->nullable();
-            $table->string('job_fingerprint', 64)->nullable()->unique();
-            $table->timestamps();
+        if (!Schema::hasTable('import_jobs')) {
+            Schema::create('import_jobs', function (Blueprint $table) {
+                $table->id();
+                $table->unsignedBigInteger('id_report');
+                $table->string('file_name');
+                $table->text('folder_path');
+                $table->string('status')->default('uploaded');
+                $table->integer('total_files')->nullable();
+                $table->unsignedInteger('total_success')->default(0);
+                $table->unsignedInteger('total_failed')->default(0);
+                $table->unsignedBigInteger('created_by');
+                $table->longText('job_context')->nullable();
+                $table->string('job_fingerprint', 64)->nullable()->unique();
+                $table->timestamps();
 
-            $table->index(['status', 'updated_at'], 'idx_import_jobs_status_upd');
-            $table->index(['id_report', 'created_at'], 'idx_import_jobs_report_create');
-        });
+                $table->index(['status', 'updated_at'], 'idx_import_jobs_status_upd');
+                $table->index(['id_report', 'created_at'], 'idx_import_jobs_report_create');
+            });
+        }
 
         // 8. System Metadata: Audit Sync
-        Schema::create('report_sync_audits', function (Blueprint $table) {
-            $table->id();
-            $table->unsignedBigInteger('import_job_id')->nullable();
-            $table->string('source', 150)->nullable();
-            $table->string('table_name', 120)->index();
-            $table->date('period_hint')->nullable()->index();
-            $table->string('action', 80)->index();
-            $table->string('status', 30)->index();
-            $table->unsignedInteger('duration_ms')->nullable();
-            $table->unsignedInteger('affected_rows')->nullable();
-            $table->text('message')->nullable();
-            $table->longText('context')->nullable();
-            $table->timestamps();
-        });
+        if (!Schema::hasTable('report_sync_audits')) {
+            Schema::create('report_sync_audits', function (Blueprint $table) {
+                $table->id();
+                $table->unsignedBigInteger('import_job_id')->nullable();
+                $table->string('source', 150)->nullable();
+                $table->string('table_name', 120)->index();
+                $table->date('period_hint')->nullable()->index();
+                $table->string('action', 80)->index();
+                $table->string('status', 30)->index();
+                $table->unsignedInteger('duration_ms')->nullable();
+                $table->unsignedInteger('affected_rows')->nullable();
+                $table->text('message')->nullable();
+                $table->longText('context')->nullable();
+                $table->timestamps();
+            });
+        }
 
         $this->seedNamaReport();
         $this->seedAdminUser();
@@ -182,20 +204,25 @@ return new class extends Migration
 
         $now = now();
         foreach ($seeds as $row) {
-            DB::table('nama_report')->insert(array_merge($row, ['created_at' => $now, 'updated_at' => $now]));
+            DB::table('nama_report')->updateOrInsert(
+                ['id_report' => $row['id_report']],
+                array_merge($row, ['created_at' => $now, 'updated_at' => $now])
+            );
         }
     }
     private function seedAdminUser(): void
     {
-        DB::table('users')->insert([
-            'id' => 1,
-            'name' => 'admin',
-            'pn' => '90179583',
-            'password' => '$2y$12$Q.YPC/lCsSrn6vvObGIhvuUi2Zs5SHT4MtPtwkxzT3iB5cipWCg52',
-            'remember_token' => null,
-            'created_at' => null,
-            'updated_at' => null,
-            'role' => 'admin',
-        ]);
+        DB::table('users')->updateOrInsert(
+            ['pn' => '90179583'],
+            [
+                'id' => 1,
+                'name' => 'admin',
+                'password' => '$2y$12$Q.YPC/lCsSrn6vvObGIhvuUi2Zs5SHT4MtPtwkxzT3iB5cipWCg52',
+                'remember_token' => null,
+                'created_at' => null,
+                'updated_at' => null,
+                'role' => 'admin',
+            ]
+        );
     }
 };

@@ -9,7 +9,8 @@ return new class extends Migration
     public function up(): void
     {
         // 1. Simpanan MultiPN
-        Schema::create('simpanan_multipn', function (Blueprint $table) {
+        if (!Schema::hasTable('simpanan_multipn')) {
+            Schema::create('simpanan_multipn', function (Blueprint $table) {
             $table->string('uniqueid_SMPN', 50)->primary();
             $table->date('posisi')->nullable()->index();
             $table->string('regional_office', 100)->nullable();
@@ -25,11 +26,13 @@ return new class extends Migration
             $table->index(['posisi', 'kantor_cabang', 'unit_kerja'], 'idx_smp_posisi_cab_unit');
             $table->index(['posisi', 'status', 'kantor_cabang', 'unit_kerja'], 'idx_smp_posisi_status_cab_unit');
             $table->index(['posisi', 'updated_at'], 'idx_smp_posisi_updated');
-            $table->index(['posisi', 'CIFNO'], 'idx_smp_posisi_cif');
-        });
+                $table->index(['posisi', 'CIFNO'], 'idx_smp_posisi_cif');
+            });
+        }
 
         // 2. Daily Loan Dinamis
-        Schema::create('daily_loan_dinamis', function (Blueprint $table) {
+        if (!Schema::hasTable('daily_loan_dinamis')) {
+            Schema::create('daily_loan_dinamis', function (Blueprint $table) {
             $table->string('uniqueid_namareport', 255)->primary();
             $table->date('periode')->nullable()->index();
             $table->string('kode_kanwil1', 100)->nullable();
@@ -140,11 +143,13 @@ return new class extends Migration
             $table->index(['periode', 'nomor_rekening1'], 'idx_loan_periode_rek');
             $table->index(['periode', 'cabang1', 'unit1'], 'idx_loan_periode_cab_unit');
             $table->index(['periode', 'segmen_dashboard', 'produk_dashboard'], 'idx_loan_periode_segmen');
-            $table->index(['periode', 'produk_dashboard'], 'idx_loan_periode_produk');
-        });
+                $table->index(['periode', 'produk_dashboard'], 'idx_loan_periode_produk');
+            });
+        }
 
         // 3. Nominatif PH
-        Schema::create('lw325_ph', function (Blueprint $table) {
+        if (!Schema::hasTable('lw325_ph')) {
+            Schema::create('lw325_ph', function (Blueprint $table) {
             $table->string('uniqueid_namareport', 255)->primary();
             $table->date('periode')->nullable()->index();
             $table->string('acctno', 50)->nullable()->index();
@@ -176,11 +181,13 @@ return new class extends Migration
             $table->decimal('os_penuh_berjalan1', 20, 2)->nullable();
             $table->timestamps();
 
-            $table->index(['periode', 'kanca', 'uniqueid_namareport'], 'idx_lw325ph_delete_scope');
-        });
+                $table->index(['periode', 'kanca', 'uniqueid_namareport'], 'idx_lw325ph_delete_scope');
+            });
+        }
 
         // 4. Performance PIS
-        Schema::create('performance_pis_per_produk', function (Blueprint $table) {
+        if (!Schema::hasTable('performance_pis_per_produk')) {
+            Schema::create('performance_pis_per_produk', function (Blueprint $table) {
             $table->string('uniqueid_namareport', 255)->primary();
             $table->date('posisi')->nullable()->index();
             $table->string('kode_kanwil', 20)->nullable();
@@ -201,11 +208,13 @@ return new class extends Migration
             $table->timestamps();
 
             $table->index(['posisi', 'kanca'], 'idx_pis_posisi_kanca');
-            $table->index(['posisi', 'nomor_rekening'], 'idx_pis_posisi_rek');
-        });
+                $table->index(['posisi', 'nomor_rekening'], 'idx_pis_posisi_rek');
+            });
+        }
 
         // 5. Brilink Web Summary
-        Schema::create('brilink_web_laporan_summary_transaksi_brilink_web', function (Blueprint $table) {
+        if (!Schema::hasTable('brilink_web_laporan_summary_transaksi_brilink_web')) {
+            Schema::create('brilink_web_laporan_summary_transaksi_brilink_web', function (Blueprint $table) {
             $table->string('uniqueid_namareport', 50)->primary();
             $table->string('periode', 20)->nullable()->index();
             $table->string('kanwil', 100)->nullable();
@@ -221,11 +230,13 @@ return new class extends Migration
             $table->decimal('total_fee_bri', 18, 2)->nullable();
             $table->timestamps();
 
-            $table->index(['periode', 'cabang', 'uker'], 'idx_brilink_period_cab_uker');
-        });
+                $table->index(['periode', 'cabang', 'uker'], 'idx_brilink_period_cab_uker');
+            });
+        }
 
         // 6. EDC Detail (Merchant Detail)
-        Schema::create('jumlah_merchant_detail', function (Blueprint $table) {
+        if (!Schema::hasTable('jumlah_merchant_detail')) {
+            Schema::create('jumlah_merchant_detail', function (Blueprint $table) {
             $table->string('uniqueid_namareport', 255)->primary();
             $table->string('PERIODE', 20)->nullable()->index();
             $table->date('POSISI')->nullable()->index();
@@ -237,11 +248,13 @@ return new class extends Migration
             $table->string('TIERING_SALES_VOLUME', 100)->nullable();
             $table->timestamps();
 
-            $table->index(['POSISI', 'NAMA_KANCA', 'NAMA_UKER'], 'idx_edc_posisi_cab_unit');
-        });
+                $table->index(['POSISI', 'NAMA_KANCA', 'NAMA_UKER'], 'idx_edc_posisi_cab_unit');
+            });
+        }
 
         // 7. CASA Brilink
-        Schema::create('casa_brilink_web', function (Blueprint $table) {
+        if (!Schema::hasTable('casa_brilink_web')) {
+            Schema::create('casa_brilink_web', function (Blueprint $table) {
             $table->string('uniqueid_namareport', 255)->primary();
             $table->date('periode')->index();
             $table->string('mbdesc', 150)->nullable()->index();
@@ -251,23 +264,27 @@ return new class extends Migration
             $table->string('cifno', 50)->nullable();
             $table->timestamps();
 
-            $table->index(['periode', 'mbdesc', 'brdesc'], 'idx_casaweb_period_cab_uker');
-        });
+                $table->index(['periode', 'mbdesc', 'brdesc'], 'idx_casaweb_period_cab_uker');
+            });
+        }
 
-        Schema::create('casa_brilink_edc', function (Blueprint $table) {
-            $table->string('uniqueid_namareport', 255)->primary();
-            $table->date('periode')->index();
-            $table->string('mbdesc', 150)->nullable()->index();
-            $table->string('brdesc', 150)->nullable()->index();
-            $table->string('account', 50)->nullable()->index();
-            $table->decimal('jml_nominal_casa', 20, 2)->nullable();
-            $table->string('cifno', 50)->nullable();
-            $table->timestamps();
+        if (!Schema::hasTable('casa_brilink_edc')) {
+            Schema::create('casa_brilink_edc', function (Blueprint $table) {
+                $table->string('uniqueid_namareport', 255)->primary();
+                $table->date('periode')->index();
+                $table->string('mbdesc', 150)->nullable()->index();
+                $table->string('brdesc', 150)->nullable()->index();
+                $table->string('account', 50)->nullable()->index();
+                $table->decimal('jml_nominal_casa', 20, 2)->nullable();
+                $table->string('cifno', 50)->nullable();
+                $table->timestamps();
 
-            $table->index(['periode', 'mbdesc', 'brdesc'], 'idx_casaedc_period_cab_uker');
-        });
+                $table->index(['periode', 'mbdesc', 'brdesc'], 'idx_casaedc_period_cab_uker');
+            });
+        }
 
-        Schema::create('merchant_qris', function (Blueprint $table) {
+        if (!Schema::hasTable('merchant_qris')) {
+            Schema::create('merchant_qris', function (Blueprint $table) {
             $table->string('uniqueid_namareport', 255)->primary();
             $table->string('PERIODE', 20)->nullable()->index();
             $table->date('POSISI')->nullable()->index();
@@ -276,10 +293,12 @@ return new class extends Migration
             $table->decimal('NILAI', 20, 2)->nullable();
             $table->timestamps();
 
-            $table->index(['POSISI', 'NAMA_KCI', 'NAMA_BRANCH'], 'idx_qris_posisi_kanwil_cab');
-        });
+                $table->index(['POSISI', 'NAMA_KCI', 'NAMA_BRANCH'], 'idx_qris_posisi_kanwil_cab');
+            });
+        }
 
-        Schema::create('merchant_qris_volume', function (Blueprint $table) {
+        if (!Schema::hasTable('merchant_qris_volume')) {
+            Schema::create('merchant_qris_volume', function (Blueprint $table) {
             $table->string('uniqueid_namareport', 255)->primary();
             $table->string('PERIODE', 20)->nullable()->index();
             $table->date('POSISI')->nullable()->index();
@@ -289,10 +308,12 @@ return new class extends Migration
             $table->decimal('MERCHANT_QRIS_VOLUME', 20, 2)->nullable();
             $table->timestamps();
 
-            $table->index(['POSISI', 'NAMA_KCI', 'NAMA_BRANCH'], 'idx_qrisvol_posisi_kanwil_cab');
-        });
+                $table->index(['POSISI', 'NAMA_KCI', 'NAMA_BRANCH'], 'idx_qrisvol_posisi_kanwil_cab');
+            });
+        }
 
-        Schema::create('sv_merchant', function (Blueprint $table) {
+        if (!Schema::hasTable('sv_merchant')) {
+            Schema::create('sv_merchant', function (Blueprint $table) {
             $table->string('uniqueid_namareport', 255)->primary();
             $table->string('PERIODE', 20)->nullable()->index();
             $table->date('POSISI')->nullable()->index();
@@ -301,11 +322,13 @@ return new class extends Migration
             $table->decimal('SV_MERCHANT', 20, 2)->nullable();
             $table->timestamps();
 
-            $table->index(['POSISI', 'NAMA_KCI', 'NAMA_BRANCH'], 'idx_sv_posisi_kanwil_cab');
-        });
+                $table->index(['POSISI', 'NAMA_KCI', 'NAMA_BRANCH'], 'idx_sv_posisi_kanwil_cab');
+            });
+        }
 
         // 8. Brimo Reports
-        Schema::create('user_brimo_fin', function (Blueprint $table) {
+        if (!Schema::hasTable('user_brimo_fin')) {
+            Schema::create('user_brimo_fin', function (Blueprint $table) {
             $table->string('uniqueid_namareport', 255)->primary();
             $table->string('periode', 20)->nullable()->index();
             $table->date('posisi')->nullable()->index();
@@ -319,11 +342,13 @@ return new class extends Migration
             $table->string('brdesc', 100)->nullable()->index();
             $table->string('kategori', 100)->nullable()->index();
             $table->string('jenis', 100)->nullable()->index();
-            $table->decimal('jumlah', 15, 2)->default(0);
-            $table->timestamps();
-        });
+                $table->decimal('jumlah', 15, 2)->default(0);
+                $table->timestamps();
+            });
+        }
 
-        Schema::create('user_brimo_rpt_v2', function (Blueprint $table) {
+        if (!Schema::hasTable('user_brimo_rpt_v2')) {
+            Schema::create('user_brimo_rpt_v2', function (Blueprint $table) {
             $table->string('uniqueid_namareport', 255)->primary();
             $table->string('periode', 20)->nullable()->index();
             $table->date('posisi')->nullable()->index();
@@ -337,9 +362,10 @@ return new class extends Migration
             $table->string('brdesc', 100)->nullable()->index();
             $table->string('kategori', 100)->nullable()->index();
             $table->string('jenis', 100)->nullable()->index();
-            $table->decimal('jumlah', 15, 2)->default(0);
-            $table->timestamps();
-        });
+                $table->decimal('jumlah', 15, 2)->default(0);
+                $table->timestamps();
+            });
+        }
     }
 
     public function down(): void

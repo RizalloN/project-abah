@@ -9,26 +9,29 @@ return new class extends Migration
     public function up(): void
     {
         // 1. SSA Simpanan
-        Schema::create('ssa_simpanan', function (Blueprint $table) {
-            $table->id();
-            $table->date('Month_Day_Year_of_Posisi')->nullable()->index();
-            $table->string('regional_office', 100)->nullable();
-            $table->string('id_cabang', 20)->nullable();
-            $table->string('nama_cabang', 150)->nullable()->index();
-            $table->string('id_uker', 20)->nullable();
-            $table->string('nama_uker', 150)->nullable()->index();
-            $table->string('cif', 50)->nullable()->index();
-            $table->string('no_rekening', 50)->nullable();
-            $table->string('segmentasi', 50)->nullable();
-            $table->string('produk', 100)->nullable();
-            $table->decimal('saldo', 20, 2)->nullable();
-            $table->timestamps();
+        if (!Schema::hasTable('ssa_simpanan')) {
+            Schema::create('ssa_simpanan', function (Blueprint $table) {
+                $table->id();
+                $table->date('Month_Day_Year_of_Posisi')->nullable()->index();
+                $table->string('regional_office', 100)->nullable();
+                $table->string('id_cabang', 20)->nullable();
+                $table->string('nama_cabang', 150)->nullable()->index();
+                $table->string('id_uker', 20)->nullable();
+                $table->string('nama_uker', 150)->nullable()->index();
+                $table->string('cif', 50)->nullable()->index();
+                $table->string('no_rekening', 50)->nullable();
+                $table->string('segmentasi', 50)->nullable();
+                $table->string('produk', 100)->nullable();
+                $table->decimal('saldo', 20, 2)->nullable();
+                $table->timestamps();
 
-            $table->index(['Month_Day_Year_of_Posisi', 'nama_cabang', 'nama_uker'], 'idx_ssa_simp_period_cab_unit');
-        });
+                $table->index(['Month_Day_Year_of_Posisi', 'nama_cabang', 'nama_uker'], 'idx_ssa_simp_period_cab_unit');
+            });
+        }
 
         // 2. SSA Pinjaman
-        Schema::create('ssa_pinjaman', function (Blueprint $table) {
+        if (!Schema::hasTable('ssa_pinjaman')) {
+            Schema::create('ssa_pinjaman', function (Blueprint $table) {
             $table->id();
             $table->date('month_day_year_of_periode')->nullable()->index();
             $table->string('regional_office', 100)->nullable();
@@ -44,12 +47,13 @@ return new class extends Migration
             $table->decimal('baki_debet', 20, 2)->nullable();
             $table->unsignedTinyInteger('kolektabilitas_one_obligor')->nullable();
             $table->timestamps();
-
-            $table->index(['month_day_year_of_periode', 'nama_cabang', 'nama_uker'], 'idx_ssa_loan_period_cab_unit');
-        });
+                $table->index(['month_day_year_of_periode', 'nama_cabang', 'nama_uker'], 'idx_ssa_loan_period_cab_unit');
+            });
+        }
 
         // 3. GI405 Rec DH
-        Schema::create('gi405_rec_dh', function (Blueprint $table) {
+        if (!Schema::hasTable('gi405_rec_dh')) {
+            Schema::create('gi405_rec_dh', function (Blueprint $table) {
             $table->string('uniqueid_namareport', 255)->primary();
             $table->date('tanggal')->nullable()->index();
             $table->string('kode', 50)->nullable();
@@ -58,11 +62,13 @@ return new class extends Migration
             $table->string('segmen', 100)->nullable();
             $table->decimal('pendapatan_koreksi_ppap_dr_angsuran_ph', 20, 2)->default(0);
             $table->decimal('recovery_non_klaim', 20, 2)->default(0);
-            $table->timestamps();
-        });
+                $table->timestamps();
+            });
+        }
 
         // 4. Cognos Recovery
-        Schema::create('cognos_recovery', function (Blueprint $table) {
+        if (!Schema::hasTable('cognos_recovery')) {
+            Schema::create('cognos_recovery', function (Blueprint $table) {
             $table->string('uniqueid_namareport', 255)->primary();
             $table->date('periode')->nullable()->index();
             $table->string('keterangan', 255)->nullable();
@@ -93,12 +99,14 @@ return new class extends Migration
             $table->decimal('recovery_klaim', 20, 2)->default(0);
             $table->decimal('recovery_olsib', 20, 2)->default(0);
             $table->decimal('total_recovery', 20, 2)->default(0);
-            $table->decimal('recovery_non_klaim', 20, 2)->default(0);
-            $table->timestamps();
-        });
+                $table->decimal('recovery_non_klaim', 20, 2)->default(0);
+                $table->timestamps();
+            });
+        }
 
         // 5. Cognos PH
-        Schema::create('cognos_ph', function (Blueprint $table) {
+        if (!Schema::hasTable('cognos_ph')) {
+            Schema::create('cognos_ph', function (Blueprint $table) {
             $table->string('uniqueid_namareport', 255)->primary();
             $table->date('periode')->nullable()->index();
             $table->string('kanwil', 150)->nullable();
@@ -118,9 +126,10 @@ return new class extends Migration
             $table->string('segmen_repeat', 100)->nullable();
             $table->string('segmen_2', 100)->nullable();
             $table->string('compliance', 100)->nullable();
-            $table->decimal('saldo_ph', 20, 2)->default(0);
-            $table->timestamps();
-        });
+                $table->decimal('saldo_ph', 20, 2)->default(0);
+                $table->timestamps();
+            });
+        }
     }
 
     public function down(): void
