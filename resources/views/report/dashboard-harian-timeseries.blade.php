@@ -11,7 +11,16 @@
     }
 
     .dashboard-timeseries {
-        padding-bottom: 3rem;
+        padding-bottom: 2rem;
+    }
+
+    .dashboard-timeseries h1 {
+        font-size: 1.5rem;
+        margin-bottom: 0.25rem;
+    }
+
+    .dashboard-timeseries .text-muted {
+        font-size: 0.85rem;
     }
 
     /* Filter Sidebar/Top Styling */
@@ -20,7 +29,11 @@
         border: 1px solid rgba(8, 87, 195, 0.12);
         border-radius: 1.25rem;
         box-shadow: 0 10px 30px -15px rgba(8, 87, 195, 0.15);
-        margin-bottom: 2rem;
+        margin-bottom: 1rem;
+    }
+
+    .filter-card .card-body {
+        padding: 0.75rem 1rem !important;
     }
 
     .filter-label {
@@ -67,12 +80,13 @@
     .chart-card {
         background: var(--chart-card-bg);
         border: 1px solid rgba(8, 87, 195, 0.08);
-        border-radius: 1.5rem;
+        border-radius: 1rem;
         box-shadow: 0 4px 20px -10px rgba(0, 0, 0, 0.05);
         transition: transform 0.3s ease, box-shadow 0.3s ease;
         height: 100%;
         display: flex;
         flex-direction: column;
+        min-height: 0;
     }
 
     .chart-card:hover {
@@ -81,28 +95,29 @@
     }
 
     .chart-header {
-        padding: 1.25rem 1.5rem;
+        padding: 0.9rem 1rem;
         border-bottom: 1px solid #f1f5f9;
         display: flex;
         align-items: center;
         justify-content: space-between;
+        flex-shrink: 0;
     }
 
     .chart-title {
-        font-size: 1.05rem;
-        font-weight: 800;
+        font-size: 0.95rem;
+        font-weight: 700;
         color: #1e293b;
         margin: 0;
     }
 
     .chart-body {
-        padding: 1.5rem;
+        padding: 1rem;
         flex: 1;
         position: relative;
-        height: 300px;
         display: flex;
         align-items: stretch;
         justify-content: stretch;
+        min-height: 0;
     }
 
     .chart-body canvas {
@@ -110,8 +125,12 @@
         height: 100% !important;
     }
 
-    #summaryChart {
-        min-height: 350px;
+    .summary-chart-card .chart-body {
+        min-height: 380px;
+    }
+
+    .col-lg-6 .chart-body {
+        min-height: 280px;
     }
 
     .summary-chart-card {
@@ -175,10 +194,10 @@
 @section('content')
 <div class="dashboard-timeseries">
     <!-- Header -->
-    <div class="d-flex align-items-center justify-content-between mb-4">
+    <div class="d-flex align-items-center justify-content-between mb-2">
         <div>
-            <h1 class="h3 font-weight-bold mb-1" style="color: #0f172a;">Timeseries Dashboard</h1>
-            <p class="text-muted small mb-0">Tren Keragaan Harian Berdasarkan Perspektif Bulanan</p>
+            <h1 class="h4 font-weight-bold mb-0" style="color: #0f172a;">Timeseries Dashboard</h1>
+            <p class="text-muted small mb-0" style="font-size: 0.8rem;">Tren Keragaan Harian Berdasarkan Perspektif Bulanan</p>
         </div>
         <div class="unit-badge">Satuan: Dalam Rp Miliar (Rp M)</div>
     </div>
@@ -228,25 +247,25 @@
     </div>
 
     <!-- Summary Chart -->
-    <div class="row mb-4">
+    <div class="row mb-3">
         <div class="col-12">
             <div class="card chart-card summary-chart-card">
                 <div class="chart-header">
                     <h5 class="chart-title"><i class="fas fa-chart-area mr-2 text-primary"></i>Total Tren Area</h5>
                     <div class="unit-badge">Total Konsolidasi Selected Branches</div>
                 </div>
-                <div class="chart-body" style="height: 350px;">
+                <div class="chart-body">
                     <div class="loading-overlay" id="summaryLoading">
                         <div class="loading-spinner"></div>
                     </div>
-                    <canvas id="summaryChart" style="width: 100%; height: 100%;"></canvas>
+                    <canvas id="summaryChart"></canvas>
                 </div>
             </div>
         </div>
     </div>
 
     <!-- Individual Branch Charts -->
-    <div class="row" id="individualChartsContainer">
+    <div class="row g-3" id="individualChartsContainer" style="margin-top: 0;">
         <!-- Dynamic Content -->
     </div>
 </div>
@@ -502,7 +521,7 @@
                 branchNames.forEach(branch => {
                     try {
                         const col = document.createElement('div');
-                        col.className = 'col-lg-6 mb-4';
+                        col.className = 'col-lg-6 mb-3';
 
                         const canvasId = `chart_${branch.replace(/\s+/g, '_')}`;
                         const card = `
