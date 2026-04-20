@@ -178,7 +178,8 @@ class Gi405RecDhImportExcelController extends ImportExcelController
         ?int $estimatedTotalRows = null,
         ?string $delimiter = null,
         bool $forceDirectLoad = false,
-        ?callable $beforeDirectLoad = null
+        ?callable $beforeDirectLoad = null,
+        array $importOptions = []
     ): bool {
         if ($tableName !== self::TABLE_NAME) {
             return parent::processStagedCsvStream(
@@ -191,7 +192,8 @@ class Gi405RecDhImportExcelController extends ImportExcelController
                 $estimatedTotalRows,
                 $delimiter,
                 $forceDirectLoad,
-                $beforeDirectLoad
+                $beforeDirectLoad,
+                $importOptions
             );
         }
 
