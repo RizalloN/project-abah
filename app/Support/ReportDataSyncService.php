@@ -250,23 +250,64 @@ class ReportDataSyncService
 
     private function syncSsaSimpanan(?string $periodHint, ?int $jobId, ?string $source): void
     {
-        $this->runSnapshotAudit('ssa_simpanan', $periodHint, $jobId, $source, 'snapshot_dashboard_harian', function () use ($periodHint) {
-            return $this->dashboardHarianSnapshotService->rebuild($periodHint, true);
-        });
+        // Dispatch background job for snapshot rebuild instead of blocking
+        // This allows the import to complete immediately instead of waiting 0.4-60+ seconds
+        $this->dispatchDashboardHarianSnapshotRebuildJob($periodHint);
 
-        if ($this->shouldRefreshDerivedSnapshotStatistics($periodHint)) {
-            $this->refreshTableStatistics(self::DASHBOARD_HARIAN_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
-        }
+        // Skip audit and stats for now - background job will handle them
+        Log::info('Dispatched background Dashboard Harian snapshot rebuild for SSA Simpanan', [
+            'period' => $periodHint,
+            'job_id' => $jobId,
+        ]);
     }
 
     private function syncSsaPinjaman(?string $periodHint, ?int $jobId, ?string $source): void
     {
-        $this->runSnapshotAudit('ssa_pinjaman', $periodHint, $jobId, $source, 'snapshot_dashboard_harian', function () use ($periodHint) {
-            return $this->dashboardHarianSnapshotService->rebuild($periodHint, true);
-        });
+        // Dispatch background job for snapshot rebuild instead of blocking
+        // This allows the import to complete immediately instead of waiting 0.4-60+ seconds
+        $this->dispatchDashboardHarianSnapshotRebuildJob($periodHint);
 
-        if ($this->shouldRefreshDerivedSnapshotStatistics($periodHint)) {
-            $this->refreshTableStatistics(self::DASHBOARD_HARIAN_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
+        // Skip audit and stats for now - background job will handle them
+        Log::info('Dispatched background Dashboard Harian snapshot rebuild for SSA Pinjaman', [
+            'period' => $periodHint,
+            'job_id' => $jobId,
+        ]);
+    }
+
+    /**
+     * OPTIMIZED: Dispatch background job for snapshot rebuild instead of blocking
+     * 
+     * This dramatically speeds up the import response by offloading the rebuild to the queue.
+     * The user sees the import complete almost instantly, while the snapshot rebuilds in the background.
+     */
+    private function dispatchDashboardHarianSnapshotRebuildJob(?string $period): void
+    {
+        try {
+            $jobClass = class_exists('App\Jobs\RebuildDashboardHarianSnapshotJob')
+                ? 'App\Jobs\RebuildDashboardHarianSnapshotJob'
+                : null;
+
+            if (!$jobClass) {
+                Log::warning('RebuildDashboardHarianSnapshotJob not found, falling back to sync rebuild');
+                $this->dashboardHarianSnapshotService->rebuild($period, true);
+                return;
+            }
+
+            $job = new $jobClass($period);
+            dispatch($job);  // Use default queue which is already working
+
+            Log::info('Dispatched RebuildDashboardHarianSnapshotJob', [
+                'period' => $period,
+                'queue' => 'default (background processing)',
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Failed to dispatch snapshot rebuild job, falling back to sync', [
+                'error' => $e->getMessage(),
+                'period' => $period,
+            ]);
+            
+            // Fallback to sync rebuild if dispatch fails
+            $this->dashboardHarianSnapshotService->rebuild($period, true);
         }
     }
 

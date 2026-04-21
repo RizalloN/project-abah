@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Support\ReportDataSyncService;
+use App\Support\SnapshotBatchAggregator;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -27,10 +28,20 @@ class EnsureDashboardSnapshotJob implements ShouldQueue
     ) {
     }
 
-    public function handle(ReportDataSyncService $syncService): void
+    public function handle(SnapshotBatchAggregator $batchAggregator): void
     {
         try {
-            $syncService->syncImportedTable('daily_loan_dinamis', $this->period, source: $this->source ?? static::class);
+            $batchAggregator->registerSyncRequest(
+                tableName: 'daily_loan_dinamis',
+                periodHint: $this->period,
+                jobId: null,
+                source: $this->source ?? static::class
+            );
+
+            Log::debug('Registered period for batched dashboard snapshot sync.', [
+                'period' => $this->period,
+                'source' => $this->source,
+            ]);
         } catch (Throwable $e) {
             Log::warning('Ensure dashboard snapshot job gagal: ' . $e->getMessage(), [
                 'period' => $this->period,

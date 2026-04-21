@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Support\ReportDataSyncService;
+use App\Support\SnapshotBatchAggregator;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -27,10 +28,20 @@ class EnsureRekeningDormantSnapshotJob implements ShouldQueue
     ) {
     }
 
-    public function handle(ReportDataSyncService $syncService): void
+    public function handle(SnapshotBatchAggregator $batchAggregator): void
     {
         try {
-            $syncService->syncImportedTable('simpanan_multipn', $this->period, source: $this->source ?? static::class);
+            $batchAggregator->registerSyncRequest(
+                tableName: 'simpanan_multipn',
+                periodHint: $this->period,
+                jobId: null,
+                source: $this->source ?? static::class
+            );
+
+            Log::debug('Registered period for batched rekening dormant snapshot sync.', [
+                'period' => $this->period,
+                'source' => $this->source,
+            ]);
         } catch (Throwable $e) {
             Log::warning('Ensure rekening dormant snapshot job gagal: ' . $e->getMessage(), [
                 'period' => $this->period,
