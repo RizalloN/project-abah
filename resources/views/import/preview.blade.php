@@ -546,23 +546,10 @@
                 return;
             }
 
-            const sourceCol = Object.prototype.hasOwnProperty.call(displayFilterMap, col)
-                ? displayFilterMap[col]
-                : col;
             const activeFilters = buildActiveFilterContext(col);
             const signature = buildActiveFilterSignature(activeFilters);
-            const previewDerivedValues = Object.keys(activeFilters).length > 0
-                ? collectPreviewValuesForColumn(col, activeFilters)
-                : new Set();
 
             if (state.fullOptionsLoaded && state.loadedSignature === signature) {
-                renderFilterList(col);
-                return;
-            }
-
-            if (previewDerivedValues.size > 0) {
-                state.fullOptionsLoaded = true;
-                state.loadedSignature = signature;
                 renderFilterList(col);
                 return;
             }
@@ -578,33 +565,34 @@
                     ? displayFilterMap[col]
                     : col;
 
-                // IMPROVEMENT: Gunakan dynamic filter options endpoint untuk loading lengkap
+                // Gunakan scan lengkap saat tidak ada filter silang; gunakan endpoint reguler saat perlu menghormati filter lain.
                 const dynamicFilterUrl = '{{ route("import.preview.dynamic-filter-options") }}';
                 const columnName = headers && headers[sourceCol] ? headers[sourceCol] : 'Column_' + sourceCol;
+                const hasActiveFilters = Object.keys(activeFilters).length > 0;
 
-                // Try dynamic endpoint first (more comprehensive), fallback ke regular endpoint
                 let url;
-                let useDynamicEndpoint = false;
+                let useDynamicEndpoint = !hasActiveFilters;
 
                 try {
-                    url = new URL(dynamicFilterUrl, window.location.origin);
-                    url.searchParams.set('file_path', filePathValue);
-                    url.searchParams.set('delimiter', delimiterValue);
-                    url.searchParams.set('column_index', String(sourceCol));
-                    url.searchParams.set('column_name', columnName);
-                    url.searchParams.set('_', String(Date.now()));
-                    useDynamicEndpoint = true;
+                    url = new URL(useDynamicEndpoint ? dynamicFilterUrl : filterOptionsUrl, window.location.origin);
                 } catch (e) {
-                    // Fallback ke regular endpoint
                     url = new URL(filterOptionsUrl, window.location.origin);
-                    url.searchParams.set('file_path', filePathValue);
-                    url.searchParams.set('delimiter', delimiterValue);
-                    url.searchParams.set('column_index', String(sourceCol));
+                    useDynamicEndpoint = false;
+                }
+
+                url.searchParams.set('file_path', filePathValue);
+                url.searchParams.set('delimiter', delimiterValue);
+                url.searchParams.set('column_index', String(useDynamicEndpoint ? sourceCol : col));
+                url.searchParams.set('_', String(Date.now()));
+
+                if (useDynamicEndpoint) {
+                    url.searchParams.set('column_name', columnName);
+                } else {
                     url.searchParams.set('display_filter_map_json', JSON.stringify(displayFilterMap || {}));
+                    url.searchParams.set('active_filters_json', JSON.stringify(activeFilters || {}));
                     if (previewStateKey) {
                         url.searchParams.set('preview_state_key', previewStateKey);
                     }
-                    url.searchParams.set('_', String(Date.now()));
                 }
 
                 const response = await fetch(url.toString(), {
@@ -638,6 +626,8 @@
                         return previousSelection.has(value);
                     }));
                 state.fullOptionsLoaded = true;
+                state.loadedSignature = signature;
+                shouldRender = true;
 
                 // Log informasi jika menggunakan dynamic endpoint
                 if (useDynamicEndpoint && payload.total_unique) {
@@ -645,6 +635,7 @@
                 }
             } catch (error) {
                 console.error('Error loading filter options:', error);
+                shouldRender = true;
             } finally {
                 state.isLoading = false;
                 if (state.needsRefresh) {
@@ -825,6 +816,18 @@
         });
 
         document.querySelectorAll('.dropdown').forEach(function (dropdown) {
+            const filterButton = dropdown.querySelector('.filter-btn');
+            if (filterButton) {
+                filterButton.addEventListener('click', function () {
+                    const container = dropdown.querySelector('[id^="list_container_"]');
+                    if (!container) {
+                        return;
+                    }
+
+                    ensureFullFilterOptions(container.getAttribute('data-col'));
+                });
+            }
+
             dropdown.addEventListener('shown.bs.dropdown', async function () {
                 const container = dropdown.querySelector('[id^="list_container_"]');
                 if (!container) {
