@@ -433,7 +433,7 @@
                         <li class="nav-item">
                             <a href="{{ route('report.dashboard-pinjaman.kejar-laba') }}" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman.kejar-laba') ? 'active' : '' }}">
                                 <i class="far fa-circle nav-icon"></i>
-                                <p>Report Kejar Laba</p>
+                                <p>Report Recovery</p>
                             </a>
                         </li>
                         <li class="nav-item">

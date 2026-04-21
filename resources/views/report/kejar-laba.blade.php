@@ -1,6 +1,6 @@
 @extends('layouts.admin')
 
-@section('title', 'Report Kejar Laba')
+@section('title', 'Report Recovery')
 
 @section('content')
 <style>
@@ -382,7 +382,7 @@
     <div class="kejar-laba-card">
         <div class="kejar-laba-card-header d-flex flex-wrap align-items-center justify-content-between gap-3">
             <div>
-                <h1 class="kejar-laba-title">Kejar Laba Report</h1>
+                <h1 class="kejar-laba-title">Report Recovery</h1>
                 <div class="kejar-laba-subtitle">Monitoring pencapaian Recovery berdasarkan data Cognos.</div>
             </div>
             <div class="d-flex align-items-center gap-2">

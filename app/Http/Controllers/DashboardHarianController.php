@@ -53,6 +53,8 @@ class DashboardHarianController extends Controller
         $selectedKanca = $this->normalizeFilter($request->input('kanca'));
         $selectedUnit = $this->normalizeFilter($request->input('unit_kerja'));
         $selectedCategory = $request->input('category', 'simpanan'); // Default to simpanan
+        $monthOptions = $this->timeseriesMonthOptions();
+        $selectedMonth = $this->resolveTimeseriesMonth($request->input('period_month'), $monthOptions);
 
         // Default to Area 6 (Madiun, Ngawi, Magetan, Ponorogo) if no kanca selected
         if (!$selectedKanca && !$selectedUnit) {
@@ -60,6 +62,7 @@ class DashboardHarianController extends Controller
         }
 
         $filters = $this->dashboardHarianSnapshotService->fetchFilterOptions(null, $selectedKanca, $selectedUnit);
+        $filters['period_month'] = $monthOptions;
 
         $dashboardPage = [
             'routes' => [
@@ -70,7 +73,9 @@ class DashboardHarianController extends Controller
                 'kanca' => $selectedKanca ?? [],
                 'unit_kerja' => $selectedUnit ?? 'all',
                 'category' => $selectedCategory,
+                'period_month' => $selectedMonth,
             ],
+            'initialData' => $this->timeseriesPayload($selectedCategory, $selectedKanca, $selectedUnit, $selectedMonth),
         ];
 
         return view('report.dashboard-harian-timeseries', compact('dashboardPage'));
@@ -81,49 +86,15 @@ class DashboardHarianController extends Controller
         $selectedKanca = $this->normalizeFilter($request->input('kanca'));
         $selectedUnit = $this->normalizeFilter($request->input('unit_kerja'));
         $category = $request->input('category', 'simpanan');
+        $monthOptions = $this->timeseriesMonthOptions();
+        $selectedMonth = $this->resolveTimeseriesMonth($request->input('period_month'), $monthOptions);
 
         // Default to Area 6 if nothing selected
         if (!$selectedKanca && !$selectedUnit) {
             $selectedKanca = ['KC Madiun', 'KC Ngawi', 'KC Magetan', 'KC Ponorogo'];
         }
 
-        // Fetch last 4 months available in snapshots
-        $periods = $this->dashboardHarianSnapshotService->fetchPeriods()->take(120);
-
-        if ($periods->isEmpty()) {
-            return response()->json([
-                'months' => [],
-                'series' => [],
-                'labels' => range(1, 31),
-                'area_total' => []
-            ]);
-        }
-
-        // Group by month and sort chronologically (oldest to newest)
-        $months = $periods->map(fn($p) => substr($p, 0, 7))->unique()->take(4)->values()->reverse()->values();
-
-        if ($months->isEmpty()) {
-            return response()->json([
-                'months' => [],
-                'series' => [],
-                'labels' => range(1, 31),
-                'area_total' => []
-            ]);
-        }
-
-        $data = $this->dashboardHarianSnapshotService->fetchTimeseriesTrend(
-            $months->toArray(),
-            $category,
-            $selectedKanca,
-            $selectedUnit
-        );
-
-        return response()->json([
-            'months' => $months->toArray(),
-            'series' => $data['series'],
-            'labels' => range(1, 31),
-            'area_total' => $data['area_total']
-        ]);
+        return response()->json($this->timeseriesPayload($category, $selectedKanca, $selectedUnit, $selectedMonth));
     }
 
     public function data(Request $request): JsonResponse
@@ -158,6 +129,114 @@ class DashboardHarianController extends Controller
                 $selectedUnit
             );
         });
+    }
+
+    private function timeseriesPayload(string $category, array|string|null $selectedKanca, array|string|null $selectedUnit, ?string $selectedMonth = null): array
+    {
+        $monthOptions = $this->timeseriesMonthOptions();
+        $resolvedMonth = $this->resolveTimeseriesMonth($selectedMonth, $monthOptions);
+
+        $cacheKey = 'dashboard_harian:timeseries:' . md5(json_encode([
+            'version' => (int) Cache::get('report_cache_version:global', 1),
+            'category' => $category,
+            'kanca' => $selectedKanca,
+            'unit' => $selectedUnit,
+            'period_month' => $resolvedMonth,
+        ]));
+
+        return Cache::remember($cacheKey, now()->addMinutes(3), function () use ($category, $selectedKanca, $selectedUnit, $monthOptions, $resolvedMonth) {
+            $emptyPayload = [
+                'months' => [],
+                'series' => [],
+                'labels' => range(1, 31),
+                'area_total' => [],
+                'source' => DashboardHarianSnapshotService::SNAPSHOT_TABLE,
+                'selected_month' => $resolvedMonth,
+                'available_months' => $monthOptions,
+            ];
+
+            $months = $this->timeseriesWindowMonths($resolvedMonth, $monthOptions);
+            if ($months === []) {
+                return $emptyPayload;
+            }
+
+            $data = $this->dashboardHarianSnapshotService->fetchTimeseriesTrend(
+                $months,
+                $category,
+                $selectedKanca,
+                $selectedUnit
+            );
+
+            return [
+                'months' => $months,
+                'series' => $data['series'],
+                'labels' => range(1, 31),
+                'area_total' => $data['area_total'],
+                'source' => DashboardHarianSnapshotService::SNAPSHOT_TABLE,
+                'selected_month' => $resolvedMonth,
+                'available_months' => $monthOptions,
+            ];
+        });
+    }
+
+    private function timeseriesMonthOptions(): array
+    {
+        return $this->dashboardHarianSnapshotService->fetchPeriods()
+            ->map(fn ($period) => substr((string) $period, 0, 7))
+            ->unique()
+            ->values()
+            ->map(fn (string $month) => [
+                'value' => $month,
+                'label' => $this->formatTimeseriesMonthLabel($month),
+            ])
+            ->all();
+    }
+
+    private function resolveTimeseriesMonth(mixed $requestedMonth, array $monthOptions): ?string
+    {
+        $availableMonths = collect($monthOptions)
+            ->pluck('value')
+            ->map(fn ($value) => (string) $value)
+            ->all();
+
+        if ($availableMonths === []) {
+            return null;
+        }
+
+        $requested = trim((string) $requestedMonth);
+        if (preg_match('/^\d{4}-\d{2}$/', $requested) === 1 && in_array($requested, $availableMonths, true)) {
+            return $requested;
+        }
+
+        return $availableMonths[0];
+    }
+
+    private function timeseriesWindowMonths(?string $selectedMonth, array $monthOptions): array
+    {
+        if ($selectedMonth === null) {
+            return [];
+        }
+
+        $availableMonths = collect($monthOptions)
+            ->pluck('value')
+            ->map(fn ($value) => (string) $value)
+            ->filter(fn (string $month) => $month <= $selectedMonth)
+            ->take(4)
+            ->values()
+            ->reverse()
+            ->values()
+            ->all();
+
+        return $availableMonths;
+    }
+
+    private function formatTimeseriesMonthLabel(string $month): string
+    {
+        try {
+            return \Carbon\Carbon::createFromFormat('Y-m', $month)->translatedFormat('F Y');
+        } catch (\Throwable) {
+            return $month;
+        }
     }
 
     private function normalizeFilter($value): array|string|null

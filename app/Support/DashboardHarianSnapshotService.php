@@ -465,27 +465,21 @@ class DashboardHarianSnapshotService
         $units = collect();
 
         try {
-            if (Schema::hasTable(self::SAVINGS_TABLE)) {
-                $rawPeriodCandidates = $this->sourcePeriodRawCandidates(self::SAVINGS_TABLE, $effectivePeriod);
-
-                $kancas = DB::table(self::SAVINGS_TABLE . ' as ss')
-                    ->whereIn('ss.Month_Day_Year_of_Posisi', $rawPeriodCandidates)
-                    ->selectRaw("TRIM(COALESCE(ss.nama_cabang, '')) as value")
-                    ->selectRaw("TRIM(COALESCE(ss.nama_cabang, '')) as label")
-                    ->whereRaw("TRIM(COALESCE(ss.nama_cabang, '')) <> ''")
+            if (Schema::hasTable(self::SNAPSHOT_TABLE)) {
+                $kancas = DB::table(self::SNAPSHOT_TABLE)
+                    ->where('snapshot_period', $effectivePeriod)
+                    ->selectRaw("kanca_label as label, kanca_label as value")
                     ->distinct()
                     ->orderBy('label')
                     ->get();
 
-                $unitQuery = DB::table(self::SAVINGS_TABLE . ' as ss')
-                    ->whereIn('ss.Month_Day_Year_of_Posisi', $rawPeriodCandidates)
-                    ->selectRaw("TRIM(COALESCE(ss.nama_uker, '')) as value")
-                    ->selectRaw("TRIM(COALESCE(ss.nama_uker, '')) as label")
-                    ->selectRaw("TRIM(COALESCE(ss.nama_cabang, '')) as kanca_value")
-                    ->whereRaw("TRIM(COALESCE(ss.nama_uker, '')) <> ''");
+                $unitQuery = DB::table(self::SNAPSHOT_TABLE)
+                    ->where('snapshot_period', $effectivePeriod)
+                    ->selectRaw("unit_label as label, unit_label as value, kanca_label as kanca_value")
+                    ->whereRaw('unit_label <> kanca_label'); // Exclude summary rows
 
                 if ($normalizedKanca !== []) {
-                    $unitQuery->whereIn(DB::raw("TRIM(COALESCE(ss.nama_cabang, ''))"), $normalizedKanca);
+                    $unitQuery->whereIn('kanca_label', $normalizedKanca);
                 }
 
                 $units = $unitQuery
@@ -493,7 +487,8 @@ class DashboardHarianSnapshotService
                     ->orderBy('label')
                     ->get();
             }
-        } catch (Throwable) {
+        } catch (Throwable $e) {
+            \Log::error("Failed to fetch filter options from snapshot", ['error' => $e->getMessage()]);
             $kancas = collect();
             $units = collect();
         }
@@ -2238,6 +2233,13 @@ class DashboardHarianSnapshotService
 
     public function fetchTimeseriesTrend(array $months, string $category, array|string|null $kancaKey = null, array|string|null $unitKey = null): array
     {
+        if (!$this->canUseSnapshotMetrics() || $months === []) {
+            return [
+                'series' => [],
+                'area_total' => [],
+            ];
+        }
+
         $columnMap = [
             'simpanan' => 'total_simpanan',
             'pinjaman' => 'total_os_non_commercial',
@@ -2255,7 +2257,9 @@ class DashboardHarianSnapshotService
             ->selectRaw("SUM({$metric}) as value")
             ->where(function ($q) use ($months) {
                 foreach ($months as $month) {
-                    $q->orWhere('snapshot_period', 'like', "{$month}%");
+                    $start = "{$month}-01";
+                    $end = "{$month}-31";
+                    $q->orWhereBetween('snapshot_period', [$start, $end]);
                 }
             });
 
@@ -2296,9 +2300,9 @@ class DashboardHarianSnapshotService
             $series[$kanca][$month][$day] = $scaledValue;
 
             if (!isset($areaTotal[$month])) {
-                $areaTotal[$month] = array_fill(1, 31, 0);
+                $areaTotal[$month] = array_fill(1, 31, null);
             }
-            $areaTotal[$month][$day] += $scaledValue;
+            $areaTotal[$month][$day] = ($areaTotal[$month][$day] ?? 0) + $scaledValue;
         }
 
         // Convert series to flat 0-indexed arrays [0...30] for Chart.js

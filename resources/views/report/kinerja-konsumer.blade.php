@@ -1,4 +1,4 @@
-﻿@extends('layouts.admin')
+@extends('layouts.admin')
 
 @section('title', 'Kinerja Konsumer')
 
@@ -7,19 +7,19 @@
     :root {
         --loan-surface: #ffffff;
         --loan-surface-soft: #f8fbff;
-        --loan-border: #e2e8f0;
-        --loan-border-strong: #cbd5e1;
-        --loan-text: #1e293b;
-        --loan-muted: #64748b;
-        --loan-blue: #2563eb;
-        --loan-blue-deep: #1e40af;
-        --loan-blue-ink: #0f172a;
-        --loan-blue-soft: #f0f7ff;
+        --loan-border: rgba(8, 87, 195, 0.12);
+        --loan-border-strong: rgba(8, 87, 195, 0.2);
+        --loan-text: #0f172a;
+        --loan-muted: #5b7da7;
+        --loan-blue: #0857c3; /* BRI Nusantara */
+        --loan-blue-deep: #053b82; /* BRI Ink */
+        --loan-blue-ink: #042a5f; /* BRI Night */
+        --loan-blue-soft: #f2f7ff; /* BRI Mist */
         --loan-red: #ef4444;
         --loan-green: #10b981;
-        --loan-cyan: #06b6d4;
+        --loan-cyan: #71c5e8; /* BRI Mentari */
         --loan-radius: 20px;
-        --loan-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
+        --loan-shadow: 0 18px 34px -28px rgba(4, 42, 95, 0.28);
     }
 
     .kinerja-konsumer-shell {
@@ -39,7 +39,7 @@
         inset: 0 auto auto 0;
         width: 100%;
         height: 6px;
-        background: linear-gradient(90deg, #1e3a8a, #3b82f6, #06b6d4);
+        background: linear-gradient(90deg, var(--loan-blue-ink), var(--loan-blue), var(--loan-cyan));
         z-index: 5;
     }
 
@@ -144,12 +144,269 @@
         background: #ffffff;
     }
 
+    .kinerja-tabs-shell {
+        border: 1px solid var(--loan-border);
+        border-radius: 20px;
+        background: #ffffff;
+        overflow: hidden;
+        box-shadow: 0 10px 22px -16px rgba(15, 23, 42, 0.22);
+    }
+
+    .kinerja-tabs-header {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 1.25rem 1.35rem;
+        background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+        border-bottom: 1px solid var(--loan-border);
+        flex-wrap: wrap;
+    }
+
+    .kinerja-tabs-heading {
+        min-width: min(100%, 380px);
+        flex: 1 1 380px;
+    }
+
+    .kinerja-tabs-kicker {
+        margin: 0 0 0.35rem;
+        color: var(--loan-blue);
+        font-size: 0.72rem;
+        font-weight: 900;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+    }
+
+    .kinerja-tabs-title {
+        margin: 0;
+        font-size: 1.25rem;
+        font-weight: 900;
+        color: var(--loan-blue-ink);
+        letter-spacing: -0.02em;
+    }
+
+    .kinerja-tabs-subtitle {
+        margin: 0.35rem 0 0;
+        color: var(--loan-muted);
+        font-size: 0.82rem;
+        font-weight: 600;
+        max-width: 58ch;
+    }
+
+    .kinerja-tabs-nav {
+        display: inline-flex;
+        gap: 0.65rem;
+        padding: 0.3rem;
+        border-radius: 16px;
+        background: #f8fafc;
+        border: 1px solid var(--loan-border);
+        flex-wrap: wrap;
+    }
+
+    .kinerja-tab-btn {
+        border: 1px solid transparent;
+        border-radius: 12px;
+        background: transparent;
+        color: #475569;
+        padding: 0.75rem 1rem;
+        min-width: 180px;
+        text-align: left;
+        display: flex;
+        flex-direction: column;
+        gap: 0.2rem;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+
+    .kinerja-tab-btn:hover {
+        background: #ffffff;
+        border-color: var(--loan-border-strong);
+        transform: translateY(-1px);
+    }
+
+    .kinerja-tab-btn.is-active,
+    .kinerja-tab-btn.active {
+        background: var(--loan-blue-ink);
+        border-color: var(--loan-blue-ink);
+        color: #ffffff;
+        box-shadow: 0 10px 20px -16px rgba(15, 23, 42, 0.65);
+    }
+
+    .kinerja-tab-btn__label {
+        font-size: 0.85rem;
+        font-weight: 900;
+        letter-spacing: -0.01em;
+    }
+
+    .kinerja-tab-btn__meta {
+        font-size: 0.7rem;
+        font-weight: 700;
+        opacity: 0.82;
+    }
+
+    .kinerja-tabs-body {
+        padding: 1rem;
+        background: #ffffff;
+    }
+
+    .kinerja-tab-panel {
+        display: none;
+    }
+
+    .kinerja-tab-panel.is-active {
+        display: block;
+        animation: panel-fade-in 0.22s ease;
+    }
+
+    @keyframes panel-fade-in {
+        from {
+            opacity: 0;
+            transform: translateY(6px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    .kinerja-report-card__header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 1rem 1.25rem;
+        border-bottom: 1px solid var(--loan-border);
+        background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+    }
+
+    .kinerja-report-card__title-wrap {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+
+    .kinerja-report-card__title {
+        margin: 0;
+        font-size: 1.05rem;
+        font-weight: 900;
+        color: var(--loan-blue-ink);
+        letter-spacing: -0.01em;
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+    }
+
+    .kinerja-report-card__subtitle {
+        margin: 0;
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: var(--loan-muted);
+    }
+
+    .kinerja-report-card__meta {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.4rem 0.8rem;
+        border: 1px solid var(--loan-border);
+        border-radius: 999px;
+        background: #ffffff;
+        color: #334155;
+        font-size: 0.72rem;
+        font-weight: 800;
+        white-space: nowrap;
+    }
+
+    .kinerja-report-section-label {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 0.95rem 1.1rem;
+        border: 1px solid var(--loan-border);
+        border-radius: 16px;
+        background: linear-gradient(90deg, rgba(37, 99, 235, 0.08), rgba(6, 182, 212, 0.08));
+    }
+
+    .kinerja-report-section-label__title {
+        margin: 0;
+        font-size: 0.95rem;
+        font-weight: 900;
+        color: var(--loan-blue-ink);
+    }
+
+    .kinerja-report-section-label__desc {
+        margin: 0.2rem 0 0;
+        font-size: 0.78rem;
+        color: var(--loan-muted);
+        font-weight: 600;
+    }
+
+    .kinerja-report-section-label__chips {
+        display: inline-flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+    }
+
+    .kinerja-report-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.45rem 0.75rem;
+        border-radius: 999px;
+        background: #ffffff;
+        border: 1px solid var(--loan-border);
+        color: #475569;
+        font-size: 0.7rem;
+        font-weight: 800;
+        white-space: nowrap;
+    }
+
     .kinerja-table-container {
         position: relative;
         max-height: 70vh;
         overflow: auto;
         border-radius: 12px;
         border: 1px solid var(--loan-border);
+    }
+
+    .kinerja-quality-intro {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 0 0.25rem 1rem;
+        margin-bottom: 0.25rem;
+        border-bottom: 1px solid rgba(226, 232, 240, 0.9);
+        flex-wrap: wrap;
+    }
+
+    .kinerja-quality-intro__title {
+        margin: 0;
+        font-size: 0.95rem;
+        font-weight: 900;
+        color: var(--loan-blue-ink);
+    }
+
+    .kinerja-quality-intro__desc {
+        margin: 0.25rem 0 0;
+        font-size: 0.78rem;
+        color: var(--loan-muted);
+        font-weight: 600;
+    }
+
+    .kinerja-quality-intro__chips {
+        display: inline-flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+    }
+
+    .kinerja-quality-stack {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
     }
 
     .kinerja-konsumer-table {
@@ -159,20 +416,24 @@
         border-spacing: 0;
     }
 
+    .kinerja-konsumer-table--compact {
+        min-width: 1180px;
+    }
+
     /* Modern Sticky Header with Glass Effect */
     .kinerja-konsumer-table thead th {
         position: sticky;
         top: 0;
         z-index: 50;
-        background: rgba(15, 23, 42, 0.95) !important;
+        background: var(--loan-blue-ink) !important;
         backdrop-filter: blur(8px);
-        color: #f8fafc;
+        color: #ffffff;
         padding: 0.4rem 0.3rem !important;
         font-size: 0.62rem;
         font-weight: 800;
         text-transform: uppercase;
         letter-spacing: 0.04rem;
-        border-bottom: 2px solid #334155;
+        border-bottom: 2px solid rgba(255, 255, 255, 0.12);
         text-align: center !important;
         vertical-align: middle !important;
         white-space: nowrap;
@@ -185,13 +446,13 @@
     }
 
     .kinerja-konsumer-table th.sub-head {
-        background: rgba(30, 41, 59, 1) !important;
-        color: #e2e8f0;
+        background: var(--loan-blue-deep) !important;
+        color: rgba(255, 255, 255, 0.9);
     }
 
     .kinerja-konsumer-table th.accent-head {
-        background: rgba(30, 58, 138, 1) !important;
-        color: #f0f7ff;
+        background: var(--loan-blue) !important;
+        color: #ffffff;
     }
 
     .kinerja-konsumer-table td {
@@ -233,8 +494,8 @@
 
     /* Current Position Highlight Class */
     .highlight-curr {
-        background: #f0f7ff !important;
-        color: #2563eb !important;
+        background: var(--loan-blue-soft) !important;
+        color: var(--loan-blue) !important;
         font-weight: 800 !important;
     }
 
@@ -244,7 +505,7 @@
     }
 
     .loan-branch-subtotal {
-        background: #1e293b !important;
+        background: var(--loan-blue-ink) !important;
     }
 
     .loan-branch-subtotal td {
@@ -257,7 +518,8 @@
     }
 
     .row-grand-total {
-        background: #0f172a !important;
+        background: var(--loan-blue-ink) !important;
+        border-top: 2px solid var(--loan-blue) !important;
         position: sticky;
         bottom: 0;
         z-index: 40;
@@ -312,7 +574,7 @@
     .delta-indicator.neg { color: #ef4444; }
 
     .tampilkan-button {
-        background: #0f172a;
+        background: linear-gradient(135deg, var(--loan-blue), #307fe2);
         color: #ffffff;
         border: none;
         border-radius: 12px;
@@ -374,7 +636,7 @@
         width: 50px;
         height: 50px;
         border: 4px solid #f1f5f9;
-        border-top-color: #2563eb;
+        border-top-color: var(--loan-blue);
         border-radius: 50%;
         animation: premium-spin 0.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
     }
@@ -389,6 +651,33 @@
         color: #1e293b;
         letter-spacing: 0.05em;
         text-transform: uppercase;
+    }
+
+    @media (max-width: 768px) {
+        .kinerja-tabs-header,
+        .kinerja-quality-intro,
+        .kinerja-report-card__header {
+            align-items: flex-start;
+            flex-direction: column;
+        }
+
+        .kinerja-tabs-nav {
+            width: 100%;
+        }
+
+        .kinerja-tab-btn {
+            min-width: 0;
+            flex: 1 1 100%;
+        }
+
+        .kinerja-report-card__meta,
+        .kinerja-quality-intro__chips {
+            white-space: normal;
+        }
+
+        .kinerja-table-container {
+            max-height: 62vh;
+        }
     }
 </style>
 
@@ -487,6 +776,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const ajaxWrapper = document.getElementById('kinerjaAjaxWrapper');
     const ajaxContainer = document.getElementById('kinerjaAjaxContainer');
     const submitButton = filterForm?.querySelector('.tampilkan-button');
+    const tabStorageKey = 'kinerja-konsumer-active-tab';
 
     // Request timeout configuration (in milliseconds)
     const REQUEST_TIMEOUT = 45000; // 45 seconds
@@ -498,6 +788,22 @@ document.addEventListener('DOMContentLoaded', function() {
             loadKinerjaData();
         });
     }
+
+    document.addEventListener('click', function(event) {
+        const tabButton = event.target.closest('[data-kinerja-tab]');
+        if (!tabButton) return;
+
+        const nextTab = tabButton.dataset.kinerjaTab || 'os';
+        setActiveKinerjaTab(nextTab);
+
+        try {
+            window.localStorage.setItem(tabStorageKey, nextTab);
+        } catch (error) {
+            // Ignore storage failures and keep the UI functional.
+        }
+    });
+
+    restoreKinerjaTabState();
 
     function loadKinerjaData() {
         const formData = new FormData(filterForm);
@@ -540,6 +846,7 @@ document.addEventListener('DOMContentLoaded', function() {
         })
         .then(html => {
             ajaxContainer.innerHTML = html;
+            restoreKinerjaTabState();
             ajaxWrapper.classList.remove('loading-active');
             
             // Update URL and history without reload
@@ -570,6 +877,37 @@ document.addEventListener('DOMContentLoaded', function() {
                 submitButton.disabled = false;
                 submitButton.innerHTML = '<i class="fas fa-search me-2"></i> TAMPILKAN';
             }
+        });
+    }
+
+    function restoreKinerjaTabState() {
+        let savedTab = 'os';
+
+        try {
+            savedTab = window.localStorage.getItem(tabStorageKey) || 'os';
+        } catch (error) {
+            savedTab = 'os';
+        }
+
+        setActiveKinerjaTab(savedTab);
+    }
+
+    function setActiveKinerjaTab(tabKey) {
+        const normalizedTab = tabKey === 'kualitas' ? 'kualitas' : 'os';
+        const tabButtons = document.querySelectorAll('[data-kinerja-tab]');
+        const tabPanels = document.querySelectorAll('[data-kinerja-panel]');
+
+        tabButtons.forEach((button) => {
+            const isActive = (button.dataset.kinerjaTab || 'os') === normalizedTab;
+            button.classList.toggle('active', isActive);
+            button.classList.toggle('is-active', isActive);
+            button.setAttribute('aria-selected', isActive ? 'true' : 'false');
+        });
+
+        tabPanels.forEach((panel) => {
+            const isActive = (panel.dataset.kinerjaPanel || 'os') === normalizedTab;
+            panel.classList.toggle('is-active', isActive);
+            panel.hidden = !isActive;
         });
     }
 

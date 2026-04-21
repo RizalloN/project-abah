@@ -17,6 +17,7 @@ use Throwable;
 class RekeningDormantController extends Controller
 {
     private const SNAPSHOT_TABLE = 'rekening_dormant_snapshots';
+    private const DORMANT_SNAPSHOT_VERSION = 2;
     private const AREA_BRANCHES = [
         'KC Madiun',
         'KC Magetan',
@@ -259,7 +260,7 @@ class RekeningDormantController extends Controller
                 'unit_column' => 'unit_kerja',
                 'status_column' => 'status',
                 'status_filter' => '9',
-                'count_basis' => 'COUNT(status)',
+                'count_basis' => 'COUNT(DISTINCT TRIM(no_rekening))',
                 'requested_period' => $requestedPeriod,
                 'resolved_period' => $currentPeriod,
                 'comparison_periods' => [
@@ -295,8 +296,25 @@ class RekeningDormantController extends Controller
     {
         $cacheKey = 'rekening_dormant_latest_period:v' . $this->reportCacheVersion();
 
-        return Cache::remember($cacheKey, now()->addMinutes(60), function () {
-            return DB::table('simpanan_multipn')->max('posisi');
+        return Cache::remember($cacheKey, now()->addMinutes(120), function () {
+            // OPTIMIZED: Try snapshot table first for faster lookup
+            $snapshotPeriod = null;
+            if (
+                Schema::hasTable(self::SNAPSHOT_TABLE)
+                && Schema::hasColumn(self::SNAPSHOT_TABLE, 'snapshot_version')
+            ) {
+                $snapshotPeriod = $this->dormantSnapshotQuery()
+                    ->max('posisi');
+            }
+
+            if ($snapshotPeriod) {
+                return $snapshotPeriod;
+            }
+
+            // Fallback to source table
+            return DB::table('simpanan_multipn')
+                ->where('status', '9')
+                ->max('posisi');
         });
     }
 
@@ -325,19 +343,20 @@ class RekeningDormantController extends Controller
         }
 
         if ($this->hasDormantSnapshots([$period])) {
-            $cacheKey = 'rekening_dormant_v7_snapshot_unit_options:' . md5(json_encode([
+            $cacheKey = 'rekening_dormant_v8_snapshot_unit_options:' . md5(json_encode([
                 'cache_version' => $this->reportCacheVersion(),
                 'period' => $period,
                 'branches' => $branches->values()->all(),
             ]));
 
-            return $this->rememberPayload($cacheKey, now()->addMinutes(60), function () use ($period, $branches) {
-                return DB::table(self::SNAPSHOT_TABLE)
+            return $this->rememberPayload($cacheKey, now()->addMinutes(120), function () use ($period, $branches) {
+                // OPTIMIZED: Single query with minimal columns
+                return $this->dormantSnapshotQuery()
                     ->where('posisi', $period)
                     ->whereIn('branch_label', $branches->all())
                     ->where('unit_kerja', '<>', '')
-                    ->select('unit_kerja')
-                    ->distinct()
+                    ->whereNotNull('unit_kerja')
+                    ->select(DB::raw('DISTINCT TRIM(unit_kerja) as unit_kerja'))
                     ->orderBy('unit_kerja')
                     ->pluck('unit_kerja')
                     ->map(fn ($value) => trim((string) $value))
@@ -352,19 +371,19 @@ class RekeningDormantController extends Controller
             return collect();
         }
 
-        $cacheKey = 'rekening_dormant_v5_unit_options:' . md5(json_encode([
+        $cacheKey = 'rekening_dormant_v6_unit_options:' . md5(json_encode([
             'cache_version' => $this->reportCacheVersion(),
             'period' => $period,
             'raw_branches' => $rawBranches->values()->all(),
         ]));
 
-        return $this->rememberPayload($cacheKey, now()->addMinutes(60), function () use ($period, $rawBranches) {
+        return $this->rememberPayload($cacheKey, now()->addMinutes(120), function () use ($period, $rawBranches) {
+            // OPTIMIZED: Use index hint and distinct in query
             return $this->baseDormantQuery($period, self::DORMANT_UNIT_INDEX)
                 ->whereIn('kantor_cabang', $rawBranches->all())
                 ->whereNotNull('unit_kerja')
                 ->where('unit_kerja', '<>', '')
-                ->select('unit_kerja')
-                ->distinct()
+                ->select(DB::raw('DISTINCT TRIM(unit_kerja) as unit_kerja'))
                 ->orderBy('unit_kerja')
                 ->pluck('unit_kerja')
                 ->map(fn ($value) => trim((string) $value))
@@ -414,8 +433,9 @@ class RekeningDormantController extends Controller
             'units' => $units->values()->all(),
         ]));
 
+        // OPTIMIZED: Always try snapshot first for faster response
         if ($this->hasDormantSnapshots($periods->all())) {
-            return $this->rememberPayload($cacheKey, now()->addMinutes(30), function () use (
+            return $this->rememberPayload($cacheKey, now()->addMinutes(15), function () use (
                 $periods,
                 $selectedBranchLabels,
                 $units,
@@ -424,11 +444,12 @@ class RekeningDormantController extends Controller
                 $ytdPeriod,
                 $yoyPeriod
             ) {
-                $rows = DB::table(self::SNAPSHOT_TABLE)
+                // Use batched query for all periods at once
+                $rows = $this->dormantSnapshotQuery()
                     ->select('posisi', 'branch_label', DB::raw('SUM(dormant_count) as dormant_count'))
                     ->whereIn('posisi', $periods->all())
                     ->whereIn('branch_label', $selectedBranchLabels)
-                    ->when($units->isNotEmpty(), fn ($query) => $query->whereIn('unit_kerja', $units->all()))
+                    ->when($units->isNotEmpty(), fn ($q) => $q->whereIn('unit_kerja', $units->all()))
                     ->groupBy('posisi', 'branch_label')
                     ->get();
 
@@ -436,7 +457,8 @@ class RekeningDormantController extends Controller
             }, $forceRefresh);
         }
 
-        return $this->rememberPayload($cacheKey, now()->addMinutes(30), function () use (
+        // OPTIMIZED: Fallback with single batch query instead of per-period queries
+        return $this->rememberPayload($cacheKey, now()->addMinutes(15), function () use (
             $periods,
             $selectedRawBranches,
             $rawBranchLookup,
@@ -446,19 +468,23 @@ class RekeningDormantController extends Controller
             $ytdPeriod,
             $yoyPeriod
         ) {
+            // BATCH QUERY: Get all periods in one query with index hint
             $rows = DB::table(DB::raw($this->qualifyIndexedSource('simpanan_multipn', null, [self::DORMANT_SUMMARY_INDEX])))
                 ->select(
                     'posisi',
                     'kantor_cabang',
-                    DB::raw('COUNT(*) as dormant_count')
+                    DB::raw('COUNT(DISTINCT TRIM(no_rekening)) as dormant_count')
                 )
                 ->whereIn('posisi', $periods->all())
                 ->where('status', '9')
                 ->whereIn('kantor_cabang', $selectedRawBranches->all())
-                ->when($units->isNotEmpty(), fn ($query) => $query->whereIn('unit_kerja', $units->all()))
+                ->whereNotNull('no_rekening')
+                ->where('no_rekening', '<>', '')
+                ->when($units->isNotEmpty(), fn ($q) => $q->whereIn('unit_kerja', $units->all()))
                 ->groupBy('posisi', 'kantor_cabang')
                 ->get();
 
+            // Process in single pass
             $counts = [];
             foreach ($rows as $row) {
                 $branchLabel = $rawBranchLookup[$row->kantor_cabang] ?? null;
@@ -539,8 +565,9 @@ class RekeningDormantController extends Controller
             'units' => $units->values()->all(),
         ]));
 
+        // OPTIMIZED: Always try snapshot first for faster response
         if ($this->hasDormantSnapshots($periods->all())) {
-            return $this->rememberPayload($cacheKey, now()->addMinutes(30), function () use (
+            return $this->rememberPayload($cacheKey, now()->addMinutes(15), function () use (
                 $periods,
                 $selectedBranchLabels,
                 $units,
@@ -549,13 +576,14 @@ class RekeningDormantController extends Controller
                 $ytdPeriod,
                 $yoyPeriod
             ) {
-                $rows = DB::table(self::SNAPSHOT_TABLE)
+                // Use batched query for all periods at once
+                $rows = $this->dormantSnapshotQuery()
                     ->select('posisi', 'unit_kerja', DB::raw('SUM(dormant_count) as dormant_count'))
                     ->whereIn('posisi', $periods->all())
                     ->whereIn('branch_label', $selectedBranchLabels)
                     ->whereNotNull('unit_kerja')
                     ->where('unit_kerja', '<>', '')
-                    ->when($units->isNotEmpty(), fn ($query) => $query->whereIn('unit_kerja', $units->all()))
+                    ->when($units->isNotEmpty(), fn ($q) => $q->whereIn('unit_kerja', $units->all()))
                     ->groupBy('posisi', 'unit_kerja')
                     ->get();
 
@@ -563,7 +591,8 @@ class RekeningDormantController extends Controller
             }, $forceRefresh);
         }
 
-        return $this->rememberPayload($cacheKey, now()->addMinutes(60), function () use (
+        // OPTIMIZED: Fallback with single batch query instead of per-period queries
+        return $this->rememberPayload($cacheKey, now()->addMinutes(15), function () use (
             $periods,
             $selectedRawBranches,
             $units,
@@ -572,14 +601,17 @@ class RekeningDormantController extends Controller
             $ytdPeriod,
             $yoyPeriod
         ) {
+            // BATCH QUERY: Get all periods in one query with index hint
             $rows = DB::table(DB::raw($this->qualifyIndexedSource('simpanan_multipn', null, [self::DORMANT_SUMMARY_INDEX])))
-                ->select('posisi', 'unit_kerja', DB::raw('COUNT(*) as dormant_count'))
+                ->select('posisi', 'unit_kerja', DB::raw('COUNT(DISTINCT TRIM(no_rekening)) as dormant_count'))
                 ->whereIn('posisi', $periods->all())
                 ->where('status', '9')
                 ->whereIn('kantor_cabang', $selectedRawBranches->all())
                 ->whereNotNull('unit_kerja')
                 ->where('unit_kerja', '<>', '')
-                ->when($units->isNotEmpty(), fn ($query) => $query->whereIn('unit_kerja', $units->all()))
+                ->whereNotNull('no_rekening')
+                ->where('no_rekening', '<>', '')
+                ->when($units->isNotEmpty(), fn ($q) => $q->whereIn('unit_kerja', $units->all()))
                 ->groupBy('posisi', 'unit_kerja')
                 ->get();
 
@@ -650,13 +682,14 @@ class RekeningDormantController extends Controller
     {
         $cacheKey = 'rekening_dormant_v6_branch_map:v' . $this->reportCacheVersion() . ':' . $period;
 
-        return $this->rememberPayload($cacheKey, now()->addMinutes(120), function () use ($period) {
+        return $this->rememberPayload($cacheKey, now()->addMinutes(240), function () use ($period) {
             if ($this->hasDormantSnapshots([$period])) {
                 $map = collect(self::AREA_BRANCHES)
                     ->mapWithKeys(fn (string $label) => [$label => []])
                     ->all();
 
-                $rows = DB::table(self::SNAPSHOT_TABLE)
+                // OPTIMIZED: Single query with minimal columns needed
+                $rows = $this->dormantSnapshotQuery()
                     ->where('posisi', $period)
                     ->select('branch_label', 'raw_branch')
                     ->distinct()
@@ -668,7 +701,7 @@ class RekeningDormantController extends Controller
                     $label = trim((string) ($row->branch_label ?? ''));
                     $rawBranch = trim((string) ($row->raw_branch ?? ''));
 
-                    if ($label !== '' && $rawBranch !== '' && array_key_exists($label, $map)) {
+                    if ($label !== '' && $rawBranch !== '' && isset($map[$label])) {
                         $map[$label][] = $rawBranch;
                     }
                 }
@@ -680,24 +713,28 @@ class RekeningDormantController extends Controller
                 ->mapWithKeys(fn (string $label) => [$label => []])
                 ->all();
 
+            // OPTIMIZED: Use index hint and select only needed columns
             $rawBranches = DB::table(DB::raw($this->qualifyIndexedSource('simpanan_multipn', null, [self::DORMANT_SUMMARY_INDEX])))
                 ->where('posisi', $period)
                 ->where('status', '9')
                 ->whereNotNull('kantor_cabang')
                 ->where('kantor_cabang', '<>', '')
-                ->select('kantor_cabang')
-                ->distinct()
+                ->select(DB::raw('DISTINCT TRIM(kantor_cabang) as kantor_cabang'))
                 ->orderBy('kantor_cabang')
                 ->pluck('kantor_cabang')
                 ->map(fn ($value) => trim((string) $value))
                 ->filter()
                 ->values();
 
+            // Pre-compute pattern matching in single pass
+            $patterns = collect(self::BRANCH_PATTERNS)
+                ->mapWithKeys(fn ($pattern, $label) => [$label => str_replace('%', '', strtoupper($pattern))])
+                ->all();
+
             foreach ($rawBranches as $rawBranch) {
                 $upperBranch = strtoupper($rawBranch);
 
-                foreach (self::BRANCH_PATTERNS as $label => $pattern) {
-                    $needle = str_replace('%', '', strtoupper($pattern));
+                foreach ($patterns as $label => $needle) {
                     if ($needle !== '' && str_contains($upperBranch, $needle)) {
                         $map[$label][] = $rawBranch;
                         break;
@@ -713,7 +750,11 @@ class RekeningDormantController extends Controller
     {
         $periods = collect($periods)->filter()->values()->all();
 
-        if (empty($periods) || !Schema::hasTable(self::SNAPSHOT_TABLE)) {
+        if (
+            empty($periods)
+            || !Schema::hasTable(self::SNAPSHOT_TABLE)
+            || !Schema::hasColumn(self::SNAPSHOT_TABLE, 'snapshot_version')
+        ) {
             return false;
         }
 
@@ -728,13 +769,14 @@ class RekeningDormantController extends Controller
         }
 
         // Single query to get all available periods at once
-        $availablePeriods = DB::table(self::SNAPSHOT_TABLE)
+        $availablePeriods = $this->dormantSnapshotQuery()
             ->whereIn('posisi', $periods)
             ->distinct('posisi')
             ->pluck('posisi')
             ->all();
 
         $availablePeriodSet = array_flip($availablePeriods);
+        $requiredPeriods = array_flip($periods);
         $missingPeriods = collect($periods)
             ->filter(fn (string $p) => !isset($availablePeriodSet[$p]))
             ->values()
@@ -761,6 +803,7 @@ class RekeningDormantController extends Controller
 
             if (!$hasSourceRows) {
                 Cache::put($periodCacheKey, false, now()->addSeconds(30));
+                unset($requiredPeriods[$missingPeriod]);
                 continue;
             }
 
@@ -792,9 +835,20 @@ class RekeningDormantController extends Controller
             Cache::put($periodCacheKey, false, now()->addSeconds(30));
         }
 
-        $allExist = count($availablePeriods) === count($periods);
+        $allExist = count($availablePeriods) === count($requiredPeriods);
         Cache::put($cacheKey, (int) $allExist, now()->addMinutes(5)); // Short TTL for incomplete sets
         return $allExist;
+    }
+
+    private function dormantSnapshotQuery()
+    {
+        $query = DB::table(self::SNAPSHOT_TABLE);
+
+        if (!Schema::hasColumn(self::SNAPSHOT_TABLE, 'snapshot_version')) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        return $query->where('snapshot_version', self::DORMANT_SNAPSHOT_VERSION);
     }
 
     private function buildLabels(?string $currentPeriod, ?string $mtdPeriod, ?string $ytdPeriod, ?string $yoyPeriod): array

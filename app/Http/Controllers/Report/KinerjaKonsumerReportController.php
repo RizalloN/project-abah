@@ -15,7 +15,7 @@ use Illuminate\View\View;
 
 class KinerjaKonsumerReportController extends Controller
 {
-    private const DEFAULT_TITLE = 'Outstanding Konsumer - Briguna & KPF';
+    private const DEFAULT_TITLE = 'Outstanding Konsumer - Briguna & KPR';
     private const SEGMENT_LABEL = 'KPR';
     private const PRODUCT_OPTIONS = ['BRIGUNA-KONSUMER', 'KPR'];
 
@@ -47,7 +47,9 @@ class KinerjaKonsumerReportController extends Controller
             $currentDate->copy()->subYearNoOverflow()->endOfYear()
         ) ?? $selectedPeriod;
 
-        $branchRows = $this->fetchBranchRows($selectedPeriod, $previousDayPeriod, $mtdPeriod, $ytdPeriod, $selectedCabang, $selectedProduct);
+        $osRows = $this->fetchBranchRows($selectedPeriod, $previousDayPeriod, $mtdPeriod, $ytdPeriod, $selectedCabang, $selectedProduct);
+        $smlRows = $this->fetchBranchRows($selectedPeriod, $previousDayPeriod, $mtdPeriod, $ytdPeriod, $selectedCabang, $selectedProduct, 'sml');
+        $nplRows = $this->fetchBranchRows($selectedPeriod, $previousDayPeriod, $mtdPeriod, $ytdPeriod, $selectedCabang, $selectedProduct, 'npl');
         $nextMonth = $currentDate->copy()->addMonthNoOverflow();
 
         $viewData = [
@@ -73,8 +75,12 @@ class KinerjaKonsumerReportController extends Controller
             'ytdLabel' => Carbon::parse($ytdPeriod)->translatedFormat('d M Y'),
             'currentMonthLabel' => $currentDate->format('M-y'),
             'nextMonthLabel' => $nextMonth->format('M-y'),
-            'rows' => $branchRows['rows'],
-            'total' => $branchRows['total'],
+            'rows' => $osRows['rows'],
+            'total' => $osRows['total'],
+            'qualityRowsSml' => $smlRows['rows'],
+            'qualityTotalSml' => $smlRows['total'],
+            'qualityRowsNpl' => $nplRows['rows'],
+            'qualityTotalNpl' => $nplRows['total'],
         ];
 
         if ($request->ajax()) {
@@ -162,18 +168,27 @@ class KinerjaKonsumerReportController extends Controller
             });
     }
 
-    private function fetchBranchRows(string $selectedPeriod, string $previousDayPeriod, string $mtdPeriod, string $ytdPeriod, ?string $selectedCabang = null, ?string $selectedProduct = null): array
+    private function fetchBranchRows(
+        string $selectedPeriod,
+        string $previousDayPeriod,
+        string $mtdPeriod,
+        string $ytdPeriod,
+        ?string $selectedCabang = null,
+        ?string $selectedProduct = null,
+        ?string $qualityType = null
+    ): array
     {
-        $cacheKey = 'kinerja_konsumer_rows:v5:' . md5(json_encode([
+        $cacheKey = 'kinerja_konsumer_rows:v6:' . md5(json_encode([
             'selected' => $selectedPeriod,
             'prev_day' => $previousDayPeriod,
             'mtd' => $mtdPeriod,
             'ytd' => $ytdPeriod,
             'cabang' => $selectedCabang,
             'produk' => $selectedProduct,
+            'quality' => $qualityType,
         ]));
 
-        return Cache::remember($cacheKey, 300, function () use ($selectedPeriod, $previousDayPeriod, $mtdPeriod, $ytdPeriod, $selectedCabang, $selectedProduct) {
+        return Cache::remember($cacheKey, 300, function () use ($selectedPeriod, $previousDayPeriod, $mtdPeriod, $ytdPeriod, $selectedCabang, $selectedProduct, $qualityType) {
         $periods = array_values(array_unique(array_filter([
             $selectedPeriod,
             $previousDayPeriod,
@@ -198,6 +213,11 @@ class KinerjaKonsumerReportController extends Controller
             ['baki_debet1', 'baki_debet'],
             'baki_debet1'
         );
+        $kolAdkColumn = $this->resolveExistingColumn(
+            'daily_loan_dinamis',
+            ['kol_adk1'],
+            'kol_adk1'
+        );
         $realisasiColumn = $this->resolveExistingColumn(
             'daily_loan_dinamis',
             ['tgl_realisasi'],
@@ -210,7 +230,13 @@ class KinerjaKonsumerReportController extends Controller
         $monthStart = Carbon::parse($selectedPeriod)->startOfMonth()->toDateString();
         $monthEnd = Carbon::parse($selectedPeriod)->endOfMonth()->toDateString();
 
-        $dbRows = DB::table('daily_loan_dinamis')
+        $qualityExpression = "CASE
+            WHEN CAST(COALESCE({$kolAdkColumn}, 0) AS DECIMAL(10,2)) = 2 THEN 'sml'
+            WHEN CAST(COALESCE({$kolAdkColumn}, 0) AS DECIMAL(10,2)) > 2 THEN 'npl'
+            ELSE 'other'
+        END";
+
+        $builder = DB::table('daily_loan_dinamis')
             ->selectRaw("{$rmColumn} as rm")
             ->selectRaw("{$cabangColumn} as cabang")
             ->selectRaw("{$productColumn} as produk_raw")
@@ -230,6 +256,9 @@ class KinerjaKonsumerReportController extends Controller
             })
             ->whereNotNull($rmColumn)
             ->where($rmColumn, '<>', '')
+            ->when($qualityType !== null, function ($query) use ($qualityExpression, $qualityType) {
+                $query->whereRaw('(' . $qualityExpression . ') = ?', [$qualityType]);
+            })
             ->when($selectedCabang !== null, function ($query) use ($normalizedCabangExpression, $selectedCabang) {
                 $query->whereRaw($normalizedCabangExpression . ' = ?', [$this->normalizeCabangKey($selectedCabang)]);
             })
@@ -237,7 +266,9 @@ class KinerjaKonsumerReportController extends Controller
             ->groupBy($rmColumn, $cabangColumn, $productColumn)
             ->orderBy($cabangColumn)
             ->orderBy($rmColumn)
-            ->get();
+            ;
+
+        $dbRows = $builder->get();
 
         $manualTargets = $this->getManualJgTargets();
         $branches = [];

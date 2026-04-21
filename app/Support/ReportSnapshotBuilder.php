@@ -15,6 +15,7 @@ class ReportSnapshotBuilder
     private const RASIO_SNAPSHOT_TABLE = 'rasio_casa_debitur_snapshots';
     private const RASIO_UKER_SNAPSHOT_TABLE = 'rasio_casa_debitur_uker_snapshots';
     private const DORMANT_SNAPSHOT_TABLE = 'rekening_dormant_snapshots';
+    private const DORMANT_SNAPSHOT_VERSION = 2;
     private const NEW_PAYROLL_SNAPSHOT_TABLE = 'performance_new_payroll_snapshots';
 
     private const PRIORITY_BRANCHES = ['MADIUN', 'MAGETAN', 'NGAWI', 'PONOROGO'];
@@ -554,8 +555,15 @@ class ReportSnapshotBuilder
 
     private function buildDormantPeriodSnapshot(string $period, bool $force): int
     {
+        if (!Schema::hasColumn(self::DORMANT_SNAPSHOT_TABLE, 'snapshot_version')) {
+            return 0;
+        }
+
         if (!$force) {
-            $existingCount = (int) DB::table(self::DORMANT_SNAPSHOT_TABLE)->where('posisi', $period)->count();
+            $existingCount = (int) DB::table(self::DORMANT_SNAPSHOT_TABLE)
+                ->where('posisi', $period)
+                ->where('snapshot_version', self::DORMANT_SNAPSHOT_VERSION)
+                ->count();
             if ($existingCount > 0) {
                 return $existingCount;
             }
@@ -567,7 +575,7 @@ class ReportSnapshotBuilder
         DB::statement("
             INSERT INTO {$snapshotTable}
             (
-                uniqueid_rds, posisi, branch_label, raw_branch, unit_kerja, dormant_count, created_at, updated_at
+                uniqueid_rds, posisi, branch_label, raw_branch, unit_kerja, dormant_count, snapshot_version, created_at, updated_at
             )
             SELECT
                 MD5(CONCAT_WS('|', 'rds', ?, TRIM(base.raw_branch), TRIM(base.unit_kerja))) as uniqueid_rds,
@@ -576,22 +584,26 @@ class ReportSnapshotBuilder
                 TRIM(base.raw_branch) as raw_branch,
                 TRIM(base.unit_kerja) as unit_kerja,
                 base.dormant_count as dormant_count,
+                " . self::DORMANT_SNAPSHOT_VERSION . " as snapshot_version,
                 NOW() as created_at,
                 NOW() as updated_at
             FROM (
                 SELECT
                     normalized.raw_branch as raw_branch,
                     normalized.unit_kerja as unit_kerja,
-                    COUNT(*) as dormant_count
+                    COUNT(DISTINCT normalized.no_rekening) as dormant_count
                 FROM (
                     SELECT
                         TRIM(kantor_cabang) as raw_branch,
-                        COALESCE(NULLIF(TRIM(unit_kerja), ''), '') as unit_kerja
+                        COALESCE(NULLIF(TRIM(unit_kerja), ''), '') as unit_kerja,
+                        TRIM(no_rekening) as no_rekening
                     FROM simpanan_multipn
                     WHERE posisi = ?
                         AND status = '9'
                         AND kantor_cabang IS NOT NULL
                         AND kantor_cabang <> ''
+                        AND no_rekening IS NOT NULL
+                        AND no_rekening <> ''
                 ) normalized
                 GROUP BY normalized.raw_branch, normalized.unit_kerja
             ) base
@@ -599,6 +611,7 @@ class ReportSnapshotBuilder
             ON DUPLICATE KEY UPDATE
                 branch_label = VALUES(branch_label),
                 dormant_count = VALUES(dormant_count),
+                snapshot_version = VALUES(snapshot_version),
                 updated_at = VALUES(updated_at)
         ", [$period, $period, $period]);
 
@@ -621,16 +634,22 @@ class ReportSnapshotBuilder
                             AND status = '9'
                             AND kantor_cabang IS NOT NULL
                             AND kantor_cabang <> ''
+                            AND no_rekening IS NOT NULL
+                            AND no_rekening <> ''
                     ) normalized
                     GROUP BY normalized.raw_branch, normalized.unit_kerja
                 ) base
                 WHERE {$branchLabelExpression} IS NOT NULL
             ) src ON src.uniqueid_rds = snap.uniqueid_rds
             WHERE snap.posisi = ?
+                AND snap.snapshot_version = ?
                 AND src.uniqueid_rds IS NULL
-        ", [$period, $period, $period]);
+        ", [$period, $period, $period, self::DORMANT_SNAPSHOT_VERSION]);
 
-        return (int) DB::table(self::DORMANT_SNAPSHOT_TABLE)->where('posisi', $period)->count();
+        return (int) DB::table(self::DORMANT_SNAPSHOT_TABLE)
+            ->where('posisi', $period)
+            ->where('snapshot_version', self::DORMANT_SNAPSHOT_VERSION)
+            ->count();
     }
 
     private function buildNewPayrollPeriodSnapshot(string $snapshotPosisi, bool $force): int
