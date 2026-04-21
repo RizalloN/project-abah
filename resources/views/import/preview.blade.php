@@ -603,9 +603,6 @@
                 return;
             }
 
-            const sourceCol = Object.prototype.hasOwnProperty.call(displayFilterMap, col)
-                ? displayFilterMap[col]
-                : col;
             const activeFilters = buildActiveFilterContext(col);
             const signature = buildActiveFilterSignature(activeFilters);
 
@@ -629,7 +626,6 @@
                     return;
                 }
             }
-
             state.isLoading = true;
             state.pendingSignature = signature;
             state.needsRefresh = false;
@@ -637,7 +633,11 @@
             let shouldRender = false;
 
             try {
+                const sourceCol = Object.prototype.hasOwnProperty.call(displayFilterMap, col)
+                    ? displayFilterMap[col]
+                    : col;
                 const url = new URL(filterOptionsUrl, window.location.origin);
+
                 url.searchParams.set('file_path', filePathValue);
                 url.searchParams.set('delimiter', delimiterValue);
                 url.searchParams.set('column_index', String(sourceCol));
@@ -680,16 +680,16 @@
                     }));
                 state.fullOptionsLoaded = true;
                 state.loadedSignature = signature;
-                
                 // Simpan ke cache untuk next load
                 if (isInitialPrefetch || Object.keys(activeFilters).length === 0) {
                     saveToLocalStorage(col, normalizedValues);
                 }
-                
+
                 shouldRender = true;
 
             } catch (error) {
                 console.error('Error loading filter options:', error);
+                shouldRender = true;
             } finally {
                 state.isLoading = false;
                 if (state.needsRefresh) {
@@ -897,41 +897,16 @@
         });
 
         document.querySelectorAll('.dropdown').forEach(function (dropdown) {
-            dropdown.addEventListener('shown.bs.dropdown', async function () {
+            dropdown.addEventListener('shown.bs.dropdown', function () {
                 const container = dropdown.querySelector('[id^="list_container_"]');
                 if (!container) {
                     return;
                 }
 
                 const col = container.getAttribute('data-col');
-                await ensureFullFilterOptions(col);
-            });
-        });
-
-        document.querySelectorAll('.filter-btn').forEach(function (button) {
-            button.addEventListener('click', function () {
-                const dropdown = button.closest('.dropdown');
-                const container = dropdown ? dropdown.querySelector('[id^="list_container_"]') : null;
-                if (!container) {
-                    return;
-                }
-
-                const col = container.getAttribute('data-col');
                 ensureFullFilterOptions(col);
             });
         });
-
-        if (window.jQuery) {
-            window.jQuery(document).on('shown.bs.dropdown', '.dropdown', function () {
-                const container = this.querySelector('[id^="list_container_"]');
-                if (!container) {
-                    return;
-                }
-
-                const col = container.getAttribute('data-col');
-                ensureFullFilterOptions(col);
-            });
-        }
 
         let importProgressStartedAt = null;
         let importProgressTicker = null;

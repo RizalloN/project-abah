@@ -2768,8 +2768,15 @@ class ImportFileController extends Controller
             ], 422);
         }
 
-        // OPTIMIZATION 1: Cached dynamic options (same cache key strategy)
-        $cacheKey = "import_dynamic_filter:".md5($filePath . $columnIndex . $currentDelimiter);
+        $fileSignature = implode('|', [
+            (string) realpath($resolvedFilePath),
+            (string) @filesize($resolvedFilePath),
+            (string) @filemtime($resolvedFilePath),
+            (string) $columnIndex,
+            (string) $currentDelimiter,
+            'v2',
+        ]);
+        $cacheKey = "import_dynamic_filter:" . md5($fileSignature);
         $cached = Cache::get($cacheKey);
 
         if (is_array($cached)) {
@@ -2789,15 +2796,6 @@ class ImportFileController extends Controller
             ], 422);
         }
 
-        // OPTIMIZATION 2: Cache delimiter detection
-        $delimiterCacheKey = "import_csv_delimiter:" . md5($resolvedFilePath . filesize($resolvedFilePath));
-        $delimiter = Cache::get($delimiterCacheKey);
-        
-        if ($delimiter === null) {
-            $delimiter = $currentDelimiter === 'auto' ? $this->detectCsvDelimiter($resolvedFilePath) : $currentDelimiter;
-            Cache::put($delimiterCacheKey, $delimiter, now()->addHours(24));
-        }
-
         $uniqueValues = [];
         $headers = [];
         $rowCounter = 0;
@@ -2808,6 +2806,9 @@ class ImportFileController extends Controller
         $stopCollecting = false;
 
         try {
+            $delimiter = $this->resolveDelimiter($handle, $currentDelimiter);
+            rewind($handle);
+
             while (($row = $this->readCsvRecord($handle, $delimiter)) !== false) {
                 // OPTIMIZATION 4: Skip empty rows early
                 if (empty($row)) {
@@ -2815,7 +2816,7 @@ class ImportFileController extends Controller
                 }
 
                 if ($rowCounter === 0) {
-                    $headers = $this->formatCsvHeaders($row);
+                    $headers = $this->formatCsvHeaders($row, false);
                     if (!isset($row[$columnIndex])) {
                         fclose($handle);
                         return response()->json([

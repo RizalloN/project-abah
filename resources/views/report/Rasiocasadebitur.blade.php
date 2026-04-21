@@ -963,6 +963,11 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function renderRows(dataList, totalData) {
+        // Bersihkan placeholder/loading row sebelum menulis hasil baru
+        $('#tbody-total').empty();
+        $('#tbody-briguna-kpr').empty();
+        $('#tbody-mikro-smc').empty();
+
         // Gunakan DocumentFragment untuk batch DOM insertion
         const fragmentTotal = document.createDocumentFragment();
         const fragmentBrigunaKpr = document.createDocumentFragment();
