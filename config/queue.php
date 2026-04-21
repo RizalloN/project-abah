@@ -47,6 +47,16 @@ return [
             'after_commit' => false,
         ],
 
+        // Priority queue for import-related tasks (snapshots, rebuilds, etc)
+        'imports-high' => [
+            'driver' => 'database',
+            'connection' => env('DB_QUEUE_CONNECTION'),
+            'table' => env('DB_QUEUE_TABLE', 'jobs'),
+            'queue' => 'imports-high',
+            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 7200),
+            'after_commit' => false,
+        ],
+
         'beanstalkd' => [
             'driver' => 'beanstalkd',
             'host' => env('BEANSTALKD_QUEUE_HOST', 'localhost'),
