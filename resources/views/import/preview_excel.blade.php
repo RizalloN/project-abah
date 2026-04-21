@@ -425,13 +425,17 @@ document.addEventListener('DOMContentLoaded', function () {
         const visibleValues = filteredValues.slice(0, filterRenderLimit);
         let html = '';
 
-        if (!filteredValues.length) {
+        if (state.isLoading && !state.fullOptionsLoaded) {
+            html = '<div class="text-center text-muted py-3 small">' +
+                '<i class="fas fa-spinner fa-spin mr-2"></i>Memuat opsi filter lengkap...</div>';
+        } else if (!filteredValues.length) {
             html = state.isLoading
-                ? '<div class="text-center text-muted py-2 small">Memuat opsi filter lengkap...</div>'
+                ? '<div class="text-center text-muted py-2 small">' +
+                  '<i class="fas fa-spinner fa-spin mr-2"></i>Memuat opsi filter...</div>'
                 : '<div class="text-center text-muted py-2 small">Tidak ada opsi yang cocok.</div>';
         } else {
             if (state.isLoading) {
-                html += '<div class="small text-muted mb-2">Memuat opsi lengkap dari file sumber...</div>';
+                html += '<div class="small text-muted mb-2"><i class="fas fa-spinner fa-spin mr-1"></i>Memindahkan nilai dari file sumber...</div>';
             }
 
             if (filteredValues.length > filterRenderLimit) {

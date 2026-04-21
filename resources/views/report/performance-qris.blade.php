@@ -201,11 +201,11 @@
     .bg-good { background-color: #dcf5e5 !important; color: #166534 !important; font-weight: 700;}
     .bg-bad { background-color: #fde2e4 !important; color: #b42318 !important; font-weight: 700;}
 
-    .content-wrapper .table-container .table-report tbody tr:not(.row-total):hover > td { background-color: var(--qris-body-hover); }
+    /* .content-wrapper .table-container .table-report tbody tr:not(.row-total):hover > td { background-color: var(--qris-body-hover); }
     .content-wrapper .table-container .table-report tbody tr:not(.row-total):hover > .sticky-col { background-color: var(--qris-sticky-hover) !important; }
     .content-wrapper .table-container .table-report tbody tr:not(.row-total):hover > .sticky-col::after {
         background: linear-gradient(to right, rgba(223, 240, 255, 0), rgba(223, 240, 255, 0.96) 70%, rgba(223, 240, 255, 1));
-    }
+    } */
     .row-total { --row-total-bg: var(--qris-total-bg); --row-total-color: #ffffff; --row-total-border: var(--qris-total-border); background: linear-gradient(180deg, #315992 0%, var(--qris-total-bg) 100%) !important; color: white !important; font-weight: 700; }
     .row-total td,
     .row-total th,
@@ -214,10 +214,10 @@
         color: #ffffff !important;
         border-color: var(--qris-total-border) !important;
     }
-    .content-wrapper .table-container .table-report tbody tr.row-total:hover > td,
+    /* .content-wrapper .table-container .table-report tbody tr.row-total:hover > td,
     .content-wrapper .table-container .table-report tbody tr.row-total:hover > th {
         background: linear-gradient(180deg, #315992 0%, var(--qris-total-bg) 100%) !important;
-    }
+    } */
     .content-wrapper .table-container .table-report .row-total .sticky-col { background-color: var(--qris-total-bg) !important; }
     .content-wrapper .table-container .table-report .row-total .sticky-col::after {
         background: linear-gradient(to right, rgba(39, 77, 134, 0), rgba(39, 77, 134, 0.96) 70%, rgba(39, 77, 134, 1));
@@ -343,7 +343,7 @@
             <!-- 🔥 TAB 1: PERFORMANCE QRIS UTAMA -->
             <div class="tab-pane fade show active" id="tab-qris" role="tabpanel">
                 <div class="table-container">
-                    <table class="table table-hover table-report m-0">
+                    <table class="table table-report m-0">
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
                                 <th rowspan="2" class="bg-qris-jml align-middle col-group-label sticky-col" data-default-label="BRANCH OFFICE" data-filtered-label="UKER">BRANCH OFFICE</th>
@@ -370,7 +370,7 @@
             <!-- 🔥 TAB 2: PERFORMANCE QRIS MoM -->
             <div class="tab-pane fade" id="tab-qris-mom" role="tabpanel">
                 <div class="table-container">
-                    <table class="table table-hover table-report m-0">
+                    <table class="table table-report m-0">
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
                                 <th rowspan="2" class="bg-mom-blue align-middle col-group-label sticky-col" data-default-label="BRANCH OFFICE" data-filtered-label="UKER">BRANCH OFFICE</th>
