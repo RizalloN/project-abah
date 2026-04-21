@@ -18,6 +18,8 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Carbon\Carbon; 
+use Symfony\Component\Process\PhpExecutableFinder;
+use Symfony\Component\Process\Process;
 
 class ImportFileController extends Controller
 {
@@ -54,6 +56,7 @@ class ImportFileController extends Controller
     private const DAILY_LOAN_PREVIEW_SAMPLE_LIMIT = 150;
     private const DAILY_LOAN_PREVIEW_UNIQUE_SCAN_LIMIT = 150;
     private const DAILY_LOAN_PREVIEW_UNIQUE_LIMIT_PER_COLUMN = 40;
+    private const PREVIEW_INDEX_WARM_LOCK_SECONDS = 1800;
     private const IMPORT_BATCH_SIZE = 1000;
     private const DAILY_LOAN_IMPORT_BATCH_SIZE = 250;
     private const BULK_LOAD_TEMP_DIR = 'app/import_bulk';
@@ -1589,6 +1592,42 @@ class ImportFileController extends Controller
         return true;
     }
 
+    private function passesActiveFiltersFast(
+        array $row,
+        array $activeFilters,
+        bool $isBrilinkSummary = false,
+        int $posisiIndex = -1,
+        int $tahunIndex = -1
+    ): bool {
+        foreach ($activeFilters as $colIdx => $allowedValues) {
+            $cellValue = isset($row[$colIdx]) ? trim((string) $row[$colIdx]) : '';
+
+            if (!$isBrilinkSummary && $colIdx === $posisiIndex && $cellValue !== '') {
+                try {
+                    if (strpos($cellValue, '/') !== false) {
+                        $cellValue = StrictDateParser::normalize($cellValue);
+                    } elseif ($tahunIndex !== -1 && isset($row[$tahunIndex]) && trim((string) $row[$tahunIndex]) !== '') {
+                        $rawTahun = trim((string) $row[$tahunIndex]);
+                        if (preg_match('/^([a-zA-Z]+\s+\d+)/', $cellValue, $matches)) {
+                            $cellValue = StrictDateParser::normalize($matches[1] . ' ' . $rawTahun);
+                        } else {
+                            $cellValue = StrictDateParser::normalize($cellValue);
+                        }
+                    } else {
+                        $cellValue = StrictDateParser::normalize($cellValue);
+                    }
+                } catch (\Throwable $e) {
+                }
+            }
+
+            if (!isset($allowedValues[$cellValue])) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     private function hasMeaningfulImportData(array $row, array $ignoredKeys = []): bool
     {
         $ignoredLookup = array_fill_keys(array_map('strtolower', $ignoredKeys), true);
@@ -2308,6 +2347,17 @@ class ImportFileController extends Controller
             $keys = array_keys($valuesMap); sort($keys); $formattedUniqueValues[$index] = $keys;
         }
 
+        $filterableColumnIndices = [];
+        foreach ($formattedUniqueValues as $index => $values) {
+            if (!empty($values)) {
+                $filterableColumnIndices[] = (int) $index;
+            }
+        }
+
+        if (in_array($extension, ['csv', 'txt'], true) && !empty($filterableColumnIndices)) {
+            $this->dispatchPreviewIndexWarmup($filePath, $currentDelimiter, $tableName, $isBrilinkSummary, $filterableColumnIndices);
+        }
+
         $area6ColumnHints = $isDailyLoan
             ? []
             : ['KANCA', 'KCI', 'BRANCH', 'BRDESC', 'MBDESC'];
@@ -2337,6 +2387,7 @@ class ImportFileController extends Controller
             'previewData',
             'filePath',
             'formattedUniqueValues',
+            'filterableColumnIndices',
             'currentDelimiter',
             'isBrilinkSummary',
             'processRoute',
@@ -2351,8 +2402,69 @@ class ImportFileController extends Controller
             'area6ColumnHints' => $area6ColumnHints,
             'initialArea6Selections' => $initialArea6Selections,
             'filterOptionsRoute' => route('import.preview.filter-options'),
+            'warmIndexRoute' => route('import.preview.warm-index'),
             'prefetchFilterOptionsOnLoad' => false,
         ]);
+    }
+
+    public function previewWarmIndex(Request $request)
+    {
+        $this->applySafeRuntimeLimits();
+
+        $request->validate([
+            'file_path' => 'required|string',
+            'delimiter' => 'nullable|string',
+            'filterable_column_indices_json' => 'nullable|string',
+        ]);
+
+        $filePath = (string) $request->input('file_path');
+        $currentDelimiter = (string) $request->input('delimiter', 'auto');
+        $filterableColumnIndices = json_decode((string) $request->input('filterable_column_indices_json', ''), true);
+        if (!is_array($filterableColumnIndices)) {
+            $filterableColumnIndices = [];
+        }
+
+        $resolvedFilePath = $filePath;
+        if (!file_exists($resolvedFilePath)) {
+            try {
+                $storageResolvedPath = Storage::path($filePath);
+                if (is_string($storageResolvedPath) && $storageResolvedPath !== '' && file_exists($storageResolvedPath)) {
+                    $resolvedFilePath = $storageResolvedPath;
+                }
+            } catch (\Throwable $e) {
+            }
+        }
+
+        if (!file_exists($resolvedFilePath)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'File tidak ditemukan di server.',
+            ], 404);
+        }
+
+        $reportData = $this->getActiveReportData();
+        $tableName = $this->resolveTableName($reportData);
+        $isBrilinkSummary = $this->isBrilinkSummaryReport($reportData);
+        $indexDbPath = $this->previewIndexDbPath($resolvedFilePath, $currentDelimiter, $tableName);
+
+        if (file_exists($indexDbPath) && filesize($indexDbPath) > 0) {
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Index preview sudah siap.',
+                'index_ready' => true,
+            ]);
+        }
+
+        $lockKey = $this->previewIndexWarmLockKey($resolvedFilePath, $currentDelimiter, $tableName);
+        if (!Cache::has($lockKey)) {
+            $this->dispatchPreviewIndexWarmup($resolvedFilePath, $currentDelimiter, $tableName, $isBrilinkSummary, $filterableColumnIndices);
+        }
+
+        return response()->json([
+            'status' => 'warming',
+            'message' => 'Index preview sedang disiapkan.',
+            'index_ready' => false,
+        ], 202);
     }
 
     public function previewFilterOptions(Request $request)
@@ -2773,14 +2885,14 @@ class ImportFileController extends Controller
             // Cache untuk 8 jam
             Cache::put($cacheKey, $values, now()->addHours(8));
 
-            return response()->json([
-                'status' => 'success',
-                'values' => $values,
-                'total_unique' => count($values),
-                'total_rows_scanned' => $rowCounter - 1, // Exclude header
-                'from_cache' => false,
-                'capped_at_limit' => count($values) >= $maxUniqueValues,
-            ]);
+        return response()->json([
+            'status' => 'success',
+            'values' => $values,
+            'total_unique' => count($values),
+            'total_rows_scanned' => $rowCounter - 1, // Exclude header
+            'from_cache' => false,
+            'capped_at_limit' => count($values) >= $maxUniqueValues,
+        ]);
 
         } catch (\Throwable $e) {
             if (is_resource($handle)) {
@@ -2790,6 +2902,505 @@ class ImportFileController extends Controller
                 'status' => 'error',
                 'message' => 'Gagal memproses file: ' . $e->getMessage(),
             ], 422);
+        }
+    }
+
+    public function previewFilteredRows(Request $request)
+    {
+        $this->applySafeRuntimeLimits();
+
+        $request->validate([
+            'file_path' => 'required|string',
+            'delimiter' => 'nullable|string',
+            'display_filter_map_json' => 'nullable|string',
+            'active_filters_json' => 'nullable|string',
+            'limit' => 'nullable|integer|min:1|max:200',
+        ]);
+
+        $filePath = (string) $request->input('file_path');
+        $currentDelimiter = (string) $request->input('delimiter', 'auto');
+        $limit = (int) $request->input('limit', 100);
+
+        $displayFilterMap = json_decode((string) $request->input('display_filter_map_json', ''), true);
+        if (!is_array($displayFilterMap)) {
+            $displayFilterMap = [];
+        }
+
+        $activeFilters = json_decode((string) $request->input('active_filters_json', ''), true);
+        if (!is_array($activeFilters)) {
+            $activeFilters = [];
+        }
+
+        $resolvedFilePath = $filePath;
+        if (!file_exists($resolvedFilePath)) {
+            try {
+                $storageResolvedPath = Storage::path($filePath);
+                if (is_string($storageResolvedPath) && $storageResolvedPath !== '' && file_exists($storageResolvedPath)) {
+                    $resolvedFilePath = $storageResolvedPath;
+                }
+            } catch (\Throwable $e) {
+            }
+        }
+
+        if (!file_exists($resolvedFilePath)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'File tidak ditemukan di server.',
+            ], 404);
+        }
+
+        $reportData = $this->getActiveReportData();
+        $tableName = $this->resolveTableName($reportData);
+        $isBrilinkSummary = $this->isBrilinkSummaryReport($reportData);
+
+        $normalizedFilters = [];
+        foreach ($activeFilters as $displayIndex => $values) {
+            $sourceIndex = array_key_exists((int) $displayIndex, $displayFilterMap)
+                ? (int) $displayFilterMap[(int) $displayIndex]
+                : (int) $displayIndex;
+
+            $normalizedValues = array_values(array_unique(array_map(static function ($value): string {
+                return trim((string) $value);
+            }, (array) $values)));
+
+            if ($normalizedValues !== []) {
+                $normalizedFilters[$sourceIndex] = array_fill_keys($normalizedValues, true);
+            }
+        }
+
+        $indexDbPath = $this->previewIndexDbPath($resolvedFilePath, $currentDelimiter, $tableName);
+        $indexReady = file_exists($indexDbPath) && filesize($indexDbPath) > 0;
+        if (!$indexReady) {
+            $lockKey = $this->previewIndexWarmLockKey($resolvedFilePath, $currentDelimiter, $tableName);
+            if (!Cache::has($lockKey)) {
+                $this->dispatchPreviewIndexWarmup($resolvedFilePath, $currentDelimiter, $tableName, $isBrilinkSummary);
+            }
+        }
+
+        if ($indexReady) {
+            try {
+                $indexed = $this->queryPreviewRowsFromIndex($indexDbPath, $normalizedFilters, $limit);
+                return response()->json([
+                    'status' => 'success',
+                    'rows' => $indexed['rows'],
+                    'total_matched' => null,
+                    'returned_rows' => count($indexed['rows']),
+                    'truncated' => (bool) $indexed['truncated'],
+                    'source' => 'sqlite',
+                ]);
+            } catch (\Throwable $indexError) {
+                Log::warning('Preview index query failed: ' . $indexError->getMessage(), [
+                    'file' => $resolvedFilePath,
+                    'table' => $tableName,
+                ]);
+            }
+        }
+
+        if (!$indexReady) {
+            Log::debug('Preview index unavailable, using bounded scan', [
+                'file' => $resolvedFilePath,
+                'table' => $tableName,
+            ]);
+        }
+
+        $fileSignature = implode('|', [
+            (string) realpath($resolvedFilePath),
+            (string) @filesize($resolvedFilePath),
+            (string) @filemtime($resolvedFilePath),
+            (string) $limit,
+            (string) $currentDelimiter,
+            (string) $tableName,
+            md5((string) json_encode($displayFilterMap)),
+            md5((string) json_encode($activeFilters)),
+            'v2',
+        ]);
+
+        $cacheKey = 'import_preview_filtered_rows:' . md5($fileSignature);
+        $cached = Cache::get($cacheKey);
+        if (is_array($cached)) {
+            return response()->json($cached);
+        }
+
+        $handle = fopen($resolvedFilePath, 'r');
+        if ($handle === false) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'File tidak dapat dibaca oleh server.',
+            ], 422);
+        }
+
+        try {
+            $delimiter = $this->resolveDelimiter($handle, $currentDelimiter);
+            rewind($handle);
+
+            $headers = [];
+            $posisiIndex = -1;
+            $tahunIndex = -1;
+            $rowCounter = 0;
+            $matchedRows = [];
+            $matchedCount = 0;
+            $truncated = false;
+
+            while (($data = $this->readCsvRecord($handle, $delimiter)) !== false) {
+                if ($rowCounter === 0) {
+                    $headers = $this->formatCsvHeaders($data, $isBrilinkSummary);
+                    if (!$isBrilinkSummary) {
+                        foreach ($headers as $i => $header) {
+                            if (stripos((string) $header, 'POSISI') !== false) {
+                                $posisiIndex = $i;
+                            }
+                            if (stripos((string) $header, 'TAHUN') !== false) {
+                                $tahunIndex = $i;
+                            }
+                        }
+                    }
+
+                    $rowCounter++;
+                    continue;
+                }
+
+                if ($isBrilinkSummary) {
+                    $parsedRow = $this->transformBrilinkSummaryRow($data);
+                    if (!$this->passesActiveFilters($parsedRow, $normalizedFilters)) {
+                        continue;
+                    }
+
+                    $matchedCount++;
+                    if (count($matchedRows) < $limit) {
+                        $matchedRows[] = array_values($parsedRow);
+                        if (count($matchedRows) >= $limit) {
+                            $truncated = true;
+                            break;
+                        }
+                    }
+                    continue;
+                }
+
+                if (!$this->passesActiveFiltersFast($data, $normalizedFilters, false, $posisiIndex, $tahunIndex)) {
+                    continue;
+                }
+
+                $parsedRow = $this->parseCsvRow($data, $isBrilinkSummary, $headers, $posisiIndex, $tahunIndex);
+                if ($parsedRow === null) {
+                    continue;
+                }
+
+                $matchedCount++;
+                if (count($matchedRows) < $limit) {
+                    $matchedRows[] = array_values($parsedRow);
+                    if (count($matchedRows) >= $limit) {
+                        $truncated = true;
+                        break;
+                    }
+                }
+            }
+
+            $payload = [
+                'status' => 'success',
+                'rows' => $matchedRows,
+                'total_matched' => $truncated ? null : $matchedCount,
+                'returned_rows' => count($matchedRows),
+                'truncated' => $truncated,
+                'partial' => false,
+                'retry_after_ms' => null,
+                'source' => 'scan',
+            ];
+
+            Cache::put($cacheKey, $payload, now()->addMinutes(30));
+
+            return response()->json($payload);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Gagal memuat preview hasil filter: ' . $e->getMessage(),
+            ], 422);
+        } finally {
+            fclose($handle);
+        }
+    }
+
+    private function previewIndexDbPath(string $resolvedFilePath, string $currentDelimiter, string $tableName): string
+    {
+        $baseDir = storage_path('app/import_preview_indexes');
+        if (!File::exists($baseDir)) {
+            File::makeDirectory($baseDir, 0755, true);
+        }
+
+        $signature = implode('|', [
+            (string) realpath($resolvedFilePath),
+            (string) @filesize($resolvedFilePath),
+            (string) @filemtime($resolvedFilePath),
+            (string) $currentDelimiter,
+            (string) $tableName,
+            'v2',
+        ]);
+
+        return $baseDir . DIRECTORY_SEPARATOR . md5($signature) . '.sqlite';
+    }
+
+    public function warmPreviewIndexDatabase(
+        string $resolvedFilePath,
+        string $currentDelimiter,
+        bool $isBrilinkSummary,
+        string $tableName,
+        array $warmIndexColumns = []
+    ): string
+    {
+        $dbPath = $this->previewIndexDbPath($resolvedFilePath, $currentDelimiter, $tableName);
+        if (file_exists($dbPath) && filesize($dbPath) > 0) {
+            return $dbPath;
+        }
+
+        $tmpDbPath = $dbPath . '.tmp';
+        if (file_exists($tmpDbPath)) {
+            @unlink($tmpDbPath);
+        }
+
+        $handle = fopen($resolvedFilePath, 'r');
+        if ($handle === false) {
+            throw new \RuntimeException('File preview tidak dapat dibaca untuk membangun index.');
+        }
+
+        try {
+            $delimiter = $this->resolveDelimiter($handle, $currentDelimiter);
+            rewind($handle);
+
+            $headers = [];
+            $posisiIndex = -1;
+            $tahunIndex = -1;
+            $rowCounter = 0;
+
+            $pdo = new \PDO('sqlite:' . $tmpDbPath);
+            $pdo->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+            $pdo->exec('PRAGMA journal_mode = OFF');
+            $pdo->exec('PRAGMA synchronous = OFF');
+            $pdo->exec('PRAGMA temp_store = MEMORY');
+            $pdo->exec('DROP TABLE IF EXISTS preview_rows');
+
+            $insert = null;
+            $batchSize = 1000;
+            $insertCount = 0;
+
+            while (($data = $this->readCsvRecord($handle, $delimiter)) !== false) {
+                if ($rowCounter === 0) {
+                    $headers = $this->formatCsvHeaders($data, $isBrilinkSummary);
+                    if (!$isBrilinkSummary) {
+                        foreach ($headers as $i => $header) {
+                            if (stripos((string) $header, 'POSISI') !== false) {
+                                $posisiIndex = $i;
+                            }
+                            if (stripos((string) $header, 'TAHUN') !== false) {
+                                $tahunIndex = $i;
+                            }
+                        }
+                    }
+
+                    $columnDefs = [];
+                    foreach (array_keys($headers) as $index) {
+                        $columnDefs[] = 'c' . $index . ' TEXT';
+                    }
+                    $pdo->exec('CREATE TABLE preview_rows (row_num INTEGER PRIMARY KEY, ' . implode(', ', $columnDefs) . ')');
+
+                    $columnNames = [];
+                    $placeholders = [];
+                    foreach (array_keys($headers) as $index) {
+                        $columnNames[] = 'c' . $index;
+                        $placeholders[] = '?';
+                    }
+
+                    $insert = $pdo->prepare('INSERT INTO preview_rows (' . implode(', ', $columnNames) . ') VALUES (' . implode(', ', $placeholders) . ')');
+                    $pdo->beginTransaction();
+                    $rowCounter++;
+                    continue;
+                }
+
+                $parsedRow = $isBrilinkSummary
+                    ? $this->transformBrilinkSummaryRow($data)
+                    : $this->parseCsvRow($data, false, $headers, $posisiIndex, $tahunIndex);
+
+                if ($parsedRow === null) {
+                    continue;
+                }
+
+                $values = array_values($parsedRow);
+                $values = array_slice($values, 0, count($headers));
+                if (count($values) < count($headers)) {
+                    $values = array_pad($values, count($headers), null);
+                }
+
+                $insert->execute($values);
+                $insertCount++;
+
+                if ($insertCount % $batchSize === 0) {
+                    $pdo->commit();
+                    $pdo->beginTransaction();
+                }
+            }
+
+            if ($pdo->inTransaction()) {
+                $pdo->commit();
+            }
+
+            $indexColumns = array_values(array_unique(array_filter(array_map('intval', $warmIndexColumns), static fn (int $index): bool => $index >= 0)));
+            if (empty($indexColumns)) {
+                $indexColumns = array_keys($headers);
+            }
+
+            foreach ($indexColumns as $index) {
+                $pdo->exec('CREATE INDEX IF NOT EXISTS idx_preview_rows_c' . (int) $index . ' ON preview_rows(c' . (int) $index . ')');
+            }
+
+            @rename($tmpDbPath, $dbPath);
+
+            if (!file_exists($dbPath) && file_exists($tmpDbPath)) {
+                @copy($tmpDbPath, $dbPath);
+                @unlink($tmpDbPath);
+            }
+
+            return $dbPath;
+        } catch (\Throwable $e) {
+            if (file_exists($tmpDbPath)) {
+                @unlink($tmpDbPath);
+            }
+            throw $e;
+        } finally {
+            fclose($handle);
+        }
+    }
+
+    private function buildPreviewIndexDatabase(
+        string $resolvedFilePath,
+        string $currentDelimiter,
+        bool $isBrilinkSummary,
+        string $tableName,
+        array $warmIndexColumns = []
+    ): string
+    {
+        return $this->warmPreviewIndexDatabase($resolvedFilePath, $currentDelimiter, $isBrilinkSummary, $tableName, $warmIndexColumns);
+    }
+
+    private function previewIndexWarmLockKey(string $resolvedFilePath, string $currentDelimiter, string $tableName): string
+    {
+        $signature = implode('|', [
+            (string) realpath($resolvedFilePath),
+            (string) @filesize($resolvedFilePath),
+            (string) @filemtime($resolvedFilePath),
+            (string) $currentDelimiter,
+            (string) $tableName,
+            'v2',
+        ]);
+
+        return 'import_preview_index_warm:' . md5($signature);
+    }
+
+    private function dispatchPreviewIndexWarmup(
+        string $resolvedFilePath,
+        string $currentDelimiter,
+        string $tableName,
+        bool $isBrilinkSummary,
+        array $warmIndexColumns = []
+    ): bool
+    {
+        $indexDbPath = $this->previewIndexDbPath($resolvedFilePath, $currentDelimiter, $tableName);
+        if (file_exists($indexDbPath) && filesize($indexDbPath) > 0) {
+            return true;
+        }
+
+        $lockKey = $this->previewIndexWarmLockKey($resolvedFilePath, $currentDelimiter, $tableName);
+        if (!Cache::add($lockKey, true, now()->addSeconds(self::PREVIEW_INDEX_WARM_LOCK_SECONDS))) {
+            return true;
+        }
+
+        try {
+            $phpBinary = (new PhpExecutableFinder())->find(false) ?: PHP_BINARY;
+            $process = new Process([
+                $phpBinary,
+                base_path('artisan'),
+                'import:warm-preview-index',
+                '--file_path=' . $resolvedFilePath,
+                '--delimiter=' . $currentDelimiter,
+                '--table_name=' . $tableName,
+                '--is_brilink_summary=' . ($isBrilinkSummary ? '1' : '0'),
+                '--lock_key=' . $lockKey,
+                '--warm_index_columns_json=' . rawurlencode(json_encode(array_values(array_map('intval', $warmIndexColumns)))),
+            ], base_path());
+            $process->disableOutput();
+            $process->setTimeout(null);
+            $process->start();
+
+            return true;
+        } catch (\Throwable $e) {
+            Cache::forget($lockKey);
+            Log::warning('Failed to dispatch preview index warmup: ' . $e->getMessage(), [
+                'file' => $resolvedFilePath,
+                'table' => $tableName,
+            ]);
+
+            return false;
+        }
+    }
+
+    private function queryPreviewRowsFromIndex(string $dbPath, array $normalizedFilters, int $limit): array
+    {
+        $pdo = new \PDO('sqlite:' . $dbPath);
+        $pdo->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+        $pdo->exec('PRAGMA busy_timeout = 3000');
+
+        $this->ensurePreviewQueryIndexes($pdo, array_keys($normalizedFilters));
+
+        $columnsInfo = $pdo->query('PRAGMA table_info(preview_rows)')->fetchAll(\PDO::FETCH_ASSOC);
+        $dataColumns = [];
+        foreach ($columnsInfo as $info) {
+            $name = (string) ($info['name'] ?? '');
+            if ($name !== '' && $name !== 'row_num') {
+                $dataColumns[] = $name;
+            }
+        }
+
+        $whereParts = [];
+        $params = [];
+        foreach ($normalizedFilters as $sourceIndex => $allowedValues) {
+            $values = array_keys($allowedValues);
+            if (empty($values)) {
+                continue;
+            }
+
+            $placeholders = implode(',', array_fill(0, count($values), '?'));
+            $whereParts[] = 'c' . (int) $sourceIndex . ' IN (' . $placeholders . ')';
+            foreach ($values as $value) {
+                $params[] = $value;
+            }
+        }
+
+        $sql = 'SELECT ' . implode(', ', $dataColumns) . ' FROM preview_rows';
+        if (!empty($whereParts)) {
+            $sql .= ' WHERE ' . implode(' AND ', $whereParts);
+        }
+        $sql .= ' ORDER BY row_num ASC LIMIT ' . ((int) $limit + 1);
+
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($params);
+        $rows = $stmt->fetchAll(\PDO::FETCH_NUM);
+        $truncated = count($rows) > $limit;
+        if ($truncated) {
+            array_pop($rows);
+        }
+
+        return [
+            'rows' => $rows,
+            'truncated' => $truncated,
+        ];
+    }
+
+    private function ensurePreviewQueryIndexes(\PDO $pdo, array $sourceColumns): void
+    {
+        $sourceColumns = array_values(array_unique(array_filter(array_map('intval', $sourceColumns), static fn (int $index): bool => $index >= 0)));
+        if (empty($sourceColumns)) {
+            return;
+        }
+
+        foreach ($sourceColumns as $index) {
+            $pdo->exec('CREATE INDEX IF NOT EXISTS idx_preview_rows_c' . (int) $index . ' ON preview_rows(c' . (int) $index . ')');
         }
     }
 

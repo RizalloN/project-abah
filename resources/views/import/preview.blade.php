@@ -57,7 +57,7 @@
         </div>
         @endif
 
-        <form id="importForm" action="{{ $processRoute ?? route('import.process') }}" method="POST" data-init-url="{{ $initRoute ?? '' }}" data-stream-url="{{ $streamRoute ?? '' }}" data-filter-options-url="{{ $filterOptionsRoute ?? route('import.preview.filter-options') }}">
+        <form id="importForm" action="{{ $processRoute ?? route('import.process') }}" method="POST" data-init-url="{{ $initRoute ?? '' }}" data-stream-url="{{ $streamRoute ?? '' }}" data-filter-options-url="{{ $filterOptionsRoute ?? route('import.preview.filter-options') }}" data-warm-index-url="{{ $warmIndexRoute ?? route('import.preview.warm-index') }}">
             @csrf
             <input type="hidden" name="file_path" value="{{ $filePath }}">
             <input type="hidden" name="delimiter" value="{{ $currentDelimiter }}">
@@ -215,11 +215,15 @@
 <script>
     document.addEventListener('DOMContentLoaded', function () {
         const filterOptionsMap = @json($formattedUniqueValues);
+        const filterableColumnIndices = @json($filterableColumnIndices ?? []);
         const forceAllChecked = @json(!empty($forceAllFiltersCheckedOnLoad));
         const headers = @json($headers);
         const disableArea6AutoFilter = @json(!empty($disableArea6AutoFilter));
         const importFormElement = document.getElementById('importForm');
+        const previewTbody = document.querySelector('.table-responsive tbody');
+        const basePreviewTbodyHtml = previewTbody ? previewTbody.innerHTML : '';
         const filterOptionsUrl = importFormElement?.dataset.filterOptionsUrl || '';
+        const warmIndexUrl = importFormElement?.dataset.warmIndexUrl || '';
         const filePathValue = importFormElement?.querySelector('input[name="file_path"]')?.value || '';
         const previewStateKey = importFormElement?.querySelector('input[name="preview_state_key"]')?.value || '';
         const delimiterValue = importFormElement?.querySelector('input[name="delimiter"]')?.value || 'auto';
@@ -227,6 +231,9 @@
         const filterState = {};
         const searchTerms = {};
         const filterRenderLimit = 200;
+        let previewRenderToken = 0;
+        let previewViewMode = 'sample';
+        let previewRefreshTimer = null;
 
         const swalTheme = {
             customClass: {
@@ -436,6 +443,25 @@
                 .replace(/>/g, '&gt;')
                 .replace(/"/g, '&quot;')
                 .replace(/'/g, '&#039;');
+        }
+
+        function buildPreviewRowHtml(row, rowNumber) {
+            const values = Array.isArray(row) ? row : [];
+            let html = '<tr class="preview-row">';
+            html += '<td class="text-center text-muted">' + rowNumber + '</td>';
+
+            headers.forEach(function (_header, colIndex) {
+                const rawValue = values[colIndex] === null || values[colIndex] === undefined
+                    ? ''
+                    : String(values[colIndex]);
+                const safeValue = escapeHtml(rawValue);
+                const displayValue = rawValue.trim() === '' ? '-' : safeValue;
+
+                html += '<td class="text-truncate col-data-' + colIndex + '" data-val="' + safeValue + '" style="max-width: 250px;" title="' + safeValue + '">' + displayValue + '</td>';
+            });
+
+            html += '</tr>';
+            return html;
         }
 
         function getFilteredValues(col) {
@@ -661,7 +687,230 @@
             });
         }
 
+        function renderSamplePreviewTable(activeFilters) {
+            if (!previewTbody) {
+                return;
+            }
+
+            if (previewViewMode !== 'sample') {
+                previewTbody.innerHTML = basePreviewTbodyHtml;
+                previewViewMode = 'sample';
+            }
+
+            let filterReqs = [];
+            for (let col in activeFilters) {
+                filterReqs.push({
+                    index: parseInt(col, 10) + 1,
+                    allowed: activeFilters[col]
+                });
+            }
+
+            let matchingCount = 0;
+
+            document.querySelectorAll('.preview-row').forEach(function (row) {
+                let pass = true;
+
+                for (let i = 0; i < filterReqs.length; i++) {
+                    const req = filterReqs[i];
+                    if (req.allowed.length === 0) {
+                        pass = false;
+                        break;
+                    }
+
+                    const cell = row.children[req.index];
+                    if (cell) {
+                        const cellVal = (cell.getAttribute('data-val') || '').trim();
+                        if (!req.allowed.includes(cellVal)) {
+                            pass = false;
+                            break;
+                        }
+                    }
+                }
+
+                if (pass) {
+                    if (matchingCount < 100) {
+                        row.classList.remove('d-none');
+                    } else {
+                        row.classList.add('d-none');
+                    }
+                    matchingCount++;
+                } else {
+                    row.classList.add('d-none');
+                }
+            });
+
+            const emptyRow = document.getElementById('empty-state-row');
+            if (emptyRow) {
+                if (matchingCount === 0) {
+                    emptyRow.classList.remove('d-none');
+                    const titleEl = emptyRow.querySelector('h5');
+                    const bodyEl = emptyRow.querySelector('p.mb-0');
+                    if (titleEl) {
+                        titleEl.textContent = 'Tidak ada kecocokan di baris sampel preview';
+                    }
+                    if (bodyEl) {
+                        bodyEl.textContent = 'Sampel preview tidak memuat baris yang cocok dengan filter ini.';
+                    }
+                } else {
+                    emptyRow.classList.add('d-none');
+                }
+            }
+
+            updateIconsColor();
+        }
+
+        async function renderFilteredPreviewTable(activeFilters) {
+            if (!previewTbody) {
+                return;
+            }
+
+            const requestToken = ++previewRenderToken;
+            previewViewMode = 'filtered';
+            previewTbody.innerHTML = `
+                <tr>
+                    <td colspan="${headers.length + 1}" class="text-center py-5 bg-white text-muted">
+                        <i class="fas fa-spinner fa-spin fa-2x mb-3 text-primary"></i><br>
+                        <h5 class="font-weight-bold text-dark">Memuat preview hasil filter</h5>
+                        <p class="mb-0">Mengambil baris yang cocok langsung dari file sumber...</p>
+                    </td>
+                </tr>`;
+
+            try {
+                const url = new URL('{{ route("import.preview.filtered-rows") }}', window.location.origin);
+                url.searchParams.set('file_path', filePathValue);
+                url.searchParams.set('delimiter', delimiterValue);
+                url.searchParams.set('display_filter_map_json', JSON.stringify(displayFilterMap || {}));
+                url.searchParams.set('active_filters_json', JSON.stringify(activeFilters || {}));
+                url.searchParams.set('limit', '100');
+                url.searchParams.set('_', String(Date.now()));
+
+                const response = await fetch(url.toString(), {
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                    cache: 'no-store',
+                });
+
+                const payload = await response.json().catch(() => ({}));
+                if (requestToken !== previewRenderToken) {
+                    return;
+                }
+
+                if (!response.ok || payload.status !== 'success' || !Array.isArray(payload.rows)) {
+                    throw new Error(payload.message || 'Gagal memuat preview hasil filter.');
+                }
+
+                const rows = payload.rows || [];
+                if (!rows.length) {
+                    previewTbody.innerHTML = `
+                        <tr>
+                            <td colspan="${headers.length + 1}" class="text-center py-5 bg-white text-muted">
+                                <i class="fas fa-search-minus fa-3x mb-3 text-secondary"></i><br>
+                                <h5 class="font-weight-bold text-dark">Tidak ada baris yang cocok di file sumber</h5>
+                                <p class="mb-0">Filter yang dipilih tidak menemukan baris hasil di file asli.</p>
+                            </td>
+                        </tr>`;
+                    updateIconsColor();
+                    return;
+                }
+
+                let html = rows.map(function (row, index) {
+                    return buildPreviewRowHtml(row, index + 1);
+                }).join('');
+
+                if (payload.truncated) {
+                    const matchText = payload.total_matched
+                        ? Number(payload.total_matched).toLocaleString('id-ID')
+                        : 'lebih dari ' + rows.length.toLocaleString('id-ID');
+                    html += `
+                        <tr>
+                            <td colspan="${headers.length + 1}" class="text-center py-3 bg-light text-muted">
+                                Menampilkan 100 baris pertama dari ${matchText} baris yang cocok.
+                            </td>
+                        </tr>`;
+                }
+
+                previewTbody.innerHTML = html;
+            } catch (error) {
+                if (requestToken !== previewRenderToken) {
+                    return;
+                }
+
+                previewTbody.innerHTML = `
+                    <tr>
+                        <td colspan="${headers.length + 1}" class="text-center py-5 bg-white text-muted">
+                            <i class="fas fa-exclamation-triangle fa-3x mb-3 text-warning"></i><br>
+                            <h5 class="font-weight-bold text-dark">Gagal memuat preview hasil filter</h5>
+                            <p class="mb-0">${escapeHtml(error.message || 'Silakan coba lagi.')}</p>
+                        </td>
+                    </tr>`;
+            } finally {
+                updateIconsColor();
+            }
+        }
+
+        function prewarmPreviewIndex() {
+            if (!filePathValue || !warmIndexUrl) {
+                return;
+            }
+
+            try {
+                const url = new URL(warmIndexUrl, window.location.origin);
+                url.searchParams.set('file_path', filePathValue);
+                url.searchParams.set('delimiter', delimiterValue);
+                url.searchParams.set('display_filter_map_json', JSON.stringify(displayFilterMap || {}));
+                url.searchParams.set('filterable_column_indices_json', JSON.stringify(filterableColumnIndices || []));
+                url.searchParams.set('_', String(Date.now()));
+
+                fetch(url.toString(), {
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                    cache: 'no-store',
+                    keepalive: true,
+                }).catch(function () {});
+            } catch (error) {
+            }
+        }
+
         function updatePreviewTable() {
+            let activeFilters = {};
+            Object.keys(filterState).forEach(function (col) {
+                const state = filterState[col];
+                if (!state) {
+                    return;
+                }
+
+                if (state.selectedValues.size === 0 || state.selectedValues.size === state.allValues.length) {
+                    return;
+                }
+
+                activeFilters[col] = Array.from(state.selectedValues);
+            });
+
+            if (Object.keys(activeFilters).length === 0) {
+                if (previewRefreshTimer) {
+                    clearTimeout(previewRefreshTimer);
+                    previewRefreshTimer = null;
+                }
+                previewRenderToken++;
+                renderSamplePreviewTable({});
+                return;
+            }
+
+            if (previewRefreshTimer) {
+                clearTimeout(previewRefreshTimer);
+            }
+
+            previewRefreshTimer = setTimeout(function () {
+                previewRefreshTimer = null;
+                renderFilteredPreviewTable(activeFilters);
+            }, 180);
+        }
+
+        function updatePreviewTableLegacy() {
             let activeFilters = {};
             Object.keys(filterState).forEach(function (col) {
                 const state = filterState[col];
@@ -1400,6 +1649,7 @@
             renderFilterList(col);
         });
         updatePreviewTable();
+        setTimeout(prewarmPreviewIndex, 50);
     });
 </script>
 <style>
