@@ -5,21 +5,17 @@
 @section('content')
 @include('report.dashboard-pinjaman._partials._styles')
 
-<div class="loan-dashboard pt-4">
-    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center mb-4">
-        <div>
-            <h1 class="loan-page-title">Matrix Pergeseran Kolek</h1>
-            <p class="text-muted mb-0">Analisis pergerakan kualitas pinjaman antar periode.</p>
-        </div>
-    </div>
-
+<div class="loan-dashboard pt-4 px-3">
     <div id="loanMatrixPanel">
         <div class="card loan-shell mb-4 animate-reveal">
             <div class="card-body p-4">
                 <form id="loanFilterForm" method="GET" action="{{ route('report.dashboard-pinjaman.matrix') }}">
-                    <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center mb-3">
+                    <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center mb-4 pb-3 border-bottom">
                         <div>
-                            <h5 class="mb-1 font-weight-bold text-dark">Filter Dashboard</h5>
+                            <h2 class="mb-1 font-weight-bold text-dark" style="font-size: 1.75rem; letter-spacing: -0.02em;">Matrix Pergeseran Kolek</h2>
+                            <p class="text-muted font-weight-bold mb-0" style="font-size: 0.85rem;">Analisis pergerakan kualitas pinjaman antar periode.</p>
+                        </div>
+                        <div class="mt-3 mt-lg-0 text-lg-right">
                             <div class="loan-filter-meta">
                                 <span>Periode aktif: <strong id="loanActivePeriodMeta">{{ $selectedPeriod ? \Carbon\Carbon::parse($selectedPeriod)->format('d/m/Y') : '-' }}</strong></span>
                                 <span>Pembanding M-1: <strong id="loanComparisonPeriodMeta">{{ $comparisonPeriod ? \Carbon\Carbon::parse($comparisonPeriod)->format('d/m/Y') : '-' }}</strong></span>
@@ -74,15 +70,15 @@
                         </div>
                     </div>
 
-                    <div class="d-flex flex-wrap align-items-center loan-filter-actions" style="gap: 0.75rem;">
-                        <button id="loanSubmitButton" type="submit" class="btn btn-primary">
-                            <i class="fas fa-filter mr-1"></i>
-                            Tampilkan
+                    <div class="d-flex flex-wrap align-items-center loan-filter-actions mt-3" style="gap: 0.75rem; padding-top: 1.5rem; border-top: 1px dashed #e2e8f0;">
+                        <button id="loanSubmitButton" type="submit" class="btn btn-dark px-4 font-weight-bold" style="border-radius: 12px; height: 44px; letter-spacing: 0.05em; background: #0f172a;">
+                            <i class="fas fa-search mr-2"></i>
+                            TAMPILKAN
                         </button>
-                        <a href="{{ route('report.dashboard-pinjaman.matrix') }}" class="btn btn-light">Reset</a>
-                        <div id="loanLoadingChip" class="loan-loading-chip d-none">
+                        <a href="{{ route('report.dashboard-pinjaman.matrix') }}" class="btn btn-outline-secondary px-4 font-weight-bold" style="border-radius: 12px; height: 44px;">RESET</a>
+                        <div id="loanLoadingChip" class="loan-loading-chip d-none ml-2">
                             <span class="loan-loading-dot"></span>
-                            Sedang Mengolah
+                            MENGOLAH DATA
                         </div>
                     </div>
                 </form>
@@ -91,10 +87,12 @@
 
         <div class="card loan-table-shell animate-reveal">
             <div class="card-body p-4">
-                <div class="loan-table-heading">
-                    <div>
-                        <h5>Matriks Pergerakan Kualitas Pinjaman</h5>
-                        <p>Membandingkan kualitas <span id="loanMatrixPeriodBadge" class="badge badge-info">{{ \Carbon\Carbon::parse($selectedPeriod)->format('d/m/Y') }} vs {{ \Carbon\Carbon::parse($comparisonPeriod)->format('d/m/Y') }}</span></p>
+                <div class="loan-table-heading mb-4">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0 font-weight-bold text-dark"><i class="fas fa-th-large mr-2 text-muted"></i> Data Matriks Pergeseran <span id="loanMatrixPeriodBadge" class="text-primary ml-1" style="font-size: 0.9rem;">{{ \Carbon\Carbon::parse($selectedPeriod)->format('d/m/Y') }} vs {{ \Carbon\Carbon::parse($comparisonPeriod)->format('d/m/Y') }}</span></h5>
+                        <div class="text-right">
+                             <span class="badge badge-light border text-muted px-2 py-1" style="font-size: 0.7rem;">UNIT: IDR JUTA</span>
+                        </div>
                     </div>
                 </div>
 
@@ -299,19 +297,81 @@
             }
         }
 
+        function buildRowHtml(row) {
+            const rowRank = qualityRanks[row.label];
+            const isNewAccount = row.label === 'New Account';
+            let html = `<tr><th>${row.label}</th>`;
+            
+            for (let idx = 0; idx < row.values.length; idx++) {
+                const val = row.values[idx];
+                const cls = isNewAccount ? 'matrix-new-account' : (rowRank === idx ? 'matrix-stagnant' : (rowRank > idx ? 'matrix-up' : 'matrix-down'));
+                html += `<td class="${val ? cls : 'matrix-empty'}">${formatNumber(val)}</td>`;
+            }
+            
+            html += `<td class="matrix-total-col">${formatNumber(row.total)}</td>`;
+            
+            for (let i = 0; i < outputColumns.length; i++) {
+                const col = outputColumns[i];
+                html += `<td>${formatNumber(row.metrics[col])}</td>`;
+            }
+            
+            html += '</tr>';
+            return html;
+        }
+
         function renderRows(rows) {
-            body.innerHTML = rows.map(row => {
-                const cells = row.values.map((val, idx) => {
-                    const rowRank = qualityRanks[row.label];
-                    const cls = row.label === 'New Account' ? 'matrix-new-account' : (rowRank === idx ? 'matrix-stagnant' : (rowRank > idx ? 'matrix-up' : 'matrix-down'));
-                    return `<td class="${val ? cls : 'matrix-empty'}">${formatNumber(val)}</td>`;
-                }).join('');
-                return `<tr><th>${row.label}</th>${cells}<td class="matrix-total-col">${formatNumber(row.total)}</td>${outputColumns.map(c => `<td>${formatNumber(row.metrics[c])}</td>`).join('')}</tr>`;
-            }).join('');
+            const chunkSize = Math.max(12, Math.ceil(rows.length / 8));
+            
+            if (rows.length <= 15) {
+                // Small dataset: render directly
+                body.innerHTML = rows.map(buildRowHtml).join('');
+                updateLoadingProgress(95, 'Memformat Data', 'Hampir selesai...');
+            } else {
+                // Large dataset: progressive rendering with DocumentFragment
+                body.innerHTML = '';
+                let index = 0;
+                
+                function renderChunk() {
+                    const fragment = document.createDocumentFragment();
+                    const endIndex = Math.min(index + chunkSize, rows.length);
+                    
+                    for (let i = index; i < endIndex; i++) {
+                        const tr = document.createElement('tr');
+                        tr.innerHTML = buildRowHtml(rows[i]).slice(4, -5); // Extract inner HTML
+                        fragment.appendChild(tr);
+                    }
+                    
+                    body.appendChild(fragment);
+                    
+                    const progress = Math.round((endIndex / rows.length) * 90) + 5;
+                    updateLoadingProgress(progress, 'Memformat Data', `${endIndex} dari ${rows.length} baris...`);
+                    
+                    index = endIndex;
+                    if (index < rows.length) {
+                        requestAnimationFrame(renderChunk);
+                    }
+                }
+                
+                renderChunk();
+            }
         }
 
         function renderFoot(totals, totalVal) {
-            foot.innerHTML = `<tr><th>Grand Total</th>${qualityColumns.map((_, i) => `<td>${formatNumber(totals.matrix[i])}</td>`).join('')}<td class="matrix-total-col">${formatNumber(totalVal)}</td>${outputColumns.map(c => `<td>${formatNumber(totals.metrics[c])}</td>`).join('')}</tr>`;
+            let html = '<tr><th>Grand Total</th>';
+            
+            for (let i = 0; i < qualityColumns.length; i++) {
+                html += `<td>${formatNumber(totals.matrix[i])}</td>`;
+            }
+            
+            html += `<td class="matrix-total-col">${formatNumber(totalVal)}</td>`;
+            
+            for (let i = 0; i < outputColumns.length; i++) {
+                const col = outputColumns[i];
+                html += `<td>${formatNumber(totals.metrics[col])}</td>`;
+            }
+            
+            html += '</tr>';
+            foot.innerHTML = html;
         }
 
         form.addEventListener('submit', e => { e.preventDefault(); loadMatrix(true); });

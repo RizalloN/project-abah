@@ -110,6 +110,10 @@ document.addEventListener('DOMContentLoaded', function () {
     const btnLoadData = document.getElementById('btnLoadData');
     const dashboardMeta = document.getElementById('dashboardMeta');
 
+    // Request timeout (in milliseconds)
+    const REQUEST_TIMEOUT = 45000; // 45 seconds
+    let requestAbortController = null;
+
     // Select2 elements
     const $periodeSel = $('#periodeSelector');
     const $kategoriSel = $('#kategoriSelector');
@@ -149,7 +153,20 @@ document.addEventListener('DOMContentLoaded', function () {
         } catch(e) { return dateStr; }
     }
 
-    function buildTable(data, headerDates, typeLabel, segmentName) {
+    function formatPctBadge(value) {
+        const num = parseFloat(value) || 0;
+        let badgeClass = '';
+        if (num >= 100) {
+            badgeClass = 'pct-good';
+        } else if (num >= 95) {
+            badgeClass = 'pct-mid';
+        } else {
+            badgeClass = 'pct-bad';
+        }
+        return `<span class="pct-badge ${badgeClass}">${num.toFixed(1)}%</span>`;
+    }
+
+    function buildTable(data, headerDates, typeLabel, segmentName, rkaLabels) {
         if (!data || data.length === 0 || (data.length === 1 && data[0].is_total && data[0].selected == 0)) {
             return '<div class="text-center py-5 text-muted">Tidak ada data untuk filter ini.</div>';
         }
@@ -169,9 +186,11 @@ document.addEventListener('DOMContentLoaded', function () {
                     <tr>
                         <th rowspan="2" style="width: 40px;">NO</th>
                         <th rowspan="2" style="width: 120px;">KANTOR CABANG</th>
-                        <th rowspan="2" style="width: 130px;">KATEGORI ${segmentName}</th>
+                        <th rowspan="2" style="width: 150px;">KATEGORI ${segmentName}</th>
                         <th colspan="4" class="sub-head">${typePrefix} PERIODE</th>
                         <th colspan="3" class="accent-head">DELTA (Δ) PERIODE</th>
+                        <th colspan="2" class="sub-head">RKA-KP</th>
+                        <th colspan="4" class="accent-head">PENCAPAIAN RKA</th>
                     </tr>
                     <tr>
                         <th class="sub-head" style="width: 85px;">${dates.ytd}<br><small>(YtD)</small></th>
@@ -181,6 +200,12 @@ document.addEventListener('DOMContentLoaded', function () {
                         <th class="accent-head" style="width: 80px;">YtD</th>
                         <th class="accent-head" style="width: 80px;">MtD</th>
                         <th class="accent-head" style="width: 80px;">DtD</th>
+                        <th class="sub-head" style="width: 85px;">${rkaLabels?.m1 || ''}</th>
+                        <th class="sub-head" style="width: 85px;">${rkaLabels?.current || ''}</th>
+                        <th class="accent-head" style="width: 90px;">${rkaLabels?.m1 || ''} Δ</th>
+                        <th class="accent-head" style="width: 70px;">%</th>
+                        <th class="accent-head" style="width: 90px;">${rkaLabels?.current || ''} Δ</th>
+                        <th class="accent-head" style="width: 70px;">%</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -201,12 +226,15 @@ document.addEventListener('DOMContentLoaded', function () {
         Object.keys(groups).forEach(branchName => {
             const groupRows = groups[branchName];
             const groupSize = groupRows.length;
-            
-            // Subtotal accumulator
-            const subtotal = { ytd: 0, m2: 0, mtm: 0, selected: 0, d_ytd: 0, d_mtd: 0, d_dtd: 0 };
 
-            groupRows.forEach((row, i) => {
-                // Sum metrics
+            // Subtotal accumulator
+            const subtotal = {
+                ytd: 0, m2: 0, mtm: 0, selected: 0, d_ytd: 0, d_mtd: 0, d_dtd: 0,
+                rka_m1: 0, rka_current: 0, penc_m1_rp: 0, penc_cur_rp: 0
+            };
+
+            // Pre-calculate subtotals
+            groupRows.forEach(row => {
                 subtotal.ytd += parseFloat(row.ytd || 0);
                 subtotal.m2 += parseFloat(row.m2 || 0);
                 subtotal.mtm += parseFloat(row.mtm || 0);
@@ -214,43 +242,82 @@ document.addEventListener('DOMContentLoaded', function () {
                 subtotal.d_ytd += parseFloat(row.delta_ytd || 0);
                 subtotal.d_mtd += parseFloat(row.delta_mtd || 0);
                 subtotal.d_dtd += parseFloat(row.delta_dtd || 0);
-
-                html += `<tr>`;
-                
-                // Index No cell (Merged across categories and subtotal)
-                if (i === 0) {
-                    html += `<td rowspan="${groupSize + 1}" class="text-center-v" style="background: #f8fbff; font-weight: 700;">${rowIndex++}</td>`;
-                    html += `<td rowspan="${groupSize + 1}" class="text-center-v text-start-important merged-branch-cell">${branchName}</td>`;
-                }
-
-                html += `
-                    <td class="text-start-important text-muted" style="font-size: 0.75rem;">${row.category || ''}</td>
-                    <td>${formatCurrency(row.ytd)}</td>
-                    <td>${formatCurrency(row.m2)}</td>
-                    <td>${formatCurrency(row.mtm)}</td>
-                    <td style="background: #f0f7ff; color: #003d7c; font-weight: 800;">${formatCurrency(row.selected)}</td>
-                    <td class="${row.delta_ytd < 0 ? 'achieve-negative' : (row.delta_ytd > 0 ? 'achieve-positive' : '')}">${formatCurrency(row.delta_ytd)}</td>
-                    <td class="${row.delta_mtd < 0 ? 'achieve-negative' : (row.delta_mtd > 0 ? 'achieve-positive' : '')}">${formatCurrency(row.delta_mtd)}</td>
-                    <td class="${row.delta_dtd < 0 ? 'achieve-negative' : (row.delta_dtd > 0 ? 'achieve-positive' : '')}">${formatCurrency(row.delta_dtd)}</td>
-                </tr>`;
+                subtotal.rka_m1 += parseFloat(row.rka_m1 || 0);
+                subtotal.rka_current += parseFloat(row.rka_current || 0);
+                subtotal.penc_m1_rp += parseFloat(row.penc_m1_rp || 0);
+                subtotal.penc_cur_rp += parseFloat(row.penc_cur_rp || 0);
             });
 
-            // Branch Subtotal Row
+            // Shorten Branch Name for Total Row
+            const shortBranchName = branchName
+                .replace(/KC Madiun/gi, 'KC MDN')
+                .replace(/KC Magetan/gi, 'KC MGT')
+                .replace(/KC Ngawi/gi, 'KC NGWI')
+                .replace(/KC Ponorogo/gi, 'KC PNRG');
+
+            // Calculate branch subtotal RKA percentages
+            const subtotal_penc_m1_pct = subtotal.rka_m1 > 0 ? (subtotal.selected / subtotal.rka_m1) * 100 : 0;
+            const subtotal_penc_cur_pct = subtotal.rka_current > 0 ? (subtotal.selected / subtotal.rka_current) * 100 : 0;
+            const subtotal_pct_m1_badge = formatPctBadge(subtotal_penc_m1_pct);
+            const subtotal_pct_cur_badge = formatPctBadge(subtotal_penc_cur_pct);
+
+            // 1. Branch Subtotal Row FIRST
             html += `
                 <tr class="loan-branch-subtotal">
-                    <td class="text-center-v" style="font-size: 0.8rem; letter-spacing: 0.05em;">TOTAL ${branchName.toUpperCase()}</td>
+                    <td rowspan="${groupSize + 1}" class="text-center-v" style="background: #f8fbff; font-weight: 700; border-bottom: 2px solid #cbd5e1; color: #1e293b !important;">${rowIndex++}</td>
+                    <td rowspan="${groupSize + 1}" class="text-center-v text-start-important merged-branch-cell" style="border-bottom: 2px solid #cbd5e1;">${branchName}</td>
+                    <td class="text-center-v" style="font-size: 0.68rem; letter-spacing: 0.05em; background: rgba(255,255,255,0.05); text-align: center !important; font-weight: 900; border-right: 1px solid rgba(255,255,255,0.1);">
+                         TOTAL ${shortBranchName.toUpperCase()}
+                    </td>
                     <td>${formatCurrency(subtotal.ytd)}</td>
                     <td>${formatCurrency(subtotal.m2)}</td>
                     <td>${formatCurrency(subtotal.mtm)}</td>
-                    <td style="background: #e0f2fe;">${formatCurrency(subtotal.selected)}</td>
-                    <td class="${subtotal.d_ytd < 0 ? 'text-danger' : (subtotal.d_ytd > 0 ? 'text-success' : '')}">${formatCurrency(subtotal.d_ytd)}</td>
-                    <td class="${subtotal.d_mtd < 0 ? 'text-danger' : (subtotal.d_mtd > 0 ? 'text-success' : '')}">${formatCurrency(subtotal.d_mtd)}</td>
-                    <td class="${subtotal.d_dtd < 0 ? 'text-danger' : (subtotal.d_dtd > 0 ? 'text-success' : '')}">${formatCurrency(subtotal.d_dtd)}</td>
+                    <td style="background: rgba(224, 242, 254, 0.15); color: #7dd3fc;">${formatCurrency(subtotal.selected)}</td>
+                    <td style="color: ${subtotal.d_ytd < 0 ? '#fca5a5' : (subtotal.d_ytd > 0 ? '#86efac' : '#ffffff')}">${formatCurrency(subtotal.d_ytd)}</td>
+                    <td style="color: ${subtotal.d_mtd < 0 ? '#fca5a5' : (subtotal.d_mtd > 0 ? '#86efac' : '#ffffff')}">${formatCurrency(subtotal.d_mtd)}</td>
+                    <td style="color: ${subtotal.d_dtd < 0 ? '#fca5a5' : (subtotal.d_dtd > 0 ? '#86efac' : '#ffffff')}">${formatCurrency(subtotal.d_dtd)}</td>
+                    <td>${formatCurrency(subtotal.rka_m1)}</td>
+                    <td>${formatCurrency(subtotal.rka_current)}</td>
+                    <td>${formatCurrency(subtotal.penc_m1_rp)}</td>
+                    <td>${subtotal_pct_m1_badge}</td>
+                    <td>${formatCurrency(subtotal.penc_cur_rp)}</td>
+                    <td>${subtotal_pct_cur_badge}</td>
                 </tr>
             `;
+
+            // 2. Individual Category Rows
+            groupRows.forEach((row, i) => {
+                const penc_m1_pct = parseFloat(row.penc_m1_pct || 0);
+                const penc_cur_pct = parseFloat(row.penc_cur_pct || 0);
+                const pct_m1_badge = formatPctBadge(penc_m1_pct);
+                const pct_cur_badge = formatPctBadge(penc_cur_pct);
+
+                html += `
+                    <tr>
+                        <td class="text-start-important text-muted" style="font-size: 0.75rem;">${row.category || ''}</td>
+                        <td>${formatCurrency(row.ytd)}</td>
+                        <td>${formatCurrency(row.m2)}</td>
+                        <td>${formatCurrency(row.mtm)}</td>
+                        <td style="background: #f0f7ff; color: #003d7c; font-weight: 800;">${formatCurrency(row.selected)}</td>
+                        <td class="${row.delta_ytd < 0 ? 'achieve-negative' : (row.delta_ytd > 0 ? 'achieve-positive' : '')}">${formatCurrency(row.delta_ytd)}</td>
+                        <td class="${row.delta_mtd < 0 ? 'achieve-negative' : (row.delta_mtd > 0 ? 'achieve-positive' : '')}">${formatCurrency(row.delta_mtd)}</td>
+                        <td class="${row.delta_dtd < 0 ? 'achieve-negative' : (row.delta_dtd > 0 ? 'achieve-positive' : '')}">${formatCurrency(row.delta_dtd)}</td>
+                        <td>${formatCurrency(row.rka_m1)}</td>
+                        <td>${formatCurrency(row.rka_current)}</td>
+                        <td>${formatCurrency(row.penc_m1_rp)}</td>
+                        <td>${pct_m1_badge}</td>
+                        <td>${formatCurrency(row.penc_cur_rp)}</td>
+                        <td>${pct_cur_badge}</td>
+                    </tr>`;
+            });
         });
 
         if (totalRow) {
+            const total_penc_m1_pct = parseFloat(totalRow.penc_m1_pct || 0);
+            const total_penc_cur_pct = parseFloat(totalRow.penc_cur_pct || 0);
+            const total_pct_m1_badge = formatPctBadge(total_penc_m1_pct);
+            const total_pct_cur_badge = formatPctBadge(total_penc_cur_pct);
+
             html += `
                 <tr style="background: #1e293b; color: #ffffff; font-weight: 900;">
                     <td colspan="3" class="text-center" style="letter-spacing: 0.1em; color: #ffffff; border-right: 1px solid rgba(255,255,255,0.2);">GRAND TOTAL</td>
@@ -261,6 +328,12 @@ document.addEventListener('DOMContentLoaded', function () {
                     <td class="${totalRow.delta_ytd < 0 ? 'text-danger' : (totalRow.delta_ytd > 0 ? 'text-success' : '')}">${formatCurrency(totalRow.delta_ytd)}</td>
                     <td class="${totalRow.delta_mtd < 0 ? 'text-danger' : (totalRow.delta_mtd > 0 ? 'text-success' : '')}">${formatCurrency(totalRow.delta_mtd)}</td>
                     <td class="${totalRow.delta_dtd < 0 ? 'text-danger' : (totalRow.delta_dtd > 0 ? 'text-success' : '')}">${formatCurrency(totalRow.delta_dtd)}</td>
+                    <td style="color: #ffffff;">${formatCurrency(totalRow.rka_m1)}</td>
+                    <td style="color: #ffffff;">${formatCurrency(totalRow.rka_current)}</td>
+                    <td style="color: #ffffff;">${formatCurrency(totalRow.penc_m1_rp)}</td>
+                    <td>${total_pct_m1_badge}</td>
+                    <td style="color: #ffffff;">${formatCurrency(totalRow.penc_cur_rp)}</td>
+                    <td>${total_pct_cur_badge}</td>
                 </tr>
             `;
         }
@@ -276,12 +349,26 @@ document.addEventListener('DOMContentLoaded', function () {
     function showSpinners(kategori) {
         const stub = (label) => `
             <div class="text-center text-muted py-5">
-                <i class="fas fa-spinner fa-spin fa-2x mb-3"></i>
-                <p>Memproses data ${label} untuk Segmen ${kategori}...</p>
+                <div class="spinner-border spinner-border-sm text-primary mb-3" role="status">
+                    <span class="sr-only">Loading...</span>
+                </div>
+                <p><strong>Memproses data ${label}</strong></p>
+                <p style="font-size: 0.85rem;">Untuk Segmen ${kategori}...</p>
             </div>`;
         osTableContainer.innerHTML = stub('Outstanding');
         smlTableContainer.innerHTML = stub('SML');
         nplTableContainer.innerHTML = stub('NPL');
+    }
+
+    function showErrorMessage(message) {
+        const errorHtml = `<div class="alert alert-danger alert-dismissible fade show" role="alert">
+            <strong>Gagal memuat data</strong><br>
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>`;
+        osTableContainer.innerHTML = errorHtml;
+        smlTableContainer.innerHTML = errorHtml;
+        nplTableContainer.innerHTML = errorHtml;
     }
 
     function loadDashboardData() {
@@ -292,38 +379,67 @@ document.addEventListener('DOMContentLoaded', function () {
 
         showSpinners(kategori);
         dashboardMeta.textContent = `Memuat data dashboard untuk periode ${formatDate(periode)}...`;
+        btnLoadData.disabled = true;
+
+        // Cancel previous request if still pending
+        if (requestAbortController) {
+            requestAbortController.abort();
+        }
+        requestAbortController = new AbortController();
+
+        const controller = requestAbortController;
+        const timeoutId = setTimeout(() => {
+            if (controller === requestAbortController) {
+                controller.abort();
+            }
+        }, REQUEST_TIMEOUT);
 
         fetch('{{ route("report.dashboard-pinjaman.kredit.data") }}?' + new URLSearchParams({
             periode: periode,
             kategori: kategori
-        }))
+        }), {
+            signal: controller.signal
+        })
             .then(response => {
-                if (!response.ok) throw new Error('Network response was not ok');
+                clearTimeout(timeoutId);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
                 return response.json();
             })
             .then(data => {
                 dashboardMeta.textContent = `Menampilkan dashboard kredit ${kategori} per ${formatDate(periode)}.`;
-                
+
                 document.getElementById('osTitle').innerText = `A. OUTSTANDING (OS) - ${kategori}`;
-                osTableContainer.innerHTML = buildTable(data.os, data.header_dates, 'Outstanding', kategori);
-                
+                osTableContainer.innerHTML = buildTable(data.os, data.header_dates, 'Outstanding', kategori, data.rka_labels);
+
                 document.getElementById('smlTitle').innerText = `B. SPECIAL MENTION LOAN (SML) - ${kategori}`;
-                smlTableContainer.innerHTML = buildTable(data.sml, data.header_dates, 'SML', kategori);
-                
+                smlTableContainer.innerHTML = buildTable(data.sml, data.header_dates, 'SML', kategori, data.rka_labels);
+
                 document.getElementById('nplTitle').innerText = `C. NON-PERFORMING LOAN (NPL) - ${kategori}`;
-                nplTableContainer.innerHTML = buildTable(data.npl, data.header_dates, 'NPL', kategori);
+                nplTableContainer.innerHTML = buildTable(data.npl, data.header_dates, 'NPL', kategori, data.rka_labels);
             })
             .catch(error => {
+                clearTimeout(timeoutId);
                 console.error('Error:', error);
-                const errorMsg = '<div class="alert alert-danger">Gagal memuat data. Periksa koneksi atau snapshot data.</div>';
-                osTableContainer.innerHTML = errorMsg;
-                smlTableContainer.innerHTML = errorMsg;
-                nplTableContainer.innerHTML = errorMsg;
+                
+                let errorMsg = 'Periksa koneksi atau snapshot data.';
+                if (error.name === 'AbortError') {
+                    errorMsg = 'Permintaan timeout setelah ' + (REQUEST_TIMEOUT / 1000) + ' detik. Coba lagi atau pilih periode lain.';
+                } else if (error.message.includes('HTTP')) {
+                    errorMsg = error.message;
+                }
+                
+                showErrorMessage(errorMsg);
+            })
+            .finally(() => {
+                btnLoadData.disabled = false;
             });
     }
 
     btnLoadData.addEventListener('click', loadDashboardData);
 
+    // Auto-load on page load if periode is set
     window.setTimeout(() => {
         if ($periodeSel.val()) {
             loadDashboardData();

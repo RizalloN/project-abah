@@ -151,6 +151,9 @@ class OptimizedCsvImporter
         $normalized = [];
         $hasData = false;
 
+        // Columns that must always be treated as TEXT to prevent scientific notation
+        $textOnlyColumns = ['nomor_rekening1', 'nomor_rekening', 'account_number', 'nomor_rekening2'];
+
         foreach ($columns as $idx => $column) {
             $value = $row[$idx] ?? null;
 
@@ -214,6 +217,9 @@ class OptimizedCsvImporter
             return 0;
         }
 
+        // Columns that must be stored as TEXT to prevent scientific notation
+        $textOnlyColumns = ['nomor_rekening1', 'nomor_rekening', 'account_number', 'nomor_rekening2'];
+
         try {
             // OPTIMIZATION: Build placeholders and values in a single pass
             $placeholders = [];
@@ -225,8 +231,16 @@ class OptimizedCsvImporter
                 $row = $rows[$r];
                 $rowPh = [];
                 for ($c = 0; $c < $colCount; $c++) {
-                    $rowPh[] = '?';
-                    $values[] = $row[$columns[$c]] ?? null;
+                    $col = $columns[$c];
+                    $val = $row[$col] ?? null;
+
+                    // Force text-only columns to be cast as CHAR to prevent scientific notation
+                    if (in_array($col, $textOnlyColumns, true) && $val !== null) {
+                        $rowPh[] = 'CAST(? AS CHAR)';
+                    } else {
+                        $rowPh[] = '?';
+                    }
+                    $values[] = $val;
                 }
                 $placeholders[] = '(' . implode(',', $rowPh) . ')';
             }
@@ -255,15 +269,22 @@ class OptimizedCsvImporter
             $count = 0;
             foreach ($rows as $row) {
                 try {
-                    $placeholders = array_fill(0, count($columns), '?');
+                    $placeholders = [];
                     $quotedCols = array_map(fn ($c) => '`' . str_replace('`', '``', $c) . '`', $columns);
+                    $vals = [];
+                    foreach ($columns as $col) {
+                        $val = $row[$col] ?? null;
+                        // Also apply CAST for text-only columns in fallback
+                        if (in_array($col, $textOnlyColumns, true) && $val !== null) {
+                            $placeholders[] = 'CAST(? AS CHAR)';
+                        } else {
+                            $placeholders[] = '?';
+                        }
+                        $vals[] = $val;
+                    }
                     $stmt = $pdo->prepare(
                         "INSERT INTO `{$tableName}` (" . implode(',', $quotedCols) . ") VALUES (" . implode(',', $placeholders) . ")"
                     );
-                    $vals = [];
-                    foreach ($columns as $col) {
-                        $vals[] = $row[$col] ?? null;
-                    }
                     $stmt->execute($vals);
                     $count++;
                 } catch (\Throwable) {
