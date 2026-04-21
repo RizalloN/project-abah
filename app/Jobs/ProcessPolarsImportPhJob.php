@@ -90,7 +90,11 @@ class ProcessPolarsImportPhJob implements ShouldQueue
     private function runPolarsProcessor(): ?array
     {
         $pythonExe = $this->findPython();
-        $scriptPath = base_path('scripts/lw325_ph_polars_processor.py');
+        // OPTIMIZATION: Use optimized v3 script if available, fallback to v2
+        $scriptPath = base_path('scripts/lw325_ph_polars_processor_v3.py');
+        if (!file_exists($scriptPath)) {
+            $scriptPath = base_path('scripts/lw325_ph_polars_processor.py');
+        }
 
         if (!$pythonExe || !file_exists($scriptPath)) {
             return null;
@@ -238,22 +242,50 @@ class ProcessPolarsImportPhJob implements ShouldQueue
             return [];
         }
 
+        // Map column indexes to actual column names (same as ImportReportPhController)
+        $targetColumns = [
+            'periode', 'acctno', 'kanwil', 'kanca', 'unit', 'nama_debitur', 'cif1', 'fksegmen',
+            'segmen_dashboard', 'description', 'produk_dashboard', 'tgl_ph', 'tgl_realisasi',
+            'curtyp', 'saldo_pertama_ph_pokok', 'saldo_pertama_ph_bunga', 'besar_realisasi',
+            'plafon', 'jw', 'at', 'cif', 'pokok', 'bunga', 'angpok', 'angbung', 'sisapok',
+            'sisabun', 'clmamt1', 'clmapr1', 'os_penuh_berjalan1', 'kecamatan_t_tinggal',
+            'kelurahan_t_tinggal', 'kodepos_t_tinggal', 'kecamatan_t_usaha', 'kelurahan_t_usaha',
+            'kodepos_t_usaha', 'pn_pengelola', 'pn_pemrakarsa', 'pn_referral', 'pn_restruk',
+            'pn_pengelola2', 'pn_pemutus', 'pn_crm', 'pn_crr1', 'pn_referral_naik_kelas',
+            'jumlah_pn', 'jumlah_pn_all', 'saldo_pertama_kali_charge_off', 'deffered_bunga',
+            'sai_deffered', 'sai_tunggakan', 'deffered_bunga_ph', 'sai_tunggakan_ph',
+            'sai_deffered_ph', 'wcbal', 'waccint', 'wadvpmt', 'wpenint', 'wmisc', 'wothchg',
+            'wpmtamt', 'wpstdt', 'wpstdt6', 'wamount', 'flag_klaim', 'clmamt', 'clmapr',
+        ];
+
         $normalized = [];
-        foreach ($filters as $column => $values) {
-            if (!is_array($values)) {
+        foreach ($filters as $columnIndex => $allowedValues) {
+            // Support both numeric index and direct column name
+            if (is_numeric($columnIndex)) {
+                $column = $targetColumns[(int) $columnIndex] ?? null;
+            } else {
+                $column = $columnIndex;
+            }
+
+            if ($column === null) {
                 continue;
             }
 
-            $normalized_values = [];
-            foreach ($values as $value) {
-                $trimmed = trim((string) $value);
-                if ($trimmed !== '') {
-                    $normalized_values[$trimmed] = true;
-                }
+            if (!is_array($allowedValues)) {
+                continue;
             }
 
-            if (!empty($normalized_values)) {
-                $normalized[$column] = array_keys($normalized_values);
+            $values = [];
+            foreach ($allowedValues as $value) {
+                $normalizedValue = trim((string) $value);
+                if ($normalizedValue === '') {
+                    continue;
+                }
+                $values[$normalizedValue] = true;
+            }
+
+            if (!empty($values)) {
+                $normalized[$column] = array_keys($values);
             }
         }
 

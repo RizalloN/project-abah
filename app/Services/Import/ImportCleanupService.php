@@ -6,6 +6,7 @@ use App\Jobs\SyncImportedReportJob;
 use App\Support\ReportDataSyncService;
 use App\Support\SnapshotBatchAggregator;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class ImportCleanupService
@@ -13,6 +14,9 @@ class ImportCleanupService
     private const SYNC_PENDING_TTL_MINUTES = 15;
     private const SYNC_COORDINATOR_LOCK_SECONDS = 5;
     private const DEFAULT_SYNC_QUEUE = 'default';
+    private const DAILY_LOAN_SYNC_QUEUE = 'imports-daily-loan';
+    private const DAILY_LOAN_TABLE = 'daily_loan_dinamis';
+    private const DAILY_LOAN_REPORT_ID = 8;
     private const USE_BATCHING = true;
 
     private ?SnapshotBatchAggregator $batchAggregator = null;
@@ -41,10 +45,21 @@ class ImportCleanupService
             return;
         }
 
-        $normalizedTableName = $this->normalizeSyncScopeValue($tableName);
+        $normalizedTableName = $this->normalizeSyncScopeValue($tableName)
+            ?? $this->resolveJobTableName($jobId);
         if ($normalizedTableName === null) {
             SyncImportedReportJob::dispatch($jobId > 0 ? $jobId : null, $tableName, $periodHint, $source)
-                ->onQueue($this->resolveSyncQueue($queue));
+                ->onQueue($this->resolveSyncQueue($queue, null, $jobId));
+            return;
+        }
+
+        if ($normalizedTableName === self::DAILY_LOAN_TABLE) {
+            $periodHints = $this->resolveSyncPeriodHints($jobId, $periodHint);
+
+            foreach ($periodHints as $resolvedPeriodHint) {
+                $this->dispatchWithoutBatching($jobId, $normalizedTableName, $resolvedPeriodHint, $source, $queue);
+            }
+
             return;
         }
 
@@ -95,8 +110,9 @@ class ImportCleanupService
 
     private function dispatchWithoutBatching(int $jobId, ?string $tableName, ?string $periodHint, ?string $source, ?string $queue): void
     {
-        $resolvedQueue = $this->resolveSyncQueue($queue);
-        $normalizedTableName = $this->normalizeSyncScopeValue($tableName);
+        $normalizedTableName = $this->normalizeSyncScopeValue($tableName)
+            ?? $this->resolveJobTableName($jobId);
+        $resolvedQueue = $this->resolveSyncQueue($queue, $normalizedTableName, $jobId);
 
         $pendingKey = $this->syncPendingKey((string) $normalizedTableName, $periodHint);
         $rerunKey = $this->syncRerunKey((string) $normalizedTableName, $periodHint);
@@ -146,7 +162,7 @@ class ImportCleanupService
                 if ($shouldRerun) {
                     $resolvedQueue = is_string($rerunQueue) && trim($rerunQueue) !== ''
                         ? trim($rerunQueue)
-                        : $this->resolveSyncQueue(null);
+                        : $this->resolveSyncQueue(null, $this->normalizeSyncScopeValue($tableName), $jobId);
 
                     SyncImportedReportJob::dispatch($jobId > 0 ? $jobId : null, $tableName, $periodHint, $source)
                         ->onQueue($resolvedQueue);
@@ -172,11 +188,104 @@ class ImportCleanupService
         return $normalized !== '' ? $normalized : null;
     }
 
-    private function resolveSyncQueue(?string $queue): string
+    private function resolveSyncQueue(?string $queue, ?string $tableName = null, int $jobId = 0): string
     {
         $normalized = trim((string) $queue);
+        $normalizedTableName = $this->normalizeSyncScopeValue($tableName) ?? $this->resolveJobTableName($jobId);
+
+        if ($normalizedTableName === self::DAILY_LOAN_TABLE) {
+            return self::DAILY_LOAN_SYNC_QUEUE;
+        }
 
         return $normalized !== '' ? $normalized : (string) config('queue.report_queue', self::DEFAULT_SYNC_QUEUE);
+    }
+
+    private function resolveJobTableName(int $jobId): ?string
+    {
+        if ($jobId <= 0) {
+            return null;
+        }
+
+        try {
+            $job = DB::table('import_jobs')->where('id', $jobId)->first(['id_report', 'job_context']);
+            if (!$job) {
+                return null;
+            }
+
+            $context = json_decode((string) ($job->job_context ?? ''), true);
+            $tableName = is_array($context)
+                ? $this->normalizeSyncScopeValue((string) ($context['table_name'] ?? ''))
+                : null;
+
+            if ($tableName !== null) {
+                return $tableName;
+            }
+
+            return (int) ($job->id_report ?? 0) === self::DAILY_LOAN_REPORT_ID
+                ? self::DAILY_LOAN_TABLE
+                : null;
+        } catch (\Throwable $e) {
+            Log::debug('Unable to resolve import job table for sync queue.', [
+                'job_id' => $jobId,
+                'exception' => $e::class,
+                'message' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+    }
+
+    /**
+     * Daily Loan snapshot rebuilds are period-scoped. If the import job already
+     * detected the source periods, preserve that scope instead of dispatching a
+     * global sync job.
+     *
+     * @return array<int, string|null>
+     */
+    private function resolveSyncPeriodHints(int $jobId, ?string $periodHint): array
+    {
+        $normalizedPeriodHint = trim((string) $periodHint);
+        if ($normalizedPeriodHint !== '') {
+            return [$normalizedPeriodHint];
+        }
+
+        if ($jobId <= 0) {
+            return [null];
+        }
+
+        try {
+            $contextJson = DB::table('import_jobs')
+                ->where('id', $jobId)
+                ->value('job_context');
+            $context = json_decode((string) $contextJson, true);
+
+            if (!is_array($context)) {
+                return [null];
+            }
+
+            $periods = $context['backend_detected_periods'] ?? $context['detected_periods'] ?? [];
+            if (!is_array($periods)) {
+                $periods = [$periods];
+            }
+
+            $normalized = [];
+            foreach ($periods as $period) {
+                $value = trim((string) $period);
+                if ($value !== '') {
+                    $normalized[$value] = $value;
+                }
+            }
+
+            return $normalized !== [] ? array_values($normalized) : [null];
+        } catch (\Throwable $e) {
+            Log::debug('Unable to resolve import job periods for sync queue.', [
+                'job_id' => $jobId,
+                'exception' => $e::class,
+                'message' => $e->getMessage(),
+            ]);
+
+            return [null];
+        }
     }
 
     private function normalizeSyncPeriodHint(?string $periodHint): string

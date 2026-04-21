@@ -63,6 +63,36 @@ class ImportFileController extends Controller
         return (bool) config('import.use_db_staging_fast_path', false);
     }
 
+    private function shouldSkipRawLoadDataFastPath(string $tableName, string $filePath, string $delimiter): bool
+    {
+        if ($tableName === 'jumlah_merchant_qris_detail') {
+            return true;
+        }
+
+        $handle = @fopen($filePath, 'r');
+        if ($handle === false) {
+            return false;
+        }
+
+        try {
+            $sampled = 0;
+            while (($line = fgets($handle)) !== false && $sampled < 250) {
+                $sampled++;
+                if (!is_string($line) || strpos($line, '"') === false) {
+                    continue;
+                }
+
+                // Raw LOAD DATA on vendor-exported files with free quotes inside unquoted fields
+                // can shift columns. These files are safer through PHP parse -> temp CSV.
+                return true;
+            }
+        } finally {
+            fclose($handle);
+        }
+
+        return false;
+    }
+
     private function cachedSchemaHasTable(string $tableName): bool
     {
         return $this->schemaService()->hasTable($tableName);
@@ -105,7 +135,7 @@ class ImportFileController extends Controller
 
     private function previewFilterCacheKey(string $filePath, string $delimiter, int $columnIndex, string $tableName, string $contextSignature = ''): string
     {
-        return 'preview_filter_options:' . md5($filePath . '|' . $delimiter . '|' . $columnIndex . '|' . $tableName . '|' . $contextSignature);
+        return 'preview_filter_options:v2:' . md5($filePath . '|' . $delimiter . '|' . $columnIndex . '|' . $tableName . '|' . $contextSignature);
     }
 
     private const BRILINK_SUMMARY_HEADERS = [
@@ -1589,6 +1619,51 @@ class ImportFileController extends Controller
         return true;
     }
 
+    private function collectFilterOptionsFromCsvFast(
+        $handle,
+        string $delimiter,
+        int $sourceColumnIndex,
+        array $normalizedActiveFilters,
+        bool $isBrilinkSummary
+    ): array {
+        $valuesMap = [];
+        $headers = [];
+        $rowCounter = 0;
+
+        while (($data = $this->readCsvRecord($handle, $delimiter)) !== false) {
+            if (empty($data)) {
+                continue;
+            }
+
+            if ($rowCounter === 0) {
+                $headers = $this->formatCsvHeaders($data, $isBrilinkSummary);
+                if (!isset($headers[$sourceColumnIndex])) {
+                    throw new \RuntimeException('Kolom filter tidak valid.');
+                }
+
+                $rowCounter++;
+                continue;
+            }
+
+            $firstCell = trim((string) ($data[0] ?? ''));
+            if ($firstCell === '' || $firstCell === 'TAHUN' || stripos($firstCell, 'textbox') !== false) {
+                continue;
+            }
+
+            if (!$this->passesActiveFilters($data, $normalizedActiveFilters)) {
+                continue;
+            }
+
+            $value = trim((string) ($data[$sourceColumnIndex] ?? ''));
+            $valuesMap[$value] = true;
+        }
+
+        $values = array_keys($valuesMap);
+        sort($values);
+
+        return $values;
+    }
+
     private function hasMeaningfulImportData(array $row, array $ignoredKeys = []): bool
     {
         $ignoredLookup = array_fill_keys(array_map('strtolower', $ignoredKeys), true);
@@ -2527,6 +2602,24 @@ class ImportFileController extends Controller
             $resolvedDelimiter = $this->resolveDelimiter($handle, $currentDelimiter);
             rewind($handle);
 
+            if ($tableName === 'jumlah_merchant_qris_detail' && !$isDailyLoan && !$isBrilinkSummary) {
+                $values = $this->collectFilterOptionsFromCsvFast(
+                    $handle,
+                    $resolvedDelimiter,
+                    $sourceColumnIndex,
+                    $normalizedActiveFilters,
+                    $isBrilinkSummary
+                );
+
+                Cache::put($cacheKey, $values, now()->addHours(4));
+
+                return response()->json([
+                    'status' => 'success',
+                    'values' => $values,
+                    'cached' => false,
+                ]);
+            }
+
             $rowCounter = 0;
             while (($data = $this->readCsvRecord($handle, $resolvedDelimiter)) !== false) {
                 if (empty($data) || implode('', $data) === '') {
@@ -3096,7 +3189,8 @@ class ImportFileController extends Controller
                 };
 
                 $stagingHandled = false;
-                if ($this->shouldUseDbStagingFastPath()) {
+                $skipRawLoadDataFastPath = $this->shouldSkipRawLoadDataFastPath($tableName, $filePath, $resolvedDelimiter);
+                if ($this->shouldUseDbStagingFastPath() && !$skipRawLoadDataFastPath) {
                     $stagingHandled = $this->processImportStreamViaStagingTable(
                         $send,
                         $filePath,
@@ -3119,6 +3213,14 @@ class ImportFileController extends Controller
                         $columnBlueprint,
                         $batchSize
                     );
+                }
+
+                if ($skipRawLoadDataFastPath) {
+                    Log::info('Skipping raw LOAD DATA staging fast path for safer CSV parsing.', [
+                        'table' => $tableName,
+                        'file' => basename($filePath),
+                        'delimiter' => $resolvedDelimiter,
+                    ]);
                 }
 
                 if ($stagingHandled) {

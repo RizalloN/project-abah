@@ -321,6 +321,59 @@
             menu.addEventListener('click', function (e) { e.stopPropagation(); });
         });
 
+        /* =========================================================
+           CACHE & OPTIMIZATION HELPERS
+        ========================================================= */
+        const storageKeyPrefix = 'preview_filter_v2_' + btoa(filePathValue + '|' + delimiterValue).substring(0, 16);
+        
+        function getStorageKey(col) {
+            return storageKeyPrefix + '_col_' + col;
+        }
+
+        function getStorageTimestampKey(col) {
+            return storageKeyPrefix + '_ts_' + col;
+        }
+
+        function getFromLocalStorage(col) {
+            try {
+                const key = getStorageKey(col);
+                const data = localStorage.getItem(key);
+                const timestamp = localStorage.getItem(getStorageTimestampKey(col));
+                
+                if (data && timestamp) {
+                    const cachedAt = parseInt(timestamp);
+                    const now = Date.now();
+                    const maxAge = 24 * 60 * 60 * 1000; // 24 hours cache
+                    
+                    if (now - cachedAt < maxAge) {
+                        return JSON.parse(data);
+                    }
+                }
+            } catch (e) {
+            }
+            return null;
+        }
+
+        function saveToLocalStorage(col, values) {
+            try {
+                localStorage.setItem(getStorageKey(col), JSON.stringify(values));
+                localStorage.setItem(getStorageTimestampKey(col), String(Date.now()));
+            } catch (e) {
+            }
+        }
+
+        // Debounce render untuk menghindari multiple renders
+        const debounceTimers = {};
+        function debounceRender(col, fn, delay = 150) {
+            if (debounceTimers[col]) {
+                clearTimeout(debounceTimers[col]);
+            }
+            debounceTimers[col] = setTimeout(() => {
+                fn();
+                delete debounceTimers[col];
+            }, delay);
+        }
+
         Object.keys(filterOptionsMap).forEach(function (col) {
             const values = Array.isArray(filterOptionsMap[col]) ? filterOptionsMap[col].map(function (value) {
                 return String(value).trim();
@@ -505,13 +558,17 @@
             const visibleValues = filteredValues.slice(0, filterRenderLimit);
             let html = '';
 
-            if (!filteredValues.length) {
+            if (state.isLoading && !state.fullOptionsLoaded) {
+                html = '<div class="text-center text-muted py-3 small">' +
+                    '<i class="fas fa-spinner fa-spin mr-2"></i>Memuat opsi filter lengkap...</div>';
+            } else if (!filteredValues.length) {
                 html = state.isLoading
-                    ? '<div class="text-center text-muted py-2 small">Memuat opsi filter lengkap...</div>'
+                    ? '<div class="text-center text-muted py-2 small">' +
+                      '<i class="fas fa-spinner fa-spin mr-2"></i>Memuat opsi filter...</div>'
                     : '<div class="text-center text-muted py-2 small">Tidak ada opsi yang cocok.</div>';
             } else {
                 if (state.isLoading) {
-                    html += '<div class="small text-muted mb-2">Memuat opsi lengkap dari file sumber...</div>';
+                    html += '<div class="small text-muted mb-2"><i class="fas fa-spinner fa-spin mr-1"></i>Memindahkan nilai dari file sumber...</div>';
                 }
 
                 if (filteredValues.length > filterRenderLimit) {
@@ -533,7 +590,7 @@
             syncSelectAllCheckbox(col, filteredValues);
         }
 
-        async function ensureFullFilterOptions(col) {
+        async function ensureFullFilterOptions(col, isInitialPrefetch = false) {
             const state = filterState[col];
             if (!state || state.isLoading || !filterOptionsUrl || !filePathValue) {
                 if (state && state.isLoading) {
@@ -551,20 +608,26 @@
                 : col;
             const activeFilters = buildActiveFilterContext(col);
             const signature = buildActiveFilterSignature(activeFilters);
-            const previewDerivedValues = Object.keys(activeFilters).length > 0
-                ? collectPreviewValuesForColumn(col, activeFilters)
-                : new Set();
 
             if (state.fullOptionsLoaded && state.loadedSignature === signature) {
                 renderFilterList(col);
                 return;
             }
 
-            if (previewDerivedValues.size > 0) {
-                state.fullOptionsLoaded = true;
-                state.loadedSignature = signature;
-                renderFilterList(col);
-                return;
+            // Cek cache localStorage jika prefetch atau tidak ada active filters
+            if ((isInitialPrefetch || Object.keys(activeFilters).length === 0) && !state.fullOptionsLoaded) {
+                const cachedValues = getFromLocalStorage(col);
+                if (cachedValues) {
+                    state.allValues = cachedValues;
+                    const previousSelection = new Set(state.selectedValues || []);
+                    state.selectedValues = new Set(cachedValues.filter(function (value) {
+                        return previousSelection.has(value) || previousSelection.size === 0;
+                    }));
+                    state.fullOptionsLoaded = true;
+                    state.loadedSignature = signature;
+                    renderFilterList(col);
+                    return;
+                }
             }
 
             state.isLoading = true;
@@ -574,38 +637,16 @@
             let shouldRender = false;
 
             try {
-                const sourceCol = Object.prototype.hasOwnProperty.call(displayFilterMap, col)
-                    ? displayFilterMap[col]
-                    : col;
-
-                // IMPROVEMENT: Gunakan dynamic filter options endpoint untuk loading lengkap
-                const dynamicFilterUrl = '{{ route("import.preview.dynamic-filter-options") }}';
-                const columnName = headers && headers[sourceCol] ? headers[sourceCol] : 'Column_' + sourceCol;
-
-                // Try dynamic endpoint first (more comprehensive), fallback ke regular endpoint
-                let url;
-                let useDynamicEndpoint = false;
-
-                try {
-                    url = new URL(dynamicFilterUrl, window.location.origin);
-                    url.searchParams.set('file_path', filePathValue);
-                    url.searchParams.set('delimiter', delimiterValue);
-                    url.searchParams.set('column_index', String(sourceCol));
-                    url.searchParams.set('column_name', columnName);
-                    url.searchParams.set('_', String(Date.now()));
-                    useDynamicEndpoint = true;
-                } catch (e) {
-                    // Fallback ke regular endpoint
-                    url = new URL(filterOptionsUrl, window.location.origin);
-                    url.searchParams.set('file_path', filePathValue);
-                    url.searchParams.set('delimiter', delimiterValue);
-                    url.searchParams.set('column_index', String(sourceCol));
-                    url.searchParams.set('display_filter_map_json', JSON.stringify(displayFilterMap || {}));
-                    if (previewStateKey) {
-                        url.searchParams.set('preview_state_key', previewStateKey);
-                    }
-                    url.searchParams.set('_', String(Date.now()));
+                const url = new URL(filterOptionsUrl, window.location.origin);
+                url.searchParams.set('file_path', filePathValue);
+                url.searchParams.set('delimiter', delimiterValue);
+                url.searchParams.set('column_index', String(sourceCol));
+                url.searchParams.set('display_filter_map_json', JSON.stringify(displayFilterMap || {}));
+                url.searchParams.set('active_filters_json', JSON.stringify(activeFilters || {}));
+                if (previewStateKey) {
+                    url.searchParams.set('preview_state_key', previewStateKey);
                 }
+                url.searchParams.set('_', String(Date.now()));
 
                 const response = await fetch(url.toString(), {
                     headers: {
@@ -638,25 +679,44 @@
                         return previousSelection.has(value);
                     }));
                 state.fullOptionsLoaded = true;
-
-                // Log informasi jika menggunakan dynamic endpoint
-                if (useDynamicEndpoint && payload.total_unique) {
-                    console.log(`Dynamic filter loaded: ${payload.total_unique} unique values, scanned ${payload.total_rows_scanned} rows`);
+                state.loadedSignature = signature;
+                
+                // Simpan ke cache untuk next load
+                if (isInitialPrefetch || Object.keys(activeFilters).length === 0) {
+                    saveToLocalStorage(col, normalizedValues);
                 }
+                
+                shouldRender = true;
+
             } catch (error) {
                 console.error('Error loading filter options:', error);
             } finally {
                 state.isLoading = false;
                 if (state.needsRefresh) {
                     state.needsRefresh = false;
-                    ensureFullFilterOptions(col);
+                    ensureFullFilterOptions(col, isInitialPrefetch);
                     return;
                 }
 
                 if (shouldRender) {
                     renderFilterList(col);
-                    updatePreviewTable();
+                    if (!isInitialPrefetch) {
+                        updatePreviewTable();
+                    }
                 }
+            }
+        }
+
+        // Prefetch semua filter options secara parallel saat page load
+        async function prefetchAllFilterOptions() {
+            const cols = Object.keys(filterState);
+            if (!cols.length) return;
+
+            const prefetchPromises = cols.map(col => ensureFullFilterOptions(col, true));
+            try {
+                await Promise.allSettled(prefetchPromises);
+            } catch (e) {
+                console.warn('Prefetch filter options partially failed:', e);
             }
         }
 
@@ -782,7 +842,11 @@
 
             syncSelectAllCheckbox(colIndex, getFilteredValues(colIndex));
             updatePreviewTable();
-            refreshDependentFilterOptions(colIndex);
+            
+            // Debounce refresh dependent filters untuk menghindari multiple requests
+            debounceRender(colIndex + '_refresh', function() {
+                refreshDependentFilterOptions(colIndex);
+            }, 300);
         });
 
         const selectAllCbs = document.querySelectorAll('.select-all-cb');
@@ -811,7 +875,11 @@
 
                 renderFilterList(colIndex);
                 updatePreviewTable();
-                refreshDependentFilterOptions(colIndex);
+                
+                // Debounce refresh dependent filters
+                debounceRender(colIndex + '_refresh', function() {
+                    refreshDependentFilterOptions(colIndex);
+                }, 300);
             });
         });
 
@@ -820,7 +888,11 @@
             input.addEventListener('keyup', function () {
                 const colIndex = this.getAttribute('data-col');
                 searchTerms[colIndex] = this.value || '';
-                renderFilterList(colIndex);
+                
+                // Debounce render untuk smooth search experience
+                debounceRender(colIndex + '_search', function() {
+                    renderFilterList(colIndex);
+                }, 150);
             });
         });
 
@@ -835,6 +907,31 @@
                 await ensureFullFilterOptions(col);
             });
         });
+
+        document.querySelectorAll('.filter-btn').forEach(function (button) {
+            button.addEventListener('click', function () {
+                const dropdown = button.closest('.dropdown');
+                const container = dropdown ? dropdown.querySelector('[id^="list_container_"]') : null;
+                if (!container) {
+                    return;
+                }
+
+                const col = container.getAttribute('data-col');
+                ensureFullFilterOptions(col);
+            });
+        });
+
+        if (window.jQuery) {
+            window.jQuery(document).on('shown.bs.dropdown', '.dropdown', function () {
+                const container = this.querySelector('[id^="list_container_"]');
+                if (!container) {
+                    return;
+                }
+
+                const col = container.getAttribute('data-col');
+                ensureFullFilterOptions(col);
+            });
+        }
 
         let importProgressStartedAt = null;
         let importProgressTicker = null;
@@ -1397,6 +1494,12 @@
             renderFilterList(col);
         });
         updatePreviewTable();
+        
+        // 🚀 Prefetch semua filter options saat page load untuk instant display
+        // Dilakukan secara parallel menggunakan Promise.allSettled
+        if (filePathValue && filterOptionsUrl) {
+            prefetchAllFilterOptions().catch(e => console.warn('Prefetch error:', e));
+        }
     });
 </script>
 <style>

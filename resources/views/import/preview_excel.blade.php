@@ -197,6 +197,59 @@ document.addEventListener('DOMContentLoaded', function () {
         menu.addEventListener('click', function (e) { e.stopPropagation(); });
     });
 
+    /* =========================================================
+       CACHE & OPTIMIZATION HELPERS
+    ========================================================= */
+    const storageKeyPrefix = 'preview_filter_excel_v2_' + btoa(filePathValue + '|' + delimiterValue).substring(0, 16);
+    
+    function getStorageKey(col) {
+        return storageKeyPrefix + '_col_' + col;
+    }
+
+    function getStorageTimestampKey(col) {
+        return storageKeyPrefix + '_ts_' + col;
+    }
+
+    function getFromLocalStorage(col) {
+        try {
+            const key = getStorageKey(col);
+            const data = localStorage.getItem(key);
+            const timestamp = localStorage.getItem(getStorageTimestampKey(col));
+            
+            if (data && timestamp) {
+                const cachedAt = parseInt(timestamp);
+                const now = Date.now();
+                const maxAge = 24 * 60 * 60 * 1000; // 24 hours cache
+                
+                if (now - cachedAt < maxAge) {
+                    return JSON.parse(data);
+                }
+            }
+        } catch (e) {
+        }
+        return null;
+    }
+
+    function saveToLocalStorage(col, values) {
+        try {
+            localStorage.setItem(getStorageKey(col), JSON.stringify(values));
+            localStorage.setItem(getStorageTimestampKey(col), String(Date.now()));
+        } catch (e) {
+        }
+    }
+
+    // Debounce render untuk menghindari multiple renders
+    const debounceTimers = {};
+    function debounceRender(col, fn, delay = 150) {
+        if (debounceTimers[col]) {
+            clearTimeout(debounceTimers[col]);
+        }
+        debounceTimers[col] = setTimeout(() => {
+            fn();
+            delete debounceTimers[col];
+        }, delay);
+    }
+
     Object.keys(filterOptionsMap).forEach(function (col) {
         const values = Array.isArray(filterOptionsMap[col]) ? filterOptionsMap[col].map(function (value) {
             return String(value);
@@ -399,7 +452,7 @@ document.addEventListener('DOMContentLoaded', function () {
         syncSelectAllCheckbox(col, filteredValues);
     }
 
-    async function ensureFullFilterOptions(col) {
+    async function ensureFullFilterOptions(col, isInitialPrefetch = false) {
         const state = filterState[col];
         if (!state || state.isLoading || !filterOptionsUrl || !filePathValue) {
             if (state && state.isLoading) {
@@ -417,14 +470,31 @@ document.addEventListener('DOMContentLoaded', function () {
             : col;
         const activeFilters = buildActiveFilterContext(col);
         const signature = buildActiveFilterSignature(activeFilters);
-        const previewDerivedValues = Object.keys(activeFilters).length > 0
-            ? collectPreviewValuesForColumn(col, activeFilters)
-            : new Set();
 
         if (state.fullOptionsLoaded && state.loadedSignature === signature) {
             renderFilterList(col);
             return;
         }
+
+        // Cek cache localStorage jika prefetch atau tidak ada active filters
+        if ((isInitialPrefetch || Object.keys(activeFilters).length === 0) && !state.fullOptionsLoaded) {
+            const cachedValues = getFromLocalStorage(col);
+            if (cachedValues) {
+                state.allValues = cachedValues;
+                const previousSelection = new Set(state.selectedValues || []);
+                state.selectedValues = new Set(cachedValues.filter(function (value) {
+                    return previousSelection.has(value) || previousSelection.size === 0;
+                }));
+                state.fullOptionsLoaded = true;
+                state.loadedSignature = signature;
+                renderFilterList(col);
+                return;
+            }
+        }
+
+        const previewDerivedValues = Object.keys(activeFilters).length > 0
+            ? collectPreviewValuesForColumn(col, activeFilters)
+            : new Set();
 
         if (previewDerivedValues.size > 0) {
             state.fullOptionsLoaded = true;
@@ -483,6 +553,12 @@ document.addEventListener('DOMContentLoaded', function () {
                 }));
             state.fullOptionsLoaded = true;
             state.loadedSignature = signature;
+            
+            // Simpan ke cache untuk next load
+            if (isInitialPrefetch || Object.keys(activeFilters).length === 0) {
+                saveToLocalStorage(col, normalizedValues);
+            }
+            
             shouldRender = true;
         } catch (error) {
             console.error(error);
@@ -490,14 +566,29 @@ document.addEventListener('DOMContentLoaded', function () {
             state.isLoading = false;
             if (state.needsRefresh) {
                 state.needsRefresh = false;
-                ensureFullFilterOptions(col);
+                ensureFullFilterOptions(col, isInitialPrefetch);
                 return;
             }
 
             if (shouldRender) {
                 renderFilterList(col);
-                updatePreviewTable();
+                if (!isInitialPrefetch) {
+                    updatePreviewTable();
+                }
             }
+        }
+    }
+
+    // Prefetch semua filter options secara parallel saat page load
+    async function prefetchAllFilterOptions() {
+        const cols = Object.keys(filterState);
+        if (!cols.length) return;
+
+        const prefetchPromises = cols.map(col => ensureFullFilterOptions(col, true));
+        try {
+            await Promise.allSettled(prefetchPromises);
+        } catch (e) {
+            console.warn('Prefetch filter options partially failed:', e);
         }
     }
 
