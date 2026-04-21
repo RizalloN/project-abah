@@ -210,6 +210,18 @@
         const searchTerms = {};
         const filterRenderLimit = 200;
 
+        // Debounce helper untuk optimize render performance
+        const debounceTimers = {};
+        function debounceRender(key, fn, delay = 150) {
+            if (debounceTimers[key]) {
+                clearTimeout(debounceTimers[key]);
+            }
+            debounceTimers[key] = setTimeout(() => {
+                fn();
+                delete debounceTimers[key];
+            }, delay);
+        }
+
         document.querySelectorAll('.dropdown-menu').forEach(function (menu) {
             menu.addEventListener('click', function (e) { e.stopPropagation(); });
         });
@@ -401,7 +413,11 @@
             input.addEventListener('keyup', function () {
                 const field = this.getAttribute('data-col');
                 searchTerms[field] = this.value || '';
-                renderFilterList(field);
+                
+                // Debounce render untuk smooth search experience
+                debounceRender(field + '_search', function() {
+                    renderFilterList(field);
+                }, 150);
             });
         });
 

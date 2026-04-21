@@ -710,7 +710,11 @@ document.addEventListener('DOMContentLoaded', function () {
 
         syncSelectAllCheckbox(colIndex, getFilteredValues(colIndex));
         updatePreviewTable();
-        refreshDependentFilterOptions(colIndex);
+        
+        // Debounce refresh dependent filters
+        debounceRender(colIndex + '_refresh', function() {
+            refreshDependentFilterOptions(colIndex);
+        }, 300);
     });
 
     /* =========================================================
@@ -741,7 +745,11 @@ document.addEventListener('DOMContentLoaded', function () {
 
             renderFilterList(colIndex);
             updatePreviewTable();
-            refreshDependentFilterOptions(colIndex);
+            
+            // Debounce refresh dependent filters
+            debounceRender(colIndex + '_refresh', function() {
+                refreshDependentFilterOptions(colIndex);
+            }, 300);
         });
     });
 
@@ -752,7 +760,11 @@ document.addEventListener('DOMContentLoaded', function () {
         input.addEventListener('keyup', function () {
             var colIndex  = this.getAttribute('data-col');
             searchTerms[colIndex] = this.value || '';
-            renderFilterList(colIndex);
+            
+            // Debounce render untuk smooth search experience
+            debounceRender(colIndex + '_search', function() {
+                renderFilterList(colIndex);
+            }, 150);
         });
     });
 
@@ -1219,6 +1231,12 @@ document.addEventListener('DOMContentLoaded', function () {
         renderFilterList(col);
     });
     updatePreviewTable();
+    
+    // 🚀 Prefetch semua filter options saat page load untuk instant display
+    // Dilakukan secara parallel menggunakan Promise.allSettled
+    if (filePathValue && filterOptionsUrl) {
+        prefetchAllFilterOptions().catch(e => console.warn('Prefetch error:', e));
+    }
 });
 </script>
 <style>
