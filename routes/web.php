@@ -196,7 +196,9 @@ Route::middleware(['auth', 'role:admin', 'release.session.lock'])->group(functio
     Route::post('/import/preview', [ImportFileController::class, 'preview'])->name('import.preview');
     Route::get('/import/preview/direct', [ImportFileController::class, 'preview'])->name('import.preview.direct');
     Route::get('/import/preview/filter-options', [ImportFileController::class, 'previewFilterOptions'])->name('import.preview.filter-options');
+    Route::get('/import/preview/warm-index', [ImportFileController::class, 'previewWarmIndex'])->name('import.preview.warm-index');
     Route::get('/import/preview/dynamic-filter-options', [ImportFileController::class, 'previewDynamicFilterOptions'])->name('import.preview.dynamic-filter-options');
+    Route::get('/import/preview/filtered-rows', [ImportFileController::class, 'previewFilteredRows'])->name('import.preview.filtered-rows');
     Route::post('/import/casa-brilink/upload', [ImportCasaBrilinkController::class, 'upload'])->name('import.casabrilink.upload');
     Route::get('/import/casa-brilink/preview', [ImportCasaBrilinkController::class, 'preview'])->name('import.casabrilink.preview');
     Route::post('/import/casa-brilink/preview', [ImportCasaBrilinkController::class, 'preview'])->name('import.casabrilink.preview.refresh');
