@@ -56,6 +56,7 @@ class ReportSnapshotBuilder
     public function rebuild(string $report = 'all', ?string $period = null, bool $force = false): array
     {
         $report = strtolower(trim($report));
+        $period = $this->normalizePeriodInput($period);
 
         return match ($report) {
             'dashboard', 'dashboard-pinjaman', 'pinjaman' => [
@@ -64,6 +65,7 @@ class ReportSnapshotBuilder
             'dashboard-simpanan', 'simpanan-dashboard', 'simpanan' => [
                 'dashboard_simpanan' => $this->rebuildDashboardSimpanan($period, $force),
             ],
+            'simpanan_multipn' => $this->rebuildSimpananMultipnSnapshots($period, $force),
             'rasio', 'rasio-casa', 'rasio-casa-debitur' => [
                 'rasio' => $this->rebuildRasioCasa($period, $force),
             ],
@@ -85,6 +87,19 @@ class ReportSnapshotBuilder
                 'new_payroll' => $this->rebuildPerformanceNewPayroll($period, $force),
             ],
         };
+    }
+
+    /**
+     * Rebuild snapshots that depend on Simpanan MultiPN.
+     */
+    private function rebuildSimpananMultipnSnapshots(?string $period = null, bool $force = false): array
+    {
+        return [
+            'dashboard_simpanan' => $this->rebuildDashboardSimpanan($period, $force),
+            'dashboard_harian' => $this->dashboardHarianSnapshotService->rebuild($period, $force),
+            'dormant' => $this->rebuildRekeningDormant($period, $force),
+            'rasio' => $this->rebuildRasioCasa($period, $force),
+        ];
     }
 
     public function describeRebuildPlan(?string $period = null): array
@@ -1088,7 +1103,8 @@ class ReportSnapshotBuilder
 
     private function resolveAvailablePeriod(string $table, string $column, ?string $targetDate): ?string
     {
-        $cacheKey = $table . '|' . $column . '|' . ($targetDate ?? '__null__');
+        $normalizedTargetDate = $this->normalizePeriodInput($targetDate);
+        $cacheKey = $table . '|' . $column . '|' . ($normalizedTargetDate ?? '__null__');
         if (array_key_exists($cacheKey, $this->availablePeriodCache)) {
             return $this->availablePeriodCache[$cacheKey];
         }
@@ -1096,8 +1112,8 @@ class ReportSnapshotBuilder
         try {
             $query = DB::table($table);
 
-            if ($targetDate) {
-                $query->where($column, '<=', Carbon::parse($targetDate)->toDateString());
+            if ($normalizedTargetDate) {
+                $query->where($column, '<=', $normalizedTargetDate);
             }
 
             return $this->availablePeriodCache[$cacheKey] = $query->max($column);
@@ -1109,16 +1125,40 @@ class ReportSnapshotBuilder
 
     private function resolveAvailableCasaPeriod(string $targetDate): ?string
     {
-        if (array_key_exists($targetDate, $this->availableCasaPeriodCache)) {
-            return $this->availableCasaPeriodCache[$targetDate];
+        $normalizedTargetDate = $this->normalizePeriodInput($targetDate);
+        if ($normalizedTargetDate === null) {
+            return null;
+        }
+
+        if (array_key_exists($normalizedTargetDate, $this->availableCasaPeriodCache)) {
+            return $this->availableCasaPeriodCache[$normalizedTargetDate];
         }
 
         try {
-            return $this->availableCasaPeriodCache[$targetDate] = DB::table('simpanan_multipn')
-                ->where('posisi', '<=', $targetDate)
+            return $this->availableCasaPeriodCache[$normalizedTargetDate] = DB::table('simpanan_multipn')
+                ->where('posisi', '<=', $normalizedTargetDate)
                 ->max('posisi');
         } catch (Throwable) {
-            $this->availableCasaPeriodCache[$targetDate] = null;
+            $this->availableCasaPeriodCache[$normalizedTargetDate] = null;
+            return null;
+        }
+    }
+
+    private function normalizePeriodInput(?string $period): ?string
+    {
+        $trimmed = trim((string) $period);
+        if ($trimmed === '') {
+            return null;
+        }
+
+        $strictNormalized = StrictDateParser::normalize($trimmed);
+        if ($strictNormalized !== null) {
+            return $strictNormalized;
+        }
+
+        try {
+            return Carbon::parse($trimmed)->toDateString();
+        } catch (Throwable) {
             return null;
         }
     }

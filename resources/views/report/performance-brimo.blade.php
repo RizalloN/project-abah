@@ -108,7 +108,7 @@
     .bg-brimo-vol { background-color: #7030A0 !important; color: #ffffff !important; border-color: #5a2580 !important; }
     .bg-header-sub { background-color: #f1f5fa !important; color: #333 !important; font-weight: bold; }
     .bg-header-light-blue { background-color: #f1f5fa !important; color: #333 !important; font-weight: bold; }
-    .table-hover tbody tr:hover { background-color: #f1f7ff; }
+    /* .table-hover tbody tr:hover { background-color: #f1f7ff; } */
     .bg-good { background-color: #d4edda !important; color: #155724 !important; font-weight: bold; }
     .bg-bad { background-color: #f8d7da !important; color: #721c24 !important; font-weight: bold; }
     .row-total { background-color: #003366 !important; color: #ffffff !important; font-weight: bold; }
@@ -228,7 +228,7 @@
         <div class="tab-content">
             <div class="tab-pane fade show active" id="tab-brimo" role="tabpanel">
                 <div class="table-container">
-                    <table class="table table-hover table-report m-0">
+                    <table class="table table-report m-0">
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
                                 <th rowspan="2" class="bg-brimo-main align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER" style="min-width: 150px;">BRANCH OFFICE</th>
@@ -251,7 +251,7 @@
 
             <div class="tab-pane fade" id="tab-ureg-rek" role="tabpanel">
                 <div class="table-container">
-                    <table class="table table-hover table-report m-0">
+                    <table class="table table-report m-0">
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
                                 <th rowspan="2" class="bg-brimo-rek align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER" style="min-width:150px;">BRANCH OFFICE</th>
@@ -275,7 +275,7 @@
 
             <div class="tab-pane fade" id="tab-ureg-fin" role="tabpanel">
                 <div class="table-container">
-                    <table class="table table-hover table-report m-0">
+                    <table class="table table-report m-0">
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
                                 <th rowspan="2" class="bg-brimo-fin align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER" style="min-width:150px;">BRANCH OFFICE</th>
@@ -299,7 +299,7 @@
 
             <div class="tab-pane fade" id="tab-mau" role="tabpanel">
                 <div class="table-container">
-                    <table class="table table-hover table-report m-0">
+                    <table class="table table-report m-0">
                         <tbody id="tbody-mau">
                             <tr>
                                 <td class="text-center py-5 text-muted"><strong>-</strong><br><small>Data MAU BRImo belum tersedia.</small></td>

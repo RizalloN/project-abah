@@ -124,7 +124,7 @@ class ImportExcelController extends Controller
         return array_reverse($ids); // Reverse so we can use array_pop (faster than array_shift)
     }
 
-    private function isCsvFile(string $path): bool
+    protected function isCsvFile(string $path): bool
     {
         return in_array(strtolower(pathinfo($path, PATHINFO_EXTENSION)), ['csv', 'txt'], true);
     }
@@ -244,52 +244,52 @@ class ImportExcelController extends Controller
     private const STAGED_CSV_TEMP_DIR = 'app/excel_stage';
     private const DAILY_LOAN_IMPORT_LOCK_NAME = 'project_abah:table_write:daily_loan_dinamis';
 
-    private function schemaService(): SchemaIntrospectionService
+    protected function schemaService(): SchemaIntrospectionService
     {
         return app(SchemaIntrospectionService::class);
     }
 
-    private function bulkLoadService(): MySqlBulkLoadService
+    protected function bulkLoadService(): MySqlBulkLoadService
     {
         return app(MySqlBulkLoadService::class);
     }
 
-    private function csvAutoRepairService(): CsvAutoRepairService
+    protected function csvAutoRepairService(): CsvAutoRepairService
     {
         return app(CsvAutoRepairService::class);
     }
 
-    private function excelStagingService(): ExcelStagingService
+    protected function excelStagingService(): ExcelStagingService
     {
         return app(ExcelStagingService::class);
     }
 
-    private function progressService(): ImportProgressService
+    protected function progressService(): ImportProgressService
     {
         return app(ImportProgressService::class);
     }
 
-    private function excelImportJobService(): ExcelImportJobService
+    protected function excelImportJobService(): ExcelImportJobService
     {
         return app(ExcelImportJobService::class);
     }
 
-    private function excelQueuedImportService(): ExcelQueuedImportService
+    protected function excelQueuedImportService(): ExcelQueuedImportService
     {
         return app(ExcelQueuedImportService::class);
     }
 
-    private function executionService(): ImportExecutionService
+    protected function executionService(): ImportExecutionService
     {
         return app(ImportExecutionService::class);
     }
 
-    private function cleanupService(): ImportCleanupService
+    protected function cleanupService(): ImportCleanupService
     {
         return app(ImportCleanupService::class);
     }
 
-    private function pipelineService(): ImportPipelineService
+    protected function pipelineService(): ImportPipelineService
     {
         return app(ImportPipelineService::class);
     }
@@ -2029,6 +2029,18 @@ class ImportExcelController extends Controller
         $sessionParams = session('excel_import_params', []);
         $jobId = (int) ($sessionParams['job_id'] ?? $request->query('job_id', 0));
         $jobState = $this->excelImportJobService()->getImportJobState($jobId);
+
+        if (
+            $jobId > 0
+            && (
+                empty($jobState['headers'])
+                || !array_key_exists('header_index', (array) ($jobState['params'] ?? []))
+            )
+        ) {
+            $this->initializeQueuedImportJobForExecution($jobId);
+            $jobState = $this->excelImportJobService()->getImportJobState($jobId);
+        }
+
         $params = !empty($jobState['params']) ? (array) $jobState['params'] : $sessionParams;
         $normalizedHeaders = !empty($jobState['headers']) ? (array) $jobState['headers'] : session('excel_headers', []);
         $activeFilters = (array) ($params['active_filters'] ?? []);
@@ -2522,6 +2534,8 @@ class ImportExcelController extends Controller
                 'manual_periode' => $importOptions['manual_periode'] ?? null,
                 'derived_kanca' => $importOptions['derived_kanca'] ?? null,
                 'derived_tahun' => $importOptions['derived_tahun'] ?? null,
+                'source_backend' => $importOptions['source_backend'] ?? null,
+                'source_pre_normalized' => $importOptions['source_pre_normalized'] ?? null,
             ],
         ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
 
@@ -2580,6 +2594,10 @@ class ImportExcelController extends Controller
         $skipColumnsLookup = array_fill_keys($skipColumns, true);
         $dateColumnsLookup = $this->getExcelDateColumnsLookup();
         $decimalColumnsLookup = $this->getExcelDecimalColumnsLookup();
+        $integerColumnsLookup = $this->getExcelIntegerColumnsLookup();
+        $sourceBackend = strtolower(trim((string) ($importOptions['source_backend'] ?? '')));
+        $sourcePreNormalized = (bool) ($importOptions['source_pre_normalized'] ?? false);
+        $fastSourcePreNormalized = $sourcePreNormalized && $sourceBackend === 'polars';
 
         $filterLookups = [];
         foreach ($activeFilters as $filterIdx => $values) {
@@ -2625,8 +2643,10 @@ class ImportExcelController extends Controller
                 'db_column' => $dbColumn,
                 'is_date' => isset($dateColumnsLookup[$normalizedHeader]),
                 'is_decimal' => isset($decimalColumnsLookup[$normalizedHeader]),
+                'is_integer' => isset($integerColumnsLookup[$normalizedHeader]),
                 'filter_lookup' => $filterLookup,
                 'db_candidates' => $mappedDbCandidates,
+                'source_pre_normalized' => $fastSourcePreNormalized,
             ];
         }
 
@@ -3458,6 +3478,20 @@ class ImportExcelController extends Controller
             @mkdir($tempDirectory, 0777, true);
         }
 
+        $dailyLoanHeaderLookup = array_fill_keys(self::DAILY_LOAN_SOURCE_HEADERS, true);
+        $dateColumns = array_values(array_filter(
+            array_keys($this->getExcelDateColumnsLookup()),
+            static fn (string $header): bool => isset($dailyLoanHeaderLookup[$header])
+        ));
+        $decimalColumns = array_values(array_filter(
+            array_keys($this->getExcelDecimalColumnsLookup()),
+            static fn (string $header): bool => isset($dailyLoanHeaderLookup[$header])
+        ));
+        $integerColumns = array_values(array_filter(
+            array_keys($this->getExcelIntegerColumnsLookup()),
+            static fn (string $header): bool => isset($dailyLoanHeaderLookup[$header])
+        ));
+
         $outputCsvPath = $tempDirectory . DIRECTORY_SEPARATOR . 'daily_loan_polars_' . Str::uuid()->toString() . '.csv';
         $configFile = storage_path('app/daily_loan_polars_config_' . uniqid() . '.json');
         file_put_contents($configFile, json_encode([
@@ -3466,6 +3500,9 @@ class ImportExcelController extends Controller
             'output_csv_path' => $outputCsvPath,
             'required_headers' => ['PERIODE', 'NOMOR_REKENING1', 'BAKI_DEBET1'],
             'strict_non_date_headers' => ['KODE_KANWIL1'],
+            'date_columns' => $dateColumns,
+            'decimal_columns' => $decimalColumns,
+            'integer_columns' => $integerColumns,
         ], JSON_UNESCAPED_UNICODE));
 
         $cmd = escapeshellarg($pythonExe)
@@ -3897,6 +3934,36 @@ class ImportExcelController extends Controller
 
     protected function prepareSimpananMultiPnDirectLoadSource(string $csvPath, ?string $delimiter = null, ?callable $send = null): array
     {
+        $delimiter = ($delimiter !== null && $delimiter !== '')
+            ? $delimiter
+            : $this->detectCsvDelimiter($csvPath);
+
+        $rawSource = $this->inspectRawSimpananMultiPnDirectLoadSource($csvPath, $delimiter);
+        if ((bool) ($rawSource['usable'] ?? false)) {
+            if ($send) {
+                $send('progress', [
+                    'percent' => 18,
+                    'message' => 'CSV sumber valid. Menggunakan direct LOAD DATA tanpa staging ulang...',
+                    'rows_done' => (int) ($rawSource['written_rows'] ?? 0),
+                    'total' => (int) ($rawSource['total_rows'] ?? 0),
+                    'speed' => 0,
+                    'mode' => 'raw',
+                ]);
+            }
+
+            return [
+                'path' => $csvPath,
+                'cleanup' => false,
+                'normalized' => false,
+                'backend' => 'raw',
+                'skipped_rows' => [],
+                'skipped_count' => 0,
+                'duplicate_count' => 0,
+                'written_rows' => (int) ($rawSource['written_rows'] ?? 0),
+                'total_rows' => (int) ($rawSource['total_rows'] ?? 0),
+            ];
+        }
+
         $normalized = $this->createNormalizedSimpananMultiPnDirectLoadCsv($csvPath, $delimiter, $send);
 
         return [
@@ -3909,6 +3976,48 @@ class ImportExcelController extends Controller
             'duplicate_count' => (int) ($normalized['duplicate_count'] ?? 0),
             'written_rows' => (int) ($normalized['written_rows'] ?? 0),
         ];
+    }
+
+    protected function inspectRawSimpananMultiPnDirectLoadSource(string $csvPath, string $delimiter): array
+    {
+        $handle = @fopen($csvPath, 'rb');
+        if ($handle === false) {
+            return ['usable' => false];
+        }
+
+        try {
+            $headers = $this->readCsvRecord($handle, $delimiter);
+            if ($headers === false || empty($headers)) {
+                return ['usable' => false];
+            }
+
+            $expectedColumns = count($headers);
+            $totalRows = 0;
+
+            while (($row = $this->readCsvRecord($handle, $delimiter)) !== false) {
+                if (empty(array_filter((array) $row, static fn ($value): bool => trim((string) $value) !== ''))) {
+                    continue;
+                }
+
+                if (count($row) !== $expectedColumns) {
+                    return ['usable' => false];
+                }
+
+                if (!$this->isCompleteSimpananMultiPnSourceRow($headers, (array) $row)) {
+                    return ['usable' => false];
+                }
+
+                $totalRows++;
+            }
+
+            return [
+                'usable' => true,
+                'total_rows' => $totalRows,
+                'written_rows' => $totalRows,
+            ];
+        } finally {
+            fclose($handle);
+        }
     }
 
     private function stageSsaSimpananCsvWithPolars(?callable $send, string $csvPath, ?string $delimiter = null): ?array
@@ -5102,6 +5211,15 @@ class ImportExcelController extends Controller
             . "ELSE NULL END";
     }
 
+    protected function buildFastDirectLoadDecimalExpression(string $columnExpression): string
+    {
+        $textExpression = $this->buildDirectLoadTextExpression($columnExpression);
+
+        return "CASE "
+            . "WHEN {$textExpression} IS NULL THEN NULL "
+            . "ELSE CAST({$textExpression} AS DECIMAL(24,2)) END";
+    }
+
     private function buildDirectLoadIntegerExpression(string $columnExpression): string
     {
         $decimalExpression = $this->buildDirectLoadDecimalExpression($columnExpression);
@@ -5111,6 +5229,15 @@ class ImportExcelController extends Controller
             . "ELSE CAST(ROUND({$decimalExpression}, 0) AS SIGNED) END";
     }
 
+    private function buildFastDirectLoadIntegerExpression(string $columnExpression): string
+    {
+        $textExpression = $this->buildDirectLoadTextExpression($columnExpression);
+
+        return "CASE "
+            . "WHEN {$textExpression} IS NULL THEN NULL "
+            . "ELSE CAST({$textExpression} AS SIGNED) END";
+    }
+
     private function buildDirectLoadDateExpression(string $columnExpression): string
     {
         $textExpression = $this->buildDirectLoadTextExpression($columnExpression);
@@ -5118,29 +5245,35 @@ class ImportExcelController extends Controller
         return StrictDateParser::buildMySqlCaseExpression($textExpression);
     }
 
+    private function buildFastDirectLoadDateExpression(string $columnExpression): string
+    {
+        $textExpression = $this->buildDirectLoadTextExpression($columnExpression);
+
+        return "CASE "
+            . "WHEN {$textExpression} IS NULL THEN NULL "
+            . "ELSE CAST({$textExpression} AS DATE) END";
+    }
+
     private function buildDirectLoadSqlExpression(array $rule, string $columnExpression): string
     {
+        $sourcePreNormalized = !empty($rule['source_pre_normalized']);
+
         if (!empty($rule['is_date'])) {
-            return $this->buildDirectLoadDateExpression($columnExpression);
+            return $sourcePreNormalized
+                ? $this->buildFastDirectLoadDateExpression($columnExpression)
+                : $this->buildDirectLoadDateExpression($columnExpression);
         }
 
         if (!empty($rule['is_decimal'])) {
-            return $this->buildDirectLoadDecimalExpression($columnExpression);
+            return $sourcePreNormalized
+                ? $this->buildFastDirectLoadDecimalExpression($columnExpression)
+                : $this->buildDirectLoadDecimalExpression($columnExpression);
         }
 
-        $normalizedHeader = preg_replace('/[^A-Z0-9]+/', '_', strtoupper(trim((string) ($rule['header_name'] ?? ''))));
-        if (in_array($normalizedHeader, [
-            'TGL',
-            'TAHUN',
-            'JANGKA_WAKTU1',
-            'UMUR_TUNGGAKAN',
-            'FREQ_PAYMENT',
-            'FREQ_INT_PAYMENT',
-            'JUMLAH_PN1',
-            'JUMLAH_PN_ALL1',
-            'RESTRUK_KE1',
-        ], true)) {
-            return $this->buildDirectLoadIntegerExpression($columnExpression);
+        if (!empty($rule['is_integer'])) {
+            return $sourcePreNormalized
+                ? $this->buildFastDirectLoadIntegerExpression($columnExpression)
+                : $this->buildDirectLoadIntegerExpression($columnExpression);
         }
 
         return $this->buildDirectLoadTextExpression($columnExpression);
@@ -5407,6 +5540,8 @@ class ImportExcelController extends Controller
         $setClause = implode(",\n", $loadPlan['set_clauses']);
         $uniquePrefix = (string) ($loadPlan['unique_id_prefix'] ?? 'imp');
         $originalSqlMode = null;
+        $originalUniqueChecks = null;
+        $originalForeignKeyChecks = null;
         $lockAcquired = false;
         $affected = false;
 
@@ -5418,6 +5553,10 @@ class ImportExcelController extends Controller
 
             $pdo->beginTransaction();
             $originalSqlMode = $this->relaxMysqlSqlModeForImport($pdo);
+            $originalUniqueChecks = $pdo->query('SELECT @@SESSION.unique_checks')->fetchColumn();
+            $originalForeignKeyChecks = $pdo->query('SELECT @@SESSION.foreign_key_checks')->fetchColumn();
+            $pdo->exec('SET SESSION unique_checks = 0');
+            $pdo->exec('SET SESSION foreign_key_checks = 0');
             $pdo->exec('SET @skip_snapshot_invalidation = 1');
             $pdo->exec('SET @daily_loan_rownum = 0');
             $pdo->exec('SET @daily_loan_unique_prefix = ' . $pdo->quote($uniquePrefix . '_'));
@@ -5463,6 +5602,22 @@ class ImportExcelController extends Controller
                     $pdo->exec('SET SESSION sql_mode = ' . $pdo->quote($originalSqlMode));
                 } catch (\Throwable) {
                     // abaikan reset sql_mode jika koneksi sudah bermasalah
+                }
+            }
+
+            if ($originalUniqueChecks !== null) {
+                try {
+                    $pdo->exec('SET SESSION unique_checks = ' . (int) $originalUniqueChecks);
+                } catch (\Throwable) {
+                    // abaikan reset jika koneksi sudah bermasalah
+                }
+            }
+
+            if ($originalForeignKeyChecks !== null) {
+                try {
+                    $pdo->exec('SET SESSION foreign_key_checks = ' . (int) $originalForeignKeyChecks);
+                } catch (\Throwable) {
+                    // abaikan reset jika koneksi sudah bermasalah
                 }
             }
 
@@ -6127,7 +6282,10 @@ class ImportExcelController extends Controller
             $skippedCount = (int) ($loadSource['skipped_count'] ?? count($skippedRows));
 
             $loadPlan = $isDailyLoanTable
-                ? $this->buildDirectDailyLoanCsvLoadPlan($sourcePath, $normalizedHeaders, $importOptions)
+                ? $this->buildDirectDailyLoanCsvLoadPlan($sourcePath, $normalizedHeaders, array_merge($importOptions, [
+                    'source_backend' => $loadBackend,
+                    'source_pre_normalized' => $sourceWasNormalized,
+                ]))
                 : $this->buildDirectGenericCsvLoadPlan($tableName, $sourcePath, $normalizedHeaders, $importOptions);
             $baseTotal = !empty($loadSource['written_rows'])
                 ? max(0, (int) $loadSource['written_rows'])
@@ -7535,19 +7693,7 @@ class ImportExcelController extends Controller
         }
 
         if ($this->excelIntegerColumnsLookupCache === null) {
-            $this->excelIntegerColumnsLookupCache = array_fill_keys([
-                'TGL',
-                'TAHUN',
-                'JANGKA_WAKTU1',
-                'UMUR_TUNGGAKAN',
-                'FREQ_PAYMENT',
-                'FREQ_INT_PAYMENT',
-                'JUMLAH_PN1',
-                'JUMLAH_PN_ALL1',
-                'RESTRUK_KE1',
-                'JUMLAH_DEBITUR_AKTIF',
-                'JUMLAH_REKENING_AKTIF',
-            ], true);
+            $this->excelIntegerColumnsLookupCache = $this->getExcelIntegerColumnsLookup();
         }
 
         // OPTIMIZED: Cache normalized header names to avoid repeated strtoupper + preg_replace
@@ -7625,6 +7771,23 @@ class ImportExcelController extends Controller
         ];
 
         return array_fill_keys($dateColumns, true);
+    }
+
+    private function getExcelIntegerColumnsLookup(): array
+    {
+        return array_fill_keys([
+            'TGL',
+            'TAHUN',
+            'JANGKA_WAKTU1',
+            'UMUR_TUNGGAKAN',
+            'FREQ_PAYMENT',
+            'FREQ_INT_PAYMENT',
+            'JUMLAH_PN1',
+            'JUMLAH_PN_ALL1',
+            'RESTRUK_KE1',
+            'JUMLAH_DEBITUR_AKTIF',
+            'JUMLAH_REKENING_AKTIF',
+        ], true);
     }
 
     private function getExcelDecimalColumnsLookup(): array

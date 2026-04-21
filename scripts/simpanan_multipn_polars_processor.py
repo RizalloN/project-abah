@@ -22,6 +22,7 @@ import re
 import sys
 import tempfile
 import time
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -230,6 +231,26 @@ def normalize_decimal_value(value: object) -> str | None:
         return None
 
 
+def decimal_string_to_cents(value: str) -> int:
+    normalized = value.strip()
+    if normalized == "":
+        return 0
+
+    negative = normalized.startswith("-")
+    if negative:
+        normalized = normalized[1:]
+
+    if "." in normalized:
+        whole, fraction = normalized.split(".", 1)
+    else:
+        whole, fraction = normalized, ""
+
+    whole = re.sub(r"\D+", "", whole) or "0"
+    fraction = (re.sub(r"\D+", "", fraction) + "00")[:2]
+    cents = (int(whole) * 100) + int(fraction or "0")
+    return -cents if negative else cents
+
+
 def is_valid_simpanan_posisi(value: object) -> bool:
     return normalize_date_value(value) is not None
 
@@ -266,7 +287,7 @@ def is_valid_simpanan_row_values(values_by_header: dict[str, object]) -> bool:
 def sanitize_source(
     source_path: str,
     delimiter: str,
-) -> tuple[str, list[str], int, int, int, int, bool, list[int], int]:
+) -> tuple[str, list[str], int, int, int, int, bool, list[int], int, int, list[dict[str, str]]]:
     temp_dir = Path(tempfile.gettempdir())
     fd, temp_path = tempfile.mkstemp(prefix="simpanan_multipn_sanitized_", suffix=".csv", dir=str(temp_dir))
     os.close(fd)
@@ -278,6 +299,8 @@ def sanitize_source(
     skipped_rows: list[int] = []
     headers: list[str] = []
     valid_rows = 0
+    balance_total_cents = 0
+    account_samples: list[dict[str, str]] = []
     start_time = time.perf_counter()
 
     with open(source_path, "r", encoding="utf-8-sig", errors="replace", newline="") as raw_handle, open(
@@ -334,14 +357,49 @@ def sanitize_source(
                 rewrite_needed = True
                 continue
 
-            writer.writerow(values)
-            valid_rows += 1
-            rewrite_needed = rewrite_needed or any(values[index] != normalize_cell(row[index]) for index in range(len(row)))
+            for index, header in enumerate(headers):
+                if header == "posisi":
+                    normalized = normalize_date_value(values[index])
+                    if normalized is None:
+                        validation_skipped += 1
+                        skipped_rows.append(row_number)
+                        rewrite_needed = True
+                        break
+                    values[index] = normalized
+                    continue
+
+                if header == "saldo_idr":
+                    normalized = normalize_decimal_value(values[index])
+                    if normalized is None:
+                        validation_skipped += 1
+                        skipped_rows.append(row_number)
+                        rewrite_needed = True
+                        break
+                    values[index] = normalized
+                    balance_total_cents += decimal_string_to_cents(normalized)
+                    continue
+
+                if header == "no_rekening":
+                    raw_value = normalize_cell(values[index])
+                    values[index] = raw_value
+                    if len(account_samples) < 10:
+                        account_samples.append({
+                            "raw": raw_value,
+                            "normalized": raw_value,
+                        })
+                    continue
+            else:
+                writer.writerow(values)
+                valid_rows += 1
+                rewrite_needed = rewrite_needed or any(values[index] != normalize_cell(row[index]) for index in range(len(row)))
+                continue
+
+            continue
 
     if not headers:
         raise RuntimeError("Header CSV Simpanan MultiPN tidak ditemukan.")
 
-    return temp_path, headers, total_records, structural_skipped, validation_skipped, 0, rewrite_needed, skipped_rows, valid_rows
+    return temp_path, headers, total_records, structural_skipped, validation_skipped, 0, rewrite_needed, skipped_rows, valid_rows, balance_total_cents, account_samples
 
 
 def read_with_polars(path: str, headers: list[str], delimiter: str):
@@ -419,7 +477,19 @@ def stage_simpanan_multipn(config: dict) -> None:
     delimiter = config.get("delimiter") or detect_delimiter(source_path, ",")
 
     send_progress(5, "Membaca dan menyiapkan CSV Simpanan MultiPN dengan Polars...", 0, 0, 0, "", "polars")
-    temp_sanitized_path, headers, total_records, structural_skipped, validation_skipped, duplicate_skipped, rewrite_needed, skipped_rows, valid_rows = sanitize_source(source_path, delimiter)
+    (
+        temp_sanitized_path,
+        headers,
+        total_records,
+        structural_skipped,
+        validation_skipped,
+        duplicate_skipped,
+        rewrite_needed,
+        skipped_rows,
+        valid_rows,
+        balance_total_cents,
+        account_samples,
+    ) = sanitize_source(source_path, delimiter)
     total_data_rows = max(0, total_records - 1)
 
     try:
@@ -436,6 +506,10 @@ def stage_simpanan_multipn(config: dict) -> None:
 
         written_rows = int(df.height)
         duplicate_count = int(duplicate_skipped)
+        balance_total_cents = sum(
+            decimal_string_to_cents(value)
+            for value in df.get_column("saldo_idr").to_list()
+        ) if "saldo_idr" in df.columns else 0
         skipped_total = int(structural_skipped + validation_skipped + duplicate_count)
 
         if written_rows == 0:
@@ -455,6 +529,8 @@ def stage_simpanan_multipn(config: dict) -> None:
                 "skipped_rows": skipped_rows[:500],
                 "rewritten": bool(rewrite_needed or structural_skipped > 0 or validation_skipped > 0 or duplicate_count > 0),
                 "backend": "polars",
+                "balance_total_cents": int(balance_total_cents),
+                "account_samples": account_samples,
             },
         )
     finally:

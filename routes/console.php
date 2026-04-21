@@ -4,6 +4,7 @@ use App\Services\JobHealthService;
 use App\Support\ManagedReportDeleteRecoveryService;
 use App\Support\ReportDataSyncService;
 use App\Support\ReportSnapshotBuilder;
+use App\Support\StrictDateParser;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -15,7 +16,7 @@ Artisan::command('inspire', function () {
 
 Artisan::command('reports:snapshot {report=all} {--period=} {--force}', function () {
     $report = (string) $this->argument('report');
-    $period = $this->option('period');
+    $period = StrictDateParser::normalize((string) $this->option('period')) ?? $this->option('period');
     $force = (bool) $this->option('force');
 
     $startedAt = microtime(true);
@@ -34,7 +35,7 @@ Artisan::command('reports:snapshot {report=all} {--period=} {--force}', function
 
 Artisan::command('reports:sync-source {table} {--period=}', function () {
     $table = strtolower(trim((string) $this->argument('table')));
-    $period = $this->option('period');
+    $period = StrictDateParser::normalize((string) $this->option('period')) ?? $this->option('period');
 
     $allowed = ['daily_loan_dinamis', 'simpanan_multipn', 'lw325_ph', 'performance_pis_per_produk'];
     if (!in_array($table, $allowed, true)) {

@@ -149,6 +149,14 @@ class SmartPartialSnapshotRebuildJob implements ShouldQueue
         DB::table('dashboard_harian_snapshots')
             ->whereIn('snapshot_period', $periods)
             ->delete();
+
+        DB::table('rasio_casa_debitur_snapshots')
+            ->whereIn('casa_period', $periods)
+            ->delete();
+
+        DB::table('rasio_casa_debitur_uker_snapshots')
+            ->whereIn('casa_period', $periods)
+            ->delete();
     }
 
     private function deleteSsaSimpananSnapshots(array $periods): void

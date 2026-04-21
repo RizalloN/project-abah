@@ -127,6 +127,20 @@ class ImportExecutionService
         return [self::IMPORT_QUEUE];
     }
 
+    private function resolvePostImportSyncQueue(int $jobId, array $params = []): string
+    {
+        $tableName = strtolower(trim((string) ($params['table_name'] ?? '')));
+        $job = $this->progressService->findJob($jobId);
+
+        if ((int) ($job->id_report ?? 0) === self::DAILY_LOAN_REPORT_ID || $tableName === 'daily_loan_dinamis') {
+            return self::DAILY_LOAN_IMPORT_QUEUE;
+        }
+
+        $queue = trim((string) config('queue.report_queue', 'default'));
+
+        return $queue !== '' ? $queue : 'default';
+    }
+
     public function streamStatus(Request $request, int $jobId, bool $startInlineImmediately = false): StreamedResponse
     {
         return response()->stream(function () use ($request, $jobId, $startInlineImmediately) {
@@ -284,7 +298,14 @@ class ImportExecutionService
         // ── OPTIMIZATION: Initialize job jika belum sepenuhnya ready ──────
         // Deteksi header dan staging CSV dilakukan ASYNC (dalam job execution)
         // Berlaku untuk SEMUA table: Simpanan, Pinjaman, Daily Loan, dll
-        if ((empty($headers) || empty($params['header_index'] ?? null)) && !empty($params['file_path'])) {
+        if (
+            (
+                empty($headers)
+                || !array_key_exists('header_index', $params)
+                || $params['header_index'] === null
+            )
+            && !empty($params['file_path'])
+        ) {
             $controllerClass = $this->resolveControllerClass($job);
             /** @var ImportExcelController $controller */
             $controller = app($controllerClass);
@@ -421,13 +442,15 @@ class ImportExecutionService
                         'percent' => 100,
                     ],
                 );
-                SyncImportedReportJob::dispatch($jobId, null, null, static::class)->onQueue((string) config('queue.report_queue', 'default'));
+                SyncImportedReportJob::dispatch($jobId, null, null, static::class)
+                    ->onQueue($this->resolvePostImportSyncQueue($jobId, $params));
                 $this->releaseDispatchMarker($jobId);
                 return;
             }
 
             if ($status === 'failed_partial' && (int) ($result['total_success'] ?? 0) > 0) {
-                SyncImportedReportJob::dispatch($jobId, null, null, static::class)->onQueue((string) config('queue.report_queue', 'default'));
+                SyncImportedReportJob::dispatch($jobId, null, null, static::class)
+                    ->onQueue($this->resolvePostImportSyncQueue($jobId, $params));
             }
 
             $this->progressService->markFailed(

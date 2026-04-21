@@ -109,7 +109,7 @@
     .table-report td { font-size: 0.75rem; padding: 6px 8px; text-align: right; }
     .table-report td.text-left { text-align: left; }
     
-    .table-hover tbody tr:hover { background-color: #f8f9fa; }
+    /* .table-hover tbody tr:hover { background-color: #f8f9fa; } */
     .row-total { --row-total-bg: #003366; --row-total-color: #ffffff; }
     .row-total td { background-color: #003366 !important; color: white !important; font-weight: bold; }
     
@@ -233,7 +233,7 @@
         <div class="tab-content">
             <div class="tab-pane fade show active" id="tab-brilink" role="tabpanel">
                 <div class="table-container">
-                    <table class="table table-hover table-report m-0">
+                    <table class="table table-report m-0">
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
                                 <th rowspan="2" class="bg-brilink-dark align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER">BRANCH OFFICE</th>
@@ -265,7 +265,7 @@
 
             <div class="tab-pane fade" id="tab-agen-user" role="tabpanel">
                 <div class="table-container">
-                    <table class="table table-hover table-report m-0">
+                    <table class="table table-report m-0">
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
                                 <th rowspan="2" class="bg-brilink-dark align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER">BRANCH OFFICE</th>
@@ -291,7 +291,7 @@
 
             <div class="tab-pane fade" id="tab-juragan" role="tabpanel">
                 <div class="table-container">
-                    <table class="table table-hover table-report m-0">
+                    <table class="table table-report m-0">
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
                                 <th rowspan="2" class="bg-brilink-dark align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER">BRANCH OFFICE</th>
@@ -319,7 +319,7 @@
 
             <div class="tab-pane fade" id="tab-bep" role="tabpanel">
                 <div class="table-container">
-                    <table class="table table-hover table-report m-0">
+                    <table class="table table-report m-0">
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
                                 <th rowspan="2" class="bg-brilink-dark align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER">BRANCH OFFICE</th>
@@ -347,7 +347,7 @@
 
             <div class="tab-pane fade" id="tab-transaksi" role="tabpanel">
                 <div class="table-container">
-                    <table class="table table-hover table-report m-0">
+                    <table class="table table-report m-0">
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
                                 <th rowspan="2" class="bg-brilink-dark align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER">BRANCH OFFICE</th>
@@ -368,7 +368,7 @@
 
             <div class="tab-pane fade" id="tab-casa" role="tabpanel">
                 <div class="table-container">
-                    <table class="table table-hover table-report m-0">
+                    <table class="table table-report m-0">
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
                                 <th rowspan="2" class="bg-brilink-dark align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER">BRANCH OFFICE</th>

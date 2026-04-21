@@ -5,7 +5,7 @@
 @section('content')
 <div class="row">
     <div class="col-12">
-        
+
         @if(session('error'))
             <div class="alert alert-danger">{{ session('error') }}</div>
         @endif
@@ -80,10 +80,10 @@
                         </button>
                     </div>
                 </div>
-                
+
                 <div class="card-body p-0">
                     <div class="alert alert-info m-3 border-0 bg-light text-dark">
-                        <i class="fas fa-info-circle text-info"></i> <strong>Petunjuk Filter:</strong> 
+                        <i class="fas fa-info-circle text-info"></i> <strong>Petunjuk Filter:</strong>
                         Klik ikon <i class="fas fa-filter text-muted mx-1"></i> di sebelah nama kolom untuk memfilter baris data. Tabel preview menampilkan <strong>sampel dari berbagai bagian file</strong> (max 100 baris) untuk evaluasi visual. <strong>Saat Anda membuka dropdown filter, sistem akan memuat SEMUA nilai unik dari file sumber</strong> - sehingga Anda dapat memilih dengan filter data yang paling lengkap.
                     </div>
 
@@ -121,11 +121,11 @@
                                     @foreach($headers as $index => $header)
                                         <th class="align-middle bg-light" style="min-width: 250px;">
                                             <div class="d-flex justify-content-between align-items-center">
-                                                
+
                                                 <div class="custom-control custom-checkbox mr-2">
-                                                    <input class="custom-control-input" type="checkbox" 
-                                                           id="col_{{ $index }}" 
-                                                           name="selected_columns[]" 
+                                                    <input class="custom-control-input" type="checkbox"
+                                                           id="col_{{ $index }}"
+                                                           name="selected_columns[]"
                                                            value="{{ $index }}" checked>
                                                     <label for="col_{{ $index }}" class="custom-control-label font-weight-bold text-dark">
                                                         {{ $header }}
@@ -139,7 +139,7 @@
                                                     <button class="btn btn-xs btn-light border dropdown-toggle filter-btn" type="button" data-toggle="dropdown" aria-expanded="false">
                                                         <i class="fas fa-filter text-muted" id="icon_filter_{{ $index }}"></i>
                                                     </button>
-                                                    
+
                                                     <div class="dropdown-menu dropdown-menu-right shadow p-0" style="width: 280px; border-radius: 8px;">
                                                         <div class="p-2 bg-light border-bottom">
                                                             <div class="input-group input-group-sm">
@@ -169,19 +169,19 @@
                             </thead>
                             <tbody>
                                 @foreach($previewData as $rowIndex => $row)
-                                    <tr class="preview-row d-none"> 
+                                    <tr class="preview-row d-none">
                                         <td class="text-center text-muted">{{ $rowIndex + 1 }}</td>
                                         @foreach($headers as $colIndex => $header)
-                                            <td class="text-truncate col-data-{{ $colIndex }}" 
+                                            <td class="text-truncate col-data-{{ $colIndex }}"
                                                 data-val="{{ trim($row[$colIndex] ?? '') }}"
-                                                style="max-width: 250px;" 
+                                                style="max-width: 250px;"
                                                 title="{{ $row[$colIndex] ?? '' }}">
                                                 {{ isset($row[$colIndex]) ? $row[$colIndex] : '-' }}
                                             </td>
                                         @endforeach
                                     </tr>
                                 @endforeach
-                                
+
                                 <tr id="empty-state-row" class="d-none">
                                     <td colspan="{{ count($headers) + 1 }}" class="text-center py-5 bg-white text-muted">
                                         <i class="fas fa-search-minus fa-3x mb-3 text-secondary"></i><br>
@@ -321,12 +321,65 @@
                 speedLabel: '',
             };
         }
-        
+
         const dropdownMenus = document.querySelectorAll('.dropdown-menu');
 
         dropdownMenus.forEach(menu => {
             menu.addEventListener('click', function (e) { e.stopPropagation(); });
         });
+
+        /* =========================================================
+           CACHE & OPTIMIZATION HELPERS
+        ========================================================= */
+        const storageKeyPrefix = 'preview_filter_v2_' + btoa(filePathValue + '|' + delimiterValue).substring(0, 16);
+
+        function getStorageKey(col) {
+            return storageKeyPrefix + '_col_' + col;
+        }
+
+        function getStorageTimestampKey(col) {
+            return storageKeyPrefix + '_ts_' + col;
+        }
+
+        function getFromLocalStorage(col) {
+            try {
+                const key = getStorageKey(col);
+                const data = localStorage.getItem(key);
+                const timestamp = localStorage.getItem(getStorageTimestampKey(col));
+
+                if (data && timestamp) {
+                    const cachedAt = parseInt(timestamp);
+                    const now = Date.now();
+                    const maxAge = 24 * 60 * 60 * 1000; // 24 hours cache
+
+                    if (now - cachedAt < maxAge) {
+                        return JSON.parse(data);
+                    }
+                }
+            } catch (e) {
+            }
+            return null;
+        }
+
+        function saveToLocalStorage(col, values) {
+            try {
+                localStorage.setItem(getStorageKey(col), JSON.stringify(values));
+                localStorage.setItem(getStorageTimestampKey(col), String(Date.now()));
+            } catch (e) {
+            }
+        }
+
+        // Debounce render untuk menghindari multiple renders
+        const debounceTimers = {};
+        function debounceRender(col, fn, delay = 150) {
+            if (debounceTimers[col]) {
+                clearTimeout(debounceTimers[col]);
+            }
+            debounceTimers[col] = setTimeout(() => {
+                fn();
+                delete debounceTimers[col];
+            }, delay);
+        }
 
         Object.keys(filterOptionsMap).forEach(function (col) {
             const values = Array.isArray(filterOptionsMap[col]) ? filterOptionsMap[col].map(function (value) {
@@ -531,13 +584,17 @@
             const visibleValues = filteredValues.slice(0, filterRenderLimit);
             let html = '';
 
-            if (!filteredValues.length) {
+            if (state.isLoading && !state.fullOptionsLoaded) {
+                html = '<div class="text-center text-muted py-3 small">' +
+                    '<i class="fas fa-spinner fa-spin mr-2"></i>Memuat opsi filter lengkap...</div>';
+            } else if (!filteredValues.length) {
                 html = state.isLoading
-                    ? '<div class="text-center text-muted py-2 small">Memuat opsi filter lengkap...</div>'
+                    ? '<div class="text-center text-muted py-2 small">' +
+                      '<i class="fas fa-spinner fa-spin mr-2"></i>Memuat opsi filter...</div>'
                     : '<div class="text-center text-muted py-2 small">Tidak ada opsi yang cocok.</div>';
             } else {
                 if (state.isLoading) {
-                    html += '<div class="small text-muted mb-2">Memuat opsi lengkap dari file sumber...</div>';
+                    html += '<div class="small text-muted mb-2"><i class="fas fa-spinner fa-spin mr-1"></i>Memindahkan nilai dari file sumber...</div>';
                 }
 
                 if (filteredValues.length > filterRenderLimit) {
@@ -559,7 +616,7 @@
             syncSelectAllCheckbox(col, filteredValues);
         }
 
-        async function ensureFullFilterOptions(col) {
+        async function ensureFullFilterOptions(col, isInitialPrefetch = false) {
             const state = filterState[col];
             if (!state || state.isLoading || !filterOptionsUrl || !filePathValue) {
                 if (state && state.isLoading) {
@@ -580,6 +637,21 @@
                 return;
             }
 
+            // Cek cache localStorage jika prefetch atau tidak ada active filters
+            if ((isInitialPrefetch || Object.keys(activeFilters).length === 0) && !state.fullOptionsLoaded) {
+                const cachedValues = getFromLocalStorage(col);
+                if (cachedValues) {
+                    state.allValues = cachedValues;
+                    const previousSelection = new Set(state.selectedValues || []);
+                    state.selectedValues = new Set(cachedValues.filter(function (value) {
+                        return previousSelection.has(value) || previousSelection.size === 0;
+                    }));
+                    state.fullOptionsLoaded = true;
+                    state.loadedSignature = signature;
+                    renderFilterList(col);
+                    return;
+                }
+            }
             state.isLoading = true;
             state.pendingSignature = signature;
             state.needsRefresh = false;
@@ -590,36 +662,17 @@
                 const sourceCol = Object.prototype.hasOwnProperty.call(displayFilterMap, col)
                     ? displayFilterMap[col]
                     : col;
-
-                // Gunakan scan lengkap saat tidak ada filter silang; gunakan endpoint reguler saat perlu menghormati filter lain.
-                const dynamicFilterUrl = '{{ route("import.preview.dynamic-filter-options") }}';
-                const columnName = headers && headers[sourceCol] ? headers[sourceCol] : 'Column_' + sourceCol;
-                const hasActiveFilters = Object.keys(activeFilters).length > 0;
-
-                let url;
-                let useDynamicEndpoint = !hasActiveFilters;
-
-                try {
-                    url = new URL(useDynamicEndpoint ? dynamicFilterUrl : filterOptionsUrl, window.location.origin);
-                } catch (e) {
-                    url = new URL(filterOptionsUrl, window.location.origin);
-                    useDynamicEndpoint = false;
-                }
+                const url = new URL(filterOptionsUrl, window.location.origin);
 
                 url.searchParams.set('file_path', filePathValue);
                 url.searchParams.set('delimiter', delimiterValue);
-                url.searchParams.set('column_index', String(useDynamicEndpoint ? sourceCol : col));
-                url.searchParams.set('_', String(Date.now()));
-
-                if (useDynamicEndpoint) {
-                    url.searchParams.set('column_name', columnName);
-                } else {
-                    url.searchParams.set('display_filter_map_json', JSON.stringify(displayFilterMap || {}));
-                    url.searchParams.set('active_filters_json', JSON.stringify(activeFilters || {}));
-                    if (previewStateKey) {
-                        url.searchParams.set('preview_state_key', previewStateKey);
-                    }
+                url.searchParams.set('column_index', String(sourceCol));
+                url.searchParams.set('display_filter_map_json', JSON.stringify(displayFilterMap || {}));
+                url.searchParams.set('active_filters_json', JSON.stringify(activeFilters || {}));
+                if (previewStateKey) {
+                    url.searchParams.set('preview_state_key', previewStateKey);
                 }
+                url.searchParams.set('_', String(Date.now()));
 
                 const response = await fetch(url.toString(), {
                     headers: {
@@ -653,12 +706,13 @@
                     }));
                 state.fullOptionsLoaded = true;
                 state.loadedSignature = signature;
+                // Simpan ke cache untuk next load
+                if (isInitialPrefetch || Object.keys(activeFilters).length === 0) {
+                    saveToLocalStorage(col, normalizedValues);
+                }
+
                 shouldRender = true;
 
-                // Log informasi jika menggunakan dynamic endpoint
-                if (useDynamicEndpoint && payload.total_unique) {
-                    console.log(`Dynamic filter loaded: ${payload.total_unique} unique values, scanned ${payload.total_rows_scanned} rows`);
-                }
             } catch (error) {
                 console.error('Error loading filter options:', error);
                 shouldRender = true;
@@ -666,14 +720,28 @@
                 state.isLoading = false;
                 if (state.needsRefresh) {
                     state.needsRefresh = false;
-                    ensureFullFilterOptions(col);
+                    ensureFullFilterOptions(col, isInitialPrefetch);
                     return;
                 }
 
                 if (shouldRender) {
                     renderFilterList(col);
-                    updatePreviewTable();
+                    if (!isInitialPrefetch) {
+                        updatePreviewTable();
+                    }
                 }
+            }
+        }
+
+        // Prefetch semua filter options secara parallel saat page load
+            const cols = Object.keys(filterState);
+            if (!cols.length) return;
+
+            const prefetchPromises = cols.map(col => ensureFullFilterOptions(col, true));
+            try {
+                await Promise.allSettled(prefetchPromises);
+            } catch (e) {
+                console.warn('Prefetch filter options partially failed:', e);
             }
         }
 
@@ -933,11 +1001,11 @@
                 });
             }
 
-            let matchingCount = 0; 
-            
+            let matchingCount = 0;
+
             document.querySelectorAll('.preview-row').forEach(row => {
                 let pass = true;
-                
+
                 for (let i = 0; i < filterReqs.length; i++) {
                     let req = filterReqs[i];
                     if (req.allowed.length === 0) { pass = false; break; }
@@ -948,7 +1016,7 @@
                         if (!req.allowed.includes(cellVal)) { pass = false; break; }
                     }
                 }
-                
+
                 if (pass) {
                     // 🔥 PERBAIKAN: Menampilkan 100 baris pertama untuk crosscheck visual
                     if (matchingCount < 100) {
@@ -970,7 +1038,7 @@
                     emptyRow.classList.add('d-none');
                 }
             }
-            
+
             updateIconsColor();
         }
 
@@ -982,7 +1050,7 @@
                     const colIndex = container.id.split('_')[2];
                     const state = filterState[colIndex];
                     const icon = document.getElementById('icon_filter_' + colIndex);
-                    
+
                     if (icon && state) {
                         if (state.selectedValues.size < state.allValues.length && state.selectedValues.size > 0) {
                             icon.classList.remove('text-muted');
@@ -1022,7 +1090,11 @@
 
             syncSelectAllCheckbox(colIndex, getFilteredValues(colIndex));
             updatePreviewTable();
-            refreshDependentFilterOptions(colIndex);
+
+            // Debounce refresh dependent filters untuk menghindari multiple requests
+            debounceRender(colIndex + '_refresh', function() {
+                refreshDependentFilterOptions(colIndex);
+            }, 300);
         });
 
         const selectAllCbs = document.querySelectorAll('.select-all-cb');
@@ -1051,7 +1123,11 @@
 
                 renderFilterList(colIndex);
                 updatePreviewTable();
-                refreshDependentFilterOptions(colIndex);
+
+                // Debounce refresh dependent filters
+                debounceRender(colIndex + '_refresh', function() {
+                    refreshDependentFilterOptions(colIndex);
+                }, 300);
             });
         });
 
@@ -1060,31 +1136,23 @@
             input.addEventListener('keyup', function () {
                 const colIndex = this.getAttribute('data-col');
                 searchTerms[colIndex] = this.value || '';
-                renderFilterList(colIndex);
+
+                // Debounce render untuk smooth search experience
+                debounceRender(colIndex + '_search', function() {
+                    renderFilterList(colIndex);
+                }, 150);
             });
         });
 
         document.querySelectorAll('.dropdown').forEach(function (dropdown) {
-            const filterButton = dropdown.querySelector('.filter-btn');
-            if (filterButton) {
-                filterButton.addEventListener('click', function () {
-                    const container = dropdown.querySelector('[id^="list_container_"]');
-                    if (!container) {
-                        return;
-                    }
-
-                    ensureFullFilterOptions(container.getAttribute('data-col'));
-                });
-            }
-
-            dropdown.addEventListener('shown.bs.dropdown', async function () {
+            dropdown.addEventListener('shown.bs.dropdown', function () {
                 const container = dropdown.querySelector('[id^="list_container_"]');
                 if (!container) {
                     return;
                 }
 
                 const col = container.getAttribute('data-col');
-                await ensureFullFilterOptions(col);
+                ensureFullFilterOptions(col);
             });
         });
 

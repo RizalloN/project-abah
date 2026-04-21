@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Log;
 class EnsureQueueWorkerRunning extends Command
 {
     protected $signature = 'queue:ensure-running
-                          {--queues=default,imports-high : Queues to monitor}
+                          {--queues=imports-daily-loan,default,imports-high : Queues to monitor}
                           {--timeout=120 : Queue worker timeout in seconds}
                           {--memory=256 : Queue worker memory limit in MB}
                           {--max-jobs=0 : Maximum jobs before restart (0 = unlimited)}
@@ -76,14 +76,22 @@ class EnsureQueueWorkerRunning extends Command
 
     private function isQueueWorkerRunning(): bool
     {
-        // Check for any queue:work process in the process list
-        $output = shell_exec('tasklist /FI "IMAGENAME eq php.exe" 2>/dev/null') ?? '';
-
-        // Check if any PHP process related to queue is running
-        // More reliable: check if jobs are being processed (reserved_at timestamp)
+        // If a job is reserved, a worker is actively processing it.
         $reservedCount = DB::table('jobs')->whereNotNull('reserved_at')->count();
+        if ($reservedCount > 0) {
+            return true;
+        }
 
-        return $reservedCount > 0 || str_contains($output, 'php.exe');
+        // On Windows, only count php.exe processes that actually run queue workers/listeners.
+        $output = shell_exec('wmic process where "name=\'php.exe\'" get CommandLine /value 2>NUL') ?? '';
+        if ($output !== '') {
+            $normalized = strtolower($output);
+            if (str_contains($normalized, 'queue:work') || str_contains($normalized, 'queue:listen')) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function startQueueWorker(string $queues, string $timeout, string $memory, int $maxJobs): void

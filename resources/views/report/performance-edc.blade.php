@@ -282,9 +282,9 @@
     .table-report tbody tr:nth-child(even) td {
         background: #fafcff;
     }
-    .table-report tbody tr:hover td {
+    /* .table-report tbody tr:hover td {
         background: #eef5ff !important;
-    }
+    } */
     .table-report td.text-left {
         text-align: left;
     }
@@ -317,7 +317,7 @@
     .bg-good { background-color: #d4edda !important; color: #155724 !important; font-weight: bold;}
     .bg-bad { background-color: #f8d7da !important; color: #721c24 !important; font-weight: bold;}
 
-    .table-hover tbody tr:hover { background-color: transparent; }
+    /* .table-hover tbody tr:hover { background-color: transparent; } */
     .row-total {
         --row-total-bg: #003366;
         --row-total-color: #ffffff;
@@ -468,7 +468,7 @@
             
             <div class="tab-pane fade show active" id="tab-edc" role="tabpanel">
                 <div class="table-container">
-                    <table class="table table-hover table-report m-0">
+                    <table class="table table-report m-0">
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
                                 <th rowspan="2" class="bg-mid-dark align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER">BRANCH OFFICE</th>
@@ -491,7 +491,7 @@
 
             <div class="tab-pane fade" id="tab-mid" role="tabpanel">
                 <div class="table-container">
-                    <table class="table table-hover table-report m-0">
+                    <table class="table table-report m-0">
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
                                 <th rowspan="2" class="bg-tab2-dark align-middle col-group-label" data-default-label="REGIONAL / BRANCH OFFICE" data-filtered-label="UKER">REGIONAL / BRANCH OFFICE</th>
@@ -514,7 +514,7 @@
 
             <div class="tab-pane fade" id="tab-merchant-prod" role="tabpanel">
                 <div class="table-container">
-                    <table class="table table-hover table-report m-0">
+                    <table class="table table-report m-0">
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
                                 <th rowspan="2" class="bg-mid-dark align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER">BRANCH OFFICE</th>
@@ -541,7 +541,7 @@
 
             <div class="tab-pane fade" id="tab-sv-merchant" role="tabpanel">
                 <div class="table-container">
-                    <table class="table table-hover table-report m-0">
+                    <table class="table table-report m-0">
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
                                 <th rowspan="2" class="bg-mid-dark align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER">BRANCH OFFICE</th>
@@ -566,7 +566,7 @@
 
             <div class="tab-pane fade" id="tab-prod-mom" role="tabpanel">
                 <div class="table-container">
-                    <table class="table table-hover table-report m-0">
+                    <table class="table table-report m-0">
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
                                 <th rowspan="2" class="bg-mom-sv0 align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER">Branch Office</th>

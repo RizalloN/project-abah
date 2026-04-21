@@ -12,6 +12,7 @@ use App\Http\Controllers\Import\ImportCasaBrilinkController;
 use App\Http\Controllers\Import\ImportCognosPhController;
 use App\Http\Controllers\Import\ImportCognosRecoveryController;
 use App\Http\Controllers\Import\ImportCleanupController;
+use App\Http\Controllers\Import\ImportDailyLoanBackendController;
 use App\Http\Controllers\Import\ImportFileBrimoController;
 use App\Http\Controllers\Import\ImportFileController;
 use App\Http\Controllers\Import\Gi405RecDhImportExcelController;
@@ -184,6 +185,8 @@ Route::middleware(['auth', 'role:admin', 'release.session.lock'])->group(functio
 
     Route::get('/import/jobs/{jobId}/status', ImportJobStatusController::class)->name('import.jobs.status');
     Route::post('/import/upload', [ImportFileController::class, 'upload'])->name('import.upload');
+    Route::post('/import/backend/daily-loan/local-file', [ImportDailyLoanBackendController::class, 'importLocalCsv'])
+        ->name('import.backend.daily-loan.local-file');
 
     Route::get('/import/select', function () {
         $files = session('import_files', []);

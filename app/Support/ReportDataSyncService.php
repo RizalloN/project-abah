@@ -95,6 +95,8 @@ class ReportDataSyncService
             return;
         }
 
+        $periodHint = $this->normalizeAuditPeriodHint($periodHint);
+
         if ($deleteId) {
             $this->heartbeat($deleteId, 'Starting report synchronization...');
         }
@@ -317,6 +319,8 @@ class ReportDataSyncService
         if ($normalizedTable === '') {
             return;
         }
+
+        $periodHint = $this->normalizeAuditPeriodHint($periodHint);
 
         $source = $source ?? static::class . '::syncAfterDelete';
 
@@ -734,6 +738,11 @@ class ReportDataSyncService
         $value = trim((string) $periodHint);
         if ($value === '') {
             return null;
+        }
+
+        $strictNormalized = StrictDateParser::normalize($value);
+        if ($strictNormalized !== null) {
+            return $strictNormalized;
         }
 
         if (preg_match('/^\d{4}-\d{2}$/', $value) === 1) {

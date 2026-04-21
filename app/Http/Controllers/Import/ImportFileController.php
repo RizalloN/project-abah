@@ -66,6 +66,36 @@ class ImportFileController extends Controller
         return (bool) config('import.use_db_staging_fast_path', false);
     }
 
+    private function shouldSkipRawLoadDataFastPath(string $tableName, string $filePath, string $delimiter): bool
+    {
+        if ($tableName === 'jumlah_merchant_qris_detail') {
+            return true;
+        }
+
+        $handle = @fopen($filePath, 'r');
+        if ($handle === false) {
+            return false;
+        }
+
+        try {
+            $sampled = 0;
+            while (($line = fgets($handle)) !== false && $sampled < 250) {
+                $sampled++;
+                if (!is_string($line) || strpos($line, '"') === false) {
+                    continue;
+                }
+
+                // Raw LOAD DATA on vendor-exported files with free quotes inside unquoted fields
+                // can shift columns. These files are safer through PHP parse -> temp CSV.
+                return true;
+            }
+        } finally {
+            fclose($handle);
+        }
+
+        return false;
+    }
+
     private function cachedSchemaHasTable(string $tableName): bool
     {
         return $this->schemaService()->hasTable($tableName);
@@ -108,7 +138,7 @@ class ImportFileController extends Controller
 
     private function previewFilterCacheKey(string $filePath, string $delimiter, int $columnIndex, string $tableName, string $contextSignature = ''): string
     {
-        return 'preview_filter_options:' . md5($filePath . '|' . $delimiter . '|' . $columnIndex . '|' . $tableName . '|' . $contextSignature);
+        return 'preview_filter_options:v2:' . md5($filePath . '|' . $delimiter . '|' . $columnIndex . '|' . $tableName . '|' . $contextSignature);
     }
 
     private const BRILINK_SUMMARY_HEADERS = [
@@ -2639,6 +2669,24 @@ class ImportFileController extends Controller
             $resolvedDelimiter = $this->resolveDelimiter($handle, $currentDelimiter);
             rewind($handle);
 
+            if ($tableName === 'jumlah_merchant_qris_detail' && !$isDailyLoan && !$isBrilinkSummary) {
+                $values = $this->collectFilterOptionsFromCsvFast(
+                    $handle,
+                    $resolvedDelimiter,
+                    $sourceColumnIndex,
+                    $normalizedActiveFilters,
+                    $isBrilinkSummary
+                );
+
+                Cache::put($cacheKey, $values, now()->addHours(4));
+
+                return response()->json([
+                    'status' => 'success',
+                    'values' => $values,
+                    'cached' => false,
+                ]);
+            }
+
             $rowCounter = 0;
             while (($data = $this->readCsvRecord($handle, $resolvedDelimiter)) !== false) {
                 if (empty($data) || implode('', $data) === '') {
@@ -3708,7 +3756,8 @@ class ImportFileController extends Controller
                 };
 
                 $stagingHandled = false;
-                if ($this->shouldUseDbStagingFastPath()) {
+                $skipRawLoadDataFastPath = $this->shouldSkipRawLoadDataFastPath($tableName, $filePath, $resolvedDelimiter);
+                if ($this->shouldUseDbStagingFastPath() && !$skipRawLoadDataFastPath) {
                     $stagingHandled = $this->processImportStreamViaStagingTable(
                         $send,
                         $filePath,
@@ -3731,6 +3780,14 @@ class ImportFileController extends Controller
                         $columnBlueprint,
                         $batchSize
                     );
+                }
+
+                if ($skipRawLoadDataFastPath) {
+                    Log::info('Skipping raw LOAD DATA staging fast path for safer CSV parsing.', [
+                        'table' => $tableName,
+                        'file' => basename($filePath),
+                        'delimiter' => $resolvedDelimiter,
+                    ]);
                 }
 
                 if ($stagingHandled) {

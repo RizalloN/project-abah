@@ -39,6 +39,21 @@ DATE_COLUMNS = {
 }
 
 
+def normalize_integer_string(value: object) -> str:
+    text = normalize_cell(value)
+    if text == "":
+        return ""
+
+    decimal_text = normalize_decimal_value(text)
+    if decimal_text is None:
+        return ""
+
+    try:
+        return str(int(round(float(decimal_text))))
+    except Exception:
+        return ""
+
+
 def send_event(event_type: str, data: dict) -> None:
     payload = dict(data)
     payload["type"] = event_type
@@ -407,6 +422,9 @@ def stage_daily_loan(config: dict) -> None:
     delimiter = config.get("delimiter") or detect_delimiter(source_path, ",")
     required_headers = [str(value) for value in config.get("required_headers", ["PERIODE", "NOMOR_REKENING1", "BAKI_DEBET1"])]
     strict_non_date_headers = [str(value).upper() for value in config.get("strict_non_date_headers", ["KODE_KANWIL1"])]
+    date_columns_lookup = {str(value).upper() for value in config.get("date_columns", list(DATE_COLUMNS))}
+    decimal_columns_lookup = {str(value).upper() for value in config.get("decimal_columns", [])}
+    integer_columns_lookup = {str(value).upper() for value in config.get("integer_columns", [])}
 
     send_progress(5, "Membaca dan menyiapkan CSV Daily Loan dengan Polars...", 0, 0, 0)
     temp_sanitized_path, headers, total_records, structural_skipped, rewrite_needed, skipped_rows = sanitize_source(source_path, delimiter)
@@ -424,12 +442,27 @@ def stage_daily_loan(config: dict) -> None:
             for column in df.columns
         ])
 
-        date_columns = [column for column in df.columns if column.upper() in DATE_COLUMNS]
-        if date_columns:
-            df = df.with_columns([
-                pl.col(column).map_elements(normalize_date_string, return_dtype=pl.Utf8).alias(column)
-                for column in date_columns
-            ])
+        normalization_exprs = []
+        for column in df.columns:
+            upper_column = column.upper()
+            if upper_column in date_columns_lookup:
+                normalization_exprs.append(
+                    pl.col(column).map_elements(normalize_date_string, return_dtype=pl.Utf8).alias(column)
+                )
+            elif upper_column in decimal_columns_lookup:
+                normalization_exprs.append(
+                    pl.col(column).map_elements(
+                        lambda value: normalize_decimal_value(value) or "",
+                        return_dtype=pl.Utf8,
+                    ).alias(column)
+                )
+            elif upper_column in integer_columns_lookup:
+                normalization_exprs.append(
+                    pl.col(column).map_elements(normalize_integer_string, return_dtype=pl.Utf8).alias(column)
+                )
+
+        if normalization_exprs:
+            df = df.with_columns(normalization_exprs)
 
         valid_expr = None
         for required in required_headers:
@@ -437,11 +470,11 @@ def stage_daily_loan(config: dict) -> None:
                 continue
 
             if required == "PERIODE":
-                expr = df[required].map_elements(normalize_date_value, return_dtype=pl.Utf8).is_not_null()
+                expr = pl.col(required).str.strip_chars().ne("")
             elif required == "BAKI_DEBET1":
-                expr = df[required].map_elements(normalize_decimal_value, return_dtype=pl.Utf8).is_not_null()
+                expr = pl.col(required).str.strip_chars().ne("")
             else:
-                expr = df[required].str.strip_chars().ne("")
+                expr = pl.col(required).str.strip_chars().ne("")
 
             valid_expr = expr if valid_expr is None else (valid_expr & expr)
 
