@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * Service untuk semua tab laporan EDC (edc, merchant_prod, sv_merchant_accum, mid_tid, prod_mom).
- * Diekstrak dari DataReportController::fetchData() agar dapat diuji dan dimaintain secara terpisah.
+ * Dipisahkan dari controller lama agar query laporan mudah diuji dan dimaintain.
  */
 class EdcReportService
 {

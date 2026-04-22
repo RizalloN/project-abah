@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * Service untuk tab laporan QRIS (qris, qris_mom).
- * Diekstrak dari DataReportController::fetchData() agar lebih mudah di-maintain dan diuji.
+ * Dipisahkan dari controller lama agar query laporan mudah di-maintain dan diuji.
  */
 class QrisReportService
 {

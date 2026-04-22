@@ -4,7 +4,6 @@ namespace App\Console\Commands;
 
 use App\Support\SnapshotBatchAggregator;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 class ManageSnapshotBatches extends Command
@@ -128,12 +127,7 @@ class ManageSnapshotBatches extends Command
             return 0;
         }
 
-        $batches = $this->aggregator->getActiveBatches();
-        $count = count($batches);
-
-        foreach (array_keys($batches) as $key) {
-            Cache::forget($key);
-        }
+        $count = $this->aggregator->resetActiveBatches();
 
         $this->info("✓ Reset {$count} batch(es)");
 

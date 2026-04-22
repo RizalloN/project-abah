@@ -14,7 +14,7 @@ use Illuminate\Support\Facades\DB;
  * menggantikan pola N+1 yang ada di PerformanceBrimoController lama
  * (yang memicu 8 query per baris display).
  *
- * Implementasi ini diekstrak dari tab 'brimo' di DataReportController yang sudah diperbaiki.
+ * Implementasi ini dipisahkan dari controller lama setelah perbaikan query.
  */
 class BrimoReportService
 {

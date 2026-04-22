@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * Service untuk tab laporan Brilink.
- * Diekstrak dari DataReportController::fetchData() (tab 'brilink') beserta semua helper privatnya.
+ * Menangani query dan helper data untuk tab laporan Brilink.
  */
 class BrilinkReportService
 {
@@ -255,7 +255,7 @@ class BrilinkReportService
     }
 
     // -------------------------------------------------------------------------
-    // Helper Methods (dulu private di DataReportController)
+    // Helper Methods
     // -------------------------------------------------------------------------
 
     public function buildBranchAliasMap(array $branches): array
