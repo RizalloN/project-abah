@@ -37,17 +37,13 @@ return new class extends Migration
 
         $this->dropIndexIfExists('dashboard_harian_snapshots', 'idx_dhs_period_scope');
 
-        if (!$this->indexExists('dashboard_harian_snapshots', 'idx_dhs_period_kanca_unit')) {
-            Schema::table('dashboard_harian_snapshots', function (Blueprint $table) {
-                $table->index(['snapshot_period', 'kanca_key', 'unit_key'], 'idx_dhs_period_kanca_unit');
-            });
-        }
-
         if (!$this->indexExists('dashboard_harian_snapshots', 'uq_dhs_period_kanca_unit')) {
             Schema::table('dashboard_harian_snapshots', function (Blueprint $table) {
                 $table->unique(['snapshot_period', 'kanca_key', 'unit_key'], 'uq_dhs_period_kanca_unit');
             });
         }
+
+        $this->dropIndexIfExists('dashboard_harian_snapshots', 'idx_dhs_period_kanca_unit');
 
         DB::table('dashboard_harian_snapshots')->delete();
     }
@@ -58,8 +54,8 @@ return new class extends Migration
             return;
         }
 
-        $this->dropIndexIfExists('dashboard_harian_snapshots', 'uq_dhs_period_kanca_unit');
         $this->dropIndexIfExists('dashboard_harian_snapshots', 'idx_dhs_period_kanca_unit');
+        $this->dropIndexIfExists('dashboard_harian_snapshots', 'uq_dhs_period_kanca_unit');
 
         if (!$this->indexExists('dashboard_harian_snapshots', 'idx_dhs_period_scope')
             && Schema::hasColumn('dashboard_harian_snapshots', 'scope')) {

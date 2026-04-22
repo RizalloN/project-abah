@@ -4,7 +4,10 @@ namespace App\Support;
 
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Contracts\Cache\LockTimeoutException;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Throwable;
@@ -91,6 +94,13 @@ class DashboardHarianSnapshotService
         'kur_kpp_npl',
         'total_sml_pct_non_commercial',
         'total_npl_pct_non_commercial',
+    ];
+    private const SOURCE_METADATA_COLUMNS = [
+        'source_signature',
+        'source_loan_row_count',
+        'source_savings_row_count',
+        'source_recovery_row_count',
+        'source_recovery_period',
     ];
     private const ROW_DEFINITIONS = [
         ['key' => 'total_simpanan', 'label' => '1. Simpanan', 'type' => 'currency', 'depth' => 0, 'accent' => 'strong'],
@@ -319,9 +329,33 @@ class DashboardHarianSnapshotService
             return 0;
         }
 
+        $lockName = 'snapshot:dashboard_harian:build:' . $period;
+
+        try {
+            return Cache::lock($lockName, 600)->block(15, function () use ($period, $force): int {
+                return $this->buildPeriodSnapshotUnlocked($period, $force);
+            });
+        } catch (LockTimeoutException) {
+            return (int) DB::table(self::SNAPSHOT_TABLE)->where('snapshot_period', $period)->count();
+        } catch (Throwable $e) {
+            Log::warning('Dashboard Harian snapshot build lock unavailable, continuing without lock.', [
+                'period' => $period,
+                'force' => $force,
+                'exception' => $e::class,
+                'error' => $e->getMessage(),
+            ]);
+
+            return $this->buildPeriodSnapshotUnlocked($period, $force);
+        }
+    }
+
+    private function buildPeriodSnapshotUnlocked(string $period, bool $force = false): int
+    {
+        $sourceMetadata = $this->buildSourceMetadata($period);
+
         if (!$force) {
             $existingCount = (int) DB::table(self::SNAPSHOT_TABLE)->where('snapshot_period', $period)->count();
-            if ($existingCount > 0) {
+            if ($existingCount > 0 && $this->snapshotSourceIsFresh($period, $sourceMetadata)) {
                 return $existingCount;
             }
         }
@@ -332,7 +366,7 @@ class DashboardHarianSnapshotService
             return 0;
         }
 
-        [$payload] = $this->buildAggregatedRowsForPeriod($period);
+        [$payload] = $this->buildAggregatedRowsForPeriod($period, null, null, $sourceMetadata);
 
         $payload = $this->deduplicateSnapshotPayload($payload);
 
@@ -346,7 +380,13 @@ class DashboardHarianSnapshotService
             DB::table(self::SNAPSHOT_TABLE)->upsert(
                 $chunk,
                 ['snapshot_period', 'kanca_key', 'unit_key'],
-                array_merge(['kanca_label', 'unit_label'], self::METRIC_COLUMNS, ['source_row_count', 'updated_at'])
+                array_merge(
+                    ['kanca_label', 'unit_label'],
+                    self::METRIC_COLUMNS,
+                    ['source_row_count'],
+                    $this->availableSourceMetadataColumns(),
+                    ['updated_at']
+                )
             );
         }
 
@@ -724,13 +764,16 @@ class DashboardHarianSnapshotService
         return $this->finalizeMetrics($metrics);
     }
 
-    private function buildAggregatedRowsForPeriod(string $period, array|string|null $kancaKey = null, array|string|null $unitKey = null): array
+    private function buildAggregatedRowsForPeriod(
+        string $period,
+        array|string|null $kancaKey = null,
+        array|string|null $unitKey = null,
+        ?array $sourceMetadata = null
+    ): array
     {
         $buckets = [];
         $sourceRowCount = 0;
 
-        $savingsCount = 0;
-        $savingsRitelTotal = 0;
         foreach ($this->fetchSavingsAggregates($period, $kancaKey, $unitKey) as $row) {
             $kancaLabel = $this->normalizeKancaLabel($row->raw_kantor_cabang ?? $row->raw_unit_kerja ?? null);
             if ($kancaLabel === '') {
@@ -740,10 +783,6 @@ class DashboardHarianSnapshotService
             $unitLabel = $this->normalizeUnitLabel($row->raw_unit_kerja ?? null, $kancaLabel);
             $bucketKey = $this->makeBucketKey($kancaLabel, $unitLabel);
             $this->initializeBucket($buckets, $bucketKey, $kancaLabel, $unitLabel);
-
-            $ritelInThisRow = ($row->giro_ritel ?? 0) + ($row->deposito_ritel ?? 0) + ($row->tabungan_ritel ?? 0);
-            $savingsRitelTotal += $ritelInThisRow;
-            $savingsCount++;
 
             foreach ([
                 'giro_ritel',
@@ -761,26 +800,6 @@ class DashboardHarianSnapshotService
             }
 
             $sourceRowCount++;
-        }
-
-        if ($period === '2026-04-18' && !$kancaKey) {
-            // Debug: breakdown ritel by kanca in buckets
-            $ritelByKanca = [];
-            foreach ($buckets as $bucketKey => $row) {
-                $kanca = $row['kanca_key'] ?? 'unknown';
-                $ritel = ($row['giro_ritel'] ?? 0) + ($row['deposito_ritel'] ?? 0) + ($row['tabungan_ritel'] ?? 0);
-                if (!isset($ritelByKanca[$kanca])) {
-                    $ritelByKanca[$kanca] = 0;
-                }
-                $ritelByKanca[$kanca] += $ritel;
-            }
-
-            \Log::info("Savings aggregation debug", [
-                'savingsCount' => $savingsCount,
-                'savingsRitelTotal' => $savingsRitelTotal,
-                'bucketsCount' => count($buckets),
-                'ritelByKanca' => array_map(fn($v) => number_format($v, 0), $ritelByKanca),
-            ]);
         }
 
         foreach ($this->fetchLoanAggregates($period, $kancaKey, $unitKey) as $row) {
@@ -821,7 +840,6 @@ class DashboardHarianSnapshotService
 
         $payload = [];
         $detailByKanca = [];
-        $payloadRitelTotal = 0;
 
         // First pass: collect all rows and group them by kanca
         foreach ($buckets as $row) {
@@ -834,29 +852,15 @@ class DashboardHarianSnapshotService
             $detailByKanca[$row['kanca_key']][] = $row;
         }
 
-        if ($period === '2026-04-18' && !$kancaKey) {
-            \Log::info("First pass result", [
-                'payloadCount' => count($payload),
-                'payloadRitelTotal' => $payloadRitelTotal,
-                'detailByKancaCount' => count($detailByKanca),
-            ]);
-        }
-
         // Second pass: build final payload with only DETAIL rows (skip rows that would be summary rows)
         // Summary rows will be created explicitly in the third pass to ensure proper aggregation
         $finalPayload = [];
-        $summaryRowsAdded = [];
-        $detailRowsAdded = 0;
-        $detailRitelTotal = 0;
 
         foreach ($payload as $row) {
             // Skip any rows where kanca_key === unit_key; those will be created in third pass
             if (($row['kanca_key'] ?? '') === ($row['unit_key'] ?? '')) {
                 continue;
             }
-
-            $detailRowsAdded++;
-            $detailRitelTotal += ($row['giro_ritel'] ?? 0) + ($row['deposito_ritel'] ?? 0) + ($row['tabungan_ritel'] ?? 0);
 
             $metrics = $this->finalizeMetrics($row);
             $finalPayload[] = array_merge(
@@ -873,16 +877,9 @@ class DashboardHarianSnapshotService
                     'source_row_count' => $sourceRowCount,
                     'created_at' => now(),
                     'updated_at' => now(),
-                ]
+                ],
+                $this->filterSourceMetadataForPayload($sourceMetadata)
             );
-        }
-
-        if ($period === '2026-04-18' && !$kancaKey) {
-            \Log::info("Second pass result", [
-                'detailRowsAdded' => $detailRowsAdded,
-                'detailRitelTotal' => $detailRitelTotal,
-                'finalPayloadCount' => count($finalPayload),
-            ]);
         }
 
         // Third pass: create summary rows by aggregating all detail rows
@@ -915,7 +912,8 @@ class DashboardHarianSnapshotService
                     'source_row_count' => $sourceRowCount,
                     'created_at' => now(),
                     'updated_at' => now(),
-                ]
+                ],
+                $this->filterSourceMetadataForPayload($sourceMetadata)
             );
         }
 
@@ -1061,23 +1059,6 @@ class DashboardHarianSnapshotService
             if (!empty($kancaConditions)) {
                 $query->where(function ($q) use ($kancaConditions) {
                     foreach ($kancaConditions as $condition) {
-                        $q->orWhereRaw($condition);
-                    }
-                });
-            }
-        }
-
-        $normalizedUnit = $this->normalizeFilterValues($unitKey);
-        if ($normalizedUnit !== []) {
-            // Build WHERE clauses that match raw db values against normalized filter values
-            $unitConditions = collect($normalizedUnit)
-                ->map(fn (string $value) => $this->buildFilterCondition('sp.nama_uker', $value))
-                ->filter()
-                ->all();
-            
-            if (!empty($unitConditions)) {
-                $query->where(function ($q) use ($unitConditions) {
-                    foreach ($unitConditions as $condition) {
                         $q->orWhereRaw($condition);
                     }
                 });
@@ -1887,6 +1868,177 @@ class DashboardHarianSnapshotService
         return DB::table($table)
             ->whereIn($this->sourcePeriodColumn($table), $this->sourcePeriodRawCandidates($table, $period))
             ->exists();
+    }
+
+    private function buildSourceMetadata(string $period): ?array
+    {
+        if (!$this->sourceMetadataColumnsAvailable()) {
+            return null;
+        }
+
+        try {
+            $loanState = $this->sourceAggregateState(
+                self::LOAN_TABLE,
+                $this->sourcePeriodColumn(self::LOAN_TABLE),
+                $this->sourcePeriodRawCandidates(self::LOAN_TABLE, $period),
+                ['baki_debet']
+            );
+
+            $savingsState = $this->sourceAggregateState(
+                self::SAVINGS_TABLE,
+                $this->sourcePeriodColumn(self::SAVINGS_TABLE),
+                $this->sourcePeriodRawCandidates(self::SAVINGS_TABLE, $period),
+                ['saldo']
+            );
+
+            [$recoverySource, $recoveryPeriod, $recoveryState] = $this->sourceRecoveryState($period);
+
+            $signaturePayload = [
+                'period' => $this->normalizeDate($period) ?? $period,
+                'loan' => $loanState,
+                'savings' => $savingsState,
+                'recovery_source' => $recoverySource,
+                'recovery_period' => $recoveryPeriod,
+                'recovery' => $recoveryState,
+            ];
+
+            return [
+                'source_signature' => hash('sha256', json_encode($signaturePayload, JSON_UNESCAPED_UNICODE)),
+                'source_loan_row_count' => (int) ($loanState['row_count'] ?? 0),
+                'source_savings_row_count' => (int) ($savingsState['row_count'] ?? 0),
+                'source_recovery_row_count' => (int) ($recoveryState['row_count'] ?? 0),
+                'source_recovery_period' => $recoveryPeriod,
+            ];
+        } catch (Throwable $e) {
+            Log::warning('Failed to build Dashboard Harian source metadata.', [
+                'period' => $period,
+                'exception' => $e::class,
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+    }
+
+    private function sourceAggregateState(string $table, string $periodColumn, array $periodValues, array $numericColumns = []): array
+    {
+        if (!Schema::hasTable($table)) {
+            return ['row_count' => 0];
+        }
+
+        $query = DB::table($table)
+            ->whereIn($periodColumn, $periodValues)
+            ->selectRaw('COUNT(*) as row_count');
+
+        foreach ($numericColumns as $column) {
+            if (Schema::hasColumn($table, $column)) {
+                $alias = 'sum_' . $column;
+                $query->selectRaw("COALESCE(SUM(COALESCE({$column}, 0)), 0) as {$alias}");
+            }
+        }
+
+        foreach (['updated_at', 'created_at', 'id', 'uniqueid_namareport'] as $column) {
+            if (Schema::hasColumn($table, $column)) {
+                $query->selectRaw("MAX({$column}) as max_{$column}");
+            }
+        }
+
+        $row = (array) $query->first();
+        ksort($row);
+
+        return $row;
+    }
+
+    private function sourceRecoveryState(string $period): array
+    {
+        $normalizedPeriod = $this->normalizeDate($period);
+
+        if ($normalizedPeriod && Schema::hasTable('cognos_recovery')) {
+            $exists = DB::table('cognos_recovery')->where('periode', $normalizedPeriod)->exists();
+            if ($exists) {
+                return [
+                    'cognos_recovery',
+                    $normalizedPeriod,
+                    $this->sourceAggregateState('cognos_recovery', 'periode', [$normalizedPeriod], ['total_recovery']),
+                ];
+            }
+        }
+
+        if (!$normalizedPeriod || !Schema::hasTable('lw325_ph')) {
+            return ['none', null, ['row_count' => 0]];
+        }
+
+        $currentPhPeriod = DB::table('lw325_ph')
+            ->where('periode', '<=', $normalizedPeriod)
+            ->orderBy('periode', 'desc')
+            ->value('periode');
+
+        if (!$currentPhPeriod) {
+            return ['lw325_ph', null, ['row_count' => 0]];
+        }
+
+        $previousPhPeriod = $this->resolvePreviousPhPeriod((string) $currentPhPeriod);
+        $periods = array_values(array_filter([(string) $currentPhPeriod, $previousPhPeriod]));
+
+        return [
+            'lw325_ph',
+            (string) $currentPhPeriod,
+            $this->sourceAggregateState('lw325_ph', 'periode', $periods, ['pokok']),
+        ];
+    }
+
+    private function snapshotSourceIsFresh(string $period, ?array $sourceMetadata): bool
+    {
+        if ($sourceMetadata === null || !$this->sourceMetadataColumnsAvailable()) {
+            return true;
+        }
+
+        $signatures = DB::table(self::SNAPSHOT_TABLE)
+            ->where('snapshot_period', $period)
+            ->select('source_signature')
+            ->distinct()
+            ->pluck('source_signature')
+            ->filter(fn ($value) => trim((string) $value) !== '')
+            ->values()
+            ->all();
+
+        if ($signatures === []) {
+            return true;
+        }
+
+        return count($signatures) === 1
+            && (string) $signatures[0] === (string) ($sourceMetadata['source_signature'] ?? '');
+    }
+
+    private function filterSourceMetadataForPayload(?array $sourceMetadata): array
+    {
+        if ($sourceMetadata === null) {
+            return [];
+        }
+
+        $availableColumns = $this->availableSourceMetadataColumns();
+        if ($availableColumns === []) {
+            return [];
+        }
+
+        return array_intersect_key($sourceMetadata, array_flip($availableColumns));
+    }
+
+    private function availableSourceMetadataColumns(): array
+    {
+        if (!Schema::hasTable(self::SNAPSHOT_TABLE)) {
+            return [];
+        }
+
+        return array_values(array_filter(
+            self::SOURCE_METADATA_COLUMNS,
+            fn (string $column) => Schema::hasColumn(self::SNAPSHOT_TABLE, $column)
+        ));
+    }
+
+    private function sourceMetadataColumnsAvailable(): bool
+    {
+        return count($this->availableSourceMetadataColumns()) === count(self::SOURCE_METADATA_COLUMNS);
     }
 
     private function resolvePreviousPhPeriod(string $period): ?string

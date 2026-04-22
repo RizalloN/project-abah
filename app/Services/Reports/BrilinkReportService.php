@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * Service untuk tab laporan Brilink.
- * Diekstrak dari DataReportController::fetchData() (tab 'brilink') beserta semua helper privatnya.
+ * Menangani query dan helper data untuk tab laporan Brilink.
  */
 class BrilinkReportService
 {
@@ -47,6 +47,17 @@ class BrilinkReportService
         $isBranchFiltered = !empty($selectedBranches);
         $groupLabel       = $isBranchFiltered ? 'UKER' : 'BRANCH OFFICE';
 
+        // Split branches for RKA lookup: direct (Ponorogo) vs regional patterns (Madiun, Magetan, Ngawi)
+        $rkaDirectBranches = ['KC PONOROGO'];
+        $rkaRegionalPatterns = [];
+        foreach ($branches as $branch) {
+            $branchUpper = strtoupper(trim($branch));
+            if ($branchUpper === 'KC PONOROGO') {
+                continue;
+            }
+            $rkaRegionalPatterns[] = strtoupper(str_replace('KC ', '', $branchUpper));
+        }
+
         $prevMonth         = $current->copy()->subMonth()->locale('en');
         $lastYearSameMonth = $current->copy()->subYear()->locale('en');
         $lastYearEnd       = Carbon::create($current->year - 1, 12, 1)->locale('en');
@@ -68,7 +79,7 @@ class BrilinkReportService
 
         $brilinkRkaMonthColumn = $this->rkaLookup->resolveMonthColumn($current);
         $brilinkRkaMonthLabel  = $this->rkaLookup->resolveMonthLabel($current);
-        $brilinkRkaGroups      = $this->rkaLookup->aggregateByGroup(
+        $brilinkRkaGroups      = $this->buildSplitRkaGroups(
             [
                 'agen'    => ['mata_anggaran' => ['Jumlah Agen Brilink']],
                 'juragan' => ['mata_anggaran' => ['Jumlah Agen Brilink Jawara', 'Jumlah Agen Brilink Juragan']],
@@ -76,8 +87,10 @@ class BrilinkReportService
             ],
             $brilinkRkaMonthColumn,
             $branches,
+            $isBranchFiltered,
             $selectedUkers,
-            $isBranchFiltered ? 'uker' : 'kanca'
+            $rkaDirectBranches,
+            $rkaRegionalPatterns
         );
 
         // CASA period resolution
@@ -242,7 +255,7 @@ class BrilinkReportService
     }
 
     // -------------------------------------------------------------------------
-    // Helper Methods (dulu private di DataReportController)
+    // Helper Methods
     // -------------------------------------------------------------------------
 
     public function buildBranchAliasMap(array $branches): array
@@ -291,5 +304,54 @@ class BrilinkReportService
         return collect($selectedBranches)
             ->flatMap(fn ($branch) => $branchUkerMap[$branch] ?? [])
             ->filter()->unique()->values()->all();
+    }
+
+    /**
+     * Build RKA groups using split filtering: direct kanca (Ponorogo) + regional patterns (Madiun, Magetan, Ngawi)
+     */
+    private function buildSplitRkaGroups(
+        array $definitions,
+        string $monthColumn,
+        array $branches,
+        bool $isBranchFiltered,
+        array $selectedUkers,
+        array $directBranches,
+        array $regionalPatterns
+    ): array {
+        $groups = [];
+
+        // Get direct RKA (KC Ponorogo only)
+        $upperSelectedUkers = array_map('strtoupper', $selectedUkers);
+        $directGroups = $this->rkaLookup->aggregateByGroup(
+            $definitions,
+            $monthColumn,
+            $directBranches,
+            $upperSelectedUkers,
+            $isBranchFiltered ? 'uker' : 'kanca'
+        );
+
+        foreach ($definitions as $defKey => $def) {
+            $groups[$defKey] = $directGroups[$defKey] ?? [];
+        }
+
+        // Get regional RKA if there are regional patterns
+        if (!empty($regionalPatterns)) {
+            $regionalGroups = $this->rkaLookup->aggregateByGroupWithRegionalFilter(
+                $definitions,
+                $monthColumn,
+                $regionalPatterns
+            );
+
+            foreach ($definitions as $defKey => $def) {
+                if (isset($regionalGroups[$defKey])) {
+                    foreach ($regionalGroups[$defKey] as $region => $value) {
+                        $branchName = 'KC ' . $region;
+                        $groups[$defKey][$branchName] = $value;
+                    }
+                }
+            }
+        }
+
+        return $groups;
     }
 }

@@ -31,7 +31,6 @@ use App\Http\Controllers\Admin\FileManagementController;
 use App\Http\Controllers\Admin\UserManagementController;
 use App\Http\Controllers\RasioCasaDebiturController;
 use App\Http\Controllers\RekeningDormantController;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -61,6 +60,10 @@ Route::middleware(['auth', 'release.session.lock', 'throttle:240,1'])->group(fun
         ->name('report.dashboard-pinjaman.summary');
     Route::get('/report/dashboard-pinjaman/matrix-pergeseran-kolek', [DashboardPinjamanReportController::class, 'matrixIndex'])
         ->name('report.dashboard-pinjaman.matrix');
+    Route::get('/report/dashboard-pinjaman/matrix-pergeseran-kolek/detail', [DashboardPinjamanReportController::class, 'matrixDetail'])
+        ->name('report.dashboard-pinjaman.matrix.detail');
+    Route::get('/report/dashboard-pinjaman/matrix-pergeseran-kolek/export', [DashboardPinjamanReportController::class, 'matrixExport'])
+        ->name('report.dashboard-pinjaman.matrix.export');
 
     Route::get('/report/dashboard-pinjaman/kolek-tidak-sesuai', [DashboardPinjamanReportController::class, 'mismatchIndex'])
         ->name('report.dashboard-pinjaman.kolek-tidak-sesuai');
@@ -112,24 +115,6 @@ Route::middleware(['auth', 'release.session.lock', 'throttle:240,1'])->group(fun
 });
 
 Route::middleware(['auth', 'role:admin', 'release.session.lock'])->group(function () {
-    Route::get('/debug-upload-limits', function (Request $request) {
-        abort_unless(app()->environment('local'), 404);
-
-        return [
-            'sapi' => PHP_SAPI,
-            'loaded_ini' => php_ini_loaded_file(),
-            'scanned_ini' => php_ini_scanned_files(),
-            'user_ini_filename' => ini_get('user_ini.filename'),
-            'user_ini_cache_ttl' => ini_get('user_ini.cache_ttl'),
-            'post_max_size' => ini_get('post_max_size'),
-            'upload_max_filesize' => ini_get('upload_max_filesize'),
-            'memory_limit' => ini_get('memory_limit'),
-            'max_execution_time' => ini_get('max_execution_time'),
-            'max_input_time' => ini_get('max_input_time'),
-            'content_length' => $request->server('CONTENT_LENGTH'),
-        ];
-    })->middleware('throttle:10,1');
-
     Route::get('/input-data', [InputRekananController::class, 'index'])->name('input.index');
     Route::post('/input-data', [InputRekananController::class, 'store'])->name('input.store');
     Route::post('/input-data/import-template', [InputRekananController::class, 'importTemplate'])->name('input.import-template');

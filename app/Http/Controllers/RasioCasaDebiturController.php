@@ -20,8 +20,8 @@ class RasioCasaDebiturController extends Controller
     private const SEGMENTS = ['TOTAL', 'BRIGUNA', 'KPR', 'MIKRO', 'SMC'];
     private const SNAPSHOT_TABLE = 'rasio_casa_debitur_snapshots';
     private const UKER_SNAPSHOT_TABLE = 'rasio_casa_debitur_uker_snapshots';
-    private const LOAN_CIF_BRANCH_INDEX = 'idx_dld_periode_cif_cabang';
-    private const CASA_CIF_TYPE_INDEX = 'idx_smp_posisi_cif_jenis';
+    private const LOAN_CIF_BRANCH_INDEX = 'idx_loan_periode_cif';
+    private const CASA_CIF_TYPE_INDEX = 'idx_smp_posisi_cif';
 
     /** @var array<string, string|null> */
     private array $availableLoanPeriodMemo = [];

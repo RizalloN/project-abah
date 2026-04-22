@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * Service untuk semua tab laporan EDC (edc, merchant_prod, sv_merchant_accum, mid_tid, prod_mom).
- * Diekstrak dari DataReportController::fetchData() agar dapat diuji dan dimaintain secara terpisah.
+ * Dipisahkan dari controller lama agar query laporan mudah diuji dan dimaintain.
  */
 class EdcReportService
 {
@@ -60,6 +60,17 @@ class EdcReportService
         $upperBranches     = array_map('strtoupper', $branches);
         $upperSelectedUkers = array_map('strtoupper', $selectedUkers);
 
+        // Split branches for RKA lookup: direct (Ponorogo) vs regional patterns (Madiun, Magetan, Ngawi)
+        $rkaDirectBranches = ['KC PONOROGO'];
+        $rkaRegionalPatterns = [];
+        foreach ($branches as $branch) {
+            $branchUpper = strtoupper(trim($branch));
+            if ($branchUpper === 'KC PONOROGO') {
+                continue; // Already in direct
+            }
+            $rkaRegionalPatterns[] = strtoupper(str_replace('KC ', '', $branchUpper)); // MADIUN, MAGETAN, NGAWI
+        }
+
         $posisi       = $request->input('posisi', date('Y-m-d'));
         $selectedDate = Carbon::parse($posisi);
 
@@ -86,7 +97,7 @@ class EdcReportService
             'totalBranchLabel', 'upperBranches', 'upperSelectedUkers',
             'selectedUkers', 'selectedDate', 'dateCurr', 'dateMtD',
             'dateYtD', 'dateYoY', 'datePrevMoM', 'rkaMonthColumn',
-            'rkaMonthLabel', 'labels'
+            'rkaMonthLabel', 'labels', 'rkaDirectBranches', 'rkaRegionalPatterns'
         );
     }
 
@@ -107,16 +118,14 @@ class EdcReportService
 
     private function handleEdc(array $ctx): JsonResponse
     {
-        $edcRkaGroups = $this->rkaLookup->aggregateByGroup(
+        // Build RKA groups using split filtering (direct + regional)
+        $edcRkaGroups = $this->buildSplitRkaGroups(
             [
                 'prod' => ['mata_anggaran' => ['Jumlah Merchant (EDC) yang Produktif']],
                 'sv'   => ['mata_anggaran' => ['Sales Volume Merchant (EDC)']],
                 'tid'  => ['mata_anggaran' => ['Populasi Merchant (TID)']],
             ],
-            $ctx['rkaMonthColumn'],
-            $ctx['upperBranches'],
-            $ctx['upperSelectedUkers'],
-            $ctx['isBranchFiltered'] ? 'uker' : 'kanca'
+            $ctx
         );
 
         $q = DB::table('jumlah_merchant_detail')
@@ -211,12 +220,9 @@ class EdcReportService
 
     private function handleMerchantProd(array $ctx): JsonResponse
     {
-        $merchantRkaGroups = $this->rkaLookup->aggregateByGroup(
+        $merchantRkaGroups = $this->buildSplitRkaGroups(
             ['prod' => ['mata_anggaran' => ['Jumlah Merchant (EDC) yang Produktif']]],
-            $ctx['rkaMonthColumn'],
-            $ctx['upperBranches'],
-            $ctx['upperSelectedUkers'],
-            $ctx['isBranchFiltered'] ? 'uker' : 'kanca'
+            $ctx
         );
 
         $query = DB::table('jumlah_merchant_detail')
@@ -291,12 +297,9 @@ class EdcReportService
 
     private function handleSvMerchantAccum(array $ctx): JsonResponse
     {
-        $svRkaGroups = $this->rkaLookup->aggregateByGroup(
+        $svRkaGroups = $this->buildSplitRkaGroups(
             ['sv' => ['mata_anggaran' => ['Sales Volume Merchant (EDC)']]],
-            $ctx['rkaMonthColumn'],
-            $ctx['upperBranches'],
-            $ctx['upperSelectedUkers'],
-            $ctx['isBranchFiltered'] ? 'uker' : 'kanca'
+            $ctx
         );
 
         $query = DB::table('jumlah_merchant_detail')
@@ -363,12 +366,9 @@ class EdcReportService
 
     private function handleMidTid(array $ctx): JsonResponse
     {
-        $midTidRkaGroups = $this->rkaLookup->aggregateByGroup(
+        $midTidRkaGroups = $this->buildSplitRkaGroups(
             ['tid' => ['mata_anggaran' => ['Populasi Merchant (TID)']]],
-            $ctx['rkaMonthColumn'],
-            $ctx['upperBranches'],
-            $ctx['upperSelectedUkers'],
-            $ctx['isBranchFiltered'] ? 'uker' : 'kanca'
+            $ctx
         );
 
         $query = DB::table('jumlah_merchant_detail')
@@ -436,12 +436,9 @@ class EdcReportService
 
     private function handleProdMom(array $ctx): JsonResponse
     {
-        $edcRkaGroups = $this->rkaLookup->aggregateByGroup(
+        $edcRkaGroups = $this->buildSplitRkaGroups(
             ['prod' => ['mata_anggaran' => ['Jumlah Merchant (EDC) yang Produktif']]],
-            $ctx['rkaMonthColumn'],
-            $ctx['upperBranches'],
-            $ctx['upperSelectedUkers'],
-            $ctx['isBranchFiltered'] ? 'uker' : 'kanca'
+            $ctx
         );
 
         $q = DB::table('jumlah_merchant_detail')
@@ -502,5 +499,50 @@ class EdcReportService
         ];
 
         return response()->json(['status' => 'success', 'labels' => $ctx['labels'], 'group_label' => $ctx['groupLabel'], 'data' => $data, 'total' => $grandTotal]);
+    }
+
+    /**
+     * Build RKA groups using split filtering: direct kanca (Ponorogo) + regional patterns (Madiun, Magetan, Ngawi)
+     * This ensures each branch gets its own RKA values from regional sub-units instead of duplicated data
+     */
+    private function buildSplitRkaGroups(array $definitions, array $ctx): array
+    {
+        $groups = [];
+
+        // Get direct RKA (KC Ponorogo only)
+        $directGroups = $this->rkaLookup->aggregateByGroup(
+            $definitions,
+            $ctx['rkaMonthColumn'],
+            ['KC PONOROGO'],  // Only Ponorogo direct
+            $ctx['upperSelectedUkers'],
+            $ctx['isBranchFiltered'] ? 'uker' : 'kanca'
+        );
+
+        // Merge direct groups
+        foreach ($definitions as $defKey => $def) {
+            $groups[$defKey] = $directGroups[$defKey] ?? [];
+        }
+
+        // Get regional RKA if there are regional patterns
+        if (!empty($ctx['rkaRegionalPatterns'])) {
+            $regionalGroups = $this->rkaLookup->aggregateByGroupWithRegionalFilter(
+                $definitions,
+                $ctx['rkaMonthColumn'],
+                $ctx['rkaRegionalPatterns']
+            );
+
+            // Merge regional groups with branch names (uppercase)
+            foreach ($definitions as $defKey => $def) {
+                if (isset($regionalGroups[$defKey])) {
+                    foreach ($regionalGroups[$defKey] as $region => $value) {
+                        // Convert region pattern back to branch name (e.g., 'MADIUN' -> 'KC MADIUN')
+                        $branchName = 'KC ' . $region;
+                        $groups[$defKey][$branchName] = $value;
+                    }
+                }
+            }
+        }
+
+        return $groups;
     }
 }

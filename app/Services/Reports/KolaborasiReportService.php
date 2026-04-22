@@ -9,7 +9,7 @@ use Illuminate\Support\Collection;
 
 /**
  * Service untuk laporan Kolaborasi Perusahaan Anak (Program Referral & Nasabah Prioritas).
- * Diekstrak dari DataReportController::buildKolaborasiSnapshotReport().
+ * Menangani build data snapshot untuk halaman kolaborasi.
  */
 class KolaborasiReportService
 {

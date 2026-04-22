@@ -31,8 +31,8 @@ class RekeningDormantController extends Controller
         'KC Ngawi' => '%KC NGAWI%',
         'KC Ponorogo' => '%KC PONOROGO%',
     ];
-    private const DORMANT_UNIT_INDEX = 'idx_smp_posisi_status_cabang_unit';
-    private const DORMANT_SUMMARY_INDEX = 'idx_smp_posisi_status_cabang_unit';
+    private const DORMANT_UNIT_INDEX = 'idx_smp_posisi_status_cab_unit';
+    private const DORMANT_SUMMARY_INDEX = 'idx_smp_posisi_status_cab_unit';
 
     public function index()
     {

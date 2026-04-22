@@ -45,7 +45,16 @@
         ],
         "dev": [
             "Composer\\Config::disableProcessTimeout",
-            "npx concurrently -c \"#93c5fd,#c4b5fd,#a7f3d0,#fb7185,#fdba74,#f59e0b\" \"php artisan serve\" \"php artisan queue:listen --queue=imports-daily-loan --tries=1 --timeout=0\" \"php artisan queue:listen --queue=imports-high --tries=1 --timeout=0\" \"php artisan queue:listen --queue=default,reports-low --tries=1 --timeout=0\" \"php artisan pail --timeout=0\" \"npm run dev\" --names=server,daily-import-queue,import-queue,main-queue,logs,vite --kill-others"
+            "npx concurrently -c \"#93c5fd,#c4b5fd,#a7f3d0,#fb7185,#fdba74,#f59e0b,#60a5fa\" \"php artisan serve\" \"php artisan queue:work --queue=imports-daily-loan --tries=1 --timeout=120 --sleep=1\" \"php artisan queue:work --queue=imports-high --tries=1 --timeout=120 --sleep=1\" \"php artisan queue:work --queue=default,reports-low --tries=1 --timeout=120 --sleep=1\" \"php artisan schedule:work\" \"php artisan pail --timeout=0\" \"npm run dev\" --names=server,daily-import-queue,import-queue,main-queue,scheduler,logs,vite --kill-others"
+        ],
+        "start": [
+            "powershell -ExecutionPolicy Bypass -File .\\scripts\\start-local.ps1"
+        ],
+        "start:vite": [
+            "powershell -ExecutionPolicy Bypass -File .\\scripts\\start-local.ps1 -WithVite"
+        ],
+        "queue": [
+            "@php artisan queue:work --queue=imports-daily-loan,imports-high,default,reports-low --tries=1 --timeout=120 --sleep=1"
         ],
         "test": [
             "@php artisan config:clear --ansi",

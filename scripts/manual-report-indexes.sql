@@ -121,24 +121,12 @@ ALTER TABLE `daily_loan_dinamis`
   (`periode`, `segmen_dashboard`, `produk_dashboard`, `cabang1`, `unit1`);
 
 -- 2) Rasio CASA Debitur
--- Existing (posisi, CIFNO) and (posisi, jenis_simpanan) are separate.
--- This composite helps the real query directly:
--- WHERE posisi = ? AND CIFNO IN (...) AND jenis_simpanan LIKE ...
-ALTER TABLE `simpanan_multipn`
-  ADD INDEX `idx_smp_posisi_cif_jenis`
-  (`posisi`, `CIFNO`, `jenis_simpanan`);
-
--- If branch rollup by CIF on daily loan is still heavy, add this bridge index.
-ALTER TABLE `daily_loan_dinamis`
-  ADD INDEX `idx_dld_periode_cif_cabang`
-  (`periode`, `cifno`, `cabang1`);
+-- The controller now uses existing indexes to avoid adding large redundant indexes:
+--   daily_loan_dinamis: idx_loan_periode_cif (periode, cifno)
+--   simpanan_multipn: idx_smp_posisi_cif (posisi, CIFNO)
 
 -- 3) Rekening Dormant
--- Existing dormant index ends with no_rekening, not unit_kerja.
--- This one is specifically for unit dropdown + branch/unit filtering.
-ALTER TABLE `simpanan_multipn`
-  ADD INDEX `idx_smp_posisi_status_cabang_unit`
-  (`posisi`, `status`, `kantor_cabang`, `unit_kerja`);
+-- Existing idx_smp_posisi_status_cab_unit covers unit dropdown + branch/unit filtering.
 
 -- PH lookup for Dashboard Pinjaman
 -- Existing periode and acctno are separate; this helps combined lookup.

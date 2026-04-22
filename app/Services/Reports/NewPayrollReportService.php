@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * Service untuk laporan Kinerja New Payroll.
- * Diekstrak dari DataReportController::fetchNewPayrollData() dan helper-helper privatnya.
+ * Menangani query dan helper data untuk halaman Kinerja New Payroll.
  */
 class NewPayrollReportService
 {

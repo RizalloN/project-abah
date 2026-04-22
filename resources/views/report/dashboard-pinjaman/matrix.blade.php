@@ -12,8 +12,8 @@
                 <form id="loanFilterForm" method="GET" action="{{ route('report.dashboard-pinjaman.matrix') }}">
                     <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center mb-4 pb-3 border-bottom">
                         <div>
-                            <h2 class="mb-1 font-weight-bold text-dark" style="font-size: 1.75rem; letter-spacing: -0.02em;">Matrix Pergeseran Kolek</h2>
-                            <p class="text-muted font-weight-bold mb-0" style="font-size: 0.85rem;">Analisis pergerakan kualitas pinjaman antar periode.</p>
+                            <h2 class="mb-1 font-weight-bold" style="font-size: 2.25rem; letter-spacing: -0.02em; color: var(--loan-blue-ink);">Matrix Pergeseran Kolek</h2>
+                            <p class="font-weight-bold mb-0" style="font-size: 0.85rem; color: var(--loan-muted);">Analisis pergerakan kualitas pinjaman antar periode.</p>
                         </div>
                         <div class="mt-3 mt-lg-0 text-lg-right">
                             <div class="loan-filter-meta">
@@ -26,7 +26,7 @@
                     <div class="row loan-filter-grid">
                         <div class="col-xl-2 col-lg-4 col-md-6">
                             <div class="form-group">
-                                <label class="loan-filter-label">Periode</label>
+                                <label class="loan-filter-label">Periode Laporan</label>
                                 <input id="loanPeriodeInput" type="date" name="periode" class="form-control loan-filter-control" value="{{ $requestedPeriod ?: $selectedPeriod }}" max="{{ $periods->first() }}">
                             </div>
                         </div>
@@ -70,15 +70,15 @@
                         </div>
                     </div>
 
-                    <div class="d-flex flex-wrap align-items-center loan-filter-actions mt-3" style="gap: 0.75rem; padding-top: 1.5rem; border-top: 1px dashed #e2e8f0;">
-                        <button id="loanSubmitButton" type="submit" class="btn btn-dark px-4 font-weight-bold" style="border-radius: 12px; height: 44px; letter-spacing: 0.05em; background: #0f172a;">
+                    <div class="d-flex flex-wrap align-items-center loan-filter-actions mt-3" style="gap: 1rem; padding-top: 1.5rem; border-top: 1px dashed var(--loan-border-strong);">
+                        <button id="loanSubmitButton" type="submit" class="btn px-4 font-weight-bold" style="border-radius: 12px; height: 48px; letter-spacing: 0.05em; background: linear-gradient(135deg, var(--loan-blue), #307fe2); color: #ffffff; border: none; box-shadow: 0 4px 12px rgba(8, 87, 195, 0.2);">
                             <i class="fas fa-search mr-2"></i>
-                            TAMPILKAN
+                            TAMPILKAN DATA
                         </button>
-                        <a href="{{ route('report.dashboard-pinjaman.matrix') }}" class="btn btn-outline-secondary px-4 font-weight-bold" style="border-radius: 12px; height: 44px;">RESET</a>
+                        <a href="{{ route('report.dashboard-pinjaman.matrix') }}" class="btn btn-light px-4 font-weight-bold" style="border-radius: 12px; height: 48px; border: 1px solid var(--loan-border); color: var(--loan-blue-ink);">RESET</a>
                         <div id="loanLoadingChip" class="loan-loading-chip d-none ml-2">
                             <span class="loan-loading-dot"></span>
-                            MENGOLAH DATA
+                            SEDANG MENGOLAH DATA
                         </div>
                     </div>
                 </form>
@@ -118,7 +118,7 @@
                                 <tr>
                                     <th class="matrix-before">Kualitas M-1</th>
                                     <th colspan="{{ count($matrixColumns) }}" class="matrix-after-group">Kualitas Current (MtD)</th>
-                                    <th rowspan="2" class="matrix-total-head py-3">Total Movement<br><span id="loanTotalValueHeader">per Baris</span></th>
+                                    <th rowspan="2" class="matrix-total-head">Total Movement<br><span id="loanTotalValueHeader">per Baris</span></th>
                                     <th colspan="4" class="matrix-subhead">Data Output (IDR)</th>
                                 </tr>
                                 <tr>
@@ -135,8 +135,11 @@
                             <tbody id="loanMatrixBody">
                                 <tr>
                                     <td colspan="{{ count($matrixColumns) + 6 }}" class="loan-empty-state">
-                                        <strong>Filter belum dijalankan</strong>
-                                        Pilih periode atau filter lain lalu klik <strong>Tampilkan</strong>.
+                                        <div class="py-4">
+                                            <i class="fas fa-search-plus fa-3x mb-3 text-muted" style="opacity: 0.3;"></i>
+                                            <strong class="d-block mb-1">Filter belum dijalankan</strong>
+                                            <p class="mb-0 text-muted">Pilih periode atau filter lain lalu klik <strong>Tampilkan Data</strong> untuk menganalisis pergeseran kolek.</p>
+                                        </div>
                                     </td>
                                 </tr>
                             </tbody>
@@ -151,6 +154,43 @@
                     <div class="loan-legend-item"><span class="loan-legend-swatch matrix-down"></span> Memburuk (Downgrade)</div>
                     <div class="loan-legend-item"><span class="loan-legend-swatch matrix-new-account"></span> New Account</div>
                 </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade loan-drill-modal" id="loanMatrixDetailModal" tabindex="-1" role="dialog" aria-hidden="true">
+    <div class="modal-dialog modal-xl" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div>
+                    <h5 class="modal-title font-weight-bold mb-1">Detail Daily Loan Dinamis</h5>
+                    <div id="loanDrillSubtitle" class="text-muted" style="font-size: 0.8rem; font-weight: 700;">-</div>
+                </div>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Tutup">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="loan-drill-toolbar">
+                    <div id="loanDrillMeta" class="loan-drill-meta"></div>
+                    <div class="d-flex flex-wrap" style="gap: 0.5rem;">
+                        <button id="loanDrillLoadMoreButton" type="button" class="btn btn-sm btn-outline-primary d-none">
+                            <i class="fas fa-plus mr-1"></i> Muat Lagi
+                        </button>
+                        <button id="loanDrillExportButton" type="button" class="btn btn-sm btn-success">
+                            <i class="fas fa-file-excel mr-1"></i> Excel
+                        </button>
+                    </div>
+                </div>
+                <div id="loanDrillState" class="loan-drill-state">Memuat data...</div>
+                <div id="loanDrillTableWrap" class="loan-drill-table-wrap d-none">
+                    <table class="loan-drill-table">
+                        <thead id="loanDrillHead"></thead>
+                        <tbody id="loanDrillBody"></tbody>
+                    </table>
+                </div>
+                <div id="loanDrillFooterNote" class="loan-drill-footer-note d-none"></div>
             </div>
         </div>
     </div>
@@ -179,9 +219,21 @@
         const activePeriodMeta = document.getElementById('loanActivePeriodMeta');
         const comparisonPeriodMeta = document.getElementById('loanComparisonPeriodMeta');
         const totalValueHeader = document.getElementById('loanTotalValueHeader');
+        const drillModal = document.getElementById('loanMatrixDetailModal');
+        const drillSubtitle = document.getElementById('loanDrillSubtitle');
+        const drillMeta = document.getElementById('loanDrillMeta');
+        const drillState = document.getElementById('loanDrillState');
+        const drillTableWrap = document.getElementById('loanDrillTableWrap');
+        const drillHead = document.getElementById('loanDrillHead');
+        const drillBody = document.getElementById('loanDrillBody');
+        const drillLoadMoreButton = document.getElementById('loanDrillLoadMoreButton');
+        const drillExportButton = document.getElementById('loanDrillExportButton');
+        const drillFooterNote = document.getElementById('loanDrillFooterNote');
 
         const filtersUrl = @json(route('report.dashboard-pinjaman.filters'));
         const dataUrl = @json(route('report.dashboard-pinjaman.data'));
+        const detailUrl = @json(route('report.dashboard-pinjaman.matrix.detail'));
+        const exportUrl = @json(route('report.dashboard-pinjaman.matrix.export'));
         const qualityColumns = @json($matrixColumns);
         const outputColumns = ['principal_reduction', 'suplesi', 'ph', 'lunas'];
         const qualityRanks = @json(array_flip($matrixColumns));
@@ -190,6 +242,12 @@
         let activeController = null;
         let activeMatrixRequestId = 0;
         let activeFilterRequestId = 0;
+        let activeDrillController = null;
+        let activeDrillRequestId = 0;
+        let activeDrillBucket = null;
+        let activeDrillNextOffset = null;
+        let activeDrillRenderedCount = 0;
+        let rowClickTimer = null;
         let isNavigatingAway = false;
         let filterReloadTimer = null;
         let isRefreshingFilters = false;
@@ -204,6 +262,7 @@
         function abortInFlightRequests() {
             if (activeController) activeController.abort();
             if (activeFilterController) activeFilterController.abort();
+            if (activeDrillController) activeDrillController.abort();
             window.clearTimeout(filterReloadTimer);
         }
 
@@ -226,6 +285,186 @@
             if (loadingCopy) loadingCopy.textContent = copy;
             if (loadingPercent) loadingPercent.textContent = `${progress}%`;
             if (loadingProgressBar) loadingProgressBar.style.width = `${progress}%`;
+        }
+
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, char => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;'
+            }[char]));
+        }
+
+        function buildDrillParams(beforeBucket, offset = 0) {
+            const params = new URLSearchParams(new FormData(form));
+            params.set('before_bucket', beforeBucket);
+            params.set('offset', offset);
+            params.set('limit', 25);
+            return params;
+        }
+
+        function showDrillModal() {
+            if (drillModal.parentElement !== document.body) {
+                document.body.appendChild(drillModal);
+            }
+
+            if (window.jQuery && window.jQuery.fn.modal) {
+                window.jQuery(drillModal)
+                    .off('shown.bs.modal.loanDrill hidden.bs.modal.loanDrill')
+                    .on('shown.bs.modal.loanDrill', () => {
+                        document.querySelectorAll('.modal-backdrop').forEach(backdrop => backdrop.classList.add('loan-drill-backdrop'));
+                    })
+                    .on('hidden.bs.modal.loanDrill', () => {
+                        cleanupDrillModalBackdrop();
+                    })
+                    .modal({
+                        backdrop: true,
+                        keyboard: true,
+                        show: true,
+                    });
+                window.setTimeout(() => {
+                    if (!drillModal.classList.contains('show')) {
+                        cleanupDrillModalBackdrop();
+                    }
+                }, 1200);
+            } else {
+                drillModal.classList.add('show');
+                drillModal.style.display = 'block';
+                drillModal.removeAttribute('aria-hidden');
+                document.body.classList.add('modal-open');
+            }
+        }
+
+        function cleanupDrillModalBackdrop() {
+            document.querySelectorAll('.modal-backdrop').forEach(backdrop => backdrop.remove());
+            document.body.classList.remove('modal-open');
+            document.body.style.removeProperty('padding-right');
+        }
+
+        function setSelectedDrillRow(beforeBucket) {
+            body.querySelectorAll('tr.loan-drill-row').forEach(row => {
+                row.classList.toggle('is-selected', row.dataset.beforeBucket === beforeBucket);
+            });
+        }
+
+        async function openDrilldown(beforeBucket, offset = 0, append = false) {
+            if (activeDrillController) activeDrillController.abort();
+            activeDrillController = new AbortController();
+            const requestId = ++activeDrillRequestId;
+            activeDrillBucket = beforeBucket;
+            setSelectedDrillRow(beforeBucket);
+
+            if (!append) {
+                drillSubtitle.textContent = `Bucket pivot: ${beforeBucket}`;
+                drillMeta.innerHTML = '';
+                drillHead.innerHTML = '';
+                drillBody.innerHTML = '';
+                activeDrillRenderedCount = 0;
+                drillTableWrap.classList.add('d-none');
+                drillState.classList.remove('d-none');
+                drillState.textContent = 'Memuat data...';
+                drillLoadMoreButton.classList.add('d-none');
+                drillFooterNote.classList.add('d-none');
+                drillFooterNote.textContent = '';
+                showDrillModal();
+            }
+
+            drillLoadMoreButton.disabled = true;
+            const params = buildDrillParams(beforeBucket, offset);
+
+            try {
+                const response = await fetch(`${detailUrl}?${params.toString()}`, { signal: activeDrillController.signal });
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                const payload = await response.json();
+                if (requestId !== activeDrillRequestId) return;
+
+                renderDrillRows(payload, append);
+                activeDrillNextOffset = payload.next_offset;
+                drillLoadMoreButton.classList.toggle('d-none', !payload.has_more);
+            } catch (e) {
+                if (e.name !== 'AbortError') {
+                    drillState.classList.remove('d-none');
+                    drillState.textContent = 'Data detail gagal dimuat.';
+                    drillTableWrap.classList.add('d-none');
+                    drillLoadMoreButton.classList.add('d-none');
+                }
+            } finally {
+                drillLoadMoreButton.disabled = false;
+            }
+        }
+
+        function renderDrillRows(payload, append) {
+            const columns = payload.columns || [];
+            const rows = payload.rows || [];
+
+            drillMeta.innerHTML = `
+                <span>Periode: ${escapeHtml(formatDate(payload.selected_period))}</span>
+                <span>M-1: ${escapeHtml(formatDate(payload.comparison_period))}</span>
+                <span>Bucket: ${escapeHtml(payload.before_bucket)}</span>
+                <span>Ditampilkan: ${formatNumber(activeDrillRenderedCount + rows.length)}</span>
+            `;
+
+            if (!append) {
+                drillHead.innerHTML = `<tr>${columns.map(column => `<th>${escapeHtml(column)}</th>`).join('')}</tr>`;
+            }
+
+            if (!rows.length && !append) {
+                drillTableWrap.classList.add('d-none');
+                drillState.classList.remove('d-none');
+                drillState.textContent = 'Tidak ada detail untuk baris pivot ini.';
+                return;
+            }
+
+            drillState.classList.add('d-none');
+            drillTableWrap.classList.remove('d-none');
+            drillFooterNote.classList.remove('d-none');
+            drillFooterNote.textContent = 'Detail dimuat bertahap per 25 baris agar halaman tetap ringan. Gunakan Excel untuk mengambil seluruh hasil filter pivot.';
+            renderDrillRowsChunked(columns, rows, append);
+        }
+
+        function renderDrillRowsChunked(columns, rows, append) {
+            if (!append) {
+                drillBody.innerHTML = '';
+            }
+
+            let index = 0;
+            const chunkSize = 5;
+
+            function renderChunk() {
+                const fragment = document.createDocumentFragment();
+                const end = Math.min(index + chunkSize, rows.length);
+
+                for (let i = index; i < end; i++) {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = columns.map(column => `<td>${escapeHtml(rows[i][column] ?? '')}</td>`).join('');
+                    fragment.appendChild(tr);
+                }
+
+                drillBody.appendChild(fragment);
+                index = end;
+
+                if (index < rows.length) {
+                    requestAnimationFrame(renderChunk);
+                    return;
+                }
+
+                activeDrillRenderedCount += rows.length;
+                drillMeta.querySelector('span:last-child').textContent = `Ditampilkan: ${formatNumber(activeDrillRenderedCount)}`;
+            }
+
+            requestAnimationFrame(renderChunk);
+        }
+
+        function exportDrilldown(beforeBucket) {
+            if (!beforeBucket) return;
+            const params = buildDrillParams(beforeBucket, 0);
+            params.delete('offset');
+            params.delete('limit');
+            window.location.href = `${exportUrl}?${params.toString()}`;
         }
 
         async function loadFilterOptions() {
@@ -300,7 +539,7 @@
         function buildRowHtml(row) {
             const rowRank = qualityRanks[row.label];
             const isNewAccount = row.label === 'New Account';
-            let html = `<tr><th>${row.label}</th>`;
+            let html = `<tr class="loan-drill-row" data-before-bucket="${escapeHtml(row.label)}"><th>${escapeHtml(row.label)}</th>`;
             
             for (let idx = 0; idx < row.values.length; idx++) {
                 const val = row.values[idx];
@@ -376,6 +615,29 @@
 
         form.addEventListener('submit', e => { e.preventDefault(); loadMatrix(true); });
         periodInput.addEventListener('change', () => { loadFilterOptions(); });
+        body.addEventListener('click', event => {
+            const row = event.target.closest('tr.loan-drill-row');
+            if (!row) return;
+            window.clearTimeout(rowClickTimer);
+            rowClickTimer = window.setTimeout(() => openDrilldown(row.dataset.beforeBucket), 220);
+        });
+        body.addEventListener('dblclick', event => {
+            const row = event.target.closest('tr.loan-drill-row');
+            if (!row) return;
+            window.clearTimeout(rowClickTimer);
+            activeDrillBucket = row.dataset.beforeBucket;
+            setSelectedDrillRow(activeDrillBucket);
+            exportDrilldown(activeDrillBucket);
+        });
+        drillLoadMoreButton.addEventListener('click', () => {
+            if (activeDrillBucket && activeDrillNextOffset !== null) {
+                openDrilldown(activeDrillBucket, activeDrillNextOffset, true);
+            }
+        });
+        drillExportButton.addEventListener('click', () => exportDrilldown(activeDrillBucket));
+        drillModal.querySelectorAll('[data-dismiss="modal"]').forEach(button => {
+            button.addEventListener('click', () => cleanupDrillModalBackdrop());
+        });
         
         filterSelects.forEach(({element}) => {
             initMultiSelect(element, element.dataset.placeholder);

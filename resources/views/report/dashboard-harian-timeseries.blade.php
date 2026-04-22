@@ -203,6 +203,80 @@
         text-transform: uppercase;
     }
 
+    .btn-export-jpg {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        border: 1px solid #e2e8f0;
+        background: #ffffff;
+        color: #64748b;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s ease;
+        padding: 0;
+        cursor: pointer;
+        margin-left: 0.75rem;
+    }
+
+    .btn-export-jpg:hover {
+        background: #f8fbff;
+        border-color: #0857c3;
+        color: #0857c3;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 10px rgba(8, 87, 195, 0.15);
+    }
+
+    .btn-export-jpg i {
+        font-size: 0.85rem;
+    }
+
+    /* Capture Status Modal Premium Styles */
+    .capture-status-modal .modal-content {
+        border-radius: 24px;
+        border: none;
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15);
+        overflow: hidden;
+    }
+
+    .capture-status-modal .modal-body {
+        padding: 3rem 2rem;
+    }
+
+    .capture-status-modal-icon {
+        width: 80px;
+        height: 80px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 1.5rem;
+        font-size: 2.5rem;
+    }
+
+    .icon-loading { background: rgba(8, 87, 195, 0.1); color: #0857c3; }
+    .icon-error { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
+    .icon-success { background: rgba(34, 197, 94, 0.1); color: #22c55e; }
+
+    .capture-status-modal .btn-primary {
+        border-radius: 12px;
+        padding: 0.6rem 1.5rem;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+    }
+
+    .modal-backdrop.show {
+        backdrop-filter: none;
+        background-color: rgba(15, 23, 42, 0.12);
+    }
+
+    body.modal-open .dashboard-timeseries,
+    body.modal-open .content-wrapper,
+    body.modal-open .main-content {
+        filter: none !important;
+        backdrop-filter: none !important;
+    }
+
     .empty-state {
         display: flex;
         flex-direction: column;
@@ -454,7 +528,12 @@
             <h1 class="h4 font-weight-bold mb-0" style="color: #0f172a;">Timeseries Dashboard</h1>
             <p class="text-muted small mb-0" style="font-size: 0.8rem;">Tren Keragaan Harian Berdasarkan Perspektif Bulanan</p>
         </div>
-        <div class="unit-badge">Satuan: Dalam Rp Miliar (Rp M)</div>
+        <div class="d-flex align-items-center" style="gap: 1rem;">
+            <button id="captureAllBtn" class="btn btn-outline-primary btn-sm px-3 font-weight-bold" style="border-radius: 12px; height: 38px; border-width: 2px;">
+                <i class="fas fa-file-image mr-2"></i> EXPORT A4 (PORTRAIT)
+            </button>
+            <div class="unit-badge">Satuan: Dalam Rp Miliar (Rp M)</div>
+        </div>
     </div>
 
     <!-- Filters -->
@@ -521,13 +600,20 @@
         </div>
     </div>
 
-    <!-- Summary Chart Container -->
-    <div class="row mb-3" id="summaryChartContainer">
+    <!-- Capture Target Area -->
+    <div id="timeseriesCaptureArea" style="background: #fdfdfe; padding: 1.5rem 0.5rem; border-radius: 20px;">
+        <!-- Summary Chart Container -->
+        <div class="row mb-3" id="summaryChartContainer">
         <div class="col-12">
             <div class="card chart-card summary-chart-card">
                 <div class="chart-header">
                     <h5 class="chart-title"><i class="fas fa-chart-area mr-2 text-primary"></i>Area 6 - Konsolidasi</h5>
-                    <div class="unit-badge" id="summaryChartBadge">Total Konsolidasi Selected Branches</div>
+                    <div class="d-flex align-items-center">
+                        <div class="unit-badge" id="summaryChartBadge">Total Konsolidasi Selected Branches</div>
+                        <button class="btn-export-jpg ml-2" onclick="window.downloadTimeseriesChart('summary', 'Timeseries-Area6-Consolidation')" title="Export to JPG">
+                            <i class="fas fa-camera"></i>
+                        </button>
+                    </div>
                 </div>
                 <div class="chart-body summary-chart-body">
                     <div class="loading-overlay" id="summaryLoading">
@@ -541,9 +627,52 @@
         </div>
     </div>
 
-    <!-- Individual Branch Charts -->
-    <div class="row g-3" id="individualChartsContainer" style="margin-top: 0;">
-        <!-- Dynamic Content -->
+        <!-- Individual Branch Charts -->
+        <div class="row g-3" id="individualChartsContainer" style="margin-top: 0;">
+            <!-- Dynamic Content -->
+        </div>
+    </div>
+
+    <!-- Capture Status Modal -->
+    <div class="modal fade capture-status-modal" id="captureStatusModal" tabindex="-1" role="dialog" aria-hidden="true" data-backdrop="static">
+        <div class="modal-dialog modal-dialog-centered" role="document">
+            <div class="modal-content">
+                <div class="modal-body text-center">
+                    <!-- Loading State -->
+                    <div id="captureProgressUI">
+                        <div class="capture-status-modal-icon icon-loading">
+                            <i class="fas fa-circle-notch fa-spin"></i>
+                        </div>
+                        <h4 class="font-weight-bold mb-2">Menyusun Laporan A4</h4>
+                        <p class="text-muted mb-0">Sedang menyusun konsolidasi dan empat cabang ke dalam satu gambar A4 portrait. Mohon tunggu sebentar...</p>
+                    </div>
+
+                    <!-- Error State -->
+                    <div id="captureErrorUI" class="d-none">
+                        <div class="capture-status-modal-icon icon-error">
+                            <i class="fas fa-exclamation-triangle"></i>
+                        </div>
+                        <h4 class="font-weight-bold mb-2">Gagal Mengambil Snapshot</h4>
+                        <p id="captureErrorMessage" class="text-muted mb-4">Terjadi kendala saat menyusun snapshot A4.</p>
+                        <button type="button" class="btn btn-primary w-100" data-dismiss="modal">
+                            Tutup & Coba Lagi
+                        </button>
+                    </div>
+
+                    <!-- Success State -->
+                    <div id="captureSuccessUI" class="d-none">
+                        <div class="capture-status-modal-icon icon-success">
+                            <i class="fas fa-check-circle"></i>
+                        </div>
+                        <h4 class="font-weight-bold mb-2">Snapshot Berhasil!</h4>
+                        <p class="text-muted mb-4">Snapshot A4 dalam satu file JPG telah berhasil diunduh ke perangkat Anda.</p>
+                        <button type="button" class="btn btn-primary w-100" data-dismiss="modal">
+                            Selesai
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 @endsection
@@ -581,6 +710,444 @@
             const unitOptionsContainer = document.getElementById('unitOptions');
             const periodMonthSelect = document.getElementById('periodMonthFilter');
             const applyBtn = document.getElementById('applyFilters');
+
+            // --- Export JPG Logic ---
+            window.downloadTimeseriesChart = function(chartKey, fileName) {
+                const chart = charts[chartKey];
+                if (!chart) {
+                    console.error('Chart not found for key:', chartKey);
+                    return;
+                }
+
+                // Create a temporary canvas to add white background (JPG doesn't support transparency)
+                const canvas = chart.canvas;
+                const tempCanvas = document.createElement('canvas');
+                const ctx = tempCanvas.getContext('2d');
+
+                tempCanvas.width = canvas.width;
+                tempCanvas.height = canvas.height;
+
+                // Fill with white background
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+
+                // Draw the original chart canvas on top
+                ctx.drawImage(canvas, 0, 0);
+
+                // Trigger download
+                const link = document.createElement('a');
+                link.download = `${fileName}.jpg`;
+                link.href = tempCanvas.toDataURL('image/jpeg', 0.9);
+                link.click();
+            };
+
+            // --- Capture All Logic (A4 Portrait Composer) ---
+            const captureBtn = document.getElementById('captureAllBtn');
+            const captureModal = document.getElementById('captureStatusModal');
+            const progressUI = document.getElementById('captureProgressUI');
+            const errorUI = document.getElementById('captureErrorUI');
+            const successUI = document.getElementById('captureSuccessUI');
+            const errorMessageUI = document.getElementById('captureErrorMessage');
+
+            const A4_EXPORT = {
+                width: 2480,
+                height: 3508,
+                marginX: 150,
+                marginY: 135,
+                headerHeight: 260,
+                footerHeight: 80,
+                sectionGap: 58,
+                branchGap: 50,
+            };
+
+            function waitFrame() {
+                return new Promise(resolve => requestAnimationFrame(() => resolve()));
+            }
+
+            function sanitizeFilePart(value) {
+                return String(value || 'timeseries')
+                    .trim()
+                    .replace(/[^\w\s-]/g, '')
+                    .replace(/\s+/g, '-')
+                    .replace(/-+/g, '-')
+                    .substring(0, 80) || 'timeseries';
+            }
+
+            function getCanvasChart(canvas) {
+                if (!canvas || !window.Chart || typeof Chart.getChart !== 'function') {
+                    return null;
+                }
+
+                return Chart.getChart(canvas);
+            }
+
+            function getVisibleChartEntries() {
+                return Array.from(document.querySelectorAll('.chart-card'))
+                    .filter(card => card.offsetParent !== null)
+                    .map(card => {
+                        const canvas = card.querySelector('canvas');
+                        const chart = getCanvasChart(canvas);
+                        if (!chart) return null;
+
+                        return {
+                            chart,
+                            title: card.querySelector('.chart-title')?.textContent?.trim() || 'Timeseries Chart',
+                            badge: card.querySelector('.unit-badge')?.textContent?.trim() || 'Daily Trend',
+                        };
+                    })
+                    .filter(Boolean);
+            }
+
+            function cloneChartDatasets(chart, isCompact = false) {
+                return chart.data.datasets.map((dataset, index) => {
+                    const isLatest = index === chart.data.datasets.length - 1;
+
+                    return {
+                        label: dataset.label,
+                        data: Array.isArray(dataset.data) ? dataset.data.slice() : dataset.data,
+                        borderColor: dataset.borderColor,
+                        backgroundColor: dataset.backgroundColor,
+                        borderWidth: isCompact ? (isLatest ? 4 : 3) : (isLatest ? 7 : 5),
+                        pointRadius: isCompact ? (isLatest ? 4 : 2) : (isLatest ? 8 : 4),
+                        pointHoverRadius: isCompact ? (isLatest ? 4 : 2) : (isLatest ? 8 : 4),
+                        tension: dataset.tension ?? 0.4,
+                        fill: dataset.fill,
+                        clip: false,
+                        spanGaps: dataset.spanGaps ?? false,
+                        borderDash: dataset.borderDash || [],
+                    };
+                });
+            }
+
+            function buildExportChartOptions(chart, isCompact = false) {
+                const originalOptions = chart.options || {};
+                const originalScales = originalOptions.scales || {};
+                const yTicksCallback = originalScales.y?.ticks?.callback;
+                const tooltipLabelCallback = originalOptions.plugins?.tooltip?.callbacks?.label;
+                const fontScale = isCompact ? 0.68 : 1;
+
+                return {
+                    responsive: false,
+                    maintainAspectRatio: false,
+                    devicePixelRatio: 1,
+                    animation: false,
+                    events: [],
+                    layout: {
+                        padding: isCompact
+                            ? { top: 14, right: 18, bottom: 18, left: 10 }
+                            : { top: 36, right: 42, bottom: 42, left: 26 }
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                            labels: {
+                                usePointStyle: true,
+                                padding: isCompact ? 12 : 30,
+                                boxWidth: isCompact ? 12 : 18,
+                                boxHeight: isCompact ? 12 : 18,
+                                font: { weight: 'bold', size: Math.round(25 * fontScale) }
+                            }
+                        },
+                        tooltip: {
+                            enabled: false,
+                            callbacks: {
+                                label: tooltipLabelCallback
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            display: true,
+                            beginAtZero: false,
+                            min: originalScales.y?.min,
+                            max: originalScales.y?.max,
+                            grace: 0,
+                            border: {
+                                display: true,
+                                color: '#cbd5e1'
+                            },
+                            title: {
+                                display: true,
+                                text: 'Value (Rp Miliar)',
+                                color: '#334155',
+                                font: { weight: 'bold', size: Math.round(24 * fontScale) }
+                            },
+                            grid: {
+                                color: 'rgba(15, 23, 42, 0.08)',
+                                drawTicks: true
+                            },
+                            ticks: {
+                                maxTicksLimit: isCompact ? 5 : 7,
+                                padding: isCompact ? 8 : 18,
+                                display: true,
+                                color: '#475569',
+                                font: { size: Math.round(23 * fontScale), weight: '600' },
+                                callback: yTicksCallback
+                            }
+                        },
+                        x: {
+                            display: true,
+                            border: {
+                                display: true,
+                                color: '#cbd5e1'
+                            },
+                            grid: {
+                                display: false,
+                                drawTicks: true
+                            },
+                            ticks: {
+                                display: true,
+                                padding: isCompact ? 8 : 18,
+                                color: '#475569',
+                                font: { size: Math.round(23 * fontScale), weight: '600' },
+                                autoSkip: true,
+                                maxTicksLimit: isCompact ? 8 : 16
+                            },
+                            title: {
+                                display: !isCompact,
+                                text: 'Tanggal',
+                                color: '#64748b',
+                                padding: { top: 16 },
+                                font: { size: Math.round(23 * fontScale), weight: 'bold' }
+                            }
+                        }
+                    }
+                };
+            }
+
+            async function renderChartForExport(chart, width, height, isCompact = false) {
+                const canvas = document.createElement('canvas');
+                canvas.width = width;
+                canvas.height = height;
+
+                const exportChart = new Chart(canvas.getContext('2d'), {
+                    type: chart.config.type || 'line',
+                    data: {
+                        labels: Array.isArray(chart.data.labels) ? chart.data.labels.slice() : chart.data.labels,
+                        datasets: cloneChartDatasets(chart, isCompact)
+                    },
+                    options: buildExportChartOptions(chart, isCompact)
+                });
+
+                exportChart.resize(width, height);
+                exportChart.update('none');
+                await waitFrame();
+
+                return { canvas, exportChart };
+            }
+
+            function drawRoundedRect(ctx, x, y, width, height, radius) {
+                ctx.beginPath();
+                ctx.moveTo(x + radius, y);
+                ctx.lineTo(x + width - radius, y);
+                ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+                ctx.lineTo(x + width, y + height - radius);
+                ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+                ctx.lineTo(x + radius, y + height);
+                ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+                ctx.lineTo(x, y + radius);
+                ctx.quadraticCurveTo(x, y, x + radius, y);
+                ctx.closePath();
+            }
+
+            function drawTextEllipsis(ctx, text, x, y, maxWidth) {
+                const source = String(text || '');
+                if (ctx.measureText(source).width <= maxWidth) {
+                    ctx.fillText(source, x, y);
+                    return;
+                }
+
+                let trimmed = source;
+                while (trimmed.length > 0 && ctx.measureText(`${trimmed}...`).width > maxWidth) {
+                    trimmed = trimmed.slice(0, -1);
+                }
+                ctx.fillText(`${trimmed}...`, x, y);
+            }
+
+            function drawExportHeader(ctx) {
+                const { width, marginX, marginY } = A4_EXPORT;
+                const category = document.querySelector('.category-btn.active')?.textContent?.trim() || '-';
+                const periodSelect = document.getElementById('periodMonthFilter');
+                const period = periodSelect?.options[periodSelect.selectedIndex]?.text || '-';
+                const unit = unitLabel?.textContent?.trim() || 'Semua Unit';
+                const kanca = kancaLabel?.textContent?.trim() || 'Semua Kanca';
+
+                ctx.fillStyle = '#0857c3';
+                ctx.fillRect(0, 0, width, 24);
+
+                ctx.fillStyle = '#0f172a';
+                ctx.font = 'bold 64px "Inter", "Segoe UI", Arial, sans-serif';
+                ctx.fillText('Timeseries Analytics Dashboard', marginX, marginY + 35);
+
+                ctx.fillStyle = '#475569';
+                ctx.font = '600 30px "Inter", "Segoe UI", Arial, sans-serif';
+                drawTextEllipsis(ctx, `Kategori: ${category}   |   Periode: ${period}`, marginX, marginY + 92, width - (marginX * 2));
+                drawTextEllipsis(ctx, `Filter: ${kanca}   |   Unit: ${unit}`, marginX, marginY + 138, width - (marginX * 2) - 220);
+
+                ctx.fillStyle = '#eaf2ff';
+                drawRoundedRect(ctx, width - marginX - 190, marginY + 86, 190, 62, 18);
+                ctx.fill();
+                ctx.fillStyle = '#0857c3';
+                ctx.font = 'bold 28px "Inter", "Segoe UI", Arial, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('A4', width - marginX - 95, marginY + 126);
+                ctx.textAlign = 'left';
+
+                ctx.strokeStyle = '#e2e8f0';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.moveTo(marginX, marginY + 178);
+                ctx.lineTo(width - marginX, marginY + 178);
+                ctx.stroke();
+            }
+
+            function drawExportFooter(ctx) {
+                const { width, height, marginX } = A4_EXPORT;
+
+                ctx.strokeStyle = '#e2e8f0';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(marginX, height - 82);
+                ctx.lineTo(width - marginX, height - 82);
+                ctx.stroke();
+
+                ctx.fillStyle = '#94a3b8';
+                ctx.font = '600 22px "Inter", "Segoe UI", Arial, sans-serif';
+                ctx.fillText(`Generated ${new Date().toLocaleString('id-ID')}`, marginX, height - 42);
+            }
+
+            async function drawChartCard(ctx, entry, x, y, width, height, isCompact = false) {
+                const radius = isCompact ? 20 : 28;
+                const headerHeight = isCompact ? 82 : 116;
+                const titleX = x + (isCompact ? 28 : 52);
+                const titleY = y + (isCompact ? 52 : 74);
+                const titleMaxWidth = width - (isCompact ? 56 : 390);
+
+                ctx.save();
+                ctx.shadowColor = 'rgba(15, 23, 42, 0.10)';
+                ctx.shadowBlur = isCompact ? 16 : 28;
+                ctx.shadowOffsetY = isCompact ? 7 : 12;
+                ctx.fillStyle = '#ffffff';
+                drawRoundedRect(ctx, x, y, width, height, radius);
+                ctx.fill();
+                ctx.restore();
+
+                ctx.strokeStyle = '#dbeafe';
+                ctx.lineWidth = 3;
+                drawRoundedRect(ctx, x, y, width, height, radius);
+                ctx.stroke();
+
+                ctx.fillStyle = '#0f172a';
+                ctx.font = `${isCompact ? 'bold 24px' : 'bold 36px'} "Inter", "Segoe UI", Arial, sans-serif`;
+                drawTextEllipsis(ctx, entry.title, titleX, titleY, titleMaxWidth);
+
+                if (!isCompact) {
+                    ctx.fillStyle = '#eaf2ff';
+                    drawRoundedRect(ctx, x + width - 310, y + 35, 250, 54, 20);
+                    ctx.fill();
+                    ctx.fillStyle = '#0857c3';
+                    ctx.font = 'bold 21px "Inter", "Segoe UI", Arial, sans-serif';
+                    ctx.textAlign = 'center';
+                    drawTextEllipsis(ctx, entry.badge, x + width - 185, y + 70, 210);
+                    ctx.textAlign = 'left';
+                }
+
+                ctx.strokeStyle = '#eef2f7';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.moveTo(x, y + headerHeight);
+                ctx.lineTo(x + width, y + headerHeight);
+                ctx.stroke();
+
+                const chartPaddingX = isCompact ? 24 : 55;
+                const chartPaddingBottom = isCompact ? 22 : 55;
+                const chartTop = y + headerHeight + (isCompact ? 10 : 19);
+                const chartWidth = width - (chartPaddingX * 2);
+                const chartHeight = height - headerHeight - chartPaddingBottom;
+                const renderedChart = await renderChartForExport(entry.chart, chartWidth, chartHeight, isCompact);
+                const chartCanvas = renderedChart.canvas;
+                ctx.drawImage(chartCanvas, x + chartPaddingX, chartTop, chartWidth, chartHeight);
+                renderedChart.exportChart.destroy();
+            }
+
+            function resolveA4LayoutEntries(chartEntries) {
+                const summary = chartEntries.find(entry => entry.chart === charts.summary) || chartEntries[0];
+                const branches = chartEntries
+                    .filter(entry => entry !== summary)
+                    .slice(0, 4);
+
+                return { summary, branches };
+            }
+
+            if (captureBtn) {
+                captureBtn.addEventListener('click', async function() {
+                    const chartEntries = getVisibleChartEntries();
+                    if (chartEntries.length === 0) return;
+
+                    // Show Modal with Loading State
+                    if (window.jQuery) {
+                        window.jQuery(captureModal).modal('show');
+                        progressUI.classList.remove('d-none');
+                        errorUI.classList.add('d-none');
+                        successUI.classList.add('d-none');
+                    }
+
+                    const originalBtnHtml = captureBtn.innerHTML;
+                    captureBtn.disabled = true;
+                    captureBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> CAPTURING...';
+
+                    try {
+                        const contentTop = A4_EXPORT.marginY + A4_EXPORT.headerHeight;
+                        const contentHeight = A4_EXPORT.height - contentTop - A4_EXPORT.footerHeight - A4_EXPORT.marginY;
+                        const cardWidth = A4_EXPORT.width - (A4_EXPORT.marginX * 2);
+                        const summaryHeight = Math.floor((contentHeight - A4_EXPORT.sectionGap) / 2);
+                        const branchGridTop = contentTop + summaryHeight + A4_EXPORT.sectionGap;
+                        const branchGridHeight = contentHeight - summaryHeight - A4_EXPORT.sectionGap;
+                        const branchCardWidth = Math.floor((cardWidth - A4_EXPORT.branchGap) / 2);
+                        const branchCardHeight = Math.floor((branchGridHeight - A4_EXPORT.branchGap) / 2);
+                        const category = sanitizeFilePart(document.querySelector('.category-btn.active')?.textContent || 'Timeseries');
+                        const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+                        const { summary, branches } = resolveA4LayoutEntries(chartEntries);
+                        const pageCanvas = document.createElement('canvas');
+                        pageCanvas.width = A4_EXPORT.width;
+                        pageCanvas.height = A4_EXPORT.height;
+                        const ctx = pageCanvas.getContext('2d');
+
+                        ctx.fillStyle = '#ffffff';
+                        ctx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
+                        drawExportHeader(ctx);
+
+                        await drawChartCard(ctx, summary, A4_EXPORT.marginX, contentTop, cardWidth, summaryHeight);
+
+                        for (let itemIndex = 0; itemIndex < branches.length; itemIndex++) {
+                            const col = itemIndex % 2;
+                            const row = Math.floor(itemIndex / 2);
+                            const x = A4_EXPORT.marginX + (col * (branchCardWidth + A4_EXPORT.branchGap));
+                            const y = branchGridTop + (row * (branchCardHeight + A4_EXPORT.branchGap));
+                            await drawChartCard(ctx, branches[itemIndex], x, y, branchCardWidth, branchCardHeight, true);
+                        }
+
+                        drawExportFooter(ctx);
+
+                        const link = document.createElement('a');
+                        link.download = `Timeseries-A4-${category}-${timestamp}.jpg`;
+                        link.href = pageCanvas.toDataURL('image/jpeg', 0.95);
+                        link.click();
+
+                        // Show Success UI
+                        progressUI.classList.add('d-none');
+                        successUI.classList.remove('d-none');
+                    } catch (err) {
+                        console.error('Stitching failure:', err);
+                        progressUI.classList.add('d-none');
+                        errorUI.classList.remove('d-none');
+                        errorMessageUI.textContent = 'Gagal menyusun laporan A4. Pastikan seluruh grafik sudah muncul sempurna dan coba lagi.';
+                    } finally {
+                        captureBtn.disabled = false;
+                        captureBtn.innerHTML = originalBtnHtml;
+                    }
+                });
+            }
 
             // Set initial selected state in memory
             let activeKancas = new Set(selectedKancasInitial || []);
@@ -1049,7 +1616,12 @@
                             <div class="card chart-card">
                                 <div class="chart-header">
                                     <h5 class="chart-title">${displayTitle}</h5>
-                                    <span class="unit-badge">Daily Trend</span>
+                                    <div class="d-flex align-items-center">
+                                        <span class="unit-badge">Daily Trend</span>
+                                        <button class="btn-export-jpg ml-2" onclick="window.downloadTimeseriesChart('${branch}', 'Timeseries-${branch.replace(/[^\w-]/g, '_')}')" title="Export to JPG">
+                                            <i class="fas fa-camera"></i>
+                                        </button>
+                                    </div>
                                 </div>
                                 <div class="chart-body branch-chart-body ${isFullWidth ? 'tall' : ''}">
                                     <div class="chart-canvas-frame">

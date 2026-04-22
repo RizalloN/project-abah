@@ -12,6 +12,8 @@ class SnapshotBatchAggregator
     private const BATCH_CACHE_PREFIX = 'snapshot:batch:';
     private const BATCH_LOCK_PREFIX = 'snapshot:batch:lock:';
     private const BATCH_METRICS_PREFIX = 'snapshot:batch:metrics:';
+    private const BATCH_REGISTRY_KEY = 'snapshot:batch:active_keys';
+    private const BATCH_REGISTRY_LOCK = 'snapshot:batch:active_keys:lock';
 
     // Use config values with fallback to constants
     private static ?array $config = null;
@@ -64,6 +66,8 @@ class SnapshotBatchAggregator
                     now()->addSeconds(SnapshotBatchConfig::BATCH_TTL_SECONDS)
                 );
 
+                $this->rememberActiveBatchKey($batchKey);
+
                 // Track metrics for monitoring
                 $this->recordBatchMetric($batchKey, 'size', count($batch['requests']));
 
@@ -112,21 +116,18 @@ class SnapshotBatchAggregator
         $flushed = [];
 
         try {
-            $pattern = self::BATCH_CACHE_PREFIX . '*';
-            if (function_exists('apcu_delete') && ini_get('apc.enabled')) {
-                foreach (apcu_cache_info() as $entry) {
-                    $key = $entry['key'] ?? null;
-                    if (is_string($key) && str_starts_with($key, self::BATCH_CACHE_PREFIX)) {
-                        $batch = Cache::get($key);
-                        if ($batch !== null && $this->isTimeToFlush($batch)) {
-                            $batchKey = substr($key, strlen(self::BATCH_CACHE_PREFIX));
-                            $result = $this->flushBatch($batchKey);
-                            $flushed[] = $result;
-                        }
-                    }
+            foreach ($this->getActiveBatchKeys() as $batchKey) {
+                $batch = $this->getBatch($batchKey);
+
+                if ($batch === null) {
+                    $this->forgetActiveBatchKey($batchKey);
+                    continue;
                 }
-            } else {
-                Log::debug('APCu not available for batch cache enumeration, skipping auto-flush scan.');
+
+                if ($this->isTimeToFlush($batch)) {
+                    $result = $this->flushBatch($batchKey);
+                    $flushed[] = $result;
+                }
             }
         } catch (\Throwable $e) {
             Log::warning('Error during batch auto-flush scan: ' . $e->getMessage());
@@ -145,6 +146,7 @@ class SnapshotBatchAggregator
         $requests = (array) ($batch['requests'] ?? []);
         if (empty($requests)) {
             Cache::forget(self::BATCH_CACHE_PREFIX . $batchKey);
+            $this->forgetActiveBatchKey($batchKey);
 
             return ['batched' => false, 'reason' => 'empty_batch'];
         }
@@ -154,6 +156,7 @@ class SnapshotBatchAggregator
                 ->onQueue((string) config('queue.report_queue', 'default'));
 
             Cache::forget(self::BATCH_CACHE_PREFIX . $batchKey);
+            $this->forgetActiveBatchKey($batchKey);
 
             Log::info('Flushed snapshot batch to job queue.', [
                 'batch_key' => $batchKey,
@@ -174,6 +177,19 @@ class SnapshotBatchAggregator
 
             return ['batched' => false, 'reason' => 'dispatch_failed', 'error' => $e->getMessage()];
         }
+    }
+
+    public function resetActiveBatches(): int
+    {
+        $batchKeys = $this->getActiveBatchKeys();
+
+        foreach ($batchKeys as $batchKey) {
+            Cache::forget(self::BATCH_CACHE_PREFIX . $batchKey);
+        }
+
+        Cache::forget(self::BATCH_REGISTRY_KEY);
+
+        return count($batchKeys);
     }
 
     public function resolveBatchKey(string $tableName, ?string $periodHint = null): string
@@ -203,6 +219,63 @@ class SnapshotBatchAggregator
         $batch = Cache::get(self::BATCH_CACHE_PREFIX . $batchKey);
 
         return is_array($batch) ? $batch : null;
+    }
+
+    private function rememberActiveBatchKey(string $batchKey): void
+    {
+        $this->withRegistryLock(function () use ($batchKey): void {
+            $keys = $this->getActiveBatchKeys();
+            $keys[] = $batchKey;
+
+            Cache::put(
+                self::BATCH_REGISTRY_KEY,
+                array_values(array_unique($keys)),
+                now()->addSeconds(SnapshotBatchConfig::BATCH_TTL_SECONDS * 2)
+            );
+        });
+    }
+
+    private function forgetActiveBatchKey(string $batchKey): void
+    {
+        $this->withRegistryLock(function () use ($batchKey): void {
+            $keys = array_values(array_filter(
+                $this->getActiveBatchKeys(),
+                fn (string $key) => $key !== $batchKey
+            ));
+
+            if ($keys === []) {
+                Cache::forget(self::BATCH_REGISTRY_KEY);
+                return;
+            }
+
+            Cache::put(
+                self::BATCH_REGISTRY_KEY,
+                $keys,
+                now()->addSeconds(SnapshotBatchConfig::BATCH_TTL_SECONDS * 2)
+            );
+        });
+    }
+
+    private function getActiveBatchKeys(): array
+    {
+        $keys = Cache::get(self::BATCH_REGISTRY_KEY, []);
+
+        if (!is_array($keys)) {
+            return [];
+        }
+
+        return array_values(array_unique(array_filter($keys, 'is_string')));
+    }
+
+    private function withRegistryLock(callable $callback): void
+    {
+        try {
+            Cache::lock(self::BATCH_REGISTRY_LOCK, SnapshotBatchConfig::BATCH_LOCK_SECONDS)
+                ->block(2, $callback);
+        } catch (\Throwable $e) {
+            Log::debug('Snapshot batch registry lock failed: ' . $e->getMessage());
+            $callback();
+        }
     }
 
     private function isTimeToFlush(array $batch): bool
@@ -264,17 +337,12 @@ class SnapshotBatchAggregator
     public function getActiveBatches(): array
     {
         $batches = [];
+
         try {
-            // Try to get all batch keys from cache
-            if (function_exists('apcu_cache_info') && ini_get('apc.enabled')) {
-                foreach (apcu_cache_info() as $entry) {
-                    $key = $entry['key'] ?? null;
-                    if (is_string($key) && str_starts_with($key, self::BATCH_CACHE_PREFIX)) {
-                        $batch = Cache::get($key);
-                        if (is_array($batch)) {
-                            $batches[$key] = $batch;
-                        }
-                    }
+            foreach ($this->getActiveBatchKeys() as $batchKey) {
+                $batch = $this->getBatch($batchKey);
+                if (is_array($batch)) {
+                    $batches[$batchKey] = $batch;
                 }
             }
         } catch (\Throwable $e) {
