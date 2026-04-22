@@ -50,12 +50,85 @@
         text-align: center;
     }
 
+    .kinerja-konsumer-hero {
+        position: relative;
+        isolation: isolate;
+        overflow: hidden;
+        margin: -2.5rem -2.25rem 1.5rem;
+        padding: 1.45rem 1.25rem;
+        background:
+            radial-gradient(circle at 12% 18%, rgba(255, 103, 31, 0.16), transparent 26%),
+            radial-gradient(circle at 88% 10%, rgba(59, 130, 246, 0.22), transparent 28%),
+            linear-gradient(135deg, #003b75 0%, #00529c 48%, #0f4c97 100%);
+        color: #ffffff;
+        box-shadow: 0 18px 40px -30px rgba(0, 55, 116, 0.55);
+    }
+
+    .kinerja-konsumer-hero::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        z-index: -1;
+        background:
+            linear-gradient(120deg, rgba(255, 255, 255, 0.12), transparent 35%),
+            repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.08) 0 1px, transparent 1px 18px);
+        opacity: 0.72;
+    }
+
+    .kinerja-konsumer-title-wrap {
+        width: min(100%, 860px);
+        margin: 0 auto;
+        padding: 0.05rem 1rem;
+    }
+
+    .kinerja-konsumer-title-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        margin-bottom: 0.6rem;
+        padding: 0.32rem 0.72rem;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.12);
+        border: 1px solid rgba(255, 255, 255, 0.24);
+        color: rgba(255, 255, 255, 0.92);
+        font-size: 0.64rem;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+    }
+
+    .kinerja-konsumer-title-badge i {
+        color: #ffb15c;
+    }
+
     .kinerja-konsumer-title {
         margin: 0;
-        font-size: 2.25rem;
-        font-weight: 800;
-        color: var(--loan-blue-ink);
-        letter-spacing: -0.02em;
+        font-size: clamp(1.18rem, 2.05vw, 2rem);
+        font-weight: 900;
+        color: #ffffff;
+        letter-spacing: 0.035em;
+        line-height: 1.08;
+        text-transform: uppercase;
+        text-shadow: 0 10px 26px rgba(0, 18, 50, 0.28);
+    }
+
+    .kinerja-konsumer-title::after {
+        content: '';
+        display: block;
+        width: min(130px, 38vw);
+        height: 3px;
+        margin: 0.7rem auto 0;
+        border-radius: 999px;
+        background: linear-gradient(90deg, #ff671f, #f9b233, rgba(255, 255, 255, 0.9));
+        box-shadow: 0 8px 18px rgba(255, 103, 31, 0.28);
+    }
+
+    .kinerja-konsumer-subtitle {
+        margin: 0.65rem auto 0;
+        color: rgba(255, 255, 255, 0.78);
+        font-size: 0.78rem;
+        line-height: 1.6;
+        max-width: 660px;
     }
 
     .kinerja-konsumer-badges {
@@ -661,6 +734,11 @@
             flex-direction: column;
         }
 
+        .kinerja-konsumer-hero {
+            margin: -2.5rem -2.25rem 1.25rem;
+            padding: 1.15rem 0.85rem;
+        }
+
         .kinerja-tabs-nav {
             width: 100%;
         }
@@ -713,7 +791,16 @@
 <div class="pt-4 px-3">
     <div class="kinerja-konsumer-shell animate-reveal">
         <div class="kinerja-konsumer-header">
-            <h1 class="kinerja-konsumer-title">{{ $title }}</h1>
+            <div class="kinerja-konsumer-hero">
+                <div class="kinerja-konsumer-title-wrap">
+                    <div class="kinerja-konsumer-title-badge">
+                        <i class="fas fa-university"></i>
+                        <span>BRI Consumer Performance</span>
+                    </div>
+                    <h1 class="kinerja-konsumer-title">KINERJA KONSUMER</h1>
+                    <p class="kinerja-konsumer-subtitle">{{ $title }}</p>
+                </div>
+            </div>
             
             <form id="kinerjaFilterForm" method="GET" action="{{ route('report.dashboard-pinjaman.kinerja-konsumer') }}" class="kinerja-konsumer-filters">
                 <div class="kinerja-filter-group">                    <label for="kinerjaSegmen" class="kinerja-filter-label">Pilih Segmen RM</label>

@@ -53,24 +53,83 @@
     }
 
     .daily-panel-head {
-        background: linear-gradient(to right, #f8fafc, #ffffff);
-        border-bottom: 1px solid var(--border-color);
+        position: relative;
+        isolation: isolate;
+        overflow: hidden;
+        background:
+            radial-gradient(circle at 12% 18%, rgba(255, 103, 31, 0.16), transparent 26%),
+            radial-gradient(circle at 88% 10%, rgba(59, 130, 246, 0.22), transparent 28%),
+            linear-gradient(135deg, #003b75 0%, #00529c 48%, #0f4c97 100%);
+        border-bottom: 1px solid rgba(219, 229, 239, 0.92);
+        color: #ffffff;
+    }
+
+    .daily-panel-head::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        z-index: -1;
+        background:
+            linear-gradient(120deg, rgba(255, 255, 255, 0.12), transparent 35%),
+            repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.08) 0 1px, transparent 1px 18px);
+        opacity: 0.72;
+    }
+
+    .daily-title-wrap {
+        width: min(100%, 860px);
+        text-align: center;
+        padding: 0.05rem 1rem;
+    }
+
+    .daily-title-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        margin-bottom: 0.6rem;
+        padding: 0.32rem 0.72rem;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.12);
+        border: 1px solid rgba(255, 255, 255, 0.24);
+        color: rgba(255, 255, 255, 0.92);
+        font-size: 0.64rem;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    }
+
+    .daily-title-badge i {
+        color: #ffb15c;
     }
 
     .daily-panel-title {
         margin: 0;
-        font-size: clamp(1.7rem, 2.7vw, 2.5rem);
-        font-weight: 800;
-        color: #0f172a;
-        letter-spacing: -0.01em;
-        margin-bottom: 0.45rem;
+        font-size: clamp(1.18rem, 2.05vw, 2rem);
+        font-weight: 900;
+        color: #ffffff;
+        letter-spacing: 0.035em;
+        line-height: 1.08;
+        text-transform: uppercase;
+        text-shadow: 0 10px 26px rgba(0, 18, 50, 0.28);
+    }
+
+    .daily-panel-title::after {
+        content: '';
+        display: block;
+        width: min(130px, 38vw);
+        height: 3px;
+        margin: 0.7rem auto 0;
+        border-radius: 999px;
+        background: linear-gradient(90deg, #ff671f, #f9b233, rgba(255, 255, 255, 0.9));
+        box-shadow: 0 8px 18px rgba(255, 103, 31, 0.28);
     }
 
     .daily-panel-desc {
-        margin: 0.5rem 0 0;
-        color: var(--text-muted);
-        font-size: 0.9rem;
+        margin: 0.65rem auto 0;
+        color: rgba(255, 255, 255, 0.78);
+        font-size: 0.78rem;
         line-height: 1.6;
+        max-width: 660px;
     }
 
     /* Chips & Badges */
@@ -1019,7 +1078,14 @@
 <div class="daily-dashboard pt-4" id="daily-dashboard-root">
     <div class="daily-surface" id="daily-surface">
         <div class="daily-panel-head px-3 py-4 d-flex flex-wrap justify-content-center align-items-center">
-                         <!-- Judul disembunyikan sesuai request user untuk minimalist design -->
+            <div class="daily-title-wrap">
+                <div class="daily-title-badge">
+                    <i class="fas fa-university"></i>
+                    <span>BRI Daily Performance</span>
+                </div>
+                <h1 class="daily-panel-title">DASHBOARD KERAGAAN HARIAN</h1>
+                <p class="daily-panel-desc">Monitoring posisi, target, dan pertumbuhan kinerja harian secara ringkas untuk mendukung keputusan bisnis Area.</p>
+            </div>
             
             <!-- Hidden elements to preserve JS functionality -->
             <div class="d-none">

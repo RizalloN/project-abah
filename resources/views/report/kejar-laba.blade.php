@@ -41,18 +41,99 @@
         border-bottom: 1px solid var(--border-color);
     }
 
+    .kejar-laba-hero {
+        position: relative;
+        isolation: isolate;
+        overflow: hidden;
+        padding: 1.45rem 1.25rem;
+        border-radius: 16px 16px 0 0;
+        background:
+            radial-gradient(circle at 12% 18%, rgba(255, 103, 31, 0.16), transparent 26%),
+            radial-gradient(circle at 88% 10%, rgba(59, 130, 246, 0.22), transparent 28%),
+            linear-gradient(135deg, #003b75 0%, #00529c 48%, #0f4c97 100%);
+        color: #ffffff;
+        box-shadow: 0 18px 40px -30px rgba(0, 55, 116, 0.55);
+    }
+
+    .kejar-laba-hero::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        z-index: -1;
+        background:
+            linear-gradient(120deg, rgba(255, 255, 255, 0.12), transparent 35%),
+            repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.08) 0 1px, transparent 1px 18px);
+        opacity: 0.72;
+    }
+
+    .kejar-laba-title-wrap {
+        width: min(100%, 860px);
+        text-align: center;
+        padding: 0.05rem 1rem;
+    }
+
+    .kejar-laba-title-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        margin-bottom: 0.6rem;
+        padding: 0.32rem 0.72rem;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.12);
+        border: 1px solid rgba(255, 255, 255, 0.24);
+        color: rgba(255, 255, 255, 0.92);
+        font-size: 0.64rem;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+    }
+
     .kejar-laba-title {
         margin: 0;
-        font-size: 1.5rem;
-        font-weight: 800;
-        color: var(--primary-blue-dark);
-        letter-spacing: -0.02em;
+        font-size: clamp(1.18rem, 2.05vw, 2rem);
+        font-weight: 900;
+        color: #ffffff;
+        letter-spacing: 0.035em;
+        line-height: 1.08;
+        text-transform: uppercase;
+        text-shadow: 0 10px 26px rgba(0, 18, 50, 0.28);
+    }
+
+    .kejar-laba-title::after {
+        content: '';
+        display: block;
+        width: min(130px, 38vw);
+        height: 3px;
+        margin: 0.7rem auto 0;
+        border-radius: 999px;
+        background: linear-gradient(90deg, #ff671f, #f9b233, rgba(255, 255, 255, 0.9));
+        box-shadow: 0 8px 18px rgba(255, 103, 31, 0.28);
     }
 
     .kejar-laba-subtitle {
-        margin-top: 0.35rem;
-        color: var(--text-muted);
-        font-size: 0.92rem;
+        margin: 0.65rem auto 0;
+        color: rgba(255, 255, 255, 0.78);
+        font-size: 0.78rem;
+        line-height: 1.6;
+        max-width: 660px;
+    }
+
+    .kejar-laba-date-badge {
+        position: absolute;
+        right: 1.25rem;
+        top: 1.25rem;
+        border-radius: 999px;
+        font-weight: 800;
+        background: rgba(255, 255, 255, 0.14);
+        color: rgba(255, 255, 255, 0.92);
+        border: 1px solid rgba(255, 255, 255, 0.22);
+    }
+
+    @media (max-width: 767.98px) {
+        .kejar-laba-date-badge {
+            position: static;
+            margin-top: 1rem;
+        }
     }
 
     .filter-section {
@@ -380,13 +461,17 @@
 
 <div class="kejar-laba-wrapper pt-4">
     <div class="kejar-laba-card">
-        <div class="kejar-laba-card-header d-flex flex-wrap align-items-center justify-content-between gap-3">
-            <div>
-                <h1 class="kejar-laba-title">Report Recovery</h1>
-                <div class="kejar-laba-subtitle">Monitoring pencapaian Recovery berdasarkan data Cognos.</div>
+        <div class="kejar-laba-card-header kejar-laba-hero d-flex flex-wrap align-items-center justify-content-center gap-3">
+            <div class="kejar-laba-title-wrap">
+                <div class="kejar-laba-title-badge">
+                    <i class="fas fa-university"></i>
+                    <span>BRI Recovery Performance</span>
+                </div>
+                <h1 class="kejar-laba-title">REPORT RECOVERY</h1>
+                <div class="kejar-laba-subtitle">Monitoring pencapaian Recovery berdasarkan data Cognos secara ringkas dan profesional.</div>
             </div>
             <div class="d-flex align-items-center gap-2">
-                <span class="badge badge-info px-3 py-2" style="border-radius: 20px; font-weight: 800; background: #eff6ff; color: var(--primary-blue); border: 1px solid #dbeafe;">
+                <span class="badge px-3 py-2 kejar-laba-date-badge">
                     <i class="fas fa-calendar-check mr-1"></i> Data per: {{ $selectedPeriodLabel }}
                 </span>
             </div>

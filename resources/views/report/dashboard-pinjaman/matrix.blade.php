@@ -6,15 +6,22 @@
 @include('report.dashboard-pinjaman._partials._styles')
 
 <div class="loan-dashboard pt-4 px-3">
+    <div class="loan-title-hero d-flex flex-wrap justify-content-center align-items-center">
+        <div class="loan-title-hero__wrap">
+            <div class="loan-title-hero__badge">
+                <i class="fas fa-university"></i>
+                <span>BRI Loan Movement</span>
+            </div>
+            <h1 class="loan-title-hero__title">MATRIX PERGESERAN KOLEK</h1>
+            <p class="loan-title-hero__desc">Analisis pergerakan kualitas pinjaman antar periode untuk membaca migrasi kolektibilitas secara ringkas.</p>
+        </div>
+    </div>
+
     <div id="loanMatrixPanel">
         <div class="card loan-shell mb-4 animate-reveal">
             <div class="card-body p-4">
                 <form id="loanFilterForm" method="GET" action="{{ route('report.dashboard-pinjaman.matrix') }}">
-                    <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center mb-4 pb-3 border-bottom">
-                        <div>
-                            <h2 class="mb-1 font-weight-bold" style="font-size: 2.25rem; letter-spacing: -0.02em; color: var(--loan-blue-ink);">Matrix Pergeseran Kolek</h2>
-                            <p class="font-weight-bold mb-0" style="font-size: 0.85rem; color: var(--loan-muted);">Analisis pergerakan kualitas pinjaman antar periode.</p>
-                        </div>
+                    <div class="d-flex flex-column flex-lg-row justify-content-end align-items-lg-center mb-4 pb-3 border-bottom">
                         <div class="mt-3 mt-lg-0 text-lg-right">
                             <div class="loan-filter-meta">
                                 <span>Periode aktif: <strong id="loanActivePeriodMeta">{{ $selectedPeriod ? \Carbon\Carbon::parse($selectedPeriod)->format('d/m/Y') : '-' }}</strong></span>
