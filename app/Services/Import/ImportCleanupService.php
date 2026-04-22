@@ -14,7 +14,7 @@ class ImportCleanupService
     private const SYNC_PENDING_TTL_MINUTES = 15;
     private const SYNC_COORDINATOR_LOCK_SECONDS = 5;
     private const DEFAULT_SYNC_QUEUE = 'default';
-    private const DAILY_LOAN_SYNC_QUEUE = 'imports-daily-loan';
+    private const DAILY_LOAN_SYNC_QUEUE = 'imports-high';
     private const DAILY_LOAN_TABLE = 'daily_loan_dinamis';
     private const DAILY_LOAN_REPORT_ID = 8;
     private const SSA_TABLES = ['ssa_simpanan', 'ssa_pinjaman'];

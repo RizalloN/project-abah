@@ -1709,8 +1709,13 @@
                             return;
                         }
 
+                        const rawData = typeof event.data === 'string' ? event.data.trim() : '';
+                        if (rawData === '') {
+                            return;
+                        }
+
                         let data = {};
-                        try { data = JSON.parse(event.data); } catch (_) {}
+                        try { data = JSON.parse(rawData); } catch (_) { data = { message: rawData }; }
                         if (isNonFatalProcessingMessage(data.message)) {
                             return;
                         }

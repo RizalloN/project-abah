@@ -12,6 +12,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
@@ -80,11 +81,11 @@ class ImportDailyLoanBackendController extends Controller
         }
 
         $replaceExistingPeriods = $request->boolean('replace_existing_periods', true);
-        $deletedExistingRows = 0;
-        if ($replaceExistingPeriods && $detectedPeriods !== []) {
-            $deletedExistingRows = (int) DB::table(self::DAILY_LOAN_TABLE)
+        $replaceTargetRows = 0;
+        if ($replaceExistingPeriods && $detectedPeriods !== [] && Schema::hasTable(self::DAILY_LOAN_TABLE)) {
+            $replaceTargetRows = (int) DB::table(self::DAILY_LOAN_TABLE)
                 ->whereIn('periode', $detectedPeriods)
-                ->delete();
+                ->count();
         }
 
         $mode = (string) ($validated['mode'] ?? 'sync');
@@ -111,6 +112,9 @@ class ImportDailyLoanBackendController extends Controller
                     'file_path' => $copiedRelativePath,
                     'active_filters' => [],
                     'disable_inline_fallback' => false,
+                    'replace_existing_periods' => $replaceExistingPeriods,
+                    'backend_detected_periods' => $detectedPeriods,
+                    'replace_periods' => $detectedPeriods,
                     'job_id' => $jobId,
                 ],
                 'headers' => [],
@@ -130,13 +134,19 @@ class ImportDailyLoanBackendController extends Controller
                 'source_path' => $sourcePath,
                 'storage_path' => Storage::path($copiedRelativePath),
                 'detected_periods' => $detectedPeriods,
-                'deleted_existing_rows' => $deletedExistingRows,
+                'deleted_existing_rows' => $replaceTargetRows,
                 'source_size_bytes' => (int) ($metadata['source_size_bytes'] ?? filesize($sourcePath) ?: 0),
                 'sampled_data_rows' => (int) ($metadata['sampled_data_rows'] ?? 0),
             ], $dispatched ? 202 : 500);
         }
 
-        return $this->runSyncDirectImport($sourcePath, $metadata, $detectedPeriods, $deletedExistingRows);
+        return $this->runSyncDirectImport(
+            $sourcePath,
+            $metadata,
+            $detectedPeriods,
+            $replaceExistingPeriods,
+            $replaceTargetRows
+        );
     }
 
     private function resolveReadableSourcePath(string $sourcePath): ?string
@@ -291,7 +301,8 @@ class ImportDailyLoanBackendController extends Controller
         string $sourcePath,
         array $metadata,
         array $detectedPeriods,
-        int $deletedExistingRows
+        bool $replaceExistingPeriods,
+        int $replaceTargetRows
     ): JsonResponse {
         $jobId = $this->jobService->createImportJobRecord(
             self::DAILY_LOAN_REPORT_ID,
@@ -303,38 +314,63 @@ class ImportDailyLoanBackendController extends Controller
                 'table_name' => self::DAILY_LOAN_TABLE,
                 'backend_source_path' => $sourcePath,
                 'backend_detected_periods' => $detectedPeriods,
+                'replace_existing_periods' => $replaceExistingPeriods,
             ],
             auth()->id()
         );
 
         $startedAt = microtime(true);
         $stagedPath = null;
+        $sourceCleanup = false;
+        $skippedRows = [];
+        $skippedCount = 0;
+        $sourcePreNormalized = false;
+        $loadBackend = 'php';
+        $inserted = 0;
+        $totalRows = 0;
+        $failedRows = 0;
 
         try {
             $this->progressService->markProcessing($jobId, [
                 'status' => 'processing',
                 'phase' => 'staging',
                 'percent' => 10,
-                'message' => 'Menyiapkan staging CSV Daily Loan untuk direct LOAD DATA...',
+                'message' => 'Menormalkan CSV Daily Loan backend untuk direct LOAD DATA...',
                 'total_rows' => 0,
                 'processed_rows' => 0,
             ]);
 
-            $stagedPath = $this->createDirectLoadReadyCsv($sourcePath, $metadata);
+            $importController = app(ImportExcelController::class);
+            $loadSource = (array) $this->invokeImportExcelControllerMethod(
+                $importController,
+                'prepareDailyLoanDirectLoadSource',
+                [$sourcePath, (string) ($metadata['delimiter'] ?? ','), null]
+            );
+
+            $stagedPath = (string) ($loadSource['path'] ?? $sourcePath);
+            $sourceCleanup = (bool) ($loadSource['cleanup'] ?? false);
+            $loadBackend = (string) ($loadSource['backend'] ?? 'php');
+            $sourcePreNormalized = (bool) ($loadSource['source_pre_normalized'] ?? false);
+            $skippedRows = array_values(array_unique(array_map('intval', (array) ($loadSource['skipped_rows'] ?? []))));
+            $skippedCount = (int) ($loadSource['skipped_count'] ?? count($skippedRows));
             $headers = array_values((array) ($metadata['headers'] ?? []));
 
             $this->progressService->cacheProgress($jobId, [
                 'status' => 'processing',
                 'phase' => 'loading',
                 'percent' => 35,
-                'message' => 'Menjalankan direct LOAD DATA Daily Loan dari staging backend...',
+                'message' => 'Menjalankan direct LOAD DATA Daily Loan dari source backend terstandar...',
             ]);
 
-            $importController = app(ImportExcelController::class);
             $loadPlan = $this->invokeImportExcelControllerMethod(
                 $importController,
                 'buildDirectDailyLoanCsvLoadPlan',
-                [$stagedPath, $headers, []]
+                [$stagedPath, $headers, [
+                    'source_backend' => $loadBackend,
+                    'source_pre_normalized' => $sourcePreNormalized,
+                    'replace_existing_periods' => $replaceExistingPeriods,
+                    'replace_periods' => $detectedPeriods,
+                ]]
             );
             $inserted = (int) $this->invokeImportExcelControllerMethod(
                 $importController,
@@ -342,15 +378,21 @@ class ImportDailyLoanBackendController extends Controller
                 [$stagedPath, $loadPlan]
             );
 
-            $this->progressService->markCompleted($jobId, $inserted, 0, $inserted, [
+            $totalRows = max($inserted, (int) ($loadSource['written_rows'] ?? 0));
+            if ($skippedCount > 0) {
+                $totalRows = max($totalRows, $inserted + $skippedCount);
+            }
+            $failedRows = max(0, $totalRows - $inserted);
+
+            $this->progressService->markCompleted($jobId, $inserted, $failedRows, $totalRows, [
                 'status' => 'completed',
                 'phase' => 'loading',
                 'percent' => 100,
                 'message' => 'Direct LOAD DATA Daily Loan selesai diproses.',
-                'total_rows' => $inserted,
-                'processed_rows' => $inserted,
+                'total_rows' => $totalRows,
+                'processed_rows' => $totalRows,
                 'total_success' => $inserted,
-                'total_failed' => 0,
+                'total_failed' => $failedRows,
             ]);
 
             $this->cleanupService->dispatchImportedJobSync($jobId, source: static::class);
@@ -363,13 +405,17 @@ class ImportDailyLoanBackendController extends Controller
                 'source_path' => $sourcePath,
                 'staged_path' => $stagedPath,
                 'detected_periods' => $detectedPeriods,
-                'deleted_existing_rows' => $deletedExistingRows,
+                'deleted_existing_rows' => $replaceTargetRows,
+                'load_backend' => $loadBackend,
+                'source_pre_normalized' => $sourcePreNormalized,
+                'skipped_count' => $skippedCount,
+                'skipped_rows' => array_slice($skippedRows, 0, 500),
                 'source_size_bytes' => (int) ($metadata['source_size_bytes'] ?? filesize($sourcePath) ?: 0),
                 'sampled_data_rows' => (int) ($metadata['sampled_data_rows'] ?? 0),
                 'duration_seconds' => $durationSeconds,
-                'total_rows' => $inserted,
+                'total_rows' => $totalRows,
                 'total_success' => $inserted,
-                'total_failed' => 0,
+                'total_failed' => $failedRows,
             ]);
         } catch (\Throwable $e) {
             $this->progressService->markFailed($jobId, $e->getMessage());
@@ -381,13 +427,17 @@ class ImportDailyLoanBackendController extends Controller
                 'source_path' => $sourcePath,
                 'staged_path' => $stagedPath,
                 'detected_periods' => $detectedPeriods,
-                'deleted_existing_rows' => $deletedExistingRows,
+                'deleted_existing_rows' => $replaceTargetRows,
+                'load_backend' => $loadBackend,
+                'source_pre_normalized' => $sourcePreNormalized,
+                'skipped_count' => $skippedCount,
+                'skipped_rows' => array_slice($skippedRows, 0, 500),
                 'source_size_bytes' => (int) ($metadata['source_size_bytes'] ?? filesize($sourcePath) ?: 0),
                 'sampled_data_rows' => (int) ($metadata['sampled_data_rows'] ?? 0),
                 'duration_seconds' => round(microtime(true) - $startedAt, 3),
             ], 500);
         } finally {
-            if ($stagedPath !== null && is_file($stagedPath)) {
+            if ($sourceCleanup && $stagedPath !== null && is_file($stagedPath)) {
                 @unlink($stagedPath);
             }
         }

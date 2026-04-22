@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\DB;
 use Throwable;
 use App\Support\RkaLookupService;
 
-class DashboardSmeSegmentService
+class DashboardPinjamanKreditService
 {
     private const SNAPSHOT_TABLE = 'dashboard_harian_snapshots';
     private const AREA_6_BRANCHES = [

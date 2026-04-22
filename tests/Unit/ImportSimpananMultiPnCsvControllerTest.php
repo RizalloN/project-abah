@@ -7,6 +7,7 @@ use App\Services\Import\ImportCleanupService;
 use Illuminate\Support\Facades\Schema;
 use Mockery;
 use ReflectionClass;
+use ReflectionMethod;
 use Tests\TestCase;
 
 class ImportSimpananMultiPnCsvControllerTest extends TestCase
@@ -69,7 +70,12 @@ class ImportSimpananMultiPnCsvControllerTest extends TestCase
 
     public function test_direct_csv_load_plan_honors_configured_validation_sample_size(): void
     {
-        $controller = new ImportSimpananMultiPnCsvController();
+        $controller = new class extends ImportSimpananMultiPnCsvController {
+            protected function resolveActiveTableName(string $default = 'daily_loan_dinamis'): string
+            {
+                return 'simpanan_multipn';
+            }
+        };
         config()->set('import.direct_load.validation_sample_rows', 5000);
 
         Schema::shouldReceive('getColumnListing')
@@ -322,7 +328,12 @@ class ImportSimpananMultiPnCsvControllerTest extends TestCase
 
     public function test_prepare_simpanan_direct_load_source_preserves_duplicates_and_skips_malformed_rows(): void
     {
-        $controller = new ImportSimpananMultiPnCsvController();
+        $controller = new class extends ImportSimpananMultiPnCsvController {
+            protected function resolveActiveTableName(string $default = 'daily_loan_dinamis'): string
+            {
+                return 'simpanan_multipn';
+            }
+        };
 
         $csvPath = storage_path('framework/testing/simpanan_validator_test.csv');
         if (!is_dir(dirname($csvPath))) {
@@ -356,7 +367,12 @@ class ImportSimpananMultiPnCsvControllerTest extends TestCase
 
     public function test_prepare_simpanan_direct_load_source_normalizes_blank_lines_instead_of_using_raw_path(): void
     {
-        $controller = new ImportSimpananMultiPnCsvController();
+        $controller = new class extends ImportSimpananMultiPnCsvController {
+            protected function resolveActiveTableName(string $default = 'daily_loan_dinamis'): string
+            {
+                return 'simpanan_multipn';
+            }
+        };
 
         $csvPath = storage_path('framework/testing/simpanan_validator_blank_lines.csv');
         if (!is_dir(dirname($csvPath))) {
@@ -385,6 +401,43 @@ class ImportSimpananMultiPnCsvControllerTest extends TestCase
         $this->assertTrue((bool) ($result['cleanup'] ?? false));
         $this->assertTrue((bool) ($result['normalized'] ?? false));
         $this->assertSame(2, $result['written_rows'] ?? null);
+    }
+
+    public function test_prepare_simpanan_direct_load_source_treats_comma_delimited_staging_output_as_raw_source(): void
+    {
+        $controller = new class extends ImportSimpananMultiPnCsvController {
+            protected function resolveActiveTableName(string $default = 'daily_loan_dinamis'): string
+            {
+                return 'simpanan_multipn';
+            }
+        };
+
+        $csvPath = storage_path('framework/testing/simpanan_staged_output_comma.csv');
+        if (!is_dir(dirname($csvPath))) {
+            @mkdir(dirname($csvPath), 0777, true);
+        }
+
+        file_put_contents($csvPath, implode("\n", [
+            'posisi,cifno,no_rekening,jenis_simpanan,saldo_idr',
+            '2026-04-20,A001,636001000001,TABUNGAN,1000',
+            '2026-04-20,A002,636001000002,GIRO,2500',
+        ]) . "\n");
+
+        $result = [];
+        try {
+            $result = $this->invokeMethod($controller, 'prepareSimpananMultiPnDirectLoadSource', [$csvPath, ',']);
+        } finally {
+            @unlink($csvPath);
+            if (!empty($result['path'] ?? '') && file_exists((string) $result['path']) && ($result['cleanup'] ?? false)) {
+                @unlink((string) $result['path']);
+            }
+        }
+
+        $this->assertSame($csvPath, $result['path'] ?? null);
+        $this->assertSame('raw', $result['backend'] ?? null);
+        $this->assertFalse((bool) ($result['cleanup'] ?? true));
+        $this->assertSame(2, $result['written_rows'] ?? null);
+        $this->assertSame(2, $result['total_rows'] ?? null);
     }
 
     public function test_direct_csv_load_bypasses_snapshot_invalidation_during_bulk_load(): void
@@ -522,6 +575,313 @@ class ImportSimpananMultiPnCsvControllerTest extends TestCase
         }
 
         $this->assertTrue(true);
+    }
+
+    public function test_cleanup_successful_import_artifacts_uses_provided_period_hints_without_rescanning_csv(): void
+    {
+        $controller = new ImportSimpananMultiPnCsvController();
+
+        $cleanupService = Mockery::mock(ImportCleanupService::class);
+        $cleanupService->shouldReceive('dispatchImportedJobSync')
+            ->once()
+            ->with(55, 'simpanan_multipn', '2026-04-20', ImportSimpananMultiPnCsvController::class)
+            ->andReturnNull();
+
+        $jobCleanup = Mockery::mock(\App\Http\Controllers\Import\ImportCleanupController::class);
+        $jobCleanup->shouldReceive('cleanupSuccessfulJobArtifacts')
+            ->once()
+            ->with(55, Mockery::type('array'))
+            ->andReturnNull();
+
+        app()->instance(ImportCleanupService::class, $cleanupService);
+        app()->instance(\App\Http\Controllers\Import\ImportCleanupController::class, $jobCleanup);
+
+        $csvPath = storage_path('framework/testing/simpanan_cleanup_no_rescan.csv');
+        if (!is_dir(dirname($csvPath))) {
+            @mkdir(dirname($csvPath), 0777, true);
+        }
+
+        file_put_contents($csvPath, 'BROKEN,CONTENT,SHOULD,NOT,BE,READ');
+
+        try {
+            $this->invokeMethod($controller, 'cleanupSuccessfulImportArtifacts', [
+                55,
+                'relative/path.csv',
+                $csvPath,
+                ['2026-04-20'],
+                '2026-04-20 10:11:12',
+            ]);
+        } finally {
+            @unlink($csvPath);
+        }
+
+        $this->assertTrue(true);
+    }
+
+    public function test_create_normalized_direct_load_csv_forwards_filters_and_job_metadata_to_polars_stage(): void
+    {
+        $controller = new class extends ImportSimpananMultiPnCsvController {
+            public array $stageCall = [];
+
+            protected function stageSimpananMultiPnCsvWithPolars(
+                ?callable $send,
+                string $csvPath,
+                ?string $delimiter = null,
+                array $activeFilters = [],
+                int $jobId = 0,
+                array $selectedColumns = [],
+                array $normalizedHeaders = []
+            ): ?array {
+                $this->stageCall = [
+                    'csvPath' => $csvPath,
+                    'delimiter' => $delimiter,
+                    'activeFilters' => $activeFilters,
+                    'jobId' => $jobId,
+                    'selectedColumns' => $selectedColumns,
+                    'normalizedHeaders' => $normalizedHeaders,
+                ];
+
+                return [
+                    'path' => 'staged-output.csv',
+                    'cleanup' => false,
+                    'normalized' => true,
+                    'backend' => 'polars',
+                    'written_rows' => 2,
+                    'total_rows' => 2,
+                ];
+            }
+        };
+
+        $method = new ReflectionMethod(ImportSimpananMultiPnCsvController::class, 'createNormalizedSimpananMultiPnDirectLoadCsv');
+        $method->setAccessible(true);
+
+        $result = $method->invoke(
+            $controller,
+            '/tmp/input.csv',
+            ';',
+            null,
+            ['posisi' => ['2026-04-20']]
+        );
+
+        $this->assertSame('staged-output.csv', $result['path'] ?? null);
+        $this->assertSame(['posisi' => ['2026-04-20']], $controller->stageCall['activeFilters'] ?? null);
+        $this->assertSame(0, $controller->stageCall['jobId'] ?? null);
+    }
+
+    public function test_direct_csv_load_plan_uses_optimized_metadata_without_rescanning_clean_stage(): void
+    {
+        $controller = new ImportSimpananMultiPnCsvController();
+
+        Schema::shouldReceive('getColumnListing')
+            ->once()
+            ->with('simpanan_multipn')
+            ->andReturn([
+                'id',
+                'posisi',
+                'cifno',
+                'no_rekening',
+                'jenis_simpanan',
+                'saldo_idr',
+                'created_at',
+                'updated_at',
+            ]);
+
+        $method = new ReflectionMethod(ImportSimpananMultiPnCsvController::class, 'buildDirectCsvLoadPlan');
+        $method->setAccessible(true);
+
+        $csvPath = storage_path('framework/testing/simpanan_clean_stage_valid_rows.csv');
+        if (!is_dir(dirname($csvPath))) {
+            @mkdir(dirname($csvPath), 0777, true);
+        }
+
+        file_put_contents($csvPath, implode("\n", [
+            'posisi;cifno;no_rekening;jenis_simpanan;saldo_idr',
+            '2026-04-20;A001;636001000001;TABUNGAN;500',
+            '2026-04-20;A002;636001000002;TABUNGAN;1000',
+        ]));
+
+        try {
+            $plan = $method->invoke(
+                $controller,
+                $csvPath,
+                ['posisi', 'cifno', 'no_rekening', 'jenis_simpanan', 'saldo_idr'],
+                [0, 1, 2, 3, 4],
+                null,
+                [
+                    'assume_clean_source' => true,
+                    'delimiter' => ';',
+                    'source_headers' => ['posisi', 'cifno', 'no_rekening', 'jenis_simpanan', 'saldo_idr'],
+                    'written_rows' => 2,
+                    'source_balance_total_cents' => 25000,
+                    'period_hints' => ['2026-04-20'],
+                    'backend' => 'polars',
+                ]
+            );
+        } finally {
+            @unlink($csvPath);
+        }
+
+        $this->assertSame($csvPath, $plan['source_path'] ?? null);
+        $this->assertSame(['2026-04-20'], $plan['period_hints'] ?? []);
+        $this->assertSame(25000, $plan['source_balance_total_cents'] ?? null);
+        $this->assertSame(2, $plan['validation_written_rows'] ?? null);
+        $this->assertSame('polars', $plan['validation_backend'] ?? null);
+        $this->assertSame(['posisi', 'cifno', 'no_rekening', 'jenis_simpanan', 'saldo_idr'], $plan['source_headers'] ?? []);
+        $this->assertNull($plan['cleanup_path'] ?? null);
+    }
+
+    public function test_direct_csv_load_plan_uses_prepared_source_metadata_without_reloading_csv(): void
+    {
+        $controller = new ImportSimpananMultiPnCsvController();
+
+        Schema::shouldReceive('getColumnListing')
+            ->once()
+            ->with('simpanan_multipn')
+            ->andReturn([
+                'id',
+                'posisi',
+                'cifno',
+                'no_rekening',
+                'status',
+                'jenis_simpanan',
+                'saldo_idr',
+                'created_at',
+                'updated_at',
+            ]);
+
+        $method = new ReflectionMethod(ImportSimpananMultiPnCsvController::class, 'buildDirectCsvLoadPlan');
+        $method->setAccessible(true);
+
+        $csvPath = storage_path('framework/testing/simpanan_prepared_source_invalid.csv');
+        if (!is_dir(dirname($csvPath))) {
+            @mkdir(dirname($csvPath), 0777, true);
+        }
+
+        file_put_contents($csvPath, 'BROKEN,CONTENT,SHOULD,NOT,BE,READ');
+
+        try {
+            $plan = $method->invoke(
+                $controller,
+                $csvPath,
+                ['No', 'Posisi', 'CIFNO', 'No Rekening', 'Status', 'Jenis Simpanan', 'Saldo IDR'],
+                [0, 1, 2, 3, 4, 5, 6],
+                null,
+                [
+                    'delimiter' => ';',
+                    'prepared_source' => [
+                        'path' => $csvPath,
+                        'cleanup' => false,
+                        'normalized' => false,
+                        'backend' => 'raw',
+                        'headers' => ['No', 'Posisi', 'CIFNO', 'No Rekening', 'Status', 'Jenis Simpanan', 'Saldo IDR'],
+                        'skipped_rows' => [],
+                        'skipped_count' => 0,
+                        'duplicate_count' => 0,
+                        'written_rows' => 2,
+                        'total_rows' => 2,
+                        'period_hints' => ['2026-04-20'],
+                    ],
+                ]
+            );
+        } finally {
+            @unlink($csvPath);
+        }
+
+        $this->assertSame($csvPath, $plan['source_path'] ?? null);
+        $this->assertSame(['2026-04-20'], $plan['period_hints'] ?? []);
+        $this->assertSame(2, $plan['validation_written_rows'] ?? null);
+        $this->assertSame('raw', $plan['validation_backend'] ?? null);
+    }
+
+    public function test_direct_csv_load_plan_rejects_clean_stage_samples_when_rows_are_all_null(): void
+    {
+        $controller = new ImportSimpananMultiPnCsvController();
+
+        $csvPath = storage_path('framework/testing/simpanan_clean_stage_null_rows.csv');
+        if (!is_dir(dirname($csvPath))) {
+            @mkdir(dirname($csvPath), 0777, true);
+        }
+
+        file_put_contents($csvPath, implode("\n", [
+            'posisi;cifno;no_rekening;jenis_simpanan;status;saldo_idr',
+            ';;;;;',
+            ';;;;;',
+        ]));
+
+        try {
+            $this->expectException(\RuntimeException::class);
+            $this->expectExceptionMessage('data null tidak masuk ke database');
+
+            $method = new ReflectionMethod(ImportSimpananMultiPnCsvController::class, 'buildDirectCsvLoadPlan');
+            $method->setAccessible(true);
+            $method->invoke(
+                $controller,
+                $csvPath,
+                ['posisi', 'cifno', 'no_rekening', 'jenis_simpanan', 'status', 'saldo_idr'],
+                [0, 1, 2, 3, 4, 5],
+                null,
+                [
+                    'assume_clean_source' => true,
+                    'delimiter' => ';',
+                    'source_headers' => ['posisi', 'cifno', 'no_rekening', 'jenis_simpanan', 'status', 'saldo_idr'],
+                    'written_rows' => 2,
+                    'backend' => 'polars',
+                ]
+            );
+        } finally {
+            @unlink($csvPath);
+        }
+    }
+
+    public function test_resolve_import_job_failure_message_falls_back_when_error_message_is_missing(): void
+    {
+        $controller = new ImportSimpananMultiPnCsvController();
+        $method = new ReflectionMethod(ImportSimpananMultiPnCsvController::class, 'resolveImportJobFailureMessage');
+        $method->setAccessible(true);
+
+        $job = (object) [
+            'status' => 'failed',
+            'message' => '',
+        ];
+
+        $message = $method->invoke($controller, $job, 'Fallback message');
+
+        $this->assertSame('Fallback message', $message);
+    }
+
+    public function test_resolve_import_job_failure_message_prefers_existing_message_fields(): void
+    {
+        $controller = new ImportSimpananMultiPnCsvController();
+        $method = new ReflectionMethod(ImportSimpananMultiPnCsvController::class, 'resolveImportJobFailureMessage');
+        $method->setAccessible(true);
+
+        $job = (object) [
+            'status' => 'failed',
+            'error_message' => null,
+            'message' => 'Import gagal karena validasi.',
+        ];
+
+        $message = $method->invoke($controller, $job, 'Fallback message');
+
+        $this->assertSame('Import gagal karena validasi.', $message);
+    }
+
+    public function test_format_safe_import_failure_message_sanitizes_runtime_errors(): void
+    {
+        $controller = new ImportSimpananMultiPnCsvController();
+        $method = new ReflectionMethod(ImportSimpananMultiPnCsvController::class, 'formatSafeImportFailureMessage');
+        $method->setAccessible(true);
+
+        $message = $method->invoke(
+            $controller,
+            'Fast import CSV gagal: ',
+            new \RuntimeException('Undefined variable $jobId (line 4076)')
+        );
+
+        $this->assertSame(
+            'Fast import CSV gagal: Import gagal diproses karena kesalahan internal pada worker. Detail teknis sudah dicatat di log server.',
+            $message
+        );
     }
 
     private function invokeMethod(object $target, string $method, array $arguments)

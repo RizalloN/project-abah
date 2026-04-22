@@ -6,7 +6,7 @@ use App\Jobs\EnsureDashboardSnapshotJob;
 use App\Support\DashboardHarianSnapshotService;
 use App\Support\ReportIndexHintResolver;
 use App\Support\LoanQualityBucketMapper;
-use App\Support\DashboardSmeSegmentService;
+use App\Support\DashboardPinjamanKreditService;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Http\Request;
@@ -139,7 +139,7 @@ class DashboardPinjamanReportController extends Controller
         $data = $this->rememberPayload(
             $cacheKey,
             now()->addMinutes(10),
-            fn () => app(DashboardSmeSegmentService::class)->getUnifiedSegmentData($selectedPeriod, $selectedCategory),
+            fn () => app(DashboardPinjamanKreditService::class)->getUnifiedSegmentData($selectedPeriod, $selectedCategory),
             $forceRefresh
         );
 

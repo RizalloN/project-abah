@@ -271,7 +271,7 @@ class ImportJobManagementControllerTest extends TestCase
         $this->assertSame('Job queued berhasil dihentikan.', $payload['message']);
     }
 
-    public function test_terminate_processing_job_only_sends_signal_and_updates_cached_progress(): void
+    public function test_terminate_processing_job_forces_terminal_status_immediately(): void
     {
         $progressService = Mockery::mock(ImportProgressService::class);
         $progressService->shouldReceive('findJob')
@@ -287,29 +287,12 @@ class ImportJobManagementControllerTest extends TestCase
         $progressService->shouldReceive('requestTermination')
             ->once()
             ->with(92, null);
-        $progressService->shouldReceive('getStatusPayload')
+        $progressService->shouldReceive('cleanupQueuedImportJobRowsForJob')
             ->once()
-            ->with(92)
-            ->andReturn([
-                'percent' => 60,
-                'processed_rows' => 15,
-                'total_success' => 12,
-                'total_failed' => 3,
-                'total_rows' => 25,
-            ]);
-        $progressService->shouldReceive('cacheProgress')
+            ->with(92);
+        $progressService->shouldReceive('markTerminated')
             ->once()
-            ->with(92, Mockery::on(function (array $payload): bool {
-                return ($payload['status'] ?? null) === 'processing'
-                    && ($payload['percent'] ?? null) === 60
-                    && ($payload['processed_rows'] ?? null) === 15
-                    && ($payload['total_success'] ?? null) === 12
-                    && ($payload['total_failed'] ?? null) === 3
-                    && ($payload['total_rows'] ?? null) === 25
-                    && str_contains((string) ($payload['message'] ?? ''), 'Permintaan terminate dikirim');
-            }));
-        $progressService->shouldNotReceive('cleanupQueuedImportJobRowsForJob');
-        $progressService->shouldNotReceive('markTerminated');
+            ->with(92, 'Job dihentikan melalui Job Management.', 12, 3);
 
         $controller = new ImportJobManagementController(
             app(ManagedReportSnapshotRebuildCoordinator::class),
@@ -321,7 +304,7 @@ class ImportJobManagementControllerTest extends TestCase
 
         $this->assertSame(200, $response->getStatusCode());
         $this->assertSame('success', $payload['status']);
-        $this->assertSame('Permintaan terminate dikirim ke worker.', $payload['message']);
+        $this->assertSame('Job processing dihentikan paksa. Jika worker lama masih aktif, status job tidak akan diaktifkan kembali.', $payload['message']);
     }
 
     public function test_terminate_rejects_non_active_job_status(): void

@@ -465,6 +465,11 @@ class ImportExcelQueuedFallbackTest extends TestCase
 
         $progressService = Mockery::mock(ImportProgressService::class);
         $progressService->shouldReceive('findJob')->once()->with(123)->andReturn($jobObject);
+        $progressService->shouldReceive('updateJob')
+            ->once()
+            ->withArgs(function (int $jobId, array $payload): bool {
+                return $jobId === 123 && array_key_exists('total_files', $payload);
+            });
         $progressService->shouldReceive('markQueued')->once();
         $this->app->instance(ImportProgressService::class, $progressService);
 

@@ -60,6 +60,35 @@ def send_error(message: str) -> None:
     send_event("error", {"message": message})
 
 
+def check_termination(job_id: int, db_config: dict) -> bool:
+    """Check if the job has been terminated in the database."""
+    if not job_id or not db_config:
+        return False
+    
+    try:
+        import mysql.connector
+        conn = mysql.connector.connect(
+            host=db_config.get("host", "127.0.0.1"),
+            user=db_config.get("username", "root"),
+            password=db_config.get("password", ""),
+            database=db_config.get("database", "project_abah"),
+            connect_timeout=2
+        )
+        cursor = conn.cursor()
+        cursor.execute("SELECT status FROM import_jobs WHERE id = %s", (job_id,))
+        row = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        
+        if row and row[0] == "terminated":
+            return True
+    except Exception:
+        # If DB check fails, assume not terminated to allow process to continue
+        pass
+    
+    return False
+
+
 def load_config(config_path: str) -> dict:
     with open(config_path, "r", encoding="utf-8-sig") as handle:
         return json.load(handle)
@@ -284,122 +313,341 @@ def is_valid_simpanan_row_values(values_by_header: dict[str, object]) -> bool:
     return normalize_decimal_value(saldo) is not None
 
 
+def sanitize_source_optimized(source_path: str, delimiter: str, config: dict) -> tuple[str, list[str], int, int, int, int, bool, list[int], int, int, list[dict[str, str]]]:
+    """Optimized CSV sanitization using Polars lazy evaluation."""
+    import polars as pl
+    from datetime import datetime, timedelta
+
+    temp_dir = Path(tempfile.gettempdir())
+    fd, temp_path = tempfile.mkstemp(prefix="simpanan_multipn_sanitized_opt_", suffix=".csv", dir=str(temp_dir))
+    os.close(fd)
+
+    start_time = time.perf_counter()
+    send_progress(10, "Membaca CSV dengan Polars (fast-path)...", 0, 0, 0, "baris/detik", "polars")
+
+    try:
+        # 1. Read headers to get column names
+        raw_headers = []
+        with open(source_path, "r", encoding="utf-8-sig", errors="replace", newline="") as h:
+            reader = csv.reader(h, delimiter=delimiter, quotechar='"', escapechar="\\")
+            for row in reader:
+                if row and any(cell.strip() for cell in row):
+                    raw_headers = [normalize_cell(c) for c in row]
+                    break
+        
+        if not raw_headers:
+            raise RuntimeError("Header CSV tidak ditemukan.")
+
+        normalized_headers = [normalize_header_name(h) or f"col_{i}" for i, h in enumerate(raw_headers)]
+        
+        # 2. Scan CSV
+        # We use infer_schema_length=0 to treat everything as string initially for robust cleaning
+        df_lazy = pl.scan_csv(
+            source_path,
+            separator=delimiter,
+            has_header=True,
+            quote_char='"',
+            # escapechar="\\" is not supported in some scan_csv versions, removed for compatibility
+            infer_schema_length=0,
+            encoding="utf8-lossy",
+            new_columns=normalized_headers,
+            skip_rows=0, # The first non-empty row was the header
+        )
+
+        # 3. Apply active filters (User-defined)
+        active_filters = config.get("active_filters") or {}
+        if active_filters:
+            for col_idx_str, values in active_filters.items():
+                try:
+                    idx = int(col_idx_str)
+                    if 0 <= idx < len(normalized_headers):
+                        col_name = normalized_headers[idx]
+                        if values:
+                            # Clean values and filter
+                            clean_values = [str(v).strip() for v in values if v is not None]
+                            if clean_values:
+                                df_lazy = df_lazy.filter(pl.col(col_name).str.strip_chars().is_in(clean_values))
+                except (ValueError, TypeError):
+                    continue
+
+        # 4. Vectorized Filtering (Business Logic)
+        # Required columns: posisi, cifno, no_rekening, jenis_simpanan, saldo_idr
+        required_cols = ["posisi", "cifno", "no_rekening", "jenis_simpanan", "saldo_idr"]
+        for col in required_cols:
+            if col not in normalized_headers:
+                raise RuntimeError(f"Kolom wajib '{col}' tidak ditemukan.")
+
+        filter_mask = (
+            pl.col("posisi").is_not_null() & (pl.col("posisi").str.strip_chars() != "") &
+            pl.col("cifno").is_not_null() & (pl.col("cifno").str.strip_chars() != "") &
+            pl.col("no_rekening").is_not_null() & (pl.col("no_rekening").str.strip_chars() != "") &
+            pl.col("jenis_simpanan").is_not_null() & (pl.col("jenis_simpanan").str.strip_chars() != "") &
+            pl.col("saldo_idr").is_not_null() & (pl.col("saldo_idr").str.strip_chars() != "")
+        )
+
+        # Business logic filters
+        filter_mask = filter_mask & (
+            pl.col("no_rekening").str.strip_chars().str.contains(r"(?i)^[A-Z0-9.,+_\/'-]+$") &
+            (pl.col("no_rekening").str.strip_chars().str.len_chars() >= 6)
+        )
+        
+        filter_mask = filter_mask & (
+            pl.col("jenis_simpanan").str.strip_chars().str.to_uppercase().str.starts_with("TABUNGAN") |
+            pl.col("jenis_simpanan").str.strip_chars().str.to_uppercase().str.starts_with("GIRO") |
+            pl.col("jenis_simpanan").str.strip_chars().str.to_uppercase().str.starts_with("DEPOSITO")
+        )
+
+        # 4. Vectorized Normalization
+        
+        # Date normalization (posisi)
+        # Handle common formats: DD/MM/YYYY, YYYY-MM-DD, and Excel Serial
+        posisi_expr = (
+            pl.col("posisi").str.strip_chars()
+            .str.replace_all("/", "-")
+            # If it's 5 digits, assume Excel serial
+            .map_elements(lambda x: (datetime(1899, 12, 30) + timedelta(days=int(float(x)))).strftime("%Y-%m-%d") 
+                          if re.fullmatch(r"\d{5}(\.0+)?", str(x)) else x, return_dtype=pl.Utf8)
+            # Try to parse as date - for simplicity in Polars we can use str.to_date with multiple formats
+            # But map_elements with the existing normalize_date_value is safer if we want exact parity
+            .map_elements(normalize_date_value, return_dtype=pl.Utf8)
+        )
+
+        # Decimal normalization (saldo_idr)
+        saldo_expr = (
+            pl.col("saldo_idr").str.strip_chars()
+            .map_elements(normalize_decimal_value, return_dtype=pl.Utf8)
+        )
+
+        transformations = []
+        for col in normalized_headers:
+            if col == "posisi":
+                transformations.append(posisi_expr.alias("posisi"))
+            elif col == "saldo_idr":
+                transformations.append(saldo_expr.alias("saldo_idr"))
+            else:
+                transformations.append(pl.col(col).str.strip_chars().alias(col))
+
+        df_processed = df_lazy.filter(filter_mask).select(transformations)
+        
+        # Execute
+        send_progress(35, "Memproses data dengan engine Polars...", 0, 0, 0, "baris/detik", "polars")
+        
+        # We need total records count for accurate reporting
+        total_input_rows = df_lazy.select(pl.len()).collect().item()
+        
+        df_collected = df_processed.collect()
+        
+        valid_rows = df_collected.height
+        total_data_rows = total_input_rows
+        skipped_count = total_data_rows - valid_rows
+        
+        if valid_rows == 0:
+            raise RuntimeError("Tidak ada data valid yang ditemukan setelah filtering Polars.")
+
+        # Calculate balance total cents
+        # We can do this in Polars too
+        balance_total_cents = 0
+        if "saldo_idr" in df_collected.columns:
+            balance_total_cents = df_collected.select(
+                pl.col("saldo_idr")
+                .map_elements(decimal_string_to_cents, return_dtype=pl.Int64)
+                .sum()
+            ).to_series()[0] or 0
+
+        # Account samples
+        account_samples = []
+        if "no_rekening" in df_collected.columns:
+            samples = df_collected.head(10).get_column("no_rekening").to_list()
+            account_samples = [{"raw": s, "normalized": s} for s in samples]
+
+        # 5. FULL VECTORIZATION (Optional - for direct DB load)
+        target_columns = config.get("target_columns") or []
+        full_vectorization = config.get("full_vectorization", False)
+        if full_vectorization:
+            send_progress(70, "Menambahkan kolom database (uniqueid, timestamps)...", 0, 0, 0, "baris/detik", "polars")
+            
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            unique_id_col = config.get("unique_id_col", "uniqueid_SMPN")
+            unique_id_prefix = config.get("unique_id_prefix", "imp")
+            
+            # Add timestamps
+            df_collected = df_collected.with_columns([
+                pl.lit(timestamp).alias("created_at"),
+                pl.lit(timestamp).alias("updated_at"),
+            ])
+            
+            # Add unique IDs
+            import uuid
+            df_collected = df_collected.with_columns([
+                pl.lit(unique_id_prefix + "_").str.concat(
+                    pl.Series([str(uuid.uuid4()) for _ in range(df_collected.height)])
+                ).alias(unique_id_col)
+            ])
+            
+            # Add manual values
+            manual_values = config.get("manual_values", {})
+            if manual_values:
+                for col_name, col_val in manual_values.items():
+                    if col_name not in df_collected.columns:
+                        df_collected = df_collected.with_columns([pl.lit(col_val).alias(col_name)])
+
+        if target_columns:
+            existing_target = [c for c in target_columns if c in df_collected.columns]
+            if existing_target:
+                df_collected = df_collected.select(existing_target)
+
+        # 6. Periodic termination check
+        job_id = config.get("job_id")
+        db_config = config.get("db_config")
+        if job_id and db_config and valid_rows > 50000:
+            if check_termination(job_id, db_config):
+                raise RuntimeError("Proses import dihentikan oleh pengguna.")
+
+        # Write CSV
+        send_progress(80, f"Menulis {valid_rows:,} baris hasil optimasi...", valid_rows, valid_rows, 0, "baris/detik", "polars")
+        df_collected.write_csv(
+            temp_path,
+            separator=delimiter,
+            include_header=True,
+            quote_style="necessary",
+            line_terminator="\n",
+        )
+
+        elapsed = max(time.perf_counter() - start_time, 0.001)
+        speed = int(valid_rows / elapsed)
+        send_progress(90, "Optimasi selesai.", valid_rows, valid_rows, speed, "baris/detik", "polars")
+
+        return temp_path, df_collected.columns, total_input_rows + 1, 0, skipped_count, 0, True, [], valid_rows, int(balance_total_cents), account_samples
+
+    except Exception as e:
+        if 'temp_path' in locals() and os.path.exists(temp_path):
+            try: os.unlink(temp_path)
+            except: pass
+        raise e
+
+
 def sanitize_source(
     source_path: str,
     delimiter: str,
 ) -> tuple[str, list[str], int, int, int, int, bool, list[int], int, int, list[dict[str, str]]]:
-    temp_dir = Path(tempfile.gettempdir())
-    fd, temp_path = tempfile.mkstemp(prefix="simpanan_multipn_sanitized_", suffix=".csv", dir=str(temp_dir))
-    os.close(fd)
+    """Try optimized Polars path first, fallback to legacy if needed."""
+    try:
+        return sanitize_source_optimized(source_path, delimiter)
+    except Exception as e:
+        send_event("debug", {"message": f"Polars fast-path failed, falling back to legacy: {str(e)}"})
+        
+        temp_dir = Path(tempfile.gettempdir())
+        fd, temp_path = tempfile.mkstemp(prefix="simpanan_multipn_sanitized_", suffix=".csv", dir=str(temp_dir))
+        os.close(fd)
 
-    total_records = 0
-    structural_skipped = 0
-    validation_skipped = 0
-    rewrite_needed = False
-    skipped_rows: list[int] = []
-    headers: list[str] = []
-    valid_rows = 0
-    balance_total_cents = 0
-    account_samples: list[dict[str, str]] = []
-    start_time = time.perf_counter()
+        total_records = 0
+        structural_skipped = 0
+        validation_skipped = 0
+        rewrite_needed = False
+        skipped_rows: list[int] = []
+        headers: list[str] = []
+        valid_rows = 0
+        balance_total_cents = 0
+        account_samples: list[dict[str, str]] = []
+        start_time = time.perf_counter()
 
-    with open(source_path, "r", encoding="utf-8-sig", errors="replace", newline="") as raw_handle, open(
-        temp_path,
-        "w",
-        encoding="utf-8",
-        newline="",
-    ) as out_handle:
-        reader = csv.reader(raw_handle, delimiter=delimiter, quotechar='"', escapechar="\\", strict=False)
-        writer = csv.writer(out_handle, delimiter=delimiter, quotechar='"', escapechar="\\", lineterminator="\n")
+        with open(source_path, "r", encoding="utf-8-sig", errors="replace", newline="") as raw_handle, open(
+            temp_path,
+            "w",
+            encoding="utf-8",
+            newline="",
+        ) as out_handle:
+            reader = csv.reader(raw_handle, delimiter=delimiter, quotechar='"', escapechar="\\", strict=False)
+            writer = csv.writer(out_handle, delimiter=delimiter, quotechar='"', escapechar="\\", lineterminator="\n")
 
-        for row_number, row in enumerate(reader, start=1):
-            if not row or all(normalize_cell(cell) == "" for cell in row):
-                continue
-
-            total_records += 1
-            if row_number % 50000 == 0:
-                elapsed = max(time.perf_counter() - start_time, 0.001)
-                processed_rows = max(0, total_records - 1)
-                speed = int(processed_rows / elapsed)
-                send_progress(
-                    min(50, 5 + int((row_number / 250000) * 45)),
-                    "Menyiapkan sanitasi CSV Simpanan MultiPN...",
-                    processed_rows,
-                    0,
-                    speed,
-                    "baris/detik",
-                    "polars",
-                )
-
-            if not headers:
-                raw_headers = [normalize_cell(cell) for cell in row]
-                headers = [normalize_header_name(header) or f"col_{index}" for index, header in enumerate(raw_headers)]
-                rewrite_needed = True
-                writer.writerow(headers)
-                continue
-
-            if len(row) != len(headers):
-                structural_skipped += 1
-                skipped_rows.append(row_number)
-                rewrite_needed = True
-                continue
-
-            values = [normalize_cell(cell) for cell in row]
-            values_by_header: dict[str, object] = {}
-            for index, header in enumerate(headers):
-                if header == "" or header.startswith("col_"):
-                    continue
-                values_by_header[header] = values[index]
-
-            if not is_valid_simpanan_row_values(values_by_header):
-                validation_skipped += 1
-                skipped_rows.append(row_number)
-                rewrite_needed = True
-                continue
-
-            for index, header in enumerate(headers):
-                if header == "posisi":
-                    normalized = normalize_date_value(values[index])
-                    if normalized is None:
-                        validation_skipped += 1
-                        skipped_rows.append(row_number)
-                        rewrite_needed = True
-                        break
-                    values[index] = normalized
+            for row_number, row in enumerate(reader, start=1):
+                if not row or all(normalize_cell(cell) == "" for cell in row):
                     continue
 
-                if header == "saldo_idr":
-                    normalized = normalize_decimal_value(values[index])
-                    if normalized is None:
-                        validation_skipped += 1
-                        skipped_rows.append(row_number)
-                        rewrite_needed = True
-                        break
-                    values[index] = normalized
-                    balance_total_cents += decimal_string_to_cents(normalized)
+                total_records += 1
+                if row_number % 50000 == 0:
+                    elapsed = max(time.perf_counter() - start_time, 0.001)
+                    processed_rows = max(0, total_records - 1)
+                    speed = int(processed_rows / elapsed)
+                    send_progress(
+                        min(50, 5 + int((row_number / 250000) * 45)),
+                        "Menyiapkan sanitasi CSV Simpanan MultiPN (legacy loop)...",
+                        processed_rows,
+                        0,
+                        speed,
+                        "baris/detik",
+                        "polars",
+                    )
+
+                if not headers:
+                    raw_headers = [normalize_cell(cell) for cell in row]
+                    headers = [normalize_header_name(header) or f"col_{index}" for index, header in enumerate(raw_headers)]
+                    rewrite_needed = True
+                    writer.writerow(headers)
                     continue
 
-                if header == "no_rekening":
-                    raw_value = normalize_cell(values[index])
-                    values[index] = raw_value
-                    if len(account_samples) < 10:
-                        account_samples.append({
-                            "raw": raw_value,
-                            "normalized": raw_value,
-                        })
+                if len(row) != len(headers):
+                    structural_skipped += 1
+                    skipped_rows.append(row_number)
+                    rewrite_needed = True
                     continue
-            else:
-                writer.writerow(values)
-                valid_rows += 1
-                rewrite_needed = rewrite_needed or any(values[index] != normalize_cell(row[index]) for index in range(len(row)))
+
+                values = [normalize_cell(cell) for cell in row]
+                values_by_header: dict[str, object] = {}
+                for index, header in enumerate(headers):
+                    if header == "" or header.startswith("col_"):
+                        continue
+                    values_by_header[header] = values[index]
+
+                if not is_valid_simpanan_row_values(values_by_header):
+                    validation_skipped += 1
+                    skipped_rows.append(row_number)
+                    rewrite_needed = True
+                    continue
+
+                for index, header in enumerate(headers):
+                    if header == "posisi":
+                        normalized = normalize_date_value(values[index])
+                        if normalized is None:
+                            validation_skipped += 1
+                            skipped_rows.append(row_number)
+                            rewrite_needed = True
+                            break
+                        values[index] = normalized
+                        continue
+
+                    if header == "saldo_idr":
+                        normalized = normalize_decimal_value(values[index])
+                        if normalized is None:
+                            validation_skipped += 1
+                            skipped_rows.append(row_number)
+                            rewrite_needed = True
+                            break
+                        values[index] = normalized
+                        balance_total_cents += decimal_string_to_cents(normalized)
+                        continue
+
+                    if header == "no_rekening":
+                        raw_value = normalize_cell(values[index])
+                        values[index] = raw_value
+                        if len(account_samples) < 10:
+                            account_samples.append({
+                                "raw": raw_value,
+                                "normalized": raw_value,
+                            })
+                        continue
+                else:
+                    writer.writerow(values)
+                    valid_rows += 1
+                    rewrite_needed = rewrite_needed or any(values[index] != normalize_cell(row[index]) for index in range(len(row)))
+                    continue
+
                 continue
 
-            continue
+        if not headers:
+            raise RuntimeError("Header CSV Simpanan MultiPN tidak ditemukan.")
 
-    if not headers:
-        raise RuntimeError("Header CSV Simpanan MultiPN tidak ditemukan.")
-
-    return temp_path, headers, total_records, structural_skipped, validation_skipped, 0, rewrite_needed, skipped_rows, valid_rows, balance_total_cents, account_samples
+        return temp_path, headers, total_records, structural_skipped, validation_skipped, 0, rewrite_needed, skipped_rows, valid_rows, balance_total_cents, account_samples
 
 
 def read_with_polars(path: str, headers: list[str], delimiter: str):
@@ -489,7 +737,7 @@ def stage_simpanan_multipn(config: dict) -> None:
         valid_rows,
         balance_total_cents,
         account_samples,
-    ) = sanitize_source(source_path, delimiter)
+    ) = sanitize_source_optimized(source_path, delimiter, config)
     total_data_rows = max(0, total_records - 1)
 
     try:
@@ -531,6 +779,8 @@ def stage_simpanan_multipn(config: dict) -> None:
                 "backend": "polars",
                 "balance_total_cents": int(balance_total_cents),
                 "account_samples": account_samples,
+                "headers": list(df_collected.columns),
+                "full_vectorization": bool(config.get("full_vectorization", False)),
             },
         )
     finally:

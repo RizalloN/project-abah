@@ -9,9 +9,10 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Queue\SerializesModels;
 
-class SyncImportedReportJob implements ShouldQueue
+class SyncImportedReportJob implements ShouldQueue, ShouldBeUnique
 {
     use Dispatchable;
     use InteractsWithQueue;
@@ -27,6 +28,14 @@ class SyncImportedReportJob implements ShouldQueue
         public ?string $source = null,
         public ?string $rebuildId = null
     ) {
+    }
+
+    public function uniqueId(): string
+    {
+        $table = strtolower(trim((string) $this->tableName));
+        $period = trim((string) $this->periodHint);
+
+        return md5($table . ':' . ($period !== '' ? $period : '__all__'));
     }
 
     public function middleware(): array

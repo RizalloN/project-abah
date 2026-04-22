@@ -133,7 +133,7 @@ class ReportDataSyncService
                 default => null,
             };
 
-            WarmReportCacheJob::dispatchUnique();
+            WarmReportCacheJob::dispatch();
 
         } catch (Throwable $e) {
             $this->writeAudit($normalizedTable, $periodHint, $jobId, $source, 'snapshot_sync', 'failed', [

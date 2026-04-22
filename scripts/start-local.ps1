@@ -57,15 +57,15 @@ function Start-PhpBackground {
 
 Start-PhpBackground `
     -Name 'Import queue worker' `
-    -Arguments 'artisan queue:work --queue=imports-high --tries=1 --timeout=120 --sleep=1 --memory=256' `
+    -Arguments 'artisan queue:work --queue=imports-high,imports-daily-loan --tries=1 --timeout=0 --sleep=1 --memory=256' `
     -LogPath $importQueueLog `
-    -DetectPattern 'artisan queue:work --queue=imports-high'
+    -DetectPattern 'artisan queue:work --queue=imports-high,imports-daily-loan'
 
 Start-PhpBackground `
     -Name 'Report queue worker' `
-    -Arguments 'artisan queue:work --queue=default,reports-low --tries=1 --timeout=120 --sleep=1 --memory=256' `
+    -Arguments 'artisan queue:work --queue=default,reports-low,imports-daily-loan --tries=1 --timeout=0 --sleep=1 --memory=256' `
     -LogPath $reportQueueLog `
-    -DetectPattern 'artisan queue:work --queue=default,reports-low'
+    -DetectPattern 'artisan queue:work --queue=default,reports-low,imports-daily-loan'
 
 Start-PhpBackground `
     -Name 'Laravel scheduler' `

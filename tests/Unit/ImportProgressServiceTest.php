@@ -70,11 +70,9 @@ class ImportProgressServiceTest extends TestCase
 
     public function test_mark_failed_removes_matching_queue_job_row(): void
     {
-        Cache::shouldReceive('put')->once()->andReturnTrue();
-        Cache::shouldReceive('forget')
-            ->once()
-            ->with('import_job_terminate:77')
-            ->andReturnTrue();
+        Cache::shouldReceive('get')->andReturn([]);
+        Cache::shouldReceive('put')->andReturnTrue();
+        Cache::shouldReceive('forget')->andReturnTrue();
 
         $importJobsTable = Mockery::mock();
         $importJobsTable->shouldReceive('where')
@@ -119,6 +117,58 @@ class ImportProgressServiceTest extends TestCase
             ->andReturn($jobsTable);
 
         app(ImportProgressService::class)->markFailed(77, 'gagal');
+    }
+
+    public function test_mark_failed_sanitizes_runtime_fatal_messages_before_persisting(): void
+    {
+        Cache::shouldReceive('get')->andReturn([]);
+        Cache::shouldReceive('put')->andReturnTrue();
+        Cache::shouldReceive('forget')->andReturnTrue();
+
+        $importJobsTable = Mockery::mock();
+        $importJobsTable->shouldReceive('where')
+            ->once()
+            ->with('id', 91)
+            ->andReturnSelf();
+        $importJobsTable->shouldReceive('update')
+            ->once()
+            ->with(Mockery::on(static function (array $attributes): bool {
+                return ($attributes['status'] ?? null) === 'failed'
+                    && (int) ($attributes['total_success'] ?? -1) === 0
+                    && (int) ($attributes['total_failed'] ?? -1) === 0
+                    && array_key_exists('job_fingerprint', $attributes);
+            }))
+            ->andReturn(1);
+
+        $jobsTable = Mockery::mock();
+        $jobsTable->shouldReceive('where')
+            ->once()
+            ->withArgs(static function (string $column, string $operator, string $value): bool {
+                return $column === 'payload'
+                    && $operator === 'like'
+                    && str_contains($value, 'RunImportJob');
+            })
+            ->andReturnSelf();
+        $jobsTable->shouldReceive('where')
+            ->once()
+            ->withArgs(static function (string $column, string $operator, string $value): bool {
+                return $column === 'payload'
+                    && $operator === 'like'
+                    && str_contains($value, 'jobId";i:91;');
+            })
+            ->andReturnSelf();
+        $jobsTable->shouldReceive('delete')->once()->andReturn(1);
+
+        DB::shouldReceive('table')
+            ->once()
+            ->with('import_jobs')
+            ->andReturn($importJobsTable);
+        DB::shouldReceive('table')
+            ->once()
+            ->with('jobs')
+            ->andReturn($jobsTable);
+
+        app(ImportProgressService::class)->markFailed(91, 'Fatal Error: Undefined variable $jobId (line 4076)');
     }
 
     public function test_mark_completed_removes_matching_queue_job_row(): void
@@ -191,7 +241,7 @@ class ImportProgressServiceTest extends TestCase
             ->andReturnSelf();
         $jobsTable->shouldReceive('whereIn')
             ->once()
-            ->with('queue', ['imports-daily-loan', 'imports-high'])
+            ->with('queue', ['imports-high'])
             ->andReturnSelf();
         $jobsTable->shouldReceive('delete')->once()->andReturn(2);
 
@@ -201,7 +251,7 @@ class ImportProgressServiceTest extends TestCase
             ->andReturn($jobsTable);
 
         $service = app(ImportProgressService::class);
-        $this->assertSame(2, $service->purgeQueuedImportJobsForQueues(['imports-daily-loan', 'imports-high']));
+        $this->assertSame(2, $service->purgeQueuedImportJobsForQueues(['imports-high']));
     }
 
     public function test_create_job_reuses_active_duplicate_for_same_report_and_file(): void

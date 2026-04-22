@@ -235,37 +235,19 @@ class ImportJobManagementController extends Controller
         }
 
         $progressService->requestTermination($jobId, auth()->id());
-
-        if ($status === 'queued') {
-            $progressService->cleanupQueuedImportJobRowsForJob($jobId);
-
-            $progressService->markTerminated(
-                $jobId,
-                'Job dihentikan melalui Job Management.',
-                (int) ($job->total_success ?? 0),
-                (int) ($job->total_failed ?? 0)
-            );
-
-            return response()->json([
-                'status' => 'success',
-                'message' => 'Job queued berhasil dihentikan.',
-            ]);
-        }
-
-        $statusPayload = $progressService->getStatusPayload($jobId);
-        $progressService->cacheProgress($jobId, [
-            'status' => 'processing',
-            'message' => 'Permintaan terminate dikirim. Worker akan menghentikan job pada checkpoint progress berikutnya.',
-            'percent' => (int) ($statusPayload['percent'] ?? 0),
-            'processed_rows' => (int) ($statusPayload['processed_rows'] ?? ((int) ($job->total_success ?? 0) + (int) ($job->total_failed ?? 0))),
-            'total_success' => (int) ($statusPayload['total_success'] ?? $job->total_success ?? 0),
-            'total_failed' => (int) ($statusPayload['total_failed'] ?? $job->total_failed ?? 0),
-            'total_rows' => (int) ($statusPayload['total_rows'] ?? $job->total_files ?? 0),
-        ]);
+        $progressService->cleanupQueuedImportJobRowsForJob($jobId);
+        $progressService->markTerminated(
+            $jobId,
+            'Job dihentikan melalui Job Management.',
+            (int) ($job->total_success ?? 0),
+            (int) ($job->total_failed ?? 0)
+        );
 
         return response()->json([
             'status' => 'success',
-            'message' => 'Permintaan terminate dikirim ke worker.',
+            'message' => $status === 'queued'
+                ? 'Job queued berhasil dihentikan.'
+                : 'Job processing dihentikan paksa. Jika worker lama masih aktif, status job tidak akan diaktifkan kembali.',
         ]);
     }
 
@@ -497,7 +479,7 @@ class ImportJobManagementController extends Controller
 
         $configuredReportQueue = trim((string) config('queue.report_queue', 'default')) ?: 'default';
         $queues = array_values(array_unique(array_filter([
-            $configuredReportQueue, 'default', 'reports-low', 'imports-high', 'imports-daily-loan',
+            $configuredReportQueue, 'default', 'reports-low', 'imports-high',
         ])));
 
         $allBasenames = $this->allKnownJobBasenames();
@@ -854,7 +836,7 @@ class ImportJobManagementController extends Controller
         if (($oldestAgeSeconds ?? 0) >= 300) {
             if (!$isProcessing) {
                 $message .= ' Indikasinya worker report tidak sedang mengonsumsi queue. Semua job ini dapat dipantau di bagian "Queue Jobs" di bawah.';
-                $message .= ' Jalankan `composer queue` untuk import umum dan report. Untuk Daily Loan Dinamis, jalankan `composer queue:daily-loan` hanya saat queue khusus itu memang perlu diproses.';
+                $message .= ' Jalankan `composer queue` untuk import umum, report, dan Daily Loan Dinamis.';
                 $status = 'warning';
             } else {
                 $message .= ' Worker sedang memproses job berat, antrean bergerak lambat.';
@@ -914,7 +896,7 @@ class ImportJobManagementController extends Controller
 
         $configuredReportQueue = trim((string) config('queue.report_queue', 'default')) ?: 'default';
         $queues = array_values(array_unique(array_filter([
-            $configuredReportQueue, 'default', 'reports-low', 'imports-high', 'imports-daily-loan',
+            $configuredReportQueue, 'default', 'reports-low', 'imports-high',
         ])));
         $allBasenames = $this->allKnownJobBasenames();
 

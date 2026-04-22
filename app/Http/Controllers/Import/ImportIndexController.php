@@ -29,6 +29,8 @@ use Throwable;
 
 class ImportIndexController extends Controller
 {
+    private array $tableIndexLookupCache = [];
+
     private const DELETE_AUDIT_TABLE = 'report_sync_audits';
     private const MANAGEMENT_MAX_GROUP_ROWS = 5000;
     private const MANAGEMENT_PERIODS_PER_PAGE = 8;
@@ -62,6 +64,7 @@ class ImportIndexController extends Controller
     private const DELETE_INDEX_HINTS = [
         'daily_loan_dinamis' => [
             'index' => 'idx_loan_periode_cab_unit',
+            'indexes' => ['idx_loan_periode_cab_unit', 'idx_dld_periode_cabang_unit'],
             'period' => 'periode',
             'kanca' => 'cabang1',
             'identity' => 'uniqueid_namareport',
@@ -569,7 +572,7 @@ class ImportIndexController extends Controller
         if (!$this->supportsDuplicateCleanup($tableName)) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Hapus duplikat hanya tersedia untuk Simpanan MultiPN.',
+                'message' => 'Hapus duplikat tidak didukung untuk report ini.',
             ], 422);
         }
 
@@ -580,7 +583,9 @@ class ImportIndexController extends Controller
             ], 404);
         }
 
-        $requiredColumns = array_merge($this->getSimpananDuplicateFingerprintColumns(), ['uniqueid_SMPN', 'created_at']);
+        $fingerprintColumns = $this->getDuplicateFingerprintColumns($tableName);
+        $identityColumn = $this->getDuplicateIdentityColumn($tableName);
+        $requiredColumns = array_merge($fingerprintColumns, [$identityColumn, 'created_at']);
         foreach ($requiredColumns as $column) {
             if (!Schema::hasColumn($tableName, $column)) {
                 return response()->json([
@@ -590,7 +595,7 @@ class ImportIndexController extends Controller
             }
         }
 
-        [$deleteSql, $periodSql] = $this->buildSimpananDuplicateCleanupQueries($tableName);
+        [$deleteSql, $periodSql] = $this->buildDuplicateCleanupQueries($tableName);
         $startedAt = microtime(true);
         $affectedPeriods = [];
         $deletedRows = 0;
@@ -606,7 +611,7 @@ class ImportIndexController extends Controller
                 $deletedRows = (int) DB::affectingStatement($deleteSql);
             });
         } catch (Throwable $e) {
-            Log::warning('Hapus duplikat Simpanan MultiPN gagal: ' . $e->getMessage(), [
+            Log::warning("Hapus duplikat untuk `{$tableName}` gagal: " . $e->getMessage(), [
                 'table_name' => $tableName,
                 'report_id' => (int) $validated['id_report'],
                 'exception_class' => $e::class,
@@ -847,30 +852,77 @@ class ImportIndexController extends Controller
 
     private function supportsDuplicateCleanup(string $tableName): bool
     {
-        return strtolower(trim($tableName)) === 'simpanan_multipn';
+        return in_array(strtolower(trim($tableName)), [
+            'simpanan_multipn',
+            'daily_loan_dinamis',
+        ], true);
     }
 
     /**
      * @return array<int, string>
      */
-    private function getSimpananDuplicateFingerprintColumns(): array
+    private function getDuplicateFingerprintColumns(string $tableName): array
     {
-        return [
-            'posisi',
-            'regional_office',
-            'kantor_cabang',
-            'unit_kerja',
-            'CIFNO',
-            'no_rekening',
-            'jenis_simpanan',
-            'status',
-            'saldo_idr',
-        ];
+        $tableName = strtolower(trim($tableName));
+
+        if ($tableName === 'simpanan_multipn') {
+            return [
+                'posisi',
+                'regional_office',
+                'kantor_cabang',
+                'unit_kerja',
+                'CIFNO',
+                'no_rekening',
+                'jenis_simpanan',
+                'status',
+                'saldo_idr',
+            ];
+        }
+
+        if ($tableName === 'daily_loan_dinamis') {
+            return [
+                'periode',
+                'kode_kanwil1',
+                'kode_cabang1',
+                'branch1',
+                'unit1',
+                'cifno',
+                'nomor_rekening1',
+                'status_rekening1',
+                'nama_debitur1',
+                'baki_debet1',
+                'kolek',
+            ];
+        }
+
+        return [];
     }
 
-    private function buildSimpananDuplicateKeepSignatureExpression(string $alias): string
+    private function getDuplicateIdentityColumn(string $tableName): string
     {
-        return "CONCAT(DATE_FORMAT(COALESCE({$alias}.`created_at`, '1000-01-01 00:00:00'), '%Y%m%d%H%i%s'), '|', COALESCE({$alias}.`uniqueid_SMPN`, ''))";
+        $tableName = strtolower(trim($tableName));
+        if ($tableName === 'simpanan_multipn') {
+            return 'uniqueid_SMPN';
+        }
+
+        return 'uniqueid_namareport';
+    }
+
+    private function getDuplicatePeriodColumn(string $tableName): string
+    {
+        $tableName = strtolower(trim($tableName));
+        if ($tableName === 'simpanan_multipn') {
+            return 'posisi';
+        }
+
+        return 'periode';
+    }
+
+    private function buildDuplicateKeepSignatureExpression(string $tableName, string $alias): string
+    {
+        $identity = $this->getDuplicateIdentityColumn($tableName);
+
+        return "CONCAT(DATE_FORMAT(COALESCE({$alias}.`created_at`, '1000-01-01 00:00:00'), '%Y%m%d%H%i%s'), '|', COALESCE({$alias}.`{$identity}`, ''))";
     }
 
     /**
@@ -887,22 +939,24 @@ class ImportIndexController extends Controller
     /**
      * @return array{0:string,1:string}
      */
-    private function buildSimpananDuplicateCleanupQueries(string $tableName): array
+    private function buildDuplicateCleanupQueries(string $tableName): array
     {
-        $columns = $this->getSimpananDuplicateFingerprintColumns();
+        $columns = $this->getDuplicateFingerprintColumns($tableName);
+        $periodColumn = $this->getDuplicatePeriodColumn($tableName);
+
         $groupColumns = implode(', ', array_map(
             static fn (string $column): string => "s.`{$column}`",
             $columns
         ));
         $joinConditions = $this->buildNullSafeColumnJoinConditions($columns, 't', 'd');
-        $keepSignature = $this->buildSimpananDuplicateKeepSignatureExpression('t');
-        $groupKeepSignature = $this->buildSimpananDuplicateKeepSignatureExpression('s');
+        $keepSignature = $this->buildDuplicateKeepSignatureExpression($tableName, 't');
+        $groupKeepSignature = $this->buildDuplicateKeepSignatureExpression($tableName, 's');
         $duplicateGroupsSql = "SELECT {$groupColumns}, MIN({$groupKeepSignature}) AS keep_signature, COUNT(*) AS duplicate_count FROM `{$tableName}` s GROUP BY {$groupColumns} HAVING COUNT(*) > 1";
         $deleteWhereClause = "{$keepSignature} <> d.keep_signature";
 
         return [
             "DELETE t FROM `{$tableName}` t INNER JOIN ({$duplicateGroupsSql}) d ON {$joinConditions} WHERE {$deleteWhereClause}",
-            "SELECT DISTINCT t.`posisi` AS period FROM `{$tableName}` t INNER JOIN ({$duplicateGroupsSql}) d ON {$joinConditions} WHERE {$deleteWhereClause}",
+            "SELECT DISTINCT t.`{$periodColumn}` AS period FROM `{$tableName}` t INNER JOIN ({$duplicateGroupsSql}) d ON {$joinConditions} WHERE {$deleteWhereClause}",
         ];
     }
 
@@ -4130,7 +4184,20 @@ class ImportIndexController extends Controller
                             }
 
                             if ($supportsFastDelete && $this->supportsDirectPredicateDelete($variant)) {
-                                $affected = $this->deleteRowsByDirectPredicateBatch($tableName, $variant, $batchLimit, $connection, $deleteId);
+                                $affected = $this->deleteRowsByDirectPredicateBatch(
+                                    $tableName,
+                                    $variant,
+                                    $batchLimit,
+                                    $connection,
+                                    $deleteId,
+                                    $this->shouldUseDirectDeleteWithoutLimit(
+                                        $tableName,
+                                        $periodColumn,
+                                        $kancaColumn,
+                                        $variant,
+                                        $batchLimit
+                                    )
+                                );
                             } elseif ($supportsFastDelete) {
                                 $affected = $this->deleteRowsByIndexedSubqueryBatch($tableName, $identityColumn, $variant, $batchLimit, $indexHint, $connection, $deleteId);
                             } else {
@@ -4401,12 +4468,28 @@ class ImportIndexController extends Controller
             return null;
         }
 
-        $indexName = (string) ($config['index'] ?? '');
-        if ($indexName === '' || !$this->tableIndexExists($tableName, $indexName)) {
-            return null;
+        $indexCandidates = [];
+        if (isset($config['indexes']) && is_array($config['indexes'])) {
+            foreach ($config['indexes'] as $candidate) {
+                $candidate = trim((string) $candidate);
+                if ($candidate !== '') {
+                    $indexCandidates[] = $candidate;
+                }
+            }
         }
 
-        return $indexName;
+        $primaryIndexCandidate = trim((string) ($config['index'] ?? ''));
+        if ($primaryIndexCandidate !== '') {
+            array_unshift($indexCandidates, $primaryIndexCandidate);
+        }
+
+        foreach (array_values(array_unique($indexCandidates)) as $indexName) {
+            if ($this->tableIndexExists($tableName, $indexName)) {
+                return $indexName;
+            }
+        }
+
+        return null;
     }
 
     private function tableIndexExists(string $tableName, string $indexName): bool
@@ -4416,12 +4499,38 @@ class ImportIndexController extends Controller
             return false;
         }
 
-        $rows = DB::select(
-            'SHOW INDEX FROM `' . str_replace('`', '``', $tableName) . '` WHERE Key_name = ?',
-            [$indexName]
-        );
+        $tableKey = strtolower(trim($tableName));
+        if ($tableKey === '') {
+            return false;
+        }
 
-        return !empty($rows);
+        if (!isset($this->tableIndexLookupCache[$tableKey])) {
+            try {
+                $rows = DB::select('SHOW INDEX FROM `' . str_replace('`', '``', $tableName) . '`');
+            } catch (Throwable) {
+                $this->tableIndexLookupCache[$tableKey] = [];
+                return false;
+            }
+
+            $lookup = [];
+            foreach ($rows as $row) {
+                $resolvedName = '';
+                if (is_object($row) && isset($row->Key_name)) {
+                    $resolvedName = (string) $row->Key_name;
+                } elseif (is_array($row) && isset($row['Key_name'])) {
+                    $resolvedName = (string) $row['Key_name'];
+                }
+
+                $resolvedName = strtolower(trim($resolvedName));
+                if ($resolvedName !== '') {
+                    $lookup[$resolvedName] = true;
+                }
+            }
+
+            $this->tableIndexLookupCache[$tableKey] = $lookup;
+        }
+
+        return isset($this->tableIndexLookupCache[$tableKey][strtolower(trim($indexName))]);
     }
 
     private function buildDeleteWhereSql(array $constraints, ?string $tableAlias = null): array
@@ -4564,12 +4673,49 @@ LIMIT {$limit}
         return true;
     }
 
+    private function shouldUseDirectDeleteWithoutLimit(
+        string $tableName,
+        ?string $periodColumn,
+        ?string $kancaColumn,
+        array $constraints,
+        int $limit
+    ): bool {
+        if (strtolower(trim($tableName)) !== 'simpanan_multipn') {
+            return false;
+        }
+
+        if ($periodColumn === null || $limit < 1000000) {
+            return false;
+        }
+
+        $hasPeriodEqualityConstraint = false;
+
+        foreach ($constraints as $constraint) {
+            if ((string) ($constraint['mode'] ?? '') !== 'equal') {
+                return false;
+            }
+
+            $column = (string) ($constraint['column'] ?? '');
+            if ($column === $periodColumn) {
+                $hasPeriodEqualityConstraint = true;
+                continue;
+            }
+
+            if ($kancaColumn !== null && $column === $kancaColumn) {
+                return false;
+            }
+        }
+
+        return $hasPeriodEqualityConstraint;
+    }
+
     private function deleteRowsByDirectPredicateBatch(
         string $tableName,
         array $constraints,
         int $limit,
         $connection = null,
-        ?string $deleteId = null
+        ?string $deleteId = null,
+        bool $withoutLimit = false
     ): int {
         $connection = $connection ?: DB::connection();
         if ($deleteId !== null && $this->isManagedDeleteCancellationRequested($deleteId)) {
@@ -4582,8 +4728,10 @@ LIMIT {$limit}
         $sql = "
 DELETE FROM {$wrappedTable}
 WHERE {$whereSql}
-LIMIT {$limit}
 ";
+        if (!$withoutLimit) {
+            $sql .= "\nLIMIT {$limit}\n";
+        }
 
         return $this->withManagedDeleteLockWait($connection, 300, fn (): int => (int) $connection->affectingStatement($sql, $bindings));
     }

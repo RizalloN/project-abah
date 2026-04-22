@@ -103,12 +103,12 @@ class JobHealthService
 
         return [
             'imports' => $this->deletePendingQueueRows(
-                ['imports-daily-loan', 'imports-high'],
+                ['imports-high'],
                 [RunImportJob::class],
                 self::IMPORT_QUEUE_STALE_SECONDS
             ),
             'reserved_imports' => $this->deleteReservedQueueRows(
-                ['imports-daily-loan', 'imports-high'],
+                ['imports-high'],
                 [RunImportJob::class],
                 self::IMPORT_QUEUE_STALE_SECONDS
             ),

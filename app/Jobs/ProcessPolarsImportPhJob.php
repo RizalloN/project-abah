@@ -22,10 +22,10 @@ class ProcessPolarsImportPhJob implements ShouldQueue
     use SerializesModels;
 
     private const CACHE_KEY_PREFIX = 'polars_ph_processing_';
-    private const PYTHON_TIMEOUT = 300; // 5 minutes
+    private const PYTHON_TIMEOUT = 0; // 0 = unlimited
     private const BULK_STAGE_DELIMITER = "\x1C";
 
-    public int $timeout = 600;
+    public int $timeout = 0;
     public int $tries = 1;
 
     public function __construct(

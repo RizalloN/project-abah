@@ -30,6 +30,12 @@ class ImportProgressService
             $payload = array_merge($existing, $payload);
         }
 
+        $existingStatus = is_array($existing) ? strtolower(trim((string) ($existing['status'] ?? ''))) : '';
+        if ($existingStatus === 'terminated' || $this->isTerminationRequested($jobId)) {
+            $payload['status'] = 'terminated';
+            $payload['message'] = (string) ($existing['message'] ?? $payload['message'] ?? 'Job dihentikan melalui Job Management.');
+        }
+
         $payload['job_id'] = $jobId;
         $payload['updated_at'] = now()->toIso8601String();
         Cache::put($this->cacheKey($jobId), $payload, now()->addHours(6));
@@ -184,6 +190,25 @@ class ImportProgressService
 
     public function markProcessing(int $jobId, ?array $progressPayload = null): void
     {
+        $job = $this->findJob($jobId);
+        if ($job && strtolower((string) ($job->status ?? '')) === 'terminated') {
+            $this->cacheProgress($jobId, array_merge($progressPayload ?? [], [
+                'status' => 'terminated',
+                'message' => 'Job dihentikan melalui Job Management.',
+            ]));
+            return;
+        }
+
+        if ($this->isTerminationRequested($jobId)) {
+            $this->markTerminated(
+                $jobId,
+                'Job dihentikan melalui Job Management.',
+                $job ? (int) ($job->total_success ?? 0) : 0,
+                $job ? (int) ($job->total_failed ?? 0) : 0
+            );
+            return;
+        }
+
         $this->updateJob($jobId, ['status' => 'processing'], $progressPayload);
     }
 
@@ -256,6 +281,7 @@ class ImportProgressService
     public function markFailed(int $jobId, string $message, int $success = 0, int $failed = 0, ?string $status = null): void
     {
         $resolvedStatus = $status ?? ($success > 0 ? 'failed_partial' : 'failed');
+        $normalizedMessage = $this->normalizeFailureMessage($message);
 
         if ($jobId > 0 && $success === 0 && $failed === 0 && $this->isMissingSourceFailure($message)) {
             $this->deleteJobRecord($jobId);
@@ -264,7 +290,7 @@ class ImportProgressService
 
         $this->updateTotals($jobId, $success, $failed, null, $resolvedStatus, [
             'status' => $resolvedStatus,
-            'message' => $message,
+            'message' => $normalizedMessage,
             'total_success' => $success,
             'total_failed' => $failed,
         ]);
@@ -890,6 +916,35 @@ class ImportProgressService
         }
 
         return false;
+    }
+
+    private function normalizeFailureMessage(string $message): string
+    {
+        $trimmed = trim($message);
+        if ($trimmed === '') {
+            return 'Import gagal diproses.';
+        }
+
+        $normalized = strtolower($trimmed);
+        $runtimeIndicators = [
+            'fatal error:',
+            'uncaught ',
+            'undefined variable',
+            'undefined array key',
+            'undefined property',
+            'call to undefined function',
+            'attempt to read property',
+            'trying to access array offset',
+            'typed property',
+        ];
+
+        foreach ($runtimeIndicators as $indicator) {
+            if (str_contains($normalized, $indicator)) {
+                return 'Import gagal diproses karena kesalahan internal pada worker. Detail teknis sudah dicatat di log server.';
+            }
+        }
+
+        return $trimmed;
     }
 
     private function deleteJobRecord(int $jobId): void

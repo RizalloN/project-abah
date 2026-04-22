@@ -174,7 +174,8 @@ class ExcelQueuedImportService
                     $path,
                     $headerIndex,
                     $normalizedHeaders,
-                    $tableName
+                    $tableName,
+                    $jobId
                 );
 
                 if (!empty($stageResult['staged_csv_path']) && file_exists((string) $stageResult['staged_csv_path'])) {
@@ -350,7 +351,8 @@ class ExcelQueuedImportService
                                 $delimiter,
                                 $forceDirectLoad,
                                 null,
-                                $params
+                                $params,
+                                (bool) ($stageResult['full_vectorization'] ?? false)
                             ),
                         ];
                     },

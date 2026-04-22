@@ -1525,7 +1525,7 @@ class ImportReportPhController extends Controller
                         self::TABLE_NAME,
                         $loadColumns,
                         function (int $processed, int $total, int $inserted) use ($jobId) {
-                            $this->progressService()->updateImportProgress($jobId, [
+                            $this->progressService()->cacheProgress($jobId, [
                                 'processed_rows' => $processed,
                                 'total_rows' => $total,
                                 'percent' => (int) (($processed / max(1, $total)) * 100),
@@ -2238,6 +2238,29 @@ class ImportReportPhController extends Controller
         ]);
     }
 
+    private function normalizeDateForDatabase(mixed $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $raw = trim((string) $value);
+        if ($raw === '') {
+            return null;
+        }
+
+        $normalized = $this->normalizeDateValue($raw);
+        if ($normalized !== null) {
+            return $normalized;
+        }
+
+        if (preg_match('/^(\d{4}-\d{2}-\d{2})/', $raw, $matches) === 1) {
+            return $matches[1];
+        }
+
+        return null;
+    }
+
     private function normalizeIntegerValue($value): ?int
     {
         $normalized = $this->normalizeDecimalValue($value);
@@ -2368,7 +2391,12 @@ class ImportReportPhController extends Controller
                 continue;
             }
 
-            $insertRow[$column] = $row[$index] ?? null;
+            $value = $row[$index] ?? null;
+            if (in_array($column, self::DATE_COLUMNS, true)) {
+                $value = $this->normalizeDateForDatabase($value);
+            }
+
+            $insertRow[$column] = $value;
         }
 
         return $this->hasMeaningfulImportData($insertRow, ['uniqueid_namareport', 'created_at', 'updated_at', 'periode'])
@@ -2396,6 +2424,10 @@ class ImportReportPhController extends Controller
                 if ($value === '') {
                     $value = null;
                 }
+            }
+
+            if (in_array($column, self::DATE_COLUMNS, true)) {
+                $value = $this->normalizeDateForDatabase($value);
             }
 
             $insertRow[$column] = $value;

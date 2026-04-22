@@ -157,7 +157,9 @@ class ExcelStagingService
         array $normalizedHeaders,
         string $stagedCsvPath,
         ?string $scriptPath = null,
-        string $configPrefix = 'excel_stage_'
+        string $configPrefix = 'excel_stage_',
+        int $jobId = 0,
+        array $extraConfig = []
     ): ?array {
         $pythonExe = $this->findPython();
         $scriptPath ??= base_path('scripts/excel_gpu_processor.py');
@@ -173,12 +175,21 @@ class ExcelStagingService
         }
 
         $configFile = storage_path('app/' . $configPrefix . uniqid() . '.json');
-        file_put_contents($configFile, json_encode([
+        
+        $configPayload = [
             'file_path' => $sourcePath,
             'header_index' => $headerIndex,
             'normalized_headers' => $normalizedHeaders,
             'output_csv_path' => $stagedCsvPath,
-        ], JSON_UNESCAPED_UNICODE));
+            'job_id' => $jobId,
+            'db_config' => $this->getDbConfig(),
+        ];
+
+        if (!empty($extraConfig)) {
+            $configPayload = array_merge($configPayload, $extraConfig);
+        }
+
+        file_put_contents($configFile, json_encode($configPayload, JSON_UNESCAPED_UNICODE));
 
         $cmd = escapeshellarg($pythonExe)
             . ' ' . escapeshellarg($scriptPath)
@@ -235,8 +246,20 @@ class ExcelStagingService
             }
         };
 
+        $lastTerminationCheck = microtime(true);
         while (true) {
             $status = proc_get_status($process);
+            
+            // TERMINATION CHECK (every 2 seconds)
+            if ($jobId > 0 && (microtime(true) - $lastTerminationCheck) > 2.0) {
+                $lastTerminationCheck = microtime(true);
+                if ($this->checkJobTerminationExternally($jobId)) {
+                    $this->terminateProcess($process, $pipes);
+                    @unlink($configFile);
+                    throw new \RuntimeException('Import dihentikan oleh pengguna.');
+                }
+            }
+
             $chunk = fread($pipes[1], 65536);
             if ($chunk !== false && $chunk !== '') {
                 $buffer .= $chunk;
@@ -283,7 +306,56 @@ class ExcelStagingService
             'total_rows' => (int) ($donePayload['total_rows'] ?? 0),
             'header_index' => 0,
             'headers' => array_values($normalizedHeaders),
+            'full_vectorization' => (bool) ($donePayload['full_vectorization'] ?? false),
         ];
+    }
+
+    private function getDbConfig(): array
+    {
+        try {
+            $connection = config('database.default', 'mysql');
+            $config = config("database.connections.{$connection}", []);
+            
+            return [
+                'host' => $config['host'] ?? '127.0.0.1',
+                'username' => $config['username'] ?? 'root',
+                'password' => $config['password'] ?? '',
+                'database' => $config['database'] ?? '',
+            ];
+        } catch (\Throwable) {
+            return [];
+        }
+    }
+
+    private function checkJobTerminationExternally(int $jobId): bool
+    {
+        try {
+            return \Illuminate\Support\Facades\DB::table('import_jobs')
+                ->where('id', $jobId)
+                ->where('status', 'terminated')
+                ->exists();
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    private function terminateProcess($process, array $pipes): void
+    {
+        foreach ($pipes as $pipe) {
+            if (is_resource($pipe)) {
+                fclose($pipe);
+            }
+        }
+        
+        $status = proc_get_status($process);
+        if ($status['running']) {
+            if (strncasecmp(PHP_OS, 'WIN', 3) === 0) {
+                exec("taskkill /F /T /PID " . $status['pid']);
+            } else {
+                proc_terminate($process, 9);
+            }
+        }
+        proc_close($process);
     }
 
     private function stageExcelToCsvViaNativeXlsx(

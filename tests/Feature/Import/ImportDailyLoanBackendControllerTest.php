@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Import\ImportDailyLoanBackendController;
+use App\Services\Import\ExcelImportJobService;
 use App\Services\Import\ImportExecutionService;
 use Illuminate\Http\Request;
 use Illuminate\Database\Schema\Blueprint;
@@ -110,6 +111,11 @@ it('queues backend daily loan import from a local csv file', function () {
     expect($job->status)->toBe('queued');
     expect($job->file_name)->toContain('backend-daily-loan.csv');
     expect((string) $job->folder_path)->toContain('storage');
+
+    $state = app(ExcelImportJobService::class)->getImportJobState((int) $job->id);
+    expect($state['params']['replace_existing_periods'] ?? null)->toBeFalse();
+    expect($state['params']['backend_detected_periods'] ?? null)->toBe(['2026-04-19']);
+    expect($state['params']['replace_periods'] ?? null)->toBe(['2026-04-19']);
 });
 
 it('rejects backend daily loan import when requested period does not match the csv', function () {

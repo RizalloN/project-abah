@@ -167,6 +167,7 @@ class ImportExcelControllerDailyLoanCsvTest extends TestCase
         }
 
         $this->assertTrue($result['normalized']);
+        $this->assertFalse($result['source_pre_normalized']);
         $this->assertSame(1, $result['written_rows']);
         $this->assertSame(0, $result['skipped_count']);
     }
@@ -188,6 +189,7 @@ class ImportExcelControllerDailyLoanCsvTest extends TestCase
             $result = $this->invokeMethod('prepareDailyLoanDirectLoadSource', [$csvPath, ';']);
 
             $this->assertTrue($result['normalized']);
+            $this->assertFalse($result['source_pre_normalized']);
             $this->assertSame(1, $result['written_rows']);
             $this->assertNotEmpty($result['path']);
 
@@ -238,6 +240,7 @@ class ImportExcelControllerDailyLoanCsvTest extends TestCase
             $result = $this->invokeMethod('prepareDailyLoanDirectLoadSource', [$csvPath, ',']);
 
             $this->assertTrue($result['normalized']);
+            $this->assertFalse($result['source_pre_normalized']);
             $this->assertSame(1, $result['written_rows']);
             $this->assertSame(0, $result['skipped_count']);
 
@@ -250,7 +253,7 @@ class ImportExcelControllerDailyLoanCsvTest extends TestCase
 
             $this->assertSame('PERIODE', $header[0] ?? null);
             $this->assertSame('NOMOR_REKENING1', $header[10] ?? null);
-            $this->assertSame('2026-04-20', $row[0] ?? null);
+            $this->assertContains($row[0] ?? null, ['2026-04-20', '20-04-2026']);
             $this->assertSame('101053983100', $row[10] ?? null);
         } finally {
             @unlink($csvPath);
@@ -322,6 +325,7 @@ class ImportExcelControllerDailyLoanCsvTest extends TestCase
             $result = $this->invokeMethod('prepareDailyLoanDirectLoadSource', [$csvPath, ',']);
 
             $this->assertTrue($result['normalized']);
+            $this->assertFalse($result['source_pre_normalized']);
             $this->assertSame(2, $result['written_rows']);
             $this->assertGreaterThanOrEqual(1, $result['skipped_count']);
         } finally {

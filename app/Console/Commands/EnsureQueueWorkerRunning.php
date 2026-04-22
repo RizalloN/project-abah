@@ -10,7 +10,7 @@ class EnsureQueueWorkerRunning extends Command
 {
     protected $signature = 'queue:ensure-running
                           {--queues=imports-high,default,reports-low : Queues to monitor}
-                          {--timeout=120 : Queue worker timeout in seconds}
+                          {--timeout=0 : Queue worker timeout in seconds (0 = unlimited)}
                           {--memory=256 : Queue worker memory limit in MB}
                           {--max-jobs=0 : Maximum jobs before restart (0 = unlimited)}
                           {--check-interval=60 : How often to check if worker is running}';

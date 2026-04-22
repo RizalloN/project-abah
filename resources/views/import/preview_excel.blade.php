@@ -39,9 +39,17 @@
                         <a href="{{ route('import.index') }}" class="btn btn-secondary">
                             <i class="fas fa-arrow-left"></i> Kembali
                         </a>
-                        <button type="submit" id="btnSubmitImport" class="btn btn-success font-weight-bold">
-                            <i class="fas fa-database"></i> Jalankan Import ke MySQL
-                        </button>
+                        <div class="d-flex align-items-center">
+                            <button type="button" id="btnResetAllFilters" class="btn btn-outline-warning mr-2">
+                                <i class="fas fa-undo"></i> Reset Filter
+                            </button>
+                            <button type="button" id="btnClearImportCache" class="btn btn-outline-danger mr-2" title="Bersihkan cache filter browser">
+                                <i class="fas fa-trash-alt"></i> Clear Cache
+                            </button>
+                            <button type="submit" id="btnSubmitImport" class="btn btn-success font-weight-bold">
+                                <i class="fas fa-database"></i> Jalankan Import ke MySQL
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -1391,8 +1399,15 @@ document.addEventListener('DOMContentLoaded', function () {
             // ── error event (server kirim event error) ──────────────────────
             evtSource.addEventListener('error', function (e) {
                 if (streamDone) return;
+                var rawData = typeof e.data === 'string' ? e.data.trim() : '';
+                if (!rawData) return;
                 var msg = lastProg.message || 'Terjadi kesalahan server.';
-                try { var d = JSON.parse(e.data); if (d && d.message) msg = d.message; } catch (_) {}
+                try {
+                    var d = JSON.parse(rawData);
+                    if (d && d.message) msg = d.message;
+                } catch (_) {
+                    msg = rawData || msg;
+                }
                 if (isNonFatalProcessingMessage(msg)) return;
                 showImportFailure(msg);
             });

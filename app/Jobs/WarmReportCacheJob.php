@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
@@ -11,7 +12,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
-class WarmReportCacheJob implements ShouldQueue
+class WarmReportCacheJob implements ShouldQueue, ShouldBeUnique
 {
     use Dispatchable;
     use InteractsWithQueue;
@@ -30,26 +31,8 @@ class WarmReportCacheJob implements ShouldQueue
         }
     }
 
-    /**
-     * Dispatch the job only if and only if there's no identical job pending.
-     */
-    public static function dispatchUnique(): void
+    public function uniqueId(): string
     {
-        try {
-            $queue = (string) config('queue.report_queue', 'default');
-            $jobName = self::class;
-
-            $exists = \Illuminate\Support\Facades\DB::table('jobs')
-                ->where('queue', $queue)
-                ->where('payload', 'like', '%' . str_replace('\\', '\\\\', $jobName) . '%')
-                ->exists();
-
-            if (!$exists) {
-                self::dispatch()->onQueue($queue);
-            }
-        } catch (\Throwable $e) {
-            // Fallback to normal dispatch if anything fails
-            self::dispatch()->onQueue((string) config('queue.report_queue', 'default'));
-        }
+        return 'all';
     }
 }

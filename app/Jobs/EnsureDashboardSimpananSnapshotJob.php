@@ -8,12 +8,13 @@ use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
-class EnsureDashboardSimpananSnapshotJob implements ShouldQueue
+class EnsureDashboardSimpananSnapshotJob implements ShouldQueue, ShouldBeUnique
 {
     use Dispatchable;
     use InteractsWithQueue;
@@ -26,6 +27,11 @@ class EnsureDashboardSimpananSnapshotJob implements ShouldQueue
         public string $period,
         public ?string $source = null
     ) {
+    }
+
+    public function uniqueId(): string
+    {
+        return trim($this->period);
     }
 
     public function handle(SnapshotBatchAggregator $batchAggregator): void

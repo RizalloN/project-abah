@@ -176,7 +176,7 @@ class ImportExecutionServiceTest extends TestCase
 
         $this->assertTrue($result);
         Bus::assertDispatched(RunImportJob::class, function (RunImportJob $job) use ($jobId): bool {
-            return $job->jobId === $jobId && $job->queue === 'imports-daily-loan';
+            return $job->jobId === $jobId && $job->queue === 'imports-high';
         });
     }
 

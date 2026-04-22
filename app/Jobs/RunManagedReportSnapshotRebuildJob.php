@@ -11,13 +11,14 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Throwable;
 
-class RunManagedReportSnapshotRebuildJob implements ShouldQueue
+class RunManagedReportSnapshotRebuildJob implements ShouldQueue, ShouldBeUnique
 {
     use Dispatchable;
     use InteractsWithQueue;
@@ -31,6 +32,11 @@ class RunManagedReportSnapshotRebuildJob implements ShouldQueue
         public ?string $source = null,
         public ?string $rebuildId = null
     ) {
+    }
+
+    public function uniqueId(): string
+    {
+        return 'all';
     }
 
     public function middleware(): array
@@ -256,7 +262,7 @@ class RunManagedReportSnapshotRebuildJob implements ShouldQueue
             ]));
 
             $syncService->invalidateReportCaches($this->source ?? static::class);
-            WarmReportCacheJob::dispatchUnique();
+            WarmReportCacheJob::dispatch();
 
             $hasErrors = $reportErrors !== [];
             $finalStatus = $hasErrors ? 'warning' : 'completed';

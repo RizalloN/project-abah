@@ -14,7 +14,7 @@ use Illuminate\Support\Carbon;
 class ImportExecutionService
 {
     private const IMPORT_QUEUE = 'imports-high';
-    private const DAILY_LOAN_IMPORT_QUEUE = 'imports-daily-loan';
+    private const DAILY_LOAN_IMPORT_QUEUE = 'imports-high';
     private const DAILY_LOAN_REPORT_ID = 8;
     private const DISPATCHED_KEY_PREFIX = 'import_excel_dispatched_job_';
     private const DISPATCHED_TTL_HOURS = 6;
