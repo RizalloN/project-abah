@@ -230,6 +230,28 @@
     .metric-neutral { color: var(--text-muted) !important; font-weight: 600; }
 </style>
 @include('report._bri-report-ui')
+<style>
+    .content-wrapper .table-container table.table-report.referral-no-hover tbody tr:hover > td,
+    .content-wrapper .table-container table.table-report.referral-no-hover tbody tr:hover > th {
+        background-color: #ffffff !important;
+        background-image: none !important;
+    }
+    .content-wrapper .table-container table.table-report.referral-no-hover tbody tr:hover > .sticky-col {
+        background-color: #ffffff !important;
+    }
+    .content-wrapper .table-container table.table-report.referral-no-hover tbody tr.row-total > td,
+    .content-wrapper .table-container table.table-report.referral-no-hover tbody tr.row-total > th,
+    .content-wrapper .table-container table.table-report.referral-no-hover tbody tr.row-total:hover > td,
+    .content-wrapper .table-container table.table-report.referral-no-hover tbody tr.row-total:hover > th {
+        background-color: var(--table-header-bg) !important;
+        background-image: none !important;
+        color: var(--table-header-text) !important;
+        font-weight: 700;
+    }
+    .content-wrapper .table-container table.table-report.referral-no-hover tbody tr.row-total:hover > .sticky-col {
+        background-color: var(--table-header-bg) !important;
+    }
+</style>
 
 <div class="report-wrapper">
     <div class="report-card mb-4">
@@ -288,7 +310,7 @@
 
         <div class="card-body p-4 bg-white">
             <div class="table-container">
-                <table class="table table-report m-0">
+                <table class="table table-report referral-no-hover m-0">
                     <thead>
                         <tr>
                             <th rowspan="2" class="bg-header-main sticky-col align-middle">Branch Office</th>

@@ -331,7 +331,7 @@
         /* =========================================================
            CACHE & OPTIMIZATION HELPERS
         ========================================================= */
-        const storageKeyPrefix = 'preview_filter_v2_' + btoa(filePathValue + '|' + delimiterValue).substring(0, 16);
+        const storageKeyPrefix = 'preview_filter_v3_' + btoa(filePathValue + '|' + delimiterValue).substring(0, 16);
 
         function getStorageKey(col) {
             return storageKeyPrefix + '_col_' + col;
@@ -420,7 +420,7 @@
                         return;
                     }
 
-                    if (state.selectedValues.size === 0 || state.selectedValues.size === state.allValues.length) {
+                    if (state.selectedValues.size === state.allValues.length) {
                         return;
                     }
 
@@ -733,9 +733,12 @@
             }
         }
 
-        // Prefetch semua filter options secara parallel saat page load
+        // Prefetch semua filter options secara parallel saat page load.
+        async function prefetchAllFilterOptions() {
             const cols = Object.keys(filterState);
-            if (!cols.length) return;
+            if (!cols.length) {
+                return;
+            }
 
             const prefetchPromises = cols.map(col => ensureFullFilterOptions(col, true));
             try {
@@ -951,7 +954,7 @@
                     return;
                 }
 
-                if (state.selectedValues.size === 0 || state.selectedValues.size === state.allValues.length) {
+                if (state.selectedValues.size === state.allValues.length) {
                     return;
                 }
 
@@ -986,7 +989,7 @@
                     return;
                 }
 
-                if (state.selectedValues.size === 0 || state.selectedValues.size === state.allValues.length) {
+                if (state.selectedValues.size === state.allValues.length) {
                     return;
                 }
 
@@ -1052,7 +1055,7 @@
                     const icon = document.getElementById('icon_filter_' + colIndex);
 
                     if (icon && state) {
-                        if (state.selectedValues.size < state.allValues.length && state.selectedValues.size > 0) {
+                        if (state.selectedValues.size < state.allValues.length) {
                             icon.classList.remove('text-muted');
                             icon.classList.add('text-primary');
                         } else {
@@ -1718,6 +1721,30 @@
         });
         updatePreviewTable();
         setTimeout(prewarmPreviewIndex, 50);
+        if (filePathValue && filterOptionsUrl) {
+            prefetchAllFilterOptions().catch(function (error) {
+                console.warn('Prefetch filter options failed:', error);
+            });
+        }
+    });
+</script>
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        setTimeout(function () {
+            const rows = Array.from(document.querySelectorAll('.preview-row'));
+            if (!rows.length || rows.some(function (row) { return !row.classList.contains('d-none'); })) {
+                return;
+            }
+
+            rows.slice(0, 100).forEach(function (row) {
+                row.classList.remove('d-none');
+            });
+
+            const emptyRow = document.getElementById('empty-state-row');
+            if (emptyRow) {
+                emptyRow.classList.add('d-none');
+            }
+        }, 250);
     });
 </script>
 <style>

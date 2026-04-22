@@ -346,8 +346,8 @@
     .dormant-table tbody td.metric-neutral { color: var(--text-muted); font-weight: 500; }
 
     .dormant-table tfoot th, .dormant-table tfoot td {
-        background: #e0e7ff !important; /* blue-100 */
-        color: var(--primary-blue-dark) !important;
+        background: var(--table-header-bg) !important;
+        color: var(--table-header-text) !important;
         font-weight: 700;
         border-top: 2px solid var(--primary-blue-light) !important;
         position: sticky;

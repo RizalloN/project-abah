@@ -117,7 +117,7 @@
     .val-down { color: #dc3545; margin-left: 3px; font-weight: bold; }
     
     .rka-col { background-color: #fff3cd !important; color: #856404 !important; font-weight: 600; border-color: #f6e3a6 !important; }
-    .row-total .rka-col { background-color: #ffe8a1 !important; color: #856404 !important; }
+    .row-total .rka-col { background-color: #003366 !important; color: #ffffff !important; }
     
     .nav-tabs.report-tabs { border-bottom: 2px solid #dee2e6; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; white-space: nowrap; scrollbar-width: thin; }
     .nav-tabs.report-tabs .nav-link { border: none; font-weight: 600; color: #6c757d; padding: 12px 18px; font-size: 0.95rem; background: transparent; }
@@ -125,6 +125,39 @@
     .nav-tabs.report-tabs .nav-link:hover { border-bottom: 3px solid #9ec5fe; color: #007bff; background: transparent; }
 </style>
 @include('report._bri-report-ui')
+<style>
+    .content-wrapper .table-container table.table-report.brilink-no-hover tbody tr.row-total > td,
+    .content-wrapper .table-container table.table-report.brilink-no-hover tbody tr.row-total > th,
+    .content-wrapper .table-container table.table-report.brilink-no-hover tbody tr.row-total > td.rka-col,
+    .content-wrapper .table-container table.table-report.brilink-no-hover tbody tr.row-total > th.rka-col {
+        background-color: #003366 !important;
+        background-image: none !important;
+        color: #ffffff !important;
+        font-weight: bold;
+    }
+    .content-wrapper .table-container table.table-report.brilink-no-hover tbody tr:hover > td,
+    .content-wrapper .table-container table.table-report.brilink-no-hover tbody tr:hover > th {
+        background-color: #ffffff !important;
+        background-image: none !important;
+    }
+    .content-wrapper .table-container table.table-report.brilink-no-hover tbody tr:nth-child(even):not(.row-total):hover > td,
+    .content-wrapper .table-container table.table-report.brilink-no-hover tbody tr:nth-child(even):not(.row-total):hover > th {
+        background-color: #fafcff !important;
+    }
+    .content-wrapper .table-container table.table-report.brilink-no-hover tbody tr:hover > td.rka-col {
+        background-color: #fff3cd !important;
+    }
+    .content-wrapper .table-container table.table-report.brilink-no-hover tbody tr.row-total:hover > td,
+    .content-wrapper .table-container table.table-report.brilink-no-hover tbody tr.row-total:hover > th {
+        background-color: #003366 !important;
+        background-image: none !important;
+        color: #ffffff !important;
+    }
+    .content-wrapper .table-container table.table-report.brilink-no-hover tbody tr.row-total:hover > td.rka-col {
+        background-color: #003366 !important;
+        color: #ffffff !important;
+    }
+</style>
 
 <div class="pt-4">
     <div class="card card-outline card-warning shadow-sm mb-4 report-filter-card">
@@ -233,7 +266,7 @@
         <div class="tab-content">
             <div class="tab-pane fade show active" id="tab-brilink" role="tabpanel">
                 <div class="table-container">
-                    <table class="table table-report m-0">
+                    <table class="table table-report brilink-no-hover m-0">
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
                                 <th rowspan="2" class="bg-brilink-dark align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER">BRANCH OFFICE</th>
@@ -265,7 +298,7 @@
 
             <div class="tab-pane fade" id="tab-agen-user" role="tabpanel">
                 <div class="table-container">
-                    <table class="table table-report m-0">
+                    <table class="table table-report brilink-no-hover m-0">
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
                                 <th rowspan="2" class="bg-brilink-dark align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER">BRANCH OFFICE</th>
@@ -291,7 +324,7 @@
 
             <div class="tab-pane fade" id="tab-juragan" role="tabpanel">
                 <div class="table-container">
-                    <table class="table table-report m-0">
+                    <table class="table table-report brilink-no-hover m-0">
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
                                 <th rowspan="2" class="bg-brilink-dark align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER">BRANCH OFFICE</th>
@@ -319,7 +352,7 @@
 
             <div class="tab-pane fade" id="tab-bep" role="tabpanel">
                 <div class="table-container">
-                    <table class="table table-report m-0">
+                    <table class="table table-report brilink-no-hover m-0">
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
                                 <th rowspan="2" class="bg-brilink-dark align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER">BRANCH OFFICE</th>
@@ -347,7 +380,7 @@
 
             <div class="tab-pane fade" id="tab-transaksi" role="tabpanel">
                 <div class="table-container">
-                    <table class="table table-report m-0">
+                    <table class="table table-report brilink-no-hover m-0">
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
                                 <th rowspan="2" class="bg-brilink-dark align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER">BRANCH OFFICE</th>
@@ -368,7 +401,7 @@
 
             <div class="tab-pane fade" id="tab-casa" role="tabpanel">
                 <div class="table-container">
-                    <table class="table table-report m-0">
+                    <table class="table table-report brilink-no-hover m-0">
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
                                 <th rowspan="2" class="bg-brilink-dark align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER">BRANCH OFFICE</th>

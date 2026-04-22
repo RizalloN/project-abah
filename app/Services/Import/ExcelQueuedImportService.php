@@ -101,6 +101,47 @@ class ExcelQueuedImportService
                 return $fail($e->getMessage());
             }
 
+            $hasEmptyFilter = false;
+            foreach ($activeFilters as $allowedValues) {
+                if (array_values((array) $allowedValues) === []) {
+                    $hasEmptyFilter = true;
+                    break;
+                }
+            }
+
+            if ($hasEmptyFilter) {
+                if ($jobId > 0) {
+                    $updateJob($jobId, [
+                        'status' => 'completed',
+                        'total_files' => 0,
+                        'total_success' => 0,
+                        'total_failed' => 0,
+                        'finished_at' => now(),
+                    ], [
+                        'status' => 'completed',
+                        'percent' => 100,
+                        'message' => 'Import selesai. Filter tidak memiliki nilai terpilih, jadi tidak ada baris yang diimport.',
+                        'total_rows' => 0,
+                        'processed_rows' => 0,
+                    ]);
+                }
+
+                $send('complete', [
+                    'status' => 'completed',
+                    'message' => 'Import selesai. Filter tidak memiliki nilai terpilih, jadi tidak ada baris yang diimport.',
+                    'total_success' => 0,
+                    'total_failed' => 0,
+                    'total_rows' => 0,
+                ]);
+
+                return [
+                    'status' => 'completed',
+                    'total_success' => 0,
+                    'total_failed' => 0,
+                    'total_rows' => 0,
+                ];
+            }
+
             $shouldStageBeforeQueueProcessing = !($callbacks['is_csv_file'])($path)
                 && $stagedCsvPath === ''
                 && in_array($tableName, ['ssa_simpanan', 'ssa_pinjaman'], true)

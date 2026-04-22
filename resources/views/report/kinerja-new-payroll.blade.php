@@ -285,6 +285,34 @@
     }
 </style>
 @include('report._bri-report-ui')
+<style>
+    .content-wrapper .table-container table.table-report.payroll-no-hover tbody tr:hover > td,
+    .content-wrapper .table-container table.table-report.payroll-no-hover tbody tr:hover > th {
+        background-color: #ffffff !important;
+        background-image: none !important;
+    }
+    .content-wrapper .table-container table.table-report.payroll-no-hover tbody tr:hover > .sticky-col {
+        background-color: #ffffff !important;
+    }
+    .content-wrapper .table-container table.table-report.payroll-no-hover tbody tr:hover > td.col-block {
+        background-color: #f1f5f9 !important;
+    }
+    .content-wrapper .table-container table.table-report.payroll-no-hover tbody tr:hover > td.rka-col {
+        background-color: #fffbeb !important;
+    }
+    .content-wrapper .table-container table.table-report.payroll-no-hover tbody tr.row-total > td,
+    .content-wrapper .table-container table.table-report.payroll-no-hover tbody tr.row-total > th,
+    .content-wrapper .table-container table.table-report.payroll-no-hover tbody tr.row-total:hover > td,
+    .content-wrapper .table-container table.table-report.payroll-no-hover tbody tr.row-total:hover > th {
+        background-color: var(--table-header-bg) !important;
+        background-image: none !important;
+        color: var(--table-header-text) !important;
+        font-weight: 700;
+    }
+    .content-wrapper .table-container table.table-report.payroll-no-hover tbody tr.row-total:hover > .sticky-col {
+        background-color: var(--table-header-bg) !important;
+    }
+</style>
 
 <div class="report-wrapper pt-4">
     <div class="card card-outline card-primary shadow-sm mb-4 report-filter-card">
@@ -382,7 +410,7 @@
             <div class="tab-content">
                 <div class="tab-pane fade show active" id="tab-total" role="tabpanel">
                     <div class="table-container">
-                        <table class="table table-report m-0">
+                        <table class="table table-report payroll-no-hover m-0">
                             <thead>
                                 <tr>
                                     <th rowspan="2" class="bg-header-main sticky-col align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER" style="min-width: 210px;">BRANCH OFFICE</th>
@@ -415,7 +443,7 @@
 
                 <div class="tab-pane fade" id="tab-rekening" role="tabpanel">
                     <div class="table-container">
-                        <table class="table table-report m-0">
+                        <table class="table table-report payroll-no-hover m-0">
                             <thead>
                                 <tr>
                                     <th colspan="8" class="bg-header-main">New Rekening Payroll</th>
@@ -438,7 +466,7 @@
 
                 <div class="tab-pane fade" id="tab-saldo" role="tabpanel">
                     <div class="table-container">
-                        <table class="table table-report m-0">
+                        <table class="table table-report payroll-no-hover m-0">
                             <thead>
                                 <tr>
                                     <th colspan="8" class="bg-header-main">Saldo New Payroll</th>

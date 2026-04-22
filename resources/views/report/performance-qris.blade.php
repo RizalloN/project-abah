@@ -132,7 +132,7 @@
         border: 2px solid #eff4fa;
     }
     .table-container::-webkit-scrollbar-thumb:hover {
-        background: linear-gradient(180deg, #aec4dc 0%, #94b0ce 100%);
+        background: linear-gradient(180deg, #c1d1e4 0%, #a9bfd7 100%);
     }
     .table-report { border-collapse: separate; border-spacing: 0; width: max-content; min-width: 100%; table-layout: auto; }
     .table-report th, .table-report td { 
@@ -201,11 +201,6 @@
     .bg-good { background-color: #dcf5e5 !important; color: #166534 !important; font-weight: 700;}
     .bg-bad { background-color: #fde2e4 !important; color: #b42318 !important; font-weight: 700;}
 
-    /* .content-wrapper .table-container .table-report tbody tr:not(.row-total):hover > td { background-color: var(--qris-body-hover); }
-    .content-wrapper .table-container .table-report tbody tr:not(.row-total):hover > .sticky-col { background-color: var(--qris-sticky-hover) !important; }
-    .content-wrapper .table-container .table-report tbody tr:not(.row-total):hover > .sticky-col::after {
-        background: linear-gradient(to right, rgba(223, 240, 255, 0), rgba(223, 240, 255, 0.96) 70%, rgba(223, 240, 255, 1));
-    } */
     .row-total { --row-total-bg: var(--qris-total-bg); --row-total-color: #ffffff; --row-total-border: var(--qris-total-border); background: linear-gradient(180deg, #315992 0%, var(--qris-total-bg) 100%) !important; color: white !important; font-weight: 700; }
     .row-total td,
     .row-total th,
@@ -214,10 +209,6 @@
         color: #ffffff !important;
         border-color: var(--qris-total-border) !important;
     }
-    /* .content-wrapper .table-container .table-report tbody tr.row-total:hover > td,
-    .content-wrapper .table-container .table-report tbody tr.row-total:hover > th {
-        background: linear-gradient(180deg, #315992 0%, var(--qris-total-bg) 100%) !important;
-    } */
     .content-wrapper .table-container .table-report .row-total .sticky-col { background-color: var(--qris-total-bg) !important; }
     .content-wrapper .table-container .table-report .row-total .sticky-col::after {
         background: linear-gradient(to right, rgba(39, 77, 134, 0), rgba(39, 77, 134, 0.96) 70%, rgba(39, 77, 134, 1));
@@ -255,6 +246,75 @@
     @include('report.partials.sticky-table-viewport-style')
 </style>
 @include('report._bri-report-ui')
+<style>
+    .content-wrapper .table-container table.table-report.qris-no-hover tbody tr.row-total > td,
+    .content-wrapper .table-container table.table-report.qris-no-hover tbody tr.row-total > th,
+    .content-wrapper .table-container table.table-report.qris-no-hover tbody tr.row-total > td.rka-col,
+    .content-wrapper .table-container table.table-report.qris-no-hover tbody tr.row-total > th.rka-col,
+    .content-wrapper .table-container table.table-report.qris-no-hover tbody tr.row-total > .sticky-col {
+        background-color: var(--qris-total-bg) !important;
+        background-image: none !important;
+        border-color: var(--qris-total-border) !important;
+        color: #ffffff !important;
+    }
+    .content-wrapper .table-container table.table-report.qris-no-hover tbody tr.row-total > td *,
+    .content-wrapper .table-container table.table-report.qris-no-hover tbody tr.row-total > th * {
+        color: #ffffff !important;
+    }
+    .content-wrapper .table-container table.table-report.qris-no-hover tbody tr.row-total > .sticky-col::before {
+        background-color: var(--qris-total-bg) !important;
+        background-image: none !important;
+        border-color: var(--qris-total-border) !important;
+    }
+    .content-wrapper .table-container table.table-report.qris-no-hover tbody tr.row-total > .sticky-col::after {
+        background: linear-gradient(to right, rgba(39, 77, 134, 0), rgba(39, 77, 134, 0.96) 70%, rgba(39, 77, 134, 1)) !important;
+    }
+    .content-wrapper .table-container table.table-report.qris-no-hover tbody tr:hover > td,
+    .content-wrapper .table-container table.table-report.qris-no-hover tbody tr:hover > th {
+        background-color: #ffffff !important;
+        background-image: none !important;
+    }
+    .content-wrapper .table-container table.table-report.qris-no-hover tbody tr:nth-child(even):not(.row-total):hover > td,
+    .content-wrapper .table-container table.table-report.qris-no-hover tbody tr:nth-child(even):not(.row-total):hover > th {
+        background-color: var(--qris-body-even) !important;
+    }
+    .content-wrapper .table-container table.table-report.qris-no-hover tbody tr:hover > .sticky-col {
+        background-color: #ffffff !important;
+    }
+    .content-wrapper .table-container table.table-report.qris-no-hover tbody tr:nth-child(even):not(.row-total):hover > .sticky-col {
+        background-color: var(--qris-body-even) !important;
+    }
+    .content-wrapper .table-container table.table-report.qris-no-hover tbody tr:hover > .sticky-col::after {
+        background: linear-gradient(to right, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.96) 70%, rgba(255, 255, 255, 1)) !important;
+    }
+    .content-wrapper .table-container table.table-report.qris-no-hover tbody tr:nth-child(even):not(.row-total):hover > .sticky-col::after {
+        background: linear-gradient(to right, rgba(248, 251, 255, 0), rgba(248, 251, 255, 0.96) 70%, rgba(248, 251, 255, 1)) !important;
+    }
+    .content-wrapper .table-container table.table-report.qris-no-hover tbody tr:hover > td.bg-good {
+        background-color: #dcf5e5 !important;
+    }
+    .content-wrapper .table-container table.table-report.qris-no-hover tbody tr:hover > td.bg-bad {
+        background-color: #fde2e4 !important;
+    }
+    .content-wrapper .table-container table.table-report.qris-no-hover tbody tr:hover > td.rka-col {
+        background-color: var(--qris-rka-bg) !important;
+    }
+    .content-wrapper .table-container table.table-report.qris-no-hover tbody tr.row-total:hover > td,
+    .content-wrapper .table-container table.table-report.qris-no-hover tbody tr.row-total:hover > th {
+        background-color: var(--qris-total-bg) !important;
+        background-image: none !important;
+    }
+    .content-wrapper .table-container table.table-report.qris-no-hover tbody tr.row-total:hover > .sticky-col {
+        background-color: var(--qris-total-bg) !important;
+        background-image: none !important;
+    }
+    .content-wrapper .table-container table.table-report.qris-no-hover tbody tr.row-total:hover > .sticky-col::after {
+        background: linear-gradient(to right, rgba(39, 77, 134, 0), rgba(39, 77, 134, 0.96) 70%, rgba(39, 77, 134, 1)) !important;
+    }
+    .content-wrapper .table-container table.table-report.qris-no-hover tbody tr.row-total:hover > td.rka-col {
+        background-color: var(--qris-total-bg) !important;
+    }
+</style>
 
 <div class="pt-4">
     <div class="card card-outline card-success shadow-sm mb-4 report-filter-card">
@@ -343,7 +403,7 @@
             <!-- 🔥 TAB 1: PERFORMANCE QRIS UTAMA -->
             <div class="tab-pane fade show active" id="tab-qris" role="tabpanel">
                 <div class="table-container">
-                    <table class="table table-report m-0">
+                    <table class="table table-report qris-no-hover m-0">
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
                                 <th rowspan="2" class="bg-qris-jml align-middle col-group-label sticky-col" data-default-label="BRANCH OFFICE" data-filtered-label="UKER">BRANCH OFFICE</th>
@@ -370,7 +430,7 @@
             <!-- 🔥 TAB 2: PERFORMANCE QRIS MoM -->
             <div class="tab-pane fade" id="tab-qris-mom" role="tabpanel">
                 <div class="table-container">
-                    <table class="table table-report m-0">
+                    <table class="table table-report qris-no-hover m-0">
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
                                 <th rowspan="2" class="bg-mom-blue align-middle col-group-label sticky-col" data-default-label="BRANCH OFFICE" data-filtered-label="UKER">BRANCH OFFICE</th>
