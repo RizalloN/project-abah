@@ -5,11 +5,106 @@
 @section('content')
 @include('report.dashboard-pinjaman._partials._styles')
 
+<style>
+    .loan-credit-hero {
+        position: relative;
+        isolation: isolate;
+        overflow: hidden;
+        margin-bottom: 1rem;
+        padding: 1.45rem 1.25rem;
+        border-radius: 0 0 1.4rem 1.4rem;
+        background:
+            radial-gradient(circle at 12% 18%, rgba(255, 103, 31, 0.16), transparent 26%),
+            radial-gradient(circle at 88% 10%, rgba(59, 130, 246, 0.22), transparent 28%),
+            linear-gradient(135deg, #003b75 0%, #00529c 48%, #0f4c97 100%);
+        color: #ffffff;
+        box-shadow: 0 18px 40px -30px rgba(0, 55, 116, 0.55);
+    }
+
+    .loan-credit-hero::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        z-index: -1;
+        background:
+            linear-gradient(120deg, rgba(255, 255, 255, 0.12), transparent 35%),
+            repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.08) 0 1px, transparent 1px 18px);
+        opacity: 0.72;
+    }
+
+    .loan-credit-title-wrap {
+        width: min(100%, 860px);
+        text-align: center;
+        padding: 0.05rem 1rem;
+    }
+
+    .loan-credit-title-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        margin-bottom: 0.6rem;
+        padding: 0.32rem 0.72rem;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.12);
+        border: 1px solid rgba(255, 255, 255, 0.24);
+        color: rgba(255, 255, 255, 0.92);
+        font-size: 0.64rem;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    }
+
+    .loan-credit-title-badge i {
+        color: #ffb15c;
+    }
+
+    .loan-credit-title {
+        margin: 0;
+        font-size: clamp(1.18rem, 2.05vw, 2rem);
+        font-weight: 900;
+        color: #ffffff;
+        letter-spacing: 0.035em;
+        line-height: 1.08;
+        text-transform: uppercase;
+        text-shadow: 0 10px 26px rgba(0, 18, 50, 0.28);
+    }
+
+    .loan-credit-title::after {
+        content: '';
+        display: block;
+        width: min(130px, 38vw);
+        height: 3px;
+        margin: 0.7rem auto 0;
+        border-radius: 999px;
+        background: linear-gradient(90deg, #ff671f, #f9b233, rgba(255, 255, 255, 0.9));
+        box-shadow: 0 8px 18px rgba(255, 103, 31, 0.28);
+    }
+
+    .loan-credit-desc {
+        margin: 0.65rem auto 0;
+        color: rgba(255, 255, 255, 0.78);
+        font-size: 0.78rem;
+        line-height: 1.6;
+        max-width: 660px;
+    }
+
+    @media (max-width: 575.98px) {
+        .loan-credit-hero {
+            padding: 1.15rem 0.85rem;
+        }
+    }
+</style>
+
 <div class="loan-dashboard pt-4 px-3">
-    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center mb-4">
-        <div>
-            <h1 class="loan-page-title">Dashboard Pinjaman Kredit</h1>
-            <p class="text-muted mb-0">Analisis performa portofolio berdasarkan segmen dan kategori.</p>
+    <div class="loan-credit-hero d-flex flex-wrap justify-content-center align-items-center">
+        <div class="loan-credit-title-wrap">
+            <div class="loan-credit-title-badge">
+                <i class="fas fa-university"></i>
+                <span>BRI Credit Performance</span>
+            </div>
+            <h1 class="loan-credit-title">DASHBOARD PINJAMAN KREDIT</h1>
+            <p class="loan-credit-desc">Analisis performa portofolio berdasarkan segmen dan kategori untuk memantau kualitas pinjaman harian secara ringkas.</p>
         </div>
     </div>
 

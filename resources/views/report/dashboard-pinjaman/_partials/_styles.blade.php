@@ -122,6 +122,95 @@
         font-weight: 800;
     }
 
+    .loan-title-hero {
+        position: relative;
+        isolation: isolate;
+        overflow: hidden;
+        margin-bottom: 1rem;
+        padding: 1.45rem 1.25rem;
+        border-radius: 0 0 1.4rem 1.4rem;
+        background:
+            radial-gradient(circle at 12% 18%, rgba(255, 103, 31, 0.16), transparent 26%),
+            radial-gradient(circle at 88% 10%, rgba(59, 130, 246, 0.22), transparent 28%),
+            linear-gradient(135deg, #003b75 0%, #00529c 48%, #0f4c97 100%);
+        color: #ffffff;
+        box-shadow: 0 18px 40px -30px rgba(0, 55, 116, 0.55);
+    }
+
+    .loan-title-hero::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        z-index: -1;
+        background:
+            linear-gradient(120deg, rgba(255, 255, 255, 0.12), transparent 35%),
+            repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.08) 0 1px, transparent 1px 18px);
+        opacity: 0.72;
+    }
+
+    .loan-title-hero__wrap {
+        width: min(100%, 860px);
+        text-align: center;
+        padding: 0.05rem 1rem;
+    }
+
+    .loan-title-hero__badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        margin-bottom: 0.6rem;
+        padding: 0.32rem 0.72rem;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.12);
+        border: 1px solid rgba(255, 255, 255, 0.24);
+        color: rgba(255, 255, 255, 0.92);
+        font-size: 0.64rem;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    }
+
+    .loan-title-hero__badge i {
+        color: #ffb15c;
+    }
+
+    .loan-title-hero__title {
+        margin: 0;
+        font-size: clamp(1.18rem, 2.05vw, 2rem);
+        font-weight: 900;
+        color: #ffffff;
+        letter-spacing: 0.035em;
+        line-height: 1.08;
+        text-transform: uppercase;
+        text-shadow: 0 10px 26px rgba(0, 18, 50, 0.28);
+    }
+
+    .loan-title-hero__title::after {
+        content: '';
+        display: block;
+        width: min(130px, 38vw);
+        height: 3px;
+        margin: 0.7rem auto 0;
+        border-radius: 999px;
+        background: linear-gradient(90deg, #ff671f, #f9b233, rgba(255, 255, 255, 0.9));
+        box-shadow: 0 8px 18px rgba(255, 103, 31, 0.28);
+    }
+
+    .loan-title-hero__desc {
+        margin: 0.65rem auto 0;
+        color: rgba(255, 255, 255, 0.78);
+        font-size: 0.78rem;
+        line-height: 1.6;
+        max-width: 660px;
+    }
+
+    @media (max-width: 575.98px) {
+        .loan-title-hero {
+            padding: 1.15rem 0.85rem;
+        }
+    }
+
     /* ── Matrix Specific ─────────────────────────── */
     .loan-matrix-wrap { 
         overflow: auto; 

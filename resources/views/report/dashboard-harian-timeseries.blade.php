@@ -24,20 +24,156 @@
         font-size: 0.85rem;
     }
 
+    .timeseries-hero {
+        position: relative;
+        isolation: isolate;
+        overflow: hidden;
+        border-radius: 0 0 1.4rem 1.4rem;
+        margin: -1rem -0.25rem 1rem;
+        padding: 1.45rem 1.25rem;
+        background:
+            radial-gradient(circle at 10% 18%, rgba(255, 103, 31, 0.18), transparent 27%),
+            radial-gradient(circle at 88% 12%, rgba(59, 130, 246, 0.22), transparent 30%),
+            linear-gradient(135deg, #003b75 0%, #00529c 48%, #0f4c97 100%);
+        color: #ffffff;
+        box-shadow: 0 18px 40px -30px rgba(0, 55, 116, 0.55);
+    }
+
+    .timeseries-hero::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        z-index: -1;
+        background:
+            linear-gradient(120deg, rgba(255, 255, 255, 0.13), transparent 36%),
+            repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.08) 0 1px, transparent 1px 18px);
+        opacity: 0.72;
+    }
+
+    .timeseries-title-wrap {
+        max-width: 760px;
+    }
+
+    .timeseries-title-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        margin-bottom: 0.55rem;
+        padding: 0.32rem 0.72rem;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.12);
+        border: 1px solid rgba(255, 255, 255, 0.24);
+        color: rgba(255, 255, 255, 0.92);
+        font-size: 0.64rem;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+    }
+
+    .timeseries-title-badge i {
+        color: #ffb15c;
+    }
+
+    .timeseries-title {
+        margin: 0;
+        font-size: clamp(1.35rem, 2.35vw, 2.35rem);
+        font-weight: 900;
+        color: #ffffff;
+        letter-spacing: 0.035em;
+        line-height: 1.08;
+        text-transform: uppercase;
+        text-shadow: 0 10px 26px rgba(0, 18, 50, 0.28);
+    }
+
+    .timeseries-title::after {
+        content: '';
+        display: block;
+        width: min(130px, 38vw);
+        height: 3px;
+        margin: 0.7rem 0 0;
+        border-radius: 999px;
+        background: linear-gradient(90deg, #ff671f, #f9b233, rgba(255, 255, 255, 0.9));
+        box-shadow: 0 8px 18px rgba(255, 103, 31, 0.28);
+    }
+
+    .timeseries-subtitle {
+        margin: 0.65rem 0 0;
+        color: rgba(255, 255, 255, 0.78);
+        font-size: 0.78rem;
+        line-height: 1.6;
+        max-width: 620px;
+    }
+
+    .timeseries-hero-actions {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+        padding-top: 2.15rem;
+    }
+
+    .timeseries-hero .btn-export-all {
+        min-height: 32px;
+        border-radius: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.45);
+        background: rgba(255, 255, 255, 0.12);
+        color: #ffffff;
+        font-weight: 800;
+        letter-spacing: 0.025em;
+        font-size: 0.68rem;
+        padding: 0.34rem 0.72rem !important;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
+    }
+
+    .timeseries-hero .btn-export-all:hover {
+        background: rgba(255, 255, 255, 0.2);
+        color: #ffffff;
+        border-color: rgba(255, 255, 255, 0.68);
+    }
+
+    .timeseries-unit-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        padding: 0.38rem 0.68rem;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.14);
+        border: 1px solid rgba(255, 255, 255, 0.22);
+        color: rgba(255, 255, 255, 0.92);
+        font-size: 0.62rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+    }
+
     /* Filter Sidebar/Top Styling */
     .filter-card {
-        background: var(--filter-card-bg);
-        border: 1px solid rgba(8, 87, 195, 0.12);
+        background:
+            linear-gradient(180deg, rgba(235, 243, 255, 0.98) 0%, rgba(255, 255, 255, 0.98) 76%),
+            var(--filter-card-bg);
+        border: 1px solid rgba(8, 87, 195, 0.14);
         border-radius: 1.25rem;
-        box-shadow: 0 10px 30px -15px rgba(8, 87, 195, 0.15);
+        box-shadow: 0 18px 38px -28px rgba(8, 87, 195, 0.32);
         margin-bottom: 1rem;
         overflow: visible !important;
         position: relative;
         z-index: 100;
     }
 
+    .filter-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 1rem;
+        right: 1rem;
+        height: 3px;
+        border-radius: 999px;
+        background: linear-gradient(90deg, #00529c, #3b82f6, #ffb15c);
+    }
+
     .filter-card .card-body {
-        padding: 0.75rem 1rem !important;
+        padding: 1rem 1rem 0.95rem !important;
         overflow: visible !important;
     }
 
@@ -45,7 +181,7 @@
         font-size: 0.72rem;
         font-weight: 700;
         text-transform: uppercase;
-        color: #64748b;
+        color: #4b6285;
         letter-spacing: 0.05em;
         margin-bottom: 0.5rem;
         display: block;
@@ -61,7 +197,7 @@
         padding: 0.6rem 1.2rem;
         border-radius: 1rem;
         border: 1px solid #e2e8f0;
-        background: #f8fafc;
+        background: rgba(255, 255, 255, 0.82);
         color: #475569;
         font-weight: 600;
         font-size: 0.85rem;
@@ -70,8 +206,8 @@
     }
 
     .category-btn:hover {
-        background: #f1f5f9;
-        border-color: #cbd5e1;
+        background: #ffffff;
+        border-color: rgba(8, 87, 195, 0.25);
     }
 
     .category-btn.active {
@@ -302,8 +438,8 @@
         width: 100%;
         min-height: 42px;
         padding: 0.6rem 1rem;
-        background: #f8fafc;
-        border: 1px solid #e2e8f0;
+        background: rgba(255, 255, 255, 0.86);
+        border: 1px solid #dbe5ef;
         border-radius: 0.75rem;
         display: flex;
         align-items: center;
@@ -315,14 +451,15 @@
     .branch-dropdown-toggle:hover {
         border-color: #0857c3;
         background: #fff;
+        box-shadow: 0 10px 24px -22px rgba(8, 87, 195, 0.42);
     }
 
     .period-month-select {
         width: 100%;
         min-height: 42px;
         padding: 0.6rem 2.4rem 0.6rem 1rem;
-        background: #f8fafc;
-        border: 1px solid #e2e8f0;
+        background: rgba(255, 255, 255, 0.86);
+        border: 1px solid #dbe5ef;
         border-radius: 0.75rem;
         color: #1e293b;
         font-size: 0.88rem;
@@ -342,6 +479,21 @@
 
     .period-select-shell {
         position: relative;
+    }
+
+    #applyFilters {
+        min-height: 42px;
+        border: none;
+        border-radius: 0.85rem;
+        background: linear-gradient(135deg, #00529c 0%, #1d4ed8 100%);
+        font-weight: 800;
+        letter-spacing: 0.02em;
+        box-shadow: 0 14px 24px -18px rgba(8, 87, 195, 0.72);
+    }
+
+    #applyFilters:hover {
+        filter: saturate(1.08);
+        transform: translateY(-1px);
     }
 
     .period-select-shell i {
@@ -473,10 +625,32 @@
     }
 
     @media (max-width: 767.98px) {
-        .dashboard-timeseries > .d-flex {
+        .dashboard-timeseries > .d-flex,
+        .dashboard-timeseries > .timeseries-hero {
             align-items: flex-start !important;
             flex-direction: column;
             gap: 0.75rem;
+        }
+
+        .timeseries-hero {
+            padding: 1.15rem 1rem;
+            margin-inline: 0;
+        }
+
+        .timeseries-hero-actions {
+            width: 100%;
+            justify-content: flex-start;
+            padding-top: 0.35rem;
+        }
+
+        .timeseries-hero .btn-export-all,
+        .timeseries-unit-badge {
+            width: 100%;
+            justify-content: center;
+        }
+
+        .timeseries-title::after {
+            margin-left: 0;
         }
 
         .category-selector {
@@ -523,16 +697,23 @@
 @section('content')
 <div class="dashboard-timeseries">
     <!-- Header -->
-    <div class="d-flex align-items-center justify-content-between mb-2">
-        <div>
-            <h1 class="h4 font-weight-bold mb-0" style="color: #0f172a;">Timeseries Dashboard</h1>
-            <p class="text-muted small mb-0" style="font-size: 0.8rem;">Tren Keragaan Harian Berdasarkan Perspektif Bulanan</p>
+    <div class="timeseries-hero d-flex align-items-center justify-content-between">
+        <div class="timeseries-title-wrap">
+            <div class="timeseries-title-badge">
+                <i class="fas fa-university"></i>
+                <span>BRI Monthly Trend</span>
+            </div>
+            <h1 class="timeseries-title">TIMESERIES DASHBOARD</h1>
+            <p class="timeseries-subtitle">Tren keragaan harian berdasarkan perspektif bulanan untuk memantau pergerakan metrik utama Area secara lebih tajam.</p>
         </div>
-        <div class="d-flex align-items-center" style="gap: 1rem;">
-            <button id="captureAllBtn" class="btn btn-outline-primary btn-sm px-3 font-weight-bold" style="border-radius: 12px; height: 38px; border-width: 2px;">
+        <div class="timeseries-hero-actions">
+            <button id="captureAllBtn" class="btn btn-sm px-3 btn-export-all">
                 <i class="fas fa-file-image mr-2"></i> EXPORT A4 (PORTRAIT)
             </button>
-            <div class="unit-badge">Satuan: Dalam Rp Miliar (Rp M)</div>
+            <div class="timeseries-unit-badge">
+                <i class="fas fa-layer-group"></i>
+                <span>Satuan: Dalam Rp Miliar (Rp M)</span>
+            </div>
         </div>
     </div>
 

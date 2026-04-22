@@ -6,10 +6,14 @@
 @include('report.dashboard-pinjaman._partials._styles')
 
 <div class="loan-dashboard pt-4">
-    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center mb-4">
-        <div>
-            <h1 class="loan-page-title" style="color: var(--loan-blue-ink); font-weight: 800;">Audit Kolek Tidak Sesuai</h1>
-            <p class="mb-0" style="color: var(--loan-muted); font-weight: 600;">Verifikasi konsistensi bucket kualitas pinjaman berdasarkan rule audit.</p>
+    <div class="loan-title-hero d-flex flex-wrap justify-content-center align-items-center">
+        <div class="loan-title-hero__wrap">
+            <div class="loan-title-hero__badge">
+                <i class="fas fa-university"></i>
+                <span>BRI Loan Audit</span>
+            </div>
+            <h1 class="loan-title-hero__title">KOLEK TIDAK SESUAI</h1>
+            <p class="loan-title-hero__desc">Verifikasi konsistensi bucket kualitas pinjaman berdasarkan rule audit agar anomali kolektibilitas lebih cepat terbaca.</p>
         </div>
     </div>
 
