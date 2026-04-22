@@ -8,10 +8,11 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $projectRoot
 
-$queueLog = Join-Path $projectRoot 'storage\logs\local-queue-worker.log'
+$importQueueLog = Join-Path $projectRoot 'storage\logs\local-import-queue-worker.log'
+$reportQueueLog = Join-Path $projectRoot 'storage\logs\local-report-queue-worker.log'
 $scheduleLog = Join-Path $projectRoot 'storage\logs\local-scheduler.log'
 
-New-Item -ItemType Directory -Force -Path (Split-Path -Parent $queueLog) | Out-Null
+New-Item -ItemType Directory -Force -Path (Split-Path -Parent $importQueueLog) | Out-Null
 
 function Test-ProcessCommand {
     param([string]$Pattern)
@@ -55,10 +56,16 @@ function Start-PhpBackground {
 }
 
 Start-PhpBackground `
-    -Name 'Queue worker' `
-    -Arguments 'artisan queue:work --queue=imports-daily-loan,imports-high,default,reports-low --tries=1 --timeout=120 --sleep=1 --memory=256' `
-    -LogPath $queueLog `
-    -DetectPattern 'artisan queue:work'
+    -Name 'Import queue worker' `
+    -Arguments 'artisan queue:work --queue=imports-high --tries=1 --timeout=120 --sleep=1 --memory=256' `
+    -LogPath $importQueueLog `
+    -DetectPattern 'artisan queue:work --queue=imports-high'
+
+Start-PhpBackground `
+    -Name 'Report queue worker' `
+    -Arguments 'artisan queue:work --queue=default,reports-low --tries=1 --timeout=120 --sleep=1 --memory=256' `
+    -LogPath $reportQueueLog `
+    -DetectPattern 'artisan queue:work --queue=default,reports-low'
 
 Start-PhpBackground `
     -Name 'Laravel scheduler' `

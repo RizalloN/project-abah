@@ -3,6 +3,7 @@
 namespace Tests\Unit;
 
 use App\Support\DashboardHarianSnapshotService;
+use App\Support\DashboardHarianSnapshotDirtyPeriodQueue;
 use App\Support\PartitionMaintenanceService;
 use App\Support\ReportDataSyncService;
 use App\Support\ReportSnapshotBuilder;
@@ -25,7 +26,8 @@ class ReportDataSyncServiceTest extends TestCase
         $builder = Mockery::mock(ReportSnapshotBuilder::class);
         $dashboardHarianSnapshotService = Mockery::mock(DashboardHarianSnapshotService::class);
         $partitionMaintenance = Mockery::mock(PartitionMaintenanceService::class);
-        $service = new ReportDataSyncService($builder, $dashboardHarianSnapshotService, $partitionMaintenance);
+        $dirtyPeriods = Mockery::mock(DashboardHarianSnapshotDirtyPeriodQueue::class);
+        $service = new ReportDataSyncService($builder, $dashboardHarianSnapshotService, $partitionMaintenance, $dirtyPeriods);
 
         $lock = Mockery::mock(Lock::class);
 
@@ -62,7 +64,8 @@ class ReportDataSyncServiceTest extends TestCase
         $builder = Mockery::mock(ReportSnapshotBuilder::class);
         $dashboardHarianSnapshotService = Mockery::mock(DashboardHarianSnapshotService::class);
         $partitionMaintenance = Mockery::mock(PartitionMaintenanceService::class);
-        $service = new ReportDataSyncService($builder, $dashboardHarianSnapshotService, $partitionMaintenance);
+        $dirtyPeriods = Mockery::mock(DashboardHarianSnapshotDirtyPeriodQueue::class);
+        $service = new ReportDataSyncService($builder, $dashboardHarianSnapshotService, $partitionMaintenance, $dirtyPeriods);
 
         $simpananLock = Mockery::mock(Lock::class);
         $lock = Mockery::mock(Lock::class);
@@ -124,7 +127,8 @@ class ReportDataSyncServiceTest extends TestCase
         $builder = Mockery::mock(ReportSnapshotBuilder::class);
         $dashboardHarianSnapshotService = Mockery::mock(DashboardHarianSnapshotService::class);
         $partitionMaintenance = Mockery::mock(PartitionMaintenanceService::class);
-        $service = Mockery::mock(ReportDataSyncService::class, [$builder, $dashboardHarianSnapshotService, $partitionMaintenance])->makePartial();
+        $dirtyPeriods = Mockery::mock(DashboardHarianSnapshotDirtyPeriodQueue::class);
+        $service = Mockery::mock(ReportDataSyncService::class, [$builder, $dashboardHarianSnapshotService, $partitionMaintenance, $dirtyPeriods])->makePartial();
 
         $lock = Mockery::mock(Lock::class);
 
@@ -174,7 +178,8 @@ class ReportDataSyncServiceTest extends TestCase
         $builder = Mockery::mock(ReportSnapshotBuilder::class);
         $dashboardHarianSnapshotService = Mockery::mock(DashboardHarianSnapshotService::class);
         $partitionMaintenance = Mockery::mock(PartitionMaintenanceService::class);
-        $service = new ReportDataSyncService($builder, $dashboardHarianSnapshotService, $partitionMaintenance);
+        $dirtyPeriods = Mockery::mock(DashboardHarianSnapshotDirtyPeriodQueue::class);
+        $service = new ReportDataSyncService($builder, $dashboardHarianSnapshotService, $partitionMaintenance, $dirtyPeriods);
 
         $builder->shouldReceive('rebuildPerformanceNewPayroll')
             ->once()
@@ -189,7 +194,6 @@ class ReportDataSyncServiceTest extends TestCase
         $this->assertTrue(true);
     }
 }
-
 
 
 

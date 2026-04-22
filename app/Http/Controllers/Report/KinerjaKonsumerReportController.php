@@ -15,9 +15,18 @@ use Illuminate\View\View;
 
 class KinerjaKonsumerReportController extends Controller
 {
-    private const DEFAULT_TITLE = 'Outstanding Konsumer - Briguna & KPR';
+    private const DEFAULT_TITLE = 'Performance Per RM';
     private const SEGMENT_LABEL = 'KPR';
-    private const PRODUCT_OPTIONS = ['BRIGUNA-KONSUMER', 'KPR'];
+    
+    // Mapping segmen ke product options
+    private const SEGMENT_PRODUCT_MAP = [
+        'CONSUMER' => ['BRIGUNA-KONSUMER', 'KPR'],
+        'SMALL' => ['COMMERCIAL', 'CASHCOLL'],
+        'MICRO' => ['BRIGUNA-MIKRO', 'KUPEDES', 'KUR-MIKRO'],
+    ];
+    
+    private const AVAILABLE_SEGMENTS = ['CONSUMER', 'SMALL', 'MICRO'];
+    private const DEFAULT_SEGMENT = 'CONSUMER';
 
     public function __construct(
         private readonly RkaLookupService $rkaLookup
@@ -26,12 +35,13 @@ class KinerjaKonsumerReportController extends Controller
     public function index(Request $request): View
     {
         $availablePeriods = $this->fetchAvailablePeriods();
-        $availableCabangs = $this->fetchAvailableCabangs();
+        $selectedSegmen = $this->resolveSelectedSegmen($request->input('segmen'));
+        $availableCabangs = $this->fetchAvailableCabangsBySegmen($selectedSegmen);
         $selectedPeriod = $this->resolveSelectedPeriod($availablePeriods, $request->input('periode'))
             ?? $availablePeriods->first()
             ?? Carbon::now()->toDateString();
         $selectedCabang = $this->resolveSelectedCabang($availableCabangs, $request->input('cabang1'));
-        $selectedProduct = $this->resolveSelectedProduct($request->input('produk'));
+        $selectedProduct = $this->resolveSelectedProduct($request->input('produk'), $selectedSegmen);
 
         $currentDate = Carbon::parse($selectedPeriod);
         $previousDayPeriod = $this->resolveClosestPeriod(
@@ -47,19 +57,23 @@ class KinerjaKonsumerReportController extends Controller
             $currentDate->copy()->subYearNoOverflow()->endOfYear()
         ) ?? $selectedPeriod;
 
-        $osRows = $this->fetchBranchRows($selectedPeriod, $previousDayPeriod, $mtdPeriod, $ytdPeriod, $selectedCabang, $selectedProduct);
-        $smlRows = $this->fetchBranchRows($selectedPeriod, $previousDayPeriod, $mtdPeriod, $ytdPeriod, $selectedCabang, $selectedProduct, 'sml');
-        $nplRows = $this->fetchBranchRows($selectedPeriod, $previousDayPeriod, $mtdPeriod, $ytdPeriod, $selectedCabang, $selectedProduct, 'npl');
+        $osRows = $this->fetchBranchRows($selectedSegmen, $selectedPeriod, $previousDayPeriod, $mtdPeriod, $ytdPeriod, $selectedCabang, $selectedProduct);
+        $smlRows = $this->fetchBranchRows($selectedSegmen, $selectedPeriod, $previousDayPeriod, $mtdPeriod, $ytdPeriod, $selectedCabang, $selectedProduct, 'sml');
+        $nplRows = $this->fetchBranchRows($selectedSegmen, $selectedPeriod, $previousDayPeriod, $mtdPeriod, $ytdPeriod, $selectedCabang, $selectedProduct, 'npl');
         $nextMonth = $currentDate->copy()->addMonthNoOverflow();
+
+        $productOptions = self::SEGMENT_PRODUCT_MAP[$selectedSegmen] ?? [];
 
         $viewData = [
             'title' => self::DEFAULT_TITLE,
             'availablePeriods' => $availablePeriods,
+            'availableSegmens' => self::AVAILABLE_SEGMENTS,
+            'selectedSegmen' => $selectedSegmen,
             'latestPeriodLabel' => $availablePeriods->first()
                 ? Carbon::parse($availablePeriods->first())->translatedFormat('d M Y')
                 : '-',
             'availableCabangs' => $availableCabangs,
-            'availableProducts' => self::PRODUCT_OPTIONS,
+            'availableProducts' => $productOptions,
             'selectedPeriod' => $selectedPeriod,
             'selectedPeriodLabel' => $currentDate->translatedFormat('d M Y'),
             'selectedPeriodShortLabel' => $currentDate->translatedFormat('d M y'),
@@ -92,30 +106,40 @@ class KinerjaKonsumerReportController extends Controller
 
     private function fetchAvailablePeriods(): Collection
     {
-        return Cache::remember('kinerja_konsumer_periods', 600, function () {
+        return Cache::remember('kinerja_rm_periods', 600, function () {
             $productColumn = $this->resolveProductColumn();
-
-            return DB::table('daily_loan_dinamis')
-                ->whereRaw("UPPER(TRIM(segmen_dashboard)) = 'CONSUMER'")
-                ->whereIn(DB::raw($this->normalizedColumnExpression($productColumn)), self::PRODUCT_OPTIONS)
-                ->select('periode')
-                ->distinct()
-                ->orderByDesc('periode')
-                ->pluck('periode')
-                ->map(fn ($value) => Carbon::parse($value)->toDateString())
-                ->values();
+            
+            $periods = collect();
+            foreach (self::AVAILABLE_SEGMENTS as $segment) {
+                $productOptions = self::SEGMENT_PRODUCT_MAP[$segment] ?? [];
+                $periodsColl = DB::table('daily_loan_dinamis')
+                    ->whereRaw("UPPER(TRIM(segmen_dashboard)) = ?", [$segment])
+                    ->whereIn(DB::raw($this->normalizedColumnExpression($productColumn)), $productOptions)
+                    ->select('periode')
+                    ->distinct()
+                    ->orderByDesc('periode')
+                    ->pluck('periode')
+                    ->map(fn ($value) => Carbon::parse($value)->toDateString());
+                
+                $periods = $periods->merge($periodsColl);
+            }
+            
+            return $periods->unique()->sort()->reverse()->values();
         });
     }
 
-    private function fetchAvailableCabangs(): Collection
+    private function fetchAvailableCabangsBySegmen(string $segmen): Collection
     {
-        return Cache::remember('kinerja_konsumer_cabangs', 1800, function () {
+        $cacheKey = 'kinerja_rm_cabangs:' . $segmen;
+        
+        return Cache::remember($cacheKey, 1800, function () use ($segmen) {
             $cabangColumn = $this->resolveCabangColumn();
             $productColumn = $this->resolveProductColumn();
+            $productOptions = self::SEGMENT_PRODUCT_MAP[$segmen] ?? [];
 
             return DB::table('daily_loan_dinamis')
-                ->whereRaw("UPPER(TRIM(segmen_dashboard)) = 'CONSUMER'")
-                ->whereIn(DB::raw($this->normalizedColumnExpression($productColumn)), self::PRODUCT_OPTIONS)
+                ->whereRaw("UPPER(TRIM(segmen_dashboard)) = ?", [$segmen])
+                ->whereIn(DB::raw($this->normalizedColumnExpression($productColumn)), $productOptions)
                 ->whereNotNull($cabangColumn)
                 ->where($cabangColumn, '<>', '')
                 ->select($cabangColumn . ' as cabang')
@@ -142,6 +166,17 @@ class KinerjaKonsumerReportController extends Controller
         return $periods->first();
     }
 
+    private function resolveSelectedSegmen(?string $requestedSegmen): string
+    {
+        $normalized = strtoupper(trim((string) $requestedSegmen));
+        
+        if (in_array($normalized, self::AVAILABLE_SEGMENTS, true)) {
+            return $normalized;
+        }
+        
+        return self::DEFAULT_SEGMENT;
+    }
+
     private function resolveSelectedCabang(Collection $cabangs, ?string $requestedCabang): ?string
     {
         $value = $this->normalizeCabangKey($requestedCabang);
@@ -153,9 +188,16 @@ class KinerjaKonsumerReportController extends Controller
         return $cabangs->first(fn ($cabang) => $this->normalizeCabangKey($cabang) === $value);
     }
 
-    private function resolveSelectedProduct(?string $requestedProduct): ?string
+    private function resolveSelectedProduct(?string $requestedProduct, string $segmen = 'CONSUMER'): ?string
     {
-        return $this->normalizeProductLabel($requestedProduct);
+        $normalized = $this->normalizeProductLabel($requestedProduct);
+        $productOptions = self::SEGMENT_PRODUCT_MAP[$segmen] ?? [];
+        
+        if ($normalized !== null && in_array($normalized, $productOptions, true)) {
+            return $normalized;
+        }
+        
+        return null;
     }
 
     private function resolveClosestPeriod(Collection $periods, Carbon $target): ?string
@@ -169,6 +211,7 @@ class KinerjaKonsumerReportController extends Controller
     }
 
     private function fetchBranchRows(
+        string $segmen,
         string $selectedPeriod,
         string $previousDayPeriod,
         string $mtdPeriod,
@@ -178,7 +221,8 @@ class KinerjaKonsumerReportController extends Controller
         ?string $qualityType = null
     ): array
     {
-        $cacheKey = 'kinerja_konsumer_rows:v6:' . md5(json_encode([
+        $cacheKey = 'kinerja_rm_rows:v1:' . md5(json_encode([
+            'segmen' => $segmen,
             'selected' => $selectedPeriod,
             'prev_day' => $previousDayPeriod,
             'mtd' => $mtdPeriod,
@@ -188,7 +232,9 @@ class KinerjaKonsumerReportController extends Controller
             'quality' => $qualityType,
         ]));
 
-        return Cache::remember($cacheKey, 300, function () use ($selectedPeriod, $previousDayPeriod, $mtdPeriod, $ytdPeriod, $selectedCabang, $selectedProduct, $qualityType) {
+        return Cache::remember($cacheKey, 300, function () use ($segmen, $selectedPeriod, $previousDayPeriod, $mtdPeriod, $ytdPeriod, $selectedCabang, $selectedProduct, $qualityType) {
+        $productOptions = self::SEGMENT_PRODUCT_MAP[$segmen] ?? [];
+        
         $periods = array_values(array_unique(array_filter([
             $selectedPeriod,
             $previousDayPeriod,
@@ -247,9 +293,9 @@ class KinerjaKonsumerReportController extends Controller
             ->selectRaw("SUM(CASE WHEN periode = ? THEN COALESCE({$balanceColumn}, 0) ELSE 0 END) as ytd", [$ytdPeriod])
             ->selectRaw("COUNT(DISTINCT CASE WHEN periode = ? AND {$realisasiDateExpression} BETWEEN ? AND ? THEN {$debiturExpression} END) as realisasi_deb", [$selectedPeriod, $monthStart, $monthEnd])
             ->selectRaw("SUM(CASE WHEN periode = ? AND {$realisasiDateExpression} BETWEEN ? AND ? THEN COALESCE({$balanceColumn}, 0) ELSE 0 END) as realisasi_os", [$selectedPeriod, $monthStart, $monthEnd])
-            ->whereRaw("UPPER(TRIM(segmen_dashboard)) = 'CONSUMER'")
-            ->when($selectedProduct === null, function ($query) use ($normalizedProductExpression) {
-                $query->whereIn(DB::raw($normalizedProductExpression), self::PRODUCT_OPTIONS);
+            ->whereRaw("UPPER(TRIM(segmen_dashboard)) = ?", [$segmen])
+            ->when($selectedProduct === null, function ($query) use ($normalizedProductExpression, $productOptions) {
+                $query->whereIn(DB::raw($normalizedProductExpression), $productOptions);
             })
             ->when($selectedProduct !== null, function ($query) use ($normalizedProductExpression, $selectedProduct) {
                 $query->whereRaw($normalizedProductExpression . ' = ?', [$selectedProduct]);
@@ -286,7 +332,7 @@ class KinerjaKonsumerReportController extends Controller
             $cabangName = trim((string) ($row->cabang ?? ''));
             $rmOriginal = trim((string) ($row->rm ?? ''));
             $rmName = $this->mapRmName($rmOriginal);
-            $productLabel = $this->normalizeProductLabel($row->produk_raw ?? null);
+            $productLabel = $this->normalizeProductLabel($row->produk_raw ?? null, $segmen);
 
             if ($rmName === '' || $productLabel === null) {
                 continue;
@@ -328,7 +374,7 @@ class KinerjaKonsumerReportController extends Controller
             $tOs = $target['os'] ?? 0.0;
 
             $item = [
-                'segmen' => self::SEGMENT_LABEL,
+                'segmen' => $segmen,
                 'product' => $productLabel,
                 'curr' => $curr,
                 'curr_deb' => $currDeb,
@@ -385,7 +431,7 @@ class KinerjaKonsumerReportController extends Controller
         }
 
         $totalRecord = [
-            'segmen' => 'Total',
+            'segmen' => $segmen,
             'cabang' => $selectedCabang ?? 'SEMUA CABANG',
             'rm' => 'TOTAL',
             'curr' => $grandTotals['curr'],
@@ -496,7 +542,7 @@ class KinerjaKonsumerReportController extends Controller
         return $total;
     }
 
-    private function normalizeProductLabel(?string $value): ?string
+    private function normalizeProductLabel(?string $value, string $segmen = 'CONSUMER'): ?string
     {
         $normalized = strtoupper(trim((string) $value));
         $normalized = preg_replace('/\s+/', ' ', $normalized) ?? $normalized;
@@ -504,15 +550,25 @@ class KinerjaKonsumerReportController extends Controller
         $normalized = preg_replace('/\s*-\s*/', ' ', $normalized) ?? $normalized;
         $normalized = preg_replace('/\s+/', ' ', trim($normalized)) ?? $normalized;
 
-        if ($normalized === 'BRIGUNA KONSUMER') {
-            return 'BRIGUNA-KONSUMER';
-        }
+        // Normalize based on segmen
+        $productMap = match($segmen) {
+            'CONSUMER' => [
+                'BRIGUNA KONSUMER' => 'BRIGUNA-KONSUMER',
+                'KPR' => 'KPR',
+            ],
+            'SMALL' => [
+                'COMMERCIAL' => 'COMMERCIAL',
+                'CASHCOLL' => 'CASHCOLL',
+            ],
+            'MICRO' => [
+                'BRIGUNA MIKRO' => 'BRIGUNA-MIKRO',
+                'KUPEDES' => 'KUPEDES',
+                'KUR MIKRO' => 'KUR-MIKRO',
+            ],
+            default => []
+        };
 
-        if ($normalized === 'KPR') {
-            return 'KPR';
-        }
-
-        return null;
+        return $productMap[$normalized] ?? null;
     }
 
     private function normalizedColumnExpression(string $column): string

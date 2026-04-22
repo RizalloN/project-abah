@@ -54,7 +54,16 @@
             "powershell -ExecutionPolicy Bypass -File .\\scripts\\start-local.ps1 -WithVite"
         ],
         "queue": [
-            "@php artisan queue:work --queue=imports-daily-loan,imports-high,default,reports-low --tries=1 --timeout=120 --sleep=1"
+            "Composer\\Config::disableProcessTimeout",
+            "npx concurrently -c \"#c4b5fd,#fb7185\" \"php artisan queue:work --queue=imports-high --tries=1 --timeout=120 --sleep=1\" \"php artisan queue:work --queue=default,reports-low --tries=1 --timeout=120 --sleep=1\" --names=import-queue,report-queue --kill-others"
+        ],
+        "queue:daily-loan": [
+            "Composer\\Config::disableProcessTimeout",
+            "@php artisan queue:work --queue=imports-daily-loan --tries=1 --timeout=120 --sleep=1"
+        ],
+        "queue:all": [
+            "Composer\\Config::disableProcessTimeout",
+            "npx concurrently -c \"#93c5fd,#c4b5fd,#fb7185\" \"php artisan queue:work --queue=imports-daily-loan --tries=1 --timeout=120 --sleep=1\" \"php artisan queue:work --queue=imports-high --tries=1 --timeout=120 --sleep=1\" \"php artisan queue:work --queue=default,reports-low --tries=1 --timeout=120 --sleep=1\" --names=daily-import-queue,import-queue,report-queue --kill-others"
         ],
         "test": [
             "@php artisan config:clear --ansi",

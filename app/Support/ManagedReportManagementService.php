@@ -704,6 +704,23 @@ class ManagedReportManagementService
             return $row;
         }, array_values($rows));
 
+        // Sort the aggregated results: Period DESC (latest first), then Kanca Label ASC
+        usort($rows, function (array $left, array $right): int {
+            $pL = (string) ($left['period'] ?? '');
+            $pR = (string) ($right['period'] ?? '');
+
+            // Handle potential blanks (put them at bottom)
+            if ($pL === '' && $pR !== '') return 1;
+            if ($pL !== '' && $pR === '') return -1;
+
+            // Primary sort: Period DESC (chronological because labels are normalized to YYYY-MM or YYYY-MM-DD)
+            $cmp = strcmp($pR, $pL);
+            if ($cmp !== 0) return $cmp;
+
+            // Secondary sort: Kanca Label ASC
+            return strcmp((string) ($left['kanca_label'] ?? ''), (string) ($right['kanca_label'] ?? ''));
+        });
+
         return [$rows, $truncated];
     }
 

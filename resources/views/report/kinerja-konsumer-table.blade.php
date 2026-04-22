@@ -23,6 +23,14 @@
 
         return "<span class='delta-indicator {$cls}'>{$icon}{$prefix}{$display}</span>";
     };
+
+    // Mapping segmen ke subtitle
+    $segmentLabels = [
+        'CONSUMER' => 'Consumer',
+        'SMALL' => 'Small Business',
+        'MICRO' => 'Micro Business',
+    ];
+    $segmentLabel = $segmentLabels[$selectedSegmen] ?? $selectedSegmen;
 @endphp
 
 <div id="kinerjaContentArea" class="animate-reveal">
@@ -30,9 +38,9 @@
         <div class="kinerja-tabs-shell">
             <div class="kinerja-tabs-header">
                 <div class="kinerja-tabs-heading">
-                    <p class="kinerja-tabs-kicker">Rincian Konsumer</p>
-                    <h2 class="kinerja-tabs-title">Kinerja OS dan Kualitas</h2>
-                    <p class="kinerja-tabs-subtitle">Pilih panel untuk berpindah antara outstanding dan kualitas RM tanpa memecah konteks halaman.</p>
+                    <p class="kinerja-tabs-kicker">Rincian RM - {{ $segmentLabel }}</p>
+                    <h2 class="kinerja-tabs-title">Performance OS dan Kualitas</h2>
+                    <p class="kinerja-tabs-subtitle">Pilih panel untuk berpindah antara performance dan kualitas RM tanpa memecah konteks halaman.</p>
                 </div>
 
                 <div class="kinerja-tabs-nav" role="tablist" aria-label="Navigasi Kinerja Konsumer">
@@ -50,14 +58,14 @@
             <div class="kinerja-tabs-body">
                 <section id="kinerja-panel-os" class="kinerja-tab-panel is-active" data-kinerja-panel="os" role="tabpanel" aria-labelledby="kinerja-tab-os">
                     @include('report.kinerja-konsumer-table-section', [
-                        'sectionTitle' => 'Kinerja OS',
-                        'sectionSubtitle' => 'Outstanding consumer per RM, branch, dan produk.',
+                        'sectionTitle' => 'Performance OS Per RM',
+                        'sectionSubtitle' => 'Performance RM per branch dan produk.',
                         'sectionMeta' => 'Satuan Akuntansi: Rp, Juta',
                         'rows' => $rows,
                         'total' => $total,
                         'showTargets' => true,
                         'compact' => false,
-                        'grandTotalLabel' => 'GRAND TOTAL ' . ($selectedProductLabel === 'Semua Produk' ? 'KONSUMER' : strtoupper($selectedProductLabel)),
+                        'grandTotalLabel' => 'GRAND TOTAL ' . ($selectedProductLabel === 'Semua Produk' ? 'RM' : strtoupper($selectedProductLabel)),
                         'emptyMessage' => 'Silakan pilih parameter filter yang berbeda.',
                     ])
                 </section>

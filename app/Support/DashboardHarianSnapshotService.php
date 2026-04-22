@@ -17,6 +17,7 @@ class DashboardHarianSnapshotService
     public const SNAPSHOT_TABLE = 'dashboard_harian_snapshots';
     private const LOAN_TABLE = 'ssa_pinjaman';
     private const SAVINGS_TABLE = 'ssa_simpanan';
+    private const AUTO_SYNC_RECENT_SOURCE_HOURS = 6;
     private const METRIC_COLUMNS = [
         'ph_tupok',
         'ph_lunas',
@@ -219,42 +220,75 @@ class DashboardHarianSnapshotService
         ];
     }
 
-    /**
-     * Sync missing snapshots - automatically rebuild periods that exist in SSA tables
-     * but are missing from snapshot cache. This is called periodically by the scheduler.
-     * 
-     * @return array Results with 'built' count and 'failed' count
-     */
     public function syncMissingPeriods(): array
     {
+        return $this->syncDuePeriods();
+    }
+
+    /**
+     * Build Dashboard Harian snapshots that are missing or stale. A snapshot can
+     * become stale when lw325_ph arrives after the SSA period was already built.
+     */
+    public function syncDuePeriods(?array $candidatePeriods = null): array
+    {
         try {
-            // Get all shared periods from SSA tables
             $sharedPeriods = $this->resolveSharedPeriods();
-            
-            if (empty($sharedPeriods)) {
-                return ['built' => 0, 'failed' => 0, 'missing' => []];
+            if ($sharedPeriods === []) {
+                return ['built' => 0, 'failed' => 0, 'missing' => [], 'stale' => [], 'checked' => 0];
             }
 
-            // Get existing snapshots
             $existingSnapshots = DB::table(self::SNAPSHOT_TABLE)
                 ->select('snapshot_period')
-                ->distinct()
-                ->pluck('snapshot_period')
-                ->map(fn ($val) => (string) $val)
+                ->selectRaw('COUNT(*) as row_count')
+                ->groupBy('snapshot_period')
+                ->pluck('row_count', 'snapshot_period')
+                ->mapWithKeys(fn ($count, $period) => [(string) $period => (int) $count])
                 ->all();
 
-            // Find missing periods
-            $missingPeriods = array_diff($sharedPeriods, $existingSnapshots);
+            $missingPeriods = array_values(array_filter(
+                $sharedPeriods,
+                fn (string $period) => ($existingSnapshots[$period] ?? 0) <= 0
+            ));
+            $staleCandidatePeriods = $this->normalizeCandidatePeriods(
+                $candidatePeriods ?? $this->resolveAutomaticStaleCandidatePeriods($sharedPeriods),
+                $sharedPeriods
+            );
 
-            if (empty($missingPeriods)) {
-                return ['built' => 0, 'failed' => 0, 'missing' => []];
+            $periodsToCheck = array_values(array_unique(array_merge($missingPeriods, $staleCandidatePeriods)));
+            if ($periodsToCheck === []) {
+                return ['built' => 0, 'failed' => 0, 'missing' => [], 'stale' => [], 'checked' => 0];
             }
 
-            // Rebuild missing periods
+            $missingPeriods = [];
+            $stalePeriods = [];
+
+            foreach ($periodsToCheck as $period) {
+                if (($existingSnapshots[$period] ?? 0) <= 0) {
+                    $missingPeriods[] = $period;
+                    continue;
+                }
+
+                $sourceMetadata = $this->buildSourceMetadata($period);
+                if (!$this->snapshotSourceIsFresh($period, $sourceMetadata)) {
+                    $stalePeriods[] = $period;
+                }
+            }
+
+            $duePeriods = array_values(array_unique(array_merge($missingPeriods, $stalePeriods)));
+            if ($duePeriods === []) {
+                return [
+                    'built' => 0,
+                    'failed' => 0,
+                    'missing' => [],
+                    'stale' => [],
+                    'checked' => count($periodsToCheck),
+                ];
+            }
+
             $built = 0;
             $failed = 0;
 
-            foreach ($missingPeriods as $period) {
+            foreach ($duePeriods as $period) {
                 try {
                     $count = $this->buildPeriodSnapshot($period, false);
                     if ($count > 0) {
@@ -262,6 +296,11 @@ class DashboardHarianSnapshotService
                     }
                 } catch (Throwable $e) {
                     $failed++;
+                    Log::warning('Failed to sync due Dashboard Harian snapshot.', [
+                        'period' => $period,
+                        'exception' => $e::class,
+                        'error' => $e->getMessage(),
+                    ]);
                 }
             }
 
@@ -269,10 +308,12 @@ class DashboardHarianSnapshotService
                 'built' => $built,
                 'failed' => $failed,
                 'missing' => array_values($missingPeriods),
+                'stale' => array_values($stalePeriods),
+                'checked' => count($periodsToCheck),
             ];
         } catch (Throwable $e) {
-            \Illuminate\Support\Facades\Log::error('Failed to sync missing snapshots', ['error' => $e->getMessage()]);
-            return ['built' => 0, 'failed' => count($this->resolveSharedPeriods() ?? []), 'missing' => []];
+            Log::error('Failed to sync due Dashboard Harian snapshots', ['error' => $e->getMessage()]);
+            return ['built' => 0, 'failed' => 0, 'missing' => [], 'stale' => [], 'checked' => 0];
         }
     }
 
@@ -288,28 +329,16 @@ class DashboardHarianSnapshotService
             return $sharedPeriods;
         }
 
-        $affected = [];
         $sharedPeriodsAsc = $sharedPeriods;
         sort($sharedPeriodsAsc);
 
-        if (in_array($normalizedPhPeriod, $sharedPeriodsAsc, true)) {
-            $affected[] = $normalizedPhPeriod;
-        }
-
         foreach ($sharedPeriodsAsc as $sharedPeriod) {
             if ($sharedPeriod > $normalizedPhPeriod) {
-                $affected[] = $sharedPeriod;
-                break;
+                return [$sharedPeriod];
             }
         }
 
-        if ($affected === []) {
-            return [];
-        }
-
-        rsort($affected);
-
-        return array_values(array_unique($affected));
+        return [];
     }
 
     public function rebuildAffectedByPhPeriod(?string $phPeriod = null, bool $force = false): array
@@ -1815,6 +1844,111 @@ class DashboardHarianSnapshotService
         return $shared;
     }
 
+    /**
+     * @param array<int, string>|null $candidatePeriods
+     * @param array<int, string> $sharedPeriods
+     * @return array<int, string>
+     */
+    private function normalizeCandidatePeriods(?array $candidatePeriods, array $sharedPeriods): array
+    {
+        if ($candidatePeriods === null) {
+            return $sharedPeriods;
+        }
+
+        $sharedLookup = array_flip($sharedPeriods);
+        $normalized = [];
+
+        foreach ($candidatePeriods as $period) {
+            $value = $this->normalizeDate((string) $period);
+            if ($value !== null && isset($sharedLookup[$value])) {
+                $normalized[$value] = $value;
+            }
+        }
+
+        $periods = array_values($normalized);
+        rsort($periods);
+
+        return $periods;
+    }
+
+    /**
+     * @param array<int, string> $sharedPeriods
+     * @return array<int, string>
+     */
+    private function resolveAutomaticStaleCandidatePeriods(array $sharedPeriods): array
+    {
+        $candidates = [];
+
+        if (($sharedPeriods[0] ?? null) !== null) {
+            $candidates[] = $sharedPeriods[0];
+        }
+
+        foreach ($this->resolveRecentSourcePeriods(self::LOAN_TABLE, $this->sourcePeriodColumn(self::LOAN_TABLE)) as $period) {
+            $candidates[] = $period;
+        }
+
+        foreach ($this->resolveRecentSourcePeriods(self::SAVINGS_TABLE, $this->sourcePeriodColumn(self::SAVINGS_TABLE)) as $period) {
+            $candidates[] = $period;
+        }
+
+        foreach ($this->resolveRecentSourcePeriods('lw325_ph', 'periode') as $phPeriod) {
+            foreach ($this->resolveAffectedSnapshotPeriodsForPh($phPeriod) as $snapshotPeriod) {
+                $candidates[] = $snapshotPeriod;
+            }
+        }
+
+        $latestPhPeriod = $this->resolveLatestSourcePeriod('lw325_ph', 'periode');
+        if ($latestPhPeriod !== null) {
+            foreach ($this->resolveAffectedSnapshotPeriodsForPh($latestPhPeriod) as $snapshotPeriod) {
+                $candidates[] = $snapshotPeriod;
+            }
+        }
+
+        return array_values(array_unique($candidates));
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function resolveRecentSourcePeriods(string $table, string $periodColumn): array
+    {
+        if (!Schema::hasTable($table) || !Schema::hasColumn($table, $periodColumn)) {
+            return [];
+        }
+
+        $query = DB::table($table)
+            ->select($periodColumn)
+            ->distinct()
+            ->orderByDesc($periodColumn)
+            ->limit(10);
+
+        if (Schema::hasColumn($table, 'updated_at')) {
+            $query->where('updated_at', '>=', now()->subHours(self::AUTO_SYNC_RECENT_SOURCE_HOURS));
+        }
+
+        return $query
+            ->pluck($periodColumn)
+            ->map(fn ($value) => $this->normalizeDate((string) $value))
+            ->filter()
+            ->values()
+            ->all();
+    }
+
+    private function resolveLatestSourcePeriod(string $table, string $periodColumn): ?string
+    {
+        if (!Schema::hasTable($table) || !Schema::hasColumn($table, $periodColumn)) {
+            return null;
+        }
+
+        try {
+            $value = DB::table($table)->max($periodColumn);
+
+            return $this->normalizeDate((string) $value);
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
     private function cleanupSnapshotOrphans(array $validPeriods): void
     {
         if (!Schema::hasTable(self::SNAPSHOT_TABLE)) {
@@ -1969,7 +2103,7 @@ class DashboardHarianSnapshotService
         }
 
         $currentPhPeriod = DB::table('lw325_ph')
-            ->where('periode', '<=', $normalizedPeriod)
+            ->where('periode', '<', $normalizedPeriod)
             ->orderBy('periode', 'desc')
             ->value('periode');
 
@@ -2003,7 +2137,7 @@ class DashboardHarianSnapshotService
             ->all();
 
         if ($signatures === []) {
-            return true;
+            return false;
         }
 
         return count($signatures) === 1

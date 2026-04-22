@@ -664,6 +664,49 @@ class ImportExcelController extends Controller
         return array_values($headers);
     }
 
+    private function isDailyLoanSourceHeaderRow(array $row): bool
+    {
+        if (!$this->isDailyLoanTable()) {
+            return false;
+        }
+
+        $canonicalHeaders = $this->canonicalizeDailyLoanSourceHeaders($row);
+        $canonicalHeaders = array_map(
+            static fn ($value) => trim((string) $value),
+            array_values($canonicalHeaders)
+        );
+
+        if (($canonicalHeaders[0] ?? null) !== 'PERIODE') {
+            return false;
+        }
+
+        $requiredHeaders = ['KODE_KANWIL1', 'CIFNO', 'NOMOR_REKENING1', 'BAKI_DEBET1'];
+        $matchedHeaders = 0;
+
+        foreach ($requiredHeaders as $requiredHeader) {
+            if (in_array($requiredHeader, $canonicalHeaders, true)) {
+                $matchedHeaders++;
+            }
+        }
+
+        return $matchedHeaders >= 3;
+    }
+
+    private function readDailyLoanSourceHeaderRecord($handle, string $delimiter = ',')
+    {
+        while (($row = $this->readCsvRecord($handle, $delimiter)) !== false) {
+            if (empty(array_filter((array) $row, static fn ($value) => trim((string) $value) !== ''))) {
+                continue;
+            }
+
+            if ($this->isDailyLoanSourceHeaderRow((array) $row)) {
+                return $this->canonicalizeDailyLoanSourceHeaders((array) $row);
+            }
+        }
+
+        return false;
+    }
+
     private function resolvePreviewHeaderLabel(string $headerName, string $tableName): string
     {
         if ($tableName !== 'daily_loan_dinamis') {
@@ -2028,6 +2071,9 @@ class ImportExcelController extends Controller
 
         $sessionParams = session('excel_import_params', []);
         $jobId = (int) ($sessionParams['job_id'] ?? $request->query('job_id', 0));
+        if ($jobId > 0 && $this->executionService()->hasQueuedExecution($jobId)) {
+            return $this->processExcelStream($request);
+        }
         $jobState = $this->excelImportJobService()->getImportJobState($jobId);
 
         if (
@@ -2756,10 +2802,14 @@ class ImportExcelController extends Controller
             return ['eligible' => false, 'reason' => 'LOCAL INFILE tidak aktif di MySQL/PDO. Menggunakan safe path queue.'];
         }
 
+        $previewMeta = (array) session('excel_preview_meta', []);
         $candidatePaths = array_values(array_filter([
             (string) ($params['staged_csv_path'] ?? ''),
             (string) ($params['file_path'] ?? ''),
-        ], static fn ($path): bool => is_string($path) && $path !== ''));
+            (string) ($previewMeta['staged_csv_path'] ?? ''),
+            (string) ($previewMeta['path'] ?? ''),
+            (string) session('excel_path', ''),
+        ], static fn ($path): bool => is_string($path) && trim($path) !== ''));
 
         foreach ($candidatePaths as $candidatePath) {
             $absolutePath = $candidatePath;
@@ -3639,7 +3689,7 @@ class ImportExcelController extends Controller
         return [
             'path' => $outputCsvPath,
             'cleanup' => true,
-            'normalized' => true,
+            'normalized' => false,
             'backend' => 'polars',
             'skipped_rows' => array_values(array_map('intval', (array) ($donePayload['skipped_rows'] ?? []))),
             'skipped_count' => (int) ($donePayload['skipped_count'] ?? 0),
@@ -5026,7 +5076,7 @@ class ImportExcelController extends Controller
         }
 
         try {
-            $header = fgetcsv($inputHandle, 0, $delimiter);
+            $header = $this->readDailyLoanSourceHeaderRecord($inputHandle, $delimiter);
             if ($header === false || empty($header)) {
                 throw new \RuntimeException('Header CSV Daily Loan tidak ditemukan saat normalisasi direct load.');
             }
@@ -5319,7 +5369,7 @@ class ImportExcelController extends Controller
         }
 
         try {
-            $sourceHeaders = $this->readCsvRecord($handle, $delimiter);
+            $sourceHeaders = $this->readDailyLoanSourceHeaderRecord($handle, $delimiter);
         } finally {
             fclose($handle);
         }
@@ -5530,8 +5580,13 @@ class ImportExcelController extends Controller
         $pdo = new \PDO($dsn, $username, $password, [
             \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
             \PDO::MYSQL_ATTR_LOCAL_INFILE => true,
-            \PDO::ATTR_TIMEOUT => 120,
+            \PDO::ATTR_TIMEOUT => 30,
         ]);
+
+        // Prevent server from killing long-running LOAD DATA INFILE on large files
+        $pdo->exec('SET SESSION net_read_timeout = 3600');
+        $pdo->exec('SET SESSION net_write_timeout = 3600');
+        $pdo->exec('SET SESSION wait_timeout = 7200');
 
         $normalizedPath = str_replace('\\', '/', realpath($absolutePath) ?: $absolutePath);
         $quotedPath = $pdo->quote($normalizedPath);
@@ -6507,8 +6562,6 @@ class ImportExcelController extends Controller
             $previewLimit = $previewSettings['preview_limit'];
             $uniqueLimit = $previewSettings['unique_scan_limit'];
             $maxUniqueValuesPerColumn = $previewSettings['max_unique_values_per_column'];
-            $forcedHeaders = self::DAILY_LOAN_SOURCE_HEADERS;
-
             // Single pass: Collect everything
             $lineNumber = 0;
             $headerIndex = null;
@@ -6532,10 +6585,10 @@ class ImportExcelController extends Controller
                 if ($headerIndex === null) {
                     if ($this->detectHeaderIndex([$row], $tableName) === 0) {
                         $headerIndex = $lineNumber - 1;
-                        $headerCount = count($row);
+                        $resolvedHeaders = $this->canonicalizeDailyLoanSourceHeaders((array) $row);
+                        $headerCount = count($resolvedHeaders);
 
-                        // Map forced headers
-                        foreach ($forcedHeaders as $colIdx => $header) {
+                        foreach ($resolvedHeaders as $colIdx => $header) {
                             $normalizedHeaders[$colIdx] = $header;
                         }
 
@@ -6563,12 +6616,13 @@ class ImportExcelController extends Controller
                     continue;
                 }
 
+                // Normalize first so decimal commas or wrapped payloads can be repaired
+                // before we decide the row is malformed.
+                $row = $this->normalizeCsvRow($row, $delimiter, $headerCount);
+
                 if ($this->hasDailyLoanFieldCountMismatch($normalizedHeaders, $row, $lineNumber, 'preview_scan_csv', $delimiter)) {
                     continue;
                 }
-
-                // === PHASE 3: NORMALIZE ROW ===
-                $row = $this->normalizeCsvRow($row, $delimiter, $headerCount);
 
                 if (!$this->isCompleteDailyLoanSourceRow($normalizedHeaders, $row)) {
                     continue;
@@ -6652,17 +6706,27 @@ class ImportExcelController extends Controller
             $formattedUniqueValues = [];
             $filterIndex = 0;
             foreach ($validIndexes as $index) {
-                $keys = array_keys($uniqueValues[$index] ?? []);
-                sort($keys);
-                $formattedUniqueValues[$filterIndex] = $keys;
+                $values = array_values($uniqueValues[$index] ?? []);
+                sort($values);
+                $formattedUniqueValues[$filterIndex] = $values;
                 $filterIndex++;
+            }
+
+            $formattedPreviewRows = [];
+            foreach ($previewRows as $previewRow) {
+                $formattedRow = [];
+                foreach ($validIndexes as $index) {
+                    $header = $normalizedHeaders[$index] ?? ('COL_' . $index);
+                    $formattedRow[$header] = $this->normalizeExcelValue($header, $previewRow[$index] ?? null);
+                }
+                $formattedPreviewRows[] = $formattedRow;
             }
 
             $result = [
                 'total_rows' => $totalRows,
                 'header_index' => $headerIndex,
                 'headers' => $finalHeaders,
-                'preview' => $previewRows,
+                'preview' => $formattedPreviewRows,
                 'formattedUniqueValues' => $formattedUniqueValues,
             ];
 
@@ -8802,6 +8866,12 @@ class ImportExcelController extends Controller
                 'job_id' => $jobId,
             ]),
         ]);
+
+        // Dispatch as early as possible so queue execution does not depend on the
+        // browser successfully opening the follow-up SSE progress stream.
+        if (!$this->shouldStartImportInlineImmediately($jobId)) {
+            $this->executionService()->dispatch($jobId);
+        }
 
         // Return response IMMEDIATELY dengan job_id, tanpa menunggu header detection
         return response()->json([

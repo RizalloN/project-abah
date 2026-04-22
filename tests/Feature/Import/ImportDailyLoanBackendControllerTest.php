@@ -60,6 +60,21 @@ function createDailyLoanBackendCsv(string $fileName, string $period = '19-04-202
     return $path;
 }
 
+function createDailyLoanBackendBusinessHeaderCsv(string $fileName, string $period = '31/03/2025'): string
+{
+    $directory = storage_path('framework/testing/import-backend-daily-loan');
+    File::ensureDirectoryExists($directory);
+
+    $path = $directory . DIRECTORY_SEPARATOR . $fileName;
+
+    File::put($path, implode(PHP_EOL, [
+        'PERIODE;KODE KANWIL;KANWIL;KODE CABANG;CABANG;BRANCH;UNIT;CURTYP;AO NAME;CIFNO;NOMOR REKENING;STATUS REKENING;LN TYPE;NAMA DEBITUR;RATE;JANGKA WAKTU;PLAFON;BAKI DEBET;OS IDR;TAGIHAN POKOK;TAGIHAN BUNGA;TAGIHAN DENDA',
+        sprintf('%s;R;KANWIL MALANG;45;KC Madiun;45;KC Madiun;IDR;Regional Office Malang;SDZJ380;5,01E+11;1;WL;SAMINGUN;0,0813;60M;150,000,000.00;89,939,319.00;89,939,319.00;0.00;0.00;0.00', $period),
+    ]) . PHP_EOL);
+
+    return $path;
+}
+
 it('queues backend daily loan import from a local csv file', function () {
     $csvPath = createDailyLoanBackendCsv('backend-daily-loan.csv');
 
@@ -118,4 +133,32 @@ it('rejects backend daily loan import when requested period does not match the c
     expect($payload['detected_periods'] ?? null)->toBe(['2026-04-19']);
 
     expect(DB::table('import_jobs')->count())->toBe(0);
+});
+
+it('queues backend daily loan import from business-header semicolon csv file', function () {
+    $csvPath = createDailyLoanBackendBusinessHeaderCsv('backend-daily-loan-business-header.csv');
+
+    $this->mock(ImportExecutionService::class, function (MockInterface $mock): void {
+        $mock->shouldReceive('dispatch')
+            ->once()
+            ->andReturn(true);
+    });
+
+    $request = Request::create('/import/backend/daily-loan/local-file', 'POST', [
+        'source_path' => $csvPath,
+        'periode' => '31032025',
+        'mode' => 'queue',
+        'replace_existing_periods' => false,
+    ]);
+    $request->headers->set('Accept', 'application/json');
+
+    $response = app(ImportDailyLoanBackendController::class)->importLocalCsv($request);
+
+    expect($response->getStatusCode())->toBe(202);
+
+    $payload = json_decode($response->getContent(), true, 512, JSON_THROW_ON_ERROR);
+
+    expect($payload['status'] ?? null)->toBe('queued');
+    expect($payload['detected_periods'] ?? null)->toBe(['2025-03-31']);
+    expect(DB::table('import_jobs')->count())->toBe(1);
 });

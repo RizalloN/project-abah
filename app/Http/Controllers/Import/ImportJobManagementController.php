@@ -89,8 +89,6 @@ class ImportJobManagementController extends Controller
             ->orderByDesc('ij.updated_at')
             ->paginate($perPage);
 
-        $managedDeleteJobs = $this->importIndexController->resolveManagedReportDeleteJobs();
-
         $items = collect($jobs->items())->map(function ($job) use ($progressService) {
             $statusPayload = $progressService->getStatusPayload((int) $job->id);
             $createdAt = $this->safeParseDate($job->created_at);
@@ -134,7 +132,11 @@ class ImportJobManagementController extends Controller
         $summarySource = DB::table('import_jobs');
         $todayStart = now()->startOfDay();
         $snapshotJobs = $this->resolveSnapshotJobs();
-        $rawQueueJobs = $this->resolveRawQueueJobs();
+        $managedDeleteJobs = $this->importIndexController->resolveManagedReportDeleteJobs();
+        $rawQueueJobs = $this->resolveRawQueueJobs(
+            collect($managedDeleteJobs)->pluck('id')->filter()->map(fn ($id): string => (string) $id)->all(),
+            collect($snapshotJobs)->pluck('id')->filter()->map(fn ($id): string => (string) $id)->all()
+        );
 
         return response()->json([
             'status' => 'success',
@@ -843,6 +845,7 @@ class ImportJobManagementController extends Controller
         if (($oldestAgeSeconds ?? 0) >= 300) {
             if (!$isProcessing) {
                 $message .= ' Indikasinya worker report tidak sedang mengonsumsi queue. Semua job ini dapat dipantau di bagian "Queue Jobs" di bawah.';
+                $message .= ' Jalankan `composer queue` untuk import umum dan report. Untuk Daily Loan Dinamis, jalankan `composer queue:daily-loan` hanya saat queue khusus itu memang perlu diproses.';
                 $status = 'warning';
             } else {
                 $message .= ' Worker sedang memproses job berat, antrean bergerak lambat.';
@@ -894,7 +897,7 @@ class ImportJobManagementController extends Controller
         )));
     }
 
-    private function resolveRawQueueJobs(): array
+    private function resolveRawQueueJobs(array $trackedManagedDeleteIds = [], array $trackedSnapshotIds = []): array
     {
         if (!Schema::hasTable('jobs')) {
             return [];
@@ -921,7 +924,7 @@ class ImportJobManagementController extends Controller
                 return false;
             });
 
-        return $rows->map(function ($row) {
+        $mappedRows = $rows->map(function ($row) {
             $payloadData = json_decode((string) ($row->payload ?? '{}'), true) ?? [];
             $displayName = (string) ($payloadData['displayName'] ?? $payloadData['data']['commandName'] ?? '');
             $className = class_basename($displayName);
@@ -935,9 +938,13 @@ class ImportJobManagementController extends Controller
                     ? Carbon::createFromTimestamp((int) $row->reserved_at)
                     : $this->safeParseDate($row->reserved_at))
                 : null;
+            $ageSeconds = $this->queueRowAgeSeconds($row);
 
             $serializedCommand = (string) ($payloadData['data']['command'] ?? '');
             $jobData = $this->extractSerializedJobData($serializedCommand);
+            if (empty($jobData)) {
+                $jobData = $this->extractSerializedJobData((string) ($row->payload ?? ''));
+            }
             $jobDataLabel = $this->buildJobDataLabel($jobData);
 
             return [
@@ -954,13 +961,61 @@ class ImportJobManagementController extends Controller
                 'created_at' => $createdAt?->toIso8601String(),
                 'created_at_label' => $createdAt?->format('d M Y H:i:s'),
                 'reserved_at_label' => $reservedAt?->format('d M Y H:i:s'),
-                'age_seconds' => $createdAt ? now()->diffInSeconds($createdAt) : 0,
-                'age_label' => $this->formatDuration($createdAt ? (int) now()->diffInSeconds($createdAt) : null),
+                'age_seconds' => $ageSeconds,
+                'age_label' => $this->formatDuration($ageSeconds),
                 'can_delete' => !$reserved,
                 'can_force_run' => !$reserved,
                 'kind' => 'raw_queue_job',
             ];
-        })->values()->all();
+        });
+
+        $trackedManagedDeleteIds = array_fill_keys(array_map('strval', $trackedManagedDeleteIds), true);
+        $trackedSnapshotIds = array_fill_keys(array_map('strval', $trackedSnapshotIds), true);
+        $queuedImportJobIds = $mappedRows
+            ->filter(fn (array $job): bool => $job['class_name'] === class_basename(\App\Jobs\RunImportJob::class))
+            ->map(fn (array $job): int => (int) ($job['job_data']['jobId'] ?? 0))
+            ->filter(fn (int $jobId): bool => $jobId > 0)
+            ->unique()
+            ->values()
+            ->all();
+        $knownImportJobIds = [];
+
+        if (!empty($queuedImportJobIds) && Schema::hasTable('import_jobs')) {
+            $knownImportJobIds = DB::table('import_jobs')
+                ->whereIn('id', $queuedImportJobIds)
+                ->pluck('id')
+                ->map(fn ($id): int => (int) $id)
+                ->flip()
+                ->all();
+        }
+
+        return $mappedRows
+            ->reject(function (array $job) use ($knownImportJobIds, $trackedManagedDeleteIds, $trackedSnapshotIds): bool {
+                $className = (string) ($job['class_name'] ?? '');
+                $jobData = is_array($job['job_data'] ?? null) ? $job['job_data'] : [];
+
+                if ($className === class_basename(\App\Jobs\RunImportJob::class)) {
+                    $jobId = (int) ($jobData['jobId'] ?? 0);
+
+                    return $jobId > 0 && array_key_exists($jobId, $knownImportJobIds);
+                }
+
+                if ($className === class_basename(\App\Jobs\RunManagedReportDeleteJob::class)) {
+                    $deleteId = trim((string) ($jobData['deleteId'] ?? ''));
+
+                    return $deleteId !== '' && isset($trackedManagedDeleteIds[$deleteId]);
+                }
+
+                if ($className === class_basename(\App\Jobs\RunManagedReportSnapshotRebuildJob::class)) {
+                    $rebuildId = trim((string) ($jobData['rebuildId'] ?? ''));
+
+                    return $rebuildId !== '' && isset($trackedSnapshotIds[$rebuildId]);
+                }
+
+                return false;
+            })
+            ->values()
+            ->all();
     }
 
     private function extractSerializedJobData(string $serialized): array
@@ -970,7 +1025,7 @@ class ImportJobManagementController extends Controller
         }
 
         $data = [];
-        $knownProps = ['jobId', 'tableName', 'periodHint', 'period', 'source', 'rebuildId'];
+        $knownProps = ['jobId', 'deleteId', 'tableName', 'periodHint', 'period', 'source', 'rebuildId'];
 
         foreach ($knownProps as $prop) {
             $propLen = strlen($prop);

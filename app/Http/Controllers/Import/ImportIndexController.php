@@ -103,7 +103,7 @@ class ImportIndexController extends Controller
             'period' => 'posisi',
             'kanca' => 'kantor_cabang',
             'identity' => 'uniqueid_SMPN',
-            'chunk_size' => 10000,
+            'chunk_size' => 3000000,
         ],
     ];
 
@@ -4129,9 +4129,12 @@ class ImportIndexController extends Controller
                                 return $deleted;
                             }
 
-                            $affected = $supportsFastDelete
-                                ? $this->deleteRowsByIndexedSubqueryBatch($tableName, $identityColumn, $variant, $batchLimit, $indexHint, $connection, $deleteId)
-                                : $this->deleteRowsByIdentityBatch(
+                            if ($supportsFastDelete && $this->supportsDirectPredicateDelete($variant)) {
+                                $affected = $this->deleteRowsByDirectPredicateBatch($tableName, $variant, $batchLimit, $connection, $deleteId);
+                            } elseif ($supportsFastDelete) {
+                                $affected = $this->deleteRowsByIndexedSubqueryBatch($tableName, $identityColumn, $variant, $batchLimit, $indexHint, $connection, $deleteId);
+                            } else {
+                                $affected = $this->deleteRowsByIdentityBatch(
                                     $tableName,
                                     $this->makeDeleteVariantQuery($tableName, $variant),
                                     $identityColumn,
@@ -4139,6 +4142,7 @@ class ImportIndexController extends Controller
                                     $connection,
                                     $deleteId
                                 );
+                            }
 
                             if ($affected <= 0) {
                                 break;
@@ -4543,6 +4547,74 @@ LIMIT {$limit}
         }
 
         return $deleted;
+    }
+
+    private function supportsDirectPredicateDelete(array $constraints): bool
+    {
+        if (empty($constraints)) {
+            return false;
+        }
+
+        foreach ($constraints as $constraint) {
+            if (($constraint['mode'] ?? '') !== 'equal') {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private function deleteRowsByDirectPredicateBatch(
+        string $tableName,
+        array $constraints,
+        int $limit,
+        $connection = null,
+        ?string $deleteId = null
+    ): int {
+        $connection = $connection ?: DB::connection();
+        if ($deleteId !== null && $this->isManagedDeleteCancellationRequested($deleteId)) {
+            return 0;
+        }
+
+        [$whereSql, $bindings] = $this->buildDeleteWhereSql($constraints);
+        $wrappedTable = '`' . str_replace('`', '``', $tableName) . '`';
+        $limit = max(1, $limit);
+        $sql = "
+DELETE FROM {$wrappedTable}
+WHERE {$whereSql}
+LIMIT {$limit}
+";
+
+        return $this->withManagedDeleteLockWait($connection, 300, fn (): int => (int) $connection->affectingStatement($sql, $bindings));
+    }
+
+    private function withManagedDeleteLockWait($connection, int $seconds, callable $callback): mixed
+    {
+        if (!in_array($connection->getDriverName(), ['mysql', 'mariadb'], true)) {
+            return $callback();
+        }
+
+        $originalLockWait = null;
+        try {
+            $row = $connection->selectOne('SELECT @@SESSION.lock_wait_timeout AS lock_wait_timeout');
+            $originalLockWait = isset($row->lock_wait_timeout) ? (int) $row->lock_wait_timeout : null;
+        } catch (Throwable) {
+            $originalLockWait = null;
+        }
+
+        try {
+            $connection->statement('SET SESSION lock_wait_timeout = ' . max(1, $seconds));
+
+            return $callback();
+        } finally {
+            if ($originalLockWait !== null) {
+                try {
+                    $connection->statement('SET SESSION lock_wait_timeout = ' . max(1, $originalLockWait));
+                } catch (Throwable) {
+                    // The connection can still be reused safely if restore fails.
+                }
+            }
+        }
     }
 
     private function shouldUseMonthPrefixDeleteConstraint(string $column, string $value): bool

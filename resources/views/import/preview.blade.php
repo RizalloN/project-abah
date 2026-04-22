@@ -168,8 +168,14 @@
                                 </tr>
                             </thead>
                             <tbody>
+                                @php
+                                    $hidePreviewRowsUntilJs = ($hidePreviewRowsUntilJs ?? null);
+                                    if ($hidePreviewRowsUntilJs === null) {
+                                        $hidePreviewRowsUntilJs = false;
+                                    }
+                                @endphp
                                 @foreach($previewData as $rowIndex => $row)
-                                    <tr class="preview-row d-none">
+                                    <tr class="preview-row{{ $hidePreviewRowsUntilJs ? ' d-none' : '' }}">
                                         <td class="text-center text-muted">{{ $rowIndex + 1 }}</td>
                                         @foreach($headers as $colIndex => $header)
                                             <td class="text-truncate col-data-{{ $colIndex }}"
@@ -733,9 +739,12 @@
             }
         }
 
-        // Prefetch semua filter options secara parallel saat page load
+        async function prefetchAllFilterOptions() {
+            // Prefetch semua filter options secara parallel saat page load
             const cols = Object.keys(filterState);
-            if (!cols.length) return;
+            if (!cols.length) {
+                return;
+            }
 
             const prefetchPromises = cols.map(col => ensureFullFilterOptions(col, true));
             try {
@@ -1500,9 +1509,11 @@
 
                 const streamUrl = streamUrlBase + '?job_id=' + encodeURIComponent(initResult.job_id);
                 const statusUrlTemplate = @json(route('import.jobs.status', ['jobId' => '__JOB_ID__']));
+                const forceStartUrlTemplate = @json(route('job-management.force-start', ['jobId' => '__JOB_ID__']));
                 let streamDone = false;
                 let reconnectAttempts = 0;
                 let evtSource = null;
+                let forceStartTriggered = false;
 
                 const showImportError = function (message) {
                     stopImportProgressTicker();
@@ -1587,6 +1598,10 @@
                     return statusUrlTemplate.replace('__JOB_ID__', encodeURIComponent(jobId));
                 };
 
+                const forceStartUrlForJob = function (jobId) {
+                    return forceStartUrlTemplate.replace('__JOB_ID__', encodeURIComponent(jobId));
+                };
+
                 const inspectJobStatus = async function (jobId) {
                     const response = await fetch(statusUrlForJob(jobId), {
                         headers: {
@@ -1600,6 +1615,70 @@
                     }
 
                     return await response.json();
+                };
+
+                const triggerForceStart = async function (jobId) {
+                    if (forceStartTriggered) {
+                        return false;
+                    }
+
+                    forceStartTriggered = true;
+
+                    const response = await fetch(forceStartUrlForJob(jobId), {
+                        method: 'POST',
+                        headers: {
+                            'Accept': 'application/json',
+                            'Content-Type': 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'X-CSRF-TOKEN': '{{ csrf_token() }}'
+                        },
+                        body: JSON.stringify({})
+                    });
+
+                    let payload = {};
+                    try { payload = await response.json(); } catch (_) {}
+
+                    if (!response.ok || payload.status === 'error') {
+                        forceStartTriggered = false;
+                        throw new Error(payload.message || 'Gagal menjalankan force start import.');
+                    }
+
+                    return true;
+                };
+
+                const pollImportStatus = async function (jobId) {
+                    for (;;) {
+                        let payload = null;
+
+                        try {
+                            payload = await inspectJobStatus(jobId);
+                        } catch (_) {
+                            payload = null;
+                        }
+
+                        if (payload) {
+                            setImportProgress(
+                                payload.percent || 0,
+                                payload.message || '',
+                                payload.processed_rows || 0,
+                                payload.total_rows || 0,
+                                importProgressSnapshot.speed || 0,
+                                importProgressSnapshot.speedLabel || ''
+                            );
+
+                            if (payload.status === 'completed') {
+                                showImportComplete(payload);
+                                return;
+                            }
+
+                            if (payload.status === 'failed' || payload.status === 'failed_partial' || payload.status === 'terminated' || payload.status === 'error') {
+                                showImportError(payload.message || 'Import gagal dijalankan!');
+                                return;
+                            }
+                        }
+
+                        await new Promise((resolve) => setTimeout(resolve, 1000));
+                    }
                 };
 
                 const connectSSE = function () {
@@ -1662,6 +1741,26 @@
                         if (status === 'queued' || status === 'processing') {
                             reconnectAttempts += 1;
                             if (reconnectAttempts <= 10) {
+                                if (status === 'queued' && reconnectAttempts >= 2 && !forceStartTriggered) {
+                                    try {
+                                        setImportProgress(
+                                            Math.max(importProgressSnapshot.percent || 12, 12),
+                                            'Koneksi stream gagal dibuka. Menjalankan force start import...',
+                                            importProgressSnapshot.rowsDone || 0,
+                                            importProgressSnapshot.totalRows || 0,
+                                            importProgressSnapshot.speed || 0,
+                                            importProgressSnapshot.speedLabel || ''
+                                        );
+
+                                        await triggerForceStart(initResult.job_id);
+                                        await pollImportStatus(initResult.job_id);
+                                        return;
+                                    } catch (forceStartError) {
+                                        showImportError((forceStartError && forceStartError.message) || 'Gagal menjalankan force start import.');
+                                        return;
+                                    }
+                                }
+
                                 setImportProgress(
                                     Math.max(importProgressSnapshot.percent || 12, 12),
                                     (statusPayload && statusPayload.message) || 'Import sedang diproses. Menyambung ulang progress...',
@@ -1717,6 +1816,7 @@
             renderFilterList(col);
         });
         updatePreviewTable();
+        setTimeout(prefetchAllFilterOptions, 0);
         setTimeout(prewarmPreviewIndex, 50);
     });
 </script>

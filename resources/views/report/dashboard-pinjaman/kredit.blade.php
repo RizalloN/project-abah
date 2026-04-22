@@ -5,11 +5,16 @@
 @section('content')
 @include('report.dashboard-pinjaman._partials._styles')
 
-<div class="loan-dashboard pt-4 px-3">
+<div class="loan-dashboard pt-4 px-3" id="loanDashboardCaptureArea">
     <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center mb-4">
         <div>
             <h1 class="loan-page-title">Dashboard Pinjaman Kredit</h1>
             <p class="text-muted mb-0">Analisis performa portofolio berdasarkan segmen dan kategori.</p>
+        </div>
+        <div class="mt-3 mt-md-0 d-flex align-items-center gap-2">
+            <button id="captureAllBtn" class="btn btn-outline-primary btn-capture-all">
+                <i class="fas fa-file-image"></i> EXPORT A4 PORTRAIT
+            </button>
         </div>
     </div>
 
@@ -57,12 +62,17 @@
     <div id="dashboardContent" class="animate-reveal">
         
         <!-- OS Section -->
-        <div class="loan-section-block mb-4">
+        <div class="loan-section-block mb-4" id="osSection">
             <div class="loan-section-header">
                 <h3 id="osTitle">A. OUTSTANDING (OS)</h3>
-                <div class="legend-box ml-auto">
-                    <i class="fas fa-info-circle"></i>
-                    <span>Angka dalam <strong>Rp, Juta</strong></span>
+                <div class="legend-box ml-auto d-flex align-items-center" style="gap: 1rem;">
+                    <div class="d-flex align-items-center" style="gap: 0.5rem;">
+                        <i class="fas fa-info-circle text-muted"></i>
+                        <span class="text-muted" style="font-size: 0.75rem;">Dalam <strong>Rp, Juta</strong></span>
+                    </div>
+                    <button class="btn-snapshot" onclick="window.captureLoanSection('osSection', 'Snapshot-OS')" title="Ambil Snapshot">
+                        <i class="fas fa-camera"></i>
+                    </button>
                 </div>
             </div>
             <div class="table-responsive loan-summary-table-wrap" id="osTableContainer">
@@ -71,12 +81,17 @@
         </div>
 
         <!-- SML Section -->
-        <div class="loan-section-block mb-4">
+        <div class="loan-section-block mb-4" id="smlSection">
             <div class="loan-section-header">
                 <h3 id="smlTitle">B. SPECIAL MENTION LOAN (SML)</h3>
-                <div class="legend-box ml-auto">
-                    <i class="fas fa-info-circle"></i>
-                    <span>Angka dalam <strong>Rp, Juta</strong></span>
+                <div class="legend-box ml-auto d-flex align-items-center" style="gap: 1rem;">
+                    <div class="d-flex align-items-center" style="gap: 0.5rem;">
+                        <i class="fas fa-info-circle text-muted"></i>
+                        <span class="text-muted" style="font-size: 0.75rem;">Dalam <strong>Rp, Juta</strong></span>
+                    </div>
+                    <button class="btn-snapshot" onclick="window.captureLoanSection('smlSection', 'Snapshot-SML')" title="Ambil Snapshot">
+                        <i class="fas fa-camera"></i>
+                    </button>
                 </div>
             </div>
             <div class="table-responsive loan-summary-table-wrap" id="smlTableContainer">
@@ -85,12 +100,17 @@
         </div>
 
         <!-- NPL Section -->
-        <div class="loan-section-block mb-4">
+        <div class="loan-section-block mb-4" id="nplSection">
             <div class="loan-section-header">
                 <h3 id="nplTitle">C. NON-PERFORMING LOAN (NPL)</h3>
-                <div class="legend-box ml-auto">
-                    <i class="fas fa-info-circle"></i>
-                    <span>Angka dalam <strong>Rp, Juta</strong></span>
+                <div class="legend-box ml-auto d-flex align-items-center" style="gap: 1rem;">
+                    <div class="d-flex align-items-center" style="gap: 0.5rem;">
+                        <i class="fas fa-info-circle text-muted"></i>
+                        <span class="text-muted" style="font-size: 0.75rem;">Dalam <strong>Rp, Juta</strong></span>
+                    </div>
+                    <button class="btn-snapshot" onclick="window.captureLoanSection('nplSection', 'Snapshot-NPL')" title="Ambil Snapshot">
+                        <i class="fas fa-camera"></i>
+                    </button>
                 </div>
             </div>
             <div class="table-responsive loan-summary-table-wrap" id="nplTableContainer">
@@ -101,7 +121,47 @@
     </div>
 </div>
 
+<!-- Capture Status Modal -->
+<div class="modal fade capture-status-modal" id="captureStatusModal" tabindex="-1" role="dialog" aria-hidden="true" data-backdrop="static">
+    <div class="modal-dialog modal-dialog-centered" role="document">
+        <div class="modal-content">
+            <div class="modal-body text-center">
+                <div id="captureProgressUI">
+                    <div class="capture-status-modal-icon icon-loading">
+                        <i class="fas fa-circle-notch fa-spin"></i>
+                    </div>
+                    <h4 class="font-weight-bold mb-2">Menyusun Laporan A4</h4>
+                    <p class="text-muted mb-0">Sedang menyusun tabel ringkasan ke dalam beberapa file gambar. Mohon tunggu sebentar...</p>
+                </div>
+
+                <div id="captureErrorUI" class="d-none">
+                    <div class="capture-status-modal-icon icon-error">
+                        <i class="fas fa-exclamation-triangle"></i>
+                    </div>
+                    <h4 class="font-weight-bold mb-2">Gagal Mengambil Snapshot</h4>
+                    <p id="captureErrorMessage" class="text-muted mb-4">Terjadi kendala saat menyusun snapshot A4.</p>
+                    <button type="button" class="btn btn-primary w-100" data-dismiss="modal">
+                        Tutup & Coba Lagi
+                    </button>
+                </div>
+
+                <div id="captureSuccessUI" class="d-none">
+                    <div class="capture-status-modal-icon icon-success">
+                        <i class="fas fa-check-circle"></i>
+                    </div>
+                    <h4 class="font-weight-bold mb-2">Snapshot Berhasil!</h4>
+                    <p class="text-muted mb-4">Semua file snapshot telah berhasil diunduh ke perangkat Anda.</p>
+                    <button type="button" class="btn btn-primary w-100" data-dismiss="modal">
+                        Selesai
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 @push('scripts')
+<script src="{{ asset('vendor/html2canvas/html2canvas.min.js') }}"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     const osTableContainer = document.getElementById('osTableContainer');
@@ -109,342 +169,447 @@ document.addEventListener('DOMContentLoaded', function () {
     const nplTableContainer = document.getElementById('nplTableContainer');
     const btnLoadData = document.getElementById('btnLoadData');
     const dashboardMeta = document.getElementById('dashboardMeta');
-
+    const captureAllBtn = document.getElementById('captureAllBtn');
+    const captureModal = document.getElementById('captureStatusModal');
+    
     // Request timeout (in milliseconds)
-    const REQUEST_TIMEOUT = 45000; // 45 seconds
+    const REQUEST_TIMEOUT = 60000;
     let requestAbortController = null;
 
     // Select2 elements
     const $periodeSel = $('#periodeSelector');
     const $kategoriSel = $('#kategoriSelector');
 
-    if (window.jQuery && window.jQuery.fn.select2) {
-        window.jQuery('.select2').each(function () {
-            const $element = window.jQuery(this);
-            if ($element.hasClass('select2-hidden-accessible')) {
-                return;
-            }
-
-            $element.select2({
-                theme: 'bootstrap4',
-                width: '100%'
-            });
-        });
-    }
-
     function formatCurrency(value) {
         if (value === null || value === undefined || value === '') return '-';
-        const num = parseFloat(value) / 1000000; // Konversi ke Juta
-        return new Intl.NumberFormat('id-ID', { 
-            minimumFractionDigits: 1,
-            maximumFractionDigits: 1
-        }).format(num);
+        let num = Math.round(parseFloat(value) / 1000000);
+        const isNeg = num < 0;
+        if (isNeg) num = Math.abs(num);
+        let formatted = new Intl.NumberFormat('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(num);
+        return isNeg ? `(${formatted})` : formatted;
     }
 
     function formatDate(dateStr) {
         if (!dateStr) return '-';
         try {
             const date = new Date(dateStr);
-            return date.toLocaleDateString('id-ID', {
-                day: '2-digit',
-                month: '2-digit',
-                year: 'numeric'
-            });
+            return date.toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' });
         } catch(e) { return dateStr; }
     }
 
-    function formatPctBadge(value) {
+    function formatPctBadge(value, type) {
         const num = parseFloat(value) || 0;
-        let badgeClass = '';
-        if (num >= 100) {
-            badgeClass = 'pct-good';
-        } else if (num >= 95) {
-            badgeClass = 'pct-mid';
+        const typeUpper = (type || '').toUpperCase();
+        const isReversed = typeUpper.includes('SML') || typeUpper.includes('NPL');
+        let barClass = '';
+        let textClass = '';
+        
+        if (num > 100) {
+            barClass = isReversed ? 'bar-danger' : 'bar-success';
+            textClass = isReversed ? 'achieve-negative' : 'achieve-positive';
+        } else if (num >= 90) {
+            barClass = 'bar-warning';
+            textClass = 'achieve-neutral';
         } else {
-            badgeClass = 'pct-bad';
+            barClass = isReversed ? 'bar-success' : 'bar-danger';
+            textClass = isReversed ? 'achieve-positive' : 'achieve-negative';
         }
-        return `<span class="pct-badge ${badgeClass}">${num.toFixed(1)}%</span>`;
+        
+        const clampedPct = Math.min(100, Math.max(0, Math.abs(num)));
+        return `
+            <div class="pct-data-bar-wrap">
+                <div class="pct-data-bar ${barClass}" style="width: ${clampedPct}%"></div>
+                <span class="pct-data-label ${textClass}">${num.toFixed(1)}%</span>
+            </div>
+        `;
     }
 
+    function getConditionalClass(value, type) {
+        const num = parseFloat(value) || 0;
+        const typeUpper = (type || '').toUpperCase();
+        const isReversed = typeUpper.includes('SML') || typeUpper.includes('NPL');
+        
+        if (num === 0) return 'achieve-neutral';
+        
+        // For OS: > 0 is good (green), < 0 is bad (red)
+        // For SML/NPL: > 0 is bad (red), < 0 is good (green)
+        if (num > 0) {
+            return isReversed ? 'achieve-negative' : 'achieve-positive';
+        }
+        return isReversed ? 'achieve-positive' : 'achieve-negative';
+    }
+
+    // --- Select2 Initialization ---
+    function initSelect2() {
+        if (window.jQuery && window.jQuery.fn.select2) {
+            window.jQuery('.select2').each(function () {
+                const $el = window.jQuery(this);
+                if ($el.hasClass('select2-hidden-accessible')) {
+                    $el.select2('destroy');
+                }
+                $el.select2({ 
+                    theme: 'bootstrap4', 
+                    width: '100%',
+                    dropdownAutoWidth: true
+                });
+            });
+        }
+    }
+    initSelect2();
+
+    // --- Capture & Export Logic ---
+    if (captureAllBtn) {
+        captureAllBtn.addEventListener('click', async function() {
+            if (typeof html2canvas === 'undefined') {
+                alert('Library html2canvas belum dimuat.');
+                return;
+            }
+
+            const progressText = document.querySelector('#captureProgressUI p');
+            captureAllBtn.disabled = true;
+            captureAllBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> EXPORTING...';
+
+            if (window.jQuery) {
+                window.jQuery(captureModal).modal({ backdrop: 'static', keyboard: false, show: true });
+                document.getElementById('captureProgressUI').classList.remove('d-none');
+                document.getElementById('captureErrorUI').classList.add('d-none');
+                document.getElementById('captureSuccessUI').classList.add('d-none');
+            }
+
+            try {
+                const sections = [
+                    { id: 'osSection', code: 'OS', label: 'Outstanding' },
+                    { id: 'smlSection', code: 'SML', label: 'Special Mention' },
+                    { id: 'nplSection', code: 'NPL', label: 'Non-Performing' }
+                ];
+                
+                const dateStr = $periodeSel.find('option:selected').text().trim().replace(/ /g, '-');
+                const kategoriStr = $kategoriSel.val().trim().toUpperCase();
+
+                for (const [index, sec] of sections.entries()) {
+                    if (progressText) progressText.innerText = `Memproses ${sec.label} (${index + 1}/3)...`;
+                    await new Promise(r => setTimeout(r, 600));
+
+                    const el = document.getElementById(sec.id);
+                    if (!el) continue;
+
+                    const snapBtn = el.querySelector('.btn-snapshot');
+                    if (snapBtn) snapBtn.style.visibility = 'hidden';
+
+                    const tableCanvas = await html2canvas(el, { 
+                        scale: 2, 
+                        backgroundColor: '#ffffff',
+                        logging: false,
+                        useCORS: true
+                    });
+
+                    if (snapBtn) snapBtn.style.visibility = 'visible';
+
+                    const finalCanvas = document.createElement('canvas');
+                    const headerHeight = 220;
+                    finalCanvas.width = tableCanvas.width;
+                    finalCanvas.height = tableCanvas.height + headerHeight;
+                    const ctx = finalCanvas.getContext('2d');
+
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(0, 0, finalCanvas.width, finalCanvas.height);
+
+                    const scaleFactor = tableCanvas.width / 2400;
+                    ctx.fillStyle = '#0857c3';
+                    ctx.fillRect(0, 0, finalCanvas.width, 15 * scaleFactor);
+
+                    ctx.fillStyle = '#0f172a';
+                    ctx.font = `bold ${56 * scaleFactor}px "Inter", sans-serif`;
+                    ctx.fillText('Dashboard Pinjaman Kredit', 40 * scaleFactor, 80 * scaleFactor);
+
+                    ctx.fillStyle = '#64748b';
+                    ctx.font = `600 ${28 * scaleFactor}px "Inter", sans-serif`;
+                    const headerInfo = `Periode: ${$periodeSel.find('option:selected').text()} | Kategori: ${$kategoriSel.val()} | ${sec.label}`;
+                    ctx.fillText(headerInfo, 40 * scaleFactor, 130 * scaleFactor);
+
+                    ctx.strokeStyle = '#e2e8f0';
+                    ctx.lineWidth = 2 * scaleFactor;
+                    ctx.beginPath();
+                    ctx.moveTo(40 * scaleFactor, 170 * scaleFactor);
+                    ctx.lineTo(finalCanvas.width - (40 * scaleFactor), 170 * scaleFactor);
+                    ctx.stroke();
+
+                    ctx.drawImage(tableCanvas, 0, headerHeight);
+
+                    const link = document.createElement('a');
+                    link.download = `Capture_DashboardKredit_${sec.code}_${kategoriStr}-${dateStr}.jpg`;
+                    link.href = finalCanvas.toDataURL('image/jpeg', 0.9);
+                    link.click();
+                    
+                    await new Promise(r => setTimeout(r, 300));
+                }
+
+                document.getElementById('captureProgressUI').classList.add('d-none');
+                document.getElementById('captureSuccessUI').classList.remove('d-none');
+            } catch (err) {
+                console.error('Capture process failed:', err);
+                document.getElementById('captureProgressUI').classList.add('d-none');
+                document.getElementById('captureErrorUI').classList.remove('d-none');
+            } finally {
+                captureAllBtn.disabled = false;
+                captureAllBtn.innerHTML = '<i class="fas fa-file-image"></i> EXPORT A4 PORTRAIT';
+            }
+        });
+    }
+
+    window.captureLoanSection = async function(sectionId, title) {
+        if (typeof html2canvas === 'undefined') return;
+        
+        const el = document.getElementById(sectionId);
+        if (!el) return;
+
+        const dateStr = $periodeSel.find('option:selected').text().trim().replace(/ /g, '-');
+        const kategoriStr = $kategoriSel.val().trim().toUpperCase();
+        const sectionCode = sectionId.replace('Section', '').toUpperCase();
+
+        if (window.jQuery) {
+            window.jQuery(captureModal).modal({ backdrop: 'static', show: true });
+            document.getElementById('captureProgressUI').classList.remove('d-none');
+            document.getElementById('captureErrorUI').classList.add('d-none');
+            document.getElementById('captureSuccessUI').classList.add('d-none');
+        }
+
+        try {
+            const snapBtn = el.querySelector('.btn-snapshot');
+            if (snapBtn) snapBtn.style.visibility = 'hidden';
+
+            const canvas = await html2canvas(el, { scale: 2, backgroundColor: '#ffffff', logging: false });
+            
+            if (snapBtn) snapBtn.style.visibility = 'visible';
+
+            const link = document.createElement('a');
+            link.download = `Capture_DashboardKredit_${sectionCode}_${kategoriStr}-${dateStr}.jpg`;
+            link.href = canvas.toDataURL('image/jpeg', 0.95);
+            link.click();
+
+            document.getElementById('captureProgressUI').classList.add('d-none');
+            document.getElementById('captureSuccessUI').classList.remove('d-none');
+        } catch (err) {
+            document.getElementById('captureProgressUI').classList.add('d-none');
+            document.getElementById('captureErrorUI').classList.remove('d-none');
+        }
+    };
+
+    // Fix for "blackout"
+    document.querySelectorAll('[data-dismiss="modal"]').forEach(btn => {
+        btn.addEventListener('click', function() {
+            if (window.jQuery) {
+                window.jQuery(captureModal).modal('hide');
+                window.jQuery('.modal-backdrop').remove();
+                window.jQuery('body').removeClass('modal-open').css('padding-right', '');
+            }
+        });
+    });
+
+    // --- Table Building Logic ---
     function buildTable(data, headerDates, typeLabel, segmentName, rkaLabels) {
         if (!data || data.length === 0 || (data.length === 1 && data[0].is_total && data[0].selected == 0)) {
             return '<div class="text-center py-5 text-muted">Tidak ada data untuk filter ini.</div>';
         }
 
-        const dates = {
-            ytd: formatDate(headerDates.ytd),
-            m2: formatDate(headerDates.m2),
-            mtm: formatDate(headerDates.mtm),
-            selected: formatDate(headerDates.selected)
+        const dates = { 
+            ytd: formatDate(headerDates.ytd), 
+            m2: formatDate(headerDates.m2), 
+            mtm: formatDate(headerDates.mtm), 
+            selected: formatDate(headerDates.selected) 
         };
-
         const typePrefix = typeLabel.toUpperCase();
-
-        let html = `
-            <table class="loan-summary-table">
-                <thead>
-                    <tr>
-                        <th rowspan="2" style="width: 40px;">NO</th>
-                        <th rowspan="2" style="width: 120px;">KANTOR CABANG</th>
-                        <th rowspan="2" style="width: 150px;">KATEGORI ${segmentName}</th>
-                        <th colspan="4" class="sub-head">${typePrefix} PERIODE</th>
-                        <th colspan="3" class="accent-head">DELTA (Δ) PERIODE</th>
-                        <th colspan="2" class="sub-head">RKA-KP</th>
-                        <th colspan="4" class="accent-head">PENCAPAIAN RKA</th>
-                    </tr>
-                    <tr>
-                        <th class="sub-head" style="width: 85px;">${dates.ytd}<br><small>(YtD)</small></th>
-                        <th class="sub-head" style="width: 85px;">${dates.m2}<br><small>(M-2)</small></th>
-                        <th class="sub-head" style="width: 85px;">${dates.mtm}<br><small>(MtM)</small></th>
-                        <th class="sub-head" style="background: #004280; width: 90px;">${dates.selected}<br><small>(HARI INI)</small></th>
-                        <th class="accent-head" style="width: 80px;">YtD</th>
-                        <th class="accent-head" style="width: 80px;">MtD</th>
-                        <th class="accent-head" style="width: 80px;">DtD</th>
-                        <th class="sub-head" style="width: 85px;">${rkaLabels?.m1 || ''}</th>
-                        <th class="sub-head" style="width: 85px;">${rkaLabels?.current || ''}</th>
-                        <th class="accent-head" style="width: 90px;">${rkaLabels?.m1 || ''} Δ</th>
-                        <th class="accent-head" style="width: 70px;">%</th>
-                        <th class="accent-head" style="width: 90px;">${rkaLabels?.current || ''} Δ</th>
-                        <th class="accent-head" style="width: 70px;">%</th>
-                    </tr>
-                </thead>
-                <tbody>
-        `;
+        let html = `<table class="loan-summary-table">
+            <thead>
+                <tr>
+                    <th rowspan="2" style="width: 40px;">NO</th>
+                    <th rowspan="2" style="width: 120px;">KANTOR CABANG</th>
+                    <th rowspan="2" style="width: 150px;">KATEGORI ${segmentName}</th>
+                    <th colspan="4" class="sub-head">${typePrefix} PERIODE</th>
+                    <th colspan="3" class="accent-head">DELTA (Δ) PERIODE</th>
+                    <th colspan="2" class="sub-head">RKA-KP</th>
+                    <th colspan="4" class="accent-head">PENCAPAIAN RKA</th>
+                </tr>
+                <tr>
+                    <th class="sub-head" style="width: 85px;">${dates.ytd}<br><small>(YtD)</small></th>
+                    <th class="sub-head" style="width: 85px;">${dates.m2}<br><small>(M-2)</small></th>
+                    <th class="sub-head" style="width: 85px;">${dates.mtm}<br><small>(MtM)</small></th>
+                    <th class="sub-head" style="background: #004280; width: 90px;">${dates.selected}<br><small>(HARI INI)</small></th>
+                    <th class="accent-head" style="width: 80px;">YtD</th>
+                    <th class="accent-head" style="width: 80px;">MtD</th>
+                    <th class="accent-head" style="width: 80px;">DtD</th>
+                    <th class="sub-head" style="width: 85px;">${rkaLabels?.m1 || ''}</th>
+                    <th class="sub-head" style="width: 85px;">${rkaLabels?.current || ''}</th>
+                    <th class="accent-head" style="width: 90px;">${rkaLabels?.m1 || ''} Δ</th>
+                    <th class="accent-head" style="width: 70px;">%</th>
+                    <th class="accent-head" style="width: 90px;">${rkaLabels?.current || ''} Δ</th>
+                    <th class="accent-head" style="width: 70px;">%</th>
+                </tr>
+            </thead>
+            <tbody>`;
 
         const totalRow = data.find(row => row.is_total);
         const dataRows = data.filter(row => !row.is_total);
-
-        // Group rows by branch
         const groups = {};
-        dataRows.forEach(row => {
-            const branch = row.branch || 'Unknown';
-            if (!groups[branch]) groups[branch] = [];
-            groups[branch].push(row);
+        dataRows.forEach(row => { 
+            const branch = row.branch || 'Unknown'; 
+            if (!groups[branch]) groups[branch] = []; 
+            groups[branch].push(row); 
         });
 
         let rowIndex = 1;
         Object.keys(groups).forEach(branchName => {
             const groupRows = groups[branchName];
-            const groupSize = groupRows.length;
-
-            // Subtotal accumulator
-            const subtotal = {
-                ytd: 0, m2: 0, mtm: 0, selected: 0, d_ytd: 0, d_mtd: 0, d_dtd: 0,
-                rka_m1: 0, rka_current: 0, penc_m1_rp: 0, penc_cur_rp: 0
+            const subtotal = { 
+                ytd: 0, m2: 0, mtm: 0, selected: 0, 
+                d_ytd: 0, d_mtd: 0, d_dtd: 0, 
+                rka_m1: 0, rka_current: 0, 
+                penc_m1_rp: 0, penc_cur_rp: 0 
             };
-
-            // Pre-calculate subtotals
-            groupRows.forEach(row => {
-                subtotal.ytd += parseFloat(row.ytd || 0);
-                subtotal.m2 += parseFloat(row.m2 || 0);
-                subtotal.mtm += parseFloat(row.mtm || 0);
-                subtotal.selected += parseFloat(row.selected || 0);
-                subtotal.d_ytd += parseFloat(row.delta_ytd || 0);
-                subtotal.d_mtd += parseFloat(row.delta_mtd || 0);
-                subtotal.d_dtd += parseFloat(row.delta_dtd || 0);
-                subtotal.rka_m1 += parseFloat(row.rka_m1 || 0);
-                subtotal.rka_current += parseFloat(row.rka_current || 0);
-                subtotal.penc_m1_rp += parseFloat(row.penc_m1_rp || 0);
-                subtotal.penc_cur_rp += parseFloat(row.penc_cur_rp || 0);
+            groupRows.forEach(row => { 
+                subtotal.ytd += parseFloat(row.ytd || 0); 
+                subtotal.m2 += parseFloat(row.m2 || 0); 
+                subtotal.mtm += parseFloat(row.mtm || 0); 
+                subtotal.selected += parseFloat(row.selected || 0); 
+                subtotal.d_ytd += parseFloat(row.delta_ytd || 0); 
+                subtotal.d_mtd += parseFloat(row.delta_mtd || 0); 
+                subtotal.d_dtd += parseFloat(row.delta_dtd || 0); 
+                subtotal.rka_m1 += parseFloat(row.rka_m1 || 0); 
+                subtotal.rka_current += parseFloat(row.rka_current || 0); 
+                subtotal.penc_m1_rp += parseFloat(row.penc_m1_rp || 0); 
+                subtotal.penc_cur_rp += parseFloat(row.penc_cur_rp || 0); 
             });
-
-            // Shorten Branch Name for Total Row
-            const shortBranchName = branchName
-                .replace(/KC Madiun/gi, 'KC MDN')
-                .replace(/KC Magetan/gi, 'KC MGT')
-                .replace(/KC Ngawi/gi, 'KC NGWI')
-                .replace(/KC Ponorogo/gi, 'KC PNRG');
-
-            // Calculate branch subtotal RKA percentages
-            const subtotal_penc_m1_pct = subtotal.rka_m1 > 0 ? (subtotal.selected / subtotal.rka_m1) * 100 : 0;
-            const subtotal_penc_cur_pct = subtotal.rka_current > 0 ? (subtotal.selected / subtotal.rka_current) * 100 : 0;
-            const subtotal_pct_m1_badge = formatPctBadge(subtotal_penc_m1_pct);
-            const subtotal_pct_cur_badge = formatPctBadge(subtotal_penc_cur_pct);
-
-            // 1. Branch Subtotal Row FIRST
-            html += `
-                <tr class="loan-branch-subtotal">
-                    <td rowspan="${groupSize + 1}" class="text-center-v" style="background: #f8fbff; font-weight: 700; border-bottom: 2px solid #cbd5e1; color: #1e293b !important;">${rowIndex++}</td>
-                    <td rowspan="${groupSize + 1}" class="text-center-v text-start-important merged-branch-cell" style="border-bottom: 2px solid #cbd5e1;">${branchName}</td>
-                    <td class="text-center-v" style="font-size: 0.68rem; letter-spacing: 0.05em; background: rgba(255,255,255,0.05); text-align: center !important; font-weight: 900; border-right: 1px solid rgba(255,255,255,0.1);">
-                         TOTAL ${shortBranchName.toUpperCase()}
-                    </td>
-                    <td>${formatCurrency(subtotal.ytd)}</td>
-                    <td>${formatCurrency(subtotal.m2)}</td>
-                    <td>${formatCurrency(subtotal.mtm)}</td>
-                    <td style="background: rgba(224, 242, 254, 0.15); color: #7dd3fc;">${formatCurrency(subtotal.selected)}</td>
-                    <td style="color: ${subtotal.d_ytd < 0 ? '#fca5a5' : (subtotal.d_ytd > 0 ? '#86efac' : '#ffffff')}">${formatCurrency(subtotal.d_ytd)}</td>
-                    <td style="color: ${subtotal.d_mtd < 0 ? '#fca5a5' : (subtotal.d_mtd > 0 ? '#86efac' : '#ffffff')}">${formatCurrency(subtotal.d_mtd)}</td>
-                    <td style="color: ${subtotal.d_dtd < 0 ? '#fca5a5' : (subtotal.d_dtd > 0 ? '#86efac' : '#ffffff')}">${formatCurrency(subtotal.d_dtd)}</td>
-                    <td>${formatCurrency(subtotal.rka_m1)}</td>
-                    <td>${formatCurrency(subtotal.rka_current)}</td>
-                    <td>${formatCurrency(subtotal.penc_m1_rp)}</td>
-                    <td>${subtotal_pct_m1_badge}</td>
-                    <td>${formatCurrency(subtotal.penc_cur_rp)}</td>
-                    <td>${subtotal_pct_cur_badge}</td>
-                </tr>
-            `;
-
-            // 2. Individual Category Rows
-            groupRows.forEach((row, i) => {
-                const penc_m1_pct = parseFloat(row.penc_m1_pct || 0);
-                const penc_cur_pct = parseFloat(row.penc_cur_pct || 0);
-                const pct_m1_badge = formatPctBadge(penc_m1_pct);
-                const pct_cur_badge = formatPctBadge(penc_cur_pct);
-
-                html += `
-                    <tr>
-                        <td class="text-start-important text-muted" style="font-size: 0.75rem;">${row.category || ''}</td>
-                        <td>${formatCurrency(row.ytd)}</td>
-                        <td>${formatCurrency(row.m2)}</td>
-                        <td>${formatCurrency(row.mtm)}</td>
-                        <td style="background: #f0f7ff; color: #003d7c; font-weight: 800;">${formatCurrency(row.selected)}</td>
-                        <td class="${row.delta_ytd < 0 ? 'achieve-negative' : (row.delta_ytd > 0 ? 'achieve-positive' : '')}">${formatCurrency(row.delta_ytd)}</td>
-                        <td class="${row.delta_mtd < 0 ? 'achieve-negative' : (row.delta_mtd > 0 ? 'achieve-positive' : '')}">${formatCurrency(row.delta_mtd)}</td>
-                        <td class="${row.delta_dtd < 0 ? 'achieve-negative' : (row.delta_dtd > 0 ? 'achieve-positive' : '')}">${formatCurrency(row.delta_dtd)}</td>
-                        <td>${formatCurrency(row.rka_m1)}</td>
-                        <td>${formatCurrency(row.rka_current)}</td>
-                        <td>${formatCurrency(row.penc_m1_rp)}</td>
-                        <td>${pct_m1_badge}</td>
-                        <td>${formatCurrency(row.penc_cur_rp)}</td>
-                        <td>${pct_cur_badge}</td>
-                    </tr>`;
+            
+            const shortBranchName = branchName.replace(/KC Madiun/gi, 'KC MDN').replace(/KC Magetan/gi, 'KC MGT').replace(/KC Ngawi/gi, 'KC NGWI').replace(/KC Ponorogo/gi, 'KC PNRG');
+            const sub_m1_pct = subtotal.rka_m1 > 0 ? (subtotal.selected / subtotal.rka_m1) * 100 : 0;
+            const sub_cur_pct = subtotal.rka_current > 0 ? (subtotal.selected / subtotal.rka_current) * 100 : 0;
+            
+            html += `<tr class="loan-branch-subtotal">
+                <td rowspan="${groupRows.length + 1}" class="text-center-v text-center-important" style="background: #f8fbff; font-weight: 700; border-bottom: 2px solid #cbd5e1; color: #1e293b !important;">${rowIndex++}</td>
+                <td rowspan="${groupRows.length + 1}" class="text-center-v text-start-important merged-branch-cell" style="border-bottom: 2px solid #cbd5e1;">${branchName}</td>
+                <td class="text-center-v text-center-important" style="font-size: 0.68rem; letter-spacing: 0.05em; background: rgba(255,255,255,0.05); font-weight: 900; border-right: 1px solid rgba(255,255,255,0.1);">TOTAL ${shortBranchName.toUpperCase()}</td>
+                <td>${formatCurrency(subtotal.ytd)}</td>
+                <td>${formatCurrency(subtotal.m2)}</td>
+                <td>${formatCurrency(subtotal.mtm)}</td>
+                <td style="background: rgba(224, 242, 254, 0.15); color: #7dd3fc;">${formatCurrency(subtotal.selected)}</td>
+                <td class="${getConditionalClass(subtotal.d_ytd, typeLabel)}">${formatCurrency(subtotal.d_ytd)}</td>
+                <td class="${getConditionalClass(subtotal.d_mtd, typeLabel)}">${formatCurrency(subtotal.d_mtd)}</td>
+                <td class="${getConditionalClass(subtotal.d_dtd, typeLabel)}">${formatCurrency(subtotal.d_dtd)}</td>
+                <td>${formatCurrency(subtotal.rka_m1)}</td>
+                <td>${formatCurrency(subtotal.rka_current)}</td>
+                <td class="${getConditionalClass(subtotal.penc_m1_rp, typeLabel)}">${formatCurrency(subtotal.penc_m1_rp)}</td>
+                <td>${formatPctBadge(sub_m1_pct, typeLabel)}</td>
+                <td class="${getConditionalClass(subtotal.penc_cur_rp, typeLabel)}">${formatCurrency(subtotal.penc_cur_rp)}</td>
+                <td>${formatPctBadge(sub_cur_pct, typeLabel)}</td>
+            </tr>`;
+            
+            groupRows.forEach(row => { 
+                html += `<tr>
+                    <td class="text-start-important text-muted" style="font-size: 0.75rem;">${row.category || ''}</td>
+                    <td>${formatCurrency(row.ytd)}</td>
+                    <td>${formatCurrency(row.m2)}</td>
+                    <td>${formatCurrency(row.mtm)}</td>
+                    <td style="background: #f0f7ff; color: #003d7c; font-weight: 800;">${formatCurrency(row.selected)}</td>
+                    <td class="${getConditionalClass(row.delta_ytd, typeLabel)}">${formatCurrency(row.delta_ytd)}</td>
+                    <td class="${getConditionalClass(row.delta_mtd, typeLabel)}">${formatCurrency(row.delta_mtd)}</td>
+                    <td class="${getConditionalClass(row.delta_dtd, typeLabel)}">${formatCurrency(row.delta_dtd)}</td>
+                    <td>${formatCurrency(row.rka_m1)}</td>
+                    <td>${formatCurrency(row.rka_current)}</td>
+                    <td class="${getConditionalClass(row.penc_m1_rp, typeLabel)}">${formatCurrency(row.penc_m1_rp)}</td>
+                    <td>${formatPctBadge(row.penc_m1_pct, typeLabel)}</td>
+                    <td class="${getConditionalClass(row.penc_cur_rp, typeLabel)}">${formatCurrency(row.penc_cur_rp)}</td>
+                    <td>${formatPctBadge(row.penc_cur_pct, typeLabel)}</td>
+                </tr>`; 
             });
         });
 
         if (totalRow) {
-            const total_penc_m1_pct = parseFloat(totalRow.penc_m1_pct || 0);
-            const total_penc_cur_pct = parseFloat(totalRow.penc_cur_pct || 0);
-            const total_pct_m1_badge = formatPctBadge(total_penc_m1_pct);
-            const total_pct_cur_badge = formatPctBadge(total_penc_cur_pct);
-
-            html += `
-                <tr style="background: #1e293b; color: #ffffff; font-weight: 900;">
-                    <td colspan="3" class="text-center" style="letter-spacing: 0.1em; color: #ffffff; border-right: 1px solid rgba(255,255,255,0.2);">GRAND TOTAL</td>
-                    <td style="color: #ffffff;">${formatCurrency(totalRow.ytd)}</td>
-                    <td style="color: #ffffff;">${formatCurrency(totalRow.m2)}</td>
-                    <td style="color: #ffffff;">${formatCurrency(totalRow.mtm)}</td>
-                    <td style="background: #0f172a; color: #ffffff;">${formatCurrency(totalRow.selected)}</td>
-                    <td class="${totalRow.delta_ytd < 0 ? 'text-danger' : (totalRow.delta_ytd > 0 ? 'text-success' : '')}">${formatCurrency(totalRow.delta_ytd)}</td>
-                    <td class="${totalRow.delta_mtd < 0 ? 'text-danger' : (totalRow.delta_mtd > 0 ? 'text-success' : '')}">${formatCurrency(totalRow.delta_mtd)}</td>
-                    <td class="${totalRow.delta_dtd < 0 ? 'text-danger' : (totalRow.delta_dtd > 0 ? 'text-success' : '')}">${formatCurrency(totalRow.delta_dtd)}</td>
-                    <td style="color: #ffffff;">${formatCurrency(totalRow.rka_m1)}</td>
-                    <td style="color: #ffffff;">${formatCurrency(totalRow.rka_current)}</td>
-                    <td style="color: #ffffff;">${formatCurrency(totalRow.penc_m1_rp)}</td>
-                    <td>${total_pct_m1_badge}</td>
-                    <td style="color: #ffffff;">${formatCurrency(totalRow.penc_cur_rp)}</td>
-                    <td>${total_pct_cur_badge}</td>
-                </tr>
-            `;
+            html += `<tr style="background: #1e293b; color: #ffffff; font-weight: 900;">
+                <td colspan="3" class="text-center-important" style="letter-spacing: 0.1em; color: #ffffff; border-right: 1px solid rgba(255,255,255,0.2);">GRAND TOTAL</td>
+                <td style="color: #ffffff;">${formatCurrency(totalRow.ytd)}</td>
+                <td style="color: #ffffff;">${formatCurrency(totalRow.m2)}</td>
+                <td style="color: #ffffff;">${formatCurrency(totalRow.mtm)}</td>
+                <td style="background: #0f172a; color: #ffffff;">${formatCurrency(totalRow.selected)}</td>
+                <td class="${getConditionalClass(totalRow.delta_ytd, typeLabel)}">${formatCurrency(totalRow.delta_ytd)}</td>
+                <td class="${getConditionalClass(totalRow.delta_mtd, typeLabel)}">${formatCurrency(totalRow.delta_mtd)}</td>
+                <td class="${getConditionalClass(totalRow.delta_dtd, typeLabel)}">${formatCurrency(totalRow.delta_dtd)}</td>
+                <td style="color: #ffffff;">${formatCurrency(totalRow.rka_m1)}</td>
+                <td style="color: #ffffff;">${formatCurrency(totalRow.rka_current)}</td>
+                <td class="${getConditionalClass(totalRow.penc_m1_rp, typeLabel)}">${formatCurrency(totalRow.penc_m1_rp)}</td>
+                <td>${formatPctBadge(totalRow.penc_m1_pct, typeLabel)}</td>
+                <td class="${getConditionalClass(totalRow.penc_cur_rp, typeLabel)}">${formatCurrency(totalRow.penc_cur_rp)}</td>
+                <td>${formatPctBadge(totalRow.penc_cur_pct, typeLabel)}</td>
+            </tr>`;
         }
 
-        html += `
-                </tbody>
-            </table>
-        `;
-
-        return '<div class="loan-table-container">' + html + '</div>';
+        return '<div class="loan-table-container">' + html + '</tbody></table></div>';
     }
 
     function showSpinners(kategori) {
-        const stub = (label) => `
-            <div class="text-center text-muted py-5">
-                <div class="spinner-border spinner-border-sm text-primary mb-3" role="status">
-                    <span class="sr-only">Loading...</span>
-                </div>
-                <p><strong>Memproses data ${label}</strong></p>
-                <p style="font-size: 0.85rem;">Untuk Segmen ${kategori}...</p>
-            </div>`;
+        const stub = (label) => `<div class="text-center text-muted py-5"><div class="spinner-border spinner-border-sm text-primary mb-3" role="status"><span class="sr-only">Loading...</span></div><p><strong>Memproses data ${label}</strong></p><p style="font-size: 0.85rem;">Untuk Segmen ${kategori}...</p></div>`;
         osTableContainer.innerHTML = stub('Outstanding');
         smlTableContainer.innerHTML = stub('SML');
         nplTableContainer.innerHTML = stub('NPL');
     }
 
     function showErrorMessage(message) {
-        const errorHtml = `<div class="alert alert-danger alert-dismissible fade show" role="alert">
-            <strong>Gagal memuat data</strong><br>
-            ${message}
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        </div>`;
-        osTableContainer.innerHTML = errorHtml;
-        smlTableContainer.innerHTML = errorHtml;
+        const errorHtml = `<div class="alert alert-danger alert-dismissible fade show" role="alert"><strong>Gagal memuat data</strong><br>${message}<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>`;
+        osTableContainer.innerHTML = errorHtml; 
+        smlTableContainer.innerHTML = errorHtml; 
         nplTableContainer.innerHTML = errorHtml;
     }
 
+    // --- Data Loading Logic ---
     function loadDashboardData() {
         const periode = $periodeSel.val();
         const kategori = $kategoriSel.val();
-
         if (!periode) return;
 
         showSpinners(kategori);
         dashboardMeta.textContent = `Memuat data dashboard untuk periode ${formatDate(periode)}...`;
         btnLoadData.disabled = true;
 
-        // Cancel previous request if still pending
-        if (requestAbortController) {
-            requestAbortController.abort();
-        }
+        if (requestAbortController) requestAbortController.abort();
         requestAbortController = new AbortController();
-
         const controller = requestAbortController;
-        const timeoutId = setTimeout(() => {
-            if (controller === requestAbortController) {
-                controller.abort();
-            }
-        }, REQUEST_TIMEOUT);
+        const timeoutId = setTimeout(() => { if (controller === requestAbortController) controller.abort(); }, REQUEST_TIMEOUT);
 
-        fetch('{{ route("report.dashboard-pinjaman.kredit.data") }}?' + new URLSearchParams({
-            periode: periode,
-            kategori: kategori
-        }), {
-            signal: controller.signal
-        })
-            .then(response => {
-                clearTimeout(timeoutId);
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                }
-                return response.json();
+        const url = '{{ route("report.dashboard-pinjaman.kredit.data") }}?' + new URLSearchParams({ periode: periode, kategori: kategori });
+        
+        fetch(url, { signal: controller.signal })
+            .then(response => { 
+                clearTimeout(timeoutId); 
+                if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`); 
+                return response.json(); 
             })
             .then(data => {
                 dashboardMeta.textContent = `Menampilkan dashboard kredit ${kategori} per ${formatDate(periode)}.`;
-
                 document.getElementById('osTitle').innerText = `A. OUTSTANDING (OS) - ${kategori}`;
                 osTableContainer.innerHTML = buildTable(data.os, data.header_dates, 'Outstanding', kategori, data.rka_labels);
-
                 document.getElementById('smlTitle').innerText = `B. SPECIAL MENTION LOAN (SML) - ${kategori}`;
                 smlTableContainer.innerHTML = buildTable(data.sml, data.header_dates, 'SML', kategori, data.rka_labels);
-
                 document.getElementById('nplTitle').innerText = `C. NON-PERFORMING LOAN (NPL) - ${kategori}`;
                 nplTableContainer.innerHTML = buildTable(data.npl, data.header_dates, 'NPL', kategori, data.rka_labels);
             })
-            .catch(error => {
-                clearTimeout(timeoutId);
-                console.error('Error:', error);
-                
-                let errorMsg = 'Periksa koneksi atau snapshot data.';
-                if (error.name === 'AbortError') {
-                    errorMsg = 'Permintaan timeout setelah ' + (REQUEST_TIMEOUT / 1000) + ' detik. Coba lagi atau pilih periode lain.';
-                } else if (error.message.includes('HTTP')) {
-                    errorMsg = error.message;
-                }
-                
-                showErrorMessage(errorMsg);
+            .catch(error => { 
+                clearTimeout(timeoutId); 
+                console.error('Error:', error); 
+                let errorMsg = 'Periksa koneksi atau snapshot data.'; 
+                if (error.name === 'AbortError') errorMsg = 'Permintaan timeout. Coba lagi.'; 
+                else if (error.message.includes('HTTP')) errorMsg = error.message; 
+                showErrorMessage(errorMsg); 
             })
-            .finally(() => {
-                btnLoadData.disabled = false;
+            .finally(() => { 
+                btnLoadData.disabled = false; 
             });
     }
 
     btnLoadData.addEventListener('click', loadDashboardData);
-
-    // Auto-load on page load if periode is set
-    window.setTimeout(() => {
-        if ($periodeSel.val()) {
-            loadDashboardData();
-        }
-    }, 100);
+    
+    // Initial load
+    if ($periodeSel.val()) {
+        loadDashboardData();
+    }
 });
 </script>
 @endpush

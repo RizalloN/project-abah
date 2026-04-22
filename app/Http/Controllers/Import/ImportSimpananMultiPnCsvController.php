@@ -176,7 +176,7 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
         try {
             $responseData = json_decode($response->getContent(), true);
             if (isset($responseData['job_id']) && $responseData['job_id'] > 0) {
-                $this->populateHeadersInJobState((int) $responseData['job_id']);
+                $this->populateDirectImportJobState((int) $responseData['job_id']);
             }
         } catch (\Throwable $e) {
             Log::warning('Failed to populate headers after initImport: ' . $e->getMessage());
@@ -185,7 +185,7 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
         return $response;
     }
 
-    private function populateHeadersInJobState(int $jobId): void
+    private function populateDirectImportJobState(int $jobId): void
     {
         try {
             $sessionPath = session('excel_path', '');
@@ -200,15 +200,32 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
 
             $payload = $this->buildPreviewPayloadFromCsvFile($path);
             $headers = $payload['normalized_headers'] ?? [];
+            $previewMeta = (array) session('excel_preview_meta', []);
 
             if (!empty($headers)) {
                 $jobState = $this->excelImportJobService()->getImportJobState($jobId) ?: [];
+                $params = (array) ($jobState['params'] ?? []);
+                $relativePath = urldecode($sessionPath);
+
+                $params = array_merge($params, [
+                    'table_name' => 'simpanan_multipn',
+                    'file_path' => $params['file_path'] ?? $relativePath,
+                    'staged_csv_path' => file_exists($path) ? $path : ($params['staged_csv_path'] ?? null),
+                    'header_index' => $params['header_index'] ?? (int) ($previewMeta['header_index'] ?? ($payload['header_index'] ?? 0)),
+                    'total_rows' => $params['total_rows'] ?? (int) ($previewMeta['total_rows'] ?? ($payload['total_sample_rows'] ?? 0)),
+                    'delimiter' => $params['delimiter'] ?? (string) ($previewMeta['delimiter'] ?? ($payload['delimiter'] ?? ';')),
+                    'job_id' => $jobId,
+                ]);
+
+                $jobState['params'] = $params;
                 $jobState['headers'] = $headers;
                 $this->excelImportJobService()->putImportJobState($jobId, $jobState);
-                Log::debug("Populated headers for Simpanan MultiPN job {$jobId}: " . count($headers) . ' headers');
+                session(['excel_headers' => $headers]);
+
+                Log::debug("Populated direct import state for Simpanan MultiPN job {$jobId}: " . count($headers) . ' headers');
             }
         } catch (\Throwable $e) {
-            Log::warning('Failed to populate headers for Simpanan MultiPN job ' . $jobId . ': ' . $e->getMessage());
+            Log::warning('Failed to populate direct import state for Simpanan MultiPN job ' . $jobId . ': ' . $e->getMessage());
         }
     }
 
@@ -219,7 +236,10 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
 
         $sessionParams = session('excel_import_params', []);
         $jobId = (int) ($sessionParams['job_id'] ?? $request->query('job_id', 0));
-        $jobState = method_exists($this, 'getExcelImportJobState') ? $this->getExcelImportJobState($jobId) : [];
+        if ($jobId > 0) {
+            $this->populateDirectImportJobState($jobId);
+        }
+        $jobState = $jobId > 0 ? $this->excelImportJobService()->getImportJobState($jobId) : [];
         $params = !empty($jobState['params']) ? (array) $jobState['params'] : $sessionParams;
         $normalizedHeaders = $this->resolveNormalizedHeadersForDirectImport($jobId, $jobState, $params);
         $activeFilters = (array) ($params['active_filters'] ?? []);

@@ -579,16 +579,28 @@
                     </div>
                 </div>
                 <div class="col-lg-2 col-md-6 mb-3 mb-lg-0">
-                    <label class="filter-label" for="periodMonthFilter">Periode Akhir</label>
-                    <div class="period-select-shell">
-                        <select id="periodMonthFilter" class="period-month-select">
-                            @foreach(($dashboardPage['filters']['period_month'] ?? []) as $item)
-                                <option value="{{ $item['value'] }}" {{ ($dashboardPage['selected']['period_month'] ?? '') === $item['value'] ? 'selected' : '' }}>
-                                    {{ $item['label'] }}
-                                </option>
-                            @endforeach
-                        </select>
-                        <i class="fas fa-chevron-down"></i>
+                    <label class="filter-label">Periode Akhir</label>
+                    <div class="branch-filter-dropdown" id="periodDropdownShell">
+                        <div class="branch-dropdown-toggle" id="periodDropdown">
+                            <span class="branch-dropdown-label" id="periodLabel">
+                                @php
+                                    $selectedLabel = collect($dashboardPage['filters']['period_month'] ?? [])->firstWhere('value', $dashboardPage['selected']['period_month'] ?? '')['label'] ?? 'Pilih Periode';
+                                @endphp
+                                {{ $selectedLabel }}
+                            </span>
+                            <i class="fas fa-chevron-down text-muted small"></i>
+                        </div>
+                        <div class="branch-dropdown-menu" id="periodMenu">
+                            <input type="hidden" id="periodMonthFilter" value="{{ $dashboardPage['selected']['period_month'] ?? '' }}">
+                            <div class="options-container" id="periodOptions">
+                                @foreach(($dashboardPage['filters']['period_month'] ?? []) as $item)
+                                    <div class="branch-option {{ ($dashboardPage['selected']['period_month'] ?? '') === $item['value'] ? 'selected' : '' }}" data-value="{{ $item['value'] }}" data-label="{{ $item['label'] }}">
+                                        <div class="branch-checkbox-ui"><i class="fas fa-check"></i></div>
+                                        <span class="branch-option-label">{{ $item['label'] }}</span>
+                                    </div>
+                                @endforeach
+                            </div>
+                        </div>
                     </div>
                 </div>
                 <div class="col-lg-2">
@@ -829,7 +841,7 @@
                 return {
                     responsive: false,
                     maintainAspectRatio: false,
-                    devicePixelRatio: 1,
+                    devicePixelRatio: 2,
                     animation: false,
                     events: [],
                     layout: {
@@ -1185,18 +1197,29 @@
             function closeAllDropdowns() {
                 if (kancaMenu) kancaMenu.classList.remove('show');
                 if (unitMenu) unitMenu.classList.remove('show');
+                if (typeof periodMenu !== 'undefined' && periodMenu) periodMenu.classList.remove('show');
                 
                 // Reset z-indices
                 const kancaShell = document.getElementById('kancaDropdownShell');
                 const unitShell = document.getElementById('unitDropdownShell');
+                const periodShell = document.getElementById('periodDropdownShell');
                 if (kancaShell) kancaShell.style.zIndex = '';
                 if (unitShell) unitShell.style.zIndex = '';
+                if (periodShell) periodShell.style.zIndex = '';
             }
 
             document.addEventListener('click', closeAllDropdowns);
             
             if (kancaMenu) kancaMenu.addEventListener('click', (e) => e.stopPropagation());
             if (unitMenu) unitMenu.addEventListener('click', (e) => e.stopPropagation());
+            
+            const periodMenu = document.getElementById('periodMenu');
+            const periodLabel = document.getElementById('periodLabel');
+            const periodToggle = document.getElementById('periodDropdown');
+            const periodOptions = document.getElementById('periodOptions');
+            const periodInput = document.getElementById('periodMonthFilter');
+
+            if (periodMenu) periodMenu.addEventListener('click', (e) => e.stopPropagation());
 
             if (kancaToggle) {
                 kancaToggle.addEventListener('click', (e) => {
@@ -1223,6 +1246,38 @@
                         const shell = document.getElementById('unitDropdownShell');
                         if (shell) shell.style.zIndex = '1001';
                     }
+                });
+            }
+
+            if (periodToggle) {
+                periodToggle.addEventListener('click', (e) => {
+                    console.log('Period Toggle Clicked');
+                    e.stopPropagation();
+                    const wasOpen = periodMenu.classList.contains('show');
+                    closeAllDropdowns();
+                    if (!wasOpen) {
+                        periodMenu.classList.add('show');
+                        const shell = document.getElementById('periodDropdownShell');
+                        if (shell) shell.style.zIndex = '1001';
+                    }
+                });
+            }
+
+            // --- Period Filter Logic ---
+            if (periodOptions) {
+                periodOptions.querySelectorAll('.branch-option').forEach(opt => {
+                    opt.addEventListener('click', () => {
+                        const val = opt.getAttribute('data-value');
+                        const label = opt.getAttribute('data-label');
+                        
+                        if (periodInput) periodInput.value = val;
+                        if (periodLabel) periodLabel.textContent = label;
+                        
+                        periodOptions.querySelectorAll('.branch-option').forEach(o => o.classList.remove('selected'));
+                        opt.classList.add('selected');
+                        
+                        closeAllDropdowns();
+                    });
                 });
             }
 
@@ -1449,20 +1504,21 @@
                                 data: d.data,
                                 borderColor: monthColors[i % monthColors.length].border,
                                 backgroundColor: monthColors[i % monthColors.length].bg,
-                                borderWidth: isLatest ? 3.5 : 2,
-                                pointRadius: isLatest ? 4 : 1.5,
-                                pointHoverRadius: 7,
+                                borderWidth: isLatest ? 4 : 2.5,
+                                pointRadius: isLatest ? 4.5 : 2,
+                                pointHoverRadius: 8,
                                 tension: 0.4,
                                 fill: isLatest,
                                 clip: false,
                                 spanGaps: false,
-                                borderDash: isLatest ? [] : [4, 2]
+                                borderDash: isLatest ? [] : [5, 3]
                             };
                         })
                     },
                     options: {
                         responsive: true,
                         maintainAspectRatio: false,
+                        devicePixelRatio: 2.5,
                         layout: {
                             padding: {
                                 top: isSummary ? 16 : 24,

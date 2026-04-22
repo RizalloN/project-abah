@@ -1,6 +1,6 @@
 @extends('layouts.admin')
 
-@section('title', 'Kinerja Konsumer')
+@section('title', 'Kinerja RM')
 
 @section('content')
 <style>
@@ -716,8 +716,17 @@
             <h1 class="kinerja-konsumer-title">{{ $title }}</h1>
             
             <form id="kinerjaFilterForm" method="GET" action="{{ route('report.dashboard-pinjaman.kinerja-konsumer') }}" class="kinerja-konsumer-filters">
-                <div class="kinerja-filter-group">
-                    <label for="kinerjaPeriode" class="kinerja-filter-label">Periode Laporan</label>
+                <div class="kinerja-filter-group">                    <label for="kinerjaSegmen" class="kinerja-filter-label">Pilih Segmen RM</label>
+                    <select id="kinerjaSegmen" name="segmen" class="kinerja-filter-control" required onchange="this.form.submit();">
+                        @foreach($availableSegmens as $segmen)
+                            <option value="{{ $segmen }}" @selected($selectedSegmen === $segmen)>
+                                {{ ucfirst(strtolower($segmen)) }}
+                            </option>
+                        @endforeach
+                    </select>
+                </div>
+
+                <div class="kinerja-filter-group">                    <label for="kinerjaPeriode" class="kinerja-filter-label">Periode Laporan</label>
                     <select id="kinerjaPeriode" name="periode" class="kinerja-filter-control">
                         @foreach($availablePeriods as $period)
                             <option value="{{ $period }}" @selected($selectedPeriod === $period)>

@@ -103,6 +103,16 @@ class ImportReportPhController extends Controller
         'sai_tunggakan_cutoff_ph' => 'sai_tunggakan_ph',
         'sai_deffered_cutoff_ph' => 'sai_deffered_ph',
     ];
+    private const EXCEL_HEADER_OCCURRENCE_ALIASES = [
+        'cif' => [
+            1 => 'cif1',
+            2 => 'cif',
+        ],
+        'cif1' => [
+            1 => 'cif1',
+            2 => 'cif',
+        ],
+    ];
     private const STAGED_CSV_TEMP_DIR = 'app/report_ph_stage';
     private const FILTERED_CSV_TEMP_DIR = 'app/report_ph_filtered';
     private const BULK_LOAD_TEMP_DIR = 'app/report_ph_bulk_stage';
@@ -1101,7 +1111,7 @@ class ImportReportPhController extends Controller
 
         $lineNumber = 0;
         $rowsProcessed = 0;
-        $previewLimit = 2500;
+        $previewLimit = 100;
         $uniquesProcessLimit = 3000;  // OPTIMIZED: Only collect uniques from first 3000 rows (saves 10-15 sec)
         $fullColumns = [];  // Track columns that reached limit
         
@@ -1343,6 +1353,8 @@ class ImportReportPhController extends Controller
             'queue' => 'imports-high',
         ]);
 
+        $this->executionService()->dispatch($jobId, 'Fase Polars LW325 - PH dimulai. Menyiapkan import fresh.');
+
         return response()->json([
             'status' => 'success',
             'job_id' => $jobId,
@@ -1504,6 +1516,18 @@ class ImportReportPhController extends Controller
                 if ($fallback['last_error'] !== '') {
                     $lastErrorMsg = $fallback['last_error'];
                 }
+            }
+
+            try {
+                $this->assertReportPhImportIntegrity($context['periode'], $preparedRows);
+            } catch (\Throwable $integrityError) {
+                $lastErrorMsg = Str::limit($integrityError->getMessage(), 800, '...');
+                Log::error(self::REPORT_LABEL . ' integrity validation failed after sync import: ' . $integrityError->getMessage(), [
+                    'periode' => $context['periode'],
+                    'expected_rows' => $preparedRows,
+                    'total_success' => $totalSuccess,
+                ]);
+                $totalFailed = max(1, $preparedRows - min($totalSuccess, $preparedRows));
             }
 
             if ($totalFailed === 0) {
@@ -1728,6 +1752,19 @@ class ImportReportPhController extends Controller
                     @unlink($cleanupPath);
                 }
             }
+        }
+
+        try {
+            $this->assertReportPhImportIntegrity((string) ($params['periode'] ?? ''), $preparedRows);
+        } catch (\Throwable $integrityError) {
+            $lastErrorMsg = Str::limit($integrityError->getMessage(), 800, '...');
+            Log::error(self::REPORT_LABEL . ' integrity validation failed after queued import: ' . $integrityError->getMessage(), [
+                'job_id' => $jobId,
+                'periode' => (string) ($params['periode'] ?? ''),
+                'expected_rows' => $preparedRows,
+                'total_success' => $totalSuccess,
+            ]);
+            $totalFailed = max(1, $preparedRows - min($totalSuccess, $preparedRows));
         }
 
         if ($jobId > 0) {
@@ -2680,6 +2717,43 @@ class ImportReportPhController extends Controller
                 'job_id' => $jobId,
                 'relative_path' => $relativePath,
             ]);
+        }
+    }
+
+    private function assertReportPhImportIntegrity(string $periode, int $expectedRows): void
+    {
+        $periode = trim($periode);
+        if ($periode === '' || StrictDateParser::normalize($periode) === null) {
+            throw new \RuntimeException('Periode validasi import LW325 - PH tidak valid.');
+        }
+
+        $actualRows = (int) DB::table(self::TABLE_NAME)
+            ->whereDate('periode', $periode)
+            ->count();
+
+        $zeroPeriodRows = (int) DB::table(self::TABLE_NAME)
+            ->where(function ($query): void {
+                $query->whereNull('periode')
+                    ->orWhere('periode', '0000-00-00');
+            })
+            ->count();
+
+        $expectedPrefix = $periode . '_';
+        $malformedRows = (int) DB::table(self::TABLE_NAME)
+            ->whereDate('periode', $periode)
+            ->where(function ($query) use ($expectedPrefix): void {
+                $query->whereNull('uniqueid_namareport')
+                    ->orWhere('uniqueid_namareport', '')
+                    ->orWhere('uniqueid_namareport', 'not like', $expectedPrefix . '%_RPH');
+            })
+            ->count();
+
+        if ($actualRows !== $expectedRows || $zeroPeriodRows > 0 || $malformedRows > 0) {
+            throw new \RuntimeException(
+                'Validasi import LW325 - PH gagal. '
+                . "Expected={$expectedRows}, actual={$actualRows}, "
+                . "zero_period={$zeroPeriodRows}, malformed_uniqueid={$malformedRows}."
+            );
         }
     }
 

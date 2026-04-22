@@ -15,10 +15,12 @@ class ImportProgressService
     private const CACHE_PREFIX = 'import_job_progress:';
     private const STATE_PREFIX = 'excel_import_job:';
     private const TERMINATE_PREFIX = 'import_job_terminate:';
+    private const HEARTBEAT_PREFIX = 'import_job_progress_heartbeat:';
     private const STALE_QUEUED_MINUTES = 15;
     private const STALE_PROCESSING_HOURS = 2;
     private const ACTIVE_PROCESSING_REUSE_HOURS = 6;
     private const MISSING_SOURCE_GRACE_SECONDS = 120;
+    private const ACTIVE_HEARTBEAT_SECONDS = 10;
     private const DAILY_LOAN_REPORT_ID = 8;
 
     public function cacheProgress(int $jobId, array $payload): array
@@ -31,6 +33,7 @@ class ImportProgressService
         $payload['job_id'] = $jobId;
         $payload['updated_at'] = now()->toIso8601String();
         Cache::put($this->cacheKey($jobId), $payload, now()->addHours(6));
+        $this->syncActiveJobHeartbeat($jobId, $payload);
 
         return $payload;
     }
@@ -535,6 +538,11 @@ class ImportProgressService
         return self::CACHE_PREFIX . $jobId;
     }
 
+    private function heartbeatKey(int $jobId): string
+    {
+        return self::HEARTBEAT_PREFIX . $jobId;
+    }
+
     private function stateKey(int $jobId): string
     {
         return self::STATE_PREFIX . $jobId;
@@ -727,6 +735,22 @@ class ImportProgressService
         }
 
         if ($status === 'queued') {
+            $queueRow = $this->findActiveQueueRowForJob($jobId);
+            if ($queueRow !== null && $queueRow->reserved_at !== null) {
+                $cachedProgress = Cache::get($this->cacheKey($jobId));
+                $cachedProgress = is_array($cachedProgress) ? $cachedProgress : [];
+
+                $this->markProcessing($jobId, [
+                    'status' => 'processing',
+                    'phase' => 'polars',
+                    'mode' => 'polars',
+                    'percent' => max(8, (int) ($cachedProgress['percent'] ?? 5)),
+                    'message' => 'Worker queue sudah mengambil job import dan sedang memulai proses.',
+                ]);
+
+                return $this->findJob($jobId);
+            }
+
             if ($queuedAt->gte(now()->subMinutes(self::STALE_QUEUED_MINUTES))) {
                 return $job;
             }
@@ -760,6 +784,23 @@ class ImportProgressService
         }
 
         return $job;
+    }
+
+    private function findActiveQueueRowForJob(int $jobId): ?object
+    {
+        if ($jobId <= 0) {
+            return null;
+        }
+
+        try {
+            return DB::table('jobs')
+                ->where('payload', 'like', '%' . class_basename(RunImportJob::class) . '%')
+                ->where('payload', 'like', '%jobId";i:' . $jobId . ';%')
+                ->orderByDesc('id')
+                ->first(['id', 'queue', 'reserved_at', 'available_at', 'created_at']);
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     private function resolveJobSourcePath(object $job): ?string
@@ -867,6 +908,7 @@ class ImportProgressService
 
         Cache::forget($this->cacheKey($jobId));
         Cache::forget($this->stateKey($jobId));
+        Cache::forget($this->heartbeatKey($jobId));
         $this->clearTerminationRequest($jobId);
         $this->cleanupQueuedImportJobRows($jobId);
     }
@@ -874,5 +916,43 @@ class ImportProgressService
     private function isTerminalStatus(?string $status): bool
     {
         return in_array($status, ['completed', 'failed', 'failed_partial', 'terminated'], true);
+    }
+
+    private function syncActiveJobHeartbeat(int $jobId, array $payload): void
+    {
+        if ($jobId <= 0) {
+            return;
+        }
+
+        $status = strtolower(trim((string) ($payload['status'] ?? '')));
+        if (!in_array($status, ['queued', 'processing'], true)) {
+            if ($status !== '') {
+                Cache::forget($this->heartbeatKey($jobId));
+            }
+
+            return;
+        }
+
+        $heartbeatKey = $this->heartbeatKey($jobId);
+        $lastHeartbeat = Cache::get($heartbeatKey);
+        if (is_numeric($lastHeartbeat) && ((time() - (int) $lastHeartbeat) < self::ACTIVE_HEARTBEAT_SECONDS)) {
+            return;
+        }
+
+        Cache::put($heartbeatKey, time(), now()->addHours(6));
+
+        try {
+            DB::table('import_jobs')
+                ->where('id', $jobId)
+                ->update([
+                    'status' => $status,
+                    'updated_at' => now(),
+                ]);
+        } catch (\Throwable $e) {
+            Log::warning('Failed to sync import job heartbeat: ' . $e->getMessage(), [
+                'job_id' => $jobId,
+                'status' => $status,
+            ]);
+        }
     }
 }

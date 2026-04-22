@@ -1,14 +1,20 @@
 @php
     $showTargets = $showTargets ?? true;
     $compact = $compact ?? false;
-    $sectionTitle = $sectionTitle ?? 'Kinerja OS';
+    $sectionTitle = $sectionTitle ?? 'Performance OS';
     $sectionSubtitle = $sectionSubtitle ?? null;
     $sectionMeta = $sectionMeta ?? null;
     $grandTotalLabel = $grandTotalLabel ?? null;
     $emptyMessage = $emptyMessage ?? 'Silakan pilih parameter filter yang berbeda.';
     $tableClass = 'kinerja-konsumer-table' . ($compact ? ' kinerja-konsumer-table--compact' : '');
     $emptyColspan = $showTargets ? 14 : 10;
-    $grandTotalLabel = $grandTotalLabel ?? ('GRAND TOTAL ' . ($selectedProductLabel === 'Semua Produk' ? 'KONSUMER' : strtoupper($selectedProductLabel)));
+    $segmentLabels = [
+        'CONSUMER' => 'RM',
+        'SMALL' => 'SMALL RM',
+        'MICRO' => 'MICRO RM',
+    ];
+    $segLabel = $segmentLabels[$selectedSegmen] ?? 'RM';
+    $grandTotalLabel = $grandTotalLabel ?? ('GRAND TOTAL ' . ($selectedProductLabel === 'Semua Produk' ? $segLabel : strtoupper($selectedProductLabel)));
 @endphp
 
 <div class="kinerja-report-card">
@@ -38,7 +44,7 @@
                     <th rowspan="2" style="width: 120px;">Kantor Cabang</th>
                     <th rowspan="2" style="width: 160px;">Nama RM / Pengelola</th>
                     <th rowspan="2" style="width: 110px;">Produk</th>
-                    <th colspan="3" class="sub-head">OUTSTANDING KONSUMER</th>
+                    <th colspan="3" class="sub-head">PERFORMANCE PER RM</th>
                     <th colspan="3" class="accent-head">DELTA PERIODE PER {{ $selectedPeriodShortLabel }}</th>
                     @if($showTargets)
                         <th colspan="2" class="sub-head">TARGET REALISASI JG</th>

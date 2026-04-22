@@ -35,7 +35,8 @@ class ReportDataSyncService
     public function __construct(
         private readonly ReportSnapshotBuilder $snapshotBuilder,
         private readonly DashboardHarianSnapshotService $dashboardHarianSnapshotService,
-        private readonly PartitionMaintenanceService $partitionMaintenanceService
+        private readonly PartitionMaintenanceService $partitionMaintenanceService,
+        private readonly DashboardHarianSnapshotDirtyPeriodQueue $dashboardHarianDirtyPeriods
     ) {
     }
 
@@ -214,10 +215,18 @@ class ReportDataSyncService
         });
     }
 
-    private function syncReportPh(?string $periodHint, ?int $jobId, ?string $source): void
+    private function syncReportPh(?string $periodHint, ?int $jobId, ?string $source, ?string $deleteId = null): void
     {
-        $this->runSnapshotAudit('lw325_ph', $periodHint, $jobId, $source, 'snapshot_dashboard_harian', function () use ($periodHint) {
-            return $this->dashboardHarianSnapshotService->rebuildAffectedByPhPeriod($periodHint, true);
+        $this->runSnapshotAudit('lw325_ph', $periodHint, $jobId, $source, 'snapshot_dashboard_harian', function () use ($periodHint, $deleteId) {
+            if ($deleteId) {
+                $this->heartbeat($deleteId, 'Rebuilding Daily Dashboard snapshots after PH import...');
+            }
+
+            if ($periodHint !== null && trim($periodHint) !== '') {
+                return $this->dashboardHarianSnapshotService->rebuildAffectedByPhPeriod($periodHint, true);
+            }
+
+            return $this->dashboardHarianSnapshotService->syncDuePeriods();
         });
 
         if ($this->shouldRefreshDerivedSnapshotStatistics($periodHint)) {
@@ -282,7 +291,7 @@ class ReportDataSyncService
      * This dramatically speeds up the import response by offloading the rebuild to the queue.
      * The user sees the import complete almost instantly, while the snapshot rebuilds in the background.
      */
-    private function dispatchDashboardHarianSnapshotRebuildJob(?string $period): void
+    private function dispatchDashboardHarianSnapshotRebuildJob(string|array|null $period): void
     {
         try {
             $jobClass = class_exists('App\Jobs\RebuildDashboardHarianSnapshotJob')
@@ -291,16 +300,29 @@ class ReportDataSyncService
 
             if (!$jobClass) {
                 Log::warning('RebuildDashboardHarianSnapshotJob not found, falling back to sync rebuild');
-                $this->dashboardHarianSnapshotService->rebuild($period, true);
+                $this->syncDashboardHarianDuePeriodsNow($period);
                 return;
             }
 
-            $job = new $jobClass($period);
-            dispatch($job);  // Use default queue which is already working
+            $periods = is_array($period) ? $period : [$period];
+            $shouldDispatch = $this->dashboardHarianDirtyPeriods->register($periods);
+            if (!$shouldDispatch) {
+                Log::info('Coalesced Dashboard Harian snapshot rebuild into pending dirty-period job', [
+                    'periods' => $periods,
+                ]);
+
+                return;
+            }
+
+            $job = new $jobClass(null, true);
+            dispatch($job)
+                ->delay(now()->addSeconds($this->dashboardHarianDirtyPeriods->debounceSeconds()))
+                ->onQueue('imports-high');
 
             Log::info('Dispatched RebuildDashboardHarianSnapshotJob', [
-                'period' => $period,
-                'queue' => 'default (background processing)',
+                'periods' => $periods,
+                'queue' => 'imports-high',
+                'debounce_seconds' => $this->dashboardHarianDirtyPeriods->debounceSeconds(),
             ]);
         } catch (\Throwable $e) {
             Log::error('Failed to dispatch snapshot rebuild job, falling back to sync', [
@@ -308,9 +330,21 @@ class ReportDataSyncService
                 'period' => $period,
             ]);
             
-            // Fallback to sync rebuild if dispatch fails
-            $this->dashboardHarianSnapshotService->rebuild($period, true);
+            $this->syncDashboardHarianDuePeriodsNow($period);
         }
+    }
+
+    private function syncDashboardHarianDuePeriodsNow(string|array|null $period): void
+    {
+        $periods = is_array($period) ? $period : [$period];
+        $normalized = array_values(array_filter(
+            array_map(fn ($value) => trim((string) $value), $periods),
+            fn (string $value) => $value !== ''
+        ));
+
+        $normalized !== []
+            ? $this->dashboardHarianSnapshotService->syncDuePeriods($normalized)
+            : $this->dashboardHarianSnapshotService->syncDuePeriods();
     }
 
     public function syncAfterDelete(string $tableName, ?string $periodHint = null, ?string $source = null, ?string $deleteId = null): void

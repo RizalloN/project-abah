@@ -215,6 +215,51 @@ class ImportExcelControllerDailyLoanCsvTest extends TestCase
         }
     }
 
+    public function test_prepare_daily_loan_direct_load_source_skips_manual_excel_preamble_before_header(): void
+    {
+        $csvPath = storage_path('framework/testing/daily_loan_manual_excel_preamble.csv');
+        if (!is_dir(dirname($csvPath))) {
+            @mkdir(dirname($csvPath), 0777, true);
+        }
+
+        file_put_contents($csvPath, implode("\n", [
+            'Textbox1,Textbox3',
+            'Date Printed : 22 Apr 2026,Laporan Nominatif Pinjaman',
+            '',
+            'Textbox278,Textbox458',
+            ': 20/04/2026,: Aktif',
+            '',
+            'PERIODE,KODE_KANWIL1,KANWIL1,KODE_CABANG1,CABANG1,BRANCH1,UNIT1,CURTYP,AO_NAME,CIFNO,NOMOR_REKENING1,STATUS_REKENING1,LN_TYPE,NAMA_DEBITUR1,RATE,JANGKA_WAKTU1,PLAFON,BAKI_DEBET1',
+            '20-04-2026,R,KANWIL MALANG,49,KC Magetan,3874,UNIT ISWAHYUDI MAGETAN,IDR,Regional Office Malang,BBZ9338,101053983100,1,WL,BAYU AJI TRIWIBOWO,0.082500,24M,"50,000,000.00","17,587,572.00"',
+        ]) . "\n");
+
+        $result = [];
+        try {
+            $result = $this->invokeMethod('prepareDailyLoanDirectLoadSource', [$csvPath, ',']);
+
+            $this->assertTrue($result['normalized']);
+            $this->assertSame(1, $result['written_rows']);
+            $this->assertSame(0, $result['skipped_count']);
+
+            $handle = fopen((string) $result['path'], 'r');
+            $this->assertNotFalse($handle);
+
+            $header = fgetcsv($handle, 0, ',');
+            $row = fgetcsv($handle, 0, ',');
+            fclose($handle);
+
+            $this->assertSame('PERIODE', $header[0] ?? null);
+            $this->assertSame('NOMOR_REKENING1', $header[10] ?? null);
+            $this->assertSame('2026-04-20', $row[0] ?? null);
+            $this->assertSame('101053983100', $row[10] ?? null);
+        } finally {
+            @unlink($csvPath);
+            if (!empty($result['path'] ?? '') && file_exists((string) $result['path']) && ($result['cleanup'] ?? false)) {
+                @unlink((string) $result['path']);
+            }
+        }
+    }
+
     public function test_prepare_daily_loan_direct_load_source_skips_malformed_rows_when_normalizing(): void
     {
         $csvPath = storage_path('framework/testing/daily_loan_direct_load_malformed.csv');

@@ -172,6 +172,46 @@ class ImportDailyLoanBackendController extends Controller
         }
     }
 
+    private function normalizeDailyLoanHeaderToken(string $value): string
+    {
+        $value = preg_replace('/^\xEF\xBB\xBF/', '', $value);
+        $value = strtoupper(trim($value));
+        $value = preg_replace('/[^A-Z0-9]+/', '_', $value);
+
+        return trim((string) $value, '_');
+    }
+
+    private function isDailyLoanHeaderRow(array $parsed): bool
+    {
+        $tokens = array_map(
+            fn ($value) => $this->normalizeDailyLoanHeaderToken((string) $value),
+            array_values($parsed)
+        );
+
+        if (($tokens[0] ?? null) !== 'PERIODE') {
+            return false;
+        }
+
+        $requiredGroups = [
+            ['KODE_KANWIL1', 'KODE_KANWIL'],
+            ['CIFNO'],
+            ['NOMOR_REKENING1', 'NOMOR_REKENING'],
+            ['BAKI_DEBET1', 'BAKI_DEBET'],
+        ];
+
+        $matchedGroups = 0;
+        foreach ($requiredGroups as $group) {
+            foreach ($group as $candidate) {
+                if (in_array($candidate, $tokens, true)) {
+                    $matchedGroups++;
+                    break;
+                }
+            }
+        }
+
+        return $matchedGroups >= 3;
+    }
+
     private function inspectDailyLoanCsv(string $sourcePath): array
     {
         $handle = @fopen($sourcePath, 'rb');
@@ -190,7 +230,7 @@ class ImportDailyLoanBackendController extends Controller
         try {
             while (($line = fgets($handle)) !== false) {
                 $lineNumber++;
-                $rawLine = trim((string) $line);
+                $rawLine = preg_replace('/^\xEF\xBB\xBF/', '', trim((string) $line));
                 if ($rawLine === '') {
                     continue;
                 }
@@ -198,8 +238,7 @@ class ImportDailyLoanBackendController extends Controller
                 if (!$headerFound) {
                     foreach ([',', ';', "\t"] as $candidateDelimiter) {
                         $parsed = str_getcsv($rawLine, $candidateDelimiter, '"', '\\');
-                        $firstColumn = strtoupper(trim((string) ($parsed[0] ?? '')));
-                        if ($firstColumn === 'PERIODE') {
+                        if ($this->isDailyLoanHeaderRow((array) $parsed)) {
                             $headerFound = true;
                             $delimiter = $candidateDelimiter;
                             $headerLineNumber = $lineNumber;

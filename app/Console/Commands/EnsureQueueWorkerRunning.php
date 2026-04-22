@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Log;
 class EnsureQueueWorkerRunning extends Command
 {
     protected $signature = 'queue:ensure-running
-                          {--queues=imports-daily-loan,default,imports-high : Queues to monitor}
+                          {--queues=imports-high,default,reports-low : Queues to monitor}
                           {--timeout=120 : Queue worker timeout in seconds}
                           {--memory=256 : Queue worker memory limit in MB}
                           {--max-jobs=0 : Maximum jobs before restart (0 = unlimited)}

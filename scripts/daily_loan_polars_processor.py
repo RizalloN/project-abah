@@ -25,6 +25,12 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Iterable
 
+try:
+    from dateutil import parser as dateutil_parser
+    _DATEUTIL_AVAILABLE = True
+except ImportError:
+    _DATEUTIL_AVAILABLE = False
+
 DATE_COLUMNS = {
     "PERIODE",
     "TGL_REALISASI",
@@ -156,6 +162,27 @@ def parse_csv_text(text: str, delimiter: str) -> list[str]:
     return [normalize_cell(cell) for cell in row]
 
 
+def normalize_header_name(value: object) -> str:
+    text = normalize_cell(value).upper()
+    text = re.sub(r"[^A-Z0-9]+", "_", text)
+    return text.strip("_")
+
+
+def is_daily_loan_header_row(row: list[str]) -> bool:
+    normalized_cells = [normalize_header_name(cell) for cell in row]
+    if not normalized_cells or normalized_cells[0] != "PERIODE":
+        return False
+
+    header_groups = [
+        {"KODE_KANWIL1", "KODE_KANWIL"},
+        {"CIFNO"},
+        {"NOMOR_REKENING1", "NOMOR_REKENING"},
+        {"BAKI_DEBET1", "BAKI_DEBET"},
+    ]
+    matched_headers = sum(1 for variants in header_groups if any(header in normalized_cells for header in variants))
+    return matched_headers >= 3
+
+
 def parse_logical_row(row: list[str], delimiter: str, expected_columns: int | None) -> tuple[list[str] | None, bool]:
     cells = [normalize_cell(cell) for cell in row]
     changed = False
@@ -189,9 +216,10 @@ def normalize_date_value(value: object) -> str | None:
     if text == "":
         return None
 
-    try:
-        from dateutil import parser as dateutil_parser
+    if not _DATEUTIL_AVAILABLE:
+        return None
 
+    try:
         parsed = dateutil_parser.parse(text.replace("/", "-"), dayfirst=True, yearfirst=False)
         return parsed.strftime("%Y-%m-%d")
     except Exception:
@@ -230,6 +258,25 @@ def is_non_date_like_value(value: object) -> bool:
         return False
 
     return True
+
+
+def build_non_date_like_expr(expr):
+    compact = expr.fill_null("").str.strip_chars()
+    patterns = [
+        r"^\d{8}$",
+        r"^\d{4}[-/]\d{2}[-/]\d{2}$",
+        r"^\d{2}[-/]\d{2}[-/]\d{4}$",
+        r"^\d{2}[-/]\d{2}[-/]\d{2}$",
+        r"^\d{4}[-/]\d{2}[-/]\d{2}\s+\d{2}:\d{2}(:\d{2})?$",
+        r"^\d{2}[-/]\d{2}[-/]\d{4}\s+\d{2}:\d{2}(:\d{2})?$",
+    ]
+
+    invalid = None
+    for pattern in patterns:
+        matched = compact.str.contains(pattern)
+        invalid = matched if invalid is None else (invalid | matched)
+
+    return compact.ne("") & (~invalid if invalid is not None else True)
 
 
 def normalize_decimal_value(value: object) -> str | None:
@@ -289,6 +336,8 @@ def sanitize_source(
     delimiter: str,
     expected_columns: int | None = None,
 ) -> tuple[str, list[str], int, int, bool, list[int]]:
+    import time
+
     temp_dir = Path(tempfile.gettempdir())
     fd, temp_path = tempfile.mkstemp(prefix="daily_loan_polars_sanitized_", suffix=".csv", dir=str(temp_dir))
     os.close(fd)
@@ -298,6 +347,7 @@ def sanitize_source(
     rewrite_needed = False
     skipped_rows: list[int] = []
     headers: list[str] = []
+    last_progress_time = time.monotonic()
 
     with open(source_path, "r", encoding="utf-8-sig", errors="replace", newline="") as raw_handle, open(
         temp_path,
@@ -312,21 +362,27 @@ def sanitize_source(
             if not row or all(normalize_cell(cell) == "" for cell in row):
                 continue
 
-            total_records += 1
-            if row_number % 50000 == 0:
+            now = time.monotonic()
+            if row_number % 10000 == 0 or (now - last_progress_time) >= 3.0:
+                last_progress_time = now
                 send_progress(min(50, 5 + int((row_number / 250000) * 45)), f"Menyiapkan sanitasi CSV Daily Loan... ({row_number} record)")
 
             if not headers:
                 parsed_header, changed = parse_logical_row(row, delimiter, None)
                 if parsed_header is None or not parsed_header:
-                    raise RuntimeError("Header CSV Daily Loan tidak dapat dibaca.")
+                    continue
 
-                headers = [re.sub(r";+\s*$", "", normalize_cell(cell)) for cell in parsed_header]
+                parsed_header = [re.sub(r";+\s*$", "", normalize_cell(cell)) for cell in parsed_header]
+                if not is_daily_loan_header_row(parsed_header):
+                    continue
+
+                headers = parsed_header
                 expected_columns = len(headers)
                 rewrite_needed = rewrite_needed or changed or any(cell != normalize_cell(cell) for cell in row)
                 writer.writerow(headers)
                 continue
 
+            total_records += 1
             parsed_row, changed = parse_logical_row(row, delimiter, expected_columns)
             if parsed_row is None:
                 skipped_count += 1
@@ -422,9 +478,6 @@ def stage_daily_loan(config: dict) -> None:
     delimiter = config.get("delimiter") or detect_delimiter(source_path, ",")
     required_headers = [str(value) for value in config.get("required_headers", ["PERIODE", "NOMOR_REKENING1", "BAKI_DEBET1"])]
     strict_non_date_headers = [str(value).upper() for value in config.get("strict_non_date_headers", ["KODE_KANWIL1"])]
-    date_columns_lookup = {str(value).upper() for value in config.get("date_columns", list(DATE_COLUMNS))}
-    decimal_columns_lookup = {str(value).upper() for value in config.get("decimal_columns", [])}
-    integer_columns_lookup = {str(value).upper() for value in config.get("integer_columns", [])}
 
     send_progress(5, "Membaca dan menyiapkan CSV Daily Loan dengan Polars...", 0, 0, 0)
     temp_sanitized_path, headers, total_records, structural_skipped, rewrite_needed, skipped_rows = sanitize_source(source_path, delimiter)
@@ -437,45 +490,19 @@ def stage_daily_loan(config: dict) -> None:
         if df.height == 0:
             raise RuntimeError("Polars tidak menemukan baris data yang valid.")
 
+        # Keep Polars work limited to structural cleanup and row validation.
+        # Type normalization is deferred to MySQL expressions during LOAD DATA.
         df = df.with_columns([
             pl.col(column).cast(pl.Utf8).str.strip_chars().alias(column)
             for column in df.columns
         ])
-
-        normalization_exprs = []
-        for column in df.columns:
-            upper_column = column.upper()
-            if upper_column in date_columns_lookup:
-                normalization_exprs.append(
-                    pl.col(column).map_elements(normalize_date_string, return_dtype=pl.Utf8).alias(column)
-                )
-            elif upper_column in decimal_columns_lookup:
-                normalization_exprs.append(
-                    pl.col(column).map_elements(
-                        lambda value: normalize_decimal_value(value) or "",
-                        return_dtype=pl.Utf8,
-                    ).alias(column)
-                )
-            elif upper_column in integer_columns_lookup:
-                normalization_exprs.append(
-                    pl.col(column).map_elements(normalize_integer_string, return_dtype=pl.Utf8).alias(column)
-                )
-
-        if normalization_exprs:
-            df = df.with_columns(normalization_exprs)
 
         valid_expr = None
         for required in required_headers:
             if required not in df.columns:
                 continue
 
-            if required == "PERIODE":
-                expr = pl.col(required).str.strip_chars().ne("")
-            elif required == "BAKI_DEBET1":
-                expr = pl.col(required).str.strip_chars().ne("")
-            else:
-                expr = pl.col(required).str.strip_chars().ne("")
-
+            expr = pl.col(required).str.strip_chars().ne("")
             valid_expr = expr if valid_expr is None else (valid_expr & expr)
 
         if valid_expr is not None:
@@ -486,7 +513,7 @@ def stage_daily_loan(config: dict) -> None:
             if strict_header not in df.columns:
                 continue
 
-            expr = pl.col(strict_header).map_elements(is_non_date_like_value, return_dtype=pl.Boolean)
+            expr = build_non_date_like_expr(pl.col(strict_header))
             audit_expr = expr if audit_expr is None else (audit_expr & expr)
 
         if audit_expr is not None:

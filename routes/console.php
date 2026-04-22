@@ -4,6 +4,8 @@ use App\Services\JobHealthService;
 use App\Support\ManagedReportDeleteRecoveryService;
 use App\Support\ReportDataSyncService;
 use App\Support\ReportSnapshotBuilder;
+use App\Support\DashboardHarianSnapshotService;
+use App\Support\SnapshotBatchAggregator;
 use App\Support\StrictDateParser;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
@@ -171,6 +173,16 @@ Artisan::command('queue:health-sweep', function () {
 Schedule::command('queue:health-sweep')
     ->everyMinute()
     ->withoutOverlapping();
+
+Artisan::command('reports:dashboard-harian-sync-missing', function () {
+    $flushed = app(SnapshotBatchAggregator::class)->flushDueBatches();
+    $result = app(DashboardHarianSnapshotService::class)->syncDuePeriods();
+
+    $this->line(json_encode([
+        'flushed_batches' => count($flushed),
+        'snapshot_sync' => $result,
+    ], JSON_UNESCAPED_SLASHES));
+})->purpose('Flush pending snapshot batches and build missing/stale Dashboard Harian SSA snapshots');
 
 Artisan::command('reports:delete-scope {table} {--period=} {--blank-kanca} {--chunk=10000}', function () {
     $table = strtolower(trim((string) $this->argument('table')));

@@ -600,7 +600,7 @@
         background: var(--loan-blue-ink); 
         color: #ffffff; 
         text-align: center; 
-        padding: 6px 4px; 
+        padding: 8px 6px; 
         border: 1px solid rgba(255, 255, 255, 0.15); 
         font-weight: 800;
         vertical-align: middle;
@@ -608,6 +608,19 @@
         letter-spacing: 0.02em;
         font-size: 0.72rem;
     }
+
+    .loan-summary-table td {
+        padding: 10px 12px;
+        border-right: 1px solid rgba(8, 87, 195, 0.06);
+        border-bottom: 1px solid rgba(8, 87, 195, 0.06);
+        text-align: right; /* Accounting standard: numbers to the right */
+        font-weight: 700;
+        color: #334155;
+        vertical-align: middle;
+    }
+
+    .text-start-important { text-align: left !important; }
+    .text-center-important { text-align: center !important; }
     
     .loan-summary-table thead th.sub-head { 
         background: var(--loan-blue-deep); 
@@ -643,6 +656,125 @@
         font-weight: 800;
         color: var(--loan-blue-ink);
         text-transform: uppercase;
+    }
+    .achieve-positive { color: #10b981 !important; font-weight: 800; }
+    .achieve-negative { color: #ef4444 !important; font-weight: 800; }
+    .achieve-neutral { color: #f59e0b !important; font-weight: 800; }
+
+    /* ── Percentage Data Bars (International UI Standard) ── */
+    .pct-data-bar-wrap {
+        position: relative;
+        width: 100%;
+        min-width: 75px;
+        height: 22px;
+        background: #f1f5f9; /* Subtle track */
+        border-radius: 4px;
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        border: 1px solid rgba(0,0,0,0.03);
+    }
+    
+    .pct-data-bar {
+        position: absolute;
+        top: 0;
+        left: 0;
+        height: 100%;
+        transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+        opacity: 0.25; /* Subtle background fill */
+    }
+    
+    .pct-data-bar.bar-success { background: #10b981; }
+    .pct-data-bar.bar-danger { background: #ef4444; }
+    .pct-data-bar.bar-warning { background: #f59e0b; }
+    
+    .pct-data-label {
+        position: relative;
+        z-index: 2;
+        width: 100%;
+        text-align: center;
+        font-weight: 800;
+        font-size: 0.72rem;
+        color: #1e293b;
+    }
+
+    /* ── Capture & Export Buttons ── */
+    .btn-capture-all {
+        border-radius: 12px;
+        height: 40px;
+        font-weight: 700;
+        border-width: 2px;
+        transition: all 0.2s ease;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .btn-snapshot {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        border: 1px solid #e2e8f0;
+        background: #ffffff;
+        color: #64748b;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s ease;
+        padding: 0;
+        cursor: pointer;
+    }
+
+    .btn-snapshot:hover {
+        background: #f8fbff;
+        border-color: var(--loan-blue);
+        color: var(--loan-blue);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 10px rgba(8, 87, 195, 0.15);
+    }
+
+    /* ── Capture Status Modal (Series Logic) ── */
+    .capture-status-modal .modal-content {
+        border-radius: 24px;
+        border: none;
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15);
+        overflow: hidden;
+    }
+
+    .capture-status-modal .modal-body {
+        padding: 3rem 2rem;
+    }
+
+    .capture-status-modal-icon {
+        width: 80px;
+        height: 80px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 1.5rem;
+        font-size: 2.5rem;
+    }
+
+    .icon-loading { background: rgba(8, 87, 195, 0.1); color: var(--loan-blue); }
+    .icon-error { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
+    .icon-success { background: rgba(34, 197, 94, 0.1); color: #22c55e; }
+
+    .capture-status-modal .btn-primary {
+        border-radius: 12px;
+        padding: 0.6rem 1.5rem;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+    }
+
+    /* Fix for backdrop overlaying too dark */
+    .modal-backdrop.show {
+        opacity: 0.15 !important;
+        background-color: #0f172a !important;
+    }
+
+    body.modal-open {
+        padding-right: 0 !important;
     }
 
     @media (max-width: 768px) {

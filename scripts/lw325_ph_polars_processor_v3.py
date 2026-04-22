@@ -40,6 +40,7 @@ EXCEL_HEADER_ALIASES = {
     "no": "textbox3",
     "nomor_rekening": "acctno",
     "nomor_rekening_1": "acctno",
+    "nomor_rekening1": "acctno",
     "segmen": "segmen_dashboard",
     "deskripsi_segmen": "description",
     "produk": "produk_dashboard",
@@ -151,8 +152,56 @@ def normalize_header(h: str) -> str:
     return REGEX_NON_ALPHANUM.sub('_', h.strip().lower()).strip('_')
 
 
+def normalize_quoted_csv_cell_value(value) -> str:
+    normalized = "" if value is None else str(value)
+    if '"' not in normalized:
+        return normalized
+
+    previous = None
+    while normalized != previous:
+        previous = normalized
+        normalized = normalized.replace('""', '"')
+        trimmed = normalized.strip()
+        if len(trimmed) >= 2 and trimmed.startswith('"') and trimmed.endswith('"'):
+            normalized = trimmed[1:-1]
+
+    return normalized
+
+
+def trim_trailing_empty_csv_cells(cells) -> list:
+    trimmed = list(cells)
+    while trimmed and not str(trimmed[-1]).strip():
+        trimmed.pop()
+    return trimmed
+
+
+def smart_parse_csv_row(line: str, delimiter: str, trim_trailing_empty: bool = False):
+    line = REGEX_BOM.sub('', str(line).rstrip("\r\n"))
+    if not line.strip():
+        return []
+
+    parsed = next(csv.reader([line], delimiter=delimiter, quotechar='"', escapechar='\\', strict=False))
+    if trim_trailing_empty:
+        parsed = trim_trailing_empty_csv_cells(parsed)
+
+    if len(parsed) == 1:
+        single = str(parsed[0]).strip()
+        if len(single) >= 2 and single.startswith('"') and single.endswith('"'):
+            single = single[1:-1].replace('""', '"')
+
+        if single and delimiter in single:
+            inner = next(csv.reader([single], delimiter=delimiter, quotechar='"', escapechar='\\', strict=False))
+            if trim_trailing_empty:
+                inner = trim_trailing_empty_csv_cells(inner)
+            if len(inner) > 1:
+                parsed = inner
+
+    return [normalize_quoted_csv_cell_value(value) for value in parsed]
+
+
 def normalize_headers_with_aliases(headers) -> list:
     normalized_headers = []
+    cif_occurrence = 0
 
     for idx, header in enumerate(headers):
         label = str(header).strip()
@@ -161,12 +210,11 @@ def normalize_headers_with_aliases(headers) -> list:
             continue
 
         normalized = normalize_header(label)
-        mapped = EXCEL_HEADER_ALIASES.get(normalized, normalized)
-
-        if normalized == "cif":
-            mapped = "cif1"
-        elif normalized in {"cif_1", "cif1"}:
-            mapped = "cif"
+        if normalized in {"cif", "cif_1", "cif1"}:
+            cif_occurrence += 1
+            mapped = "cif1" if cif_occurrence == 1 else "cif"
+        else:
+            mapped = EXCEL_HEADER_ALIASES.get(normalized, normalized)
 
         normalized_headers.append(mapped)
 
@@ -256,9 +304,7 @@ def detect_delimiter(path: str, fallback: str = ",") -> str:
             counts = []
             for s in samples:
                 try:
-                    row = list(csv.reader([s], delimiter=cand))[0]
-                    while row and not row[-1].strip():
-                        row.pop()
+                    row = smart_parse_csv_row(s, cand, True)
                     counts.append(len(row))
                 except Exception:
                     continue
@@ -298,8 +344,10 @@ def detect_header_row(source_path: str, delimiter: str):
 
     # Fallback untuk CSV
     with open(source_path, "r", encoding="utf-8-sig", errors="replace", newline="") as fh:
-        reader = csv.reader(fh, delimiter=delimiter)
-        for idx, row in enumerate(reader):
+        for idx, line in enumerate(fh):
+            row = smart_parse_csv_row(line, delimiter, True)
+            if not row:
+                continue
             if idx < 10 and metadata_period is None:  # Reduced from 20
                 joined = ",".join(str(v).strip() for v in row if str(v).strip())
                 metadata_period = extract_metadata_period(joined) or metadata_period
@@ -460,12 +508,10 @@ def load_csv_polars_with_repair(source_path: str, delimiter: str, skip_rows: int
 
 def parse_csv_row_safe(line: str, delimiter: str, expected_fields: int):
     """OPTIMIZED: Faster CSV row parsing."""
-    text = line.rstrip("\r\n")
-    if not text.strip():
-        return None
-
     try:
-        row = next(csv.reader([text], delimiter=delimiter))
+        row = smart_parse_csv_row(line, delimiter, False)
+        if not row:
+            return None
         
         if len(row) == expected_fields:
             return row

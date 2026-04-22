@@ -955,13 +955,19 @@ document.addEventListener('DOMContentLoaded', function () {
         // ── STEP 2 & 3: SSE Stream dengan auto-reconnect ───────────────────
         var streamUrl  = '{{ $streamRoute ?? route("import.excel.stream") }}?job_id=' + encodeURIComponent(jobId);
         var statusUrlTemplate = @json(route('import.jobs.status', ['jobId' => '__JOB_ID__']));
+        var forceStartUrlTemplate = @json(route('job-management.force-start', ['jobId' => '__JOB_ID__']));
         var evtSource  = null;
         var streamDone = false;
         var reconnectAttempts = 0;
+        var forceStartTriggered = false;
         var lastProg   = { percent: 12, message: 'Fase Polars...', rows_done: 0, total: 0, speed: 0 };
 
         function statusUrlForJob(jobId) {
             return statusUrlTemplate.replace('__JOB_ID__', encodeURIComponent(jobId));
+        }
+
+        function forceStartUrlForJob(jobId) {
+            return forceStartUrlTemplate.replace('__JOB_ID__', encodeURIComponent(jobId));
         }
 
         function isDuplicateImportMessage(message) {
@@ -1089,6 +1095,71 @@ document.addEventListener('DOMContentLoaded', function () {
             return await response.json();
         }
 
+        async function triggerForceStart(jobId) {
+            if (forceStartTriggered) return false;
+            forceStartTriggered = true;
+
+            var response = await fetch(forceStartUrlForJob(jobId), {
+                method: 'POST',
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'X-CSRF-TOKEN': '{{ csrf_token() }}'
+                },
+                body: JSON.stringify({})
+            });
+
+            var payload = {};
+            try { payload = await response.json(); } catch (_) {}
+
+            if (!response.ok || payload.status === 'error') {
+                forceStartTriggered = false;
+                throw new Error(payload.message || 'Gagal menjalankan force start import.');
+            }
+
+            return true;
+        }
+
+        async function pollImportStatus(jobId) {
+            for (;;) {
+                var payload = null;
+
+                try {
+                    payload = await inspectImportJob(jobId);
+                } catch (_) {
+                    payload = null;
+                }
+
+                if (payload) {
+                    lastProg = {
+                        percent: payload.percent != null ? payload.percent : lastProg.percent,
+                        message: payload.message != null ? payload.message : lastProg.message,
+                        rows_done: payload.processed_rows != null ? payload.processed_rows : lastProg.rows_done,
+                        total: payload.total_rows != null ? payload.total_rows : lastProg.total,
+                        speed: lastProg.speed
+                    };
+
+                    if (lastProg.percent >= 5 && lastProg.percent < 22) activateStep('step-read', 'line-2');
+                    if (lastProg.percent >= 22) { activateStep('step-read', 'line-2'); activateStep('step-insert', 'line-3'); }
+
+                    setProgress(lastProg.percent, lastProg.message, lastProg.rows_done, lastProg.total, lastProg.speed);
+
+                    if (payload.status === 'completed') {
+                        showImportSuccess(payload);
+                        return;
+                    }
+
+                    if (payload.status === 'failed' || payload.status === 'failed_partial' || payload.status === 'terminated' || payload.status === 'error') {
+                        showImportFailure(payload.message || 'Import gagal dijalankan!');
+                        return;
+                    }
+                }
+
+                await new Promise(function (resolve) { setTimeout(resolve, 1000); });
+            }
+        }
+
         function connectSSE() {
             if (streamDone) return;
             evtSource = new EventSource(streamUrl);
@@ -1193,6 +1264,24 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (status === 'queued' || status === 'processing') {
                     reconnectAttempts += 1;
                     if (reconnectAttempts <= 10) {
+                        if (status === 'queued' && reconnectAttempts >= 2 && !forceStartTriggered) {
+                            try {
+                                setProgress(
+                                    Math.max(lastProg.percent || 12, 12),
+                                    'Koneksi stream gagal dibuka. Menjalankan force start import...',
+                                    lastProg.rows_done || 0,
+                                    lastProg.total || 0,
+                                    lastProg.speed || 0
+                                );
+                                await triggerForceStart(jobId);
+                                await pollImportStatus(jobId);
+                                return;
+                            } catch (forceStartError) {
+                                showImportFailure((forceStartError && forceStartError.message) || 'Gagal menjalankan force start import.');
+                                return;
+                            }
+                        }
+
                         setProgress(
                             Math.max(lastProg.percent || 12, 12),
                             (statusPayload && statusPayload.message) || 'Import sedang diproses. Menyambung ulang progress...',

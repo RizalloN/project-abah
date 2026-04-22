@@ -7,6 +7,7 @@ use App\Jobs\RunImportJob;
 use App\Jobs\SyncImportedReportJob;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Illuminate\Support\Carbon;
 
@@ -37,15 +38,6 @@ class ImportExecutionService
             return false;
         }
 
-        $this->progressService->purgeStaleQueuedJobs();
-        $this->progressService->purgeStaleProcessingJobs();
-
-        $job = $this->progressService->findJob($jobId);
-        if (!$job || in_array($job->status, ['processing', 'completed', 'failed', 'failed_partial', 'terminated'], true)) {
-            $this->releaseDispatchMarker($jobId);
-            return false;
-        }
-
         $lock = Cache::lock('import_excel_dispatch_job_' . $jobId, 30);
 
         try {
@@ -53,11 +45,7 @@ class ImportExecutionService
                 return false;
             }
 
-            $queue = $this->resolveImportQueue($jobId);
-            $this->progressService->purgeQueuedImportJobsForQueues(
-                $this->queuesToPurgeFor($queue),
-                self::STALE_QUEUED_MINUTES
-            );
+            // Re-fetch inside lock to guard against concurrent dispatch races
             $job = $this->progressService->findJob($jobId);
             if (!$job || in_array($job->status, ['processing', 'completed', 'failed', 'failed_partial', 'terminated'], true)) {
                 $this->releaseDispatchMarker($jobId);
@@ -67,6 +55,8 @@ class ImportExecutionService
             if (Cache::has($this->dispatchedKey($jobId)) && !$this->shouldRedispatchQueuedJob($job)) {
                 return false;
             }
+
+            $queue = $this->resolveImportQueue($job);
 
             $this->progressService->markQueued($jobId, [
                 'status' => 'queued',
@@ -99,10 +89,9 @@ class ImportExecutionService
         }
     }
 
-    private function resolveImportQueue(int $jobId): string
+    private function resolveImportQueue(object $job): string
     {
-        $job = $this->progressService->findJob($jobId);
-        $state = $this->progressService->getJobState($jobId);
+        $state = $this->progressService->getJobState((int) $job->id);
         $tableName = strtolower(trim((string) ($state['params']['table_name'] ?? '')));
         $reportId = (int) ($job->id_report ?? 0);
 
@@ -111,20 +100,6 @@ class ImportExecutionService
         }
 
         return self::IMPORT_QUEUE;
-    }
-
-    /**
-     * Daily Loan harus membersihkan antrean import umum supaya worker khususnya dapat jalan lebih dulu.
-     *
-     * @return array<int, string>
-     */
-    private function queuesToPurgeFor(string $queue): array
-    {
-        if ($queue === self::DAILY_LOAN_IMPORT_QUEUE) {
-            return [self::DAILY_LOAN_IMPORT_QUEUE, self::IMPORT_QUEUE];
-        }
-
-        return [self::IMPORT_QUEUE];
     }
 
     private function resolvePostImportSyncQueue(int $jobId, array $params = []): string
@@ -281,7 +256,7 @@ class ImportExecutionService
             return;
         }
 
-        if (in_array($job->status, ['completed', 'failed', 'failed_partial'], true)) {
+        if (in_array($job->status, ['completed', 'failed', 'failed_partial', 'terminated'], true)) {
             $this->progressService->cleanupQueuedImportJobRowsForJob($jobId);
             $this->releaseDispatchMarker($jobId);
             return;
@@ -420,7 +395,7 @@ class ImportExecutionService
             });
 
             $job = $this->progressService->findJob($jobId);
-            if ($job && in_array($job->status, ['completed', 'failed', 'failed_partial'], true)) {
+            if ($job && in_array($job->status, ['completed', 'failed', 'failed_partial', 'terminated'], true)) {
                 $this->releaseDispatchMarker($jobId);
                 return;
             }
@@ -500,6 +475,10 @@ class ImportExecutionService
             return false;
         }
 
+        if ((time() - $startedAt) < $this->inlineFallbackGraceSeconds()) {
+            return false;
+        }
+
         $jobId = (int) ($payload['job_id'] ?? 0);
         if ($jobId > 0) {
             $state = $this->progressService->getJobState($jobId);
@@ -508,7 +487,7 @@ class ImportExecutionService
             }
         }
 
-        return (time() - $startedAt) >= $this->inlineFallbackGraceSeconds();
+        return true;
     }
 
     private function inlineFallbackGraceSeconds(): int
@@ -519,6 +498,27 @@ class ImportExecutionService
     private function dispatchedKey(int $jobId): string
     {
         return self::DISPATCHED_KEY_PREFIX . $jobId;
+    }
+
+    public function hasQueuedExecution(int $jobId): bool
+    {
+        if ($jobId <= 0) {
+            return false;
+        }
+
+        if (Cache::has($this->dispatchedKey($jobId))) {
+            return true;
+        }
+
+        try {
+            return \Illuminate\Support\Facades\DB::table('jobs')
+                ->whereIn('queue', [self::DAILY_LOAN_IMPORT_QUEUE, self::IMPORT_QUEUE])
+                ->where('payload', 'like', '%' . str_replace('\\', '\\\\', RunImportJob::class) . '%')
+                ->where('payload', 'like', '%jobId";i:' . $jobId . ';%')
+                ->exists();
+        } catch (\Throwable) {
+            return false;
+        }
     }
 
     private function releaseDispatchMarker(int $jobId): void

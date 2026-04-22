@@ -430,8 +430,9 @@ class MySqlBulkLoadService
             $processedLines = 0;
             $chunkIndex = 0;
             $chunkDir = dirname($csvPath);
+            $carryBuffer = '';
 
-            while (!feof($source)) {
+            while (!feof($source) || $carryBuffer !== '') {
                 $chunkPath = $chunkDir . DIRECTORY_SEPARATOR . 'chunk_' . $chunkIndex . '_' . Str::random(6) . '.csv';
                 $chunkHandle = @fopen($chunkPath, 'w');
                 if ($chunkHandle === false) {
@@ -441,7 +442,8 @@ class MySqlBulkLoadService
                 $currentChunkLines = 0;
                 try {
                     // OPTIMASI: Read chunks with larger buffers for better throughput
-                    $buffer = '';
+                    $buffer = $carryBuffer;
+                    $carryBuffer = '';
                     $bufferSize = 65536; // 64KB buffer for reading
                     while ($currentChunkLines < $chunkLines && !feof($source)) {
                         $data = fread($source, min($bufferSize, ($chunkLines - $currentChunkLines) * 50));
@@ -463,14 +465,34 @@ class MySqlBulkLoadService
                             }
                         }
                     }
-                    // Write remaining buffer
-                    if ($buffer !== '' && $currentChunkLines < $chunkLines) {
-                        fwrite($chunkHandle, $buffer . "\n");
+
+                    // Simpan potongan baris terakhir untuk chunk berikutnya.
+                    // Tanpa ini, batas chunk bisa memotong record CSV dan membuat row bergeser/corrupt.
+                    if ($buffer !== '') {
+                        if ($currentChunkLines < $chunkLines && feof($source)) {
+                            fwrite($chunkHandle, $buffer . "\n");
+                            $currentChunkLines++;
+                            $processedLines++;
+                        } else {
+                            $carryBuffer = $buffer;
+                        }
+                    }
+
+                    if ($currentChunkLines === 0 && $carryBuffer !== '' && feof($source)) {
+                        fwrite($chunkHandle, $carryBuffer . "\n");
                         $currentChunkLines++;
                         $processedLines++;
+                        $carryBuffer = '';
                     }
                 } finally {
                     fclose($chunkHandle);
+                }
+
+                if ($currentChunkLines === 0) {
+                    if (file_exists($chunkPath)) {
+                        @unlink($chunkPath);
+                    }
+                    break;
                 }
 
                 if ($currentChunkLines > 0) {

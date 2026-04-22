@@ -38,7 +38,7 @@ class ImportExecutionServiceTest extends TestCase
 
         $progressService = Mockery::mock(ImportProgressService::class);
         $progressService->shouldReceive('findJob')
-            ->times(8)
+            ->times(4)
             ->andReturn((object) [
                 'id' => 55,
                 'id_report' => 12,
@@ -49,23 +49,12 @@ class ImportExecutionServiceTest extends TestCase
                 'total_files' => 100,
             ]);
         $progressService->shouldReceive('getJobState')
-            ->twice()
+            ->once()
             ->andReturn([
                 'params' => [
                     'table_name' => 'performance_pis_per_produk',
                 ],
             ]);
-        $progressService->shouldReceive('purgeStaleQueuedJobs')->twice()->andReturn(0);
-        $progressService->shouldReceive('purgeStaleProcessingJobs')->twice()->andReturn(0);
-        $progressService->shouldReceive('purgeQueuedImportJobsForQueues')
-            ->twice()
-            ->with(
-                Mockery::on(static function (array $queues): bool {
-                    return $queues === ['imports-high'];
-                }),
-                10
-            )
-            ->andReturn(0);
         $progressService->shouldReceive('cleanupQueuedImportJobRowsForJob')->once()->with(55);
         $progressService->shouldReceive('markQueued')->once();
 
@@ -105,7 +94,7 @@ class ImportExecutionServiceTest extends TestCase
 
         $progressService = Mockery::mock(ImportProgressService::class);
         $progressService->shouldReceive('findJob')
-            ->times(4)
+            ->twice()
             ->andReturn((object) [
                 'id' => $jobId,
                 'id_report' => 12,
@@ -122,17 +111,6 @@ class ImportExecutionServiceTest extends TestCase
                     'table_name' => 'performance_pis_per_produk',
                 ],
             ]);
-        $progressService->shouldReceive('purgeStaleQueuedJobs')->once()->andReturn(1);
-        $progressService->shouldReceive('purgeStaleProcessingJobs')->once()->andReturn(0);
-        $progressService->shouldReceive('purgeQueuedImportJobsForQueues')
-            ->once()
-            ->with(
-                Mockery::on(static function (array $queues): bool {
-                    return $queues === ['imports-high'];
-                }),
-                10
-            )
-            ->andReturn(0);
         $progressService->shouldReceive('cleanupQueuedImportJobRowsForJob')->once()->with($jobId);
         $progressService->shouldReceive('markQueued')->once();
 
@@ -172,7 +150,7 @@ class ImportExecutionServiceTest extends TestCase
 
         $progressService = Mockery::mock(ImportProgressService::class);
         $progressService->shouldReceive('findJob')
-            ->times(4)
+            ->twice()
             ->andReturn((object) [
                 'id' => $jobId,
                 'id_report' => 8,
@@ -189,17 +167,6 @@ class ImportExecutionServiceTest extends TestCase
                     'table_name' => 'daily_loan_dinamis',
                 ],
             ]);
-        $progressService->shouldReceive('purgeStaleQueuedJobs')->once()->andReturn(0);
-        $progressService->shouldReceive('purgeStaleProcessingJobs')->once()->andReturn(0);
-        $progressService->shouldReceive('purgeQueuedImportJobsForQueues')
-            ->once()
-            ->with(
-                Mockery::on(static function (array $queues): bool {
-                    return $queues === ['imports-daily-loan', 'imports-high'];
-                }),
-                10
-            )
-            ->andReturn(0);
         $progressService->shouldReceive('cleanupQueuedImportJobRowsForJob')->once()->with($jobId);
         $progressService->shouldReceive('markQueued')->once();
 

@@ -17,7 +17,13 @@ class ImportCleanupService
     private const DAILY_LOAN_SYNC_QUEUE = 'imports-daily-loan';
     private const DAILY_LOAN_TABLE = 'daily_loan_dinamis';
     private const DAILY_LOAN_REPORT_ID = 8;
-    private const USE_BATCHING = true;
+    private const SSA_TABLES = ['ssa_simpanan', 'ssa_pinjaman'];
+    private const IMPORT_PERIOD_COLUMNS = [
+        'ssa_pinjaman' => 'month_day_year_of_periode',
+        'ssa_simpanan' => 'Month_Day_Year_of_Posisi',
+        'lw325_ph' => 'periode',
+    ];
+    private const USE_BATCHING = false;
 
     private ?SnapshotBatchAggregator $batchAggregator = null;
 
@@ -53,9 +59,9 @@ class ImportCleanupService
             return;
         }
 
-        if ($normalizedTableName === self::DAILY_LOAN_TABLE) {
-            $periodHints = $this->resolveSyncPeriodHints($jobId, $periodHint);
+        $periodHints = $this->resolveSyncPeriodHints($jobId, $periodHint, $normalizedTableName);
 
+        if ($normalizedTableName === self::DAILY_LOAN_TABLE || in_array($normalizedTableName, self::SSA_TABLES, true)) {
             foreach ($periodHints as $resolvedPeriodHint) {
                 $this->dispatchWithoutBatching($jobId, $normalizedTableName, $resolvedPeriodHint, $source, $queue);
             }
@@ -64,12 +70,16 @@ class ImportCleanupService
         }
 
         if (self::USE_BATCHING) {
-            $this->dispatchWithBatching($jobId, $tableName, $periodHint, $source);
+            foreach ($periodHints as $resolvedPeriodHint) {
+                $this->dispatchWithBatching($jobId, $normalizedTableName, $resolvedPeriodHint, $source);
+            }
 
             return;
         }
 
-        $this->dispatchWithoutBatching($jobId, $tableName, $periodHint, $source, $queue);
+        foreach ($periodHints as $resolvedPeriodHint) {
+            $this->dispatchWithoutBatching($jobId, $normalizedTableName, $resolvedPeriodHint, $source, $queue);
+        }
     }
 
     private function dispatchWithBatching(int $jobId, ?string $tableName, ?string $periodHint, ?string $source): void
@@ -119,9 +129,9 @@ class ImportCleanupService
         $lock = Cache::lock($this->syncCoordinatorLockKey((string) $normalizedTableName, $periodHint), self::SYNC_COORDINATOR_LOCK_SECONDS);
 
         try {
-            $lock->block(2, function () use ($jobId, $tableName, $periodHint, $source, $pendingKey, $rerunKey, $resolvedQueue): void {
+            $lock->block(2, function () use ($jobId, $normalizedTableName, $periodHint, $source, $pendingKey, $rerunKey, $resolvedQueue): void {
                 if (Cache::add($pendingKey, now()->toIso8601String(), now()->addMinutes(self::SYNC_PENDING_TTL_MINUTES))) {
-                    SyncImportedReportJob::dispatch($jobId > 0 ? $jobId : null, $tableName, $periodHint, $source)
+                    SyncImportedReportJob::dispatch($jobId > 0 ? $jobId : null, $normalizedTableName, $periodHint, $source)
                         ->onQueue($resolvedQueue);
                     return;
                 }
@@ -242,7 +252,7 @@ class ImportCleanupService
      *
      * @return array<int, string|null>
      */
-    private function resolveSyncPeriodHints(int $jobId, ?string $periodHint): array
+    private function resolveSyncPeriodHints(int $jobId, ?string $periodHint, ?string $tableName = null): array
     {
         $normalizedPeriodHint = trim((string) $periodHint);
         if ($normalizedPeriodHint !== '') {
@@ -276,7 +286,15 @@ class ImportCleanupService
                 }
             }
 
-            return $normalized !== [] ? array_values($normalized) : [null];
+            if ($normalized !== []) {
+                return array_values($normalized);
+            }
+
+            $contextTable = $this->normalizeSyncScopeValue((string) ($context['table_name'] ?? ''));
+            $resolvedTable = $tableName ?? $contextTable;
+            $resolvedFromSource = $this->resolveRecentlyImportedPeriods($jobId, $resolvedTable);
+
+            return $resolvedFromSource !== [] ? $resolvedFromSource : [null];
         } catch (\Throwable $e) {
             Log::debug('Unable to resolve import job periods for sync queue.', [
                 'job_id' => $jobId,
@@ -284,7 +302,72 @@ class ImportCleanupService
                 'message' => $e->getMessage(),
             ]);
 
-            return [null];
+            $resolvedFromSource = $this->resolveRecentlyImportedPeriods($jobId, $tableName);
+
+            return $resolvedFromSource !== [] ? $resolvedFromSource : [null];
+        }
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function resolveRecentlyImportedPeriods(int $jobId, ?string $tableName): array
+    {
+        $normalizedTable = $this->normalizeSyncScopeValue($tableName);
+        if ($jobId <= 0 || !isset(self::IMPORT_PERIOD_COLUMNS[$normalizedTable])) {
+            return [];
+        }
+
+        $periodColumn = self::IMPORT_PERIOD_COLUMNS[$normalizedTable];
+
+        try {
+            $job = DB::table('import_jobs')
+                ->where('id', $jobId)
+                ->first(['created_at', 'updated_at']);
+
+            if (!$job) {
+                return $this->resolveLatestSourcePeriod($normalizedTable, $periodColumn);
+            }
+
+            $createdAt = \Carbon\Carbon::parse((string) $job->created_at)->subMinutes(5);
+            $updatedAt = \Carbon\Carbon::parse((string) $job->updated_at)->addMinutes(10);
+
+            $periods = DB::table($normalizedTable)
+                ->whereBetween('updated_at', [$createdAt, $updatedAt])
+                ->select($periodColumn)
+                ->distinct()
+                ->orderByDesc($periodColumn)
+                ->pluck($periodColumn)
+                ->map(fn ($value) => trim((string) $value))
+                ->filter()
+                ->values()
+                ->all();
+
+            return $periods !== [] ? $periods : $this->resolveLatestSourcePeriod($normalizedTable, $periodColumn);
+        } catch (\Throwable $e) {
+            Log::debug('Unable to resolve import periods from source table.', [
+                'job_id' => $jobId,
+                'table_name' => $normalizedTable,
+                'exception' => $e::class,
+                'message' => $e->getMessage(),
+            ]);
+
+            return [];
+        }
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function resolveLatestSourcePeriod(string $tableName, string $periodColumn): array
+    {
+        try {
+            $latest = DB::table($tableName)->max($periodColumn);
+            $normalized = trim((string) $latest);
+
+            return $normalized !== '' ? [$normalized] : [];
+        } catch (\Throwable) {
+            return [];
         }
     }
 

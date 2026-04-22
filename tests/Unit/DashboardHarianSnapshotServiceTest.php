@@ -165,7 +165,7 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         $this->assertSame('2026-04-20', $after['source_recovery_period']);
     }
 
-    public function test_snapshot_freshness_accepts_legacy_rows_and_rejects_changed_signature(): void
+    public function test_snapshot_freshness_rebuilds_legacy_rows_and_rejects_changed_signature(): void
     {
         $this->createSourceMetadataTables();
 
@@ -181,7 +181,7 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         $reflection = new \ReflectionMethod($service, 'snapshotSourceIsFresh');
         $reflection->setAccessible(true);
 
-        $this->assertTrue($reflection->invoke($service, '2026-04-20', ['source_signature' => 'new']));
+        $this->assertFalse($reflection->invoke($service, '2026-04-20', ['source_signature' => 'new']));
 
         DB::table('dashboard_harian_snapshots')
             ->where('uniqueid_dhs', 'legacy')
@@ -189,6 +189,136 @@ class DashboardHarianSnapshotServiceTest extends TestCase
 
         $this->assertFalse($reflection->invoke($service, '2026-04-20', ['source_signature' => 'new']));
         $this->assertTrue($reflection->invoke($service, '2026-04-20', ['source_signature' => 'old']));
+    }
+
+    public function test_sync_due_periods_rebuilds_existing_snapshot_when_lw325_changes_recovery_source(): void
+    {
+        $this->createSourceMetadataTables();
+
+        DB::table('ssa_pinjaman')->insert([
+            'month_day_year_of_periode' => '2026-04-21',
+            'baki_debet' => 1000,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('ssa_simpanan')->insert([
+            'Month_Day_Year_of_Posisi' => '2026-04-21',
+            'saldo' => 500,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('dashboard_harian_snapshots')->insert([
+            'uniqueid_dhs' => 'existing-2026-04-21',
+            'snapshot_period' => '2026-04-21',
+            'kanca_key' => 'kc',
+            'unit_key' => 'kc',
+            'source_signature' => 'old-signature-before-ph-import',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('lw325_ph')->insert([
+            'periode' => '2026-04-20',
+            'pokok' => 250,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $service = new class extends DashboardHarianSnapshotService {
+            public array $builtPeriods = [];
+
+            public function buildPeriodSnapshot(string $period, bool $force = false): int
+            {
+                $this->builtPeriods[] = [$period, $force];
+
+                return 109;
+            }
+        };
+
+        $result = $service->syncDuePeriods(['2026-04-21']);
+
+        $this->assertSame(1, $result['built']);
+        $this->assertSame(0, $result['failed']);
+        $this->assertSame(['2026-04-21'], $result['stale']);
+        $this->assertSame([['2026-04-21', false]], $service->builtPeriods);
+    }
+
+    public function test_rebuild_affected_by_ph_period_force_rebuilds_next_shared_period_only(): void
+    {
+        $this->createSourceMetadataTables();
+
+        foreach (['2026-04-20', '2026-04-21'] as $period) {
+            DB::table('ssa_pinjaman')->insert([
+                'month_day_year_of_periode' => $period,
+                'baki_debet' => 1000,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+            DB::table('ssa_simpanan')->insert([
+                'Month_Day_Year_of_Posisi' => $period,
+                'saldo' => 500,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+
+        $service = new class extends DashboardHarianSnapshotService {
+            public array $builtPeriods = [];
+
+            public function buildPeriodSnapshot(string $period, bool $force = false): int
+            {
+                $this->builtPeriods[] = [$period, $force];
+
+                return 109;
+            }
+        };
+
+        $result = $service->rebuildAffectedByPhPeriod('2026-04-20', true);
+
+        $this->assertSame([
+            '2026-04-21' => 109,
+        ], $result);
+        $this->assertSame([
+            ['2026-04-21', true],
+        ], $service->builtPeriods);
+    }
+
+    public function test_lw325_recovery_source_uses_latest_ph_before_snapshot_period(): void
+    {
+        $this->createSourceMetadataTables();
+
+        DB::table('ssa_pinjaman')->insert([
+            'month_day_year_of_periode' => '2026-04-21',
+            'baki_debet' => 1000,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('ssa_simpanan')->insert([
+            'Month_Day_Year_of_Posisi' => '2026-04-21',
+            'saldo' => 500,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('lw325_ph')->insert([
+            'periode' => '2026-04-20',
+            'pokok' => 250,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('lw325_ph')->insert([
+            'periode' => '2026-04-21',
+            'pokok' => 999,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $service = new DashboardHarianSnapshotService();
+        $reflection = new \ReflectionMethod($service, 'buildSourceMetadata');
+        $reflection->setAccessible(true);
+
+        $metadata = $reflection->invoke($service, '2026-04-21');
+
+        $this->assertSame('2026-04-20', $metadata['source_recovery_period']);
+        $this->assertSame(1, $metadata['source_recovery_row_count']);
     }
 
     private function createSourceMetadataTables(): void
