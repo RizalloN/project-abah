@@ -2,8 +2,12 @@
 
 namespace Tests\Unit;
 
+use App\Jobs\ExecuteBatchedSnapshotJob;
+use App\Services\Import\ImportProgressService;
 use App\Support\SnapshotBatchAggregator;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Bus;
+use Mockery;
 use Tests\TestCase;
 
 class SnapshotBatchAggregatorTest extends TestCase
@@ -53,5 +57,44 @@ class SnapshotBatchAggregatorTest extends TestCase
         $this->assertSame(1, $count);
         $this->assertNull(Cache::get('snapshot:batch:daily_loan_dinamis:2026-04-20'));
         $this->assertNull(Cache::get('snapshot:batch:active_keys'));
+    }
+
+    public function test_flush_batch_is_deferred_when_an_import_is_active(): void
+    {
+        Cache::flush();
+        Bus::fake();
+
+        Cache::put('snapshot:batch:daily_loan_dinamis:2026-04-20', [
+            'batch_key' => 'daily_loan_dinamis:2026-04-20',
+            'table_name' => 'daily_loan_dinamis',
+            'period_hint' => '2026-04-20',
+            'first_requested_at' => now()->toIso8601String(),
+            'last_updated_at' => now()->toIso8601String(),
+            'request_count' => 1,
+            'requests' => [
+                [
+                    'table_name' => 'daily_loan_dinamis',
+                    'period_hint' => '2026-04-20',
+                    'job_id' => null,
+                    'source' => 'unit-test',
+                    'rebuild_id' => null,
+                    'requested_at' => now()->toIso8601String(),
+                ],
+            ],
+        ], now()->addMinute());
+        Cache::put('snapshot:batch:active_keys', ['daily_loan_dinamis:2026-04-20'], now()->addMinute());
+
+        $importProgressService = Mockery::mock(ImportProgressService::class);
+        $importProgressService->shouldReceive('hasActiveProcessingJobs')
+            ->once()
+            ->andReturnTrue();
+        $this->app->instance(ImportProgressService::class, $importProgressService);
+
+        $result = (new SnapshotBatchAggregator())->flushBatch('daily_loan_dinamis:2026-04-20');
+
+        $this->assertSame('import_active', $result['reason']);
+        $this->assertSame('daily_loan_dinamis:2026-04-20', $result['batch_key']);
+        $this->assertNotNull(Cache::get('snapshot:batch:daily_loan_dinamis:2026-04-20'));
+        Bus::assertNotDispatched(ExecuteBatchedSnapshotJob::class);
     }
 }

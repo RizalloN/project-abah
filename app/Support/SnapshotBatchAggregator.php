@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Services\Import\ImportProgressService;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -152,6 +153,21 @@ class SnapshotBatchAggregator
         }
 
         try {
+            if ($this->hasActiveImportProcessing()) {
+                Log::info('Snapshot batch flush ditunda karena import masih berjalan.', [
+                    'batch_key' => $batchKey,
+                    'request_count' => count($requests),
+                ]);
+
+                return [
+                    'batched' => true,
+                    'batch_key' => $batchKey,
+                    'request_count' => count($requests),
+                    'flushed' => false,
+                    'reason' => 'import_active',
+                ];
+            }
+
             \App\Jobs\ExecuteBatchedSnapshotJob::dispatch($batchKey, $requests)
                 ->onQueue((string) config('queue.report_queue', 'default'));
 
@@ -313,6 +329,20 @@ class SnapshotBatchAggregator
             Cache::put($metricsKey, $metrics, now()->addHours(1));
         } catch (\Throwable $e) {
             Log::debug('Failed to record batch metric: ' . $e->getMessage());
+        }
+    }
+
+    private function hasActiveImportProcessing(): bool
+    {
+        try {
+            return app(ImportProgressService::class)->hasActiveProcessingJobs();
+        } catch (\Throwable $e) {
+            Log::debug('Failed to detect active import processing for snapshot batch flush.', [
+                'exception' => $e::class,
+                'message' => $e->getMessage(),
+            ]);
+
+            return false;
         }
     }
 

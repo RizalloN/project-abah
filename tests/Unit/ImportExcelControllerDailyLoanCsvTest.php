@@ -3,8 +3,10 @@
 namespace Tests\Unit;
 
 use App\Http\Controllers\Import\ImportExcelController;
+use App\Services\Import\SchemaIntrospectionService;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
+use Mockery;
 use ReflectionClass;
 use Tests\TestCase;
 
@@ -170,6 +172,9 @@ class ImportExcelControllerDailyLoanCsvTest extends TestCase
         $this->assertFalse($result['source_pre_normalized']);
         $this->assertSame(1, $result['written_rows']);
         $this->assertSame(0, $result['skipped_count']);
+        $this->assertNotEmpty($result['headers'] ?? []);
+        $this->assertArrayHasKey('period_hints', $result);
+        $this->assertIsArray($result['period_hints']);
     }
 
     public function test_prepare_daily_loan_direct_load_source_rewrites_business_headers_to_canonical_headers(): void
@@ -334,6 +339,66 @@ class ImportExcelControllerDailyLoanCsvTest extends TestCase
                 @unlink((string) $result['path']);
             }
         }
+    }
+
+    public function test_build_direct_daily_loan_csv_load_plan_uses_prepared_source_metadata_without_reloading_file(): void
+    {
+        $schemaService = Mockery::mock(SchemaIntrospectionService::class);
+        $schemaService->shouldReceive('hasTable')->with('daily_loan_dinamis')->andReturnTrue();
+        $schemaService->shouldReceive('getColumnListing')->with('daily_loan_dinamis')->andReturn($this->dailyLoanHeaders());
+        $schemaService->shouldReceive('hasColumn')->andReturnTrue();
+        $schemaService->shouldReceive('getColumnMetadata')->with('daily_loan_dinamis')->andReturn(
+            array_fill_keys(
+                array_map('strtolower', $this->dailyLoanHeaders()),
+                [
+                    'type' => 'varchar(255)',
+                    'base_type' => 'varchar',
+                    'max_length' => 255,
+                    'is_textual' => true,
+                ]
+            )
+        );
+        app()->instance(SchemaIntrospectionService::class, $schemaService);
+
+        $csvPath = storage_path('framework/testing/daily_loan_invalid_source_for_prepared_plan.csv');
+        if (!is_dir(dirname($csvPath))) {
+            @mkdir(dirname($csvPath), 0777, true);
+        }
+
+        file_put_contents($csvPath, 'BROKEN,CONTENT,SHOULD,NOT,BE,READ');
+
+        try {
+            $plan = $this->invokeMethod('buildDirectDailyLoanCsvLoadPlan', [
+                $csvPath,
+                $this->dailyLoanHeaders(),
+                [
+                    'prepared_source' => [
+                        'path' => $csvPath,
+                        'cleanup' => false,
+                        'normalized' => false,
+                        'source_pre_normalized' => false,
+                        'backend' => 'raw',
+                        'headers' => $this->dailyLoanHeaders(),
+                        'skipped_rows' => [],
+                        'skipped_count' => 0,
+                        'written_rows' => 2,
+                        'period_hints' => ['2026-04-04'],
+                    ],
+                    'delimiter' => ',',
+                    'source_backend' => 'raw',
+                    'source_pre_normalized' => false,
+                    'replace_existing_periods' => true,
+                    'replace_periods' => ['2026-04-04'],
+                ],
+            ]);
+        } finally {
+            @unlink($csvPath);
+        }
+
+        $this->assertSame($csvPath, $plan['source_path'] ?? null);
+        $this->assertSame(['2026-04-04'], $plan['period_hints'] ?? []);
+        $this->assertSame('raw', $plan['source_backend'] ?? null);
+        $this->assertSame(2, $plan['validation_written_rows'] ?? null);
     }
 
     public function test_estimate_csv_import_total_rows_ignores_malformed_daily_loan_rows(): void

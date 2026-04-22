@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Jobs\Middleware\DeferSnapshotJobsDuringImport;
 use App\Services\Import\ImportCleanupService;
 use App\Support\ReportDataSyncService;
 use Illuminate\Bus\Queueable;
@@ -40,18 +41,22 @@ class SyncImportedReportJob implements ShouldQueue, ShouldBeUnique
 
     public function middleware(): array
     {
+        $middleware = [
+            new DeferSnapshotJobsDuringImport(),
+        ];
+
         if ($this->tableName === null || trim($this->tableName) === '') {
-            return [];
+            return $middleware;
         }
 
         $periodScope = trim((string) $this->periodHint);
         $scope = strtolower(trim($this->tableName)) . ':' . ($periodScope !== '' ? $periodScope : '__all__');
 
-        return [
-            (new WithoutOverlapping('snapshot:sync:job:' . $scope))
-                ->releaseAfter(5)
-                ->expireAfter(600),
-        ];
+        $middleware[] = (new WithoutOverlapping('snapshot:sync:job:' . $scope))
+            ->releaseAfter(5)
+            ->expireAfter(600);
+
+        return $middleware;
     }
 
     public function handle(ReportDataSyncService $syncService, ImportCleanupService $cleanupService): void

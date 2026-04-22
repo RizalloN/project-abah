@@ -7,7 +7,9 @@ use App\Support\DashboardHarianSnapshotDirtyPeriodQueue;
 use App\Support\PartitionMaintenanceService;
 use App\Support\ReportDataSyncService;
 use App\Support\ReportSnapshotBuilder;
+use App\Jobs\SyncImportedReportJob;
 use Illuminate\Contracts\Cache\Lock;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schema;
 use Mockery;
@@ -173,6 +175,32 @@ class ReportDataSyncServiceTest extends TestCase
 
         $this->assertTrue(true);
     }
+
+    public function test_sync_imported_table_defers_snapshot_when_any_import_is_processing(): void
+    {
+        Bus::fake();
+
+        $builder = Mockery::mock(ReportSnapshotBuilder::class);
+        $dashboardHarianSnapshotService = Mockery::mock(DashboardHarianSnapshotService::class);
+        $partitionMaintenance = Mockery::mock(PartitionMaintenanceService::class);
+        $dirtyPeriods = Mockery::mock(DashboardHarianSnapshotDirtyPeriodQueue::class);
+        $service = new ReportDataSyncService($builder, $dashboardHarianSnapshotService, $partitionMaintenance, $dirtyPeriods);
+
+        $importProgressService = Mockery::mock(\App\Services\Import\ImportProgressService::class);
+        $importProgressService->shouldReceive('hasActiveProcessingJobs')
+            ->once()
+            ->andReturnTrue();
+        $this->app->instance(\App\Services\Import\ImportProgressService::class, $importProgressService);
+
+        $service->syncImportedTable('simpanan_multipn', '2026-04-04', 77, 'unit-test');
+
+        Bus::assertDispatched(SyncImportedReportJob::class, function (SyncImportedReportJob $job): bool {
+            return $job->jobId === 77
+                && $job->tableName === 'simpanan_multipn'
+                && $job->periodHint === '2026-04-04'
+                && $job->source === 'unit-test';
+        });
+    }
     public function test_performance_sync_rebuilds_new_payroll_using_the_import_period_hint(): void
     {
         $builder = Mockery::mock(ReportSnapshotBuilder::class);
@@ -194,7 +222,6 @@ class ReportDataSyncServiceTest extends TestCase
         $this->assertTrue(true);
     }
 }
-
 
 
 

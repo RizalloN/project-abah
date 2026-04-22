@@ -6,6 +6,7 @@ use App\Jobs\RunImportJob;
 use App\Services\Import\ImportProgressService;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Mockery;
 use Carbon\Carbon;
 use Tests\TestCase;
@@ -222,6 +223,29 @@ class ImportProgressServiceTest extends TestCase
             ->andReturn($jobsTable);
 
         app(ImportProgressService::class)->markCompleted(88, 50, 0, 50);
+    }
+
+    public function test_has_active_processing_jobs_detects_processing_import_rows(): void
+    {
+        $query = Mockery::mock();
+        $query->shouldReceive('where')
+            ->once()
+            ->with('status', 'processing')
+            ->andReturnSelf();
+        $query->shouldReceive('exists')
+            ->once()
+            ->andReturnTrue();
+
+        Schema::shouldReceive('hasTable')
+            ->once()
+            ->with('import_jobs')
+            ->andReturnTrue();
+        DB::shouldReceive('table')
+            ->once()
+            ->with('import_jobs')
+            ->andReturn($query);
+
+        $this->assertTrue(app(ImportProgressService::class)->hasActiveProcessingJobs());
     }
 
     public function test_purge_queued_import_jobs_for_queues_filters_target_queue_rows(): void

@@ -3,6 +3,9 @@
 namespace App\Support;
 
 use App\Jobs\WarmReportCacheJob;
+use App\Jobs\SyncImportedReportJob;
+use App\Services\Import\ImportProgressService;
+use App\Support\SimpananMultiPnSnapshotGate;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -98,6 +101,11 @@ class ReportDataSyncService
 
         $periodHint = $this->normalizeAuditPeriodHint($periodHint);
 
+        if ($this->shouldDeferSnapshotSync($jobId, $deleteId, $rebuildId)) {
+            $this->dispatchDeferredSnapshotSync($jobId, $normalizedTable, $periodHint, $source, $deleteId, $rebuildId);
+            return;
+        }
+
         if ($deleteId) {
             $this->heartbeat($deleteId, 'Starting report synchronization...');
         }
@@ -146,6 +154,54 @@ class ReportDataSyncService
         }
     }
 
+    private function shouldDeferSnapshotSync(?int $jobId, ?string $deleteId = null, ?string $rebuildId = null): bool
+    {
+        try {
+            return app(ImportProgressService::class)->hasActiveProcessingJobs();
+        } catch (Throwable $e) {
+            Log::debug('Gagal mengecek status import aktif saat sinkronisasi snapshot.', [
+                'job_id' => $jobId,
+                'exception' => $e::class,
+                'message' => $e->getMessage(),
+            ]);
+
+            return false;
+        }
+    }
+
+    private function dispatchDeferredSnapshotSync(
+        ?int $jobId,
+        string $tableName,
+        ?string $periodHint,
+        ?string $source,
+        ?string $deleteId,
+        ?string $rebuildId
+    ): void {
+        try {
+            SyncImportedReportJob::dispatch(
+                $jobId > 0 ? $jobId : null,
+                $tableName,
+                $periodHint,
+                $source,
+                $rebuildId
+            )->onQueue((string) config('queue.report_queue', 'default'));
+
+            Log::info('Snapshot sync ditunda karena import masih aktif.', [
+                'table' => $tableName,
+                'period_hint' => $periodHint,
+                'job_id' => $jobId,
+                'delete_id' => $deleteId,
+                'rebuild_id' => $rebuildId,
+            ]);
+        } catch (Throwable $e) {
+            Log::warning('Gagal menjadwalkan snapshot sync yang ditunda: ' . $e->getMessage(), [
+                'table' => $tableName,
+                'period_hint' => $periodHint,
+                'job_id' => $jobId,
+            ]);
+        }
+    }
+
     private function syncDailyLoan(?string $periodHint, ?int $jobId, ?string $source, ?string $deleteId = null): void
     {
         $this->runSnapshotAudit('daily_loan_dinamis', $periodHint, $jobId, $source, 'snapshot_dashboard', function () use ($periodHint, $deleteId) {
@@ -176,6 +232,17 @@ class ReportDataSyncService
 
     private function syncSimpanan(?string $periodHint, ?int $jobId, ?string $source, ?string $deleteId = null): void
     {
+        if ($this->shouldDeferSimpananSnapshotStart($periodHint)) {
+            Log::info('Snapshot simpanan multipn ditunda karena Area 6 belum lengkap.', [
+                'period' => $periodHint,
+                'job_id' => $jobId,
+                'source' => $source,
+                'missing_branches' => app(SimpananMultiPnSnapshotGate::class)->getMissingBranches($periodHint),
+            ]);
+
+            return;
+        }
+
         $this->runWithSimpananSnapshotLock($periodHint, function () use ($periodHint, $jobId, $source, $deleteId) {
             $this->runSnapshotAudit('simpanan_multipn', $periodHint, $jobId, $source, 'snapshot_dashboard_simpanan', function () use ($periodHint, $deleteId) {
                 return $this->snapshotBuilder->rebuildDashboardSimpanan($periodHint, true, $this->makeHeartbeatCallback($deleteId, 'Rebuilding Simpanan snapshots...'));
@@ -213,6 +280,16 @@ class ReportDataSyncService
                 $this->refreshTableStatistics(self::RASIO_UKER_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
             }
         });
+    }
+
+    private function shouldDeferSimpananSnapshotStart(?string $periodHint): bool
+    {
+        $normalizedPeriod = trim((string) $periodHint);
+        if ($normalizedPeriod === '') {
+            return false;
+        }
+
+        return !app(SimpananMultiPnSnapshotGate::class)->isReady($normalizedPeriod);
     }
 
     private function syncReportPh(?string $periodHint, ?int $jobId, ?string $source, ?string $deleteId = null): void

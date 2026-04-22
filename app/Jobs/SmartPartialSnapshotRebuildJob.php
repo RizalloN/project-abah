@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Jobs\Middleware\DeferSnapshotJobsDuringImport;
 use App\Support\ReportDataSyncService;
 use App\Support\SnapshotAuditService;
 use App\Support\SnapshotBatchAggregator;
@@ -39,6 +40,7 @@ class SmartPartialSnapshotRebuildJob implements ShouldQueue
             (new WithoutOverlapping('snapshot:' . $scope))
                 ->releaseAfter(5)
                 ->expireAfter(600),
+            new DeferSnapshotJobsDuringImport(),
         ];
     }
 

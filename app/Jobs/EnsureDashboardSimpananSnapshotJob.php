@@ -2,8 +2,8 @@
 
 namespace App\Jobs;
 
-use App\Support\ReportDataSyncService;
 use App\Support\SnapshotBatchAggregator;
+use App\Support\SimpananMultiPnSnapshotGate;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -37,6 +37,16 @@ class EnsureDashboardSimpananSnapshotJob implements ShouldQueue, ShouldBeUnique
     public function handle(SnapshotBatchAggregator $batchAggregator): void
     {
         try {
+            if (!$this->isSnapshotReady()) {
+                Log::info('Ensure dashboard simpanan snapshot job ditunda karena Area 6 belum lengkap.', [
+                    'period' => $this->period,
+                    'source' => $this->source,
+                    'missing_branches' => app(SimpananMultiPnSnapshotGate::class)->getMissingBranches($this->period),
+                ]);
+
+                return;
+            }
+
             $batchAggregator->registerSyncRequest(
                 tableName: 'simpanan_multipn',
                 periodHint: $this->period,
@@ -59,5 +69,10 @@ class EnsureDashboardSimpananSnapshotJob implements ShouldQueue, ShouldBeUnique
             Cache::forget('snapshot:dashboard_simpanan:auto-rebuild:pending:' . $this->period);
             Cache::forget('dashboard_simpanan:snapshot_exists:v' . (int) Cache::get('report_cache_version:global', 1) . ':' . $this->period);
         }
+    }
+
+    private function isSnapshotReady(): bool
+    {
+        return app(SimpananMultiPnSnapshotGate::class)->isReady($this->period);
     }
 }

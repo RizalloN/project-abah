@@ -2,8 +2,10 @@
 
 namespace App\Jobs;
 
+use App\Jobs\Middleware\DeferSnapshotJobsDuringImport;
 use App\Support\DashboardHarianSnapshotService;
 use App\Support\ManagedReportSnapshotRebuildStore;
+use App\Services\Import\ImportProgressService;
 use App\Support\ReportDataSyncService;
 use App\Support\ReportSnapshotBuilder;
 use Illuminate\Bus\Queueable;
@@ -45,6 +47,7 @@ class RunManagedReportSnapshotRebuildJob implements ShouldQueue, ShouldBeUnique
             (new WithoutOverlapping('snapshot:managed-report:rebuild:all'))
                 ->releaseAfter(10)
                 ->expireAfter(10800),
+            new DeferSnapshotJobsDuringImport(),
         ];
     }
 
@@ -60,6 +63,19 @@ class RunManagedReportSnapshotRebuildJob implements ShouldQueue, ShouldBeUnique
 
         if ($rebuildId === '') {
             $rebuildId = (string) Str::uuid();
+        }
+
+        if ($this->hasActiveImportProcessing()) {
+            Log::info('RunManagedReportSnapshotRebuildJob ditunda karena import masih aktif.', [
+                'rebuild_id' => $rebuildId,
+                'force' => $this->force,
+                'source' => $this->source,
+            ]);
+
+            self::dispatch($this->force, $this->source, $rebuildId)
+                ->onQueue((string) config('queue.report_queue', 'default'));
+
+            return;
         }
 
         $state = ManagedReportSnapshotRebuildStore::getState($rebuildId)
@@ -335,5 +351,19 @@ class RunManagedReportSnapshotRebuildJob implements ShouldQueue, ShouldBeUnique
         }
 
         return max(0, min(100, (int) floor(($completedUnits / $totalUnits) * 100)));
+    }
+
+    private function hasActiveImportProcessing(): bool
+    {
+        try {
+            return app(ImportProgressService::class)->hasActiveProcessingJobs();
+        } catch (Throwable $e) {
+            Log::debug('Gagal mengecek import aktif pada managed snapshot rebuild job.', [
+                'exception' => $e::class,
+                'message' => $e->getMessage(),
+            ]);
+
+            return false;
+        }
     }
 }

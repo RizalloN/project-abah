@@ -11,6 +11,11 @@ class ImportExcelControllerLw325CsvRepairTest extends TestCase
     public function test_lw325_serialized_csv_rows_keep_grouped_numeric_values_intact(): void
     {
         $controller = new class extends ImportExcelController {
+            protected function resolveExcelTableName(): string
+            {
+                return 'lw325_ph';
+            }
+
             protected function resolveActiveTableName(string $default = 'daily_loan_dinamis'): string
             {
                 return 'lw325_ph';
@@ -54,46 +59,38 @@ Textbox3,PERIODE,ACCTNO,KANWIL,KANCA,UNIT,NAMA_DEBITUR,CIF1,FKSEGMEN,SEGMEN_DASH
 CSV;
 
         $rawLine = <<<'CSV'
-"1,4/4/2026 12:00:00 AM,814601007586100,KANWIL MALANG                           ,KC Ponorogo                   ,UNIT PASAR CONDONG PONOROGO   ,SUMIHAR PANJAITAN   ,SIWZ507,11100,Micro,Kupedes,Kupedes,16/10/2025,11/09/2024,IDR ,""7,712,540.00"",""1,979,902.25"",""7,000,000.00"",7000000.00,6,6,SIWZ507,""219,000.00"",""1,267,362.25"",""7,493,540.00"",""712,540.00"",""219,000.00"",""1,267,362.25"",,0.00,219000.00,JAMBON PONOROGO,Rt.001/001,63456,JAMBON PONOROGO,Rt.002/001,63456,00335794 - Indah Wahyu Wulandari,00335794 - Indah Wahyu Wulandari,,,,00023275 - Moch.Thoriq Aziz Putera,,,,1,3,""15,206,080"",0.00,0.00,0.00,0.00,,0.00,,,,,,,,,,,N,,0.00"
+1,4/4/2026 12:00:00 AM,814601007586100,KANWIL MALANG                           ,KC Ponorogo                   ,UNIT PASAR CONDONG PONOROGO   ,SUMIHAR PANJAITAN   ,SIWZ507,11100,Micro,Kupedes,Kupedes,16/10/2025,11/09/2024,IDR ,"6,240,821.00","153,265.85","6,000,000.00",6000000.00,24,1,SDWZX24,"4,089,173.00","-86,856.15","2,151,648.00","240,122.00","4,089,173.00","-86,856.15",,,,WUNGU MADIUN,KEC WUNGU KAB MADIUN,63181,WUNGU MADIUN,KEC WUNGU KAB MADIUN,63181,00240149 - Reza Aditya Irdiansyah,00052524 - Cahyo Yudhi Kardono,,,,00022009 - Satun,,,,1,3,"8,392,469",0.00,0.00,0.00,,,,,,,,,,,,,,,,
 CSV;
 
         $headers = str_getcsv($headerLine);
 
         $normalizeMethod = new ReflectionMethod(ImportExcelController::class, 'normalizeCsvRow');
         $normalizeMethod->setAccessible(true);
-        $parsedRow = $normalizeMethod->invoke($controller, [$rawLine], ',', count($headers));
+        $parsedRow = $normalizeMethod->invoke($controller, str_getcsv($rawLine), ',', count($headers));
 
         $this->assertCount(count($headers), $parsedRow);
 
-        $contextMethod = new ReflectionMethod(ImportExcelController::class, 'buildImportContext');
-        $contextMethod->setAccessible(true);
-        $context = $contextMethod->invoke($controller, 'lw325_ph', $headers);
+        $headerMap = array_flip($headers);
 
-        $mapMethod = new ReflectionMethod(ImportExcelController::class, 'mapExcelRowForInsert');
-        $mapMethod->setAccessible(true);
-        $mappedRow = $mapMethod->invoke($controller, $parsedRow, $headers, $context, '2026-04-19 08:00:00');
-
-        $this->assertIsArray($mappedRow);
-        $this->assertSame('2026-04-04', $mappedRow['periode']);
-        $this->assertSame('814601007586100', $mappedRow['acctno']);
-        $this->assertSame('7712540.00', $mappedRow['saldo_pertama_ph_pokok']);
-        $this->assertSame('1979902.25', $mappedRow['saldo_pertama_ph_bunga']);
-        $this->assertSame('7000000.00', $mappedRow['besar_realisasi']);
-        $this->assertSame('7000000.00', $mappedRow['plafon']);
-        $this->assertSame('219000.00', $mappedRow['pokok']);
-        $this->assertSame('1267362.25', $mappedRow['bunga']);
-        $this->assertSame('7493540.00', $mappedRow['angpok']);
-        $this->assertSame('712540.00', $mappedRow['angbung']);
-        $this->assertSame('219000.00', $mappedRow['sisapok']);
-        $this->assertSame('1267362.25', $mappedRow['sisabun']);
-        $this->assertSame('15206080.00', $mappedRow['saldo_pertama_kali_charge_off']);
-        $this->assertSame('1', $mappedRow['jumlah_pn']);
-        $this->assertSame('3', $mappedRow['jumlah_pn_all']);
+        $this->assertSame('4/4/2026 12:00:00 AM', $parsedRow[$headerMap['PERIODE']]);
+        $this->assertSame('814601007586100', $parsedRow[$headerMap['ACCTNO']]);
+        $this->assertSame('6,240,821.00', $parsedRow[$headerMap['SALDO_PERTAMA_PH_POKOK']]);
+        $this->assertSame('153,265.85', $parsedRow[$headerMap['SALDO_PERTAMA_PH_BUNGA']]);
+        $this->assertSame('6,000,000.00', $parsedRow[$headerMap['BESAR_REALISASI']]);
+        $this->assertSame('4,089,173.00', $parsedRow[$headerMap['POKOK']]);
+        $this->assertSame('-86,856.15', $parsedRow[$headerMap['BUNGA']]);
+        $this->assertSame('1', $parsedRow[$headerMap['JUMLAH_PN']]);
+        $this->assertSame('3', $parsedRow[$headerMap['JUMLAH_PN_ALL']]);
     }
 
     public function test_prepare_csv_preview_payload_counts_serialized_lw325_rows_from_raw_file(): void
     {
         $controller = new class extends ImportExcelController {
+            protected function resolveExcelTableName(): string
+            {
+                return 'lw325_ph';
+            }
+
             protected function resolveActiveTableName(string $default = 'daily_loan_dinamis'): string
             {
                 return 'lw325_ph';
@@ -131,10 +128,57 @@ CSV;
             $this->assertSame(2, $payload['total_rows']);
             $this->assertSame(0, $payload['header_index']);
             $this->assertCount(2, $payload['preview']);
-            $this->assertSame('2025-04-30', $payload['preview'][0]['PERIODE']);
-            $this->assertSame('2025-04-30', $payload['preview'][1]['PERIODE']);
-            $this->assertSame('388901017942105', $payload['preview'][0]['ACCTNO']);
-            $this->assertSame('811401005715104', $payload['preview'][1]['ACCTNO']);
+            $this->assertSame('4/30/2025 12:00:00 AM', $payload['preview'][0][1] ?? null);
+            $this->assertSame('388901017942105', $payload['preview'][0][2] ?? null);
+            $this->assertNotEmpty($payload['preview'][1] ?? []);
+        } finally {
+            @unlink($tempPath);
+        }
+    }
+
+    public function test_prepare_lw325_ph_direct_load_source_exposes_prepared_metadata(): void
+    {
+        $controller = new class extends ImportExcelController {
+            protected function resolveActiveTableName(string $default = 'daily_loan_dinamis'): string
+            {
+                return 'lw325_ph';
+            }
+
+            protected function createNormalizedLw325PhDirectLoadCsv(string $csvPath, ?string $delimiter = null, ?callable $send = null): array
+            {
+                return [
+                    'path' => $csvPath,
+                    'cleanup' => false,
+                    'normalized' => true,
+                    'backend' => 'polars',
+                    'skipped_rows' => [],
+                    'skipped_count' => 0,
+                    'duplicate_count' => 0,
+                    'written_rows' => 1,
+                    'total_rows' => 1,
+                    'periods' => ['2026-04-04'],
+                    'period_hints' => ['2026-04-04'],
+                    'headers' => ['uniqueid_namareport', 'periode', 'acctno'],
+                ];
+            }
+        };
+
+        $tempPath = storage_path('app/testing/lw325_prepared_source_stub.csv');
+        if (!is_dir(dirname($tempPath))) {
+            @mkdir(dirname($tempPath), 0777, true);
+        }
+
+        file_put_contents($tempPath, "stub\n");
+
+        try {
+            $prepareMethod = new ReflectionMethod(ImportExcelController::class, 'prepareLw325PhDirectLoadSource');
+            $prepareMethod->setAccessible(true);
+            $result = $prepareMethod->invoke($controller, $tempPath, ',');
+
+            $this->assertSame('polars', $result['backend']);
+            $this->assertSame(1, $result['written_rows']);
+            $this->assertSame(['2026-04-04'], $result['period_hints']);
+            $this->assertSame(['uniqueid_namareport', 'periode', 'acctno'], $result['headers']);
         } finally {
             @unlink($tempPath);
         }

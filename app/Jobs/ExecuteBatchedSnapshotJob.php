@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Jobs\Middleware\DeferSnapshotJobsDuringImport;
 use App\Support\ReportDataSyncService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -98,5 +99,12 @@ class ExecuteBatchedSnapshotJob implements ShouldQueue
 
             throw $e;
         }
+    }
+
+    public function middleware(): array
+    {
+        return [
+            new DeferSnapshotJobsDuringImport(),
+        ];
     }
 }

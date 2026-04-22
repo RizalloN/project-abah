@@ -370,6 +370,8 @@ class ImportDailyLoanBackendController extends Controller
                     'source_pre_normalized' => $sourcePreNormalized,
                     'replace_existing_periods' => $replaceExistingPeriods,
                     'replace_periods' => $detectedPeriods,
+                    'prepared_source' => $loadSource,
+                    'delimiter' => (string) ($metadata['delimiter'] ?? ','),
                 ]]
             );
             $inserted = (int) $this->invokeImportExcelControllerMethod(

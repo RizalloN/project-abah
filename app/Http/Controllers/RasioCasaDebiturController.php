@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Jobs\EnsureRasioCasaSnapshotJob;
+use App\Services\Import\ImportProgressService;
 use App\Support\ReportSnapshotBuilder;
 use App\Support\ReportIndexHintResolver;
 use Carbon\Carbon;
@@ -1003,6 +1004,17 @@ class RasioCasaDebiturController extends Controller
             return;
         }
 
+        if ($this->hasActiveImportProcessing()) {
+            Log::info('Inline rebuild rasio snapshot ditunda karena import masih aktif.', [
+                'loan_period' => $loanPeriod,
+            ]);
+
+            EnsureRasioCasaSnapshotJob::dispatch($loanPeriod, static::class)
+                ->onQueue('imports-high');
+
+            return;
+        }
+
         $summaryExists = DB::table(self::SNAPSHOT_TABLE)
             ->where('loan_period', $loanPeriod)
             ->exists();
@@ -1039,6 +1051,20 @@ class RasioCasaDebiturController extends Controller
             ]);
         } finally {
             optional($lock)->release();
+        }
+    }
+
+    private function hasActiveImportProcessing(): bool
+    {
+        try {
+            return app(ImportProgressService::class)->hasActiveProcessingJobs();
+        } catch (Throwable $e) {
+            Log::debug('Gagal mengecek import aktif pada Rasio CASA controller.', [
+                'exception' => $e::class,
+                'message' => $e->getMessage(),
+            ]);
+
+            return false;
         }
     }
 

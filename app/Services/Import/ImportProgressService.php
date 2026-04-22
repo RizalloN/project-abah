@@ -296,6 +296,22 @@ class ImportProgressService
         ]);
     }
 
+    public function hasActiveProcessingJobs(?int $exceptJobId = null): bool
+    {
+        if (!Schema::hasTable('import_jobs')) {
+            return false;
+        }
+
+        $query = DB::table('import_jobs')
+            ->where('status', 'processing');
+
+        if ($exceptJobId !== null && $exceptJobId > 0) {
+            $query->where('id', '!=', $exceptJobId);
+        }
+
+        return $query->exists();
+    }
+
     public function purgeStaleQueuedJobs(): int
     {
         $cutoff = now()->subMinutes(self::STALE_QUEUED_MINUTES);

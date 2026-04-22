@@ -3878,6 +3878,16 @@ class ImportExcelController extends Controller
             'skipped_count' => (int) ($donePayload['skipped_count'] ?? 0),
             'written_rows' => (int) ($donePayload['written_rows'] ?? 0),
             'total_rows' => (int) ($donePayload['total_rows'] ?? 0),
+            'headers' => !empty($donePayload['headers'])
+                ? array_values(array_map(
+                    static fn ($value): string => trim((string) $value),
+                    (array) $donePayload['headers']
+                ))
+                : self::DAILY_LOAN_SOURCE_HEADERS,
+            'period_hints' => array_values(array_filter(array_map(
+                static fn ($value): string => trim((string) $value),
+                (array) ($donePayload['dates'] ?? [])
+            ), static fn (string $value): bool => $value !== '')),
         ];
     }
 
@@ -5113,13 +5123,21 @@ class ImportExcelController extends Controller
             'written_rows' => (int) ($donePayload['written_rows'] ?? 0),
             'total_rows' => (int) ($donePayload['total_rows'] ?? 0),
             'periods' => array_values((array) ($donePayload['dates'] ?? [])),
+            'period_hints' => array_values(array_filter(array_map(
+                static fn ($value): string => trim((string) $value),
+                (array) ($donePayload['dates'] ?? [])
+            ), static fn (string $value): bool => $value !== '')),
+            'headers' => array_values(array_map(
+                static fn (string $value): string => trim($value),
+                $targetColumns
+            )),
         ];
     }
 
     protected function createNormalizedLw325PhDirectLoadCsv(string $csvPath, ?string $delimiter = null, ?callable $send = null): array
     {
         $polarsResult = $this->stageLw325PhCsvWithPolars($send, $csvPath, $delimiter);
-        if ($polarsResult !== null && $this->validateLw325NormalizedPeriods((string) ($polarsResult['path'] ?? ''))) {
+        if ($polarsResult !== null && !empty($polarsResult['path'])) {
             return $polarsResult;
         }
 
@@ -5144,6 +5162,8 @@ class ImportExcelController extends Controller
             'duplicate_count' => (int) ($normalized['duplicate_count'] ?? 0),
             'written_rows' => (int) ($normalized['written_rows'] ?? 0),
             'periods' => $normalized['periods'] ?? [],
+            'period_hints' => $normalized['period_hints'] ?? ($normalized['periods'] ?? []),
+            'headers' => $normalized['headers'] ?? [],
         ];
     }
 
@@ -5236,6 +5256,11 @@ class ImportExcelController extends Controller
             'written_rows' => $writtenRows,
             'total_rows' => $writtenRows,
             'periods' => array_keys($periods),
+            'period_hints' => array_keys($periods),
+            'headers' => array_values(array_map(
+                static fn ($value): string => trim((string) $value),
+                $headerRow
+            )),
         ];
     }
 
@@ -5413,6 +5438,7 @@ class ImportExcelController extends Controller
             $skippedRows = [];
             $skippedCount = 0;
             $writtenRows = 0;
+            $periodHints = [];
             $normalizedHeaders = array_map(
                 fn ($value) => $this->normalizeImportColumnName((string) $value),
                 $header
@@ -5453,6 +5479,17 @@ class ImportExcelController extends Controller
                     continue;
                 }
 
+                $periodeValue = trim((string) ($valuesByHeader['periode'] ?? ''));
+                if ($periodeValue !== '') {
+                    try {
+                        $normalizedPeriod = StrictDateParser::normalize($periodeValue);
+                    } catch (\Throwable) {
+                        $normalizedPeriod = null;
+                    }
+
+                    $periodHints[$normalizedPeriod ?: $periodeValue] = true;
+                }
+
                 fputcsv($outputHandle, $row, $delimiter, '"', '\\');
                 $writtenRows++;
 
@@ -5479,6 +5516,11 @@ class ImportExcelController extends Controller
             'skipped_rows' => $skippedRows,
             'skipped_count' => $skippedCount,
             'written_rows' => $writtenRows,
+            'headers' => array_values(array_map(
+                static fn ($value): string => trim((string) $value),
+                $header
+            )),
+            'period_hints' => array_values(array_keys($periodHints)),
         ];
     }
 
@@ -5511,6 +5553,8 @@ class ImportExcelController extends Controller
             'skipped_rows' => $normalized['skipped_rows'] ?? [],
             'skipped_count' => (int) ($normalized['skipped_count'] ?? 0),
             'written_rows' => (int) ($normalized['written_rows'] ?? 0),
+            'headers' => $normalized['headers'] ?? [],
+            'period_hints' => $normalized['period_hints'] ?? [],
         ];
     }
 
@@ -5692,23 +5736,58 @@ class ImportExcelController extends Controller
 
     private function buildDirectDailyLoanCsvLoadPlan(string $absolutePath, array $normalizedHeaders, array $importOptions = []): array
     {
-        $delimiter = $this->detectCsvDelimiter($absolutePath);
-        $handle = fopen($absolutePath, 'r');
-        if ($handle === false) {
-            throw new \RuntimeException('Gagal membuka file CSV Daily Loan.');
+        $preparedSource = isset($importOptions['prepared_source']) && is_array($importOptions['prepared_source'])
+            ? (array) $importOptions['prepared_source']
+            : null;
+        $sourcePath = $absolutePath;
+        $delimiter = trim((string) ($importOptions['delimiter'] ?? ''));
+        if ($delimiter === '') {
+            $delimiter = $this->detectCsvDelimiter($absolutePath);
         }
 
-        try {
-            $sourceHeaders = $this->readDailyLoanSourceHeaderRecord($handle, $delimiter);
-        } finally {
-            fclose($handle);
+        $validationWrittenRows = 0;
+        $sourceBackend = (string) ($importOptions['source_backend'] ?? 'php');
+
+        if ($preparedSource !== null) {
+            $preparedPath = (string) ($preparedSource['path'] ?? '');
+            if ($preparedPath !== '' && file_exists($preparedPath)) {
+                $sourcePath = $preparedPath;
+                if ($delimiter === '') {
+                    $delimiter = $this->detectCsvDelimiter($sourcePath);
+                }
+            }
+            if (!empty($preparedSource['backend'])) {
+                $sourceBackend = (string) $preparedSource['backend'];
+            }
+            $validationWrittenRows = max(0, (int) ($preparedSource['written_rows'] ?? $preparedSource['total_rows'] ?? 0));
+            $sourceHeaders = array_values(array_filter(array_map(
+                static fn ($value): string => trim((string) $value),
+                (array) ($preparedSource['headers'] ?? [])
+            ), static fn (string $value): bool => $value !== ''));
+        } else {
+            $handle = fopen($absolutePath, 'r');
+            if ($handle === false) {
+                throw new \RuntimeException('Gagal membuka file CSV Daily Loan.');
+            }
+
+            try {
+                $sourceHeaders = $this->readDailyLoanSourceHeaderRecord($handle, $delimiter);
+            } finally {
+                fclose($handle);
+            }
+
+            if ($sourceHeaders === false || empty($sourceHeaders)) {
+                throw new \RuntimeException('Header CSV Daily Loan tidak ditemukan.');
+            }
+
+            $sourceHeaders = array_values((array) $sourceHeaders);
         }
 
-        if ($sourceHeaders === false || empty($sourceHeaders)) {
+        if ($sourceHeaders === []) {
             throw new \RuntimeException('Header CSV Daily Loan tidak ditemukan.');
         }
 
-        $sourceHeaders = $this->canonicalizeDailyLoanSourceHeaders((array) $sourceHeaders);
+        $sourceHeaders = $this->canonicalizeDailyLoanSourceHeaders($sourceHeaders);
         $normalizedHeaders = $this->canonicalizeDailyLoanSourceHeaders($normalizedHeaders);
 
         $context = $this->buildImportContext('daily_loan_dinamis', $normalizedHeaders, [], $importOptions);
@@ -5764,6 +5843,12 @@ class ImportExcelController extends Controller
         $replacePeriodsRaw = $importOptions['replace_periods'] ?? $importOptions['backend_detected_periods'] ?? [];
         $replacePeriods = $this->normalizeDailyLoanReplacePeriods((array) $replacePeriodsRaw);
 
+        $sourcePreNormalized = (bool) ($importOptions['source_pre_normalized'] ?? ($preparedSource['source_pre_normalized'] ?? false));
+        $periodHints = array_values(array_unique(array_filter(array_map(
+            static fn ($value): string => trim((string) $value),
+            (array) ($preparedSource['period_hints'] ?? [])
+        ), static fn (string $value): bool => $value !== '')));
+
         return [
             'delimiter' => $delimiter,
             'field_variables' => $fieldVariables,
@@ -5771,6 +5856,12 @@ class ImportExcelController extends Controller
             'unique_id_prefix' => (string) ($context['unique_id_prefix'] ?? 'imp'),
             'replace_existing_periods' => (bool) ($importOptions['replace_existing_periods'] ?? false),
             'replace_periods' => $replacePeriods,
+            'source_headers' => $sourceHeaders,
+            'source_pre_normalized' => $sourcePreNormalized,
+            'period_hints' => $periodHints,
+            'source_path' => $sourcePath,
+            'source_backend' => $sourceBackend,
+            'validation_written_rows' => $validationWrittenRows,
         ];
     }
 
@@ -6722,6 +6813,8 @@ class ImportExcelController extends Controller
                 ? $this->buildDirectDailyLoanCsvLoadPlan($sourcePath, $normalizedHeaders, array_merge($importOptions, [
                     'source_backend' => $loadBackend,
                     'source_pre_normalized' => $sourcePreNormalized,
+                    'prepared_source' => $loadSource,
+                    'delimiter' => (string) $delimiter,
                 ]))
                 : $this->buildDirectGenericCsvLoadPlan($tableName, $sourcePath, $normalizedHeaders, $importOptions);
             $baseTotal = !empty($loadSource['written_rows'])

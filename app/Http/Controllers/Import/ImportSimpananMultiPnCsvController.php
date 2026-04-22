@@ -248,363 +248,67 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
         $normalizedHeaders = $this->resolveNormalizedHeadersForDirectImport($jobId, $jobState, $params);
         $activeFilters = (array) ($params['active_filters'] ?? []);
         $selectedColumns = $this->resolveSelectedColumns($params, $normalizedHeaders);
-
-        try {
-            $eligibility = $this->resolveDirectCsvFastPathEligibility('simpanan_multipn', $params, $normalizedHeaders);
-        } catch (\Throwable $e) {
-            Log::warning('Simpanan MultiPN fast-path eligibility check gagal. Fallback ke stream queue standar.', [
-                'job_id' => $jobId,
-                'exception' => $e::class,
-                'message' => $e->getMessage(),
-            ]);
-
-            $request->attributes->set('queue_message', 'Fast import tidak tersedia. Menggunakan safe path queue.');
-
-            return $this->processExcelStream($request);
-        }
-
-        if (!($eligibility['eligible'] ?? false)) {
-            $reason = (string) ($eligibility['reason'] ?? 'Fast import tidak tersedia.');
-            Log::info('Simpanan MultiPN direct path not eligible; using queue-based fallback: ' . $reason, [
-                'job_id' => $jobId,
-                'table_name' => 'simpanan_multipn',
-            ]);
-
-            $relativePath = (string) ($eligibility['relative_path'] ?? '');
-            $absolutePath = (string) ($eligibility['absolute_path'] ?? '');
-            $totalRows = (int) ($eligibility['total_rows'] ?? 0);
-
+        $streamFailureResponse = function (string $message) use ($jobId) {
             request()->session()->save();
 
-            return response()->stream(function () use (
-                $jobId,
-                $relativePath,
-                $absolutePath,
-                $totalRows,
-                $normalizedHeaders,
-                $activeFilters,
-                $reason
-            ) {
-                $streamLock = null;
-                $send = function (string $event, array $data) use ($jobId) {
-                    if ($jobId > 0 && $event === 'progress' && !$this->isImportTerminationRequested($jobId)) {
-                        $this->cacheFastImportProgress($jobId, array_merge([
-                            'status' => 'processing',
-                        ], $data, [
-                            'total_rows' => (int) ($data['total_rows'] ?? $data['total'] ?? 0),
-                            'processed_rows' => (int) ($data['processed_rows'] ?? $data['rows_done'] ?? 0),
-                        ]));
-                    }
-
-                    echo "event: {$event}\n";
-                    echo 'data: ' . json_encode($data) . "\n\n";
-                    if (ob_get_level() > 0) {
-                        ob_flush();
-                    }
-                    flush();
-                };
-
-                try {
-                    if ($jobId > 0) {
-                        $streamLock = Cache::lock('import_excel_stream_job_' . $jobId, 7200);
-                        if (!$streamLock->get()) {
-                            $job = DB::table('import_jobs')->where('id', $jobId)->first();
-                            if ($job && in_array($job->status, ['completed', 'failed', 'failed_partial'], true)) {
-                                $send('complete', [
-                                    'total_success' => (int) ($job->total_success ?? 0),
-                                    'total_failed' => (int) ($job->total_failed ?? 0),
-                                    'total_rows' => (int) ($job->total_files ?? 0),
-                                ]);
-                                return;
-                            }
-
-                            // If it's already processing, we "attach" to its progress by polling
-                            $send('progress', [
-                                'percent' => 5,
-                                'message' => 'Job sedang diproses oleh worker. Menyambung ke progress...',
-                            ]);
-
-                            while (true) {
-                                $currentJob = DB::table('import_jobs')->where('id', $jobId)->first();
-                                if (!$currentJob) break;
-
-                                $progress = $this->progressService()->getStatusPayload($jobId);
-                                if ($progress) {
-                                    $send('progress', $progress);
-                                }
-
-                                if (in_array($currentJob->status, ['completed', 'failed', 'failed_partial', 'terminated'], true)) {
-                                    if ($currentJob->status === 'completed') {
-                                        $send('complete', [
-                                            'total_success' => (int) ($currentJob->total_success ?? 0),
-                                            'total_failed' => (int) ($currentJob->total_failed ?? 0),
-                                            'total_rows' => (int) ($currentJob->total_files ?? 0),
-                                        ]);
-                                    } else {
-                                        $send('error', [
-                                            'message' => $this->resolveImportJobFailureMessage(
-                                                $currentJob,
-                                                'Import gagal diproses (status: ' . $currentJob->status . ')'
-                                            ),
-                                        ]);
-                                    }
-                                    return;
-                                }
-
-                                sleep(1);
-                                if (connection_aborted()) return;
-                            }
-                            return;
-                        }
-                    }
-
-                    $this->progressService()->markProcessing($jobId, [
-                        'status' => 'processing',
-                        'phase' => 'preparing_load_plan',
-                        'percent' => 10,
-                        'message' => 'Menyiapkan staging CSV Simpanan MultiPN dengan engine Polars...',
-                        'processed_rows' => 0,
-                        'total_rows' => $totalRows,
+            return response()->stream(function () use ($jobId, $message) {
+                if ($jobId > 0) {
+                    $this->updateImportJobStatusSafely($jobId, [
+                        'status' => 'failed',
+                        'updated_at' => now(),
                     ]);
-
-                    $send('progress', [
-                        'status' => 'processing',
-                        'phase' => 'preparing_load_plan',
-                        'percent' => 10,
-                        'message' => 'Menyiapkan staging CSV Simpanan MultiPN dengan engine Polars...',
-                        'rows_done' => 0,
-                        'total' => $totalRows,
-                        'speed' => 0,
-                    ]);
-
-                    $handled = false;
-                    try {
-                        $polarsResult = $this->stageSimpananMultiPnCsvWithPolars(
-                            $send, 
-                            $absolutePath, 
-                            $params['delimiter'] ?? null, 
-                            $activeFilters,
-                            $jobId,
-                            $selectedColumns,
-                            $normalizedHeaders
-                        );
-
-                        if ($polarsResult && !empty($polarsResult['path'])) {
-                            $cleanCsvPath = $polarsResult['path'];
-                            $loadPlan = $this->buildDirectCsvLoadPlan($cleanCsvPath, $normalizedHeaders, $selectedColumns, $send, [
-                                'assume_clean_source' => true,
-                                'delimiter' => (string) ($params['delimiter'] ?? ''),
-                                'source_headers' => (array) ($polarsResult['headers'] ?? $normalizedHeaders),
-                                'period_hints' => (array) ($polarsResult['period_hints'] ?? []),
-                                'source_balance_total_cents' => $polarsResult['balance_total_cents'] ?? null,
-                                'written_rows' => $polarsResult['written_rows'] ?? null,
-                                'backend' => $polarsResult['backend'] ?? 'polars',
-                            ]);
-                            
-                            $beforeDirectLoad = function () use ($jobId, $cleanCsvPath) {
-                                $this->progressService()->markProcessing($jobId, [
-                                    'status' => 'processing',
-                                    'phase' => 'loading_mysql',
-                                    'percent' => 96,
-                                    'message' => 'Optimasi Polars selesai. Memuat data ke MySQL via LOAD DATA LOCAL INFILE...',
-                                ]);
-                            };
-
-                            $inserted = $this->executeDirectCsvLoad($loadPlan, $beforeDirectLoad, $send, $jobId);
-                            $handled = $inserted !== false;
-
-                            if (!empty($polarsResult['cleanup']) && file_exists($cleanCsvPath)) {
-                                @unlink($cleanCsvPath);
-                            }
-                        }
-                    } catch (\Throwable $e) {
-                        if ($this->isTerminationInterruption($e, $jobId)) {
-                            $this->handleTerminationInterruption($jobId, $send);
-                            return;
-                        }
-
-                        Log::warning('Polars filtering failed for Simpanan MultiPN: ' . $e->getMessage());
-                    }
-
-                    if ($jobId > 0 && $this->isImportTerminationRequested($jobId)) {
-                        $this->handleTerminationInterruption($jobId, $send);
-                        return;
-                    }
-
-                    if (!$handled) {
-                        $send('progress', [
-                            'message' => 'Polars gagal/tidak tersedia. Menggunakan safe path legacy (lambat)...',
-                            'percent' => 12,
-                        ]);
-
-                        $handled = $this->processStagedCsvStream(
-                            $send,
-                            $absolutePath,
-                            'simpanan_multipn',
-                            $activeFilters,
-                            $normalizedHeaders,
-                            $jobId,
-                            $totalRows,
-                            null,
-                            true
-                        );
-                    }
-
-                    if ($handled) {
-                        $job = $jobId > 0 ? DB::table('import_jobs')->where('id', $jobId)->first() : null;
-                        if ($job && $job->status === 'completed') {
-                            $this->cleanupSuccessfulImportArtifacts($jobId, $relativePath, $absolutePath);
-                        }
-                        return;
-                    }
-
-                    if ($jobId > 0) {
-                        $this->updateImportJobStatusSafely($jobId, [
-                            'status' => 'failed',
-                            'updated_at' => now(),
-                        ]);
-                    }
-
-                    $send('error', [
-                        'message' => $this->formatSafeImportFailureMessage('Import Simpanan MultiPN gagal diproses: ', $reason),
-                    ]);
-                } catch (\Throwable $e) {
-                    if ($this->isTerminationInterruption($e, $jobId)) {
-                        $this->handleTerminationInterruption($jobId, $send);
-                        return;
-                    }
-
-                    Log::error('SIMPANAN MULTIPN STAGED DIRECT LOAD FALLBACK ERROR: ' . $e->getMessage() . ' | ' . $e->getFile() . ':' . $e->getLine());
-
-                    if ($jobId > 0) {
-                        $this->updateImportJobStatusSafely($jobId, [
-                            'status' => 'failed',
-                            'updated_at' => now(),
-                        ]);
-                    }
-
-                    $send('error', [
-                        'message' => $this->formatSafeImportFailureMessage('Fast import Simpanan MultiPN gagal: ', $e),
-                    ]);
-                } finally {
-                    if ($streamLock) {
-                        try {
-                            $streamLock->release();
-                        } catch (\Throwable $e) {
-                            Log::warning('Failed to release Simpanan MultiPN staged fallback lock for job ' . $jobId . ': ' . $e->getMessage());
-                        }
-                    }
+                    $this->progressService()->markFailed($jobId, $message);
                 }
+
+                echo "event: error\n";
+                echo 'data: ' . json_encode(['message' => $message]) . "\n\n";
+                if (ob_get_level() > 0) {
+                    ob_flush();
+                }
+                flush();
             }, 200, [
                 'Content-Type' => 'text/event-stream',
                 'Cache-Control' => 'no-cache, no-store',
                 'X-Accel-Buffering' => 'no',
                 'Connection' => 'keep-alive',
             ]);
+        };
+
+        try {
+            $eligibility = $this->resolveDirectCsvFastPathEligibility('simpanan_multipn', $params, $normalizedHeaders);
+        } catch (\Throwable $e) {
+            Log::warning('Simpanan MultiPN fast-path eligibility check gagal. Import dihentikan tanpa fallback lambat.', [
+                'job_id' => $jobId,
+                'exception' => $e::class,
+                'message' => $e->getMessage(),
+            ]);
+
+            return $streamFailureResponse(
+                $this->formatSafeImportFailureMessage('Fast import Simpanan MultiPN gagal divalidasi: ', $e)
+            );
+        }
+
+        if (!($eligibility['eligible'] ?? false)) {
+            $reason = (string) ($eligibility['reason'] ?? 'Fast import tidak tersedia.');
+            Log::warning('Simpanan MultiPN direct path tidak eligible. Import dihentikan tanpa fallback lambat: ' . $reason, [
+                'job_id' => $jobId,
+                'table_name' => 'simpanan_multipn',
+            ]);
+            return $streamFailureResponse(
+                $this->formatSafeImportFailureMessage('Fast import Simpanan MultiPN tidak tersedia: ', $reason)
+            );
         }
 
         $relativePath = (string) ($eligibility['relative_path'] ?? '');
         $absolutePath = (string) ($eligibility['absolute_path'] ?? '');
         $totalRows = (int) ($eligibility['total_rows'] ?? 0);
 
-        // If filters are present, use queue-based filtered import instead of direct LOAD DATA
-        if (!empty($activeFilters)) {
-            request()->session()->save();
-
-            return response()->stream(function () use (
-                $jobId,
-                $absolutePath,
-                $totalRows,
-                $normalizedHeaders,
-                $activeFilters
-            ) {
-                $send = function (string $event, array $data) use ($jobId) {
-                    if ($jobId > 0 && $event === 'progress' && !$this->isImportTerminationRequested($jobId)) {
-                        $this->cacheFastImportProgress($jobId, array_merge([
-                            'status' => 'processing',
-                        ], $data, [
-                            'total_rows' => (int) ($data['total_rows'] ?? $data['total'] ?? 0),
-                            'processed_rows' => (int) ($data['processed_rows'] ?? $data['rows_done'] ?? 0),
-                        ]));
-                    }
-
-                    echo "event: {$event}\n";
-                    echo 'data: ' . json_encode($data) . "\n\n";
-                    if (ob_get_level() > 0) {
-                        ob_flush();
-                    }
-                    flush();
-                };
-
-                try {
-                    $send('progress', [
-                        'status' => 'processing',
-                        'phase' => 'preparing_load_plan',
-                        'percent' => 5,
-                        'message' => 'Menyiapkan filtered import Simpanan MultiPN melalui queue...',
-                        'rows_done' => 0,
-                        'total' => $totalRows,
-                        'speed' => 0,
-                    ]);
-
-                    $handled = $this->processStagedCsvStream(
-                        $send,
-                        $absolutePath,
-                        'simpanan_multipn',
-                        $activeFilters,
-                        $normalizedHeaders,
-                        $jobId,
-                        $totalRows,
-                        null,
-                        true
-                    );
-
-                    if ($handled) {
-                        return;
-                    }
-
-                    if ($jobId > 0) {
-                        $this->updateImportJobStatusSafely($jobId, [
-                            'status' => 'failed',
-                            'updated_at' => now(),
-                        ]);
-                    }
-
-                    $send('error', [
-                        'message' => 'Filtered import Simpanan MultiPN gagal diproses.',
-                    ]);
-                } catch (\Throwable $e) {
-                    if ($this->isTerminationInterruption($e, $jobId)) {
-                        $this->handleTerminationInterruption($jobId, $send);
-                        return;
-                    }
-
-                    Log::error('SIMPANAN MULTIPN FILTERED IMPORT ERROR: ' . $e->getMessage() . ' | ' . $e->getFile() . ':' . $e->getLine());
-
-                    if ($jobId > 0) {
-                        $this->updateImportJobStatusSafely($jobId, [
-                            'status' => 'failed',
-                            'updated_at' => now(),
-                        ]);
-                    }
-
-                    $send('error', [
-                        'message' => $this->formatSafeImportFailureMessage('Filtered import Simpanan MultiPN gagal: ', $e),
-                    ]);
-                }
-            }, 200, [
-                'Content-Type' => 'text/event-stream',
-                'Cache-Control' => 'no-cache, no-store',
-                'X-Accel-Buffering' => 'no',
-                'Connection' => 'keep-alive',
-            ]);
-        }
-
         request()->session()->save();
 
-        return response()->stream(function () use ($jobId, $relativePath, $absolutePath, $totalRows, $normalizedHeaders, $selectedColumns, $activeFilters) {
+        return response()->stream(function () use ($jobId, $relativePath, $absolutePath, $totalRows, $normalizedHeaders, $selectedColumns, $activeFilters, $params) {
             $streamLock = null;
             $cleanupPaths = [];
+            $usePolarsStage = !empty($activeFilters);
             $send = function (string $event, array $data) use ($jobId) {
                 if ($jobId > 0 && $event === 'progress' && !$this->isImportTerminationRequested($jobId)) {
                     $this->cacheFastImportProgress($jobId, array_merge([
@@ -702,20 +406,44 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                     'status' => 'processing',
                     'phase' => 'validating',
                     'percent' => 3,
-                    'message' => 'Validasi file fast import Simpanan MultiPN...',
+                    'message' => $usePolarsStage
+                        ? 'Validasi file filtered fast import Simpanan MultiPN...'
+                        : 'Validasi file fast import Simpanan MultiPN...',
                     'rows_done' => 0,
                     'total' => $totalRows,
                     'speed' => 0,
                 ]);
 
                 try {
-                    $preparedSource = $this->prepareSimpananMultiPnDirectLoadSource($absolutePath, $params['delimiter'] ?? null, $send);
-                    $loadPlan = $this->buildDirectCsvLoadPlan($absolutePath, $normalizedHeaders, $selectedColumns, $send, [
-                        'prepared_source' => $preparedSource,
-                        'delimiter' => $params['delimiter'] ?? null,
-                    ]);
-                    if (!empty($loadPlan['cleanup_path']) && is_string($loadPlan['cleanup_path'])) {
-                        $cleanupPaths[] = $loadPlan['cleanup_path'];
+                    if ($usePolarsStage) {
+                        $preparedSource = $this->stageSimpananMultiPnCsvWithPolars(
+                            $send,
+                            $absolutePath,
+                            $params['delimiter'] ?? null,
+                            $activeFilters,
+                            $jobId,
+                            $selectedColumns,
+                            $normalizedHeaders
+                        );
+
+                        if ($preparedSource === null || empty($preparedSource['path'])) {
+                            throw new \RuntimeException('Polars gagal menyiapkan staging CSV Simpanan MultiPN untuk import filtered.');
+                        }
+
+                        $cleanupPaths[] = (string) $preparedSource['path'];
+                        $loadPlan = $this->buildDirectCsvLoadPlan($preparedSource['path'], $normalizedHeaders, $selectedColumns, $send, [
+                            'prepared_source' => $preparedSource,
+                            'delimiter' => $params['delimiter'] ?? null,
+                        ]);
+                    } else {
+                        $preparedSource = $this->prepareSimpananMultiPnDirectLoadSource($absolutePath, $params['delimiter'] ?? null, $send);
+                        $loadPlan = $this->buildDirectCsvLoadPlan($absolutePath, $normalizedHeaders, $selectedColumns, $send, [
+                            'prepared_source' => $preparedSource,
+                            'delimiter' => $params['delimiter'] ?? null,
+                        ]);
+                        if (!empty($loadPlan['cleanup_path']) && is_string($loadPlan['cleanup_path'])) {
+                            $cleanupPaths[] = $loadPlan['cleanup_path'];
+                        }
                     }
                 } catch (\Throwable $e) {
                     if ($this->isTerminationInterruption($e, $jobId)) {
@@ -723,43 +451,25 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                         return;
                     }
 
-                    Log::warning('Fast-path Simpanan MultiPN direct plan failed, trying staged direct LOAD DATA fallback: ' . $e->getMessage(), [
+                    Log::error('Fast-path Simpanan MultiPN direct plan failed. Fallback lambat dimatikan: ' . $e->getMessage(), [
                         'job_id' => $jobId,
                         'absolute_path' => $absolutePath,
                     ]);
 
-                    $send('progress', [
-                        'status' => 'processing',
-                        'phase' => 'preparing_load_plan',
-                        'percent' => 8,
-                        'message' => 'Direct plan gagal. Menyiapkan staging CSV lalu LOAD DATA LOCAL INFILE...',
-                        'rows_done' => 0,
-                        'total' => $totalRows,
-                        'speed' => 0,
-                    ]);
-
-                    $handled = $this->processStagedCsvStream(
-                        $send,
-                        $absolutePath,
-                        'simpanan_multipn',
-                        $activeFilters,
-                        $normalizedHeaders,
-                        $jobId,
-                        $totalRows,
-                        null,
-                        true
-                    );
-
-                    if ($handled) {
-                        $job = $jobId > 0 ? DB::table('import_jobs')->where('id', $jobId)->first() : null;
-                        if ($job && $job->status === 'completed') {
-                            $this->cleanupSuccessfulImportArtifacts($jobId, $relativePath, $absolutePath);
-                        }
-                        return;
+                    if ($jobId > 0) {
+                        $this->updateImportJobStatusSafely($jobId, [
+                            'status' => 'failed',
+                            'updated_at' => now(),
+                        ]);
                     }
 
                     $send('error', [
-                        'message' => $this->formatSafeImportFailureMessage('Fast import CSV tidak bisa dilanjutkan: ', $e),
+                        'message' => $this->formatSafeImportFailureMessage(
+                            $usePolarsStage
+                                ? 'Filtered fast import Simpanan MultiPN gagal: '
+                                : 'Fast import CSV tidak bisa dilanjutkan: ',
+                            $e
+                        ),
                     ]);
                     return;
                 }
@@ -768,7 +478,9 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                     'status' => 'processing',
                     'phase' => 'preparing_load_plan',
                     'percent' => 8,
-                    'message' => 'Menyiapkan direct LOAD DATA untuk Simpanan MultiPN...',
+                    'message' => $usePolarsStage
+                        ? 'Menyiapkan direct LOAD DATA untuk filtered Simpanan MultiPN...'
+                        : 'Menyiapkan direct LOAD DATA untuk Simpanan MultiPN...',
                     'rows_done' => 0,
                     'total' => $totalRows,
                     'speed' => 0,
@@ -830,65 +542,24 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                     return;
                 }
 
-                Log::warning('Simpanan MultiPN direct path failed, trying staged direct LOAD DATA fallback: ' . $e->getMessage(), [
+                Log::error('Simpanan MultiPN direct path gagal dan fallback lambat dimatikan: ' . $e->getMessage(), [
                     'job_id' => $jobId,
                     'absolute_path' => $absolutePath,
                 ]);
 
-                try {
-                    $send('progress', [
-                        'status' => 'processing',
-                        'phase' => 'preparing_load_plan',
-                        'percent' => 10,
-                        'message' => 'Direct path gagal. Menyiapkan staging CSV lalu LOAD DATA LOCAL INFILE...',
-                        'rows_done' => 0,
-                        'total' => $totalRows,
-                        'speed' => 0,
-                    ]);
-
-                    $handled = $this->processStagedCsvStream(
-                        $send,
-                        $absolutePath,
-                        'simpanan_multipn',
-                        $activeFilters,
-                        $normalizedHeaders,
-                        $jobId,
-                        $totalRows,
-                        null,
-                        true
-                    );
-
-                    if ($handled) {
-                        $job = $jobId > 0 ? DB::table('import_jobs')->where('id', $jobId)->first() : null;
-                        if ($job && $job->status === 'completed') {
-                $this->cleanupSuccessfulImportArtifacts($jobId, $relativePath, $absolutePath);
-                        }
-                        return;
+                if ($jobId > 0) {
+                    if ($this->isImportTerminationRequested($jobId)) {
+                        $this->terminateImportJobNow($jobId, 'Job dihentikan melalui Job Management.');
+                    } else {
+                        $this->progressService()->markFailed($jobId, $this->formatSafeImportFailureMessage('Fast import CSV gagal: ', $e));
                     }
-                } catch (\Throwable $fallbackException) {
-                if ($this->isTerminationInterruption($fallbackException, $jobId)) {
-                    $this->handleTerminationInterruption($jobId, $send);
-                    return;
                 }
 
-                Log::error('SIMPANAN MULTIPN STAGED DIRECT LOAD FALLBACK ERROR: ' . $fallbackException->getMessage() . ' | ' . $fallbackException->getFile() . ':' . $fallbackException->getLine());
-            }
-
-                Log::error('SIMPANAN MULTIPN DIRECT CSV LOAD ERROR: ' . $e->getMessage() . ' | ' . $e->getFile() . ':' . $e->getLine());
-
-                    if ($jobId > 0) {
-                        if ($this->isImportTerminationRequested($jobId)) {
-                            $this->terminateImportJobNow($jobId, 'Job dihentikan melalui Job Management.');
-                        } else {
-                            $this->progressService()->markFailed($jobId, $this->formatSafeImportFailureMessage('Fast import CSV gagal: ', $e));
-                        }
-                    }
-
-                    $send('error', [
-                        'message' => $this->isImportTerminationRequested($jobId)
-                            ? 'Import dihentikan oleh pengguna.'
-                            : $this->formatSafeImportFailureMessage('Fast import CSV gagal: ', $e),
-                    ]);
+                $send('error', [
+                    'message' => $this->isImportTerminationRequested($jobId)
+                        ? 'Import dihentikan oleh pengguna.'
+                        : $this->formatSafeImportFailureMessage('Fast import CSV gagal: ', $e),
+                ]);
                 } finally {
                     if ($streamLock) {
                         try {
@@ -1806,25 +1477,7 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
 
     private function shouldUseStagedDirectLoadFallback(string $reason): bool
     {
-        $reason = strtolower(trim($reason));
-
-        if ($reason === '') {
-            return true;
-        }
-
-        if (str_contains($reason, 'local infile')) {
-            return false;
-        }
-
-        if (str_contains($reason, 'header import tidak tersedia')) {
-            return false;
-        }
-
-        if (str_contains($reason, 'file sumber import') || str_contains($reason, 'file csv') || str_contains($reason, 'file tidak ditemukan')) {
-            return false;
-        }
-
-        return true;
+        return false;
     }
 
     private function configureLongRunningImportRuntime(): void

@@ -2,8 +2,10 @@
 
 namespace App\Jobs;
 
+use App\Jobs\Middleware\DeferSnapshotJobsDuringImport;
 use App\Support\DashboardHarianSnapshotDirtyPeriodQueue;
 use App\Support\DashboardHarianSnapshotService;
+use App\Services\Import\ImportProgressService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -46,11 +48,25 @@ class RebuildDashboardHarianSnapshotJob implements ShouldQueue
             (new WithoutOverlapping('snapshot:dashboard_harian:rebuild:' . md5($scope)))
                 ->releaseAfter(10)
                 ->expireAfter(900),
+            new DeferSnapshotJobsDuringImport(),
         ];
     }
 
     public function handle(DashboardHarianSnapshotService $service, DashboardHarianSnapshotDirtyPeriodQueue $dirtyPeriods): void
     {
+        if ($this->hasActiveImportProcessing()) {
+            Log::info('RebuildDashboardHarianSnapshotJob ditunda karena import masih aktif.', [
+                'consume_dirty_periods' => $this->consumeDirtyPeriods,
+                'force' => $this->force,
+                'periods' => $this->periods,
+            ]);
+
+            dispatch(new self($this->periods, $this->consumeDirtyPeriods, $this->force))
+                ->onQueue('imports-high');
+
+            return;
+        }
+
         try {
             $periods = $this->consumeDirtyPeriods
                 ? $dirtyPeriods->consume()
@@ -108,5 +124,19 @@ class RebuildDashboardHarianSnapshotJob implements ShouldQueue
             array_map(fn ($period) => trim((string) $period), $this->periods),
             fn (string $period) => $period !== ''
         ));
+    }
+
+    private function hasActiveImportProcessing(): bool
+    {
+        try {
+            return app(ImportProgressService::class)->hasActiveProcessingJobs();
+        } catch (\Throwable $e) {
+            Log::debug('Gagal mengecek import aktif pada Dashboard Harian snapshot job.', [
+                'exception' => $e::class,
+                'message' => $e->getMessage(),
+            ]);
+
+            return false;
+        }
     }
 }

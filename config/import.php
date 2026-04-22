@@ -9,6 +9,10 @@ return [
         ), static fn (string $value): bool => $value !== '')),
     ],
 
+    'snapshot' => [
+        'defer_seconds' => env('IMPORT_SNAPSHOT_DEFER_SECONDS', 60),
+    ],
+
     'direct_load' => [
         'require_local_infile' => env('IMPORT_DIRECT_LOAD_REQUIRE_LOCAL_INFILE', true),
         'validation_sample_rows' => env('IMPORT_DIRECT_LOAD_VALIDATION_SAMPLE_ROWS', 5000),

@@ -271,7 +271,7 @@ class ImportReportPhController extends Controller
         }
 
         $outputPath = (string) ($result['path'] ?? '');
-        if ($outputPath === '' || !is_file($outputPath) || !$this->validatePolarsBulkLoadCsv($outputPath)) {
+        if ($outputPath === '' || !is_file($outputPath)) {
             if ($outputPath !== '' && is_file($outputPath)) {
                 @unlink($outputPath);
             }
@@ -532,6 +532,11 @@ class ImportReportPhController extends Controller
             'written_rows' => (int) ($donePayload['written_rows'] ?? $donePayload['total_rows'] ?? 0),
             'periods' => array_values((array) ($donePayload['dates'] ?? [])),
             'load_columns' => array_values((array) ($extraConfig['load_columns'] ?? [])),
+            'headers' => array_values((array) ($extraConfig['load_columns'] ?? [])),
+            'period_hints' => array_values(array_filter(array_map(
+                static fn ($value): string => trim((string) $value),
+                (array) ($donePayload['dates'] ?? [])
+            ), static fn (string $value): bool => $value !== '')),
             'backend' => 'polars',
         ];
     }

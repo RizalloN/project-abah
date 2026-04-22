@@ -480,10 +480,13 @@ class ImportSimpananMultiPnCsvControllerTest extends TestCase
         ], $pdo->statements);
     }
 
-    public function test_staged_direct_load_fallback_is_blocked_for_local_infile_errors(): void
+    public function test_staged_direct_load_fallback_is_disabled_for_all_reasons(): void
     {
         $controller = new ImportSimpananMultiPnCsvController();
 
+        $this->assertFalse($this->invokeMethod($controller, 'shouldUseStagedDirectLoadFallback', [
+            '',
+        ]));
         $this->assertFalse($this->invokeMethod($controller, 'shouldUseStagedDirectLoadFallback', [
             'LOCAL INFILE tidak aktif di MySQL/PDO. Menggunakan safe path queue.',
         ]));
@@ -495,11 +498,11 @@ class ImportSimpananMultiPnCsvControllerTest extends TestCase
         ]));
     }
 
-    public function test_staged_direct_load_fallback_is_allowed_for_filter_based_reasons(): void
+    public function test_staged_direct_load_fallback_is_disabled_for_filter_based_reasons(): void
     {
         $controller = new ImportSimpananMultiPnCsvController();
 
-        $this->assertTrue($this->invokeMethod($controller, 'shouldUseStagedDirectLoadFallback', [
+        $this->assertFalse($this->invokeMethod($controller, 'shouldUseStagedDirectLoadFallback', [
             'Filtered import menggunakan safe path queue.',
         ]));
     }

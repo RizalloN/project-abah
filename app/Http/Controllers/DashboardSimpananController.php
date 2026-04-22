@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
+use App\Support\SimpananMultiPnSnapshotGate;
 use Throwable;
 
 class DashboardSimpananController extends Controller
@@ -800,6 +801,20 @@ class DashboardSimpananController extends Controller
             return false;
         }
 
+        if (!$this->isSimpananMultiPnSnapshotReady($period)) {
+            $missingBranches = app(SimpananMultiPnSnapshotGate::class)->getMissingBranches($period);
+
+            Log::info('Dashboard simpanan snapshot ditunda karena Area 6 belum lengkap.', [
+                'period' => $period,
+                'missing_branches' => $missingBranches,
+            ]);
+
+            Cache::put($cacheKey, false, now()->addSeconds(30));
+            $this->snapshotExistsMemo[$period] = false;
+
+            return false;
+        }
+
         $lock = Cache::lock('snapshot:dashboard_simpanan:auto-rebuild:' . $period, 60);
         $pendingKey = 'snapshot:dashboard_simpanan:auto-rebuild:pending:' . $period;
         $jobDispatched = false;
@@ -829,6 +844,11 @@ class DashboardSimpananController extends Controller
         $this->snapshotExistsMemo[$period] = false;
 
         return false;
+    }
+
+    private function isSimpananMultiPnSnapshotReady(string $period): bool
+    {
+        return app(SimpananMultiPnSnapshotGate::class)->isReady($period);
     }
 
     private function resolveDashboardPeriods(): array
