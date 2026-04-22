@@ -1,7 +1,6 @@
 <?php
 
 use Illuminate\Database\Migrations\Migration;
-use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\DB;
 
@@ -16,39 +15,15 @@ return new class extends Migration
             return;
         }
 
-        // Use raw SQL to create indexes with error suppression
-        if (!$this->indexExists('simpanan_multipn', 'idx_smp_posisi_status')) {
-            try {
-            DB::statement("
-                ALTER TABLE simpanan_multipn 
-                ADD INDEX idx_smp_posisi_status (posisi, status)
-            ");
-            } catch (\Exception) {
-                // Index might already exist or table engine may not support the exact statement.
-            }
-        }
+        $this->addIndexIfMissing(
+            'simpanan_multipn',
+            'idx_smp_posisi_status_cab_unit',
+            ['posisi', 'status', 'kantor_cabang', 'unit_kerja']
+        );
 
-        if (!$this->indexExists('simpanan_multipn', 'idx_smp_posisi_status_cabang')) {
-            try {
-            DB::statement("
-                ALTER TABLE simpanan_multipn 
-                ADD INDEX idx_smp_posisi_status_cabang (posisi, status, kantor_cabang)
-            ");
-            } catch (\Exception) {
-                // Index might already exist or table engine may not support the exact statement.
-            }
-        }
-
-        if (!$this->indexExists('simpanan_multipn', 'idx_smp_posisi_status_cabang_unit_new')) {
-            try {
-            DB::statement("
-                ALTER TABLE simpanan_multipn 
-                ADD INDEX idx_smp_posisi_status_cabang_unit_new (posisi, status, kantor_cabang, unit_kerja)
-            ");
-            } catch (\Exception) {
-                // Index might already exist or table engine may not support the exact statement.
-            }
-        }
+        $this->dropIndexIfExists('simpanan_multipn', 'idx_smp_posisi_status_cabang_unit_new');
+        $this->dropIndexIfExists('simpanan_multipn', 'idx_smp_posisi_status_cabang');
+        $this->dropIndexIfExists('simpanan_multipn', 'idx_smp_posisi_status');
     }
 
     /**
@@ -56,23 +31,7 @@ return new class extends Migration
      */
     public function down(): void
     {
-        try {
-            DB::statement("ALTER TABLE simpanan_multipn DROP INDEX idx_smp_posisi_status");
-        } catch (\Exception) {
-            // Already dropped or doesn't exist
-        }
-
-        try {
-            DB::statement("ALTER TABLE simpanan_multipn DROP INDEX idx_smp_posisi_status_cabang");
-        } catch (\Exception) {
-            // Already dropped or doesn't exist
-        }
-
-        try {
-            DB::statement("ALTER TABLE simpanan_multipn DROP INDEX idx_smp_posisi_status_cabang_unit_new");
-        } catch (\Exception) {
-            // Already dropped or doesn't exist
-        }
+        $this->dropIndexIfExists('simpanan_multipn', 'idx_smp_posisi_status_cab_unit');
     }
 
     private function indexExists(string $table, string $indexName): bool
@@ -86,5 +45,40 @@ return new class extends Migration
         } catch (\Throwable) {
             return false;
         }
+    }
+
+    /**
+     * @param array<int, string> $columns
+     */
+    private function addIndexIfMissing(string $table, string $indexName, array $columns): void
+    {
+        if ($this->indexExists($table, $indexName)) {
+            return;
+        }
+
+        $columnSql = implode(', ', array_map(
+            fn (string $column): string => '`' . str_replace('`', '``', $column) . '`',
+            $columns
+        ));
+
+        DB::statement(sprintf(
+            'ALTER TABLE `%s` ADD INDEX `%s` (%s)',
+            str_replace('`', '``', $table),
+            str_replace('`', '``', $indexName),
+            $columnSql
+        ));
+    }
+
+    private function dropIndexIfExists(string $table, string $indexName): void
+    {
+        if (!$this->indexExists($table, $indexName)) {
+            return;
+        }
+
+        DB::statement(sprintf(
+            'ALTER TABLE `%s` DROP INDEX `%s`',
+            str_replace('`', '``', $table),
+            str_replace('`', '``', $indexName)
+        ));
     }
 };

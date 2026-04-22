@@ -238,8 +238,7 @@ CREATE TABLE `daily_loan_dinamis` (
   KEY `idx_dld_periode_rekening` (`periode`,`nomor_rekening1`),
   KEY `idx_dld_periode_segmen_produk` (`periode`,`segmen_dashboard`,`produk_dashboard`),
   KEY `idx_dld_periode_cabang_unit` (`periode`,`cabang1`,`unit1`),
-  KEY `idx_dld_periode_segmen_produk_cabang_unit` (`periode`,`segmen_dashboard`,`produk_dashboard`,`cabang1`,`unit1`),
-  KEY `idx_dld_periode_cif_cabang` (`periode`,`cifno`,`cabang1`)
+  KEY `idx_dld_periode_segmen_produk_cabang_unit` (`periode`,`segmen_dashboard`,`produk_dashboard`,`cabang1`,`unit1`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!50003 SET @saved_cs_client      = @@character_set_client */ ;
@@ -811,13 +810,11 @@ CREATE TABLE `simpanan_multipn` (
   `created_at` timestamp NULL DEFAULT NULL,
   `updated_at` timestamp NULL DEFAULT NULL,
   PRIMARY KEY (`uniqueid_SMPN`),
-  KEY `idx_simp_posisi_cif` (`posisi`,`CIFNO`),
+  KEY `idx_smp_posisi_cif` (`posisi`,`CIFNO`),
   KEY `idx_simp_posisi_jenis` (`posisi`,`jenis_simpanan`),
   KEY `idx_simp_cif` (`CIFNO`),
   KEY `idx_simp_dormant_posisi_status_cabang_rek` (`posisi`,`status`,`kantor_cabang`,`no_rekening`),
-  KEY `idx_smp_posisi_cif_jenis` (`posisi`,`CIFNO`,`jenis_simpanan`),
-  KEY `idx_smp_posisi_status_cabang_unit` (`posisi`,`status`,`kantor_cabang`,`unit_kerja`),
-  KEY `simpanan_multipn_dormant_lookup_idx` (`posisi`,`status`,`kantor_cabang`,`unit_kerja`)
+  KEY `idx_smp_posisi_status_cab_unit` (`posisi`,`status`,`kantor_cabang`,`unit_kerja`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!50003 SET @saved_cs_client      = @@character_set_client */ ;

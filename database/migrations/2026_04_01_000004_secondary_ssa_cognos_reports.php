@@ -2,6 +2,7 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
@@ -133,6 +134,9 @@ return new class extends Migration
                 $table->timestamps();
             });
         }
+
+        $this->dropIndexIfExists('ssa_simpanan', 'idx_dhs_period_kanca_unit');
+        $this->dropIndexIfExists('ssa_pinjaman', 'idx_dhs_period_kanca_unit');
     }
 
     public function down(): void
@@ -142,5 +146,27 @@ return new class extends Migration
         Schema::dropIfExists('gi405_rec_dh');
         Schema::dropIfExists('ssa_pinjaman');
         Schema::dropIfExists('ssa_simpanan');
+    }
+
+    private function dropIndexIfExists(string $table, string $indexName): void
+    {
+        if (!Schema::hasTable($table) || !$this->indexExists($table, $indexName)) {
+            return;
+        }
+
+        DB::statement(sprintf(
+            'ALTER TABLE `%s` DROP INDEX `%s`',
+            str_replace('`', '``', $table),
+            str_replace('`', '``', $indexName)
+        ));
+    }
+
+    private function indexExists(string $table, string $indexName): bool
+    {
+        return DB::table('information_schema.statistics')
+            ->where('table_schema', DB::connection()->getDatabaseName())
+            ->where('table_name', $table)
+            ->where('index_name', $indexName)
+            ->exists();
     }
 };
