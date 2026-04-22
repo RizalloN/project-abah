@@ -825,7 +825,7 @@ class ImportReportPhController extends Controller
 
     private function resolveWorkingImportPath(string $relativePath): string
     {
-        $absolutePath = Storage::path($relativePath);
+        $absolutePath = $this->resolveAbsoluteImportPath($relativePath) ?? Storage::path($relativePath);
         if (!$this->isExcelFile($absolutePath)) {
             return $absolutePath;
         }
@@ -834,6 +834,33 @@ class ImportReportPhController extends Controller
         $stagedCsvPath = (string) ($stageState['staged_csv_path'] ?? '');
 
         return ($stagedCsvPath !== '' && file_exists($stagedCsvPath)) ? $stagedCsvPath : $absolutePath;
+    }
+
+    private function resolveAbsoluteImportPath(string $relativePath): ?string
+    {
+        $normalizedRelativePath = trim(str_replace('\\', '/', (string) $relativePath), '/');
+        if ($normalizedRelativePath === '') {
+            return null;
+        }
+
+        $candidates = [
+            Storage::path($normalizedRelativePath),
+            storage_path('app/' . $normalizedRelativePath),
+        ];
+
+        if (str_starts_with($normalizedRelativePath, 'private/')) {
+            $candidates[] = storage_path('app/' . substr($normalizedRelativePath, strlen('private/')));
+        } else {
+            $candidates[] = storage_path('app/private/' . $normalizedRelativePath);
+        }
+
+        foreach (array_values(array_unique($candidates)) as $candidatePath) {
+            if ($candidatePath !== '' && file_exists($candidatePath)) {
+                return $candidatePath;
+            }
+        }
+
+        return null;
     }
 
     private function createPreviewStateKey(string $relativePath): string
@@ -944,8 +971,8 @@ class ImportReportPhController extends Controller
                     return;
                 }
 
-                $absolutePath = Storage::path($relativePath);
-                if (!file_exists($absolutePath)) {
+                $absolutePath = $this->resolveAbsoluteImportPath($relativePath);
+                if ($absolutePath === null || !file_exists($absolutePath)) {
                     $send('error_msg', ['message' => 'File CSV ' . self::REPORT_LABEL . ' tidak ditemukan di server.']);
                     return;
                 }
@@ -1044,13 +1071,15 @@ class ImportReportPhController extends Controller
             return redirect()->route('import.index')->with('error', 'File import ' . self::REPORT_LABEL . ' tidak ditemukan. Silakan upload ulang.');
         }
 
-        $absolutePath = Storage::path($relativePath);
-        if (!file_exists($absolutePath)) {
+        $absolutePath = $this->resolveAbsoluteImportPath($relativePath);
+        if ($absolutePath === null || !file_exists($absolutePath)) {
             return redirect()->route('import.index')->with('error', 'File CSV ' . self::REPORT_LABEL . ' tidak ditemukan di server.');
         }
 
         $previewStateKey = trim((string) $request->input('preview_state_key', ''));
-        $previewState = $this->excelImportJobService()->getPreviewState($previewStateKey);
+        $previewState = $previewStateKey !== ''
+            ? $this->excelImportJobService()->getPreviewState($previewStateKey)
+            : [];
         $previewMeta = (array) ($previewState['previewMeta'] ?? []);
         $previewPath = (string) ($previewMeta['path'] ?? '');
         $previewStageCsv = (string) ($previewMeta['staged_csv_path'] ?? '');
@@ -1195,8 +1224,8 @@ class ImportReportPhController extends Controller
         ]);
 
         $relativePath = $request->input('file_path');
-        $absolutePath = Storage::path($relativePath);
-        if (!file_exists($absolutePath)) {
+        $absolutePath = $this->resolveAbsoluteImportPath($relativePath);
+        if ($absolutePath === null || !file_exists($absolutePath)) {
             return response()->json([
                 'status' => 'error',
                 'title' => 'Gagal!',
@@ -1225,7 +1254,10 @@ class ImportReportPhController extends Controller
 
         $selectedColumns = array_map('intval', $request->input('selected_columns', []));
         $activeFilters = json_decode($request->input('active_filters_json', '{}'), true) ?: [];
-        $previewState = $this->excelImportJobService()->getPreviewState($request->input('preview_state_key'));
+        $previewStateKey = trim((string) $request->input('preview_state_key', ''));
+        $previewState = $previewStateKey !== ''
+            ? $this->excelImportJobService()->getPreviewState($previewStateKey)
+            : [];
         $previewMeta = !empty($previewState['previewMeta']) && is_array($previewState['previewMeta'])
             ? (array) $previewState['previewMeta']
             : (array) session('report_ph_preview_meta', []);
@@ -1331,6 +1363,7 @@ class ImportReportPhController extends Controller
             'header_index' => $headerIndex,
             'delimiter' => $isFastExcelPreview ? self::COLUMN_DELIMITER : (string) (($context['delimiter'] ?? self::COLUMN_DELIMITER)),
             'table_name' => self::TABLE_NAME,
+            'disable_inline_fallback' => true,
             'staged_csv_path' => (!$isFastExcelPreview && $workingPath !== $absolutePath) ? $workingPath : null,
             'filtered_csv_path' => $filteredCsvPath,
             'bulk_load_columns' => $bulkLoadColumns,
@@ -1353,7 +1386,7 @@ class ImportReportPhController extends Controller
             'queue' => 'imports-high',
         ]);
 
-        $this->executionService()->dispatch($jobId, 'Fase Polars LW325 - PH dimulai. Menyiapkan import fresh.');
+        $this->dispatchExecutionBestEffort($jobId, 'Fase Polars LW325 - PH dimulai. Menyiapkan import fresh.');
 
         return response()->json([
             'status' => 'success',
@@ -1379,7 +1412,7 @@ class ImportReportPhController extends Controller
         }
 
         request()->session()->save();
-        $this->executionService()->dispatch($jobId, 'Fase Polars LW325 - PH dimulai. Menyiapkan import fresh.');
+        $this->dispatchExecutionBestEffort($jobId, 'Fase Polars LW325 - PH dimulai. Menyiapkan import fresh.');
 
         return $this->executionService()->streamStatus($request, $jobId, false);
     }
@@ -1398,8 +1431,8 @@ class ImportReportPhController extends Controller
         ]);
 
         $relativePath = $request->input('file_path');
-        $absolutePath = Storage::path($relativePath);
-        if (!file_exists($absolutePath)) {
+        $absolutePath = $this->resolveAbsoluteImportPath($relativePath);
+        if ($absolutePath === null || !file_exists($absolutePath)) {
             return response()->json([
                 'status' => 'error',
                 'title' => 'Gagal!',
@@ -1617,7 +1650,7 @@ class ImportReportPhController extends Controller
         $params = (array) ($state['params'] ?? []);
         $jobId = (int) ($state['job_id'] ?? ($params['job_id'] ?? 0));
         $relativePath = (string) ($params['file_path'] ?? '');
-        $absolutePath = $relativePath !== '' ? Storage::path($relativePath) : '';
+        $absolutePath = $relativePath !== '' ? ($this->resolveAbsoluteImportPath($relativePath) ?? '') : '';
 
         if ($absolutePath === '' || !file_exists($absolutePath)) {
             return [
@@ -2391,6 +2424,21 @@ class ImportReportPhController extends Controller
     private function progressService(): ImportProgressService
     {
         return app(ImportProgressService::class);
+    }
+
+    private function dispatchExecutionBestEffort(int $jobId, string $message): void
+    {
+        if ($jobId <= 0) {
+            return;
+        }
+
+        try {
+            $this->executionService()->dispatch($jobId, $message);
+        } catch (\Throwable $e) {
+            Log::warning('Gagal memulai eksekusi queue ' . self::REPORT_LABEL . ': ' . $e->getMessage(), [
+                'job_id' => $jobId,
+            ]);
+        }
     }
 
     private function executionService(): ImportExecutionService

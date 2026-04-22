@@ -417,8 +417,14 @@ class ImportExecutionService
                         'percent' => 100,
                     ],
                 );
-                SyncImportedReportJob::dispatch($jobId, null, null, static::class)
-                    ->onQueue($this->resolvePostImportSyncQueue($jobId, $params));
+                try {
+                    SyncImportedReportJob::dispatch($jobId, null, null, static::class)
+                        ->onQueue($this->resolvePostImportSyncQueue($jobId, $params));
+                } catch (\Throwable $syncError) {
+                    Log::warning('Import successful but failed to dispatch post-import sync: ' . $syncError->getMessage(), [
+                        'job_id' => $jobId,
+                    ]);
+                }
                 $this->releaseDispatchMarker($jobId);
                 return;
             }

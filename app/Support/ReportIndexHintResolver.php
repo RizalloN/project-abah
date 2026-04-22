@@ -14,13 +14,13 @@ class ReportIndexHintResolver
         $qualifiedTable = '`' . str_replace('`', '``', $table) . '`';
         $sql = $qualifiedTable;
 
-        if ($alias !== null && trim($alias) !== '') {
-            $sql .= ' as ' . $alias;
-        }
-
         $indexName = $this->firstExistingIndex($table, $preferredIndexes);
         if ($indexName !== null) {
             $sql .= ' FORCE INDEX (`' . str_replace('`', '``', $indexName) . '`)';
+        }
+
+        if ($alias !== null && trim($alias) !== '') {
+            $sql .= ' as ' . $alias;
         }
 
         return $sql;

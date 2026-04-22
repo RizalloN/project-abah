@@ -1199,9 +1199,10 @@ class ImportExcelController extends Controller
         array $row,
         int $lineNumber,
         string $source,
-        string $delimiter = ','
+        string $delimiter = ',',
+        ?string $tableName = null
     ): bool {
-        if (!$this->usesSerializedCsvRepair()) {
+        if (!$this->usesSerializedCsvRepair($tableName)) {
             return false;
         }
 
@@ -1210,11 +1211,11 @@ class ImportExcelController extends Controller
             return false;
         }
 
-        $tableName = $this->isLw325PhTable() ? 'lw325_ph' : 'daily_loan_dinamis';
-        $primaryAccountKey = $this->isLw325PhTable() ? 'acctno' : 'nomor_rekening1';
+        $resolvedTableName = $tableName ?: ($this->isLw325PhTable() ? 'lw325_ph' : 'daily_loan_dinamis');
+        $primaryAccountKey = $resolvedTableName === 'lw325_ph' ? 'acctno' : 'nomor_rekening1';
 
         Log::warning('Serialized CSV field count mismatch; row skipped.', [
-            'table_name' => $tableName,
+            'table_name' => $resolvedTableName,
             'source' => $source,
             'line_number' => $lineNumber,
             'expected_columns' => $expectedColumns,
@@ -1233,6 +1234,35 @@ class ImportExcelController extends Controller
         return true;
     }
 
+    private function stripLeadingRowNumberForSimpananMultiPnRow(array $headers, array $row): array
+    {
+        $expectedColumns = count($headers);
+        if ($expectedColumns === 0 || count($row) !== $expectedColumns + 1) {
+            return $row;
+        }
+
+        $firstValue = trim((string) ($row[0] ?? ''));
+        if ($firstValue === '' || preg_match('/^\d+$/', $firstValue) !== 1) {
+            return $row;
+        }
+
+        $shiftedRow = array_slice($row, 1);
+        $valuesByHeader = [];
+
+        foreach ($headers as $index => $header) {
+            $normalizedHeader = $this->normalizeImportColumnName((string) $header);
+            if ($normalizedHeader === '' || str_starts_with($normalizedHeader, 'col_')) {
+                continue;
+            }
+
+            $valuesByHeader[$normalizedHeader] = $shiftedRow[$index] ?? null;
+        }
+
+        return $this->hasRequiredSimpananMultiPnImportData($valuesByHeader)
+            ? $shiftedRow
+            : $row;
+    }
+
     private function isRowNumberLikeHeader(string $headerName): bool
     {
         return in_array($this->normalizeImportColumnName($headerName), [
@@ -1244,9 +1274,9 @@ class ImportExcelController extends Controller
         ], true);
     }
 
-    protected function isCompleteSimpananMultiPnSourceRow(array $headers, array $row): bool
+    protected function isCompleteSimpananMultiPnSourceRow(array $headers, array $row, ?string $tableName = null): bool
     {
-        if (!$this->isSimpananMultiPnTable()) {
+        if (!$this->isSimpananMultiPnTable($tableName)) {
             return true;
         }
 
@@ -1271,9 +1301,9 @@ class ImportExcelController extends Controller
         return $this->isValidSimpananMultiPnRowValues($valuesByHeader);
     }
 
-    protected function isCompleteDailyLoanSourceRow(array $headers, array $row): bool
+    protected function isCompleteDailyLoanSourceRow(array $headers, array $row, ?string $tableName = null): bool
     {
-        if (!$this->isDailyLoanTable()) {
+        if (!$this->isDailyLoanTable($tableName)) {
             return true;
         }
 
@@ -2306,7 +2336,7 @@ class ImportExcelController extends Controller
         ]);
     }
 
-    private function countCsvDataRows(string $csvPath, ?string $tableName = null): int
+    protected function countCsvDataRows(string $csvPath, ?string $tableName = null): int
     {
         if ($this->isDailyLoanTable($tableName)) {
             return (int) ($this->analyzeDailyLoanCsvImportSource($csvPath)['valid_rows'] ?? 0);
@@ -2337,15 +2367,19 @@ class ImportExcelController extends Controller
                     continue;
                 }
 
-                if ($this->hasDailyLoanFieldCountMismatch($headers, (array) $row, $lineNumber, 'count_csv_data_rows', $delimiter)) {
+                if ($this->hasDailyLoanFieldCountMismatch($headers, (array) $row, $lineNumber, 'count_csv_data_rows', $delimiter, $tableName)) {
                     continue;
                 }
 
-                if (!$this->isCompleteSimpananMultiPnSourceRow($headers, (array) $row)) {
+                if ($this->isSimpananMultiPnTable($tableName)) {
+                    $row = $this->stripLeadingRowNumberForSimpananMultiPnRow($headers, (array) $row);
+                }
+
+                if (!$this->isCompleteSimpananMultiPnSourceRow($headers, (array) $row, $tableName)) {
                     continue;
                 }
 
-                if (!$this->isCompleteDailyLoanSourceRow($headers, (array) $row)) {
+                if (!$this->isCompleteDailyLoanSourceRow($headers, (array) $row, $tableName)) {
                     continue;
                 }
 
@@ -2356,6 +2390,37 @@ class ImportExcelController extends Controller
         }
 
         return $rows;
+    }
+
+    protected function countCsvPhysicalDataRows(string $csvPath): int
+    {
+        try {
+            $file = new \SplFileObject($csvPath, 'r');
+            $file->seek(PHP_INT_MAX);
+            $lineIndex = $file->key();
+            $currentLine = trim((string) $file->current());
+            if ($currentLine === '' && $lineIndex > 0) {
+                $lineIndex--;
+            }
+
+            return max(0, $lineIndex);
+        } catch (\Throwable) {
+            $handle = @fopen($csvPath, 'rb');
+            if ($handle === false) {
+                return 0;
+            }
+
+            $lines = 0;
+            try {
+                while (fgets($handle) !== false) {
+                    $lines++;
+                }
+            } finally {
+                fclose($handle);
+            }
+
+            return max(0, $lines - 1);
+        }
     }
 
     private function estimateCsvImportTotalRows(string $csvPath, int $headerIndex): int
@@ -2790,7 +2855,16 @@ class ImportExcelController extends Controller
             return ['eligible' => false, 'reason' => 'Fast import dinonaktifkan pada konfigurasi aplikasi. Menggunakan safe path queue.'];
         }
 
-        if (!empty($params['active_filters'] ?? [])) {
+        $activeFilters = (array) ($params['active_filters'] ?? []);
+        $hasActualFilters = false;
+        foreach ($activeFilters as $filterValue) {
+            if ($filterValue !== null && trim((string) $filterValue) !== '') {
+                $hasActualFilters = true;
+                break;
+            }
+        }
+
+        if ($hasActualFilters) {
             return ['eligible' => false, 'reason' => 'Filtered import menggunakan safe path queue.'];
         }
 
@@ -3928,6 +4002,8 @@ class ImportExcelController extends Controller
                     continue;
                 }
 
+                $row = $this->stripLeadingRowNumberForSimpananMultiPnRow($header, (array) $row);
+
                 if (count($row) !== $expectedColumns) {
                     $skippedRows[] = $lineNumber;
                     $skippedCount++;
@@ -4025,6 +4101,7 @@ class ImportExcelController extends Controller
             'skipped_count' => (int) ($normalized['skipped_count'] ?? 0),
             'duplicate_count' => (int) ($normalized['duplicate_count'] ?? 0),
             'written_rows' => (int) ($normalized['written_rows'] ?? 0),
+            'total_rows' => (int) ($normalized['total_rows'] ?? 0),
         ];
     }
 
@@ -4042,28 +4119,37 @@ class ImportExcelController extends Controller
             }
 
             $expectedColumns = count($headers);
-            $totalRows = 0;
+            $totalRows = $this->countCsvPhysicalDataRows($csvPath);
+            $sampleLimit = max(1, (int) config('import.direct_load.validation_sample_rows', 5000));
+            $scannedRows = 0;
 
             while (($row = $this->readCsvRecord($handle, $delimiter)) !== false) {
                 if (empty(array_filter((array) $row, static fn ($value): bool => trim((string) $value) !== ''))) {
+                    return ['usable' => false];
+                }
+
+                if ($scannedRows >= $sampleLimit) {
                     continue;
                 }
+
+                $row = $this->stripLeadingRowNumberForSimpananMultiPnRow($headers, (array) $row);
 
                 if (count($row) !== $expectedColumns) {
                     return ['usable' => false];
                 }
 
-                if (!$this->isCompleteSimpananMultiPnSourceRow($headers, (array) $row)) {
+                if (!$this->isCompleteSimpananMultiPnSourceRow($headers, (array) $row, 'simpanan_multipn')) {
                     return ['usable' => false];
                 }
 
-                $totalRows++;
+                $scannedRows++;
             }
 
             return [
                 'usable' => true,
                 'total_rows' => $totalRows,
                 'written_rows' => $totalRows,
+                'sampled_rows' => $scannedRows,
             ];
         } finally {
             fclose($handle);
@@ -5237,7 +5323,8 @@ class ImportExcelController extends Controller
 
     private function buildDirectLoadTextExpression(string $columnExpression): string
     {
-        $trimmed = "TRIM(COALESCE({$columnExpression}, ''))";
+        $normalizedWhitespace = "REPLACE(REPLACE(REPLACE(COALESCE({$columnExpression}, ''), CHAR(13), ''), CHAR(10), ''), CHAR(9), ' ')";
+        $trimmed = "TRIM({$normalizedWhitespace})";
 
         return "NULLIF(NULLIF({$trimmed}, ''), '\\\\N')";
     }
@@ -6403,7 +6490,7 @@ class ImportExcelController extends Controller
                 $this->progressService()->updateTotals($jobId, $inserted, $failed, $baseTotal, $status, [
                     'status' => $status,
                     'phase' => 'loading',
-                    'percent' => $status === 'completed' ? 98 : 96,
+                    'percent' => 100,
                     'message' => $status === 'completed'
                         ? ($isDailyLoanTable ? 'Direct LOAD DATA Daily Loan selesai diproses.' : 'Direct LOAD DATA ' . $directTableLabel . ' selesai diproses.')
                         : ($isDailyLoanTable ? 'Direct LOAD DATA Daily Loan selesai dengan kegagalan parsial.' : 'Direct LOAD DATA ' . $directTableLabel . ' selesai dengan kegagalan parsial.'),
@@ -6417,7 +6504,7 @@ class ImportExcelController extends Controller
             $send('progress', [
                 'status' => 'processing',
                 'phase' => 'loading',
-                'percent' => 98,
+                'percent' => 100,
                 'message' => $isDailyLoanTable
                     ? 'Direct LOAD DATA Daily Loan selesai diproses.'
                     : 'Direct LOAD DATA ' . $directTableLabel . ' selesai diproses.',
@@ -9222,7 +9309,7 @@ class ImportExcelController extends Controller
             }
 
             // OPTIMIZED: Cache table type checks at streaming start (eliminates 46k+ redundant function calls)
-            $activeTableName = $this->resolveExcelTableName();
+            $activeTableName = $tableName;
             $this->streamingTableType = $activeTableName;
             $this->streamingIsSimpananMultiPN = ($activeTableName === 'simpanan_multipn');
             $this->streamingIsLw325Ph = ($activeTableName === 'lw325_ph');
@@ -9249,8 +9336,12 @@ class ImportExcelController extends Controller
             while (($row = $this->readCsvRecord($handle, $delimiter)) !== false) {
                 $lineNumber++;
 
-                if ($this->hasDailyLoanFieldCountMismatch($normalizedHeaders, $row, $lineNumber, 'stream_staged_csv_export', $delimiter)) {
+                if ($this->hasDailyLoanFieldCountMismatch($normalizedHeaders, $row, $lineNumber, 'stream_staged_csv_export', $delimiter, $tableName)) {
                     continue;
+                }
+
+                if ($tableName === 'simpanan_multipn') {
+                    $row = $this->stripLeadingRowNumberForSimpananMultiPnRow($normalizedHeaders, (array) $row);
                 }
 
                 // OPTIMIZED: Inline padRow untuk menghindari function call overhead
@@ -9398,7 +9489,11 @@ class ImportExcelController extends Controller
                     $inserted,
                     $failed,
                     $rowsDone,
-                    ($inserted > 0 || $rowsDone === 0) ? 'completed' : 'failed'
+                    ($inserted > 0 || $rowsDone === 0) ? 'completed' : 'failed',
+                    [
+                        'percent' => 100,
+                        'message' => 'Import selesai diproses.',
+                    ]
                 );
             }
 

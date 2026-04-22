@@ -403,10 +403,19 @@ class ImportJobManagementController extends Controller
             }
             DB::table('jobs')->where('id', $queueJobId)->delete();
             $progressService->cleanupQueuedImportJobRowsForJob($importJobId);
-            $executionService->run($importJobId);
+            
+            // RUN IN BACKGROUND to avoid web request timeout
+            // Using artisan command is safer for environment loading
+            $cmd = "php artisan import:run-job $importJobId";
+            if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
+                pclose(popen("start /B " . $cmd, "r"));
+            } else {
+                exec($cmd . " > /dev/null 2>&1 &");
+            }
+
             return response()->json([
                 'status' => 'success',
-                'message' => 'Import job #' . $importJobId . ' dijalankan langsung (force start).',
+                'message' => 'Import job #' . $importJobId . ' dijalankan di background (force start). Progress dapat dipantau di Dashboard.',
             ]);
         }
 

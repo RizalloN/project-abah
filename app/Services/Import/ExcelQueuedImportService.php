@@ -103,7 +103,19 @@ class ExcelQueuedImportService
 
             $hasEmptyFilter = false;
             foreach ($activeFilters as $allowedValues) {
-                if (array_values((array) $allowedValues) === []) {
+                $allowedValues = (array) $allowedValues;
+                // Only consider it an "empty filter" if the array is truly empty.
+                // If it contains empty strings, we treat it as unfiltered in the controller,
+                // so we should be consistent here.
+                $hasValues = false;
+                foreach ($allowedValues as $val) {
+                    if ($val !== null && trim((string) $val) !== '') {
+                        $hasValues = true;
+                        break;
+                    }
+                }
+                
+                if (!$hasValues && !empty($allowedValues)) {
                     $hasEmptyFilter = true;
                     break;
                 }
@@ -116,7 +128,7 @@ class ExcelQueuedImportService
                         'total_files' => 0,
                         'total_success' => 0,
                         'total_failed' => 0,
-                        'finished_at' => now(),
+                        // 'finished_at' removed as it doesn't exist in import_jobs
                     ], [
                         'status' => 'completed',
                         'percent' => 100,
@@ -582,29 +594,36 @@ class ExcelQueuedImportService
                 'total_failed' => $totalFailed,
             ]);
 
-            // Edge case: no rows were inserted AND none failed means file had no valid data rows
-            $finalStatus = match (true) {
-                $totalFailed > 0 && $totalInserted > 0 => 'failed_partial',
-                $totalFailed > 0 => 'failed',
-                $totalInserted === 0 => 'failed',
-                default => 'completed',
-            };
+            $job = $jobId > 0 ? $findJob($jobId) : null;
+            $currentStatus = $job ? (string)$job->status : null;
+
+            // Only decide final status if not already in a terminal state (like 'completed' from a sub-handler)
+            if (!in_array($currentStatus, ['completed', 'failed', 'failed_partial', 'terminated'], true)) {
+                $finalStatus = match (true) {
+                    $totalFailed > 0 && $totalInserted > 0 => 'failed_partial',
+                    $totalFailed > 0 => 'failed',
+                    $totalInserted === 0 && $totalDataRows > 0 => 'failed', // Failed to insert anything from a non-empty file
+                    default => 'completed',
+                };
+            } else {
+                $finalStatus = $currentStatus;
+            }
 
             if ($jobId > 0) {
                 $updateJob($jobId, [
-                    'total_success' => $totalInserted,
-                    'total_failed' => $totalFailed,
+                    'total_success' => $totalInserted > 0 ? $totalInserted : ($job->total_success ?? 0),
+                    'total_failed' => $totalFailed > 0 ? $totalFailed : ($job->total_failed ?? 0),
                     'status' => $finalStatus,
                 ], [
                     'status' => $finalStatus,
                     'percent' => 100,
-                    'message' => $finalStatus === 'completed'
+                    'message' => in_array($finalStatus, ['completed', 'success'], true)
                         ? 'Import selesai diproses.'
-                        : 'Import selesai dengan kegagalan parsial.',
-                    'processed_rows' => $rowsDone,
-                    'total_rows' => $totalDataRows,
-                    'total_success' => $totalInserted,
-                    'total_failed' => $totalFailed,
+                        : 'Import selesai dengan kegagalan atau status: ' . $finalStatus,
+                    'processed_rows' => $rowsDone > 0 ? $rowsDone : ($job->total_files ?? 0),
+                    'total_rows' => $totalDataRows > 0 ? $totalDataRows : ($job->total_files ?? 0),
+                    'total_success' => $totalInserted > 0 ? $totalInserted : ($job->total_success ?? 0),
+                    'total_failed' => $totalFailed > 0 ? $totalFailed : ($job->total_failed ?? 0),
                 ]);
             }
 

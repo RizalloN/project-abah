@@ -213,6 +213,7 @@ class ImportSimpananMultiPnCsvControllerTest extends TestCase
         $this->assertStringContainsString('`saldo_idr` = CASE', $planSql);
         $this->assertStringContainsString('CASE', $planSql);
         $this->assertStringContainsString('DECIMAL(24,2)', $planSql);
+        $this->assertStringContainsString('CHAR(13)', $planSql);
         $this->assertStringContainsString("REGEXP '^-?[0-9]+(,[0-9]+)?$'", $planSql);
         $this->assertSame(383158180, (int) ($plan['source_balance_total_cents'] ?? 0));
     }
@@ -267,6 +268,58 @@ class ImportSimpananMultiPnCsvControllerTest extends TestCase
         $this->assertStringContainsString('`uniqueid_SimoPN` = CONCAT(', $planSql);
     }
 
+    public function test_direct_csv_load_plan_collects_normalized_period_hints_from_source(): void
+    {
+        $controller = new ImportSimpananMultiPnCsvController();
+
+        Schema::shouldReceive('getColumnListing')
+            ->once()
+            ->with('simpanan_multipn')
+            ->andReturn([
+                'id',
+                'uniqueid_SMPN',
+                'posisi',
+                'cifno',
+                'no_rekening',
+                'status',
+                'jenis_simpanan',
+                'saldo_idr',
+                'created_at',
+                'updated_at',
+            ]);
+
+        $csvPath = storage_path('framework/testing/simpanan_fast_import_period_hints.csv');
+        if (!is_dir(dirname($csvPath))) {
+            @mkdir(dirname($csvPath), 0777, true);
+        }
+
+        file_put_contents($csvPath, implode("\n", [
+            'No;Posisi;CIFNO;No Rekening;Status;Jenis Simpanan;Saldo IDR',
+            '1;20/04/2026;PQ32242;636001000001;9;TABUNGAN;500',
+            '2;2026-04-20;PQ32243;636001000002;9;GIRO;700',
+            '3;21-04-2026;PQ32244;636001000003;9;DEPOSITO;900',
+        ]));
+
+        $plan = [];
+        try {
+            $plan = $this->invokeMethod($controller, 'buildDirectCsvLoadPlan', [
+                $csvPath,
+                ['No', 'Posisi', 'CIFNO', 'No Rekening', 'Status', 'Jenis Simpanan', 'Saldo IDR'],
+                [0, 1, 2, 3, 4, 5, 6],
+            ]);
+        } finally {
+            @unlink($csvPath);
+            if (!empty($plan['cleanup_path'] ?? '') && file_exists((string) $plan['cleanup_path'])) {
+                @unlink((string) $plan['cleanup_path']);
+            }
+        }
+
+        $this->assertSame([
+            '2026-04-20',
+            '2026-04-21',
+        ], $plan['period_hints'] ?? []);
+    }
+
     public function test_prepare_simpanan_direct_load_source_preserves_duplicates_and_skips_malformed_rows(): void
     {
         $controller = new ImportSimpananMultiPnCsvController();
@@ -299,6 +352,39 @@ class ImportSimpananMultiPnCsvControllerTest extends TestCase
         $this->assertSame(0, $result['duplicate_count']);
         $this->assertSame(1, $result['skipped_count']);
         $this->assertTrue((bool) ($result['normalized'] ?? false));
+    }
+
+    public function test_prepare_simpanan_direct_load_source_normalizes_blank_lines_instead_of_using_raw_path(): void
+    {
+        $controller = new ImportSimpananMultiPnCsvController();
+
+        $csvPath = storage_path('framework/testing/simpanan_validator_blank_lines.csv');
+        if (!is_dir(dirname($csvPath))) {
+            @mkdir(dirname($csvPath), 0777, true);
+        }
+
+        file_put_contents($csvPath, implode("\n", [
+            'POSISI;CIFNO;NO_REKENING;JENIS_SIMPANAN;SALDO_IDR;STATUS',
+            '20/04/2026;CIF001;1234567890;TABUNGAN;1000;AKTIF',
+            '',
+            '20/04/2026;CIF002;1234567891;GIRO;2500;AKTIF',
+            '',
+        ]) . "\n");
+
+        $result = [];
+        try {
+            $result = $this->invokeMethod($controller, 'prepareSimpananMultiPnDirectLoadSource', [$csvPath, ';']);
+        } finally {
+            @unlink($csvPath);
+            if (!empty($result['path'] ?? '') && file_exists((string) $result['path']) && ($result['cleanup'] ?? false)) {
+                @unlink((string) $result['path']);
+            }
+        }
+
+        $this->assertNotSame($csvPath, $result['path'] ?? '');
+        $this->assertTrue((bool) ($result['cleanup'] ?? false));
+        $this->assertTrue((bool) ($result['normalized'] ?? false));
+        $this->assertSame(2, $result['written_rows'] ?? null);
     }
 
     public function test_direct_csv_load_bypasses_snapshot_invalidation_during_bulk_load(): void

@@ -87,18 +87,27 @@ INT_COLS = ['jw', 'at', 'jumlah_pn', 'jumlah_pn_all']
 # Format tanggal prioritas tinggi untuk lw325_ph (US banking format)
 DATE_FMTS_MONTH_FIRST = [
     "%m/%d/%Y %I:%M:%S %p",
+    "%m/%d/%Y %I:%M %p",
     "%m/%d/%Y %H:%M:%S",
+    "%m/%d/%Y %H:%M",
     "%m/%d/%Y",
     "%Y-%m-%d",
+    "%d/%m/%Y %H:%M:%S",
+    "%d/%m/%Y %H:%M",
     "%d/%m/%Y",
     "%d-%m-%Y",
 ]
 DATE_FMTS_DAY_FIRST = [
     "%d/%m/%Y %I:%M:%S %p",
+    "%d/%m/%Y %I:%M %p",
     "%d/%m/%Y %H:%M:%S",
+    "%d/%m/%Y %H:%M",
     "%d/%m/%Y",
     "%Y-%m-%d",
+    "%m/%d/%Y %I:%M:%S %p",
+    "%m/%d/%Y %I:%M %p",
     "%m/%d/%Y",
+    "%m/%d/%Y %H:%M",
     "%d-%m-%Y",
 ]
 
@@ -838,8 +847,9 @@ def main():
     if active_filters:
         send_progress(30, "Menerapkan filter cepat dengan Polars...", 0, data_rows_estimate)
         filter_exprs = []
+        schema_names = set(lf.collect_schema().names())
         for col, raw_values in active_filters.items():
-            if col not in lf.columns:
+            if col not in schema_names:
                 continue
             values = [str(v).strip() for v in (raw_values or []) if str(v).strip()]
             if values:

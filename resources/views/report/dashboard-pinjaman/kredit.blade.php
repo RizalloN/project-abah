@@ -61,6 +61,25 @@
     <!-- Dashboard Content -->
     <div id="dashboardContent" class="animate-reveal">
         
+        <!-- Consolidation Area 6 Section -->
+        <div class="loan-section-block mb-4 d-none" id="consolidationSection">
+            <div class="loan-section-header">
+                <h3 id="consolidationTitle">KONSOLIDASI AREA 6</h3>
+                <div class="legend-box ml-auto d-flex align-items-center" style="gap: 1rem;">
+                    <div class="d-flex align-items-center" style="gap: 0.5rem;">
+                        <i class="fas fa-info-circle text-muted"></i>
+                        <span class="text-muted" style="font-size: 0.75rem;">Dalam <strong>Rp, Juta</strong></span>
+                    </div>
+                    <button class="btn-snapshot" onclick="window.captureLoanSection('consolidationSection', 'Snapshot-Konsolidasi')" title="Ambil Snapshot">
+                        <i class="fas fa-camera"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="table-responsive loan-summary-table-wrap" id="consolidationTableContainer">
+                @include('report.dashboard-pinjaman._partials._loading_stub', ['label' => 'Konsolidasi'])
+            </div>
+        </div>
+
         <!-- OS Section -->
         <div class="loan-section-block mb-4" id="osSection">
             <div class="loan-section-header">
@@ -165,6 +184,8 @@
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     const osTableContainer = document.getElementById('osTableContainer');
+    const consolidationTableContainer = document.getElementById('consolidationTableContainer');
+    const consolidationSection = document.getElementById('consolidationSection');
     const smlTableContainer = document.getElementById('smlTableContainer');
     const nplTableContainer = document.getElementById('nplTableContainer');
     const btnLoadData = document.getElementById('btnLoadData');
@@ -277,11 +298,15 @@ document.addEventListener('DOMContentLoaded', function () {
             }
 
             try {
-                const sections = [
+                const sections = [];
+                if (!consolidationSection.classList.contains('d-none')) {
+                    sections.push({ id: 'consolidationSection', code: 'CONS', label: 'Konsolidasi Area 6' });
+                }
+                sections.push(
                     { id: 'osSection', code: 'OS', label: 'Outstanding' },
                     { id: 'smlSection', code: 'SML', label: 'Special Mention' },
                     { id: 'nplSection', code: 'NPL', label: 'Non-Performing' }
-                ];
+                );
                 
                 const dateStr = $periodeSel.find('option:selected').text().trim().replace(/ /g, '-');
                 const kategoriStr = $kategoriSel.val().trim().toUpperCase();
@@ -407,6 +432,135 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     // --- Table Building Logic ---
+    function buildConsolidationTable(osData, smlData, nplData, headerDates, segmentName, rkaLabels) {
+        if (!osData || !smlData || !nplData) return '';
+
+        const dates = { 
+            ytd: formatDate(headerDates.ytd), 
+            m2: formatDate(headerDates.m2), 
+            mtm: formatDate(headerDates.mtm), 
+            selected: formatDate(headerDates.selected) 
+        };
+
+        const osTotal = osData.find(r => r.is_total);
+        const smlTotal = smlData.find(r => r.is_total);
+        const nplTotal = nplData.find(r => r.is_total);
+
+        // Helper to consolidate categories
+        const getCategoryConsolidation = (rows) => {
+            const categories = {};
+            rows.filter(r => !r.is_total).forEach(r => {
+                if (!categories[r.category]) {
+                    categories[r.category] = { 
+                        label: r.category, ytd: 0, m2: 0, mtm: 0, selected: 0, 
+                        delta_ytd: 0, delta_mtd: 0, delta_dtd: 0,
+                        rka_m1: 0, rka_current: 0, penc_m1_rp: 0, penc_cur_rp: 0,
+                        penc_m1_pct: 0, penc_cur_pct: 0
+                    };
+                }
+                const c = categories[r.category];
+                c.ytd += parseFloat(r.ytd || 0);
+                c.m2 += parseFloat(r.m2 || 0);
+                c.mtm += parseFloat(r.mtm || 0);
+                c.selected += parseFloat(r.selected || 0);
+                c.delta_ytd += parseFloat(r.delta_ytd || 0);
+                c.delta_mtd += parseFloat(r.delta_mtd || 0);
+                c.delta_dtd += parseFloat(r.delta_dtd || 0);
+                c.rka_m1 += parseFloat(r.rka_m1 || 0);
+                c.rka_current += parseFloat(r.rka_current || 0);
+                c.penc_m1_rp += parseFloat(r.penc_m1_rp || 0);
+                c.penc_cur_rp += parseFloat(r.penc_cur_rp || 0);
+            });
+            // Recalculate percentages
+            Object.values(categories).forEach(c => {
+                c.penc_m1_pct = c.rka_m1 > 0 ? (c.selected / c.rka_m1) * 100 : 0;
+                c.penc_cur_pct = c.rka_current > 0 ? (c.selected / c.rka_current) * 100 : 0;
+            });
+            return Object.values(categories);
+        };
+
+        const renderRow = (label, d, type, no, isBold = false, isSubRow = false) => {
+            if (!d) return '';
+            const labelStyle = isBold ? 'font-weight: 800; color: #0857c3;' : (isSubRow ? 'font-weight: 600; padding-left: 2rem; font-style: italic; color: #64748b; font-size: 0.75rem;' : 'font-weight: 600;');
+            const rowStyle = isBold ? 'background: rgba(8, 87, 195, 0.03);' : '';
+            return `<tr style="${rowStyle}">
+                <td class="text-center-important">${no}</td>
+                <td class="text-start-important" style="${labelStyle}">${label}</td>
+                <td>${formatCurrency(d.ytd)}</td>
+                <td>${formatCurrency(d.m2)}</td>
+                <td>${formatCurrency(d.mtm)}</td>
+                <td style="background: ${isBold ? 'rgba(224, 242, 254, 0.3)' : '#f0f7ff'}; color: #003d7c; font-weight: 800;">${formatCurrency(d.selected)}</td>
+                <td class="${getConditionalClass(d.delta_ytd, type)}">${formatCurrency(d.delta_ytd)}</td>
+                <td class="${getConditionalClass(d.delta_mtd, type)}">${formatCurrency(d.delta_mtd)}</td>
+                <td class="${getConditionalClass(d.delta_dtd, type)}">${formatCurrency(d.delta_dtd)}</td>
+                <td>${formatCurrency(d.rka_m1)}</td>
+                <td>${formatCurrency(d.rka_current)}</td>
+                <td class="${getConditionalClass(d.penc_m1_rp, type)}">${formatCurrency(d.penc_m1_rp)}</td>
+                <td>${formatPctBadge(d.penc_m1_pct, type)}</td>
+                <td class="${getConditionalClass(d.penc_cur_rp, type)}">${formatCurrency(d.penc_cur_rp)}</td>
+                <td>${formatPctBadge(d.penc_cur_pct, type)}</td>
+            </tr>`;
+        };
+
+        let html = `<table class="loan-summary-table">
+            <thead>
+                <tr>
+                    <th rowspan="2" style="width: 40px;">NO</th>
+                    <th rowspan="2" style="width: 250px;">URAIAN KONSOLIDASI AREA 6</th>
+                    <th colspan="4" class="sub-head">PERIODE</th>
+                    <th colspan="3" class="accent-head">DELTA (Δ) PERIODE</th>
+                    <th colspan="2" class="sub-head">RKA-KP</th>
+                    <th colspan="4" class="accent-head">PENCAPAIAN RKA</th>
+                </tr>
+                <tr>
+                    <th class="sub-head" style="width: 85px;">${dates.ytd}<br><small>(YtD)</small></th>
+                    <th class="sub-head" style="width: 85px;">${dates.m2}<br><small>(M-2)</small></th>
+                    <th class="sub-head" style="width: 85px;">${dates.mtm}<br><small>(MtM)</small></th>
+                    <th class="sub-head" style="background: #004280; width: 90px;">${dates.selected}<br><small>(HARI INI)</small></th>
+                    <th class="accent-head" style="width: 80px;">YtD</th>
+                    <th class="accent-head" style="width: 80px;">MtD</th>
+                    <th class="accent-head" style="width: 80px;">DtD</th>
+                    <th class="sub-head" style="width: 85px;">${rkaLabels?.m1 || ''}</th>
+                    <th class="sub-head" style="width: 85px;">${rkaLabels?.current || ''}</th>
+                    <th class="accent-head" style="width: 90px;">${rkaLabels?.m1 || ''} Δ</th>
+                    <th class="accent-head" style="width: 70px;">%</th>
+                    <th class="accent-head" style="width: 90px;">${rkaLabels?.current || ''} Δ</th>
+                    <th class="accent-head" style="width: 70px;">%</th>
+                </tr>
+            </thead>
+            <tbody>`;
+
+        // A. Outstanding
+        html += renderRow('A. OUTSTANDING (OS)', osTotal, 'Outstanding', '1', true);
+        if (segmentName === 'Mikro') {
+            const osCats = getCategoryConsolidation(osData);
+            osCats.forEach(c => {
+                html += renderRow(c.label, c, 'Outstanding', '', false, true);
+            });
+        }
+
+        // B. SML
+        html += renderRow('B. SPECIAL MENTION LOAN (SML)', smlTotal, 'SML', '2', true);
+        if (segmentName === 'Mikro') {
+            const smlCats = getCategoryConsolidation(smlData);
+            smlCats.forEach(c => {
+                html += renderRow(c.label, c, 'SML', '', false, true);
+            });
+        }
+
+        // C. NPL
+        html += renderRow('C. NON-PERFORMING LOAN (NPL)', nplTotal, 'NPL', '3', true);
+        if (segmentName === 'Mikro') {
+            const nplCats = getCategoryConsolidation(nplData);
+            nplCats.forEach(c => {
+                html += renderRow(c.label, c, 'NPL', '', false, true);
+            });
+        }
+
+        html += '</tbody></table>';
+        return '<div class="loan-table-container">' + html + '</div>';
+    }
+
     function buildTable(data, headerDates, typeLabel, segmentName, rkaLabels) {
         if (!data || data.length === 0 || (data.length === 1 && data[0].is_total && data[0].selected == 0)) {
             return '<div class="text-center py-5 text-muted">Tidak ada data untuk filter ini.</div>';
@@ -548,6 +702,7 @@ document.addEventListener('DOMContentLoaded', function () {
     function showSpinners(kategori) {
         const stub = (label) => `<div class="text-center text-muted py-5"><div class="spinner-border spinner-border-sm text-primary mb-3" role="status"><span class="sr-only">Loading...</span></div><p><strong>Memproses data ${label}</strong></p><p style="font-size: 0.85rem;">Untuk Segmen ${kategori}...</p></div>`;
         osTableContainer.innerHTML = stub('Outstanding');
+        consolidationTableContainer.innerHTML = stub('Konsolidasi');
         smlTableContainer.innerHTML = stub('SML');
         nplTableContainer.innerHTML = stub('NPL');
     }
@@ -584,6 +739,19 @@ document.addEventListener('DOMContentLoaded', function () {
             })
             .then(data => {
                 dashboardMeta.textContent = `Menampilkan dashboard kredit ${kategori} per ${formatDate(periode)}.`;
+                
+                // Consolidation Table (Shown for all, but specifically requested for Mikro)
+                const osTotal = data.os.find(r => r.is_total);
+                const smlTotal = data.sml.find(r => r.is_total);
+                const nplTotal = data.npl.find(r => r.is_total);
+                
+                if (kategori === 'Mikro' && (osTotal || smlTotal || nplTotal)) {
+                    consolidationSection.classList.remove('d-none');
+                    consolidationTableContainer.innerHTML = buildConsolidationTable(data.os, data.sml, data.npl, data.header_dates, kategori, data.rka_labels);
+                } else {
+                    consolidationSection.classList.add('d-none');
+                }
+
                 document.getElementById('osTitle').innerText = `A. OUTSTANDING (OS) - ${kategori}`;
                 osTableContainer.innerHTML = buildTable(data.os, data.header_dates, 'Outstanding', kategori, data.rka_labels);
                 document.getElementById('smlTitle').innerText = `B. SPECIAL MENTION LOAN (SML) - ${kategori}`;

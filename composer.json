@@ -55,7 +55,7 @@
         ],
         "queue": [
             "Composer\\Config::disableProcessTimeout",
-            "npx concurrently -c \"#c4b5fd,#fb7185\" \"php artisan queue:work --queue=imports-high --tries=1 --timeout=120 --sleep=1\" \"php artisan queue:work --queue=default,reports-low --tries=1 --timeout=120 --sleep=1\" --names=import-queue,report-queue --kill-others"
+            "@php artisan queue:work --queue=imports-daily-loan,imports-high,default,reports-low --tries=1 --timeout=120 --sleep=1"
         ],
         "queue:daily-loan": [
             "Composer\\Config::disableProcessTimeout",

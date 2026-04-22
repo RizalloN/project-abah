@@ -100,19 +100,28 @@ INT_COLS = ['jw', 'at', 'jumlah_pn', 'jumlah_pn_all']
 
 DATE_FMTS_MONTH_FIRST = [
     "%m/%d/%Y %I:%M:%S %p",
+    "%m/%d/%Y %I:%M %p",
     "%m/%d/%Y %H:%M:%S",
+    "%m/%d/%Y %H:%M",
     "%m/%d/%Y",
     "%Y-%m-%d",
+    "%d/%m/%Y %H:%M:%S",
+    "%d/%m/%Y %H:%M",
     "%d/%m/%Y",
     "%d-%m-%Y",
 ]
 DATE_FMTS_DAY_FIRST = [
     "%d/%m/%Y %I:%M:%S %p",
+    "%d/%m/%Y %I:%M %p",
     "%d/%m/%Y %H:%M:%S",
+    "%d/%m/%Y %H:%M",
     "%d/%m/%Y",
     "%Y-%m-%d",
+    "%m/%d/%Y %I:%M:%S %p",
+    "%m/%d/%Y %I:%M %p",
     "%m/%d/%Y",
     "%m/%d/%Y %H:%M:%S",
+    "%m/%d/%Y %H:%M",
 ]
 
 # OPTIMIZATION: Cache for header detection (file hash -> header info)
@@ -751,8 +760,9 @@ def main():
     if active_filters:
         send_progress(25, "Menerapkan filter...")
         filter_exprs = []
+        schema_names = set(lf.collect_schema().names())
         for col, raw_values in active_filters.items():
-            if col not in lf.columns:
+            if col not in schema_names:
                 continue
             values = [str(v).strip() for v in (raw_values or []) if str(v).strip()]
             if values:
