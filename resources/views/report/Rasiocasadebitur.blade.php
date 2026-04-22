@@ -408,14 +408,15 @@
     }
 
     .row-total td {
-        background-color: #e0e7ff !important; /* blue-100 */
-        color: var(--primary-blue-dark) !important;
+        background-color: var(--table-header-bg) !important;
+        color: var(--table-header-text) !important;
         font-weight: 700;
         border-top: 2px solid var(--primary-blue-light) !important;
     }
 
     .row-total:hover td {
-        background-color: #dbeafe !important;
+        background-color: var(--table-header-bg) !important;
+        color: var(--table-header-text) !important;
     }
 
     .loading-row td {
@@ -492,6 +493,34 @@
     }
 </style>
 @include('report._bri-report-ui')
+<style>
+    .content-wrapper .table-container table.table-report.casa-no-hover tbody tr:hover > td,
+    .content-wrapper .table-container table.table-report.casa-no-hover tbody tr:hover > th {
+        background-color: #ffffff !important;
+        background-image: none !important;
+    }
+    .content-wrapper .table-container table.table-report.casa-no-hover tbody tr:hover > .sticky-col {
+        background-color: #ffffff !important;
+    }
+    .content-wrapper .table-container table.table-report.casa-no-hover tbody tr:hover > td.ratio-positive {
+        background-color: #dcfce7 !important;
+    }
+    .content-wrapper .table-container table.table-report.casa-no-hover tbody tr:hover > td.ratio-negative {
+        background-color: #fee2e2 !important;
+    }
+    .content-wrapper .table-container table.table-report.casa-no-hover tbody tr.row-total > td,
+    .content-wrapper .table-container table.table-report.casa-no-hover tbody tr.row-total > th,
+    .content-wrapper .table-container table.table-report.casa-no-hover tbody tr.row-total:hover > td,
+    .content-wrapper .table-container table.table-report.casa-no-hover tbody tr.row-total:hover > th {
+        background-color: var(--table-header-bg) !important;
+        background-image: none !important;
+        color: var(--table-header-text) !important;
+        font-weight: 700;
+    }
+    .content-wrapper .table-container table.table-report.casa-no-hover tbody tr.row-total:hover > .sticky-col {
+        background-color: var(--table-header-bg) !important;
+    }
+</style>
 
 <div class="casa-dashboard pt-4">
     <div class="card card-outline card-primary shadow-sm mb-4 casa-shell">
@@ -611,7 +640,7 @@
                 <div class="tab-content">
                     <div class="tab-pane fade show active" id="tab-total" role="tabpanel">
                         <div class="table-container">
-                            <table class="table table-report m-0">
+                            <table class="table table-report casa-no-hover m-0">
                                 <thead>
                                     <tr>
                                         <th rowspan="3" class="bg-header-main sticky-col align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER" style="min-width: 170px;">BRANCH OFFICE</th>
@@ -639,7 +668,7 @@
 
                     <div class="tab-pane fade" id="tab-briguna-kpr" role="tabpanel">
                         <div class="table-container">
-                            <table class="table table-report m-0">
+                            <table class="table table-report casa-no-hover m-0">
                                 <thead>
                                     <tr>
                                         <th rowspan="3" class="bg-header-main sticky-col align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER" style="min-width: 170px;">BRANCH OFFICE</th>
@@ -678,7 +707,7 @@
 
                     <div class="tab-pane fade" id="tab-mikro-smc" role="tabpanel">
                         <div class="table-container">
-                            <table class="table table-report m-0">
+                            <table class="table table-report casa-no-hover m-0">
                                 <thead>
                                     <tr>
                                         <th rowspan="3" class="bg-header-main sticky-col align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER" style="min-width: 170px;">BRANCH OFFICE</th>
@@ -745,7 +774,7 @@
                         </div>
 
                         <div class="table-container">
-                            <table class="table table-report m-0">
+                            <table class="table table-report casa-no-hover m-0">
                                 <thead>
                                     <tr>
                                         <th rowspan="3" class="bg-header-main sticky-col align-middle col-group-label" style="min-width: 170px;">RM / MANTRI</th>

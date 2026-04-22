@@ -2527,6 +2527,7 @@ class ImportFileController extends Controller
             : $columnIndex;
 
         $normalizedActiveFilters = [];
+        $hasEmptyActiveFilter = false;
         foreach ($activeFilters as $displayIndex => $values) {
             $sourceIndex = array_key_exists((int) $displayIndex, $displayFilterMap)
                 ? (int) $displayFilterMap[(int) $displayIndex]
@@ -2542,7 +2543,17 @@ class ImportFileController extends Controller
 
             if ($normalizedValues !== []) {
                 $normalizedActiveFilters[$sourceIndex] = array_fill_keys($normalizedValues, true);
+            } else {
+                $hasEmptyActiveFilter = true;
             }
+        }
+
+        if ($hasEmptyActiveFilter) {
+            return response()->json([
+                'status' => 'success',
+                'values' => [],
+                'cached' => false,
+            ]);
         }
 
         ksort($normalizedActiveFilters);
@@ -2962,12 +2973,14 @@ class ImportFileController extends Controller
             'delimiter' => 'nullable|string',
             'display_filter_map_json' => 'nullable|string',
             'active_filters_json' => 'nullable|string',
+            'preview_state_key' => 'nullable|string',
             'limit' => 'nullable|integer|min:1|max:200',
         ]);
 
         $filePath = (string) $request->input('file_path');
         $currentDelimiter = (string) $request->input('delimiter', 'auto');
         $limit = (int) $request->input('limit', 100);
+        $previewStateKey = trim((string) $request->input('preview_state_key', ''));
 
         $displayFilterMap = json_decode((string) $request->input('display_filter_map_json', ''), true);
         if (!is_array($displayFilterMap)) {
@@ -2990,6 +3003,69 @@ class ImportFileController extends Controller
             }
         }
 
+        $previewState = $previewStateKey !== ''
+            ? app(\App\Services\Import\ExcelImportJobService::class)->getPreviewState($previewStateKey)
+            : [];
+        $previewMeta = !empty($previewState['previewMeta']) && is_array($previewState['previewMeta'])
+            ? (array) $previewState['previewMeta']
+            : (array) session('excel_preview_meta', []);
+
+        $stagedCsvPath = (string) ($previewMeta['staged_csv_path'] ?? '');
+        if ($stagedCsvPath !== '' && file_exists($stagedCsvPath)) {
+            $resolvedFilePath = $stagedCsvPath;
+        }
+
+        $extension = strtolower(pathinfo($resolvedFilePath, PATHINFO_EXTENSION));
+        if (!in_array($extension, ['csv', 'txt'], true)) {
+            $headerIndex = isset($previewMeta['header_index']) ? (int) $previewMeta['header_index'] : null;
+            $sourceHeaders = array_values((array) ($previewMeta['source_headers'] ?? []));
+            $previewPath = urldecode((string) ($previewMeta['path'] ?? ''));
+            $sourceExcelPath = $previewPath !== '' ? Storage::path($previewPath) : $resolvedFilePath;
+
+            if (
+                $previewStateKey !== ''
+                && $headerIndex !== null
+                && !empty($sourceHeaders)
+                && is_string($sourceExcelPath)
+                && $sourceExcelPath !== ''
+                && file_exists($sourceExcelPath)
+            ) {
+                try {
+                    $stagingService = app(\App\Services\Import\ExcelStagingService::class);
+                    $generatedStagedCsvPath = $stagingService->createStagedCsvPath(storage_path('app/import_preview_filters'), 'filtered_preview');
+                    $stageResult = $stagingService->stageExcelToCsv(
+                        static function (string $event, array $payload): void {
+                        },
+                        $sourceExcelPath,
+                        $headerIndex,
+                        $sourceHeaders,
+                        $generatedStagedCsvPath,
+                        null,
+                        'excel_filtered_preview_'
+                    );
+
+                    $candidateCsvPath = (string) ($stageResult['staged_csv_path'] ?? '');
+                    if ($candidateCsvPath !== '' && file_exists($candidateCsvPath)) {
+                        $resolvedFilePath = $candidateCsvPath;
+                        $extension = strtolower(pathinfo($resolvedFilePath, PATHINFO_EXTENSION));
+
+                        $previewMeta['staged_csv_path'] = $candidateCsvPath;
+                        session(['excel_preview_meta' => array_merge((array) session('excel_preview_meta', []), [
+                            'staged_csv_path' => $candidateCsvPath,
+                        ])]);
+
+                        if ($previewStateKey !== '') {
+                            app(\App\Services\Import\ExcelImportJobService::class)->putPreviewState(
+                                $previewStateKey,
+                                array_merge($previewState, ['previewMeta' => $previewMeta])
+                            );
+                        }
+                    }
+                } catch (\Throwable $e) {
+                }
+            }
+        }
+
         if (!file_exists($resolvedFilePath)) {
             return response()->json([
                 'status' => 'error',
@@ -2997,11 +3073,19 @@ class ImportFileController extends Controller
             ], 404);
         }
 
+        if (!in_array($extension, ['csv', 'txt'], true)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Format file tidak didukung untuk preview hasil filter.',
+            ], 422);
+        }
+
         $reportData = $this->getActiveReportData();
         $tableName = $this->resolveTableName($reportData);
         $isBrilinkSummary = $this->isBrilinkSummaryReport($reportData);
 
         $normalizedFilters = [];
+        $hasEmptyActiveFilter = false;
         foreach ($activeFilters as $displayIndex => $values) {
             $sourceIndex = array_key_exists((int) $displayIndex, $displayFilterMap)
                 ? (int) $displayFilterMap[(int) $displayIndex]
@@ -3013,7 +3097,22 @@ class ImportFileController extends Controller
 
             if ($normalizedValues !== []) {
                 $normalizedFilters[$sourceIndex] = array_fill_keys($normalizedValues, true);
+            } else {
+                $hasEmptyActiveFilter = true;
             }
+        }
+
+        if ($hasEmptyActiveFilter) {
+            return response()->json([
+                'status' => 'success',
+                'rows' => [],
+                'total_matched' => 0,
+                'returned_rows' => 0,
+                'truncated' => false,
+                'partial' => false,
+                'retry_after_ms' => null,
+                'source' => 'empty-filter',
+            ]);
         }
 
         $indexDbPath = $this->previewIndexDbPath($resolvedFilePath, $currentDelimiter, $tableName);

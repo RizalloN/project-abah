@@ -126,6 +126,31 @@
     .nav-tabs.report-tabs .nav-link:not(.active):hover { border-bottom: 3px solid transparent; color: #6c757d; background: transparent; }
 </style>
 @include('report._bri-report-ui')
+<style>
+    .content-wrapper .table-container table.table-report.brimo-no-hover tbody tr:hover > td,
+    .content-wrapper .table-container table.table-report.brimo-no-hover tbody tr:hover > th {
+        background-color: #ffffff !important;
+        background-image: none !important;
+    }
+    .content-wrapper .table-container table.table-report.brimo-no-hover tbody tr:nth-child(even):not(.row-total):not(.row-total-blue):hover > td,
+    .content-wrapper .table-container table.table-report.brimo-no-hover tbody tr:nth-child(even):not(.row-total):not(.row-total-blue):hover > th {
+        background-color: #fafcff !important;
+    }
+    .content-wrapper .table-container table.table-report.brimo-no-hover tbody tr:hover > td.bg-good {
+        background-color: #d4edda !important;
+    }
+    .content-wrapper .table-container table.table-report.brimo-no-hover tbody tr:hover > td.bg-bad {
+        background-color: #f8d7da !important;
+    }
+    .content-wrapper .table-container table.table-report.brimo-no-hover tbody tr.row-total:hover > td,
+    .content-wrapper .table-container table.table-report.brimo-no-hover tbody tr.row-total:hover > th,
+    .content-wrapper .table-container table.table-report.brimo-no-hover tbody tr.row-total-blue:hover > td,
+    .content-wrapper .table-container table.table-report.brimo-no-hover tbody tr.row-total-blue:hover > th {
+        background-color: #003366 !important;
+        background-image: none !important;
+        color: #ffffff !important;
+    }
+</style>
 
 <div class="pt-4">
     <div class="card card-outline card-primary shadow-sm mb-3 report-filter-card">
@@ -228,7 +253,7 @@
         <div class="tab-content">
             <div class="tab-pane fade show active" id="tab-brimo" role="tabpanel">
                 <div class="table-container">
-                    <table class="table table-report m-0">
+                    <table class="table table-report brimo-no-hover m-0">
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
                                 <th rowspan="2" class="bg-brimo-main align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER" style="min-width: 150px;">BRANCH OFFICE</th>
@@ -251,7 +276,7 @@
 
             <div class="tab-pane fade" id="tab-ureg-rek" role="tabpanel">
                 <div class="table-container">
-                    <table class="table table-report m-0">
+                    <table class="table table-report brimo-no-hover m-0">
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
                                 <th rowspan="2" class="bg-brimo-rek align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER" style="min-width:150px;">BRANCH OFFICE</th>
@@ -275,7 +300,7 @@
 
             <div class="tab-pane fade" id="tab-ureg-fin" role="tabpanel">
                 <div class="table-container">
-                    <table class="table table-report m-0">
+                    <table class="table table-report brimo-no-hover m-0">
                         <thead class="sticky-top" style="z-index: 2;">
                             <tr>
                                 <th rowspan="2" class="bg-brimo-fin align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER" style="min-width:150px;">BRANCH OFFICE</th>
@@ -299,7 +324,7 @@
 
             <div class="tab-pane fade" id="tab-mau" role="tabpanel">
                 <div class="table-container">
-                    <table class="table table-report m-0">
+                    <table class="table table-report brimo-no-hover m-0">
                         <tbody id="tbody-mau">
                             <tr>
                                 <td class="text-center py-5 text-muted"><strong>-</strong><br><small>Data MAU BRImo belum tersedia.</small></td>
@@ -311,7 +336,7 @@
 
             <div class="tab-pane fade" id="tab-trx" role="tabpanel">
                 <div class="table-container">
-                    <table class="table table-hover table-report m-0">
+                    <table class="table table-report brimo-no-hover m-0">
                         <tbody id="tbody-trx">
                             <tr>
                                 <td class="text-center py-5 text-muted"><strong>-</strong><br><small>Data Transaksi belum tersedia.</small></td>

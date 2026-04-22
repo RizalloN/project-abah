@@ -25,7 +25,7 @@
             </div>
         </div>
 
-        <form id="importForm" method="POST" data-filter-options-url="{{ $filterOptionsRoute ?? route('import.preview.filter-options') }}">
+        <form id="importForm" method="POST" data-filter-options-url="{{ $filterOptionsRoute ?? route('import.preview.filter-options') }}" data-filtered-rows-url="{{ route('import.preview.filtered-rows') }}">
             @csrf
             <input type="hidden" name="path"                id="file_path"           value="{{ $path }}">
             <input type="hidden" name="active_filters_json" id="active_filters_json" value="{}">
@@ -149,14 +149,22 @@
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     const filterOptionsMap = @json($formattedUniqueValues);
-    const filterOptionsUrl = document.getElementById('importForm')?.dataset.filterOptionsUrl || '';
+    const importFormElement = document.getElementById('importForm');
+    const previewTbody = document.querySelector('.table-responsive tbody');
+    const basePreviewTbodyHtml = previewTbody ? previewTbody.innerHTML : '';
+    const filterOptionsUrl = importFormElement?.dataset.filterOptionsUrl || '';
+    const filteredRowsUrl = importFormElement?.dataset.filteredRowsUrl || '';
     const filePathValue = document.getElementById('file_path')?.value || '';
     const previewStateKey = document.querySelector('input[name="preview_state_key"]')?.value || '';
     const delimiterValue = document.querySelector('input[name="delimiter"]')?.value || 'auto';
     const displayFilterMap = @json(session('excel_display_filter_map', []));
+    const previewHeaders = @json(array_values($headers ?? []));
     const filterState = {};
     const searchTerms = {};
     const filterRenderLimit = 200;
+    let previewViewMode = 'sample';
+    let previewRenderToken = 0;
+    let previewRefreshTimer = null;
 
     const swalTheme = {
         customClass: {
@@ -200,7 +208,7 @@ document.addEventListener('DOMContentLoaded', function () {
     /* =========================================================
        CACHE & OPTIMIZATION HELPERS
     ========================================================= */
-    const storageKeyPrefix = 'preview_filter_excel_v2_' + btoa(filePathValue + '|' + delimiterValue).substring(0, 16);
+    const storageKeyPrefix = 'preview_filter_excel_v3_' + btoa(filePathValue + '|' + delimiterValue).substring(0, 16);
     
     function getStorageKey(col) {
         return storageKeyPrefix + '_col_' + col;
@@ -282,7 +290,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     return;
                 }
 
-                if (state.selectedValues.size === 0 || state.selectedValues.size === state.allValues.length) {
+                if (state.selectedValues.size === state.allValues.length) {
                     return;
                 }
 
@@ -356,6 +364,27 @@ document.addEventListener('DOMContentLoaded', function () {
             .replace(/>/g, '&gt;')
             .replace(/"/g, '&quot;')
             .replace(/'/g, '&#039;');
+    }
+
+    function buildPreviewRowHtml(row, rowNumber) {
+        const values = Array.isArray(row) ? row : [];
+        let html = '<tr class="preview-row">';
+        html += '<td class="text-center text-muted">' + rowNumber + '</td>';
+
+        previewHeaders.forEach(function (_header, colIndex) {
+            const rawValue = values[colIndex] === null || values[colIndex] === undefined
+                ? ''
+                : String(values[colIndex]);
+            const safeValue = escapeHtml(rawValue);
+            const dataValue = rawValue.trim() === '' ? '(Blank)' : rawValue.trim();
+            const safeDataValue = escapeHtml(dataValue);
+            const displayValue = rawValue.trim() === '' ? '-' : safeValue;
+
+            html += '<td class="text-truncate col-data-' + colIndex + '" data-val="' + safeDataValue + '" style="max-width: 250px;" title="' + safeValue + '">' + displayValue + '</td>';
+        });
+
+        html += '</tr>';
+        return html;
     }
 
     function getFilteredValues(col) {
@@ -496,17 +525,6 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         }
 
-        const previewDerivedValues = Object.keys(activeFilters).length > 0
-            ? collectPreviewValuesForColumn(col, activeFilters)
-            : new Set();
-
-        if (previewDerivedValues.size > 0) {
-            state.fullOptionsLoaded = true;
-            state.loadedSignature = signature;
-            renderFilterList(col);
-            return;
-        }
-
         state.isLoading = true;
         state.pendingSignature = signature;
         state.needsRefresh = false;
@@ -609,56 +627,195 @@ document.addEventListener('DOMContentLoaded', function () {
     /* =========================================================
        PREVIEW TABLE FILTER
     ========================================================= */
-    function updatePreviewTable() {
-        // Kumpulkan filter aktif: { colIndex: [allowedValues...] }
-        var activeFilters = {};
-        Object.keys(filterState).forEach(function (col) {
-            var state = filterState[col];
-            if (!state) return;
+    function renderSamplePreviewTable(activeFilters) {
+        if (!previewTbody) {
+            return;
+        }
 
-            if (state.selectedValues.size < state.allValues.length) {
-                activeFilters[col] = Array.from(state.selectedValues);
-            }
-        });
+        if (previewViewMode !== 'sample') {
+            previewTbody.innerHTML = basePreviewTbodyHtml;
+            previewViewMode = 'sample';
+        }
 
-        // Bangun array requirement filter
-        var filterReqs = [];
-        for (var col in activeFilters) {
+        const filterReqs = [];
+        for (const col in activeFilters) {
             filterReqs.push({
-                index:   parseInt(col) + 1,   // +1 karena kolom pertama adalah "#"
+                index: parseInt(col, 10) + 1,
                 allowed: activeFilters[col]
             });
         }
 
-        var matchingRows = [];
+        let matchingCount = 0;
         document.querySelectorAll('.preview-row').forEach(function (row) {
-            var pass = true;
-            for (var i = 0; i < filterReqs.length; i++) {
-                var req = filterReqs[i];
-                if (req.allowed.length === 0) { pass = false; break; }
-                var cell = row.children[req.index];
+            let pass = true;
+
+            for (let i = 0; i < filterReqs.length; i++) {
+                const req = filterReqs[i];
+                if (req.allowed.length === 0) {
+                    pass = false;
+                    break;
+                }
+
+                const cell = row.children[req.index];
                 if (cell) {
-                    var cellVal = (cell.getAttribute('data-val') || '').trim();
-                    if (req.allowed.indexOf(cellVal) === -1) { pass = false; break; }
+                    const cellVal = (cell.getAttribute('data-val') || '').trim();
+                    if (!req.allowed.includes(cellVal)) {
+                        pass = false;
+                        break;
+                    }
                 }
             }
-            if (pass) matchingRows.push(row);
+
+            if (pass) {
+                if (matchingCount < 100) {
+                    row.classList.remove('d-none');
+                } else {
+                    row.classList.add('d-none');
+                }
+                matchingCount++;
+            } else {
+                row.classList.add('d-none');
+            }
         });
 
-        // Sembunyikan semua, lalu tampilkan yang lolos (maks 100)
-        document.querySelectorAll('.preview-row').forEach(function (row) {
-            row.classList.add('d-none');
-        });
-        matchingRows.slice(0, 100).forEach(function (row) {
-            row.classList.remove('d-none');
-        });
-
-        var emptyRow = document.getElementById('empty-state-row');
+        const emptyRow = document.getElementById('empty-state-row');
         if (emptyRow) {
-            emptyRow.classList.toggle('d-none', matchingRows.length > 0);
+            emptyRow.classList.toggle('d-none', matchingCount > 0);
         }
 
         updateFilterIcons();
+    }
+
+    async function renderFilteredPreviewTable(activeFilters) {
+        if (!previewTbody || !filteredRowsUrl) {
+            renderSamplePreviewTable(activeFilters);
+            return;
+        }
+
+        const requestToken = ++previewRenderToken;
+        previewViewMode = 'filtered';
+        previewTbody.innerHTML = `
+            <tr>
+                <td colspan="{{ count($headers) + 1 }}" class="text-center py-5 bg-white text-muted">
+                    <i class="fas fa-spinner fa-spin fa-2x mb-3 text-primary"></i><br>
+                    <h5 class="font-weight-bold text-dark">Memuat preview hasil filter</h5>
+                    <p class="mb-0">Mengambil 100 baris pertama yang cocok langsung dari file sumber...</p>
+                </td>
+            </tr>`;
+
+        try {
+            const url = new URL(filteredRowsUrl, window.location.origin);
+            url.searchParams.set('file_path', filePathValue);
+            url.searchParams.set('delimiter', delimiterValue);
+            url.searchParams.set('display_filter_map_json', JSON.stringify(displayFilterMap || {}));
+            url.searchParams.set('active_filters_json', JSON.stringify(activeFilters || {}));
+            url.searchParams.set('limit', '100');
+            if (previewStateKey) {
+                url.searchParams.set('preview_state_key', previewStateKey);
+            }
+            url.searchParams.set('_', String(Date.now()));
+
+            const response = await fetch(url.toString(), {
+                headers: {
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                cache: 'no-store',
+            });
+
+            const payload = await response.json().catch(() => ({}));
+            if (requestToken !== previewRenderToken) {
+                return;
+            }
+
+            if (!response.ok || payload.status !== 'success' || !Array.isArray(payload.rows)) {
+                throw new Error(payload.message || 'Gagal memuat preview hasil filter.');
+            }
+
+            const rows = payload.rows || [];
+            if (!rows.length) {
+                previewTbody.innerHTML = `
+                    <tr>
+                        <td colspan="{{ count($headers) + 1 }}" class="text-center py-5 bg-white text-muted">
+                            <i class="fas fa-search-minus fa-3x mb-3 text-secondary"></i><br>
+                            <h5 class="font-weight-bold text-dark">Tidak ada baris yang cocok di file sumber</h5>
+                            <p class="mb-0">Filter yang dipilih tidak menemukan baris hasil di file asli.</p>
+                        </td>
+                    </tr>`;
+                updateFilterIcons();
+                return;
+            }
+
+            let html = rows.map(function (row, index) {
+                return buildPreviewRowHtml(row, index + 1);
+            }).join('');
+
+            if (payload.truncated) {
+                html += `
+                    <tr>
+                        <td colspan="{{ count($headers) + 1 }}" class="text-center py-3 bg-light text-muted">
+                            Menampilkan 100 baris pertama dari hasil yang cocok di file sumber.
+                        </td>
+                    </tr>`;
+            }
+
+            previewTbody.innerHTML = html;
+        } catch (error) {
+            if (requestToken !== previewRenderToken) {
+                return;
+            }
+
+            previewTbody.innerHTML = `
+                <tr>
+                    <td colspan="{{ count($headers) + 1 }}" class="text-center py-5 bg-white text-muted">
+                        <i class="fas fa-exclamation-triangle fa-3x mb-3 text-warning"></i><br>
+                        <h5 class="font-weight-bold text-dark">Gagal memuat preview hasil filter</h5>
+                        <p class="mb-0">${escapeHtml(error.message || 'Silakan coba lagi.')}</p>
+                    </td>
+                </tr>`;
+        } finally {
+            updateFilterIcons();
+        }
+    }
+
+    function updatePreviewTable() {
+        const activeFilters = {};
+        Object.keys(filterState).forEach(function (col) {
+            const state = filterState[col];
+            if (!state) {
+                return;
+            }
+
+            if (state.selectedValues.size === state.allValues.length) {
+                return;
+            }
+
+            activeFilters[col] = Array.from(state.selectedValues);
+        });
+
+        const activeFiltersInput = document.getElementById('active_filters_json');
+        if (activeFiltersInput) {
+            activeFiltersInput.value = JSON.stringify(activeFilters);
+        }
+
+        if (Object.keys(activeFilters).length === 0) {
+            if (previewRefreshTimer) {
+                clearTimeout(previewRefreshTimer);
+                previewRefreshTimer = null;
+            }
+            previewRenderToken++;
+            renderSamplePreviewTable({});
+            return;
+        }
+
+        if (previewRefreshTimer) {
+            clearTimeout(previewRefreshTimer);
+        }
+
+        previewRefreshTimer = setTimeout(function () {
+            previewRefreshTimer = null;
+            renderFilteredPreviewTable(activeFilters);
+        }, 180);
     }
 
     /* =========================================================
@@ -672,7 +829,7 @@ document.addEventListener('DOMContentLoaded', function () {
             var state     = filterState[colIndex];
             var icon      = document.getElementById('icon_filter_' + colIndex);
             if (!icon) return;
-            if (state && state.selectedValues.size < state.allValues.length && state.selectedValues.size > 0) {
+            if (state && state.selectedValues.size < state.allValues.length) {
                 icon.classList.remove('text-muted');
                 icon.classList.add('text-primary');
             } else {
@@ -1327,6 +1484,25 @@ document.addEventListener('DOMContentLoaded', function () {
         prefetchAllFilterOptions().catch(e => console.warn('Prefetch error:', e));
     }
 });
+</script>
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        setTimeout(function () {
+            var rows = Array.prototype.slice.call(document.querySelectorAll('.preview-row'));
+            if (!rows.length || rows.some(function (row) { return !row.classList.contains('d-none'); })) {
+                return;
+            }
+
+            rows.slice(0, 100).forEach(function (row) {
+                row.classList.remove('d-none');
+            });
+
+            var emptyRow = document.getElementById('empty-state-row');
+            if (emptyRow) {
+                emptyRow.classList.add('d-none');
+            }
+        }, 250);
+    });
 </script>
 <style>
     .swal-modern-popup {
