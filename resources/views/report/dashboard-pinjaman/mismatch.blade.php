@@ -8,8 +8,8 @@
 <div class="loan-dashboard pt-4">
     <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center mb-4">
         <div>
-            <h1 class="loan-page-title">Audit Kolek Tidak Sesuai</h1>
-            <p class="text-muted mb-0">Verifikasi konsistensi bucket kualitas pinjaman berdasarkan rule audit.</p>
+            <h1 class="loan-page-title" style="color: var(--loan-blue-ink); font-weight: 800;">Audit Kolek Tidak Sesuai</h1>
+            <p class="mb-0" style="color: var(--loan-muted); font-weight: 600;">Verifikasi konsistensi bucket kualitas pinjaman berdasarkan rule audit.</p>
         </div>
     </div>
 
@@ -26,26 +26,26 @@
                     <div class="row loan-filter-grid">
                         <div class="col-xl-3 col-lg-4 col-md-6">
                             <div class="form-group">
-                                <label class="loan-filter-label">Periode</label>
+                                <label class="loan-filter-label">Periode Audit</label>
                                 <input id="loanMismatchPeriodeInput" type="date" name="mismatch_periode" class="form-control loan-filter-control" value="{{ $mismatchRequestedPeriod ?: $mismatchSelectedPeriod }}" max="{{ $periods->first() }}">
                             </div>
                         </div>
                         <div class="col-xl-4 col-lg-5 col-md-6">
                             <div class="form-group">
                                 <label class="loan-filter-label">Kantor Cabang</label>
-                                <select id="loanMismatchCabangSelect" name="mismatch_cabang1" class="form-control loan-filter-control" data-selected="{{ $mismatchSelectedBranch }}">
+                                <select id="loanMismatchCabangSelect" name="mismatch_cabang1" class="form-control select2 loan-filter-control" data-selected="{{ $mismatchSelectedBranch }}">
                                     <option value="">Pilih periode dulu</option>
                                 </select>
                             </div>
                         </div>
                         <div class="col-xl-5 col-lg-3 col-md-12 loan-mismatch-action-col">
                             <div class="loan-mismatch-actions w-100">
-                                <button id="loanMismatchSubmitButton" type="submit" class="btn btn-primary">
-                                    <i class="fas fa-search mr-1"></i> Proses
+                                <button id="loanMismatchSubmitButton" type="submit" class="btn px-4 font-weight-bold" style="border-radius: 12px; height: 48px; background: linear-gradient(135deg, var(--loan-blue), #307fe2); color: #ffffff; border: none; box-shadow: 0 4px 12px rgba(8, 87, 195, 0.2);">
+                                    <i class="fas fa-search mr-1"></i> PROSES AUDIT
                                 </button>
-                                <a href="{{ route('report.dashboard-pinjaman.kolek-tidak-sesuai') }}" class="btn btn-light">Reset</a>
+                                <a href="{{ route('report.dashboard-pinjaman.kolek-tidak-sesuai') }}" class="btn btn-light px-4 font-weight-bold" style="border-radius: 12px; height: 48px; border: 1px solid var(--loan-border); color: var(--loan-blue-ink);">RESET</a>
                                 <div id="loanMismatchLoadingChip" class="loan-loading-chip d-none">
-                                    <span class="loan-loading-dot"></span> Audit Sedang Jalan
+                                    <span class="loan-loading-dot"></span> AUDIT SEDANG BERJALAN
                                 </div>
                             </div>
                         </div>
@@ -88,12 +88,12 @@
                 <div class="table-responsive mt-4">
                     <div class="loan-mismatch-table-wrap">
                         <table class="table table-hover mb-0">
-                            <thead class="thead-light">
+                            <thead>
                                 <tr>
-                                    <th style="width: 72px;">No</th>
-                                    <th>Unit Kerja</th>
-                                    <th style="width: 220px;">Jumlah Kolek Tidak Sesuai</th>
-                                    <th style="width: 180px;">Export Detail</th>
+                                    <th style="width: 72px; text-align: center;">No</th>
+                                    <th style="text-align: left;">Unit Kerja</th>
+                                    <th style="width: 220px; text-align: center;">Jumlah Kolek Tidak Sesuai</th>
+                                    <th style="width: 180px; text-align: center;">Export Detail</th>
                                 </tr>
                             </thead>
                             <tbody id="loanMismatchBody">
@@ -128,6 +128,8 @@
         const dataUrl = @json(route('report.dashboard-pinjaman.kolek-tidak-sesuai.data'));
         const exportUrl = @json(route('report.dashboard-pinjaman.kolek-tidak-sesuai.export'));
 
+        initMultiSelect(branchSelect, 'Pilih Kantor Cabang');
+
         async function loadBranches() {
             if (!periodInput.value) return;
             const res = await fetch(`${filterUrl}?periode=${periodInput.value}`);
@@ -137,6 +139,7 @@
                 branchSelect.add(new Option(b, b, false, b === branchSelect.dataset.selected));
             });
             branchSelect.disabled = false;
+            window.jQuery(branchSelect).trigger('change');
         }
 
         async function loadData() {

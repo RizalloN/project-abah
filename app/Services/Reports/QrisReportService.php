@@ -57,6 +57,17 @@ class QrisReportService
         $upperBranches        = array_map('strtoupper', $branches);
         $upperSelectedUkers   = array_map('strtoupper', $selectedUkers);
 
+        // Split branches for RKA lookup: direct (Ponorogo) vs regional patterns (Madiun, Magetan, Ngawi)
+        $rkaDirectBranches = ['KC PONOROGO'];
+        $rkaRegionalPatterns = [];
+        foreach ($branches as $branch) {
+            $branchUpper = strtoupper(trim($branch));
+            if ($branchUpper === 'KC PONOROGO') {
+                continue; // Already in direct
+            }
+            $rkaRegionalPatterns[] = strtoupper(str_replace('KC ', '', $branchUpper)); // MADIUN, MAGETAN, NGAWI
+        }
+
         $posisi       = $request->input('posisi', date('Y-m-d'));
         $selectedDate = Carbon::parse($posisi);
 
@@ -82,7 +93,7 @@ class QrisReportService
             'branches', 'isQrisBranchFiltered', 'qrisGroupColumn', 'qrisGroupLabel',
             'qrisTotalLabel', 'upperBranches', 'upperSelectedUkers', 'selectedUkers',
             'dateCurr', 'dateMtD', 'dateYtD', 'dateYoY', 'datePrevMoM',
-            'rkaMonthColumn', 'rkaMonthLabel', 'labels'
+            'rkaMonthColumn', 'rkaMonthLabel', 'labels', 'rkaDirectBranches', 'rkaRegionalPatterns'
         );
     }
 
@@ -129,16 +140,13 @@ class QrisReportService
         ]));
 
         $payload = Cache::remember($cacheKey, now()->addMinutes(5), function () use ($ctx) {
-            $qrisRkaGroups = $this->rkaLookup->aggregateByGroup(
+            $qrisRkaGroups = $this->buildSplitRkaGroups(
                 [
                     'jml'  => ['mata_anggaran' => ['User QRIS']],
                     'prod' => ['mata_anggaran' => ['Jumlah QRIS yang Produktif']],
                     'vol'  => ['mata_anggaran' => ['Sales Volume QRIS']],
                 ],
-                $ctx['rkaMonthColumn'],
-                $ctx['upperBranches'],
-                $ctx['upperSelectedUkers'],
-                $ctx['isQrisBranchFiltered'] ? 'uker' : 'kanca'
+                $ctx
             );
 
             $dataRows = DB::table('jumlah_merchant_qris_detail')
@@ -220,12 +228,9 @@ class QrisReportService
         ]));
 
         $payload = Cache::remember($cacheKey, now()->addMinutes(5), function () use ($ctx) {
-            $qrisRkaGroups = $this->rkaLookup->aggregateByGroup(
+            $qrisRkaGroups = $this->buildSplitRkaGroups(
                 ['prod' => ['mata_anggaran' => ['Jumlah QRIS yang Produktif']]],
-                $ctx['rkaMonthColumn'],
-                $ctx['upperBranches'],
-                $ctx['upperSelectedUkers'],
-                $ctx['isQrisBranchFiltered'] ? 'uker' : 'kanca'
+                $ctx
             );
 
             $dataRows = DB::table('jumlah_merchant_qris_detail')
@@ -287,5 +292,46 @@ class QrisReportService
         });
 
         return response()->json(['status' => 'success'] + $payload);
+    }
+
+    /**
+     * Build RKA groups using split filtering: direct kanca (Ponorogo) + regional patterns (Madiun, Magetan, Ngawi)
+     */
+    private function buildSplitRkaGroups(array $definitions, array $ctx): array
+    {
+        $groups = [];
+
+        // Get direct RKA (KC Ponorogo only)
+        $directGroups = $this->rkaLookup->aggregateByGroup(
+            $definitions,
+            $ctx['rkaMonthColumn'],
+            ['KC PONOROGO'],
+            $ctx['upperSelectedUkers'],
+            $ctx['isQrisBranchFiltered'] ? 'uker' : 'kanca'
+        );
+
+        foreach ($definitions as $defKey => $def) {
+            $groups[$defKey] = $directGroups[$defKey] ?? [];
+        }
+
+        // Get regional RKA if there are regional patterns
+        if (!empty($ctx['rkaRegionalPatterns'])) {
+            $regionalGroups = $this->rkaLookup->aggregateByGroupWithRegionalFilter(
+                $definitions,
+                $ctx['rkaMonthColumn'],
+                $ctx['rkaRegionalPatterns']
+            );
+
+            foreach ($definitions as $defKey => $def) {
+                if (isset($regionalGroups[$defKey])) {
+                    foreach ($regionalGroups[$defKey] as $region => $value) {
+                        $branchName = 'KC ' . $region;
+                        $groups[$defKey][$branchName] = $value;
+                    }
+                }
+            }
+        }
+
+        return $groups;
     }
 }

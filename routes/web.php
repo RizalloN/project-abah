@@ -61,6 +61,10 @@ Route::middleware(['auth', 'release.session.lock', 'throttle:240,1'])->group(fun
         ->name('report.dashboard-pinjaman.summary');
     Route::get('/report/dashboard-pinjaman/matrix-pergeseran-kolek', [DashboardPinjamanReportController::class, 'matrixIndex'])
         ->name('report.dashboard-pinjaman.matrix');
+    Route::get('/report/dashboard-pinjaman/matrix-pergeseran-kolek/detail', [DashboardPinjamanReportController::class, 'matrixDetail'])
+        ->name('report.dashboard-pinjaman.matrix.detail');
+    Route::get('/report/dashboard-pinjaman/matrix-pergeseran-kolek/export', [DashboardPinjamanReportController::class, 'matrixExport'])
+        ->name('report.dashboard-pinjaman.matrix.export');
 
     Route::get('/report/dashboard-pinjaman/kolek-tidak-sesuai', [DashboardPinjamanReportController::class, 'mismatchIndex'])
         ->name('report.dashboard-pinjaman.kolek-tidak-sesuai');

@@ -2,13 +2,18 @@
     :root {
         --loan-surface: #ffffff;
         --loan-surface-soft: #f8fbff;
-        --loan-border: #dbe5ef;
-        --loan-border-strong: #c9d6e6;
+        --loan-border: rgba(8, 87, 195, 0.12);
+        --loan-border-strong: rgba(8, 87, 195, 0.2);
         --loan-text: #0f172a;
-        --loan-muted: #64748b;
-        --loan-blue: #1d4ed8;
-        --loan-blue-deep: #0f4c97;
-        --loan-blue-soft: #eff6ff;
+        --loan-muted: #5b7da7;
+        --loan-blue: #0857c3; /* BRI Nusantara */
+        --loan-blue-deep: #053b82; /* BRI Ink */
+        --loan-blue-ink: #042a5f; /* BRI Night */
+        --loan-blue-soft: #f2f7ff; /* BRI Mist */
+        --loan-cyan: #71c5e8; /* BRI Mentari */
+        --loan-red: #ef4444;
+        --loan-radius: 20px;
+        --loan-shadow: 0 18px 34px -28px rgba(4, 42, 95, 0.28);
     }
 
     .loan-dashboard {
@@ -21,10 +26,11 @@
     .loan-table-shell {
         position: relative;
         border: 1px solid var(--loan-border);
-        border-radius: 20px;
+        border-radius: var(--loan-radius);
         background: #ffffff;
-        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05);
+        box-shadow: var(--loan-shadow);
         overflow: hidden;
+        transition: transform 0.3s ease;
     }
 
     .loan-shell::before,
@@ -34,7 +40,7 @@
         inset: 0 auto auto 0;
         width: 100%;
         height: 6px;
-        background: linear-gradient(90deg, #0f172a, #1e293b, #334155);
+        background: linear-gradient(90deg, var(--loan-blue-ink), var(--loan-blue), var(--loan-cyan));
         z-index: 5;
     }
 
@@ -46,6 +52,7 @@
         border-radius: 12px;
         background: #f8fafc;
         transition: all 0.2s ease;
+        min-height: 90px;
     }
 
     .loan-filter-grid .form-group:focus-within {
@@ -102,6 +109,19 @@
         100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(20, 184, 166, 0); }
     }
 
+    .loan-filter-meta {
+        display: flex;
+        gap: 1.25rem;
+        font-size: 0.8rem;
+        color: var(--loan-muted);
+        font-weight: 700;
+    }
+
+    .loan-filter-meta strong {
+        color: var(--loan-blue-ink);
+        font-weight: 800;
+    }
+
     /* ── Matrix Specific ─────────────────────────── */
     .loan-matrix-wrap { 
         overflow: auto; 
@@ -120,33 +140,40 @@
     
     .loan-matrix th, .loan-matrix td { 
         padding: 10px 12px; 
-        border-right: 1px solid #f1f5f9; 
-        border-bottom: 1px solid #f1f5f9; 
+        border-right: 1px solid rgba(8, 87, 195, 0.08); 
+        border-bottom: 1px solid rgba(8, 87, 195, 0.08); 
         text-align: right; 
         font-weight: 700;
+        vertical-align: middle;
     }
     
     .loan-matrix thead th { 
         position: sticky;
         top: 0;
         z-index: 10;
-        background: #0f172a !important; 
-        color: #f8fafc; 
+        background: var(--loan-blue-ink) !important;
+        backdrop-filter: blur(8px);
+        color: #ffffff; 
         text-align: center; 
         font-weight: 800; 
-        font-size: 0.7rem;
+        font-size: 0.72rem;
         text-transform: uppercase;
         letter-spacing: 0.05em;
-        border-bottom: 2px solid #334155;
+        border-bottom: 2px solid rgba(255, 255, 255, 0.15);
+        vertical-align: middle !important;
+        height: 48px;
+        padding: 8px 12px !important;
     }
 
     .loan-matrix thead tr:nth-child(2) th {
-        top: 41px;
+        top: 48px;
+        height: 42px;
     }
 
+
     .loan-matrix .matrix-before { 
-        background: #1e293b !important; 
-        color: #f8fafc !important;
+        background: var(--loan-blue-deep) !important; 
+        color: #ffffff !important;
         position: sticky; 
         left: 0; 
         z-index: 20; 
@@ -155,12 +182,12 @@
 
     .loan-matrix tbody th { 
         background: #ffffff; 
-        color: #0f172a; 
+        color: var(--loan-blue-ink); 
         position: sticky; 
         left: 0; 
         z-index: 15; 
         text-align: left; 
-        border-left: 5px solid #0f172a;
+        border-left: 5px solid var(--loan-blue);
         font-weight: 800;
         box-shadow: 2px 0 5px rgba(0,0,0,0.02);
     }
@@ -188,9 +215,9 @@
         border: 1px solid #fecaca !important;
     }
     .matrix-stagnant { 
-        background: #f8fafc !important; 
-        color: #475569 !important;
-        border: 1px solid #e2e8f0 !important;
+        background: var(--loan-blue-soft) !important; 
+        color: var(--loan-blue) !important;
+        border: 1px solid rgba(8, 87, 195, 0.1) !important;
     }
     .matrix-new-account { 
         background: #f0f7ff !important; 
@@ -198,7 +225,258 @@
         border: 1px solid #bfdbfe !important;
         font-weight: 800 !important;
     }
-    .matrix-empty { color: #f1f5f9 !important; }
+    .matrix-empty { color: rgba(15, 23, 42, 0.08) !important; }
+
+    .loan-matrix tbody tr.loan-drill-row {
+        cursor: pointer;
+    }
+
+    .loan-matrix tbody tr.loan-drill-row.is-selected th,
+    .loan-matrix tbody tr.loan-drill-row.is-selected td {
+        outline: 2px solid rgba(8, 87, 195, 0.3);
+        outline-offset: -2px;
+        background-color: #eff6ff !important;
+    }
+
+    .loan-drill-modal .modal-dialog {
+        max-width: min(1320px, calc(100vw - 2rem));
+    }
+
+    .loan-drill-modal {
+        z-index: 1065;
+    }
+
+    .modal-backdrop.loan-drill-backdrop {
+        z-index: 1055;
+    }
+
+    .loan-drill-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        margin-bottom: 1rem;
+    }
+
+    .loan-drill-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        font-size: 0.75rem;
+        font-weight: 800;
+        color: #475569;
+    }
+
+    .loan-drill-meta span {
+        border: 1px solid #e2e8f0;
+        border-radius: 999px;
+        background: #f8fafc;
+        padding: 0.35rem 0.7rem;
+    }
+
+    .loan-drill-table-wrap {
+        overflow: auto;
+        max-height: 58vh;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+    }
+
+    .loan-drill-table {
+        width: 100%;
+        min-width: 2200px;
+        border-collapse: separate;
+        border-spacing: 0;
+        font-size: 0.76rem;
+    }
+
+    .loan-drill-table th,
+    .loan-drill-table td {
+        padding: 0.55rem 0.65rem;
+        border-right: 1px solid #f1f5f9;
+        border-bottom: 1px solid #f1f5f9;
+        white-space: nowrap;
+        vertical-align: top;
+    }
+
+    .loan-drill-table th {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        background: var(--loan-blue-ink);
+        color: #ffffff;
+        font-size: 0.68rem;
+        text-transform: uppercase;
+    }
+
+    .loan-drill-state {
+        padding: 2rem;
+        text-align: center;
+        color: #64748b;
+        font-weight: 800;
+    }
+
+    .loan-drill-footer-note {
+        margin-top: 0.75rem;
+        font-size: 0.72rem;
+        font-weight: 700;
+        color: #64748b;
+    }
+
+    /* Legend Styles */
+    .loan-legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1.5rem;
+        margin-top: 1.5rem;
+        padding: 1.25rem;
+        background: var(--loan-surface-soft);
+        border-radius: 16px;
+        border: 1px solid var(--loan-border);
+    }
+
+    .loan-legend-item {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        font-size: 0.82rem;
+        font-weight: 800;
+        color: var(--loan-blue-ink);
+        padding: 0.5rem 1rem;
+        background: #ffffff;
+        border-radius: 10px;
+        box-shadow: 0 2px 8px rgba(4, 42, 95, 0.04);
+        border: 1px solid rgba(255, 255, 255, 0.5);
+    }
+
+    .loan-legend-swatch {
+        width: 14px;
+        height: 14px;
+        border-radius: 4px;
+        display: inline-block;
+        flex-shrink: 0;
+    }
+
+    /* Matrix State Colors - Extended to Legend */
+    .loan-legend-swatch.matrix-up { background-color: #22c55e !important; box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.1); }
+    .loan-legend-swatch.matrix-down { background-color: #ef4444 !important; box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1); }
+    .loan-legend-swatch.matrix-stagnant { background-color: var(--loan-blue) !important; box-shadow: 0 0 0 3px rgba(8, 87, 195, 0.1); }
+    .loan-legend-swatch.matrix-new-account { background-color: #3b82f6 !important; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1); }
+
+
+    /* ── Mismatch Specific ───────────────────────── */
+    .loan-mismatch-summary {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 1.25rem;
+        margin: 1.5rem 0;
+    }
+
+    .loan-mismatch-card {
+        position: relative;
+        border: 1px solid var(--loan-border);
+        border-radius: 16px;
+        padding: 1.25rem;
+        background: linear-gradient(135deg, #ffffff, var(--loan-surface-soft));
+        box-shadow: 0 4px 12px rgba(4, 42, 95, 0.04);
+        overflow: hidden;
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    .loan-mismatch-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 8px 24px rgba(4, 42, 95, 0.08);
+    }
+
+    .loan-mismatch-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 4px;
+        background: linear-gradient(90deg, var(--loan-blue), var(--loan-cyan));
+    }
+
+    .loan-audit-label {
+        font-size: 0.72rem;
+        font-weight: 800;
+        color: var(--loan-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        margin-bottom: 0.5rem;
+        display: block;
+    }
+
+    .loan-audit-value {
+        font-size: 1.75rem;
+        font-weight: 800;
+        color: var(--loan-blue-ink);
+        line-height: 1;
+        display: block;
+    }
+
+    .loan-mismatch-table-shell {
+        border-radius: var(--loan-radius);
+        overflow: hidden;
+    }
+
+    .loan-mismatch-table-wrap {
+        margin-top: 1rem;
+        border-radius: 12px;
+        overflow: hidden;
+        border: 1px solid var(--loan-border);
+    }
+
+    .loan-mismatch-table thead th {
+        background: var(--loan-blue-ink) !important;
+        color: #ffffff !important;
+        font-size: 0.75rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        padding: 12px;
+        border: none;
+    }
+
+    .loan-table-heading {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1.25rem;
+    }
+
+    .loan-table-heading h5 {
+        margin: 0;
+        font-weight: 800;
+        color: var(--loan-blue-ink);
+    }
+
+    .loan-table-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.4rem 0.8rem;
+        background: var(--loan-blue-soft);
+        color: var(--loan-blue-deep);
+        border-radius: 999px;
+        font-size: 0.75rem;
+        font-weight: 800;
+        border: 1px solid rgba(8, 87, 195, 0.1);
+    }
+
+    .loan-empty-state {
+        padding: 3rem 1rem;
+        text-align: center;
+        color: var(--loan-muted);
+        background: var(--loan-surface-soft);
+    }
+
+    .loan-empty-state strong {
+        display: block;
+        margin-bottom: 0.5rem;
+        color: var(--loan-blue-ink);
+    }
 
     /* ── Loading Overlay ─────────────────────────── */
     .loan-table-stage {
@@ -209,14 +487,14 @@
     .loan-loading-overlay {
         position: absolute;
         inset: 0;
-        background: rgba(255, 255, 255, 0.9);
-        backdrop-filter: blur(8px);
+        background: rgba(255, 255, 255, 0.85);
+        backdrop-filter: blur(14px) saturate(160%);
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
         z-index: 100;
-        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
         border-radius: 12px;
     }
 
@@ -224,38 +502,40 @@
         opacity: 0;
         visibility: hidden;
         pointer-events: none;
+        transform: scale(1.02);
     }
 
     .loan-loading-title {
         font-size: 1.1rem;
         font-weight: 800;
-        color: #0f172a;
-        margin: 1.25rem 0 0.25rem;
+        color: var(--loan-blue-ink);
+        margin-top: 1rem;
     }
 
     .loan-loading-copy {
         font-size: 0.85rem;
-        color: #64748b;
+        color: var(--loan-muted);
         margin-bottom: 1.5rem;
     }
 
     .loan-loading-progress {
-        width: 240px;
+        width: 280px;
+        max-width: 90%;
     }
 
     .loan-loading-progress-meta {
         display: flex;
         justify-content: space-between;
+        margin-bottom: 0.5rem;
         font-size: 0.7rem;
         font-weight: 800;
-        color: #1e293b;
-        margin-bottom: 0.5rem;
+        color: var(--loan-blue-deep);
         text-transform: uppercase;
         letter-spacing: 0.05em;
     }
 
     .loan-loading-progress-track {
-        height: 6px;
+        height: 8px;
         background: #f1f5f9;
         border-radius: 999px;
         overflow: hidden;
@@ -264,68 +544,60 @@
 
     .loan-loading-progress-bar {
         height: 100%;
-        background: linear-gradient(90deg, #0f172a, #2563eb);
+        background: linear-gradient(90deg, var(--loan-blue-deep), var(--loan-blue));
         width: 0%;
         transition: width 0.3s ease;
     }
 
-    .loan-legend {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 1.5rem;
-        margin-top: 1.5rem;
-        padding: 1rem 1.25rem;
-        background: #f8fafc;
-        border-radius: 12px;
-        border: 1px solid #e2e8f0;
+    /* ── Select2 overrides ── */
+    .select2-container--bootstrap4 .select2-selection {
+        border-radius: 8px !important;
+        min-height: 38px !important;
+        border-color: #e2e8f0 !important;
+        background: #ffffff !important;
     }
 
-    .loan-legend-item {
+    .select2-container--bootstrap4 .select2-selection--single .select2-selection__rendered {
+        line-height: 36px !important;
+        font-weight: 700 !important;
+        color: #1e293b !important;
+        font-size: 0.85rem !important;
+    }
+
+    .select2-container--bootstrap4 .select2-selection--multiple {
+        min-height: 38px !important;
+    }
+
+    .select2-container--bootstrap4 .select2-selection--multiple .select2-selection__rendered {
+        display: flex !important;
+        align-items: center !important;
+    }
+
+    .loan-select2-option {
         display: flex;
         align-items: center;
-        gap: 0.6rem;
-        font-size: 0.75rem;
-        font-weight: 700;
-        color: #475569;
+        gap: 0.5rem;
+        padding: 0.25rem 0;
     }
 
-    .loan-legend-swatch {
-        width: 16px;
-        height: 16px;
-        border-radius: 4px;
-        border: 1px solid rgba(0,0,0,0.05);
+    .loan-select2-option input[type="checkbox"] {
+        margin: 0;
     }
 
+    /* Summary Tables Styles */
     .loan-summary-table-wrap { 
         width: 100%;
         margin-bottom: 1.25rem; 
         border-radius: 12px; 
         overflow: hidden; 
         border: 1px solid var(--loan-border); 
-        box-shadow: 0 4px 18px rgba(15, 23, 42, 0.08); 
         background: #fff; 
     }
     
     .loan-summary-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 0.82rem; }
     
-    .legend-box {
-        background: rgba(255, 255, 255, 0.6);
-        border: 1px solid var(--loan-border);
-        border-radius: 8px;
-        padding: 4px 12px;
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        font-size: 0.75rem;
-        font-weight: 700;
-        color: var(--loan-muted);
-        margin-bottom: 0.5rem;
-        letter-spacing: 0.02em;
-    }
-    
-    /* Main Headers */
     .loan-summary-table thead th { 
-        background: #002d5a; 
+        background: var(--loan-blue-ink); 
         color: #ffffff; 
         text-align: center; 
         padding: 6px 4px; 
@@ -337,144 +609,48 @@
         font-size: 0.72rem;
     }
     
-    /* Sub Headers / Data Range Headers */
     .loan-summary-table thead th.sub-head { 
-        background: #004280; 
+        background: var(--loan-blue-deep); 
         color: #ffffff;
         font-size: 0.7rem;
         font-weight: 700;
     }
 
-    .loan-summary-table thead th.accent-head {
-        background: #0d1117;
-    }
-    
-    /* Body Styling */
-    .loan-summary-table tbody td { 
-        padding: 4px 4px; 
-        border: 1px solid #e2e8f0; 
-        text-align: right; 
-        font-weight: 600; 
-        color: #334155;
-        vertical-align: middle;
-        font-size: 0.75rem;
-    }
-
-    .loan-summary-table tbody td.text-center-v {
-        vertical-align: middle !important;
-        text-align: center !important;
-    }
-
-    .merged-branch-cell {
-        background: linear-gradient(135deg, #f0f7ff 0%, #e0f2fe 100%) !important;
-        border-right: 1px solid var(--loan-border) !important;
-        border-left: 6px solid #004280 !important;
-        font-weight: 800 !important;
-        color: #002d5a !important;
-        text-transform: uppercase;
-        text-align: center !important;
-        vertical-align: middle !important;
-        font-size: 0.68rem;
-        padding: 4px !important;
-        box-shadow: inset 2px 0 10px rgba(0, 66, 128, 0.05);
-    }
-
     .loan-branch-subtotal {
-        background: #1e293b !important;
+        background: var(--loan-blue-ink) !important;
     }
 
     .loan-branch-subtotal td {
         color: #ffffff !important;
         font-weight: 900 !important;
-        border-top: 2px solid #030712 !important;
-        border-bottom: 2px solid #334155 !important;
-        font-size: 0.76rem !important;
-        padding-top: 4px !important;
-        padding-bottom: 4px !important;
     }
 
-    .loan-branch-subtotal td[rowspan] {
-        color: #1e293b !important;
-        background: #f8fbff !important;
-        border-bottom: 2px solid #cbd5e1 !important;
-    }
+    .loan-summary-title { background: var(--loan-blue); color: white; padding: 12px 20px; font-weight: 800; text-transform: uppercase; font-size: 1rem; border-radius: 12px 12px 0 0; }
+    .loan-summary-section-title { width: 100%; background: var(--loan-blue-ink); color: white; text-align: center; padding: 10px; font-weight: 800; font-size: 1.05rem; border-bottom: 2px solid rgba(255, 255, 255, 0.1); text-transform: uppercase; }
     
-    /* Category/Branch Columns (Left Aligned) */
-    .loan-summary-table tbody td.text-start-important {
-        text-align: left !important;
-        font-weight: 700;
-        color: #0f172a;
-    }
-
-    .loan-summary-table tbody tr:nth-child(even) {
-        background-color: #f8fbff;
-    }
-
-    .loan-summary-table tbody tr:hover {
-        background-color: #f1f5f9;
-    }
-    
-    .loan-summary-title { background: #00529c; color: white; padding: 12px 20px; font-weight: 800; text-transform: uppercase; font-size: 1rem; display: flex; justify-content: space-between; align-items: center; border-radius: 12px 12px 0 0; }
-    .loan-summary-section-title { width: 100%; background: #1e293b; color: white; text-align: center; padding: 10px; font-weight: 800; font-size: 1.05rem; border-bottom: 2px solid #334155; text-transform: uppercase; }
-    
-    .achieve-positive { background: #dcfce7 !important; color: #166534 !important; font-weight: 800; }
-    .achieve-negative { background: #fee2e2 !important; color: #991b1b !important; font-weight: 800; }
-    .achieve-neutral { background: #f1f5f9 !important; color: #475569 !important; }
-
     .loan-section-header {
         display: flex;
         align-items: center;
         gap: 1rem;
         margin: 1.5rem 0 0.8rem;
         padding-left: 0.5rem;
-        border-left: 5px solid #00529c;
+        border-left: 5px solid var(--loan-blue);
     }
 
     .loan-section-header h3 {
         margin: 0;
         font-size: 1.35rem;
         font-weight: 800;
-        color: #0f172a;
+        color: var(--loan-blue-ink);
         text-transform: uppercase;
-        letter-spacing: 0.05em;
-    }
-    
-    .loan-summary-toggle { cursor: pointer; transition: transform 0.2s ease; }
-    .loan-summary-toggle.collapsed i { transform: rotate(-90deg); }
-
-    /* Select2 overrides */
-    .select2-container--bootstrap4 .select2-selection {
-        border-radius: 11px !important;
-        min-height: 40px !important;
-        border-color: var(--loan-border-strong) !important;
-        background: linear-gradient(180deg, #eaf2ff 0%, #ffffff 78%) !important;
     }
 
-    /* RKA Achievement badges */
-    .pct-badge {
-        display: inline-block;
-        padding: 0.25rem 0.5rem;
-        border-radius: 6px;
-        font-weight: 800;
-        font-style: italic;
-        min-width: 60px;
-        text-align: center;
-        font-size: 0.75rem;
-    }
-
-    .pct-good {
-        background: #10b981;
-        color: white;
-    }
-
-    .pct-mid {
-        background: #fbbf24;
-        color: #92400e;
-    }
-
-    .pct-bad {
-        background: #ef4444;
-        color: white;
+    @media (max-width: 768px) {
+        .loan-mismatch-summary {
+            grid-template-columns: repeat(2, 1fr);
+        }
+        .loan-filter-grid .form-group {
+            min-height: auto;
+        }
     }
 </style>
-

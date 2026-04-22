@@ -39,6 +39,49 @@ class DashboardPinjamanReportController extends Controller
 
     private const OUTPUT_COLUMNS = ['Turunan Pokok', 'Suplesi', 'PH', 'Lunas'];
     private const KOLEK_MISMATCH_RULE_LABEL = 'kol_adk1_vs_umur_tunggakan_v1';
+    private const MATRIX_MODAL_COLUMNS = [
+        'pivot_before_bucket',
+        'pivot_after_bucket',
+        'periode',
+        'cabang1',
+        'unit1',
+        'cifno',
+        'nomor_rekening1',
+        'nama_debitur1',
+        'plafon',
+        'baki_debet1',
+        'kol_adk1',
+        'kolek_detail',
+        'kolek',
+        'total_kewajiban',
+        'tunggakan_pokok',
+        'tunggakan_bunga',
+        'tunggakan_penalti',
+        'umur_tunggakan',
+        'tgl_realisasi',
+        'tgl_jatuh_tempo',
+        'tanggal_menunggak',
+        'tgl_bayar_terakhir',
+        'next_pmt_date',
+        'next_pmt_int_date',
+        'bap',
+        'payment_amount',
+        'final_payment_amount',
+        'sai_deffered',
+        'sai1',
+        'freq_payment',
+        'freq_int_payment',
+        'pn_pengelola1',
+        'segmen_dashboard',
+        'produk_dashboard',
+        'tgl_akad_restruk',
+        'flag_restruk',
+    ];
+    private const MATRIX_PIVOT_DETAIL_COLUMNS = [
+        'pivot_before_bucket',
+        'pivot_after_bucket',
+        'pivot_previous_balance',
+    ];
 
     public function summaryIndex(Request $request)
     {
@@ -267,6 +310,104 @@ class DashboardPinjamanReportController extends Controller
             'grand_totals' => $grandTotals,
             'grand_total_value' => $grandTotalValue,
             'data_source' => $usesSnapshot ? self::SNAPSHOT_TABLE : 'daily_loan_dinamis',
+        ]);
+    }
+
+    public function matrixDetail(Request $request)
+    {
+        @set_time_limit(60);
+        DB::connection()->disableQueryLog();
+        $this->releaseSessionLockIfNeeded();
+
+        $selectedPeriod = $this->resolveEffectivePeriod($request->input('periode'));
+        $comparisonPeriod = $this->resolveComparisonPeriod($selectedPeriod);
+        $beforeBucket = trim((string) $request->input('before_bucket', ''));
+        $limit = max(10, min(50, (int) $request->input('limit', 25)));
+        $offset = max(0, (int) $request->input('offset', 0));
+
+        abort_if(!$selectedPeriod || !in_array($beforeBucket, self::BEFORE_ROWS, true), 422, 'Periode dan bucket pivot wajib valid.');
+
+        $filters = [
+            'segmen' => $this->normalizeFilterValues($request->input('segmen_dashboard')),
+            'produk' => $this->normalizeFilterValues($request->input('produk_dashboard')),
+            'cabang' => $this->normalizeFilterValues($request->input('cabang1')),
+            'unit' => $this->normalizeFilterValues($request->input('unit1')),
+        ];
+
+        $columns = $this->collectMatrixModalColumns();
+        $rows = $this->buildMatrixDrilldownQuery($selectedPeriod, $comparisonPeriod, $filters, $beforeBucket, $columns)
+            ->offset($offset)
+            ->limit($limit + 1)
+            ->get();
+
+        $hasMore = $rows->count() > $limit;
+        $rows = $rows->take($limit)->map(fn ($row) => (array) $row)->values();
+
+        return response()->json([
+            'selected_period' => $selectedPeriod,
+            'comparison_period' => $comparisonPeriod,
+            'before_bucket' => $beforeBucket,
+            'columns' => $columns,
+            'rows' => $rows,
+            'limit' => $limit,
+            'offset' => $offset,
+            'next_offset' => $hasMore ? $offset + $limit : null,
+            'has_more' => $hasMore,
+        ]);
+    }
+
+    public function matrixExport(Request $request)
+    {
+        @set_time_limit(0);
+        DB::connection()->disableQueryLog();
+        $this->releaseSessionLockIfNeeded();
+
+        $selectedPeriod = $this->resolveEffectivePeriod($request->input('periode'));
+        $comparisonPeriod = $this->resolveComparisonPeriod($selectedPeriod);
+        $beforeBucket = trim((string) $request->input('before_bucket', ''));
+
+        abort_if(!$selectedPeriod || !in_array($beforeBucket, self::BEFORE_ROWS, true), 422, 'Periode dan bucket pivot wajib valid.');
+
+        $filters = [
+            'segmen' => $this->normalizeFilterValues($request->input('segmen_dashboard')),
+            'produk' => $this->normalizeFilterValues($request->input('produk_dashboard')),
+            'cabang' => $this->normalizeFilterValues($request->input('cabang1')),
+            'unit' => $this->normalizeFilterValues($request->input('unit1')),
+        ];
+
+        $exportColumns = $this->collectMatrixDetailColumns();
+        $query = $this->buildMatrixDrilldownQuery($selectedPeriod, $comparisonPeriod, $filters, $beforeBucket, $exportColumns);
+        $filename = sprintf(
+            'matrix-pergeseran-kolek_%s_%s.xlsx',
+            str_replace('-', '', $selectedPeriod),
+            $this->sanitizeExportToken($beforeBucket)
+        );
+
+        return response()->streamDownload(function () use ($query, $exportColumns) {
+            $spreadsheet = new Spreadsheet();
+            $sheet = $spreadsheet->getActiveSheet();
+            $sheet->setTitle('Detail Matrix Kolek');
+
+            foreach ($exportColumns as $index => $column) {
+                $sheet->setCellValue(Coordinate::stringFromColumnIndex($index + 1) . '1', $column);
+            }
+
+            $rowIndex = 2;
+            foreach ($query->cursor() as $row) {
+                foreach ($exportColumns as $columnIndex => $column) {
+                    $sheet->setCellValue(
+                        Coordinate::stringFromColumnIndex($columnIndex + 1) . $rowIndex,
+                        $row->{$column} ?? ''
+                    );
+                }
+                $rowIndex++;
+            }
+
+            $writer = new Xlsx($spreadsheet);
+            $writer->save('php://output');
+            $spreadsheet->disconnectWorksheets();
+        }, $filename, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         ]);
     }
 
@@ -566,6 +707,119 @@ class DashboardPinjamanReportController extends Controller
         ]);
 
         return [$matrixRows, $grandTotals, $grandTotalCents > 0 ? $this->centsToAmount($grandTotalCents) : null];
+    }
+
+    private function buildMatrixDrilldownQuery(string $selectedPeriod, ?string $comparisonPeriod, array $filters, string $beforeBucket, array $columns): Builder
+    {
+        $currentAlias = 'curr_detail';
+        $previousAlias = 'prev_detail';
+        $currentBucketExpression = $this->buildQualityBucketExpression($currentAlias);
+        $previousBucketExpression = $this->buildQualityBucketExpression($previousAlias);
+        $pivotColumns = array_values(array_intersect($columns, self::MATRIX_PIVOT_DETAIL_COLUMNS));
+        $sourceColumns = array_values(array_filter(
+            array_diff($columns, self::MATRIX_PIVOT_DETAIL_COLUMNS),
+            fn (string $column) => Schema::hasColumn('daily_loan_dinamis', $column)
+        ));
+        $pivotSelects = [];
+
+        if (in_array('pivot_before_bucket', $pivotColumns, true)) {
+            $pivotSelects[] = "
+                CASE
+                    WHEN {$previousAlias}.nomor_rekening1 IS NULL THEN 'New Account'
+                    ELSE {$previousBucketExpression}
+                END as pivot_before_bucket
+            ";
+        }
+        if (in_array('pivot_after_bucket', $pivotColumns, true)) {
+            $pivotSelects[] = "{$currentBucketExpression} as pivot_after_bucket";
+        }
+        if (in_array('pivot_previous_balance', $pivotColumns, true)) {
+            $pivotSelects[] = "COALESCE({$previousAlias}.baki_debet1, 0) as pivot_previous_balance";
+        }
+
+        $query = DB::table(DB::raw($this->buildLoanSnapshotSource($currentAlias, $filters)))
+            ->leftJoin(DB::raw($this->buildLoanSnapshotSource($previousAlias, $filters)), function ($join) use ($currentAlias, $previousAlias, $comparisonPeriod, $filters) {
+                $join->on("{$currentAlias}.nomor_rekening1", '=', "{$previousAlias}.nomor_rekening1");
+
+                if ($comparisonPeriod) {
+                    $join->where("{$previousAlias}.periode", '=', $comparisonPeriod);
+                } else {
+                    $join->whereRaw('1 = 0');
+                }
+
+                if (!empty($filters['segmen'])) {
+                    $join->whereIn("{$previousAlias}.segmen_dashboard", $filters['segmen']);
+                }
+                if (!empty($filters['produk'])) {
+                    $join->whereIn("{$previousAlias}.produk_dashboard", $filters['produk']);
+                }
+                if (!empty($filters['cabang'])) {
+                    $join->whereIn("{$previousAlias}.cabang1", $filters['cabang']);
+                }
+                if (!empty($filters['unit'])) {
+                    $join->whereIn("{$previousAlias}.unit1", $filters['unit']);
+                }
+            })
+            ->where("{$currentAlias}.periode", $selectedPeriod)
+            ->whereIn(DB::raw($currentBucketExpression), self::QUALITY_BUCKETS);
+
+        if (!empty($pivotSelects)) {
+            $query->selectRaw(implode(",\n", $pivotSelects));
+        }
+
+        foreach ($sourceColumns as $column) {
+            $query->addSelect(DB::raw("{$currentAlias}.`{$column}` as `{$column}`"));
+        }
+
+        $this->applyFilterConstraint($query, "{$currentAlias}.segmen_dashboard", $filters['segmen']);
+        $this->applyFilterConstraint($query, "{$currentAlias}.produk_dashboard", $filters['produk']);
+        $this->applyFilterConstraint($query, "{$currentAlias}.cabang1", $filters['cabang']);
+        $this->applyFilterConstraint($query, "{$currentAlias}.unit1", $filters['unit']);
+
+        if ($beforeBucket === 'New Account') {
+            $query->where(function (Builder $where) use ($currentAlias, $previousAlias) {
+                $where->whereNull("{$previousAlias}.nomor_rekening1")
+                    ->orWhereNull("{$currentAlias}.nomor_rekening1")
+                    ->orWhereRaw("TRIM(COALESCE({$currentAlias}.nomor_rekening1, '')) = ''");
+            });
+        } else {
+            $query->whereNotNull("{$currentAlias}.nomor_rekening1")
+                ->whereRaw("TRIM(COALESCE({$currentAlias}.nomor_rekening1, '')) <> ''")
+                ->whereNotNull("{$previousAlias}.nomor_rekening1")
+                ->whereRaw("({$previousBucketExpression}) = ?", [$beforeBucket]);
+        }
+
+        return $query;
+    }
+
+    private function collectMatrixModalColumns(): array
+    {
+        static $cached = null;
+        if ($cached !== null) {
+            return $cached;
+        }
+
+        $available = array_fill_keys(Schema::getColumnListing('daily_loan_dinamis'), true);
+        $cached = array_values(array_filter(self::MATRIX_MODAL_COLUMNS, function (string $column) use ($available) {
+            return in_array($column, self::MATRIX_PIVOT_DETAIL_COLUMNS, true) || isset($available[$column]);
+        }));
+
+        return $cached;
+    }
+
+    private function collectMatrixDetailColumns(): array
+    {
+        static $cached = null;
+        if ($cached !== null) {
+            return $cached;
+        }
+
+        $cached = array_values(array_unique(array_merge(
+            self::MATRIX_PIVOT_DETAIL_COLUMNS,
+            Schema::getColumnListing('daily_loan_dinamis')
+        )));
+
+        return $cached;
     }
 
     private function buildMovementMatrixAggregateQuery(
