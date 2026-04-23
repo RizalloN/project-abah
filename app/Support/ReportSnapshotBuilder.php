@@ -682,21 +682,27 @@ class ReportSnapshotBuilder
                 saldo_curr, saldo_prev, saldo_yoy_prev, created_at, updated_at
             )
             SELECT
-                MD5(CONCAT_WS('|', 'pnps', ?, TRIM(UPPER(kanca)))) as uniqueid_pnps,
+                MD5(CONCAT_WS('|', 'pnps', ?, base.branch)) as uniqueid_pnps,
                 ? as snapshot_posisi,
-                TRIM(UPPER(kanca)) as branch,
-                SUM(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN 1 ELSE 0 END) as rekening_curr,
-                SUM(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN 1 ELSE 0 END) as rekening_prev,
-                SUM(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN 1 ELSE 0 END) as rekening_yoy_prev,
-                SUM(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN saldo_britama_kerjasama ELSE 0 END) as saldo_curr,
-                SUM(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN saldo_britama_kerjasama ELSE 0 END) as saldo_prev,
-                SUM(CASE WHEN tanggal_pembuatan_rekening BETWEEN ? AND ? THEN saldo_britama_kerjasama ELSE 0 END) as saldo_yoy_prev,
+                base.branch as branch,
+                SUM(CASE WHEN base.tanggal_pembuatan_rekening BETWEEN ? AND ? THEN 1 ELSE 0 END) as rekening_curr,
+                SUM(CASE WHEN base.tanggal_pembuatan_rekening BETWEEN ? AND ? THEN 1 ELSE 0 END) as rekening_prev,
+                SUM(CASE WHEN base.tanggal_pembuatan_rekening BETWEEN ? AND ? THEN 1 ELSE 0 END) as rekening_yoy_prev,
+                SUM(CASE WHEN base.tanggal_pembuatan_rekening BETWEEN ? AND ? THEN base.saldo_britama_kerjasama ELSE 0 END) as saldo_curr,
+                SUM(CASE WHEN base.tanggal_pembuatan_rekening BETWEEN ? AND ? THEN base.saldo_britama_kerjasama ELSE 0 END) as saldo_prev,
+                SUM(CASE WHEN base.tanggal_pembuatan_rekening BETWEEN ? AND ? THEN base.saldo_britama_kerjasama ELSE 0 END) as saldo_yoy_prev,
                 NOW() as created_at,
                 NOW() as updated_at
-            FROM performance_pis_per_produk
-            WHERE posisi = ?
-                AND UPPER(TRIM(kanca)) IN ('{$branchList}')
-            GROUP BY TRIM(UPPER(kanca))
+            FROM (
+                SELECT
+                    TRIM(UPPER(kanca)) as branch,
+                    tanggal_pembuatan_rekening,
+                    saldo_britama_kerjasama
+                FROM performance_pis_per_produk
+                WHERE posisi = ?
+                    AND TRIM(UPPER(kanca)) IN ('{$branchList}')
+            ) base
+            GROUP BY base.branch
             ON DUPLICATE KEY UPDATE
                 rekening_curr = VALUES(rekening_curr),
                 rekening_prev = VALUES(rekening_prev),

@@ -215,6 +215,12 @@
         transition: all 0.2s;
     }
 
+    .daily-dropdown-toggle.is-disabled {
+        opacity: 0.65;
+        cursor: not-allowed;
+        pointer-events: none;
+    }
+
     .daily-dropdown-toggle:hover {
         border-color: var(--primary-blue-light);
         background: #ffffff;
@@ -243,6 +249,17 @@
         overflow-y: auto;
     }
 
+    .daily-dropdown.is-disabled .daily-dropdown-toggle {
+        background: #eef2f7;
+        color: #94a3b8;
+        border-color: #dbe4ef;
+    }
+
+    .daily-dropdown.is-disabled .daily-dropdown-toggle:hover {
+        border-color: #dbe4ef;
+        background: #eef2f7;
+    }
+
     .daily-dropdown.is-open .daily-dropdown-menu {
         display: block;
     }
@@ -255,6 +272,11 @@
         cursor: pointer;
         transition: background 0.15s;
         gap: 0.75rem;
+    }
+
+    .daily-dropdown-option.is-disabled-option {
+        opacity: 0.45;
+        pointer-events: none;
     }
 
     .daily-dropdown-option:hover {
@@ -477,6 +499,10 @@
             </div>
         </div>
 
+        @php
+            $isArea6AllSelected = (bool) ($isArea6All ?? false);
+        @endphp
+
         <div class="filter-section">
             <form action="{{ route('report.dashboard-pinjaman.kejar-laba') }}" method="GET" class="filter-container" id="filterForm">
                 {{-- Periode --}}
@@ -497,13 +523,15 @@
                     <div class="daily-dropdown" id="kancaDropdown">
                         <input type="hidden" name="kanca" id="kancaInput" value="{{ is_array($selected['kanca']) ? implode(',', $selected['kanca']) : $selected['kanca'] }}">
                         <div class="daily-dropdown-toggle">
-                            <span class="daily-dropdown-toggle-text" id="kancaLabel">Pilih Kantor Cabang...</span>
+                            <span class="daily-dropdown-toggle-text" id="kancaLabel">
+                                {{ $isArea6AllSelected ? 'AREA-6 All' : 'Pilih Kantor Cabang...' }}
+                            </span>
                             <i class="fas fa-chevron-down daily-dropdown-toggle-icon"></i>
                         </div>
                         <div class="daily-dropdown-menu">
-                            <div class="daily-dropdown-option {{ empty($selected['kanca']) ? 'is-active' : '' }}" data-value="all">
+                            <div class="daily-dropdown-option {{ $isArea6AllSelected ? 'is-active' : '' }}" data-value="all">
                                 <div class="daily-dropdown-check"><i class="fas fa-check"></i></div>
-                                <span class="daily-dropdown-label">Semua Kantor Cabang</span>
+                                <span class="daily-dropdown-label">AREA-6 All</span>
                             </div>
                             @foreach($filters['kanca'] as $kc)
                                 @if($kc['value'] !== 'all')
@@ -521,9 +549,9 @@
                 {{-- Unit Kerja (Searchable Dropdown) --}}
                 <div class="filter-item" style="min-width: 300px;">
                     <label class="filter-label">Unit Kerja</label>
-                    <div class="daily-dropdown" id="unitDropdown">
+                    <div class="daily-dropdown {{ $isArea6AllSelected ? 'is-disabled' : '' }}" id="unitDropdown">
                         <input type="hidden" name="unit_kerja" id="unitInput" value="{{ $selected['unit_kerja'] }}">
-                        <div class="daily-dropdown-toggle">
+                        <div class="daily-dropdown-toggle {{ $isArea6AllSelected ? 'is-disabled' : '' }}" aria-disabled="{{ $isArea6AllSelected ? 'true' : 'false' }}">
                             <span class="daily-dropdown-toggle-text" id="unitLabel">
                                 {{ $selected['unit_kerja'] === 'all' ? 'Semua Unit Kerja' : $selected['unit_kerja'] }}
                             </span>
@@ -533,7 +561,7 @@
                             <div class="daily-search-shell">
                                 <div class="daily-search-inner">
                                     <i class="fas fa-search"></i>
-                                    <input type="text" class="daily-search-input" placeholder="Cari unit kerja..." id="unitSearch">
+                                    <input type="text" class="daily-search-input" placeholder="Cari unit kerja..." id="unitSearch" {{ $isArea6AllSelected ? 'disabled' : '' }}>
                                 </div>
                             </div>
                             <div class="daily-dropdown-options-list" id="unitOptionsContainer">
@@ -569,9 +597,9 @@
 
         <script>
             document.addEventListener('DOMContentLoaded', function() {
-                // Constants from Backend
+                const area6Branches = @json($area6Branches ?? []);
                 const allUnitsData = @json($filters['unit_kerja']);
-                
+
                 // Elements - Kanca
                 const kancaDropdown = document.getElementById('kancaDropdown');
                 const kancaToggle = kancaDropdown.querySelector('.daily-dropdown-toggle');
@@ -579,7 +607,7 @@
                 const kancaOptions = kancaDropdown.querySelectorAll('.daily-dropdown-option');
                 const kancaInput = document.getElementById('kancaInput');
                 const kancaLabel = document.getElementById('kancaLabel');
-                
+
                 // Elements - Unit
                 const unitDropdown = document.getElementById('unitDropdown');
                 const unitToggle = unitDropdown.querySelector('.daily-dropdown-toggle');
@@ -588,21 +616,157 @@
                 const unitLabel = document.getElementById('unitLabel');
                 const unitOptionsContainer = document.getElementById('unitOptionsContainer');
                 const unitSearchInput = document.getElementById('unitSearch');
+                const unitAllLabel = 'Semua Unit Kerja';
+
+                function getSelectedKancas() {
+                    return kancaInput.value
+                        ? kancaInput.value.split(',').filter(Boolean)
+                        : [];
+                }
+
+                function isArea6AllSelection(selected) {
+                    return selected.length === area6Branches.length
+                        && area6Branches.every(branch => selected.includes(branch));
+                }
+
+                function setUnitDisabled(disabled) {
+                    unitDropdown.classList.toggle('is-disabled', disabled);
+                    unitToggle.classList.toggle('is-disabled', disabled);
+                    unitSearchInput.disabled = disabled;
+
+                    if (disabled) {
+                        unitInput.value = 'all';
+                        unitLabel.textContent = unitAllLabel;
+                        unitDropdown.classList.remove('is-open');
+                        unitSearchInput.value = '';
+                    }
+                }
+
+                function selectUnit(value, label, closeDropdown = true) {
+                    unitInput.value = value;
+                    unitLabel.textContent = label;
+                    if (closeDropdown) {
+                        unitDropdown.classList.remove('is-open');
+                    }
+
+                    unitOptionsContainer.querySelectorAll('.daily-dropdown-option').forEach(option => {
+                        option.classList.toggle('is-active', option.dataset.value === value);
+                    });
+                }
+
+                function rebuildUnitOptions() {
+                    const selectedKancas = getSelectedKancas();
+                    const disableUnit = isArea6AllSelection(selectedKancas);
+                    const currentUnit = unitInput.value;
+                    let foundCurrentUnit = currentUnit === 'all';
+
+                    setUnitDisabled(disableUnit);
+
+                    unitOptionsContainer.innerHTML = `
+                        <div class="daily-dropdown-option ${currentUnit === 'all' ? 'is-active' : ''}" data-value="all">
+                            <div class="daily-dropdown-check"><i class="fas fa-check"></i></div>
+                            <span class="daily-dropdown-label">${unitAllLabel}</span>
+                        </div>
+                    `;
+
+                    if (!disableUnit) {
+                        allUnitsData.forEach(unit => {
+                            if (unit.value === 'all') {
+                                return;
+                            }
+
+                            if (selectedKancas.includes(unit.kanca_value)) {
+                                const opt = document.createElement('div');
+                                opt.className = `daily-dropdown-option ${unit.value === currentUnit ? 'is-active' : ''}`;
+                                opt.dataset.value = unit.value;
+                                opt.innerHTML = `
+                                    <div class="daily-dropdown-check"><i class="fas fa-check"></i></div>
+                                    <span class="daily-dropdown-label">${unit.label}</span>
+                                `;
+
+                                if (unit.value === currentUnit) {
+                                    foundCurrentUnit = true;
+                                }
+
+                                opt.addEventListener('click', function() {
+                                    selectUnit(unit.value, unit.label);
+                                });
+
+                                unitOptionsContainer.appendChild(opt);
+                            }
+                        });
+                    }
+
+                    unitOptionsContainer.querySelector('[data-value="all"]').addEventListener('click', () => {
+                        if (!unitDropdown.classList.contains('is-disabled')) {
+                            selectUnit('all', unitAllLabel);
+                        }
+                    });
+
+                    if (disableUnit) {
+                        selectUnit('all', unitAllLabel, false);
+                        return;
+                    }
+
+                    if (!foundCurrentUnit) {
+                        selectUnit('all', unitAllLabel, false);
+                    }
+                }
+
+                function updateKancaUI() {
+                    const selected = getSelectedKancas();
+                    const allSelected = isArea6AllSelection(selected);
+
+                    if (allSelected) {
+                        kancaLabel.textContent = 'AREA-6 All';
+                        kancaOptions.forEach(option => option.classList.add('is-active'));
+                    } else if (selected.length === 1) {
+                        kancaLabel.textContent = selected[0];
+                        kancaOptions.forEach(option => option.classList.toggle('is-active', option.dataset.value === selected[0]));
+                        kancaOptions[0].classList.remove('is-active');
+                    } else if (selected.length > 1) {
+                        kancaLabel.textContent = `${selected.length} Cabang Dipilih`;
+                        kancaOptions.forEach(option => {
+                            if (option.dataset.value === 'all') {
+                                option.classList.remove('is-active');
+                                return;
+                            }
+
+                            option.classList.toggle('is-active', selected.includes(option.dataset.value));
+                        });
+                    } else {
+                        kancaLabel.textContent = 'Pilih Kantor Cabang...';
+                        kancaOptions.forEach(option => option.classList.remove('is-active'));
+                    }
+
+                    if (!allSelected) {
+                        kancaOptions[0].classList.remove('is-active');
+                    } else {
+                        kancaOptions[0].classList.add('is-active');
+                    }
+
+                    kancaInput.value = selected.join(',');
+                    rebuildUnitOptions();
+                }
 
                 // Toggle logic
                 [kancaToggle, unitToggle].forEach(toggle => {
                     toggle.addEventListener('click', (e) => {
+                        if (toggle === unitToggle && unitDropdown.classList.contains('is-disabled')) {
+                            return;
+                        }
+
                         e.stopPropagation();
                         const target = toggle.parentElement;
                         const wasOpen = target.classList.contains('is-open');
-                        
+
                         // Close all
                         document.querySelectorAll('.daily-dropdown').forEach(d => d.classList.remove('is-open'));
-                        
+
                         if (!wasOpen) target.classList.add('is-open');
-                        
+
                         // Focus search if it exists
-                        if (!wasOpen && target.id === 'unitDropdown') {
+                        if (!wasOpen && target.id === 'unitDropdown' && !unitSearchInput.disabled) {
                             setTimeout(() => unitSearchInput.focus(), 50);
                         }
                     });
@@ -621,87 +785,13 @@
                     const term = this.value.toLowerCase();
                     const options = unitOptionsContainer.querySelectorAll('.daily-dropdown-option');
                     options.forEach(opt => {
-                        if (opt.dataset.value === 'all') return;
+                        if (opt.dataset.value === 'all') {
+                            return;
+                        }
                         const text = opt.querySelector('.daily-dropdown-label').textContent.toLowerCase();
                         opt.style.display = text.includes(term) ? 'flex' : 'none';
                     });
                 });
-
-                function rebuildUnitOptions() {
-                    const selectedKancas = kancaInput.value ? kancaInput.value.split(',') : [];
-                    const currentUnit = unitInput.value;
-                    let foundCurrentUnit = currentUnit === 'all';
-
-                    // Clear and add "All" option
-                    unitOptionsContainer.innerHTML = `
-                        <div class="daily-dropdown-option ${currentUnit === 'all' ? 'is-active' : ''}" data-value="all">
-                            <div class="daily-dropdown-check"><i class="fas fa-check"></i></div>
-                            <span class="daily-dropdown-label">Semua Unit Kerja</span>
-                        </div>
-                    `;
-
-                    allUnitsData.forEach(unit => {
-                        if (unit.value === 'all') return;
-
-                        // Filter by Branch
-                        if (selectedKancas.length === 0 || selectedKancas.includes(unit.kanca_value)) {
-                            const opt = document.createElement('div');
-                            opt.className = `daily-dropdown-option ${unit.value === currentUnit ? 'is-active' : ''}`;
-                            opt.dataset.value = unit.value;
-                            opt.innerHTML = `
-                                <div class="daily-dropdown-check"><i class="fas fa-check"></i></div>
-                                <span class="daily-dropdown-label">${unit.label}</span>
-                            `;
-                            
-                            if (unit.value === currentUnit) foundCurrentUnit = true;
-
-                            opt.addEventListener('click', function() {
-                                selectUnit(unit.value, unit.label);
-                            });
-                            
-                            unitOptionsContainer.appendChild(opt);
-                        }
-                    });
-
-                    // Add "All" click listener
-                    unitOptionsContainer.querySelector('[data-value="all"]').addEventListener('click', () => selectUnit('all', 'Semua Unit Kerja'));
-
-                    // If previously selected unit is no longer in the list, reset to "All"
-                    if (!foundCurrentUnit) {
-                        selectUnit('all', 'Semua Unit Kerja');
-                    }
-                }
-
-                function selectUnit(value, label) {
-                    unitInput.value = value;
-                    unitLabel.textContent = label;
-                    unitDropdown.classList.remove('is-open');
-                    
-                    // Update active class
-                    unitOptionsContainer.querySelectorAll('.daily-dropdown-option').forEach(o => {
-                        o.classList.toggle('is-active', o.dataset.value === value);
-                    });
-                }
-
-                function updateKancaUI() {
-                    const selected = kancaInput.value ? kancaInput.value.split(',') : [];
-                    
-                    // Update UI labels
-                    if (selected.length === 0) {
-                        kancaLabel.textContent = 'Semua Kantor Cabang';
-                        kancaOptions[0].classList.add('is-active');
-                        kancaOptions.forEach((o, i) => i > 0 && o.classList.remove('is-active'));
-                    } else if (selected.length === 1) {
-                        kancaLabel.textContent = selected[0];
-                        kancaOptions[0].classList.remove('is-active');
-                    } else {
-                        kancaLabel.textContent = `${selected.length} Cabang Dipilih`;
-                        kancaOptions[0].classList.remove('is-active');
-                    }
-
-                    // Dynamic rebuild of unit options
-                    rebuildUnitOptions();
-                }
 
                 // Initial UI state
                 updateKancaUI();
@@ -710,25 +800,20 @@
                 kancaOptions.forEach(opt => {
                     opt.addEventListener('click', function() {
                         const val = this.dataset.value;
-                        let selected = kancaInput.value ? kancaInput.value.split(',') : [];
+                        let selected = getSelectedKancas();
 
                         if (val === 'all') {
-                            selected = [];
-                            kancaOptions.forEach(o => o.classList.toggle('is-active', o.dataset.value === 'all'));
-                        } else {
-                            if (selected.includes(val)) {
-                                selected = selected.filter(v => v !== val);
-                                this.classList.remove('is-active');
-                            } else {
-                                selected.push(val);
-                                this.classList.add('is-active');
-                            }
-                            
+                            selected = [...area6Branches];
+                            kancaOptions.forEach(option => {
+                                option.classList.toggle('is-active', option.dataset.value === 'all' || selected.includes(option.dataset.value));
+                            });
+                        } else if (selected.includes(val)) {
+                            selected = selected.filter(v => v !== val);
                             if (selected.length === 0) {
-                                kancaOptions[0].classList.add('is-active');
-                            } else {
-                                kancaOptions[0].classList.remove('is-active');
+                                selected = [...area6Branches];
                             }
+                        } else {
+                            selected.push(val);
                         }
 
                         kancaInput.value = selected.join(',');
@@ -745,7 +830,7 @@
                         <th rowspan="2" class="sticky-col">No</th>
                         <th rowspan="2" class="sticky-col" style="left: 64px;">Kanca</th>
                         <th rowspan="2">BUC</th>
-                        <th rowspan="2">Unit</th>
+                        <th rowspan="2">{{ $isArea6AllSelected ? 'BRANCH OFFICE' : 'Unit' }}</th>
                         <th colspan="4" class="text-center">Recovery (M-1)</th>
                         <th colspan="4" class="text-center">Recovery ({{ \Carbon\Carbon::parse($selectedPeriod)->translatedFormat('d M Y') }})</th>
                         <th colspan="4" class="text-center">RKA (Target)</th>
@@ -768,7 +853,9 @@
                             <td class="text-center sticky-col">{{ $row['no'] }}</td>
                             <td class="sticky-col" style="left: 64px; font-weight: 700; color: var(--primary-blue-dark);">{{ $row['kanca'] }}</td>
                             <td class="text-center" style="font-weight: 600;">{{ $row['buc'] }}</td>
-                            <td style="min-width: 250px; font-weight: 600;">{{ $row['unit'] }}</td>
+                            <td style="min-width: 250px; font-weight: 600;">
+                                {{ $isArea6AllSelected ? ($row['branch_office'] ?? $row['unit']) : $row['unit'] }}
+                            </td>
                             
                             {{-- Recovery M-1 --}}
                             @include('report.partials.kejar-laba-metrics', ['metrics' => $row['recovery_m1']])
