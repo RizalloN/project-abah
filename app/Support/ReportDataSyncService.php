@@ -16,6 +16,7 @@ class ReportDataSyncService
 {
     private const AUDIT_TABLE = 'report_sync_audits';
     private const DASHBOARD_SNAPSHOT_TABLE = 'dashboard_pinjaman_snapshots';
+    private const CHART_PERIODIK_SNAPSHOT_TABLE = 'dashboard_pinjaman_chart_periodik_snapshots';
     private const DASHBOARD_SIMPANAN_SNAPSHOT_TABLE = 'dashboard_simpanan_snapshots';
     private const DASHBOARD_SIMPANAN_BRANCH_SNAPSHOT_TABLE = 'dashboard_simpanan_branch_snapshots';
     private const DASHBOARD_HARIAN_SNAPSHOT_TABLE = 'dashboard_harian_snapshots';
@@ -23,6 +24,7 @@ class ReportDataSyncService
     private const RASIO_UKER_SNAPSHOT_TABLE = 'rasio_casa_debitur_uker_snapshots';
     private const DORMANT_SNAPSHOT_TABLE = 'rekening_dormant_snapshots';
     private const NEW_PAYROLL_SNAPSHOT_TABLE = 'performance_new_payroll_snapshots';
+    private const PERFORMANCE_RM_SNAPSHOT_TABLE = 'performance_rm_snapshots';
     private const CACHE_VERSION_KEY = 'report_cache_version:global';
     private const RASIO_REBUILD_LOCK_PREFIX = 'snapshot:rasio:rebuild:';
     private const SIMPANAN_REBUILD_LOCK_PREFIX = 'snapshot:simpanan:rebuild:';
@@ -133,6 +135,7 @@ class ReportDataSyncService
         try {
             match ($normalizedTable) {
                 'daily_loan_dinamis' => $this->syncDailyLoan($periodHint, $jobId, $source, $deleteId),
+                'loan_type' => $this->syncLoanType($periodHint, $jobId, $source, $deleteId),
                 'simpanan_multipn' => $this->syncSimpanan($periodHint, $jobId, $source, $deleteId),
                 'ssa_simpanan' => $this->syncSsaSimpanan($periodHint, $jobId, $source, $deleteId),
                 'ssa_pinjaman' => $this->syncSsaPinjaman($periodHint, $jobId, $source, $deleteId),
@@ -228,6 +231,21 @@ class ReportDataSyncService
             $this->refreshTableStatistics(self::RASIO_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
             $this->refreshTableStatistics(self::RASIO_UKER_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
         }
+
+        $this->runSnapshotAudit('daily_loan_dinamis', $periodHint, $jobId, $source, 'snapshot_performance_rm', function () use ($periodHint) {
+            return $this->snapshotBuilder->rebuildPerformanceRm($periodHint, true);
+        });
+        if ($this->shouldRefreshDerivedSnapshotStatistics($periodHint)) {
+            $this->refreshTableStatistics(self::PERFORMANCE_RM_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
+        }
+
+        $this->runSnapshotAudit('daily_loan_dinamis', $periodHint, $jobId, $source, 'snapshot_chart_periodik', function () use ($periodHint) {
+            return $this->snapshotBuilder->rebuildChartPeriodik($periodHint, true);
+        });
+
+        if ($this->shouldRefreshDerivedSnapshotStatistics($periodHint)) {
+            $this->refreshTableStatistics(self::CHART_PERIODIK_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
+        }
     }
 
     private function syncSimpanan(?string $periodHint, ?int $jobId, ?string $source, ?string $deleteId = null): void
@@ -279,6 +297,13 @@ class ReportDataSyncService
                 $this->refreshTableStatistics(self::RASIO_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
                 $this->refreshTableStatistics(self::RASIO_UKER_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
             }
+
+            $this->runSnapshotAudit('simpanan_multipn', $periodHint, $jobId, $source, 'snapshot_performance_rm', function () use ($periodHint) {
+                return $this->snapshotBuilder->rebuildPerformanceRm($periodHint, true);
+            });
+            if ($this->shouldRefreshDerivedSnapshotStatistics($periodHint)) {
+                $this->refreshTableStatistics(self::PERFORMANCE_RM_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
+            }
         });
     }
 
@@ -317,6 +342,17 @@ class ReportDataSyncService
             return $this->snapshotBuilder->rebuildPerformanceNewPayroll($periodHint, true, $this->makeHeartbeatCallback($deleteId, 'Rebuilding New Payroll snapshots...'));
         });
         $this->refreshTableStatistics(self::NEW_PAYROLL_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
+    }
+
+    private function syncLoanType(?string $periodHint, ?int $jobId, ?string $source, ?string $deleteId = null): void
+    {
+        $this->runSnapshotAudit('loan_type', $periodHint, $jobId, $source, 'snapshot_chart_periodik', function () {
+            return $this->snapshotBuilder->rebuildChartPeriodik(null, true);
+        });
+
+        if ($this->shouldRefreshDerivedSnapshotStatistics($periodHint)) {
+            $this->refreshTableStatistics(self::CHART_PERIODIK_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
+        }
     }
 
     private function makeHeartbeatCallback(?string $deleteId, string $message): ?callable
@@ -500,9 +536,11 @@ class ReportDataSyncService
         $cleanupMap = match ($normalizedTable) {
             'daily_loan_dinamis' => [
                 self::DASHBOARD_SNAPSHOT_TABLE => 'periode',
+                self::CHART_PERIODIK_SNAPSHOT_TABLE => 'periode',
                 self::DASHBOARD_HARIAN_SNAPSHOT_TABLE => 'snapshot_period',
                 self::RASIO_SNAPSHOT_TABLE => 'loan_period',
                 self::RASIO_UKER_SNAPSHOT_TABLE => 'loan_period',
+                self::PERFORMANCE_RM_SNAPSHOT_TABLE => 'periode',
             ],
             'simpanan_multipn' => [
                 self::DASHBOARD_SIMPANAN_SNAPSHOT_TABLE => 'snapshot_period',
@@ -511,6 +549,7 @@ class ReportDataSyncService
                 self::DORMANT_SNAPSHOT_TABLE => 'posisi',
                 self::RASIO_SNAPSHOT_TABLE => 'casa_period',
                 self::RASIO_UKER_SNAPSHOT_TABLE => 'casa_period',
+                self::PERFORMANCE_RM_SNAPSHOT_TABLE => 'periode',
             ],
             'ssa_simpanan' => [
                 self::DASHBOARD_HARIAN_SNAPSHOT_TABLE => 'snapshot_period',
@@ -633,6 +672,7 @@ class ReportDataSyncService
 
         match ($normalizedTable) {
             'daily_loan_dinamis' => $this->syncDailyLoan($normalizedPeriodHint, null, $source, $deleteId),
+            'loan_type' => $this->syncLoanType(null, null, $source, $deleteId),
             'simpanan_multipn' => $this->syncSimpanan($normalizedPeriodHint, null, $source, $deleteId),
             'ssa_simpanan' => $this->syncSsaSimpanan($normalizedPeriodHint, null, $source, $deleteId),
             'ssa_pinjaman' => $this->syncSsaPinjaman($normalizedPeriodHint, null, $source, $deleteId),

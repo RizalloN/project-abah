@@ -654,6 +654,14 @@ class ImportExcelController extends Controller
             'FLAG_BRIGUNA_DIGITAL' => 'FLAG_BRIGUNA_DIGITAL1',
             'FLAG_BRIGUNA_DIGITAL1' => 'FLAG_BRIGUNA_DIGITAL1',
             'PMTAMT_BASE' => 'PMTAMT_Base',
+            'LAST_DATE_MAINTENANCE_BILLING' => 'LAST_DATE_MAINTENANCE_BILLING',
+            'TGL_LAST_MAINTENANCE_BILLING' => 'LAST_DATE_MAINTENANCE_BILLING',
+            'NEXT_PMT_DATE' => 'NEXT_PMT_DATE',
+            'TGL_NEXT_PMT' => 'NEXT_PMT_DATE',
+            'NEXT_PMT_INT_DATE' => 'NEXT_PMT_INT_DATE',
+            'TGL_NEXT_PMT_INT' => 'NEXT_PMT_INT_DATE',
+            'LBDOTU' => 'LBDOTU',
+            'TOTAL_OS_BUNGA_YANG_DITUNDA_DAN_BELUM_DIJADWALKAN' => 'LBDOTU',
             'TEXTBOX20' => 'Textbox20',
             'TEXTBOX21' => 'Textbox21',
             'TAGIHAN_POKOK' => 'BILPRN',
@@ -5447,7 +5455,7 @@ class ImportExcelController extends Controller
 
             while (($rawRow = fgetcsv($inputHandle, 0, $delimiter)) !== false) {
                 $lineNumber++;
-                $row = $this->normalizeCsvRow((array) $rawRow, $delimiter);
+                $row = $this->normalizeCsvRow((array) $rawRow, $delimiter, $expectedColumns);
 
                 if (empty(array_filter((array) $row, fn ($value) => trim((string) $value) !== ''))) {
                     continue;
@@ -6394,77 +6402,55 @@ class ImportExcelController extends Controller
     private function buildDailyLoanBulkImportSqlParts(array $context, string $stagingTable): array
     {
         $headerCount = (int) ($context['header_count'] ?? 0);
-        $insertColumns = ['id_import_job', 'unique_id', 'created_at', 'updated_at'];
+        $insertColumns = ['uniqueid_namareport', 'created_at', 'updated_at'];
         $selectClauses = [
-            $this->quoteSqlIdentifier('id_import_job'),
-            $this->quoteSqlIdentifier('unique_id'),
+            $this->quoteSqlIdentifier('uniqueid_namareport'),
             'NOW() AS `created_at`',
             'NOW() AS `updated_at`',
         ];
         $filterAliases = [];
+        $tableColumns = $this->schemaColumnsForBulkImport('daily_loan_dinamis');
+        $headerRules = (array) ($context['header_rules'] ?? []);
+        $skipColumnsLookup = (array) ($context['skip_columns_lookup'] ?? []);
+        $sourceIndexesByColumn = [];
 
-        $mapping = [
-            'periode' => 'PERIODE',
-            'kode_kanwil' => 'KODE_KANWIL1',
-            'kanwil' => 'KANWIL',
-            'kode_kanca' => 'KODE_KANCA1',
-            'kanca' => 'KANCA',
-            'kode_unit' => 'KODE_UNIT1',
-            'unit' => 'UNIT',
-            'nomor_rekening' => 'NOMOR_REKENING1',
-            'nama_nasabah' => 'NAMA_NASABAH',
-            'alamat_nasabah' => 'ALAMAT_NASABAH',
-            'cif' => 'CIF',
-            'sub_segment' => 'SUB_SEGMENT',
-            'ao_code' => 'AO_CODE',
-            'nama_ao' => 'NAMA_AO',
-            'produk_id' => 'PRODUK_ID',
-            'kualitas' => 'KUALITAS',
-            'baki_debet' => 'BAKI_DEBET1',
-            'plafon' => 'PLAFON',
-            'besar_realisasi' => 'BESAR_REALISASI',
-            'tgl_realisasi' => 'TGL_REALISASI',
-            'tgl_jatuh_tempo' => 'TGL_JATUH_TEMPO',
-            'tgl_bayar_terakhir' => 'TGL_BAYAR_TERAKHIR',
-            'tunggakan_pokok' => 'TUNGGAKAN_POKOK1',
-            'tunggakan_bunga' => 'TUNGGAKAN_BUNGA1',
-            'jumlah_pembayaran_terakhir' => 'JUMLAH_PEMBAYARAN_TERAKHIR',
-            'segment_bisnis' => 'SEGMENT_BISNIS',
-            'tgl_terminate' => 'TGL_TERMINATE',
-            'sektor_ekonomi' => 'SEKTOR_EKONOMI',
-            'curtyp' => 'CURTYP',
-        ];
+        foreach ($headerRules as $sourceIndex => $rule) {
+            foreach ((array) ($rule['db_candidates'] ?? []) as $candidateColumn) {
+                $candidateLower = strtolower((string) $candidateColumn);
+                if ($candidateLower === '' || isset($skipColumnsLookup[$candidateLower])) {
+                    continue;
+                }
 
-        $columnToIndex = $context['column_to_index'] ?? [];
-        $backend = $context['backend'] ?? '';
+                if (!isset($sourceIndexesByColumn[$candidateLower])) {
+                    $sourceIndexesByColumn[$candidateLower] = (int) $sourceIndex;
+                }
+            }
+        }
 
-        $polarsMap = [
-            'periode' => 1, 'kode_kanwil' => 2, 'kanwil' => 3, 'kode_kanca' => 4, 'kanca' => 5, 'kode_unit' => 6,
-            'unit' => 7, 'nomor_rekening' => 8, 'nama_nasabah' => 9, 'alamat_nasabah' => 10, 'cif' => 11,
-            'sub_segment' => 12, 'ao_code' => 13, 'nama_ao' => 14, 'produk_id' => 15, 'kualitas' => 16,
-            'baki_debet' => 17, 'plafon' => 18, 'besar_realisasi' => 19, 'tgl_realisasi' => 20,
-            'tgl_jatuh_tempo' => 21, 'tgl_bayar_terakhir' => 22, 'tunggakan_pokok' => 23, 'tunggakan_bunga' => 24,
-            'jumlah_pembayaran_terakhir' => 25, 'segment_bisnis' => 26, 'tgl_terminate' => 27,
-            'sektor_ekonomi' => 28, 'curtyp' => 29
-        ];
+        $uniqueIdPrefix = DB::getPdo()->quote((string) ($context['unique_id_prefix'] ?? 'imp') . '_');
+        $uniqueIdSuffix = DB::getPdo()->quote((string) ($context['suffix'] ?? '_DLD'));
+        $uniqueIdExpression = "CONCAT({$uniqueIdPrefix}, LPAD(CAST(`id` AS CHAR), 12, '0'), {$uniqueIdSuffix}) AS `uniqueid_namareport`";
+        $selectClauses[0] = $uniqueIdExpression;
 
-        foreach ($mapping as $dbColumn => $headerKey) {
-            if ($backend === 'polars') {
-                $sourceIndex = $polarsMap[$dbColumn] ?? null;
-            } else {
-                $sourceIndex = $columnToIndex[$headerKey] ?? null;
+        foreach ($tableColumns as $dbColumn) {
+            $dbColumnLower = strtolower((string) $dbColumn);
+
+            if ($dbColumnLower === 'id' || in_array($dbColumnLower, ['uniqueid_namareport', 'created_at', 'updated_at'], true)) {
+                continue;
             }
 
+            $sourceIndex = $sourceIndexesByColumn[$dbColumnLower] ?? null;
             if ($sourceIndex === null || $sourceIndex >= $headerCount) {
                 continue;
             }
 
-            $sourceCol = $this->quoteSqlIdentifier('COL_' . $sourceIndex);
-            $expression = "NULLIF(TRIM({$sourceCol}), '')";
-
-            if (in_array(strtoupper($headerKey), self::DAILY_LOAN_DATE_COLUMNS, true)) {
-                $expression = \App\Support\StrictDateParser::buildMySqlCaseExpression($expression);
+            $rule = $headerRules[$sourceIndex] ?? null;
+            if (!$rule) {
+                continue;
             }
+
+            $sourceCol = $this->quoteSqlIdentifier('c' . $sourceIndex);
+            $expression = $this->buildDirectLoadSqlExpression($rule, $sourceCol);
 
             $insertColumns[] = $dbColumn;
             $selectClauses[] = "{$expression} AS " . $this->quoteSqlIdentifier($dbColumn);
@@ -6515,8 +6501,8 @@ class ImportExcelController extends Controller
 
         $whereClauses = [
             'src.`periode` IS NOT NULL',
-            'src.`nomor_rekening` IS NOT NULL',
-            'src.`baki_debet` IS NOT NULL',
+            'src.`nomor_rekening1` IS NOT NULL',
+            'src.`baki_debet1` IS NOT NULL',
         ];
 
         return 'WHERE ' . implode(' AND ', $whereClauses);
@@ -7014,6 +7000,11 @@ class ImportExcelController extends Controller
         
         $cached = Cache::get($cacheKey);
         if (is_array($cached) && !empty($cached['headers'])) {
+            if ((!isset($cached['delimiter']) || $cached['delimiter'] === '') && file_exists($path)) {
+                $cached['delimiter'] = $this->detectCsvDelimiter($path);
+                Cache::put($cacheKey, $cached, now()->addHours(6));
+            }
+
             return $cached; // Return cached hasil - avoid reprocessing
         }
 
@@ -7408,6 +7399,7 @@ class ImportExcelController extends Controller
             'headers' => $finalHeaders,
             'preview' => $cleanPreview,
             'formattedUniqueValues' => $formattedUniqueValues,
+            'delimiter' => $delimiter,
         ];
     }
 
@@ -8693,14 +8685,28 @@ class ImportExcelController extends Controller
                 ]);
 
                 if ($this->isDailyLoanTable()) {
+                    $delimiterValue = isset($cached['delimiter']) && $cached['delimiter'] !== ''
+                        ? (string) $cached['delimiter']
+                        : ($cached['stagedCsvPath'] && file_exists((string) $cached['stagedCsvPath'])
+                            ? $this->detectCsvDelimiter((string) $cached['stagedCsvPath'])
+                            : ',');
+
                     return view('import.preview', [
                         'headers' => $cached['headers'] ?? [],
                         'previewData' => $this->buildLegacyPreviewRows($cached['headers'] ?? [], $cached['preview'] ?? []),
                         'formattedUniqueValues' => $cached['formattedUniqueValues'] ?? [],
                         'filePath' => $cached['path'] ?? null,
-                        'currentDelimiter' => ',',
+                        'currentDelimiter' => $delimiterValue,
                         'lockDelimiterSelector' => true,
-                        'fixedDelimiterLabel' => 'Koma ( , )',
+                        'fixedDelimiterLabel' => $delimiterValue === ';'
+                            ? 'Titik Koma ( ; )'
+                            : ($delimiterValue === "\t"
+                                ? 'Tab'
+                                : ($delimiterValue === '|'
+                                    ? 'Garis Lurus / Pipe ( | )'
+                                    : ($delimiterValue === '.'
+                                        ? 'Titik ( . )'
+                                        : 'Koma ( , )'))),
                         'hideDelimiterCard' => true,
                         'processRoute' => '',
                         'backRoute' => route('import.index'),
@@ -8777,6 +8783,9 @@ class ImportExcelController extends Controller
                 'preview' => $reorderedPayload['preview'],
                 'formattedUniqueValues' => $reorderedPayload['formattedUniqueValues'],
                 'path' => $relativePath,
+                'currentDelimiter' => isset($csvPayload['delimiter']) && $csvPayload['delimiter'] !== ''
+                    ? (string) $csvPayload['delimiter']
+                    : $this->detectCsvDelimiter($path),
                 'initRoute' => $initRoute,
                 'streamRoute' => $streamRoute,
                 'previewStateKey' => $previewStateKey,

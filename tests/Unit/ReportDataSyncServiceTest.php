@@ -85,6 +85,18 @@ class ReportDataSyncServiceTest extends TestCase
             });
         $simpananLock->shouldReceive('release')->once();
 
+        Cache::shouldReceive('get')
+            ->once()
+            ->with('report_cache_version:global', 1)
+            ->andReturn(1);
+        Cache::shouldReceive('remember')
+            ->once()
+            ->andReturn([
+                'is_ready' => true,
+                'available_branches' => ['MADIUN', 'MAGETAN', 'NGAWI', 'PONOROGO'],
+                'missing_branches' => [],
+            ]);
+
         Cache::shouldReceive('lock')
             ->once()
             ->with('snapshot:rasio:rebuild:2026-04-04', 120)
@@ -112,6 +124,10 @@ class ReportDataSyncServiceTest extends TestCase
             ->with('2026-04-04', true)
             ->andReturn(['2026-04-04' => 1]);
         $builder->shouldReceive('rebuildRasioCasa')
+            ->once()
+            ->with('2026-04-04', true)
+            ->andReturn(['2026-04-04' => 1]);
+        $builder->shouldReceive('rebuildPerformanceRm')
             ->once()
             ->with('2026-04-04', true)
             ->andReturn(['2026-04-04' => 1]);
@@ -159,6 +175,10 @@ class ReportDataSyncServiceTest extends TestCase
             ->once()
             ->with('2026-04-04', true, null)
             ->andReturn(['2026-04-04' => 0]);
+        $builder->shouldReceive('rebuildChartPeriodik')
+            ->once()
+            ->with('2026-04-04', true)
+            ->andReturn(['2026-04-04' => 0]);
         $dashboardHarianSnapshotService->shouldReceive('rebuild')
             ->once()
             ->with('2026-04-04', true)
@@ -167,11 +187,45 @@ class ReportDataSyncServiceTest extends TestCase
             ->once()
             ->with('2026-04-04', true)
             ->andReturn(['2026-04-04' => 0]);
+        $builder->shouldReceive('rebuildPerformanceRm')
+            ->once()
+            ->with('2026-04-04', true)
+            ->andReturn(['2026-04-04' => 0]);
         $builder->shouldNotReceive('rebuildDashboardSimpanan');
         $builder->shouldNotReceive('rebuildRekeningDormant');
         $builder->shouldNotReceive('rebuildPerformanceNewPayroll');
 
         $service->syncAfterDelete('daily_loan_dinamis', '2026-04-04', 'unit-test');
+
+        $this->assertTrue(true);
+    }
+
+    public function test_sync_imported_table_rebuilds_chart_periodik_when_loan_type_changes(): void
+    {
+        Bus::fake();
+
+        $builder = Mockery::mock(ReportSnapshotBuilder::class);
+        $dashboardHarianSnapshotService = Mockery::mock(DashboardHarianSnapshotService::class);
+        $partitionMaintenance = Mockery::mock(PartitionMaintenanceService::class);
+        $dirtyPeriods = Mockery::mock(DashboardHarianSnapshotDirtyPeriodQueue::class);
+        $service = new ReportDataSyncService($builder, $dashboardHarianSnapshotService, $partitionMaintenance, $dirtyPeriods);
+
+        Cache::shouldReceive('add')->once()->andReturnTrue();
+        Cache::shouldReceive('increment')->once()->andReturn(2);
+        Schema::shouldReceive('hasTable')->andReturnFalse();
+
+        $importProgressService = Mockery::mock(\App\Services\Import\ImportProgressService::class);
+        $importProgressService->shouldReceive('hasActiveProcessingJobs')
+            ->once()
+            ->andReturnFalse();
+        $this->app->instance(\App\Services\Import\ImportProgressService::class, $importProgressService);
+
+        $builder->shouldReceive('rebuildChartPeriodik')
+            ->once()
+            ->with(null, true)
+            ->andReturn(['2026-04-04' => 1]);
+
+        $service->syncImportedTable('loan_type', '2026-04-04', 77, 'unit-test');
 
         $this->assertTrue(true);
     }
@@ -222,6 +276,3 @@ class ReportDataSyncServiceTest extends TestCase
         $this->assertTrue(true);
     }
 }
-
-
-

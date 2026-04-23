@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Jobs\EnsureDashboardSnapshotJob;
 use App\Support\DashboardHarianSnapshotService;
+use App\Support\DashboardPinjamanChartPeriodikService;
 use App\Support\ReportIndexHintResolver;
 use App\Support\LoanQualityBucketMapper;
 use App\Support\DashboardPinjamanKreditService;
@@ -150,6 +151,42 @@ class DashboardPinjamanReportController extends Controller
             'selected_period' => $selectedPeriod,
             'category' => $selectedCategory,
         ], $data));
+    }
+
+    public function chartPeriodikIndex(Request $request)
+    {
+        $payload = $this->chartPeriodikService()->buildIndexPayload(
+            $request->input('periode'),
+            $request->input('cabang1'),
+            $request->input('unit1')
+        );
+
+        return view('report.dashboard-pinjaman.chart-periodik', $payload);
+    }
+
+    public function chartPeriodikFilters(Request $request)
+    {
+        $this->releaseSessionLockIfNeeded();
+
+        $payload = $this->chartPeriodikService()->buildFilterPayload(
+            $request->input('periode'),
+            $request->input('cabang1')
+        );
+
+        return response()->json($payload);
+    }
+
+    public function chartPeriodikData(Request $request)
+    {
+        $this->releaseSessionLockIfNeeded();
+
+        $payload = $this->chartPeriodikService()->buildChartPayload(
+            $request->input('periode'),
+            $request->input('cabang1'),
+            $request->input('unit1')
+        );
+
+        return response()->json($payload);
     }
 
     public function smallArrearsIndex(Request $request)
@@ -304,7 +341,12 @@ class DashboardPinjamanReportController extends Controller
                 ->pluck('snapshot_period')
                 ->map(fn ($p) => (string) $p)
                 ->values();
-        });
+            });
+    }
+
+    private function chartPeriodikService(): DashboardPinjamanChartPeriodikService
+    {
+        return app(DashboardPinjamanChartPeriodikService::class);
     }
 
     private function resolveKreditEffectivePeriod(?string $requestedPeriod): ?string

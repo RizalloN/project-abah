@@ -20,6 +20,7 @@ use App\Http\Controllers\Import\ImportIndexController;
 use App\Http\Controllers\Import\ImportJobStatusController;
 use App\Http\Controllers\Import\ImportJobManagementController;
 use App\Http\Controllers\Import\ImportPerformancePisPerProdukController;
+use App\Http\Controllers\Import\ImportKurMikroController;
 use App\Http\Controllers\Import\ImportReportPhController;
 use App\Http\Controllers\Import\ImportSimpananMultiPnCsvController;
 use App\Http\Controllers\Import\SnapshotAuditController;
@@ -67,6 +68,12 @@ Route::middleware(['auth', 'release.session.lock', 'throttle:240,1'])->group(fun
 
     Route::get('/report/dashboard-pinjaman/kolek-tidak-sesuai', [DashboardPinjamanReportController::class, 'mismatchIndex'])
         ->name('report.dashboard-pinjaman.kolek-tidak-sesuai');
+    Route::get('/report/dashboard-pinjaman/chart-periodik', [DashboardPinjamanReportController::class, 'chartPeriodikIndex'])
+        ->name('report.dashboard-pinjaman.chart-periodik');
+    Route::get('/report/dashboard-pinjaman/chart-periodik/filters', [DashboardPinjamanReportController::class, 'chartPeriodikFilters'])
+        ->name('report.dashboard-pinjaman.chart-periodik.filters');
+    Route::get('/report/dashboard-pinjaman/chart-periodik/data', [DashboardPinjamanReportController::class, 'chartPeriodikData'])
+        ->name('report.dashboard-pinjaman.chart-periodik.data');
     Route::get('/report/dashboard-pinjaman/filters', [DashboardPinjamanReportController::class, 'filters'])
         ->name('report.dashboard-pinjaman.filters');
     Route::get('/report/dashboard-pinjaman/data', [DashboardPinjamanReportController::class, 'data'])
@@ -91,6 +98,8 @@ Route::middleware(['auth', 'release.session.lock', 'throttle:240,1'])->group(fun
         ->name('report.dashboard-pinjaman.kejar-laba');
     Route::get('/report/dashboard-pinjaman/kinerjarm', [KinerjaRmReportController::class, 'index'])
         ->name('report.dashboard-pinjaman.kinerjarm');
+    Route::get('/report/dashboard-pinjaman/kinerjarm/history', [KinerjaRmReportController::class, 'historyDetails'])
+        ->name('report.dashboard-pinjaman.kinerjarm.history');
 
     // Digital Performance Reports (EDC, QRIS, Brilink) — dihandle oleh DigitalPerformanceController
     Route::get('/report/optimalisasi-digital/edc', [DigitalPerformanceController::class, 'performanceEdc'])->name('report.edc');
@@ -204,6 +213,13 @@ Route::middleware(['auth', 'role:admin', 'release.session.lock'])->group(functio
     Route::post('/import/performance-pis/init', [ImportPerformancePisPerProdukController::class, 'initImport'])->name('import.performancepis.init');
     Route::get('/import/performance-pis/stream', [ImportPerformancePisPerProdukController::class, 'processImportStream'])->name('import.performancepis.stream');
     Route::post('/import/performance-pis/process', [ImportPerformancePisPerProdukController::class, 'processImport'])->name('import.performancepis.process');
+    Route::post('/import/kurmikro/upload', [ImportKurMikroController::class, 'upload'])->name('import.kurmikro.upload');
+    Route::get('/import/kurmikro/preview', [ImportKurMikroController::class, 'preview'])->name('import.kurmikro.preview');
+    Route::post('/import/kurmikro/preview', [ImportKurMikroController::class, 'preview'])->name('import.kurmikro.preview.refresh');
+    Route::get('/import/kurmikro/prepare-preview', [ImportKurMikroController::class, 'preparePreviewStream'])->name('import.kurmikro.prepare-preview');
+    Route::post('/import/kurmikro/init', [ImportKurMikroController::class, 'initImport'])->name('import.kurmikro.init');
+    Route::get('/import/kurmikro/stream', [ImportKurMikroController::class, 'processImportStream'])->name('import.kurmikro.stream');
+    Route::post('/import/kurmikro/process', [ImportKurMikroController::class, 'processImport'])->name('import.kurmikro.process');
     Route::post('/import/report-ph/upload', [ImportReportPhController::class, 'upload'])->name('import.reportph.upload');
     Route::get('/import/report-ph/preview', [ImportReportPhController::class, 'preview'])->name('import.reportph.preview');
     Route::post('/import/report-ph/preview', [ImportReportPhController::class, 'preview'])->name('import.reportph.preview.refresh');

@@ -437,6 +437,12 @@
                             </a>
                         </li>
                         <li class="nav-item">
+                            <a href="{{ route('report.dashboard-pinjaman.chart-periodik') }}" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman.chart-periodik') ? 'active' : '' }}">
+                                <i class="far fa-circle nav-icon"></i>
+                                <p>Chart Periodik</p>
+                            </a>
+                        </li>
+                        <li class="nav-item">
                             <a href="{{ route('report.dashboard-pinjaman.kejar-laba') }}" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman.kejar-laba') ? 'active' : '' }}">
                                 <i class="far fa-circle nav-icon"></i>
                                 <p>Report Recovery</p>

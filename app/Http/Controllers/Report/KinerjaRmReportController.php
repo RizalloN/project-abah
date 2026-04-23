@@ -21,8 +21,8 @@ class KinerjaRmReportController extends Controller
     // Mapping segmen ke product options
     private const SEGMENT_PRODUCT_MAP = [
         'CONSUMER' => ['BRIGUNA-KONSUMER', 'KPR'],
-        'SMALL' => ['COMMERCIAL', 'CASHCOLL'],
-        'MICRO' => ['BRIGUNA-MIKRO', 'KUPEDES', 'KUR-MIKRO'],
+        'SMALL' => ['COMMERCIAL', 'CASHCALL'],
+        'MICRO' => ['BRIGUNA-MIKRO', 'KUPEDES', 'KUR-MIKRO', 'CASHCOLLATERAL', 'KPR', 'KUR-SMALL'],
     ];
     
     private const AVAILABLE_SEGMENTS = ['CONSUMER', 'SMALL', 'MICRO'];
@@ -53,22 +53,25 @@ class KinerjaRmReportController extends Controller
         $selectedProduct = $this->resolveSelectedProduct($request->input('produk'), $selectedSegmen);
 
         $currentDate = Carbon::parse($selectedPeriod);
-        $previousDayPeriod = $this->resolveClosestPeriod(
+        
+        $yoyPeriod = $this->resolveClosestPeriod(
             $availablePeriods,
-            $currentDate->copy()->subDay()
+            $currentDate->copy()->subYear()
         ) ?? $selectedPeriod;
+        
+        $ytdPeriod = $this->resolveClosestPeriod(
+            $availablePeriods,
+            $currentDate->copy()->subYear()->endOfYear()
+        ) ?? $selectedPeriod;
+        
         $mtdPeriod = $this->resolveClosestPeriod(
             $availablePeriods,
             $currentDate->copy()->subMonthNoOverflow()->endOfMonth()
         ) ?? $selectedPeriod;
-        $ytdPeriod = $this->resolveClosestPeriod(
-            $availablePeriods,
-            $currentDate->copy()->subYearNoOverflow()->endOfYear()
-        ) ?? $selectedPeriod;
 
-        $osRows = $this->fetchBranchRows($selectedSegmen, $selectedPeriod, $previousDayPeriod, $mtdPeriod, $ytdPeriod, $selectedCabang, $selectedProduct);
-        $smlRows = $this->fetchBranchRows($selectedSegmen, $selectedPeriod, $previousDayPeriod, $mtdPeriod, $ytdPeriod, $selectedCabang, $selectedProduct, 'sml');
-        $nplRows = $this->fetchBranchRows($selectedSegmen, $selectedPeriod, $previousDayPeriod, $mtdPeriod, $ytdPeriod, $selectedCabang, $selectedProduct, 'npl');
+        $osRows = $this->fetchBranchRows($selectedSegmen, $selectedPeriod, $yoyPeriod, $ytdPeriod, $mtdPeriod, $selectedCabang, $selectedProduct);
+        $smlRows = $this->fetchBranchRows($selectedSegmen, $selectedPeriod, $yoyPeriod, $ytdPeriod, $mtdPeriod, $selectedCabang, $selectedProduct, 'sml');
+        $nplRows = $this->fetchBranchRows($selectedSegmen, $selectedPeriod, $yoyPeriod, $ytdPeriod, $mtdPeriod, $selectedCabang, $selectedProduct, 'npl');
         $nextMonth = $currentDate->copy()->addMonthNoOverflow();
 
         $productOptions = self::SEGMENT_PRODUCT_MAP[$selectedSegmen] ?? [];
@@ -90,12 +93,12 @@ class KinerjaRmReportController extends Controller
             'selectedCabangLabel' => $selectedCabang !== null ? $selectedCabang : 'Semua Cabang',
             'selectedProduct' => $selectedProduct,
             'selectedProductLabel' => $selectedProduct ?? 'Semua Produk',
-            'previousDayPeriod' => $previousDayPeriod,
-            'previousDayLabel' => Carbon::parse($previousDayPeriod)->translatedFormat('d M y'),
-            'mtdPeriod' => $mtdPeriod,
-            'mtdLabel' => Carbon::parse($mtdPeriod)->translatedFormat('d M Y'),
+            'yoyPeriod' => $yoyPeriod,
+            'yoyLabel' => Carbon::parse($yoyPeriod)->translatedFormat('d M Y'),
             'ytdPeriod' => $ytdPeriod,
             'ytdLabel' => Carbon::parse($ytdPeriod)->translatedFormat('d M Y'),
+            'mtdPeriod' => $mtdPeriod,
+            'mtdLabel' => Carbon::parse($mtdPeriod)->translatedFormat('d M Y'),
             'currentMonthLabel' => $currentDate->format('M-y'),
             'nextMonthLabel' => $nextMonth->format('M-y'),
             'rows' => $osRows['rows'],
@@ -104,59 +107,107 @@ class KinerjaRmReportController extends Controller
             'qualityTotalSml' => $smlRows['total'],
             'qualityRowsNpl' => $nplRows['rows'],
             'qualityTotalNpl' => $nplRows['total'],
+            'formatAmount' => fn ($value, int $decimals = 1) => $this->formatAmountInJuta($value, $decimals),
+            'formatSignedAmount' => fn ($value, bool $showArrow = true, int $decimals = 1) => $this->formatSignedAmountInJuta($value, $showArrow, $decimals),
+            'formatCount' => fn ($value) => $this->formatCount($value),
+            'formatPercent' => fn ($value, int $decimals = 1) => $this->formatPercent($value, $decimals),
+            'quadrantLabel' => fn ($quadrant) => $this->formatQuadrantLabel($quadrant),
+            'quadrantClass' => fn ($quadrant) => $this->formatQuadrantClass($quadrant),
         ];
 
         if ($request->ajax()) {
+            $this->releaseSessionLockIfNeeded();
             return view('report.kinerjarm-table', $viewData);
         }
 
         return view('report.kinerjarm', $viewData);
     }
 
+    public function historyDetails(Request $request): View
+    {
+        $rm = $request->input('rm');
+        $segmen = $request->input('segmen');
+        $selectedPeriod = $request->input('periode');
+        
+        $year = Carbon::parse($selectedPeriod)->year;
+        
+        $history = DB::table('performance_rm_snapshots')
+            ->where('rm', $rm)
+            ->where('segmen', $segmen)
+            ->whereYear('periode', $year)
+            ->orderByDesc('periode')
+            ->get();
+            
+        // Group by Month and Branch
+        $groups = $history->groupBy(function ($row) {
+            return Carbon::parse($row->periode)->format('Y-m') . '|' . $row->cabang;
+        });
+
+        $details = $groups->map(function ($group) {
+            // Pick the latest date in this month-branch group
+            $latestDate = $group->first()->periode;
+            $latestDateRows = $group->where('periode', $latestDate);
+
+            $loanOs = $latestDateRows->sum('loan_os');
+            $smlOs = $latestDateRows->sum('sml_os');
+            $nplOs = $latestDateRows->sum('npl_os');
+            $restrukOs = $latestDateRows->sum('restruk_os');
+            $realisasiOs = $latestDateRows->sum('realisasi_os');
+
+            $lar = (float)$restrukOs + (float)$smlOs + (float)$nplOs;
+            $pctLar = $loanOs > 0 ? ($lar / $loanOs) * 100 : 0;
+            
+            // Re-calculate A/B (Target 1600M)
+            $isRealizA = ($realisasiOs / 1000000) >= 1600;
+            $isLarA = $pctLar < 17.5;
+            
+            return [
+                'periode' => Carbon::parse($latestDate)->translatedFormat('M Y'),
+                'cabang' => $group->first()->cabang,
+                'realisasi_os' => $realisasiOs,
+                'penc_realisasi' => $isRealizA ? 'A' : 'B',
+                'pct_lar' => $pctLar,
+                'penc_lar' => $isLarA ? 'A' : 'B',
+                'sort_date' => $latestDate
+            ];
+        })->sortBy('sort_date')->values();
+        
+        return view('report.kinerjarm-detail-modal', [
+            'rm' => $rm,
+            'segmen' => $segmen,
+            'details' => $details,
+            'formatAmount' => fn ($value, int $decimals = 0) => $this->formatAmountInJuta($value, $decimals),
+            'formatPercent' => fn ($value, int $decimals = 2) => $this->formatPercent($value, $decimals),
+        ]);
+    }
+
     private function fetchAvailablePeriods(): Collection
     {
-        return Cache::remember('kinerja_rm_periods', 600, function () {
-            $productColumn = $this->resolveProductColumn();
-            
-            $periods = collect();
-            foreach (self::AVAILABLE_SEGMENTS as $segment) {
-                $productOptions = self::SEGMENT_PRODUCT_MAP[$segment] ?? [];
-                $periodsColl = DB::table('daily_loan_dinamis')
-                    ->whereRaw("UPPER(TRIM(segmen_dashboard)) = ?", [$segment])
-                    ->whereIn(DB::raw($this->normalizedColumnExpression($productColumn)), $productOptions)
-                    ->select('periode')
-                    ->distinct()
-                    ->orderByDesc('periode')
-                    ->pluck('periode')
-                    ->map(fn ($value) => Carbon::parse($value)->toDateString());
-                
-                $periods = $periods->merge($periodsColl);
-            }
-            
-            return $periods->unique()->sort()->reverse()->values();
+        $cacheKey = 'kinerja_rm_periods_v2:' . $this->reportCacheVersion();
+
+        return Cache::remember($cacheKey, 600, function () {
+            return DB::table('performance_rm_snapshots')
+                ->select('periode')
+                ->distinct()
+                ->orderByDesc('periode')
+                ->pluck('periode')
+                ->map(fn ($value) => Carbon::parse($value)->toDateString());
         });
     }
 
     private function fetchAvailableCabangsBySegmen(string $segmen): Collection
     {
-        $cacheKey = 'kinerja_rm_cabangs:' . $segmen;
+        $cacheKey = 'kinerja_rm_cabangs_v2:' . $this->reportCacheVersion() . ':' . $segmen;
         
         return Cache::remember($cacheKey, 1800, function () use ($segmen) {
-            $cabangColumn = $this->resolveCabangColumn();
-            $productColumn = $this->resolveProductColumn();
-            $productOptions = self::SEGMENT_PRODUCT_MAP[$segmen] ?? [];
-
-            return DB::table('daily_loan_dinamis')
-                ->whereRaw("UPPER(TRIM(segmen_dashboard)) = ?", [$segmen])
-                ->whereIn(DB::raw($this->normalizedColumnExpression($productColumn)), $productOptions)
-                ->whereNotNull($cabangColumn)
-                ->where($cabangColumn, '<>', '')
-                ->select($cabangColumn . ' as cabang')
+            return DB::table('performance_rm_snapshots')
+                ->where('segmen', $segmen)
+                ->whereNotNull('cabang')
+                ->where('cabang', '<>', '')
+                ->select('cabang')
+                ->distinct()
                 ->orderBy('cabang')
                 ->pluck('cabang')
-                ->map(fn ($cabang) => $this->sanitizeCabangLabel($cabang))
-                ->filter(fn ($cabang) => $cabang !== '')
-                ->unique(fn ($cabang) => $this->normalizeCabangKey($cabang))
                 ->values();
         });
     }
@@ -222,18 +273,18 @@ class KinerjaRmReportController extends Controller
     private function fetchBranchRows(
         string $segmen,
         string $selectedPeriod,
-        string $previousDayPeriod,
-        string $mtdPeriod,
+        string $yoyPeriod,
         string $ytdPeriod,
+        string $mtdPeriod,
         ?string $selectedCabang = null,
         ?string $selectedProduct = null,
         ?string $qualityType = null
     ): array
     {
-        $cacheKey = 'kinerja_rm_rows:v3:' . md5(json_encode([
+        $cacheKey = 'kinerja_rm_rows_v4:' . $this->reportCacheVersion() . ':' . md5(json_encode([
             'segmen' => $segmen,
             'selected' => $selectedPeriod,
-            'prev_day' => $previousDayPeriod,
+            'yoy' => $yoyPeriod,
             'mtd' => $mtdPeriod,
             'ytd' => $ytdPeriod,
             'cabang' => $selectedCabang,
@@ -241,293 +292,193 @@ class KinerjaRmReportController extends Controller
             'quality' => $qualityType,
         ]));
 
-        return Cache::remember($cacheKey, 300, function () use ($segmen, $selectedPeriod, $previousDayPeriod, $mtdPeriod, $ytdPeriod, $selectedCabang, $selectedProduct, $qualityType) {
-        $productOptions = self::SEGMENT_PRODUCT_MAP[$segmen] ?? [];
-        
-        $periods = array_values(array_unique(array_filter([
-            $selectedPeriod,
-            $previousDayPeriod,
-            $mtdPeriod,
-            $ytdPeriod,
-        ])));
+        return Cache::remember($cacheKey, 300, function () use ($segmen, $selectedPeriod, $yoyPeriod, $mtdPeriod, $ytdPeriod, $selectedCabang, $selectedProduct, $qualityType) {
+            $periods = array_values(array_unique(array_filter([
+                $selectedPeriod,
+                $yoyPeriod,
+                $ytdPeriod,
+                $mtdPeriod,
+            ])));
 
-        $rmColumn = $this->resolveExistingColumn(
-            'daily_loan_dinamis',
-            ['pn_pengelola1', 'pn_pengelola', 'rm'],
-            'pn_pengelola1'
-        );
-        $cabangColumn = $this->resolveCabangColumn();
-        $productColumn = $this->resolveProductColumn();
-        $debiturColumn = $this->resolveExistingColumn(
-            'daily_loan_dinamis',
-            ['nomor_rekening1', 'nomor_rekening', 'no_rekening', 'rekening', 'account_number', 'cifno', 'nocif'],
-            'nomor_rekening1'
-        );
-        $balanceColumn = $this->resolveExistingColumn(
-            'daily_loan_dinamis',
-            ['baki_debet1', 'baki_debet'],
-            'baki_debet1'
-        );
-        $kolAdkColumn = $this->resolveExistingColumn(
-            'daily_loan_dinamis',
-            ['kol_adk1'],
-            'kol_adk1'
-        );
-        $realisasiColumn = $this->resolveExistingColumn(
-            'daily_loan_dinamis',
-            ['tgl_realisasi'],
-            'tgl_realisasi'
-        );
-        $debiturExpression = "NULLIF(TRIM(CAST({$debiturColumn} AS CHAR)), '')";
-        $realisasiDateExpression = StrictDateParser::buildMySqlCaseExpression("NULLIF(TRIM(CAST({$realisasiColumn} AS CHAR)), '')");
-        $normalizedProductExpression = $this->normalizedColumnExpression($productColumn);
-        $normalizedCabangExpression = $this->normalizedColumnExpression($cabangColumn);
-        $monthStart = Carbon::parse($selectedPeriod)->startOfMonth()->toDateString();
-        $monthEnd = Carbon::parse($selectedPeriod)->endOfMonth()->toDateString();
-
-        $qualityExpression = "CASE
-            WHEN CAST(COALESCE({$kolAdkColumn}, 0) AS DECIMAL(10,2)) = 2 THEN 'sml'
-            WHEN CAST(COALESCE({$kolAdkColumn}, 0) AS DECIMAL(10,2)) > 2 THEN 'npl'
-            ELSE 'other'
-        END";
-
-        // Pre-calculate LDR and Quality per RM for Quadrant
-        // We need latest simpanan_multipn position
-        $latestSmpnPosisi = DB::table('simpanan_multipn')->max('posisi');
-        
-        $rmStats = [];
-        if ($qualityType === null) {
-            // Subquery to get unique CIFs and their total loan per RM
-            $cifLoans = DB::table('daily_loan_dinamis')
-                ->selectRaw("UPPER(TRIM({$rmColumn})) as rm_key")
-                ->selectRaw("cifno")
-                ->selectRaw("SUM(COALESCE({$balanceColumn}, 0)) as loan_os")
-                ->selectRaw("SUM(CASE WHEN {$kolAdkColumn} = 1 THEN COALESCE({$balanceColumn}, 0) ELSE 0 END) as lancar_os")
-                ->where('periode', $selectedPeriod)
-                ->whereRaw("UPPER(TRIM(segmen_dashboard)) = ?", [$segmen])
-                ->whereNotNull('cifno')
-                ->where('cifno', '<>', '')
-                ->when($selectedProduct === null, function ($query) use ($normalizedProductExpression, $productOptions) {
-                    $query->whereIn(DB::raw($normalizedProductExpression), $productOptions);
+            $dbRows = DB::table('performance_rm_snapshots')
+                ->whereIn('periode', $periods)
+                ->where('segmen', $segmen)
+                ->when($selectedProduct !== null, function ($query) use ($selectedProduct) {
+                    $query->where('produk', $selectedProduct);
                 })
-                ->when($selectedProduct !== null, function ($query) use ($normalizedProductExpression, $selectedProduct) {
-                    $query->whereRaw($normalizedProductExpression . ' = ?', [$selectedProduct]);
+                ->when($selectedCabang !== null, function ($query) use ($selectedCabang) {
+                    $query->where('cabang', $selectedCabang);
                 })
-                ->when($selectedCabang !== null, function ($query) use ($normalizedCabangExpression, $selectedCabang) {
-                    $query->whereRaw($normalizedCabangExpression . ' = ?', [$this->normalizeCabangKey($selectedCabang)]);
-                })
-                ->groupBy(DB::raw("UPPER(TRIM({$rmColumn}))"), 'cifno');
-
-            $statsData = DB::table(DB::raw("({$cifLoans->toSql()}) as t"))
-                ->mergeBindings($cifLoans)
-                ->leftJoin('simpanan_multipn as s', function($join) use ($latestSmpnPosisi) {
-                    $join->on(DB::raw("REGEXP_REPLACE(t.cifno, '[^0-9]', '')"), '=', DB::raw("REGEXP_REPLACE(s.CIFNO, '[^0-9]', '')"))
-                         ->where('s.posisi', '=', $latestSmpnPosisi);
-                })
-                ->selectRaw("t.rm_key as rm, SUM(t.loan_os) as total_loan, SUM(t.lancar_os) as lancar_loan, SUM(COALESCE(s.saldo_idr, 0)) as total_deposit")
-                ->groupBy('t.rm_key')
                 ->get();
 
-            foreach ($statsData as $stat) {
-                $rmKey = trim(strtoupper((string)$stat->rm));
-                $loan = (float)$stat->total_loan;
-                $lancar = (float)$stat->lancar_loan;
-                $deposit = (float)$stat->total_deposit;
-                
-                $ldr = $deposit > 0 ? ($loan / $deposit) * 100 : ($loan > 0 ? 999 : 0);
-                $quality = $loan > 0 ? ($lancar / $loan) * 100 : 100;
-                
-                // Quadrant Logic
-                // Quality >= 97% (NPL < 3%), LDR >= 80%
-                $isHighQuality = $quality >= 97;
-                $isHighLdr = $ldr >= 80;
-                
-                if ($isHighQuality && !$isHighLdr) $quadrant = 1;      // Q1: High Q, Low LDR (Bottom Right)
-                elseif ($isHighQuality && $isHighLdr) $quadrant = 2;   // Q2: High Q, High LDR (Top Right)
-                elseif (!$isHighQuality && $isHighLdr) $quadrant = 3;  // Q3: Low Q, High LDR (Top Left)
-                else $quadrant = 4;                                   // Q4: Low Q, Low LDR (Bottom Left)
-                
-                $rmStats[$rmKey] = [
-                    'ldr' => $ldr,
-                    'quality_pct' => $quality,
-                    'quadrant' => $quadrant
-                ];
-            }
-        }
-
-        $builder = DB::table('daily_loan_dinamis')
-            ->selectRaw("{$rmColumn} as rm")
-            ->selectRaw("{$cabangColumn} as cabang")
-            ->selectRaw("{$productColumn} as produk_raw")
-            ->selectRaw("SUM(CASE WHEN periode = ? THEN COALESCE({$balanceColumn}, 0) ELSE 0 END) as curr", [$selectedPeriod])
-            ->selectRaw("COUNT(DISTINCT CASE WHEN periode = ? THEN {$debiturExpression} END) as curr_deb", [$selectedPeriod])
-            ->selectRaw("SUM(CASE WHEN periode = ? THEN COALESCE({$balanceColumn}, 0) ELSE 0 END) as prev_day", [$previousDayPeriod])
-            ->selectRaw("SUM(CASE WHEN periode = ? THEN COALESCE({$balanceColumn}, 0) ELSE 0 END) as mtd", [$mtdPeriod])
-            ->selectRaw("SUM(CASE WHEN periode = ? THEN COALESCE({$balanceColumn}, 0) ELSE 0 END) as ytd", [$ytdPeriod])
-            ->selectRaw("COUNT(DISTINCT CASE WHEN periode = ? AND {$realisasiDateExpression} BETWEEN ? AND ? THEN {$debiturExpression} END) as realisasi_deb", [$selectedPeriod, $monthStart, $monthEnd])
-            ->selectRaw("SUM(CASE WHEN periode = ? AND {$realisasiDateExpression} BETWEEN ? AND ? THEN COALESCE({$balanceColumn}, 0) ELSE 0 END) as realisasi_os", [$selectedPeriod, $monthStart, $monthEnd])
-            ->whereRaw("UPPER(TRIM(segmen_dashboard)) = ?", [$segmen])
-            ->when($selectedProduct === null, function ($query) use ($normalizedProductExpression, $productOptions) {
-                $query->whereIn(DB::raw($normalizedProductExpression), $productOptions);
-            })
-            ->when($selectedProduct !== null, function ($query) use ($normalizedProductExpression, $selectedProduct) {
-                $query->whereRaw($normalizedProductExpression . ' = ?', [$selectedProduct]);
-            })
-            ->whereNotNull($rmColumn)
-            ->where($rmColumn, '<>', '')
-            ->when($qualityType !== null, function ($query) use ($qualityExpression, $qualityType) {
-                $query->whereRaw('(' . $qualityExpression . ') = ?', [$qualityType]);
-            })
-            ->when($selectedCabang !== null, function ($query) use ($normalizedCabangExpression, $selectedCabang) {
-                $query->whereRaw($normalizedCabangExpression . ' = ?', [$this->normalizeCabangKey($selectedCabang)]);
-            })
-            ->whereIn('periode', $periods)
-            ->groupBy($rmColumn, $cabangColumn, $productColumn)
-            ->orderBy($cabangColumn)
-            ->orderBy($rmColumn)
-            ;
-
-        $dbRows = $builder->get();
-
-        $manualTargets = $this->getManualJgTargets();
-        $branches = [];
-        $grandTotals = [
-            'curr' => 0.0,
-            'curr_deb' => 0,
-            'prev_day' => 0.0,
-            'mtd' => 0.0,
-            'ytd' => 0.0,
-            'target_jg_deb' => 0,
-            'target_jg_os' => 0.0,
-        ];
-
-        foreach ($dbRows as $row) {
-            $cabangName = trim((string) ($row->cabang ?? ''));
-            $rmOriginal = trim(strtoupper((string) ($row->rm ?? '')));
-            $rmName = $this->mapRmName(trim((string) ($row->rm ?? '')));
-            $productLabel = $this->normalizeProductLabel($row->produk_raw ?? null, $segmen);
-
-            if ($rmName === '' || $productLabel === null) {
-                continue;
-            }
-
-            $cabangKey = $this->normalizeCabangKey($cabangName);
-            if (!isset($branches[$cabangKey])) {
-                $branches[$cabangKey] = [
-                    'cabang' => $this->sanitizeCabangLabel($cabangName) ?: '-',
-                    'rms' => [],
-                    'subtotal' => [
-                        'curr' => 0.0, 'curr_deb' => 0, 'prev_day' => 0.0, 'mtd' => 0.0, 'ytd' => 0.0,
-                        'target_jg_deb' => 0, 'target_jg_os' => 0.0,
-                    ],
-                    'branch_rowspan' => 0,
-                ];
-            }
-
-            if (!isset($branches[$cabangKey]['rms'][$rmName])) {
-                $stats = $rmStats[$rmOriginal] ?? ['quadrant' => null, 'ldr' => 0, 'quality_pct' => 100];
-                $branches[$cabangKey]['rms'][$rmName] = [
-                    'rm' => $rmName,
-                    'items' => [],
-                    'rm_rowspan' => 0,
-                    'quadrant' => $stats['quadrant'],
-                ];
-            }
-
-            $curr = (float) ($row->curr ?? 0);
-            $currDeb = (int) ($row->curr_deb ?? 0);
-            $prevDay = (float) ($row->prev_day ?? 0);
-            $mtd = (float) ($row->mtd ?? 0);
-            $ytd = (float) ($row->ytd ?? 0);
-            $realisasiDeb = (int) ($row->realisasi_deb ?? 0);
-            $realisasiOs = (float) ($row->realisasi_os ?? 0);
-
-            // Fetch Manual JG Target
-            $nameOnly = strtoupper(trim(explode('-', $rmName)[1] ?? $rmName));
-            $target = $manualTargets[$productLabel][$nameOnly] ?? null;
-            $tDeb = $target['deb'] ?? 0;
-            $tOs = $target['os'] ?? 0.0;
-
-            $item = [
-                'segmen' => $segmen,
-                'product' => $productLabel,
-                'curr' => $curr,
-                'curr_deb' => $currDeb,
-                'prev_day' => $prevDay,
-                'mtd' => $mtd,
-                'ytd' => $ytd,
-                'delta_dtd' => $curr - $prevDay,
-                'delta_mtd' => $curr - $mtd,
-                'delta_ytd' => $curr - $ytd,
-                'target_jg_deb' => $tDeb,
-                'target_jg_os' => $tOs,
-                'ach_deb' => $realisasiDeb,
-                'ach_os' => $realisasiOs,
+            $manualTargets = $this->getManualJgTargets();
+            $branches = [];
+            $grandTotals = [
+                'curr' => 0.0, 'curr_deb' => 0, 'yoy' => 0.0, 'mtd' => 0.0, 'ytd' => 0.0,
+                'target_jg_deb' => 0, 'target_jg_os' => 0.0,
+                'ach_deb' => 0, 'ach_os' => 0.0,
             ];
 
-            $branches[$cabangKey]['rms'][$rmName]['items'][] = $item;
-            $branches[$cabangKey]['rms'][$rmName]['rm_rowspan']++;
-            $branches[$cabangKey]['branch_rowspan']++;
+            // Pivot data by RM and Product
+            $pivoted = [];
+            foreach ($dbRows as $row) {
+                $cabKey = $this->normalizeCabangKey($row->cabang);
+                $rmKey = trim(strtoupper((string)$row->rm));
+                $prodKey = $row->produk;
+                $key = "{$cabKey}|{$rmKey}|{$prodKey}";
 
-            // Update Branch Subtotal
-            $branches[$cabangKey]['subtotal']['curr'] += $curr;
-            $branches[$cabangKey]['subtotal']['curr_deb'] += $currDeb;
-            $branches[$cabangKey]['subtotal']['prev_day'] += $prevDay;
-            $branches[$cabangKey]['subtotal']['mtd'] += $mtd;
-            $branches[$cabangKey]['subtotal']['ytd'] += $ytd;
-            $branches[$cabangKey]['subtotal']['target_jg_deb'] += $tDeb;
-            $branches[$cabangKey]['subtotal']['target_jg_os'] += $tOs;
-            $branches[$cabangKey]['subtotal']['ach_deb'] = ($branches[$cabangKey]['subtotal']['ach_deb'] ?? 0) + $realisasiDeb;
-            $branches[$cabangKey]['subtotal']['ach_os'] = ($branches[$cabangKey]['subtotal']['ach_os'] ?? 0.0) + $realisasiOs;
+                $val = (float) match($qualityType) {
+                    'sml' => $row->sml_os,
+                    'npl' => $row->npl_os,
+                    default => $row->loan_os
+                };
 
-            // Update Grand Totals
-            $grandTotals['curr'] += $curr;
-            $grandTotals['curr_deb'] += $currDeb;
-            $grandTotals['prev_day'] += $prevDay;
-            $grandTotals['mtd'] += $mtd;
-            $grandTotals['ytd'] += $ytd;
-            $grandTotals['target_jg_deb'] += $tDeb;
-            $grandTotals['target_jg_os'] += $tOs;
-            $grandTotals['ach_deb'] = ($grandTotals['ach_deb'] ?? 0) + $realisasiDeb;
-            $grandTotals['ach_os'] = ($grandTotals['ach_os'] ?? 0.0) + $realisasiOs;
-        }
+                $pivoted[$key] ??= [
+                    'cabang' => $row->cabang,
+                    'rm' => $row->rm,
+                    'produk' => $row->produk,
+                    'quadrant' => null,
+                    'curr' => 0.0, 'curr_deb' => 0, 'yoy' => 0.0, 'mtd' => 0.0, 'ytd' => 0.0,
+                    'realisasi_deb' => 0, 'realisasi_os' => 0.0,
+                ];
 
-        // Add 1 to branch_rowspan for the subtotal row
-        foreach ($branches as $key => $branch) {
-            $branches[$key]['branch_rowspan'] += 1;
-            
-            $b_curr = $branches[$key]['subtotal']['curr'];
-            $branches[$key]['subtotal']['delta_dtd'] = $b_curr - $branches[$key]['subtotal']['prev_day'];
-            $branches[$key]['subtotal']['delta_mtd'] = $b_curr - $branches[$key]['subtotal']['mtd'];
-            $branches[$key]['subtotal']['delta_ytd'] = $b_curr - $branches[$key]['subtotal']['ytd'];
-            
-            $branches[$key]['subtotal']['ach_deb'] = $branches[$key]['subtotal']['ach_deb'] ?? 0;
-            $branches[$key]['subtotal']['ach_os'] = $branches[$key]['subtotal']['ach_os'] ?? 0.0;
-        }
+                if ($row->periode === $selectedPeriod) {
+                    $pivoted[$key]['curr'] = $val;
+                    $pivoted[$key]['curr_deb'] = (int)$row->total_deb;
+                    $pivoted[$key]['realisasi_deb'] = (int)($row->realisasi_deb ?? 0);
+                    $pivoted[$key]['realisasi_os'] = (float)($row->realisasi_os ?? 0.0);
+                    $pivoted[$key]['quadrant'] = $row->quadrant;
+                }
+                
+                if ($row->periode === $yoyPeriod) {
+                    $pivoted[$key]['yoy'] = $val;
+                }
+                
+                if ($row->periode === $ytdPeriod) {
+                    $pivoted[$key]['ytd'] = $val;
+                }
+                
+                if ($row->periode === $mtdPeriod) {
+                    $pivoted[$key]['mtd'] = $val;
+                }
+            }
 
-        $totalRecord = [
-            'segmen' => $segmen,
-            'cabang' => $selectedCabang ?? 'SEMUA CABANG',
-            'rm' => 'TOTAL',
-            'curr' => $grandTotals['curr'],
-            'curr_deb' => $grandTotals['curr_deb'],
-            'prev_day' => $grandTotals['prev_day'],
-            'mtd' => $grandTotals['mtd'],
-            'ytd' => $grandTotals['ytd'],
-            'delta_dtd' => $grandTotals['curr'] - $grandTotals['prev_day'],
-            'delta_mtd' => $grandTotals['curr'] - $grandTotals['mtd'],
-            'delta_ytd' => $grandTotals['curr'] - $grandTotals['ytd'],
-            'target_jg_deb' => $grandTotals['target_jg_deb'],
-            'target_jg_os' => $grandTotals['target_jg_os'],
-            'ach_deb' => $grandTotals['ach_deb'] ?? 0,
-            'ach_os' => $grandTotals['ach_os'] ?? 0.0,
-        ];
+            foreach ($pivoted as $data) {
+                $cabangName = $data['cabang'];
+                $rmName = $this->mapRmName($data['rm']);
+                $productLabel = $this->normalizeProductLabel($data['produk'], $segmen);
 
-        return [
-            'rows' => array_values($branches),
-            'total' => $totalRecord,
-        ];
+                if ($rmName === '' || $productLabel === null) continue;
+
+                $cabangKey = $this->normalizeCabangKey($cabangName);
+                if (!isset($branches[$cabangKey])) {
+                    $branches[$cabangKey] = [
+                        'cabang' => $cabangName,
+                        'rms' => [],
+                        'subtotal' => [
+                            'curr' => 0.0, 'curr_deb' => 0, 'yoy' => 0.0, 'mtd' => 0.0, 'ytd' => 0.0,
+                            'target_jg_deb' => 0, 'target_jg_os' => 0.0,
+                            'ach_deb' => 0, 'ach_os' => 0.0,
+                        ],
+                        'branch_rowspan' => 0,
+                    ];
+                }
+
+                if (!isset($branches[$cabangKey]['rms'][$rmName])) {
+                    $branches[$cabangKey]['rms'][$rmName] = [
+                        'rm' => $rmName,
+                        'items' => [],
+                        'rm_rowspan' => 0,
+                        'quadrant' => $data['quadrant'],
+                    ];
+                }
+
+                // Manual Targets
+                $nameOnly = strtoupper(trim(explode('-', $rmName)[1] ?? $rmName));
+                $target = $manualTargets[$productLabel][$nameOnly] ?? null;
+                $tDeb = $target['deb'] ?? 0;
+                $tOs = $target['os'] ?? 0.0;
+
+                $item = [
+                    'segmen' => $segmen,
+                    'product' => $productLabel,
+                    'curr' => $data['curr'],
+                    'curr_deb' => $data['curr_deb'],
+                    'yoy' => $data['yoy'],
+                    'ytd' => $data['ytd'],
+                    'mtd' => $data['mtd'],
+                    'delta_yoy' => $data['curr'] - $data['yoy'],
+                    'delta_ytd' => $data['curr'] - $data['ytd'],
+                    'delta_mtd' => $data['curr'] - $data['mtd'],
+                    'target_jg_deb' => $tDeb,
+                    'target_jg_os' => $tOs,
+                    'ach_deb' => $data['realisasi_deb'],
+                    'ach_os' => $data['realisasi_os'],
+                ];
+
+                $branches[$cabangKey]['rms'][$rmName]['items'][] = $item;
+                $branches[$cabangKey]['rms'][$rmName]['rm_rowspan']++;
+                $branches[$cabangKey]['branch_rowspan']++;
+
+                // Update Branch Subtotal
+                $branches[$cabangKey]['subtotal']['curr'] += $data['curr'];
+                $branches[$cabangKey]['subtotal']['curr_deb'] += $data['curr_deb'];
+                $branches[$cabangKey]['subtotal']['yoy'] += $data['yoy'];
+                $branches[$cabangKey]['subtotal']['ytd'] += $data['ytd'];
+                $branches[$cabangKey]['subtotal']['mtd'] += $data['mtd'];
+                $branches[$cabangKey]['subtotal']['target_jg_deb'] += $tDeb;
+                $branches[$cabangKey]['subtotal']['target_jg_os'] += $tOs;
+                $branches[$cabangKey]['subtotal']['ach_deb'] = ($branches[$cabangKey]['subtotal']['ach_deb'] ?? 0) + $data['realisasi_deb'];
+                $branches[$cabangKey]['subtotal']['ach_os'] = ($branches[$cabangKey]['subtotal']['ach_os'] ?? 0.0) + $data['realisasi_os'];
+
+                // Grand Totals
+                $grandTotals['curr'] += $data['curr'];
+                $grandTotals['curr_deb'] += $data['curr_deb'];
+                $grandTotals['yoy'] += $data['yoy'];
+                $grandTotals['ytd'] += $data['ytd'];
+                $grandTotals['mtd'] += $data['mtd'];
+                $grandTotals['target_jg_deb'] += $tDeb;
+                $grandTotals['target_jg_os'] += $tOs;
+                $grandTotals['ach_deb'] = ($grandTotals['ach_deb'] ?? 0) + $data['realisasi_deb'];
+                $grandTotals['ach_os'] = ($grandTotals['ach_os'] ?? 0.0) + $data['realisasi_os'];
+            }
+
+            foreach ($branches as $key => $branch) {
+                $branches[$key]['branch_rowspan'] += 1; // For subtotal row
+                $b_curr = $branches[$key]['subtotal']['curr'];
+                $branches[$key]['subtotal']['delta_yoy'] = $b_curr - $branches[$key]['subtotal']['yoy'];
+                $branches[$key]['subtotal']['delta_ytd'] = $b_curr - $branches[$key]['subtotal']['ytd'];
+                $branches[$key]['subtotal']['delta_mtd'] = $b_curr - $branches[$key]['subtotal']['mtd'];
+            }
+
+            $totalRecord = [
+                'segmen' => $segmen,
+                'cabang' => $selectedCabang ?? 'SEMUA CABANG',
+                'rm' => 'TOTAL',
+                'curr' => $grandTotals['curr'],
+                'curr_deb' => $grandTotals['curr_deb'],
+                'yoy' => $grandTotals['yoy'],
+                'ytd' => $grandTotals['ytd'],
+                'mtd' => $grandTotals['mtd'],
+                'delta_yoy' => $grandTotals['curr'] - $grandTotals['yoy'],
+                'delta_ytd' => $grandTotals['curr'] - $grandTotals['ytd'],
+                'delta_mtd' => $grandTotals['curr'] - $grandTotals['mtd'],
+                'target_jg_deb' => $grandTotals['target_jg_deb'],
+                'target_jg_os' => $grandTotals['target_jg_os'],
+                'ach_deb' => $grandTotals['ach_deb'] ?? 0,
+                'ach_os' => $grandTotals['ach_os'] ?? 0.0,
+            ];
+
+            return [
+                'rows' => array_values($branches),
+                'total' => $totalRecord,
+            ];
         });
+    }
+
+    private function reportCacheVersion(): int
+    {
+        return (int) Cache::get('report_cache_version:global', 1);
     }
 
     private function getManualJgTargets(): array
@@ -619,26 +570,26 @@ class KinerjaRmReportController extends Controller
 
     private function normalizeProductLabel(?string $value, string $segmen = 'CONSUMER'): ?string
     {
-        $normalized = strtoupper(trim((string) $value));
-        $normalized = preg_replace('/\s+/', ' ', $normalized) ?? $normalized;
-        $normalized = str_replace(['_', '/'], [' ', ' '], $normalized);
-        $normalized = preg_replace('/\s*-\s*/', ' ', $normalized) ?? $normalized;
-        $normalized = preg_replace('/\s+/', ' ', trim($normalized)) ?? $normalized;
+        $normalized = preg_replace('/[^A-Z0-9]/', '', strtoupper(trim((string) $value))) ?? '';
 
         // Normalize based on segmen
         $productMap = match($segmen) {
             'CONSUMER' => [
-                'BRIGUNA KONSUMER' => 'BRIGUNA-KONSUMER',
+                'BRIGUNAKONSUMER' => 'BRIGUNA-KONSUMER',
                 'KPR' => 'KPR',
             ],
             'SMALL' => [
                 'COMMERCIAL' => 'COMMERCIAL',
-                'CASHCOLL' => 'CASHCOLL',
+                'CASHCALL' => 'CASHCALL',
             ],
             'MICRO' => [
-                'BRIGUNA MIKRO' => 'BRIGUNA-MIKRO',
+                'BRIGUNAMIKRO' => 'BRIGUNA-MIKRO',
                 'KUPEDES' => 'KUPEDES',
-                'KUR MIKRO' => 'KUR-MIKRO',
+                'KURMIKRO' => 'KUR-MIKRO',
+                'CASHCOLLATERAL' => 'CASHCOLLATERAL',
+                'CASHCOLL' => 'CASHCOLLATERAL',
+                'KPR' => 'KPR',
+                'KURSMALL' => 'KUR-SMALL',
             ],
             default => []
         };
@@ -682,5 +633,104 @@ class KinerjaRmReportController extends Controller
         } catch (\Throwable) {
             return null;
         }
+    }
+
+    private function normalizeNumericValue(mixed $value): ?float
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return is_numeric($value) ? (float) $value : null;
+    }
+
+    private function formatAmountInJuta(mixed $value, int $decimals = 1): string
+    {
+        $normalized = $this->normalizeNumericValue($value);
+
+        if ($normalized === null) {
+            return '-';
+        }
+
+        return number_format($normalized / 1000000, $decimals, ',', '.');
+    }
+
+    private function formatSignedAmountInJuta(mixed $value, bool $showArrow = true, int $decimals = 1): string
+    {
+        $normalized = $this->normalizeNumericValue($value);
+
+        if ($normalized === null) {
+            return "<span class='delta-indicator'>-</span>";
+        }
+
+        $amount = $normalized / 1000000;
+        $cls = $amount > 0 ? 'pos' : ($amount < 0 ? 'neg' : '');
+        $icon = '';
+
+        if ($showArrow) {
+            if ($amount > 0) {
+                $icon = '<i class="fas fa-caret-up me-1"></i>';
+            } elseif ($amount < 0) {
+                $icon = '<i class="fas fa-caret-down me-1"></i>';
+            }
+        }
+
+        $prefix = ($amount > 0 && ! $showArrow) ? '+' : '';
+        $display = number_format(abs($amount), $decimals, ',', '.');
+
+        if ($amount < 0 && ! $showArrow) {
+            $display = '-' . $display;
+        }
+
+        return "<span class='delta-indicator {$cls}'>{$icon}{$prefix}{$display}</span>";
+    }
+
+    private function formatCount(mixed $value): string
+    {
+        $normalized = $this->normalizeNumericValue($value);
+
+        if ($normalized === null) {
+            return '-';
+        }
+
+        return number_format((int) round($normalized), 0, ',', '.');
+    }
+
+    private function formatPercent(mixed $value, int $decimals = 1): string
+    {
+        $normalized = $this->normalizeNumericValue($value);
+
+        if ($normalized === null) {
+            return '-';
+        }
+
+        return number_format($normalized, $decimals, ',', '.');
+    }
+
+    private function normalizeQuadrant(mixed $quadrant): ?int
+    {
+        $normalized = $this->normalizeNumericValue($quadrant);
+
+        if ($normalized === null) {
+            return null;
+        }
+
+        $quadrantValue = (int) $normalized;
+
+        return in_array($quadrantValue, [1, 2, 3, 4], true) ? $quadrantValue : null;
+    }
+
+    private function formatQuadrantLabel(mixed $quadrant): string
+    {
+        $normalized = $this->normalizeQuadrant($quadrant);
+
+        return $normalized !== null ? 'Kuadran ' . $normalized : '-';
+    }
+
+    private function formatQuadrantClass(mixed $quadrant): string
+    {
+        $normalized = $this->normalizeQuadrant($quadrant);
+
+        return $normalized !== null ? 'q' . $normalized : '';
     }
 }

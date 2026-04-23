@@ -1234,6 +1234,8 @@
 
                 if (speedLabel === 'record') {
                     etaInfo.innerText = 'Estimasi sisa: tahap sanitasi sedang memproses batch data...';
+                } else if (totalRows <= 0) {
+                    etaInfo.innerText = 'Estimasi sisa: menunggu total baris terkonfirmasi...';
                 } else if (speed > 0 && totalRows > rowsDone) {
                     const remainingRows = totalRows - rowsDone;
                     etaInfo.innerText = 'Estimasi sisa: ' + formatDuration(remainingRows / speed);
@@ -1268,14 +1270,16 @@
             const speedInfo = document.getElementById('swal-speed-info');
             const speedDetail = document.getElementById('swal-speed-detail');
             const normalized = normalizeProgressStatus(message);
+            const resolvedRowsDone = Number(rowsDone || 0);
+            const resolvedTotalRows = Number(totalRows || importProgressSnapshot.totalRows || 0);
             const effectiveSpeed = speed > 0
                 ? speed
                 : (normalized.speed ? Number(normalized.speed) : 0);
             importProgressSnapshot = {
                 percent: Number(percent || 0),
                 message: normalized.message || message || '',
-                rowsDone: Number(rowsDone || 0),
-                totalRows: Number(totalRows || 0),
+                rowsDone: resolvedRowsDone,
+                totalRows: resolvedTotalRows > 0 ? resolvedTotalRows : Number(importProgressSnapshot.totalRows || 0),
                 speed: Number(effectiveSpeed || 0),
                 speedLabel: speedLabel || normalized.speedLabel || ''
             };
@@ -1295,8 +1299,14 @@
                 progressText.innerText = normalized.message || message || '';
             }
 
-            if (rowsInfo && totalRows > 0) {
-                rowsInfo.innerText = Number(rowsDone || 0).toLocaleString('id-ID') + ' / ' + Number(totalRows).toLocaleString('id-ID') + ' baris';
+            if (rowsInfo) {
+                if (resolvedTotalRows > 0) {
+                    rowsInfo.innerText = resolvedRowsDone.toLocaleString('id-ID') + ' / ' + resolvedTotalRows.toLocaleString('id-ID') + ' baris';
+                } else {
+                    rowsInfo.innerText = resolvedRowsDone > 0
+                        ? resolvedRowsDone.toLocaleString('id-ID') + ' / - baris'
+                        : 'Menunggu total baris...';
+                }
             }
 
             if (speedInfo) {
@@ -1460,7 +1470,7 @@
                     <div class="swal-import-stats swal-import-stats--compact">
                         <div class="swal-import-stat">
                             <span class="swal-import-stat__label">Baris</span>
-                            <span id="swal-rows-info" class="swal-import-stat__value">0 / 0</span>
+                            <span id="swal-rows-info" class="swal-import-stat__value">0 / -</span>
                         </div>
                         <div class="swal-import-stat">
                             <span class="swal-import-stat__label">Kecepatan</span>

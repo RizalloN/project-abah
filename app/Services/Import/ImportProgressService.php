@@ -511,10 +511,17 @@ class ImportProgressService
         $progress = Cache::get($this->cacheKey($jobId));
         $progress = is_array($progress) ? $progress : [];
 
-        $totalRows = (int) ($progress['total_rows'] ?? $job->total_files ?? 0);
+        $totalRows = max(
+            0,
+            (int) ($job->total_files ?? 0),
+            (int) ($progress['total_rows'] ?? 0)
+        );
         $success = (int) ($progress['total_success'] ?? $job->total_success ?? 0);
         $failed = (int) ($progress['total_failed'] ?? $job->total_failed ?? 0);
         $processed = max($success + $failed, (int) ($progress['processed_rows'] ?? 0));
+        if ($totalRows < $processed) {
+            $totalRows = $processed;
+        }
         $percent = (int) ($progress['percent'] ?? ($totalRows > 0 ? round(($processed / $totalRows) * 100) : 0));
         $queuedAt = null;
         $queuedForSeconds = null;

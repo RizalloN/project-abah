@@ -768,5 +768,6 @@
 @stack('scripts')
 @yield('scripts')
 
+@stack('modals')
 </body>
 </html>

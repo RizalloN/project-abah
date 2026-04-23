@@ -135,7 +135,7 @@ it('aggregates current total and raw posisi counts by branch office', function (
 
     $response = $this
         ->actingAs($user)
-        ->getJson(route('report.dashboard-pinjaman.tunggakan-kecil.data', [
+        ->getJson('/report/dashboard-pinjaman/tunggakan-kecil/data?' . http_build_query([
             'periode' => '2026-04-22',
         ]));
 
@@ -173,7 +173,7 @@ it('switches grouping to uker when unit filter is selected', function () {
 
     $response = $this
         ->actingAs($user)
-        ->getJson(route('report.dashboard-pinjaman.tunggakan-kecil.data', [
+        ->getJson('/report/dashboard-pinjaman/tunggakan-kecil/data?' . http_build_query([
             'periode' => '2026-04-22',
             'cabang1' => ['KC Madiun'],
             'unit1' => ['Unit A'],
@@ -212,7 +212,7 @@ it('keeps branch scope when all uker is selected for a branch', function () {
 
     $response = $this
         ->actingAs($user)
-        ->getJson(route('report.dashboard-pinjaman.tunggakan-kecil.data', [
+        ->getJson('/report/dashboard-pinjaman/tunggakan-kecil/data?' . http_build_query([
             'periode' => '2026-04-22',
             'cabang1' => ['KC Madiun'],
             'unit1' => ['ALL_UKER'],
@@ -238,7 +238,7 @@ it('keeps user selected period and returns zero totals when no data exists on th
 
     $response = $this
         ->actingAs($user)
-        ->getJson(route('report.dashboard-pinjaman.tunggakan-kecil.data', [
+        ->getJson('/report/dashboard-pinjaman/tunggakan-kecil/data?' . http_build_query([
             'periode' => '2026-04-24',
             'cabang1' => ['KC Madiun'],
         ]));
@@ -264,7 +264,7 @@ it('returns area 6 default branch selector and disables unit options until branc
 
     $response = $this
         ->actingAs($user)
-        ->getJson(route('report.dashboard-pinjaman.tunggakan-kecil.filters', [
+        ->getJson('/report/dashboard-pinjaman/tunggakan-kecil/filters?' . http_build_query([
             'periode' => '2026-04-22',
         ]));
 
@@ -286,7 +286,7 @@ it('filters unit selector based on selected branch offices', function () {
 
     $response = $this
         ->actingAs($user)
-        ->getJson(route('report.dashboard-pinjaman.tunggakan-kecil.filters', [
+        ->getJson('/report/dashboard-pinjaman/tunggakan-kecil/filters?' . http_build_query([
             'periode' => '2026-04-22',
             'cabang1' => ['KC Ngawi'],
         ]));
