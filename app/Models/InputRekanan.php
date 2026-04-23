@@ -2,12 +2,15 @@
 
 namespace App\Models;
 
+use App\Traits\IdReusable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 
 class InputRekanan extends Model
 {
+    use IdReusable;
+
     protected $table = 'input_rekanan';
 
     protected $fillable = [

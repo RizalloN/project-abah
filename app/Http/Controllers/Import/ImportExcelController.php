@@ -1274,8 +1274,18 @@ class ImportExcelController extends Controller
         }
 
         $expectedColumns = count($headers);
-        if ($expectedColumns === 0 || count($row) === $expectedColumns) {
+        $actualColumns = count($row);
+
+        // OPTIMIZED: If columns are missing at the end, we can often pad them later.
+        // We only reject if it's drastically different or we can't repair it.
+        if ($expectedColumns === 0 || $actualColumns === $expectedColumns) {
             return false;
+        }
+
+        // If it's just 1 or 2 columns short, we might allow it to be padded later in the pipeline
+        // unless strict mode is requested.
+        if ($actualColumns < $expectedColumns && ($expectedColumns - $actualColumns) <= 2) {
+             return false; 
         }
 
         $resolvedTableName = $tableName ?: ($this->isLw325PhTable() ? 'lw325_ph' : 'daily_loan_dinamis');
@@ -1286,7 +1296,7 @@ class ImportExcelController extends Controller
             'source' => $source,
             'line_number' => $lineNumber,
             'expected_columns' => $expectedColumns,
-            'actual_columns' => count($row),
+            'actual_columns' => $actualColumns,
             'parse_status' => $this->lastDailyLoanCsvParseMeta['status'] ?? 'irrecoverable',
             'parse_reason' => $this->lastDailyLoanCsvParseMeta['reason'] ?? 'field_count_mismatch',
             'was_repaired' => (bool) ($this->lastDailyLoanCsvParseMeta['repaired'] ?? false),
