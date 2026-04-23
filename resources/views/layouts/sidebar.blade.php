@@ -419,6 +419,12 @@
                             </a>
                         </li>
                         <li class="nav-item">
+                            <a href="{{ route('report.dashboard-pinjaman.tunggakan-kecil') }}" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman.tunggakan-kecil*') ? 'active' : '' }}">
+                                <i class="far fa-circle nav-icon"></i>
+                                <p>Tunggakan Kecil</p>
+                            </a>
+                        </li>
+                        <li class="nav-item">
                             <a href="{{ route('report.dashboard-pinjaman.matrix') }}" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman.matrix') ? 'active' : '' }}">
                                 <i class="far fa-circle nav-icon"></i>
                                 <p>Matrix Pergeseran Kolek</p>

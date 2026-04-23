@@ -87,6 +87,12 @@ Route::middleware(['auth', 'release.session.lock', 'throttle:240,1'])->group(fun
         ->name('report.dashboard-pinjaman.kredit');
     Route::get('/report/dashboard-pinjaman/kredit/data', [DashboardPinjamanReportController::class, 'kreditData'])
         ->name('report.dashboard-pinjaman.kredit.data');
+    Route::get('/report/dashboard-pinjaman/tunggakan-kecil', [DashboardPinjamanReportController::class, 'smallArrearsIndex'])
+        ->name('report.dashboard-pinjaman.tunggakan-kecil');
+    Route::get('/report/dashboard-pinjaman/tunggakan-kecil/filters', [DashboardPinjamanReportController::class, 'smallArrearsFilters'])
+        ->name('report.dashboard-pinjaman.tunggakan-kecil.filters');
+    Route::get('/report/dashboard-pinjaman/tunggakan-kecil/data', [DashboardPinjamanReportController::class, 'smallArrearsData'])
+        ->name('report.dashboard-pinjaman.tunggakan-kecil.data');
     Route::get('/report/dashboard-pinjaman/kejar-laba', [KejarLabaReportController::class, 'index'])
         ->name('report.dashboard-pinjaman.kejar-laba');
     Route::get('/report/dashboard-pinjaman/kinerjarm', [KinerjaRmReportController::class, 'index'])

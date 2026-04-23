@@ -35,6 +35,9 @@ class DashboardPinjamanReportController extends Controller
 
     private const QUALITY_BUCKETS = ['L', 'LR', 'DPK 1', 'DPK 2', 'DPK 3', 'KL', 'D1', 'D2', 'M'];
     private const HEALTHY_BUCKETS = ['L', 'LR'];
+    private const SMALL_ARREARS_AREA_ALL = 'AREA_6_ALL';
+    private const SMALL_ARREARS_AREA_BRANCHES = ['KC Madiun', 'KC Magetan', 'KC Ngawi', 'KC Ponorogo'];
+    private const SMALL_ARREARS_ALL_UKER = 'ALL_UKER';
 
     private const BEFORE_ROWS = ['New Account', 'L', 'LR', 'DPK 1', 'DPK 2', 'DPK 3', 'KL', 'D1', 'D2', 'M'];
 
@@ -184,6 +187,146 @@ class DashboardPinjamanReportController extends Controller
         );
 
         return response()->json($payload);
+    }
+
+    public function smallArrearsIndex(Request $request)
+    {
+        $availablePeriods = $this->fetchPeriods();
+        $selectedPeriod = $this->resolveSmallArrearsSelectedPeriod($request->input('periode'), $availablePeriods);
+        $branchSelection = $this->resolveSmallArrearsBranchSelection($request->input('cabang1'));
+        $selectedBranches = $branchSelection['selected_values'];
+        $effectiveBranches = $branchSelection['effective_branches'];
+        $unitSelection = $this->resolveSmallArrearsUnitSelection($request->input('unit1'), $branchSelection['is_area_all']);
+        $selectedUnits = $unitSelection['selected_values'];
+        $branchOptions = $this->smallArrearsBranchOptions();
+        $unitOptions = $branchSelection['is_area_all']
+            ? collect()
+            : collect([self::SMALL_ARREARS_ALL_UKER])->merge($this->fetchSmallArrearsDistinctValues('unit1', $selectedPeriod, $effectiveBranches))->values();
+        $selectedUnits = $branchSelection['is_area_all']
+            ? []
+            : array_values(array_intersect($selectedUnits, $unitOptions->all()));
+        if (!$branchSelection['is_area_all'] && $selectedUnits === []) {
+            $selectedUnits = [self::SMALL_ARREARS_ALL_UKER];
+        }
+
+        return view('report.dashboard-pinjaman.tunggakan-kecil', [
+            'availablePeriods' => $availablePeriods,
+            'selectedPeriod' => $selectedPeriod,
+            'selectedBranches' => $selectedBranches,
+            'effectiveBranches' => $effectiveBranches,
+            'isAreaAllSelected' => $branchSelection['is_area_all'],
+            'selectedUnits' => $selectedUnits,
+            'branchOptions' => $branchOptions,
+            'unitOptions' => $unitOptions,
+            'isAllUkerSelected' => in_array(self::SMALL_ARREARS_ALL_UKER, $selectedUnits, true) || (!$branchSelection['is_area_all'] && $selectedUnits === []),
+        ]);
+    }
+
+    public function smallArrearsFilters(Request $request)
+    {
+        @set_time_limit(30);
+        $this->releaseSessionLockIfNeeded();
+
+        $availablePeriods = $this->fetchPeriods();
+        $selectedPeriod = $this->resolveSmallArrearsSelectedPeriod($request->input('periode'), $availablePeriods);
+        $branchSelection = $this->resolveSmallArrearsBranchSelection($request->input('cabang1'));
+        $selectedBranches = $branchSelection['selected_values'];
+        $effectiveBranches = $branchSelection['effective_branches'];
+        $unitSelection = $this->resolveSmallArrearsUnitSelection($request->input('unit1'), $branchSelection['is_area_all']);
+        $forceRefresh = $request->boolean('refresh');
+
+        $cacheKey = 'dashboard_pinjaman_tunggakan_kecil_filters:v1:' . md5(json_encode([
+            'cache_version' => $this->reportCacheVersion(),
+            'periode' => $selectedPeriod,
+            'cabang1' => $selectedBranches,
+            'unit1' => $unitSelection['selected_values'],
+        ]));
+
+        $payload = $this->rememberPayload($cacheKey, now()->addMinutes(3), function () use ($selectedPeriod, $selectedBranches, $effectiveBranches, $branchSelection, $unitSelection) {
+            $unitOptions = $branchSelection['is_area_all']
+                ? collect()
+                : collect([self::SMALL_ARREARS_ALL_UKER])->merge($this->fetchSmallArrearsDistinctValues('unit1', $selectedPeriod, $effectiveBranches))->values();
+
+            return [
+                'branch_options' => $this->smallArrearsBranchOptions()->all(),
+                'unit_options' => $unitOptions->all(),
+                'selected_branches' => $selectedBranches,
+                'effective_branches' => $effectiveBranches,
+                'is_area_all' => $branchSelection['is_area_all'],
+                'selected_units' => $unitSelection['selected_values'],
+                'is_all_uker' => $unitSelection['is_all_uker'],
+            ];
+        }, $forceRefresh);
+
+        return response()->json([
+            'available_periods' => $availablePeriods->all(),
+            'selected_period' => $selectedPeriod,
+            'branch_options' => $payload['branch_options'],
+            'unit_options' => $payload['unit_options'],
+            'selected_branches' => $payload['selected_branches'],
+            'effective_branches' => $payload['effective_branches'],
+            'is_area_all' => $payload['is_area_all'],
+            'selected_units' => $payload['selected_units'],
+            'is_all_uker' => $payload['is_all_uker'],
+        ]);
+    }
+
+    public function smallArrearsData(Request $request)
+    {
+        @set_time_limit(0);
+        DB::connection()->disableQueryLog();
+        $this->releaseSessionLockIfNeeded();
+
+        $availablePeriods = $this->fetchPeriods();
+        $selectedPeriod = $this->resolveSmallArrearsSelectedPeriod($request->input('periode'), $availablePeriods);
+        $branchSelection = $this->resolveSmallArrearsBranchSelection($request->input('cabang1'));
+        $selectedBranches = $branchSelection['selected_values'];
+        $effectiveBranches = $branchSelection['effective_branches'];
+        $unitSelection = $this->resolveSmallArrearsUnitSelection($request->input('unit1'), $branchSelection['is_area_all']);
+        $selectedUnits = $unitSelection['selected_values'];
+        $effectiveUnits = $unitSelection['effective_units'];
+        $forceRefresh = $request->boolean('refresh');
+
+        if (!$selectedPeriod) {
+            return response()->json([
+                'selected_period' => null,
+                'selected_branches' => [self::SMALL_ARREARS_AREA_ALL],
+                'effective_branches' => self::SMALL_ARREARS_AREA_BRANCHES,
+                'is_area_all' => true,
+                'selected_units' => [],
+                'effective_units' => [],
+                'is_all_uker' => true,
+                'group_label' => 'BRANCH OFFICE',
+                'rows' => [],
+                'total' => [
+                    'current' => 0,
+                    'ytd' => 0,
+                    'mtd' => 0,
+                    'total_tunggakan' => 0.0,
+                ],
+            ]);
+        }
+
+        $cacheKey = 'dashboard_pinjaman_tunggakan_kecil_data:v1:' . md5(json_encode([
+            'cache_version' => $this->reportCacheVersion(),
+            'periode' => $selectedPeriod,
+            'cabang1' => $selectedBranches,
+            'unit1' => $effectiveUnits,
+        ]));
+
+        $payload = $this->rememberPayload($cacheKey, now()->addMinutes(3), function () use ($selectedPeriod, $effectiveBranches, $effectiveUnits, $branchSelection) {
+            return $this->buildSmallArrearsPayload($selectedPeriod, $effectiveBranches, $effectiveUnits, $branchSelection['is_area_all']);
+        }, $forceRefresh);
+
+        return response()->json(array_merge([
+            'selected_period' => $selectedPeriod,
+            'selected_branches' => $selectedBranches,
+            'effective_branches' => $effectiveBranches,
+            'is_area_all' => $branchSelection['is_area_all'],
+            'selected_units' => $selectedUnits,
+            'effective_units' => $effectiveUnits,
+            'is_all_uker' => $unitSelection['is_all_uker'],
+        ], $payload));
     }
 
     private function fetchKreditPeriods(): Collection
@@ -1295,6 +1438,291 @@ class DashboardPinjamanReportController extends Controller
                     }
                 })
                 ->values();
+        });
+    }
+
+    private function resolveSmallArrearsSelectedPeriod($value, ?Collection $availablePeriods = null): ?string
+    {
+        $availablePeriods ??= $this->fetchPeriods();
+        $requestedPeriod = trim((string) (is_array($value) ? ($value[0] ?? '') : $value));
+
+        if ($requestedPeriod !== '') {
+            try {
+                return Carbon::parse($requestedPeriod)->format('Y-m-d');
+            } catch (Throwable) {
+                return $availablePeriods->first();
+            }
+        }
+
+        return $availablePeriods->first();
+    }
+
+    private function smallArrearsBranchOptions(): Collection
+    {
+        return collect([self::SMALL_ARREARS_AREA_ALL, ...self::SMALL_ARREARS_AREA_BRANCHES]);
+    }
+
+    private function resolveSmallArrearsBranchSelection($value): array
+    {
+        $normalized = $this->normalizeFilterValues($value);
+
+        if ($normalized === [] || in_array(self::SMALL_ARREARS_AREA_ALL, $normalized, true)) {
+            return [
+                'selected_values' => [self::SMALL_ARREARS_AREA_ALL],
+                'effective_branches' => self::SMALL_ARREARS_AREA_BRANCHES,
+                'is_area_all' => true,
+            ];
+        }
+
+        $effectiveBranches = array_values(array_intersect(self::SMALL_ARREARS_AREA_BRANCHES, $normalized));
+
+        if ($effectiveBranches === []) {
+            return [
+                'selected_values' => [self::SMALL_ARREARS_AREA_ALL],
+                'effective_branches' => self::SMALL_ARREARS_AREA_BRANCHES,
+                'is_area_all' => true,
+            ];
+        }
+
+        return [
+            'selected_values' => $effectiveBranches,
+            'effective_branches' => $effectiveBranches,
+            'is_area_all' => false,
+        ];
+    }
+
+    private function resolveSmallArrearsUnitSelection($value, bool $isAreaAll = false): array
+    {
+        if ($isAreaAll) {
+            return [
+                'selected_values' => [],
+                'effective_units' => [],
+                'is_all_uker' => true,
+            ];
+        }
+
+        $normalized = $this->normalizeFilterValues($value);
+
+        if ($normalized === [] || in_array(self::SMALL_ARREARS_ALL_UKER, $normalized, true)) {
+            return [
+                'selected_values' => [self::SMALL_ARREARS_ALL_UKER],
+                'effective_units' => [],
+                'is_all_uker' => true,
+            ];
+        }
+
+        return [
+            'selected_values' => $normalized,
+            'effective_units' => $normalized,
+            'is_all_uker' => false,
+        ];
+    }
+
+    private function fetchSmallArrearsDistinctValues(string $column, ?string $selectedPeriod, array $selectedBranches = []): Collection
+    {
+        if (!$selectedPeriod) {
+            return collect();
+        }
+
+        $cacheKey = 'dashboard_pinjaman_tunggakan_kecil_distinct:v1:' . md5(json_encode([
+            'cache_version' => $this->reportCacheVersion(),
+            'column' => $column,
+            'periode' => $selectedPeriod,
+            'branches' => array_values($selectedBranches),
+        ]));
+
+        return Cache::remember($cacheKey, now()->addMinutes(5), function () use ($column, $selectedPeriod, $selectedBranches) {
+            $query = DB::table('daily_loan_dinamis')
+                ->where('periode', $selectedPeriod)
+                ->whereNotNull($column)
+                ->whereRaw("TRIM(COALESCE({$column}, '')) <> ''")
+                ->select($column)
+                ->distinct()
+                ->orderBy($column);
+
+            if ($column === 'unit1' && $selectedBranches !== []) {
+                $query->whereIn('cabang1', $selectedBranches);
+            }
+
+            return $query->pluck($column)
+                ->map(fn ($value) => trim((string) $value))
+                ->filter()
+                ->values();
+        });
+    }
+
+    private function fetchSmallArrearsUnitLabelsByBranches(array $selectedBranches): array
+    {
+        if ($selectedBranches === []) {
+            return [];
+        }
+
+        $cacheKey = 'dashboard_pinjaman_tunggakan_kecil_units_by_branch:v1:' . md5(json_encode([
+            'cache_version' => $this->reportCacheVersion(),
+            'branches' => array_values($selectedBranches),
+        ]));
+
+        return Cache::remember($cacheKey, now()->addMinutes(5), function () use ($selectedBranches) {
+            return DB::table('daily_loan_dinamis')
+                ->whereIn('cabang1', $selectedBranches)
+                ->whereNotNull('unit1')
+                ->whereRaw("TRIM(COALESCE(unit1, '')) <> ''")
+                ->distinct()
+                ->orderBy('unit1')
+                ->pluck('unit1')
+                ->map(fn ($value) => trim((string) $value))
+                ->filter()
+                ->values()
+                ->all();
+        });
+    }
+
+    private function buildSmallArrearsPayload(string $selectedPeriod, array $selectedBranches, array $selectedUnits, bool $isAreaAll = false): array
+    {
+        $isAllUker = !$isAreaAll && $selectedUnits === [];
+        $groupColumn = $isAreaAll ? 'cabang1' : 'unit1';
+        $groupLabel = $isAreaAll ? 'BRANCH OFFICE' : 'UKER';
+        $comparisonPeriods = $this->resolveSmallArrearsComparisonPeriods($selectedPeriod);
+        $accountColumn = Schema::hasColumn('daily_loan_dinamis', 'nomor_rekening1')
+            ? 'nomor_rekening1'
+            : $this->resolveIdentityColumn('daily_loan_dinamis');
+        $penaltyColumn = Schema::hasColumn('daily_loan_dinamis', 'tunggakan_penalti')
+            ? 'tunggakan_penalti'
+            : (Schema::hasColumn('daily_loan_dinamis', 'tunggakan_pinalti') ? 'tunggakan_pinalti' : null);
+        $totalExpression = 'COALESCE(tunggakan_pokok, 0) + COALESCE(tunggakan_bunga, 0)';
+        if ($penaltyColumn !== null) {
+            $totalExpression .= " + COALESCE({$penaltyColumn}, 0)";
+        }
+        $qualifiedAccountExpression = "CASE WHEN ({$totalExpression}) >= 0 AND ({$totalExpression}) < 100000 THEN {$accountColumn} END";
+        $qualifiedAmountExpression = "CASE WHEN ({$totalExpression}) >= 0 AND ({$totalExpression}) < 100000 THEN ({$totalExpression}) ELSE 0 END";
+        $currentPeriodHasData = DB::table('daily_loan_dinamis')
+            ->where('periode', $selectedPeriod)
+            ->when($selectedBranches !== [], fn (Builder $query) => $query->whereIn('cabang1', $selectedBranches))
+            ->when($selectedUnits !== [], fn (Builder $query) => $query->whereIn('unit1', $selectedUnits))
+            ->whereRaw("({$totalExpression}) >= 0 AND ({$totalExpression}) < 100000")
+            ->exists();
+
+        $periodsToQuery = collect([
+            $selectedPeriod,
+            $comparisonPeriods['mtd'],
+            $comparisonPeriods['ytd'],
+        ])->filter()->unique()->values()->all();
+
+        $rows = DB::table('daily_loan_dinamis')
+            ->selectRaw("{$groupColumn} as grouping_label")
+            ->selectRaw("COUNT(DISTINCT CASE WHEN periode = ? THEN {$qualifiedAccountExpression} END) as current_count", [$selectedPeriod])
+            ->selectRaw("COUNT(DISTINCT CASE WHEN periode = ? THEN {$qualifiedAccountExpression} END) as ytd_base", [$comparisonPeriods['ytd']])
+            ->selectRaw("COUNT(DISTINCT CASE WHEN periode = ? THEN {$qualifiedAccountExpression} END) as mtd_base", [$comparisonPeriods['mtd']])
+            ->selectRaw("SUM(CASE WHEN periode = ? THEN {$qualifiedAmountExpression} ELSE 0 END) as current_total_tunggakan", [$selectedPeriod])
+            ->whereIn('periode', $periodsToQuery)
+            ->whereNotNull($groupColumn)
+            ->whereRaw("TRIM(COALESCE({$groupColumn}, '')) <> ''")
+            ->when($selectedBranches !== [], fn (Builder $query) => $query->whereIn('cabang1', $selectedBranches))
+            ->when($selectedUnits !== [], fn (Builder $query) => $query->whereIn('unit1', $selectedUnits))
+            ->groupBy('grouping_label')
+            ->orderBy('grouping_label')
+            ->get();
+
+        $resultRows = [];
+        $totals = [
+            'current' => 0,
+            'ytd' => 0,
+            'mtd' => 0,
+            'total_tunggakan' => 0.0,
+        ];
+
+        foreach ($rows as $row) {
+            $label = trim((string) ($row->grouping_label ?? ''));
+            if ($label === '') {
+                continue;
+            }
+
+            $current = (int) ($row->current_count ?? 0);
+            $ytdBase = (int) ($row->ytd_base ?? 0);
+            $mtdBase = (int) ($row->mtd_base ?? 0);
+            $currentTotalTunggakan = (float) ($row->current_total_tunggakan ?? 0);
+
+            $mappedRow = [
+                'label' => $label,
+                'ytd' => $currentPeriodHasData ? $ytdBase : 0,
+                'mtd' => $currentPeriodHasData ? $mtdBase : 0,
+                'current' => $currentPeriodHasData ? $current : 0,
+                'total_tunggakan' => $currentPeriodHasData ? $currentTotalTunggakan : 0.0,
+            ];
+
+            $resultRows[] = $mappedRow;
+            $totals['current'] += $mappedRow['current'];
+            $totals['ytd'] += $mappedRow['ytd'];
+            $totals['mtd'] += $mappedRow['mtd'];
+            $totals['total_tunggakan'] += $mappedRow['total_tunggakan'];
+        }
+
+        $fallbackLabels = $isAllUker
+            ? $this->fetchSmallArrearsUnitLabelsByBranches($selectedBranches)
+            : ($selectedBranches !== [] ? $selectedBranches : []);
+
+        if ($groupColumn === 'cabang1') {
+            $resultRows = $this->completeSmallArrearsBranchRows($resultRows, $fallbackLabels);
+        } elseif ($resultRows === []) {
+            foreach ($fallbackLabels as $label) {
+                $resultRows[] = [
+                    'label' => $label,
+                    'ytd' => 0,
+                    'mtd' => 0,
+                    'current' => 0,
+                    'total_tunggakan' => 0.0,
+                ];
+            }
+        }
+
+        return [
+            'group_label' => $groupLabel,
+            'rows' => $resultRows,
+            'total' => $totals,
+            'labels' => [
+                'current' => $selectedPeriod,
+                'ytd' => $comparisonPeriods['ytd'],
+                'mtd' => $comparisonPeriods['mtd'],
+            ],
+        ];
+    }
+
+    private function completeSmallArrearsBranchRows(array $rows, array $branches): array
+    {
+        $rowsByLabel = collect($rows)->keyBy('label');
+        $orderedRows = [];
+
+        foreach ($branches as $branch) {
+            $orderedRows[] = $rowsByLabel->get($branch, [
+                'label' => $branch,
+                'ytd' => 0,
+                'mtd' => 0,
+                'current' => 0,
+                'total_tunggakan' => 0.0,
+            ]);
+        }
+
+        return $orderedRows;
+    }
+
+    private function resolveSmallArrearsComparisonPeriods(string $selectedPeriod): array
+    {
+        $cacheKey = 'dashboard_pinjaman_tunggakan_kecil_compare:v1:' . md5(json_encode([
+            'cache_version' => $this->reportCacheVersion(),
+            'periode' => $selectedPeriod,
+        ]));
+
+        return Cache::remember($cacheKey, now()->addMinutes(5), function () use ($selectedPeriod) {
+            $currentDate = Carbon::parse($selectedPeriod);
+
+            return [
+                'ytd' => DB::table('daily_loan_dinamis')
+                    ->where('periode', '<=', $currentDate->copy()->subYearNoOverflow()->endOfYear()->toDateString())
+                    ->max('periode'),
+                'mtd' => DB::table('daily_loan_dinamis')
+                    ->where('periode', '<=', $currentDate->copy()->subMonthNoOverflow()->endOfMonth()->toDateString())
+                    ->max('periode'),
+            ];
         });
     }
 
