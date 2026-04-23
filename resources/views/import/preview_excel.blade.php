@@ -3,6 +3,9 @@
 @section('title', $pageTitle ?? 'Preview & Filter Data Excel')
 
 @section('content')
+@php
+    $filtersDisabled = !empty($filtersDisabled);
+@endphp
 <div class="row">
     <div class="col-12">
 
@@ -19,8 +22,12 @@
             <div class="card-body">
                 <div class="alert alert-info border-0 bg-light text-dark">
                     <i class="fas fa-info-circle text-info"></i>
-                    <strong>Smart Parser Aktif:</strong> Struktur kolom file import telah dinormalisasi dan siap difilter.
-                    Opsi filter akan dimuat dari seluruh file saat dropdown dibuka, lalu tabel tetap menampilkan maks 100 baris pertama untuk evaluasi.
+                    @if($filtersDisabled)
+                        <strong>Mode Import Full Aktif:</strong> Filter dinonaktifkan untuk report ini agar hasil import tidak ambigu dan selalu memproses seluruh data.
+                    @else
+                        <strong>Smart Parser Aktif:</strong> Struktur kolom file import telah dinormalisasi dan siap difilter.
+                        Opsi filter akan dimuat dari seluruh file saat dropdown dibuka, lalu tabel tetap menampilkan maks 100 baris pertama untuk evaluasi.
+                    @endif
                 </div>
             </div>
         </div>
@@ -41,12 +48,14 @@
                             <i class="fas fa-arrow-left"></i> Kembali
                         </a>
                         <div class="d-flex align-items-center">
+                            @if(!$filtersDisabled)
                             <button type="button" id="btnResetAllFilters" class="btn btn-outline-warning mr-2">
                                 <i class="fas fa-undo"></i> Reset Filter
                             </button>
                             <button type="button" id="btnClearImportCache" class="btn btn-outline-danger mr-2" title="Bersihkan cache filter browser">
                                 <i class="fas fa-trash-alt"></i> Clear Cache
                             </button>
+                            @endif
                             <button type="submit" id="btnSubmitImport" class="btn btn-success font-weight-bold">
                                 <i class="fas fa-database"></i> Jalankan Import ke MySQL
                             </button>
@@ -69,7 +78,7 @@
                                                     {{ $header }}
                                                 </div>
 
-                                                @if(isset($formattedUniqueValues[$index]) && count($formattedUniqueValues[$index]) > 0)
+                                                @if(!$filtersDisabled && isset($formattedUniqueValues[$index]) && count($formattedUniqueValues[$index]) > 0)
                                                 <div class="dropdown">
                                                     <button class="btn btn-xs btn-light border dropdown-toggle filter-btn"
                                                             type="button" data-toggle="dropdown"
@@ -158,6 +167,7 @@
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     const filterOptionsMap = @json($formattedUniqueValues);
+    const filtersDisabled = @json($filtersDisabled);
     const importFormElement = document.getElementById('importForm');
     const previewTbody = document.querySelector('.table-responsive tbody');
     const basePreviewTbodyHtml = previewTbody ? previewTbody.innerHTML : '';
@@ -985,16 +995,18 @@ document.addEventListener('DOMContentLoaded', function () {
 
         // ── Kumpulkan filter aktif ──────────────────────────────────────────
         var activeFilters = {};
-        Object.keys(filterState).forEach(function (colIndex) {
-            var state = filterState[colIndex];
-            if (!state) {
-                return;
-            }
+        if (!filtersDisabled) {
+            Object.keys(filterState).forEach(function (colIndex) {
+                var state = filterState[colIndex];
+                if (!state) {
+                    return;
+                }
 
-            if (state.selectedValues.size < state.allValues.length) {
-                activeFilters[colIndex] = Array.from(state.selectedValues);
-            }
-        });
+                if (state.selectedValues.size < state.allValues.length) {
+                    activeFilters[colIndex] = Array.from(state.selectedValues);
+                }
+            });
+        }
         var filtersJson = JSON.stringify(activeFilters);
         document.getElementById('active_filters_json').value = filtersJson;
 

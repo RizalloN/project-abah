@@ -451,6 +451,22 @@ class ImportExcelController extends Controller
         return ($tableName ?? $this->resolveExcelTableName()) === 'simpanan_multipn';
     }
 
+    private function shouldDisableImportFilters(?string $tableName = null): bool
+    {
+        $resolvedTable = strtolower(trim((string) ($tableName ?? $this->resolveExcelTableName())));
+
+        return in_array($resolvedTable, ['daily_loan_dinamis', 'simpanan_multipn'], true);
+    }
+
+    private function normalizeImportActiveFilters(array $filters, ?string $tableName = null): array
+    {
+        if ($this->shouldDisableImportFilters($tableName)) {
+            return [];
+        }
+
+        return $filters;
+    }
+
     private function isSsaSimpananTable(?string $tableName = null): bool
     {
         return ($tableName ?? $this->resolveExcelTableName()) === 'ssa_simpanan';
@@ -2282,15 +2298,15 @@ class ImportExcelController extends Controller
                     'speed' => 0,
                 ]);
 
-                $handled = $this->processFastPathBulkCsvStream(
+                $handled = $this->processDailyLoanDirectCsvStream(
                     $send,
                     $absolutePath,
                     'daily_loan_dinamis',
                     $normalizedHeaders,
-                    [],
                     $jobId,
                     $totalRows,
                     null,
+                    [],
                     false
                 );
 
@@ -2500,9 +2516,16 @@ class ImportExcelController extends Controller
         }
     }
 
-    private function estimateCsvImportTotalRows(string $csvPath, int $headerIndex): int
+    private function estimateCsvImportTotalRows(string $csvPath, int $headerIndex, ?string $tableName = null): int
     {
-        $dataRows = $this->countCsvDataRows($csvPath);
+        $fileSize = (int) (@filesize($csvPath) ?: 0);
+        $largeFileThresholdBytes = 64 * 1024 * 1024;
+
+        if ($fileSize >= $largeFileThresholdBytes) {
+            $dataRows = $this->countCsvPhysicalDataRows($csvPath);
+        } else {
+            $dataRows = $this->countCsvDataRows($csvPath, $tableName);
+        }
 
         return max(0, $dataRows + max(0, $headerIndex + 1));
     }
@@ -6075,7 +6098,7 @@ class ImportExcelController extends Controller
         $affected = false;
 
         try {
-            $lockAcquired = $this->acquireMysqlAdvisoryLockOnPdo($pdo, self::DAILY_LOAN_IMPORT_LOCK_NAME, 5);
+            $lockAcquired = $this->acquireMysqlAdvisoryLockOnPdo($pdo, self::DAILY_LOAN_IMPORT_LOCK_NAME, 90);
             if (!$lockAcquired) {
                 throw new \RuntimeException('Import Daily Loan sedang berjalan. Tunggu proses sebelumnya selesai terlebih dahulu.');
             }
@@ -8658,6 +8681,8 @@ class ImportExcelController extends Controller
         set_time_limit(0);
 
         $activeIdReport = (int) session('active_id_report');
+        $activeTableName = $this->resolveActiveTableName();
+        $filtersDisabled = $this->shouldDisableImportFilters($activeTableName);
         $importSource = (string) session('excel_import_source', '');
         $initRoute = $activeIdReport === self::DAILY_LOAN_REPORT_ID
             ? route('import.dailyloan.init')
@@ -8704,7 +8729,7 @@ class ImportExcelController extends Controller
                     return view('import.preview', [
                         'headers' => $cached['headers'] ?? [],
                         'previewData' => $this->buildLegacyPreviewRows($cached['headers'] ?? [], $cached['preview'] ?? []),
-                        'formattedUniqueValues' => $cached['formattedUniqueValues'] ?? [],
+                        'formattedUniqueValues' => $filtersDisabled ? [] : ($cached['formattedUniqueValues'] ?? []),
                         'filePath' => $cached['path'] ?? null,
                         'currentDelimiter' => $delimiterValue,
                         'lockDelimiterSelector' => true,
@@ -8725,15 +8750,18 @@ class ImportExcelController extends Controller
                         'previewStateKey' => $previewStateKey,
                         'disableArea6AutoFilter' => true,
                         'forceAllFiltersCheckedOnLoad' => true,
+                        'filtersDisabled' => $filtersDisabled,
                         'pageTitle' => $this->resolvePreviewPageTitle(),
                         'previewBannerTitle' => $this->resolvePreviewBannerTitle(),
                     ]);
                 }
 
                 if (!$this->isDailyLoanTable()) {
+                    $cached['formattedUniqueValues'] = $filtersDisabled ? [] : ($cached['formattedUniqueValues'] ?? []);
                     $cached['initRoute'] = $initRoute;
                     $cached['streamRoute'] = $streamRoute;
                     $cached['previewStateKey'] = $previewStateKey;
+                    $cached['filtersDisabled'] = $filtersDisabled;
                     $cached['pageTitle'] = $this->resolvePreviewPageTitle();
                     $cached['previewBannerTitle'] = $this->resolvePreviewBannerTitle();
                     return view('import.preview_excel', $cached);
@@ -8791,7 +8819,7 @@ class ImportExcelController extends Controller
             return view('import.preview_excel', [
                 'headers' => $reorderedPayload['headers'],
                 'preview' => $reorderedPayload['preview'],
-                'formattedUniqueValues' => $reorderedPayload['formattedUniqueValues'],
+                'formattedUniqueValues' => $filtersDisabled ? [] : $reorderedPayload['formattedUniqueValues'],
                 'path' => $relativePath,
                 'currentDelimiter' => isset($csvPayload['delimiter']) && $csvPayload['delimiter'] !== ''
                     ? (string) $csvPayload['delimiter']
@@ -8799,6 +8827,7 @@ class ImportExcelController extends Controller
                 'initRoute' => $initRoute,
                 'streamRoute' => $streamRoute,
                 'previewStateKey' => $previewStateKey,
+                'filtersDisabled' => $filtersDisabled,
                 'pageTitle' => $this->resolvePreviewPageTitle(),
                 'previewBannerTitle' => $this->resolvePreviewBannerTitle(),
             ]);
@@ -8893,7 +8922,7 @@ class ImportExcelController extends Controller
             return view('import.preview', [
                 'headers' => $payload['headers'],
                 'previewData' => $this->buildLegacyPreviewRows($payload['headers'], $payload['preview']),
-                'formattedUniqueValues' => $payload['formattedUniqueValues'],
+                'formattedUniqueValues' => $filtersDisabled ? [] : $payload['formattedUniqueValues'],
                 'filePath' => $relativePath,
                 'currentDelimiter' => ',',
                 'lockDelimiterSelector' => true,
@@ -8906,6 +8935,7 @@ class ImportExcelController extends Controller
                 'previewStateKey' => $previewStateKey,
                 'disableArea6AutoFilter' => true,
                 'forceAllFiltersCheckedOnLoad' => true,
+                'filtersDisabled' => $filtersDisabled,
                 'pageTitle' => $this->resolvePreviewPageTitle(),
                 'previewBannerTitle' => $this->resolvePreviewBannerTitle(),
             ]);
@@ -8914,11 +8944,12 @@ class ImportExcelController extends Controller
         return view('import.preview_excel', [
             'headers' => $payload['headers'],
             'preview' => $payload['preview'],
-            'formattedUniqueValues' => $payload['formattedUniqueValues'],
+            'formattedUniqueValues' => $filtersDisabled ? [] : $payload['formattedUniqueValues'],
             'path' => $relativePath,
             'initRoute' => $initRoute,
             'streamRoute' => $streamRoute,
             'previewStateKey' => $previewStateKey,
+            'filtersDisabled' => $filtersDisabled,
             'pageTitle' => $this->resolvePreviewPageTitle(),
             'previewBannerTitle' => $this->resolvePreviewBannerTitle(),
         ]);
@@ -9033,19 +9064,31 @@ class ImportExcelController extends Controller
                         return false;
                     }
 
+                    $lineNumber = 0;
                     while (($row = $this->readCsvRecord($handle, $delimiter)) !== false) {
-                        if ($headerIndex === null) {
-                            if ($this->detectHeaderIndex([$row], $tableName) === 0) {
-                                $headerIndex = $totalRows;
-                                $sheet = [];
-                                $sheet[$headerIndex] = $this->isDailyLoanActive()
-                                    ? self::DAILY_LOAN_SOURCE_HEADERS
-                                    : $row;
-                            }
+                        if ($this->detectHeaderIndex([$row], $tableName) === 0) {
+                            $headerIndex = $lineNumber;
+                            $sheet = [];
+                            $sheet[$headerIndex] = $this->isDailyLoanActive()
+                                ? self::DAILY_LOAN_SOURCE_HEADERS
+                                : $row;
+                            break;
                         }
-                        $totalRows++;
+                        $lineNumber++;
                     }
                     fclose($handle);
+
+                    if ($headerIndex === null) {
+                        Log::error('initializeQueuedImportJobForExecution: Header tidak ditemukan di CSV', [
+                            'job_id' => $jobId,
+                            'path' => $path,
+                            'table_name' => $tableName,
+                        ]);
+                        return false;
+                    }
+
+                    // For large CSV files, avoid full logical scan here so queued jobs can start quickly.
+                    $totalRows = $this->estimateCsvImportTotalRows($path, (int) $headerIndex, $tableName);
                 } catch (\Throwable $e) {
                     Log::error('initializeQueuedImportJobForExecution: Gagal scan CSV', [
                         'job_id' => $jobId,
@@ -9120,10 +9163,6 @@ class ImportExcelController extends Controller
             }
 
             // ── Estimasi Total Rows ─────────────────────────────────────
-            if ($this->isCsvFile($path)) {
-                $totalRows = $this->estimateCsvImportTotalRows($path, (int) $headerIndex);
-            }
-
             $dataRowsCount = max(0, $totalRows - ($headerIndex + 1));
 
             // ── Normalize Headers ───────────────────────────────────────
@@ -9197,6 +9236,7 @@ class ImportExcelController extends Controller
             }
 
             ksort($normalizedActiveFilters);
+            $normalizedActiveFilters = $this->normalizeImportActiveFilters($normalizedActiveFilters, $tableName);
 
             // ── Update job state dengan full params dan headers ────────
             try {
@@ -9329,6 +9369,7 @@ class ImportExcelController extends Controller
         }
 
         ksort($normalizedActiveFilters);
+        $normalizedActiveFilters = $this->normalizeImportActiveFilters($normalizedActiveFilters, $tableName);
 
         $disableInlineFallback = $tableName === 'lw325_ph';
 
@@ -9362,7 +9403,11 @@ class ImportExcelController extends Controller
         ]);
 
         // Store active filters di session untuk diambil saat initialization
-        session(['excel_active_filters_json' => $request->active_filters_json ?? '{}']);
+        session([
+            'excel_active_filters_json' => $this->shouldDisableImportFilters($tableName)
+                ? '{}'
+                : ($request->active_filters_json ?? '{}'),
+        ]);
 
         // Queue job dengan status 'queued' tanpa menunggu header detection
         $this->progressService()->markQueued($jobId, [
@@ -9883,6 +9928,8 @@ class ImportExcelController extends Controller
                         'rows_done' => $rowsDone,
                         'total' => $estimatedTotalRows,
                         'speed' => $speed,
+                        'processed_rows' => $rowsDone,
+                        'total_rows' => $estimatedTotalRows,
                         'mode' => $forceDirectLoad ? 'direct_load' : 'staged_load',
                     ]);
                 }
@@ -9931,6 +9978,8 @@ class ImportExcelController extends Controller
                     'rows_done' => $rowsDone,
                     'total' => $estimatedTotalRows > 0 ? $estimatedTotalRows : $rowsDone,
                     'speed' => 0,
+                    'processed_rows' => $rowsDone,
+                    'total_rows' => $estimatedTotalRows > 0 ? $estimatedTotalRows : $rowsDone,
                     'mode' => $forceDirectLoad ? 'direct_load' : 'staged_load',
                 ]);
 
@@ -9954,6 +10003,8 @@ class ImportExcelController extends Controller
                             'rows_done' => $rowsDone,
                             'total' => $estimatedTotalRows > 0 ? $estimatedTotalRows : $rowsDone,
                             'speed' => 0,
+                            'processed_rows' => $rowsDone,
+                            'total_rows' => $estimatedTotalRows > 0 ? $estimatedTotalRows : $rowsDone,
                             'mode' => $forceDirectLoad ? 'direct_load' : 'staged_load',
                         ]);
                     },
@@ -10439,6 +10490,7 @@ class ImportExcelController extends Controller
             $chunkSize   = max((int) $request->chunk_size, 1);
             $endExclusive = $startRow + $chunkSize;
             $activeFilters = json_decode($request->active_filters_json, true) ?: [];
+            $activeFilters = $this->normalizeImportActiveFilters($activeFilters, (string) $tableName);
             $relativePath  = urldecode($request->file_path);
             $path = Storage::path($relativePath);
 

@@ -71,6 +71,7 @@ class ImportProgressService
 
         // Manually assign the smallest available ID to fill holes and avoid standard auto-increment behavior
         $nextId = $this->findSmallestAvailableJobId();
+        $this->resetReusedJobRuntimeState($nextId);
         $attributes['id'] = $nextId;
 
         try {
@@ -210,6 +211,7 @@ class ImportProgressService
         }
 
         $this->updateJob($jobId, ['status' => 'processing'], $progressPayload);
+        $this->pauseSnapshotQueuesSafely();
     }
 
     public function markCompleted(int $jobId, int $success, int $failed, int $totalRows, ?array $progressPayload = null): void
@@ -443,6 +445,42 @@ class ImportProgressService
         if ($this->isTerminalStatus($status)) {
             $this->clearTerminationRequest($jobId);
             $this->cleanupQueuedImportJobRows($jobId);
+            $this->resumeSnapshotQueuesSafely();
+        }
+    }
+
+    private function snapshotQueuePauseService(): SnapshotQueuePauseService
+    {
+        return app(SnapshotQueuePauseService::class);
+    }
+
+    private function pauseSnapshotQueuesSafely(): void
+    {
+        if (!(bool) config('import.snapshot.pause_during_import', true)) {
+            return;
+        }
+
+        try {
+            $this->snapshotQueuePauseService()->pauseWhileImportActive();
+        } catch (\Throwable $e) {
+            Log::debug('Skip snapshot queue pause because service is unavailable.', [
+                'message' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function resumeSnapshotQueuesSafely(): void
+    {
+        if (!(bool) config('import.snapshot.pause_during_import', true)) {
+            return;
+        }
+
+        try {
+            $this->snapshotQueuePauseService()->resumeWhenNoActiveImports();
+        } catch (\Throwable $e) {
+            Log::debug('Skip snapshot queue resume because service is unavailable.', [
+                'message' => $e->getMessage(),
+            ]);
         }
     }
 
@@ -1055,6 +1093,33 @@ class ImportProgressService
         Cache::forget($this->stateKey($jobId));
         Cache::forget($this->heartbeatKey($jobId));
         $this->clearTerminationRequest($jobId);
+        $this->cleanupQueuedImportJobRows($jobId);
+    }
+
+    private function resetReusedJobRuntimeState(int $jobId): void
+    {
+        if ($jobId <= 0) {
+            return;
+        }
+
+        Cache::forget($this->cacheKey($jobId));
+        Cache::forget($this->stateKey($jobId));
+        Cache::forget($this->heartbeatKey($jobId));
+        Cache::forget($this->terminationKey($jobId));
+        Cache::forget('import_excel_dispatched_job_' . $jobId);
+
+        try {
+            Cache::lock('import_excel_execute_job_' . $jobId, 1)->forceRelease();
+        } catch (\Throwable) {
+            // Ignore lock reset failures; runtime flow can still self-heal on next dispatch.
+        }
+
+        try {
+            Cache::lock('import_excel_dispatch_job_' . $jobId, 1)->forceRelease();
+        } catch (\Throwable) {
+            // Ignore lock reset failures; runtime flow can still self-heal on next dispatch.
+        }
+
         $this->cleanupQueuedImportJobRows($jobId);
     }
 

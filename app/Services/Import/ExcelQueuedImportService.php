@@ -27,6 +27,9 @@ class ExcelQueuedImportService
         $headerIndex = (int) ($params['header_index'] ?? 0);
         $tableName = (string) ($params['table_name'] ?? 'daily_loan_dinamis');
         $activeFilters = (array) ($params['active_filters'] ?? []);
+        if ($this->filtersDisabledForTable($tableName)) {
+            $activeFilters = [];
+        }
         $strategy = ($callbacks['resolve_import_strategy'])($tableName);
         $relativePath = (string) ($params['file_path'] ?? '');
         $stagedCsvPath = (string) ($params['staged_csv_path'] ?? '');
@@ -221,10 +224,15 @@ class ExcelQueuedImportService
                     'table_name' => $tableName,
                     'path' => $workingPath,
                 ]);
+                if ($this->filtersDisabledForTable($tableName)) {
+                    $mode = 'bulk_csv_direct';
+                }
 
                 $send('progress', [
                     'percent' => 12,
-                    'message' => 'Mode strict aktif: filter CSV -> LOAD DATA LOCAL INFILE...',
+                    'message' => $mode === 'bulk_csv_direct'
+                        ? 'Mode fast import aktif: direct LOAD DATA LOCAL INFILE...'
+                        : 'Mode strict aktif: filter CSV -> LOAD DATA LOCAL INFILE...',
                     'rows_done' => 0,
                     'total' => $totalDataRows,
                     'speed' => 0,
@@ -663,5 +671,12 @@ class ExcelQueuedImportService
 
             return $fail('Fatal Error: ' . $e->getMessage() . ' (line ' . $e->getLine() . ')');
         }
+    }
+
+    private function filtersDisabledForTable(string $tableName): bool
+    {
+        $resolvedTable = strtolower(trim($tableName));
+
+        return in_array($resolvedTable, ['daily_loan_dinamis', 'simpanan_multipn'], true);
     }
 }

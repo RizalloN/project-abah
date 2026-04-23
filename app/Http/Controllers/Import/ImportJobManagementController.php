@@ -9,6 +9,7 @@ use App\Support\ManagedReportSnapshotRebuildCoordinator;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 
 class ImportJobManagementController extends Controller
@@ -201,12 +202,59 @@ class ImportJobManagementController extends Controller
         }
 
         $progressService->cleanupQueuedImportJobRowsForJob($jobId);
-        $executionService->run($jobId);
+        if (!$this->launchImportInBackground($jobId)) {
+            $executionService->run($jobId);
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Force start dijalankan. Job import diproses langsung karena background runner tidak tersedia.',
+            ]);
+        }
 
         return response()->json([
             'status' => 'success',
-            'message' => 'Force start dijalankan. Job import diproses langsung tanpa menunggu worker queue.',
+            'message' => 'Force start dijalankan. Job import diproses di background tanpa menunggu worker queue.',
         ]);
+    }
+
+    protected function launchImportInBackground(int $jobId): bool
+    {
+        if ($jobId <= 0) {
+            return false;
+        }
+
+        try {
+            $phpBinary = PHP_BINARY ?: 'php';
+            $artisanPath = base_path('artisan');
+            $projectRoot = base_path();
+            $command = escapeshellarg($phpBinary)
+                . ' '
+                . escapeshellarg($artisanPath)
+                . ' import:run-job '
+                . $jobId;
+
+            if (DIRECTORY_SEPARATOR === '\\') {
+                $backgroundCommand = 'start /B cmd /C "cd /D '
+                    . escapeshellarg($projectRoot)
+                    . ' && '
+                    . $command
+                    . '"';
+                @pclose(@popen($backgroundCommand, 'r'));
+
+                return true;
+            }
+
+            exec('cd ' . escapeshellarg($projectRoot) . ' && ' . $command . ' > /dev/null 2>&1 &');
+
+            return true;
+        } catch (\Throwable $e) {
+            Log::warning('ImportJobManagementController: gagal menjalankan import background.', [
+                'job_id' => $jobId,
+                'message' => $e->getMessage(),
+            ]);
+
+            return false;
+        }
     }
 
     public function forceStartSnapshot(string $rebuildId)

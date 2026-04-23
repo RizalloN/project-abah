@@ -11,6 +11,15 @@ return [
 
     'snapshot' => [
         'defer_seconds' => env('IMPORT_SNAPSHOT_DEFER_SECONDS', 60),
+        'pause_during_import' => env('IMPORT_SNAPSHOT_PAUSE_DURING_IMPORT', true),
+        'pause_queues' => array_values(array_filter(array_map(
+            static fn ($value): string => trim((string) $value),
+            explode(',', (string) env('IMPORT_SNAPSHOT_PAUSE_QUEUES', (string) env('REPORT_QUEUE', 'default')))
+        ), static fn (string $value): bool => $value !== '')),
+        'pause_excluded_queues' => array_values(array_filter(array_map(
+            static fn ($value): string => trim((string) $value),
+            explode(',', (string) env('IMPORT_SNAPSHOT_PAUSE_EXCLUDED_QUEUES', 'imports-high'))
+        ), static fn (string $value): bool => $value !== '')),
     ],
 
     'direct_load' => [
