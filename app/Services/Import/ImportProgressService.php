@@ -746,6 +746,21 @@ class ImportProgressService
         }
 
         $status = strtolower((string) ($job->status ?? ''));
+        if (!in_array($status, ['queued', 'processing'], true)) {
+            return $job;
+        }
+
+        $success = (int) ($job->total_success ?? 0);
+        $failed = (int) ($job->total_failed ?? 0);
+        $totalRows = max(0, (int) ($job->total_files ?? 0));
+        $resolvedTerminalStatus = $this->resolveTerminalStatusFromTotals($success, $failed, $totalRows);
+
+        if ($status === 'processing' && $resolvedTerminalStatus !== null) {
+            $this->finalizeProcessingJobFromTotals($jobId, $resolvedTerminalStatus, $success, $failed, $totalRows);
+
+            return $this->findJob($jobId);
+        }
+
         $sourcePath = $this->resolveJobSourcePath($job);
         $sourceExists = $sourcePath !== null && is_file($sourcePath);
 
@@ -753,16 +768,12 @@ class ImportProgressService
             $this->markFailed(
                 $jobId,
                 $this->resolveMissingSourceMessage($job),
-                (int) ($job->total_success ?? 0),
-                (int) ($job->total_failed ?? 0),
+                $success,
+                $failed,
                 'failed'
             );
 
             return $this->findJob($jobId);
-        }
-
-        if (!in_array($status, ['queued', 'processing'], true)) {
-            return $job;
         }
 
         $updatedAt = $job->updated_at ?? null;
@@ -810,9 +821,6 @@ class ImportProgressService
             return $this->findJob($jobId);
         }
 
-        $success = (int) ($job->total_success ?? 0);
-        $failed = (int) ($job->total_failed ?? 0);
-
         if ($queuedAt->lt(now()->subHours(self::STALE_PROCESSING_HOURS))) {
             $this->markFailed(
                 $jobId,
@@ -826,6 +834,65 @@ class ImportProgressService
         }
 
         return $job;
+    }
+
+    private function resolveTerminalStatusFromTotals(int $success, int $failed, int $totalRows): ?string
+    {
+        if ($totalRows <= 0) {
+            return null;
+        }
+
+        if (($success + $failed) < $totalRows) {
+            return null;
+        }
+
+        if ($failed > 0) {
+            return $success > 0 ? 'failed_partial' : 'failed';
+        }
+
+        return 'completed';
+    }
+
+    private function finalizeProcessingJobFromTotals(
+        int $jobId,
+        string $status,
+        int $success,
+        int $failed,
+        int $totalRows
+    ): void {
+        $terminalStatus = in_array($status, ['failed', 'failed_partial'], true)
+            ? $status
+            : 'completed';
+
+        if ($terminalStatus === 'completed') {
+            $this->markCompleted(
+                $jobId,
+                $success,
+                $failed,
+                $totalRows,
+                [
+                    'status' => 'completed',
+                    'message' => 'Import selesai diproses.',
+                    'total_success' => $success,
+                    'total_failed' => $failed,
+                    'total_rows' => $totalRows,
+                    'processed_rows' => $success + $failed,
+                    'percent' => 100,
+                ]
+            );
+
+            return;
+        }
+
+        $this->markFailed(
+            $jobId,
+            $failed > 0 && $success > 0
+                ? 'Import selesai dengan kegagalan parsial.'
+                : 'Import gagal diproses.',
+            $success,
+            $failed,
+            $terminalStatus
+        );
     }
 
     private function findActiveQueueRowForJob(int $jobId): ?object

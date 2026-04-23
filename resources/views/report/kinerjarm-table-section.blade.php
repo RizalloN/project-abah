@@ -7,7 +7,7 @@
     $grandTotalLabel = $grandTotalLabel ?? null;
     $emptyMessage = $emptyMessage ?? 'Silakan pilih parameter filter yang berbeda.';
     $tableClass = 'kinerja-konsumer-table' . ($compact ? ' kinerja-konsumer-table--compact' : '');
-    $emptyColspan = $showTargets ? 14 : 10;
+    $emptyColspan = $showTargets ? 15 : 11;
     $segmentLabels = [
         'CONSUMER' => 'RM',
         'SMALL' => 'SMALL RM',
@@ -44,6 +44,7 @@
                     <th rowspan="2" style="width: 120px;">Kantor Cabang</th>
                     <th rowspan="2" style="width: 160px;">Nama RM / Pengelola</th>
                     <th rowspan="2" style="width: 110px;">Produk</th>
+                    <th rowspan="2" style="width: 70px;">Kuadran</th>
                     <th colspan="3" class="sub-head">PERFORMANCE PER RM</th>
                     <th colspan="3" class="accent-head">DELTA PERIODE PER {{ $selectedPeriodShortLabel }}</th>
                     @if($showTargets)
@@ -75,7 +76,7 @@
                     <tr class="loan-branch-subtotal">
                         <td rowspan="{{ $branch['branch_rowspan'] }}" class="text-center-important" style="font-weight: 800; border-right: 1px solid var(--loan-border-strong); background: #ffffff !important; color: var(--loan-blue-ink) !important;">{{ $no++ }}</td>
                         <td rowspan="{{ $branch['branch_rowspan'] }}" class="merged-branch-cell">{{ $branch['cabang'] }}</td>
-                        <td colspan="2" class="text-center-important" style="font-size: 0.7rem; letter-spacing: 0.08em; font-weight: 900; color: var(--loan-cyan);">
+                        <td colspan="3" class="text-center-important" style="font-size: 0.7rem; letter-spacing: 0.08em; font-weight: 900; color: var(--loan-cyan);">
                             <i class="fas fa-layer-group me-1" style="opacity: 0.8;"></i> TOTAL {{ $branch['cabang'] }}
                         </td>
                         <td>{{ $fmt($branch['subtotal']['ytd']) }}</td>
@@ -98,6 +99,7 @@
                                 $rmName = '00385844 - Glagah Mahestya Yahya';
                             }
                             $isFirstRmRow = true;
+                            $isFirstRmRowForQuad = true;
                         @endphp
                         @foreach($rmData['items'] as $item)
                             <tr>
@@ -109,6 +111,16 @@
                                 <td class="text-start-important" style="font-size: 0.7rem; font-weight: 700; color: var(--loan-muted); padding-left: 0.75rem;">
                                     {{ $item['product'] }}
                                 </td>
+                                @if($isFirstRmRowForQuad)
+                                    <td rowspan="{{ $rmData['rm_rowspan'] }}" class="text-center-important">
+                                        @if($rmData['quadrant'])
+                                            <span class="quadrant-badge q{{ $rmData['quadrant'] }}">Q{{ $rmData['quadrant'] }}</span>
+                                        @else
+                                            <span class="text-muted small">-</span>
+                                        @endif
+                                    </td>
+                                    @php $isFirstRmRowForQuad = false; @endphp
+                                @endif
                                 <td>{{ $fmt($item['ytd']) }}</td>
                                 <td>{{ $fmt($item['mtd']) }}</td>
                                 <td class="highlight-curr">{{ $fmt($item['curr']) }}</td>
@@ -136,7 +148,7 @@
 
                 @if(!empty($rows))
                     <tr class="row-grand-total">
-                        <td colspan="4" class="text-center-important" style="letter-spacing: 2px;">
+                        <td colspan="5" class="text-center-important" style="letter-spacing: 2px;">
                             <i class="fas fa-chart-line me-2"></i> {{ $grandTotalLabel }}
                         </td>
                         <td>{{ $fmt($total['ytd']) }}</td>

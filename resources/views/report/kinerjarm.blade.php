@@ -637,6 +637,23 @@
     .pct-mid { background: #fef3c7; color: #b45309; border: 1px solid #fde68a; }
     .pct-bad { background: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; }
 
+    .quadrant-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        font-weight: 900;
+        font-size: 0.75rem;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        border: 1.5px solid transparent;
+    }
+    .quadrant-badge.q1 { background: #dcfce7; color: #15803d; border-color: #10b981; }
+    .quadrant-badge.q2 { background: #e0f2fe; color: #0369a1; border-color: #0ea5e9; }
+    .quadrant-badge.q3 { background: #fff7ed; color: #c2410c; border-color: #f97316; }
+    .quadrant-badge.q4 { background: #fef2f2; color: #b91c1c; border-color: #ef4444; }
+
     .delta-indicator {
         display: inline-flex;
         align-items: center;
@@ -795,14 +812,14 @@
                 <div class="kinerja-konsumer-title-wrap">
                     <div class="kinerja-konsumer-title-badge">
                         <i class="fas fa-university"></i>
-                        <span>BRI Consumer Performance</span>
+                        <span>BRI RM Performance</span>
                     </div>
-                    <h1 class="kinerja-konsumer-title">KINERJA KONSUMER</h1>
+                    <h1 class="kinerja-konsumer-title">KINERJA RM</h1>
                     <p class="kinerja-konsumer-subtitle">{{ $title }}</p>
                 </div>
             </div>
             
-            <form id="kinerjaFilterForm" method="GET" action="{{ route('report.dashboard-pinjaman.kinerja-konsumer') }}" class="kinerja-konsumer-filters">
+            <form id="kinerjaFilterForm" method="GET" action="{{ route('report.dashboard-pinjaman.kinerjarm') }}" class="kinerja-konsumer-filters">
                 <div class="kinerja-filter-group">                    <label for="kinerjaSegmen" class="kinerja-filter-label">Pilih Segmen RM</label>
                     <select id="kinerjaSegmen" name="segmen" class="kinerja-filter-control" required onchange="this.form.submit();">
                         @foreach($availableSegmens as $segmen)
@@ -825,8 +842,8 @@
 
                 <div class="kinerja-filter-group">
                     <label for="kinerjaCabang" class="kinerja-filter-label">Filter Unit Kerja</label>
-                    <select id="kinerjaCabang" name="cabang1" class="kinerja-filter-control">
-                        <option value="" @selected($selectedCabang === null)>SEMUA CABANG</option>
+                    <select id="kinerjaCabang" name="cabang1" class="kinerja-filter-control" @if($selectedSegmen === 'MICRO') required @endif>
+                        <option value="" @selected($selectedCabang === null) @if($selectedSegmen === 'MICRO') disabled style="display:none;" @endif>SEMUA CABANG</option>
                         @foreach($availableCabangs as $cabang)
                             <option value="{{ $cabang }}" @selected($selectedCabang === $cabang)>{{ $cabang }}</option>
                         @endforeach
@@ -855,11 +872,11 @@
             <div class="kinerja-loading-overlay">
                 <div class="premium-loader">
                     <div class="premium-loader-spinner"></div>
-                    <div class="premium-loader-text">Mengolah Data Konsumer...</div>
+                    <div class="premium-loader-text">Mengolah Data RM...</div>
                 </div>
             </div>
             <div id="kinerjaAjaxContainer">
-                @include('report.kinerja-konsumer-table')
+                @include('report.kinerjarm-table')
             </div>
         </div>
     </div>

@@ -129,14 +129,14 @@ class ImportJobManagementController extends Controller
             ];
         })->values();
 
-        $summarySource = DB::table('import_jobs');
-        $todayStart = now()->startOfDay();
         $snapshotJobs = $this->resolveSnapshotJobs();
         $managedDeleteJobs = $this->importIndexController->resolveManagedReportDeleteJobs();
         $rawQueueJobs = $this->resolveRawQueueJobs(
             collect($managedDeleteJobs)->pluck('id')->filter()->map(fn ($id): string => (string) $id)->all(),
             collect($snapshotJobs)->pluck('id')->filter()->map(fn ($id): string => (string) $id)->all()
         );
+        $summarySource = DB::table('import_jobs');
+        $todayStart = now()->startOfDay();
 
         return response()->json([
             'status' => 'success',

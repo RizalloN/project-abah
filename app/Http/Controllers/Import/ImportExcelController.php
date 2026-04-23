@@ -6890,8 +6890,8 @@ class ImportExcelController extends Controller
             }
 
             $send('progress', [
-                'status' => 'processing',
-                'phase' => 'loading',
+                'status' => $status,
+                'phase' => $status === 'completed' ? 'completed' : 'failed',
                 'percent' => 100,
                 'message' => $isDailyLoanTable
                     ? 'Direct LOAD DATA Daily Loan selesai diproses.'

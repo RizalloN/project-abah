@@ -57,7 +57,7 @@
 
             <div class="kinerja-tabs-body">
                 <section id="kinerja-panel-os" class="kinerja-tab-panel is-active" data-kinerja-panel="os" role="tabpanel" aria-labelledby="kinerja-tab-os">
-                    @include('report.kinerja-konsumer-table-section', [
+                    @include('report.kinerjarm-table-section', [
                         'sectionTitle' => 'Performance OS Per RM',
                         'sectionSubtitle' => 'Performance RM per branch dan produk.',
                         'sectionMeta' => 'Satuan Akuntansi: Rp, Juta',
@@ -83,7 +83,7 @@
                     </div>
 
                     <div class="kinerja-quality-stack">
-                        @include('report.kinerja-konsumer-table-section', [
+                        @include('report.kinerjarm-table-section', [
                             'sectionTitle' => 'SML',
                             'sectionSubtitle' => 'Filter kualitas: kol_adk1 = 2.',
                             'sectionMeta' => 'Filter: kol_adk1 = 2',
@@ -95,7 +95,7 @@
                             'emptyMessage' => 'Tidak ada data SML untuk kombinasi filter ini.',
                         ])
 
-                        @include('report.kinerja-konsumer-table-section', [
+                        @include('report.kinerjarm-table-section', [
                             'sectionTitle' => 'NPL',
                             'sectionSubtitle' => 'Filter kualitas: kol_adk1 > 2.',
                             'sectionMeta' => 'Filter: kol_adk1 > 2',

@@ -380,4 +380,99 @@ class ImportProgressServiceTest extends TestCase
         }
     }
 
+    public function test_get_status_payload_reconciles_finished_processing_jobs_to_completed_state(): void
+    {
+        $progressService = Mockery::mock(ImportProgressService::class)->makePartial();
+        $sampleFile = storage_path('app/private/excel_imports/finished-job.csv');
+
+        if (!is_dir(dirname($sampleFile))) {
+            @mkdir(dirname($sampleFile), 0777, true);
+        }
+        file_put_contents($sampleFile, 'payload');
+
+        $initialJob = (object) [
+            'id' => 77,
+            'id_report' => 8,
+            'file_name' => basename($sampleFile),
+            'folder_path' => dirname($sampleFile),
+            'status' => 'processing',
+            'total_files' => 323248,
+            'total_success' => 323248,
+            'total_failed' => 0,
+            'updated_at' => now()->toDateTimeString(),
+        ];
+
+        $updatedJob = (object) [
+            'id' => 77,
+            'id_report' => 8,
+            'file_name' => basename($sampleFile),
+            'folder_path' => dirname($sampleFile),
+            'status' => 'completed',
+            'total_files' => 323248,
+            'total_success' => 323248,
+            'total_failed' => 0,
+            'updated_at' => now()->toDateTimeString(),
+        ];
+
+        try {
+            Cache::shouldReceive('get')->zeroOrMoreTimes()->andReturn([]);
+            Cache::shouldReceive('put')->zeroOrMoreTimes()->andReturnTrue();
+            Cache::shouldReceive('forget')->zeroOrMoreTimes()->andReturnTrue();
+
+            $importJobsTable = Mockery::mock();
+            $importJobsTable->shouldReceive('where')
+                ->times(3)
+                ->with('id', 77)
+                ->andReturnSelf();
+            $importJobsTable->shouldReceive('first')
+                ->twice()
+                ->andReturn($initialJob, $updatedJob);
+            $importJobsTable->shouldReceive('update')
+                ->once()
+                ->with(Mockery::on(static function (array $attributes): bool {
+                    return ($attributes['status'] ?? null) === 'completed'
+                        && (int) ($attributes['total_success'] ?? -1) === 323248
+                        && (int) ($attributes['total_failed'] ?? -1) === 0;
+                }))
+                ->andReturn(1);
+
+            $jobsTable = Mockery::mock();
+            $jobsTable->shouldReceive('where')
+                ->withArgs(static function (string $column, string $operator, string $value): bool {
+                    return $column === 'payload'
+                        && $operator === 'like'
+                        && str_contains($value, 'RunImportJob');
+                })
+                ->andReturnSelf();
+            $jobsTable->shouldReceive('where')
+                ->withArgs(static function (string $column, string $operator, string $value): bool {
+                    return $column === 'payload'
+                        && $operator === 'like'
+                        && str_contains($value, 'jobId";i:77;');
+                })
+                ->andReturnSelf();
+            $jobsTable->shouldReceive('delete')->once()->andReturn(1);
+
+            DB::shouldReceive('table')
+                ->with('import_jobs')
+                ->andReturn($importJobsTable, $importJobsTable, $importJobsTable);
+            DB::shouldReceive('table')
+                ->with('jobs')
+                ->andReturn($jobsTable);
+
+            $payload = $progressService->getStatusPayload(77);
+
+            $this->assertSame('completed', $payload['status']);
+            $this->assertSame(323248, $payload['total_success']);
+            $this->assertSame(0, $payload['total_failed']);
+            $this->assertSame(323248, $payload['processed_rows']);
+            $this->assertSame(100, $payload['percent']);
+            $this->assertNotSame('Import gagal diproses.', $payload['message']);
+        } finally {
+            if (is_file($sampleFile)) {
+                @unlink($sampleFile);
+            }
+        }
+    }
+
 }

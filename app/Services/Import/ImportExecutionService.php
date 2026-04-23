@@ -152,12 +152,13 @@ class ImportExecutionService
 
                 if ($this->shouldRunInlineFallback($payload, $startedAt, $inlineFallbackAttempted)) {
                     $inlineFallbackAttempted = true;
+                    $inlineFallbackMessage = $this->resolveInlineFallbackMessage($jobId, $payload);
                     $send('progress', [
                         'status' => 'processing',
                         'phase' => (string) ($payload['phase'] ?? 'polars'),
                         'mode' => (string) ($payload['mode'] ?? 'polars'),
                         'percent' => max(6, (int) ($payload['percent'] ?? 5)),
-                        'message' => 'Worker queue belum mengambil job. Import dijalankan langsung dari request ini.',
+                        'message' => $inlineFallbackMessage,
                         'processed_rows' => (int) ($payload['processed_rows'] ?? 0),
                         'total_rows' => (int) ($payload['total_rows'] ?? 0),
                         'total_success' => (int) ($payload['total_success'] ?? 0),
@@ -499,6 +500,24 @@ class ImportExecutionService
     private function inlineFallbackGraceSeconds(): int
     {
         return max(0, (int) config('import.queue.inline_fallback_grace_seconds', 0));
+    }
+
+    private function resolveInlineFallbackMessage(int $jobId, array $payload): string
+    {
+        $state = $jobId > 0 ? $this->progressService->getJobState($jobId) : [];
+        $tableName = strtolower(trim((string) ($state['params']['table_name'] ?? '')));
+        $phase = strtolower(trim((string) ($payload['phase'] ?? '')));
+
+        if ($tableName === 'daily_loan_dinamis' && in_array($phase, ['polars', 'staging', 'preparing_load_plan', 'loading'], true)) {
+            return 'Menyiapkan sanitasi CSV Daily Loan...';
+        }
+
+        $message = trim((string) ($payload['message'] ?? ''));
+        if ($message !== '') {
+            return $message;
+        }
+
+        return 'Worker queue belum mengambil job. Import dijalankan langsung dari request ini.';
     }
 
     private function dispatchedKey(int $jobId): string

@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\View\View;
 
-class KinerjaKonsumerReportController extends Controller
+class KinerjaRmReportController extends Controller
 {
     private const DEFAULT_TITLE = 'Performance Per RM';
     private const SEGMENT_LABEL = 'KPR';
@@ -36,11 +36,20 @@ class KinerjaKonsumerReportController extends Controller
     {
         $availablePeriods = $this->fetchAvailablePeriods();
         $selectedSegmen = $this->resolveSelectedSegmen($request->input('segmen'));
+        
+        // LIMITATION FOR MIKRO SEGMENT
         $availableCabangs = $this->fetchAvailableCabangsBySegmen($selectedSegmen);
+        
         $selectedPeriod = $this->resolveSelectedPeriod($availablePeriods, $request->input('periode'))
             ?? $availablePeriods->first()
             ?? Carbon::now()->toDateString();
         $selectedCabang = $this->resolveSelectedCabang($availableCabangs, $request->input('cabang1'));
+        
+        // Force selection for MICRO if not selected
+        if ($selectedSegmen === 'MICRO' && $selectedCabang === null) {
+             $selectedCabang = $availableCabangs->first();
+        }
+
         $selectedProduct = $this->resolveSelectedProduct($request->input('produk'), $selectedSegmen);
 
         $currentDate = Carbon::parse($selectedPeriod);
@@ -98,10 +107,10 @@ class KinerjaKonsumerReportController extends Controller
         ];
 
         if ($request->ajax()) {
-            return view('report.kinerja-konsumer-table', $viewData);
+            return view('report.kinerjarm-table', $viewData);
         }
 
-        return view('report.kinerja-konsumer', $viewData);
+        return view('report.kinerjarm', $viewData);
     }
 
     private function fetchAvailablePeriods(): Collection
@@ -221,7 +230,7 @@ class KinerjaKonsumerReportController extends Controller
         ?string $qualityType = null
     ): array
     {
-        $cacheKey = 'kinerja_rm_rows:v1:' . md5(json_encode([
+        $cacheKey = 'kinerja_rm_rows:v3:' . md5(json_encode([
             'segmen' => $segmen,
             'selected' => $selectedPeriod,
             'prev_day' => $previousDayPeriod,
@@ -282,6 +291,70 @@ class KinerjaKonsumerReportController extends Controller
             ELSE 'other'
         END";
 
+        // Pre-calculate LDR and Quality per RM for Quadrant
+        // We need latest simpanan_multipn position
+        $latestSmpnPosisi = DB::table('simpanan_multipn')->max('posisi');
+        
+        $rmStats = [];
+        if ($qualityType === null) {
+            // Subquery to get unique CIFs and their total loan per RM
+            $cifLoans = DB::table('daily_loan_dinamis')
+                ->selectRaw("UPPER(TRIM({$rmColumn})) as rm_key")
+                ->selectRaw("cifno")
+                ->selectRaw("SUM(COALESCE({$balanceColumn}, 0)) as loan_os")
+                ->selectRaw("SUM(CASE WHEN {$kolAdkColumn} = 1 THEN COALESCE({$balanceColumn}, 0) ELSE 0 END) as lancar_os")
+                ->where('periode', $selectedPeriod)
+                ->whereRaw("UPPER(TRIM(segmen_dashboard)) = ?", [$segmen])
+                ->whereNotNull('cifno')
+                ->where('cifno', '<>', '')
+                ->when($selectedProduct === null, function ($query) use ($normalizedProductExpression, $productOptions) {
+                    $query->whereIn(DB::raw($normalizedProductExpression), $productOptions);
+                })
+                ->when($selectedProduct !== null, function ($query) use ($normalizedProductExpression, $selectedProduct) {
+                    $query->whereRaw($normalizedProductExpression . ' = ?', [$selectedProduct]);
+                })
+                ->when($selectedCabang !== null, function ($query) use ($normalizedCabangExpression, $selectedCabang) {
+                    $query->whereRaw($normalizedCabangExpression . ' = ?', [$this->normalizeCabangKey($selectedCabang)]);
+                })
+                ->groupBy(DB::raw("UPPER(TRIM({$rmColumn}))"), 'cifno');
+
+            $statsData = DB::table(DB::raw("({$cifLoans->toSql()}) as t"))
+                ->mergeBindings($cifLoans)
+                ->leftJoin('simpanan_multipn as s', function($join) use ($latestSmpnPosisi) {
+                    $join->on(DB::raw("REGEXP_REPLACE(t.cifno, '[^0-9]', '')"), '=', DB::raw("REGEXP_REPLACE(s.CIFNO, '[^0-9]', '')"))
+                         ->where('s.posisi', '=', $latestSmpnPosisi);
+                })
+                ->selectRaw("t.rm_key as rm, SUM(t.loan_os) as total_loan, SUM(t.lancar_os) as lancar_loan, SUM(COALESCE(s.saldo_idr, 0)) as total_deposit")
+                ->groupBy('t.rm_key')
+                ->get();
+
+            foreach ($statsData as $stat) {
+                $rmKey = trim(strtoupper((string)$stat->rm));
+                $loan = (float)$stat->total_loan;
+                $lancar = (float)$stat->lancar_loan;
+                $deposit = (float)$stat->total_deposit;
+                
+                $ldr = $deposit > 0 ? ($loan / $deposit) * 100 : ($loan > 0 ? 999 : 0);
+                $quality = $loan > 0 ? ($lancar / $loan) * 100 : 100;
+                
+                // Quadrant Logic
+                // Quality >= 97% (NPL < 3%), LDR >= 80%
+                $isHighQuality = $quality >= 97;
+                $isHighLdr = $ldr >= 80;
+                
+                if ($isHighQuality && !$isHighLdr) $quadrant = 1;      // Q1: High Q, Low LDR (Bottom Right)
+                elseif ($isHighQuality && $isHighLdr) $quadrant = 2;   // Q2: High Q, High LDR (Top Right)
+                elseif (!$isHighQuality && $isHighLdr) $quadrant = 3;  // Q3: Low Q, High LDR (Top Left)
+                else $quadrant = 4;                                   // Q4: Low Q, Low LDR (Bottom Left)
+                
+                $rmStats[$rmKey] = [
+                    'ldr' => $ldr,
+                    'quality_pct' => $quality,
+                    'quadrant' => $quadrant
+                ];
+            }
+        }
+
         $builder = DB::table('daily_loan_dinamis')
             ->selectRaw("{$rmColumn} as rm")
             ->selectRaw("{$cabangColumn} as cabang")
@@ -330,8 +403,8 @@ class KinerjaKonsumerReportController extends Controller
 
         foreach ($dbRows as $row) {
             $cabangName = trim((string) ($row->cabang ?? ''));
-            $rmOriginal = trim((string) ($row->rm ?? ''));
-            $rmName = $this->mapRmName($rmOriginal);
+            $rmOriginal = trim(strtoupper((string) ($row->rm ?? '')));
+            $rmName = $this->mapRmName(trim((string) ($row->rm ?? '')));
             $productLabel = $this->normalizeProductLabel($row->produk_raw ?? null, $segmen);
 
             if ($rmName === '' || $productLabel === null) {
@@ -352,10 +425,12 @@ class KinerjaKonsumerReportController extends Controller
             }
 
             if (!isset($branches[$cabangKey]['rms'][$rmName])) {
+                $stats = $rmStats[$rmOriginal] ?? ['quadrant' => null, 'ldr' => 0, 'quality_pct' => 100];
                 $branches[$cabangKey]['rms'][$rmName] = [
                     'rm' => $rmName,
                     'items' => [],
                     'rm_rowspan' => 0,
+                    'quadrant' => $stats['quadrant'],
                 ];
             }
 

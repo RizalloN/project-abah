@@ -328,6 +328,27 @@
             };
         }
 
+        const previewBannerTitle = @json($previewBannerTitle ?? '');
+        const isDailyLoanPreview = /daily loan/i.test(previewBannerTitle);
+
+        function resolveLoadingCopy() {
+            if (isDailyLoanPreview) {
+                return {
+                    title: 'Import Data',
+                    description: 'Memeriksa file dan menyiapkan sanitasi CSV Daily Loan.',
+                    phase: 'Menyiapkan sanitasi CSV Daily Loan...',
+                    status: 'Menyiapkan sanitasi CSV Daily Loan...',
+                };
+            }
+
+            return {
+                title: 'Memproses Data',
+                description: 'Sistem sedang memindahkan data ke MySQL.',
+                phase: 'Fase Polars dimulai...',
+                status: 'Menyiapkan batch Polars...',
+            };
+        }
+
         const dropdownMenus = document.querySelectorAll('.dropdown-menu');
 
         dropdownMenus.forEach(menu => {
@@ -1336,12 +1357,13 @@
 
             if (!initUrl || !streamUrlBase) {
                 const formData = new FormData(form);
+                const loadingCopy = resolveLoadingCopy();
                 const loadingHtml = `
                     <div class="swal-import-shell">
                         <div class="swal-import-head">
                             <span class="swal-import-badge"><i class="fas fa-circle-notch fa-spin mr-1"></i> Sedang diproses</span>
-                            <div class="swal-import-title">Memproses Data</div>
-                            <div class="swal-import-desc">Sistem sedang memindahkan baris data ke MySQL.</div>
+                            <div class="swal-import-title">${loadingCopy.title}</div>
+                            <div class="swal-import-desc">${loadingCopy.description}</div>
                         </div>
                         <div class="swal-import-card">
                             <div class="swal-import-card__top">
@@ -1355,10 +1377,10 @@
                                 <small class="swal-import-meta__status">Mohon tunggu sebentar.</small>
                             </div>
                         </div>
-                    </div>`;
+                </div>`;
 
                 themedSwal({
-                    title: '<i class="fas fa-cloud-upload-alt mr-2 text-success"></i> Memproses Data',
+                    title: '<i class="fas fa-cloud-upload-alt mr-2 text-success"></i> ' + loadingCopy.title,
                     html: loadingHtml,
                     allowOutsideClick: false,
                     allowEscapeKey: false,
@@ -1413,13 +1435,14 @@
                 return;
             }
 
+            const loadingCopy = resolveLoadingCopy();
             const progressHtml = `
                 <div class="swal-import-shell">
                     <div class="swal-import-head">
                         <span class="swal-import-badge"><i class="fas fa-circle-notch fa-spin mr-1"></i> Sedang diproses</span>
-                        <div class="swal-import-title">Memproses Data</div>
-                        <div class="swal-import-desc">Sistem sedang memindahkan data ke MySQL.</div>
-                        <div class="swal-import-phase">Fase Polars dimulai...</div>
+                        <div class="swal-import-title">${loadingCopy.title}</div>
+                        <div class="swal-import-desc">${loadingCopy.description}</div>
+                        <div class="swal-import-phase">${loadingCopy.phase}</div>
                     </div>
                     <div class="swal-import-card">
                         <div class="swal-import-card__top">
@@ -1459,7 +1482,7 @@
             `;
 
             themedSwal({
-                title: '<i class="fas fa-cloud-upload-alt mr-2 text-success"></i> Memproses Data',
+                title: '<i class="fas fa-cloud-upload-alt mr-2 text-success"></i> ' + loadingCopy.title,
                 html: progressHtml,
                 allowOutsideClick: false,
                 allowEscapeKey: false,
@@ -1468,7 +1491,7 @@
             });
 
             startImportProgressTicker();
-            setImportProgress(5, 'Fase Polars dimulai...', 0, 0, 0, '');
+            setImportProgress(5, loadingCopy.status, 0, 0, 0, isDailyLoanPreview ? 'record' : '');
 
             try {
                 const initFormData = new FormData(form);
@@ -1508,7 +1531,16 @@
                     return;
                 }
 
-                setImportProgress(12, 'Fase Polars siap. Membuka koneksi progress...', 0, initResult.total_rows || 0, 0, '');
+                setImportProgress(
+                    12,
+                    isDailyLoanPreview
+                        ? 'Menyiapkan sanitasi CSV Daily Loan... (' + Number(initResult.total_rows || 0).toLocaleString('id-ID') + ' record)'
+                        : 'Fase Polars siap. Membuka koneksi progress...',
+                    0,
+                    initResult.total_rows || 0,
+                    0,
+                    isDailyLoanPreview ? 'record' : ''
+                );
 
                 const streamUrl = streamUrlBase + '?job_id=' + encodeURIComponent(initResult.job_id);
                 const statusUrlTemplate = @json(route('import.jobs.status', ['jobId' => '__JOB_ID__']));
@@ -1649,6 +1681,14 @@
                     return true;
                 };
 
+                const shouldForceStartQueuedJob = function (statusPayload) {
+                    if (!statusPayload || String(statusPayload.status || '') !== 'queued') {
+                        return false;
+                    }
+
+                    return Boolean(statusPayload.is_stale_queue);
+                };
+
                 const pollImportStatus = async function (jobId) {
                     for (;;) {
                         let payload = null;
@@ -1748,39 +1788,61 @@
 
                         if (status === 'queued' || status === 'processing') {
                             reconnectAttempts += 1;
-                            if (reconnectAttempts <= 10) {
-                                if (status === 'queued' && reconnectAttempts >= 2 && !forceStartTriggered) {
-                                    try {
+                            if (shouldForceStartQueuedJob(statusPayload) && !forceStartTriggered) {
+                                try {
+                                    setImportProgress(
+                                        Math.max(importProgressSnapshot.percent || 12, 12),
+                                        'Koneksi stream gagal dibuka. Menjalankan force start import...',
+                                        importProgressSnapshot.rowsDone || 0,
+                                        importProgressSnapshot.totalRows || 0,
+                                        importProgressSnapshot.speed || 0,
+                                        importProgressSnapshot.speedLabel || ''
+                                    );
+
+                                    await triggerForceStart(initResult.job_id);
+                                    await pollImportStatus(initResult.job_id);
+                                    return;
+                                } catch (forceStartError) {
+                                    const refreshedStatus = await inspectJobStatus(initResult.job_id).catch(function () {
+                                        return null;
+                                    });
+                                    const refreshedState = String(refreshedStatus && refreshedStatus.status ? refreshedStatus.status : '');
+
+                                    if (refreshedState === 'completed') {
+                                        showImportComplete(refreshedStatus || {});
+                                        return;
+                                    }
+
+                                    if (refreshedState === 'queued' || refreshedState === 'processing') {
+                                        reconnectAttempts = 0;
                                         setImportProgress(
                                             Math.max(importProgressSnapshot.percent || 12, 12),
-                                            'Koneksi stream gagal dibuka. Menjalankan force start import...',
+                                            (refreshedStatus && refreshedStatus.message) || 'Import sedang diproses di backend. Menyambung ulang progress...',
                                             importProgressSnapshot.rowsDone || 0,
                                             importProgressSnapshot.totalRows || 0,
                                             importProgressSnapshot.speed || 0,
                                             importProgressSnapshot.speedLabel || ''
                                         );
-
-                                        await triggerForceStart(initResult.job_id);
-                                        await pollImportStatus(initResult.job_id);
-                                        return;
-                                    } catch (forceStartError) {
-                                        showImportError((forceStartError && forceStartError.message) || 'Gagal menjalankan force start import.');
+                                        setTimeout(connectSSE, 1000);
                                         return;
                                     }
+
+                                    showImportError((forceStartError && forceStartError.message) || 'Gagal menjalankan force start import.');
+                                    return;
                                 }
-
-                                setImportProgress(
-                                    Math.max(importProgressSnapshot.percent || 12, 12),
-                                    (statusPayload && statusPayload.message) || 'Import sedang diproses. Menyambung ulang progress...',
-                                    importProgressSnapshot.rowsDone || 0,
-                                    importProgressSnapshot.totalRows || 0,
-                                    importProgressSnapshot.speed || 0,
-                                    importProgressSnapshot.speedLabel || ''
-                                );
-
-                                setTimeout(connectSSE, 1000 * Math.min(reconnectAttempts, 5));
-                                return;
                             }
+
+                            setImportProgress(
+                                Math.max(importProgressSnapshot.percent || 12, 12),
+                                (statusPayload && statusPayload.message) || 'Import sedang diproses. Menyambung ulang progress...',
+                                importProgressSnapshot.rowsDone || 0,
+                                importProgressSnapshot.totalRows || 0,
+                                importProgressSnapshot.speed || 0,
+                                importProgressSnapshot.speedLabel || ''
+                            );
+
+                            setTimeout(connectSSE, 1000 * Math.min(reconnectAttempts, 5));
+                            return;
                         }
 
                         if (status === 'failed' || status === 'failed_partial' || status === 'error') {

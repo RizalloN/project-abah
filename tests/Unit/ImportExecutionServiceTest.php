@@ -274,6 +274,33 @@ class ImportExecutionServiceTest extends TestCase
         $response->sendContent();
     }
 
+    public function test_stream_status_uses_daily_loan_specific_inline_fallback_message(): void
+    {
+        $progressService = Mockery::mock(ImportProgressService::class);
+        $progressService->shouldReceive('getJobState')
+            ->once()
+            ->with(101)
+            ->andReturn([
+                'params' => [
+                    'table_name' => 'daily_loan_dinamis',
+                ],
+            ]);
+        $service = new ImportExecutionService($progressService);
+        $method = new \ReflectionMethod($service, 'resolveInlineFallbackMessage');
+        $method->setAccessible(true);
+
+        $message = $method->invoke(
+            $service,
+            101,
+            [
+                'phase' => 'polars',
+                'message' => 'Fase Polars dimulai. Menyiapkan import fresh.',
+            ]
+        );
+
+        $this->assertSame('Menyiapkan sanitasi CSV Daily Loan...', $message);
+    }
+
     public function test_inline_fallback_grace_seconds_uses_import_config_and_defaults_to_zero(): void
     {
         $progressService = Mockery::mock(ImportProgressService::class);

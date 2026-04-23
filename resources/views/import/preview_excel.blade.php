@@ -206,6 +206,27 @@ document.addEventListener('DOMContentLoaded', function () {
         };
     }
 
+    const previewBannerTitle = @json($previewBannerTitle ?? '');
+    const isDailyLoanPreview = /daily loan/i.test(previewBannerTitle);
+
+    function resolveLoadingCopy() {
+        if (isDailyLoanPreview) {
+            return {
+                title: 'Import Data',
+                description: 'Memeriksa file dan menyiapkan sanitasi CSV Daily Loan.',
+                phase: 'Menyiapkan sanitasi CSV Daily Loan...',
+                status: 'Menyiapkan sanitasi CSV Daily Loan...',
+            };
+        }
+
+        return {
+            title: 'Memproses Data',
+            description: 'Sistem sedang memindahkan data ke MySQL.',
+            phase: 'Fase Polars dimulai...',
+            status: 'Menyiapkan batch Polars...',
+        };
+    }
+
     /* =========================================================
        DROPDOWN: klik di dalam menu tidak menutup dropdown
     ========================================================= */
@@ -983,12 +1004,13 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         // ── Modal loading ───────────────────────────────────────────────────
+        var loadingCopy = resolveLoadingCopy();
         var swalHtml = `
             <div class="swal-import-shell">
                 <div class="swal-import-head">
                     <span class="swal-import-badge"><i class="fas fa-circle-notch fa-spin mr-1"></i> Sedang diproses</span>
-                    <div class="swal-import-title">Import Excel</div>
-                    <div class="swal-import-desc">Memeriksa file dan menyiapkan data ke database.</div>
+                    <div class="swal-import-title">${loadingCopy.title}</div>
+                    <div class="swal-import-desc">${loadingCopy.description}</div>
                 </div>
                 <div class="swal-import-card">
                     <div class="swal-import-card__top">
@@ -1017,7 +1039,7 @@ document.addEventListener('DOMContentLoaded', function () {
             </div>`;
 
         themedSwal({
-            title: '<i class="fas fa-cloud-upload-alt text-success mr-1"></i> Import Data',
+            title: '<i class="fas fa-cloud-upload-alt text-success mr-1"></i> ' + loadingCopy.title,
             html: swalHtml,
             allowOutsideClick: false,
             allowEscapeKey: false,
@@ -1067,7 +1089,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         // ── STEP 1: Inisialisasi (POST) ─────────────────────────────────────
         activateStep('step-init', null);
-        setProgress(5, 'Fase Polars dimulai...', 0, 0, 0);
+        setProgress(5, loadingCopy.status, 0, 0, 0);
 
         var jobId;
         try {
@@ -1100,7 +1122,15 @@ document.addEventListener('DOMContentLoaded', function () {
 
             jobId = resInit.job_id;
             activateStep('step-init', 'line-1');
-            setProgress(12, 'Fase Polars siap. Membuka koneksi stream...', 0, 0, 0);
+            setProgress(
+                12,
+                isDailyLoanPreview
+                    ? 'Menyiapkan sanitasi CSV Daily Loan... (' + Number(resInit.total_rows || 0).toLocaleString('id-ID') + ' record)'
+                    : 'Fase Polars siap. Membuka koneksi stream...',
+                0,
+                resInit.total_rows || 0,
+                0
+            );
 
         } catch (err) {
             var errorHtml = String((err && err.message) || '');
@@ -1286,6 +1316,14 @@ document.addEventListener('DOMContentLoaded', function () {
             return true;
         }
 
+        function shouldForceStartQueuedJob(statusPayload) {
+            if (!statusPayload || String(statusPayload.status || '') !== 'queued') {
+                return false;
+            }
+
+            return Boolean(statusPayload.is_stale_queue);
+        }
+
         async function pollImportStatus(jobId) {
             for (;;) {
                 var payload = null;
@@ -1433,43 +1471,64 @@ document.addEventListener('DOMContentLoaded', function () {
                     return;
                 }
 
-                if (status === 'queued' || status === 'processing') {
-                    reconnectAttempts += 1;
-                    if (reconnectAttempts <= 10) {
-                        if (status === 'queued' && reconnectAttempts >= 2 && !forceStartTriggered) {
-                            try {
-                                setProgress(
-                                    Math.max(lastProg.percent || 12, 12),
-                                    'Koneksi stream gagal dibuka. Menjalankan force start import...',
-                                    lastProg.rows_done || 0,
-                                    lastProg.total || 0,
-                                    lastProg.speed || 0
-                                );
-                                await triggerForceStart(jobId);
-                                await pollImportStatus(jobId);
-                                return;
-                            } catch (forceStartError) {
-                                showImportFailure((forceStartError && forceStartError.message) || 'Gagal menjalankan force start import.');
-                                return;
+                        if (status === 'queued' || status === 'processing') {
+                            reconnectAttempts += 1;
+                            if (shouldForceStartQueuedJob(statusPayload) && !forceStartTriggered) {
+                                try {
+                                    setProgress(
+                                        Math.max(lastProg.percent || 12, 12),
+                                        'Koneksi stream gagal dibuka. Menjalankan force start import...',
+                                        lastProg.rows_done || 0,
+                                        lastProg.total || 0,
+                                        lastProg.speed || 0
+                                    );
+                                    await triggerForceStart(jobId);
+                                    await pollImportStatus(jobId);
+                                    return;
+                                } catch (forceStartError) {
+                                    const refreshedStatus = await inspectImportJob(jobId).catch(function () {
+                                        return null;
+                                    });
+                                    const refreshedState = String(refreshedStatus && refreshedStatus.status ? refreshedStatus.status : '');
+
+                                    if (refreshedState === 'completed') {
+                                        showImportSuccess(refreshedStatus || {});
+                                        return;
+                                    }
+
+                                    if (refreshedState === 'queued' || refreshedState === 'processing') {
+                                        reconnectAttempts = 0;
+                                        setProgress(
+                                            Math.max(lastProg.percent || 12, 12),
+                                            (refreshedStatus && refreshedStatus.message) || 'Import sedang diproses di backend. Menyambung ulang progress...',
+                                            lastProg.rows_done || 0,
+                                            lastProg.total || 0,
+                                            lastProg.speed || 0
+                                        );
+                                        setTimeout(connectSSE, 1000);
+                                        return;
+                                    }
+
+                                    showImportFailure((forceStartError && forceStartError.message) || 'Gagal menjalankan force start import.');
+                                    return;
+                                }
                             }
+
+                            setProgress(
+                                Math.max(lastProg.percent || 12, 12),
+                                (statusPayload && statusPayload.message) || 'Import sedang diproses. Menyambung ulang progress...',
+                                lastProg.rows_done || 0,
+                                lastProg.total || 0,
+                                lastProg.speed || 0
+                            );
+                            setTimeout(connectSSE, 1000 * Math.min(reconnectAttempts, 5));
+                            return;
                         }
 
-                        setProgress(
-                            Math.max(lastProg.percent || 12, 12),
-                            (statusPayload && statusPayload.message) || 'Import sedang diproses. Menyambung ulang progress...',
-                            lastProg.rows_done || 0,
-                            lastProg.total || 0,
-                            lastProg.speed || 0
-                        );
-                        setTimeout(connectSSE, 1000 * Math.min(reconnectAttempts, 5));
-                        return;
-                    }
-                }
-
-                if (status === 'failed' || status === 'failed_partial' || status === 'error') {
-                    showImportFailure((statusPayload && statusPayload.message) || 'Import gagal dijalankan!');
-                    return;
-                }
+                        if (status === 'failed' || status === 'failed_partial' || status === 'error') {
+                            showImportFailure((statusPayload && statusPayload.message) || 'Import gagal dijalankan!');
+                            return;
+                        }
 
                 reconnectAttempts += 1;
                 if (reconnectAttempts <= 5) {

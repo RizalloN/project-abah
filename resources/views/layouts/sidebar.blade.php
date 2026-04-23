@@ -403,8 +403,8 @@
                     </a>
                 </li>
 
-                <li class="nav-item {{ request()->routeIs('report.dashboard-pinjaman*', 'report.dashboard-pinjaman.kinerja-konsumer', 'report.dashboard-pinjaman.kolek-tidak-sesuai.*') ? 'menu-open' : '' }}">
-                    <a href="#" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman*', 'report.dashboard-pinjaman.kinerja-konsumer', 'report.dashboard-pinjaman.kolek-tidak-sesuai.*') ? 'active' : '' }}">
+                <li class="nav-item {{ request()->routeIs('report.dashboard-pinjaman*', 'report.dashboard-pinjaman.kinerjarm', 'report.dashboard-pinjaman.kolek-tidak-sesuai.*') ? 'menu-open' : '' }}">
+                    <a href="#" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman*', 'report.dashboard-pinjaman.kinerjarm', 'report.dashboard-pinjaman.kolek-tidak-sesuai.*') ? 'active' : '' }}">
                         <i class="nav-icon fas fa-chart-line"></i>
                         <p>
                             Dashboard Pinjaman
@@ -437,9 +437,9 @@
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a href="{{ route('report.dashboard-pinjaman.kinerja-konsumer') }}" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman.kinerja-konsumer') ? 'active' : '' }}">
+                            <a href="{{ route('report.dashboard-pinjaman.kinerjarm') }}" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman.kinerjarm') ? 'active' : '' }}">
                                 <i class="far fa-circle nav-icon"></i>
-                                <p>Kinerja Konsumer</p>
+                                <p>Kinerja RM</p>
                             </a>
                         </li>
                     </ul>
