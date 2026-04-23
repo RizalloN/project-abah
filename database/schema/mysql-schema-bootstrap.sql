@@ -256,6 +256,7 @@ DELIMITER ;;
             BEGIN
                 IF NEW.periode IS NOT NULL THEN
                     DELETE FROM dashboard_pinjaman_snapshots WHERE periode = NEW.periode;
+                    DELETE FROM dashboard_pinjaman_chart_periodik_snapshots WHERE periode = NEW.periode;
                     DELETE FROM rasio_casa_debitur_snapshots WHERE loan_period = NEW.periode;
                 END IF;
             END */;;
@@ -279,11 +280,13 @@ DELIMITER ;;
             BEGIN
                 IF NEW.periode IS NOT NULL THEN
                     DELETE FROM dashboard_pinjaman_snapshots WHERE periode = NEW.periode;
+                    DELETE FROM dashboard_pinjaman_chart_periodik_snapshots WHERE periode = NEW.periode;
                     DELETE FROM rasio_casa_debitur_snapshots WHERE loan_period = NEW.periode;
                 END IF;
 
                 IF OLD.periode IS NOT NULL AND (NEW.periode IS NULL OR OLD.periode <> NEW.periode) THEN
                     DELETE FROM dashboard_pinjaman_snapshots WHERE periode = OLD.periode;
+                    DELETE FROM dashboard_pinjaman_chart_periodik_snapshots WHERE periode = OLD.periode;
                     DELETE FROM rasio_casa_debitur_snapshots WHERE loan_period = OLD.periode;
                 END IF;
             END */;;
@@ -307,6 +310,7 @@ DELIMITER ;;
             BEGIN
                 IF OLD.periode IS NOT NULL THEN
                     DELETE FROM dashboard_pinjaman_snapshots WHERE periode = OLD.periode;
+                    DELETE FROM dashboard_pinjaman_chart_periodik_snapshots WHERE periode = OLD.periode;
                     DELETE FROM rasio_casa_debitur_snapshots WHERE loan_period = OLD.periode;
                 END IF;
             END */;;
@@ -328,16 +332,39 @@ CREATE TABLE `dashboard_pinjaman_snapshots` (
   `produk_dashboard` varchar(150) DEFAULT NULL,
   `cabang1` varchar(150) DEFAULT NULL,
   `unit1` varchar(180) DEFAULT NULL,
-  `created_at` timestamp NULL DEFAULT NULL,
-  `updated_at` timestamp NULL DEFAULT NULL,
-  PRIMARY KEY (`uniqueid_dps`),
-  KEY `idx_dps_period_filter_chain` (`periode`,`segmen_dashboard`,`produk_dashboard`,`cabang1`,`unit1`),
-  KEY `idx_dps_period_account` (`periode`,`account_number`),
-  KEY `idx_dps_period_branch_unit` (`periode`,`cabang1`,`unit1`),
+    `created_at` timestamp NULL DEFAULT NULL,
+    `updated_at` timestamp NULL DEFAULT NULL,
+    PRIMARY KEY (`uniqueid_dps`),
+    KEY `idx_dps_period_filter_chain` (`periode`,`segmen_dashboard`,`produk_dashboard`,`cabang1`,`unit1`),
+    KEY `idx_dps_period_account` (`periode`,`account_number`),
+    KEY `idx_dps_period_branch_unit` (`periode`,`cabang1`,`unit1`),
   KEY `dashboard_pinjaman_snapshots_periode_index` (`periode`),
   KEY `dashboard_pinjaman_snapshots_account_number_index` (`account_number`),
   KEY `dashboard_pinjaman_snapshots_quality_bucket_index` (`quality_bucket`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `dashboard_pinjaman_chart_periodik_snapshots` (
+  `uniqueid_dpcs` varchar(191) NOT NULL,
+  `periode` date NOT NULL,
+  `source_uniqueid_namareport` varchar(255) DEFAULT NULL,
+  `account_number` varchar(50) DEFAULT NULL,
+  `baki_debet1` decimal(20,2) NOT NULL DEFAULT 0.00,
+  `ln_type` varchar(100) DEFAULT NULL,
+  `loan_type` varchar(100) DEFAULT NULL,
+  `pola_pembayaran` varchar(150) DEFAULT NULL,
+  `segmen_dashboard` varchar(100) DEFAULT NULL,
+  `produk_dashboard` varchar(150) DEFAULT NULL,
+  `cabang1` varchar(150) DEFAULT NULL,
+  `unit1` varchar(150) DEFAULT NULL,
+  `branch1` varchar(180) DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`uniqueid_dpcs`),
+  KEY `idx_dpcp_period_cabang_branch_unit` (`periode`,`cabang1`,`branch1`,`unit1`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `failed_jobs`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;

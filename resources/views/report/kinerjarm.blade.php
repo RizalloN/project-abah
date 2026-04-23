@@ -777,32 +777,30 @@
 </style>
 
 @php
-    $normalize = fn($v) => (float)$v / 1000000;
-    $fmt = fn($v) => number_format($normalize($v), 1, ',', '.');
-    
-    $formatSigned = function($v, $showArrow = true) use ($normalize) {
-        $val = $normalize($v);
-        $cls = $val > 0 ? 'pos' : ($val < 0 ? 'neg' : '');
+    $formatAmount = $formatAmount ?? fn ($value, int $decimals = 1) => number_format(((float) $value) / 1000000, $decimals, ',', '.');
+    $formatSignedAmount = $formatSignedAmount ?? function ($value, bool $showArrow = true, int $decimals = 1) {
+        $amount = ((float) $value) / 1000000;
+        $cls = $amount > 0 ? 'pos' : ($amount < 0 ? 'neg' : '');
         $icon = '';
-        
+
         if ($showArrow) {
-            if ($val > 0) $icon = '<i class="fas fa-caret-up me-1"></i>';
-            elseif ($val < 0) $icon = '<i class="fas fa-caret-down me-1"></i>';
+            if ($amount > 0) {
+                $icon = '<i class="fas fa-caret-up me-1"></i>';
+            } elseif ($amount < 0) {
+                $icon = '<i class="fas fa-caret-down me-1"></i>';
+            }
         }
-        
-        $prefix = ($val > 0 && !$showArrow) ? '+' : '';
-        $display = number_format(abs($val), 1, ',', '.');
-        if ($val < 0 && !$showArrow) $display = '-' . $display;
-        
+
+        $prefix = ($amount > 0 && ! $showArrow) ? '+' : '';
+        $display = number_format(abs($amount), $decimals, ',', '.');
+        if ($amount < 0 && ! $showArrow) {
+            $display = '-' . $display;
+        }
+
         return "<span class='delta-indicator $cls'>$icon$prefix$display</span>";
     };
-
-    $formatPct = function($v) {
-        $num = (float)$v;
-        $cls = $num >= 100 ? 'pct-good' : ($num >= 95 ? 'pct-mid' : 'pct-bad');
-        $icon = $num >= 100 ? '<i class="fas fa-check-circle me-1" style="font-size: 0.6rem;"></i>' : '';
-        return "<span class='pct-badge $cls'>$icon" . number_format($num, 1, ',', '.') . "%</span>";
-    };
+    $formatCount = $formatCount ?? fn ($value) => number_format((int) round((float) $value), 0, ',', '.');
+    $formatPercent = $formatPercent ?? fn ($value, int $decimals = 1) => number_format((float) $value, $decimals, ',', '.');
 @endphp
 
 <div class="pt-4 px-3">
@@ -882,6 +880,8 @@
     </div>
 </div>
 
+
+
 @push('scripts')
 <script>
 document.addEventListener('DOMContentLoaded', function() {
@@ -915,8 +915,6 @@ document.addEventListener('DOMContentLoaded', function() {
             // Ignore storage failures and keep the UI functional.
         }
     });
-
-    restoreKinerjaTabState();
 
     function loadKinerjaData() {
         const formData = new FormData(filterForm);
@@ -993,6 +991,50 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
+    // RM Detail Click Handler
+    $(document).on('click', '.clickable-rm-row', function() {
+        const rm = $(this).data('rm-name');
+        const segmen = $(this).data('segment');
+        const periode = $(this).data('period');
+        
+        const modal = new bootstrap.Modal(document.getElementById('rmDetailModal'));
+        const content = $('#rmDetailModalContent');
+        
+        content.html(`
+            <div class="modal-body text-center py-5">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p class="mt-2 text-muted">Mengambil data rincian RM: ${rm}...</p>
+            </div>
+        `);
+        
+        modal.show();
+        
+        $.get("{{ route('report.dashboard-pinjaman.kinerjarm.history') }}", {
+            rm: rm,
+            segmen: segmen,
+            periode: periode
+        })
+        .done(function(html) {
+            content.html(html);
+        })
+        .fail(function(err) {
+            content.html(`
+                <div class="modal-header">
+                    <h5 class="modal-title">Error</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body text-center py-5">
+                    <i class="fas fa-exclamation-triangle fa-3x text-danger mb-3"></i>
+                    <p>Gagal mengambil data rincian. Silakan coba lagi.</p>
+                </div>
+            `);
+        });
+    });
+
+    restoreKinerjaTabState();
+
     function restoreKinerjaTabState() {
         let savedTab = 'os';
 
@@ -1036,3 +1078,20 @@ document.addEventListener('DOMContentLoaded', function() {
 </script>
 @endpush
 @endsection
+
+@push('modals')
+<!-- RM Detail Modal -->
+<div class="modal fade" id="rmDetailModal" tabindex="-1" aria-labelledby="rmDetailModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+        <div class="modal-content shadow-lg border-0" id="rmDetailModalContent">
+            <!-- Content loaded via AJAX -->
+            <div class="modal-body text-center py-5">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p class="mt-2 text-muted">Mengambil data historis...</p>
+            </div>
+        </div>
+    </div>
+</div>
+@endpush

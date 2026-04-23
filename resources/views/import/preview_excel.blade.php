@@ -28,6 +28,7 @@
         <form id="importForm" method="POST" data-filter-options-url="{{ $filterOptionsRoute ?? route('import.preview.filter-options') }}" data-filtered-rows-url="{{ route('import.preview.filtered-rows') }}">
             @csrf
             <input type="hidden" name="path"                id="file_path"           value="{{ $path }}">
+            <input type="hidden" name="delimiter" value="{{ $currentDelimiter ?? 'auto' }}">
             <input type="hidden" name="active_filters_json" id="active_filters_json" value="{}">
             @if(!empty($previewStateKey))
                 <input type="hidden" name="preview_state_key" value="{{ $previewStateKey }}">
@@ -1029,7 +1030,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 <div class="swal-import-stats swal-import-stats--compact">
                     <div class="swal-import-stat">
                         <span class="swal-import-stat__label">Baris</span>
-                        <span id="swal-rows-info" class="swal-import-stat__value">0 / 0</span>
+                        <span id="swal-rows-info" class="swal-import-stat__value">0 / -</span>
                     </div>
                     <div class="swal-import-stat">
                         <span class="swal-import-stat__label">Kecepatan</span>
@@ -1072,11 +1073,23 @@ document.addEventListener('DOMContentLoaded', function () {
             var ri  = document.getElementById('swal-rows-info');
             var si  = document.getElementById('swal-speed-info');
             var normalized = normalizeProgressStatus(statusText);
+            var resolvedRowsDone = Number(rowsDone || 0);
+            var resolvedTotal = Number(total || 0);
+            if (resolvedTotal <= 0 && ri && ri.dataset.totalRows) {
+                resolvedTotal = Number(ri.dataset.totalRows || 0);
+            }
             var effectiveSpeed = speed > 0 ? speed : (normalized.speed ? Number(normalized.speed) : 0);
             if (bar) { bar.style.width = pct + '%'; bar.innerText = pct + '%'; }
             if (pp)  pp.innerText = pct + '%';
             if (st)  st.innerText = normalized.message || statusText || '';
-            if (ri && total > 0) ri.innerText = Number(rowsDone).toLocaleString('id-ID') + ' / ' + Number(total).toLocaleString('id-ID') + ' baris';
+            if (ri) {
+                if (resolvedTotal > 0) {
+                    ri.dataset.totalRows = String(resolvedTotal);
+                    ri.innerText = resolvedRowsDone.toLocaleString('id-ID') + ' / ' + resolvedTotal.toLocaleString('id-ID') + ' baris';
+                } else {
+                    ri.innerText = resolvedRowsDone > 0 ? resolvedRowsDone.toLocaleString('id-ID') + ' / - baris' : 'Menunggu total baris...';
+                }
+            }
             if (si)  si.innerText = effectiveSpeed > 0 ? Number(effectiveSpeed).toLocaleString('id-ID') + ' baris/detik' : '-';
         }
 

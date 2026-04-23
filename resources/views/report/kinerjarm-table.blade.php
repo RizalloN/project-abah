@@ -1,9 +1,8 @@
 @php
     $normalize = fn($v) => (float) $v / 1000000;
-    $fmt = fn($v) => number_format($normalize($v), 1, ',', '.');
-
-    $formatSigned = function ($v, $showArrow = true) use ($normalize) {
-        $val = $normalize($v);
+    $formatAmount = $formatAmount ?? fn ($value, int $decimals = 1) => number_format($normalize($value), $decimals, ',', '.');
+    $formatSignedAmount = $formatSignedAmount ?? function ($value, bool $showArrow = true, int $decimals = 1) use ($normalize) {
+        $val = $normalize($value);
         $cls = $val > 0 ? 'pos' : ($val < 0 ? 'neg' : '');
         $icon = '';
 
@@ -16,13 +15,14 @@
         }
 
         $prefix = ($val > 0 && !$showArrow) ? '+' : '';
-        $display = number_format(abs($val), 1, ',', '.');
+        $display = number_format(abs($val), $decimals, ',', '.');
         if ($val < 0 && !$showArrow) {
             $display = '-' . $display;
         }
 
         return "<span class='delta-indicator {$cls}'>{$icon}{$prefix}{$display}</span>";
     };
+    $formatCount = $formatCount ?? fn ($value) => number_format((int) round((float) $value), 0, ',', '.');
 
     // Mapping segmen ke subtitle
     $segmentLabels = [

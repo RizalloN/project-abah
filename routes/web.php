@@ -67,6 +67,12 @@ Route::middleware(['auth', 'release.session.lock', 'throttle:240,1'])->group(fun
 
     Route::get('/report/dashboard-pinjaman/kolek-tidak-sesuai', [DashboardPinjamanReportController::class, 'mismatchIndex'])
         ->name('report.dashboard-pinjaman.kolek-tidak-sesuai');
+    Route::get('/report/dashboard-pinjaman/chart-periodik', [DashboardPinjamanReportController::class, 'chartPeriodikIndex'])
+        ->name('report.dashboard-pinjaman.chart-periodik');
+    Route::get('/report/dashboard-pinjaman/chart-periodik/filters', [DashboardPinjamanReportController::class, 'chartPeriodikFilters'])
+        ->name('report.dashboard-pinjaman.chart-periodik.filters');
+    Route::get('/report/dashboard-pinjaman/chart-periodik/data', [DashboardPinjamanReportController::class, 'chartPeriodikData'])
+        ->name('report.dashboard-pinjaman.chart-periodik.data');
     Route::get('/report/dashboard-pinjaman/filters', [DashboardPinjamanReportController::class, 'filters'])
         ->name('report.dashboard-pinjaman.filters');
     Route::get('/report/dashboard-pinjaman/data', [DashboardPinjamanReportController::class, 'data'])
@@ -85,6 +91,8 @@ Route::middleware(['auth', 'release.session.lock', 'throttle:240,1'])->group(fun
         ->name('report.dashboard-pinjaman.kejar-laba');
     Route::get('/report/dashboard-pinjaman/kinerjarm', [KinerjaRmReportController::class, 'index'])
         ->name('report.dashboard-pinjaman.kinerjarm');
+    Route::get('/report/dashboard-pinjaman/kinerjarm/history', [KinerjaRmReportController::class, 'historyDetails'])
+        ->name('report.dashboard-pinjaman.kinerjarm.history');
 
     // Digital Performance Reports (EDC, QRIS, Brilink) — dihandle oleh DigitalPerformanceController
     Route::get('/report/optimalisasi-digital/edc', [DigitalPerformanceController::class, 'performanceEdc'])->name('report.edc');

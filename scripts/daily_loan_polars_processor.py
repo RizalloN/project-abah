@@ -205,8 +205,14 @@ def parse_logical_row(row: list[str], delimiter: str, expected_columns: int | No
                 cells = parsed
                 changed = True
 
-    if expected_columns is not None and len(cells) != expected_columns:
-        return None, changed
+    if expected_columns is not None:
+        if len(cells) == expected_columns - 1:
+            # Daily Loan exports sometimes omit the final empty trailing column.
+            # Pad it back so valid rows are not dropped by a strict field-count check.
+            cells = cells + [""]
+            changed = True
+        elif len(cells) != expected_columns:
+            return None, changed
 
     return cells, changed
 

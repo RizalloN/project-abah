@@ -251,6 +251,7 @@ class RunManagedReportSnapshotRebuildJob implements ShouldQueue, ShouldBeUnique
             };
 
             $safeRunRebuilder('dashboard', 'Dashboard Pinjaman', fn (?callable $progress = null) => $snapshotBuilder->rebuildDashboard(null, $this->force, $progress));
+            $safeRunRebuilder('chart_periodik', 'Chart Periodik', fn (?callable $progress = null) => $snapshotBuilder->rebuildChartPeriodik(null, $this->force, $progress));
             $safeRunRebuilder('dashboard_simpanan', 'Dashboard Simpanan', fn (?callable $progress = null) => $snapshotBuilder->rebuildDashboardSimpanan(null, $this->force, $progress));
             $safeRunRebuilder('dashboard_harian', 'Dashboard Harian', fn (?callable $progress = null) => $dashboardHarianSnapshotService->rebuild(null, $this->force, $progress));
             $safeRunRebuilder('rasio', 'Rasio CASA Debitur', fn (?callable $progress = null) => $snapshotBuilder->rebuildRasioCasa(null, $this->force, $progress));

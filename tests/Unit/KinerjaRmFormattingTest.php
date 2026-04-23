@@ -1,0 +1,149 @@
+<?php
+
+namespace Tests\Unit;
+
+use App\Http\Controllers\Report\KinerjaRmReportController;
+use App\Support\RkaLookupService;
+use Mockery;
+use ReflectionClass;
+use Tests\TestCase;
+
+class KinerjaRmFormattingTest extends TestCase
+{
+    protected function tearDown(): void
+    {
+        Mockery::close();
+
+        parent::tearDown();
+    }
+
+    public function test_controller_formatters_normalize_amounts_and_quadrants(): void
+    {
+        $controller = new KinerjaRmReportController(Mockery::mock(RkaLookupService::class));
+
+        $this->assertSame('1.600,0', $this->invokePrivateMethod($controller, 'formatAmountInJuta', [1600000000]));
+        $this->assertStringContainsString('+1,0', $this->invokePrivateMethod($controller, 'formatSignedAmountInJuta', [1000000, false]));
+        $this->assertSame('Kuadran 2', $this->invokePrivateMethod($controller, 'formatQuadrantLabel', [2]));
+        $this->assertSame('-', $this->invokePrivateMethod($controller, 'formatQuadrantLabel', [7]));
+        $this->assertSame('q3', $this->invokePrivateMethod($controller, 'formatQuadrantClass', [3]));
+        $this->assertSame('', $this->invokePrivateMethod($controller, 'formatQuadrantClass', [null]));
+    }
+
+    public function test_controller_product_mapping_supports_small_and_micro_rules(): void
+    {
+        $controller = new KinerjaRmReportController(Mockery::mock(RkaLookupService::class));
+
+        $this->assertSame('CASHCALL', $this->invokePrivateMethod($controller, 'normalizeProductLabel', ['cashcall', 'SMALL']));
+        $this->assertNull($this->invokePrivateMethod($controller, 'normalizeProductLabel', ['cashcoll', 'SMALL']));
+
+        $this->assertSame('CASHCOLLATERAL', $this->invokePrivateMethod($controller, 'normalizeProductLabel', ['Cash Collateral', 'MICRO']));
+        $this->assertSame('KUR-SMALL', $this->invokePrivateMethod($controller, 'normalizeProductLabel', ['kur-small', 'MICRO']));
+        $this->assertSame('KPR', $this->invokePrivateMethod($controller, 'normalizeProductLabel', ['kpr', 'MICRO']));
+    }
+
+    public function test_kinerjarm_table_section_renders_amounts_in_juta_and_quadrant_badge(): void
+    {
+        $html = view('report.kinerjarm-table-section', [
+            'selectedSegmen' => 'CONSUMER',
+            'selectedProductLabel' => 'Semua Produk',
+            'selectedPeriod' => '2026-04-23',
+            'selectedPeriodShortLabel' => '23 Apr 26',
+            'selectedPeriodLabel' => '23 Apr 2026',
+            'yoyPeriod' => '2026-03-31',
+            'ytdPeriod' => '2025-12-31',
+            'mtdPeriod' => '2026-03-31',
+            'showTargets' => true,
+            'compact' => false,
+            'rows' => [
+                [
+                    'cabang' => 'KC TEST',
+                    'branch_rowspan' => 2,
+                    'subtotal' => [
+                        'yoy' => 1500000000,
+                        'ytd' => 1400000000,
+                        'mtd' => 1300000000,
+                        'curr' => 1600000000,
+                        'delta_yoy' => 100000000,
+                        'delta_ytd' => 200000000,
+                        'delta_mtd' => 300000000,
+                        'target_jg_deb' => 20,
+                        'target_jg_os' => 3750000000,
+                        'ach_deb' => 21,
+                        'ach_os' => 4100000000,
+                    ],
+                    'rms' => [
+                        'RM TEST' => [
+                            'rm_rowspan' => 1,
+                            'quadrant' => 2,
+                            'items' => [
+                                [
+                                    'product' => 'BRIGUNA-KONSUMER',
+                                    'yoy' => 1500000000,
+                                    'ytd' => 1400000000,
+                                    'mtd' => 1300000000,
+                                    'curr' => 1600000000,
+                                    'delta_yoy' => 100000000,
+                                    'delta_ytd' => 200000000,
+                                    'delta_mtd' => 300000000,
+                                    'target_jg_deb' => 20,
+                                    'target_jg_os' => 3750000000,
+                                    'ach_deb' => 21,
+                                    'ach_os' => 4100000000,
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+            'total' => [
+                'yoy' => 1500000000,
+                'ytd' => 1400000000,
+                'mtd' => 1300000000,
+                'curr' => 1600000000,
+                'delta_yoy' => 100000000,
+                'delta_ytd' => 200000000,
+                'delta_mtd' => 300000000,
+                'target_jg_deb' => 20,
+                'target_jg_os' => 3750000000,
+                'ach_deb' => 21,
+                'ach_os' => 4100000000,
+            ],
+        ])->render();
+
+        $this->assertStringContainsString('1.600,0', $html);
+        $this->assertStringContainsString('Kuadran 2', $html);
+        $this->assertStringContainsString('quadrant-badge q2', $html);
+    }
+
+    public function test_kinerjarm_history_modal_renders_million_format_for_realisasi_os(): void
+    {
+        $html = view('report.kinerjarm-detail-modal', [
+            'rm' => 'RM TEST',
+            'details' => [
+                [
+                    'periode' => 'Apr 2026',
+                    'cabang' => 'KC TEST',
+                    'realisasi_os' => 1600000000,
+                    'penc_realisasi' => 'A',
+                    'pct_lar' => 12.3456,
+                    'penc_lar' => 'A',
+                ],
+            ],
+            'formatAmount' => fn ($value, int $decimals = 1) => number_format(((float) $value) / 1000000, $decimals, ',', '.'),
+            'formatPercent' => fn ($value, int $decimals = 2) => number_format((float) $value, $decimals, ',', '.'),
+        ])->render();
+
+        $this->assertStringContainsString('Realisasi OS (Rp Juta)', $html);
+        $this->assertStringContainsString('1.600,0', $html);
+        $this->assertStringContainsString('12,35%', $html);
+    }
+
+    private function invokePrivateMethod(object $object, string $method, array $arguments = []): mixed
+    {
+        $reflection = new ReflectionClass($object);
+        $reflectedMethod = $reflection->getMethod($method);
+        $reflectedMethod->setAccessible(true);
+
+        return $reflectedMethod->invokeArgs($object, $arguments);
+    }
+}

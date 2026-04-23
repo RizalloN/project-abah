@@ -39,7 +39,7 @@ Artisan::command('reports:sync-source {table} {--period=}', function () {
     $table = strtolower(trim((string) $this->argument('table')));
     $period = StrictDateParser::normalize((string) $this->option('period')) ?? $this->option('period');
 
-    $allowed = ['daily_loan_dinamis', 'simpanan_multipn', 'lw325_ph', 'performance_pis_per_produk'];
+    $allowed = ['daily_loan_dinamis', 'loan_type', 'simpanan_multipn', 'lw325_ph', 'performance_pis_per_produk'];
     if (!in_array($table, $allowed, true)) {
         $this->error('Table tidak didukung. Pilih: ' . implode(', ', $allowed));
         return;
@@ -47,11 +47,22 @@ Artisan::command('reports:sync-source {table} {--period=}', function () {
 
     $startedAt = microtime(true);
 
-    app(ReportDataSyncService::class)->syncAfterDelete(
-        $table,
-        $period ? (string) $period : null,
-        'artisan:reports:sync-source'
-    );
+    $syncService = app(ReportDataSyncService::class);
+
+    if ($table === 'loan_type') {
+        $syncService->syncImportedTable(
+            tableName: $table,
+            periodHint: $period ? (string) $period : null,
+            jobId: null,
+            source: 'artisan:reports:sync-source'
+        );
+    } else {
+        $syncService->syncAfterDelete(
+            $table,
+            $period ? (string) $period : null,
+            'artisan:reports:sync-source'
+        );
+    }
 
     $this->info("Sinkronisasi selesai untuk {$table}.");
     $this->info('Durasi: ' . number_format(microtime(true) - $startedAt, 2) . ' detik.');

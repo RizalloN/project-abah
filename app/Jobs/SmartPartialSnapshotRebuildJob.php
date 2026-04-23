@@ -133,6 +133,10 @@ class SmartPartialSnapshotRebuildJob implements ShouldQueue
             ->whereIn('snapshot_period', $periods)
             ->delete();
 
+        DB::table('dashboard_pinjaman_chart_periodik_snapshots')
+            ->whereIn('periode', $periods)
+            ->delete();
+
         DB::table('dashboard_harian_snapshots')
             ->whereIn('snapshot_period', $periods)
             ->delete();

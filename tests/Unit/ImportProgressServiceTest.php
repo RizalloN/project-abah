@@ -69,6 +69,54 @@ class ImportProgressServiceTest extends TestCase
         }
     }
 
+    public function test_get_status_payload_prefers_job_total_rows_when_cached_total_rows_is_zero(): void
+    {
+        $sampleFile = storage_path('app/private/excel_imports/sample-zero.xlsx');
+        if (!is_dir(dirname($sampleFile))) {
+            @mkdir(dirname($sampleFile), 0777, true);
+        }
+        file_put_contents($sampleFile, 'payload');
+
+        DB::shouldReceive('table->where->first')
+            ->once()
+            ->andReturn((object) [
+                'id' => 78,
+                'id_report' => 8,
+                'file_name' => 'sample-zero.xlsx',
+                'folder_path' => dirname($sampleFile),
+                'status' => 'processing',
+                'total_files' => 326033,
+                'total_success' => 0,
+                'total_failed' => 0,
+                'updated_at' => now()->subMinutes(2)->toDateTimeString(),
+            ]);
+
+        Cache::shouldReceive('get')
+            ->twice()
+            ->andReturn(
+                [
+                    'message' => 'Menyiapkan sanitasi CSV Daily Loan...',
+                    'processed_rows' => 0,
+                    'total_rows' => 0,
+                    'percent' => 6,
+                    'updated_at' => now()->toIso8601String(),
+                ],
+                []
+            );
+
+        try {
+            $payload = app(ImportProgressService::class)->getStatusPayload(78);
+
+            $this->assertSame(326033, $payload['total_rows']);
+            $this->assertSame(0, $payload['processed_rows']);
+            $this->assertSame(6, $payload['percent']);
+        } finally {
+            if (is_file($sampleFile)) {
+                @unlink($sampleFile);
+            }
+        }
+    }
+
     public function test_mark_failed_removes_matching_queue_job_row(): void
     {
         Cache::shouldReceive('get')->andReturn([]);
