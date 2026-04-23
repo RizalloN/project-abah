@@ -101,6 +101,12 @@ class ImportIndexController extends Controller
             'kanca' => 'kanca',
             'identity' => 'uniqueid_namareport',
         ],
+        'performance_kurkecil_mikro' => [
+            'index' => 'idx_pkm_delete_scope',
+            'period' => 'tanggal_bl',
+            'kanca' => 'kanca',
+            'identity' => 'uniqueid_namareport',
+        ],
         'simpanan_multipn' => [
             'index' => 'idx_smp_posisi_cab_unit',
             'period' => 'posisi',

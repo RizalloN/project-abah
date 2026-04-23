@@ -39,7 +39,7 @@ Artisan::command('reports:sync-source {table} {--period=}', function () {
     $table = strtolower(trim((string) $this->argument('table')));
     $period = StrictDateParser::normalize((string) $this->option('period')) ?? $this->option('period');
 
-    $allowed = ['daily_loan_dinamis', 'loan_type', 'simpanan_multipn', 'lw325_ph', 'performance_pis_per_produk'];
+    $allowed = ['daily_loan_dinamis', 'loan_type', 'simpanan_multipn', 'lw325_ph', 'performance_pis_per_produk', 'performance_kurkecil_mikro'];
     if (!in_array($table, $allowed, true)) {
         $this->error('Table tidak didukung. Pilih: ' . implode(', ', $allowed));
         return;
