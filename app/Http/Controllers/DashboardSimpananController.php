@@ -11,6 +11,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use App\Support\SimpananMultiPnSnapshotGate;
+use App\Support\DashboardDanaService;
+use Illuminate\Http\Request;
 use Throwable;
 
 class DashboardSimpananController extends Controller
@@ -33,6 +35,36 @@ class DashboardSimpananController extends Controller
         return view('dashboard', [
             'dashboard' => $dashboard,
         ]);
+    }
+
+    public function dashboardDanaIndex(Request $request): View
+    {
+        $service = app(DashboardDanaService::class);
+        $periods = $service->fetchPeriods();
+        $categories = $service->fetchCategories();
+        $selectedPeriod = $request->input('periode') ?? $periods->first();
+        $selectedCategory = $request->input('kategori') ?? 'all';
+        $selectedRka = $request->input('rka_periode') ?? $selectedPeriod;
+
+        return view('report.dashboard-dana', [
+            'periods' => $periods,
+            'categories' => $categories,
+            'selectedPeriod' => $selectedPeriod,
+            'selectedCategory' => $selectedCategory,
+            'selectedRka' => $selectedRka,
+        ]);
+    }
+
+    public function dashboardDanaData(Request $request)
+    {
+        $service = app(DashboardDanaService::class);
+        $period = $request->input('periode');
+        $category = $request->input('kategori');
+        $rkaPeriod = $request->input('rka_periode');
+
+        $data = $service->getDashboardData($period, $category, $rkaPeriod);
+
+        return response()->json($data);
     }
 
     private function buildDashboardPayload(): array

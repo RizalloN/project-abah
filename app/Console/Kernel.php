@@ -29,6 +29,15 @@ class Kernel extends ConsoleKernel
                 \Illuminate\Support\Facades\Log::warning('Dashboard Harian snapshot sync failed');
             });
 
+        // Rebuild important Performance RM snapshots hourly (current + recent periods)
+        // Ensures data stays fresh without full rebuild overhead
+        $schedule->command('snapshot:rebuild-rm-scheduled')
+            ->hourly()
+            ->withoutOverlapping(5)
+            ->onFailure(function () {
+                \Illuminate\Support\Facades\Log::warning('Performance RM snapshot scheduled rebuild failed');
+            });
+
         // Monitor queue and ensure worker is running (check every 30 seconds)
         // Note: This is a fallback; queue workers should be managed by supervisor/systemd in production
         // Uncomment to enable automatic queue worker restart:

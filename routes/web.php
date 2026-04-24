@@ -136,6 +136,10 @@ Route::middleware(['auth', 'release.session.lock', 'throttle:240,1'])->group(fun
     // New Payroll — dihandle oleh NewPayrollReportController
     Route::get('/report/peningkatan-payroll-berkualitas/kinerja-new-payroll', [NewPayrollReportController::class, 'index'])->name('report.kinerja.newpayroll');
     Route::post('/report/data/newpayroll', [NewPayrollReportController::class, 'fetchData'])->name('report.data.newpayroll');
+
+    // Dashboard Dana (ssa_simpanan)
+    Route::get('/report/dashboard-dana', [DashboardSimpananController::class, 'dashboardDanaIndex'])->name('report.dashboard-dana');
+    Route::get('/report/dashboard-dana/data', [DashboardSimpananController::class, 'dashboardDanaData'])->name('report.dashboard-dana.data');
 });
 
 Route::middleware(['auth', 'role:admin', 'release.session.lock'])->group(function () {

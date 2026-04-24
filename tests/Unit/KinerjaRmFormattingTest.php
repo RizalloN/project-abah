@@ -138,6 +138,81 @@ class KinerjaRmFormattingTest extends TestCase
         $this->assertStringContainsString('12,35%', $html);
     }
 
+    public function test_kinerjarm_table_section_renders_zero_realisasi_values(): void
+    {
+        $html = view('report.kinerjarm-table-section', [
+            'selectedSegmen' => 'SMALL',
+            'selectedProductLabel' => 'Semua Produk',
+            'selectedPeriod' => '2026-04-20',
+            'selectedPeriodShortLabel' => '20 Apr 26',
+            'selectedPeriodLabel' => '20 Apr 2026',
+            'yoyPeriod' => '2025-03-31',
+            'ytdPeriod' => '2025-12-31',
+            'mtdPeriod' => '2026-03-31',
+            'showTargets' => true,
+            'compact' => false,
+            'rows' => [
+                [
+                    'cabang' => 'KC TEST',
+                    'branch_rowspan' => 2,
+                    'subtotal' => [
+                        'yoy' => 100,
+                        'ytd' => 100,
+                        'mtd' => 100,
+                        'curr' => 100,
+                        'delta_yoy' => 0,
+                        'delta_ytd' => 0,
+                        'delta_mtd' => 0,
+                        'target_jg_deb' => 0,
+                        'target_jg_os' => 0,
+                        'ach_deb' => 0,
+                        'ach_os' => 0,
+                    ],
+                    'rms' => [
+                        'RM TEST' => [
+                            'rm_rowspan' => 1,
+                            'quadrant' => null,
+                            'items' => [
+                                [
+                                    'product' => 'COMMERCIAL',
+                                    'yoy' => 100,
+                                    'ytd' => 100,
+                                    'mtd' => 100,
+                                    'curr' => 100,
+                                    'delta_yoy' => 0,
+                                    'delta_ytd' => 0,
+                                    'delta_mtd' => 0,
+                                    'target_jg_deb' => 0,
+                                    'target_jg_os' => 0,
+                                    'ach_deb' => 0,
+                                    'ach_os' => 0,
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+            'total' => [
+                'yoy' => 100,
+                'ytd' => 100,
+                'mtd' => 100,
+                'curr' => 100,
+                'delta_yoy' => 0,
+                'delta_ytd' => 0,
+                'delta_mtd' => 0,
+                'target_jg_deb' => 0,
+                'target_jg_os' => 0,
+                'ach_deb' => 0,
+                'ach_os' => 0,
+            ],
+            'formatAmount' => fn ($value, int $decimals = 1) => number_format(((float) $value) / 1000000, $decimals, ',', '.'),
+            'formatCount' => fn ($value) => number_format((int) round((float) $value), 0, ',', '.'),
+        ])->render();
+
+        $this->assertStringContainsString('<td class="text-center-important">0</td>', $html);
+        $this->assertStringContainsString('<td>0,0</td>', $html);
+    }
+
     private function invokePrivateMethod(object $object, string $method, array $arguments = []): mixed
     {
         $reflection = new ReflectionClass($object);

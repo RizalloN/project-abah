@@ -44,8 +44,12 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
             $table->decimal('lancar_os', 20, 2)->default(0);
             $table->decimal('sml_os', 20, 2)->default(0);
             $table->decimal('npl_os', 20, 2)->default(0);
+            $table->decimal('restruk_os', 20, 2)->default(0);
             $table->integer('total_deb')->default(0);
+            $table->integer('realisasi_deb')->default(0);
+            $table->decimal('realisasi_os', 20, 2)->default(0);
             $table->decimal('total_deposit', 20, 2)->default(0);
+            $table->tinyInteger('quadrant')->nullable();
             $table->timestamps();
         });
 
@@ -128,6 +132,97 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
 
         $periodsRefreshed = $this->invokePrivateMethod($controller, 'fetchAvailablePeriods', []);
         $this->assertSame(['2026-04-18', '2026-04-17'], $periodsRefreshed->all());
+    }
+
+    public function test_kinerja_rm_period_options_include_daily_loan_source_periods(): void
+    {
+        DB::table('daily_loan_dinamis')->insert([
+            ['periode' => '2026-04-20'],
+            ['periode' => '2026-03-31'],
+            ['periode' => '2025-12-31'],
+        ]);
+
+        DB::table('performance_rm_snapshots')->insert([
+            [
+                'periode' => '2026-04-20',
+                'cabang' => 'KC MADIUN',
+                'unit' => 'UNIT A',
+                'rm' => 'RM A',
+                'segmen' => 'CONSUMER',
+                'produk' => 'BRIGUNA-KONSUMER',
+                'loan_os' => 1000,
+                'lancar_os' => 1000,
+                'sml_os' => 0,
+                'npl_os' => 0,
+                'restruk_os' => 0,
+                'total_deb' => 1,
+                'realisasi_deb' => 0,
+                'realisasi_os' => 0,
+                'total_deposit' => 0,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        $controller = new KinerjaRmReportController(Mockery::mock(RkaLookupService::class));
+
+        $periods = $this->invokePrivateMethod($controller, 'fetchAvailablePeriods', []);
+
+        $this->assertSame(['2026-04-20', '2026-03-31', '2025-12-31'], $periods->all());
+    }
+
+    public function test_kinerja_rm_rows_use_comparison_periods_and_realisasi_values(): void
+    {
+        DB::table('performance_rm_snapshots')->insert([
+            $this->snapshotRow('2026-04-20', 1600000000, 11, 250000000),
+            $this->snapshotRow('2026-03-31', 1200000000, 0, 0),
+            $this->snapshotRow('2025-12-31', 1000000000, 0, 0),
+            $this->snapshotRow('2025-03-31', 900000000, 0, 0),
+        ]);
+
+        $controller = new KinerjaRmReportController(Mockery::mock(RkaLookupService::class));
+
+        $result = $this->invokePrivateMethod($controller, 'fetchBranchRows', [
+            'CONSUMER',
+            '2026-04-20',
+            '2025-03-31',
+            '2025-12-31',
+            '2026-03-31',
+            null,
+            null,
+            null,
+        ]);
+
+        $item = $result['rows'][0]['rms']['RM A']['items'][0];
+
+        $this->assertSame(700000000.0, $item['delta_yoy']);
+        $this->assertSame(600000000.0, $item['delta_ytd']);
+        $this->assertSame(400000000.0, $item['delta_mtd']);
+        $this->assertSame(11, $item['ach_deb']);
+        $this->assertSame(250000000.0, $item['ach_os']);
+    }
+
+    private function snapshotRow(string $period, float $loanOs, int $realisasiDeb, float $realisasiOs): array
+    {
+        return [
+            'periode' => $period,
+            'cabang' => 'KC MADIUN',
+            'unit' => 'UNIT A',
+            'rm' => 'RM A',
+            'segmen' => 'CONSUMER',
+            'produk' => 'BRIGUNA-KONSUMER',
+            'loan_os' => $loanOs,
+            'lancar_os' => $loanOs,
+            'sml_os' => 0,
+            'npl_os' => 0,
+            'restruk_os' => 0,
+            'total_deb' => 1,
+            'realisasi_deb' => $realisasiDeb,
+            'realisasi_os' => $realisasiOs,
+            'total_deposit' => 0,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ];
     }
 
     private function invokePrivateMethod(object $object, string $method, array $arguments = []): mixed

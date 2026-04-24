@@ -146,6 +146,61 @@
         font-weight: 600;
     }
 
+    /* Capture Button Style */
+    .btn-export-all {
+        min-height: 32px;
+        border-radius: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.45);
+        background: rgba(255, 255, 255, 0.12);
+        color: #ffffff;
+        font-weight: 800;
+        letter-spacing: 0.025em;
+        font-size: 0.68rem;
+        padding: 0.34rem 0.72rem !important;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
+        transition: all 0.2s ease;
+    }
+
+    .btn-export-all:hover {
+        background: rgba(255, 255, 255, 0.2);
+        color: #ffffff;
+        border-color: rgba(255, 255, 255, 0.68);
+    }
+
+    /* Capture Status Modal Premium Styles */
+    .capture-status-modal .modal-content {
+        border-radius: 24px;
+        border: none;
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15);
+        overflow: hidden;
+    }
+
+    .capture-status-modal .modal-body {
+        padding: 3rem 2rem;
+    }
+
+    .capture-status-modal-icon {
+        width: 80px;
+        height: 80px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 1.5rem;
+        font-size: 2.5rem;
+    }
+
+    .icon-loading { background: rgba(8, 87, 195, 0.1); color: #0857c3; }
+    .icon-error { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
+    .icon-success { background: rgba(34, 197, 94, 0.1); color: #22c55e; }
+
+    .capture-status-modal .btn-primary {
+        border-radius: 12px;
+        padding: 0.6rem 1.5rem;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+    }
+
     .daily-scope-chip {
         display: inline-flex;
         align-items: center;
@@ -1085,6 +1140,11 @@
                 </div>
                 <h1 class="daily-panel-title">DASHBOARD KERAGAAN HARIAN</h1>
                 <p class="daily-panel-desc">Monitoring posisi, target, dan pertumbuhan kinerja harian secara ringkas untuk mendukung keputusan bisnis Area.</p>
+                <div class="mt-3 d-flex justify-content-center">
+                    <button id="captureAllBtn" class="btn btn-sm btn-export-all">
+                        <i class="fas fa-file-image mr-2"></i> EXPORT A4 (PORTRAIT)
+                    </button>
+                </div>
             </div>
             
             <!-- Hidden elements to preserve JS functionality -->
@@ -1284,10 +1344,53 @@
             </div>
         </div>
     </div>
+
+    <!-- Capture Status Modal -->
+    <div class="modal fade capture-status-modal" id="captureStatusModal" tabindex="-1" role="dialog" aria-hidden="true" data-backdrop="static">
+        <div class="modal-dialog modal-dialog-centered" role="document">
+            <div class="modal-content">
+                <div class="modal-body text-center">
+                    <!-- Loading State -->
+                    <div id="captureProgressUI">
+                        <div class="capture-status-modal-icon icon-loading">
+                            <i class="fas fa-circle-notch fa-spin"></i>
+                        </div>
+                        <h4 class="font-weight-bold mb-2">Menyusun Laporan A4</h4>
+                        <p class="text-muted mb-0">Sedang menyusun data dashboard ke dalam format gambar A4 portrait dengan header per segmen. Mohon tunggu sebentar...</p>
+                    </div>
+
+                    <!-- Error State -->
+                    <div id="captureErrorUI" class="d-none">
+                        <div class="capture-status-modal-icon icon-error">
+                            <i class="fas fa-exclamation-triangle"></i>
+                        </div>
+                        <h4 class="font-weight-bold mb-2">Gagal Mengambil Snapshot</h4>
+                        <p id="captureErrorMessage" class="text-muted mb-4">Terjadi kendala saat menyusun laporan A4.</p>
+                        <button type="button" class="btn btn-primary w-100" data-dismiss="modal">
+                            Tutup & Coba Lagi
+                        </button>
+                    </div>
+
+                    <!-- Success State -->
+                    <div id="captureSuccessUI" class="d-none">
+                        <div class="capture-status-modal-icon icon-success">
+                            <i class="fas fa-check-circle"></i>
+                        </div>
+                        <h4 class="font-weight-bold mb-2">Snapshot Berhasil!</h4>
+                        <p class="text-muted mb-4">Laporan A4 dalam satu file JPG telah berhasil diunduh ke perangkat Anda.</p>
+                        <button type="button" class="btn btn-primary w-100" data-dismiss="modal">
+                            Selesai
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 @endsection
 
 @section('scripts')
+<script src="{{ asset('vendor/html2canvas/html2canvas.min.js') }}"></script>
 <script>
     window.dailyDashboardPage = @json($dashboardPage ?? []);
 </script>
@@ -2174,6 +2277,219 @@
                     syncUnitSelect(latestFilters, selects.unit_kerja.value || 'all');
                 });
         };
+
+        // --- Capture All Logic (A4 Portrait Composer) ---
+        const captureBtn = document.getElementById('captureAllBtn');
+        const captureModal = document.getElementById('captureStatusModal');
+        const progressUI = document.getElementById('captureProgressUI');
+        const errorUI = document.getElementById('captureErrorUI');
+        const successUI = document.getElementById('captureSuccessUI');
+        const errorMessageUI = document.getElementById('captureErrorMessage');
+
+        const A4_EXPORT = {
+            width: 2480,
+            height: 3508,
+            marginX: 140,
+            marginY: 130,
+            headerHeight: 280,
+            footerHeight: 80,
+            sectionGap: 72,
+        };
+
+        function waitFrame() {
+            return new Promise(resolve => requestAnimationFrame(() => resolve()));
+        }
+
+        function drawTextEllipsis(ctx, text, x, y, maxWidth) {
+            const source = String(text || '');
+            if (ctx.measureText(source).width <= maxWidth) {
+                ctx.fillText(source, x, y);
+                return;
+            }
+
+            let trimmed = source;
+            while (trimmed.length > 0 && ctx.measureText(`${trimmed}...`).width > maxWidth) {
+                trimmed = trimmed.slice(0, -1);
+            }
+            ctx.fillText(`${trimmed}...`, x, y);
+        }
+
+        function drawExportHeader(ctx) {
+            const { width, marginX, marginY } = A4_EXPORT;
+            const kancaText = scopeKanca?.textContent?.trim() || 'Semua Kanca';
+            const unitText = scopeUnit?.textContent?.trim() || 'Semua Unit';
+            const posisiText = scopePosisi?.textContent?.trim() || 'Belum Ada Data';
+            const rkaText = scopeRka?.textContent?.trim() || 'Belum Ada Data';
+
+            ctx.fillStyle = '#004685'; // BRI Blue Dark
+            ctx.fillRect(0, 0, width, 24);
+
+            ctx.fillStyle = '#0f172a';
+            ctx.font = 'bold 62px "Inter", "Segoe UI", Arial, sans-serif';
+            ctx.fillText('Daily Dashboard Performance', marginX, marginY + 45);
+
+            ctx.fillStyle = '#475569';
+            ctx.font = '600 30px "Inter", "Segoe UI", Arial, sans-serif';
+            drawTextEllipsis(ctx, `Kanca: ${kancaText}   |   Unit: ${unitText}`, marginX, marginY + 105, width - (marginX * 2));
+            drawTextEllipsis(ctx, `Periode: ${posisiText}   |   RKA: ${rkaText}`, marginX, marginY + 152, width - (marginX * 2));
+
+            ctx.strokeStyle = '#e2e8f0';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(marginX, marginY + 205);
+            ctx.lineTo(width - marginX, marginY + 205);
+            ctx.stroke();
+        }
+
+        function drawExportFooter(ctx) {
+            const { width, height, marginX } = A4_EXPORT;
+            ctx.strokeStyle = '#e2e8f0';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(marginX, height - 85);
+            ctx.lineTo(width - marginX, height - 85);
+            ctx.stroke();
+
+            ctx.fillStyle = '#94a3b8';
+            ctx.font = '600 22px "Inter", "Segoe UI", Arial, sans-serif';
+            ctx.fillText(`Dashboard A-Six Generated: ${new Date().toLocaleString('id-ID')}`, marginX, height - 45);
+            
+            ctx.textAlign = 'right';
+            ctx.fillText('Halaman 1 / 1', width - marginX, height - 45);
+            ctx.textAlign = 'left';
+        }
+
+        const captureAllDailyDashboard = async function() {
+            if (window.jQuery) {
+                window.jQuery(captureModal).modal('show');
+                progressUI.classList.remove('d-none');
+                errorUI.classList.add('d-none');
+                successUI.classList.add('d-none');
+            }
+
+            const originalBtnHtml = captureBtn.innerHTML;
+            captureBtn.disabled = true;
+            captureBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> CAPTURING...';
+
+            try {
+                // 1. Group rows by segments
+                const tbodyRows = Array.from(document.querySelectorAll('#daily-dashboard-body tr'));
+                const segments = [];
+                let currentSegment = null;
+
+                const blockClasses = [
+                    'metric-block-simpanan', 'metric-block-os', 'metric-block-sml', 
+                    'metric-block-npl', 'metric-block-casa', 'metric-block-ldr', 'metric-block-recdh'
+                ];
+
+                tbodyRows.forEach(row => {
+                    if (row.classList.contains('row-hidden-by-scope')) return;
+                    
+                    const isNewBlock = blockClasses.some(cls => row.classList.contains(cls));
+                    if (isNewBlock || segments.length === 0) {
+                        currentSegment = {
+                            rows: [row]
+                        };
+                        segments.push(currentSegment);
+                    } else if (currentSegment) {
+                        currentSegment.rows.push(row);
+                    }
+                });
+
+                if (segments.length === 0) throw new Error('Tidak ada data untuk dicapture.');
+
+                // 2. Prepare Main Canvas
+                const reportCanvas = document.createElement('canvas');
+                reportCanvas.width = A4_EXPORT.width;
+                reportCanvas.height = A4_EXPORT.height;
+                const ctx = reportCanvas.getContext('2d');
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, reportCanvas.width, reportCanvas.height);
+
+                drawExportHeader(ctx);
+
+                // 3. Render Segments
+                let currentY = A4_EXPORT.marginY + A4_EXPORT.headerHeight;
+                const originalTable = document.querySelector('.daily-table');
+                const colgroupHtml = originalTable.querySelector('colgroup').outerHTML;
+                const theadHtml = originalTable.querySelector('thead').outerHTML;
+
+                for (let i = 0; i < segments.length; i++) {
+                    const segment = segments[i];
+                    
+                    // Create temporary table for this segment
+                    const tempWrap = document.createElement('div');
+                    tempWrap.style.position = 'absolute';
+                    tempWrap.style.left = '-9999px';
+                    tempWrap.style.top = '0';
+                    tempWrap.style.width = '1670px'; // Standard dashboard table width
+                    
+                    const tableHtml = `
+                        <table class="daily-table" style="width: 1670px; border-collapse: separate; border-spacing: 0; background: #ffffff;">
+                            ${colgroupHtml}
+                            ${theadHtml}
+                            <tbody>
+                                ${segment.rows.map(r => {
+                                    const clone = r.cloneNode(true);
+                                    clone.querySelectorAll('.sticky-no, .sticky-label').forEach(cell => {
+                                        cell.style.position = 'static';
+                                        cell.style.backgroundColor = window.getComputedStyle(cell).backgroundColor;
+                                    });
+                                    return clone.outerHTML;
+                                }).join('')}
+                            </tbody>
+                        </table>
+                    `;
+                    tempWrap.innerHTML = tableHtml;
+                    document.body.appendChild(tempWrap);
+
+                    await waitFrame();
+
+                    const segmentCanvas = await html2canvas(tempWrap.querySelector('table'), {
+                        scale: 1.5,
+                        useCORS: true,
+                        backgroundColor: '#ffffff',
+                        logging: false
+                    });
+
+                    document.body.removeChild(tempWrap);
+
+                    // Draw to main canvas
+                    const targetWidth = A4_EXPORT.width - (A4_EXPORT.marginX * 2);
+                    const targetHeight = (segmentCanvas.height * targetWidth) / segmentCanvas.width;
+
+                    ctx.drawImage(segmentCanvas, A4_EXPORT.marginX, currentY, targetWidth, targetHeight);
+                    currentY += targetHeight + A4_EXPORT.sectionGap;
+                    
+                    await waitFrame();
+                }
+
+                drawExportFooter(ctx);
+
+                // 4. Download
+                const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+                const link = document.createElement('a');
+                link.download = `Daily-Dashboard-A4-${timestamp}.jpg`;
+                link.href = reportCanvas.toDataURL('image/jpeg', 0.95);
+                link.click();
+
+                progressUI.classList.add('d-none');
+                successUI.classList.remove('d-none');
+            } catch (err) {
+                console.error('Capture failed:', err);
+                progressUI.classList.add('d-none');
+                errorUI.classList.add('d-none'); // Hide progress if showing error
+                errorUI.classList.remove('d-none');
+                errorMessageUI.textContent = 'Gagal menyusun laporan A4. Silakan coba lagi.';
+            } finally {
+                captureBtn.disabled = false;
+                captureBtn.innerHTML = originalBtnHtml;
+            }
+        };
+
+        if (captureBtn) {
+            captureBtn.addEventListener('click', captureAllDailyDashboard);
+        }
 
         renderKancaDropdown(initialFilters.kanca || [], initialSelected.kanca || []);
         syncUnitSelect(initialFilters, initialSelected.unit_kerja || 'all');

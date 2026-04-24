@@ -127,8 +127,8 @@
                         @if($showTargets)
                             <td class="text-center-important" style="font-size: 0.72rem;">{{ $branch['subtotal']['target_jg_deb'] ?: '-' }}</td>
                             <td>{{ $branch['subtotal']['target_jg_os'] > 0 ? $formatAmount($branch['subtotal']['target_jg_os']) : '-' }}</td>
-                            <td class="text-center-important">{{ ($branch['subtotal']['ach_deb'] ?? 0) > 0 ? $formatCount($branch['subtotal']['ach_deb']) : '-' }}</td>
-                            <td>{{ ($branch['subtotal']['ach_os'] ?? 0) > 0 ? $formatAmount($branch['subtotal']['ach_os']) : '-' }}</td>
+                            <td class="text-center-important">{{ $formatCount($branch['subtotal']['ach_deb'] ?? 0) }}</td>
+                            <td>{{ $formatAmount($branch['subtotal']['ach_os'] ?? 0) }}</td>
                         @endif
                     </tr>
 
@@ -181,8 +181,8 @@
                                 @if($showTargets)
                                     <td class="text-center-important" style="background: rgba(8, 87, 195, 0.02); font-size: 0.7rem;">{{ $item['target_jg_deb'] ?: '' }}</td>
                                     <td style="background: rgba(8, 87, 195, 0.02);">{{ $item['target_jg_os'] > 0 ? $formatAmount($item['target_jg_os']) : '' }}</td>
-                                    <td class="text-center-important">{{ ($item['ach_deb'] ?? 0) > 0 ? $formatCount($item['ach_deb']) : '' }}</td>
-                                    <td>{{ ($item['ach_os'] ?? 0) > 0 ? $formatAmount($item['ach_os']) : '' }}</td>
+                                    <td class="text-center-important">{{ $formatCount($item['ach_deb'] ?? 0) }}</td>
+                                    <td>{{ $formatAmount($item['ach_os'] ?? 0) }}</td>
                                 @endif
                             </tr>
                         @endforeach
@@ -212,8 +212,8 @@
                         @if($showTargets)
                             <td class="text-center-important">{{ $total['target_jg_deb'] ?: '-' }}</td>
                             <td>{{ $total['target_jg_os'] > 0 ? $formatAmount($total['target_jg_os']) : '-' }}</td>
-                            <td class="text-center-important">{{ ($total['ach_deb'] ?? 0) > 0 ? $formatCount($total['ach_deb']) : '-' }}</td>
-                            <td>{{ ($total['ach_os'] ?? 0) > 0 ? $formatAmount($total['ach_os']) : '-' }}</td>
+                            <td class="text-center-important">{{ $formatCount($total['ach_deb'] ?? 0) }}</td>
+                            <td>{{ $formatAmount($total['ach_os'] ?? 0) }}</td>
                         @endif
                     </tr>
                 @endif

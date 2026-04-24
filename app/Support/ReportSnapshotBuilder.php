@@ -1820,10 +1820,9 @@ class ReportSnapshotBuilder
 
     private function computePerformanceRmRows(string $period): array
     {
-        $latestSmpnPosisi = DB::table('simpanan_multipn')->max('posisi');
         $rows = [];
-        $normalizedSegmenSql = $this->buildKinerjaRmNormalizedSql('segmen_dashboard');
-        $normalizedProductSql = $this->buildKinerjaRmNormalizedSql('produk_dashboard');
+        $periodStart = Carbon::parse($period)->startOfMonth()->toDateString();
+        $latestSmpnPosisi = (int) DB::table('simpanan_multipn')->max('posisi');
 
         foreach (self::KINERJA_RM_SEGMENT_RULES as $segment => $rules) {
             $normalizedRules = $this->normalizeKinerjaRmRules((array) $rules);
@@ -1832,175 +1831,171 @@ class ReportSnapshotBuilder
             }
 
             $isSmall = ($segment === 'SMALL');
-            
-            // 1. Ambil data Loan per CIF per RM
-            $query = DB::table('daily_loan_dinamis')
-                ->where('periode', $period)
-                ->where(function ($scope) use ($normalizedRules, $normalizedSegmenSql, $normalizedProductSql) {
-                    foreach ($normalizedRules as $rule) {
-                        $scope->orWhere(function ($ruleScope) use ($rule, $normalizedSegmenSql, $normalizedProductSql) {
-                            $ruleScope->whereRaw("{$normalizedSegmenSql} = ?", [$rule['segment']])
-                                ->whereIn(DB::raw($normalizedProductSql), $rule['products']);
-                        });
-                    }
-                })
-                ->whereNotNull('pn_pengelola1')
-                ->where('pn_pengelola1', '<>', '')
-                ->selectRaw("UPPER(TRIM(cabang1)) as cabang")
-                ->selectRaw("UPPER(TRIM(unit1)) as unit")
-                ->selectRaw("UPPER(TRIM(pn_pengelola1)) as rm_key")
-                ->selectRaw("UPPER(TRIM(produk_dashboard)) as produk")
-                ->selectRaw("cifno")
-                ->selectRaw("SUM(COALESCE(baki_debet1, 0)) as loan_os")
-                ->selectRaw("SUM(CASE WHEN kol_adk1 = 1 THEN COALESCE(baki_debet1, 0) ELSE 0 END) as lancar_os");
+            $segmentRows = $this->fetchSegmentRmAggregates($period, $segment, $normalizedRules, $isSmall);
 
-            if ($isSmall) {
-                $query->selectRaw("SUM(CASE WHEN kol_adk1 = 2 THEN COALESCE(baki_debet1, 0) ELSE 0 END) as sml_os")
-                    ->selectRaw("SUM(CASE WHEN kol_adk1 IN (3,4,5) THEN COALESCE(baki_debet1, 0) ELSE 0 END) as npl_os")
-                    ->selectRaw("SUM(CASE WHEN kol_adk1 = 1 AND UPPER(TRIM(flag_restruk)) = 'Y' THEN COALESCE(baki_debet1, 0) ELSE 0 END) as restruk_os")
-                    ->selectRaw("COUNT(DISTINCT nomor_rekening1) as total_deb")
-                    ->selectRaw("COUNT(DISTINCT CASE WHEN " . StrictDateParser::buildMySqlCaseExpression("NULLIF(TRIM(CAST(tgl_realisasi AS CHAR)), '')") . " BETWEEN ? AND ? THEN nomor_rekening1 END) as realisasi_deb", [Carbon::parse($period)->startOfMonth()->toDateString(), $period])
-                    ->selectRaw("SUM(CASE WHEN " . StrictDateParser::buildMySqlCaseExpression("NULLIF(TRIM(CAST(tgl_realisasi AS CHAR)), '')") . " BETWEEN ? AND ? THEN COALESCE(baki_debet1, 0) ELSE 0 END) as realisasi_os", [Carbon::parse($period)->startOfMonth()->toDateString(), $period]);
-            } else {
-                $query->selectRaw("0 as sml_os")
-                    ->selectRaw("0 as npl_os")
-                    ->selectRaw("0 as restruk_os")
-                    ->selectRaw("COUNT(DISTINCT nomor_rekening1) as total_deb")
-                    ->selectRaw("0 as realisasi_deb")
-                    ->selectRaw("0 as realisasi_os");
-            }
-
-            $cifLoanData = $query->groupBy('cabang', 'unit', 'rm_key', 'produk', 'cifno')
-                ->get();
-
-            if ($cifLoanData->isEmpty()) {
+            if (empty($segmentRows)) {
                 continue;
             }
 
-            $uniqueCifs = $cifLoanData->pluck('cifno')->unique()->filter()->values()->all();
-            $normalizedCifs = collect($uniqueCifs)->map(fn($c) => preg_replace('/[^0-9]/', '', (string)$c))->unique()->filter()->values()->all();
-            
+            $uniqueCifs = array_reduce($segmentRows, function ($cifs, $row) {
+                if (!empty($row['cifno_list'])) {
+                    $parsed = array_filter(array_map('trim', explode(',', (string)$row['cifno_list'])));
+                    return array_merge($cifs, $parsed);
+                }
+                return $cifs;
+            }, []);
+
             $deposits = [];
-            if (!empty($normalizedCifs)) {
-                $deposits = DB::table('simpanan_multipn')
-                    ->where('posisi', $latestSmpnPosisi)
-                    ->whereIn(DB::raw("REGEXP_REPLACE(CIFNO, '[^0-9]', '')"), $normalizedCifs)
-                    ->selectRaw("REGEXP_REPLACE(CIFNO, '[^0-9]', '') as clean_cif")
-                    ->selectRaw("SUM(COALESCE(saldo_idr, 0)) as total_deposit")
-                    ->groupBy('clean_cif')
-                    ->pluck('total_deposit', 'clean_cif')
-                    ->all();
+            if (!empty($uniqueCifs)) {
+                $deposits = $this->fetchDepositsByNormalizedCifs(array_unique($uniqueCifs), $latestSmpnPosisi);
             }
 
-            // 2. Agregasi ke level RM/Produk
-            $aggr = [];
-            foreach ($cifLoanData as $cd) {
-                $canonicalProduct = $this->canonicalizeKinerjaRmProduct((string) $segment, (string) $cd->produk);
-                $key = implode('|', [$cd->cabang, $cd->unit, $cd->rm_key, $canonicalProduct]);
-                $cleanCif = preg_replace('/[^0-9]/', '', (string)$cd->cifno);
-                $dep = (float)($deposits[$cleanCif] ?? 0);
+            $rmTotals = [];
+            foreach ($segmentRows as $row) {
+                $rm = (string) $row['rm'];
+                $cifList = array_filter(array_map('trim', explode(',', (string)($row['cifno_list'] ?? ''))));
+                $depSum = array_reduce($cifList, fn ($sum, $cif) => $sum + ((float) ($deposits[$cif] ?? 0)), 0.0);
 
-                $aggr[$key] ??= [
+                if (!isset($rmTotals[$rm])) {
+                    $rmTotals[$rm] = [
+                        'loan' => 0, 'lancar' => 0, 'npl' => 0,
+                        'sml' => 0, 'restruk' => 0, 'deposit' => 0,
+                        'realisasi_os' => 0, 'total_deb' => 0, 'realisasi_deb' => 0
+                    ];
+                }
+
+                $rmTotals[$rm]['loan'] += (float) $row['loan_os'];
+                $rmTotals[$rm]['lancar'] += (float) $row['lancar_os'];
+                $rmTotals[$rm]['npl'] += (float) $row['npl_os'];
+                $rmTotals[$rm]['sml'] += (float) $row['sml_os'];
+                $rmTotals[$rm]['restruk'] += (float) $row['restruk_os'];
+                $rmTotals[$rm]['deposit'] += $depSum;
+                $rmTotals[$rm]['realisasi_os'] += (float) $row['realisasi_os'];
+                $rmTotals[$rm]['total_deb'] += (int) $row['total_deb'];
+                $rmTotals[$rm]['realisasi_deb'] += (int) $row['realisasi_deb'];
+            }
+
+            $rmGrades = $isSmall
+                ? $this->computeSmallSegmentGrades($period, $rmTotals)
+                : array_fill_keys(array_keys($rmTotals), null);
+
+            foreach ($segmentRows as $row) {
+                $rm = (string) $row['rm'];
+                $cifList = array_filter(array_map('trim', explode(',', (string)($row['cifno_list'] ?? ''))));
+                $depSum = array_reduce($cifList, fn ($sum, $cif) => $sum + ((float) ($deposits[$cif] ?? 0)), 0.0);
+                $canonicalProduct = $this->canonicalizeKinerjaRmProduct($segment, (string) $row['produk']);
+
+                $rows[] = [
                     'periode' => $period,
-                    'cabang' => $cd->cabang,
-                    'unit' => $cd->unit,
-                    'rm' => $cd->rm_key,
+                    'cabang' => (string) $row['cabang'],
+                    'unit' => (string) $row['unit'],
+                    'rm' => $rm,
                     'segmen' => $segment,
                     'produk' => $canonicalProduct,
-                    'loan_os' => 0,
-                    'lancar_os' => 0,
-                    'sml_os' => 0,
-                    'npl_os' => 0,
-                    'restruk_os' => 0,
-                    'total_deb' => 0,
-                    'realisasi_deb' => 0,
-                    'realisasi_os' => 0,
-                    'total_deposit' => 0,
+                    'loan_os' => (float) $row['loan_os'],
+                    'lancar_os' => (float) $row['lancar_os'],
+                    'sml_os' => (float) $row['sml_os'],
+                    'npl_os' => (float) $row['npl_os'],
+                    'restruk_os' => (float) $row['restruk_os'],
+                    'total_deb' => (int) $row['total_deb'],
+                    'realisasi_deb' => (int) $row['realisasi_deb'],
+                    'realisasi_os' => (float) $row['realisasi_os'],
+                    'total_deposit' => $depSum,
+                    'quadrant' => $rmGrades[$rm] ?? null,
                     'created_at' => now(),
                     'updated_at' => now(),
                 ];
-
-                $aggr[$key]['loan_os'] += (float)$cd->loan_os;
-                $aggr[$key]['lancar_os'] += (float)$cd->lancar_os;
-                $aggr[$key]['sml_os'] += (float)$cd->sml_os;
-                $aggr[$key]['npl_os'] += (float)$cd->npl_os;
-                $aggr[$key]['restruk_os'] += (float)$cd->restruk_os;
-                $aggr[$key]['total_deb'] += (int)$cd->total_deb;
-                $aggr[$key]['realisasi_deb'] += (int)$cd->realisasi_deb;
-                $aggr[$key]['realisasi_os'] += (float)$cd->realisasi_os;
-                $aggr[$key]['total_deposit'] += $dep;
-            }
-
-            // 3. Hitung Kuadran per RM dalam segmen ini
-            $rmTotals = [];
-            foreach ($aggr as $key => $data) {
-                $rm = $data['rm'];
-                $rmTotals[$rm] ??= ['loan' => 0, 'lancar' => 0, 'npl' => 0, 'sml' => 0, 'restruk' => 0, 'deposit' => 0, 'realisasi_os' => 0];
-                $rmTotals[$rm]['loan'] += $data['loan_os'];
-                $rmTotals[$rm]['lancar'] += $data['lancar_os'];
-                $rmTotals[$rm]['npl'] += $data['npl_os'];
-                $rmTotals[$rm]['sml'] += $data['sml_os'];
-                $rmTotals[$rm]['restruk'] += $data['restruk_os'];
-                $rmTotals[$rm]['deposit'] += $data['total_deposit'];
-                $rmTotals[$rm]['realisasi_os'] += $data['realisasi_os'];
-            }
-
-            $rmGrades = [];
-            foreach ($rmTotals as $rm => $total) {
-                $grade = null;
-
-                if ($segment === 'SMALL') {
-                    // 1. Hitung Ratas Realisasi (Jan - Current)
-                    $dateObj = Carbon::parse($period);
-                    $year = $dateObj->year;
-                    $month = $dateObj->month;
-                    
-                    $historyRealization = DB::table(self::PERFORMANCE_RM_SNAPSHOT_TABLE)
-                        ->where('rm', $rm)
-                        ->where('segmen', 'SMALL')
-                        ->whereIn('produk', ['COMMERCIAL', 'CASHCALL'])
-                        ->whereYear('periode', $year)
-                        ->where('periode', '<', $dateObj->startOfMonth()->toDateString())
-                        ->select('periode', DB::raw('SUM(realisasi_os) as total_realisasi'))
-                        ->groupBy('periode')
-                        ->get();
-                        
-                    $sumHistorical = $historyRealization->sum('total_realisasi');
-                    
-                    // Ratas = (History Sum + Current Realization) / Current Month Index
-                    $divisor = max(1, $month); 
-                    $ratas = ($sumHistorical + $total['realisasi_os']) / $divisor;
-                    $ratasInMillion = $ratas / 1000000;
-                    
-                    $isRatasA = $ratasInMillion >= 1600;
-                    
-                    // 2. Hitung % LAR
-                    $larValue = (float)$total['restruk'] + (float)$total['sml'] + (float)$total['npl'];
-                    $pctLarValue = $total['loan'] > 0 ? ($larValue / $total['loan']) * 100 : 0;
-                    $isLarA = $pctLarValue < 17.5;
-                    
-                    // 3. Mapping Quadrant (Small Only)
-                    if ($isRatasA && $isLarA) {
-                        $grade = 1;
-                    } elseif ($isRatasA && !$isLarA) {
-                        $grade = 2;
-                    } elseif (!$isRatasA && $isLarA) {
-                        $grade = 3;
-                    } else {
-                        $grade = 4;
-                    }
-                }
-
-                $rmGrades[$rm] = $grade;
-            }
-
-            foreach ($aggr as $key => $data) {
-                $data['quadrant'] = $rmGrades[$data['rm']] ?? null;
-                $rows[] = $data;
             }
         }
 
         return $rows;
+    }
+
+    private function fetchSegmentRmAggregates(string $period, string $segment, array $normalizedRules, bool $isSmall): array
+    {
+        $normalizedSegmenSql = $this->buildKinerjaRmNormalizedSql('segmen_dashboard');
+        $normalizedProductSql = $this->buildKinerjaRmNormalizedSql('produk_dashboard');
+        $periodStart = Carbon::parse($period)->startOfMonth()->toDateString();
+
+        $query = DB::table('daily_loan_dinamis')
+            ->where('periode', $period)
+            ->where(function ($scope) use ($normalizedRules, $normalizedSegmenSql, $normalizedProductSql) {
+                foreach ($normalizedRules as $rule) {
+                    $scope->orWhere(function ($ruleScope) use ($rule, $normalizedSegmenSql, $normalizedProductSql) {
+                        $ruleScope->whereRaw("{$normalizedSegmenSql} = ?", [$rule['segment']])
+                            ->whereIn(DB::raw($normalizedProductSql), $rule['products']);
+                    });
+                }
+            })
+            ->whereNotNull('pn_pengelola1')
+            ->where('pn_pengelola1', '<>', '')
+            ->selectRaw("UPPER(TRIM(cabang1)) as cabang")
+            ->selectRaw("UPPER(TRIM(unit1)) as unit")
+            ->selectRaw("UPPER(TRIM(pn_pengelola1)) as rm")
+            ->selectRaw("UPPER(TRIM(produk_dashboard)) as produk")
+            ->selectRaw("SUM(COALESCE(baki_debet1, 0)) as loan_os")
+            ->selectRaw("SUM(CASE WHEN kol_adk1 = 1 THEN COALESCE(baki_debet1, 0) ELSE 0 END) as lancar_os")
+            ->selectRaw("SUM(CASE WHEN kol_adk1 = 2 THEN COALESCE(baki_debet1, 0) ELSE 0 END) as sml_os")
+            ->selectRaw("SUM(CASE WHEN kol_adk1 IN (3,4,5) THEN COALESCE(baki_debet1, 0) ELSE 0 END) as npl_os")
+            ->selectRaw("SUM(CASE WHEN kol_adk1 = 1 AND UPPER(TRIM(COALESCE(flag_restruk, ''))) = 'Y' THEN COALESCE(baki_debet1, 0) ELSE 0 END) as restruk_os")
+            ->selectRaw("COUNT(DISTINCT nomor_rekening1) as total_deb")
+            ->selectRaw("COUNT(DISTINCT CASE WHEN tgl_realisasi BETWEEN ? AND ? THEN nomor_rekening1 END) as realisasi_deb", [$periodStart, $period])
+            ->selectRaw("SUM(CASE WHEN tgl_realisasi BETWEEN ? AND ? THEN COALESCE(baki_debet1, 0) ELSE 0 END) as realisasi_os", [$periodStart, $period])
+            ->selectRaw("GROUP_CONCAT(DISTINCT REGEXP_REPLACE(COALESCE(cifno, ''), '[^0-9]', '') SEPARATOR ',') as cifno_list")
+            ->groupBy(DB::raw("UPPER(TRIM(cabang1)), UPPER(TRIM(unit1)), UPPER(TRIM(pn_pengelola1)), UPPER(TRIM(produk_dashboard))"))
+            ->get();
+
+        return $query->map(fn($row) => (array)$row)->toArray();
+    }
+
+    private function fetchDepositsByNormalizedCifs(array $normalizedCifs, ?int $latestPosisi): array
+    {
+        if (empty($normalizedCifs)) {
+            return [];
+        }
+
+        $deposits = DB::table('simpanan_multipn')
+            ->where('posisi', $latestPosisi ?? (int)DB::table('simpanan_multipn')->max('posisi'))
+            ->selectRaw("REGEXP_REPLACE(CIFNO, '[^0-9]', '') as clean_cif")
+            ->selectRaw("SUM(COALESCE(saldo_idr, 0)) as total_deposit");
+
+        $cleanCifs = array_map(fn($c) => preg_replace('/[^0-9]/', '', (string)$c), $normalizedCifs);
+        $deposits->whereIn(DB::raw("REGEXP_REPLACE(CIFNO, '[^0-9]', '')"), array_unique($cleanCifs));
+
+        return $deposits
+            ->groupBy('clean_cif')
+            ->pluck('total_deposit', 'clean_cif')
+            ->all();
+    }
+
+    private function computeSmallSegmentGrades(string $period, array $rmTotals): array
+    {
+        $grades = [];
+        $dateObj = Carbon::parse($period);
+        $year = $dateObj->year;
+        $month = $dateObj->month;
+
+        foreach (array_keys($rmTotals) as $rm) {
+            $historySum = DB::table(self::PERFORMANCE_RM_SNAPSHOT_TABLE)
+                ->where('rm', $rm)
+                ->where('segmen', 'SMALL')
+                ->whereIn('produk', ['COMMERCIAL', 'CASHCALL'])
+                ->whereYear('periode', $year)
+                ->where('periode', '<', $dateObj->startOfMonth()->toDateString())
+                ->selectRaw('SUM(realisasi_os) as total')
+                ->first()?->total ?? 0;
+
+            $ratasInMillion = (($historySum + $rmTotals[$rm]['realisasi_os']) / max(1, $month)) / 1000000;
+            $isRatasA = $ratasInMillion >= 1600;
+
+            $larValue = $rmTotals[$rm]['restruk'] + $rmTotals[$rm]['sml'] + $rmTotals[$rm]['npl'];
+            $pctLar = $rmTotals[$rm]['loan'] > 0 ? ($larValue / $rmTotals[$rm]['loan']) * 100 : 0;
+            $isLarA = $pctLar < 17.5;
+
+            $grades[$rm] = ($isRatasA && $isLarA) ? 1 : (($isRatasA && !$isLarA) ? 2 : ((!$isRatasA && $isLarA) ? 3 : 4));
+        }
+
+        return $grades;
     }
 
     private function buildKinerjaRmNormalizedSql(string $column): string

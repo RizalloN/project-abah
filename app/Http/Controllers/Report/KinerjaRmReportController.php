@@ -17,6 +17,8 @@ class KinerjaRmReportController extends Controller
 {
     private const DEFAULT_TITLE = 'Performance Per RM';
     private const SEGMENT_LABEL = 'KPR';
+    private const SOURCE_TABLE = 'daily_loan_dinamis';
+    private const SNAPSHOT_TABLE = 'performance_rm_snapshots';
     
     // Mapping segmen ke product options
     private const SEGMENT_PRODUCT_MAP = [
@@ -36,13 +38,12 @@ class KinerjaRmReportController extends Controller
     {
         $availablePeriods = $this->fetchAvailablePeriods();
         $selectedSegmen = $this->resolveSelectedSegmen($request->input('segmen'));
-        
-        // LIMITATION FOR MIKRO SEGMENT
-        $availableCabangs = $this->fetchAvailableCabangsBySegmen($selectedSegmen);
-        
         $selectedPeriod = $this->resolveSelectedPeriod($availablePeriods, $request->input('periode'))
             ?? $availablePeriods->first()
             ?? Carbon::now()->toDateString();
+
+        // LIMITATION FOR MIKRO SEGMENT
+        $availableCabangs = $this->fetchAvailableCabangsBySegmen($selectedSegmen);
         $selectedCabang = $this->resolveSelectedCabang($availableCabangs, $request->input('cabang1'));
         
         // Force selection for MICRO if not selected
@@ -183,24 +184,24 @@ class KinerjaRmReportController extends Controller
 
     private function fetchAvailablePeriods(): Collection
     {
-        $cacheKey = 'kinerja_rm_periods_v2:' . $this->reportCacheVersion();
+        $cacheKey = 'kinerja_rm_periods_v3:' . $this->reportCacheVersion();
 
         return Cache::remember($cacheKey, 600, function () {
-            return DB::table('performance_rm_snapshots')
-                ->select('periode')
-                ->distinct()
-                ->orderByDesc('periode')
-                ->pluck('periode')
-                ->map(fn ($value) => Carbon::parse($value)->toDateString());
+            return collect()
+                ->merge($this->fetchPeriodList(self::SOURCE_TABLE, 'periode'))
+                ->merge($this->fetchPeriodList(self::SNAPSHOT_TABLE, 'periode'))
+                ->unique()
+                ->sortDesc()
+                ->values();
         });
     }
 
     private function fetchAvailableCabangsBySegmen(string $segmen): Collection
     {
-        $cacheKey = 'kinerja_rm_cabangs_v2:' . $this->reportCacheVersion() . ':' . $segmen;
+        $cacheKey = 'kinerja_rm_cabangs_v3:' . $this->reportCacheVersion() . ':' . $segmen;
         
         return Cache::remember($cacheKey, 1800, function () use ($segmen) {
-            return DB::table('performance_rm_snapshots')
+            return DB::table(self::SNAPSHOT_TABLE)
                 ->where('segmen', $segmen)
                 ->whereNotNull('cabang')
                 ->where('cabang', '<>', '')
@@ -210,6 +211,24 @@ class KinerjaRmReportController extends Controller
                 ->pluck('cabang')
                 ->values();
         });
+    }
+
+    private function fetchPeriodList(string $table, string $column): Collection
+    {
+        if (!Schema::hasTable($table) || !Schema::hasColumn($table, $column)) {
+            return collect();
+        }
+
+        return DB::table($table)
+            ->whereNotNull($column)
+            ->where($column, '<>', '')
+            ->select($column)
+            ->distinct()
+            ->orderByDesc($column)
+            ->pluck($column)
+            ->map(fn ($value) => $this->normalizeDate((string) $value))
+            ->filter()
+            ->values();
     }
 
     private function resolveSelectedPeriod(Collection $periods, ?string $requestedPeriod): ?string
@@ -281,7 +300,7 @@ class KinerjaRmReportController extends Controller
         ?string $qualityType = null
     ): array
     {
-        $cacheKey = 'kinerja_rm_rows_v4:' . $this->reportCacheVersion() . ':' . md5(json_encode([
+        $cacheKey = 'kinerja_rm_rows_v7:' . $this->reportCacheVersion() . ':' . md5(json_encode([
             'segmen' => $segmen,
             'selected' => $selectedPeriod,
             'yoy' => $yoyPeriod,
@@ -300,7 +319,7 @@ class KinerjaRmReportController extends Controller
                 $mtdPeriod,
             ])));
 
-            $dbRows = DB::table('performance_rm_snapshots')
+            $dbRows = DB::table(self::SNAPSHOT_TABLE)
                 ->whereIn('periode', $periods)
                 ->where('segmen', $segmen)
                 ->when($selectedProduct !== null, function ($query) use ($selectedProduct) {
@@ -310,6 +329,31 @@ class KinerjaRmReportController extends Controller
                     $query->where('cabang', $selectedCabang);
                 })
                 ->get();
+
+            $snapshotPeriods = $dbRows
+                ->pluck('periode')
+                ->map(fn ($period) => $this->normalizeDate((string) $period))
+                ->filter()
+                ->unique()
+                ->values()
+                ->all();
+            $sourceReplacementPeriods = array_values(array_diff($periods, $snapshotPeriods));
+
+            if (in_array($selectedPeriod, $periods, true)
+                && !in_array($selectedPeriod, $sourceReplacementPeriods, true)
+                && $this->snapshotRealisasiLooksStale($selectedPeriod)) {
+                $sourceReplacementPeriods[] = $selectedPeriod;
+                $dbRows = $dbRows->reject(fn ($row) => (string) $row->periode === $selectedPeriod)->values();
+            }
+
+            if ($sourceReplacementPeriods !== []) {
+                $dbRows = $dbRows->concat($this->fetchSourceBranchRows(
+                    $segmen,
+                    $sourceReplacementPeriods,
+                    $selectedCabang,
+                    $selectedProduct
+                ));
+            }
 
             $manualTargets = $this->getManualJgTargets();
             $branches = [];
@@ -343,10 +387,10 @@ class KinerjaRmReportController extends Controller
                 ];
 
                 if ($row->periode === $selectedPeriod) {
-                    $pivoted[$key]['curr'] = $val;
-                    $pivoted[$key]['curr_deb'] = (int)$row->total_deb;
-                    $pivoted[$key]['realisasi_deb'] = (int)($row->realisasi_deb ?? 0);
-                    $pivoted[$key]['realisasi_os'] = (float)($row->realisasi_os ?? 0.0);
+                    $pivoted[$key]['curr'] += $val;
+                    $pivoted[$key]['curr_deb'] += (int)$row->total_deb;
+                    $pivoted[$key]['realisasi_deb'] += (int)($row->realisasi_deb ?? 0);
+                    $pivoted[$key]['realisasi_os'] += (float)($row->realisasi_os ?? 0.0);
                     $quadrant = $row->quadrant ?? null;
 
                     if ($quadrant === null) {
@@ -368,19 +412,19 @@ class KinerjaRmReportController extends Controller
                         }
                     }
 
-                    $pivoted[$key]['quadrant'] = $quadrant;
+                    $pivoted[$key]['quadrant'] ??= $quadrant;
                 }
                 
                 if ($row->periode === $yoyPeriod) {
-                    $pivoted[$key]['yoy'] = $val;
+                    $pivoted[$key]['yoy'] += $val;
                 }
                 
                 if ($row->periode === $ytdPeriod) {
-                    $pivoted[$key]['ytd'] = $val;
+                    $pivoted[$key]['ytd'] += $val;
                 }
                 
                 if ($row->periode === $mtdPeriod) {
-                    $pivoted[$key]['mtd'] = $val;
+                    $pivoted[$key]['mtd'] += $val;
                 }
             }
 
@@ -500,6 +544,151 @@ class KinerjaRmReportController extends Controller
     private function reportCacheVersion(): int
     {
         return (int) Cache::get('report_cache_version:global', 1);
+    }
+
+    private function fetchSourceBranchRows(
+        string $segmen,
+        array $periods,
+        ?string $selectedCabang = null,
+        ?string $selectedProduct = null
+    ): Collection
+    {
+        if (!Schema::hasTable(self::SOURCE_TABLE) || !Schema::hasTable(self::SNAPSHOT_TABLE)) {
+            return collect();
+        }
+
+        $periods = collect($periods)
+            ->map(fn ($period) => $this->normalizeDate((string) $period))
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($periods->isEmpty()) {
+            return collect();
+        }
+
+        $cabangExpr = 'UPPER(TRIM(cabang1))';
+        $unitExpr = 'UPPER(TRIM(unit1))';
+        $rmExpr = 'UPPER(TRIM(pn_pengelola1))';
+        $productExpr = 'UPPER(TRIM(produk_dashboard))';
+        $sourceProducts = $selectedProduct !== null
+            ? $this->sourceProductValues($selectedProduct)
+            : collect(self::SEGMENT_PRODUCT_MAP[$segmen] ?? [])
+                ->flatMap(fn (string $product) => $this->sourceProductValues($product))
+                ->unique()
+                ->values()
+                ->all();
+
+        return DB::table(self::SOURCE_TABLE)
+            ->whereIn('periode', $periods->all())
+            ->whereIn('segmen_dashboard', $this->sourceSegmentValues($segmen))
+            ->when($sourceProducts !== [], function ($query) use ($sourceProducts) {
+                $query->whereIn('produk_dashboard', $sourceProducts);
+            })
+            ->whereNotNull('pn_pengelola1')
+            ->where('pn_pengelola1', '<>', '')
+            ->when($selectedCabang !== null, function ($query) use ($cabangExpr, $selectedCabang) {
+                $query->whereRaw("{$cabangExpr} = ?", [$this->normalizeCabangKey($selectedCabang)]);
+            })
+            ->selectRaw('periode')
+            ->selectRaw("{$cabangExpr} as cabang")
+            ->selectRaw("{$unitExpr} as unit")
+            ->selectRaw("{$rmExpr} as rm")
+            ->selectRaw("{$productExpr} as produk")
+            ->selectRaw('SUM(COALESCE(baki_debet1, 0)) as loan_os')
+            ->selectRaw('SUM(CASE WHEN kol_adk1 = 1 THEN COALESCE(baki_debet1, 0) ELSE 0 END) as lancar_os')
+            ->selectRaw('SUM(CASE WHEN kol_adk1 = 2 THEN COALESCE(baki_debet1, 0) ELSE 0 END) as sml_os')
+            ->selectRaw('SUM(CASE WHEN kol_adk1 IN (3,4,5) THEN COALESCE(baki_debet1, 0) ELSE 0 END) as npl_os')
+            ->selectRaw("SUM(CASE WHEN kol_adk1 = 1 AND UPPER(TRIM(COALESCE(flag_restruk, ''))) = 'Y' THEN COALESCE(baki_debet1, 0) ELSE 0 END) as restruk_os")
+            ->selectRaw('COUNT(DISTINCT nomor_rekening1) as total_deb')
+            ->selectRaw(
+                'COUNT(DISTINCT CASE WHEN tgl_realisasi BETWEEN DATE_FORMAT(periode, "%Y-%m-01") AND periode THEN nomor_rekening1 END) as realisasi_deb'
+            )
+            ->selectRaw(
+                'SUM(CASE WHEN tgl_realisasi BETWEEN DATE_FORMAT(periode, "%Y-%m-01") AND periode THEN COALESCE(baki_debet1, 0) ELSE 0 END) as realisasi_os'
+            )
+            ->selectRaw('0 as total_deposit')
+            ->selectRaw('NULL as quadrant')
+            ->groupBy('periode', DB::raw($cabangExpr), DB::raw($unitExpr), DB::raw($rmExpr), DB::raw($productExpr))
+            ->get();
+    }
+
+    private function sourceSegmentValues(string $segmen): array
+    {
+        return match ($segmen) {
+            'CONSUMER' => ['Consumer', 'CONSUMER'],
+            'SMALL' => ['Small', 'SMALL'],
+            'MICRO' => ['Micro', 'MICRO', 'Mikro', 'MIKRO'],
+            default => [$segmen],
+        };
+    }
+
+    private function sourceProductValues(string $product): array
+    {
+        return match ($product) {
+            'BRIGUNA-KONSUMER' => ['Briguna-Konsumer', 'BRIGUNA-KONSUMER'],
+            'KPR' => ['KPR'],
+            'COMMERCIAL' => ['Commercial', 'COMMERCIAL'],
+            'CASHCALL' => ['Cashcall', 'CASHCALL'],
+            'BRIGUNA-MIKRO' => ['Briguna-Mikro', 'BRIGUNA-MIKRO'],
+            'KUPEDES' => ['Kupedes', 'KUPEDES'],
+            'KUR-MIKRO' => ['KUR-Mikro', 'KUR-MIKRO'],
+            'CASHCOLLATERAL' => ['Cash Collateral', 'CashCollateral', 'CASHCOLLATERAL', 'Cashcoll', 'CASHCOLL'],
+            'KUR-SMALL' => ['KUR-Small', 'KUR-SMALL'],
+            default => [$product],
+        };
+    }
+
+    private function snapshotRealisasiLooksStale(string $period): bool
+    {
+        if (!Schema::hasTable(self::SNAPSHOT_TABLE) || !Schema::hasTable(self::SOURCE_TABLE)) {
+            return false;
+        }
+
+        $snapshot = DB::table(self::SNAPSHOT_TABLE)
+            ->where('periode', $period)
+            ->selectRaw('COUNT(*) as cnt, MAX(updated_at) as last_updated')
+            ->first();
+
+        if ($snapshot?->cnt <= 0) {
+            return false;
+        }
+
+        $snapshotUpdatedAt = $snapshot ? Carbon::parse($snapshot->last_updated) : Carbon::now()->subDay();
+        $sourceUpdatedAfterSnapshot = DB::table(self::SOURCE_TABLE)
+            ->where('periode', $period)
+            ->where('created_at', '>', $snapshotUpdatedAt)
+            ->exists();
+
+        if ($sourceUpdatedAfterSnapshot) {
+            return true;
+        }
+
+        if (!Schema::hasColumn(self::SNAPSHOT_TABLE, 'realisasi_deb')
+            || !Schema::hasColumn(self::SOURCE_TABLE, 'tgl_realisasi')) {
+            return false;
+        }
+
+        $snapshotHasRealisasi = DB::table(self::SNAPSHOT_TABLE)
+            ->where('periode', $period)
+            ->where(function ($query) {
+                $query->where('realisasi_deb', '>', 0)
+                    ->orWhere('realisasi_os', '>', 0);
+            })
+            ->exists();
+
+        if ($snapshotHasRealisasi) {
+            return false;
+        }
+
+        $date = Carbon::parse($period);
+        return DB::table(self::SOURCE_TABLE)
+            ->where('periode', $period)
+            ->whereBetween('tgl_realisasi', [
+                $date->copy()->startOfMonth()->toDateString(),
+                $period,
+            ])
+            ->exists();
     }
 
     private function getManualJgTargets(): array
