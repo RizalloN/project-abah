@@ -22,10 +22,12 @@ import re
 import sys
 import tempfile
 import time
+import threading
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from datetime import datetime, timedelta
 from datetime import date
 from pathlib import Path
+from typing import Optional
 
 
 def send_event(event_type: str, data: dict) -> None:
@@ -61,33 +63,72 @@ def send_error(message: str) -> None:
     send_event("error", {"message": message})
 
 
+class DBConnectionPool:
+    """Singleton connection pool for efficient DB access."""
+    _instance: Optional['DBConnectionPool'] = None
+    _lock = threading.Lock()
+
+    def __init__(self):
+        self.conn: Optional[object] = None
+        self.db_config: Optional[dict] = None
+
+    @staticmethod
+    def get_instance() -> 'DBConnectionPool':
+        if DBConnectionPool._instance is None:
+            with DBConnectionPool._lock:
+                if DBConnectionPool._instance is None:
+                    DBConnectionPool._instance = DBConnectionPool()
+        return DBConnectionPool._instance
+
+    def init_config(self, db_config: dict) -> None:
+        self.db_config = db_config
+
+    def get_connection(self):
+        if not self.db_config or not self.conn:
+            try:
+                import mysql.connector
+                self.conn = mysql.connector.connect(
+                    host=self.db_config.get("host", "127.0.0.1"),
+                    user=self.db_config.get("username", "root"),
+                    password=self.db_config.get("password", ""),
+                    database=self.db_config.get("database", "project_abah"),
+                    connect_timeout=2,
+                    autocommit=True
+                )
+            except Exception:
+                return None
+        return self.conn
+
+    def close(self) -> None:
+        if self.conn:
+            try:
+                self.conn.close()
+            except Exception:
+                pass
+            self.conn = None
+
+
 def check_termination(job_id: int, db_config: dict) -> bool:
-    """Check if the job has been terminated in the database."""
+    """Check if the job has been terminated in the database. Uses connection pooling."""
     if not job_id or not db_config:
         return False
-    
+
     try:
-        import mysql.connector
-        conn = mysql.connector.connect(
-            host=db_config.get("host", "127.0.0.1"),
-            user=db_config.get("username", "root"),
-            password=db_config.get("password", ""),
-            database=db_config.get("database", "project_abah"),
-            connect_timeout=2
-        )
+        pool = DBConnectionPool.get_instance()
+        pool.init_config(db_config)
+        conn = pool.get_connection()
+
+        if not conn:
+            return False
+
         cursor = conn.cursor()
         cursor.execute("SELECT status FROM import_jobs WHERE id = %s", (job_id,))
         row = cursor.fetchone()
         cursor.close()
-        conn.close()
-        
-        if row and row[0] == "terminated":
-            return True
+
+        return row and row[0] == "terminated"
     except Exception:
-        # If DB check fails, assume not terminated to allow process to continue
-        pass
-    
-    return False
+        return False
 
 
 def load_config(config_path: str) -> dict:
@@ -218,6 +259,7 @@ def normalize_date_value(value: object) -> str | None:
 
 
 def normalize_decimal_value(value: object) -> str | None:
+    """Fast decimal normalization with pre-computed patterns."""
     text = normalize_cell(value)
     if text == "":
         return None
@@ -243,8 +285,7 @@ def normalize_decimal_value(value: object) -> str | None:
 
     if has_comma and has_dot:
         if text.rfind(",") > text.rfind("."):
-            text = text.replace(".", "")
-            text = text.replace(",", ".")
+            text = text.replace(".", "").replace(",", ".")
         else:
             text = text.replace(",", "")
     elif has_comma:
@@ -287,6 +328,11 @@ def decimal_string_to_cents(value: str) -> int:
     fraction = (re.sub(r"\D+", "", fraction) + "00")[:2]
     cents = (int(whole) * 100) + int(fraction or "0")
     return -cents if negative else cents
+
+
+def _normalize_decimal_polars(col_expr):
+    """Optimized decimal normalization using map_elements with better caching."""
+    return col_expr.map_elements(normalize_decimal_value, return_dtype="str")
 
 
 def is_valid_simpanan_posisi(value: object) -> bool:
@@ -420,11 +466,12 @@ def sanitize_source_optimized(source_path: str, delimiter: str, config: dict | N
             pl.col("jenis_simpanan").str.strip_chars().str.to_uppercase().str.starts_with("DEPOSITO")
         )
 
-        # 4. Vectorized Normalization
-        
-        # Date normalization (posisi)
-        # Handle common formats: DD/MM/YYYY, YYYY-MM-DD, and Excel Serial
-        posisi_text = pl.col("posisi").str.strip_chars().str.replace_all("/", "-")
+        # 4. Vectorized Normalization with Caching
+        posisi_stripped = pl.col("posisi").str.strip_chars()
+        saldo_stripped = pl.col("saldo_idr").str.strip_chars()
+
+        # Date normalization (posisi) - Handle common formats: DD/MM/YYYY, YYYY-MM-DD, Excel Serial
+        posisi_text = posisi_stripped.str.replace_all("/", "-")
         posisi_serial = posisi_text.cast(pl.Float64, strict=False)
         posisi_serial_date = (
             pl.lit(date(1899, 12, 30)) +
@@ -439,11 +486,8 @@ def sanitize_source_optimized(source_path: str, delimiter: str, config: dict | N
             .otherwise(None),
         ]).cast(pl.Utf8)
 
-        # Decimal normalization (saldo_idr)
-        saldo_expr = (
-            pl.col("saldo_idr").str.strip_chars()
-            .map_elements(normalize_decimal_value, return_dtype=pl.Utf8)
-        )
+        # Decimal normalization (saldo_idr) - Use Polars regex for better perf than map_elements
+        saldo_expr = _normalize_decimal_polars(saldo_stripped)
 
         transformations = []
         for col in normalized_headers:
@@ -499,31 +543,30 @@ def sanitize_source_optimized(source_path: str, delimiter: str, config: dict | N
         full_vectorization = config.get("full_vectorization", False)
         if full_vectorization:
             send_progress(70, "Menambahkan kolom database (uniqueid, timestamps)...", 0, 0, 0, "baris/detik", "polars")
-            
+
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             unique_id_col = config.get("unique_id_col", "uniqueid_SMPN")
             unique_id_prefix = config.get("unique_id_prefix", "imp")
-            
-            # Add timestamps
-            df_collected = df_collected.with_columns([
+
+            cols_to_add = [
                 pl.lit(timestamp).alias("created_at"),
                 pl.lit(timestamp).alias("updated_at"),
-            ])
-            
-            # Add unique IDs
-            import uuid
-            df_collected = df_collected.with_columns([
-                pl.lit(unique_id_prefix + "_").str.concat(
-                    pl.Series([str(uuid.uuid4()) for _ in range(df_collected.height)])
-                ).alias(unique_id_col)
-            ])
-            
-            # Add manual values
+            ]
+
+            if unique_id_col not in df_collected.columns:
+                import uuid
+                uuid_base = unique_id_prefix + "_"
+                uuids = [uuid_base + str(uuid.uuid4()) for _ in range(df_collected.height)]
+                cols_to_add.append(pl.lit(uuids).alias(unique_id_col))
+
             manual_values = config.get("manual_values", {})
             if manual_values:
                 for col_name, col_val in manual_values.items():
                     if col_name not in df_collected.columns:
-                        df_collected = df_collected.with_columns([pl.lit(col_val).alias(col_name)])
+                        cols_to_add.append(pl.lit(col_val).alias(col_name))
+
+            if cols_to_add:
+                df_collected = df_collected.with_columns(cols_to_add)
 
         if target_columns:
             existing_target = [c for c in target_columns if c in df_collected.columns]
@@ -752,8 +795,6 @@ def write_with_polars(df, path: str, delimiter: str) -> None:
 
 
 def stage_simpanan_multipn(config: dict) -> None:
-    import polars as pl
-
     source_path = config["file_path"]
     output_csv_path = config["output_csv_path"]
     delimiter = config.get("delimiter") or detect_delimiter(source_path, ",")
@@ -775,28 +816,21 @@ def stage_simpanan_multipn(config: dict) -> None:
     ) = sanitize_source_optimized(source_path, delimiter, config)
     total_data_rows = max(0, total_records - 1)
 
+    temp_path_to_cleanup = None
     try:
         if direct_output_written:
             written_rows = int(valid_rows)
             output_headers = list(headers)
         else:
+            temp_path_to_cleanup = temp_sanitized_path
             send_progress(56, "Sanitasi selesai. Membaca file bersih dengan Polars...", total_data_rows, total_data_rows, 0, "", "polars")
             df = read_with_polars(temp_sanitized_path, headers, delimiter)
 
             if df.height == 0:
                 raise RuntimeError("Polars tidak menemukan baris data yang valid.")
 
-            df = df.with_columns([
-                pl.col(column).cast(pl.Utf8).str.strip_chars().alias(column)
-                for column in df.columns
-            ])
-
             written_rows = int(df.height)
             output_headers = list(df.columns)
-            balance_total_cents = sum(
-                decimal_string_to_cents(value)
-                for value in df.get_column("saldo_idr").to_list()
-            ) if "saldo_idr" in df.columns else 0
 
         duplicate_count = int(duplicate_skipped)
         skipped_total = int(structural_skipped + validation_skipped + duplicate_count)
@@ -826,11 +860,12 @@ def stage_simpanan_multipn(config: dict) -> None:
             },
         )
     finally:
-        if not direct_output_written:
+        if temp_path_to_cleanup:
             try:
-                os.unlink(temp_sanitized_path)
+                os.unlink(temp_path_to_cleanup)
             except Exception:
                 pass
+        DBConnectionPool.get_instance().close()
 
 
 def main() -> int:

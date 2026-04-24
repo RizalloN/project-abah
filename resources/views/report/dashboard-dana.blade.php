@@ -138,8 +138,8 @@
         font-weight: 700;
         font-size: 0.65rem;
         text-transform: uppercase;
-        letter-spacing: 0.08em;
-        padding: 1rem 0.5rem;
+        letter-spacing: 0.03em;
+        padding: 0.2rem 0.15rem;
         border-bottom: 2px solid rgba(255,255,255,0.1);
         position: sticky;
         top: 0;
@@ -148,8 +148,8 @@
     }
 
     .dana-table thead tr.group-row th {
-        font-size: 0.8rem;
-        padding: 1.25rem 0.75rem;
+        font-size: 0.7rem;
+        padding: 0.3rem 0.2rem;
         border-bottom: 1px solid rgba(255,255,255,0.05);
     }
 
@@ -167,43 +167,54 @@
     }
 
     .dana-table tbody td {
-        padding: 0.85rem 1rem;
-        font-size: 0.8rem;
+        padding: 0.02rem 0.2rem; /* Extreme density */
+        font-size: 0.7rem;
         border-bottom: 1px solid #f1f5f9;
         vertical-align: middle;
-        line-height: 1.4;
+        line-height: 1.1;
         white-space: nowrap;
         transition: background-color 0.2s;
     }
 
-    .dana-table tbody tr:hover td {
+    .dana-table tbody tr:not(.subtotal-row):not(.grandtotal-row):hover td {
         background-color: #f8fafc !important;
+    }
+
+    /* Disable hover on totals */
+    .dana-table tbody tr.subtotal-row:hover td,
+    .dana-table tbody tr.grandtotal-row:hover td {
+        background-color: inherit !important;
     }
 
     .dana-table .branch-cell {
         font-weight: 800;
         color: #0f172a;
-        text-align: center;
+        text-align: left;
+        padding-left: 0.75rem !important;
         background: #ffffff !important;
-        font-size: 0.85rem;
+        font-size: 0.7rem;
         border-right: 1px solid #e2e8f0;
-        position: relative;
+        position: sticky;
     }
 
-    .dana-table .branch-cell::after {
-        content: '';
-        position: absolute;
-        left: 0;
-        top: 10%;
-        height: 80%;
-        width: 4px;
-        background: var(--dana-primary);
-        border-radius: 0 4px 4px 0;
+    .dana-table .branch-name {
+        max-width: 100px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
     }
 
     .dana-table .cat-cell {
         font-weight: 600;
         color: #475569;
+        font-size: 0.68rem;
+        padding-left: 10px !important;
+    }
+
+    .subtotal-row .cat-cell {
+        max-width: none !important;
+        text-overflow: clip !important;
+        white-space: nowrap;
     }
 
     .dana-table .val-cell {
@@ -247,19 +258,19 @@
 
     .sticky-col {
         position: sticky;
-        left: 0;
         background: white;
         z-index: 10;
+        border-right: 1px solid #e2e8f0 !important;
     }
 
     .subtotal-row {
-        background-color: rgba(15, 76, 129, 0.03) !important;
+        background-color: #e0f2fe !important; /* High contrast light blue */
     }
     
     .subtotal-row td {
-        font-weight: 700;
-        color: var(--dana-primary);
-        border-bottom: 1px solid rgba(15, 76, 129, 0.1);
+        font-weight: 800;
+        color: #0369a1; /* Contrasting dark blue text */
+        border-bottom: 1px solid #bae6fd;
     }
 
     .grandtotal-row {
@@ -375,9 +386,9 @@
                     <table class="dana-table">
                         <thead>
                             <tr class="group-row">
-                                <th rowspan="2" class="text-center" width="50">No</th>
-                                <th rowspan="2" class="sticky-col">Kantor Cabang</th>
-                                <th rowspan="2" class="text-center">Kategori</th>
+                                <th rowspan="2" class="text-center sticky-col" width="40" style="left: 0; z-index: 21;">No</th>
+                                <th rowspan="2" class="sticky-col" width="135" style="left: 40px; z-index: 21;">Kantor Cabang</th>
+                                <th rowspan="2" class="text-center" width="140">Kategori</th>
                                 <th colspan="3" class="text-center border-bottom group-position">Posisi Saldo (Rp)</th>
                                 <th colspan="2" class="text-center border-bottom border-left group-delta">Delta Posisi</th>
                                 <th colspan="2" class="text-center border-bottom border-left group-rka">Performa RKA</th>
@@ -404,10 +415,10 @@
 
 @endsection
 
-@section('scripts')
-<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+@push('scripts')
+<script src="{{ asset('vendor/html2canvas/html2canvas.min.js') }}"></script>
 <script>
-    $(document).ready(function() {
+document.addEventListener('DOMContentLoaded', function() {
         if ($.fn.select2) {
             $('.select2').select2({ theme: 'bootstrap4', width: '100%' });
         }
@@ -436,6 +447,16 @@
             return `<span class="kategori-badge badge-${slug}">${kat}</span>`;
         };
 
+        const getShortBranch = (name) => {
+            const map = {
+                'KC MADIUN': 'KC MDN',
+                'KC MAGETAN': 'KC MGT',
+                'KC NGAWI': 'KC NGWI',
+                'KC PONOROGO': 'KC PNRG'
+            };
+            return map[name.toUpperCase()] || name;
+        };
+
         const loadData = () => {
             $('#loader').fadeIn(200);
             
@@ -457,13 +478,17 @@
                     
                     html += `
                         <tr class="${isTotal ? 'subtotal-row' : ''}">
-                            <td class="text-center text-muted" style="font-size: 0.65rem;">${row.no || ''}</td>
                             ${isStartOfBranch ? `
-                            <td class="sticky-col branch-cell" rowspan="5">
+                            <td class="text-center text-muted sticky-col" rowspan="5" style="left: 0;">
+                                ${row.no || ''}
+                            </td>
+                            <td class="sticky-col branch-cell" rowspan="5" style="left: 40px;">
                                 <div class="branch-name">${row.nama_cabang}</div>
                             </td>
                             ` : ''}
-                            <td class="text-left cat-cell ${isTotal ? 'font-weight-bold' : 'pl-4'}">${row.kategori}</td>
+                            <td class="text-left cat-cell ${isTotal ? 'font-weight-bold' : 'pl-3'}">
+                                ${isTotal ? `TOTAL ${getShortBranch(row.nama_cabang)}` : row.kategori}
+                            </td>
                             <td class="val-cell ${isTotal ? '' : 'text-muted'}">${formatMoney(row.ytd)}</td>
                             <td class="val-cell ${isTotal ? '' : 'text-muted'}">${formatMoney(row.mtd)}</td>
                             <td class="val-cell ${isTotal ? 'font-weight-bold' : ''}">${formatMoney(row.selected)}</td>
@@ -484,8 +509,7 @@
                 const gt = res.total;
                 html += `
                     <tr class="grandtotal-row">
-                        <td colspan="2" class="text-center">TOTAL AREA 6</td>
-                        <td class="text-center">SEMUA</td>
+                        <td colspan="3" class="text-center">TOTAL AREA 6</td>
                         <td class="val-cell">${formatMoney(gt.ytd)}</td>
                         <td class="val-cell">${formatMoney(gt.mtd)}</td>
                         <td class="val-cell">${formatMoney(gt.selected)}</td>
@@ -607,6 +631,7 @@
         captureBtn.addEventListener('click', captureAllDanaDashboard);
     });
 </script>
+@endpush
 
 <!-- Modal Capture Status -->
 <div class="modal fade capture-status-modal" id="captureStatusModal" tabindex="-1" role="dialog" aria-hidden="true" data-backdrop="static">
@@ -645,4 +670,3 @@
         </div>
     </div>
 </div>
-@endsection

@@ -65,35 +65,23 @@
         <table class="{{ $tableClass }}">
             <thead>
                 <tr>
-                    <th rowspan="2" style="width: 36px;">No.</th>
-                    <th rowspan="2" style="width: 120px;">Kantor Cabang</th>
-                    <th rowspan="2" style="width: 160px;">Nama RM / Pengelola</th>
-                    <th rowspan="2" style="width: 110px;">Produk</th>
-                    <th rowspan="2" style="width: 70px;">Kuadran</th>
+                    <th rowspan="2" class="sticky-col" style="width: 32px; left: 0;">No.</th>
+                    <th rowspan="2" class="sticky-col" style="width: 100px; left: 32px;">Kantor Cabang</th>
+                    <th rowspan="2" class="sticky-col" style="width: 150px; left: 132px;">Nama RM / Pengelola</th>
+                    <th rowspan="2" style="width: 100px;">Produk</th>
+                    <th rowspan="2" style="width: 60px;">Kuadran</th>
                     <th colspan="4" class="sub-head">PERFORMANCE PER RM</th>
-                    <th colspan="3" class="accent-head">DELTA PERIODE PER {{ $selectedPeriodShortLabel }}</th>
+                    <th colspan="3" class="accent-head">DELTA PERIODE</th>
                     @if($showTargets)
                         <th colspan="2" class="sub-head">TARGET REALISASI JG</th>
                         <th colspan="2" class="accent-head">PENCAPAIAN REALISASI JG</th>
                     @endif
                 </tr>
                 <tr>
-                    <th class="sub-head" style="width: 82px; font-size: 0.65rem; line-height: 1.2;">
-                        YoY<br>
-                        <span style="font-weight: 400; opacity: 0.7;">{{ Carbon\Carbon::parse($yoyPeriod)->format('d M y') }}</span>
-                    </th>
-                    <th class="sub-head" style="width: 82px; font-size: 0.65rem; line-height: 1.2;">
-                        YtD<br>
-                        <span style="font-weight: 400; opacity: 0.7;">{{ Carbon\Carbon::parse($ytdPeriod)->format('d M y') }}</span>
-                    </th>
-                    <th class="sub-head" style="width: 82px; font-size: 0.65rem; line-height: 1.2;">
-                        MtD<br>
-                        <span style="font-weight: 400; opacity: 0.7;">{{ Carbon\Carbon::parse($mtdPeriod)->format('d M y') }}</span>
-                    </th>
-                    <th class="sub-head" style="width: 88px; font-size: 0.65rem; line-height: 1.2;">
-                        POSISI<br>
-                        <span style="font-weight: 400; opacity: 0.7;">{{ $selectedPeriodLabel }}</span>
-                    </th>
+                    <th class="sub-head" style="width: 75px;">YoY</th>
+                    <th class="sub-head" style="width: 75px;">YtD</th>
+                    <th class="sub-head" style="width: 75px;">MtD</th>
+                    <th class="sub-head" style="width: 80px;">POSISI</th>
 
                     <th class="accent-head" style="width: 70px;">YoY</th>
                     <th class="accent-head" style="width: 70px;">YtD</th>
@@ -112,10 +100,10 @@
                 @php $no = 1; @endphp
                 @forelse($rows as $branch)
                     <tr class="loan-branch-subtotal">
-                        <td rowspan="{{ $branch['branch_rowspan'] }}" class="text-center-important" style="font-weight: 800; border-right: 1px solid var(--loan-border-strong); background: #ffffff !important; color: var(--loan-blue-ink) !important;">{{ $no++ }}</td>
-                        <td rowspan="{{ $branch['branch_rowspan'] }}" class="merged-branch-cell">{{ $branch['cabang'] }}</td>
-                        <td colspan="3" class="text-center-important" style="font-size: 0.7rem; letter-spacing: 0.08em; font-weight: 900; color: var(--loan-cyan);">
-                            <i class="fas fa-layer-group me-1" style="opacity: 0.8;"></i> TOTAL {{ $branch['cabang'] }}
+                        <td rowspan="{{ $branch['branch_rowspan'] }}" class="text-center-important sticky-col" style="font-weight: 800; left: 0; border-right: 1px solid var(--loan-border-strong); background: #ffffff !important; color: var(--loan-blue-ink) !important;">{{ $no++ }}</td>
+                        <td rowspan="{{ $branch['branch_rowspan'] }}" class="merged-branch-cell" style="left: 32px;">{{ $branch['cabang'] }}</td>
+                        <td colspan="3" class="text-center-important" style="letter-spacing: 0.05em; font-weight: 900; color: var(--loan-cyan);">
+                            TOTAL {{ $branch['cabang'] }}
                         </td>
                         <td>{{ $formatAmount($branch['subtotal']['yoy']) }}</td>
                         <td>{{ $formatAmount($branch['subtotal']['ytd']) }}</td>
@@ -125,7 +113,7 @@
                         <td>{!! $formatSignedAmount($branch['subtotal']['delta_ytd']) !!}</td>
                         <td>{!! $formatSignedAmount($branch['subtotal']['delta_mtd']) !!}</td>
                         @if($showTargets)
-                            <td class="text-center-important" style="font-size: 0.72rem;">{{ $branch['subtotal']['target_jg_deb'] ?: '-' }}</td>
+                            <td class="text-center-important">{{ $branch['subtotal']['target_jg_deb'] ?: '-' }}</td>
                             <td>{{ $branch['subtotal']['target_jg_os'] > 0 ? $formatAmount($branch['subtotal']['target_jg_os']) : '-' }}</td>
                             <td class="text-center-important">{{ $formatCount($branch['subtotal']['ach_deb'] ?? 0) }}</td>
                             <td>{{ $formatAmount($branch['subtotal']['ach_os'] ?? 0) }}</td>
@@ -149,7 +137,7 @@
                                         data-segment="{{ $selectedSegmen }}" 
                                         data-period="{{ $selectedPeriod }}"
                                         title="Klik untuk detail rincian"
-                                        style="cursor: pointer; transition: all 0.2s; position: relative;">
+                                        style="cursor: pointer; transition: all 0.2s; position: relative; left: 132px;">
                                         <div class="d-flex align-items-center">
                                             <i class="fas fa-info-circle me-1 text-primary" style="font-size: 0.65rem; opacity: 0.6;"></i>
                                             {{ $rmName }}
@@ -158,7 +146,7 @@
                                     @php $isFirstRmRow = false; @endphp
                                 @endif
 
-                                <td class="text-start-important" style="font-size: 0.7rem; font-weight: 700; color: var(--loan-muted); padding-left: 0.75rem;">
+                                <td class="text-start-important" style="font-weight: 700; color: var(--loan-muted); padding-left: 0.5rem;">
                                     {{ $item['product'] }}
                                 </td>
                                 @if($isFirstRmRowForQuad)
@@ -199,8 +187,8 @@
 
                 @if(!empty($rows))
                     <tr class="row-grand-total">
-                        <td colspan="5" class="text-center-important" style="letter-spacing: 2px;">
-                            <i class="fas fa-chart-line me-2"></i> {{ $grandTotalLabel }}
+                        <td colspan="5" class="text-center-important" style="font-weight: 900; text-transform: uppercase;">
+                            {{ $grandTotalLabel }}
                         </td>
                         <td>{{ $formatAmount($total['yoy']) }}</td>
                         <td>{{ $formatAmount($total['ytd']) }}</td>

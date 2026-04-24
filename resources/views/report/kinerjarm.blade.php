@@ -4,150 +4,182 @@
 
 @section('content')
 <style>
+    /* LUXURY REDESIGN SYSTEM */
     :root {
-        --loan-surface: #ffffff;
-        --loan-surface-soft: #f8fbff;
-        --loan-border: rgba(8, 87, 195, 0.12);
-        --loan-border-strong: rgba(8, 87, 195, 0.2);
-        --loan-text: #0f172a;
-        --loan-muted: #5b7da7;
-        --loan-blue: #0857c3; /* BRI Nusantara */
-        --loan-blue-deep: #053b82; /* BRI Ink */
-        --loan-blue-ink: #042a5f; /* BRI Night */
-        --loan-blue-soft: #f2f7ff; /* BRI Mist */
-        --loan-red: #ef4444;
-        --loan-green: #10b981;
-        --loan-cyan: #71c5e8; /* BRI Mentari */
-        --loan-radius: 20px;
-        --loan-shadow: 0 18px 34px -28px rgba(4, 42, 95, 0.28);
+        --lux-primary: #0f172a;
+        --lux-accent: #2563eb;
+        --lux-accent-soft: rgba(37, 99, 235, 0.08);
+        --lux-border: #e2e8f0;
+        --lux-bg-soft: #f8fafc;
+        --lux-text-main: #1e293b;
+        --lux-text-muted: #64748b;
+        --lux-radius: 16px;
     }
 
     .kinerja-konsumer-shell {
-        position: relative;
-        border: 1px solid var(--loan-border);
-        border-radius: var(--loan-radius);
-        background: #ffffff;
-        box-shadow: var(--loan-shadow);
-        overflow: hidden;
+        background: #f8fafc !important;
+        border: none !important;
+        box-shadow: none !important;
+    }
+
+    /* Refined Luxury Header */
+    .lux-header-section {
+        padding: 3rem 0 2rem;
+        border-bottom: 1px solid var(--lux-border);
         margin-bottom: 2.5rem;
-        transition: transform 0.3s ease;
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 2rem;
     }
 
-    .kinerja-konsumer-shell::before {
-        content: '';
-        position: absolute;
-        inset: 0 auto auto 0;
-        width: 100%;
-        height: 6px;
-        background: linear-gradient(90deg, var(--loan-blue-ink), var(--loan-blue), var(--loan-cyan));
-        z-index: 5;
-    }
-
-    .kinerja-konsumer-header {
-        padding: 2.5rem 2.25rem 2rem;
-        background: linear-gradient(180deg, rgba(248, 250, 252, 0.5) 0%, #ffffff 100%);
-        border-bottom: 1px solid var(--loan-border);
-        text-align: center;
-    }
-
-    .kinerja-konsumer-hero {
-        position: relative;
-        isolation: isolate;
-        overflow: hidden;
-        margin: -2.5rem -2.25rem 1.5rem;
-        padding: 1.45rem 1.25rem;
-        background:
-            radial-gradient(circle at 12% 18%, rgba(255, 103, 31, 0.16), transparent 26%),
-            radial-gradient(circle at 88% 10%, rgba(59, 130, 246, 0.22), transparent 28%),
-            linear-gradient(135deg, #003b75 0%, #00529c 48%, #0f4c97 100%);
-        color: #ffffff;
-        box-shadow: 0 18px 40px -30px rgba(0, 55, 116, 0.55);
-    }
-
-    .kinerja-konsumer-hero::before {
-        content: '';
-        position: absolute;
-        inset: 0;
-        z-index: -1;
-        background:
-            linear-gradient(120deg, rgba(255, 255, 255, 0.12), transparent 35%),
-            repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.08) 0 1px, transparent 1px 18px);
-        opacity: 0.72;
-    }
-
-    .kinerja-konsumer-title-wrap {
-        width: min(100%, 860px);
-        margin: 0 auto;
-        padding: 0.05rem 1rem;
-    }
-
-    .kinerja-konsumer-title-badge {
-        display: inline-flex;
+    .lux-header-info h1 {
+        font-size: 2.5rem;
+        font-weight: 950;
+        color: var(--lux-primary);
+        letter-spacing: -0.05em;
+        margin-bottom: 0.5rem;
+        display: flex;
         align-items: center;
-        gap: 0.45rem;
-        margin-bottom: 0.6rem;
-        padding: 0.32rem 0.72rem;
-        border-radius: 999px;
-        background: rgba(255, 255, 255, 0.12);
-        border: 1px solid rgba(255, 255, 255, 0.24);
-        color: rgba(255, 255, 255, 0.92);
-        font-size: 0.64rem;
-        font-weight: 800;
-        letter-spacing: 0.12em;
-        text-transform: uppercase;
+        gap: 1rem;
     }
 
-    .kinerja-konsumer-title-badge i {
-        color: #ffb15c;
+    .lux-header-info h1 i {
+        background: var(--lux-accent-soft);
+        color: var(--lux-accent);
+        padding: 0.8rem;
+        border-radius: 20px;
+        font-size: 1.5rem;
     }
 
-    .kinerja-konsumer-title {
-        margin: 0;
-        font-size: clamp(1.18rem, 2.05vw, 2rem);
+    .lux-header-subtitle {
+        font-size: 1.15rem;
+        font-weight: 600;
+        color: var(--lux-text-muted);
+        max-width: 600px;
+    }
+
+    /* Luxury Filter Grid */
+    .lux-filter-card {
+        background: white;
+        border-radius: 28px;
+        padding: 2rem;
+        border: 1px solid var(--lux-border);
+        box-shadow: 0 10px 40px -15px rgba(0, 0, 0, 0.05);
+        margin-bottom: 3rem;
+    }
+
+    .lux-filter-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr) auto;
+        gap: 1.75rem;
+        align-items: flex-end;
+    }
+
+    .lux-field {
+        display: flex;
+        flex-direction: column;
+        gap: 0.85rem;
+    }
+
+    .lux-label {
+        font-size: 0.72rem;
         font-weight: 900;
-        color: #ffffff;
-        letter-spacing: 0.035em;
-        line-height: 1.08;
+        color: var(--lux-text-muted);
         text-transform: uppercase;
-        text-shadow: 0 10px 26px rgba(0, 18, 50, 0.28);
+        letter-spacing: 0.12em;
+        padding-left: 0.4rem;
     }
 
-    .kinerja-konsumer-title::after {
-        content: '';
-        display: block;
-        width: min(130px, 38vw);
-        height: 3px;
-        margin: 0.7rem auto 0;
-        border-radius: 999px;
-        background: linear-gradient(90deg, #ff671f, #f9b233, rgba(255, 255, 255, 0.9));
-        box-shadow: 0 8px 18px rgba(255, 103, 31, 0.28);
+    .lux-select-wrap {
+        position: relative;
     }
 
-    .kinerja-konsumer-subtitle {
-        margin: 0.65rem auto 0;
-        color: rgba(255, 255, 255, 0.78);
-        font-size: 0.78rem;
-        line-height: 1.6;
-        max-width: 660px;
-    }
-
-    .kinerja-konsumer-badges {
-        display: none;
-    }
-
-    .kinerja-konsumer-badge {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.5rem;
-        padding: 0.45rem 1rem;
-        border-radius: 12px;
-        border: 1px solid var(--loan-border);
-        background: #ffffff;
-        color: #475569;
-        font-size: 0.8rem;
+    .lux-select {
+        width: 100%;
+        height: 56px;
+        background: #f1f5f9;
+        border: 1.5px solid transparent;
+        border-radius: 18px;
+        padding: 0 1.5rem;
+        font-size: 1rem;
         font-weight: 700;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
-        transition: all 0.2s ease;
+        color: var(--lux-primary);
+        appearance: none;
+        cursor: pointer;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .lux-select:hover {
+        background: #e2e8f0;
+    }
+
+    .lux-select:focus {
+        background: white;
+        border-color: var(--lux-accent);
+        box-shadow: 0 0 0 5px rgba(37, 99, 235, 0.08);
+        outline: none;
+    }
+
+    .lux-select-wrap i {
+        position: absolute;
+        right: 1.5rem;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--lux-text-muted);
+        pointer-events: none;
+    }
+
+    /* Premium Action Buttons */
+    .lux-actions {
+        display: flex;
+        gap: 1rem;
+    }
+
+    .lux-btn {
+        height: 56px;
+        border-radius: 18px;
+        font-size: 0.9rem;
+        font-weight: 850;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.85rem;
+        padding: 0 2rem;
+        cursor: pointer;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        border: none;
+        white-space: nowrap;
+    }
+
+    .lux-btn-primary {
+        background: var(--lux-primary);
+        color: white;
+        box-shadow: 0 10px 25px -8px rgba(15, 23, 42, 0.35);
+    }
+
+    .lux-btn-primary:hover {
+        background: #000000;
+        transform: translateY(-2px);
+        box-shadow: 0 15px 30px -8px rgba(15, 23, 42, 0.45);
+    }
+
+    .lux-btn-capture {
+        background: white;
+        color: var(--lux-primary);
+        border: 2px solid var(--lux-border);
+    }
+
+    .lux-btn-capture:hover {
+        border-color: var(--lux-primary);
+        transform: translateY(-2px);
+        background: #f8fafc;
+    }
+
+    /* Deprecating old layout elements */
+    .kinerja-konsumer-header, .kinerja-konsumer-hero, .kinerja-konsumer-filters {
+        display: none !important;
+    }
     }
 
     .kinerja-konsumer-badge:hover {
@@ -493,7 +525,6 @@
         min-width: 1180px;
     }
 
-    /* Modern Sticky Header with Glass Effect */
     .kinerja-konsumer-table thead th {
         position: sticky;
         top: 0;
@@ -501,21 +532,33 @@
         background: var(--loan-blue-ink) !important;
         backdrop-filter: blur(8px);
         color: #ffffff;
-        padding: 0.4rem 0.3rem !important;
-        font-size: 0.62rem;
+        padding: 0.2rem 0.15rem !important;
+        font-size: 0.6rem;
         font-weight: 800;
         text-transform: uppercase;
-        letter-spacing: 0.04rem;
+        letter-spacing: 0.02rem;
         border-bottom: 2px solid rgba(255, 255, 255, 0.12);
         text-align: center !important;
         vertical-align: middle !important;
         white-space: nowrap;
-        height: 38px;
+        height: 28px;
+    }
+
+    .kinerja-konsumer-table thead th.sticky-col {
+        z-index: 60;
+    }
+
+    .kinerja-konsumer-table td.sticky-col {
+        position: sticky;
+        left: 0;
+        background: #ffffff !important;
+        z-index: 10;
+        border-right: 1px solid #f1f5f9 !important;
     }
 
     .kinerja-konsumer-table thead tr:nth-child(2) th {
-        top: 38px; /* Must match Row 1 height */
-        height: 34px;
+        top: 28px; /* Must match Row 1 height */
+        height: 26px;
     }
 
     .kinerja-konsumer-table th.sub-head {
@@ -529,8 +572,8 @@
     }
 
     .kinerja-konsumer-table td {
-        padding: 0.4rem 0.5rem;
-        font-size: 0.74rem;
+        padding: 0.1rem 0.2rem;
+        font-size: 0.68rem;
         font-weight: 700;
         color: #334155;
         border-bottom: 1px solid #f1f5f9;
@@ -540,29 +583,31 @@
 
     .kinerja-konsumer-table td.merged-branch-cell {
         background: #ffffff !important;
-        border-left: 5px solid var(--loan-blue) !important;
+        border-left: 3px solid var(--loan-blue) !important;
         color: var(--loan-blue-ink) !important;
         font-weight: 800 !important;
         text-transform: uppercase;
         text-align: center !important;
-        font-size: 0.62rem !important;
-        padding: 0.5rem 0.6rem !important;
+        font-size: 0.6rem !important;
+        padding: 0.2rem 0.3rem !important;
         position: sticky !important;
-        left: 0;
+        left: 32px; /* After No column */
         z-index: 20;
+        border-right: 1px solid #f1f5f9 !important;
     }
 
     .kinerja-konsumer-table td.merged-rm-cell {
         background: #ffffff !important;
         color: #475569 !important;
         text-align: left !important;
-        font-size: 0.72rem !important;
+        font-size: 0.68rem !important;
         font-weight: 800 !important;
-        padding: 0.5rem 0.75rem !important;
+        padding: 0.2rem 0.4rem !important;
         position: sticky !important;
-        left: 120px; /* Aligned with Branch width */
-        z-index: 10;
+        left: 132px; /* 32 + 100 */
+        z-index: 20;
         border-right: 1px solid #f1f5f9 !important;
+        box-shadow: 5px 0 10px -5px rgba(15, 23, 42, 0.15);
     }
 
     /* Current Position Highlight Class */
@@ -584,10 +629,10 @@
     .loan-branch-subtotal td {
         color: #ffffff !important;
         font-weight: 800 !important;
-        border-top: 1.5px solid #334155 !important;
-        border-bottom: 1.5px solid #334155 !important;
-        padding-top: 0.75rem !important;
-        padding-bottom: 0.75rem !important;
+        border-top: 1px solid #334155 !important;
+        border-bottom: 1px solid #334155 !important;
+        padding-top: 0.3rem !important;
+        padding-bottom: 0.3rem !important;
     }
 
     .row-grand-total {
@@ -601,10 +646,18 @@
     .row-grand-total td {
         color: #ffffff !important;
         font-weight: 900 !important;
-        font-size: 0.8rem !important;
+        font-size: 0.72rem !important;
         border: none !important;
-        padding: 0.8rem 0.5rem !important;
+        padding: 0.4rem 0.3rem !important;
     }
+
+    .row-grand-total td.highlight-curr {
+        background: transparent !important;
+        color: #ffffff !important;
+    }
+
+    .row-grand-total .delta-indicator.pos { color: #4ade80 !important; }
+    .row-grand-total .delta-indicator.neg { color: #fca5a5 !important; }
 
     .legend-box {
         display: inline-flex;
@@ -803,67 +856,79 @@
     $formatPercent = $formatPercent ?? fn ($value, int $decimals = 1) => number_format((float) $value, $decimals, ',', '.');
 @endphp
 
-<div class="pt-4 px-3">
+<div class="pt-4 px-4">
     <div class="kinerja-konsumer-shell animate-reveal">
-        <div class="kinerja-konsumer-header">
-            <div class="kinerja-konsumer-hero">
-                <div class="kinerja-konsumer-title-wrap">
-                    <div class="kinerja-konsumer-title-badge">
-                        <i class="fas fa-university"></i>
-                        <span>BRI RM Performance</span>
-                    </div>
-                    <h1 class="kinerja-konsumer-title">KINERJA RM</h1>
-                    <p class="kinerja-konsumer-subtitle">{{ $title }}</p>
-                </div>
+        <!-- New Luxury Header Section -->
+        <header class="lux-header-section">
+            <div class="lux-header-info">
+                <h1><i class="fas fa-chart-line"></i> KINERJA RM</h1>
+                <p class="lux-header-subtitle">{{ $title }}</p>
             </div>
-            
-            <form id="kinerjaFilterForm" method="GET" action="{{ route('report.dashboard-pinjaman.kinerjarm') }}" class="kinerja-konsumer-filters">
-                <div class="kinerja-filter-group">                    <label for="kinerjaSegmen" class="kinerja-filter-label">Pilih Segmen RM</label>
-                    <select id="kinerjaSegmen" name="segmen" class="kinerja-filter-control" required onchange="this.form.submit();">
-                        @foreach($availableSegmens as $segmen)
-                            <option value="{{ $segmen }}" @selected($selectedSegmen === $segmen)>
-                                {{ ucfirst(strtolower($segmen)) }}
-                            </option>
-                        @endforeach
-                    </select>
+        </header>
+        
+        <!-- New Luxury Filter Section -->
+        <div class="lux-filter-card">
+            <form id="kinerjaFilterForm" method="GET" action="{{ route('report.dashboard-pinjaman.kinerjarm') }}" class="lux-filter-grid">
+                <div class="lux-field">
+                    <label for="kinerjaSegmen" class="lux-label">Segmen RM</label>
+                    <div class="lux-select-wrap">
+                        <select id="kinerjaSegmen" name="segmen" class="lux-select" required onchange="this.form.submit();">
+                            @foreach($availableSegmens as $segmen)
+                                <option value="{{ $segmen }}" @selected($selectedSegmen === $segmen)>
+                                    {{ ucfirst(strtolower($segmen)) }}
+                                </option>
+                            @endforeach
+                        </select>
+                        <i class="fas fa-chevron-down"></i>
+                    </div>
                 </div>
 
-                <div class="kinerja-filter-group">                    <label for="kinerjaPeriode" class="kinerja-filter-label">Periode Laporan</label>
-                    <select id="kinerjaPeriode" name="periode" class="kinerja-filter-control">
-                        @foreach($availablePeriods as $period)
-                            <option value="{{ $period }}" @selected($selectedPeriod === $period)>
-                                {{ \Carbon\Carbon::parse($period)->translatedFormat('d M Y') }}
-                            </option>
-                        @endforeach
-                    </select>
+                <div class="lux-field">
+                    <label for="kinerjaPeriode" class="lux-label">Periode Laporan</label>
+                    <div class="lux-select-wrap">
+                        <select id="kinerjaPeriode" name="periode" class="lux-select">
+                            @foreach($availablePeriods as $period)
+                                <option value="{{ $period }}" @selected($selectedPeriod === $period)>
+                                    {{ \Carbon\Carbon::parse($period)->translatedFormat('d M Y') }}
+                                </option>
+                            @endforeach
+                        </select>
+                        <i class="fas fa-chevron-down"></i>
+                    </div>
                 </div>
 
-                <div class="kinerja-filter-group">
-                    <label for="kinerjaCabang" class="kinerja-filter-label">Filter Unit Kerja</label>
-                    <select id="kinerjaCabang" name="cabang1" class="kinerja-filter-control" @if($selectedSegmen === 'MICRO') required @endif>
-                        <option value="" @selected($selectedCabang === null) @if($selectedSegmen === 'MICRO') disabled style="display:none;" @endif>SEMUA CABANG</option>
-                        @foreach($availableCabangs as $cabang)
-                            <option value="{{ $cabang }}" @selected($selectedCabang === $cabang)>{{ $cabang }}</option>
-                        @endforeach
-                    </select>
+                <div class="lux-field">
+                    <label for="kinerjaCabang" class="lux-label">Unit Kerja</label>
+                    <div class="lux-select-wrap">
+                        <select id="kinerjaCabang" name="cabang1" class="lux-select" @if($selectedSegmen === 'MICRO') required @endif>
+                            <option value="" @selected($selectedCabang === null) @if($selectedSegmen === 'MICRO') disabled style="display:none;" @endif>SEMUA CABANG</option>
+                            @foreach($availableCabangs as $cabang)
+                                <option value="{{ $cabang }}" @selected($selectedCabang === $cabang)>{{ $cabang }}</option>
+                            @endforeach
+                        </select>
+                        <i class="fas fa-chevron-down"></i>
+                    </div>
                 </div>
 
-                <div class="kinerja-filter-group">
-                    <label for="kinerjaProduk" class="kinerja-filter-label">Jenis Produk</label>
-                    <select id="kinerjaProduk" name="produk" class="kinerja-filter-control">
-                        <option value="" @selected($selectedProduct === null)>SEMUA PRODUK</option>
-                        @foreach($availableProducts as $product)
-                            <option value="{{ $product }}" @selected($selectedProduct === $product)>{{ $product }}</option>
-                        @endforeach
-                    </select>
+                <div class="lux-field">
+                    <label for="kinerjaProduk" class="lux-label">Jenis Produk</label>
+                    <div class="lux-select-wrap">
+                        <select id="kinerjaProduk" name="produk" class="lux-select">
+                            <option value="" @selected($selectedProduct === null)>SEMUA PRODUK</option>
+                            @foreach($availableProducts as $product)
+                                <option value="{{ $product }}" @selected($selectedProduct === $product)>{{ $product }}</option>
+                            @endforeach
+                        </select>
+                        <i class="fas fa-chevron-down"></i>
+                    </div>
                 </div>
 
-                <div class="kinerja-filter-group d-flex align-items-end justify-content-end gap-2">
-                    <button type="submit" class="tampilkan-button">
-                        <i class="fas fa-search me-2"></i> TAMPILKAN
+                <div class="lux-actions">
+                    <button type="submit" class="lux-btn lux-btn-primary">
+                        <i class="fas fa-search"></i> TAMPILKAN
                     </button>
-                    <button type="button" id="captureAllBtn" class="tampilkan-button" style="background: linear-gradient(135deg, #1e293b, #334155);">
-                        <i class="fas fa-camera me-2"></i> CAPTURE ALL
+                    <button type="button" id="captureAllBtn" class="lux-btn lux-btn-capture">
+                        <i class="fas fa-camera"></i> CAPTURE ALL
                     </button>
                 </div>
             </form>
@@ -886,12 +951,13 @@
 
 
 @push('scripts')
+<script src="{{ asset('vendor/html2canvas/html2canvas.min.js') }}"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const filterForm = document.getElementById('kinerjaFilterForm');
     const ajaxWrapper = document.getElementById('kinerjaAjaxWrapper');
     const ajaxContainer = document.getElementById('kinerjaAjaxContainer');
-    const submitButton = filterForm?.querySelector('.tampilkan-button');
+    const submitButton = filterForm?.querySelector('.lux-btn-primary');
     const tabStorageKey = 'kinerja-konsumer-active-tab';
 
     // Request timeout configuration (in milliseconds)
@@ -989,7 +1055,7 @@ document.addEventListener('DOMContentLoaded', function() {
         .finally(() => {
             if (submitButton) {
                 submitButton.disabled = false;
-                submitButton.innerHTML = '<i class="fas fa-search me-2"></i> TAMPILKAN';
+                submitButton.innerHTML = '<i class="fas fa-search"></i> TAMPILKAN';
             }
         });
     }
@@ -1336,5 +1402,4 @@ document.addEventListener('DOMContentLoaded', function() {
     </div>
 </div>
 
-<script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
 @endpush
