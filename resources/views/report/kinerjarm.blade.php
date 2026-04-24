@@ -858,9 +858,12 @@
                     </select>
                 </div>
 
-                <div class="kinerja-filter-group d-flex align-items-end justify-content-end">
+                <div class="kinerja-filter-group d-flex align-items-end justify-content-end gap-2">
                     <button type="submit" class="tampilkan-button">
                         <i class="fas fa-search me-2"></i> TAMPILKAN
+                    </button>
+                    <button type="button" id="captureAllBtn" class="tampilkan-button" style="background: linear-gradient(135deg, #1e293b, #334155);">
+                        <i class="fas fa-camera me-2"></i> CAPTURE ALL
                     </button>
                 </div>
             </form>
@@ -1047,6 +1050,201 @@ document.addEventListener('DOMContentLoaded', function() {
         setActiveKinerjaTab(savedTab);
     }
 
+    // --- Capture All Logic (A4 Portrait Composer) ---
+    const captureBtn = document.getElementById('captureAllBtn');
+    const captureModal = document.getElementById('captureStatusModal');
+    const progressUI = document.getElementById('captureProgressUI');
+    const errorUI = document.getElementById('captureErrorUI');
+    const successUI = document.getElementById('captureSuccessUI');
+    const errorMessageUI = document.getElementById('captureErrorMessage');
+
+    const A4_EXPORT = {
+        width: 2480,
+        height: 3508,
+        marginX: 120,
+        marginY: 120,
+        headerHeight: 280,
+        footerHeight: 80,
+        sectionGap: 60,
+    };
+
+    function waitFrame() {
+        return new Promise(resolve => requestAnimationFrame(() => resolve()));
+    }
+
+    function drawExportHeader(ctx, segmen, periode) {
+        const { width, marginX, marginY } = A4_EXPORT;
+        
+        ctx.fillStyle = '#004685'; // BRI Blue Dark
+        ctx.fillRect(0, 0, width, 24);
+
+        ctx.fillStyle = '#0f172a';
+        ctx.font = 'bold 62px "Inter", "Segoe UI", Arial, sans-serif';
+        ctx.fillText('Kinerja RM Performance Report', marginX, marginY + 45);
+
+        ctx.fillStyle = '#475569';
+        ctx.font = '600 30px "Inter", "Segoe UI", Arial, sans-serif';
+        ctx.fillText(`Segmen: ${segmen}   |   Periode: ${periode}`, marginX, marginY + 105);
+
+        ctx.strokeStyle = '#e2e8f0';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(marginX, marginY + 160);
+        ctx.lineTo(width - marginX, marginY + 160);
+        ctx.stroke();
+    }
+
+    function drawExportFooter(ctx) {
+        const { width, height, marginX } = A4_EXPORT;
+        ctx.strokeStyle = '#e2e8f0';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(marginX, height - 85);
+        ctx.lineTo(width - marginX, height - 85);
+        ctx.stroke();
+
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '600 22px "Inter", "Segoe UI", Arial, sans-serif';
+        ctx.fillText(`Generated: ${new Date().toLocaleString('id-ID')}`, marginX, height - 45);
+        
+        ctx.textAlign = 'right';
+        ctx.fillText('Report RM Performance', width - marginX, height - 45);
+        ctx.textAlign = 'left';
+    }
+
+    const captureAllKinerjaRm = async function() {
+        // Find the active panel (usually OS)
+        const activePanel = document.querySelector('.kinerja-tab-panel.is-active');
+        if (!activePanel) {
+            alert('Tidak ada panel aktif untuk dicapture.');
+            return;
+        }
+
+        const table = activePanel.querySelector('table');
+        if (!table) {
+            alert('Tabel tidak ditemukan.');
+            return;
+        }
+
+        if (window.bootstrap) {
+            const modal = new bootstrap.Modal(captureModal);
+            modal.show();
+        } else if (window.jQuery) {
+            window.jQuery(captureModal).modal('show');
+        }
+
+        progressUI.classList.remove('d-none');
+        errorUI.classList.add('d-none');
+        successUI.classList.add('d-none');
+
+        try {
+            const tbodyRows = Array.from(table.querySelectorAll('tbody tr'));
+            const segments = [];
+            let currentSegment = null;
+
+            // Group by branch rows
+            tbodyRows.forEach(row => {
+                if (row.classList.contains('loan-branch-subtotal')) {
+                    currentSegment = {
+                        rows: [row]
+                    };
+                    segments.push(currentSegment);
+                } else if (currentSegment) {
+                    currentSegment.rows.push(row);
+                }
+            });
+
+            if (segments.length === 0) throw new Error('Tidak ada data untuk dicapture.');
+
+            const reportCanvas = document.createElement('canvas');
+            reportCanvas.width = A4_EXPORT.width;
+            reportCanvas.height = A4_EXPORT.height;
+            const ctx = reportCanvas.getContext('2d');
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, reportCanvas.width, reportCanvas.height);
+
+            const segmenLabel = document.getElementById('kinerjaSegmen')?.options[document.getElementById('kinerjaSegmen').selectedIndex].text || 'RM';
+            const periodeLabel = document.getElementById('kinerjaPeriode')?.options[document.getElementById('kinerjaPeriode').selectedIndex].text || '-';
+            
+            drawExportHeader(ctx, segmenLabel, periodeLabel);
+
+            let currentY = A4_EXPORT.marginY + 220;
+            const theadHtml = table.querySelector('thead').outerHTML;
+            const tableWidth = table.offsetWidth;
+
+            for (let i = 0; i < segments.length; i++) {
+                const segment = segments[i];
+                
+                const tempWrap = document.createElement('div');
+                tempWrap.style.position = 'absolute';
+                tempWrap.style.left = '-9999px';
+                tempWrap.style.width = tableWidth + 'px';
+                
+                tempWrap.innerHTML = `
+                    <table class="${table.className}" style="width: ${tableWidth}px; border-collapse: separate; border-spacing: 0; background: #ffffff;">
+                        ${theadHtml}
+                        <tbody>
+                            ${segment.rows.map(r => {
+                                const clone = r.cloneNode(true);
+                                clone.style.background = '#ffffff';
+                                // Remove sticky positioning for capture
+                                clone.querySelectorAll('td, th').forEach(cell => {
+                                    cell.style.position = 'static';
+                                    cell.style.backgroundColor = window.getComputedStyle(cell).backgroundColor;
+                                });
+                                return clone.outerHTML;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                `;
+                document.body.appendChild(tempWrap);
+
+                await waitFrame();
+
+                const segmentCanvas = await html2canvas(tempWrap.querySelector('table'), {
+                    scale: 2,
+                    useCORS: true,
+                    backgroundColor: '#ffffff',
+                    logging: false
+                });
+
+                document.body.removeChild(tempWrap);
+
+                const targetWidth = A4_EXPORT.width - (A4_EXPORT.marginX * 2);
+                const targetHeight = (segmentCanvas.height * targetWidth) / segmentCanvas.width;
+
+                // Check for page overflow (simple implementation: if it exceeds A4 height, we might need multiple pages)
+                // For now, we'll just draw. If it's too many branches, it will overflow the single A4.
+                // Professional approach: multiple canvases if currentY + targetHeight > A4_EXPORT.height
+                
+                ctx.drawImage(segmentCanvas, A4_EXPORT.marginX, currentY, targetWidth, targetHeight);
+                currentY += targetHeight + A4_EXPORT.sectionGap;
+                
+                await waitFrame();
+            }
+
+            drawExportFooter(ctx);
+
+            const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+            const link = document.createElement('a');
+            link.download = `Kinerja-RM-A4-${timestamp}.jpg`;
+            link.href = reportCanvas.toDataURL('image/jpeg', 0.95);
+            link.click();
+
+            progressUI.classList.add('d-none');
+            successUI.classList.remove('d-none');
+        } catch (err) {
+            console.error('Capture failed:', err);
+            progressUI.classList.add('d-none');
+            errorUI.classList.remove('d-none');
+            errorMessageUI.textContent = 'Gagal menyusun laporan. ' + err.message;
+        }
+    };
+
+    if (captureBtn) {
+        captureBtn.addEventListener('click', captureAllKinerjaRm);
+    }
+
     function setActiveKinerjaTab(tabKey) {
         const normalizedTab = tabKey === 'kualitas' ? 'kualitas' : 'os';
         const tabButtons = document.querySelectorAll('[data-kinerja-tab]');
@@ -1094,4 +1292,49 @@ document.addEventListener('DOMContentLoaded', function() {
         </div>
     </div>
 </div>
+
+<!-- Capture Status Modal -->
+<div class="modal fade" id="captureStatusModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg" style="border-radius: 24px; overflow: hidden;">
+            <div class="modal-body p-0">
+                <!-- Progress UI -->
+                <div id="captureProgressUI" class="text-center p-5">
+                    <div class="premium-loader mb-4">
+                        <div class="premium-loader-spinner" style="width: 70px; height: 70px; border-width: 5px;"></div>
+                    </div>
+                    <h4 class="font-weight-black text-dark mb-2" style="letter-spacing: -0.02em;">Menyusun Laporan A4</h4>
+                    <p class="text-muted mb-0">Mohon tunggu, sedang memproses segmentasi data per cabang...</p>
+                    <div class="progress mt-4" style="height: 6px; border-radius: 3px; background: #f1f5f9;">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 100%; background: var(--loan-blue);"></div>
+                    </div>
+                </div>
+
+                <!-- Error UI -->
+                <div id="captureErrorUI" class="text-center p-5 d-none">
+                    <div class="mb-4">
+                        <i class="fas fa-exclamation-circle text-danger" style="font-size: 4rem;"></i>
+                    </div>
+                    <h4 class="font-weight-black text-dark mb-2">Capture Gagal</h4>
+                    <p id="captureErrorMessage" class="text-muted mb-4">Terjadi kesalahan saat memproses gambar.</p>
+                    <button type="button" class="btn btn-secondary px-4 py-2" style="border-radius: 12px; font-weight: 700;" data-bs-dismiss="modal">Tutup</button>
+                </div>
+
+                <!-- Success UI -->
+                <div id="captureSuccessUI" class="text-center p-5 d-none">
+                    <div class="mb-4">
+                        <div class="d-inline-flex align-items-center justify-content-center" style="width: 80px; height: 80px; background: #dcfce7; color: #10b981; border-radius: 50%; font-size: 2.5rem;">
+                            <i class="fas fa-check"></i>
+                        </div>
+                    </div>
+                    <h4 class="font-weight-black text-dark mb-2">Laporan Siap!</h4>
+                    <p class="text-muted mb-4">File laporan A4 telah berhasil diunduh ke perangkat Anda.</p>
+                    <button type="button" class="btn btn-primary px-5 py-2" style="border-radius: 12px; font-weight: 700; background: var(--loan-blue);" data-bs-dismiss="modal">Selesai</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
 @endpush

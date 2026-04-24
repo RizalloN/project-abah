@@ -6,111 +6,124 @@
 <style>
     :root {
         --dana-bg: #f8fafc;
-        --dana-primary: #0f4c81;
+        --dana-primary: #0f4c81; /* Biru Nusantara */
+        --dana-primary-light: #1e40af;
         --dana-accent: #3b82f6;
-        --dana-success: #10b981;
-        --dana-danger: #ef4444;
+        --dana-success: #059669;
+        --dana-danger: #dc2626;
         --dana-border: #e2e8f0;
-        --dana-card-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
+        --dana-card-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.025);
     }
 
+    /* Google Fonts Import for better typography */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap');
+
     .dana-dashboard {
+        font-family: 'Plus Jakarta Sans', 'Inter', sans-serif;
         background-color: var(--dana-bg);
         min-height: 100vh;
-        padding-bottom: 3rem;
+        padding-bottom: 4rem;
     }
 
     .dana-hero {
         background: linear-gradient(135deg, #0f4c81 0%, #1e40af 100%);
-        padding: 3rem 2rem 5rem;
+        padding: 4rem 2rem 6rem;
         color: white;
-        margin-bottom: -3rem;
-        border-radius: 0 0 2.5rem 2.5rem;
+        margin-bottom: -4rem;
+        border-radius: 0 0 3rem 3rem;
+        box-shadow: 0 10px 30px rgba(15, 76, 129, 0.15);
     }
 
     .dana-container {
         max-width: 1600px;
         margin: 0 auto;
-        padding: 0 1.5rem;
+        padding: 0 2rem;
     }
 
     .dana-card {
         background: white;
-        border-radius: 1.25rem;
-        border: 1px solid var(--dana-border);
+        border-radius: 1.5rem;
+        border: 1px solid rgba(226, 232, 240, 0.8);
         box-shadow: var(--dana-card-shadow);
         overflow: hidden;
+        backdrop-filter: blur(10px);
+        transition: transform 0.3s ease;
     }
 
     .dana-filter-bar {
-        background: white;
-        padding: 1.25rem;
-        border-radius: 1rem;
+        background: rgba(255, 255, 255, 0.9);
+        padding: 1.5rem;
+        border-radius: 1.25rem;
         display: flex;
         flex-wrap: wrap;
         gap: 1.5rem;
         align-items: flex-end;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-        margin-bottom: 2rem;
-        border: 1px solid var(--dana-border);
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+        margin-bottom: 2.5rem;
+        border: 1px solid white;
+        backdrop-filter: blur(8px);
     }
 
     .filter-item {
         flex: 1;
-        min-width: 200px;
+        min-width: 220px;
     }
 
     .filter-label {
-        font-size: 0.75rem;
-        font-weight: 700;
+        font-size: 0.7rem;
+        font-weight: 800;
         color: #64748b;
         text-transform: uppercase;
-        margin-bottom: 0.5rem;
+        margin-bottom: 0.6rem;
         display: block;
+        letter-spacing: 0.05em;
     }
 
     .filter-select {
         width: 100%;
-        height: 42px;
-        border-radius: 0.75rem;
-        border: 1px solid #cbd5e1;
-        padding: 0 1rem;
-        font-size: 0.875rem;
+        height: 46px;
+        border-radius: 0.85rem;
+        border: 1.5px solid #e2e8f0;
+        padding: 0 1.25rem;
+        font-size: 0.9rem;
         font-weight: 600;
         color: #1e293b;
-        background-color: #f8fafc;
-        transition: all 0.2s;
+        background-color: #ffffff;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        cursor: pointer;
     }
 
     .filter-select:focus {
         border-color: var(--dana-accent);
-        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1);
         outline: none;
     }
 
     .btn-dana-refresh {
-        background: var(--dana-accent);
+        background: linear-gradient(135deg, var(--dana-accent) 0%, #2563eb 100%);
         color: white;
         border: none;
-        padding: 0.625rem 1.5rem;
-        border-radius: 0.75rem;
+        padding: 0 2rem;
+        border-radius: 0.85rem;
         font-weight: 700;
-        font-size: 0.875rem;
+        font-size: 0.9rem;
         display: flex;
         align-items: center;
-        gap: 0.5rem;
-        transition: all 0.2s;
-        height: 42px;
+        justify-content: center;
+        gap: 0.75rem;
+        transition: all 0.3s ease;
+        height: 46px;
+        box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
     }
 
     .btn-dana-refresh:hover {
-        background: #2563eb;
-        transform: translateY(-1px);
-        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+        transform: translateY(-2px);
+        box-shadow: 0 8px 20px rgba(37, 99, 235, 0.3);
+        filter: brightness(1.1);
     }
 
     .dana-table-container {
-        margin-top: 1rem;
+        margin: 0;
     }
 
     .dana-table {
@@ -120,29 +133,51 @@
     }
 
     .dana-table thead th {
-        background: #0f4c81;
+        background: #004685;
         color: #ffffff;
-        font-weight: 800;
-        font-size: 0.6rem;
+        font-weight: 700;
+        font-size: 0.65rem;
         text-transform: uppercase;
-        letter-spacing: 0.02em;
-        padding: 0.35rem 0.3rem;
-        border-bottom: 2px solid #0a3d6b;
-        border-right: 1px solid #145994;
+        letter-spacing: 0.08em;
+        padding: 1rem 0.5rem;
+        border-bottom: 2px solid rgba(255,255,255,0.1);
         position: sticky;
         top: 0;
-        z-index: 10;
+        z-index: 20;
         text-align: center;
     }
 
+    .dana-table thead tr.group-row th {
+        font-size: 0.8rem;
+        padding: 1.25rem 0.75rem;
+        border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+
+    /* Gradients for headers */
+    .dana-table thead .group-position { 
+        background: linear-gradient(180deg, #005bb7 0%, #004685 100%); 
+        border-right: 1px solid rgba(255,255,255,0.05);
+    }
+    .dana-table thead .group-delta { 
+        background: linear-gradient(180deg, #004a8f 0%, #003366 100%); 
+        border-right: 1px solid rgba(255,255,255,0.05);
+    }
+    .dana-table thead .group-rka { 
+        background: linear-gradient(180deg, #16a34a 0%, #15803d 100%); 
+    }
+
     .dana-table tbody td {
-        padding: 0.15rem 0.4rem;
-        font-size: 0.725rem;
-        border-bottom: 1px solid #e2e8f0;
-        border-right: 1px solid #e2e8f0;
+        padding: 0.85rem 1rem;
+        font-size: 0.8rem;
+        border-bottom: 1px solid #f1f5f9;
         vertical-align: middle;
-        line-height: 1.1;
+        line-height: 1.4;
         white-space: nowrap;
+        transition: background-color 0.2s;
+    }
+
+    .dana-table tbody tr:hover td {
+        background-color: #f8fafc !important;
     }
 
     .dana-table .branch-cell {
@@ -150,8 +185,20 @@
         color: #0f172a;
         text-align: center;
         background: #ffffff !important;
-        font-size: 0.75rem;
-        border-right: 2px solid #cbd5e1;
+        font-size: 0.85rem;
+        border-right: 1px solid #e2e8f0;
+        position: relative;
+    }
+
+    .dana-table .branch-cell::after {
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 10%;
+        height: 80%;
+        width: 4px;
+        background: var(--dana-primary);
+        border-radius: 0 4px 4px 0;
     }
 
     .dana-table .cat-cell {
@@ -163,104 +210,103 @@
         font-family: 'JetBrains Mono', monospace;
         font-weight: 600;
         text-align: right;
+        color: #1e293b;
     }
 
     .dana-table .delta-cell {
         text-align: right;
         font-weight: 700;
+        font-family: 'JetBrains Mono', monospace;
     }
 
-    .dana-table .perf-cell {
-        text-align: center;
-    }
-
-    .text-pos { color: var(--dana-success); }
-    .text-neg { color: var(--dana-danger); }
+    .text-pos { color: #059669; }
+    .text-neg { color: #dc2626; }
 
     .perf-badge {
-        display: inline-block;
-        padding: 0.25rem 0.5rem;
-        border-radius: 0.5rem;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 65px;
+        padding: 0.4rem 0.75rem;
+        border-radius: 2rem;
         font-weight: 800;
         font-size: 0.75rem;
+        letter-spacing: -0.01em;
     }
 
-    .perf-badge.bg-pos { background: #d1fae5; color: #065f46; }
-    .perf-badge.bg-neg { background: #fee2e2; color: #991b1b; }
+    .perf-badge.bg-pos { 
+        background: #ecfdf5; 
+        color: #065f46; 
+        border: 1px solid #d1fae5;
+    }
+    .perf-badge.bg-neg { 
+        background: #fef2f2; 
+        color: #991b1b; 
+        border: 1px solid #fee2e2;
+    }
 
     .sticky-col {
         position: sticky;
         left: 0;
         background: white;
-        z-index: 5;
+        z-index: 10;
     }
 
     .subtotal-row {
-        background-color: #f8fafc !important;
-        font-weight: 800;
+        background-color: rgba(15, 76, 129, 0.03) !important;
+    }
+    
+    .subtotal-row td {
+        font-weight: 700;
         color: var(--dana-primary);
+        border-bottom: 1px solid rgba(15, 76, 129, 0.1);
     }
 
     .grandtotal-row {
-        background-color: #0f4c81 !important;
-        color: white !important;
-        font-weight: 800;
+        background: linear-gradient(90deg, #0f4c81 0%, #1e40af 100%) !important;
+        position: sticky;
+        bottom: 0;
+        z-index: 25;
     }
 
     .grandtotal-row td {
         color: white !important;
-    }
-
-    /* Number formatting classes */
-    .neg-val::before { content: '('; }
-    .neg-val::after { content: ')'; }
-
-    .loading-overlay {
-        position: absolute;
-        inset: 0;
-        background: rgba(255, 255, 255, 0.8);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 100;
-        backdrop-filter: blur(2px);
-    }
-
-    /* Capture Status Modal */
-    .capture-status-modal .modal-content {
-        border-radius: 24px;
+        font-weight: 800;
+        font-size: 0.9rem;
+        padding: 1.25rem 1rem;
         border: none;
-        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.2);
     }
-    .capture-status-modal-icon {
-        width: 80px;
-        height: 80px;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        margin: 0 auto 1.5rem;
-        font-size: 2.5rem;
-    }
-    .icon-loading { background: rgba(15, 76, 129, 0.1); color: #0f4c81; }
-    .icon-success { background: rgba(16, 185, 129, 0.1); color: #10b981; }
-    .icon-error { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
 
+    /* Number formatting helper */
+    .val-cell span.neg-val {
+        color: var(--dana-danger);
+    }
+
+    /* Capture Status Modal Refinement */
+    .capture-status-modal .modal-content {
+        border-radius: 2rem;
+        border: none;
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+    }
+    
     .btn-capture-all {
-        background: rgba(255, 255, 255, 0.15);
-        border: 1px solid rgba(255, 255, 255, 0.3);
+        background: rgba(255, 255, 255, 0.12);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        backdrop-filter: blur(4px);
         color: white;
-        padding: 0.5rem 1rem;
-        border-radius: 0.75rem;
+        padding: 0.75rem 1.5rem;
+        border-radius: 1rem;
         font-weight: 700;
-        font-size: 0.75rem;
-        transition: all 0.2s;
+        font-size: 0.8rem;
+        letter-spacing: 0.05em;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     }
     .btn-capture-all:hover {
         background: rgba(255, 255, 255, 0.25);
-        color: white;
-        border-color: white;
+        transform: translateY(-2px);
+        box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
     }
+
 </style>
 
 <div class="dana-dashboard">
@@ -297,7 +343,7 @@
             <div class="filter-item">
                 <label class="filter-label">Periode RKA</label>
                 <select id="filterRka" class="filter-select">
-                    @foreach($periods as $p)
+                    @foreach($rkaPeriods as $p)
                         <option value="{{ $p }}" {{ $selectedRka == $p ? 'selected' : '' }}>{{ $p }}</option>
                     @endforeach
                 </select>
@@ -328,22 +374,22 @@
                 <div class="table-responsive">
                     <table class="dana-table">
                         <thead>
-                            <tr>
+                            <tr class="group-row">
                                 <th rowspan="2" class="text-center" width="50">No</th>
                                 <th rowspan="2" class="sticky-col">Kantor Cabang</th>
                                 <th rowspan="2" class="text-center">Kategori</th>
-                                <th colspan="3" class="text-center border-bottom">Posisi Saldo (Rp)</th>
-                                <th colspan="2" class="text-center border-bottom border-left">Delta Posisi</th>
-                                <th colspan="2" class="text-center border-bottom border-left" style="background: #ecfdf5;">Performa RKA</th>
+                                <th colspan="3" class="text-center border-bottom group-position">Posisi Saldo (Rp)</th>
+                                <th colspan="2" class="text-center border-bottom border-left group-delta">Delta Posisi</th>
+                                <th colspan="2" class="text-center border-bottom border-left group-rka">Performa RKA</th>
                             </tr>
                             <tr>
-                                <th class="text-right">YTD</th>
-                                <th class="text-right">MTD</th>
-                                <th class="text-right" id="headerSelectedDate">Posisi</th>
-                                <th class="text-right border-left">YTD</th>
-                                <th class="text-right">MTD</th>
-                                <th class="text-right border-left" style="background: #f0fdf4;">Rp</th>
-                                <th class="text-center" style="background: #f0fdf4;">%</th>
+                                <th class="text-right group-position">YTD</th>
+                                <th class="text-right group-position">MTD</th>
+                                <th class="text-right group-position" id="headerSelectedDate">Posisi</th>
+                                <th class="text-right border-left group-delta">YTD</th>
+                                <th class="text-right group-delta">MTD</th>
+                                <th class="text-right border-left group-rka">Rp</th>
+                                <th class="text-center group-rka">%</th>
                             </tr>
                         </thead>
                         <tbody id="danaContent">
@@ -411,47 +457,49 @@
                     
                     html += `
                         <tr class="${isTotal ? 'subtotal-row' : ''}">
-                            <td class="text-center text-muted xsmall">${row.no || ''}</td>
+                            <td class="text-center text-muted" style="font-size: 0.65rem;">${row.no || ''}</td>
                             ${isStartOfBranch ? `
                             <td class="sticky-col branch-cell" rowspan="5">
-                                ${row.nama_cabang}
+                                <div class="branch-name">${row.nama_cabang}</div>
                             </td>
                             ` : ''}
-                            <td class="text-left cat-cell ${isTotal ? 'font-weight-bold' : 'pl-3 text-muted'}">${row.kategori}</td>
-                            <td class="val-cell ${isTotal ? 'font-weight-bold' : 'text-muted'}">${formatMoney(row.ytd)}</td>
-                            <td class="val-cell ${isTotal ? 'font-weight-bold' : 'text-muted'}">${formatMoney(row.mtd)}</td>
+                            <td class="text-left cat-cell ${isTotal ? 'font-weight-bold' : 'pl-4'}">${row.kategori}</td>
+                            <td class="val-cell ${isTotal ? '' : 'text-muted'}">${formatMoney(row.ytd)}</td>
+                            <td class="val-cell ${isTotal ? '' : 'text-muted'}">${formatMoney(row.mtd)}</td>
                             <td class="val-cell ${isTotal ? 'font-weight-bold' : ''}">${formatMoney(row.selected)}</td>
-                            <td class="delta-cell border-left ${getColorClass(row.delta_ytd)} ${isTotal ? 'font-weight-bold' : ''}">${formatMoney(row.delta_ytd)}</td>
+                            <td class="delta-cell ${getColorClass(row.delta_ytd)} ${isTotal ? 'font-weight-bold' : ''}">${formatMoney(row.delta_ytd)}</td>
                             <td class="delta-cell ${getColorClass(row.delta_mtd)} ${isTotal ? 'font-weight-bold' : ''}">${formatMoney(row.delta_mtd)}</td>
-                            <td class="val-cell border-left ${getColorClass(row.rka_rp)} ${isTotal ? 'font-weight-bold' : ''}" style="background: #f0fdf4;">${formatMoney(row.rka_rp)}</td>
-                            <td class="perf-cell" style="background: #f0fdf4;">
+                            <td class="val-cell ${getColorClass(row.rka_rp)} ${isTotal ? 'font-weight-bold' : ''}" style="background: rgba(240, 253, 244, 0.5);">${formatMoney(row.rka_rp)}</td>
+                            <td class="perf-cell" style="background: rgba(240, 253, 244, 0.5);">
                                 <span class="perf-badge ${parseFloat(row.rka_pct) >= 100 ? 'bg-pos' : 'bg-neg'}">
                                     ${formatPercent(row.rka_pct)}
                                 </span>
                             </td>
                         </tr>
                     `;
+
                 });
 
                 // Grand Total
                 const gt = res.total;
                 html += `
                     <tr class="grandtotal-row">
-                        <td colspan="2" class="text-center font-weight-bold">TOTAL AREA 6</td>
+                        <td colspan="2" class="text-center">TOTAL AREA 6</td>
                         <td class="text-center">SEMUA</td>
                         <td class="val-cell">${formatMoney(gt.ytd)}</td>
                         <td class="val-cell">${formatMoney(gt.mtd)}</td>
                         <td class="val-cell">${formatMoney(gt.selected)}</td>
-                        <td class="delta-cell border-left ${getColorClass(gt.delta_ytd)}">${formatMoney(gt.delta_ytd)}</td>
+                        <td class="delta-cell ${getColorClass(gt.delta_ytd)}">${formatMoney(gt.delta_ytd)}</td>
                         <td class="delta-cell ${getColorClass(gt.delta_mtd)}">${formatMoney(gt.delta_mtd)}</td>
-                        <td class="val-cell border-left ${getColorClass(gt.rka_rp)}" style="background: #f0fdf4;">${formatMoney(gt.rka_rp)}</td>
-                        <td class="perf-cell" style="background: #f0fdf4;">
-                            <span class="perf-badge ${parseFloat(gt.rka_pct) >= 100 ? 'bg-pos' : 'bg-neg'}">
+                        <td class="val-cell ${getColorClass(gt.rka_rp)}">${formatMoney(gt.rka_rp)}</td>
+                        <td class="perf-cell">
+                            <span class="perf-badge bg-pos" style="border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.1); color: white;">
                                 ${formatPercent(gt.rka_pct)}
                             </span>
                         </td>
                     </tr>
                 `;
+
 
                 $('#danaContent').html(html);
                 $('#headerTotalDana').text(formatMoney(res.total.selected));

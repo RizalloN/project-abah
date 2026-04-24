@@ -1,0 +1,265 @@
+<?php
+
+namespace App\Console\Commands;
+
+use Carbon\Carbon;
+use Illuminate\Console\Command;
+use Illuminate\Support\Facades\DB;
+
+class ValidateSnapshotDataIntegrityCommand extends Command
+{
+    protected $signature = 'snapshot:validate-integrity {--period= : Validate specific period} {--segment= : Validate specific segment} {--sample : Sample-based validation (faster)}';
+
+    protected $description = 'Validate Performance RM snapshot data integrity against source';
+
+    public function handle(): int
+    {
+        try {
+            $period = trim((string) $this->option('period')) ?: null;
+            $segment = trim((string) $this->option('segment')) ?: null;
+            $useSample = (bool) $this->option('sample');
+
+            $this->info('Starting snapshot data integrity validation...');
+
+            if ($useSample) {
+                $this->validateWithSampling($period, $segment);
+            } else {
+                $this->validateAggregate($period, $segment);
+            }
+
+            return self::SUCCESS;
+        } catch (\Throwable $e) {
+            $this->error('Validation failed: ' . $e->getMessage());
+            return self::FAILURE;
+        }
+    }
+
+    private function validateAggregate(?string $period = null, ?string $segment = null): void
+    {
+        $this->line('<fg=cyan>== AGGREGATE VALIDATION ==</>');
+
+        $periods = $period
+            ? [$period]
+            : DB::table('performance_rm_snapshots')
+                ->distinct('periode')
+                ->orderByDesc('periode')
+                ->limit(5)
+                ->pluck('periode')
+                ->map(fn($p) => (string)$p)
+                ->toArray();
+
+        $segments = $segment ? [$segment] : ['CONSUMER', 'SMALL', 'MICRO'];
+
+        foreach ($periods as $p) {
+            $this->line("\n<fg=yellow>Period: {$p}</>");
+
+            foreach ($segments as $seg) {
+                $snapAgg = DB::table('performance_rm_snapshots')
+                    ->where('periode', $p)
+                    ->where('segmen', $seg)
+                    ->selectRaw('COUNT(*) as cnt, SUM(loan_os) as total_loan, SUM(lancar_os) as total_lancar, SUM(realisasi_os) as total_real')
+                    ->first();
+
+                if (!$snapAgg || $snapAgg->cnt === 0) {
+                    $this->line("  {$seg}: <fg=gray>No data</>");
+                    continue;
+                }
+
+                $sourceAgg = $this->getSourceAggregate($p, $seg);
+
+                $loanMatch = $this->compareValues($snapAgg->total_loan, $sourceAgg->total_loan);
+                $lancarMatch = $this->compareValues($snapAgg->total_lancar, $sourceAgg->total_lancar);
+                $realMatch = $this->compareValues($snapAgg->total_real, $sourceAgg->total_real);
+
+                $status = $loanMatch && $lancarMatch ? '✓' : '✗';
+                $color = $loanMatch && $lancarMatch ? 'fg=green' : 'fg=red';
+
+                $this->line("  <{$color}>{$status} {$seg} ({$snapAgg->cnt} records)</>");
+                $this->line("    Loan OS: snap=" . $this->formatNum($snapAgg->total_loan) . " vs src=" . $this->formatNum($sourceAgg->total_loan) . " ({$this->getDiff($snapAgg->total_loan, $sourceAgg->total_loan)}%)");
+                $this->line("    Lancar OS: snap=" . $this->formatNum($snapAgg->total_lancar) . " vs src=" . $this->formatNum($sourceAgg->total_lancar) . " ({$this->getDiff($snapAgg->total_lancar, $sourceAgg->total_lancar)}%)");
+
+                if ($sourceAgg->total_real > 0 || $snapAgg->total_real > 0) {
+                    $realStatus = $realMatch ? '✓' : '!';
+                    $this->line("    {$realStatus} Realisasi: snap=" . $this->formatNum($snapAgg->total_real) . " vs src=" . $this->formatNum($sourceAgg->total_real));
+                }
+            }
+        }
+    }
+
+    private function validateWithSampling(?string $period = null, ?string $segment = null): void
+    {
+        $this->line('<fg=cyan>== SAMPLE-BASED VALIDATION (10 records per segment) ==</>');
+
+        $periods = $period
+            ? [$period]
+            : DB::table('performance_rm_snapshots')
+                ->distinct('periode')
+                ->orderByDesc('periode')
+                ->limit(3)
+                ->pluck('periode')
+                ->map(fn($p) => (string)$p)
+                ->toArray();
+
+        $segments = $segment ? [$segment] : ['CONSUMER', 'SMALL', 'MICRO'];
+
+        foreach ($periods as $p) {
+            $this->line("\n<fg=yellow>Period: {$p}</>");
+
+            foreach ($segments as $seg) {
+                $samples = DB::table('performance_rm_snapshots')
+                    ->where('periode', $p)
+                    ->where('segmen', $seg)
+                    ->select('cabang', 'unit', 'rm', 'produk', 'loan_os', 'lancar_os', 'total_deb', 'realisasi_os')
+                    ->inRandomOrder()
+                    ->limit(10)
+                    ->get();
+
+                if ($samples->isEmpty()) {
+                    $this->line("  {$seg}: <fg=gray>No data</>");
+                    continue;
+                }
+
+                $matchCount = 0;
+                $issues = [];
+
+                foreach ($samples as $snap) {
+                    $src = $this->getSourceData($p, $snap->cabang, $snap->unit, $snap->rm, $snap->produk, $seg);
+
+                    if (!$src) {
+                        $issues[] = "{$snap->rm}|{$snap->produk}: source not found";
+                        continue;
+                    }
+
+                    if ($this->compareValues($snap->loan_os, $src->loan_os) &&
+                        $this->compareValues($snap->lancar_os, $src->lancar_os) &&
+                        $snap->total_deb == $src->total_deb) {
+                        $matchCount++;
+                    } else {
+                        $issues[] = "{$snap->rm}|{$snap->produk}: loan_os diff=" . $this->getDiff($snap->loan_os, $src->loan_os) . "%";
+                    }
+                }
+
+                $color = $matchCount >= 8 ? 'fg=green' : ($matchCount >= 5 ? 'fg=yellow' : 'fg=red');
+                $this->line("  <{$color}>{$seg}: {$matchCount}/10 samples match</>");
+
+                if (!empty($issues)) {
+                    foreach (array_slice($issues, 0, 3) as $issue) {
+                        $this->line("    - {$issue}");
+                    }
+                    if (count($issues) > 3) {
+                        $this->line("    ... and " . (count($issues) - 3) . " more");
+                    }
+                }
+            }
+        }
+    }
+
+    private function getSourceAggregate(string $period, string $segment): object
+    {
+        $sourceSegments = $this->getSourceSegments($segment);
+
+        return DB::table('daily_loan_dinamis')
+            ->where('periode', $period)
+            ->whereIn('segmen_dashboard', $sourceSegments)
+            ->selectRaw('SUM(COALESCE(baki_debet1, 0)) as total_loan')
+            ->selectRaw('SUM(CASE WHEN kol_adk1 = 1 THEN COALESCE(baki_debet1, 0) ELSE 0 END) as total_lancar')
+            ->selectRaw('SUM(CASE WHEN tgl_realisasi BETWEEN DATE_FORMAT(?, "%Y-%m-01") AND ? THEN COALESCE(baki_debet1, 0) ELSE 0 END) as total_real', [
+                Carbon::parse($period)->startOfMonth()->toDateString(),
+                $period,
+            ])
+            ->first() ?? (object)[
+                'total_loan' => 0,
+                'total_lancar' => 0,
+                'total_real' => 0,
+            ];
+    }
+
+    private function getSourceData(string $period, string $cabang, string $unit, string $rm, string $produk, string $segment): ?object
+    {
+        $sourceProducts = $this->getSourceProducts($produk);
+        $sourceSegments = $this->getSourceSegments($segment);
+
+        return DB::table('daily_loan_dinamis')
+            ->where('periode', $period)
+            ->whereIn('segmen_dashboard', $sourceSegments)
+            ->whereIn('produk_dashboard', $sourceProducts)
+            ->whereRaw("UPPER(TRIM(cabang1)) = ?", [strtoupper(trim($cabang))])
+            ->whereRaw("UPPER(TRIM(unit1)) = ?", [strtoupper(trim($unit))])
+            ->whereRaw("UPPER(TRIM(pn_pengelola1)) = ?", [strtoupper(trim($rm))])
+            ->selectRaw('SUM(COALESCE(baki_debet1, 0)) as loan_os')
+            ->selectRaw('SUM(CASE WHEN kol_adk1 = 1 THEN COALESCE(baki_debet1, 0) ELSE 0 END) as lancar_os')
+            ->selectRaw('COUNT(DISTINCT nomor_rekening1) as total_deb')
+            ->selectRaw('SUM(CASE WHEN tgl_realisasi BETWEEN DATE_FORMAT(?, "%Y-%m-01") AND ? THEN COALESCE(baki_debet1, 0) ELSE 0 END) as realisasi_os', [
+                Carbon::parse($period)->startOfMonth()->toDateString(),
+                $period,
+            ])
+            ->first();
+    }
+
+    private function compareValues($snap, $source): bool
+    {
+        if ($snap == 0 && $source == 0) {
+            return true;
+        }
+
+        if ($source == 0) {
+            return $snap == 0;
+        }
+
+        $diff = abs($snap - $source) / $source * 100;
+        return $diff <= 1;
+    }
+
+    private function getDiff($snap, $source): string
+    {
+        if ($source == 0) {
+            return $snap == 0 ? '0' : 'INF';
+        }
+
+        $diff = abs($snap - $source) / $source * 100;
+        return round($diff, 2);
+    }
+
+    private function formatNum($val): string
+    {
+        if ($val == 0) {
+            return '0';
+        }
+
+        if (abs($val) >= 1000000000) {
+            return round($val / 1000000000, 1) . 'M';
+        }
+
+        if (abs($val) >= 1000000) {
+            return round($val / 1000000, 1) . 'K';
+        }
+
+        return round($val, 0);
+    }
+
+    private function getSourceSegments(string $segment): array
+    {
+        return match ($segment) {
+            'CONSUMER' => ['CONSUMER', 'Consumer'],
+            'SMALL' => ['SMALL', 'Small'],
+            'MICRO' => ['MICRO', 'Micro', 'MIKRO', 'Mikro'],
+            default => [$segment],
+        };
+    }
+
+    private function getSourceProducts(string $product): array
+    {
+        return match ($product) {
+            'BRIGUNA-KONSUMER' => ['BRIGUNA-KONSUMER', 'Briguna-Konsumer'],
+            'KPR' => ['KPR'],
+            'COMMERCIAL' => ['COMMERCIAL', 'Commercial'],
+            'CASHCALL' => ['CASHCALL', 'Cashcall'],
+            'BRIGUNA-MIKRO' => ['BRIGUNA-MIKRO', 'Briguna-Mikro'],
+            'KUPEDES' => ['KUPEDES', 'Kupedes'],
+            'KUR-MIKRO' => ['KUR-MIKRO', 'KUR-Mikro'],
+            'CASHCOLLATERAL' => ['CASHCOLLATERAL', 'CashCollateral', 'Cash Collateral', 'Cashcoll'],
+            'KUR-SMALL' => ['KUR-SMALL', 'KUR-Small'],
+            default => [$product],
+        };
+    }
+}

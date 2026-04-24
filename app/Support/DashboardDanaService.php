@@ -190,12 +190,37 @@ class DashboardDanaService
     private function loadRkaData(string $period, ?string $category): array
     {
         $service = app(RkaLookupService::class);
-        $date = Carbon::parse($period);
-        $monthCol = $service->resolveMonthColumn($date);
-        
-        $requestedYear = $date->year;
+
+        // Parse the RKA period - could be "2026" (year) or "2026-04" (year-month) or a date string
+        $year = null;
+        $monthCol = null;
+
+        try {
+            // Try parsing as a date first
+            $date = Carbon::parse($period);
+            $year = $date->year;
+            $monthCol = $service->resolveMonthColumn($date);
+        } catch (Throwable) {
+            // If that fails, try parsing as just a year
+            if (is_numeric($period) && strlen($period) === 4) {
+                $year = (int) $period;
+                $monthCol = 'jan'; // Default to January if only year is provided
+            }
+        }
+
+        // Verify year is available
         $availableYears = $service->availableYears();
-        $year = in_array($requestedYear, $availableYears) ? $requestedYear : (!empty($availableYears) ? max($availableYears) : null);
+        if (!in_array($year, $availableYears)) {
+            $year = !empty($availableYears) ? max($availableYears) : null;
+        }
+
+        if (!$year || !$monthCol) {
+            return [
+                'Giro' => [],
+                'Tabungan' => [],
+                'Deposito' => [],
+            ];
+        }
 
         $ukerFilter = [];
         $categoryLower = strtolower($category ?? 'all');
@@ -209,6 +234,7 @@ class DashboardDanaService
             'Giro' => ['mata_anggaran' => ['Giro Retail Funding Total']],
             'Tabungan' => ['mata_anggaran' => ['Tabungan Retail Funding Total']],
             'Deposito' => ['mata_anggaran' => ['Deposito Retail Funding Total']],
+            'CASA' => ['mata_anggaran' => ['Giro Retail Funding Total', 'Tabungan Retail Funding Total']],
         ];
 
         if (!empty($ukerFilter)) {
@@ -217,19 +243,30 @@ class DashboardDanaService
             }
         }
 
-        // RKA data is typically at the branch level
-        $data = $service->aggregateByGroup($definitions, $monthCol, self::AREA_6_BRANCHES, [], 'kanca', $year);
-        
-        // Handle regional branches like DashboardPinjamanKreditService does
-        $regionPatterns = ['MADIUN', 'NGAWI', 'MAGETAN'];
+        // RKA data is stored at the kanca level (only KC Ponorogo) and unit level (desc_uker)
+        // We aggregate by regional patterns (MADIUN, NGAWI, MAGETAN, PONOROGO) from desc_uker
+        $regionPatterns = ['MADIUN', 'NGAWI', 'MAGETAN', 'PONOROGO'];
         $regionalData = $service->aggregateByGroupWithRegionalFilter($definitions, $monthCol, $regionPatterns, $year);
 
-        // Merge regional data into main branch data
+        // Map region data to standardized branch names
+        $data = [];
+        foreach ($definitions as $defKey => $_) {
+            $data[$defKey] = [];
+        }
+
+        // Map regions to their corresponding KC names
+        $regionMap = [
+            'MADIUN' => 'KC MADIUN',
+            'MAGETAN' => 'KC MAGETAN',
+            'NGAWI' => 'KC NGAWI',
+            'PONOROGO' => 'KC PONOROGO',
+        ];
+
         foreach ($definitions as $defKey => $_) {
             foreach ($regionPatterns as $region) {
-                $branchKey = 'KC ' . $region;
+                $standardizedBranchName = $regionMap[$region];
                 if (isset($regionalData[$defKey][$region])) {
-                    $data[$defKey][$branchKey] = $regionalData[$defKey][$region];
+                    $data[$defKey][$standardizedBranchName] = $regionalData[$defKey][$region];
                 }
             }
         }
@@ -237,10 +274,21 @@ class DashboardDanaService
         return $data;
     }
 
+    public function fetchRkaPeriods(): Collection
+    {
+        $service = app(RkaLookupService::class);
+        $years = $service->availableYears();
+
+        // Return years as period options
+        return collect($years)->map(fn($year) => (string) $year);
+    }
+
     private function getRkaVal(array $rkaData, string $branch, string $kategori): float
     {
-        $branchKey = strtoupper(trim($branch));
-        
+        // Normalize the branch name to match RKA data keys
+        $normalizedBranch = $this->normalizeBranchName($branch);
+        $branchKey = strtoupper($normalizedBranch);
+
         if ($kategori === 'CASA') {
             return ($rkaData['Giro'][$branchKey] ?? 0) + ($rkaData['Tabungan'][$branchKey] ?? 0);
         }

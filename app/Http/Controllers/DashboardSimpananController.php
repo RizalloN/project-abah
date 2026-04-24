@@ -42,13 +42,16 @@ class DashboardSimpananController extends Controller
         $service = app(DashboardDanaService::class);
         $periods = $service->fetchPeriods();
         $categories = $service->fetchCategories();
+        $rkaPeriods = $service->fetchRkaPeriods();
+
         $selectedPeriod = $request->input('periode') ?? $periods->first();
         $selectedCategory = $request->input('kategori') ?? 'all';
-        $selectedRka = $request->input('rka_periode') ?? $selectedPeriod;
+        $selectedRka = $request->input('rka_periode') ?? $rkaPeriods->first();
 
         return view('report.dashboard-dana', [
             'periods' => $periods,
             'categories' => $categories,
+            'rkaPeriods' => $rkaPeriods,
             'selectedPeriod' => $selectedPeriod,
             'selectedCategory' => $selectedCategory,
             'selectedRka' => $selectedRka,
