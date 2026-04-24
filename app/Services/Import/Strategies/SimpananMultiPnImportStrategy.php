@@ -29,9 +29,15 @@ class SimpananMultiPnImportStrategy implements ImportStrategyInterface
 
     public function transformHeaders(array $headers): array
     {
-        return array_values(array_filter($headers, static function ($header): bool {
-            return !preg_match('/^(?:no|row|nomor)$/i', trim((string) $header));
-        }));
+        return array_values(array_map(static function ($header, int $index): string {
+            $headerName = trim((string) $header);
+
+            if (preg_match('/^(?:no|row|nomor)$/i', $headerName) === 1) {
+                return 'COL_' . $index;
+            }
+
+            return $headerName !== '' ? $headerName : 'COL_' . $index;
+        }, $headers, array_keys($headers)));
     }
 
     public function importMode(array $context = []): string

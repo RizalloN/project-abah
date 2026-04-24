@@ -3966,7 +3966,7 @@ class ImportExcelController extends Controller
                     continue;
                 }
 
-                $normalizedHeader = $this->normalizeImportColumnName((string) $header);
+                $normalizedHeader = $this->normalizeSimpananMultiPnImportColumnName((string) $header);
                 if ($normalizedHeader !== '') {
                     $targetColumns[] = $normalizedHeader;
                 }
@@ -3975,7 +3975,7 @@ class ImportExcelController extends Controller
 
         if ($targetColumns === [] && !empty($normalizedHeaders)) {
             foreach ($normalizedHeaders as $header) {
-                $normalizedHeader = $this->normalizeImportColumnName((string) $header);
+                $normalizedHeader = $this->normalizeSimpananMultiPnImportColumnName((string) $header);
                 if ($normalizedHeader !== '') {
                     $targetColumns[] = $normalizedHeader;
                 }
@@ -4160,6 +4160,20 @@ class ImportExcelController extends Controller
                 ))
                 : $targetColumns,
         ];
+    }
+
+    private function normalizeSimpananMultiPnImportColumnName(string $headerName): string
+    {
+        $normalizedHeader = $this->normalizeImportColumnName($headerName);
+
+        return match ($normalizedHeader) {
+            'status_rekening',
+            'statusrek',
+            'status_rek',
+            'status_simpanan',
+            'status_dormant' => 'status',
+            default => $normalizedHeader,
+        };
     }
 
     protected function createNormalizedSimpananMultiPnDirectLoadCsv(
@@ -5687,11 +5701,19 @@ class ImportExcelController extends Controller
 
     private function buildDirectLoadIntegerExpression(string $columnExpression): string
     {
+        $textExpression = $this->buildDirectLoadTextExpression($columnExpression);
+        $compacted = "REPLACE({$textExpression}, ' ', '')";
+        $signed = "CASE "
+            . "WHEN {$compacted} IS NULL THEN NULL "
+            . "WHEN LEFT({$compacted}, 1) = '(' AND RIGHT({$compacted}, 1) = ')' THEN CONCAT('-', SUBSTRING({$compacted}, 2, CHAR_LENGTH({$compacted}) - 2)) "
+            . "WHEN RIGHT({$compacted}, 1) = '-' THEN CONCAT('-', LEFT({$compacted}, CHAR_LENGTH({$compacted}) - 1)) "
+            . "ELSE {$compacted} END";
         $decimalExpression = $this->buildDirectLoadDecimalExpression($columnExpression);
 
         return "CASE "
-            . "WHEN ({$decimalExpression}) IS NULL THEN NULL "
-            . "ELSE CAST(ROUND({$decimalExpression}, 0) AS SIGNED) END";
+            . "WHEN ({$decimalExpression}) IS NOT NULL THEN CAST(ROUND({$decimalExpression}, 0) AS SIGNED) "
+            . "WHEN {$signed} REGEXP '^-?[0-9]+' THEN CAST({$signed} AS SIGNED) "
+            . "ELSE NULL END";
     }
 
     private function buildFastDirectLoadIntegerExpression(string $columnExpression): string

@@ -50,11 +50,13 @@ class SnapshotAuditController extends Controller
         ]);
     }
 
-    public function triggerSmartRebuild(Request $request): JsonResponse
+    public function triggerSmartRebuild(Request $request, ?string $auditId = null): JsonResponse
     {
-        $validated = $request->validate([
-            'audit_id' => 'required|string|uuid',
-        ]);
+        $validated = $auditId !== null
+            ? ['audit_id' => $auditId]
+            : $request->validate([
+                'audit_id' => 'required|string|uuid',
+            ]);
 
         $result = $this->auditCoordinator->triggerSmartRebuild($validated['audit_id']);
 

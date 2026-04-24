@@ -130,7 +130,7 @@ class SmartPartialSnapshotRebuildJob implements ShouldQueue
     private function deleteDailyLoanSnapshots(array $periods): void
     {
         DB::table('dashboard_pinjaman_snapshots')
-            ->whereIn('snapshot_period', $periods)
+            ->whereIn('periode', $periods)
             ->delete();
 
         DB::table('dashboard_pinjaman_chart_periodik_snapshots')

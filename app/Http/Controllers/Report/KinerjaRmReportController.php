@@ -347,7 +347,28 @@ class KinerjaRmReportController extends Controller
                     $pivoted[$key]['curr_deb'] = (int)$row->total_deb;
                     $pivoted[$key]['realisasi_deb'] = (int)($row->realisasi_deb ?? 0);
                     $pivoted[$key]['realisasi_os'] = (float)($row->realisasi_os ?? 0.0);
-                    $pivoted[$key]['quadrant'] = $row->quadrant;
+                    $quadrant = $row->quadrant ?? null;
+
+                    if ($quadrant === null) {
+                        $loanOs = (float) ($row->loan_os ?? 0);
+
+                        if ($loanOs > 0) {
+                            $isXPositive = (float) ($row->lancar_os ?? 0) >= (float) ($row->npl_os ?? 0);
+                            $isYPositive = (float) ($row->total_deposit ?? 0) >= $loanOs;
+
+                            if ($isXPositive && $isYPositive) {
+                                $quadrant = 2;
+                            } elseif (!$isXPositive && $isYPositive) {
+                                $quadrant = 3;
+                            } elseif (!$isXPositive && !$isYPositive) {
+                                $quadrant = 4;
+                            } else {
+                                $quadrant = 1;
+                            }
+                        }
+                    }
+
+                    $pivoted[$key]['quadrant'] = $quadrant;
                 }
                 
                 if ($row->periode === $yoyPeriod) {

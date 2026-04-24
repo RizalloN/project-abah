@@ -68,6 +68,79 @@ class ManagedReportDeleteTest extends TestCase
         parent::tearDown();
     }
 
+    public function test_report_management_data_groups_only_requested_period_page(): void
+    {
+        Schema::create('large_report_fixture', function (Blueprint $table) {
+            $table->string('uniqueid_namareport')->primary();
+            $table->date('periode')->nullable();
+            $table->string('kanca')->nullable();
+        });
+
+        DB::table('nama_report')->insert([
+            'id_report' => 500,
+            'nama_report' => 'Large Report Fixture',
+            'table_name' => 'large_report_fixture',
+            'active' => 1,
+        ]);
+
+        $rows = [];
+        foreach (['2026-04-10', '2026-04-09', '2026-04-08', '2026-04-07', '2026-04-06'] as $period) {
+            foreach (['KC Madiun', 'KC Ponorogo'] as $branch) {
+                $rows[] = [
+                    'uniqueid_namareport' => $period . '-' . $branch,
+                    'periode' => $period,
+                    'kanca' => $branch,
+                ];
+            }
+        }
+        DB::table('large_report_fixture')->insert($rows);
+
+        $controller = app(ImportIndexController::class);
+        $request = Request::create('/import/report-management/data', 'POST', [
+            'id_report' => 500,
+            'max_rows' => 100,
+            'page' => 2,
+            'per_page' => 2,
+        ]);
+
+        $response = $controller->reportManagementData($request);
+        $payload = $response->getData(true);
+
+        $this->assertSame(200, $response->status());
+        $this->assertSame('success', $payload['status']);
+        $this->assertSame(5, $payload['pagination']['total_periods']);
+        $this->assertSame(3, $payload['pagination']['total_pages']);
+        $this->assertSame(2, $payload['pagination']['current_page']);
+        $this->assertSame(['2026-04-08', '2026-04-07'], array_column($payload['periods'], 'period'));
+        $this->assertSame(4, $payload['total_groups']);
+        $this->assertSame(
+            ['2026-04-08', '2026-04-08', '2026-04-07', '2026-04-07'],
+            array_column($payload['rows'], 'period')
+        );
+    }
+
+    public function test_simpanan_delete_chunk_is_bounded_for_visible_progress(): void
+    {
+        $controller = app(ImportIndexController::class);
+
+        $resolveChunkSize = new \ReflectionMethod($controller, 'resolveDeleteChunkSize');
+        $resolveChunkSize->setAccessible(true);
+
+        $this->assertSame(50000, $resolveChunkSize->invoke($controller, 'simpanan_multipn', 'uniqueid_SMPN'));
+
+        $resolveEffectiveBatchSize = new \ReflectionMethod($controller, 'resolveEffectiveDeleteBatchSize');
+        $resolveEffectiveBatchSize->setAccessible(true);
+
+        $this->assertSame(50000, $resolveEffectiveBatchSize->invoke($controller, [
+            'chunk_size' => 50000,
+            'remaining_rows' => 721417,
+        ]));
+        $this->assertSame(17417, $resolveEffectiveBatchSize->invoke($controller, [
+            'chunk_size' => 50000,
+            'remaining_rows' => 17417,
+        ]));
+    }
+
     public function test_delete_management_processes_selected_scopes_per_chunk_without_touching_other_scopes(): void
     {
         DB::table('nama_report')->insert([
@@ -1711,4 +1784,3 @@ class ManagedReportDeleteTest extends TestCase
         $this->assertSame(1, DB::table('daily_loan_dinamis')->where('periode', '2026-04-04')->where('cabang1', 'KC Madiun')->count());
     }
 }
-

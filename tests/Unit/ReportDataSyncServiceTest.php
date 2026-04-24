@@ -89,6 +89,7 @@ class ReportDataSyncServiceTest extends TestCase
             ->once()
             ->with('report_cache_version:global', 1)
             ->andReturn(1);
+        Cache::shouldReceive('add')->andReturnFalse();
         Cache::shouldReceive('remember')
             ->once()
             ->andReturn([
@@ -117,7 +118,7 @@ class ReportDataSyncServiceTest extends TestCase
 
         $builder->shouldReceive('rebuildDashboardSimpanan')
             ->once()
-            ->with('2026-04-04', true, null)
+            ->with('2026-04-04', false, null)
             ->andReturn(['2026-04-04' => 1]);
         $builder->shouldReceive('rebuildRekeningDormant')
             ->once()

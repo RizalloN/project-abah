@@ -24,6 +24,7 @@ import tempfile
 import time
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from datetime import datetime, timedelta
+from datetime import date
 from pathlib import Path
 
 
@@ -161,6 +162,14 @@ def normalize_header_name(header_name: str) -> str:
         "POSISI": "posisi",
         "JENISSIMPANAN": "jenis_simpanan",
         "JENIS_SIMPANAN": "jenis_simpanan",
+        "STATUSREKENING": "status",
+        "STATUS_REKENING": "status",
+        "STATUSREK": "status",
+        "STATUS_REK": "status",
+        "STATUSSIMPANAN": "status",
+        "STATUS_SIMPANAN": "status",
+        "STATUSDORMANT": "status",
+        "STATUS_DORMANT": "status",
         "SALDOIDR": "saldo_idr",
         "SALDO_IDR": "saldo_idr",
     }
@@ -313,14 +322,22 @@ def is_valid_simpanan_row_values(values_by_header: dict[str, object]) -> bool:
     return normalize_decimal_value(saldo) is not None
 
 
-def sanitize_source_optimized(source_path: str, delimiter: str, config: dict) -> tuple[str, list[str], int, int, int, int, bool, list[int], int, int, list[dict[str, str]]]:
+def sanitize_source_optimized(source_path: str, delimiter: str, config: dict | None = None) -> tuple[str, list[str], int, int, int, int, bool, list[int], int, int, list[dict[str, str]], bool]:
     """Optimized CSV sanitization using Polars lazy evaluation."""
     import polars as pl
     from datetime import datetime, timedelta
 
-    temp_dir = Path(tempfile.gettempdir())
-    fd, temp_path = tempfile.mkstemp(prefix="simpanan_multipn_sanitized_opt_", suffix=".csv", dir=str(temp_dir))
-    os.close(fd)
+    config = config or {}
+    output_csv_path = str(config.get("output_csv_path") or "")
+    direct_output_written = output_csv_path != ""
+    temp_path = ""
+    if direct_output_written:
+        write_path = output_csv_path
+    else:
+        temp_dir = Path(tempfile.gettempdir())
+        fd, temp_path = tempfile.mkstemp(prefix="simpanan_multipn_sanitized_opt_", suffix=".csv", dir=str(temp_dir))
+        os.close(fd)
+        write_path = temp_path
 
     start_time = time.perf_counter()
     send_progress(10, "Membaca CSV dengan Polars (fast-path)...", 0, 0, 0, "baris/detik", "polars")
@@ -377,7 +394,13 @@ def sanitize_source_optimized(source_path: str, delimiter: str, config: dict) ->
             if col not in normalized_headers:
                 raise RuntimeError(f"Kolom wajib '{col}' tidak ditemukan.")
 
+        non_empty_mask = pl.any_horizontal([
+            pl.col(col).is_not_null() & (pl.col(col).str.strip_chars() != "")
+            for col in normalized_headers
+        ])
+
         filter_mask = (
+            non_empty_mask &
             pl.col("posisi").is_not_null() & (pl.col("posisi").str.strip_chars() != "") &
             pl.col("cifno").is_not_null() & (pl.col("cifno").str.strip_chars() != "") &
             pl.col("no_rekening").is_not_null() & (pl.col("no_rekening").str.strip_chars() != "") &
@@ -401,16 +424,20 @@ def sanitize_source_optimized(source_path: str, delimiter: str, config: dict) ->
         
         # Date normalization (posisi)
         # Handle common formats: DD/MM/YYYY, YYYY-MM-DD, and Excel Serial
-        posisi_expr = (
-            pl.col("posisi").str.strip_chars()
-            .str.replace_all("/", "-")
-            # If it's 5 digits, assume Excel serial
-            .map_elements(lambda x: (datetime(1899, 12, 30) + timedelta(days=int(float(x)))).strftime("%Y-%m-%d") 
-                          if re.fullmatch(r"\d{5}(\.0+)?", str(x)) else x, return_dtype=pl.Utf8)
-            # Try to parse as date - for simplicity in Polars we can use str.to_date with multiple formats
-            # But map_elements with the existing normalize_date_value is safer if we want exact parity
-            .map_elements(normalize_date_value, return_dtype=pl.Utf8)
-        )
+        posisi_text = pl.col("posisi").str.strip_chars().str.replace_all("/", "-")
+        posisi_serial = posisi_text.cast(pl.Float64, strict=False)
+        posisi_serial_date = (
+            pl.lit(date(1899, 12, 30)) +
+            pl.duration(days=posisi_serial.cast(pl.Int64, strict=False))
+        ).cast(pl.Date)
+        posisi_expr = pl.coalesce([
+            posisi_text.str.strptime(pl.Date, "%d-%m-%Y", strict=False),
+            posisi_text.str.strptime(pl.Date, "%Y-%m-%d", strict=False),
+            posisi_text.str.strptime(pl.Date, "%d-%m-%y", strict=False),
+            pl.when(posisi_serial.is_between(20000, 80000))
+            .then(posisi_serial_date)
+            .otherwise(None),
+        ]).cast(pl.Utf8)
 
         # Decimal normalization (saldo_idr)
         saldo_expr = (
@@ -427,16 +454,23 @@ def sanitize_source_optimized(source_path: str, delimiter: str, config: dict) ->
             else:
                 transformations.append(pl.col(col).str.strip_chars().alias(col))
 
-        df_processed = df_lazy.filter(filter_mask).select(transformations)
-        
+        df_processed = df_lazy.select([
+            *transformations,
+            non_empty_mask.alias("__smpn_non_empty"),
+            filter_mask.alias("__smpn_valid_shape"),
+        ])
+
         # Execute
         send_progress(35, "Memproses data dengan engine Polars...", 0, 0, 0, "baris/detik", "polars")
-        
-        # We need total records count for accurate reporting
-        total_input_rows = df_lazy.select(pl.len()).collect().item()
-        
+
         df_collected = df_processed.collect()
-        
+        total_input_rows = int(df_collected.filter(pl.col("__smpn_non_empty")).height)
+        df_collected = df_collected.filter(
+            pl.col("__smpn_valid_shape") &
+            pl.col("posisi").is_not_null() & (pl.col("posisi") != "") &
+            pl.col("saldo_idr").is_not_null() & (pl.col("saldo_idr") != "")
+        ).drop(["__smpn_non_empty", "__smpn_valid_shape"])
+
         valid_rows = df_collected.height
         total_data_rows = total_input_rows
         skipped_count = total_data_rows - valid_rows
@@ -506,7 +540,7 @@ def sanitize_source_optimized(source_path: str, delimiter: str, config: dict) ->
         # Write CSV
         send_progress(80, f"Menulis {valid_rows:,} baris hasil optimasi...", valid_rows, valid_rows, 0, "baris/detik", "polars")
         df_collected.write_csv(
-            temp_path,
+            write_path,
             separator=delimiter,
             include_header=True,
             quote_style="necessary",
@@ -517,10 +551,10 @@ def sanitize_source_optimized(source_path: str, delimiter: str, config: dict) ->
         speed = int(valid_rows / elapsed)
         send_progress(90, "Optimasi selesai.", valid_rows, valid_rows, speed, "baris/detik", "polars")
 
-        return temp_path, df_collected.columns, total_input_rows + 1, 0, skipped_count, 0, True, [], valid_rows, int(balance_total_cents), account_samples
+        return write_path, df_collected.columns, total_input_rows + 1, 0, skipped_count, 0, True, [], valid_rows, int(balance_total_cents), account_samples, direct_output_written
 
     except Exception as e:
-        if 'temp_path' in locals() and os.path.exists(temp_path):
+        if temp_path and os.path.exists(temp_path):
             try: os.unlink(temp_path)
             except: pass
         raise e
@@ -532,7 +566,7 @@ def sanitize_source(
 ) -> tuple[str, list[str], int, int, int, int, bool, list[int], int, int, list[dict[str, str]]]:
     """Try optimized Polars path first, fallback to legacy if needed."""
     try:
-        return sanitize_source_optimized(source_path, delimiter)
+        return sanitize_source_optimized(source_path, delimiter)[:11]
     except Exception as e:
         send_event("debug", {"message": f"Polars fast-path failed, falling back to legacy: {str(e)}"})
         
@@ -737,34 +771,42 @@ def stage_simpanan_multipn(config: dict) -> None:
         valid_rows,
         balance_total_cents,
         account_samples,
+        direct_output_written,
     ) = sanitize_source_optimized(source_path, delimiter, config)
     total_data_rows = max(0, total_records - 1)
 
     try:
-        send_progress(56, "Sanitasi selesai. Membaca file bersih dengan Polars...", total_data_rows, total_data_rows, 0, "", "polars")
-        df = read_with_polars(temp_sanitized_path, headers, delimiter)
+        if direct_output_written:
+            written_rows = int(valid_rows)
+            output_headers = list(headers)
+        else:
+            send_progress(56, "Sanitasi selesai. Membaca file bersih dengan Polars...", total_data_rows, total_data_rows, 0, "", "polars")
+            df = read_with_polars(temp_sanitized_path, headers, delimiter)
 
-        if df.height == 0:
-            raise RuntimeError("Polars tidak menemukan baris data yang valid.")
+            if df.height == 0:
+                raise RuntimeError("Polars tidak menemukan baris data yang valid.")
 
-        df = df.with_columns([
-            pl.col(column).cast(pl.Utf8).str.strip_chars().alias(column)
-            for column in df.columns
-        ])
+            df = df.with_columns([
+                pl.col(column).cast(pl.Utf8).str.strip_chars().alias(column)
+                for column in df.columns
+            ])
 
-        written_rows = int(df.height)
+            written_rows = int(df.height)
+            output_headers = list(df.columns)
+            balance_total_cents = sum(
+                decimal_string_to_cents(value)
+                for value in df.get_column("saldo_idr").to_list()
+            ) if "saldo_idr" in df.columns else 0
+
         duplicate_count = int(duplicate_skipped)
-        balance_total_cents = sum(
-            decimal_string_to_cents(value)
-            for value in df.get_column("saldo_idr").to_list()
-        ) if "saldo_idr" in df.columns else 0
         skipped_total = int(structural_skipped + validation_skipped + duplicate_count)
 
         if written_rows == 0:
             raise RuntimeError("Polars tidak menemukan baris data Simpanan MultiPN yang valid.")
 
-        send_progress(86, "Menulis CSV bersih untuk LOAD DATA...", written_rows, total_data_rows, 0, "", "polars")
-        write_with_polars(df, output_csv_path, delimiter)
+        if not direct_output_written:
+            send_progress(86, "Menulis CSV bersih untuk LOAD DATA...", written_rows, total_data_rows, 0, "", "polars")
+            write_with_polars(df, output_csv_path, delimiter)
 
         send_event(
             "done",
@@ -779,15 +821,16 @@ def stage_simpanan_multipn(config: dict) -> None:
                 "backend": "polars",
                 "balance_total_cents": int(balance_total_cents),
                 "account_samples": account_samples,
-                "headers": list(df_collected.columns),
+                "headers": output_headers,
                 "full_vectorization": bool(config.get("full_vectorization", False)),
             },
         )
     finally:
-        try:
-            os.unlink(temp_sanitized_path)
-        except Exception:
-            pass
+        if not direct_output_written:
+            try:
+                os.unlink(temp_sanitized_path)
+            except Exception:
+                pass
 
 
 def main() -> int:

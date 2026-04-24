@@ -28,6 +28,7 @@ class ReportDataSyncService
     private const CACHE_VERSION_KEY = 'report_cache_version:global';
     private const RASIO_REBUILD_LOCK_PREFIX = 'snapshot:rasio:rebuild:';
     private const SIMPANAN_REBUILD_LOCK_PREFIX = 'snapshot:simpanan:rebuild:';
+    private const ANALYZE_THROTTLE_SECONDS = 600;
     private const POST_DELETE_SNAPSHOT_REPORTS = [
         'daily_loan_dinamis',
         'simpanan_multipn',
@@ -263,7 +264,7 @@ class ReportDataSyncService
 
         $this->runWithSimpananSnapshotLock($periodHint, function () use ($periodHint, $jobId, $source, $deleteId) {
             $this->runSnapshotAudit('simpanan_multipn', $periodHint, $jobId, $source, 'snapshot_dashboard_simpanan', function () use ($periodHint, $deleteId) {
-                return $this->snapshotBuilder->rebuildDashboardSimpanan($periodHint, true, $this->makeHeartbeatCallback($deleteId, 'Rebuilding Simpanan snapshots...'));
+                return $this->snapshotBuilder->rebuildDashboardSimpanan($periodHint, false, $this->makeHeartbeatCallback($deleteId, 'Rebuilding Simpanan snapshots...'));
             });
 
             if ($this->shouldRefreshDerivedSnapshotStatistics($periodHint)) {
@@ -685,6 +686,15 @@ class ReportDataSyncService
     private function refreshTableStatistics(string $tableName, ?string $periodHint, ?int $jobId, ?string $source): void
     {
         if (!Schema::hasTable($tableName)) {
+            return;
+        }
+
+        $cacheKey = 'report:analyze:last:' . $tableName . ':' . $this->normalizeSnapshotLockScope($periodHint);
+        if (!Cache::add($cacheKey, now()->toIso8601String(), now()->addSeconds(self::ANALYZE_THROTTLE_SECONDS))) {
+            $this->writeAudit($tableName, $periodHint, $jobId, $source, 'analyze_table', 'skipped', [
+                'context' => ['reason' => 'throttled'],
+            ]);
+
             return;
         }
 

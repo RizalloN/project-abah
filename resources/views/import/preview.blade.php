@@ -316,7 +316,7 @@
 
             if (speedMatch) {
                 return {
-                    message: text.replace(speedMatch[0], '').trim(),
+                    message: text,
                     speed: speedMatch[1].replace(/[^\d]/g, ''),
                     speedLabel: 'baris/detik',
                 };
@@ -324,7 +324,7 @@
 
             if (recordMatch) {
                 return {
-                    message: text.replace(recordMatch[0], '').trim(),
+                    message: text,
                     speed: recordMatch[1].replace(/[^\d]/g, ''),
                     speedLabel: 'record',
                 };
@@ -1279,33 +1279,42 @@
             const speedInfo = document.getElementById('swal-speed-info');
             const speedDetail = document.getElementById('swal-speed-detail');
             const normalized = normalizeProgressStatus(message);
-            const resolvedRowsDone = Number(rowsDone || 0);
-            const resolvedTotalRows = Number(totalRows || importProgressSnapshot.totalRows || 0);
-            const effectiveSpeed = speed > 0
+            const hasRowsDone = rowsDone !== null && rowsDone !== undefined && rowsDone !== '';
+            const hasTotalRows = totalRows !== null && totalRows !== undefined && totalRows !== '';
+            const hasSpeed = speed !== null && speed !== undefined && speed !== '';
+            let resolvedRowsDone = hasRowsDone ? Number(rowsDone || 0) : Number(importProgressSnapshot.rowsDone || 0);
+            const resolvedTotalRows = hasTotalRows
+                ? Number(totalRows || importProgressSnapshot.totalRows || 0)
+                : Number(importProgressSnapshot.totalRows || 0);
+            if (resolvedTotalRows > 0 && resolvedRowsDone > resolvedTotalRows) {
+                resolvedRowsDone = resolvedTotalRows;
+            }
+            const effectiveSpeed = hasSpeed && Number(speed) > 0
                 ? speed
-                : (normalized.speed ? Number(normalized.speed) : 0);
+                : (normalized.speed ? Number(normalized.speed) : Number(importProgressSnapshot.speed || 0));
+            const resolvedPercent = Math.max(0, Math.min(100, Number(percent ?? importProgressSnapshot.percent ?? 0)));
             importProgressSnapshot = {
-                percent: Number(percent || 0),
-                message: normalized.message || message || '',
+                percent: resolvedPercent,
+                message: normalized.message || message || importProgressSnapshot.message || '',
                 rowsDone: resolvedRowsDone,
                 totalRows: resolvedTotalRows > 0 ? resolvedTotalRows : Number(importProgressSnapshot.totalRows || 0),
                 speed: Number(effectiveSpeed || 0),
-                speedLabel: speedLabel || normalized.speedLabel || ''
+                speedLabel: speedLabel || normalized.speedLabel || importProgressSnapshot.speedLabel || ''
             };
 
             if (progressBar) {
-                progressBar.style.width = percent + '%';
-                progressBar.innerText = percent + '%';
-                progressBar.setAttribute('aria-valuenow', percent);
+                progressBar.style.width = resolvedPercent + '%';
+                progressBar.innerText = resolvedPercent + '%';
+                progressBar.setAttribute('aria-valuenow', resolvedPercent);
             }
 
             const progressPercent = document.getElementById('swal-progress-percent');
             if (progressPercent) {
-                progressPercent.innerText = percent + '%';
+                progressPercent.innerText = resolvedPercent + '%';
             }
 
             if (progressText) {
-                progressText.innerText = normalized.message || message || '';
+                progressText.innerText = normalized.message || message || importProgressSnapshot.message || '';
             }
 
             if (rowsInfo) {
@@ -2075,6 +2084,9 @@
         color: #0f766e;
         font-weight: 700;
         letter-spacing: 0.02em;
+        display: block;
+        word-break: break-word;
+        white-space: normal;
     }
 
     .swal-import-stats {

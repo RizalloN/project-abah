@@ -11,6 +11,9 @@ class ManagedReportManagementService
 {
     private const MANAGEMENT_MAX_GROUP_ROWS = 5000;
     private const MANAGEMENT_PERIODS_PER_PAGE = 8;
+    private const MANAGEMENT_EXACT_PERIOD_COUNT_ROW_LIMIT = 250000;
+    private const MANAGEMENT_HEAVY_TABLE_ROW_LIMIT = 1000000;
+    private const MANAGEMENT_HEAVY_PERIODS_PER_PAGE = 1;
     private const LW325_BLANK_CREATED_AT_FALLBACK_MODE = 'lw325_blank_created_at';
 
     private const PERIOD_COLUMN_CANDIDATES = [
@@ -206,21 +209,24 @@ class ManagedReportManagementService
             'progress_percent' => 55,
         ]);
 
-        [$rows, $truncated] = $this->buildManagementRows($tableName, $periodColumn, $kancaColumn, $maxRows);
+        $managementPage = $this->buildManagementPage(
+            $tableName,
+            $periodColumn,
+            $kancaColumn,
+            $maxRows,
+            $page,
+            $perPage
+        );
 
         $this->emitProgress($progressCallback, [
             'stage' => 'counting',
-            'message' => 'Menghitung total baris sumber dan menyiapkan pagination periode...',
+            'message' => 'Menyiapkan ringkasan baris sumber dan pagination periode...',
             'completed_units' => 3,
             'total_units' => 4,
             'progress_percent' => 82,
         ]);
 
-        $paginatedPeriods = $this->paginateManagementPeriods($rows, $page, $perPage, $periodColumn !== null);
-        $displayedRowsTotal = array_reduce($paginatedPeriods['periods'], static function (int $carry, array $period): int {
-            return $carry + (int) ($period['total_rows'] ?? 0);
-        }, 0);
-        $grandTotalRows = (int) DB::table($tableName)->count();
+        $grandTotalRows = $this->estimateTableRows($tableName);
 
         $this->emitProgress($progressCallback, [
             'stage' => 'finalizing',
@@ -240,13 +246,13 @@ class ManagedReportManagementService
                 'kanca_column' => $kancaColumn,
                 'duplicate_cleanup_available' => $duplicateCleanupAvailable,
                 'max_rows' => $maxRows,
-                'truncated' => $truncated,
-                'displayed_rows_total' => $displayedRowsTotal,
+                'truncated' => $managementPage['truncated'],
+                'displayed_rows_total' => $managementPage['displayed_rows_total'],
                 'grand_total_rows' => $grandTotalRows,
-                'total_groups' => count($rows),
-                'rows' => $paginatedPeriods['rows'],
-                'periods' => $paginatedPeriods['periods'],
-                'pagination' => $paginatedPeriods['pagination'],
+                'total_groups' => $managementPage['total_groups'],
+                'rows' => $managementPage['rows'],
+                'periods' => $managementPage['periods'],
+                'pagination' => $managementPage['pagination'],
             ],
         ];
     }
@@ -586,40 +592,138 @@ class ManagedReportManagementService
         return $value;
     }
 
-    private function buildManagementRows(string $tableName, ?string $periodColumn, ?string $kancaColumn, int $maxRows): array
-    {
-        if ($periodColumn === null && $kancaColumn === null) {
-            $count = (int) DB::table($tableName)->count();
-
-            return [[
-                [
-                    'period' => '(Tanpa Periode)',
-                    'kanca' => '(Semua)',
-                    'row_count' => $count,
-                    'period_is_null' => false,
-                    'kanca_is_null' => false,
-                ],
-            ], false];
+    private function buildManagementPage(
+        string $tableName,
+        ?string $periodColumn,
+        ?string $kancaColumn,
+        int $maxRows,
+        int $page,
+        int $perPage
+    ): array {
+        if (
+            $periodColumn !== null
+            && !$this->supportsLw325BlankCreatedAtFallback($tableName, $periodColumn, $kancaColumn)
+        ) {
+            return $this->buildPeriodPagedManagementRows(
+                $tableName,
+                $periodColumn,
+                $kancaColumn,
+                $maxRows,
+                $page,
+                $perPage
+            );
         }
 
-        if ($this->supportsLw325BlankCreatedAtFallback($tableName, $periodColumn, $kancaColumn)) {
-            return $this->buildLw325ManagementRows($tableName, $periodColumn, $kancaColumn, $maxRows);
+        [$rows, $truncated] = $this->buildManagementRows($tableName, $periodColumn, $kancaColumn, $maxRows);
+        $paginatedPeriods = $this->paginateManagementPeriods($rows, $page, $perPage, $periodColumn !== null);
+        $displayedRowsTotal = array_reduce($paginatedPeriods['periods'], static function (int $carry, array $period): int {
+            return $carry + (int) ($period['total_rows'] ?? 0);
+        }, 0);
+
+        return [
+            'rows' => $paginatedPeriods['rows'],
+            'periods' => $paginatedPeriods['periods'],
+            'pagination' => $paginatedPeriods['pagination'],
+            'truncated' => $truncated,
+            'displayed_rows_total' => $displayedRowsTotal,
+            'total_groups' => count($rows),
+        ];
+    }
+
+    private function buildPeriodPagedManagementRows(
+        string $tableName,
+        string $periodColumn,
+        ?string $kancaColumn,
+        int $maxRows,
+        int $page,
+        int $perPage
+    ): array {
+        $safePeriod = str_replace('`', '``', $periodColumn);
+        $periodBaseQuery = DB::table($tableName)
+            ->selectRaw("`{$safePeriod}` as period_value")
+            ->groupBy($periodColumn);
+
+        $estimatedSourceRows = $this->estimateTableRows($tableName);
+        $perPage = $this->resolveEffectiveManagementPerPage($perPage, $estimatedSourceRows);
+        $useExactPeriodCount = $estimatedSourceRows <= self::MANAGEMENT_EXACT_PERIOD_COUNT_ROW_LIMIT;
+        $totalPeriods = $useExactPeriodCount
+            ? (int) DB::query()
+                ->fromSub(clone $periodBaseQuery, 'management_periods')
+                ->count()
+            : null;
+        $totalPages = $useExactPeriodCount
+            ? max(1, (int) ceil(((int) $totalPeriods) / $perPage))
+            : 1;
+        $currentPage = $useExactPeriodCount
+            ? min(max(1, $page), $totalPages)
+            : max(1, $page);
+        $offset = ($currentPage - 1) * $perPage;
+
+        $periodRows = $periodBaseQuery
+            ->orderByDesc($periodColumn)
+            ->offset($offset)
+            ->limit($useExactPeriodCount ? $perPage : ($perPage + 1))
+            ->get();
+        $hasNext = !$useExactPeriodCount && $periodRows->count() > $perPage;
+        if ($hasNext) {
+            $periodRows = $periodRows->take($perPage);
+        }
+        $resolvedTotalPeriods = $totalPeriods ?? ($offset + $periodRows->count() + ($hasNext ? 1 : 0));
+
+        if ($periodRows->isEmpty()) {
+            return [
+                'rows' => [],
+                'periods' => [],
+                'pagination' => $this->buildManagementPagination(
+                    $currentPage,
+                    $perPage,
+                    $resolvedTotalPeriods,
+                    $useExactPeriodCount,
+                    $hasNext
+                ),
+                'truncated' => false,
+                'displayed_rows_total' => 0,
+                'total_groups' => 0,
+            ];
+        }
+
+        $nonBlankPeriods = [];
+        $hasBlankPeriod = false;
+        foreach ($periodRows as $periodRow) {
+            $periodValue = $periodRow->period_value ?? null;
+            if ($periodValue === null || trim((string) $periodValue) === '') {
+                $hasBlankPeriod = true;
+                continue;
+            }
+
+            $nonBlankPeriods[(string) $periodValue] = $periodValue;
         }
 
         $query = DB::table($tableName);
-        $selects = ['COUNT(*) as row_count'];
+        $query->where(function ($periodQuery) use ($periodColumn, $nonBlankPeriods, $hasBlankPeriod) {
+            $hasConstraint = false;
+
+            if ($nonBlankPeriods !== []) {
+                $periodQuery->whereIn($periodColumn, array_values($nonBlankPeriods));
+                $hasConstraint = true;
+            }
+
+            if ($hasBlankPeriod) {
+                $method = $hasConstraint ? 'orWhere' : 'where';
+                $periodQuery->{$method}(function ($blankQuery) use ($periodColumn) {
+                    $this->applyBlankValueConstraint($blankQuery, $periodColumn);
+                });
+            }
+        });
+
+        $selects = ['COUNT(*) as row_count', "`{$safePeriod}` as period_value"];
+        $query->groupBy($periodColumn);
+
         $kancaLabelFallbackColumn = $this->resolveKancaLabelFallbackColumn($tableName);
-
-        if ($periodColumn !== null) {
-            $safePeriod = str_replace('`', '``', $periodColumn);
-            $selects[] = "`{$safePeriod}` as period_value";
-            $query->groupBy($periodColumn)->orderByDesc($periodColumn);
-        }
-
         if ($kancaColumn !== null) {
             $safeKanca = str_replace('`', '``', $kancaColumn);
             $selects[] = "`{$safeKanca}` as kanca_value";
-            $query->groupBy($kancaColumn)->orderBy($kancaColumn);
+            $query->groupBy($kancaColumn);
         }
 
         if ($kancaLabelFallbackColumn !== null) {
@@ -637,7 +741,119 @@ class ManagedReportManagementService
             $result = $result->take($maxRows);
         }
 
+        $rows = $this->normalizeManagementGroupRows(
+            $tableName,
+            $result,
+            $periodColumn,
+            $kancaColumn,
+            $kancaLabelFallbackColumn
+        );
+        $periods = $this->groupCurrentManagementPeriods($rows, $periodColumn !== null);
+        $displayedRowsTotal = array_reduce($periods, static function (int $carry, array $period): int {
+            return $carry + (int) ($period['total_rows'] ?? 0);
+        }, 0);
+
+        return [
+            'rows' => $rows,
+            'periods' => $periods,
+            'pagination' => $this->buildManagementPagination(
+                $currentPage,
+                $perPage,
+                $resolvedTotalPeriods,
+                $useExactPeriodCount,
+                $hasNext
+            ),
+            'truncated' => $truncated,
+            'displayed_rows_total' => $displayedRowsTotal,
+            'total_groups' => count($rows),
+        ];
+    }
+
+    private function resolveEffectiveManagementPerPage(int $requestedPerPage, int $estimatedSourceRows): int
+    {
+        $requestedPerPage = max(1, $requestedPerPage);
+        if ($estimatedSourceRows >= self::MANAGEMENT_HEAVY_TABLE_ROW_LIMIT) {
+            return min($requestedPerPage, self::MANAGEMENT_HEAVY_PERIODS_PER_PAGE);
+        }
+
+        return $requestedPerPage;
+    }
+
+    private function buildManagementPagination(
+        int $currentPage,
+        int $perPage,
+        int $totalPeriods,
+        bool $totalPeriodsExact = true,
+        ?bool $hasNextOverride = null
+    ): array
+    {
+        $totalPages = max(1, (int) ceil($totalPeriods / max(1, $perPage)));
+        $offset = ($currentPage - 1) * $perPage;
+        $hasNext = $hasNextOverride ?? ($currentPage < $totalPages);
+
+        return [
+            'current_page' => $currentPage,
+            'per_page' => $perPage,
+            'total_pages' => $totalPages,
+            'total_periods' => $totalPeriods,
+            'total_periods_exact' => $totalPeriodsExact,
+            'has_prev' => $currentPage > 1,
+            'has_next' => $hasNext,
+            'from_period' => $totalPeriods === 0 ? 0 : ($offset + 1),
+            'to_period' => min($offset + $perPage, $totalPeriods),
+        ];
+    }
+
+    private function groupCurrentManagementPeriods(array $rows, bool $hasPeriodColumn): array
+    {
+        $periods = [];
+        $periodOrder = [];
+
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $periodLabel = (string) ($row['period_label'] ?? $row['period'] ?? ($hasPeriodColumn ? '(Blank)' : '(Tanpa Periode)'));
+            $periodIsNull = (bool) ($row['period_is_null'] ?? false);
+            $fallbackBucketKey = trim((string) ($row['fallback_bucket_key'] ?? ''));
+            $bucketKey = $hasPeriodColumn
+                ? ($fallbackBucketKey !== ''
+                    ? 'fallback:' . $fallbackBucketKey
+                    : ($periodIsNull ? '__blank__' : 'value:' . $periodLabel))
+                : '__single_period__';
+
+            if (!isset($periods[$bucketKey])) {
+                $periodOrder[] = $bucketKey;
+                $periods[$bucketKey] = [
+                    'period' => $periodLabel,
+                    'period_is_null' => $periodIsNull,
+                    'group_count' => 0,
+                    'total_rows' => 0,
+                    'rows' => [],
+                ];
+            }
+
+            $periods[$bucketKey]['rows'][] = $row;
+            $periods[$bucketKey]['group_count']++;
+            $periods[$bucketKey]['total_rows'] += (int) ($row['row_count'] ?? 0);
+        }
+
+        return array_values(array_map(
+            static fn (string $bucketKey): array => $periods[$bucketKey],
+            $periodOrder
+        ));
+    }
+
+    private function normalizeManagementGroupRows(
+        string $tableName,
+        iterable $result,
+        ?string $periodColumn,
+        ?string $kancaColumn,
+        ?string $kancaLabelFallbackColumn
+    ): array {
         $rows = [];
+
         foreach ($result as $item) {
             $periodRaw = $periodColumn !== null ? ($item->period_value ?? null) : null;
             $kancaRaw = $kancaColumn !== null ? ($item->kanca_value ?? null) : null;
@@ -645,9 +861,6 @@ class ManagedReportManagementService
             $normalizedPeriodFilter = $periodRaw === null || trim((string) $periodRaw) === ''
                 ? ''
                 : $this->normalizeManagementPeriodFilter($tableName, $periodRaw, $periodColumn);
-            $periodLabel = $periodRaw === null || trim((string) $periodRaw) === ''
-                ? ($periodColumn !== null ? '(Blank)' : '(Tanpa Periode)')
-                : $this->formatManagementPeriodLabel($periodRaw, $periodColumn);
             $normalizedKancaFilter = $kancaRaw === null || trim((string) $kancaRaw) === ''
                 ? ''
                 : $this->normalizeManagementKancaFilter($tableName, (string) $kancaRaw);
@@ -704,22 +917,98 @@ class ManagedReportManagementService
             return $row;
         }, array_values($rows));
 
-        // Sort the aggregated results: Period DESC (latest first), then Kanca Label ASC
         usort($rows, function (array $left, array $right): int {
             $pL = (string) ($left['period'] ?? '');
             $pR = (string) ($right['period'] ?? '');
 
-            // Handle potential blanks (put them at bottom)
             if ($pL === '' && $pR !== '') return 1;
             if ($pL !== '' && $pR === '') return -1;
 
-            // Primary sort: Period DESC (chronological because labels are normalized to YYYY-MM or YYYY-MM-DD)
             $cmp = strcmp($pR, $pL);
             if ($cmp !== 0) return $cmp;
 
-            // Secondary sort: Kanca Label ASC
             return strcmp((string) ($left['kanca_label'] ?? ''), (string) ($right['kanca_label'] ?? ''));
         });
+
+        return $rows;
+    }
+
+    private function estimateTableRows(string $tableName): int
+    {
+        try {
+            if (DB::connection()->getDriverName() === 'mysql') {
+                $row = DB::selectOne(
+                    'SELECT TABLE_ROWS AS table_rows FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?',
+                    [$tableName]
+                );
+                if ($row !== null && $row->table_rows !== null) {
+                    return max(0, (int) $row->table_rows);
+                }
+            }
+        } catch (\Throwable) {
+        }
+
+        return (int) DB::table($tableName)->count();
+    }
+
+    private function buildManagementRows(string $tableName, ?string $periodColumn, ?string $kancaColumn, int $maxRows): array
+    {
+        if ($periodColumn === null && $kancaColumn === null) {
+            $count = (int) DB::table($tableName)->count();
+
+            return [[
+                [
+                    'period' => '(Tanpa Periode)',
+                    'kanca' => '(Semua)',
+                    'row_count' => $count,
+                    'period_is_null' => false,
+                    'kanca_is_null' => false,
+                ],
+            ], false];
+        }
+
+        if ($this->supportsLw325BlankCreatedAtFallback($tableName, $periodColumn, $kancaColumn)) {
+            return $this->buildLw325ManagementRows($tableName, $periodColumn, $kancaColumn, $maxRows);
+        }
+
+        $query = DB::table($tableName);
+        $selects = ['COUNT(*) as row_count'];
+        $kancaLabelFallbackColumn = $this->resolveKancaLabelFallbackColumn($tableName);
+
+        if ($periodColumn !== null) {
+            $safePeriod = str_replace('`', '``', $periodColumn);
+            $selects[] = "`{$safePeriod}` as period_value";
+            $query->groupBy($periodColumn)->orderByDesc($periodColumn);
+        }
+
+        if ($kancaColumn !== null) {
+            $safeKanca = str_replace('`', '``', $kancaColumn);
+            $selects[] = "`{$safeKanca}` as kanca_value";
+            $query->groupBy($kancaColumn)->orderBy($kancaColumn);
+        }
+
+        if ($kancaLabelFallbackColumn !== null) {
+            $safeFallback = str_replace('`', '``', $kancaLabelFallbackColumn);
+            $selects[] = "MIN(`{$safeFallback}`) as kanca_label_fallback_value";
+        }
+
+        $result = $query
+            ->selectRaw(implode(', ', $selects))
+            ->limit($maxRows + 1)
+            ->get();
+
+        $truncated = $result->count() > $maxRows;
+        if ($truncated) {
+            $result = $result->take($maxRows);
+        }
+
+        $rows = $this->normalizeManagementGroupRows(
+            $tableName,
+            $result,
+            $periodColumn,
+            $kancaColumn,
+            $kancaLabelFallbackColumn
+        );
 
         return [$rows, $truncated];
     }

@@ -623,17 +623,26 @@ class ReportSnapshotBuilder
             return 0;
         }
 
+        $existingSnapshot = null;
         if (!$force) {
-            $existingSourceRowCount = DB::table(self::DASHBOARD_SIMPANAN_SNAPSHOT_TABLE)
+            $existingSnapshot = DB::table(self::DASHBOARD_SIMPANAN_SNAPSHOT_TABLE)
                 ->where('snapshot_period', $period)
-                ->value('source_row_count');
-
-            if ($existingSourceRowCount !== null) {
-                return (int) $existingSourceRowCount;
-            }
+                ->first(['source_row_count', 'source_updated_at']);
         }
 
         $baseQuery = DB::table('simpanan_multipn')->where('posisi', $period);
+        $sourceMetadata = null;
+
+        if (!$force && $existingSnapshot !== null) {
+            $sourceMetadata = (clone $baseQuery)
+                ->selectRaw('COUNT(*) as source_row_count')
+                ->selectRaw('MAX(updated_at) as source_updated_at')
+                ->first();
+
+            if ($this->dashboardSimpananSnapshotIsFresh($existingSnapshot, $sourceMetadata)) {
+                return (int) ($existingSnapshot->source_row_count ?? 0);
+            }
+        }
 
         $summary = (clone $baseQuery)
             ->selectRaw('COUNT(*) as source_row_count')
@@ -743,6 +752,38 @@ class ReportSnapshotBuilder
         }
 
         return $sourceRowCount;
+    }
+
+    private function dashboardSimpananSnapshotIsFresh(object $existingSnapshot, ?object $sourceMetadata): bool
+    {
+        if ($sourceMetadata === null) {
+            return false;
+        }
+
+        $snapshotRowCount = (int) ($existingSnapshot->source_row_count ?? -1);
+        $sourceRowCount = (int) ($sourceMetadata->source_row_count ?? -2);
+        if ($snapshotRowCount !== $sourceRowCount) {
+            return false;
+        }
+
+        $snapshotUpdatedAt = $this->normalizeComparableTimestamp($existingSnapshot->source_updated_at ?? null);
+        $sourceUpdatedAt = $this->normalizeComparableTimestamp($sourceMetadata->source_updated_at ?? null);
+
+        return $snapshotUpdatedAt === $sourceUpdatedAt;
+    }
+
+    private function normalizeComparableTimestamp(mixed $value): ?string
+    {
+        $normalized = trim((string) $value);
+        if ($normalized === '') {
+            return null;
+        }
+
+        try {
+            return Carbon::parse($normalized)->format('Y-m-d H:i:s');
+        } catch (Throwable) {
+            return $normalized;
+        }
     }
 
     private function buildDormantPeriodSnapshot(string $period, bool $force): int

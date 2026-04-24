@@ -29,7 +29,9 @@ class ExecuteBatchedSnapshotJob implements ShouldQueue
 
     public function handle(ReportDataSyncService $syncService): void
     {
-        if (empty($this->requests)) {
+        $requests = $this->compactRequests($this->requests);
+
+        if (empty($requests)) {
             Log::warning('ExecuteBatchedSnapshotJob received empty requests list.', [
                 'batch_key' => $this->batchKey,
             ]);
@@ -43,11 +45,12 @@ class ExecuteBatchedSnapshotJob implements ShouldQueue
 
         Log::info('Processing batched snapshot requests.', [
             'batch_key' => $this->batchKey,
-            'request_count' => count($this->requests),
+            'request_count' => count($requests),
+            'original_request_count' => count($this->requests),
         ]);
 
         try {
-            foreach ($this->requests as $request) {
+            foreach ($requests as $request) {
                 try {
                     $tableName = trim((string) ($request['table_name'] ?? ''));
                     if ($tableName === '') {
@@ -86,7 +89,8 @@ class ExecuteBatchedSnapshotJob implements ShouldQueue
 
             Log::info('Completed batched snapshot processing.', [
                 'batch_key' => $this->batchKey,
-                'total_requests' => count($this->requests),
+                'total_requests' => count($requests),
+                'original_request_count' => count($this->requests),
                 'processed' => $processed,
                 'failed' => $failed,
                 'elapsed_seconds' => round($elapsed, 2),
@@ -106,5 +110,38 @@ class ExecuteBatchedSnapshotJob implements ShouldQueue
         return [
             new DeferSnapshotJobsDuringImport(),
         ];
+    }
+
+    /**
+     * @param array<int, mixed> $requests
+     * @return array<int, array<string, mixed>>
+     */
+    private function compactRequests(array $requests): array
+    {
+        $compacted = [];
+
+        foreach ($requests as $request) {
+            if (!is_array($request)) {
+                continue;
+            }
+
+            $tableName = strtolower(trim((string) ($request['table_name'] ?? '')));
+            if ($tableName === '') {
+                continue;
+            }
+
+            $periodHint = trim((string) ($request['period_hint'] ?? ''));
+            $rebuildId = trim((string) ($request['rebuild_id'] ?? ''));
+            $scope = $tableName . ':' . ($periodHint !== '' ? $periodHint : '__all__') . ':' . ($rebuildId !== '' ? $rebuildId : '__default__');
+
+            $compacted[$scope] = $request;
+            $compacted[$scope]['table_name'] = $tableName;
+            $compacted[$scope]['period_hint'] = $periodHint !== '' ? $periodHint : null;
+            $compacted[$scope]['job_id'] = isset($request['job_id']) && (int) $request['job_id'] > 0 ? (int) $request['job_id'] : null;
+            $compacted[$scope]['source'] = $request['source'] ?? null;
+            $compacted[$scope]['rebuild_id'] = $rebuildId !== '' ? $rebuildId : null;
+        }
+
+        return array_values($compacted);
     }
 }

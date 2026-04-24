@@ -309,13 +309,28 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
             $streamLock = null;
             $cleanupPaths = [];
             $usePolarsStage = !empty($activeFilters);
-            $send = function (string $event, array $data) use ($jobId) {
+            $send = function (string $event, array $data) use ($jobId, $totalRows) {
                 if ($jobId > 0 && $event === 'progress' && !$this->isImportTerminationRequested($jobId)) {
+                    $resolvedTotalRows = (int) ($data['total_rows'] ?? $data['total'] ?? 0);
+                    if ($resolvedTotalRows <= 0 && $totalRows > 0) {
+                        $resolvedTotalRows = $totalRows;
+                    }
+
+                    $resolvedProcessedRows = (int) ($data['processed_rows'] ?? $data['rows_done'] ?? 0);
+                    if ($resolvedProcessedRows > $resolvedTotalRows && $resolvedTotalRows > 0) {
+                        $resolvedProcessedRows = $resolvedTotalRows;
+                    }
+
+                    $data['total_rows'] = $resolvedTotalRows;
+                    $data['processed_rows'] = $resolvedProcessedRows;
+                    $data['total'] = (int) ($data['total'] ?? $resolvedTotalRows);
+                    $data['rows_done'] = (int) ($data['rows_done'] ?? $resolvedProcessedRows);
+
                     $this->cacheFastImportProgress($jobId, array_merge([
                         'status' => 'processing',
                     ], $data, [
-                        'total_rows' => (int) ($data['total_rows'] ?? $data['total'] ?? 0),
-                        'processed_rows' => (int) ($data['processed_rows'] ?? $data['rows_done'] ?? 0),
+                        'total_rows' => $resolvedTotalRows,
+                        'processed_rows' => $resolvedProcessedRows,
                     ]));
                 }
 
@@ -812,6 +827,14 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
             'NO_REKENING' => 'no_rekening',
             'CIF_NO' => 'cifno',
             'CIF_NUMBER' => 'cifno',
+            'STATUS_REKENING' => 'status',
+            'STATUSREKENING' => 'status',
+            'STATUS_REK' => 'status',
+            'STATUSREK' => 'status',
+            'STATUS_SIMPANAN' => 'status',
+            'STATUSSIMPANAN' => 'status',
+            'STATUS_DORMANT' => 'status',
+            'STATUSDORMANT' => 'status',
         ];
 
         if (isset($aliases[$normalized])) {

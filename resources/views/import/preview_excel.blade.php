@@ -212,7 +212,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         return {
-            message: text.replace(speedMatch[0], '').trim(),
+            message: text,
             speed: speedMatch[1].replace(/[^\d]/g, ''),
         };
     }
@@ -1731,6 +1731,9 @@ document.addEventListener('DOMContentLoaded', function () {
         color: #0f766e;
         font-weight: 700;
         letter-spacing: 0.02em;
+        display: block;
+        word-break: break-word;
+        white-space: normal;
     }
 
     .swal-import-stats {

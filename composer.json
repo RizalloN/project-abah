@@ -55,7 +55,7 @@
         ],
         "queue": [
             "Composer\\Config::disableProcessTimeout",
-            "@php artisan queue:work --queue=imports-high,default,reports-low --tries=1 --timeout=0 --sleep=1"
+            "powershell -ExecutionPolicy Bypass -File .\\scripts\\queue-persistent.ps1"
         ],
 
         "queue:all": [

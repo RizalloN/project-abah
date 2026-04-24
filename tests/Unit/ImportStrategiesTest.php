@@ -32,9 +32,33 @@ class ImportStrategiesTest extends TestCase
         $headers = $strategy->transformHeaders(['No', 'Nama', 'Posisi']);
         $context = $strategy->prepareContext(['table_name' => 'simpanan_multipn']);
 
-        $this->assertSame(['Nama', 'Posisi'], $headers);
+        $this->assertSame(['COL_0', 'Nama', 'Posisi'], $headers);
         $this->assertTrue($context['ignore_row_number_headers']);
         $this->assertTrue($strategy->supports((object) ['table_name' => 'simpanan_multipn']));
+    }
+
+    public function test_simpanan_strategy_keeps_status_source_position_after_row_number_header(): void
+    {
+        $strategy = new SimpananMultiPnImportStrategy();
+
+        $headers = $strategy->transformHeaders([
+            'No',
+            'Posisi',
+            '',
+            'Regional Office',
+            'Kantor Cabang',
+            '',
+            'Unit Kerja',
+            'CIFNO',
+            'No Rekening',
+            'Status',
+            'Jenis Simpanan',
+            'Saldo IDR',
+        ]);
+
+        $this->assertSame('COL_0', $headers[0]);
+        $this->assertSame('Status', $headers[9]);
+        $this->assertSame('Saldo IDR', $headers[11]);
     }
 
     public function test_generic_strategy_is_safe_default(): void

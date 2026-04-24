@@ -112,7 +112,7 @@ class ImportIndexController extends Controller
             'period' => 'posisi',
             'kanca' => 'kantor_cabang',
             'identity' => 'uniqueid_SMPN',
-            'chunk_size' => 3000000,
+            'chunk_size' => 50000,
         ],
     ];
 
@@ -2178,7 +2178,7 @@ class ImportIndexController extends Controller
         $periodColumn = $state['period_column'] ?? null;
         $kancaColumn = $state['kanca_column'] ?? null;
         $identityColumn = $state['identity_column'] ?? null;
-        $chunkSize = (int) ($state['chunk_size'] ?? self::DELETE_CHUNK_SIZE);
+        $chunkSize = $this->resolveEffectiveDeleteBatchSize($state);
         $deletePlan = (string) ($state['delete_plan'] ?? 'normal');
         $currentScopeIndex = max(0, (int) ($state['current_scope_index'] ?? 0));
         $totalScopes = count($scopes);
@@ -3888,6 +3888,16 @@ class ImportIndexController extends Controller
             : self::DELETE_CHUNK_SIZE;
     }
 
+    private function resolveEffectiveDeleteBatchSize(array $state): int
+    {
+        $configuredChunkSize = max(1, (int) ($state['chunk_size'] ?? self::DELETE_CHUNK_SIZE));
+        $remainingRows = max(0, (int) ($state['remaining_rows'] ?? $state['total_rows'] ?? 0));
+
+        return $remainingRows > 0
+            ? max(1, min($configuredChunkSize, $remainingRows))
+            : $configuredChunkSize;
+    }
+
     private function resolveDeleteScopeStrategy(
         string $tableName,
         ?string $periodColumn,
@@ -4796,7 +4806,7 @@ WHERE {$whereSql}
 
         $state['batch_state'] = 'deleting_pending';
         $state['is_waiting_on_batch'] = true;
-        $state['active_batch_size'] = max(1, (int) ($state['chunk_size'] ?? self::DELETE_CHUNK_SIZE));
+        $state['active_batch_size'] = $this->resolveEffectiveDeleteBatchSize($state);
         $state['last_batch_deleted_rows'] = max(0, (int) ($state['last_batch_deleted_rows'] ?? 0));
         $state['last_batch_started_at'] = now()->toIso8601String();
         $state['last_batch_finished_at'] = null;

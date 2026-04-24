@@ -470,7 +470,7 @@
 
             if (speedMatch) {
                 return {
-                    message: text.replace(speedMatch[0], '').trim(),
+                    message: text,
                     speed: speedMatch[1].replace(/[^\d]/g, ''),
                     speedLabel: 'baris/detik',
                 };
@@ -3132,6 +3132,9 @@
         color: #c2410c;
         font-weight: 700;
         letter-spacing: 0.02em;
+        display: block;
+        word-break: break-word;
+        white-space: normal;
     }
 
     .swal-import-metrics {

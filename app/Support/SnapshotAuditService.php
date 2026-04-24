@@ -4,6 +4,7 @@ namespace App\Support;
 
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Throwable;
 
 class SnapshotAuditService
@@ -46,27 +47,30 @@ class SnapshotAuditService
         $sourceTable = 'daily_loan_dinamis';
         $snapshotTable = 'dashboard_pinjaman_snapshots';
 
+        if (!$this->tablesAndColumnsAvailable([
+            $sourceTable => ['periode', 'baki_debet1', 'nomor_rekening1'],
+            $snapshotTable => ['periode', 'loan_balance', 'account_number'],
+        ])) {
+            return $this->auditUnavailable($sourceTable, $snapshotTable, $periodHint);
+        }
+
         $sourceMetrics = $this->getSourceMetrics($sourceTable, 'periode', $periodHint, [
-            'total_plafon' => 'SUM(CAST(plafon AS DECIMAL(20,2)))',
-            'total_baki_debet' => 'SUM(CAST(baki_debet AS DECIMAL(20,2)))',
-            'total_npl_amount' => 'SUM(CAST(CASE WHEN kol_adkval > 2 THEN baki_debet ELSE 0 END AS DECIMAL(20,2)))',
+            'total_balance' => 'SUM(CAST(COALESCE(baki_debet1, 0) AS DECIMAL(20,2)))',
             'record_count' => 'COUNT(*)',
-            'distinct_debitur' => 'COUNT(DISTINCT CIFNO)',
+            'distinct_accounts' => 'COUNT(DISTINCT nomor_rekening1)',
         ]);
 
-        $snapshotMetrics = $this->getSnapshotMetrics($snapshotTable, 'snapshot_period', $periodHint, [
-            'total_plafon' => 'SUM(CAST(total_plafon_amount AS DECIMAL(20,2)))',
-            'total_baki_debet' => 'SUM(CAST(total_baki_debet_amount AS DECIMAL(20,2)))',
-            'total_npl_amount' => 'SUM(CAST(total_npl_amount AS DECIMAL(20,2)))',
-            'record_count' => 'SUM(source_row_count)',
-            'distinct_debitur' => 'COUNT(DISTINCT id)',
+        $snapshotMetrics = $this->getSnapshotMetrics($snapshotTable, 'periode', $periodHint, [
+            'total_balance' => 'SUM(CAST(COALESCE(loan_balance, 0) AS DECIMAL(20,2)))',
+            'record_count' => 'COUNT(*)',
+            'distinct_accounts' => 'COUNT(DISTINCT account_number)',
         ]);
 
         return $this->compareMetrics(
             $sourceTable,
             $snapshotTable,
             'periode',
-            'snapshot_period',
+            'periode',
             $sourceMetrics,
             $snapshotMetrics,
             $periodHint
@@ -78,24 +82,29 @@ class SnapshotAuditService
         $sourceTable = 'simpanan_multipn';
         $snapshotTable = 'dashboard_simpanan_snapshots';
 
-        $sourceMetrics = $this->getSourceMetrics($sourceTable, 'periode', $periodHint, [
-            'total_saldo' => 'SUM(CAST(saldo_akhir AS DECIMAL(20,2)))',
-            'total_bunga_bersih' => 'SUM(CAST(bunga_bersih AS DECIMAL(20,2)))',
+        if (!$this->tablesAndColumnsAvailable([
+            $sourceTable => ['posisi', 'saldo_idr', 'CIFNO'],
+            $snapshotTable => ['snapshot_period', 'total_balance', 'source_row_count', 'cif_count'],
+        ])) {
+            return $this->auditUnavailable($sourceTable, $snapshotTable, $periodHint);
+        }
+
+        $sourceMetrics = $this->getSourceMetrics($sourceTable, 'posisi', $periodHint, [
+            'total_balance' => 'SUM(CAST(COALESCE(saldo_idr, 0) AS DECIMAL(20,2)))',
             'record_count' => 'COUNT(*)',
-            'distinct_nasabah' => 'COUNT(DISTINCT cif)',
+            'distinct_cif' => 'COUNT(DISTINCT CIFNO)',
         ]);
 
         $snapshotMetrics = $this->getSnapshotMetrics($snapshotTable, 'snapshot_period', $periodHint, [
-            'total_saldo' => 'SUM(CAST(total_saldo_amount AS DECIMAL(20,2)))',
-            'total_bunga_bersih' => 'SUM(CAST(total_bunga_bersih_amount AS DECIMAL(20,2)))',
+            'total_balance' => 'SUM(CAST(COALESCE(total_balance, 0) AS DECIMAL(20,2)))',
             'record_count' => 'SUM(source_row_count)',
-            'distinct_nasabah' => 'COUNT(DISTINCT id)',
+            'distinct_cif' => 'SUM(cif_count)',
         ]);
 
         return $this->compareMetrics(
             $sourceTable,
             $snapshotTable,
-            'periode',
+            'posisi',
             'snapshot_period',
             $sourceMetrics,
             $snapshotMetrics,
@@ -199,6 +208,41 @@ class SnapshotAuditService
             'discrepancies' => [],
             'summary' => [],
         ];
+    }
+
+    private function auditUnavailable(string $sourceTable, string $snapshotTable, ?string $periodHint): array
+    {
+        return [
+            'status' => 'unsupported',
+            'table_name' => $sourceTable,
+            'snapshot_table' => $snapshotTable,
+            'period_hint' => $periodHint,
+            'message' => 'Audit skipped because the required table or columns are not available in the current schema.',
+            'discrepancies' => [],
+            'summary' => [],
+            'total_periods_checked' => 0,
+            'periods_with_issues' => 0,
+        ];
+    }
+
+    /**
+     * @param array<string, array<int, string>> $requirements
+     */
+    private function tablesAndColumnsAvailable(array $requirements): bool
+    {
+        foreach ($requirements as $table => $columns) {
+            if (!Schema::hasTable($table)) {
+                return false;
+            }
+
+            foreach ($columns as $column) {
+                if (!Schema::hasColumn($table, $column)) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
     }
 
     private function getSourceMetrics(string $table, string $periodColumn, ?string $periodHint, array $metrics): array
@@ -341,7 +385,7 @@ class SnapshotAuditService
             }
 
             $diff = $this->compareValues($sourceValue, $snapshotValue);
-            if ($diff !== 0) {
+            if ($diff != 0.0) {
                 $severity = abs($diff) > 0.01 ? 'critical' : 'warning';
                 $differences[] = [
                     'metric' => $metric,

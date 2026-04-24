@@ -57,6 +57,7 @@ class SnapshotBatchAggregator
                     'rebuild_id' => $rebuildId,
                     'requested_at' => now()->toIso8601String(),
                 ];
+                $batch['requests'] = $this->compactRequests($batch['requests']);
 
                 $batch['request_count'] = count($batch['requests']);
                 $batch['last_updated_at'] = now()->toIso8601String();
@@ -144,7 +145,7 @@ class SnapshotBatchAggregator
             return ['batched' => false, 'reason' => 'batch_not_found'];
         }
 
-        $requests = (array) ($batch['requests'] ?? []);
+        $requests = $this->compactRequests((array) ($batch['requests'] ?? []));
         if (empty($requests)) {
             Cache::forget(self::BATCH_CACHE_PREFIX . $batchKey);
             $this->forgetActiveBatchKey($batchKey);
@@ -330,6 +331,44 @@ class SnapshotBatchAggregator
         } catch (\Throwable $e) {
             Log::debug('Failed to record batch metric: ' . $e->getMessage());
         }
+    }
+
+    /**
+     * Keep only the newest request per table/period/rebuild scope.
+     *
+     * Snapshot rebuilds are period scoped, so replaying multiple queued requests
+     * for the same scope only repeats the same expensive database work.
+     *
+     * @param array<int, mixed> $requests
+     * @return array<int, array<string, mixed>>
+     */
+    private function compactRequests(array $requests): array
+    {
+        $compacted = [];
+
+        foreach ($requests as $request) {
+            if (!is_array($request)) {
+                continue;
+            }
+
+            $tableName = strtolower(trim((string) ($request['table_name'] ?? '')));
+            if ($tableName === '') {
+                continue;
+            }
+
+            $periodHint = trim((string) ($request['period_hint'] ?? ''));
+            $rebuildId = trim((string) ($request['rebuild_id'] ?? ''));
+            $scope = $tableName . ':' . ($periodHint !== '' ? $periodHint : '__all__') . ':' . ($rebuildId !== '' ? $rebuildId : '__default__');
+
+            $compacted[$scope] = $request;
+            $compacted[$scope]['table_name'] = $tableName;
+            $compacted[$scope]['period_hint'] = $periodHint !== '' ? $periodHint : null;
+            $compacted[$scope]['job_id'] = isset($request['job_id']) && (int) $request['job_id'] > 0 ? (int) $request['job_id'] : null;
+            $compacted[$scope]['source'] = $request['source'] ?? null;
+            $compacted[$scope]['rebuild_id'] = $rebuildId !== '' ? $rebuildId : null;
+        }
+
+        return array_values($compacted);
     }
 
     private function hasActiveImportProcessing(): bool

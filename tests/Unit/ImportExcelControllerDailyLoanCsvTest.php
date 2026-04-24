@@ -399,6 +399,10 @@ class ImportExcelControllerDailyLoanCsvTest extends TestCase
         $this->assertSame(['2026-04-04'], $plan['period_hints'] ?? []);
         $this->assertSame('raw', $plan['source_backend'] ?? null);
         $this->assertSame(2, $plan['validation_written_rows'] ?? null);
+        $this->assertNotEmpty(array_filter(
+            (array) ($plan['set_clauses'] ?? []),
+            static fn (string $clause): bool => str_contains(strtolower($clause), '`jangka_waktu1`')
+        ));
     }
 
     public function test_estimate_csv_import_total_rows_ignores_malformed_daily_loan_rows(): void
@@ -565,6 +569,15 @@ class ImportExcelControllerDailyLoanCsvTest extends TestCase
 
         $this->assertSame('2026-04-04', $normalized);
         $this->assertSame('2024-04-20', $usNormalized);
+    }
+
+    public function test_direct_load_integer_expression_accepts_jangka_waktu_unit_suffix(): void
+    {
+        $expression = $this->invokeMethod('buildDirectLoadIntegerExpression', ['@csv_col_15']);
+
+        $this->assertStringContainsString("REGEXP '^-?[0-9]+'", $expression);
+        $this->assertStringContainsString('CAST(', $expression);
+        $this->assertSame(24, $this->invokeMethod('normalizeExcelValue', ['JANGKA_WAKTU1', '24M']));
     }
 
     private function dailyLoanHeaders(): array
