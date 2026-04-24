@@ -27,6 +27,8 @@ class DashboardPinjamanReportController extends Controller
 {
     private const PH_TABLE = 'lw325_ph';
     private const SNAPSHOT_TABLE = 'dashboard_pinjaman_snapshots';
+    private const KUR_MIKRO_TABLE = 'performance_kurkecil_mikro';
+    private const MANTRI_TABLE = 'performance_mantri';
     private const LOAN_REKENING_INDEX = 'idx_dld_periode_rekening';
     private const LOAN_FILTER_INDEX = 'idx_dld_periode_segmen_produk_cabang_unit';
     private const LOAN_CABANG_UNIT_INDEX = 'idx_dld_periode_cabang_unit';
@@ -327,6 +329,87 @@ class DashboardPinjamanReportController extends Controller
             'effective_units' => $effectiveUnits,
             'is_all_uker' => $unitSelection['is_all_uker'],
         ], $payload));
+    }
+
+    public function kurMikroIndex(Request $request)
+    {
+        $requestedKanca = $this->normalizeFilterValues($request->input('kanca'));
+        $kancaOptions = $this->fetchKurMikroDistinctValues('kanca');
+        $selectedKanca = array_values(array_intersect($requestedKanca, $kancaOptions->all()));
+
+        $requestedUker = $this->normalizeFilterValues($request->input('uker'));
+        $ukerOptions = $this->fetchKurMikroDistinctValues('uker', $selectedKanca);
+        $selectedUker = array_values(array_intersect($requestedUker, $ukerOptions->all()));
+
+        $rows = $this->fetchKurMikroRows($selectedKanca, $selectedUker);
+
+        return view('report.dashboard-pinjaman.kurmikro', [
+            'selectedKanca' => $selectedKanca,
+            'selectedUker' => $selectedUker,
+            'kancaOptions' => $kancaOptions,
+            'ukerOptions' => $ukerOptions,
+            'rows' => $rows,
+            'rowCount' => $rows->count(),
+        ]);
+    }
+
+    public function kurMikroFilters(Request $request)
+    {
+        $selectedKanca = array_values(array_intersect(
+            $this->normalizeFilterValues($request->input('kanca')),
+            $this->fetchKurMikroDistinctValues('kanca')->all()
+        ));
+
+        $ukerOptions = $this->fetchKurMikroDistinctValues('uker', $selectedKanca);
+
+        return response()->json([
+            'selected_kanca' => $selectedKanca,
+            'uker_options' => $ukerOptions->all(),
+        ]);
+    }
+
+    public function mantriIndex(Request $request)
+    {
+        $requestedPeriod = trim((string) $request->input('periode', ''));
+        $selectedPeriod = $this->resolveMantriEffectivePeriod($requestedPeriod);
+        $requestedCabang = $this->normalizeFilterValues($request->input('cabang'));
+        $cabangOptions = $this->fetchMantriDistinctValues('cabang', [], $selectedPeriod);
+        $selectedCabang = array_values(array_intersect($requestedCabang, $cabangOptions->all()));
+
+        $requestedUnit = $this->normalizeFilterValues($request->input('unit'));
+        $unitOptions = $this->fetchMantriDistinctValues('unit', $selectedCabang, $selectedPeriod);
+        $selectedUnit = array_values(array_intersect($requestedUnit, $unitOptions->all()));
+
+        $rows = $this->fetchMantriRows($selectedCabang, $selectedUnit, $selectedPeriod);
+
+        return view('report.dashboard-pinjaman.mantri', [
+            'requestedPeriod' => $requestedPeriod,
+            'selectedPeriod' => $selectedPeriod,
+            'selectedCabang' => $selectedCabang,
+            'selectedUnit' => $selectedUnit,
+            'cabangOptions' => $cabangOptions,
+            'unitOptions' => $unitOptions,
+            'rows' => $rows,
+            'rowCount' => $rows->count(),
+        ]);
+    }
+
+    public function mantriFilters(Request $request)
+    {
+        $requestedPeriod = trim((string) $request->input('periode', ''));
+        $selectedPeriod = $this->resolveMantriEffectivePeriod($requestedPeriod);
+        $selectedCabang = array_values(array_intersect(
+            $this->normalizeFilterValues($request->input('cabang')),
+            $this->fetchMantriDistinctValues('cabang', [], $selectedPeriod)->all()
+        ));
+
+        $unitOptions = $this->fetchMantriDistinctValues('unit', $selectedCabang, $selectedPeriod);
+
+        return response()->json([
+            'selected_period' => $selectedPeriod,
+            'selected_cabang' => $selectedCabang,
+            'unit_options' => $unitOptions->all(),
+        ]);
     }
 
     private function fetchKreditPeriods(): Collection
@@ -1441,6 +1524,234 @@ class DashboardPinjamanReportController extends Controller
         });
     }
 
+    private function fetchKurMikroDistinctValues(string $column, array $selectedKanca = []): Collection
+    {
+        $normalizedKanca = array_values(array_filter(array_map(
+            fn ($value) => trim((string) $value),
+            $selectedKanca
+        ), fn (string $value) => $value !== ''));
+
+        $cacheKey = 'dashboard_pinjaman_kurmikro_distinct:v1:' . md5(json_encode([
+            'cache_version' => $this->reportCacheVersion(),
+            'column' => $column,
+            'kanca' => $normalizedKanca,
+        ]));
+
+        return Cache::remember($cacheKey, now()->addMinutes(10), function () use ($column, $normalizedKanca) {
+            $query = DB::table(self::KUR_MIKRO_TABLE)
+                ->whereNotNull($column)
+                ->whereRaw("TRIM(COALESCE({$column}, '')) <> ''")
+                ->selectRaw("TRIM(COALESCE({$column}, '')) as value")
+                ->distinct()
+                ->orderBy('value');
+
+            if ($column === 'uker' && $normalizedKanca !== []) {
+                $this->applyTrimmedInConstraint($query, 'kanca', $normalizedKanca);
+            }
+
+            return $query->pluck('value')
+                ->map(fn ($value) => trim((string) $value))
+                ->filter()
+                ->values();
+        });
+    }
+
+    private function fetchKurMikroRows(array $selectedKanca = [], array $selectedUker = []): Collection
+    {
+        $normalizedKanca = array_values(array_filter(array_map(
+            fn ($value) => trim((string) $value),
+            $selectedKanca
+        ), fn (string $value) => $value !== ''));
+        $normalizedUker = array_values(array_filter(array_map(
+            fn ($value) => trim((string) $value),
+            $selectedUker
+        ), fn (string $value) => $value !== ''));
+
+        $cacheKey = 'dashboard_pinjaman_kurmikro_rows:v1:' . md5(json_encode([
+            'cache_version' => $this->reportCacheVersion(),
+            'kanca' => $normalizedKanca,
+            'uker' => $normalizedUker,
+        ]));
+
+        return Cache::remember($cacheKey, now()->addMinutes(5), function () use ($normalizedKanca, $normalizedUker) {
+            $query = DB::table(self::KUR_MIKRO_TABLE)
+                ->select([
+                    'uniqueid_namareport',
+                    'kanca',
+                    'pn',
+                    'nama',
+                    'bc_uker',
+                    'uker',
+                    'tanggal_bl',
+                    'ket',
+                    'lt_250_juta_deb',
+                    'lt_250_juta_pct',
+                    'lt_250_juta_rp_juta',
+                    'gt_250_juta_deb',
+                    'gt_250_juta_pct',
+                    'gt_250_juta_rp_juta',
+                    'total_deb',
+                    'total_rp_juta',
+                ])
+                ->whereNotNull('kanca')
+                ->whereRaw("TRIM(COALESCE(kanca, '')) <> ''")
+                ->orderBy('kanca')
+                ->orderBy('uker')
+                ->orderBy('pn');
+
+            if ($normalizedKanca !== []) {
+                $this->applyTrimmedInConstraint($query, 'kanca', $normalizedKanca);
+            }
+
+            if ($normalizedUker !== []) {
+                $this->applyTrimmedInConstraint($query, 'uker', $normalizedUker);
+            }
+
+            return $query->get()->map(function ($row) {
+                return (array) $row;
+            })->values();
+        });
+    }
+
+    private function fetchMantriDistinctValues(string $column, array $selectedCabang = [], ?string $selectedPeriod = null): Collection
+    {
+        $normalizedCabang = array_values(array_filter(array_map(
+            fn ($value) => trim((string) $value),
+            $selectedCabang
+        ), fn (string $value) => $value !== ''));
+
+        $cacheKey = 'dashboard_pinjaman_mantri_distinct:v1:' . md5(json_encode([
+            'cache_version' => $this->reportCacheVersion(),
+            'column' => $column,
+            'cabang' => $normalizedCabang,
+            'periode' => $selectedPeriod,
+        ]));
+
+        return Cache::remember($cacheKey, now()->addMinutes(10), function () use ($column, $normalizedCabang, $selectedPeriod) {
+            $query = DB::table(self::MANTRI_TABLE)
+                ->whereNotNull($column)
+                ->whereRaw("TRIM(COALESCE({$column}, '')) <> ''")
+                ->selectRaw("TRIM(COALESCE({$column}, '')) as value")
+                ->distinct()
+                ->orderBy('value');
+
+            if ($selectedPeriod !== null && Schema::hasColumn(self::MANTRI_TABLE, 'snapshot_period')) {
+                $query->whereDate('snapshot_period', $selectedPeriod);
+            }
+
+            if ($column === 'unit' && $normalizedCabang !== []) {
+                $this->applyTrimmedInConstraint($query, 'cabang', $normalizedCabang);
+            }
+
+            return $query->pluck('value')
+                ->map(fn ($value) => trim((string) $value))
+                ->filter()
+                ->values();
+        });
+    }
+
+    private function fetchMantriRows(array $selectedCabang = [], array $selectedUnit = [], ?string $selectedPeriod = null): Collection
+    {
+        $normalizedCabang = array_values(array_filter(array_map(
+            fn ($value) => trim((string) $value),
+            $selectedCabang
+        ), fn (string $value) => $value !== ''));
+        $normalizedUnit = array_values(array_filter(array_map(
+            fn ($value) => trim((string) $value),
+            $selectedUnit
+        ), fn (string $value) => $value !== ''));
+
+        $cacheKey = 'dashboard_pinjaman_mantri_rows:v1:' . md5(json_encode([
+            'cache_version' => $this->reportCacheVersion(),
+            'cabang' => $normalizedCabang,
+            'unit' => $normalizedUnit,
+            'periode' => $selectedPeriod,
+        ]));
+
+        return Cache::remember($cacheKey, now()->addMinutes(5), function () use ($normalizedCabang, $normalizedUnit, $selectedPeriod) {
+            $query = DB::table(self::MANTRI_TABLE)
+                ->select([
+                    'pn',
+                    'nama',
+                    'bc',
+                    'unit',
+                    'cabang',
+                    'ket',
+                    'tmt_jabatan',
+                    'ket_kehadiran_mantri',
+                    'tanggal_mulai_bl',
+                    'disbursement_deb',
+                    'disbursement_rp_juta',
+                    'ket_realisasi',
+                    'kategori_realisasi',
+                    'tiket_size',
+                    'ratas_hk',
+                    'keterangan',
+                ])
+                ->orderBy('cabang')
+                ->orderBy('unit')
+                ->orderBy('nama');
+
+            if ($selectedPeriod !== null && Schema::hasColumn(self::MANTRI_TABLE, 'snapshot_period')) {
+                $query->whereDate('snapshot_period', $selectedPeriod);
+            }
+
+            if ($normalizedCabang !== []) {
+                $this->applyTrimmedInConstraint($query, 'cabang', $normalizedCabang);
+            }
+
+            if ($normalizedUnit !== []) {
+                $this->applyTrimmedInConstraint($query, 'unit', $normalizedUnit);
+            }
+
+            return $query->get()->map(fn ($row) => (array) $row)->values();
+        });
+    }
+
+    private function fetchMantriPeriods(): Collection
+    {
+        $cacheKey = 'dashboard_pinjaman_mantri_periods:v1:' . $this->reportCacheVersion();
+
+        return Cache::remember($cacheKey, now()->addMinutes(10), function () {
+            if (!Schema::hasColumn(self::MANTRI_TABLE, 'snapshot_period')) {
+                return collect();
+            }
+
+            return DB::table(self::MANTRI_TABLE)
+                ->whereNotNull('snapshot_period')
+                ->selectRaw('DATE(snapshot_period) as snapshot_period')
+                ->distinct()
+                ->orderByDesc('snapshot_period')
+                ->pluck('snapshot_period')
+                ->map(fn ($value) => trim((string) $value))
+                ->filter()
+                ->values();
+        });
+    }
+
+    private function resolveMantriEffectivePeriod(?string $requestedPeriod): ?string
+    {
+        $periods = $this->fetchMantriPeriods();
+
+        if ($requestedPeriod !== null && trim($requestedPeriod) !== '') {
+            try {
+                $normalized = Carbon::parse($requestedPeriod)->format('Y-m-d');
+
+                if ($periods->contains($normalized)) {
+                    return $normalized;
+                }
+
+                return $periods
+                    ->filter(fn ($period) => $period <= $normalized)
+                    ->first() ?? ($periods->first() ?: $normalized);
+            } catch (Throwable) {
+                return $periods->first() ?: null;
+            }
+        }
+
+        return $periods->first() ?: now()->toDateString();
+    }
+
     private function resolveSmallArrearsSelectedPeriod($value, ?Collection $availablePeriods = null): ?string
     {
         $availablePeriods ??= $this->fetchPeriods();
@@ -2204,6 +2515,21 @@ class DashboardPinjamanReportController extends Controller
         if (!empty($values)) {
             $query->whereIn($column, $values);
         }
+    }
+
+    private function applyTrimmedInConstraint(Builder $query, string $column, array $values): void
+    {
+        $normalized = array_values(array_filter(array_map(
+            fn ($value) => trim((string) $value),
+            $values
+        ), fn (string $value) => $value !== ''));
+
+        if ($normalized === []) {
+            return;
+        }
+
+        $placeholders = implode(', ', array_fill(0, count($normalized), '?'));
+        $query->whereRaw("TRIM(COALESCE({$column}, '')) IN ({$placeholders})", $normalized);
     }
 
 

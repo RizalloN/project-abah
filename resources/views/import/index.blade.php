@@ -1538,6 +1538,8 @@
             const isReportPh = reportName.includes('report nominatif rekening pinjaman ph');
             const isCognosPh = reportName.includes('cognos ph');
             const isCognosRecovery = reportName.includes('cognos recovery');
+            const isMantri = tableName === 'performance_mantri' || importController.includes('ImportPerformanceMantriController');
+            const isKurMikro = tableName === 'performance_kurkecil_mikro' || importController.includes('ImportKurMikroController');
             const isGi405RecDh = tableName === 'gi405_rec_dh' || importController.includes('Gi405RecDhImportExcelController');
             const isSsaSimpanan = tableName === 'ssa_simpanan';
             const isSsaPinjaman = tableName === 'ssa_pinjaman';
@@ -1710,6 +1712,54 @@
                 applyButtonState('csv', '<i class="fas fa-file-upload"></i> Upload File');
                 configurePeriodeInput({ visible: false });
                 configureKancaInput({ visible: false });
+                updateReportSummary();
+                updateFileSelectionUI();
+                return;
+            }
+
+            if (isKurMikro) {
+                formExcel.style.display = 'block';
+                inputExcel.disabled = false;
+                inputExcel.required = true;
+                inputExcel.setAttribute('accept', '.xlsx,.xls');
+                formImport.action = "{{ route('import.kurmikro.upload') }}";
+                formImport.dataset.preparePreviewUrl = "{{ route('import.kurmikro.prepare-preview') }}";
+
+                if (excelLabel) {
+                    excelLabel.innerHTML = '<i class="fas fa-file-excel mr-1"></i> Upload File KUR Mikro (.xlsx, .xls)';
+                }
+
+                if (excelHelp) {
+                    excelHelp.textContent = 'Gunakan workbook Excel KUR Mikro resmi. Struktur header bertingkat akan diproses lewat jalur khusus agar kolom database tetap sesuai.';
+                }
+
+                configurePeriodeInput({ visible: false });
+                configureKancaInput({ visible: false });
+                applyButtonState('excel', '<i class="fas fa-file-excel"></i> Upload Excel');
+                updateReportSummary();
+                updateFileSelectionUI();
+                return;
+            }
+
+            if (isMantri) {
+                formExcel.style.display = 'block';
+                inputExcel.disabled = false;
+                inputExcel.required = true;
+                inputExcel.setAttribute('accept', '.xlsx,.xls');
+                formImport.action = "{{ route('import.mantri.upload') }}";
+                formImport.dataset.preparePreviewUrl = "{{ route('import.mantri.prepare-preview') }}";
+
+                if (excelLabel) {
+                    excelLabel.innerHTML = '<i class="fas fa-file-excel mr-1"></i> Upload File Kinerja Mantri (.xlsx, .xls)';
+                }
+
+                if (excelHelp) {
+                    excelHelp.textContent = 'Gunakan workbook Excel Kinerja Mantri resmi. Header harus sesuai dengan format file yang disiapkan.';
+                }
+
+                configurePeriodeInput({ visible: false });
+                configureKancaInput({ visible: false });
+                applyButtonState('excel', '<i class="fas fa-file-excel"></i> Upload Excel');
                 updateReportSummary();
                 updateFileSelectionUI();
                 return;

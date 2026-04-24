@@ -20,6 +20,8 @@ class ImportKurMikroController extends Controller
     private const REPORT_LABEL = 'Kinerja per RM Kur Mikro';
     private const STORAGE_DIR = 'performance_kurmikro_imports';
     private const BATCH_SIZE = 1000;
+    private const PREVIEW_ROW_LIMIT = 100;
+    private const MAX_UNIQUE_FILTER_VALUES = 5000;
     private const HEADER_ROW = 3;
     private const SUBHEADER_ROW = 4;
     private const DATA_START_ROW = 7;
@@ -158,7 +160,7 @@ class ImportKurMikroController extends Controller
         ]);
     }
 
-    public function preview(Request $request): JsonResponse
+    public function preview(Request $request)
     {
         $sourcePath = $this->resolveSourcePath($request);
         if ($sourcePath === null || !file_exists($sourcePath)) {
@@ -169,22 +171,73 @@ class ImportKurMikroController extends Controller
         }
 
         try {
-            return response()->json([
-                'status' => 'success',
-                'report' => self::REPORT_LABEL,
-                'summary' => $this->inspectWorkbook($sourcePath),
+            $summary = $this->inspectWorkbook($sourcePath);
+            $headers = (array) ($summary['headers'] ?? []);
+            $previewRows = (array) ($summary['sample_rows'] ?? []);
+            $formattedUniqueValues = (array) ($summary['formatted_unique_values'] ?? []);
+            $previewStateKey = 'kurmikro_preview_' . md5($sourcePath . '|' . (string) microtime(true));
+
+            session([
+                'kurmikro_preview_state_key' => $previewStateKey,
+                'kurmikro_preview_summary' => $summary,
+            ]);
+
+            return view('import.preview_excel', [
+                'pageTitle' => 'Preview Kinerja RM Kur Mikro',
+                'previewBannerTitle' => 'Preview Kinerja RM Kur Mikro',
+                'headers' => $headers,
+                'preview' => $previewRows,
+                'formattedUniqueValues' => $formattedUniqueValues,
+                'path' => $sourcePath,
+                'currentDelimiter' => 'excel',
+                'initRoute' => route('import.kurmikro.init'),
+                'streamRoute' => route('import.kurmikro.stream'),
+                'processRoute' => route('import.kurmikro.process'),
+                'previewStateKey' => $previewStateKey,
+                'filterOptionsRoute' => route('import.preview.filter-options'),
             ]);
         } catch (\Throwable $e) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Gagal membaca preview KUR Mikro: ' . $e->getMessage(),
-            ], 422);
+            return redirect()->route('import.index')->with('error', 'Gagal membaca preview KUR Mikro: ' . $e->getMessage());
         }
     }
 
     public function initImport(Request $request): JsonResponse
     {
-        return $this->processImport($request);
+        $sourcePath = $this->resolveSourcePath($request);
+        if ($sourcePath === null || !file_exists($sourcePath)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'File KUR Mikro tidak ditemukan. Silakan upload ulang.',
+            ], 422);
+        }
+
+        try {
+            $activeFilters = $this->parseActiveFilters($request);
+            $totalRows = $this->countMatchingRows($sourcePath, $activeFilters);
+            $jobId = 'kurmikro_' . md5($sourcePath . '|' . json_encode($activeFilters) . '|' . microtime(true));
+
+            session([
+                'kurmikro_active_filters' => $activeFilters,
+                'kurmikro_active_filters_json' => json_encode($activeFilters),
+                'kurmikro_import_job_id' => $jobId,
+                'kurmikro_import_total_rows' => $totalRows,
+            ]);
+
+            return response()->json([
+                'status' => 'success',
+                'job_id' => $jobId,
+                'total_rows' => $totalRows,
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('KUR Mikro init import error: ' . $e->getMessage(), [
+                'file' => $sourcePath,
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Gagal menyiapkan import KUR Mikro: ' . $e->getMessage(),
+            ], 422);
+        }
     }
 
     public function processImportStream(Request $request)
@@ -216,19 +269,27 @@ class ImportKurMikroController extends Controller
                     return;
                 }
 
+                $activeFilters = (array) session('kurmikro_active_filters', []);
+                $totalRows = (int) session('kurmikro_import_total_rows', 0);
+
                 $send('progress', ['percent' => 10, 'message' => 'Memvalidasi workbook KUR Mikro...']);
                 $summary = $this->inspectWorkbook($sourcePath);
                 $send('progress', ['percent' => 25, 'message' => 'Workbook valid. Memulai proses import baris data...']);
 
-                $result = $this->importWorkbook($sourcePath, function (string $event, array $payload) use ($send): void {
+                $result = $this->importWorkbook($sourcePath, $activeFilters, function (string $event, array $payload) use ($send): void {
                     $send($event, $payload);
-                });
+                }, $totalRows > 0 ? $totalRows : null);
 
                 $send('complete', [
                     'status' => 'success',
                     'message' => 'Import KUR Mikro selesai.',
                     'summary' => $summary,
                     'result' => $result,
+                    'total_rows' => (int) ($result['total_rows'] ?? $result['source_rows'] ?? 0),
+                    'total_success' => (int) ($result['total_success'] ?? $result['inserted_rows'] ?? 0),
+                    'total_failed' => (int) ($result['total_failed'] ?? $result['skipped_rows'] ?? 0),
+                    'skipped_count' => (int) ($result['skipped_count'] ?? $result['skipped_rows'] ?? 0),
+                    'skipped_rows' => (array) ($result['skipped_rows_list'] ?? []),
                 ]);
             } catch (\Throwable $e) {
                 Log::error('KUR Mikro import stream error: ' . $e->getMessage(), [
@@ -255,7 +316,8 @@ class ImportKurMikroController extends Controller
         }
 
         try {
-            $result = $this->importWorkbook($sourcePath);
+            $activeFilters = $this->parseActiveFilters($request);
+            $result = $this->importWorkbook($sourcePath, $activeFilters);
 
             return response()->json([
                 'status' => 'success',
@@ -293,7 +355,7 @@ class ImportKurMikroController extends Controller
         return file_exists($resolved) ? $resolved : null;
     }
 
-    private function importWorkbook(string $path, ?callable $send = null): array
+    private function importWorkbook(string $path, array $activeFilters = [], ?callable $send = null, ?int $totalRowsHint = null): array
     {
         $context = $this->openWorkbookWorksheet($path);
         $worksheet = $context['worksheet'];
@@ -305,18 +367,22 @@ class ImportKurMikroController extends Controller
         $skippedRows = 0;
         $latestPeriod = null;
         $processedRows = 0;
+        $matchedRows = 0;
         $startTime = microtime(true);
 
         DB::transaction(function () use (
             $worksheet,
             $highestRow,
+            $activeFilters,
             &$rowsToInsert,
             &$insertedRows,
             &$skippedRows,
             &$latestPeriod,
             &$processedRows,
+            &$matchedRows,
             $send,
-            $startTime
+            $startTime,
+            $totalRowsHint
         ): void {
             for ($rowNumber = self::DATA_START_ROW; $rowNumber <= $highestRow; $rowNumber++) {
                 $row = $this->buildRowPayload($worksheet, $rowNumber);
@@ -326,6 +392,12 @@ class ImportKurMikroController extends Controller
                     $skippedRows++;
                     continue;
                 }
+
+                if (!$this->rowMatchesActiveFilters($row, $activeFilters)) {
+                    continue;
+                }
+
+                $matchedRows++;
 
                 if (($row['tanggal_bl'] ?? null) !== null) {
                     $latestPeriod = max((string) ($latestPeriod ?? $row['tanggal_bl']), (string) $row['tanggal_bl']);
@@ -339,19 +411,19 @@ class ImportKurMikroController extends Controller
                     $rowsToInsert = [];
                 }
 
-                if ($send !== null && ($processedRows % 25 === 0 || $rowNumber === $highestRow)) {
+                if ($send !== null && ($matchedRows % 25 === 0 || $rowNumber === $highestRow)) {
                     $elapsed = max(microtime(true) - $startTime, 0.001);
-                    $speed = (int) ($processedRows / $elapsed);
-                    $percent = $highestRow > 0
-                        ? min(95, 20 + (int) (($rowNumber / $highestRow) * 75))
-                        : 95;
+                    $speed = (int) ($matchedRows / $elapsed);
+                    $totalBase = max(1, (int) ($totalRowsHint ?? $matchedRows));
+                    $percent = min(95, 20 + (int) (($matchedRows / $totalBase) * 75));
 
                     $send('progress', [
                         'percent' => $percent,
-                        'message' => "Memproses baris KUR Mikro... ({$speed} baris/detik)",
-                        'rows_done' => $processedRows,
+                        'message' => "Memproses baris KUR Mikro sesuai filter... ({$speed} baris/detik)",
+                        'rows_done' => $matchedRows,
                         'inserted_rows' => $insertedRows + count($rowsToInsert),
                         'speed' => $speed,
+                        'total' => $totalRowsHint ?? $matchedRows,
                     ]);
                 }
             }
@@ -369,8 +441,13 @@ class ImportKurMikroController extends Controller
             'table' => self::TABLE_NAME,
             'sheet' => $context['sheet_name'],
             'source_rows' => $processedRows,
+            'total_rows' => $matchedRows,
             'inserted_rows' => $insertedRows,
             'skipped_rows' => $skippedRows,
+            'total_success' => $insertedRows,
+            'total_failed' => $skippedRows,
+            'skipped_count' => $skippedRows,
+            'skipped_rows_list' => [],
             'latest_period' => $latestPeriod,
         ];
     }
@@ -408,12 +485,27 @@ class ImportKurMikroController extends Controller
 
         $highestRow = $context['highest_row'];
         $sampleRows = [];
+        $formattedUniqueValues = [];
 
-        for ($rowNumber = self::DATA_START_ROW; $rowNumber <= min($highestRow, self::DATA_START_ROW + 4); $rowNumber++) {
+        for ($rowNumber = self::DATA_START_ROW; $rowNumber <= $highestRow; $rowNumber++) {
             $row = $this->buildRowPayload($worksheet, $rowNumber);
             if ($row !== null) {
-                $sampleRows[] = $row;
+                if (count($sampleRows) < self::PREVIEW_ROW_LIMIT) {
+                    $sampleRows[] = $this->mapPayloadToPreviewRow($row);
+                }
+
+                foreach (array_values(self::COLUMN_MAP) as $index => [$columnName]) {
+                    $formattedUniqueValues[$index] ??= [];
+                    $filterValue = $this->formatPreviewFilterValue($row[$columnName] ?? null);
+                    if (count($formattedUniqueValues[$index]) < self::MAX_UNIQUE_FILTER_VALUES || isset($formattedUniqueValues[$index][$filterValue])) {
+                        $formattedUniqueValues[$index][$filterValue] = true;
+                    }
+                }
             }
+        }
+
+        foreach ($formattedUniqueValues as $index => $valuesMap) {
+            $formattedUniqueValues[$index] = array_keys($valuesMap);
         }
 
         return [
@@ -424,6 +516,7 @@ class ImportKurMikroController extends Controller
                 self::COLUMN_MAP
             )),
             'sample_rows' => $sampleRows,
+            'formatted_unique_values' => $formattedUniqueValues,
         ];
     }
 
@@ -560,7 +653,7 @@ class ImportKurMikroController extends Controller
         }
 
         if (is_int($value) || is_float($value)) {
-            return number_format((float) $value, $scale, '.', '');
+            return $this->normalizeNumericString(sprintf('%.17g', (float) $value), $scale);
         }
 
         $value = trim((string) $value);
@@ -568,6 +661,11 @@ class ImportKurMikroController extends Controller
             return null;
         }
 
+        return $this->normalizeNumericString($value, $scale);
+    }
+
+    private function normalizeNumericString(string $value, int $scale = 2): ?string
+    {
         $value = preg_replace('/\s+/', '', $value);
         $value = preg_replace('/[^0-9,\.\-\+eE]/', '', $value);
         if ($value === '' || $value === '-' || $value === '+') {
@@ -576,7 +674,7 @@ class ImportKurMikroController extends Controller
 
         if (preg_match('/^[+-]?\d+(?:[.,]\d+)?[eE][+-]?\d+$/', $value) === 1) {
             $value = str_replace(',', '.', $value);
-            return number_format((float) $value, $scale, '.', '');
+            return $this->trimNumericString(sprintf('%.17g', (float) $value), $scale);
         }
 
         $hasComma = str_contains($value, ',');
@@ -611,7 +709,27 @@ class ImportKurMikroController extends Controller
             return null;
         }
 
-        return number_format((float) $value, $scale, '.', '');
+        return $this->trimNumericString(sprintf('%.17g', (float) $value), $scale);
+    }
+
+    private function trimNumericString(string $value, int $scale = 2): string
+    {
+        if (!str_contains($value, '.')) {
+            return $scale === 0 ? $value : $value . '.' . str_repeat('0', $scale);
+        }
+
+        [$integerPart, $decimalPart] = explode('.', $value, 2);
+        $decimalPart = rtrim($decimalPart, '0');
+
+        if ($scale === 0) {
+            return $integerPart;
+        }
+
+        if ($decimalPart === '') {
+            return $integerPart . '.' . str_repeat('0', $scale);
+        }
+
+        return $integerPart . '.' . $decimalPart;
     }
 
     private function normalizeDateValue(mixed $value): ?string
@@ -634,6 +752,103 @@ class ImportKurMikroController extends Controller
         $text = preg_replace('/\s+/', ' ', $text) ?? $text;
 
         return strtoupper($text);
+    }
+
+    private function mapPayloadToPreviewRow(array $payload): array
+    {
+        $previewRow = [];
+
+        foreach (array_values(self::COLUMN_MAP) as [$columnName]) {
+            $previewRow[] = $payload[$columnName] ?? null;
+        }
+
+        return $previewRow;
+    }
+
+    private function formatPreviewFilterValue(mixed $value): string
+    {
+        if ($value === null) {
+            return '(Blank)';
+        }
+
+        $text = trim((string) $value);
+        return $text === '' ? '(Blank)' : $text;
+    }
+
+    private function parseActiveFilters(Request $request): array
+    {
+        $raw = trim((string) ($request->input('active_filters_json') ?? session('kurmikro_active_filters_json', '')));
+        if ($raw === '') {
+            return [];
+        }
+
+        $decoded = json_decode($raw, true);
+        if (!is_array($decoded)) {
+            return [];
+        }
+
+        $normalized = [];
+        foreach ($decoded as $index => $values) {
+            if (!is_array($values) || $values === []) {
+                continue;
+            }
+
+            $normalized[(string) $index] = array_values(array_filter(array_map(
+                static fn ($value) => trim((string) $value),
+                $values
+            ), static fn (string $value): bool => $value !== ''));
+        }
+
+        return $normalized;
+    }
+
+    private function rowMatchesActiveFilters(array $row, array $activeFilters): bool
+    {
+        if ($activeFilters === []) {
+            return true;
+        }
+
+        foreach ($activeFilters as $columnIndex => $allowedValues) {
+            if (!is_array($allowedValues) || $allowedValues === []) {
+                continue;
+            }
+
+            $columnMap = array_values(self::COLUMN_MAP);
+            if (!isset($columnMap[(int) $columnIndex][0])) {
+                continue;
+            }
+
+            $columnName = $columnMap[(int) $columnIndex][0];
+            $value = $this->formatPreviewFilterValue($row[$columnName] ?? null);
+            if (!in_array($value, $allowedValues, true)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private function countMatchingRows(string $path, array $activeFilters): int
+    {
+        $context = $this->openWorkbookWorksheet($path);
+        $worksheet = $context['worksheet'];
+        $this->validateWorksheetStructure($worksheet);
+
+        $matches = 0;
+        $highestRow = $context['highest_row'];
+
+        for ($rowNumber = self::DATA_START_ROW; $rowNumber <= $highestRow; $rowNumber++) {
+            $row = $this->buildRowPayload($worksheet, $rowNumber);
+            if ($row === null) {
+                continue;
+            }
+
+            if ($this->rowMatchesActiveFilters($row, $activeFilters)) {
+                $matches++;
+            }
+        }
+
+        return $matches;
     }
 
     private function isAbsolutePath(string $path): bool

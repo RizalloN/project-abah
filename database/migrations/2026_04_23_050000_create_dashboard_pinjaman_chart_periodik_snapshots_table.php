@@ -32,30 +32,43 @@ return new class extends Migration
             });
         }
 
-        DB::unprepared("DROP TRIGGER IF EXISTS trg_daily_loan_after_insert");
+        $this->replaceDailyLoanTrigger();
+    }
+
+    public function down(): void
+    {
+        $this->replaceDailyLoanTrigger(false);
+
+        Schema::dropIfExists(self::TABLE);
+    }
+
+    private function replaceDailyLoanTrigger(bool $includeChartSnapshotCleanup = true): void
+    {
+        $this->dropTriggerIfExists('trg_daily_loan_after_insert');
+
+        $chartCleanup = $includeChartSnapshotCleanup
+            ? "DELETE FROM dashboard_pinjaman_chart_periodik_snapshots WHERE periode = NEW.periode;\n"
+            : '';
+
         DB::unprepared("
             CREATE TRIGGER trg_daily_loan_after_insert AFTER INSERT ON daily_loan_dinamis
             FOR EACH ROW BEGIN
                 DELETE FROM dashboard_pinjaman_snapshots WHERE periode = NEW.periode;
-                DELETE FROM dashboard_pinjaman_chart_periodik_snapshots WHERE periode = NEW.periode;
-                DELETE FROM dashboard_harian_snapshots WHERE snapshot_period = NEW.periode;
+                {$chartCleanup}DELETE FROM dashboard_harian_snapshots WHERE snapshot_period = NEW.periode;
                 DELETE FROM rasio_casa_debitur_snapshots WHERE loan_period = NEW.periode;
             END;
         ");
     }
 
-    public function down(): void
+    private function dropTriggerIfExists(string $triggerName): void
     {
-        DB::unprepared("DROP TRIGGER IF EXISTS trg_daily_loan_after_insert");
-        DB::unprepared("
-            CREATE TRIGGER trg_daily_loan_after_insert AFTER INSERT ON daily_loan_dinamis
-            FOR EACH ROW BEGIN
-                DELETE FROM dashboard_pinjaman_snapshots WHERE periode = NEW.periode;
-                DELETE FROM dashboard_harian_snapshots WHERE snapshot_period = NEW.periode;
-                DELETE FROM rasio_casa_debitur_snapshots WHERE loan_period = NEW.periode;
-            END;
-        ");
+        $result = DB::selectOne(
+            'SELECT COUNT(*) AS aggregate FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = DATABASE() AND TRIGGER_NAME = ?',
+            [$triggerName]
+        );
 
-        Schema::dropIfExists(self::TABLE);
+        if ((int) ($result->aggregate ?? 0) > 0) {
+            DB::unprepared("DROP TRIGGER IF EXISTS `{$triggerName}`");
+        }
     }
 };
