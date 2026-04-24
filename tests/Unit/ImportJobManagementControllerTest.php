@@ -78,7 +78,7 @@ class ImportJobManagementControllerTest extends TestCase
         parent::tearDown();
     }
 
-    public function test_force_start_runs_queued_import_inline(): void
+    public function test_force_start_runs_queued_import_in_background_when_launcher_available(): void
     {
         $progressService = Mockery::mock(ImportProgressService::class);
         $executionService = Mockery::mock(ImportExecutionService::class);
@@ -95,18 +95,59 @@ class ImportJobManagementControllerTest extends TestCase
         $progressService->shouldReceive('cleanupQueuedImportJobRowsForJob')
             ->once()
             ->with(77);
-        $executionService->shouldReceive('run')
-            ->once()
-            ->with(77);
+        $executionService->shouldNotReceive('run');
 
-        $controller = new ImportJobManagementController(
+        $controller = new class(
             app(ManagedReportSnapshotRebuildCoordinator::class),
             app(ImportIndexController::class)
-        );
+        ) extends ImportJobManagementController {
+            protected function launchImportInBackground(int $jobId): bool
+            {
+                return true;
+            }
+        };
         $response = $controller->forceStart(77, $progressService, $executionService);
         $payload = $response->getData(true);
 
         $this->assertSame('success', $payload['status']);
+        $this->assertStringContainsString('background', $payload['message']);
+    }
+
+    public function test_force_start_falls_back_to_inline_when_background_launcher_fails(): void
+    {
+        $progressService = Mockery::mock(ImportProgressService::class);
+        $executionService = Mockery::mock(ImportExecutionService::class);
+
+        $progressService->shouldReceive('findJob')
+            ->once()
+            ->with(78)
+            ->andReturn((object) [
+                'id' => 78,
+                'status' => 'queued',
+                'total_success' => 0,
+                'total_failed' => 0,
+            ]);
+        $progressService->shouldReceive('cleanupQueuedImportJobRowsForJob')
+            ->once()
+            ->with(78);
+        $executionService->shouldReceive('run')
+            ->once()
+            ->with(78);
+
+        $controller = new class(
+            app(ManagedReportSnapshotRebuildCoordinator::class),
+            app(ImportIndexController::class)
+        ) extends ImportJobManagementController {
+            protected function launchImportInBackground(int $jobId): bool
+            {
+                return false;
+            }
+        };
+        $response = $controller->forceStart(78, $progressService, $executionService);
+        $payload = $response->getData(true);
+
+        $this->assertSame('success', $payload['status']);
+        $this->assertStringContainsString('diproses langsung', $payload['message']);
     }
 
     public function test_queue_health_purges_stale_reserved_snapshot_jobs_without_active_state(): void

@@ -170,7 +170,11 @@ def normalize_header_name(value: object) -> str:
 
 def is_daily_loan_header_row(row: list[str]) -> bool:
     normalized_cells = [normalize_header_name(cell) for cell in row]
-    if not normalized_cells or normalized_cells[0] != "PERIODE":
+    if not normalized_cells:
+        return False
+    
+    # RELAXED: PERIODE/POSISI can be anywhere in the row
+    if "PERIODE" not in normalized_cells and "POSISI" not in normalized_cells:
         return False
 
     header_groups = [

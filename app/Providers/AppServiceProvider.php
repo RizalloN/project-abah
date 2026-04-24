@@ -2,6 +2,8 @@
 
 namespace App\Providers;
 
+use Illuminate\Console\Events\CommandStarting;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\ServiceProvider;
@@ -22,6 +24,31 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // 🔥 PROTECT FROM ACCIDENTAL DATA LOSS
+        // Mencegah perintah destruktif yang dapat menghapus seluruh database secara tidak sengaja.
+        if (!app()->runningUnitTests()) {
+            Event::listen(CommandStarting::class, function (CommandStarting $event): void {
+                $destructiveCommands = ['migrate:fresh', 'migrate:refresh', 'db:wipe'];
+                
+                if (in_array($event->command, $destructiveCommands, true)) {
+                    // Cek apakah ada flag --force (biasanya digunakan di production)
+                    // Atau jika kita ingin melarang sama sekali di environment tertentu.
+                    $input = $event->input;
+                    $isForce = $input->hasParameterOption('--force') || $input->hasParameterOption('-f');
+                    
+                    // Kita berikan perlindungan ekstra: harus ada konfirmasi manual atau flag khusus.
+                    if (app()->environment('local') && !$isForce) {
+                        // Di local, kita tetap izinkan TAPI dengan peringatan keras (atau bisa kita blok jika user minta).
+                        // Karena user meminta "guard agar tidak bisa terjadi lagi", kita blok saja jika tanpa --force.
+                        throw new \RuntimeException(
+                            "BAHAYA: Perintah '{$event->command}' diblokir untuk mencegah kehilangan data. " .
+                            "Jika Anda BENAR-BENAR ingin mereset database, gunakan flag --force."
+                        );
+                    }
+                }
+            });
+        }
+
         View::composer('layouts.sidebar', function ($view): void {
             $activeImportJobCount = 0;
 

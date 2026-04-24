@@ -2,12 +2,15 @@
 
 namespace App\Models;
 
+use App\Traits\IdReusable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 
 class BodBoc extends Model
 {
+    use IdReusable;
+
     protected $table = 'bod_boc';
 
     protected $fillable = [

@@ -9,6 +9,7 @@ use App\Services\Import\ImportExecutionService;
 use App\Services\Import\ImportProgressService;
 use App\Services\Import\SchemaIntrospectionService;
 use App\Services\Import\MySqlBulkLoadService;
+use App\Services\Import\Strategies\DailyLoanImportStrategy;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Config;
@@ -64,7 +65,8 @@ class ImportExcelQueuedFallbackTest extends TestCase
                 ?string $delimiter = null,
                 bool $forceDirectLoad = false,
                 ?callable $beforeDirectLoad = null,
-                array $importOptions = []
+                array $importOptions = [],
+                bool $fullVectorization = false
             ): bool {
                 $this->stagedFallbackCalled = true;
 
@@ -100,6 +102,18 @@ class ImportExcelQueuedFallbackTest extends TestCase
         $this->assertSame(1, $result['total_success']);
         $this->assertSame(0, $result['total_failed']);
         $this->assertSame(1, $result['total_rows']);
+    }
+
+    public function test_daily_loan_strategy_always_forces_direct_mode_even_if_filters_present(): void
+    {
+        $strategy = new DailyLoanImportStrategy();
+
+        $this->assertSame('bulk_csv_direct', $strategy->importMode([
+            'table_name' => 'daily_loan_dinamis',
+            'active_filters' => [
+                0 => ['2026-04-23'],
+            ],
+        ]));
     }
 
     public function test_process_excel_stream_starts_lw325_inline_without_dispatching_queue(): void
@@ -276,7 +290,8 @@ class ImportExcelQueuedFallbackTest extends TestCase
                 ?string $delimiter = null,
                 bool $forceDirectLoad = false,
                 ?callable $beforeDirectLoad = null,
-                array $importOptions = []
+                array $importOptions = [],
+                bool $fullVectorization = false
             ): bool {
                 $this->capturedForceDirectLoad = $forceDirectLoad;
 

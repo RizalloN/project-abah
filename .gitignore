@@ -37,3 +37,6 @@ Thumbs.db
 # Executable biner tidak boleh ada di root project web
 /*.exe
 /*.frm
+
+# Jangan commit dump SQL eksperimen/backup lokal
+/scratch/*.sql

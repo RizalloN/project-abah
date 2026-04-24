@@ -7,6 +7,23 @@ use Illuminate\Support\Facades\DB;
 trait IdReusable
 {
     /**
+     * Automatically reuse the smallest available ID for models that opt in.
+     */
+    protected static function bootIdReusable(): void
+    {
+        static::creating(function ($model): void {
+            if ($model->getAttribute($model->getKeyName()) !== null) {
+                return;
+            }
+
+            $model->setAttribute(
+                $model->getKeyName(),
+                $model->findSmallestAvailableId($model->getTable())
+            );
+        });
+    }
+
+    /**
      * Find the smallest available positive integer ID in the given table.
      * To be used when AUTO_INCREMENT is disabled and we want to fill holes.
      *

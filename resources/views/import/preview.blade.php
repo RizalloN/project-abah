@@ -3,6 +3,9 @@
 @section('title', $pageTitle ?? 'Preview & Filter Data Excel')
 
 @section('content')
+@php
+    $filtersDisabled = !empty($filtersDisabled);
+@endphp
 <div class="row">
     <div class="col-12">
 
@@ -83,8 +86,13 @@
 
                 <div class="card-body p-0">
                     <div class="alert alert-info m-3 border-0 bg-light text-dark">
-                        <i class="fas fa-info-circle text-info"></i> <strong>Petunjuk Filter:</strong>
-                        Klik ikon <i class="fas fa-filter text-muted mx-1"></i> di sebelah nama kolom untuk memfilter baris data. Tabel preview menampilkan <strong>sampel dari berbagai bagian file</strong> (max 100 baris) untuk evaluasi visual. <strong>Saat Anda membuka dropdown filter, sistem akan memuat SEMUA nilai unik dari file sumber</strong> - sehingga Anda dapat memilih dengan filter data yang paling lengkap.
+                        @if($filtersDisabled)
+                            <i class="fas fa-info-circle text-info"></i> <strong>Mode Import Full:</strong>
+                            Filter dinonaktifkan untuk report ini agar proses import selalu memproses seluruh data tanpa ambiguitas.
+                        @else
+                            <i class="fas fa-info-circle text-info"></i> <strong>Petunjuk Filter:</strong>
+                            Klik ikon <i class="fas fa-filter text-muted mx-1"></i> di sebelah nama kolom untuk memfilter baris data. Tabel preview menampilkan <strong>sampel dari berbagai bagian file</strong> (max 100 baris) untuk evaluasi visual. <strong>Saat Anda membuka dropdown filter, sistem akan memuat SEMUA nilai unik dari file sumber</strong> - sehingga Anda dapat memilih dengan filter data yang paling lengkap.
+                        @endif
                     </div>
 
                     @if(!empty($manualPeriodeLabel))
@@ -132,7 +140,7 @@
                                                     </label>
                                                 </div>
 
-                                                @if(isset($formattedUniqueValues[$index]) && count($formattedUniqueValues[$index]) > 0)
+                                                @if(!$filtersDisabled && isset($formattedUniqueValues[$index]) && count($formattedUniqueValues[$index]) > 0)
                                                 <input type="hidden" name="has_filter[]" value="{{ $index }}">
 
                                                 <div class="dropdown">
@@ -221,6 +229,7 @@
 <script>
     document.addEventListener('DOMContentLoaded', function () {
         const filterOptionsMap = @json($formattedUniqueValues);
+        const filtersDisabled = @json($filtersDisabled);
         const filterableColumnIndices = @json($filterableColumnIndices ?? []);
         const forceAllChecked = @json(!empty($forceAllFiltersCheckedOnLoad));
         const headers = @json($headers);
@@ -1335,16 +1344,18 @@
 
         function collectActiveFilters() {
             let activeFilters = {};
-            Object.keys(filterState).forEach(function (colIndex) {
-                const state = filterState[colIndex];
-                if (!state) {
-                    return;
-                }
+            if (!filtersDisabled) {
+                Object.keys(filterState).forEach(function (colIndex) {
+                    const state = filterState[colIndex];
+                    if (!state) {
+                        return;
+                    }
 
-                if (state.selectedValues.size < state.allValues.length) {
-                    activeFilters[colIndex] = Array.from(state.selectedValues);
-                }
-            });
+                    if (state.selectedValues.size < state.allValues.length) {
+                        activeFilters[colIndex] = Array.from(state.selectedValues);
+                    }
+                });
+            }
 
             document.getElementById('active_filters_json').value = JSON.stringify(activeFilters);
         }

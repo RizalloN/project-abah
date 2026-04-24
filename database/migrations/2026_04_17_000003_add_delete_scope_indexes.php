@@ -41,12 +41,16 @@ return new class extends Migration
             return false;
         }
 
-        $rows = DB::select(
-            'SHOW INDEX FROM `' . str_replace('`', '``', $table) . '` WHERE Key_name = ?',
-            [$indexName]
-        );
+        $conn = DB::connection();
+        $indexes = $conn->getSchemaBuilder()->getIndexes($table);
 
-        return !empty($rows);
+        foreach ($indexes as $index) {
+            if (strtolower($index['name']) === strtolower($indexName)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public function up(): void

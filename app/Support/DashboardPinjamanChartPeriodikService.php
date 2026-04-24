@@ -71,16 +71,18 @@ class DashboardPinjamanChartPeriodikService
             ? self::DEFAULT_BRANCHES
             : [$normalizedBranch];
 
-        $normalizedUnits = $this->normalizeUnitSelections($selectedUnits);
         $unitPayload = $this->buildUnitOptions($resolvedPeriod, $normalizedBranch, $sourceTable);
+        $normalizedUnits = $this->normalizeUnitSelections($selectedUnits);
+        $selectedUnitsFiltered = $this->intersectSelectedUnits($normalizedUnits, $unitPayload['unit_options']);
+
         $trendPeriods = $this->resolveTrendPeriods($resolvedPeriod, $sourceTable);
 
         if ($trendPeriods === []) {
-            return $this->emptyChartPayload($normalizedBranch, $normalizedUnits);
+            return $this->emptyChartPayload($normalizedBranch, $selectedUnitsFiltered);
         }
 
-        $trendRows = $this->aggregatePatternCounts($trendPeriods, $branchScope, $normalizedUnits, $sourceTable);
-        $currentRows = $this->aggregatePatternCounts([$resolvedPeriod], $branchScope, $normalizedUnits, $sourceTable);
+        $trendRows = $this->aggregatePatternCounts($trendPeriods, $branchScope, $selectedUnitsFiltered, $sourceTable);
+        $currentRows = $this->aggregatePatternCounts([$resolvedPeriod], $branchScope, $selectedUnitsFiltered, $sourceTable);
 
         $trendMatrix = [];
         $trendTotals = [];
@@ -129,8 +131,8 @@ class DashboardPinjamanChartPeriodikService
             'selected_period_label' => $this->formatPeriodLabel($resolvedPeriod),
             'selected_branch' => $normalizedBranch,
             'selected_branch_label' => $this->branchLabel($normalizedBranch),
-            'selected_units' => $normalizedUnits,
-            'selected_unit_label' => $this->summarizeUnitSelection($normalizedUnits, $unitPayload['unit_options']),
+            'selected_units' => $selectedUnitsFiltered,
+            'selected_unit_label' => $this->summarizeUnitSelection($selectedUnitsFiltered, $unitPayload['unit_options']),
             'scope_label' => $this->buildScopeLabel($normalizedBranch, $selectedUnitCount),
             'trend' => [
                 'labels' => array_map(fn (string $period) => $this->formatPeriodLabel($period), $trendPeriods),
@@ -254,18 +256,14 @@ class DashboardPinjamanChartPeriodikService
         }
 
         if ($sourceTable === self::SNAPSHOT_TABLE) {
-            $baseQuery = DB::table($sourceTable . ' as d')
+            return DB::table($sourceTable . ' as d')
                 ->whereIn('d.periode', $periods)
                 ->whereIn('d.cabang1', $branches)
+                ->when(!empty($selectedUnits), function ($q) use ($selectedUnits) {
+                    $this->applyUnitFilter($q, $selectedUnits);
+                })
                 ->selectRaw('d.periode as periode')
-                ->selectRaw("COALESCE(NULLIF(d.pola_pembayaran, ''), 'TIDAK TERPETAKAN') as pola_pembayaran");
-
-            $this->applyUnitFilter($baseQuery, $selectedUnits);
-
-            return DB::query()
-                ->fromSub($baseQuery, 'loan_pattern_scope')
-                ->selectRaw('periode')
-                ->selectRaw('pola_pembayaran')
+                ->selectRaw("COALESCE(NULLIF(d.pola_pembayaran, ''), 'TIDAK TERPETAKAN') as pola_pembayaran")
                 ->selectRaw('COUNT(*) as total_count')
                 ->groupBy('periode', 'pola_pembayaran')
                 ->orderBy('periode')
@@ -273,21 +271,17 @@ class DashboardPinjamanChartPeriodikService
                 ->get();
         }
 
-        $baseQuery = DB::table(self::RAW_TABLE . ' as d')
+        return DB::table(self::RAW_TABLE . ' as d')
             ->leftJoin(self::LOOKUP_TABLE . ' as lt', function ($join) {
                 $join->on(DB::raw('UPPER(TRIM(d.ln_type))'), '=', DB::raw('UPPER(TRIM(lt.loan_type))'));
             })
             ->whereIn('d.periode', $periods)
             ->whereIn(DB::raw('UPPER(TRIM(d.cabang1))'), $branches)
+            ->when(!empty($selectedUnits), function ($q) use ($selectedUnits) {
+                $this->applyUnitFilter($q, $selectedUnits);
+            })
             ->selectRaw('d.periode as periode')
-            ->selectRaw("COALESCE(NULLIF(UPPER(TRIM(lt.pola_pembayaran)), ''), 'TIDAK TERPETAKAN') as pola_pembayaran");
-
-        $this->applyUnitFilter($baseQuery, $selectedUnits);
-
-        return DB::query()
-            ->fromSub($baseQuery, 'loan_pattern_scope')
-            ->selectRaw('periode')
-            ->selectRaw('pola_pembayaran')
+            ->selectRaw("COALESCE(NULLIF(UPPER(TRIM(lt.pola_pembayaran)), ''), 'TIDAK TERPETAKAN') as pola_pembayaran")
             ->selectRaw('COUNT(*) as total_count')
             ->groupBy('periode', 'pola_pembayaran')
             ->orderBy('periode')
@@ -316,8 +310,8 @@ class DashboardPinjamanChartPeriodikService
                 $group->orWhere(function ($unitQuery) use ($branch, $unit, $isSnapshot) {
                     if ($isSnapshot) {
                         $unitQuery
-                            ->where('d.cabang1', '=', $branch)
-                            ->where('d.unit1', '=', $unit);
+                            ->whereRaw('UPPER(TRIM(d.cabang1)) = ?', [$branch])
+                            ->whereRaw('UPPER(TRIM(d.unit1)) = ?', [$unit]);
                     } else {
                         $unitQuery
                             ->whereRaw('UPPER(TRIM(d.cabang1)) = ?', [$branch])
@@ -379,11 +373,7 @@ class DashboardPinjamanChartPeriodikService
     {
         $normalized = strtoupper(trim((string) $value));
 
-        if ($normalized === '' || $normalized === 'ALL') {
-            return 'all';
-        }
-
-        return in_array($normalized, self::DEFAULT_BRANCHES, true) ? $normalized : 'all';
+        return $normalized !== '' ? $normalized : 'all';
     }
 
     private function normalizeUnitSelections(array|string|null $value): array

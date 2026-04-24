@@ -1,0 +1,7 @@
+{
+  "file_path": "storage/app/private/excel_imports/20260423_161129_ASGA6j_update-4-report-daily-loan-dinamis-v7-5-31012026.csv",
+  "output_csv_path": "storage/app/temp/test_output.csv",
+  "delimiter": ",",
+  "required_headers": ["PERIODE", "NOMOR_REKENING1", "BAKI_DEBET1"],
+  "strict_non_date_headers": ["KODE_KANWIL1"]
+}

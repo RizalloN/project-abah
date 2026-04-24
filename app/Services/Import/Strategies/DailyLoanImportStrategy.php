@@ -45,6 +45,8 @@ class DailyLoanImportStrategy implements ImportStrategyInterface
 
     public function importMode(array $context = []): string
     {
-        return empty($context['active_filters']) ? 'bulk_csv_direct' : 'bulk_csv_filtered';
+        // Daily Loan is locked to full-import mode in this project.
+        // Force direct LOAD DATA path to avoid slow staging + INSERT SELECT fallback.
+        return 'bulk_csv_direct';
     }
 }
