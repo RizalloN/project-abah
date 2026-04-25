@@ -389,6 +389,10 @@ class DashboardHarianSnapshotService
             }
         }
 
+        if ($force) {
+            DB::table(self::SNAPSHOT_TABLE)->where('snapshot_period', $period)->delete();
+        }
+
         if (!$this->sourcePeriodExists(self::LOAN_TABLE, $period) || !$this->sourcePeriodExists(self::SAVINGS_TABLE, $period)) {
             DB::table(self::SNAPSHOT_TABLE)->where('snapshot_period', $period)->delete();
 
@@ -420,10 +424,12 @@ class DashboardHarianSnapshotService
         }
 
         $validIds = array_column($payload, 'uniqueid_dhs');
-        DB::table(self::SNAPSHOT_TABLE)
-            ->where('snapshot_period', $period)
-            ->whereNotIn('uniqueid_dhs', $validIds)
-            ->delete();
+        if (!$force) {
+            DB::table(self::SNAPSHOT_TABLE)
+                ->where('snapshot_period', $period)
+                ->whereNotIn('uniqueid_dhs', $validIds)
+                ->delete();
+        }
 
         return count($payload);
     }
@@ -1223,77 +1229,65 @@ class DashboardHarianSnapshotService
         // - Database buffer pool pressure
         // Expected performance gain: 10-15%
 
-        $combinedSubquery = DB::query()
-            ->select(
-                DB::raw("TRIM(COALESCE(n_kanca, '')) as raw_kanca"),
-                DB::raw("TRIM(COALESCE(n_unit, '')) as raw_unit"),
-                DB::raw("TRIM(COALESCE(n_segment, '')) as raw_segment"),
-                DB::raw('amount'),
-                DB::raw('recovery_type')
-            )
-            ->fromSub(
-                DB::query()
-                    ->fromSub(
-                        DB::table('lw325_ph as n')
-                            ->join('lw325_ph as o', function ($join) use ($previousPhPeriod, $currentPhPeriod) {
-                                $join->on('n.acctno', '=', 'o.acctno')
-                                    ->on('n.kanca', '=', 'o.kanca')
-                                    ->on('n.unit', '=', 'o.unit')
-                                    ->where('n.periode', '=', $currentPhPeriod)
-                                    ->where('o.periode', '=', $previousPhPeriod);
-                            })
-                            ->selectRaw("n.kanca as n_kanca")
-                            ->selectRaw("n.unit as n_unit")
-                            ->selectRaw("n.segmen_dashboard as n_segment")
-                            ->selectRaw("COALESCE(o.pokok, 0) as amount")
-                            ->selectRaw("'tupok' as recovery_type")
-                            ->whereRaw('(COALESCE(o.pokok, 0) - COALESCE(n.pokok, 0)) > 0')
-                            ->whereNotNull('n.acctno')
-                            ->where('n.acctno', '<>', ''),
-                        'tupok_data'
-                    )
-                    ->unionAll(
-                        DB::table('lw325_ph as o')
-                            ->leftJoin('lw325_ph as n', function ($join) use ($previousPhPeriod, $currentPhPeriod) {
-                                $join->on('o.acctno', '=', 'n.acctno')
-                                    ->on('o.kanca', '=', 'n.kanca')
-                                    ->on('o.unit', '=', 'n.unit')
-                                    ->where('o.periode', '=', $previousPhPeriod)
-                                    ->where('n.periode', '=', $currentPhPeriod);
-                            })
-                            ->where('o.periode', $previousPhPeriod)
-                            ->whereNull('n.acctno')
-                            ->whereNotNull('o.acctno')
-                            ->where('o.acctno', '<>', '')
-                            ->selectRaw("o.kanca as n_kanca")
-                            ->selectRaw("o.unit as n_unit")
-                            ->selectRaw("o.segmen_dashboard as n_segment")
-                            ->selectRaw("COALESCE(o.pokok, 0) as amount")
-                            ->selectRaw("'lunas' as recovery_type")
-                    ),
-                'combined_recovery'
-            );
+        $tupokQuery = DB::table('lw325_ph as n')
+            ->join('lw325_ph as o', function ($join) use ($previousPhPeriod, $currentPhPeriod) {
+                $join->on('n.acctno', '=', 'o.acctno')
+                    ->on('n.kanca', '=', 'o.kanca')
+                    ->on('n.unit', '=', 'o.unit')
+                    ->where('n.periode', '=', $currentPhPeriod)
+                    ->where('o.periode', '=', $previousPhPeriod);
+            })
+            ->selectRaw("n.kanca as n_kanca")
+            ->selectRaw("n.unit as n_unit")
+            ->selectRaw("n.segmen_dashboard as n_segment")
+            ->selectRaw("COALESCE(o.pokok, 0) as amount")
+            ->selectRaw("'tupok' as recovery_type")
+            ->whereRaw('(COALESCE(o.pokok, 0) - COALESCE(n.pokok, 0)) > 0')
+            ->whereNotNull('n.acctno')
+            ->where('n.acctno', '<>', '');
 
-        // Apply kanca/unit filters to combined subquery
+        // Apply index-friendly filters directly on source columns (not on TRIM/COALESCE results)
         if ($normalizedKanca !== []) {
-            $combinedSubquery->whereIn(
-                DB::raw("UPPER(TRIM(COALESCE(n_kanca, '')))"), 
-                array_map('strtoupper', $normalizedKanca)
-            );
+            $tupokQuery->whereIn('n.kanca', $normalizedKanca);
+        }
+        if ($normalizedUnit !== []) {
+            $tupokQuery->whereIn('n.unit', $normalizedUnit);
         }
 
-        if ($normalizedUnit !== []) {
-            $combinedSubquery->whereIn(
-                DB::raw("UPPER(TRIM(COALESCE(n_unit, '')))"), 
-                array_map('strtoupper', $normalizedUnit)
-            );
+        $lumasQuery = DB::table('lw325_ph as o')
+            ->leftJoin('lw325_ph as n', function ($join) use ($previousPhPeriod, $currentPhPeriod) {
+                $join->on('o.acctno', '=', 'n.acctno')
+                    ->on('o.kanca', '=', 'n.kanca')
+                    ->on('o.unit', '=', 'n.unit')
+                    ->where('o.periode', '=', $previousPhPeriod)
+                    ->where('n.periode', '=', $currentPhPeriod);
+            })
+            ->where('o.periode', $previousPhPeriod)
+            ->whereNull('n.acctno')
+            ->whereNotNull('o.acctno')
+            ->where('o.acctno', '<>', '')
+            ->selectRaw("o.kanca as n_kanca")
+            ->selectRaw("o.unit as n_unit")
+            ->selectRaw("o.segmen_dashboard as n_segment")
+            ->selectRaw("COALESCE(o.pokok, 0) as amount")
+            ->selectRaw("'lunas' as recovery_type");
+
+        // Apply index-friendly filters directly on source columns
+        if ($normalizedKanca !== []) {
+            $lumasQuery->whereIn('o.kanca', $normalizedKanca);
         }
+        if ($normalizedUnit !== []) {
+            $lumasQuery->whereIn('o.unit', $normalizedUnit);
+        }
+
+        $combinedSubquery = $tupokQuery->unionAll($lumasQuery);
 
         // Final aggregation: single pass over combined recovery data
+        // TRIM/COALESCE now applied only to SELECT for output formatting, not for filtering
         return DB::query()
             ->fromSub($combinedSubquery, 'ph_summary')
-            ->selectRaw("TRIM(COALESCE(raw_kanca, '')) as raw_kanca")
-            ->selectRaw("TRIM(COALESCE(raw_unit, '')) as raw_unit")
+            ->selectRaw("TRIM(COALESCE(n_kanca, '')) as raw_kanca")
+            ->selectRaw("TRIM(COALESCE(n_unit, '')) as raw_unit")
             ->selectRaw("
                 SUM(
                     CASE
@@ -1315,7 +1309,7 @@ class DashboardHarianSnapshotService
             ->selectRaw("
                 SUM(
                     CASE
-                        WHEN UPPER(TRIM(COALESCE(raw_segment, ''))) = 'SMALL'
+                        WHEN UPPER(TRIM(COALESCE(n_segment, ''))) = 'SMALL'
                         THEN amount
                         ELSE 0
                     END
@@ -1324,7 +1318,7 @@ class DashboardHarianSnapshotService
             ->selectRaw("
                 SUM(
                     CASE
-                        WHEN UPPER(TRIM(COALESCE(raw_segment, ''))) = 'CONSUMER'
+                        WHEN UPPER(TRIM(COALESCE(n_segment, ''))) = 'CONSUMER'
                         THEN amount
                         ELSE 0
                     END
@@ -1333,14 +1327,14 @@ class DashboardHarianSnapshotService
             ->selectRaw("
                 SUM(
                     CASE
-                        WHEN UPPER(TRIM(COALESCE(raw_segment, ''))) IN ('MICRO', 'MIKRO')
+                        WHEN UPPER(TRIM(COALESCE(n_segment, ''))) IN ('MICRO', 'MIKRO')
                         THEN amount
                         ELSE 0
                     END
                 ) as rec_dh_micro
             ")
             ->selectRaw('SUM(amount) as rec_dh_total')
-            ->groupBy('raw_kanca', 'raw_unit')
+            ->groupBy('n_kanca', 'n_unit')
             ->get();
     }
 
