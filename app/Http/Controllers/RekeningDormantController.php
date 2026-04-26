@@ -50,9 +50,11 @@ class RekeningDormantController extends Controller
         @set_time_limit(30);
         $requestedPeriod = $request->input('posisi');
         $forceRefresh = $request->boolean('refresh');
-        $currentPeriod = $this->normalizeRequestedPeriod($requestedPeriod) ?? $this->latestPeriod();
+        $currentPeriod = $this->resolveRequestedDormantPeriod($requestedPeriod);
         $comparisonPeriod = $currentPeriod
-            ? Carbon::parse($currentPeriod)->subMonthNoOverflow()->endOfMonth()->toDateString()
+            ? $this->resolveComparisonDormantPeriod(
+                Carbon::parse($currentPeriod)->subMonthNoOverflow()->endOfMonth()->toDateString()
+            )
             : null;
         $selectedBranches = $this->normalizeFilterValues($request->input('kantor_cabang'));
         $selectedUnits = $this->normalizeFilterValues($request->input('unit_kerja'));
@@ -105,7 +107,7 @@ class RekeningDormantController extends Controller
         @set_time_limit(0);
         $requestedPeriod = $request->input('posisi');
         $forceRefresh = $request->boolean('refresh');
-        $currentPeriod = $this->normalizeRequestedPeriod($requestedPeriod) ?? $this->latestPeriod();
+        $currentPeriod = $this->resolveRequestedDormantPeriod($requestedPeriod);
 
         if (!$currentPeriod) {
             return response()->json([
@@ -130,9 +132,9 @@ class RekeningDormantController extends Controller
         }
 
         $currDate = Carbon::parse($currentPeriod);
-        $mtdPeriod = $currDate->copy()->subMonthNoOverflow()->endOfMonth()->toDateString();
-        $ytdPeriod = $currDate->copy()->subYearNoOverflow()->endOfYear()->toDateString();
-        $yoyPeriod = $currDate->copy()->subYearNoOverflow()->endOfMonth()->toDateString();
+        $mtdPeriod = $this->resolveComparisonDormantPeriod($currDate->copy()->subMonthNoOverflow()->endOfMonth()->toDateString());
+        $ytdPeriod = $this->resolveComparisonDormantPeriod($currDate->copy()->subYearNoOverflow()->endOfYear()->toDateString());
+        $yoyPeriod = $this->resolveComparisonDormantPeriod($currDate->copy()->subYearNoOverflow()->endOfMonth()->toDateString());
         $requestedBranches = $this->normalizeFilterValues($request->input('kantor_cabang'));
         $requestedUnits = $this->normalizeFilterValues($request->input('unit_kerja'));
         $isBranchFiltered = !empty($requestedBranches);
@@ -290,6 +292,59 @@ class RekeningDormantController extends Controller
         } catch (Throwable) {
             return null;
         }
+    }
+
+    private function resolveRequestedDormantPeriod($requestedPeriod): ?string
+    {
+        $rawPeriod = trim((string) $requestedPeriod);
+        if ($rawPeriod === '') {
+            return $this->latestPeriod();
+        }
+
+        if (preg_match('/^\d{4}-\d{2}$/', $rawPeriod) === 1) {
+            return $this->resolveMonthlyDormantPeriod($rawPeriod);
+        }
+
+        return $this->normalizeRequestedPeriod($rawPeriod);
+    }
+
+    private function resolveMonthlyDormantPeriod(string $month): ?string
+    {
+        try {
+            $monthStart = Carbon::createFromFormat('Y-m', $month)->startOfMonth()->toDateString();
+            $monthEnd = Carbon::createFromFormat('Y-m', $month)->endOfMonth()->toDateString();
+
+            $sourcePeriod = DB::table('simpanan_multipn')
+                ->whereBetween('posisi', [$monthStart, $monthEnd])
+                ->where('status', '9')
+                ->max('posisi');
+
+            if ($sourcePeriod) {
+                return Carbon::parse($sourcePeriod)->toDateString();
+            }
+
+            if (
+                Schema::hasTable(self::SNAPSHOT_TABLE)
+                && Schema::hasColumn(self::SNAPSHOT_TABLE, 'snapshot_version')
+            ) {
+                $snapshotPeriod = $this->dormantSnapshotQuery()
+                    ->whereBetween('posisi', [$monthStart, $monthEnd])
+                    ->max('posisi');
+
+                if ($snapshotPeriod) {
+                    return Carbon::parse($snapshotPeriod)->toDateString();
+                }
+            }
+        } catch (Throwable) {
+            return null;
+        }
+
+        return null;
+    }
+
+    private function resolveComparisonDormantPeriod(string $targetDate): ?string
+    {
+        return $this->resolveAvailablePeriod($targetDate);
     }
 
     private function latestPeriod(): ?string
