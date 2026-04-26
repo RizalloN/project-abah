@@ -4352,7 +4352,10 @@ class ImportExcelController extends Controller
                 'written_rows' => (int) ($rawSource['written_rows'] ?? 0),
                 'total_rows' => (int) ($rawSource['total_rows'] ?? 0),
                 'balance_total_cents' => null,
-                'period_hints' => [],
+                'period_hints' => array_values(array_filter(array_map(
+                    static fn ($value): string => trim((string) $value),
+                    (array) ($rawSource['period_hints'] ?? [])
+                ), static fn (string $value): bool => $value !== '')),
             ];
         }
 
@@ -4407,7 +4410,7 @@ class ImportExcelController extends Controller
                 }
 
                 if ($scannedRows >= $sampleLimit) {
-                    continue;
+                    break;
                 }
 
                 $row = $this->stripLeadingRowNumberForSimpananMultiPnRow($headers, (array) $row);
@@ -9020,7 +9023,7 @@ class ImportExcelController extends Controller
      */
     public function initializeQueuedImportJobForExecution(int $jobId): bool
     {
-        ini_set('memory_limit', '512M');
+        @ini_set('memory_limit', '2048M');
         set_time_limit(0);
 
         try {
@@ -9354,7 +9357,7 @@ class ImportExcelController extends Controller
 
     public function initExcelImport(Request $request)
     {
-        ini_set('memory_limit', '512M');
+        @ini_set('memory_limit', '2048M');
         set_time_limit(0);
 
         $sessionPath = session('excel_path', $request->path);

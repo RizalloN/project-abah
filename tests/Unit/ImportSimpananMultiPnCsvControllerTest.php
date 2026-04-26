@@ -122,6 +122,37 @@ class ImportSimpananMultiPnCsvControllerTest extends TestCase
         $this->assertNotEmpty($plan['set_clauses'] ?? []);
     }
 
+    public function test_raw_simpanan_validation_stops_after_configured_sample_limit(): void
+    {
+        $controller = new ImportSimpananMultiPnCsvController();
+        config()->set('import.direct_load.validation_sample_rows', 1);
+
+        $csvPath = storage_path('framework/testing/simpanan_raw_sample_limit.csv');
+        if (!is_dir(dirname($csvPath))) {
+            @mkdir(dirname($csvPath), 0777, true);
+        }
+
+        file_put_contents($csvPath, implode("\n", [
+            'No;Posisi;CIFNO;No Rekening;Status;Jenis Simpanan;Saldo IDR',
+            '1;04-04-2026;PQ32242;636001000001;9;TABUNGAN;500',
+            '2;04-04-2026;PQ32243;636001000002;9',
+        ]));
+
+        try {
+            $result = $this->invokeMethod($controller, 'inspectRawSimpananMultiPnDirectLoadSource', [
+                $csvPath,
+                ';',
+            ]);
+        } finally {
+            @unlink($csvPath);
+        }
+
+        $this->assertTrue($result['usable'] ?? false);
+        $this->assertSame(1, $result['sampled_rows'] ?? null);
+        $this->assertGreaterThanOrEqual(1, $result['total_rows'] ?? 0);
+        $this->assertSame(['2026-04-04'], $result['period_hints'] ?? []);
+    }
+
     public function test_direct_csv_load_plan_embeds_import_batch_timestamp_for_fast_snapshot_scope_resolution(): void
     {
         $controller = new ImportSimpananMultiPnCsvController();
