@@ -22,7 +22,7 @@ class RasioCasaDebiturController extends Controller
     private const SNAPSHOT_TABLE = 'rasio_casa_debitur_snapshots';
     private const UKER_SNAPSHOT_TABLE = 'rasio_casa_debitur_uker_snapshots';
     private const LOAN_CIF_BRANCH_INDEX = 'idx_loan_periode_cif';
-    private const CASA_CIF_TYPE_INDEX = 'idx_smp_posisi_cif';
+    private const CASA_CIF_TYPE_INDEX = 'idx_smp_posisi_cif_covering';
 
     /** @var array<string, string|null> */
     private array $availableLoanPeriodMemo = [];
@@ -706,13 +706,15 @@ class RasioCasaDebiturController extends Controller
             ->where('d.periode', $loanPeriod)
             ->whereNotNull("d.{$loanKeyColumn}")
             ->where("d.{$loanKeyColumn}", '<>', '')
-            ->whereRaw("TRIM(COALESCE(d.{$loanBranchColumn}, '')) <> ''")
-            ->whereRaw("TRIM(COALESCE(d.{$loanUkerColumn}, '')) <> ''")
+            ->whereNotNull("d.{$loanBranchColumn}")
+            ->where("d.{$loanBranchColumn}", '<>', '')
+            ->whereNotNull("d.{$loanUkerColumn}")
+            ->where("d.{$loanUkerColumn}", '<>', '')
             ->when(!empty($selectedBranches), function ($query) use ($loanBranchColumn, $selectedBranches) {
-                $query->whereIn(DB::raw("UPPER(TRIM(d.{$loanBranchColumn}))"), $selectedBranches);
+                $query->whereIn(DB::raw("UPPER(d.{$loanBranchColumn})"), $selectedBranches);
             })
             ->when(!empty($selectedUkers), function ($query) use ($loanUkerColumn, $selectedUkers) {
-                $query->whereIn(DB::raw("UPPER(TRIM(d.{$loanUkerColumn}))"), $selectedUkers);
+                $query->whereIn(DB::raw("UPPER(d.{$loanUkerColumn})"), $selectedUkers);
             })
             ->selectRaw("
                 UPPER(TRIM(d.{$loanUkerColumn})) as branch_key,

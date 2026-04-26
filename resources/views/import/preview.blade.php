@@ -1617,6 +1617,14 @@
                         evtSource.close();
                     }
 
+                    data = Object.assign({}, data || {});
+                    if (String(data.status || 'completed') === 'completed' && Number(data.total_success || 0) === 0) {
+                        const inferredSuccess = Number(data.processed_rows || data.total_rows || 0) - Number(data.total_failed || 0);
+                        if (inferredSuccess > 0) {
+                            data.total_success = inferredSuccess;
+                        }
+                    }
+
                     const skippedCount = Number(data.skipped_count || 0);
                     const skippedRows = Array.isArray(data.skipped_rows) ? data.skipped_rows : [];
                     const skippedHtml = skippedCount > 0

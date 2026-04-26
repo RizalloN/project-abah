@@ -271,7 +271,7 @@ def is_non_date_like_value(value: object) -> bool:
 
 
 def build_non_date_like_expr(expr):
-    compact = expr.fill_null("").str.strip_chars()
+    compact = expr.fill_null("")
     patterns = [
         r"^\d{8}$",
         r"^\d{4}[-/]\d{2}[-/]\d{2}$",
@@ -512,7 +512,7 @@ def stage_daily_loan(config: dict) -> None:
             if required not in df.columns:
                 continue
 
-            expr = pl.col(required).str.strip_chars().ne("")
+            expr = pl.col(required).ne("")
             valid_expr = expr if valid_expr is None else (valid_expr & expr)
 
         if valid_expr is not None:

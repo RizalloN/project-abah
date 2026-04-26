@@ -101,7 +101,19 @@ it('builds the periodik payload with Area 6 default scope and snapshot-based uni
     expect($payload['selected_period_label'])->toBe('21/04/2026');
     expect($payload['branch_options'])->toHaveCount(5);
     expect($payload['unit_options'])->not()->toBeEmpty();
-    expect(collect($payload['unit_options'])->pluck('value')->all())->toContain('KC MADIUN||BALEREJO');
+    expect(collect($payload['unit_options'])->pluck('value')->all())->toContain('KC MADIUN||3883');
+});
+
+it('keeps uppercase all request values on the Area 6 default scope', function () {
+    $service = app(DashboardPinjamanChartPeriodikService::class);
+
+    $payload = $service->buildIndexPayload('2026-04-20', 'ALL');
+
+    expect($payload['selected_branch'])->toBe('all');
+    expect($payload['selected_branch_label'])->toBe('Area 6 - All');
+    expect($payload['chart']['scope_label'])->toBe('Area 6 - All');
+    expect($payload['chart']['summary']['branch_count'])->toBe(4);
+    expect($payload['chart']['summary']['total_rekening'])->toBe(4);
 });
 
 it('builds unit options from the snapshot for the requested period', function () {
@@ -111,8 +123,12 @@ it('builds unit options from the snapshot for the requested period', function ()
 
     expect($payload['selected_period'])->toBe('2026-04-20');
     expect(collect($payload['unit_options'])->pluck('value')->all())->toBe([
-        'KC PONOROGO||NGRAYUN',
-        'KC PONOROGO||PONOROGO',
+        'KC PONOROGO||3887',
+        'KC PONOROGO||3890',
+    ]);
+    expect(collect($payload['unit_options'])->pluck('label')->all())->toBe([
+        '3887 - NGRAYUN',
+        '3890 - PONOROGO',
     ]);
 });
 
@@ -124,15 +140,15 @@ it('returns unit options and chart counts for a selected branch and unit', funct
     expect($filters['selected_branch'])->toBe('KC PONOROGO');
     expect($filters['selected_branch_label'])->toBe('KC PONOROGO');
     expect(collect($filters['unit_options'])->pluck('value')->all())->toBe([
-        'KC PONOROGO||NGRAYUN',
-        'KC PONOROGO||PONOROGO',
+        'KC PONOROGO||3887',
+        'KC PONOROGO||3890',
     ]);
 
-    $chart = $service->buildChartPayload('2026-04-20', 'KC PONOROGO', ['KC PONOROGO||NGRAYUN']);
+    $chart = $service->buildChartPayload('2026-04-20', 'KC PONOROGO', ['KC PONOROGO||3887']);
 
     expect($chart['selected_period'])->toBe('2026-04-20');
     expect($chart['selected_branch'])->toBe('KC PONOROGO');
-    expect($chart['selected_unit_label'])->toBe('NGRAYUN');
+    expect($chart['selected_unit_label'])->toBe('3887 - NGRAYUN');
     expect($chart['summary']['total_rekening'])->toBe(3);
     expect($chart['summary']['pattern_count'])->toBe(2);
     expect($chart['summary']['top_pattern'])->toBe('MUSIMAN');

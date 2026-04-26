@@ -145,18 +145,26 @@ class Gi405RecDhImportExcelController extends ImportExcelController
         }
 
         $grouped = (array) ($pairs['grouped'] ?? []);
-        $existing = [];
-
+        $allSearchPairs = [];
         foreach ($grouped as $date => $codes) {
-            $rows = DB::table(self::TABLE_NAME)
-                ->whereDate('tanggal', $date)
-                ->whereIn('kode', array_values($codes))
-                ->limit(5)
-                ->get(['tanggal', 'kode']);
-
-            foreach ($rows as $row) {
-                $existing[] = trim((string) $row->tanggal) . ' / ' . trim((string) $row->kode);
+            foreach ($codes as $code) {
+                $allSearchPairs[] = [$date, $code];
             }
+        }
+
+        if (empty($allSearchPairs)) {
+            return null;
+        }
+
+        // BATCH QUERY: Search for all existing date+code pairs in one go
+        $existing = [];
+        $existingRows = DB::table(self::TABLE_NAME)
+            ->whereIn(['tanggal', 'kode'], $allSearchPairs)
+            ->limit(10)
+            ->get(['tanggal', 'kode']);
+
+        foreach ($existingRows as $row) {
+            $existing[] = trim((string) $row->tanggal) . ' / ' . trim((string) $row->kode);
         }
 
         if ($existing === []) {

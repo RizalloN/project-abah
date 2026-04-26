@@ -10037,21 +10037,33 @@ class ImportExcelController extends Controller
             $failed = max(0, $rowsDone - $inserted);
             $this->applyManualColumnValuesAfterLoad($tableName, $context, $inserted);
 
+            $finalStatus = match (true) {
+                $failed > 0 && $inserted > 0 => 'failed_partial',
+                $failed > 0 => 'failed',
+                default => 'completed',
+            };
+
             if ($jobId > 0) {
                 $this->progressService()->updateTotals(
                     $jobId,
                     $inserted,
                     $failed,
                     $rowsDone,
-                    ($inserted > 0 || $rowsDone === 0) ? 'completed' : 'failed',
+                    $finalStatus,
                     [
                         'percent' => 100,
-                        'message' => 'Import selesai diproses.',
+                        'message' => $finalStatus === 'completed'
+                            ? 'Import selesai diproses.'
+                            : 'Import selesai dengan kegagalan parsial.',
                     ]
                 );
             }
 
-            $send('complete', [
+            $send($finalStatus === 'completed' ? 'complete' : 'error', [
+                'status' => $finalStatus,
+                'message' => $finalStatus === 'completed'
+                    ? 'Import selesai diproses.'
+                    : 'Import selesai dengan kegagalan parsial.',
                 'total_success' => $inserted,
                 'total_failed' => $failed,
                 'total_rows' => $rowsDone,

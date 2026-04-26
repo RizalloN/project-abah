@@ -13,14 +13,14 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
-use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use RuntimeException;
 use Throwable;
 
-class RunManagedReportSnapshotRebuildJob implements ShouldQueue, ShouldBeUnique
+class RunManagedReportSnapshotRebuildJob implements ShouldQueue
 {
     use Dispatchable;
     use InteractsWithQueue;
@@ -34,11 +34,6 @@ class RunManagedReportSnapshotRebuildJob implements ShouldQueue, ShouldBeUnique
         public ?string $source = null,
         public ?string $rebuildId = null
     ) {
-    }
-
-    public function uniqueId(): string
-    {
-        return 'all';
     }
 
     public function middleware(): array
@@ -82,6 +77,8 @@ class RunManagedReportSnapshotRebuildJob implements ShouldQueue, ShouldBeUnique
             ?? ManagedReportSnapshotRebuildStore::createInitialState($rebuildId, $this->force, $this->source ?? static::class);
 
         try {
+            $this->assertRebuildCanWriteState($state);
+
             $plan = $snapshotBuilder->describeRebuildPlan();
             $reports = collect($plan['reports'] ?? [])
                 ->map(function (array $report): array {
@@ -313,6 +310,16 @@ class RunManagedReportSnapshotRebuildJob implements ShouldQueue, ShouldBeUnique
                 ]);
             }
         } catch (Throwable $e) {
+            if ($this->isStoppedRebuildException($e)) {
+                Log::info($e->getMessage(), [
+                    'force' => $this->force,
+                    'source' => $this->source,
+                    'rebuild_id' => $rebuildId,
+                ]);
+
+                return;
+            }
+
             $state = $this->writeState(array_merge($state, [
                 'status' => 'failed',
                 'stage' => 'failed',
@@ -342,7 +349,41 @@ class RunManagedReportSnapshotRebuildJob implements ShouldQueue, ShouldBeUnique
 
     private function writeState(array $state): array
     {
+        $this->assertRebuildCanWriteState($state);
+
         return ManagedReportSnapshotRebuildStore::putState($state);
+    }
+
+    private function assertRebuildCanWriteState(array $state): void
+    {
+        $rebuildId = trim((string) ($state['rebuild_id'] ?? ''));
+        if ($rebuildId === '') {
+            return;
+        }
+
+        $activeRebuildId = ManagedReportSnapshotRebuildStore::getActiveRebuildId();
+        if ($activeRebuildId !== null && $activeRebuildId !== $rebuildId) {
+            throw new RuntimeException(sprintf(
+                'Managed snapshot rebuild stopped: rebuild %s is no longer active; active rebuild is %s.',
+                $rebuildId,
+                $activeRebuildId
+            ));
+        }
+
+        $currentState = ManagedReportSnapshotRebuildStore::getState($rebuildId);
+        $currentStatus = strtolower(trim((string) ($currentState['status'] ?? '')));
+        if (in_array($currentStatus, ['completed', 'warning', 'failed'], true)) {
+            throw new RuntimeException(sprintf(
+                'Managed snapshot rebuild stopped: rebuild %s already reached terminal status %s.',
+                $rebuildId,
+                $currentStatus
+            ));
+        }
+    }
+
+    private function isStoppedRebuildException(Throwable $e): bool
+    {
+        return str_starts_with($e->getMessage(), 'Managed snapshot rebuild stopped:');
     }
 
     private function calculatePercent(int $completedUnits, int $totalUnits): int

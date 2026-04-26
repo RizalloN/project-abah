@@ -25,6 +25,7 @@ class DashboardPinjamanChartPeriodikService
 
     private const DEFAULT_BRANCH_LABEL = 'Area 6 - All';
     private const DEFAULT_TREND_WINDOW = 6;
+    private const CACHE_NAMESPACE_VERSION = 5;
 
     public function buildIndexPayload(?string $requestedPeriod, ?string $selectedBranch = null, array|string|null $selectedUnits = null): array
     {
@@ -124,7 +125,7 @@ class DashboardPinjamanChartPeriodikService
         $pieValues = array_values($pieCounts);
         $topPattern = $pieLabels[0] ?? null;
 
-        $selectedUnitCount = count($normalizedUnits);
+        $selectedUnitCount = count($selectedUnitsFiltered);
 
         return [
             'selected_period' => $resolvedPeriod,
@@ -167,7 +168,7 @@ class DashboardPinjamanChartPeriodikService
             }
         }
 
-        $latestKey = 'dashboard_pinjaman_chart_periodik_v3_latest:v' . $this->reportCacheVersion() . ':' . $sourceTable;
+        $latestKey = $this->cacheKey('latest', $sourceTable);
 
         return Cache::remember($latestKey, now()->addMinutes(10), function () use ($sourceTable) {
             return $this->resolveLatestPeriodFromSource($sourceTable ?? self::RAW_TABLE, 'periode')
@@ -178,7 +179,7 @@ class DashboardPinjamanChartPeriodikService
     public function fetchPeriods(?string $sourceTable = null): Collection
     {
         $sourceTable ??= $this->resolveSourceTable();
-        $cacheKey = 'dashboard_pinjaman_chart_periodik_v3_periods:v' . $this->reportCacheVersion() . ':' . $sourceTable;
+        $cacheKey = $this->cacheKey('periods', $sourceTable);
 
         return Cache::remember($cacheKey, now()->addMinutes(10), function () use ($sourceTable) {
             $periods = $this->fetchPeriodsFromSource($sourceTable ?? self::RAW_TABLE, 'periode');
@@ -230,11 +231,11 @@ class DashboardPinjamanChartPeriodikService
             ? self::DEFAULT_BRANCHES
             : [$selectedBranch];
 
-        $cacheKey = 'dashboard_pinjaman_chart_periodik_v3_units:v' . $this->reportCacheVersion() . ':' . md5(json_encode([
+        $cacheKey = $this->cacheKey('units', md5(json_encode([
             'source' => $sourceTable,
             'period' => $selectedPeriod,
             'branch' => $selectedBranch,
-        ]));
+        ])));
 
         $unitOptions = Cache::remember($cacheKey, now()->addMinutes(10), function () use ($selectedPeriod, $branchScope, $selectedBranch, $sourceTable) {
             return $this->fetchUnitOptionsFromSource($sourceTable ?? self::RAW_TABLE, 'periode', $selectedPeriod, $branchScope, $selectedBranch);
@@ -259,8 +260,8 @@ class DashboardPinjamanChartPeriodikService
             return DB::table($sourceTable . ' as d')
                 ->whereIn('d.periode', $periods)
                 ->whereIn('d.cabang1', $branches)
-                ->when(!empty($selectedUnits), function ($q) use ($selectedUnits) {
-                    $this->applyUnitFilter($q, $selectedUnits);
+                ->when(!empty($selectedUnits), function ($q) use ($selectedUnits, $sourceTable) {
+                    $this->applyUnitFilter($q, $selectedUnits, $sourceTable);
                 })
                 ->selectRaw('d.periode as periode')
                 ->selectRaw("COALESCE(NULLIF(d.pola_pembayaran, ''), 'TIDAK TERPETAKAN') as pola_pembayaran")
@@ -273,15 +274,15 @@ class DashboardPinjamanChartPeriodikService
 
         return DB::table(self::RAW_TABLE . ' as d')
             ->leftJoin(self::LOOKUP_TABLE . ' as lt', function ($join) {
-                $join->on(DB::raw('UPPER(TRIM(d.ln_type))'), '=', DB::raw('UPPER(TRIM(lt.loan_type))'));
+                $join->on(DB::raw('d.ln_type'), '=', DB::raw('lt.loan_type'));
             })
             ->whereIn('d.periode', $periods)
-            ->whereIn(DB::raw('UPPER(TRIM(d.cabang1))'), $branches)
-            ->when(!empty($selectedUnits), function ($q) use ($selectedUnits) {
-                $this->applyUnitFilter($q, $selectedUnits);
+            ->whereIn('d.cabang1', $branches)
+            ->when(!empty($selectedUnits), function ($q) use ($selectedUnits, $sourceTable) {
+                $this->applyUnitFilter($q, $selectedUnits, $sourceTable);
             })
             ->selectRaw('d.periode as periode')
-            ->selectRaw("COALESCE(NULLIF(UPPER(TRIM(lt.pola_pembayaran)), ''), 'TIDAK TERPETAKAN') as pola_pembayaran")
+            ->selectRaw("COALESCE(NULLIF(lt.pola_pembayaran, ''), 'TIDAK TERPETAKAN') as pola_pembayaran")
             ->selectRaw('COUNT(*) as total_count')
             ->groupBy('periode', 'pola_pembayaran')
             ->orderBy('periode')
@@ -289,13 +290,13 @@ class DashboardPinjamanChartPeriodikService
             ->get();
     }
 
-    private function applyUnitFilter($query, array $selectedUnits): void
+    private function applyUnitFilter($query, array $selectedUnits, ?string $sourceTable = null): void
     {
         if ($selectedUnits === []) {
             return;
         }
 
-        $sourceTable = $this->resolveSourceTable();
+        $sourceTable ??= $this->resolveSourceTable();
         $isSnapshot = ($sourceTable === self::SNAPSHOT_TABLE);
 
         $query->where(function ($group) use ($selectedUnits, $isSnapshot) {
@@ -308,18 +309,19 @@ class DashboardPinjamanChartPeriodikService
                 }
 
                 $group->orWhere(function ($unitQuery) use ($branch, $unit, $isSnapshot) {
+                    $unitQuery->where('d.cabang1', $branch);
+
                     if ($isSnapshot) {
-                        $unitQuery
-                            ->whereRaw('UPPER(TRIM(d.cabang1)) = ?', [$branch])
-                            ->whereRaw('UPPER(TRIM(d.unit1)) = ?', [$unit]);
+                        if (preg_match('/^\d+$/', $unit) === 1) {
+                            $unitQuery->where('d.branch1', $unit);
+                        } else {
+                            $unitQuery->where('d.unit1', $unit);
+                        }
                     } else {
-                        $unitQuery
-                            ->whereRaw('UPPER(TRIM(d.cabang1)) = ?', [$branch])
-                            ->where(function ($unitMatch) use ($unit) {
-                                $unitMatch
-                                    ->whereRaw('UPPER(TRIM(d.branch1)) = ?', [$unit])
-                                    ->orWhereRaw('UPPER(TRIM(d.unit1)) = ?', [$unit]);
-                            });
+                        $unitQuery->where(function ($unitMatch) use ($unit) {
+                            $unitMatch->where('d.branch1', $unit)
+                                ->orWhere('d.unit1', $unit);
+                        });
                     }
                 });
             }
@@ -371,7 +373,13 @@ class DashboardPinjamanChartPeriodikService
 
     private function normalizeBranchSelection(?string $value): string
     {
-        $normalized = strtoupper(trim((string) $value));
+        $raw = trim((string) $value);
+
+        if ($raw === '' || strtolower($raw) === 'all') {
+            return 'all';
+        }
+
+        $normalized = strtoupper($raw);
 
         return $normalized !== '' ? $normalized : 'all';
     }
@@ -526,7 +534,7 @@ class DashboardPinjamanChartPeriodikService
             return null;
         }
 
-        $cacheKey = 'dashboard_pinjaman_chart_periodik_v3_latest_source:v' . $this->reportCacheVersion() . ':' . $table;
+        $cacheKey = $this->cacheKey('latest_source', $table);
 
         return Cache::remember($cacheKey, now()->addMinutes(10), function () use ($table, $periodColumn) {
             $latest = DB::table($table)->max($periodColumn);
@@ -541,11 +549,11 @@ class DashboardPinjamanChartPeriodikService
             return null;
         }
 
-        $cacheKey = 'dashboard_pinjaman_chart_periodik_v3_resolved_period:v' . $this->reportCacheVersion() . ':' . md5(json_encode([
+        $cacheKey = $this->cacheKey('resolved_period', md5(json_encode([
             'table' => $table,
             'period_column' => $periodColumn,
             'requested_period' => $requestedPeriod,
-        ]));
+        ])));
 
         return Cache::remember($cacheKey, now()->addMinutes(10), function () use ($table, $periodColumn, $requestedPeriod) {
             $resolved = DB::table($table)
@@ -562,7 +570,7 @@ class DashboardPinjamanChartPeriodikService
             return collect();
         }
 
-        $cacheKey = 'dashboard_pinjaman_chart_periodik_v3_periods_source:v' . $this->reportCacheVersion() . ':' . $table;
+        $cacheKey = $this->cacheKey('periods_source', $table);
 
         return Cache::remember($cacheKey, now()->addMinutes(10), function () use ($table, $periodColumn) {
             return DB::table($table)
@@ -585,11 +593,10 @@ class DashboardPinjamanChartPeriodikService
         $query = DB::table($table)
             ->where($periodColumn, $selectedPeriod)
             ->whereNotNull('cabang1')
-            ->whereRaw("TRIM(COALESCE(cabang1, '')) <> ''")
-            ->whereIn(DB::raw('UPPER(TRIM(cabang1))'), $branchScope)
-            ->selectRaw('UPPER(TRIM(cabang1)) as branch_name')
-            ->selectRaw("UPPER(TRIM(unit1)) as unit_code")
-            ->selectRaw("UPPER(TRIM(unit1)) as unit_name")
+            ->whereIn('cabang1', $branchScope)
+            ->selectRaw('cabang1 as branch_name')
+            ->selectRaw("branch1 as unit_code")
+            ->selectRaw("unit1 as unit_name")
             ->distinct()
             ->orderBy('branch_name')
             ->orderBy('unit_code')
@@ -666,7 +673,7 @@ class DashboardPinjamanChartPeriodikService
 
     private function resolveSourceTable(): string
     {
-        $cacheKey = 'dashboard_pinjaman_chart_periodik_v4_source_table:v' . $this->reportCacheVersion();
+        $cacheKey = $this->cacheKey('source_table');
 
         return Cache::remember($cacheKey, now()->addMinutes(10), function () {
             $hasSnapshot = DB::table(self::SNAPSHOT_TABLE)->exists();
@@ -682,5 +689,13 @@ class DashboardPinjamanChartPeriodikService
     private function reportCacheVersion(): int
     {
         return (int) Cache::get('report_cache_version:global', 1);
+    }
+
+    private function cacheKey(string $segment, ?string $suffix = null): string
+    {
+        return 'dashboard_pinjaman_chart_periodik_v' . self::CACHE_NAMESPACE_VERSION
+            . '_' . $segment
+            . ':v' . $this->reportCacheVersion()
+            . ($suffix !== null ? ':' . $suffix : '');
     }
 }

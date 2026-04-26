@@ -702,7 +702,7 @@ class DashboardPinjamanReportController extends Controller
             return DB::table('daily_loan_dinamis')
                 ->where('periode', $selectedPeriod)
                 ->whereNotNull('cabang1')
-                ->whereRaw("TRIM(COALESCE(cabang1, '')) <> ''")
+                ->where('cabang1', '<>', '')
                 ->distinct()
                 ->orderBy('cabang1')
                 ->pluck('cabang1')
@@ -1048,11 +1048,11 @@ class DashboardPinjamanReportController extends Controller
             $query->where(function (Builder $where) use ($currentAlias, $previousAlias) {
                 $where->whereNull("{$previousAlias}.nomor_rekening1")
                     ->orWhereNull("{$currentAlias}.nomor_rekening1")
-                    ->orWhereRaw("TRIM(COALESCE({$currentAlias}.nomor_rekening1, '')) = ''");
+                    ->orWhere("{$currentAlias}.nomor_rekening1", '');
             });
         } else {
             $query->whereNotNull("{$currentAlias}.nomor_rekening1")
-                ->whereRaw("TRIM(COALESCE({$currentAlias}.nomor_rekening1, '')) <> ''")
+                ->where("{$currentAlias}.nomor_rekening1", '<>', '')
                 ->whereNotNull("{$previousAlias}.nomor_rekening1")
                 ->whereRaw("({$previousBucketExpression}) = ?", [$beforeBucket]);
         }
@@ -1540,7 +1540,7 @@ class DashboardPinjamanReportController extends Controller
         return Cache::remember($cacheKey, now()->addMinutes(10), function () use ($column, $normalizedKanca) {
             $query = DB::table(self::KUR_MIKRO_TABLE)
                 ->whereNotNull($column)
-                ->whereRaw("TRIM(COALESCE({$column}, '')) <> ''")
+                ->where($column, '<>', '')
                 ->selectRaw("TRIM(COALESCE({$column}, '')) as value")
                 ->distinct()
                 ->orderBy('value');
@@ -1594,7 +1594,7 @@ class DashboardPinjamanReportController extends Controller
                     'total_rp_juta',
                 ])
                 ->whereNotNull('kanca')
-                ->whereRaw("TRIM(COALESCE(kanca, '')) <> ''")
+                ->where('kanca', '<>', '')
                 ->orderBy('kanca')
                 ->orderBy('uker')
                 ->orderBy('pn');
@@ -1630,7 +1630,7 @@ class DashboardPinjamanReportController extends Controller
         return Cache::remember($cacheKey, now()->addMinutes(10), function () use ($column, $normalizedCabang, $selectedPeriod) {
             $query = DB::table(self::MANTRI_TABLE)
                 ->whereNotNull($column)
-                ->whereRaw("TRIM(COALESCE({$column}, '')) <> ''")
+                ->where($column, '<>', '')
                 ->selectRaw("TRIM(COALESCE({$column}, '')) as value")
                 ->distinct()
                 ->orderBy('value');
@@ -1846,7 +1846,7 @@ class DashboardPinjamanReportController extends Controller
             $query = DB::table('daily_loan_dinamis')
                 ->where('periode', $selectedPeriod)
                 ->whereNotNull($column)
-                ->whereRaw("TRIM(COALESCE({$column}, '')) <> ''")
+                ->where($column, '<>', '')
                 ->select($column)
                 ->distinct()
                 ->orderBy($column);
@@ -1877,7 +1877,7 @@ class DashboardPinjamanReportController extends Controller
             return DB::table('daily_loan_dinamis')
                 ->whereIn('cabang1', $selectedBranches)
                 ->whereNotNull('unit1')
-                ->whereRaw("TRIM(COALESCE(unit1, '')) <> ''")
+                ->where('unit1', '<>', '')
                 ->distinct()
                 ->orderBy('unit1')
                 ->pluck('unit1')
@@ -1927,7 +1927,7 @@ class DashboardPinjamanReportController extends Controller
             ->selectRaw("SUM(CASE WHEN periode = ? THEN {$qualifiedAmountExpression} ELSE 0 END) as current_total_tunggakan", [$selectedPeriod])
             ->whereIn('periode', $periodsToQuery)
             ->whereNotNull($groupColumn)
-            ->whereRaw("TRIM(COALESCE({$groupColumn}, '')) <> ''")
+            ->where($groupColumn, '<>', '')
             ->when($selectedBranches !== [], fn (Builder $query) => $query->whereIn('cabang1', $selectedBranches))
             ->when($selectedUnits !== [], fn (Builder $query) => $query->whereIn('unit1', $selectedUnits))
             ->groupBy('grouping_label')
@@ -2529,7 +2529,7 @@ class DashboardPinjamanReportController extends Controller
         }
 
         $placeholders = implode(', ', array_fill(0, count($normalized), '?'));
-        $query->whereRaw("TRIM(COALESCE({$column}, '')) IN ({$placeholders})", $normalized);
+        $query->whereIn($column, $normalized);
     }
 
 

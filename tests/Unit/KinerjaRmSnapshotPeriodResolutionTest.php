@@ -40,6 +40,7 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
             $table->string('rm', 255);
             $table->string('segmen', 50);
             $table->string('produk', 100);
+            $table->decimal('plafon', 20, 2)->default(0);
             $table->decimal('loan_os', 20, 2)->default(0);
             $table->decimal('lancar_os', 20, 2)->default(0);
             $table->decimal('sml_os', 20, 2)->default(0);
@@ -211,6 +212,7 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
             'rm' => 'RM A',
             'segmen' => 'CONSUMER',
             'produk' => 'BRIGUNA-KONSUMER',
+            'plafon' => $loanOs,
             'loan_os' => $loanOs,
             'lancar_os' => $loanOs,
             'sml_os' => 0,

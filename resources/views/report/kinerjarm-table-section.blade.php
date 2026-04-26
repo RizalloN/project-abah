@@ -38,7 +38,7 @@
         return "<span class='delta-indicator {$cls}'>{$icon}{$prefix}{$display}</span>";
     };
     $formatCount = $formatCount ?? fn ($value) => number_format((int) round((float) $value), 0, ',', '.');
-    $quadrantLabel = $quadrantLabel ?? fn ($quadrant) => in_array((int) $quadrant, [1, 2, 3, 4], true) ? 'Kuadran ' . (int) $quadrant : '-';
+    $quadrantLabel = $quadrantLabel ?? fn ($quadrant) => in_array((int) $quadrant, [1, 2, 3, 4], true) ? (int) $quadrant : '-';
     $quadrantClass = $quadrantClass ?? fn ($quadrant) => in_array((int) $quadrant, [1, 2, 3, 4], true) ? 'q' . (int) $quadrant : '';
 @endphp
 
@@ -100,9 +100,9 @@
                 @php $no = 1; @endphp
                 @forelse($rows as $branch)
                     <tr class="loan-branch-subtotal">
-                        <td rowspan="{{ $branch['branch_rowspan'] }}" class="text-center-important sticky-col" style="font-weight: 800; left: 0; border-right: 1px solid var(--loan-border-strong); background: #ffffff !important; color: var(--loan-blue-ink) !important;">{{ $no++ }}</td>
-                        <td rowspan="{{ $branch['branch_rowspan'] }}" class="merged-branch-cell" style="left: 32px;">{{ $branch['cabang'] }}</td>
-                        <td colspan="3" class="text-center-important" style="letter-spacing: 0.05em; font-weight: 900; color: var(--loan-cyan);">
+                        <td rowspan="{{ $branch['branch_rowspan'] }}" class="text-center-important sticky-col" style="font-weight: 800; left: 0; border-right: 1px solid var(--loan-border-strong); background: #0f2f66 !important; color: #ffffff !important;">{{ $no++ }}</td>
+                        <td rowspan="{{ $branch['branch_rowspan'] }}" class="merged-branch-cell sticky-col" style="left: 32px;">{{ $branch['cabang'] }}</td>
+                        <td colspan="3" class="text-center-important sticky-col" style="letter-spacing: 0.05em; font-weight: 900; background: #0b3f86 !important; color: #e0f2fe !important; left: 132px; z-index: 20;">
                             TOTAL {{ $branch['cabang'] }}
                         </td>
                         <td>{{ $formatAmount($branch['subtotal']['yoy']) }}</td>
@@ -152,7 +152,15 @@
                                 @if($isFirstRmRowForQuad)
                                     <td rowspan="{{ $rmData['rm_rowspan'] }}" class="text-center-important">
                                         @if(!empty($rmData['quadrant']))
-                                            <span class="quadrant-badge {{ $quadrantClass($rmData['quadrant']) }}">{{ $quadrantLabel($rmData['quadrant']) }}</span>
+                                            <div class="quadrant-badge {{ $quadrantClass($rmData['quadrant']) }}">
+                                                <span class="quadrant-label">Q{{ $quadrantLabel($rmData['quadrant']) }}</span>
+                                                <div class="quadrant-visual">
+                                                    <div class="quad-cell"></div>
+                                                    <div class="quad-cell"></div>
+                                                    <div class="quad-cell"></div>
+                                                    <div class="quad-cell"></div>
+                                                </div>
+                                            </div>
                                         @else
                                             <span class="text-muted small">-</span>
                                         @endif
@@ -187,7 +195,7 @@
 
                 @if(!empty($rows))
                     <tr class="row-grand-total">
-                        <td colspan="5" class="text-center-important" style="font-weight: 900; text-transform: uppercase;">
+                        <td colspan="5" class="text-center-important sticky-col" style="font-weight: 900; text-transform: uppercase; background: #0b1f44 !important; color: #ffffff !important; left: 0; z-index: 50;">
                             {{ $grandTotalLabel }}
                         </td>
                         <td>{{ $formatAmount($total['yoy']) }}</td>

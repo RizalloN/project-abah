@@ -331,10 +331,17 @@
 
     .kinerja-tab-btn.is-active,
     .kinerja-tab-btn.active {
-        background: var(--loan-blue-ink);
-        border-color: var(--loan-blue-ink);
-        color: #ffffff;
+        background: linear-gradient(135deg, #0f2f66 0%, #0857c3 100%) !important;
+        border-color: #0f2f66 !important;
+        color: #ffffff !important;
         box-shadow: 0 10px 20px -16px rgba(15, 23, 42, 0.65);
+    }
+
+    .kinerja-tab-btn.is-active .kinerja-tab-btn__label,
+    .kinerja-tab-btn.is-active .kinerja-tab-btn__meta,
+    .kinerja-tab-btn.active .kinerja-tab-btn__label,
+    .kinerja-tab-btn.active .kinerja-tab-btn__meta {
+        color: #ffffff !important;
     }
 
     .kinerja-tab-btn__label {
@@ -525,19 +532,30 @@
         min-width: 1180px;
     }
 
+    .kinerja-konsumer-table thead {
+        background: #005baa !important;
+    }
+
+    .kinerja-konsumer-table thead tr {
+        background: #005baa !important;
+    }
+
     .kinerja-konsumer-table thead th {
         position: sticky;
         top: 0;
         z-index: 50;
-        background: var(--loan-blue-ink) !important;
-        backdrop-filter: blur(8px);
-        color: #ffffff;
+        background-color: #005baa !important;
+        background-image: linear-gradient(180deg, #0072ce 0%, #005baa 55%, #003f7d 100%) !important;
+        background-clip: padding-box;
+        color: #ffffff !important;
         padding: 0.2rem 0.15rem !important;
         font-size: 0.6rem;
         font-weight: 800;
         text-transform: uppercase;
         letter-spacing: 0.02rem;
-        border-bottom: 2px solid rgba(255, 255, 255, 0.12);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.24) !important;
+        border-right: 1px solid rgba(255, 255, 255, 0.14) !important;
+        box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.22);
         text-align: center !important;
         vertical-align: middle !important;
         white-space: nowrap;
@@ -546,6 +564,9 @@
 
     .kinerja-konsumer-table thead th.sticky-col {
         z-index: 60;
+        background-color: #004c97 !important;
+        background-image: linear-gradient(180deg, #0067bd 0%, #004c97 100%) !important;
+        color: #ffffff !important;
     }
 
     .kinerja-konsumer-table td.sticky-col {
@@ -553,7 +574,7 @@
         left: 0;
         background: #ffffff !important;
         z-index: 10;
-        border-right: 1px solid #f1f5f9 !important;
+        border-right: 1px solid rgba(0, 0, 0, 0.05) !important;
     }
 
     .kinerja-konsumer-table thead tr:nth-child(2) th {
@@ -562,13 +583,15 @@
     }
 
     .kinerja-konsumer-table th.sub-head {
-        background: var(--loan-blue-deep) !important;
-        color: rgba(255, 255, 255, 0.9);
+        background-color: #004c97 !important;
+        background-image: linear-gradient(180deg, #0067bd 0%, #004c97 100%) !important;
+        color: #ffffff !important;
     }
 
     .kinerja-konsumer-table th.accent-head {
-        background: var(--loan-blue) !important;
-        color: #ffffff;
+        background-color: #008bd2 !important;
+        background-image: linear-gradient(180deg, #18a8e8 0%, #008bd2 100%) !important;
+        color: #ffffff !important;
     }
 
     .kinerja-konsumer-table td {
@@ -582,7 +605,6 @@
     }
 
     .kinerja-konsumer-table td.merged-branch-cell {
-        background: #ffffff !important;
         border-left: 3px solid var(--loan-blue) !important;
         color: var(--loan-blue-ink) !important;
         font-weight: 800 !important;
@@ -593,11 +615,14 @@
         position: sticky !important;
         left: 32px; /* After No column */
         z-index: 20;
-        border-right: 1px solid #f1f5f9 !important;
+        border-right: 1px solid rgba(0, 0, 0, 0.05) !important;
+    }
+
+    .kinerja-konsumer-table tr:not(.loan-branch-subtotal):not(.row-grand-total) td.merged-branch-cell {
+        background: #ffffff !important;
     }
 
     .kinerja-konsumer-table td.merged-rm-cell {
-        background: #ffffff !important;
         color: #475569 !important;
         text-align: left !important;
         font-size: 0.68rem !important;
@@ -606,8 +631,12 @@
         position: sticky !important;
         left: 132px; /* 32 + 100 */
         z-index: 20;
-        border-right: 1px solid #f1f5f9 !important;
-        box-shadow: 5px 0 10px -5px rgba(15, 23, 42, 0.15);
+        border-right: 1px solid rgba(0, 0, 0, 0.05) !important;
+        box-shadow: 5px 0 10px -5px rgba(15, 23, 42, 0.1);
+    }
+
+    .kinerja-konsumer-table tr:not(.loan-branch-subtotal):not(.row-grand-total) td.merged-rm-cell {
+        background: #ffffff !important;
     }
 
     /* Current Position Highlight Class */
@@ -623,10 +652,11 @@
     }
 
     .loan-branch-subtotal {
-        background: var(--loan-blue-ink) !important;
+        background: #0f2f66 !important;
     }
 
     .loan-branch-subtotal td {
+        background: #0f2f66 !important;
         color: #ffffff !important;
         font-weight: 800 !important;
         border-top: 1px solid #334155 !important;
@@ -635,8 +665,20 @@
         padding-bottom: 0.3rem !important;
     }
 
+    .loan-branch-subtotal td.sticky-col,
+    .loan-branch-subtotal td.merged-branch-cell {
+        background: #0f2f66 !important;
+        color: #ffffff !important;
+        border-left-color: #38bdf8 !important;
+    }
+
+    .loan-branch-subtotal td[colspan] {
+        background: #0b3f86 !important;
+        color: #e0f2fe !important;
+    }
+
     .row-grand-total {
-        background: var(--loan-blue-ink) !important;
+        background: #0b1f44 !important;
         border-top: 2px solid var(--loan-blue) !important;
         position: sticky;
         bottom: 0;
@@ -644,11 +686,18 @@
     }
 
     .row-grand-total td {
+        background: #0b1f44 !important;
         color: #ffffff !important;
         font-weight: 900 !important;
         font-size: 0.72rem !important;
         border: none !important;
         padding: 0.4rem 0.3rem !important;
+    }
+
+    .row-grand-total td.sticky-col {
+        background: #0b1f44 !important;
+        color: #ffffff !important;
+        box-shadow: 6px 0 12px -8px rgba(0, 0, 0, 0.45);
     }
 
     .row-grand-total td.highlight-curr {
@@ -692,20 +741,52 @@
 
     .quadrant-badge {
         display: inline-flex;
+        flex-direction: column;
         align-items: center;
         justify-content: center;
-        width: 32px;
-        height: 32px;
-        border-radius: 8px;
-        font-weight: 900;
-        font-size: 0.75rem;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        border: 1.5px solid transparent;
+        gap: 2px;
+        padding: 4px;
+        border-radius: 6px;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        min-width: 48px;
     }
-    .quadrant-badge.q1 { background: #dcfce7; color: #15803d; border-color: #10b981; }
-    .quadrant-badge.q2 { background: #e0f2fe; color: #0369a1; border-color: #0ea5e9; }
-    .quadrant-badge.q3 { background: #fff7ed; color: #c2410c; border-color: #f97316; }
-    .quadrant-badge.q4 { background: #fef2f2; color: #b91c1c; border-color: #ef4444; }
+
+    .quadrant-label {
+        font-size: 9px;
+        font-weight: 900;
+        text-transform: uppercase;
+        letter-spacing: 0.02em;
+        line-height: 1;
+        margin-bottom: 2px;
+    }
+
+    .quadrant-visual {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 2px;
+        width: 18px;
+        height: 18px;
+    }
+
+    .quad-cell {
+        width: 8px;
+        height: 8px;
+        background: #cbd5e1;
+        border-radius: 1px;
+    }
+
+    .quadrant-badge.q1 .quadrant-label { color: #15803d; }
+    .quadrant-badge.q1 .quad-cell:nth-child(1) { background: #22c55e; box-shadow: 0 0 4px rgba(34, 197, 94, 0.4); }
+    
+    .quadrant-badge.q2 .quadrant-label { color: #0369a1; }
+    .quadrant-badge.q2 .quad-cell:nth-child(2) { background: #0ea5e9; box-shadow: 0 0 4px rgba(14, 165, 233, 0.4); }
+    
+    .quadrant-badge.q3 .quadrant-label { color: #c2410c; }
+    .quadrant-badge.q3 .quad-cell:nth-child(3) { background: #f97316; box-shadow: 0 0 4px rgba(249, 115, 22, 0.4); }
+    
+    .quadrant-badge.q4 .quadrant-label { color: #b91c1c; }
+    .quadrant-badge.q4 .quad-cell:nth-child(4) { background: #ef4444; box-shadow: 0 0 4px rgba(239, 68, 68, 0.4); }
 
     .delta-indicator {
         display: inline-flex;

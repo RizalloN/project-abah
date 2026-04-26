@@ -14,198 +14,328 @@
 @endphp
 
 <style>
-    .chart-periodik-shell {
+    /* Premium Glassmorphism & Modern UI */
+    .loan-shell {
+        background: rgba(255, 255, 255, 0.7);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        box-shadow: 0 12px 40px 0 rgba(31, 38, 135, 0.1);
+        overflow: visible !important;
         position: relative;
-        overflow: hidden;
+        z-index: 5;
     }
 
     .chart-periodik-shell::after {
         content: '';
         position: absolute;
-        inset: auto -15% -35% auto;
-        width: 280px;
-        height: 280px;
+        inset: auto -10% -20% auto;
+        width: 400px;
+        height: 400px;
         border-radius: 50%;
-        background: radial-gradient(circle, rgba(113, 197, 232, 0.18) 0%, rgba(113, 197, 232, 0.04) 48%, transparent 70%);
+        background: radial-gradient(circle, rgba(8, 87, 195, 0.08) 0%, rgba(8, 87, 195, 0.02) 50%, transparent 70%);
         pointer-events: none;
+        z-index: 0;
+    }
+
+    .loan-filter-grid {
+        position: relative;
+        z-index: 1;
+    }
+
+    .loan-filter-label {
+        font-size: 0.72rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: #536c8b;
+        margin-bottom: 0.6rem;
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+    }
+
+    .loan-filter-label i {
+        color: var(--loan-blue);
+        font-size: 0.8rem;
+    }
+
+    .loan-filter-control {
+        border-radius: 14px !important;
+        border: 1.5px solid #e2eaf3 !important;
+        background: #ffffff !important;
+        height: 48px !important;
+        font-weight: 600 !important;
+        color: var(--loan-blue-ink) !important;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    }
+
+    .loan-filter-control:focus {
+        border-color: var(--loan-blue) !important;
+        box-shadow: 0 0 0 4px rgba(8, 87, 195, 0.1) !important;
+    }
+
+    /* Select2 Premium Override */
+    .select2-container--default .select2-selection--single,
+    .select2-container--default .select2-selection--multiple {
+        border: 1.5px solid #e2eaf3 !important;
+        border-radius: 14px !important;
+        min-height: 48px !important;
+        background: #ffffff !important;
+        transition: all 0.3s ease !important;
+    }
+
+    .select2-container--default.select2-container--focus .select2-selection--single,
+    .select2-container--default.select2-container--focus .select2-selection--multiple {
+        border-color: var(--loan-blue) !important;
+        box-shadow: 0 0 0 4px rgba(8, 87, 195, 0.1) !important;
+    }
+
+    .select2-container--default .select2-selection--multiple .select2-selection__choice {
+        background: linear-gradient(135deg, var(--loan-blue), #307fe2) !important;
+        border: none !important;
+        color: #ffffff !important;
+        border-radius: 8px !important;
+        padding: 4px 10px !important;
+        font-size: 0.75rem !important;
+        font-weight: 700 !important;
+        margin-top: 8px !important;
+    }
+
+    .select2-container--default .select2-selection--multiple .select2-selection__choice__remove {
+        color: rgba(255, 255, 255, 0.8) !important;
+        margin-right: 5px !important;
+    }
+
+    .select2-container--default .select2-selection--multiple .select2-selection__choice__remove:hover {
+        color: #ffffff !important;
+    }
+
+    .chart-periodik-kpi {
+        background: rgba(255, 255, 255, 0.7);
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.5);
+        border-radius: 24px;
+        padding: 1.5rem;
+        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        min-height: 140px;
+        box-shadow: 0 4px 20px rgba(8, 87, 195, 0.05);
+        position: relative;
+        overflow: hidden;
+    }
+
+    .chart-periodik-kpi:hover {
+        transform: translateY(-8px);
+        box-shadow: 0 15px 35px rgba(8, 87, 195, 0.12);
+        background: #ffffff;
+        border-color: var(--loan-blue);
+    }
+
+    .chart-periodik-kpi__label {
+        font-size: 0.7rem;
+        font-weight: 800;
+        color: var(--loan-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        margin-bottom: 0.5rem;
+    }
+
+    .chart-periodik-kpi__value {
+        font-size: 1.85rem;
+        font-weight: 900;
+        color: var(--loan-blue-ink);
+        line-height: 1;
+        margin-bottom: 0.5rem;
+    }
+
+    .chart-periodik-kpi__hint {
+        font-size: 0.72rem;
+        color: var(--loan-muted);
+        line-height: 1.4;
+        font-weight: 600;
+    }
+
+    .chart-card {
+        background: #ffffff;
+        border-radius: 24px;
+        border: 1px solid #eef2f7;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.02);
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        transition: all 0.3s ease;
+    }
+
+    .chart-card:hover {
+        box-shadow: 0 8px 30px rgba(8, 87, 195, 0.06);
+    }
+
+    .chart-card__header {
+        padding: 1.5rem;
+        border-bottom: 1px solid #f8fafc;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 1rem;
+    }
+
+    .chart-card__title {
+        font-size: 1.1rem;
+        font-weight: 800;
+        color: var(--loan-blue-ink);
+        margin-bottom: 0.25rem;
+    }
+
+    .chart-card__desc {
+        font-size: 0.78rem;
+        color: var(--loan-muted);
+        margin-bottom: 0;
+        line-height: 1.5;
+    }
+
+    .chart-card__badge {
+        background: var(--loan-blue-soft);
+        color: var(--loan-blue);
+        padding: 0.5rem 0.8rem;
+        border-radius: 12px;
+        font-size: 0.7rem;
+        font-weight: 800;
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        white-space: nowrap;
+    }
+
+    .chart-card__body {
+        padding: 1.5rem;
+        flex: 1;
+        position: relative;
+    }
+
+    .chart-canvas-wrap {
+        position: relative;
+        height: 320px;
+        width: 100%;
+    }
+
+    .chart-empty-state {
+        height: 320px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        color: var(--loan-muted);
+        background: #f8fafc;
+        border-radius: 16px;
     }
 
     .chart-periodik-summary {
         display: grid;
         grid-template-columns: repeat(4, minmax(0, 1fr));
-        gap: 1rem;
+        gap: 1.25rem;
     }
 
-    .chart-periodik-kpi {
-        position: relative;
-        overflow: hidden;
-        border: 1px solid var(--loan-border);
-        border-radius: 18px;
-        background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
-        box-shadow: var(--loan-shadow);
-        padding: 1rem 1.05rem;
-        min-height: 112px;
-    }
-
-    .chart-periodik-kpi::before {
-        content: '';
-        position: absolute;
-        inset: 0 auto auto 0;
-        width: 100%;
-        height: 4px;
-        background: linear-gradient(90deg, var(--loan-blue-ink), var(--loan-blue), var(--loan-cyan));
-    }
-
-    .chart-periodik-kpi__label {
-        font-size: 0.66rem;
+    .btn-premium {
+        background: linear-gradient(135deg, var(--loan-blue), #307fe2);
+        color: #ffffff;
+        border: none;
+        border-radius: 14px;
         font-weight: 800;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-        color: #6982a7;
-        margin-bottom: 0.55rem;
-    }
-
-    .chart-periodik-kpi__value {
-        font-size: clamp(1.1rem, 2vw, 1.65rem);
-        font-weight: 900;
-        color: var(--loan-blue-ink);
-        line-height: 1.08;
-        margin-bottom: 0.35rem;
-    }
-
-    .chart-periodik-kpi__hint {
-        color: #6b7f99;
-        font-size: 0.75rem;
-        line-height: 1.45;
-    }
-
-    .chart-card {
-        position: relative;
-        border: 1px solid var(--loan-border);
-        border-radius: 18px;
-        background: #ffffff;
-        box-shadow: var(--loan-shadow);
-        overflow: hidden;
-        height: 100%;
-    }
-
-    .chart-card::before {
-        content: '';
-        position: absolute;
-        inset: 0 auto auto 0;
-        width: 100%;
-        height: 5px;
-        background: linear-gradient(90deg, var(--loan-blue-ink), var(--loan-blue), var(--loan-cyan));
-    }
-
-    .chart-card__header {
-        display: flex;
-        align-items: flex-start;
-        justify-content: space-between;
-        gap: 1rem;
-        padding: 1rem 1.05rem 0.75rem;
-        border-bottom: 1px solid #edf3fb;
-    }
-
-    .chart-card__title {
-        margin: 0;
-        color: var(--loan-blue-ink);
-        font-size: 0.92rem;
-        font-weight: 900;
-        letter-spacing: 0.03em;
-        text-transform: uppercase;
-    }
-
-    .chart-card__desc {
-        margin: 0.35rem 0 0;
-        color: #6c7f99;
-        font-size: 0.75rem;
-        line-height: 1.45;
-    }
-
-    .chart-card__badge {
+        letter-spacing: 0.02em;
+        padding: 0 1.5rem;
+        height: 52px;
         display: inline-flex;
         align-items: center;
-        gap: 0.4rem;
-        padding: 0.38rem 0.68rem;
-        border-radius: 999px;
-        background: var(--loan-blue-soft);
-        color: var(--loan-blue-ink);
-        font-size: 0.7rem;
-        font-weight: 800;
-        white-space: nowrap;
-    }
-
-    .chart-card__body {
-        padding: 1rem 1.05rem 1.05rem;
-    }
-
-    .chart-canvas-wrap {
-        position: relative;
-        min-height: 360px;
-    }
-
-    .chart-empty-state {
-        display: flex;
-        align-items: center;
         justify-content: center;
-        min-height: 360px;
-        padding: 1.25rem;
-        text-align: center;
-        color: #6b7f99;
-        background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
-        border: 1px dashed #d6e2f1;
-        border-radius: 16px;
-    }
-
-    .chart-empty-state strong {
-        display: block;
-        margin-bottom: 0.35rem;
-        color: var(--loan-blue-ink);
-    }
-
-    .chart-periodik-actions {
-        display: flex;
-        align-items: center;
         gap: 0.6rem;
-        flex-wrap: wrap;
-        justify-content: flex-end;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 15px rgba(8, 87, 195, 0.25);
     }
 
-    .chart-periodik-note {
-        display: grid;
-        gap: 0.75rem;
-        grid-template-columns: 1.15fr 0.85fr;
+    .btn-premium:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 20px rgba(8, 87, 195, 0.35);
+        color: #ffffff;
+    }
+
+    .btn-premium:active {
+        transform: translateY(0);
+    }
+
+    .btn-reset {
+        background: #ffffff;
+        color: var(--loan-blue-ink);
+        border: 1.5px solid #e2eaf3;
+        border-radius: 14px;
+        font-weight: 700;
+        height: 52px;
+        padding: 0 1.5rem;
+        transition: all 0.3s ease;
+    }
+
+    .btn-reset:hover {
+        background: #f8fbff;
+        border-color: var(--loan-blue);
+        color: var(--loan-blue);
     }
 
     .chart-note-panel {
-        border: 1px solid var(--loan-border);
-        border-radius: 18px;
-        background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
-        box-shadow: var(--loan-shadow);
-        padding: 1rem 1.05rem;
+        background: #ffffff;
+        border: 1px solid #eef2f7;
+        padding: 1.5rem;
+        border-radius: 20px;
+        flex: 1;
+        min-width: 300px;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.02);
     }
 
     .chart-note-panel h6 {
-        margin: 0 0 0.35rem;
-        color: var(--loan-blue-ink);
-        font-size: 0.82rem;
-        font-weight: 900;
+        color: var(--loan-blue);
+        font-weight: 800;
         text-transform: uppercase;
-        letter-spacing: 0.04em;
+        font-size: 0.75rem;
+        letter-spacing: 0.05em;
+        margin-bottom: 1rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
     }
 
-    .chart-note-panel p,
-    .chart-note-panel li {
-        color: #5f7490;
-        font-size: 0.78rem;
-        line-height: 1.6;
+    .chart-note-panel h6::before {
+        content: '';
+        width: 8px;
+        height: 8px;
+        background: var(--loan-blue);
+        border-radius: 50%;
     }
 
-    .chart-note-panel ul {
-        margin: 0.45rem 0 0;
-        padding-left: 1.05rem;
+    .loan-loading-chip {
+        background: rgba(8, 87, 195, 0.05);
+        border: 1px solid rgba(8, 87, 195, 0.1);
+        padding: 0.5rem 1rem;
+        border-radius: 999px;
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        font-size: 0.75rem;
+        font-weight: 700;
+        color: var(--loan-blue-ink);
     }
+
+    .loan-loading-dot {
+        width: 8px;
+        height: 8px;
+        background: var(--loan-blue);
+        border-radius: 50%;
+        animation: pulse 1.5s infinite;
+    }
+</style>
+@include('report.dashboard-pinjaman._partials._styles_dropdown')
+<style>
 
     @media (max-width: 1199.98px) {
         .chart-periodik-summary {
@@ -258,58 +388,105 @@
 
                 <div class="row loan-filter-grid align-items-end">
                     <div class="col-xl-3 col-lg-4 col-md-6">
-                        <div class="form-group">
-                            <label class="loan-filter-label" for="chartPeriodikPeriode">Periode Terakhir</label>
-                            <select id="chartPeriodikPeriode" name="periode" class="form-control loan-filter-control chart-periodik-select">
-                                @foreach($periods as $periode)
-                                    <option value="{{ $periode }}" @selected($periode === $selected_period)>
-                                        {{ \Carbon\Carbon::parse($periode)->format('d M Y') }}
-                                    </option>
-                                @endforeach
-                            </select>
+                        <div class="form-group mb-0">
+                            <label class="loan-filter-label" for="chartPeriodikPeriode">
+                                <i class="fas fa-calendar-alt"></i> Periode Terakhir
+                            </label>
+                            <div class="loan-dropdown-shell" id="periodeDropdownShell">
+                                <input type="hidden" name="periode" id="chartPeriodikPeriode" value="{{ $selected_period }}">
+                                <button type="button" class="loan-dropdown-toggle" id="periodeDropdownToggle" aria-haspopup="true" aria-expanded="false">
+                                    <span class="loan-dropdown-label" id="periodeDropdownLabel">
+                                        {{ $selected_period ? \Carbon\Carbon::parse($selected_period)->format('d M Y') : 'Pilih Periode' }}
+                                    </span>
+                                    <i class="fas fa-chevron-down text-muted" style="font-size: 0.8rem;"></i>
+                                </button>
+                                <div class="loan-dropdown-menu" id="periodeDropdownMenu">
+                                    <div id="periodeOptions">
+                                        @foreach($periods as $periode)
+                                            <div class="loan-dropdown-item filter-single-option {{ $periode === $selected_period ? 'active' : '' }}" 
+                                                data-value="{{ $periode }}" 
+                                                data-label="{{ \Carbon\Carbon::parse($periode)->format('d M Y') }}">
+                                                <span class="form-check-label">{{ \Carbon\Carbon::parse($periode)->format('d M Y') }}</span>
+                                            </div>
+                                        @endforeach
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                     <div class="col-xl-3 col-lg-4 col-md-6">
-                        <div class="form-group">
-                            <label class="loan-filter-label" for="chartPeriodikCabang">Kanca</label>
-                            <select id="chartPeriodikCabang" name="cabang1" class="form-control loan-filter-control chart-periodik-select">
-                                @foreach($branch_options as $branchOption)
-                                    <option value="{{ $branchOption['value'] }}" @selected($branchOption['value'] === $selected_branch)>
-                                        {{ $branchOption['label'] }}
-                                    </option>
-                                @endforeach
-                            </select>
+                        <div class="form-group mb-0">
+                            <label class="loan-filter-label" for="chartPeriodikCabang">
+                                <i class="fas fa-university"></i> Kantor Cabang
+                            </label>
+                            <div class="loan-dropdown-shell" id="cabangDropdownShell">
+                                <input type="hidden" name="cabang1" id="chartPeriodikCabang" value="{{ $selected_branch }}">
+                                <button type="button" class="loan-dropdown-toggle" id="cabangDropdownToggle" aria-haspopup="true" aria-expanded="false">
+                                    <span class="loan-dropdown-label" id="cabangDropdownLabel">
+                                        {{ collect($branch_options)->firstWhere('value', $selected_branch)['label'] ?? 'Pilih Cabang' }}
+                                    </span>
+                                    <i class="fas fa-chevron-down text-muted" style="font-size: 0.8rem;"></i>
+                                </button>
+                                <div class="loan-dropdown-menu" id="cabangDropdownMenu">
+                                    <div id="cabangOptions">
+                                        @foreach($branch_options as $branchOption)
+                                            <div class="loan-dropdown-item filter-single-option {{ $branchOption['value'] === $selected_branch ? 'active' : '' }}" 
+                                                data-value="{{ $branchOption['value'] }}" 
+                                                data-label="{{ $branchOption['label'] }}">
+                                                <span class="form-check-label">{{ $branchOption['label'] }}</span>
+                                            </div>
+                                        @endforeach
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                     <div class="col-xl-4 col-lg-5 col-md-8">
-                        <div class="form-group">
-                            <label class="loan-filter-label" for="chartPeriodikUnit">Kode Uker</label>
-                            <select
-                                id="chartPeriodikUnit"
-                                name="unit1[]"
-                                class="form-control loan-filter-control chart-periodik-select"
-                                multiple
-                                data-placeholder="Semua Kode Uker"
-                                data-selected='@json($selectedUnitValues)'
-                            >
-                                @forelse($unit_options as $unitOption)
-                                    <option value="{{ $unitOption['value'] }}" @selected(in_array($unitOption['value'], $selectedUnitValues, true))>
-                                        {{ $unitOption['label'] }}
-                                    </option>
-                                @empty
-                                    <option value="">Pilih periode atau kanca dulu</option>
-                                @endforelse
-                            </select>
+                        <div class="form-group mb-0">
+                            <label class="loan-filter-label" for="chartPeriodikUnit">
+                                <i class="fas fa-store"></i> Pilih Unit Kerja
+                            </label>
+                            <div class="loan-dropdown-shell" id="unitDropdownShell">
+                                <button type="button" class="loan-dropdown-toggle" id="unitDropdownToggle" aria-haspopup="true" aria-expanded="false">
+                                    <span class="loan-dropdown-label" id="unitDropdownLabel">Pilih Unit Kerja</span>
+                                    <i class="fas fa-chevron-down text-muted" style="font-size: 0.8rem;"></i>
+                                </button>
+                                <div class="loan-dropdown-menu" id="unitDropdownMenu">
+                                    <div id="unitCheckboxes">
+                                        @forelse($unit_options as $unitOption)
+                                            <div class="loan-dropdown-item">
+                                                <div class="form-check">
+                                                    <input class="form-check-input filter-unit-checkbox" type="checkbox" 
+                                                        name="unit1[]" 
+                                                        value="{{ $unitOption['value'] }}" 
+                                                        id="unit_{{ $unitOption['value'] }}"
+                                                        @checked(in_array($unitOption['value'], $selectedUnitValues, true))>
+                                                    <label class="form-check-label" for="unit_{{ $unitOption['value'] }}">
+                                                        {{ $unitOption['label'] }}
+                                                    </label>
+                                                </div>
+                                            </div>
+                                        @empty
+                                            <div class="p-3 text-center text-muted" style="font-size: 0.85rem;">
+                                                Pilih kanca untuk memuat unit
+                                            </div>
+                                        @endforelse
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                     <div class="col-xl-2 col-lg-3 col-md-4">
-                        <div class="chart-periodik-actions">
-                            <button type="submit" class="btn px-4 font-weight-bold" id="chartPeriodikRefreshButton" style="border-radius: 12px; height: 48px; background: linear-gradient(135deg, var(--loan-blue), #307fe2); color: #ffffff; border: none; box-shadow: 0 4px 12px rgba(8, 87, 195, 0.2);">
-                                <i class="fas fa-sync-alt mr-2"></i> MUAT DATA
-                            </button>
-                            <a href="{{ route('report.dashboard-pinjaman.chart-periodik') }}" class="btn btn-light px-4 font-weight-bold" style="border-radius: 12px; height: 48px; border: 1px solid var(--loan-border); color: var(--loan-blue-ink);">
-                                RESET
-                            </a>
+                        <div class="form-group mb-0">
+                            <label class="loan-filter-label" style="visibility: hidden;">Aksi</label>
+                            <div class="chart-periodik-actions d-flex align-items-center" style="height: 52px; margin-bottom: 0;">
+                                <button type="submit" class="btn btn-premium flex-grow-1 h-100" id="chartPeriodikRefreshButton">
+                                    <i class="fas fa-sync-alt"></i> MUAT
+                                </button>
+                                <a href="{{ route('report.dashboard-pinjaman.chart-periodik') }}" class="btn btn-reset ml-2 h-100 d-flex align-items-center justify-content-center" style="width: 52px; padding: 0;" title="Reset Filter">
+                                    <i class="fas fa-undo"></i>
+                                </a>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -319,24 +496,34 @@
 
     <div class="chart-periodik-summary animate-reveal mb-4">
         <div class="chart-periodik-kpi">
-            <div class="chart-periodik-kpi__label">Total Rekening</div>
-            <div class="chart-periodik-kpi__value" id="chartPeriodikTotalRekening">{{ number_format((int) ($chart['summary']['total_rekening'] ?? 0), 0, ',', '.') }}</div>
-            <div class="chart-periodik-kpi__hint">Jumlah baris yang masuk scope aktif.</div>
+            <div>
+                <div class="chart-periodik-kpi__label">Total Rekening</div>
+                <div class="chart-periodik-kpi__value" id="chartPeriodikTotalRekening">{{ number_format((int) ($chart['summary']['total_rekening'] ?? 0), 0, ',', '.') }}</div>
+            </div>
+            <div class="chart-periodik-kpi__hint"><i class="fas fa-info-circle mr-1"></i> Data scope aktif.</div>
         </div>
         <div class="chart-periodik-kpi">
-            <div class="chart-periodik-kpi__label">Jumlah Pola</div>
-            <div class="chart-periodik-kpi__value" id="chartPeriodikPatternCount">{{ number_format((int) ($chart['summary']['pattern_count'] ?? 0), 0, ',', '.') }}</div>
-            <div class="chart-periodik-kpi__hint">Pola pembayaran unik dari lookup <code>loan_type</code>.</div>
+            <div>
+                <div class="chart-periodik-kpi__label">Jumlah Pola</div>
+                <div class="chart-periodik-kpi__value" id="chartPeriodikPatternCount">{{ number_format((int) ($chart['summary']['pattern_count'] ?? 0), 0, ',', '.') }}</div>
+            </div>
+            <div class="chart-periodik-kpi__hint"><i class="fas fa-tags mr-1"></i> Pola unik terdeteksi.</div>
         </div>
         <div class="chart-periodik-kpi">
-            <div class="chart-periodik-kpi__label">Pola Dominan</div>
-            <div class="chart-periodik-kpi__value" id="chartPeriodikTopPattern">{{ $chart['summary']['top_pattern'] ?? '-' }}</div>
-            <div class="chart-periodik-kpi__hint">Pola dengan frekuensi tertinggi pada periode aktif.</div>
+            <div>
+                <div class="chart-periodik-kpi__label">Pola Dominan</div>
+                <div class="chart-periodik-kpi__value" style="font-size: 1.4rem;" id="chartPeriodikTopPattern">{{ $chart['summary']['top_pattern'] ?? '-' }}</div>
+            </div>
+            <div class="chart-periodik-kpi__hint"><i class="fas fa-crown mr-1"></i> Frekuensi tertinggi.</div>
         </div>
-        <div class="chart-periodik-kpi">
-            <div class="chart-periodik-kpi__label">Scope Aktif</div>
-            <div class="chart-periodik-kpi__value" id="chartPeriodikScopeLabel">{{ $chart['scope_label'] ?? 'Area 6 - All' }}</div>
-            <div class="chart-periodik-kpi__hint" id="chartPeriodikPeriodLabel">{{ $selected_period_label ?? '-' }}</div>
+        <div class="chart-periodik-kpi" style="background: linear-gradient(135deg, var(--loan-blue-ink), var(--loan-blue)); border: none;">
+            <div>
+                <div class="chart-periodik-kpi__label" style="color: rgba(255,255,255,0.7);">Scope & Periode</div>
+                <div class="chart-periodik-kpi__value" style="color: #ffffff; font-size: 1.3rem;" id="chartPeriodikScopeLabel">{{ $chart['scope_label'] ?? 'Area 6 - All' }}</div>
+            </div>
+            <div class="chart-periodik-kpi__hint" style="color: rgba(255,255,255,0.8);" id="chartPeriodikPeriodLabel">
+                <i class="fas fa-calendar-alt mr-1"></i> {{ $selected_period_label ?? '-' }}
+            </div>
         </div>
     </div>
 
@@ -393,16 +580,16 @@
         </div>
     </div>
 
-    <div class="chart-periodik-note mt-4 animate-reveal">
+    <div class="chart-periodik-note mt-4 animate-reveal" style="display: flex; flex-wrap: wrap; gap: 1.25rem;">
         <div class="chart-note-panel">
-            <h6>Catatan logika data</h6>
-            <p class="mb-0">
+            <h6><i class="fas fa-database"></i> Catatan logika data</h6>
+            <p class="mb-0" style="font-size: 0.85rem; line-height: 1.6; color: #475569;">
                 Data diturunkan dulu ke <strong>dashboard_pinjaman_chart_periodik_snapshots</strong> dari <strong>daily_loan_dinamis</strong> dan <strong>loan_type</strong>, lalu selector serta chart membaca hasil snapshot itu agar filter periode, kanca, dan kode uker tetap cepat dan konsisten.
             </p>
         </div>
         <div class="chart-note-panel">
-            <h6>Contoh scope</h6>
-            <ul>
+            <h6><i class="fas fa-lightbulb"></i> Contoh scope</h6>
+            <ul style="font-size: 0.85rem; line-height: 1.6; color: #475569; padding-left: 1.2rem; margin-bottom: 0;">
                 <li>Area 6 default menampilkan KC Madiun, KC Magetan, KC Ngawi, dan KC Ponorogo.</li>
                 <li>Jika memilih KC Ponorogo, kode uker yang tampil akan mengikuti unit pada cabang tersebut.</li>
                 <li>Contoh scope spesifik: KC Ponorogo - 3887 - Ngrayun.</li>
@@ -414,14 +601,31 @@
 @push('scripts')
 <script src="{{ asset('vendor/chartjs/chart.min.js') }}"></script>
 @include('report.dashboard-pinjaman._partials._scripts_shared')
+@include('report.dashboard-pinjaman._partials._scripts_dropdown')
 <script>
     document.addEventListener('DOMContentLoaded', function () {
         const periodSelect = document.getElementById('chartPeriodikPeriode');
         const branchSelect = document.getElementById('chartPeriodikCabang');
-        const unitSelect = document.getElementById('chartPeriodikUnit');
         const form = document.getElementById('chartPeriodikForm');
         const statusChip = document.getElementById('chartPeriodikStatus');
         const refreshButton = document.getElementById('chartPeriodikRefreshButton');
+        const periodDropdownToggle = document.getElementById('periodeDropdownToggle');
+        const periodDropdownMenu = document.getElementById('periodeDropdownMenu');
+        const periodDropdownLabel = document.getElementById('periodeDropdownLabel');
+        const periodOptionsContainer = document.getElementById('periodeOptions');
+        const periodDropdownShell = document.getElementById('periodeDropdownShell');
+
+        const cabangDropdownToggle = document.getElementById('cabangDropdownToggle');
+        const cabangDropdownMenu = document.getElementById('cabangDropdownMenu');
+        const cabangDropdownLabel = document.getElementById('cabangDropdownLabel');
+        const cabangOptionsContainer = document.getElementById('cabangOptions');
+        const cabangDropdownShell = document.getElementById('cabangDropdownShell');
+
+        const unitDropdownToggle = document.getElementById('unitDropdownToggle');
+        const unitDropdownMenu = document.getElementById('unitDropdownMenu');
+        const unitDropdownLabel = document.getElementById('unitDropdownLabel');
+        const unitCheckboxesContainer = document.getElementById('unitCheckboxes');
+        const unitDropdownShell = document.getElementById('unitDropdownShell');
         const totalRekeningEl = document.getElementById('chartPeriodikTotalRekening');
         const patternCountEl = document.getElementById('chartPeriodikPatternCount');
         const topPatternEl = document.getElementById('chartPeriodikTopPattern');
@@ -437,30 +641,95 @@
         const filtersUrl = @json(route('report.dashboard-pinjaman.chart-periodik.filters'));
         const dataUrl = @json(route('report.dashboard-pinjaman.chart-periodik.data'));
         const initialChartPayload = @json($chart);
+        const initialPeriodOptions = @json(collect($periods ?? [])->map(fn ($period) => [
+            'value' => (string) $period,
+            'label' => \Carbon\Carbon::parse($period)->format('d M Y'),
+        ])->values()->all());
+        const initialBranchOptions = @json($branch_options ?? []);
+        const initialSelectedPeriod = @json($selected_period ?? null);
+        const initialSelectedBranch = @json($selected_branch ?? 'all');
+        const initialUnitOptions = @json($unit_options ?? []);
         const initialSelectedUnits = @json($selectedUnitValues);
 
         let trendChart = null;
         let pieChart = null;
         let filtersController = null;
         let dataController = null;
+        let suppressFilterReload = false;
         let suppressUnitReload = false;
 
-        function initSelect(select, options = {}) {
-            const $select = window.jQuery(select);
-            if ($select.hasClass('select2-hidden-accessible')) {
-                $select.select2('destroy');
-            }
-
-            $select.select2(Object.assign({
-                theme: 'bootstrap4',
-                width: '100%',
-            }, options));
+        function initSelects() {
+            // Standard selects are removed
         }
 
-        function initSelects() {
-            initSelect(periodSelect);
-            initSelect(branchSelect);
-            initMultiSelect(unitSelect, 'Semua Kode Uker');
+        function bindFilterEvents() {
+            if (window.jQuery) {
+                $(periodOptionsContainer).off('click', '.filter-single-option').on('click', '.filter-single-option', function() {
+                    const val = $(this).data('value');
+                    const label = $(this).data('label');
+                    periodSelect.value = val;
+                    periodDropdownLabel.textContent = label;
+                    $(periodOptionsContainer).find('.filter-single-option').removeClass('active');
+                    $(this).addClass('active');
+                    periodDropdownMenu.classList.remove('show');
+                    if (!suppressFilterReload) reloadAll();
+                });
+
+                $(cabangOptionsContainer).off('click', '.filter-single-option').on('click', '.filter-single-option', function() {
+                    const val = $(this).data('value');
+                    const label = $(this).data('label');
+                    branchSelect.value = val;
+                    cabangDropdownLabel.textContent = label;
+                    $(cabangOptionsContainer).find('.filter-single-option').removeClass('active');
+                    $(this).addClass('active');
+                    cabangDropdownMenu.classList.remove('show');
+                    if (!suppressFilterReload) reloadAll();
+                });
+
+                $(unitCheckboxesContainer).off('change', '.filter-unit-checkbox').on('change', '.filter-unit-checkbox', function () {
+                    if (suppressUnitReload) return;
+                    updateUnitLabel();
+                    reloadData();
+                });
+                return;
+            }
+
+            // Vanilla Fallback
+            periodOptionsContainer.addEventListener('click', function(e) {
+                const item = e.target.closest('.filter-single-option');
+                if (item) {
+                    periodSelect.value = item.dataset.value;
+                    periodDropdownLabel.textContent = item.dataset.label;
+                    periodOptionsContainer.querySelectorAll('.filter-single-option').forEach(el => el.classList.remove('active'));
+                    item.classList.add('active');
+                    periodDropdownMenu.classList.remove('show');
+                    if (!suppressFilterReload) reloadAll();
+                }
+            });
+
+            cabangOptionsContainer.addEventListener('click', function(e) {
+                const item = e.target.closest('.filter-single-option');
+                if (item) {
+                    branchSelect.value = item.dataset.value;
+                    cabangDropdownLabel.textContent = item.dataset.label;
+                    cabangOptionsContainer.querySelectorAll('.filter-single-option').forEach(el => el.classList.remove('active'));
+                    item.classList.add('active');
+                    cabangDropdownMenu.classList.remove('show');
+                    if (!suppressFilterReload) reloadAll();
+                }
+            });
+            
+            unitCheckboxesContainer.addEventListener('change', function (e) {
+                if (e.target.classList.contains('filter-unit-checkbox')) {
+                    if (suppressUnitReload) return;
+                    updateUnitLabel();
+                    reloadData();
+                }
+            });
+        }
+
+        function updateUnitLabel() {
+            updateMultiDropdownLabel(unitCheckboxesContainer, unitDropdownLabel, 'Pilih Unit Kerja');
         }
 
         function setStatus(message) {
@@ -471,47 +740,40 @@
             refreshButton.disabled = isLoading;
             periodSelect.disabled = isLoading;
             branchSelect.disabled = isLoading;
-            unitSelect.disabled = isLoading;
+            unitDropdownToggle.disabled = isLoading;
             setStatus(message || (isLoading ? 'Mengambil data...' : 'Siap menampilkan data.'));
         }
 
         function selectedUnitValues() {
-            return window.jQuery(unitSelect).val() || [];
+            return Array.from(unitCheckboxesContainer.querySelectorAll('.filter-unit-checkbox:checked')).map(cb => cb.value);
+        }
+
+        function rebuildSingleSelectOptions(hiddenInput, container, labelEl, options, selectedValue) {
+            rebuildSingleDropdownOptions(hiddenInput, container, labelEl, options, selectedValue);
+        }
+
+        function hydrateBaseFilterOptions() {
+            suppressFilterReload = true;
+            rebuildSingleSelectOptions(
+                periodSelect,
+                periodOptionsContainer,
+                periodDropdownLabel,
+                initialPeriodOptions,
+                initialSelectedPeriod || initialChartPayload?.selected_period || ''
+            );
+            rebuildSingleSelectOptions(
+                branchSelect,
+                cabangOptionsContainer,
+                cabangDropdownLabel,
+                initialBranchOptions,
+                initialSelectedBranch || initialChartPayload?.selected_branch || 'all'
+            );
+            suppressFilterReload = false;
         }
 
         function rebuildUnitOptions(options, preservedValues = []) {
-            const normalizedPreserved = new Set((preservedValues || []).map((value) => String(value)));
-            const validValues = [];
-            const $unit = window.jQuery(unitSelect);
-
-            if ($unit.hasClass('select2-hidden-accessible')) {
-                $unit.select2('destroy');
-            }
-
-            unitSelect.innerHTML = '';
-
-            if (!options.length) {
-                unitSelect.add(new Option('Tidak ada kode uker untuk scope ini', '', false, false));
-                unitSelect.disabled = true;
-                initMultiSelect(unitSelect, 'Semua Kode Uker');
-                suppressUnitReload = true;
-                $unit.val(null).trigger('change');
-                suppressUnitReload = false;
-                return;
-            }
-
-            options.forEach((option) => {
-                const isSelected = normalizedPreserved.has(String(option.value));
-                unitSelect.add(new Option(option.label, option.value, false, isSelected));
-                if (isSelected) {
-                    validValues.push(String(option.value));
-                }
-            });
-
-            unitSelect.disabled = false;
-            initMultiSelect(unitSelect, 'Semua Kode Uker');
             suppressUnitReload = true;
-            $unit.val(validValues).trigger('change');
+            rebuildMultiDropdownOptions(unitCheckboxesContainer, unitDropdownToggle, unitDropdownLabel, options, preservedValues, 'Tidak ada unit scope ini');
             suppressUnitReload = false;
         }
 
@@ -730,6 +992,11 @@
 
                 const payload = await response.json();
                 const preserved = selectedUnitValues();
+                if (payload.branch_options && payload.selected_branch) {
+                    suppressFilterReload = true;
+                    rebuildSingleSelectOptions(branchSelect, cabangOptionsContainer, cabangDropdownLabel, payload.branch_options, payload.selected_branch);
+                    suppressFilterReload = false;
+                }
                 rebuildUnitOptions(payload.unit_options || [], preserved);
                 updateUrl();
             } catch (error) {
@@ -777,6 +1044,9 @@
 
                 if (payload.selected_period) {
                     periodSelect.value = payload.selected_period;
+                    if (window.jQuery && window.jQuery.fn.select2) {
+                        window.jQuery(periodSelect).trigger('change.select2');
+                    }
                 }
 
                 updateUrl();
@@ -803,20 +1073,18 @@
             await reloadData();
         }
 
+        hydrateBaseFilterOptions();
         initSelects();
-        rebuildUnitOptions(@json($unit_options ?? []), initialSelectedUnits);
+        rebuildUnitOptions(initialUnitOptions, initialSelectedUnits);
         renderCharts(initialChartPayload);
         updateUrl();
+        bindFilterEvents();
 
-        periodSelect.addEventListener('change', reloadAll);
-        branchSelect.addEventListener('change', reloadAll);
-        unitSelect.addEventListener('change', function () {
-            if (suppressUnitReload) {
-                return;
-            }
+        // Custom Dropdown Handlers
+        initDropdownHandlers(periodDropdownShell, periodDropdownToggle, periodDropdownMenu);
+        initDropdownHandlers(cabangDropdownShell, cabangDropdownToggle, cabangDropdownMenu);
+        initDropdownHandlers(unitDropdownShell, unitDropdownToggle, unitDropdownMenu);
 
-            reloadData();
-        });
         if (form) {
             form.addEventListener('submit', function (event) {
                 event.preventDefault();
@@ -828,7 +1096,7 @@
             periodSelect.value = periodSelect.options[0].value;
             reloadAll();
         } else if (periodSelect.value) {
-            setStatus('Mengambil snapshot awal...');
+            setStatus('Siap menampilkan data.');
         } else {
             setStatus('Periode tidak tersedia.');
         }

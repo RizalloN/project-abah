@@ -83,7 +83,7 @@ class SsaSimpananSnapshotBuilder
                 SUM(saldo) as total_saldo,
                 COUNT(*) as record_count
             ')
-            ->whereNotNull('Month_Day_Year_of_Posisi')
+            ->where('Month_Day_Year_of_Posisi', $period)
             ->whereNotNull('nama_cabang')
             ->groupBy('Month_Day_Year_of_Posisi', 'nama_cabang', 'produk', 'segmentasi')
             ->get();

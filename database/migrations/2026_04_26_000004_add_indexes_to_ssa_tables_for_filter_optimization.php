@@ -57,14 +57,14 @@ return new class extends Migration
         // Index 4: For SSA Pinjaman - similar filter optimization
         if (Schema::hasTable(self::SSA_PINJAMAN_TABLE) && !$this->indexExists(self::SSA_PINJAMAN_TABLE, 'idx_ssa_pinj_periode_filter')) {
             Schema::table(self::SSA_PINJAMAN_TABLE, function ($table) {
-                $table->index(['periode'], 'idx_ssa_pinj_periode_filter');
+                $table->index(['month_day_year_of_periode'], 'idx_ssa_pinj_periode_filter');
             });
         }
 
         // Index 5: For SSA Pinjaman segmentation
         if (Schema::hasTable(self::SSA_PINJAMAN_TABLE) && !$this->indexExists(self::SSA_PINJAMAN_TABLE, 'idx_ssa_pinj_segmentasi_filter')) {
             Schema::table(self::SSA_PINJAMAN_TABLE, function ($table) {
-                $table->index(['segmentasi'], 'idx_ssa_pinj_segmentasi_filter');
+                $table->index(['segmen_dashboard'], 'idx_ssa_pinj_segmentasi_filter');
             });
         }
     }

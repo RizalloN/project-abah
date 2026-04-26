@@ -74,11 +74,15 @@ class OptimizedDashboardDanaService extends DashboardDanaService
         $branches = [];
 
         foreach ($records as $record) {
-            $dataMatrix[$record->nama_cabang][$record->Month_Day_Year_of_Posisi][$record->produk]
-                = (float) $record->total_saldo;
+            $branch = $record->nama_cabang;
+            $period = $record->Month_Day_Year_of_Posisi;
+            $product = $record->produk;
+            $val = (float) $record->total_saldo;
 
-            if (!in_array($record->nama_cabang, $branches)) {
-                $branches[] = $record->nama_cabang;
+            $dataMatrix[$branch][$period][$product] = ($dataMatrix[$branch][$period][$product] ?? 0) + $val;
+
+            if (!in_array($branch, $branches)) {
+                $branches[] = $branch;
             }
         }
 

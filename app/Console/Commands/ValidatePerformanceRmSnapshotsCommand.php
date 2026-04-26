@@ -138,6 +138,7 @@ class ValidatePerformanceRmSnapshotsCommand extends Command
             ->whereRaw("UPPER(TRIM(cabang1)) = ?", [strtoupper(trim($cabang))])
             ->whereRaw("UPPER(TRIM(unit1)) = ?", [strtoupper(trim($unit))])
             ->whereRaw("UPPER(TRIM(pn_pengelola1)) = ?", [strtoupper(trim($rm))])
+            ->selectRaw('SUM(COALESCE(plafon, 0)) as plafon')
             ->selectRaw('SUM(COALESCE(baki_debet1, 0)) as loan_os')
             ->selectRaw('SUM(CASE WHEN kol_adk1 = 1 THEN COALESCE(baki_debet1, 0) ELSE 0 END) as lancar_os')
             ->selectRaw('SUM(CASE WHEN kol_adk1 = 2 THEN COALESCE(baki_debet1, 0) ELSE 0 END) as sml_os')
@@ -148,7 +149,7 @@ class ValidatePerformanceRmSnapshotsCommand extends Command
                 Carbon::parse($period)->startOfMonth()->toDateString(),
                 $period,
             ])
-            ->selectRaw('SUM(CASE WHEN tgl_realisasi BETWEEN DATE_FORMAT(?, "%Y-%m-01") AND ? THEN COALESCE(baki_debet1, 0) ELSE 0 END) as realisasi_os', [
+            ->selectRaw('SUM(CASE WHEN tgl_realisasi BETWEEN DATE_FORMAT(?, "%Y-%m-01") AND ? THEN COALESCE(plafon, 0) ELSE 0 END) as realisasi_os', [
                 Carbon::parse($period)->startOfMonth()->toDateString(),
                 $period,
             ])
@@ -168,6 +169,7 @@ class ValidatePerformanceRmSnapshotsCommand extends Command
         }
 
         $checks = [
+            'plafon' => [(float)$snapshot->plafon, (float)($sourceData->plafon ?? 0)],
             'loan_os' => [(float)$snapshot->loan_os, (float)($sourceData->loan_os ?? 0)],
             'lancar_os' => [(float)$snapshot->lancar_os, (float)($sourceData->lancar_os ?? 0)],
             'sml_os' => [(float)$snapshot->sml_os, (float)($sourceData->sml_os ?? 0)],

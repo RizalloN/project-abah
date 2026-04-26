@@ -114,7 +114,7 @@ class ImportIndexController extends Controller
             'identity' => 'uniqueid_namareport',
         ],
         'simpanan_multipn' => [
-            'index' => 'idx_smp_posisi_cab_unit',
+            'index' => 'idx_smp_posisi_updated',
             'period' => 'posisi',
             'kanca' => 'kantor_cabang',
             'identity' => 'uniqueid_SMPN',
@@ -934,7 +934,8 @@ class ImportIndexController extends Controller
     {
         $identity = $this->getDuplicateIdentityColumn($tableName);
 
-        return "CONCAT(DATE_FORMAT(COALESCE({$alias}.`created_at`, '1000-01-01 00:00:00'), '%Y%m%d%H%i%s'), '|', COALESCE({$alias}.`{$identity}`, ''))";
+        // OPTIMIZED: Avoid expensive DATE_FORMAT on millions of rows
+        return "CONCAT(COALESCE({$alias}.`created_at`, '1000-01-01 00:00:00'), '|', COALESCE({$alias}.`{$identity}`, ''))";
     }
 
     /**
@@ -1303,11 +1304,15 @@ class ImportIndexController extends Controller
     {
         $state = $this->getDeleteState($deleteId);
         if ($state === null) {
-            return null;
+            $queueRow = $this->findManagedDeleteQueueRow($deleteId);
+
+            return $this->reconcileManagedDeleteStateWithQueueRow($deleteId, null, $queueRow);
         }
 
         if (in_array($state['status'] ?? '', ['completed', 'warning', 'failed', 'cancelled'], true)) {
-            return $state;
+            $queueRow = $this->findManagedDeleteQueueRow($deleteId);
+
+            return $this->reconcileManagedDeleteStateWithQueueRow($deleteId, $state, $queueRow);
         }
 
         if ($this->shouldAllowManagedDeleteFallback($state)) {
@@ -1331,7 +1336,9 @@ class ImportIndexController extends Controller
             }
         }
 
-        return $this->reconcileStaleManagedDeleteState($deleteId, $state);
+        $queueRow = $this->findManagedDeleteQueueRow($deleteId);
+
+        return $this->reconcileManagedDeleteStateWithQueueRow($deleteId, $state, $queueRow);
     }
 
     public function sweepManagedReportDeleteStates(?ReportDataSyncService $syncService = null): int
@@ -2842,6 +2849,27 @@ class ImportIndexController extends Controller
         }
 
         $status = strtolower(trim((string) ($state['status'] ?? '')));
+        if ($status === 'failed' && $queueRow !== null) {
+            $reserved = (bool) ($queueRow['reserved'] ?? false);
+            $state['previous_failed_status'] = [
+                'message' => $state['message'] ?? null,
+                'error' => $state['error'] ?? null,
+                'error_code' => $state['error_code'] ?? null,
+                'updated_at' => $state['updated_at'] ?? null,
+            ];
+            $state['status'] = $reserved ? 'running' : 'queued';
+            $state['stage'] = $reserved ? 'deleting' : 'queued';
+            $state['batch_state'] = $reserved ? 'deleting_pending' : 'queued';
+            $state['message'] = $reserved
+                ? 'Delete masih berjalan di worker queue. Status disinkronkan dari Job Management.'
+                : 'Delete masih menunggu worker queue. Status disinkronkan dari Job Management.';
+            $state['error'] = null;
+            $state['error_code'] = null;
+            $state['updated_at'] = now()->toIso8601String();
+            $status = strtolower(trim((string) $state['status']));
+            $this->putDeleteState($deleteId, $state);
+        }
+
         if (in_array($status, ['completed', 'warning', 'failed', 'cancelled'], true)) {
             return $state;
         }
@@ -4579,8 +4607,8 @@ class ImportIndexController extends Controller
             }
 
             if ($mode === 'month_prefix') {
-                $clauses[] = "SUBSTR(CAST({$wrappedColumn} AS CHAR), 1, 7) = ?";
-                $bindings[] = (string) ($constraint['value'] ?? '');
+                $clauses[] = "{$wrappedColumn} LIKE ?";
+                $bindings[] = (string) ($constraint['value'] ?? '') . '%';
                 continue;
             }
 

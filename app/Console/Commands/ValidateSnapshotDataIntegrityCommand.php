@@ -109,7 +109,7 @@ class ValidateSnapshotDataIntegrityCommand extends Command
                 $samples = DB::table('performance_rm_snapshots')
                     ->where('periode', $p)
                     ->where('segmen', $seg)
-                    ->select('cabang', 'unit', 'rm', 'produk', 'loan_os', 'lancar_os', 'total_deb', 'realisasi_os')
+                    ->select('cabang', 'unit', 'rm', 'produk', 'plafon', 'loan_os', 'lancar_os', 'total_deb', 'realisasi_os')
                     ->inRandomOrder()
                     ->limit(10)
                     ->get();
@@ -130,7 +130,8 @@ class ValidateSnapshotDataIntegrityCommand extends Command
                         continue;
                     }
 
-                    if ($this->compareValues($snap->loan_os, $src->loan_os) &&
+                    if ($this->compareValues($snap->plafon, $src->plafon) &&
+                        $this->compareValues($snap->loan_os, $src->loan_os) &&
                         $this->compareValues($snap->lancar_os, $src->lancar_os) &&
                         $snap->total_deb == $src->total_deb) {
                         $matchCount++;
@@ -163,7 +164,7 @@ class ValidateSnapshotDataIntegrityCommand extends Command
             ->whereIn('segmen_dashboard', $sourceSegments)
             ->selectRaw('SUM(COALESCE(baki_debet1, 0)) as total_loan')
             ->selectRaw('SUM(CASE WHEN kol_adk1 = 1 THEN COALESCE(baki_debet1, 0) ELSE 0 END) as total_lancar')
-            ->selectRaw('SUM(CASE WHEN tgl_realisasi BETWEEN DATE_FORMAT(?, "%Y-%m-01") AND ? THEN COALESCE(baki_debet1, 0) ELSE 0 END) as total_real', [
+            ->selectRaw('SUM(CASE WHEN tgl_realisasi BETWEEN DATE_FORMAT(?, "%Y-%m-01") AND ? THEN COALESCE(plafon, 0) ELSE 0 END) as total_real', [
                 Carbon::parse($period)->startOfMonth()->toDateString(),
                 $period,
             ])
@@ -186,10 +187,11 @@ class ValidateSnapshotDataIntegrityCommand extends Command
             ->whereRaw("UPPER(TRIM(cabang1)) = ?", [strtoupper(trim($cabang))])
             ->whereRaw("UPPER(TRIM(unit1)) = ?", [strtoupper(trim($unit))])
             ->whereRaw("UPPER(TRIM(pn_pengelola1)) = ?", [strtoupper(trim($rm))])
+            ->selectRaw('SUM(COALESCE(plafon, 0)) as plafon')
             ->selectRaw('SUM(COALESCE(baki_debet1, 0)) as loan_os')
             ->selectRaw('SUM(CASE WHEN kol_adk1 = 1 THEN COALESCE(baki_debet1, 0) ELSE 0 END) as lancar_os')
             ->selectRaw('COUNT(DISTINCT nomor_rekening1) as total_deb')
-            ->selectRaw('SUM(CASE WHEN tgl_realisasi BETWEEN DATE_FORMAT(?, "%Y-%m-01") AND ? THEN COALESCE(baki_debet1, 0) ELSE 0 END) as realisasi_os', [
+            ->selectRaw('SUM(CASE WHEN tgl_realisasi BETWEEN DATE_FORMAT(?, "%Y-%m-01") AND ? THEN COALESCE(plafon, 0) ELSE 0 END) as realisasi_os', [
                 Carbon::parse($period)->startOfMonth()->toDateString(),
                 $period,
             ])

@@ -102,17 +102,17 @@ class ManagedReportDeleteRecoveryService
                     }
 
                     $query = $connection->table($normalizedTable)
-                        ->where(function ($q) use ($normalizedPeriodColumn, $safePeriodColumn) {
+                        ->where(function ($q) use ($normalizedPeriodColumn) {
                             $q->whereNull($normalizedPeriodColumn)
-                                ->orWhereRaw("TRIM(COALESCE(`{$safePeriodColumn}`, '')) = ''");
+                                ->orWhere($normalizedPeriodColumn, '');
                         });
 
                     if ($normalizedKancaColumn !== null) {
                         $safeKancaColumn = str_replace('`', '``', $normalizedKancaColumn);
                         if ($kancaIsNull) {
-                            $query->where(function ($q) use ($normalizedKancaColumn, $safeKancaColumn) {
+                            $query->where(function ($q) use ($normalizedKancaColumn) {
                                 $q->whereNull($normalizedKancaColumn)
-                                    ->orWhereRaw("TRIM(COALESCE(`{$safeKancaColumn}`, '')) = ''");
+                                    ->orWhere($normalizedKancaColumn, '');
                             });
                         } elseif ($kancaFilter !== null) {
                             $query->where($normalizedKancaColumn, $kancaFilter);
@@ -241,10 +241,10 @@ class ManagedReportDeleteRecoveryService
 
                     $query = $connection->table($normalizedTable)
                         ->where($normalizedPeriodColumn, $normalizedPeriod)
-                        ->where(function ($query) use ($normalizedKancaColumn, $safeKancaColumn) {
+                        ->where(function ($query) use ($normalizedKancaColumn) {
                             $query
                                 ->whereNull($normalizedKancaColumn)
-                                ->orWhereRaw("TRIM(COALESCE(`{$safeKancaColumn}`, '')) = ''");
+                                ->orWhere($normalizedKancaColumn, '');
                         });
 
                     $affected = $this->deleteScopedBatchByIdentity(

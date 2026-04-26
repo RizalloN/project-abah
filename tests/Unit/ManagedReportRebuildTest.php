@@ -11,6 +11,7 @@ use App\Support\ManagedReportSnapshotRebuildStore;
 use App\Support\PartitionMaintenanceService;
 use App\Support\ReportDataSyncService;
 use App\Support\ReportSnapshotBuilder;
+use App\Services\Import\ImportProgressService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -243,8 +244,8 @@ class ManagedReportRebuildTest extends TestCase
                 'results' => [],
                 'started_at' => null,
                 'finished_at' => null,
-                'created_at' => now()->subMinutes(20)->toIso8601String(),
-                'updated_at' => now()->subMinutes(20)->toIso8601String(),
+                'created_at' => now()->subMinutes(40)->toIso8601String(),
+                'updated_at' => now()->subMinutes(40)->toIso8601String(),
             ],
             ManagedReportSnapshotRebuildStore::ttl()
         );
@@ -255,5 +256,137 @@ class ManagedReportRebuildTest extends TestCase
         $this->assertSame('failed', $state['status']);
         $this->assertSame('failed', $state['stage']);
         $this->assertStringContainsString('tidak lagi memiliki job queue aktif', $state['message']);
+    }
+
+    public function test_reconcile_keeps_running_snapshot_state_without_queue_row_while_progress_is_recent(): void
+    {
+        $rebuildId = '123e4567-e89b-12d3-a456-426614174003';
+
+        Cache::put(
+            ManagedReportSnapshotRebuildStore::stateKey($rebuildId),
+            [
+                'rebuild_id' => $rebuildId,
+                'status' => 'running',
+                'stage' => 'rebuilding',
+                'queued' => false,
+                'force_rebuild' => true,
+                'source' => 'unit-test-running',
+                'message' => 'Chart Periodik: 2/8 periode selesai.',
+                'progress_percent' => 2,
+                'completed_units' => 4,
+                'total_units' => 178,
+                'build_units' => 177,
+                'current_report_key' => 'chart_periodik',
+                'current_report_label' => 'Chart Periodik',
+                'current_period' => '2026-04-20',
+                'report_completed_units' => 2,
+                'report_total_units' => 8,
+                'reports' => [],
+                'results' => [],
+                'started_at' => now()->subHours(2)->toIso8601String(),
+                'finished_at' => null,
+                'created_at' => now()->subHours(2)->toIso8601String(),
+                'updated_at' => now()->subMinutes(5)->toIso8601String(),
+            ],
+            ManagedReportSnapshotRebuildStore::ttl()
+        );
+
+        $state = app(ManagedReportSnapshotRebuildCoordinator::class)->reconcile($rebuildId);
+
+        $this->assertIsArray($state);
+        $this->assertSame('running', $state['status']);
+        $this->assertSame('rebuilding', $state['stage']);
+    }
+
+    public function test_sweep_marks_running_snapshot_state_failed_when_progress_is_stale(): void
+    {
+        $rebuildId = '123e4567-e89b-12d3-a456-426614174004';
+
+        Cache::put(
+            ManagedReportSnapshotRebuildStore::stateKey($rebuildId),
+            [
+                'rebuild_id' => $rebuildId,
+                'status' => 'running',
+                'stage' => 'rebuilding',
+                'queued' => false,
+                'force_rebuild' => true,
+                'source' => 'unit-test-stale-running',
+                'message' => 'Dashboard Harian: 10/155 periode selesai.',
+                'progress_percent' => 10,
+                'completed_units' => 10,
+                'total_units' => 178,
+                'build_units' => 177,
+                'current_report_key' => 'dashboard_harian',
+                'current_report_label' => 'Dashboard Harian',
+                'current_period' => '2026-02-20',
+                'report_completed_units' => 10,
+                'report_total_units' => 155,
+                'reports' => [],
+                'results' => [],
+                'started_at' => now()->subHours(2)->toIso8601String(),
+                'finished_at' => null,
+                'created_at' => now()->subHours(2)->toIso8601String(),
+                'updated_at' => now()->subMinutes(70)->toIso8601String(),
+            ],
+            ManagedReportSnapshotRebuildStore::ttl()
+        );
+        ManagedReportSnapshotRebuildStore::setActiveRebuildId($rebuildId);
+
+        $count = app(ManagedReportSnapshotRebuildCoordinator::class)->sweepStaleStates();
+        $state = ManagedReportSnapshotRebuildStore::getState($rebuildId);
+
+        $this->assertGreaterThanOrEqual(1, $count);
+        $this->assertSame('failed', $state['status']);
+        $this->assertStringContainsString('progress tidak bergerak', $state['message']);
+    }
+
+    public function test_superseded_snapshot_job_does_not_overwrite_old_running_state(): void
+    {
+        $oldRebuildId = '123e4567-e89b-12d3-a456-426614174005';
+        $activeRebuildId = '123e4567-e89b-12d3-a456-426614174006';
+
+        ManagedReportSnapshotRebuildStore::putState([
+            'rebuild_id' => $oldRebuildId,
+            'status' => 'running',
+            'stage' => 'rebuilding',
+            'queued' => false,
+            'force_rebuild' => true,
+            'source' => 'unit-test-old-worker',
+            'message' => 'Rasio CASA Debitur: 1/2 periode selesai.',
+            'progress_percent' => 96,
+            'completed_units' => 172,
+            'total_units' => 178,
+            'build_units' => 177,
+            'current_report_key' => 'rasio',
+            'current_report_label' => 'Rasio CASA Debitur',
+            'current_period' => '2026-04-22',
+            'report_completed_units' => 1,
+            'report_total_units' => 2,
+            'reports' => [],
+            'results' => [],
+            'started_at' => now()->subHour()->toIso8601String(),
+            'finished_at' => null,
+            'created_at' => now()->subHour()->toIso8601String(),
+        ]);
+        ManagedReportSnapshotRebuildStore::setActiveRebuildId($activeRebuildId);
+
+        $importProgressService = Mockery::mock(ImportProgressService::class);
+        $importProgressService->shouldReceive('hasActiveProcessingJobs')->once()->andReturnFalse();
+        app()->instance(ImportProgressService::class, $importProgressService);
+
+        $builder = Mockery::mock(ReportSnapshotBuilder::class);
+        $builder->shouldReceive('describeRebuildPlan')->never();
+
+        (new RunManagedReportSnapshotRebuildJob(true, 'unit-test', $oldRebuildId))->handle(
+            $builder,
+            Mockery::mock(DashboardHarianSnapshotService::class),
+            Mockery::mock(ReportDataSyncService::class)
+        );
+
+        $state = ManagedReportSnapshotRebuildStore::getState($oldRebuildId);
+
+        $this->assertSame('running', $state['status']);
+        $this->assertSame('Rasio CASA Debitur: 1/2 periode selesai.', $state['message']);
+        $this->assertSame($activeRebuildId, ManagedReportSnapshotRebuildStore::getActiveRebuildId());
     }
 }

@@ -330,32 +330,12 @@ class KinerjaRmReportController extends Controller
                 })
                 ->get();
 
-            $snapshotPeriods = $dbRows
-                ->pluck('periode')
-                ->map(fn ($period) => $this->normalizeDate((string) $period))
-                ->filter()
-                ->unique()
-                ->values()
-                ->all();
-            $sourceReplacementPeriods = array_values(array_diff($periods, $snapshotPeriods));
+            // Always fetch from snapshot (Zero Fallback Policy)
+            $manualTargets = DB::table('performance_targets')
+                ->get()
+                ->groupBy('category')
+                ->map(fn ($items) => $items->keyBy('rm_name'));
 
-            if (in_array($selectedPeriod, $periods, true)
-                && !in_array($selectedPeriod, $sourceReplacementPeriods, true)
-                && $this->snapshotRealisasiLooksStale($selectedPeriod)) {
-                $sourceReplacementPeriods[] = $selectedPeriod;
-                $dbRows = $dbRows->reject(fn ($row) => (string) $row->periode === $selectedPeriod)->values();
-            }
-
-            if ($sourceReplacementPeriods !== []) {
-                $dbRows = $dbRows->concat($this->fetchSourceBranchRows(
-                    $segmen,
-                    $sourceReplacementPeriods,
-                    $selectedCabang,
-                    $selectedProduct
-                ));
-            }
-
-            $manualTargets = $this->getManualJgTargets();
             $branches = [];
             $grandTotals = [
                 'curr' => 0.0, 'curr_deb' => 0, 'yoy' => 0.0, 'mtd' => 0.0, 'ytd' => 0.0,
@@ -458,11 +438,11 @@ class KinerjaRmReportController extends Controller
                     ];
                 }
 
-                // Manual Targets
+                // Manual Targets from database
                 $nameOnly = strtoupper(trim(explode('-', $rmName)[1] ?? $rmName));
                 $target = $manualTargets[$productLabel][$nameOnly] ?? null;
-                $tDeb = $target['deb'] ?? 0;
-                $tOs = $target['os'] ?? 0.0;
+                $tDeb = (int) ($target->target_deb ?? 0);
+                $tOs = (float) ($target->target_os ?? 0.0);
 
                 $item = [
                     'segmen' => $segmen,
@@ -595,6 +575,7 @@ class KinerjaRmReportController extends Controller
             ->selectRaw("{$unitExpr} as unit")
             ->selectRaw("{$rmExpr} as rm")
             ->selectRaw("{$productExpr} as produk")
+            ->selectRaw('SUM(COALESCE(plafon, 0)) as plafon')
             ->selectRaw('SUM(COALESCE(baki_debet1, 0)) as loan_os')
             ->selectRaw('SUM(CASE WHEN kol_adk1 = 1 THEN COALESCE(baki_debet1, 0) ELSE 0 END) as lancar_os')
             ->selectRaw('SUM(CASE WHEN kol_adk1 = 2 THEN COALESCE(baki_debet1, 0) ELSE 0 END) as sml_os')
@@ -605,7 +586,7 @@ class KinerjaRmReportController extends Controller
                 'COUNT(DISTINCT CASE WHEN tgl_realisasi BETWEEN DATE_FORMAT(periode, "%Y-%m-01") AND periode THEN nomor_rekening1 END) as realisasi_deb'
             )
             ->selectRaw(
-                'SUM(CASE WHEN tgl_realisasi BETWEEN DATE_FORMAT(periode, "%Y-%m-01") AND periode THEN COALESCE(baki_debet1, 0) ELSE 0 END) as realisasi_os'
+                'SUM(CASE WHEN tgl_realisasi BETWEEN DATE_FORMAT(periode, "%Y-%m-01") AND periode THEN COALESCE(plafon, 0) ELSE 0 END) as realisasi_os'
             )
             ->selectRaw('0 as total_deposit')
             ->selectRaw('NULL as quadrant')
@@ -691,28 +672,6 @@ class KinerjaRmReportController extends Controller
             ->exists();
     }
 
-    private function getManualJgTargets(): array
-    {
-        return [
-            'BRIGUNA-KONSUMER' => [
-                'BAGUS PRASETYO' => ['deb' => 20, 'os' => 3750000000],
-                'ARIANI SETYO PALUPI' => ['deb' => 20, 'os' => 3750000000],
-                'RONA ROHANA TALIBATA' => ['deb' => 20, 'os' => 3750000000],
-                'RATNA DWI SISWIYANTORO' => ['deb' => 19, 'os' => 3700000000],
-                'ARIS SULISTYAWAN' => ['deb' => 19, 'os' => 3700000000],
-                'TITIN OKTAVIA' => ['deb' => 20, 'os' => 3850000000],
-                'FARID ROMADLONI' => ['deb' => 19, 'os' => 3700000000],
-                'ZULFA ENDY CRISMANA' => ['deb' => 19, 'os' => 3700000000],
-                'ARDINI' => ['deb' => 20, 'os' => 3850000000],
-                'NOVAN YOGA PRATAMA' => ['deb' => 16, 'os' => 1900000000],
-            ],
-            'KPR' => [
-                'VIVIN SRIHARDILA TANTIAYUDHA' => ['deb' => 7, 'os' => 3300000000],
-                'ABDUL HALIM MUZAKKI' => ['deb' => 7, 'os' => 3500000000],
-                'GLAGAH MAHESTYA YAHYA' => ['deb' => 6, 'os' => 2800000000],
-            ],
-        ];
-    }
 
     private function mapRmName(string $rmName): string
     {

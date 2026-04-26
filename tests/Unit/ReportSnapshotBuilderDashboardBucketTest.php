@@ -198,6 +198,74 @@ class ReportSnapshotBuilderDashboardBucketTest extends TestCase
         $this->assertSame($expectedBuckets, $actualBuckets);
     }
 
+    public function test_force_dashboard_snapshot_rebuild_replaces_period_without_antijoin_cleanup(): void
+    {
+        $this->sourceIds = [
+            'test-dashboard-force-source-' . uniqid(),
+        ];
+        $this->accountNumbers = [
+            'UT-FORCE-' . uniqid(),
+            'UT-FORCE-STALE-' . uniqid(),
+        ];
+
+        DB::table('daily_loan_dinamis')->insert([
+            'uniqueid_namareport' => $this->sourceIds[0],
+            'periode' => $this->testPeriod,
+            'nomor_rekening1' => $this->accountNumbers[0],
+            'baki_debet1' => 1000,
+            'kolek_detail' => 'L',
+            'umur_tunggakan' => 0,
+            'flag_restruk' => null,
+            'kol_adk1' => '1',
+            'kolek' => '1',
+            'segmen_dashboard' => 'TEST',
+            'produk_dashboard' => 'TEST',
+            'cabang1' => 'TEST',
+            'unit1' => 'TEST',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('dashboard_pinjaman_snapshots')->insert([
+            'uniqueid_dps' => 'test-dashboard-force-stale-' . uniqid(),
+            'periode' => $this->testPeriod,
+            'account_number' => $this->accountNumbers[1],
+            'loan_balance' => 999,
+            'quality_bucket' => 'STALE',
+            'segmen_dashboard' => 'TEST',
+            'produk_dashboard' => 'TEST',
+            'cabang1' => 'TEST',
+            'unit1' => 'TEST',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $queries = [];
+        DB::listen(function ($query) use (&$queries): void {
+            $queries[] = $query->sql;
+        });
+
+        $result = app(ReportSnapshotBuilder::class)->rebuildDashboard($this->testPeriod, true);
+
+        $this->assertSame(1, $result[$this->testPeriod]);
+        $this->assertSame(
+            [$this->accountNumbers[0]],
+            DB::table('dashboard_pinjaman_snapshots')
+                ->where('periode', $this->testPeriod)
+                ->whereIn('account_number', $this->accountNumbers)
+                ->pluck('account_number')
+                ->all()
+        );
+
+        $this->assertNotContains(
+            true,
+            array_map(
+                static fn (string $sql): bool => str_contains($sql, 'DELETE snap') && str_contains($sql, 'LEFT JOIN'),
+                $queries
+            )
+        );
+    }
+
     private function configureMysqlConnectionFromEnvironment(): void
     {
         $env = $this->readDotEnv(base_path('.env'));

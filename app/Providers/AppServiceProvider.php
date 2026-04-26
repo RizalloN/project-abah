@@ -17,6 +17,17 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->registerCustomQueueExtensions();
+
+        // Bind optimized services for Phase 2
+        $this->app->bind(
+            \App\Support\DashboardDanaService::class,
+            \App\Support\OptimizedDashboardDanaService::class
+        );
+
+        $this->app->bind(
+            \App\Support\RkaLookupService::class,
+            \App\Support\OptimizedRkaLookupService::class
+        );
     }
 
     /**

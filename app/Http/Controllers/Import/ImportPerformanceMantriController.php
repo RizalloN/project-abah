@@ -222,10 +222,14 @@ class ImportPerformanceMantriController extends Controller
 
         try {
             $summary = (array) session('mantri_preview_summary', []);
-            $totalRows = max(0, (int) ($summary['highest_row'] ?? 0) - self::DATA_START_ROW + 1);
+            $totalRows = (int) ($summary['total_meaningful_rows'] ?? 0);
+            
             if ($totalRows <= 0) {
-                $context = $this->openWorkbookWorksheet($sourcePath);
-                $totalRows = max(0, (int) $context['highest_row'] - self::DATA_START_ROW + 1);
+                $totalRows = max(0, (int) ($summary['highest_row'] ?? 0) - self::DATA_START_ROW + 1);
+                if ($totalRows <= 0) {
+                    $context = $this->openWorkbookWorksheet($sourcePath);
+                    $totalRows = max(0, (int) $context['highest_row'] - self::DATA_START_ROW + 1);
+                }
             }
             $jobId = 'mantri_' . md5($sourcePath . '|' . microtime(true));
 
@@ -433,12 +437,12 @@ class ImportPerformanceMantriController extends Controller
             'table' => self::TABLE_NAME,
             'sheet' => $context['sheet_name'],
             'source_rows' => $processedRows,
-            'total_rows' => $processedRows - $skippedRows,
+            'total_rows' => $insertedRows, // Menampilkan baris yang benar-benar ada datanya
             'inserted_rows' => $insertedRows,
-            'skipped_rows' => $skippedRows,
+            'skipped_rows' => 0, // Baris kosong tidak dianggap "terlewat" secara error
             'total_success' => $insertedRows,
-            'total_failed' => $skippedRows,
-            'skipped_count' => $skippedRows,
+            'total_failed' => 0,
+            'skipped_count' => 0,
             'skipped_rows_list' => [],
             'latest_period' => $snapshotPeriod,
         ];
@@ -470,14 +474,14 @@ class ImportPerformanceMantriController extends Controller
         $highestRow = $context['highest_row'];
         $sampleRows = [];
         $snapshotPeriod = $this->extractSnapshotPeriod($worksheet, $columns);
+        $totalMeaningfulRows = 0;
 
         for ($rowNumber = self::DATA_START_ROW; $rowNumber <= $highestRow; $rowNumber++) {
             $row = $this->buildRowPayload($worksheet, $rowNumber, $columns);
-            if ($row !== null && count($sampleRows) < self::PREVIEW_ROW_LIMIT) {
-                $sampleRows[] = $this->mapPayloadToPreviewRow($row);
-
-                if (count($sampleRows) >= self::PREVIEW_ROW_LIMIT) {
-                    break;
+            if ($row !== null) {
+                $totalMeaningfulRows++;
+                if (count($sampleRows) < self::PREVIEW_ROW_LIMIT) {
+                    $sampleRows[] = $this->mapPayloadToPreviewRow($row);
                 }
             }
         }
@@ -485,6 +489,7 @@ class ImportPerformanceMantriController extends Controller
         return [
             'sheet_name' => $context['sheet_name'],
             'highest_row' => $highestRow,
+            'total_meaningful_rows' => $totalMeaningfulRows,
             'snapshot_period' => $snapshotPeriod,
             'headers' => array_values(array_map(
                 static fn (array $definition): string => $definition[0],

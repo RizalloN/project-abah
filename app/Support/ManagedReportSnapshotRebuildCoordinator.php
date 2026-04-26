@@ -19,14 +19,21 @@ class ManagedReportSnapshotRebuildCoordinator
     private const SLOT_RECOVERY_LOCK_KEY = 'report_management:rebuild:slot_recovery';
     private const SLOT_RECOVERY_LOCK_SECONDS = 8;
     private const QUEUED_FAIL_SECONDS = 300;
-    private const RUNNING_FAIL_SECONDS = 1800;
-    private const SNAPSHOT_QUEUELESS_STALE_SECONDS = 300;
+    private const RUNNING_FAIL_SECONDS = 3600;
+    private const SNAPSHOT_QUEUELESS_STALE_SECONDS = 1800;
     private const SNAPSHOT_RESERVED_STALE_SECONDS = 600;
 
     public function queue(bool $forceRebuild, ?string $source = null): array
     {
+        $this->terminateStaleCachedStates();
+
         $rebuildId = (string) Str::uuid();
         $slotReserved = false;
+        $runningState = $this->findRunningRebuildState();
+
+        if ($runningState !== null) {
+            return $this->activeRebuildResponse($forceRebuild, $runningState, 'Rebuild snapshot seluruh report masih berjalan. Request baru tidak dijadwalkan agar tidak membuat queue stuck atau rebuild paralel.');
+        }
 
         if (Cache::add(ManagedReportSnapshotRebuildStore::PENDING_KEY, $rebuildId, ManagedReportSnapshotRebuildStore::ttl())) {
             $slotReserved = true;
@@ -77,22 +84,7 @@ class ManagedReportSnapshotRebuildCoordinator
             }
 
             if (!$slotReserved) {
-                return [
-                    'status_code' => 409,
-                    'payload' => [
-                        'status' => 'warning',
-                        'message' => 'Rebuild snapshot seluruh report sudah sedang berjalan atau masih antre.',
-                        'force_rebuild' => $forceRebuild,
-                        'queued' => false,
-                        'rebuild_id' => $activeRebuildId,
-                        'progress_percent' => (int) ($activeState['progress_percent'] ?? 0),
-                        'completed_units' => (int) ($activeState['completed_units'] ?? 0),
-                        'total_units' => (int) ($activeState['total_units'] ?? 1),
-                        'stage' => $activeState['stage'] ?? 'queued',
-                        'current_report_label' => $activeState['current_report_label'] ?? null,
-                        'current_period' => $activeState['current_period'] ?? null,
-                    ],
-                ];
+                return $this->activeRebuildResponse($forceRebuild, $activeState, 'Rebuild snapshot seluruh report sudah sedang berjalan atau masih antre.', $activeRebuildId);
             }
         }
 
@@ -198,6 +190,8 @@ class ManagedReportSnapshotRebuildCoordinator
 
     public function forceStart(string $rebuildId): array
     {
+        $this->terminateStaleCachedStates();
+
         $rebuildId = trim($rebuildId);
         $queueRow = $this->findSnapshotQueueRow($rebuildId);
         $state = $this->resolveOperationalState($rebuildId, $queueRow);
@@ -242,6 +236,15 @@ class ManagedReportSnapshotRebuildCoordinator
                     'message' => 'Force start hanya tersedia untuk snapshot rebuild yang masih queued.',
                 ],
             ];
+        }
+
+        $runningState = $this->findRunningRebuildState([$rebuildId]);
+        if ($runningState !== null) {
+            return $this->activeRebuildResponse(
+                (bool) ($state['force_rebuild'] ?? false),
+                $runningState,
+                'Force start ditolak karena rebuild snapshot lain masih berjalan. Tunggu selesai agar tidak terjadi rebuild paralel.'
+            );
         }
 
         if (ManagedReportSnapshotRebuildStore::getState($rebuildId) === null) {
@@ -459,6 +462,8 @@ class ManagedReportSnapshotRebuildCoordinator
             $reconciled++;
         }
 
+        $reconciled += $this->terminateStaleCachedStates();
+
         return $reconciled;
     }
 
@@ -534,14 +539,127 @@ class ManagedReportSnapshotRebuildCoordinator
             return false;
         }
 
-        $referenceTimestamp = $state['started_at'] ?: ($state['updated_at'] ?? $state['created_at'] ?? null);
+        $referenceTimestamp = in_array($stage, ['rebuilding', 'cache'], true)
+            ? ($state['updated_at'] ?? $state['started_at'] ?? $state['created_at'] ?? null)
+            : ($state['started_at'] ?: ($state['updated_at'] ?? $state['created_at'] ?? null));
         if (!$this->timestampIsStale($referenceTimestamp, self::REBUILD_FALLBACK_STALE_SECONDS)) {
             return false;
         }
 
         $activeRebuildId = ManagedReportSnapshotRebuildStore::getActiveRebuildId();
 
-        return $activeRebuildId === null || $activeRebuildId === $rebuildId;
+        if ($activeRebuildId !== null && $activeRebuildId !== $rebuildId) {
+            return false;
+        }
+
+        return $this->findRunningRebuildState([$rebuildId]) === null;
+    }
+
+    private function activeRebuildResponse(bool $forceRebuild, ?array $state, string $message, ?string $fallbackRebuildId = null): array
+    {
+        return [
+            'status_code' => 409,
+            'payload' => [
+                'status' => 'warning',
+                'message' => $message,
+                'force_rebuild' => $forceRebuild,
+                'queued' => false,
+                'rebuild_id' => $state['rebuild_id'] ?? $fallbackRebuildId,
+                'progress_percent' => (int) ($state['progress_percent'] ?? 0),
+                'completed_units' => (int) ($state['completed_units'] ?? 0),
+                'total_units' => (int) ($state['total_units'] ?? 1),
+                'stage' => $state['stage'] ?? 'queued',
+                'current_report_label' => $state['current_report_label'] ?? null,
+                'current_period' => $state['current_period'] ?? null,
+            ],
+        ];
+    }
+
+    private function findRunningRebuildState(array $excludeRebuildIds = []): ?array
+    {
+        $excluded = array_fill_keys(array_map(
+            static fn (string $id): string => strtolower(trim($id)),
+            $excludeRebuildIds
+        ), true);
+
+        foreach ($this->cachedRebuildStates() as $state) {
+            $rebuildId = strtolower(trim((string) ($state['rebuild_id'] ?? '')));
+            if ($rebuildId === '' || isset($excluded[$rebuildId])) {
+                continue;
+            }
+
+            $status = strtolower(trim((string) ($state['status'] ?? '')));
+            $stage = strtolower(trim((string) ($state['stage'] ?? '')));
+            if ($status !== 'running' || !in_array($stage, ['planning', 'rebuilding', 'cache'], true)) {
+                continue;
+            }
+
+            $updatedAt = (string) ($state['updated_at'] ?? $state['started_at'] ?? $state['created_at'] ?? '');
+            if ($this->timestampIsOlderThan($updatedAt, self::RUNNING_FAIL_SECONDS)) {
+                continue;
+            }
+
+            return $state;
+        }
+
+        return null;
+    }
+
+    private function cachedRebuildStates(): array
+    {
+        if (!Schema::hasTable('cache')) {
+            return [];
+        }
+
+        try {
+            return DB::table('cache')
+                ->where('key', 'like', '%' . ManagedReportSnapshotRebuildStore::stateKey('') . '%')
+                ->pluck('value')
+                ->map(function ($value): ?array {
+                    $decoded = @unserialize((string) $value);
+
+                    return is_array($decoded) ? ManagedReportSnapshotRebuildStore::normalizeState($decoded, false) : null;
+                })
+                ->filter()
+                ->values()
+                ->all();
+        } catch (Throwable $e) {
+            Log::debug('Failed to scan cached managed report rebuild states.', [
+                'exception' => $e::class,
+                'message' => $e->getMessage(),
+            ]);
+
+            return [];
+        }
+    }
+
+    private function terminateStaleCachedStates(): int
+    {
+        $terminated = 0;
+
+        foreach ($this->cachedRebuildStates() as $state) {
+            $status = strtolower(trim((string) ($state['status'] ?? '')));
+            $stage = strtolower(trim((string) ($state['stage'] ?? '')));
+            if ($status === 'queued' && $this->timestampIsOlderThan((string) ($state['updated_at'] ?? ''), self::QUEUED_FAIL_SECONDS)) {
+                $this->markStateAsFailed($state, 'Snapshot rebuild otomatis dihentikan karena terlalu lama menunggu worker tanpa queue aktif.');
+                $terminated++;
+                continue;
+            }
+
+            if ($status !== 'running' || !in_array($stage, ['planning', 'rebuilding', 'cache'], true)) {
+                continue;
+            }
+
+            $updatedAt = (string) ($state['updated_at'] ?? $state['started_at'] ?? $state['created_at'] ?? '');
+            if (!$this->timestampIsOlderThan($updatedAt, self::RUNNING_FAIL_SECONDS)) {
+                continue;
+            }
+
+            $this->markStateAsFailed($state, 'Snapshot rebuild otomatis dihentikan karena progress tidak bergerak terlalu lama.');
+            $terminated++;
+        }
+
+        return $terminated;
     }
 
     private function reconcileStateWithQueueRow(string $rebuildId, ?array $state, ?array $queueRow): ?array
@@ -571,7 +689,11 @@ class ManagedReportSnapshotRebuildCoordinator
 
         $updatedAt = (string) ($state['updated_at'] ?? $state['started_at'] ?? $state['created_at'] ?? '');
 
-        if ($queueRow === null && $this->timestampIsOlderThan($updatedAt, self::SNAPSHOT_QUEUELESS_STALE_SECONDS)) {
+        if (
+            $queueRow === null
+            && $this->stageCanFailWithoutQueueRow($state)
+            && $this->timestampIsOlderThan($updatedAt, self::SNAPSHOT_QUEUELESS_STALE_SECONDS)
+        ) {
             return $this->markStateAsFailed(
                 $state,
                 'Progress snapshot tidak lagi memiliki job queue aktif dan tidak bergerak terlalu lama. State dibersihkan otomatis.'
@@ -612,6 +734,13 @@ class ManagedReportSnapshotRebuildCoordinator
         }
 
         return $state;
+    }
+
+    private function stageCanFailWithoutQueueRow(array $state): bool
+    {
+        $stage = strtolower(trim((string) ($state['stage'] ?? '')));
+
+        return in_array($stage, ['queued', 'planning'], true);
     }
 
     private function makeSyntheticState(string $rebuildId, array $queueRow): array
@@ -693,7 +822,9 @@ class ManagedReportSnapshotRebuildCoordinator
             return $state;
         }
 
-        $referenceTimestamp = $state['started_at'] ?: ($state['updated_at'] ?? $state['created_at'] ?? null);
+        $referenceTimestamp = in_array($stage, ['rebuilding', 'cache'], true)
+            ? ($state['updated_at'] ?? $state['started_at'] ?? $state['created_at'] ?? null)
+            : ($state['started_at'] ?: ($state['updated_at'] ?? $state['created_at'] ?? null));
 
         $shouldFail = match (true) {
             in_array($stage, ['queued', 'planning'], true) => $this->timestampIsStale($referenceTimestamp, self::QUEUED_FAIL_SECONDS),

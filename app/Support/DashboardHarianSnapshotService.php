@@ -103,6 +103,8 @@ class DashboardHarianSnapshotService
         'source_recovery_row_count',
         'source_recovery_period',
     ];
+    private ?array $availableSourceMetadataColumnsCache = null;
+    private ?bool $canUseSnapshotMetricsCache = null;
     private const ROW_DEFINITIONS = [
         ['key' => 'total_simpanan', 'label' => '1. Simpanan', 'type' => 'currency', 'depth' => 0, 'accent' => 'strong'],
         ['key' => 'simpanan_ritel', 'label' => 'A. Ritel', 'type' => 'currency', 'depth' => 1, 'accent' => 'section'],
@@ -191,16 +193,9 @@ class DashboardHarianSnapshotService
         $totalPeriods = count($periods);
 
         foreach ($periods as $index => $snapshotPeriod) {
+            $this->reportProgress($progress, $snapshotPeriod, $index, $totalPeriods);
             $results[$snapshotPeriod] = $this->buildPeriodSnapshot($snapshotPeriod, $force);
-
-            if ($progress !== null) {
-                $progress([
-                    'current_period' => $snapshotPeriod,
-                    'completed_units' => $index + 1,
-                    'total_units' => $totalPeriods,
-                    'current_result_count' => (int) ($results[$snapshotPeriod] ?? 0),
-                ]);
-            }
+            $this->reportProgress($progress, $snapshotPeriod, $index + 1, $totalPeriods, (int) ($results[$snapshotPeriod] ?? 0));
         }
 
         if ($period === null) {
@@ -2154,11 +2149,15 @@ class DashboardHarianSnapshotService
 
     private function availableSourceMetadataColumns(): array
     {
-        if (!Schema::hasTable(self::SNAPSHOT_TABLE)) {
-            return [];
+        if ($this->availableSourceMetadataColumnsCache !== null) {
+            return $this->availableSourceMetadataColumnsCache;
         }
 
-        return array_values(array_filter(
+        if (!Schema::hasTable(self::SNAPSHOT_TABLE)) {
+            return $this->availableSourceMetadataColumnsCache = [];
+        }
+
+        return $this->availableSourceMetadataColumnsCache = array_values(array_filter(
             self::SOURCE_METADATA_COLUMNS,
             fn (string $column) => Schema::hasColumn(self::SNAPSHOT_TABLE, $column)
         ));
@@ -2182,14 +2181,37 @@ class DashboardHarianSnapshotService
 
     private function canUseSnapshotMetrics(): bool
     {
+        if ($this->canUseSnapshotMetricsCache !== null) {
+            return $this->canUseSnapshotMetricsCache;
+        }
+
         if (!Schema::hasTable(self::SNAPSHOT_TABLE)) {
-            return false;
+            return $this->canUseSnapshotMetricsCache = false;
         }
 
         $columns = Schema::getColumnListing(self::SNAPSHOT_TABLE);
         $requiredColumns = array_merge(['snapshot_period', 'source_row_count'], self::METRIC_COLUMNS);
 
-        return array_diff($requiredColumns, $columns) === [];
+        return $this->canUseSnapshotMetricsCache = array_diff($requiredColumns, $columns) === [];
+    }
+
+    private function reportProgress(
+        ?callable $progress,
+        string $snapshotPeriod,
+        int $completedUnits,
+        int $totalUnits,
+        int $currentResultCount = 0
+    ): void {
+        if ($progress === null) {
+            return;
+        }
+
+        $progress([
+            'current_period' => $snapshotPeriod,
+            'completed_units' => max(0, $completedUnits),
+            'total_units' => $totalUnits,
+            'current_result_count' => max(0, $currentResultCount),
+        ]);
     }
 
     private function normalizeDate(?string $value): ?string

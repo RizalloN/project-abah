@@ -31,8 +31,8 @@ class RekeningDormantController extends Controller
         'KC Ngawi' => '%KC NGAWI%',
         'KC Ponorogo' => '%KC PONOROGO%',
     ];
-    private const DORMANT_UNIT_INDEX = 'idx_smp_posisi_status_cab_unit';
-    private const DORMANT_SUMMARY_INDEX = 'idx_smp_posisi_status_cab_unit';
+    private const DORMANT_UNIT_INDEX = 'idx_smp_dormant_covering';
+    private const DORMANT_SUMMARY_INDEX = 'idx_smp_dormant_covering';
 
     public function index()
     {
@@ -260,7 +260,7 @@ class RekeningDormantController extends Controller
                 'unit_column' => 'unit_kerja',
                 'status_column' => 'status',
                 'status_filter' => '9',
-                'count_basis' => 'COUNT(DISTINCT TRIM(no_rekening))',
+                'count_basis' => 'COUNT(DISTINCT no_rekening)',
                 'requested_period' => $requestedPeriod,
                 'resolved_period' => $currentPeriod,
                 'comparison_periods' => [
@@ -473,7 +473,7 @@ class RekeningDormantController extends Controller
                 ->select(
                     'posisi',
                     'kantor_cabang',
-                    DB::raw('COUNT(DISTINCT TRIM(no_rekening)) as dormant_count')
+                    DB::raw('COUNT(DISTINCT no_rekening) as dormant_count')
                 )
                 ->whereIn('posisi', $periods->all())
                 ->where('status', '9')
@@ -603,7 +603,7 @@ class RekeningDormantController extends Controller
         ) {
             // BATCH QUERY: Get all periods in one query with index hint
             $rows = DB::table(DB::raw($this->qualifyIndexedSource('simpanan_multipn', null, [self::DORMANT_SUMMARY_INDEX])))
-                ->select('posisi', 'unit_kerja', DB::raw('COUNT(DISTINCT TRIM(no_rekening)) as dormant_count'))
+                ->select('posisi', 'unit_kerja', DB::raw('COUNT(DISTINCT no_rekening) as dormant_count'))
                 ->whereIn('posisi', $periods->all())
                 ->where('status', '9')
                 ->whereIn('kantor_cabang', $selectedRawBranches->all())

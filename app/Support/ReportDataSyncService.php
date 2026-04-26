@@ -25,6 +25,7 @@ class ReportDataSyncService
     private const DORMANT_SNAPSHOT_TABLE = 'rekening_dormant_snapshots';
     private const NEW_PAYROLL_SNAPSHOT_TABLE = 'performance_new_payroll_snapshots';
     private const PERFORMANCE_RM_SNAPSHOT_TABLE = 'performance_rm_snapshots';
+    private const SSA_SIMPANAN_SNAPSHOT_TABLE = 'ssa_simpanan_snapshots';
     private const CACHE_VERSION_KEY = 'report_cache_version:global';
     private const RASIO_REBUILD_LOCK_PREFIX = 'snapshot:rasio:rebuild:';
     private const SIMPANAN_REBUILD_LOCK_PREFIX = 'snapshot:simpanan:rebuild:';
@@ -142,6 +143,7 @@ class ReportDataSyncService
                 'ssa_pinjaman' => $this->syncSsaPinjaman($periodHint, $jobId, $source, $deleteId),
                 'lw325_ph' => $this->syncReportPh($periodHint, $jobId, $source, $deleteId),
                 'performance_pis_per_produk' => $this->syncPerformanceNewPayroll($periodHint, $jobId, $source, $deleteId),
+                'rka' => app(\App\Support\OptimizedRkaLookupService::class)->invalidateCache(),
                 default => null,
             };
 
@@ -375,12 +377,15 @@ class ReportDataSyncService
 
     private function syncSsaSimpanan(?string $periodHint, ?int $jobId, ?string $source): void
     {
-        // Dispatch background job for snapshot rebuild instead of blocking
-        // This allows the import to complete immediately instead of waiting 0.4-60+ seconds
+        // Rebuild the new SSA Simpanan Snapshot (Phase 2)
+        $this->runSnapshotAudit('ssa_simpanan', $periodHint, $jobId, $source, 'snapshot_ssa_simpanan', function () use ($periodHint) {
+            return app(\App\Support\SsaSimpananSnapshotBuilder::class)->rebuild($periodHint, true);
+        });
+
+        // Dispatch background job for dashboard harian snapshot rebuild
         $this->dispatchDashboardHarianSnapshotRebuildJob($periodHint);
 
-        // Skip audit and stats for now - background job will handle them
-        Log::info('Dispatched background Dashboard Harian snapshot rebuild for SSA Simpanan', [
+        Log::info('Triggered SSA Simpanan snapshot rebuild and background Dashboard Harian sync', [
             'period' => $periodHint,
             'job_id' => $jobId,
         ]);
@@ -554,6 +559,7 @@ class ReportDataSyncService
             ],
             'ssa_simpanan' => [
                 self::DASHBOARD_HARIAN_SNAPSHOT_TABLE => 'snapshot_period',
+                self::SSA_SIMPANAN_SNAPSHOT_TABLE => 'Month_Day_Year_of_Posisi',
             ],
             'ssa_pinjaman' => [
                 self::DASHBOARD_HARIAN_SNAPSHOT_TABLE => 'snapshot_period',

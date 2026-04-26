@@ -1533,6 +1533,80 @@ class ManagedReportDeleteTest extends TestCase
         $this->assertSame(20000, $resolved['deleted_rows']);
     }
 
+    public function test_delete_status_uses_queue_state_when_progress_cache_is_stale_but_queue_still_reserved(): void
+    {
+        $deleteId = (string) \Illuminate\Support\Str::uuid();
+
+        Cache::store('file')->put($this->managedDeleteStateCacheKey($deleteId), [
+            'delete_id' => $deleteId,
+            'status' => 'running',
+            'stage' => 'deleting',
+            'batch_state' => 'deleting_pending',
+            'table_name' => 'daily_loan_dinamis',
+            'deleted_rows' => 0,
+            'total_rows' => 100,
+            'remaining_rows' => 100,
+            'message' => 'Delete sedang diproses.',
+            'created_at' => now()->subMinutes(20)->toIso8601String(),
+            'updated_at' => now()->subMinutes(20)->toIso8601String(),
+        ]);
+
+        DB::table('jobs')->insert([
+            'queue' => 'imports-high',
+            'reserved_at' => now()->subMinute()->timestamp,
+            'available_at' => now()->subMinutes(2)->timestamp,
+            'created_at' => now()->subMinutes(2)->timestamp,
+            'payload' => 'a:2:{s:7:"jobClass";s:24:"RunManagedReportDeleteJob";s:8:"deleteId";s:36:"' . $deleteId . '";}',
+        ]);
+
+        $controller = app(ImportIndexController::class);
+        $response = $controller->managedReportDeleteStatus($deleteId);
+        $payload = $response->getData(true);
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame('running', $payload['status']);
+        $this->assertSame('deleting', $payload['stage']);
+        $this->assertSame('Delete sedang diproses.', $payload['message']);
+    }
+
+    public function test_delete_status_recovers_failed_cache_when_queue_still_reserved(): void
+    {
+        $deleteId = (string) \Illuminate\Support\Str::uuid();
+
+        Cache::store('file')->put($this->managedDeleteStateCacheKey($deleteId), [
+            'delete_id' => $deleteId,
+            'status' => 'failed',
+            'stage' => 'failed',
+            'batch_state' => 'failed',
+            'table_name' => 'daily_loan_dinamis',
+            'deleted_rows' => 0,
+            'total_rows' => 100,
+            'remaining_rows' => 100,
+            'message' => 'Delete report management stale timeout. Progress tidak bergerak terlalu lama.',
+            'error' => 'Delete report management stale timeout. Progress tidak bergerak terlalu lama.',
+            'created_at' => now()->subMinutes(20)->toIso8601String(),
+            'updated_at' => now()->subMinutes(20)->toIso8601String(),
+        ]);
+
+        DB::table('jobs')->insert([
+            'queue' => 'imports-high',
+            'reserved_at' => now()->subMinute()->timestamp,
+            'available_at' => now()->subMinutes(2)->timestamp,
+            'created_at' => now()->subMinutes(2)->timestamp,
+            'payload' => 'a:2:{s:7:"jobClass";s:24:"RunManagedReportDeleteJob";s:8:"deleteId";s:36:"' . $deleteId . '";}',
+        ]);
+
+        $controller = app(ImportIndexController::class);
+        $response = $controller->managedReportDeleteStatus($deleteId);
+        $payload = $response->getData(true);
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame('running', $payload['status']);
+        $this->assertSame('deleting', $payload['stage']);
+        $this->assertSame('Delete masih berjalan di worker queue. Status disinkronkan dari Job Management.', $payload['message']);
+        $this->assertNull($payload['error']);
+    }
+
     public function test_resolve_managed_report_delete_jobs_exposes_status_labels_without_crashing(): void
     {
         $deleteId = (string) \Illuminate\Support\Str::uuid();

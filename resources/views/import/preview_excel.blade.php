@@ -1264,6 +1264,14 @@ document.addEventListener('DOMContentLoaded', function () {
             streamDone = true;
             if (evtSource) evtSource.close();
 
+            d = Object.assign({}, d || {});
+            if (String(d.status || 'completed') === 'completed' && Number(d.total_success || 0) === 0) {
+                var inferredSuccess = Number(d.processed_rows || d.total_rows || 0) - Number(d.total_failed || 0);
+                if (inferredSuccess > 0) {
+                    d.total_success = inferredSuccess;
+                }
+            }
+
             var skippedCount = Number(d.skipped_count || 0);
             var skippedRows = Array.isArray(d.skipped_rows) ? d.skipped_rows : [];
             var skippedRowsText = skippedRows.length ? skippedRows.join(', ') : '';
