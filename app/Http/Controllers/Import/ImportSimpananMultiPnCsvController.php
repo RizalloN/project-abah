@@ -1350,23 +1350,18 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
         ?callable $beforeLoad = null
     ): int
     {
-        $affected = 0;
-        $indexesDisabled = false;
-
         try {
-            // CRITICAL OPTIMIZATION: Disable all secondary indexes during LOAD DATA
-            // For 680k rows with 13+ indexes, index thrashing causes 6-12h delay
-            // Disabling + rebuild takes ~5 minutes vs 6h+ of index updates
+            // CRITICAL OPTIMIZATION: Optimize constraint checking for bulk load
+            // For 680k rows with 23+ indexes, index enforcement causes significant slowdown
+            // Using SET unique_checks/foreign_key_checks is safer than DISABLE KEYS (no implicit commit)
+            // These settings affect index enforcement but NOT index maintenance
             try {
-                $pdo->exec('SET FOREIGN_KEY_CHECKS=0');
-                $pdo->exec('SET UNIQUE_CHECKS=0');
-                $pdo->exec('ALTER TABLE `simpanan_multipn` DISABLE KEYS');
-                $indexesDisabled = true;
-
-                Log::debug('Simpanan MultiPN: Secondary indexes disabled for fast LOAD DATA');
+                $pdo->exec('SET SESSION unique_checks = 0');
+                $pdo->exec('SET SESSION foreign_key_checks = 0');
+                Log::debug('Simpanan MultiPN: Constraint checking optimized for LOAD DATA');
             } catch (\Throwable $e) {
-                Log::warning('Failed to disable indexes before LOAD DATA (continuing anyway): ' . $e->getMessage());
-                // Continue anyway - better to slow LOAD DATA than fail entirely
+                Log::warning('Failed to optimize constraint checking (continuing): ' . $e->getMessage());
+                // Continue anyway - constraint checks are secondary to data integrity
             }
 
             $pdo->exec('SET @skip_snapshot_invalidation = 1');
@@ -1375,27 +1370,22 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                 $beforeLoad($pdo);
             }
 
-            // Execute LOAD DATA (should be very fast now with indexes disabled)
+            // Execute LOAD DATA
             $affected = $pdo->exec($sql);
 
             if ($affected === false) {
                 throw new \RuntimeException('LOAD DATA LOCAL INFILE gagal dieksekusi untuk Simpanan MultiPN.');
             }
 
-            // Re-enable and rebuild indexes
-            if ($indexesDisabled) {
-                try {
-                    $pdo->exec('ALTER TABLE `simpanan_multipn` ENABLE KEYS');
-                    $pdo->exec('SET UNIQUE_CHECKS=1');
-                    $pdo->exec('SET FOREIGN_KEY_CHECKS=1');
-
-                    Log::debug('Simpanan MultiPN: Indexes re-enabled after LOAD DATA', [
-                        'affected_rows' => $affected
-                    ]);
-                } catch (\Throwable $e) {
-                    Log::error('Failed to re-enable indexes after LOAD DATA: ' . $e->getMessage());
-                    // This is non-fatal - data is already loaded, just indexes might be rebuild later
-                }
+            // Re-enable constraint checking
+            try {
+                $pdo->exec('SET SESSION unique_checks = 1');
+                $pdo->exec('SET SESSION foreign_key_checks = 1');
+                Log::debug('Simpanan MultiPN: Constraint checking re-enabled after LOAD DATA', [
+                    'affected_rows' => $affected
+                ]);
+            } catch (\Throwable $e) {
+                Log::warning('Failed to re-enable constraint checking: ' . $e->getMessage());
             }
 
             return (int) $affected;
@@ -1406,33 +1396,20 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                 // abaikan reset session variable bila koneksi sudah gagal
             }
 
-            // Cleanup if indexes are still disabled (safety net)
-            if ($indexesDisabled) {
-                try {
-                    $pdo->exec('ALTER TABLE `simpanan_multipn` ENABLE KEYS');
-                    $pdo->exec('SET UNIQUE_CHECKS=1');
-                    $pdo->exec('SET FOREIGN_KEY_CHECKS=1');
-                } catch (\Throwable) {
-                    // Best effort cleanup
-                }
+            // Safety: Ensure constraint checking is re-enabled even if exception occurs
+            try {
+                $pdo->exec('SET SESSION unique_checks = 1');
+                $pdo->exec('SET SESSION foreign_key_checks = 1');
+            } catch (\Throwable) {
+                // Best effort cleanup
             }
         }
     }
 
     private function buildSimpananMultiPnDirectLoadBeforeLoadCallback(array $loadPlan): ?callable
     {
-        $periodHints = array_values(array_unique(array_filter(array_map(
-            static fn ($value): string => trim((string) $value),
-            (array) ($loadPlan['period_hints'] ?? [])
-        ), static fn (string $value): bool => $value !== '')));
-
-        if ($periodHints === []) {
-            return null;
-        }
-
-        return function (\PDO $pdo) use ($periodHints): void {
-            $this->deleteExistingSimpananMultiPnPeriods($pdo, $periodHints);
-        };
+        // DISABLED: Automatic delete is disabled per user request to allow 'Append' mode.
+        return null;
     }
 
     private function deleteExistingSimpananMultiPnPeriods(\PDO $pdo, array $periodHints): void

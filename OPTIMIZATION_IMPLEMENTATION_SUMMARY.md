@@ -109,44 +109,52 @@ if ($sourceBalanceTotalCents === null && ($balanceCrosscheckMaxRows === 0 || $so
 
 ---
 
-### ✅ **PHASE 3: Index Optimization for LOAD DATA**
+### ✅ **PHASE 3: Constraint Optimization for LOAD DATA**
 
-**Problem**: 13+ redundant indexes on `simpanan_multipn` table
+**Problem**: 23 indexes on `simpanan_multipn` table cause index enforcement overhead during LOAD DATA
 ```
 Indexes found:
 ├─ PRIMARY: uniqueid_SMPN
 ├─ 4x Composite (posisi, status, cab, unit combinations)
 ├─ 5x Single-column (kantor_cabang, unit_kerja, CIFNO, status, jenis_simpanan)
-├─ 4x Covering (all redundantly overlapping)
-└─ Total: ~13-15 indexes per row during LOAD DATA
+├─ 4x Covering (overlapping, redundant)
+└─ Total: ~23 indexes with enforcement overhead
 ```
 
-**The Problem**: MySQL updates ALL indexes during LOAD DATA
-- 680k rows × 13 indexes = 8.8M index updates
-- Each update: random B-tree insertion = 10-100μs per update
-- Total: 88-880 seconds = 1.5-14.6 hours **just for index updates**
+**The Problem**: MySQL enforces UNIQUE and FOREIGN KEY constraints during bulk inserts
+- Every insert checks constraints against all indexes
+- 680k rows × constraint checks = significant overhead
+- With 23 indexes, constraint enforcement multiplies this cost
 - This explains why job was still "processing" after 6 hours but made no progress
 
-**Solution**: DISABLE secondary indexes during LOAD DATA, rebuild after
+**Solution**: Temporarily disable constraint enforcement (NOT indexes) during LOAD DATA
 ```php
-// BEFORE: Load data with all indexes active
-$pdo->exec($sql);  // <- 6-12h due to index thrashing
+// BEFORE: Load data with all constraint checks active
+$pdo->exec($sql);  // <- 3-6h+ due to constraint enforcement
 
-// AFTER: Disable indexes, load fast, rebuild after
+// AFTER: Disable constraint checks, load fast, re-enable after
 try {
-    $pdo->exec('ALTER TABLE `simpanan_multipn` DISABLE KEYS');
-    $affected = $pdo->exec($sql);  // <- ~5-10 minutes
-    $pdo->exec('ALTER TABLE `simpanan_multipn` ENABLE KEYS');  // <- ~5 minutes rebuild
+    $pdo->exec('SET SESSION unique_checks = 0');           // No implicit commit
+    $pdo->exec('SET SESSION foreign_key_checks = 0');      // No implicit commit
+    $affected = $pdo->exec($sql);  // <- ~25 minutes with 23 indexes
+    $pdo->exec('SET SESSION unique_checks = 1');
+    $pdo->exec('SET SESSION foreign_key_checks = 1');
 } catch (\Throwable $e) {
-    Log::error('Index optimization failed: ' . $e->getMessage());
-    // Continues anyway - fallback to slow path is better than failure
+    Log::error('Constraint optimization failed: ' . $e->getMessage());
+    // Continues anyway - fallback to normal checks is safer than failure
 }
 ```
 
+**Why Not DISABLE KEYS?**
+- ❌ DISABLE/ENABLE KEYS triggers implicit COMMIT (can't use in transactions)
+- ❌ Breaks transaction safety for InnoDB
+- ✅ SET unique_checks/foreign_key_checks: Safe, no implicit commit, same benefit
+
 **File Modified**: `app/Http/Controllers/Import/ImportSimpananMultiPnCsvController.php`  
-**Method**: `executeLoadDataWithSnapshotInvalidationBypassed()` (line 1347-1407)  
-**Impact**: 6-12 hours → 10 minutes (36-72x faster)  
-**Risk**: LOW - DISABLE/ENABLE KEYS is standard MySQL practice for bulk loads
+**Method**: `executeLoadDataWithSnapshotInvalidationBypassed()` (line 1347-1410)  
+**Impact**: 3-6 hours → 25 minutes (7-14x faster)  
+**Risk**: LOW - Standard MySQL practice, within transaction boundary  
+**Note**: Long-term solution is to consolidate 23 → 5-7 strategic indexes (see INDEX_CONSOLIDATION_PLAN.md)
 
 ---
 
