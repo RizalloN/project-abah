@@ -472,6 +472,12 @@
                             </a>
                         </li>
                         <li class="nav-item">
+                            <a href="{{ route('report.dashboard-pinjaman.kinerjarmmikro') }}" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman.kinerjarmmikro') ? 'active' : '' }}">
+                                <i class="far fa-circle nav-icon"></i>
+                                <p>Kinerja RM Mikro</p>
+                            </a>
+                        </li>
+                        <li class="nav-item">
                             <a href="{{ route('report.dashboard-pinjaman.kurmikro') }}" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman.kurmikro') ? 'active' : '' }}">
                                 <i class="far fa-circle nav-icon"></i>
                                 <p>Kinerja RM Kur Mikro</p>

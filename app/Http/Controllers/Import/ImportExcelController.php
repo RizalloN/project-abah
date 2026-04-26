@@ -2787,6 +2787,14 @@ class ImportExcelController extends Controller
             }
 
             $suffix = '_SMPN';
+        } elseif ($tableName === 'brihc' && isset($tableColumnsLookup['uniqueid_brihc'])) {
+            $uniqueIdCol = $tableColumnsByLower['uniqueid_brihc'] ?? 'uniqueid_brihc';
+            $suffix = '_BRIHC';
+            $uniqueIdPrefix = 'uuid_brihc';
+        } elseif ($tableName === 'wilayah_mbm' && isset($tableColumnsLookup['uniqueid_mbm'])) {
+            $uniqueIdCol = $tableColumnsByLower['uniqueid_mbm'] ?? 'uniqueid_mbm';
+            $suffix = '_MBM';
+            $uniqueIdPrefix = 'uuid_mbm';
         } elseif ($tableName === 'rka' && isset($tableColumnsLookup['uniqueid_namareport'])) {
             $uniqueIdCol = $tableColumnsByLower['uniqueid_namareport'] ?? 'uniqueid_namareport';
             $suffix = '';

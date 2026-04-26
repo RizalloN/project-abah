@@ -63,7 +63,9 @@ class OptimizedRkaLookupService extends RkaLookupService
         array $regionPatterns = [],
         ?int $year = null
     ): array {
-        $patternsKey = md5(json_encode(array_sort($regionPatterns)));
+        $sortedPatterns = $regionPatterns;
+        sort($sortedPatterns);
+        $patternsKey = md5(json_encode($sortedPatterns));
 
         return $this->withCaching(
             fn () => parent::aggregateByGroupWithRegionalFilter($definitions, $monthColumn, $regionPatterns, $year),

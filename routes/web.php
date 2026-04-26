@@ -6,6 +6,7 @@ use App\Http\Controllers\DashboardSimpananController;
 use App\Http\Controllers\Report\DigitalPerformanceController;
 use App\Http\Controllers\Report\KejarLabaReportController;
 use App\Http\Controllers\Report\KinerjaRmReportController;
+use App\Http\Controllers\Report\KinerjaRmMikroReportController;
 use App\Http\Controllers\Report\KolaborasiReportController;
 use App\Http\Controllers\Report\NewPayrollReportController;
 use App\Http\Controllers\Import\ImportCasaBrilinkController;
@@ -101,6 +102,8 @@ Route::middleware(['auth', 'release.session.lock', 'throttle:240,1'])->group(fun
         ->name('report.dashboard-pinjaman.kinerjarm');
     Route::get('/report/dashboard-pinjaman/kinerjarm/history', [KinerjaRmReportController::class, 'historyDetails'])
         ->name('report.dashboard-pinjaman.kinerjarm.history');
+    Route::get('/report/dashboard-pinjaman/kinerjarmmikro', [KinerjaRmMikroReportController::class, 'index'])
+        ->name('report.dashboard-pinjaman.kinerjarmmikro');
     Route::get('/report/dashboard-pinjaman/kur-mikro', [DashboardPinjamanReportController::class, 'kurMikroIndex'])
         ->name('report.dashboard-pinjaman.kurmikro');
     Route::get('/report/dashboard-pinjaman/kur-mikro/filters', [DashboardPinjamanReportController::class, 'kurMikroFilters'])

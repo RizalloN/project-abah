@@ -179,8 +179,10 @@ class ValidateSnapshotDataIntegrityCommand extends Command
     {
         $sourceProducts = $this->getSourceProducts($produk);
         $sourceSegments = $this->getSourceSegments($segment);
+        $isMicroKur = $segment === 'MICRO' && $produk === 'KUR-MIKRO';
+        $normalizedDescriptionSql = "UPPER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(TRIM(COALESCE(description, '')), ' ', ''), '-', ''), '_', ''), '/', ''), '.', ''))";
 
-        return DB::table('daily_loan_dinamis')
+        $query = DB::table('daily_loan_dinamis')
             ->where('periode', $period)
             ->whereIn('segmen_dashboard', $sourceSegments)
             ->whereIn('produk_dashboard', $sourceProducts)
@@ -188,14 +190,20 @@ class ValidateSnapshotDataIntegrityCommand extends Command
             ->whereRaw("UPPER(TRIM(unit1)) = ?", [strtoupper(trim($unit))])
             ->whereRaw("UPPER(TRIM(pn_pengelola1)) = ?", [strtoupper(trim($rm))])
             ->selectRaw('SUM(COALESCE(plafon, 0)) as plafon')
-            ->selectRaw('SUM(COALESCE(baki_debet1, 0)) as loan_os')
+            ->selectRaw($isMicroKur ? 'SUM(COALESCE(plafon, 0)) as loan_os' : 'SUM(COALESCE(baki_debet1, 0)) as loan_os')
             ->selectRaw('SUM(CASE WHEN kol_adk1 = 1 THEN COALESCE(baki_debet1, 0) ELSE 0 END) as lancar_os')
             ->selectRaw('COUNT(DISTINCT nomor_rekening1) as total_deb')
             ->selectRaw('SUM(CASE WHEN tgl_realisasi BETWEEN DATE_FORMAT(?, "%Y-%m-01") AND ? THEN COALESCE(plafon, 0) ELSE 0 END) as realisasi_os', [
                 Carbon::parse($period)->startOfMonth()->toDateString(),
                 $period,
             ])
-            ->first();
+            ;
+
+        if ($isMicroKur) {
+            $query->whereRaw("{$normalizedDescriptionSql} = ?", ['KREDITMIKROKURRITEL2015']);
+        }
+
+        return $query->first();
     }
 
     private function compareValues($snap, $source): bool

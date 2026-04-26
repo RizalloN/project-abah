@@ -135,7 +135,7 @@ class DashboardDanaService
         ];
     }
 
-    private function normalizeBranchName(string $name): string
+    protected function normalizeBranchName(string $name): string
     {
         $normalized = strtoupper(trim($name));
         
@@ -152,7 +152,7 @@ class DashboardDanaService
         return trim($normalized);
     }
 
-    private function getVal(array $matrix, string $branch, ?string $period, string $kategori): float
+    protected function getVal(array $matrix, string $branch, ?string $period, string $kategori): float
     {
         if (!$period || !isset($matrix[$branch][$period])) return 0;
 
@@ -163,7 +163,7 @@ class DashboardDanaService
         return $matrix[$branch][$period][$kategori] ?? 0;
     }
 
-    private function calculatePeriodReferences(string $selectedPeriod): array
+    protected function calculatePeriodReferences(string $selectedPeriod): array
     {
         try {
             $selected = Carbon::parse($selectedPeriod);
@@ -177,7 +177,7 @@ class DashboardDanaService
         }
     }
 
-    private function formatDateLabel(?string $date): string
+    protected function formatDateLabel(?string $date): string
     {
         if (!$date) return '-';
         try {
@@ -187,7 +187,7 @@ class DashboardDanaService
         }
     }
 
-    private function loadRkaData(string $period, ?string $category): array
+    protected function loadRkaData(string $period, ?string $category): array
     {
         $service = app(RkaLookupService::class);
 
@@ -283,7 +283,7 @@ class DashboardDanaService
         return collect($years)->map(fn($year) => (string) $year);
     }
 
-    private function getRkaVal(array $rkaData, string $branch, string $kategori): float
+    protected function getRkaVal(array $rkaData, string $branch, string $kategori): float
     {
         // Normalize the branch name to match RKA data keys
         $normalizedBranch = $this->normalizeBranchName($branch);
@@ -296,7 +296,7 @@ class DashboardDanaService
         return $rkaData[$kategori][$branchKey] ?? 0;
     }
 
-    private function calculateGrandTotals(array $rows): array
+    protected function calculateGrandTotals(array $rows): array
     {
         $grandTotal = [
             'selected' => 0, 'ytd' => 0, 'mtd' => 0,

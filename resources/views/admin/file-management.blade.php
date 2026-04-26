@@ -444,9 +444,8 @@
                             try {
                                 const statusUrl = statusUrlTemplate.replace(':id', backupId);
                                 const response = await fetch(statusUrl);
-                                if (!response.ok) throw new Error('Gagal mengambil status backup.');
-                                
                                 const status = await response.json();
+                                if (!response.ok) throw new Error(status.message || 'Gagal mengambil status backup.');
 
                                 if (status.status === 'processing' || status.status === 'starting') {
                                     const percent = status.progress_percent || 0;

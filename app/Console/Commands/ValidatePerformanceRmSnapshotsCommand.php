@@ -125,11 +125,13 @@ class ValidatePerformanceRmSnapshotsCommand extends Command
     ): ?object {
         $normalizedSegmenSql = "UPPER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(TRIM(COALESCE(segmen_dashboard, '')), ' ', ''), '-', ''), '_', ''), '/', ''), '.', ''))";
         $normalizedProductSql = "UPPER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(TRIM(COALESCE(produk_dashboard, '')), ' ', ''), '-', ''), '_', ''), '/', ''), '.', ''))";
+        $normalizedDescriptionSql = "UPPER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(TRIM(COALESCE(description, '')), ' ', ''), '-', ''), '_', ''), '/', ''), '.', ''))";
 
         $sourceProducts = $this->getSourceProducts($produk);
         $sourceSegments = $this->getSourceSegments($segment);
+        $isMicroKur = $segment === 'MICRO' && $produk === 'KUR-MIKRO';
 
-        return DB::table('daily_loan_dinamis')
+        $query = DB::table('daily_loan_dinamis')
             ->where('periode', $period)
             ->where(function ($q) use ($normalizedSegmenSql, $sourceSegments) {
                 $q->whereIn(DB::raw($normalizedSegmenSql), $sourceSegments);
@@ -139,10 +141,10 @@ class ValidatePerformanceRmSnapshotsCommand extends Command
             ->whereRaw("UPPER(TRIM(unit1)) = ?", [strtoupper(trim($unit))])
             ->whereRaw("UPPER(TRIM(pn_pengelola1)) = ?", [strtoupper(trim($rm))])
             ->selectRaw('SUM(COALESCE(plafon, 0)) as plafon')
-            ->selectRaw('SUM(COALESCE(baki_debet1, 0)) as loan_os')
+            ->selectRaw($isMicroKur ? 'SUM(COALESCE(plafon, 0)) as loan_os' : 'SUM(COALESCE(baki_debet1, 0)) as loan_os')
             ->selectRaw('SUM(CASE WHEN kol_adk1 = 1 THEN COALESCE(baki_debet1, 0) ELSE 0 END) as lancar_os')
             ->selectRaw('SUM(CASE WHEN kol_adk1 = 2 THEN COALESCE(baki_debet1, 0) ELSE 0 END) as sml_os')
-            ->selectRaw('SUM(CASE WHEN kol_adk1 IN (3,4,5) THEN COALESCE(baki_debet1, 0) ELSE 0 END) as npl_os')
+            ->selectRaw('SUM(CASE WHEN kol_adk1 > 2 THEN COALESCE(baki_debet1, 0) ELSE 0 END) as npl_os')
             ->selectRaw("SUM(CASE WHEN kol_adk1 = 1 AND UPPER(TRIM(COALESCE(flag_restruk, ''))) = 'Y' THEN COALESCE(baki_debet1, 0) ELSE 0 END) as restruk_os")
             ->selectRaw('COUNT(DISTINCT nomor_rekening1) as total_deb')
             ->selectRaw('COUNT(DISTINCT CASE WHEN tgl_realisasi BETWEEN DATE_FORMAT(?, "%Y-%m-01") AND ? THEN nomor_rekening1 END) as realisasi_deb', [
@@ -153,7 +155,13 @@ class ValidatePerformanceRmSnapshotsCommand extends Command
                 Carbon::parse($period)->startOfMonth()->toDateString(),
                 $period,
             ])
-            ->first();
+            ;
+
+        if ($isMicroKur) {
+            $query->whereRaw("{$normalizedDescriptionSql} = ?", ['KREDITMIKROKURRITEL2015']);
+        }
+
+        return $query->first();
     }
 
     private function compareValues(object $snapshot, ?object $sourceData, string $period): array

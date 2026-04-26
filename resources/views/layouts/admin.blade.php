@@ -769,5 +769,6 @@
 @yield('scripts')
 
 @stack('modals')
+    @include('report.partials.floating-scrollbar')
 </body>
 </html>

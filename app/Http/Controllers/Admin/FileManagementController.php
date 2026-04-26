@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\View\View;
 use App\Services\Import\ImportProgressService;
+use RuntimeException;
 
 class FileManagementController extends Controller
 {
@@ -128,14 +129,23 @@ class FileManagementController extends Controller
                 'current_table_index' => 0,
                 'total_tables' => count($tables),
                 'message' => 'Menyiapkan backup database...',
+                'updated_at' => now()->timestamp,
+            ], now()->addHours(1));
+            Cache::put("backup_meta:{$backupId}", [
+                'created_at' => now()->timestamp,
             ], now()->addHours(1));
 
-            $command = "php artisan db:backup-progressive {$backupId}";
-            
             if (strncasecmp(PHP_OS, 'WIN', 3) === 0) {
-                pclose(popen("start /B {$command}", "r"));
+                $this->startWindowsBackupProcess($backupId);
             } else {
-                exec("{$command} > /dev/null 2>&1 &");
+                $command = sprintf(
+                    'cd %s && %s %s db:backup-progressive %s > /dev/null 2>&1 &',
+                    escapeshellarg(base_path()),
+                    escapeshellarg(PHP_BINARY),
+                    escapeshellarg(base_path('artisan')),
+                    escapeshellarg($backupId)
+                );
+                exec($command);
             }
 
             return response()->json([
@@ -155,13 +165,81 @@ class FileManagementController extends Controller
         $status = Cache::get("backup_progress:{$backupId}");
 
         if (!$status) {
+            $meta = Cache::get("backup_meta:{$backupId}");
+            if ($meta && now()->timestamp - (int) ($meta['created_at'] ?? 0) <= 30) {
+                return response()->json([
+                    'status' => 'starting',
+                    'progress_percent' => 0,
+                    'message' => 'Menunggu proses backup database dimulai...',
+                ], 202);
+            }
+
             return response()->json([
                 'status' => 'error',
                 'message' => 'Status backup tidak ditemukan.',
             ], 404);
         }
 
+        $lastUpdate = (int) ($status['updated_at'] ?? 0);
+        if (
+            in_array($status['status'] ?? null, ['starting', 'processing'], true)
+            && $lastUpdate > 0
+            && now()->timestamp - $lastUpdate > 180
+        ) {
+            return response()->json([
+                'status' => 'failed',
+                'progress_percent' => (int) ($status['progress_percent'] ?? 0),
+                'message' => 'Backup tidak memberi progress lebih dari 3 menit. Pastikan proses PHP CLI dan mysqldump dapat dijalankan.',
+            ]);
+        }
+
         return response()->json($status);
+    }
+
+    private function startWindowsBackupProcess(string $backupId): void
+    {
+        $logPath = storage_path("logs/database-backup-{$backupId}.log");
+        $launcherDirectory = storage_path('framework/backup-launchers');
+        if (!is_dir($launcherDirectory)) {
+            File::makeDirectory($launcherDirectory, 0755, true);
+        }
+
+        $launcherPath = $launcherDirectory . DIRECTORY_SEPARATOR . "{$backupId}.cmd";
+        File::put($launcherPath, implode(PHP_EOL, [
+            '@echo off',
+            'cd /D "' . base_path() . '"',
+            '"' . PHP_BINARY . '" "' . base_path('artisan') . '" db:backup-progressive "' . $backupId . '" >> "' . $logPath . '" 2>&1',
+            'del "%~f0" >NUL 2>&1',
+            '',
+        ]));
+
+        $command = sprintf('cmd /C start "" /B "%s"', $launcherPath);
+
+        $process = proc_open(
+            $command,
+            [
+                0 => ['pipe', 'r'],
+                1 => ['pipe', 'w'],
+                2 => ['pipe', 'w'],
+            ],
+            $pipes,
+            base_path()
+        );
+
+        if (!is_resource($process)) {
+            throw new RuntimeException('Gagal menjalankan proses backup database di background.');
+        }
+
+        foreach ($pipes as $pipe) {
+            if (is_resource($pipe)) {
+                fclose($pipe);
+            }
+        }
+
+        $exitCode = proc_close($process);
+        if ($exitCode !== 0) {
+            throw new RuntimeException("Gagal menjalankan proses backup database di background. Lihat log: {$logPath}");
+        }
     }
 
     public function destroy(Request $request): JsonResponse|RedirectResponse

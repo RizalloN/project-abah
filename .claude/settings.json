@@ -4,8 +4,16 @@
       "Bash(mkdir -p public/vendor/chartjs)",
       "Bash(wget -q https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js -O chart.min.js)",
       "Bash(php -r ' *)",
-      "Bash(git commit -m 'Fix: Use local Chart.js instead of CDN + improve canvas sizing *)",
-      "Bash(git commit -m 'Optimize: Maximize timeseries dashboard view and reduce whitespace *)"
+      "Bash(git status)",
+      "Bash(git status *)",
+      "Bash(git diff)",
+      "Bash(git diff *)",
+      "Bash(git add -- *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git commit -m \"*)",
+      "Bash(git commit -m *)",
+      "Bash(git commit --no-edit)"
     ]
   }
 }

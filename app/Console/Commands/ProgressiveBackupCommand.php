@@ -43,6 +43,7 @@ class ProgressiveBackupCommand extends Command
                 'total_tables' => $totalTables,
                 'current_table' => 'Schema',
                 'message' => 'Menyiapkan schema database...',
+                'updated_at' => now()->timestamp,
             ], now()->addHours(1));
 
             $schemaCommand = $backupService->buildDumpCommand($config, $database, $absolutePath, ['--no-data']);
@@ -59,6 +60,7 @@ class ProgressiveBackupCommand extends Command
                     'total_tables' => $totalTables,
                     'current_table' => $table,
                     'message' => "Mencadangkan tabel: {$table} ({$progress}%)",
+                    'updated_at' => now()->timestamp,
                 ], now()->addHours(1));
 
                 $tempPath = $this->createTemporaryDumpPath($database, $table);
@@ -72,6 +74,7 @@ class ProgressiveBackupCommand extends Command
                             'total_tables' => $totalTables,
                             'current_table' => $table,
                             'message' => "Mencadangkan tabel: {$table} ({$progress}%)",
+                            'updated_at' => now()->timestamp,
                         ], now()->addHours(1));
                     });
                     $this->appendDumpFile($tempPath, $absolutePath);
@@ -87,6 +90,7 @@ class ProgressiveBackupCommand extends Command
                 'progress_percent' => 100,
                 'current_table_index' => $totalTables,
                 'message' => 'Backup database selesai.',
+                'updated_at' => now()->timestamp,
                 'file' => [
                     'name' => $filename,
                     'relative_path' => 'private/database_backups/' . $filename,
@@ -99,6 +103,7 @@ class ProgressiveBackupCommand extends Command
             Cache::put($cacheKey, [
                 'status' => 'failed',
                 'message' => $e->getMessage(),
+                'updated_at' => now()->timestamp,
             ], now()->addHours(1));
             
             if (isset($absolutePath) && is_file($absolutePath)) {
