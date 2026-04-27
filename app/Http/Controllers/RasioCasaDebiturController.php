@@ -113,6 +113,11 @@ class RasioCasaDebiturController extends Controller
                 }
             }
 
+            $ritelRows = [];
+            $ritelTotal = [];
+            $microRows = [];
+            $microTotal = [];
+
             if ($isBranchFiltered) {
                 $currentSummary = $this->buildFilteredSummarySnapshot($currentPeriod, $selectedBranches, $selectedUkers, $forceRefresh);
                 $previousSummary = $previousPeriod
@@ -120,12 +125,41 @@ class RasioCasaDebiturController extends Controller
                     : $this->emptySnapshot();
 
                 $branches = $this->resolveFilteredBranches($previousSummary, $currentSummary);
+                
+                // 1. Konsolidasi (All)
                 [$rows, $total] = $this->assembleFilteredRows(
                     $branches,
                     $previousSummary,
                     $currentSummary,
-                    'TOTAL ' . implode(', ', $selectedBranches)
+                    'TOTAL KONSOLIDASI'
                 );
+
+                // 2. Ritel (KC & KCP) - Typically anything NOT containing "UNIT"
+                $ritelBranches = collect($branches)->filter(function ($b) {
+                    $ub = strtoupper((string) $b);
+                    return !str_contains($ub, 'UNIT');
+                })->values()->all();
+
+                [$ritelRows, $ritelTotal] = $this->assembleFilteredRows(
+                    $ritelBranches,
+                    $previousSummary,
+                    $currentSummary,
+                    'TOTAL RITEL'
+                );
+
+                // 3. Mikro (Unit Only) - Typically anything containing "UNIT"
+                $microBranches = collect($branches)->filter(function ($b) {
+                    $ub = strtoupper((string) $b);
+                    return str_contains($ub, 'UNIT');
+                })->values()->all();
+
+                [$microRows, $microTotal] = $this->assembleFilteredRows(
+                    $microBranches,
+                    $previousSummary,
+                    $currentSummary,
+                    'TOTAL MIKRO'
+                );
+
                 $groupLabel = 'UKER';
             } else {
                 $currentSummary = $this->buildSummarySnapshot($currentPeriod, $forceRefresh);
@@ -140,6 +174,7 @@ class RasioCasaDebiturController extends Controller
                 'status' => 'success',
                 'labels' => $this->buildLabels($previousPeriod, $currentPeriod),
                 'group_label' => $groupLabel,
+                'is_branch_filtered' => $isBranchFiltered,
                 'effective_dates' => [
                     'prev' => $previousPeriod,
                     'curr' => $currentPeriod,
@@ -154,6 +189,10 @@ class RasioCasaDebiturController extends Controller
                 ],
                 'data' => $rows,
                 'total' => $total,
+                'ritel_data' => $ritelRows,
+                'ritel_total' => $ritelTotal,
+                'micro_data' => $microRows,
+                'micro_total' => $microTotal,
             ];
 
             Cache::put($responseCacheKey, $payload, now()->addMinutes(3));
@@ -711,10 +750,12 @@ class RasioCasaDebiturController extends Controller
             ->whereNotNull("d.{$loanUkerColumn}")
             ->where("d.{$loanUkerColumn}", '<>', '')
             ->when(!empty($selectedBranches), function ($query) use ($loanBranchColumn, $selectedBranches) {
-                $query->whereIn(DB::raw("UPPER(d.{$loanBranchColumn})"), $selectedBranches);
+                $placeholders = implode(',', array_fill(0, count($selectedBranches), '?'));
+                $query->whereRaw("UPPER(TRIM(d.{$loanBranchColumn})) IN ({$placeholders})", $selectedBranches);
             })
             ->when(!empty($selectedUkers), function ($query) use ($loanUkerColumn, $selectedUkers) {
-                $query->whereIn(DB::raw("UPPER(d.{$loanUkerColumn})"), $selectedUkers);
+                $placeholders = implode(',', array_fill(0, count($selectedUkers), '?'));
+                $query->whereRaw("UPPER(TRIM(d.{$loanUkerColumn})) IN ({$placeholders})", $selectedUkers);
             })
             ->selectRaw("
                 UPPER(TRIM(d.{$loanUkerColumn})) as branch_key,
