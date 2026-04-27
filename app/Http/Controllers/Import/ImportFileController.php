@@ -68,9 +68,6 @@ class ImportFileController extends Controller
 
     private function shouldSkipRawLoadDataFastPath(string $tableName, string $filePath, string $delimiter): bool
     {
-        if ($tableName === 'jumlah_merchant_qris_detail') {
-            return true;
-        }
 
         $handle = @fopen($filePath, 'r');
         if ($handle === false) {
@@ -139,6 +136,19 @@ class ImportFileController extends Controller
     private function previewFilterCacheKey(string $filePath, string $delimiter, int $columnIndex, string $tableName, string $contextSignature = ''): string
     {
         return 'preview_filter_options:v2:' . md5($filePath . '|' . $delimiter . '|' . $columnIndex . '|' . $tableName . '|' . $contextSignature);
+    }
+
+    private function normalizeDisplayFilterMap(array $displayFilterMap, int $maxValidIndex = -1): array
+    {
+        $normalized = [];
+        foreach ($displayFilterMap as $displayIdx => $sourceIdx) {
+            $displayIdxInt = (int) $displayIdx;
+            $sourceIdxInt = (int) $sourceIdx;
+            if ($maxValidIndex === -1 || ($sourceIdxInt >= 0 && $sourceIdxInt <= $maxValidIndex)) {
+                $normalized[$displayIdxInt] = $sourceIdxInt;
+            }
+        }
+        return $normalized;
     }
 
     private const BRILINK_SUMMARY_HEADERS = [
@@ -1622,6 +1632,59 @@ class ImportFileController extends Controller
         return true;
     }
 
+    private function collectFilterOptionsFromCsvFast(
+        $handle,
+        string $delimiter,
+        int $sourceColumnIndex,
+        array $activeFilters,
+        bool $isBrilinkSummary = false
+    ): array {
+        $valuesMap = [];
+        $headers = [];
+        $rowCounter = 0;
+
+        while (($row = $this->readCsvRecord($handle, $delimiter)) !== false) {
+            if (empty($row) || implode('', $row) === '') {
+                continue;
+            }
+
+            if ($rowCounter === 0) {
+                $headers = $this->formatCsvHeaders($row, $isBrilinkSummary);
+                if (!isset($headers[$sourceColumnIndex])) {
+                    return [];
+                }
+
+                $rowCounter++;
+                continue;
+            }
+
+            if (!$isBrilinkSummary) {
+                $firstCell = trim((string) ($row[0] ?? ''));
+                if ($firstCell === 'TAHUN' || stripos($firstCell, 'textbox') !== false) {
+                    continue;
+                }
+            }
+
+            $row = $isBrilinkSummary ? $this->transformBrilinkSummaryRow($row) : $row;
+            if (count($row) < count($headers)) {
+                $row = array_pad($row, count($headers), null);
+            } elseif (count($row) > count($headers)) {
+                continue;
+            }
+
+            if (!$this->passesActiveFilters($row, $activeFilters)) {
+                continue;
+            }
+
+            $valuesMap[trim((string) ($row[$sourceColumnIndex] ?? ''))] = true;
+        }
+
+        $values = array_keys($valuesMap);
+        sort($values);
+
+        return $values;
+    }
+
     private function passesActiveFiltersFast(
         array $row,
         array $activeFilters,
@@ -2348,8 +2411,16 @@ class ImportFileController extends Controller
                             // OPTIMIZATION 11: Batch unique value collection
                             $validIndices = array_keys($uniqueValues);
                             foreach ($validIndices as $i) {
-                                $val = $data[$i] ?? '';
+                                if (!isset($data[$i])) {
+                                    continue;
+                                }
+
+                                $val = $data[$i];
                                 $cleanVal = is_string($val) ? trim($val) : (string) $val;
+
+                                if ($cleanVal === '' && count($uniqueValues[$i]) > 0) {
+                                    continue;
+                                }
 
                                 if (count($uniqueValues[$i]) < $previewUniqueLimitPerColumn || isset($uniqueValues[$i][$cleanVal])) {
                                     $uniqueValues[$i][$cleanVal] = true;
@@ -2522,26 +2593,30 @@ class ImportFileController extends Controller
         if (!is_array($activeFilters)) {
             $activeFilters = [];
         }
-        $sourceColumnIndex = array_key_exists($columnIndex, $displayFilterMap)
-            ? (int) $displayFilterMap[$columnIndex]
-            : $columnIndex;
+
+        $displayFilterMap = $this->normalizeDisplayFilterMap($displayFilterMap);
+        $sourceColumnIndex = (int) ($displayFilterMap[$columnIndex] ?? $columnIndex);
 
         $normalizedActiveFilters = [];
         $hasEmptyActiveFilter = false;
         foreach ($activeFilters as $displayIndex => $values) {
-            $sourceIndex = array_key_exists((int) $displayIndex, $displayFilterMap)
-                ? (int) $displayFilterMap[(int) $displayIndex]
-                : (int) $displayIndex;
+            $displayIndexInt = (int) $displayIndex;
+            $sourceIndex = (int) ($displayFilterMap[$displayIndexInt] ?? $displayIndexInt);
 
             if ($sourceIndex === $sourceColumnIndex) {
                 continue;
             }
 
+            if (!is_array($values) || empty($values)) {
+                $hasEmptyActiveFilter = true;
+                continue;
+            }
+
             $normalizedValues = array_values(array_unique(array_map(static function ($value): string {
                 return trim((string) $value);
-            }, (array) $values)));
+            }, $values)));
 
-            if ($normalizedValues !== []) {
+            if (count($normalizedValues) > 0) {
                 $normalizedActiveFilters[$sourceIndex] = array_fill_keys($normalizedValues, true);
             } else {
                 $hasEmptyActiveFilter = true;
@@ -2565,6 +2640,11 @@ class ImportFileController extends Controller
         $previewMeta = !empty($previewState['previewMeta']) && is_array($previewState['previewMeta'])
             ? (array) $previewState['previewMeta']
             : (array) session('excel_preview_meta', []);
+
+        $metaPath = urldecode((string) ($previewMeta['path'] ?? ''));
+        if ($metaPath === '' || !$this->isSameImportPath($filePath, $metaPath)) {
+            $previewMeta = [];
+        }
 
         $resolvedFilePath = $filePath;
         if (!file_exists($resolvedFilePath)) {
@@ -2786,12 +2866,18 @@ class ImportFileController extends Controller
                     }
                 }
 
+                if (!isset($data[$sourceColumnIndex])) {
+                    continue;
+                }
+
                 if (!$this->passesActiveFilters($data, $normalizedActiveFilters)) {
                     continue;
                 }
 
-                $value = trim((string) ($data[$sourceColumnIndex] ?? ''));
-                $valuesMap[$value] = true;
+                $value = trim((string) $data[$sourceColumnIndex]);
+                if ($value !== '') {
+                    $valuesMap[$value] = true;
+                }
             }
         } finally {
             fclose($handle);
@@ -2992,6 +3078,8 @@ class ImportFileController extends Controller
             $activeFilters = [];
         }
 
+        $displayFilterMap = $this->normalizeDisplayFilterMap($displayFilterMap);
+
         $resolvedFilePath = $filePath;
         if (!file_exists($resolvedFilePath)) {
             try {
@@ -3009,6 +3097,11 @@ class ImportFileController extends Controller
         $previewMeta = !empty($previewState['previewMeta']) && is_array($previewState['previewMeta'])
             ? (array) $previewState['previewMeta']
             : (array) session('excel_preview_meta', []);
+
+        $metaPath = urldecode((string) ($previewMeta['path'] ?? ''));
+        if ($metaPath === '' || !$this->isSameImportPath($filePath, $metaPath)) {
+            $previewMeta = [];
+        }
 
         $stagedCsvPath = (string) ($previewMeta['staged_csv_path'] ?? '');
         if ($stagedCsvPath !== '' && file_exists($stagedCsvPath)) {
@@ -3087,15 +3180,19 @@ class ImportFileController extends Controller
         $normalizedFilters = [];
         $hasEmptyActiveFilter = false;
         foreach ($activeFilters as $displayIndex => $values) {
-            $sourceIndex = array_key_exists((int) $displayIndex, $displayFilterMap)
-                ? (int) $displayFilterMap[(int) $displayIndex]
-                : (int) $displayIndex;
+            $displayIndexInt = (int) $displayIndex;
+            $sourceIndex = (int) ($displayFilterMap[$displayIndexInt] ?? $displayIndexInt);
+
+            if (!is_array($values) || empty($values)) {
+                $hasEmptyActiveFilter = true;
+                continue;
+            }
 
             $normalizedValues = array_values(array_unique(array_map(static function ($value): string {
                 return trim((string) $value);
-            }, (array) $values)));
+            }, $values)));
 
-            if ($normalizedValues !== []) {
+            if (count($normalizedValues) > 0) {
                 $normalizedFilters[$sourceIndex] = array_fill_keys($normalizedValues, true);
             } else {
                 $hasEmptyActiveFilter = true;
@@ -3438,6 +3535,12 @@ class ImportFileController extends Controller
         ]);
 
         return 'import_preview_index_warm:' . md5($signature);
+    }
+
+    private function isSameImportPath(string $requestPath, string $metaPath): bool
+    {
+        $normalize = static fn(string $p): string => str_replace('\\', '/', urldecode(trim($p)));
+        return $normalize($requestPath) === $normalize($metaPath);
     }
 
     private function dispatchPreviewIndexWarmup(

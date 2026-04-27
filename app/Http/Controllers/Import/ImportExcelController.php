@@ -2798,7 +2798,7 @@ class ImportExcelController extends Controller
         } elseif ($tableName === 'rka' && isset($tableColumnsLookup['uniqueid_namareport'])) {
             $uniqueIdCol = $tableColumnsByLower['uniqueid_namareport'] ?? 'uniqueid_namareport';
             $suffix = '';
-            $uniqueIdPrefix = 'uuid_rka';
+            $uniqueIdPrefix = 'uuid_rka_' . str_replace('.', '', uniqid('', true));
         } elseif ($tableName === 'gi405_rec_dh' && isset($tableColumnsLookup['uniqueid_namareport'])) {
             $uniqueIdCol = $tableColumnsByLower['uniqueid_namareport'] ?? 'uniqueid_namareport';
             $suffix = '';
@@ -3388,9 +3388,15 @@ class ImportExcelController extends Controller
         }
 
         try {
-            return (int) DB::table($tableName)
+            $affected = (int) DB::table($tableName)
                 ->where($uniqueIdColumn, 'like', $uniqueIdPrefix . '%')
                 ->update($updates);
+
+            if ($tableName === 'rka') {
+                $this->verifyRkaManualValuesAfterLoad($context, $insertedRows, $updates, $affected);
+            }
+
+            return $affected;
         } catch (\Throwable $e) {
             Log::warning('Failed to apply manual column values after import load: ' . $e->getMessage(), [
                 'table' => $tableName,
@@ -3398,6 +3404,42 @@ class ImportExcelController extends Controller
                 'unique_id_prefix' => $uniqueIdPrefix,
             ]);
             return 0;
+        }
+    }
+
+    private function verifyRkaManualValuesAfterLoad(array $context, int $insertedRows, array $updates, int $affectedRows): void
+    {
+        $uniqueIdColumn = (string) ($context['unique_id_col'] ?? '');
+        $uniqueIdPrefix = trim((string) ($context['unique_id_prefix'] ?? ''));
+        if ($uniqueIdColumn === '' || $uniqueIdPrefix === '' || $updates === []) {
+            return;
+        }
+
+        $query = DB::table('rka')->where($uniqueIdColumn, 'like', $uniqueIdPrefix . '%');
+        $scopedRows = (int) (clone $query)->count();
+        $mismatchQuery = clone $query;
+
+        $mismatchQuery->where(function ($where) use ($updates): void {
+            foreach ($updates as $column => $value) {
+                $where->orWhere(function ($nested) use ($column, $value): void {
+                    $nested->whereNull($column)
+                        ->orWhere($column, '<>', $value);
+                });
+            }
+        });
+
+        $mismatchedRows = (int) $mismatchQuery->count();
+
+        if ($scopedRows < $insertedRows || $mismatchedRows > 0) {
+            Log::warning('RKA manual tahun/kanca verification found mismatched imported rows.', [
+                'unique_id_column' => $uniqueIdColumn,
+                'unique_id_prefix' => $uniqueIdPrefix,
+                'inserted_rows' => $insertedRows,
+                'scoped_rows' => $scopedRows,
+                'updated_rows' => $affectedRows,
+                'mismatched_rows' => $mismatchedRows,
+                'manual_columns' => array_keys($updates),
+            ]);
         }
     }
 
@@ -8520,6 +8562,8 @@ class ImportExcelController extends Controller
         $path = $file->store('excel_imports');
         $cacheKey = 'excel_preview_' . md5($path . '|' . (auth()->id() ?? 'guest') . '|' . microtime(true));
 
+        session()->forget(['excel_preview_meta', 'excel_display_filter_map']);
+
         session([
             'excel_path'        => $path,
             'active_id_report'  => $request->id_report,
@@ -9560,6 +9604,9 @@ class ImportExcelController extends Controller
             'output_csv_path' => $csvTempPath,
             'load_columns' => $bulkLoadColumns,
             'unique_id_prefix' => $importContext['unique_id_prefix'] ?? null,
+            'unique_id_col' => $importContext['unique_id_col'] ?? null,
+            'unique_id_suffix' => $importContext['suffix'] ?? null,
+            'manual_values' => (array) ($importContext['manual_column_values'] ?? []),
         ];
 
         $configFile = storage_path('app/excel_gpu_config_' . uniqid() . '.json');
@@ -10204,6 +10251,9 @@ class ImportExcelController extends Controller
             'normalized_headers' => $normalizedHeaders,
             'table_columns'      => array_keys($importContext['table_columns_lookup']),  // PHP kirim daftar kolom valid ke Python
             'unique_id_prefix'   => $importContext['unique_id_prefix'] ?? null,
+            'unique_id_col'      => $importContext['unique_id_col'] ?? null,
+            'unique_id_suffix'   => $importContext['suffix'] ?? null,
+            'manual_values'      => (array) ($importContext['manual_column_values'] ?? []),
         ];
 
         $configFile = storage_path('app/excel_gpu_config_' . uniqid() . '.json');

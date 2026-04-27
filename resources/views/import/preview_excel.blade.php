@@ -248,7 +248,23 @@ document.addEventListener('DOMContentLoaded', function () {
     /* =========================================================
        CACHE & OPTIMIZATION HELPERS
     ========================================================= */
-    const storageKeyPrefix = 'preview_filter_excel_v3_' + btoa(filePathValue + '|' + delimiterValue).substring(0, 16);
+    function stableHash(value) {
+        let hash = 2166136261;
+        const input = String(value || '');
+        for (let i = 0; i < input.length; i++) {
+            hash ^= input.charCodeAt(i);
+            hash = Math.imul(hash, 16777619);
+        }
+
+        return (hash >>> 0).toString(36);
+    }
+
+    const storageKeyPrefix = 'preview_filter_excel_v5_' + stableHash(JSON.stringify({
+        file: filePathValue,
+        delimiter: delimiterValue,
+        headers: previewHeaders,
+        displayFilterMap: displayFilterMap,
+    }));
     
     function getStorageKey(col) {
         return storageKeyPrefix + '_col_' + col;
@@ -538,9 +554,6 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
         }
 
-        const sourceCol = Object.prototype.hasOwnProperty.call(displayFilterMap, col)
-            ? displayFilterMap[col]
-            : col;
         const activeFilters = buildActiveFilterContext(col);
         const signature = buildActiveFilterSignature(activeFilters);
 
@@ -575,7 +588,7 @@ document.addEventListener('DOMContentLoaded', function () {
             const url = new URL(filterOptionsUrl, window.location.origin);
             url.searchParams.set('file_path', filePathValue);
             url.searchParams.set('delimiter', delimiterValue);
-            url.searchParams.set('column_index', String(sourceCol));
+            url.searchParams.set('column_index', String(col));
             url.searchParams.set('display_filter_map_json', JSON.stringify(displayFilterMap || {}));
             url.searchParams.set('active_filters_json', JSON.stringify(activeFilters || {}));
             if (previewStateKey) {
@@ -963,6 +976,48 @@ document.addEventListener('DOMContentLoaded', function () {
                 renderFilterList(colIndex);
             }, 150);
         });
+    });
+
+    /* =========================================================
+       EVENT: Clear Cache button
+    ========================================================= */
+    document.getElementById('btnClearImportCache')?.addEventListener('click', function () {
+        try {
+            const keysToRemove = [];
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key && key.startsWith('preview_filter_excel_')) {
+                    keysToRemove.push(key);
+                }
+            }
+            keysToRemove.forEach(key => localStorage.removeItem(key));
+        } catch (e) {}
+
+        Object.keys(filterState).forEach(function (col) {
+            const state = filterState[col];
+            if (state) {
+                state.fullOptionsLoaded = false;
+                state.loadedSignature = '';
+            }
+        });
+
+        themedSwal({ icon: 'success', title: 'Cache Dibersihkan', text: 'Opsi filter akan dimuat ulang dari sumber.', timer: 1500, showConfirmButton: false });
+    });
+
+    /* =========================================================
+       EVENT: Reset Filter button
+    ========================================================= */
+    document.getElementById('btnResetAllFilters')?.addEventListener('click', function () {
+        Object.keys(filterState).forEach(function (col) {
+            const state = filterState[col];
+            if (state) {
+                state.selectedValues = new Set(state.allValues);
+            }
+        });
+        document.querySelectorAll('.filter-checkbox').forEach(cb => cb.checked = true);
+        document.querySelectorAll('.select-all-cb').forEach(cb => cb.checked = true);
+        updatePreviewTable();
+        updateFilterIcons();
     });
 
     document.querySelectorAll('.dropdown').forEach(function (dropdown) {
