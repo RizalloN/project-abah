@@ -249,6 +249,12 @@
         background: #ffffff;
     }
 
+    .kinerja-empty-highlight {
+        background: rgba(245, 158, 11, 0.12) !important;
+        color: #b45309 !important;
+        font-weight: 800;
+    }
+
     .kinerja-tabs-shell {
         border: 1px solid var(--loan-border);
         border-radius: 20px;

@@ -61,15 +61,21 @@ class OptimizedRkaLookupService extends RkaLookupService
         array $definitions,
         string $monthColumn,
         array $regionPatterns = [],
-        ?int $year = null
+        ?int $year = null,
+        array $units = [],
+        string $groupBy = 'region'
     ): array {
         $sortedPatterns = $regionPatterns;
         sort($sortedPatterns);
         $patternsKey = md5(json_encode($sortedPatterns));
+        $sortedUnits = $units;
+        sort($sortedUnits);
+        $unitsKey = md5(json_encode($sortedUnits));
+        $groupBy = strtolower(trim($groupBy)) === 'uker' ? 'uker' : 'region';
 
         return $this->withCaching(
-            fn () => parent::aggregateByGroupWithRegionalFilter($definitions, $monthColumn, $regionPatterns, $year),
-            "aggregate_regional_{$monthColumn}_{$patternsKey}_{$year}"
+            fn () => parent::aggregateByGroupWithRegionalFilter($definitions, $monthColumn, $regionPatterns, $year, $units, $groupBy),
+            "aggregate_regional_{$monthColumn}_{$patternsKey}_{$year}_{$unitsKey}_{$groupBy}"
         );
     }
 

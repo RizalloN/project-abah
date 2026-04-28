@@ -82,4 +82,49 @@ class RkaLookupServiceTest extends TestCase
 
         $this->assertSame(1250000.0, $result['total_simpanan']);
     }
+
+    public function test_regional_rka_can_be_grouped_and_filtered_by_selected_uker(): void
+    {
+        DB::table('rka')->insert([
+            [
+                'uniqueid_namareport' => 'rka-regional-1',
+                'kanca' => 'KC Ponorogo',
+                'desc_uker' => '6388-UNIT SLEKO MADIUN',
+                'mata_anggaran' => 'Jumlah Merchant (EDC) yang Produktif',
+                'apr' => 10,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'uniqueid_namareport' => 'rka-regional-2',
+                'kanca' => 'KC Ponorogo',
+                'desc_uker' => '6339-UNIT ALOON ALOON MADIUN',
+                'mata_anggaran' => 'Jumlah Merchant (EDC) yang Produktif',
+                'apr' => 20,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'uniqueid_namareport' => 'rka-regional-3',
+                'kanca' => 'KC Ponorogo',
+                'desc_uker' => '7000-UNIT MAGETAN',
+                'mata_anggaran' => 'Jumlah Merchant (EDC) yang Produktif',
+                'apr' => 30,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        $service = new RkaLookupService();
+        $result = $service->aggregateByGroupWithRegionalFilter(
+            ['prod' => ['mata_anggaran' => ['Jumlah Merchant (EDC) yang Produktif']]],
+            'apr',
+            ['MADIUN'],
+            2026,
+            ['UNIT SLEKO MADIUN'],
+            'uker'
+        );
+
+        $this->assertSame(['UNIT SLEKO MADIUN' => 10.0], $result['prod']);
+    }
 }

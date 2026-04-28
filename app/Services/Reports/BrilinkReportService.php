@@ -48,11 +48,12 @@ class BrilinkReportService
         $groupLabel       = $isBranchFiltered ? 'UKER' : 'BRANCH OFFICE';
 
         // Split branches for RKA lookup: direct (Ponorogo) vs regional patterns (Madiun, Magetan, Ngawi)
-        $rkaDirectBranches = ['KC PONOROGO'];
+        $rkaDirectBranches = [];
         $rkaRegionalPatterns = [];
         foreach ($branches as $branch) {
             $branchUpper = strtoupper(trim($branch));
             if ($branchUpper === 'KC PONOROGO') {
+                $rkaDirectBranches[] = 'KC PONOROGO';
                 continue;
             }
             $rkaRegionalPatterns[] = strtoupper(str_replace('KC ', '', $branchUpper));
@@ -320,18 +321,24 @@ class BrilinkReportService
     ): array {
         $groups = [];
 
-        // Get direct RKA (KC Ponorogo only)
         $upperSelectedUkers = array_map('strtoupper', $selectedUkers);
-        $directGroups = $this->rkaLookup->aggregateByGroup(
-            $definitions,
-            $monthColumn,
-            $directBranches,
-            $upperSelectedUkers,
-            $isBranchFiltered ? 'uker' : 'kanca'
-        );
-
         foreach ($definitions as $defKey => $def) {
-            $groups[$defKey] = $directGroups[$defKey] ?? [];
+            $groups[$defKey] = [];
+        }
+
+        // Get direct RKA only when selected scope contains KC Ponorogo.
+        if (!empty($directBranches)) {
+            $directGroups = $this->rkaLookup->aggregateByGroup(
+                $definitions,
+                $monthColumn,
+                $directBranches,
+                $upperSelectedUkers,
+                $isBranchFiltered ? 'uker' : 'kanca'
+            );
+
+            foreach ($definitions as $defKey => $def) {
+                $groups[$defKey] = $directGroups[$defKey] ?? [];
+            }
         }
 
         // Get regional RKA if there are regional patterns
@@ -339,14 +346,17 @@ class BrilinkReportService
             $regionalGroups = $this->rkaLookup->aggregateByGroupWithRegionalFilter(
                 $definitions,
                 $monthColumn,
-                $regionalPatterns
+                $regionalPatterns,
+                null,
+                $upperSelectedUkers,
+                $isBranchFiltered ? 'uker' : 'region'
             );
 
             foreach ($definitions as $defKey => $def) {
                 if (isset($regionalGroups[$defKey])) {
-                    foreach ($regionalGroups[$defKey] as $region => $value) {
-                        $branchName = 'KC ' . $region;
-                        $groups[$defKey][$branchName] = $value;
+                    foreach ($regionalGroups[$defKey] as $groupKey => $value) {
+                        $resultKey = $isBranchFiltered ? $groupKey : ('KC ' . $groupKey);
+                        $groups[$defKey][$resultKey] = $value;
                     }
                 }
             }

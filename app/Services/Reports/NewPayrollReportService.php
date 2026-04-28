@@ -74,12 +74,12 @@ class NewPayrollReportService
             ? 'TOTAL ' . strtoupper(implode(', ', $selectedBranches))
             : 'TOTAL AREA 6';
 
-        $newPayrollRka = $this->rkaLookup->aggregateByGroup(
+        $newPayrollRka = $this->buildSplitRkaGroups(
             ['rekening' => ['mata_anggaran' => ['New Rekening Payroll Ritel']]],
             $rkaMonthColumn,
             $branches,
             $selectedUkers,
-            $isBranchFiltered ? 'uker' : 'kanca'
+            $isBranchFiltered
         );
 
         $effectiveSnapshot = DB::table('performance_pis_per_produk')
@@ -188,6 +188,72 @@ class NewPayrollReportService
     // -------------------------------------------------------------------------
     // Helper Methods
     // -------------------------------------------------------------------------
+
+    private function buildSplitRkaGroups(
+        array $definitions,
+        string $monthColumn,
+        array $branches,
+        array $selectedUkers,
+        bool $isBranchFiltered
+    ): array {
+        $directBranches = [];
+        $regionalPatterns = [];
+
+        foreach ($branches as $branch) {
+            $branchUpper = strtoupper(trim((string) $branch));
+            if ($branchUpper === '') {
+                continue;
+            }
+
+            if ($branchUpper === 'KC PONOROGO') {
+                $directBranches[] = $branchUpper;
+                continue;
+            }
+
+            $regionalPatterns[] = strtoupper(str_replace('KC ', '', $branchUpper));
+        }
+
+        $upperSelectedUkers = array_map('strtoupper', $selectedUkers);
+        $groups = [];
+
+        if ($directBranches !== []) {
+            $directGroups = $this->rkaLookup->aggregateByGroup(
+                $definitions,
+                $monthColumn,
+                $directBranches,
+                $upperSelectedUkers,
+                $isBranchFiltered ? 'uker' : 'kanca'
+            );
+
+            foreach ($definitions as $defKey => $definition) {
+                $groups[$defKey] = $directGroups[$defKey] ?? [];
+            }
+        }
+
+        foreach ($definitions as $defKey => $definition) {
+            $groups[$defKey] ??= [];
+        }
+
+        if ($regionalPatterns !== []) {
+            $regionalGroups = $this->rkaLookup->aggregateByGroupWithRegionalFilter(
+                $definitions,
+                $monthColumn,
+                $regionalPatterns,
+                null,
+                $upperSelectedUkers,
+                $isBranchFiltered ? 'uker' : 'region'
+            );
+
+            foreach ($definitions as $defKey => $definition) {
+                foreach (($regionalGroups[$defKey] ?? []) as $groupKey => $value) {
+                    $resultKey = $isBranchFiltered ? $groupKey : ('KC ' . $groupKey);
+                    $groups[$defKey][$resultKey] = $value;
+                }
+            }
+        }
+
+        return $groups;
+    }
 
     private function calculateMetrics($curr, $prev, $yoyPrev): array
     {

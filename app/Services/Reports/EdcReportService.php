@@ -61,11 +61,12 @@ class EdcReportService
         $upperSelectedUkers = array_map('strtoupper', $selectedUkers);
 
         // Split branches for RKA lookup: direct (Ponorogo) vs regional patterns (Madiun, Magetan, Ngawi)
-        $rkaDirectBranches = ['KC PONOROGO'];
+        $rkaDirectBranches = [];
         $rkaRegionalPatterns = [];
         foreach ($branches as $branch) {
             $branchUpper = strtoupper(trim($branch));
             if ($branchUpper === 'KC PONOROGO') {
+                $rkaDirectBranches[] = 'KC PONOROGO';
                 continue; // Already in direct
             }
             $rkaRegionalPatterns[] = strtoupper(str_replace('KC ', '', $branchUpper)); // MADIUN, MAGETAN, NGAWI
@@ -509,18 +510,23 @@ class EdcReportService
     {
         $groups = [];
 
-        // Get direct RKA (KC Ponorogo only)
-        $directGroups = $this->rkaLookup->aggregateByGroup(
-            $definitions,
-            $ctx['rkaMonthColumn'],
-            ['KC PONOROGO'],  // Only Ponorogo direct
-            $ctx['upperSelectedUkers'],
-            $ctx['isBranchFiltered'] ? 'uker' : 'kanca'
-        );
-
-        // Merge direct groups
         foreach ($definitions as $defKey => $def) {
-            $groups[$defKey] = $directGroups[$defKey] ?? [];
+            $groups[$defKey] = [];
+        }
+
+        // Get direct RKA only when selected scope contains KC Ponorogo.
+        if (!empty($ctx['rkaDirectBranches'])) {
+            $directGroups = $this->rkaLookup->aggregateByGroup(
+                $definitions,
+                $ctx['rkaMonthColumn'],
+                $ctx['rkaDirectBranches'],
+                $ctx['upperSelectedUkers'],
+                $ctx['isBranchFiltered'] ? 'uker' : 'kanca'
+            );
+
+            foreach ($definitions as $defKey => $def) {
+                $groups[$defKey] = $directGroups[$defKey] ?? [];
+            }
         }
 
         // Get regional RKA if there are regional patterns
@@ -528,16 +534,18 @@ class EdcReportService
             $regionalGroups = $this->rkaLookup->aggregateByGroupWithRegionalFilter(
                 $definitions,
                 $ctx['rkaMonthColumn'],
-                $ctx['rkaRegionalPatterns']
+                $ctx['rkaRegionalPatterns'],
+                null,
+                $ctx['upperSelectedUkers'],
+                $ctx['isBranchFiltered'] ? 'uker' : 'region'
             );
 
             // Merge regional groups with branch names (uppercase)
             foreach ($definitions as $defKey => $def) {
                 if (isset($regionalGroups[$defKey])) {
-                    foreach ($regionalGroups[$defKey] as $region => $value) {
-                        // Convert region pattern back to branch name (e.g., 'MADIUN' -> 'KC MADIUN')
-                        $branchName = 'KC ' . $region;
-                        $groups[$defKey][$branchName] = $value;
+                    foreach ($regionalGroups[$defKey] as $groupKey => $value) {
+                        $resultKey = $ctx['isBranchFiltered'] ? $groupKey : ('KC ' . $groupKey);
+                        $groups[$defKey][$resultKey] = $value;
                     }
                 }
             }

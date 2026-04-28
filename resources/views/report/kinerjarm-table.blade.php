@@ -64,6 +64,9 @@
                         'rows' => $rows,
                         'total' => $total,
                         'showTargets' => true,
+                        'showTargetColumns' => $selectedSegmen !== 'SMALL',
+                        'showAchievementColumns' => true,
+                        'showLarColumn' => true,
                         'compact' => false,
                         'grandTotalLabel' => 'GRAND TOTAL ' . ($selectedProductLabel === 'Semua Produk' ? 'RM' : strtoupper($selectedProductLabel)),
                         'emptyMessage' => 'Silakan pilih parameter filter yang berbeda.',
@@ -87,25 +90,31 @@
                             'sectionTitle' => 'SML',
                             'sectionSubtitle' => 'Filter kualitas: kol_adk1 = 2.',
                             'sectionMeta' => 'Filter: kol_adk1 = 2',
-                            'rows' => $qualityRowsSml,
-                            'total' => $qualityTotalSml,
-                            'showTargets' => false,
-                            'compact' => true,
-                            'grandTotalLabel' => 'GRAND TOTAL SML ' . ($selectedProductLabel === 'Semua Produk' ? 'KONSUMER' : strtoupper($selectedProductLabel)),
-                            'emptyMessage' => 'Tidak ada data SML untuk kombinasi filter ini.',
-                        ])
+                        'rows' => $qualityRowsSml,
+                        'total' => $qualityTotalSml,
+                        'showTargets' => false,
+                        'showTargetColumns' => false,
+                        'showAchievementColumns' => false,
+                        'showLarColumn' => false,
+                        'compact' => true,
+                        'grandTotalLabel' => 'GRAND TOTAL SML ' . ($selectedProductLabel === 'Semua Produk' ? 'KONSUMER' : strtoupper($selectedProductLabel)),
+                        'emptyMessage' => 'Tidak ada data SML untuk kombinasi filter ini.',
+                    ])
 
                         @include('report.kinerjarm-table-section', [
                             'sectionTitle' => 'NPL',
                             'sectionSubtitle' => 'Filter kualitas: kol_adk1 > 2.',
                             'sectionMeta' => 'Filter: kol_adk1 > 2',
-                            'rows' => $qualityRowsNpl,
-                            'total' => $qualityTotalNpl,
-                            'showTargets' => false,
-                            'compact' => true,
-                            'grandTotalLabel' => 'GRAND TOTAL NPL ' . ($selectedProductLabel === 'Semua Produk' ? 'KONSUMER' : strtoupper($selectedProductLabel)),
-                            'emptyMessage' => 'Tidak ada data NPL untuk kombinasi filter ini.',
-                        ])
+                        'rows' => $qualityRowsNpl,
+                        'total' => $qualityTotalNpl,
+                        'showTargets' => false,
+                        'showTargetColumns' => false,
+                        'showAchievementColumns' => false,
+                        'showLarColumn' => false,
+                        'compact' => true,
+                        'grandTotalLabel' => 'GRAND TOTAL NPL ' . ($selectedProductLabel === 'Semua Produk' ? 'KONSUMER' : strtoupper($selectedProductLabel)),
+                        'emptyMessage' => 'Tidak ada data NPL untuk kombinasi filter ini.',
+                    ])
                     </div>
                 </section>
             </div>

@@ -266,6 +266,13 @@
             { element: unitSelect, placeholder: 'Semua Unit Kerja' }
         ];
 
+        const selectKeyMap = {
+            'segmen_dashboard': segmenSelect,
+            'produk_dashboard': produkSelect,
+            'cabang1': cabangSelect,
+            'unit1': unitSelect,
+        };
+
         function abortInFlightRequests() {
             if (activeController) activeController.abort();
             if (activeFilterController) activeFilterController.abort();
@@ -480,42 +487,70 @@
             if (!periodInput.value) {
                 activePeriodMeta.textContent = '-';
                 comparisonPeriodMeta.textContent = '-';
+                isRefreshingFilters = true;
+                filterSelects.forEach(({element}) => {
+                    element.innerHTML = '<option value="">Pilih periode dulu</option>';
+                    window.jQuery(element).val(null).trigger('change');
+                });
+                isRefreshingFilters = false;
                 return;
             }
 
             activeFilterController = new AbortController();
             const params = new URLSearchParams();
             params.set('periode', periodInput.value);
-            ['segmen_dashboard', 'produk_dashboard', 'cabang1', 'unit1'].forEach(key => {
-                const select = document.getElementById('loan' + key.charAt(0).toUpperCase() + key.slice(1).replace('1', '').replace('_dashboard', '') + 'Select');
-                (window.jQuery(select).val() || []).forEach(v => params.append(key + '[]', v));
+
+            Object.keys(selectKeyMap).forEach(key => {
+                const select = selectKeyMap[key];
+                if (select) {
+                    const val = window.jQuery(select).val() || [];
+                    val.forEach(v => params.append(key + '[]', v));
+                    if (val.length > 0) {
+                        console.log(`Including ${key} in filter params:`, val);
+                    }
+                }
             });
 
             try {
+                console.log('Fetching filter options with params:', params.toString());
                 const response = await fetch(`${filtersUrl}?${params.toString()}`, { signal: activeFilterController.signal });
                 const payload = await response.json();
                 if (requestId !== activeFilterRequestId) return;
 
+                console.log('Filter options response:', payload);
+
                 activePeriodMeta.textContent = formatDate(payload.selected_period);
                 comparisonPeriodMeta.textContent = formatDate(payload.comparison_period);
-                
+
                 isRefreshingFilters = true;
                 setSelectOptions(segmenSelect, payload.segments || [], 'Semua Segmen');
                 setSelectOptions(produkSelect, payload.products || [], 'Semua Produk');
                 setSelectOptions(cabangSelect, payload.branches || [], 'Semua Kantor Cabang');
+                console.log(`Setting unit options. Backend returned ${(payload.units || []).length} units`);
                 setSelectOptions(unitSelect, payload.units || [], 'Semua Unit Kerja');
                 isRefreshingFilters = false;
-            } catch (e) {}
+            } catch (e) {
+                console.error('Filter load error:', e);
+            }
         }
 
         function setSelectOptions(select, items, placeholder) {
             const selected = parseSelectedDataset(select);
+            const $select = window.jQuery(select);
+
             select.innerHTML = '';
             items.forEach(item => {
                 const opt = new Option(item, item, false, selected.includes(String(item)));
                 select.add(opt);
             });
-            window.jQuery(select).trigger('change');
+
+            // Refresh Select2 display
+            if ($select.hasClass('select2-hidden-accessible')) {
+                $select.select2('destroy');
+                initMultiSelect(select, placeholder);
+            }
+
+            $select.val(selected).trigger('change');
         }
 
         async function loadMatrix(pushHistory = false) {
@@ -621,7 +656,17 @@
         }
 
         form.addEventListener('submit', e => { e.preventDefault(); loadMatrix(true); });
-        periodInput.addEventListener('change', () => { loadFilterOptions(); });
+        periodInput.addEventListener('change', () => {
+            loadFilterOptions();
+        });
+        periodInput.addEventListener('input', () => {
+            window.clearTimeout(filterReloadTimer);
+            filterReloadTimer = window.setTimeout(() => {
+                if (periodInput.value) {
+                    loadFilterOptions();
+                }
+            }, 300);
+        });
         body.addEventListener('click', event => {
             const row = event.target.closest('tr.loan-drill-row');
             if (!row) return;
@@ -646,11 +691,17 @@
             button.addEventListener('click', () => cleanupDrillModalBackdrop());
         });
         
-        filterSelects.forEach(({element}) => {
-            initMultiSelect(element, element.dataset.placeholder);
+        filterSelects.forEach(({element, placeholder}) => {
+            initMultiSelect(element, placeholder);
             window.jQuery(element).on('change', () => {
                 syncSelectedDataset(element);
-                if (!isRefreshingFilters) loadFilterOptions();
+                const selectedValue = window.jQuery(element).val();
+                const elementId = element.id;
+                console.log(`Filter changed: ${elementId} =`, selectedValue);
+                if (!isRefreshingFilters) {
+                    console.log(`Loading filter options due to ${elementId} change...`);
+                    loadFilterOptions();
+                }
             });
         });
 

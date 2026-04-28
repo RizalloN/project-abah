@@ -126,6 +126,7 @@ class ValidatePerformanceRmSnapshotsCommand extends Command
         $normalizedSegmenSql = "UPPER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(TRIM(COALESCE(segmen_dashboard, '')), ' ', ''), '-', ''), '_', ''), '/', ''), '.', ''))";
         $normalizedProductSql = "UPPER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(TRIM(COALESCE(produk_dashboard, '')), ' ', ''), '-', ''), '_', ''), '/', ''), '.', ''))";
         $normalizedDescriptionSql = "UPPER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(TRIM(COALESCE(description, '')), ' ', ''), '-', ''), '_', ''), '/', ''), '.', ''))";
+        $realisasiDateColumn = Schema::hasColumn('daily_loan_dinamis', 'tgl_realisasi1') ? 'tgl_realisasi1' : 'tgl_realisasi';
 
         $sourceProducts = $this->getSourceProducts($produk);
         $sourceSegments = $this->getSourceSegments($segment);
@@ -147,11 +148,11 @@ class ValidatePerformanceRmSnapshotsCommand extends Command
             ->selectRaw('SUM(CASE WHEN kol_adk1 > 2 THEN COALESCE(baki_debet1, 0) ELSE 0 END) as npl_os')
             ->selectRaw("SUM(CASE WHEN kol_adk1 = 1 AND UPPER(TRIM(COALESCE(flag_restruk, ''))) = 'Y' THEN COALESCE(baki_debet1, 0) ELSE 0 END) as restruk_os")
             ->selectRaw('COUNT(DISTINCT nomor_rekening1) as total_deb')
-            ->selectRaw('COUNT(DISTINCT CASE WHEN tgl_realisasi BETWEEN DATE_FORMAT(?, "%Y-%m-01") AND ? THEN nomor_rekening1 END) as realisasi_deb', [
+            ->selectRaw("COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN DATE_FORMAT(?, \"%Y-%m-01\") AND ? THEN nomor_rekening1 END) as realisasi_deb", [
                 Carbon::parse($period)->startOfMonth()->toDateString(),
                 $period,
             ])
-            ->selectRaw('SUM(CASE WHEN tgl_realisasi BETWEEN DATE_FORMAT(?, "%Y-%m-01") AND ? THEN COALESCE(plafon, 0) ELSE 0 END) as realisasi_os', [
+            ->selectRaw("SUM(CASE WHEN {$realisasiDateColumn} BETWEEN DATE_FORMAT(?, \"%Y-%m-01\") AND ? THEN COALESCE(plafon, 0) ELSE 0 END) as realisasi_os", [
                 Carbon::parse($period)->startOfMonth()->toDateString(),
                 $period,
             ])
@@ -295,9 +296,9 @@ class ValidatePerformanceRmSnapshotsCommand extends Command
     private function getSourceSegments(string $segment): array
     {
         return match ($segment) {
-            'CONSUMER' => ['CONSUMER', 'Consumer'],
-            'SMALL' => ['SMALL', 'Small'],
-            'MICRO' => ['MICRO', 'Micro', 'MIKRO', 'Mikro'],
+            'CONSUMER' => ['CONSUMER'],
+            'SMALL' => ['SMALL'],
+            'MICRO' => ['MICRO'],
             default => [$segment],
         };
     }
@@ -305,15 +306,14 @@ class ValidatePerformanceRmSnapshotsCommand extends Command
     private function getSourceProducts(string $product): array
     {
         return match ($product) {
-            'BRIGUNA-KONSUMER' => ['BRIGUNA-KONSUMER', 'Briguna-Konsumer'],
+            'BRIGUNA-KONSUMER' => ['BRIGUNAKONSUMER'],
             'KPR' => ['KPR'],
-            'COMMERCIAL' => ['COMMERCIAL', 'Commercial'],
-            'CASHCALL' => ['CASHCALL', 'Cashcall'],
-            'BRIGUNA-MIKRO' => ['BRIGUNA-MIKRO', 'Briguna-Mikro'],
-            'KUPEDES' => ['KUPEDES', 'Kupedes'],
-            'KUR-MIKRO' => ['KUR-MIKRO', 'KUR-Mikro'],
-            'CASHCOLLATERAL' => ['CASHCOLLATERAL', 'CashCollateral', 'Cash Collateral', 'Cashcoll'],
-            'KUR-SMALL' => ['KUR-SMALL', 'KUR-Small'],
+            'SMALL' => ['SMALL', 'COMMERCIAL', 'CASHCALL', 'CASHCOLLATERAL', 'CASHCOLL'],
+            'BRIGUNA-MIKRO' => ['BRIGUNAMIKRO'],
+            'KUPEDES' => ['KUPEDES'],
+            'KUR-MIKRO' => ['KURMIKRO'],
+            'CASHCOLLATERAL' => ['CASHCOLLATERAL', 'CASHCOLL'],
+            'KUR-SMALL' => ['KURSMALL'],
             default => [$product],
         };
     }

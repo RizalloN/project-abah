@@ -365,6 +365,30 @@
         color: #00529c;
         background: transparent;
     }
+        /* Ensure the branch/uker dropdown can float above the table and sticky headers */
+        .report-filter-card {
+            position: relative;
+            z-index: 30;
+            overflow: visible;
+        }
+
+        .report-filter-card .form-group,
+        .branch-filter-dropdown,
+        .uker-filter-dropdown {
+            position: relative;
+            overflow: visible;
+            z-index: 40;
+        }
+
+        .branch-dropdown-menu,
+        .uker-dropdown-menu {
+            z-index: 2000;
+        }
+
+        .report-data-card {
+            position: relative;
+            z-index: 10;
+        }
 </style>
 
 <div class="pt-4">

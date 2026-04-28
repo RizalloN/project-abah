@@ -291,10 +291,14 @@ class RkaLookupService
         array $definitions,
         string $monthColumn,
         array $regionPatterns = [],  // ['MADIUN', 'NGAWI', 'MAGETAN']
-        ?int $year = null
+        ?int $year = null,
+        array $units = [],
+        string $groupBy = 'region'
     ): array {
         // Normalize month column
         $normalizedMonth = strtolower(trim((string) $monthColumn));
+        $normalizedUnits = $this->normalizeScopeValues($units);
+        $groupBy = strtolower(trim($groupBy)) === 'uker' ? 'uker' : 'region';
         
         // Load all rows for this period
         $loadedRows = $this->loadRows([$normalizedMonth], $year);
@@ -315,13 +319,22 @@ class RkaLookupService
                 foreach ($regionPatterns as $region) {
                     $regionUpper = strtoupper(trim($region));
                     if ($regionUpper !== '' && str_contains($row['uker_key'], $regionUpper)) {
+                        if (!empty($normalizedUnits) && !in_array($row['uker_key'], $normalizedUnits, true)) {
+                            continue;
+                        }
+
+                        $groupKey = $groupBy === 'uker' ? $row['uker_key'] : $region;
+                        if ($groupKey === '') {
+                            continue;
+                        }
+
                         // Found a match - aggregate by this region
-                        if (!isset($groups[$definitionKey][$region])) {
-                            $groups[$definitionKey][$region] = 0;
+                        if (!isset($groups[$definitionKey][$groupKey])) {
+                            $groups[$definitionKey][$groupKey] = 0;
                         }
                         // Access month value from nested 'months' array
                         $monthValue = $row['months'][$normalizedMonth] ?? 0;
-                        $groups[$definitionKey][$region] += (float) $monthValue;
+                        $groups[$definitionKey][$groupKey] += (float) $monthValue;
                     }
                 }
             }

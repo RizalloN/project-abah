@@ -259,6 +259,82 @@ class MySqlBulkLoadService
         throw new \RuntimeException('LOAD DATA LOCAL INFILE gagal dieksekusi.');
     }
 
+    public function loadCsvViaStaging(
+        string $csvPath,
+        string $targetTable,
+        array $columns,
+        array $duplicateKeyColumns = [],
+        bool $relaxSqlMode = false
+    ): array {
+        /**
+         * OPTIMIZED: Load ke staging table terlebih dahulu, lalu pindahkan ke main table
+         * dengan database-side duplicate detection. Lebih cepat daripada PHP-side checking.
+         *
+         * Returns: ['loaded' => int, 'duplicates_skipped' => int, 'final_count' => int]
+         */
+        $stagingTable = $targetTable . '_staging_' . str_pad(random_int(1, 999999), 6, '0', STR_PAD_LEFT);
+
+        try {
+            // Step 1: Create staging table
+            DB::statement("CREATE TEMPORARY TABLE `{$stagingTable}` LIKE `{$targetTable}`");
+
+            // Step 2: Load CSV ke staging table
+            $loaded = $this->loadCsvIntoMysql($csvPath, $stagingTable, $columns, $relaxSqlMode);
+
+            // Step 3: Database-side duplicate check menggunakan JOIN
+            if (empty($duplicateKeyColumns)) {
+                // Jika tidak ada duplicate key, copy semua data langsung
+                $inserted = DB::statement(
+                    "INSERT INTO `{$targetTable}` SELECT * FROM `{$stagingTable}`"
+                );
+                return [
+                    'loaded' => $loaded,
+                    'duplicates_skipped' => 0,
+                    'final_count' => $loaded,
+                ];
+            }
+
+            // Build JOIN condition untuk duplicate detection
+            $joinConditions = [];
+            foreach ($duplicateKeyColumns as $col) {
+                $quotedCol = '`' . str_replace('`', '``', $col) . '`';
+                $joinConditions[] = "t.{$quotedCol} = s.{$quotedCol}";
+            }
+            $joinCondition = implode(' AND ', $joinConditions);
+
+            // Count duplicates
+            $duplicateResult = DB::selectOne(
+                "SELECT COUNT(*) as dup_count FROM `{$stagingTable}` s " .
+                "INNER JOIN `{$targetTable}` t ON {$joinCondition}"
+            );
+            $duplicatesSkipped = (int) ($duplicateResult->dup_count ?? 0);
+
+            // Insert hanya yang tidak duplicate
+            $inserted = DB::statement(
+                "INSERT INTO `{$targetTable}` " .
+                "SELECT s.* FROM `{$stagingTable}` s " .
+                "LEFT JOIN `{$targetTable}` t ON {$joinCondition} " .
+                "WHERE t." . reset(array_map(static function(string $col) {
+                    return '`' . str_replace('`', '``', $col) . '`';
+                }, $duplicateKeyColumns)) . " IS NULL"
+            );
+
+            return [
+                'loaded' => $loaded,
+                'duplicates_skipped' => $duplicatesSkipped,
+                'final_count' => $loaded - $duplicatesSkipped,
+            ];
+
+        } finally {
+            // Cleanup staging table (TEMPORARY tables are auto-dropped, tapi explicitly safer)
+            try {
+                DB::statement("DROP TEMPORARY TABLE IF EXISTS `{$stagingTable}`");
+            } catch (\Throwable $e) {
+                Log::warning("Failed to drop staging table {$stagingTable}: " . $e->getMessage());
+            }
+        }
+    }
+
     public function countFileLines(string $path): int
     {
         if (!file_exists($path)) {

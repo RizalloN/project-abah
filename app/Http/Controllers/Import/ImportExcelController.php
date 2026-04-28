@@ -3963,7 +3963,7 @@ class ImportExcelController extends Controller
             'path' => $outputCsvPath,
             'cleanup' => true,
             'normalized' => true,
-            'source_pre_normalized' => false,
+            'source_pre_normalized' => true,
             'backend' => 'polars',
             'skipped_rows' => array_values(array_map('intval', (array) ($donePayload['skipped_rows'] ?? []))),
             'skipped_count' => (int) ($donePayload['skipped_count'] ?? 0),

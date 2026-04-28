@@ -495,6 +495,7 @@ def classify_daily_loan_columns(headers: list[str]) -> dict:
         'NPB_POKOK_LA', 'NPB_POKOK_LF', 'NPB_BUNGA_LA', 'NPB_BUNGA_LF',
         'JML_ANGSURAN1', 'JUMLAH_BAYAR', 'DEFFERED_BUNGA',
         'SAI_TUNGGAKAN', 'SAI_DEFFERED', 'SAI1', 'PMTAMT', 'PMTAMT_BASE',
+        'TEXTBOX20', 'TEXTBOX21',
         'OS_IDR', 'OS_SEBELUM_KLAIM', 'OS_PENUH_BERJALAN',
         'BILPRN', 'BILINT', 'BILLC'
     }
@@ -506,33 +507,45 @@ def classify_daily_loan_columns(headers: list[str]) -> dict:
     }
 
     integer_columns = {
-        'UMUR_TUNGGAKAN', 'FREQ_PAYMENT', 'FREQ_INT_PAYMENT',
+        'JANGKA_WAKTU1', 'UMUR_TUNGGAKAN', 'FREQ_PAYMENT', 'FREQ_INT_PAYMENT',
         'JUMLAH_PN1', 'JUMLAH_PN_ALL1', 'RESTRUK_KE1'
     }
 
-    string_columns = set(headers) - decimal_columns - date_columns - integer_columns
-
-    return {
-        'decimal': [h for h in headers if h in decimal_columns],
-        'date': [h for h in headers if h in date_columns],
-        'integer': [h for h in headers if h in integer_columns],
-        'string': list(string_columns)
+    classified = {
+        'decimal': [],
+        'date': [],
+        'integer': [],
+        'string': [],
     }
+
+    for header in headers:
+        normalized = normalize_header_name(header)
+        if normalized in decimal_columns:
+            classified['decimal'].append(header)
+        elif normalized in date_columns:
+            classified['date'].append(header)
+        elif normalized in integer_columns:
+            classified['integer'].append(header)
+        else:
+            classified['string'].append(header)
+
+    return classified
 
 
 def normalize_decimal_optimized_daily_loan(val: str) -> str:
     """
-    Lightweight decimal normalization untuk Daily Loan setelah pre-clean vectorized.
-    Assumption: Input sudah di-pre-clean (whitespace, non-numeric chars removed).
-    Impact: 70% less work per row dibanding raw normalization.
+    Normalize Daily Loan decimal values after vectorized pre-cleaning.
+
+    Daily Loan source files commonly use Indonesian thousands/decimal
+    separators, for example 27.828.492,00. Keep the proven parser here so
+    required amount columns such as BAKI_DEBET1 are never blanked by an
+    over-aggressive fast path.
     """
-    if not val or val == "-":
+    normalized = normalize_decimal_value(val)
+    if normalized is None:
         return ""
 
-    try:
-        return f"{float(val):.2f}"
-    except Exception:
-        return ""
+    return normalized
 
 
 def normalize_daily_loan_with_polars_optimized(df, column_classes: dict):
@@ -573,7 +586,7 @@ def normalize_daily_loan_with_polars_optimized(df, column_classes: dict):
         df = df.with_columns(
             col_expr.map_elements(
                 lambda val: normalize_decimal_optimized_daily_loan(val),
-                return_dtype="str",
+                return_dtype=pl.Utf8,
                 skip_nulls=True
             ).alias(col)
         )
@@ -588,6 +601,7 @@ def normalize_daily_loan_with_polars_optimized(df, column_classes: dict):
                 pl.col(col)
                 .cast(pl.Utf8)
                 .str.strip_chars()
+                .str.replace_all(r"(\d{2})-(\d{2})-(\d{4})", r"$3-$2-$1")
                 .str.replace_all(r"(\d{2})/(\d{2})/(\d{4})", r"$3-$2-$1")
                 .alias(col)
             )
@@ -607,7 +621,7 @@ def normalize_daily_loan_with_polars_optimized(df, column_classes: dict):
             .str.replace_all(r"[^0-9\-]", "")
             .map_elements(
                 lambda val: str(int(val)) if val and val != "-" else "",
-                return_dtype="str",
+                return_dtype=pl.Utf8,
                 skip_nulls=True
             )
             .alias(col)

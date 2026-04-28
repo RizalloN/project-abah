@@ -1,5 +1,8 @@
 @php
     $showTargets = $showTargets ?? true;
+    $showTargetColumns = $showTargetColumns ?? $showTargets;
+    $showAchievementColumns = $showAchievementColumns ?? $showTargets;
+    $showLarColumn = $showLarColumn ?? $showTargets;
     $compact = $compact ?? false;
     $sectionTitle = $sectionTitle ?? 'Performance OS';
     $sectionSubtitle = $sectionSubtitle ?? null;
@@ -7,7 +10,10 @@
     $grandTotalLabel = $grandTotalLabel ?? null;
     $emptyMessage = $emptyMessage ?? 'Silakan pilih parameter filter yang berbeda.';
     $tableClass = 'kinerja-konsumer-table' . ($compact ? ' kinerja-konsumer-table--compact' : '');
-    $emptyColspan = $showTargets ? 16 : 12;
+    $emptyColspan = 12
+        + ($showTargetColumns ? 5 : 0)
+        + (!$showTargetColumns && $showAchievementColumns ? 2 : 0)
+        + (!$showTargetColumns && $showLarColumn ? 1 : 0);
     $segmentLabels = [
         'CONSUMER' => 'RM',
         'SMALL' => 'SMALL RM',
@@ -38,6 +44,7 @@
         return "<span class='delta-indicator {$cls}'>{$icon}{$prefix}{$display}</span>";
     };
     $formatCount = $formatCount ?? fn ($value) => number_format((int) round((float) $value), 0, ',', '.');
+    $formatPercent = $formatPercent ?? fn ($value, int $decimals = 1) => number_format((float) $value, $decimals, ',', '.') . '%';
     $quadrantLabel = $quadrantLabel ?? fn ($quadrant) => in_array((int) $quadrant, [1, 2, 3, 4], true) ? (int) $quadrant : '-';
     $quadrantClass = $quadrantClass ?? fn ($quadrant) => in_array((int) $quadrant, [1, 2, 3, 4], true) ? 'q' . (int) $quadrant : '';
 @endphp
@@ -72,9 +79,14 @@
                     <th rowspan="2" style="width: 60px;">Kuadran</th>
                     <th colspan="4" class="sub-head">PERFORMANCE PER RM</th>
                     <th colspan="3" class="accent-head">DELTA PERIODE</th>
-                    @if($showTargets)
+                    @if($showTargetColumns)
                         <th colspan="2" class="sub-head">TARGET REALISASI JG</th>
+                    @endif
+                    @if($showAchievementColumns)
                         <th colspan="2" class="accent-head">PENCAPAIAN REALISASI JG</th>
+                    @endif
+                    @if($showLarColumn)
+                        <th rowspan="2" class="accent-head" style="width: 78px;">% LAR</th>
                     @endif
                 </tr>
                 <tr>
@@ -87,10 +99,12 @@
                     <th class="accent-head" style="width: 70px;">YtD</th>
                     <th class="accent-head" style="width: 70px;">MtD</th>
 
-                    @if($showTargets)
+                    @if($showTargetColumns)
                         <th class="sub-head" style="width: 50px;">Deb</th>
                         <th class="sub-head" style="width: 80px;">Rp</th>
+                    @endif
 
+                    @if($showAchievementColumns)
                         <th class="accent-head" style="width: 60px;">Deb</th>
                         <th class="accent-head" style="width: 85px;">Rp</th>
                     @endif
@@ -112,11 +126,21 @@
                         <td>{!! $formatSignedAmount($branch['subtotal']['delta_yoy']) !!}</td>
                         <td>{!! $formatSignedAmount($branch['subtotal']['delta_ytd']) !!}</td>
                         <td>{!! $formatSignedAmount($branch['subtotal']['delta_mtd']) !!}</td>
-                        @if($showTargets)
+                        @if($showTargetColumns)
                             <td class="text-center-important">{{ $branch['subtotal']['target_jg_deb'] ?: '-' }}</td>
                             <td>{{ $branch['subtotal']['target_jg_os'] > 0 ? $formatAmount($branch['subtotal']['target_jg_os']) : '-' }}</td>
-                            <td class="text-center-important">{{ $formatCount($branch['subtotal']['ach_deb'] ?? 0) }}</td>
-                            <td>{{ $formatAmount($branch['subtotal']['ach_os'] ?? 0) }}</td>
+                        @endif
+                        @if($showAchievementColumns)
+                            @php
+                                $branchAchDeb = $branch['subtotal']['ach_deb'] ?? null;
+                                $branchAchOs = $branch['subtotal']['ach_os'] ?? null;
+                                $branchLarPct = $branch['subtotal']['lar_pct'] ?? null;
+                            @endphp
+                            <td class="text-center-important {{ is_null($branchAchDeb) ? 'kinerja-empty-highlight' : '' }}">{{ is_null($branchAchDeb) ? '' : $formatCount($branchAchDeb) }}</td>
+                            <td class="{{ is_null($branchAchOs) ? 'kinerja-empty-highlight' : '' }}">{{ is_null($branchAchOs) ? '' : $formatAmount($branchAchOs) }}</td>
+                        @endif
+                        @if($showLarColumn)
+                            <td class="text-center-important {{ is_null($branchLarPct) ? 'kinerja-empty-highlight' : '' }}">{{ is_null($branchLarPct) ? '' : $formatPercent($branchLarPct) }}</td>
                         @endif
                     </tr>
 
@@ -174,11 +198,21 @@
                                 <td>{!! $formatSignedAmount($item['delta_yoy']) !!}</td>
                                 <td>{!! $formatSignedAmount($item['delta_ytd']) !!}</td>
                                 <td>{!! $formatSignedAmount($item['delta_mtd']) !!}</td>
-                                @if($showTargets)
+                                @if($showTargetColumns)
                                     <td class="text-center-important" style="background: rgba(8, 87, 195, 0.02); font-size: 0.7rem;">{{ $item['target_jg_deb'] ?: '' }}</td>
                                     <td style="background: rgba(8, 87, 195, 0.02);">{{ $item['target_jg_os'] > 0 ? $formatAmount($item['target_jg_os']) : '' }}</td>
-                                    <td class="text-center-important">{{ $formatCount($item['ach_deb'] ?? 0) }}</td>
-                                    <td>{{ $formatAmount($item['ach_os'] ?? 0) }}</td>
+                                @endif
+                                @if($showAchievementColumns)
+                                    @php
+                                        $itemAchDeb = $item['ach_deb'] ?? null;
+                                        $itemAchOs = $item['ach_os'] ?? null;
+                                        $itemLarPct = $item['lar_pct'] ?? null;
+                                    @endphp
+                                    <td class="text-center-important {{ is_null($itemAchDeb) ? 'kinerja-empty-highlight' : '' }}">{{ is_null($itemAchDeb) ? '' : $formatCount($itemAchDeb) }}</td>
+                                    <td class="{{ is_null($itemAchOs) ? 'kinerja-empty-highlight' : '' }}">{{ is_null($itemAchOs) ? '' : $formatAmount($itemAchOs) }}</td>
+                                @endif
+                                @if($showLarColumn)
+                                    <td class="text-center-important {{ is_null($itemLarPct) ? 'kinerja-empty-highlight' : '' }}">{{ is_null($itemLarPct) ? '' : $formatPercent($itemLarPct) }}</td>
                                 @endif
                             </tr>
                         @endforeach
@@ -205,11 +239,21 @@
                         <td>{!! $formatSignedAmount($total['delta_yoy'], false) !!}</td>
                         <td>{!! $formatSignedAmount($total['delta_ytd'], false) !!}</td>
                         <td>{!! $formatSignedAmount($total['delta_mtd'], false) !!}</td>
-                        @if($showTargets)
+                        @if($showTargetColumns)
                             <td class="text-center-important">{{ $total['target_jg_deb'] ?: '-' }}</td>
                             <td>{{ $total['target_jg_os'] > 0 ? $formatAmount($total['target_jg_os']) : '-' }}</td>
-                            <td class="text-center-important">{{ $formatCount($total['ach_deb'] ?? 0) }}</td>
-                            <td>{{ $formatAmount($total['ach_os'] ?? 0) }}</td>
+                        @endif
+                        @if($showAchievementColumns)
+                            @php
+                                $totalAchDeb = $total['ach_deb'] ?? null;
+                                $totalAchOs = $total['ach_os'] ?? null;
+                                $totalLarPct = $total['lar_pct'] ?? null;
+                            @endphp
+                            <td class="text-center-important {{ is_null($totalAchDeb) ? 'kinerja-empty-highlight' : '' }}">{{ is_null($totalAchDeb) ? '' : $formatCount($totalAchDeb) }}</td>
+                            <td class="{{ is_null($totalAchOs) ? 'kinerja-empty-highlight' : '' }}">{{ is_null($totalAchOs) ? '' : $formatAmount($totalAchOs) }}</td>
+                        @endif
+                        @if($showLarColumn)
+                            <td class="text-center-important {{ is_null($totalLarPct) ? 'kinerja-empty-highlight' : '' }}">{{ is_null($totalLarPct) ? '' : $formatPercent($totalLarPct) }}</td>
                         @endif
                     </tr>
                 @endif

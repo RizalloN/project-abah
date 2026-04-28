@@ -409,10 +409,42 @@ class KinerjaRmReportController extends Controller
                     $pivoted[$key]['quadrant'] ??= $quadrant;
                 }
 
-                if ($row->periode === end($averagePeriods)) {
-                    $pivoted[$key]['realisasi_deb_sum'] = (float) ($row->realisasi_deb ?? 0);
-                    $pivoted[$key]['realisasi_os_sum'] = (float) ($row->realisasi_os ?? 0);
-                    $pivoted[$key]['realisasi_period_count'] = 1;
+                // For SMALL segment, collect realisasi data from ALL average periods to compute average
+                // For other segments, use only selectedPeriod
+                $useForRealisasiAverage = $segmen === 'SMALL'
+                    ? in_array($row->periode, $averagePeriods, true)
+                    : ($row->periode === $selectedPeriod);
+
+                if ($useForRealisasiAverage) {
+                    $pivoted[$key]['realisasi_deb_sum'] += (float) ($row->realisasi_deb ?? 0);
+                    $pivoted[$key]['realisasi_os_sum'] += (float) ($row->realisasi_os ?? 0);
+                    $pivoted[$key]['realisasi_period_count']++;
+                }
+
+                // If quadrant is still null and we're in SMALL segment, use the latest available period for quadrant
+                if ($pivoted[$key]['quadrant'] === null && $segmen === 'SMALL' && in_array($row->periode, $averagePeriods, true)) {
+                    $quadrant = $row->quadrant ?? null;
+                    if ($quadrant === null) {
+                        $loanOs = (float) ($row->loan_os ?? 0);
+                        if ($loanOs > 0) {
+                            $isXPositive = (float) ($row->lancar_os ?? 0) >= (float) ($row->npl_os ?? 0);
+                            $isYPositive = (float) ($row->total_deposit ?? 0) >= $loanOs;
+
+                            if ($isXPositive && $isYPositive) {
+                                $quadrant = 2;
+                            } elseif (!$isXPositive && $isYPositive) {
+                                $quadrant = 3;
+                            } elseif (!$isXPositive && !$isYPositive) {
+                                $quadrant = 4;
+                            } else {
+                                $quadrant = 1;
+                            }
+                        }
+                    }
+                    // Only set if this is the latest period in scope
+                    if ($row->periode === end($averagePeriods)) {
+                        $pivoted[$key]['quadrant'] = $quadrant;
+                    }
                 }
 
                 if ($row->periode === $larPeriod) {
@@ -514,8 +546,10 @@ class KinerjaRmReportController extends Controller
                 $branches[$cabangKey]['subtotal']['target_jg_os'] += $tOs;
                 if ($data['realisasi_period_count'] > 0) {
                     $branches[$cabangKey]['subtotal']['ach_count']++;
-                    $branches[$cabangKey]['subtotal']['ach_deb'] = ($branches[$cabangKey]['subtotal']['ach_deb'] ?? 0) + ($data['realisasi_deb_sum'] / $data['realisasi_period_count']);
-                    $branches[$cabangKey]['subtotal']['ach_os'] = ($branches[$cabangKey]['subtotal']['ach_os'] ?? 0.0) + ($data['realisasi_os_sum'] / $data['realisasi_period_count']);
+                    $achDeb = $data['realisasi_deb_sum'] / $data['realisasi_period_count'];
+                    $achOs = $data['realisasi_os_sum'] / $data['realisasi_period_count'];
+                    $branches[$cabangKey]['subtotal']['ach_deb'] = ($branches[$cabangKey]['subtotal']['ach_deb'] ?? 0) + $achDeb;
+                    $branches[$cabangKey]['subtotal']['ach_os'] = ($branches[$cabangKey]['subtotal']['ach_os'] ?? 0.0) + $achOs;
                 }
                 $branches[$cabangKey]['subtotal']['lar_loan_os'] = ($branches[$cabangKey]['subtotal']['lar_loan_os'] ?? 0.0) + $data['lar_loan_os'];
                 $branches[$cabangKey]['subtotal']['lar_value'] = ($branches[$cabangKey]['subtotal']['lar_value'] ?? 0.0) + $data['lar_value'];
@@ -533,8 +567,10 @@ class KinerjaRmReportController extends Controller
                 $grandTotals['target_jg_os'] += $tOs;
                 if ($data['realisasi_period_count'] > 0) {
                     $grandTotals['ach_count']++;
-                    $grandTotals['ach_deb'] = ($grandTotals['ach_deb'] ?? 0) + ($data['realisasi_deb_sum'] / $data['realisasi_period_count']);
-                    $grandTotals['ach_os'] = ($grandTotals['ach_os'] ?? 0.0) + ($data['realisasi_os_sum'] / $data['realisasi_period_count']);
+                    $achDeb = $data['realisasi_deb_sum'] / $data['realisasi_period_count'];
+                    $achOs = $data['realisasi_os_sum'] / $data['realisasi_period_count'];
+                    $grandTotals['ach_deb'] = ($grandTotals['ach_deb'] ?? 0) + $achDeb;
+                    $grandTotals['ach_os'] = ($grandTotals['ach_os'] ?? 0.0) + $achOs;
                 }
                 $grandTotals['lar_loan_os'] = ($grandTotals['lar_loan_os'] ?? 0.0) + $data['lar_loan_os'];
                 $grandTotals['lar_value'] = ($grandTotals['lar_value'] ?? 0.0) + $data['lar_value'];

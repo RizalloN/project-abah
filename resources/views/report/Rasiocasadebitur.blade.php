@@ -639,30 +639,100 @@
 
                 <div class="tab-content">
                     <div class="tab-pane fade show active" id="tab-total" role="tabpanel">
-                        <div class="table-container">
-                            <table class="table table-report casa-no-hover m-0">
-                                <thead>
-                                    <tr>
-                                        <th rowspan="3" class="bg-header-main sticky-col align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER" style="min-width: 170px;">BRANCH OFFICE</th>
-                                        <th colspan="7" class="bg-header-main">TOTAL</th>
-                                    </tr>
-                                    <tr class="bg-header-sub">
-                                        <th colspan="2">Total OS</th>
-                                        <th colspan="2">Total CASA</th>
-                                        <th colspan="3">Rasio CASA/OS</th>
-                                    </tr>
-                                    <tr class="bg-header-sub-light">
-                                        <th class="lbl-prev-th">-</th>
-                                        <th class="lbl-curr-th">-</th>
-                                        <th class="lbl-prev-th">-</th>
-                                        <th class="lbl-curr-th">-</th>
-                                        <th class="lbl-prev-th">-</th>
-                                        <th class="lbl-curr-th">-</th>
-                                        <th>MtD</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="tbody-total"></tbody>
-                            </table>
+                        <!-- Section Konsolidasi -->
+                        <div id="section-konsolidasi">
+                            <h6 class="mt-4 mb-2 font-weight-bold text-primary section-title-extra d-none">
+                                <i class="fas fa-layer-group mr-1"></i> KONSOLIDASI (ALL UNIT)
+                            </h6>
+                            <div class="table-container">
+                                <table class="table table-report casa-no-hover m-0">
+                                    <thead>
+                                        <tr>
+                                            <th rowspan="3" class="bg-header-main sticky-col align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER" style="min-width: 170px;">BRANCH OFFICE</th>
+                                            <th colspan="7" class="bg-header-main">TOTAL</th>
+                                        </tr>
+                                        <tr class="bg-header-sub">
+                                            <th colspan="2">Total OS</th>
+                                            <th colspan="2">Total CASA</th>
+                                            <th colspan="3">Rasio CASA/OS</th>
+                                        </tr>
+                                        <tr class="bg-header-sub-light">
+                                            <th class="lbl-prev-th">-</th>
+                                            <th class="lbl-curr-th">-</th>
+                                            <th class="lbl-prev-th">-</th>
+                                            <th class="lbl-curr-th">-</th>
+                                            <th class="lbl-prev-th">-</th>
+                                            <th class="lbl-curr-th">-</th>
+                                            <th>MtD</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="tbody-total"></tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- Section Ritel -->
+                        <div id="section-ritel" class="d-none">
+                            <h6 class="mt-4 mb-2 font-weight-bold text-primary section-title-extra">
+                                <i class="fas fa-building mr-1"></i> RITEL (KC & KCP)
+                            </h6>
+                            <div class="table-container">
+                                <table class="table table-report casa-no-hover m-0">
+                                    <thead>
+                                        <tr>
+                                            <th rowspan="3" class="bg-header-main sticky-col align-middle col-group-label" style="min-width: 170px;">UKER RITEL</th>
+                                            <th colspan="7" class="bg-header-main">TOTAL RITEL</th>
+                                        </tr>
+                                        <tr class="bg-header-sub">
+                                            <th colspan="2">Total OS</th>
+                                            <th colspan="2">Total CASA</th>
+                                            <th colspan="3">Rasio CASA/OS</th>
+                                        </tr>
+                                        <tr class="bg-header-sub-light">
+                                            <th class="lbl-prev-th">-</th>
+                                            <th class="lbl-curr-th">-</th>
+                                            <th class="lbl-prev-th">-</th>
+                                            <th class="lbl-curr-th">-</th>
+                                            <th class="lbl-prev-th">-</th>
+                                            <th class="lbl-curr-th">-</th>
+                                            <th>MtD</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="tbody-ritel"></tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- Section Mikro -->
+                        <div id="section-micro" class="d-none">
+                            <h6 class="mt-4 mb-2 font-weight-bold text-primary section-title-extra">
+                                <i class="fas fa-store mr-1"></i> MIKRO (UNIT ONLY)
+                            </h6>
+                            <div class="table-container">
+                                <table class="table table-report casa-no-hover m-0">
+                                    <thead>
+                                        <tr>
+                                            <th rowspan="3" class="bg-header-main sticky-col align-middle col-group-label" style="min-width: 170px;">UKER MIKRO</th>
+                                            <th colspan="7" class="bg-header-main">TOTAL MIKRO</th>
+                                        </tr>
+                                        <tr class="bg-header-sub">
+                                            <th colspan="2">Total OS</th>
+                                            <th colspan="2">Total CASA</th>
+                                            <th colspan="3">Rasio CASA/OS</th>
+                                        </tr>
+                                        <tr class="bg-header-sub-light">
+                                            <th class="lbl-prev-th">-</th>
+                                            <th class="lbl-curr-th">-</th>
+                                            <th class="lbl-prev-th">-</th>
+                                            <th class="lbl-curr-th">-</th>
+                                            <th class="lbl-prev-th">-</th>
+                                            <th class="lbl-curr-th">-</th>
+                                            <th>MtD</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="tbody-micro"></tbody>
+                                </table>
+                            </div>
                         </div>
                     </div>
 
@@ -991,90 +1061,63 @@ document.addEventListener('DOMContentLoaded', function () {
         $('#tbody-mikro-smc').html(html);
     }
 
-    function renderRows(dataList, totalData) {
-        // Bersihkan placeholder/loading row sebelum menulis hasil baru
-        $('#tbody-total').empty();
-        $('#tbody-briguna-kpr').empty();
-        $('#tbody-mikro-smc').empty();
-
-        // Gunakan DocumentFragment untuk batch DOM insertion
-        const fragmentTotal = document.createDocumentFragment();
-        const fragmentBrigunaKpr = document.createDocumentFragment();
-        const fragmentMikroSmc = document.createDocumentFragment();
+    function renderSingleTableBody(tbodyId, dataList, totalData, segmentKey = 'total', isDual = false, segmentKey2 = null) {
+        const tbody = document.getElementById(tbodyId);
+        if (!tbody) return;
         
-        const isLargeDataset = dataList.length > 50;
-        const chunkSize = Math.max(10, Math.ceil(dataList.length / 5)); // ~5 batches untuk large dataset
-
-        // Render data rows
-        if (isLargeDataset) {
-            // Progressive rendering untuk dataset besar
-            dataList.forEach(function(row, index) {
-                const branchCell = `<td class="sticky-col text-left font-weight-bold">${row.branch || '-'}</td>`;
-                
-                const trTotal = document.createElement('tr');
-                trTotal.innerHTML = branchCell + createDataCells(row.total);
-                fragmentTotal.appendChild(trTotal);
-                
-                const trBrigunaKpr = document.createElement('tr');
-                trBrigunaKpr.innerHTML = branchCell + createDataCells(row.briguna) + createDataCells(row.kpr, true);
-                fragmentBrigunaKpr.appendChild(trBrigunaKpr);
-                
-                const trMikroSmc = document.createElement('tr');
-                trMikroSmc.innerHTML = branchCell + createDataCells(row.mikro) + createDataCells(row.smc, true);
-                fragmentMikroSmc.appendChild(trMikroSmc);
-                
-                // Batch append every chunkSize rows
-                if ((index + 1) % chunkSize === 0 || index === dataList.length - 1) {
-                    document.getElementById('tbody-total').appendChild(fragmentTotal);
-                    document.getElementById('tbody-briguna-kpr').appendChild(fragmentBrigunaKpr);
-                    document.getElementById('tbody-mikro-smc').appendChild(fragmentMikroSmc);
-                    
-                    // Clear fragments for next batch
-                    fragmentTotal.innerHTML = '';
-                    fragmentBrigunaKpr.innerHTML = '';
-                    fragmentMikroSmc.innerHTML = '';
-                }
-            });
-        } else {
-            // Direct rendering untuk dataset kecil
-            dataList.forEach(function(row) {
-                const branchCell = `<td class="sticky-col text-left font-weight-bold">${row.branch || '-'}</td>`;
-                
-                const trTotal = document.createElement('tr');
-                trTotal.innerHTML = branchCell + createDataCells(row.total);
-                fragmentTotal.appendChild(trTotal);
-                
-                const trBrigunaKpr = document.createElement('tr');
-                trBrigunaKpr.innerHTML = branchCell + createDataCells(row.briguna) + createDataCells(row.kpr, true);
-                fragmentBrigunaKpr.appendChild(trBrigunaKpr);
-                
-                const trMikroSmc = document.createElement('tr');
-                trMikroSmc.innerHTML = branchCell + createDataCells(row.mikro) + createDataCells(row.smc, true);
-                fragmentMikroSmc.appendChild(trMikroSmc);
-            });
+        tbody.innerHTML = '';
+        const fragment = document.createDocumentFragment();
+        
+        dataList.forEach(function(row) {
+            const tr = document.createElement('tr');
+            const branchCell = `<td class="sticky-col text-left font-weight-bold">${row.branch || '-'}</td>`;
             
-            document.getElementById('tbody-total').appendChild(fragmentTotal);
-            document.getElementById('tbody-briguna-kpr').appendChild(fragmentBrigunaKpr);
-            document.getElementById('tbody-mikro-smc').appendChild(fragmentMikroSmc);
+            if (isDual && segmentKey2) {
+                tr.innerHTML = branchCell + createDataCells(row[segmentKey]) + createDataCells(row[segmentKey2], true);
+            } else {
+                tr.innerHTML = branchCell + createDataCells(row[segmentKey]);
+            }
+            fragment.appendChild(tr);
+        });
+        
+        tbody.appendChild(fragment);
+        
+        // Append Total Row
+        const trTotal = document.createElement('tr');
+        trTotal.className = 'row-total';
+        const totalBranchCell = `<td class="sticky-col text-left">${totalData.branch || 'TOTAL'}</td>`;
+        
+        if (isDual && segmentKey2) {
+            trTotal.innerHTML = totalBranchCell + createDataCells(totalData[segmentKey]) + createDataCells(totalData[segmentKey2], true);
+        } else {
+            trTotal.innerHTML = totalBranchCell + createDataCells(totalData[segmentKey]);
         }
+        tbody.appendChild(trTotal);
+    }
 
-        // Append total rows
-        const totalBranchCell = `<td class="sticky-col text-left">${totalData.branch || 'TOTAL AREA 6'}</td>`;
+    function renderRows(dataList, totalData, ritelData = [], ritelTotal = null, microData = [], microTotal = null, isBranchFiltered = false) {
+        // Render Main Tables
+        renderSingleTableBody('tbody-total', dataList, totalData, 'total');
+        renderSingleTableBody('tbody-briguna-kpr', dataList, totalData, 'briguna', true, 'kpr');
+        renderSingleTableBody('tbody-mikro-smc', dataList, totalData, 'mikro', true, 'smc');
         
-        const trTotalRow = document.createElement('tr');
-        trTotalRow.className = 'row-total';
-        trTotalRow.innerHTML = totalBranchCell + createDataCells(totalData.total);
-        document.getElementById('tbody-total').appendChild(trTotalRow);
+        // Handle Ritel & Mikro Tables
+        const sectionRitel = document.getElementById('section-ritel');
+        const sectionMicro = document.getElementById('section-micro');
+        const sectionKonsolidasiTitle = document.querySelector('#section-konsolidasi .section-title-extra');
         
-        const trBrigunaKprRow = document.createElement('tr');
-        trBrigunaKprRow.className = 'row-total';
-        trBrigunaKprRow.innerHTML = totalBranchCell + createDataCells(totalData.briguna) + createDataCells(totalData.kpr, true);
-        document.getElementById('tbody-briguna-kpr').appendChild(trBrigunaKprRow);
-        
-        const trMikroSmcRow = document.createElement('tr');
-        trMikroSmcRow.className = 'row-total';
-        trMikroSmcRow.innerHTML = totalBranchCell + createDataCells(totalData.mikro) + createDataCells(totalData.smc, true);
-        document.getElementById('tbody-mikro-smc').appendChild(trMikroSmcRow);
+        if (isBranchFiltered && ritelTotal && microTotal) {
+            sectionRitel.classList.remove('d-none');
+            sectionMicro.classList.remove('d-none');
+            if (sectionKonsolidasiTitle) sectionKonsolidasiTitle.classList.remove('d-none');
+            
+            renderSingleTableBody('tbody-ritel', ritelData, ritelTotal, 'total');
+            renderSingleTableBody('tbody-micro', microData, microTotal, 'total');
+        } else {
+            sectionRitel.classList.add('d-none');
+            sectionMicro.classList.add('d-none');
+            if (sectionKonsolidasiTitle) sectionKonsolidasiTitle.classList.add('d-none');
+        }
     }
 
     function resetTableState() {
@@ -1146,7 +1189,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 return;
             }
 
-            renderRows(dataList, totalData);
+            renderRows(dataList, totalData, res.ritel_data, res.ritel_total, res.micro_data, res.micro_total, res.is_branch_filtered);
             summaryBadge.innerHTML = `<i class="fas fa-check-circle text-success mr-1"></i> ${dataList.length} ${summaryLabel} | ${labels.curr || currentDate}`;
             setOverlay('Data Siap Ditampilkan', 'Data siap ditampilkan.', false);
         } catch (xhr) {

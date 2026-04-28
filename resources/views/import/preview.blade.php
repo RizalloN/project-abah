@@ -367,7 +367,23 @@
         /* =========================================================
            CACHE & OPTIMIZATION HELPERS
         ========================================================= */
-        const storageKeyPrefix = 'preview_filter_v3_' + btoa(filePathValue + '|' + delimiterValue).substring(0, 16);
+        function stableHash(value) {
+            let hash = 2166136261;
+            const input = String(value || '');
+            for (let i = 0; i < input.length; i++) {
+                hash ^= input.charCodeAt(i);
+                hash = Math.imul(hash, 16777619);
+            }
+
+            return (hash >>> 0).toString(36);
+        }
+
+        const storageKeyPrefix = 'preview_filter_v4_' + stableHash(JSON.stringify({
+            file: filePathValue,
+            delimiter: delimiterValue,
+            headers: headers,
+            displayFilterMap: displayFilterMap,
+        }));
 
         function getStorageKey(col) {
             return storageKeyPrefix + '_col_' + col;
@@ -464,6 +480,19 @@
                 });
 
             return filters;
+        }
+
+        function normalizeActiveFiltersForServer(activeFilters) {
+            const normalized = {};
+            for (const displayColStr in activeFilters) {
+                const displayCol = Number(displayColStr);
+                const values = activeFilters[displayColStr];
+                if (!Array.isArray(values) || values.length === 0) {
+                    continue;
+                }
+                normalized[displayCol] = values;
+            }
+            return normalized;
         }
 
         function buildActiveFilterSignature(filters) {
@@ -695,16 +724,14 @@
             let shouldRender = false;
 
             try {
-                const sourceCol = Object.prototype.hasOwnProperty.call(displayFilterMap, col)
-                    ? displayFilterMap[col]
-                    : col;
                 const url = new URL(filterOptionsUrl, window.location.origin);
 
                 url.searchParams.set('file_path', filePathValue);
                 url.searchParams.set('delimiter', delimiterValue);
-                url.searchParams.set('column_index', String(sourceCol));
+                url.searchParams.set('column_index', String(col));
                 url.searchParams.set('display_filter_map_json', JSON.stringify(displayFilterMap || {}));
-                url.searchParams.set('active_filters_json', JSON.stringify(activeFilters || {}));
+                const normalizedActiveFilters = normalizeActiveFiltersForServer(activeFilters || {});
+                url.searchParams.set('active_filters_json', JSON.stringify(normalizedActiveFilters));
                 if (previewStateKey) {
                     url.searchParams.set('preview_state_key', previewStateKey);
                 }
@@ -890,7 +917,8 @@
                 url.searchParams.set('file_path', filePathValue);
                 url.searchParams.set('delimiter', delimiterValue);
                 url.searchParams.set('display_filter_map_json', JSON.stringify(displayFilterMap || {}));
-                url.searchParams.set('active_filters_json', JSON.stringify(activeFilters || {}));
+                const normalizedActiveFiltersForRows = normalizeActiveFiltersForServer(activeFilters || {});
+                url.searchParams.set('active_filters_json', JSON.stringify(normalizedActiveFiltersForRows));
                 url.searchParams.set('limit', '100');
                 url.searchParams.set('_', String(Date.now()));
 
@@ -1089,7 +1117,12 @@
             dropdowns.forEach(dropdown => {
                 const container = dropdown.querySelector('[id^="list_container_"]');
                 if (container) {
-                    const colIndex = container.id.split('_')[2];
+                    const colIndexStr = container.getAttribute('data-col');
+                    if (!colIndexStr) {
+                        return;
+                    }
+
+                    const colIndex = String(colIndexStr);
                     const state = filterState[colIndex];
                     const icon = document.getElementById('icon_filter_' + colIndex);
 

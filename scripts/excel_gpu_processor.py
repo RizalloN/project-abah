@@ -383,7 +383,8 @@ def _run_process_inner(config):
     table_name         = config['table_name']
     active_filters     = config.get('active_filters', {})
     normalized_headers = config['normalized_headers']
-    table_columns      = set(c.lower() for c in config.get('table_columns', []))
+    table_columns_raw  = [str(c).strip() for c in config.get('table_columns', []) if str(c).strip() != '']
+    table_columns      = set(c.lower() for c in table_columns_raw)
 
     # ── CRITICAL FIX: PHP json_encode mengubah array integer-key menjadi JSON array ──
     # Contoh: [0=>'PERIODE', 1=>'POSISI'] → ["PERIODE","POSISI"] (bukan {"0":"PERIODE",...})
@@ -404,12 +405,21 @@ def _run_process_inner(config):
         sys.exit(1)
 
     is_simpanan_multipn = str(table_name).strip().lower() == 'simpanan_multipn'
-    unique_id_col = 'uniqueid_SimoPN' if is_simpanan_multipn else 'uniqueid_namareport'
-    suffix        = '_SimoPN'         if is_simpanan_multipn else '_DLD'
-    table_columns_map = {str(col).lower(): str(col) for col in table_columns}
+    unique_id_col = str(config.get('unique_id_col') or ('uniqueid_SimoPN' if is_simpanan_multipn else 'uniqueid_namareport')).strip()
+    suffix        = str(config.get('unique_id_suffix') if config.get('unique_id_suffix') is not None else ('_SimoPN' if is_simpanan_multipn else '_DLD'))
+    table_columns_map = {str(col).lower(): str(col) for col in table_columns_raw}
     unique_id_col = table_columns_map.get(unique_id_col.lower(), unique_id_col)
     unique_id_prefix = str(config.get('unique_id_prefix') or 'imp').strip() or 'imp'
     skip_cols     = set(['id', unique_id_col.lower()])
+    manual_values = {}
+    for manual_col, manual_value in dict(config.get('manual_values') or {}).items():
+        manual_col_key = str(manual_col).strip()
+        if manual_col_key == '':
+            continue
+        manual_col_lower = manual_col_key.lower()
+        if table_columns and manual_col_lower not in table_columns_map:
+            continue
+        manual_values[table_columns_map.get(manual_col_lower, manual_col_key)] = manual_value
 
     # Build valid headers list: [(original_col_index, header_name), ...]
     valid_headers = []
@@ -480,6 +490,11 @@ def _run_process_inner(config):
             if table_columns and db_col not in table_columns_map:
                 continue
             final_row[table_columns_map.get(db_col, db_col)] = val
+
+        for manual_col, manual_value in manual_values.items():
+            if manual_col.lower() in skip_cols:
+                continue
+            final_row[manual_col] = manual_value
 
         if len(final_row) > 3:
             rows_done += 1

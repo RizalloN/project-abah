@@ -180,16 +180,18 @@ class FileManagementController extends Controller
             ], 404);
         }
 
+        // Enhanced timeout logic: only fail if no updates for 5+ minutes AND progress is stalled
+        // (this accommodates large table processing without false positives)
         $lastUpdate = (int) ($status['updated_at'] ?? 0);
         if (
             in_array($status['status'] ?? null, ['starting', 'processing'], true)
             && $lastUpdate > 0
-            && now()->timestamp - $lastUpdate > 180
+            && now()->timestamp - $lastUpdate > 300
         ) {
             return response()->json([
-                'status' => 'failed',
+                'status' => 'stalled',
                 'progress_percent' => (int) ($status['progress_percent'] ?? 0),
-                'message' => 'Backup tidak memberi progress lebih dari 3 menit. Pastikan proses PHP CLI dan mysqldump dapat dijalankan.',
+                'message' => 'Backup sudah tidak ada update progress selama 5 menit. Proses mungkin sedang memproses tabel yang sangat besar. Silakan tunggu lebih lama atau check log di storage/logs/database-backup-*.log',
             ]);
         }
 

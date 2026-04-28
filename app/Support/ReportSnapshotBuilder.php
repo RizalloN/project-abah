@@ -37,7 +37,7 @@ class ReportSnapshotBuilder
             ['source_segment' => 'CONSUMER', 'products' => ['BRIGUNA-KONSUMER', 'KPR']],
         ],
         'SMALL' => [
-            ['source_segment' => 'SMALL', 'products' => ['COMMERCIAL', 'CASHCALL']],
+            ['source_segment' => 'SMALL', 'products' => ['COMMERCIAL', 'CASHCALL', 'CASHCOLLATERAL']],
         ],
         'MICRO' => [
             ['source_segment' => 'MICRO', 'products' => ['BRIGUNA-MIKRO', 'KUPEDES', 'CASHCOLLATERAL', 'KPR']],
@@ -1100,29 +1100,29 @@ class ReportSnapshotBuilder
             $applyCasaTypeFilter = $this->shouldApplyCasaTypeFilter($casaDate);
             $casaKeyColumn = $this->resolveExistingColumn('simpanan_multipn', ['nocif', 'cifno', 'CIFNO'], 'CIFNO');
             
-            // Use a single optimized JOIN query for CASA balances
-            // This leverages the new idx_smp_posisi_cif_covering index for an index-only scan
-            $casaBalances = DB::table('simpanan_multipn')
-                ->where('posisi', $casaDate)
-                ->whereIn($casaKeyColumn, array_keys($identityVariants))
-                ->when($applyCasaTypeFilter, function ($query) {
-                    $query->where(function ($inner) {
-                        $inner->where('jenis_simpanan', 'like', 'GIRO%')
-                            ->orWhere('jenis_simpanan', 'like', 'TABUNGAN%');
-                    });
-                })
-                ->selectRaw("{$casaKeyColumn} as identity_key, SUM(COALESCE(saldo_idr, 0)) as casa_balance")
-                ->groupBy($casaKeyColumn)
-                ->get()
-                ->pluck('casa_balance', 'identity_key')
-                ->all();
+            foreach (array_chunk(array_keys($identityVariants), 10000) as $identityChunk) {
+                $casaBalances = DB::table('simpanan_multipn')
+                    ->where('posisi', $casaDate)
+                    ->whereIn($casaKeyColumn, $identityChunk)
+                    ->when($applyCasaTypeFilter, function ($query) {
+                        $query->where(function ($inner) {
+                            $inner->where('jenis_simpanan', 'like', 'GIRO%')
+                                ->orWhere('jenis_simpanan', 'like', 'TABUNGAN%');
+                        });
+                    })
+                    ->selectRaw("{$casaKeyColumn} as identity_key, SUM(COALESCE(saldo_idr, 0)) as casa_balance")
+                    ->groupBy($casaKeyColumn)
+                    ->get()
+                    ->pluck('casa_balance', 'identity_key')
+                    ->all();
 
-            foreach ($casaBalances as $identityKey => $balance) {
-                $normId = $this->normalizeIdentityKey($identityKey);
-                foreach (($identityMappings[$normId] ?? []) as $branchKey => $flags) {
-                    foreach ($flags as $segmentKey => $enabled) {
-                        if ($enabled) {
-                            $snapshot['casa'][$branchKey][$segmentKey] += (float) $balance;
+                foreach ($casaBalances as $identityKey => $balance) {
+                    $normId = $this->normalizeIdentityKey($identityKey);
+                    foreach (($identityMappings[$normId] ?? []) as $branchKey => $flags) {
+                        foreach ($flags as $segmentKey => $enabled) {
+                            if ($enabled) {
+                                $snapshot['casa'][$branchKey][$segmentKey] += (float) $balance;
+                            }
                         }
                     }
                 }
@@ -2055,6 +2055,7 @@ class ReportSnapshotBuilder
         $periodDate = Carbon::parse($period);
         $kurRitelDescriptionSql = $this->buildKinerjaRmNormalizedSql('description');
         $kurRitelDescriptionToken = $this->normalizeKinerjaRmToken('Kredit Mikro - KUR Ritel 2015');
+        $realisasiDateColumn = $this->resolvePerformanceRmRealisasiDateColumn();
         $weekRanges = [
             'w1' => [$periodDate->copy()->startOfMonth(), $periodDate->copy()->startOfMonth()->addDays(6)],
             'w2' => [$periodDate->copy()->startOfMonth()->addDays(7), $periodDate->copy()->startOfMonth()->addDays(13)],
@@ -2108,20 +2109,20 @@ class ReportSnapshotBuilder
             ->selectRaw("COUNT(DISTINCT CASE WHEN kol_adk1 > 2 THEN nomor_rekening1 END) as npl_deb")
             ->selectRaw("SUM(CASE WHEN kol_adk1 = 1 AND COALESCE(flag_restruk, '') = 'Y' THEN COALESCE(baki_debet1, 0) ELSE 0 END) as restruk_os")
             ->selectRaw("COUNT(DISTINCT nomor_rekening1) as total_deb")
-            ->selectRaw("COUNT(DISTINCT CASE WHEN tgl_realisasi BETWEEN ? AND ? THEN nomor_rekening1 END) as realisasi_deb", [$periodStart, $period])
-            ->selectRaw("SUM(CASE WHEN tgl_realisasi BETWEEN ? AND ? THEN COALESCE(plafon, 0) ELSE 0 END) as realisasi_os", [$periodStart, $period])
-            ->selectRaw("COUNT(DISTINCT CASE WHEN tgl_realisasi BETWEEN ? AND ? THEN nomor_rekening1 END) as w1_realisasi_deb", $weekRanges['w1'])
-            ->selectRaw("SUM(CASE WHEN tgl_realisasi BETWEEN ? AND ? THEN COALESCE(plafon, 0) ELSE 0 END) as w1_realisasi_os", $weekRanges['w1'])
-            ->selectRaw("COUNT(DISTINCT CASE WHEN tgl_realisasi BETWEEN ? AND ? THEN nomor_rekening1 END) as w2_realisasi_deb", $weekRanges['w2'])
-            ->selectRaw("SUM(CASE WHEN tgl_realisasi BETWEEN ? AND ? THEN COALESCE(plafon, 0) ELSE 0 END) as w2_realisasi_os", $weekRanges['w2'])
-            ->selectRaw("COUNT(DISTINCT CASE WHEN tgl_realisasi BETWEEN ? AND ? THEN nomor_rekening1 END) as w3_realisasi_deb", $weekRanges['w3'])
-            ->selectRaw("SUM(CASE WHEN tgl_realisasi BETWEEN ? AND ? THEN COALESCE(plafon, 0) ELSE 0 END) as w3_realisasi_os", $weekRanges['w3'])
-            ->selectRaw("COUNT(DISTINCT CASE WHEN tgl_realisasi BETWEEN ? AND ? THEN nomor_rekening1 END) as w4_realisasi_deb", $weekRanges['w4'])
-            ->selectRaw("SUM(CASE WHEN tgl_realisasi BETWEEN ? AND ? THEN COALESCE(plafon, 0) ELSE 0 END) as w4_realisasi_os", $weekRanges['w4'])
-            ->selectRaw("COUNT(DISTINCT CASE WHEN tgl_realisasi BETWEEN ? AND ? AND COALESCE(plafon, 0) < 250000000 THEN nomor_rekening1 END) as lt_250_realisasi_deb", [$periodStart, $period])
-            ->selectRaw("SUM(CASE WHEN tgl_realisasi BETWEEN ? AND ? AND COALESCE(plafon, 0) < 250000000 THEN COALESCE(plafon, 0) ELSE 0 END) as lt_250_realisasi_os", [$periodStart, $period])
-            ->selectRaw("COUNT(DISTINCT CASE WHEN tgl_realisasi BETWEEN ? AND ? AND COALESCE(plafon, 0) > 250000000 THEN nomor_rekening1 END) as gt_250_realisasi_deb", [$periodStart, $period])
-            ->selectRaw("SUM(CASE WHEN tgl_realisasi BETWEEN ? AND ? AND COALESCE(plafon, 0) > 250000000 THEN COALESCE(plafon, 0) ELSE 0 END) as gt_250_realisasi_os", [$periodStart, $period])
+            ->selectRaw("COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN nomor_rekening1 END) as realisasi_deb", [$periodStart, $period])
+            ->selectRaw("SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN COALESCE(plafon, 0) ELSE 0 END) as realisasi_os", [$periodStart, $period])
+            ->selectRaw("COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN nomor_rekening1 END) as w1_realisasi_deb", $weekRanges['w1'])
+            ->selectRaw("SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN COALESCE(plafon, 0) ELSE 0 END) as w1_realisasi_os", $weekRanges['w1'])
+            ->selectRaw("COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN nomor_rekening1 END) as w2_realisasi_deb", $weekRanges['w2'])
+            ->selectRaw("SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN COALESCE(plafon, 0) ELSE 0 END) as w2_realisasi_os", $weekRanges['w2'])
+            ->selectRaw("COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN nomor_rekening1 END) as w3_realisasi_deb", $weekRanges['w3'])
+            ->selectRaw("SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN COALESCE(plafon, 0) ELSE 0 END) as w3_realisasi_os", $weekRanges['w3'])
+            ->selectRaw("COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN nomor_rekening1 END) as w4_realisasi_deb", $weekRanges['w4'])
+            ->selectRaw("SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN COALESCE(plafon, 0) ELSE 0 END) as w4_realisasi_os", $weekRanges['w4'])
+            ->selectRaw("COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? AND COALESCE(plafon, 0) < 250000000 THEN nomor_rekening1 END) as lt_250_realisasi_deb", [$periodStart, $period])
+            ->selectRaw("SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? AND COALESCE(plafon, 0) < 250000000 THEN COALESCE(plafon, 0) ELSE 0 END) as lt_250_realisasi_os", [$periodStart, $period])
+            ->selectRaw("COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? AND COALESCE(plafon, 0) > 250000000 THEN nomor_rekening1 END) as gt_250_realisasi_deb", [$periodStart, $period])
+            ->selectRaw("SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? AND COALESCE(plafon, 0) > 250000000 THEN COALESCE(plafon, 0) ELSE 0 END) as gt_250_realisasi_os", [$periodStart, $period])
             // OPTIMIZATION: Use cifno_clean instead of REGEXP_REPLACE in GROUP_CONCAT (5x faster)
             ->selectRaw("GROUP_CONCAT(DISTINCT cifno_clean SEPARATOR ',') as cifno_list")
             // Use shadow columns in GROUP BY to avoid function overhead
@@ -2171,7 +2172,7 @@ class ReportSnapshotBuilder
         $historySums = DB::table(self::PERFORMANCE_RM_SNAPSHOT_TABLE)
             ->whereIn('rm', $rmKeys)
             ->where('segmen', 'SMALL')
-            ->whereIn('produk', ['COMMERCIAL', 'CASHCALL'])
+            ->whereIn('produk', ['SMALL', 'COMMERCIAL', 'CASHCALL', 'CASHCOLLATERAL', 'CASHCOLL'])
             ->whereYear('periode', $year)
             ->where('periode', '<', $periodStart)
             ->selectRaw('rm, SUM(realisasi_os) as total')
@@ -2192,6 +2193,13 @@ class ReportSnapshotBuilder
         }
 
         return $grades;
+    }
+
+    private function resolvePerformanceRmRealisasiDateColumn(): string
+    {
+        return Schema::hasColumn('daily_loan_dinamis', 'tgl_realisasi1')
+            ? 'tgl_realisasi1'
+            : 'tgl_realisasi';
     }
 
     private function buildKinerjaRmNormalizedSql(string $column): string
@@ -2252,8 +2260,11 @@ class ReportSnapshotBuilder
                 'KPR' => 'KPR',
             ],
             'SMALL' => [
-                'COMMERCIAL' => 'COMMERCIAL',
-                'CASHCALL' => 'CASHCALL',
+                'COMMERCIAL' => 'SMALL',
+                'CASHCALL' => 'SMALL',
+                'CASHCOLLATERAL' => 'SMALL',
+                'CASHCOLL' => 'SMALL',
+                'SMALL' => 'SMALL',
             ],
             'MICRO' => [
                 'BRIGUNAMIKRO' => 'BRIGUNA-MIKRO',

@@ -362,7 +362,7 @@ def _normalize_decimal_polars(col_expr):
     # By pre-cleaning with Polars, we reduce the work in the callback by ~70%
     return col_expr.map_elements(
         lambda val: _normalize_decimal_optimized(val),
-        return_dtype="str",
+        return_dtype=pl.Utf8,
         skip_nulls=True
     )
 
@@ -482,23 +482,7 @@ def sanitize_source_optimized(source_path: str, delimiter: str, config: dict | N
             skip_rows=0, # The first non-empty row was the header
         )
 
-        # 3. Apply active filters (User-defined)
-        active_filters = config.get("active_filters") or {}
-        if active_filters:
-            for col_idx_str, values in active_filters.items():
-                try:
-                    idx = int(col_idx_str)
-                    if 0 <= idx < len(normalized_headers):
-                        col_name = normalized_headers[idx]
-                        if values:
-                            # Clean values and filter
-                            clean_values = [str(v).strip() for v in values if v is not None]
-                            if clean_values:
-                                df_lazy = df_lazy.filter(pl.col(col_name).str.strip_chars().is_in(clean_values))
-                except (ValueError, TypeError):
-                    continue
-
-        # 4. Vectorized Filtering (Business Logic)
+        # 3. Vectorized Filtering (Business Logic)
         # Required columns: posisi, cifno, no_rekening, jenis_simpanan, saldo_idr
         required_cols = ["posisi", "cifno", "no_rekening", "jenis_simpanan", "saldo_idr"]
         for col in required_cols:
@@ -531,7 +515,7 @@ def sanitize_source_optimized(source_path: str, delimiter: str, config: dict | N
             pl.col("jenis_simpanan").str.strip_chars().str.to_uppercase().str.starts_with("DEPOSITO")
         )
 
-        # 4. Vectorized Normalization with Caching
+        # 5. Vectorized Normalization with Caching
         posisi_stripped = pl.col("posisi").str.strip_chars()
         saldo_stripped = pl.col("saldo_idr").str.strip_chars()
 
@@ -580,6 +564,23 @@ def sanitize_source_optimized(source_path: str, delimiter: str, config: dict | N
             pl.col("saldo_idr").is_not_null() & (pl.col("saldo_idr") != "")
         ).drop(["__smpn_non_empty", "__smpn_valid_shape"])
 
+        # 4. Apply active filters AFTER data normalization (now data is clean)
+        active_filters = config.get("active_filters") or {}
+        if active_filters:
+            for col_idx_str, values in active_filters.items():
+                try:
+                    idx = int(col_idx_str)
+                    if 0 <= idx < len(normalized_headers):
+                        col_name = normalized_headers[idx]
+                        if values:
+                            clean_values = [str(v).strip() for v in values if v is not None]
+                            if clean_values:
+                                df_collected = df_collected.filter(
+                                    pl.col(col_name).str.strip_chars().is_in(clean_values)
+                                )
+                except (ValueError, TypeError):
+                    continue
+
         valid_rows = df_collected.height
         total_data_rows = total_input_rows
         skipped_count = total_data_rows - valid_rows
@@ -612,7 +613,7 @@ def sanitize_source_optimized(source_path: str, delimiter: str, config: dict | N
             samples = df_collected.head(10).get_column("no_rekening").to_list()
             account_samples = [{"raw": s, "normalized": s} for s in samples]
 
-        # 5. FULL VECTORIZATION (Optional - for direct DB load)
+        # 6. FULL VECTORIZATION (Optional - for direct DB load)
         target_columns = config.get("target_columns") or []
         full_vectorization = config.get("full_vectorization", False)
         if full_vectorization:
@@ -647,7 +648,7 @@ def sanitize_source_optimized(source_path: str, delimiter: str, config: dict | N
             if existing_target:
                 df_collected = df_collected.select(existing_target)
 
-        # 6. Periodic termination check
+        # 7. Periodic termination check
         job_id = config.get("job_id")
         db_config = config.get("db_config")
         if job_id and db_config and valid_rows > 50000:

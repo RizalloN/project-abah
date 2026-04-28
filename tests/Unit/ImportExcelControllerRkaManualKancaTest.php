@@ -219,16 +219,19 @@ class ImportExcelControllerRkaManualKancaTest extends TestCase
         $method = new ReflectionMethod(ImportExcelController::class, 'applyManualColumnValuesAfterLoad');
         $method->setAccessible(true);
         $affected = $method->invoke($controller, 'rka', [
-            'manual_column_values' => ['kanca' => 'KC Ponorogo'],
+            'manual_column_values' => ['kanca' => 'KC Ponorogo', 'tahun' => 2026],
             'unique_id_col' => 'uniqueid_namareport',
             'unique_id_prefix' => 'imp_testprefix_',
-            'table_columns_by_lower' => ['kanca' => 'kanca'],
+            'table_columns_by_lower' => ['kanca' => 'kanca', 'tahun' => 'tahun'],
         ], 2);
 
         $this->assertSame(2, $affected);
         $this->assertSame('KC Ponorogo', DB::table('rka')->where('uniqueid_namareport', 'imp_testprefix_111_DLD')->value('kanca'));
         $this->assertSame('KC Ponorogo', DB::table('rka')->where('uniqueid_namareport', 'imp_testprefix_222_DLD')->value('kanca'));
+        $this->assertSame(2026, DB::table('rka')->where('uniqueid_namareport', 'imp_testprefix_111_DLD')->value('tahun'));
+        $this->assertSame(2026, DB::table('rka')->where('uniqueid_namareport', 'imp_testprefix_222_DLD')->value('tahun'));
         $this->assertNull(DB::table('rka')->where('uniqueid_namareport', 'imp_otherprefix_999_DLD')->value('kanca'));
+        $this->assertNull(DB::table('rka')->where('uniqueid_namareport', 'imp_otherprefix_999_DLD')->value('tahun'));
     }
 
     public function test_rka_insert_rows_use_batch_prefix_on_uniqueid(): void

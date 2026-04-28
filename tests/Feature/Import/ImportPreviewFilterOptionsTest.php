@@ -10,6 +10,7 @@ use Illuminate\Database\Schema\Blueprint;
 
 beforeEach(function () {
     Schema::dropIfExists('jumlah_merchant_qris_detail');
+    Schema::dropIfExists('sv_merchant');
     Schema::dropIfExists('nama_report');
 
     Schema::create('nama_report', function (Blueprint $table) {
@@ -32,9 +33,26 @@ beforeEach(function () {
         $table->date('POSISI')->nullable();
         $table->timestamps();
     });
+
+    Schema::create('sv_merchant', function (Blueprint $table) {
+        $table->string('uniqueid_namareport', 255)->primary();
+        $table->string('TAHUN', 10)->nullable();
+        $table->string('PERIODE', 20)->nullable();
+        $table->string('POSISI', 50)->nullable();
+        $table->string('KODE_KANWIL', 50)->nullable();
+        $table->string('NAMA_KANWIL', 100)->nullable();
+        $table->string('KODE_KCI', 50)->nullable();
+        $table->string('NAMA_KCI', 100)->nullable();
+        $table->string('KODE_BRANCH', 50)->nullable();
+        $table->string('NAMA_BRANCH', 150)->nullable();
+        $table->string('JENIS', 50)->nullable();
+        $table->string('SEGMENTASI_JENIS', 100)->nullable();
+        $table->string('SV_MERCHANT', 50)->nullable();
+    });
 });
 
 afterEach(function () {
+    Schema::dropIfExists('sv_merchant');
     Schema::dropIfExists('jumlah_merchant_qris_detail');
     Schema::dropIfExists('nama_report');
 });
@@ -99,6 +117,68 @@ it('loads qris detail filter options from the full file instead of the first pre
 
         expect($payload['status'] ?? null)->toBe('success');
         expect($payload['values'] ?? null)->toBe(['UKER B 999']);
+    } finally {
+        File::delete($csvPath);
+    }
+});
+
+it('maps sv merchant preview display filters to the correct source columns', function () {
+    $user = User::factory()->make([
+        'role' => 'admin',
+    ]);
+
+    DB::table('nama_report')->insert([
+        'id_report' => 100,
+        'nama_report' => 'SV Merchant',
+        'table_name' => 'sv_merchant',
+        'active' => 1,
+        'import_controller' => 'ImportFileController',
+        'requires_manual_periode' => 0,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    $csvDirectory = storage_path('framework/testing/import-preview');
+    File::ensureDirectoryExists($csvDirectory);
+    $csvPath = $csvDirectory . DIRECTORY_SEPARATOR . 'sv-merchant-display-map.csv';
+
+    $rows = [
+        'TAHUN|PERIODE|POSISI|KODE KANWIL|NAMA KANWIL|KODE KCI|NAMA KCI|KODE BRANCH|NAMA BRANCH|JENIS|SEGMENTASI JENIS|SV_MERCHANT',
+        '2026|2026-04|2026-04-25|R|KANWIL MALANG|120|KC MADIUN|1111|UNIT MADIUN A|AKUMULASI|Ritel|100.00',
+        '2026|2026-04|2026-04-25|R|KANWIL MALANG|120|KC MADIUN|2222|UNIT MADIUN B|AKUMULASI|Ritel|200.00',
+        '2026|2026-04|2026-04-25|R|KANWIL MALANG|110|KC TULUNGAGUNG|3333|UNIT TULUNGAGUNG|AKUMULASI|Ritel|300.00',
+    ];
+
+    File::put($csvPath, implode(PHP_EOL, $rows) . PHP_EOL);
+
+    try {
+        $this->be($user);
+        $session = app('session.store');
+        $session->start();
+        $session->put('active_id_report', 100);
+
+        $request = Request::create('/import/preview/filter-options', 'GET', [
+            'file_path' => $csvPath,
+            'delimiter' => '|',
+            'column_index' => 1,
+            'display_filter_map_json' => json_encode([
+                0 => 6,
+                1 => 8,
+            ]),
+            'active_filters_json' => json_encode([
+                0 => ['KC MADIUN'],
+            ]),
+        ]);
+        $request->setLaravelSession($session);
+
+        $response = app(ImportFileController::class)->previewFilterOptions($request);
+
+        expect($response->getStatusCode())->toBe(200);
+
+        $payload = json_decode($response->getContent(), true, 512, JSON_THROW_ON_ERROR);
+
+        expect($payload['status'] ?? null)->toBe('success');
+        expect($payload['values'] ?? null)->toBe(['UNIT MADIUN A', 'UNIT MADIUN B']);
     } finally {
         File::delete($csvPath);
     }
