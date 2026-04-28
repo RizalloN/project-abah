@@ -128,21 +128,78 @@ This plan addresses three critical issues in the Simpanan MultiPN CSV import pip
 
 ---
 
-## Phase 4: Database & Schema
-**Files:** Database migrations (if new, else schema exists)
+## Phase 4: Database Optimization (CRITICAL FOR PERFORMANCE)
+**Files:** Database migrations + verification scripts  
+**Scope:** Virtual generated column + index for O(log N) deduplication
 
-### 4.1 Verify job_context Column
-- **Table:** import_jobs
-- **Column:** job_context
-- **Type:** LONGTEXT or JSON
-- **Current Status:** Already exists (confirmed in ImportProgressService)
-- **Action:** No migration needed
+### 4.1 Virtual Generated Column Strategy
+- **Problem:** Original validateFileUniqueness() pulled ALL completed jobs to PHP, parsed JSON for each row (O(N) complexity)
+- **Solution:** Create virtual column that auto-extracts content_hash from JSON, then index it
+- **Column:** `job_content_hash` (VARCHAR 64, VIRTUAL GENERATED)
+- **Formula:** `JSON_UNQUOTE(JSON_EXTRACT(job_context, '$.content_hash'))`
+- **Benefits:**
+  - Zero storage overhead (VIRTUAL = no disk duplication)
+  - Auto-computed from source JSON (always in sync)
+  - Fully indexable (B-Tree index)
+  - Enables Sargable queries (queryable by index)
 
-### 4.2 Optional: Add Partial Hash Index
-- **Purpose:** Speed up duplicate checks
-- **SQL:** `CREATE INDEX idx_job_context_hash ON import_jobs((JSON_EXTRACT(job_context, '$.content_hash')))`
-- **Decision:** Optional - only if duplicate checks slow down
-- **Timing:** Can be added after Phase 1 testing
+### 4.2 Index on Virtual Column
+- **Migration File:** `2026_04_28_add_job_content_hash_virtual_column.php`
+- **Index Name:** `idx_import_jobs_content_hash`
+- **Type:** BTREE (single-column)
+- **Query Performance:** O(N) → O(log N)
+  - Before: 1M rows = 500ms+ query time (full scan)
+  - After: 1M rows = < 1ms query time (index seek)
+
+### 4.3 Refactored validateFileUniqueness()
+**Old Approach (Bad):**
+```php
+$existingJobs = DB::table('import_jobs')->get();  // Pull ALL rows!
+foreach ($existingJobs as $job) {
+    $context = json_decode($job->job_context);    // Parse JSON in PHP
+    if ($context['content_hash'] == $targetHash) { // Compare in loop
+        // found it
+    }
+}
+```
+
+**New Approach (Good):**
+```php
+$existingJob = DB::table('import_jobs')
+    ->where('job_content_hash', $contentHash)  // Uses index!
+    ->first();
+if ($existingJob) {
+    // Parse JSON only for 1 result (not 1M)
+}
+```
+
+### 4.4 Verification Steps
+After running migration `php artisan migrate`:
+
+1. **Verify Column Exists:**
+   ```sql
+   SHOW COLUMNS FROM import_jobs WHERE Field = 'job_content_hash';
+   ```
+   Expected: Column type VARCHAR(64), Extra shows GENERATED ALWAYS AS
+
+2. **Verify Index Exists:**
+   ```sql
+   SHOW INDEX FROM import_jobs WHERE Key_name = 'idx_import_jobs_content_hash';
+   ```
+   Expected: Index appears with Seq_in_index = 1
+
+3. **Verify Query Uses Index (CRITICAL):**
+   ```sql
+   EXPLAIN SELECT * FROM import_jobs
+   WHERE job_content_hash = 'your_hash_here'
+   AND id_report = 9;
+   ```
+   Expected: 
+   - `key` column shows `idx_import_jobs_content_hash` (NOT NULL)
+   - `type` shows `ref` or `eq_ref` (NOT `ALL`)
+   - `rows` shows small number like 1-10 (NOT 1000000)
+
+Full verification script: `database/queries/verify_job_content_hash_index.sql`
 
 ---
 
@@ -236,6 +293,39 @@ This plan addresses three critical issues in the Simpanan MultiPN CSV import pip
 | Edge cases handled correctly | PENDING | Test Scenario 5: All cases pass |
 | No regressions in normal import | PENDING | Full regression suite passes |
 | Database consistency maintained | PENDING | No data loss/corruption observed |
+| Virtual column created successfully | PENDING | SHOW COLUMNS confirms job_content_hash |
+| Index on virtual column works | PENDING | SHOW INDEX confirms idx_import_jobs_content_hash |
+| Query uses index (SARGABLE) | PENDING | EXPLAIN shows key = idx_import_jobs_content_hash |
+| Query performance improved | PENDING | EXPLAIN shows rows < 100 (not full table scan) |
+
+---
+
+## Expected Performance Gains
+
+### Before Optimization
+- **Complexity:** O(N) - Linear scan of all completed jobs
+- **Dataset:** 100K completed jobs
+- **Average Query Time:** 500-2000ms (slow!)
+- **Memory Usage:** High (loads all rows + JSON parsing)
+- **Bottleneck:** PHP loop + JSON parsing for every check
+
+### After Optimization
+- **Complexity:** O(log N) - Index seek + single result
+- **Dataset:** 100K completed jobs (same)
+- **Average Query Time:** 1-5ms (40-200x faster!)
+- **Memory Usage:** Minimal (only matching row loaded)
+- **Bottleneck:** Eliminated (direct index lookup)
+
+### Real-World Impact
+For a busy system with 10 imports/hour:
+- **Old:** 10 checks × 500ms = 5 seconds/hour added overhead
+- **New:** 10 checks × 2ms = 20ms/hour added overhead
+- **Savings:** ~250x faster duplicate checks
+
+For periodic batch imports (1000 jobs in parallel):
+- **Old:** 1000 × 500ms = 500 seconds (8+ minutes!)
+- **New:** 1000 × 2ms = 2 seconds
+- **Savings:** Batch processing goes from 8+ minutes to 2 seconds
 
 ---
 

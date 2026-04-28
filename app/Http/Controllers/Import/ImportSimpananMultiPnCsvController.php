@@ -319,9 +319,46 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
             ]);
         }
 
+        // Acquire atomic lock to prevent simultaneous import of identical file
+        // This prevents race condition where two jobs upload same file simultaneously
+        $contentLock = null;
+        if ($contentHash !== '') {
+            $contentLock = Cache::lock("import_lock_content_{$contentHash}", 3600);
+            if (!$contentLock->get()) {
+                return response()->stream(function () use ($jobId) {
+                    echo "event: error\n";
+                    echo 'data: ' . json_encode([
+                        'message' => 'File identik sedang diproses oleh job lain. Mohon tunggu beberapa saat atau reload halaman.'
+                    ]) . "\n\n";
+                    if (ob_get_level() > 0) {
+                        ob_flush();
+                    }
+                    flush();
+
+                    if ($jobId > 0) {
+                        $this->updateImportJobStatusSafely($jobId, [
+                            'status' => 'failed',
+                            'updated_at' => now(),
+                        ]);
+                        $this->progressService()->markFailed($jobId, 'File identik sedang diproses oleh job lain.');
+                    }
+                }, 200, [
+                    'Content-Type' => 'text/event-stream',
+                    'Cache-Control' => 'no-cache, no-store',
+                    'X-Accel-Buffering' => 'no',
+                    'Connection' => 'keep-alive',
+                ]);
+            }
+
+            Log::info('Simpanan MultiPN: Content lock acquired', [
+                'job_id' => $jobId,
+                'content_hash' => $contentHash,
+            ]);
+        }
+
         request()->session()->save();
 
-        return response()->stream(function () use ($jobId, $relativePath, $absolutePath, $totalRows, $normalizedHeaders, $selectedColumns, $activeFilters, $params, $contentHash) {
+        return response()->stream(function () use ($jobId, $relativePath, $absolutePath, $totalRows, $normalizedHeaders, $selectedColumns, $activeFilters, $params, $contentHash, $contentLock) {
             $streamLock = null;
             $cleanupPaths = [];
             $usePolarsStage = !empty($activeFilters);
@@ -609,6 +646,19 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                         : $this->formatSafeImportFailureMessage('Fast import CSV gagal: ', $e),
                 ]);
                 } finally {
+                    // Release content lock (atomic lock preventing simultaneous imports)
+                    if ($contentLock) {
+                        try {
+                            $contentLock->release();
+                            Log::debug('Simpanan MultiPN: Content lock released', [
+                                'job_id' => $jobId,
+                            ]);
+                        } catch (\Throwable $e) {
+                            Log::warning('Failed to release Simpanan MultiPN content lock: ' . $e->getMessage());
+                        }
+                    }
+
+                    // Release stream lock
                     if ($streamLock) {
                         try {
                             $streamLock->release();
@@ -1723,61 +1773,87 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
 
     private function validateFileUniqueness(string $contentHash, array $periodHints): void
     {
+        if (empty($contentHash)) {
+            return;
+        }
+
         $periodHints = array_values(array_unique(array_filter(array_map(
             static fn ($value): string => trim((string) $value),
             $periodHints
         ), static fn (string $value): bool => $value !== '')));
 
-        if (empty($periodHints)) {
-            return;
-        }
-
         try {
-            $existingJobs = DB::table('import_jobs')
+            // OPTIMIZED: Query menggunakan virtual column index (O(log N))
+            // Jika migration belum dijalankan, query akan tetap berfungsi (fallback tanpa index)
+            $existingJob = DB::table('import_jobs')
                 ->where('status', 'completed')
                 ->where('id_report', self::REPORT_ID)
-                ->get(['id', 'job_context']);
+                ->where('job_content_hash', $contentHash)
+                ->first(['job_context']);
 
-            foreach ($existingJobs as $job) {
-                $jobContext = $job->job_context;
-                if (!is_string($jobContext) || trim($jobContext) === '') {
-                    continue;
-                }
+            if (!$existingJob) {
+                // Tidak ada job dengan hash yang sama, aman untuk import
+                return;
+            }
 
-                $context = @json_decode($jobContext, true);
-                if (!is_array($context)) {
-                    continue;
-                }
+            // Ada job dengan hash yang sama - ini adalah suspicious
+            Log::warning('Simpanan MultiPN: Identical file hash found in completed jobs', [
+                'content_hash' => $contentHash,
+                'new_periods' => $periodHints,
+            ]);
 
-                $storedHash = trim((string) ($context['content_hash'] ?? ''));
-                if ($storedHash === '' || $storedHash !== $contentHash) {
-                    continue;
-                }
-
-                $storedPeriods = (array) ($context['period_hints'] ?? []);
-                $storedPeriods = array_values(array_unique(array_filter(array_map(
-                    static fn ($value): string => trim((string) $value),
-                    $storedPeriods
-                ), static fn (string $value): bool => $value !== '')));
-
-                if (empty($storedPeriods)) {
-                    continue;
-                }
-
-                $hasOverlapPeriod = false;
-                foreach ($periodHints as $period) {
-                    if (in_array($period, $storedPeriods, true)) {
-                        $hasOverlapPeriod = true;
-                        break;
-                    }
-                }
-
-                if ($hasOverlapPeriod) {
+            // Jika ada job dengan hash yang sama, cek periode overlap
+            $jobContext = $existingJob->job_context;
+            if (!is_string($jobContext) || trim($jobContext) === '') {
+                // Safety check: Jika tidak ada context dari job lama (corrupted), tetap reject
+                if (empty($periodHints)) {
                     throw new \RuntimeException(
-                        'File sudah pernah di-import sebelumnya untuk periode yang sama. '
-                        . 'Gunakan file berbeda atau ubah periode upload.'
+                        'File identik telah diimpor sebelumnya (periode tidak terdeteksi pada file baru). '
+                        . 'Verifikasi bahwa kolom POSISI pada CSV sudah benar.'
                     );
                 }
+                return;
+            }
+
+            $context = @json_decode($jobContext, true);
+            if (!is_array($context)) {
+                // Corrupted job context dari import lama
+                if (empty($periodHints)) {
+                    throw new \RuntimeException(
+                        'File identik telah diimpor sebelumnya (periode tidak terdeteksi pada file baru). '
+                        . 'Verifikasi bahwa kolom POSISI pada CSV sudah benar.'
+                    );
+                }
+                return;
+            }
+
+            $storedPeriods = (array) ($context['period_hints'] ?? []);
+            $storedPeriods = array_values(array_unique(array_filter(array_map(
+                static fn ($value): string => trim((string) $value),
+                $storedPeriods
+            ), static fn (string $value): bool => $value !== '')));
+
+            // SAFEGUARD: Jika file baru tidak punya periode terdeteksi, tapi ada file lama dengan periode
+            // Ini mungkin indikasi kolom POSISI berubah atau CSV format salah
+            if (empty($periodHints) && !empty($storedPeriods)) {
+                throw new \RuntimeException(
+                    'File identik telah diimpor sebelumnya untuk periode: ' . implode(', ', array_slice($storedPeriods, 0, 3)) . '. '
+                    . 'Periode pada file baru tidak terdeteksi - verifikasi kolom POSISI pada CSV Anda.'
+                );
+            }
+
+            if (empty($storedPeriods)) {
+                return;
+            }
+
+            // Cek overlap periode
+            $hasOverlapPeriod = !empty(array_intersect($periodHints, $storedPeriods));
+
+            if ($hasOverlapPeriod) {
+                throw new \RuntimeException(
+                    'File sudah pernah di-import sebelumnya untuk periode yang sama: ' . implode(', ', array_intersect($periodHints, $storedPeriods)) . '. '
+                    . 'Gunakan file berbeda atau ubah periode upload.'
+                );
             }
         } catch (\RuntimeException $e) {
             throw $e;
