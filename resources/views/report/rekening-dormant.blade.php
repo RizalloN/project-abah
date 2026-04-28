@@ -459,18 +459,22 @@
                         <thead>
                             <tr>
                                 <th rowspan="2" class="head-branch dormant-group-label" data-default-label="Branch Office" data-filtered-label="UKER">Branch Office</th>
-                                <th colspan="4" class="head-group">Rekening Dormant</th>
+                                <th colspan="4" class="head-group">Posisi Rekening Dormant</th>
+                                <th colspan="3" class="head-group">Delta thd Posisi</th>
                             </tr>
                             <tr>
+                                <th id="dormantHeaderYoyPosition" class="head-sub">YoY</th>
+                                <th id="dormantHeaderYtdPosition" class="head-sub">YtD</th>
+                                <th id="dormantHeaderMtdPosition" class="head-sub">MtD</th>
                                 <th id="dormantHeaderCurrent" class="head-sub">Periode Terakhir</th>
-                                <th id="dormantHeaderMtd" class="head-sub">MtD</th>
-                                <th id="dormantHeaderYtd" class="head-sub">YtD</th>
                                 <th id="dormantHeaderYoy" class="head-sub">YoY</th>
+                                <th id="dormantHeaderYtd" class="head-sub">YtD</th>
+                                <th id="dormantHeaderMtd" class="head-sub">MtD</th>
                             </tr>
                         </thead>
                         <tbody id="dormantTableBody">
                             <tr>
-                                <td colspan="5" class="dormant-empty-state">
+                                <td colspan="8" class="dormant-empty-state">
                                     <i class="fas fa-inbox fa-2x text-muted mb-3 opacity-50"></i>
                                     <strong>Belum ada data</strong> Klik <strong>Tampilkan Data</strong>.
                                 </td>
@@ -478,7 +482,7 @@
                         </tbody>
                         <tfoot>
                             <tr id="dormantTableFoot">
-                                <th>Grand Total</th><td>-</td><td>-</td><td>-</td><td>-</td>
+                                <th>Grand Total</th><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td>
                             </tr>
                         </tfoot>
                     </table>
@@ -514,6 +518,9 @@ document.addEventListener('DOMContentLoaded', function () {
     const comparisonMeta = document.getElementById('dormantComparisonPeriodMeta');
     const badge = document.getElementById('dormantPeriodBadge');
     const currentHeader = document.getElementById('dormantHeaderCurrent');
+    const yoyPositionHeader = document.getElementById('dormantHeaderYoyPosition');
+    const ytdPositionHeader = document.getElementById('dormantHeaderYtdPosition');
+    const mtdPositionHeader = document.getElementById('dormantHeaderMtdPosition');
     const mtdHeader = document.getElementById('dormantHeaderMtd');
     const ytdHeader = document.getElementById('dormantHeaderYtd');
     const yoyHeader = document.getElementById('dormantHeaderYoy');
@@ -578,7 +585,7 @@ document.addEventListener('DOMContentLoaded', function () {
         currentPage = Math.max(1, Math.min(pageNum, Math.ceil((rows.length / ROWS_PER_PAGE) || 1)));
 
         if (!rows || rows.length === 0) {
-            tableBody.innerHTML = `<tr><td colspan="5" class="dormant-empty-state"><i class="fas fa-inbox fa-2x text-muted mb-3 opacity-50"></i><strong>Data tidak ditemukan</strong>Coba ubah periode atau filter branch office agar hasil report tersedia.</td></tr>`;
+            tableBody.innerHTML = `<tr><td colspan="8" class="dormant-empty-state"><i class="fas fa-inbox fa-2x text-muted mb-3 opacity-50"></i><strong>Data tidak ditemukan</strong>Coba ubah periode atau filter branch office agar hasil report tersedia.</td></tr>`;
             renderPagination(0);
             return;
         }
@@ -593,10 +600,13 @@ document.addEventListener('DOMContentLoaded', function () {
         pageRows.forEach(row => {
             html += `<tr>
                 <th>${row.branch || '-'}</th>
+                <td class="metric-neutral">${formatNumber(row.yoy_base)}</td>
+                <td class="metric-neutral">${formatNumber(row.ytd_base)}</td>
+                <td class="metric-neutral">${formatNumber(row.mtd_base)}</td>
                 <td class="${cellClass(row.current, true)}">${formatNumber(row.current)}</td>
-                <td class="${cellClass(row.mtd)}">${deltaText(row.mtd)}</td>
-                <td class="${cellClass(row.ytd)}">${deltaText(row.ytd)}</td>
                 <td class="${cellClass(row.yoy)}">${deltaText(row.yoy)}</td>
+                <td class="${cellClass(row.ytd)}">${deltaText(row.ytd)}</td>
+                <td class="${cellClass(row.mtd)}">${deltaText(row.mtd)}</td>
             </tr>`;
         });
         tableBody.innerHTML = html;
@@ -688,18 +698,24 @@ document.addEventListener('DOMContentLoaded', function () {
     function renderFoot(total = {}) {
         tableFoot.innerHTML = `
             <th>Grand Total</th>
+            <td>${formatNumber(total.yoy_base ?? null)}</td>
+            <td>${formatNumber(total.ytd_base ?? null)}</td>
+            <td>${formatNumber(total.mtd_base ?? null)}</td>
             <td>${formatNumber(total.current ?? null)}</td>
-            <td>${deltaText(total.mtd ?? null)}</td>
-            <td>${deltaText(total.ytd ?? null)}</td>
             <td>${deltaText(total.yoy ?? null)}</td>
+            <td>${deltaText(total.ytd ?? null)}</td>
+            <td>${deltaText(total.mtd ?? null)}</td>
         `;
     }
 
     function updateHeaders(labels = {}) {
         currentHeader.textContent = labels.curr && labels.curr !== '-' ? labels.curr : 'Periode Terakhir';
-        mtdHeader.textContent = labels.mtd && labels.mtd !== '-' ? `MtD vs ${labels.mtd}` : 'MtD';
-        ytdHeader.textContent = labels.ytd && labels.ytd !== '-' ? `YtD vs ${labels.ytd}` : 'YtD';
-        yoyHeader.textContent = labels.yoy && labels.yoy !== '-' ? `YoY vs ${labels.yoy}` : 'YoY';
+        yoyPositionHeader.textContent = labels.yoy && labels.yoy !== '-' ? `YoY ${labels.yoy}` : 'YoY';
+        ytdPositionHeader.textContent = labels.ytd && labels.ytd !== '-' ? `YtD ${labels.ytd}` : 'YtD';
+        mtdPositionHeader.textContent = labels.mtd && labels.mtd !== '-' ? `MtD ${labels.mtd}` : 'MtD';
+        yoyHeader.textContent = labels.yoy && labels.yoy !== '-' ? `vs YoY ${labels.yoy}` : 'vs YoY';
+        ytdHeader.textContent = labels.ytd && labels.ytd !== '-' ? `vs YtD ${labels.ytd}` : 'vs YtD';
+        mtdHeader.textContent = labels.mtd && labels.mtd !== '-' ? `vs MtD ${labels.mtd}` : 'vs MtD';
     }
 
     function updateGroupLabel(groupLabel) {
@@ -722,7 +738,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function resetTableState() {
         updateGroupLabel('BRANCH OFFICE');
-        tableBody.innerHTML = `<tr><td colspan="5" class="dormant-empty-state"><i class="fas fa-inbox fa-2x text-muted mb-3 opacity-50"></i><strong>Belum ada data</strong>Klik <strong>Tampilkan Data</strong>.</td></tr>`;
+        tableBody.innerHTML = `<tr><td colspan="8" class="dormant-empty-state"><i class="fas fa-inbox fa-2x text-muted mb-3 opacity-50"></i><strong>Belum ada data</strong>Klik <strong>Tampilkan Data</strong>.</td></tr>`;
         renderFoot({});
         activeMeta.textContent = '-';
         comparisonMeta.textContent = '-';
@@ -1015,7 +1031,7 @@ document.addEventListener('DOMContentLoaded', function () {
         } catch (error) {
             if (error.name !== 'AbortError') {
                 updateGroupLabel('BRANCH OFFICE');
-                tableBody.innerHTML = `<tr><td colspan="5" class="dormant-empty-state"><i class="fas fa-exclamation-triangle fa-2x text-danger mb-3 opacity-50"></i><strong>Gagal memuat report</strong>Coba ulangi.</td></tr>`;
+                tableBody.innerHTML = `<tr><td colspan="8" class="dormant-empty-state"><i class="fas fa-exclamation-triangle fa-2x text-danger mb-3 opacity-50"></i><strong>Gagal memuat report</strong>Coba ulangi.</td></tr>`;
                 renderFoot({});
                 badge.textContent = '-';
                 setOverlay('Siap Memuat Data', 'Silakan coba lagi.');

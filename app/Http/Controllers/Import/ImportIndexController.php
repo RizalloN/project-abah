@@ -19,6 +19,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use App\Models\NamaReport;
 use Illuminate\Database\Query\Builder;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
@@ -419,6 +420,103 @@ class ImportIndexController extends Controller
         $resolved = $this->managedReportRecoveryCoordinator()->status($recoveryId);
 
         return response()->json($resolved['payload'], (int) ($resolved['status_code'] ?? 200));
+    }
+
+    public function startForceSyncSnapshots(Request $request)
+    {
+        try {
+            $validated = $request->validate([
+                'period' => 'required|string|regex:/^\d{4}-\d{2}-\d{2}$/',
+            ]);
+
+            $period = (string) $validated['period'];
+
+            if (!$this->isValidDateString($period)) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Format periode tidak valid. Gunakan: YYYY-MM-DD',
+                    'sync_id' => null,
+                ], 422);
+            }
+
+            $syncId = Str::uuid()->toString();
+            $cacheKey = "snapshot_force_sync:{$syncId}";
+
+            Cache::put($cacheKey, [
+                'sync_id' => $syncId,
+                'period' => $period,
+                'status' => 'running',
+                'progress' => 0,
+                'total_tables' => 6,
+                'completed_tables' => 0,
+                'failed_tables' => 0,
+                'message' => 'Memulai sinkronisasi snapshot untuk semua tabel...',
+                'started_at' => now()->toIso8601String(),
+                'updated_at' => now()->toIso8601String(),
+            ], now()->addHours(6));
+
+            Artisan::queue('snapshot:force-sync', [
+                '--period' => $period,
+            ])->onQueue('imports-high');
+
+            Log::info('Force sync snapshots queued', [
+                'sync_id' => $syncId,
+                'period' => $period,
+                'source' => 'ImportIndexController::startForceSyncSnapshots',
+            ]);
+
+            return response()->json([
+                'status' => 'queued',
+                'message' => "Sinkronisasi snapshot untuk periode {$period} telah di-queue.",
+                'sync_id' => $syncId,
+                'period' => $period,
+            ]);
+        } catch (Throwable $e) {
+            Log::error('Failed to queue force sync snapshots', [
+                'message' => $e->getMessage(),
+                'period' => $request->input('period'),
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Gagal memulai sinkronisasi: ' . $e->getMessage(),
+                'sync_id' => null,
+            ], 500);
+        }
+    }
+
+    public function forceSyncSnapshotsStatus(string $syncId)
+    {
+        try {
+            $cacheKey = "snapshot_force_sync:{$syncId}";
+            $state = Cache::get($cacheKey);
+
+            if (!$state) {
+                return response()->json([
+                    'status' => 'not_found',
+                    'message' => 'Sync ID tidak ditemukan atau sudah expired.',
+                    'sync_id' => $syncId,
+                ], 404);
+            }
+
+            return response()->json($state);
+        } catch (Throwable $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+                'sync_id' => $syncId,
+            ], 500);
+        }
+    }
+
+    private function isValidDateString(string $dateString): bool
+    {
+        try {
+            Carbon::createFromFormat('Y-m-d', $dateString);
+            return true;
+        } catch (Throwable) {
+            return false;
+        }
     }
 
     public function deleteManagedReportRows(Request $request)

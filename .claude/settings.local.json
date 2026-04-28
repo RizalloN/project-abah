@@ -54,7 +54,12 @@
       "Read(//c/Users/uzuma/AppData/Local/Temp/claude/c--xampp-htdocs-project-ABAH/05b4fd94-c1aa-4fd3-a3c5-258c1a31630e/tasks//**)",
       "Bash(php -l c:\\\\xampp\\\\htdocs\\\\project-ABAH\\\\app\\\\Support\\\\DashboardSmeSegmentService.php)",
       "Bash(php -l \"app/Support/DashboardSmeSegmentService.php\")",
-      "Bash(php -r ' *)"
+      "Bash(php -r ' *)",
+      "Bash(netstat -tuln)",
+      "Bash(tasklist)",
+      "Bash(net start *)",
+      "Bash(sc start *)",
+      "Bash(sc query *)"
     ],
     "additionalDirectories": [
       "\\tmp",

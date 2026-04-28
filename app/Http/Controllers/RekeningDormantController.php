@@ -165,6 +165,9 @@ class RekeningDormantController extends Controller
             'mtd' => 0,
             'ytd' => 0,
             'yoy' => 0,
+            'mtd_base' => 0,
+            'ytd_base' => 0,
+            'yoy_base' => 0,
         ];
 
         if ($isBranchFiltered) {
@@ -193,6 +196,9 @@ class RekeningDormantController extends Controller
                     'branch' => $unit,
                     'source_branch' => $unit,
                     'current' => $current,
+                    'mtd_base' => $mtdBase,
+                    'ytd_base' => $ytdBase,
+                    'yoy_base' => $yoyBase,
                     'mtd' => $current - $mtdBase,
                     'ytd' => $current - $ytdBase,
                     'yoy' => $current - $yoyBase,
@@ -201,6 +207,9 @@ class RekeningDormantController extends Controller
                 $rows[] = $row;
 
                 $totals['current'] += $row['current'];
+                $totals['mtd_base'] += $row['mtd_base'];
+                $totals['ytd_base'] += $row['ytd_base'];
+                $totals['yoy_base'] += $row['yoy_base'];
                 $totals['mtd'] += $row['mtd'];
                 $totals['ytd'] += $row['ytd'];
                 $totals['yoy'] += $row['yoy'];
@@ -227,6 +236,9 @@ class RekeningDormantController extends Controller
                     'branch' => $branch,
                     'source_branch' => $branch,
                     'current' => $current,
+                    'mtd_base' => $mtdBase,
+                    'ytd_base' => $ytdBase,
+                    'yoy_base' => $yoyBase,
                     'mtd' => $current - $mtdBase,
                     'ytd' => $current - $ytdBase,
                     'yoy' => $current - $yoyBase,
@@ -235,6 +247,9 @@ class RekeningDormantController extends Controller
                 $rows[] = $row;
 
                 $totals['current'] += $row['current'];
+                $totals['mtd_base'] += $row['mtd_base'];
+                $totals['ytd_base'] += $row['ytd_base'];
+                $totals['yoy_base'] += $row['yoy_base'];
                 $totals['mtd'] += $row['mtd'];
                 $totals['ytd'] += $row['ytd'];
                 $totals['yoy'] += $row['yoy'];

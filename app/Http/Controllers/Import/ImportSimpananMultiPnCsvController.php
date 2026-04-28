@@ -1783,6 +1783,12 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
         ), static fn (string $value): bool => $value !== '')));
 
         try {
+            // Safety check: Verify that job_content_hash column exists before querying
+            if (!Schema::hasColumn('import_jobs', 'job_content_hash')) {
+                Log::info('Simpanan MultiPN: job_content_hash column not available yet, skipping uniqueness check');
+                return;
+            }
+
             // OPTIMIZED: Query menggunakan virtual column index (O(log N))
             // Jika migration belum dijalankan, query akan tetap berfungsi (fallback tanpa index)
             $existingJob = DB::table('import_jobs')
@@ -1855,8 +1861,6 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                     . 'Gunakan file berbeda atau ubah periode upload.'
                 );
             }
-        } catch (\RuntimeException $e) {
-            throw $e;
         } catch (\Throwable $e) {
             Log::warning('Validasi keunikan file Simpanan MultiPN gagal (continuing without check): ' . $e->getMessage(), [
                 'content_hash' => $contentHash,

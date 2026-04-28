@@ -3811,6 +3811,8 @@ class ImportFileController extends Controller
 
         return response()->stream(function () use ($params, $jobId) {
             $streamLock = null;
+            $progressService = app(\App\Services\Import\ImportProgressService::class);
+
             $send = function (string $event, array $data) {
                 echo "event: {$event}\n";
                 echo 'data: ' . json_encode($data) . "\n\n";
@@ -3819,7 +3821,36 @@ class ImportFileController extends Controller
                 }
                 flush();
             };
-            $progressService = app(\App\Services\Import\ImportProgressService::class);
+
+            $sendWithCacheSync = function (string $event, array $data) use (&$send, $jobId, $progressService): void {
+                $send($event, $data);
+
+                if ($jobId > 0 && in_array($event, ['progress', 'complete'], true)) {
+                    $cachePayload = [
+                        'status' => $event === 'complete' ? 'completed' : 'processing',
+                        'percent' => (int) ($data['percent'] ?? 0),
+                        'message' => (string) ($data['message'] ?? ''),
+                        'processed_rows' => (int) ($data['rows_done'] ?? $data['processed_rows'] ?? 0),
+                        'total_rows' => (int) ($data['total'] ?? $data['total_rows'] ?? 0),
+                        'total_success' => (int) ($data['total_success'] ?? 0),
+                        'total_failed' => (int) ($data['total_failed'] ?? 0),
+                    ];
+
+                    if (!empty($data['speed'])) {
+                        $cachePayload['speed'] = (int) $data['speed'];
+                    }
+
+                    if (!empty($data['speed_label'])) {
+                        $cachePayload['speed_label'] = (string) $data['speed_label'];
+                    }
+
+                    try {
+                        $progressService->cacheProgress($jobId, $cachePayload);
+                    } catch (\Throwable $e) {
+                        Log::warning('Failed to cache import progress for job ' . $jobId . ': ' . $e->getMessage());
+                    }
+                }
+            };
             $markJobFailed = function (string $message, int $success = 0, int $failed = 0, ?string $status = null) use ($jobId, $progressService): void {
                 if ($jobId <= 0) {
                     return;
@@ -3902,7 +3933,7 @@ class ImportFileController extends Controller
                     return;
                 }
 
-                $send('progress', [
+                $sendWithCacheSync('progress', [
                     'percent' => 5,
                     'message' => 'Menyiapkan stream import CSV...',
                     'rows_done' => 0,
@@ -3913,7 +3944,7 @@ class ImportFileController extends Controller
                 $resolvedDelimiter = $this->resolveDelimiter($handle, $delimiter);
                 rewind($handle);
 
-                $send('progress', [
+                $sendWithCacheSync('progress', [
                     'percent' => 12,
                     'message' => "Delimiter terdeteksi. Memulai insert ke tabel `{$tableName}`...",
                     'rows_done' => 0,
@@ -3961,7 +3992,7 @@ class ImportFileController extends Controller
                 $skipRawLoadDataFastPath = $this->shouldSkipRawLoadDataFastPath($tableName, $filePath, $resolvedDelimiter);
                 if ($this->shouldUseDbStagingFastPath() && !$skipRawLoadDataFastPath) {
                     $stagingHandled = $this->processImportStreamViaStagingTable(
-                        $send,
+                        $sendWithCacheSync,
                         $filePath,
                         $resolvedDelimiter,
                         $selectedColumns,
@@ -4030,7 +4061,7 @@ class ImportFileController extends Controller
 
                 if ($this->supportsNativeBulkLoad()) {
                     $strictHandled = $this->processImportStreamViaStrictLocalInfile(
-                        $send,
+                        $sendWithCacheSync,
                         $filePath,
                         $resolvedDelimiter,
                         $selectedColumns,
@@ -4096,7 +4127,7 @@ class ImportFileController extends Controller
                     return;
                 }
 
-                $send('progress', [
+                $sendWithCacheSync('progress', [
                     'percent' => 12,
                     'message' => $fallbackReason,
                     'rows_done' => $rowsDone,
@@ -4158,7 +4189,7 @@ class ImportFileController extends Controller
                             ? min(95, 12 + (int) (($rowsDone / $totalRows) * 83))
                             : 80;
 
-                        $send('progress', [
+                        $sendWithCacheSync('progress', [
                             'percent' => $percent,
                             'message' => "Menyimpan data ke database... ({$speed} baris/detik)",
                             'rows_done' => $rowsDone,
@@ -4187,7 +4218,7 @@ class ImportFileController extends Controller
 
                 $this->cleanupImportDirectory($filePath);
 
-                $send('progress', [
+                $sendWithCacheSync('progress', [
                     'percent' => 98,
                     'message' => 'Finalisasi status import...',
                     'rows_done' => $rowsDone,
@@ -4195,7 +4226,7 @@ class ImportFileController extends Controller
                     'speed' => 0,
                 ]);
 
-                $send('complete', [
+                $sendWithCacheSync('complete', [
                     'total_success' => $totalSuccess,
                     'total_failed' => $totalFailed + $duplicateSkipped,
                     'total_rows' => $totalRows,

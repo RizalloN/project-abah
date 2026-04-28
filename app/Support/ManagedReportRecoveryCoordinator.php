@@ -19,6 +19,27 @@ class ManagedReportRecoveryCoordinator
 
     public function queue(int $reportId, string $backupPath, ?string $source = null): array
     {
+        // Validate inputs
+        if ($reportId <= 0) {
+            return [
+                'status_code' => 422,
+                'payload' => [
+                    'status' => 'error',
+                    'message' => 'ID report tidak valid. Recovery dibatalkan.',
+                ],
+            ];
+        }
+
+        if (trim($backupPath) === '') {
+            return [
+                'status_code' => 422,
+                'payload' => [
+                    'status' => 'error',
+                    'message' => 'Path file backup tidak valid. Recovery dibatalkan.',
+                ],
+            ];
+        }
+
         $recoveryId = (string) Str::uuid();
         $state = ManagedReportRecoveryStore::createInitialState($recoveryId, $reportId, $backupPath, $source);
         ManagedReportRecoveryStore::putState($state);
@@ -26,6 +47,13 @@ class ManagedReportRecoveryCoordinator
         try {
             RunManagedReportRecoveryJob::dispatch($reportId, $backupPath, $source, $recoveryId)
                 ->onQueue(self::RECOVERY_QUEUE);
+            
+            Log::info('Managed report recovery queued successfully', [
+                'recovery_id' => $recoveryId,
+                'report_id' => $reportId,
+                'backup_path' => basename($backupPath),
+                'source' => $source ?? 'unknown',
+            ]);
         } catch (Throwable $e) {
             ManagedReportRecoveryStore::putState(array_merge($state, [
                 'queued' => false,
@@ -77,14 +105,31 @@ class ManagedReportRecoveryCoordinator
 
     public function reconcile(string $recoveryId): ?array
     {
+        $recoveryId = trim((string) $recoveryId);
+        if ($recoveryId === '' || !preg_match('/^[a-f0-9\-]{36}$/i', $recoveryId)) {
+            return null;
+        }
+
         $state = ManagedReportRecoveryStore::getState($recoveryId);
         if ($state === null) {
             return null;
         }
 
-        $state = $this->maybeProcessFallback($state);
+        // Validate state structure
+        if (!is_array($state) || empty($state['recovery_id'])) {
+            return null;
+        }
 
-        return $this->reconcileStaleState($state);
+        $state = $this->maybeProcessFallback($state);
+        $state = $this->reconcileStaleState($state);
+
+        // Update last access timestamp for tracking
+        if (is_array($state)) {
+            $state['last_polled_at'] = now()->toIso8601String();
+            ManagedReportRecoveryStore::putState($state);
+        }
+
+        return $state;
     }
 
     private function maybeProcessFallback(array $state): array

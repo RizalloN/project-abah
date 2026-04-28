@@ -1557,6 +1557,7 @@
             setImportProgress(5, loadingCopy.status, 0, 0, 0, isDailyLoanPreview ? 'record' : '');
 
             try {
+                let pollStarted = false;
                 const initFormData = new FormData(form);
                 const initResponse = await fetch(initUrl, {
                     method: 'POST',
@@ -1605,6 +1606,11 @@
                     isDailyLoanPreview ? 'record' : ''
                 );
 
+                if (!pollStarted) {
+                    pollStarted = true;
+                    startIndependentPolling(initResult.job_id);
+                }
+
                 const streamUrl = streamUrlBase + '?job_id=' + encodeURIComponent(initResult.job_id);
                 const statusUrlTemplate = @json(route('import.jobs.status', ['jobId' => '__JOB_ID__']));
                 const forceStartUrlTemplate = @json(route('job-management.force-start', ['jobId' => '__JOB_ID__']));
@@ -1615,6 +1621,10 @@
 
                 const showImportError = function (message) {
                     stopImportProgressTicker();
+                    if (independentPollingTimer) {
+                        clearInterval(independentPollingTimer);
+                        independentPollingTimer = null;
+                    }
                     const errorMessage = message || 'Import gagal dijalankan!';
                     if (isDuplicateImportMessage(errorMessage)) {
                         showDuplicateImportModal(
@@ -1648,6 +1658,10 @@
                     streamDone = true;
                     if (evtSource) {
                         evtSource.close();
+                    }
+                    if (independentPollingTimer) {
+                        clearInterval(independentPollingTimer);
+                        independentPollingTimer = null;
                     }
 
                     data = Object.assign({}, data || {});
@@ -1793,6 +1807,46 @@
 
                         await new Promise((resolve) => setTimeout(resolve, 1000));
                     }
+                };
+
+                let independentPollingTimer = null;
+                const startIndependentPolling = function (jobId) {
+                    if (independentPollingTimer) {
+                        clearInterval(independentPollingTimer);
+                    }
+
+                    independentPollingTimer = setInterval(async function () {
+                        if (streamDone) {
+                            clearInterval(independentPollingTimer);
+                            independentPollingTimer = null;
+                            return;
+                        }
+
+                        try {
+                            const payload = await inspectJobStatus(jobId);
+                            if (payload && !streamDone) {
+                                setImportProgress(
+                                    payload.percent || importProgressSnapshot.percent || 0,
+                                    payload.message || importProgressSnapshot.message || '',
+                                    payload.processed_rows || importProgressSnapshot.rowsDone || 0,
+                                    payload.total_rows || importProgressSnapshot.totalRows || 0,
+                                    payload.speed || importProgressSnapshot.speed || 0,
+                                    importProgressSnapshot.speedLabel || ''
+                                );
+
+                                if (payload.status === 'completed' && !streamDone) {
+                                    streamDone = true;
+                                    if (evtSource) {
+                                        evtSource.close();
+                                    }
+                                    showImportComplete(payload);
+                                    clearInterval(independentPollingTimer);
+                                    independentPollingTimer = null;
+                                }
+                            }
+                        } catch (_) {
+                        }
+                    }, 4000);
                 };
 
                 const connectSSE = function () {

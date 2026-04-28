@@ -56,7 +56,26 @@ class ManagedReportBackupRecoveryService
                 throw new RuntimeException("Tabel staging `{$tempTable}` tidak ditemukan setelah proses import backup.");
             }
 
+            // Validate temp table data before swap
+            $tempTableRowCount = (int) DB::table($tempTable)->count();
+            if ($tempTableRowCount === 0) {
+                throw new RuntimeException("Tabel staging `{$tempTable}` kosong. File backup mungkin tidak mengandung data valid.");
+            }
+
             $restoredRows = $this->swapRecoveredTableData($tableName, $tempTable, $progressCallback);
+
+            // Validate restored data
+            $actualRowCount = (int) DB::table($tableName)->count();
+            if ($actualRowCount !== $restoredRows) {
+                throw new RuntimeException(
+                    sprintf(
+                        'Data integrity check gagal: expected %d rows, tapi ditemukan %d rows di tabel %s. Silakan jalankan recovery ulang.',
+                        $restoredRows,
+                        $actualRowCount,
+                        $tableName
+                    )
+                );
+            }
 
             $this->emitProgress($progressCallback, [
                 'stage' => 'syncing',
@@ -83,6 +102,14 @@ class ManagedReportBackupRecoveryService
 
             $this->dropTemporaryTable($tempTable);
             @unlink($tempSqlPath);
+
+            $this->emitProgress($progressCallback, [
+                'stage' => 'completed',
+                'message' => sprintf('Recovery selesai: %d baris data berhasil dipulihkan.', $restoredRows),
+                'completed_units' => 6,
+                'total_units' => self::TOTAL_UNITS,
+                'progress_percent' => 100,
+            ]);
 
             return [
                 'report_id' => (int) $report->id_report,
@@ -409,29 +436,64 @@ class ManagedReportBackupRecoveryService
             'progress_percent' => 80,
         ]);
 
+        // Validate temp table exists and has data
+        if (!Schema::hasTable($tempTable)) {
+            throw new RuntimeException("Tabel staging `{$tempTable}` tidak ditemukan. Recovery tidak bisa dilanjutkan.");
+        }
+
         $restoredRows = (int) DB::table($tempTable)->count();
+        if ($restoredRows === 0) {
+            throw new RuntimeException("Tabel staging `{$tempTable}` kosong. Tidak ada data untuk dipulihkan.");
+        }
+
         DB::statement('SET SESSION foreign_key_checks = 0');
+        DB::beginTransaction();
 
         try {
             $quotedTarget = '`' . str_replace('`', '``', $targetTable) . '`';
             $quotedTemp = '`' . str_replace('`', '``', $tempTable) . '`';
             $backupTable = $this->buildRecoveredTableSwapName($targetTable);
+            $quotedBackup = '`' . str_replace('`', '``', $backupTable) . '`';
 
+            // Verify target table still exists
+            if (!Schema::hasTable($targetTable)) {
+                throw new RuntimeException("Tabel target `{$targetTable}` tidak ditemukan. Database mungkin berubah saat proses berjalan.");
+            }
+
+            // Clean up old backup if exists
             if (Schema::hasTable($backupTable)) {
                 Schema::dropIfExists($backupTable);
             }
 
-            if (Schema::hasTable($targetTable)) {
-                DB::statement(
-                    'RENAME TABLE ' . $quotedTarget . ' TO `' . str_replace('`', '``', $backupTable) . '`, ' . $quotedTemp . ' TO ' . $quotedTarget
-                );
+            // Atomic swap: original → backup, staging → original
+            DB::statement(
+                'RENAME TABLE ' . $quotedTarget . ' TO ' . $quotedBackup . ', ' . $quotedTemp . ' TO ' . $quotedTarget
+            );
 
-                Schema::dropIfExists($backupTable);
-            } else {
-                DB::statement('RENAME TABLE ' . $quotedTemp . ' TO ' . $quotedTarget);
-            }
-        } finally {
+            // Clean up old backup
+            Schema::dropIfExists($backupTable);
+
+            DB::commit();
             DB::statement('SET SESSION foreign_key_checks = 1');
+
+            $this->emitProgress($progressCallback, [
+                'stage' => 'swapping_data',
+                'message' => sprintf('Tabel berhasil ditukar. %d baris data berhasil dipulihkan.', $restoredRows),
+                'completed_units' => 4,
+                'total_units' => self::TOTAL_UNITS,
+                'progress_percent' => 80,
+            ]);
+        } catch (Throwable $e) {
+            try {
+                DB::rollBack();
+            } catch (Throwable) {
+                // Ignore rollback errors
+            }
+            DB::statement('SET SESSION foreign_key_checks = 1');
+
+            throw new RuntimeException(
+                'Gagal menukar tabel staging ke tabel aktif: ' . $e->getMessage()
+            );
         }
 
         return $restoredRows;
@@ -445,32 +507,73 @@ class ManagedReportBackupRecoveryService
     private function shouldSkipStatement(string $statement): bool
     {
         $trimmed = ltrim($statement);
+        
+        // Skip comments and special directives
+        if (preg_match('/^(--|#|\/\*[^!])/i', $trimmed) === 1) {
+            return true;
+        }
 
-        return preg_match('/^(--|\/\*[^!]|USE\s+|CREATE\s+DATABASE|DROP\s+DATABASE|LOCK\s+TABLES|UNLOCK\s+TABLES)/i', $trimmed) === 1;
+        // Skip database/use commands
+        if (preg_match('/^(USE\s+|CREATE\s+DATABASE|DROP\s+DATABASE|CREATE\s+SCHEMA|DROP\s+SCHEMA|SET\s+(?:SESSION|GLOBAL))/i', $trimmed) === 1) {
+            return true;
+        }
+
+        // Skip table lock commands
+        if (preg_match('/^(LOCK|UNLOCK)\s+TABLES/i', $trimmed) === 1) {
+            return true;
+        }
+
+        // Skip MySQL-specific pragmas that aren't table-related
+        if (preg_match('/^\/\*![0-9]{5}\s+(?!ALTER TABLE)/i', $trimmed) === 1) {
+            return true;
+        }
+
+        // Skip empty statements
+        if (trim($trimmed) === '' || trim($trimmed) === ';') {
+            return true;
+        }
+
+        return false;
     }
 
     private function rewriteStatementForRestore(string $statement, string $targetTable, string $tempTable): ?string
     {
         $patterns = [
-            '/^DROP TABLE IF EXISTS `' . preg_quote($targetTable, '/') . '`/i',
-            '/^CREATE TABLE `' . preg_quote($targetTable, '/') . '`/i',
-            '/^INSERT INTO `' . preg_quote($targetTable, '/') . '`/i',
-            '/^\/\*![0-9]{5} ALTER TABLE `' . preg_quote($targetTable, '/') . '` (DISABLE|ENABLE) KEYS \*\//i',
-            '/^ALTER TABLE `' . preg_quote($targetTable, '/') . '`/i',
+            '/^DROP TABLE IF EXISTS\s+`' . preg_quote($targetTable, '/') . '`/i',
+            '/^CREATE TABLE\s+`' . preg_quote($targetTable, '/') . '`/i',
+            '/^INSERT INTO\s+`' . preg_quote($targetTable, '/') . '`/i',
+            '/^\/\*![0-9]{5}\s+ALTER TABLE\s+`' . preg_quote($targetTable, '/') . '`\s+(DISABLE|ENABLE)\s+KEYS\s*\*\//i',
+            '/^ALTER TABLE\s+`' . preg_quote($targetTable, '/') . '`/i',
         ];
 
+        // Check if this statement matches any patterns for our target table
+        $matches = false;
         foreach ($patterns as $pattern) {
             if (preg_match($pattern, ltrim($statement)) === 1) {
-                return preg_replace(
-                    '/`' . preg_quote($targetTable, '/') . '`/i',
-                    '`' . $tempTable . '`',
-                    $statement,
-                    1
-                );
+                $matches = true;
+                break;
             }
         }
 
-        return null;
+        // If no match, skip this statement
+        if (!$matches) {
+            return null;
+        }
+
+        // Replace backtick-quoted table name with temp table
+        $rewritten = preg_replace(
+            '/`' . preg_quote($targetTable, '/') . '`/i',
+            '`' . $tempTable . '`',
+            $statement,
+            1
+        );
+
+        // Validate the rewritten statement is still valid SQL
+        if ($rewritten === null || trim($rewritten) === '') {
+            return null;
+        }
+
+        return $rewritten;
     }
 
     private function isSchemaStatement(string $statement, string $targetTable): bool
@@ -499,23 +602,51 @@ class ManagedReportBackupRecoveryService
 
     private function resolveBackupPath(string $backupRelativePath): ?string
     {
+        // Normalize the input path
         $normalized = trim(str_replace('\\', '/', $backupRelativePath));
-        if ($normalized === '' || str_contains($normalized, '..')) {
+        
+        // Security: reject empty or path traversal attempts
+        if ($normalized === '' || str_contains($normalized, '..') || str_contains($normalized, '//')) {
             return null;
         }
 
+        // Reject paths with special characters that could bypass security
+        if (preg_match('/[<>:|?*]/', $normalized) === 1) {
+            return null;
+        }
+
+        // Try to get the real path - first normalize it
         $candidate = $this->normalizeManagedRecoveryPath($normalized);
+        
+        // Check if file exists
+        if (!is_file($candidate)) {
+            return null;
+        }
+
+        // Get the real path (follows symlinks and resolves . and ..)
         $real = realpath($candidate);
         if ($real === false) {
             return null;
         }
 
+        // Verify against allowed backup directories
         $allowedRoots = $this->managedBackupAllowedRoots();
-        if ($this->pathMatchesAllowedRoots($candidate, $allowedRoots) || $this->pathMatchesAllowedRoots($real, $allowedRoots)) {
-            return $real;
+        if (!($this->pathMatchesAllowedRoots($candidate, $allowedRoots) || $this->pathMatchesAllowedRoots($real, $allowedRoots))) {
+            return null;
         }
 
-        return null;
+        // Final validation: check if it's actually a file and readable
+        if (!is_file($real) || !is_readable($real)) {
+            return null;
+        }
+
+        // Validate file has proper extension
+        $ext = strtolower(pathinfo($real, PATHINFO_EXTENSION));
+        if ($ext !== 'sql' && !($ext === 'gz' && str_ends_with(strtolower($real), '.sql.gz'))) {
+            return null;
+        }
+
+        return $real;
     }
 
     private function managedBackupAllowedRoots(): array

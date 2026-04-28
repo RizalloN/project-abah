@@ -27,7 +27,9 @@
      data-duplicate-url="{{ route('import.report-management.duplicates') }}"
      data-delete-process-url-template="{{ route('import.report-management.delete.process', ['deleteId' => '__DELETE_ID__']) }}"
      data-delete-status-url-template="{{ route('import.report-management.delete.status', ['deleteId' => '__DELETE_ID__']) }}"
-     data-delete-cancel-url-template="{{ route('import.report-management.delete.cancel', ['deleteId' => '__DELETE_ID__']) }}">
+     data-delete-cancel-url-template="{{ route('import.report-management.delete.cancel', ['deleteId' => '__DELETE_ID__']) }}"
+     data-force-sync-url="{{ route('import.report-management.force-sync') }}"
+     data-force-sync-status-url-template="{{ route('import.report-management.force-sync.status', ['syncId' => '__SYNC_ID__']) }}">
     <div class="card-header bg-white border-0 import-upload-card__header">
         <span class="import-upload-card__eyebrow">Seleksi & Preview</span>
         <h5 class="card-title font-weight-bold text-dark mb-1">
@@ -69,8 +71,23 @@
                             @endforeach
                         </select>
                         <div class="report-management-rebuild-hint mt-2 mb-3">Memulihkan data tabel spesifik dari file backup sistem secara parsial dan aman.</div>
-                        <button type="button" id="btn-management-recover" class="btn btn-outline-success report-management-filter-btn report-management-filter-btn--secondary mt-auto" {{ empty($backupFiles) ? 'disabled' : '' }}>
+                        <button type="button" id="btn-management-recover" class="btn btn-outline-success report-management-filter-btn report-management-filter-btn--secondary mt-auto" disabled>
                             <i class="fas fa-life-ring mr-2"></i> <span id="management-recover-label">Jalankan Recovery</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Manual Sync Panel (NEW) -->
+                <div class="col-lg-4">
+                    <div class="report-management-rebuild-panel h-100 border-info" style="border-left: 3px solid #17a2b8;">
+                        <div class="report-management-rebuild-panel__topline mb-2">
+                            <i class="fas fa-bolt mr-1" style="color: #ffc107;"></i> Sinkronisasi Manual
+                        </div>
+                        <label class="report-management-field-panel__label mb-2">Periode (YYYY-MM-DD)</label>
+                        <input type="text" id="management-force-sync-period" class="form-control mb-3" placeholder="2026-04-26">
+                        <div class="report-management-rebuild-hint mb-3">Sinkronisasi snapshot untuk periode spesifik setelah perubahan data manual. Akan sync SEMUA snapshot types sekaligus.</div>
+                        <button type="button" id="btn-management-force-sync" class="btn btn-outline-warning report-management-filter-btn report-management-filter-btn--secondary mt-auto">
+                            <i class="fas fa-bolt mr-2"></i> <span id="management-force-sync-label">Sinkronisasi Sekarang</span>
                         </button>
                     </div>
                 </div>
@@ -250,7 +267,16 @@
         const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '{{ csrf_token() }}';
 
         if (!reportManagementCard || !managementReportSelect) {
+            console.error('[Recovery] Report management card or select not found');
             return;
+        }
+
+        // Validate critical elements
+        if (!managementBackupSelect) {
+            console.error('[Recovery] Backup select element not found');
+        }
+        if (!btnManagementRecover) {
+            console.error('[Recovery] Recovery button not found');
         }
 
         function selectedTableName() {
@@ -307,11 +333,31 @@
             }
 
             if (btnManagementRecover) {
-                const canRecover = !!managementReportSelect.value && !!managementBackupSelect?.value;
+                // ✅ FIXED: Check both report and backup selection explicitly
+                const hasReportSelected = Boolean(managementReportSelect?.value);
+                const hasBackupSelected = Boolean(managementBackupSelect?.value);
+                const canRecover = hasReportSelected && hasBackupSelected;
+                
+                // ✅ Enable/disable button based on selections
                 btnManagementRecover.disabled = !canRecover;
+                
+                // ✅ Debug logging
+                const prevState = btnManagementRecover.title;
                 btnManagementRecover.title = canRecover
                     ? 'Pulihkan tabel report dari file backup yang dipilih.'
                     : 'Pilih report dan file backup terlebih dahulu.';
+                
+                // Log state changes for debugging
+                if (canRecover && prevState !== btnManagementRecover.title) {
+                    console.log('[Recovery Debug]', {
+                        event: 'button_state_changed',
+                        enabled: !btnManagementRecover.disabled,
+                        hasReportSelected: hasReportSelected,
+                        hasBackupSelected: hasBackupSelected,
+                        reportValue: managementReportSelect?.value,
+                        backupValue: managementBackupSelect?.value
+                    });
+                }
             }
         }
 
@@ -482,86 +528,213 @@
                 return null;
             }
 
-            for (let attempt = 0; attempt < 14400; attempt++) {
-                const response = await fetch(statusUrl, {
-                    headers: {
-                        'Accept': 'application/json',
-                        'X-Requested-With': 'XMLHttpRequest',
-                    },
-                });
+            let attempt = 0;
+            let consecutiveErrors = 0;
+            const maxAttempts = 14400; // ~4 hours at base rate
+            const maxConsecutiveErrors = 3;
+            const baseDelayMs = 500; // Start with 500ms
+            const maxDelayMs = 5000; // Cap at 5 seconds
 
-                const state = await response.json().catch(() => ({}));
-                updateRecoveryProgress(state);
+            while (attempt < maxAttempts) {
+                try {
+                    const response = await fetch(statusUrl, {
+                        headers: {
+                            'Accept': 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest',
+                        },
+                        signal: AbortSignal.timeout(10000), // 10 second timeout per request
+                    });
 
-                const status = String(state.status || '').toLowerCase();
-                if (['completed', 'failed', 'warning', 'error'].includes(status)) {
-                    return state;
+                    // Handle non-OK responses
+                    if (!response.ok) {
+                        consecutiveErrors++;
+                        if (consecutiveErrors >= maxConsecutiveErrors) {
+                            return {
+                                status: 'error',
+                                message: `Recovery status polling failed (HTTP ${response.status}). Jalankan ulang recovery.`,
+                                error: `HTTP ${response.status} after ${consecutiveErrors} attempts`,
+                            };
+                        }
+                        // Continue polling with delay
+                        const delayMs = Math.min(baseDelayMs * (1 + attempt / 100), maxDelayMs);
+                        await new Promise((resolve) => setTimeout(resolve, delayMs));
+                        attempt++;
+                        continue;
+                    }
+
+                    const state = await response.json().catch(() => ({}));
+                    
+                    // Reset error counter on successful response
+                    if (state && typeof state === 'object') {
+                        consecutiveErrors = 0;
+                    }
+
+                    updateRecoveryProgress(state);
+
+                    const status = String(state?.status || '').toLowerCase();
+                    if (['completed', 'failed', 'warning', 'error'].includes(status)) {
+                        return state;
+                    }
+
+                    // Calculate exponential backoff delay
+                    // Start at 500ms, increase progressively, cap at 5 seconds
+                    const progress = (attempt + 1) / maxAttempts;
+                    const delayMs = Math.min(
+                        baseDelayMs + Math.floor(progress * progress * 4500),
+                        maxDelayMs
+                    );
+
+                    await new Promise((resolve) => setTimeout(resolve, delayMs));
+                } catch (error) {
+                    consecutiveErrors++;
+                    
+                    // Special handling for timeout
+                    if (error instanceof DOMException && error.name === 'AbortError') {
+                        if (consecutiveErrors >= maxConsecutiveErrors) {
+                            return {
+                                status: 'error',
+                                message: 'Recovery status polling timeout. Koneksi terputus. Jalankan ulang recovery.',
+                                error: 'Request timeout',
+                            };
+                        }
+                    } else if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
+                        // Network error
+                        if (consecutiveErrors >= maxConsecutiveErrors) {
+                            return {
+                                status: 'error',
+                                message: 'Network error saat polling recovery status. Periksa koneksi internet dan jalankan ulang.',
+                                error: 'Network error',
+                            };
+                        }
+                    }
+
+                    // Continue polling with delay
+                    const delayMs = Math.min(baseDelayMs * Math.pow(1.5, consecutiveErrors), maxDelayMs);
+                    await new Promise((resolve) => setTimeout(resolve, delayMs));
                 }
 
-                await new Promise((resolve) => setTimeout(resolve, 1000));
+                attempt++;
             }
 
-            return { status: 'warning', message: 'Recovery backup masih berjalan di background.' };
+            return {
+                status: 'warning',
+                message: 'Recovery backup masih berjalan di background setelah 4 jam polling. Cek status ulang nanti.',
+            };
         }
 
         async function handleRecovery() {
-            if (!btnManagementRecover || !managementReportSelect?.value || !managementBackupSelect?.value) {
+            // ✅ Validate all required elements and values
+            if (!btnManagementRecover) {
+                console.error('[Recovery] Recovery button not found');
                 return;
             }
 
+            // Get current values
+            const reportId = managementReportSelect?.value;
+            const backupPath = managementBackupSelect?.value;
+
+            // ✅ Check if both selections are made
+            if (!reportId || !backupPath) {
+                await Swal.fire({
+                    icon: 'warning',
+                    title: 'Input Tidak Lengkap',
+                    text: 'Silakan pilih report dan file backup sebelum menjalankan recovery.',
+                });
+                console.warn('[Recovery] Missing input:', { hasReport: !!reportId, hasBackup: !!backupPath });
+                return;
+            }
+
+            // ✅ Get human-readable labels
             const backupLabel = managementBackupSelect.selectedOptions?.[0]?.text || 'backup terpilih';
             const reportLabel = managementReportSelect.selectedOptions?.[0]?.text || 'report terpilih';
+            
+            console.log('[Recovery] Starting recovery with:', { reportId, backupPath, reportLabel, backupLabel });
+            
             const confirmation = await Swal.fire({
                 icon: 'warning',
                 title: 'Recover Data Report?',
-                html: `Data pada <b>${reportLabel}</b> akan diganti dari backup <b>${backupLabel}</b>.`,
+                html: `
+                    <p>Data pada <b>${reportLabel}</b> akan diganti sepenuhnya dari backup:</p>
+                    <p><b>${backupLabel}</b></p>
+                    <p style="color: #dc3545; font-size: 0.9rem;">⚠️ Aksi ini tidak bisa dibatalkan. Pastikan backup dipilih dengan benar.</p>
+                `,
                 showCancelButton: true,
-                confirmButtonText: 'Lanjutkan',
+                confirmButtonText: 'Ya, Lanjutkan Recovery',
                 cancelButtonText: 'Batal',
+                confirmButtonColor: '#dc3545',
             });
 
             if (!confirmation.isConfirmed) {
+                console.log('[Recovery] User cancelled recovery');
                 return;
             }
 
-            updateRecoveryProgress({
-                status: 'queued',
-                stage: 'queued',
-                progress_percent: 0,
-                completed_units: 0,
-                total_units: 6,
-                message: 'Menjadwalkan recovery backup report...',
-            });
+            try {
+                updateRecoveryProgress({
+                    status: 'queued',
+                    stage: 'queued',
+                    progress_percent: 0,
+                    completed_units: 0,
+                    total_units: 6,
+                    message: 'Menjadwalkan recovery backup report...',
+                });
 
-            const payload = await postJson(reportManagementCard.dataset.recoverUrl, {
-                id_report: Number(managementReportSelect.value || 0),
-                backup_path: String(managementBackupSelect.value || ''),
-            });
+                const payload = await postJson(reportManagementCard.dataset.recoverUrl, {
+                    id_report: Number(managementReportSelect.value || 0),
+                    backup_path: String(managementBackupSelect.value || ''),
+                });
 
-            if (payload.status === 'error') {
-                throw new Error(payload.message || 'Gagal memulai recovery backup.');
+                if (payload.status === 'error') {
+                    throw new Error(payload.message || 'Gagal memulai recovery backup.');
+                }
+
+                const recoveryId = String(payload.recovery_id || '').trim();
+                if (!recoveryId || !/^[a-f0-9\-]{36}$/i.test(recoveryId)) {
+                    throw new Error('Recovery ID tidak valid. Server response error.');
+                }
+
+                const statusUrl = String(reportManagementCard.dataset.recoverStatusUrlTemplate || '')
+                    .replace('__RECOVERY_ID__', encodeURIComponent(recoveryId));
+                
+                if (!statusUrl) {
+                    throw new Error('Status URL template tidak dikonfigurasi dengan benar.');
+                }
+
+                const finalState = await pollRecoveryStatus(statusUrl);
+
+                if (!finalState) {
+                    throw new Error('Tidak ada response dari server saat polling status.');
+                }
+
+                if (String(finalState?.status || '').toLowerCase() === 'failed') {
+                    throw new Error(finalState?.error || finalState?.message || 'Recovery backup gagal dijalankan.');
+                }
+
+                await Swal.fire({
+                    icon: String(finalState?.status || '').toLowerCase() === 'warning' ? 'warning' : 'success',
+                    title: String(finalState?.status || '').toLowerCase() === 'warning' ? 'Recovery Berlanjut' : 'Recovery Selesai',
+                    text: finalState?.message || 'Recovery backup selesai diproses.',
+                    confirmButtonColor: '#28a745',
+                });
+
+                await refreshCurrentGrid();
+            } catch (error) {
+                const errorMessage = error instanceof Error ? error.message : 'Error tidak diketahui';
+                
+                await Swal.fire({
+                    icon: 'error',
+                    title: 'Recovery Gagal',
+                    text: errorMessage,
+                    confirmButtonColor: '#dc3545',
+                });
+
+                console.error('Recovery error:', error);
+                
+                // Reset progress display on error
+                if (managementRecoveryProgress) {
+                    managementRecoveryProgress.classList.add('d-none');
+                }
             }
-
-            const recoveryId = String(payload.recovery_id || '').trim();
-            if (!recoveryId) {
-                throw new Error('Recovery ID tidak diterima dari server.');
-            }
-
-            const finalState = await pollRecoveryStatus(
-                String(reportManagementCard.dataset.recoverStatusUrlTemplate || '').replace('__RECOVERY_ID__', encodeURIComponent(recoveryId))
-            );
-
-            if (String(finalState?.status || '').toLowerCase() === 'failed') {
-                throw new Error(finalState?.error || finalState?.message || 'Recovery backup gagal.');
-            }
-
-            await Swal.fire({
-                icon: String(finalState?.status || '').toLowerCase() === 'warning' ? 'warning' : 'success',
-                title: String(finalState?.status || '').toLowerCase() === 'warning' ? 'Recovery Berjalan' : 'Recovery Selesai',
-                text: finalState?.message || 'Recovery backup selesai diproses.',
-            });
-
-            await refreshCurrentGrid();
         }
 
         async function pollRebuildStatus(statusUrl) {
@@ -590,46 +763,74 @@
             return { status: 'warning', message: 'Rebuild snapshot masih berjalan di background.' };
         }
 
+        // ✅ FIXED: Initialize button state immediately
         syncExtraActionState();
 
-        managementReportSelect.addEventListener('change', function () {
-            if (managementRecoveryProgress) {
-                managementRecoveryProgress.classList.add('d-none');
-            }
-            syncExtraActionState();
-        });
-        managementBackupSelect?.addEventListener('change', syncExtraActionState);
-        managementRebuildForce?.addEventListener('change', syncExtraActionState);
-        btnManagementDeduplicate?.addEventListener('click', async function () {
-            btnManagementDeduplicate.disabled = true;
-            try {
-                await handleDeduplicate();
-            } catch (error) {
-                await Swal.fire({ icon: 'error', title: 'Hapus Duplikat Gagal', text: error.message || 'Terjadi kesalahan saat memproses duplikat.' });
-            } finally {
+        // ✅ FIXED: Attach event listeners with explicit null checks (not optional chaining)
+        if (managementReportSelect) {
+            managementReportSelect.addEventListener('change', function () {
+                if (managementRecoveryProgress) {
+                    managementRecoveryProgress.classList.add('d-none');
+                }
                 syncExtraActionState();
-            }
-        });
-        btnManagementRebuild?.addEventListener('click', async function () {
-            btnManagementRebuild.disabled = true;
-            try {
-                await handleRebuild();
-            } catch (error) {
-                await Swal.fire({ icon: 'error', title: 'Rebuild Gagal', text: error.message || 'Terjadi kesalahan saat menjadwalkan rebuild.' });
-            } finally {
+            });
+        }
+
+        // ✅ CRITICAL FIX: This is the main issue - backup select listener must be attached!
+        if (managementBackupSelect) {
+            managementBackupSelect.addEventListener('change', function () {
+                console.debug('[Recovery] Backup selection changed to:', this.value);
                 syncExtraActionState();
-            }
-        });
-        btnManagementRecover?.addEventListener('click', async function () {
-            btnManagementRecover.disabled = true;
-            try {
-                await handleRecovery();
-            } catch (error) {
-                await Swal.fire({ icon: 'error', title: 'Recovery Gagal', text: error.message || 'Terjadi kesalahan saat memproses recovery backup.' });
-            } finally {
-                syncExtraActionState();
-            }
-        });
+            });
+        } else {
+            console.error('[Recovery] managementBackupSelect not found - cannot attach change listener!');
+        }
+
+        if (managementRebuildForce) {
+            managementRebuildForce.addEventListener('change', syncExtraActionState);
+        }
+        if (btnManagementDeduplicate) {
+            btnManagementDeduplicate.addEventListener('click', async function () {
+                btnManagementDeduplicate.disabled = true;
+                try {
+                    await handleDeduplicate();
+                } catch (error) {
+                    await Swal.fire({ icon: 'error', title: 'Hapus Duplikat Gagal', text: error.message || 'Terjadi kesalahan saat memproses duplikat.' });
+                } finally {
+                    syncExtraActionState();
+                }
+            });
+        }
+
+        if (btnManagementRebuild) {
+            btnManagementRebuild.addEventListener('click', async function () {
+                btnManagementRebuild.disabled = true;
+                try {
+                    await handleRebuild();
+                } catch (error) {
+                    await Swal.fire({ icon: 'error', title: 'Rebuild Gagal', text: error.message || 'Terjadi kesalahan saat menjadwalkan rebuild.' });
+                } finally {
+                    syncExtraActionState();
+                }
+            });
+        }
+
+        if (btnManagementRecover) {
+            btnManagementRecover.addEventListener('click', async function () {
+                console.log('[Recovery] Recovery button clicked');
+                btnManagementRecover.disabled = true;
+                try {
+                    await handleRecovery();
+                } catch (error) {
+                    console.error('[Recovery] Recovery error:', error);
+                    await Swal.fire({ icon: 'error', title: 'Recovery Gagal', text: error.message || 'Terjadi kesalahan saat memproses recovery backup.' });
+                } finally {
+                    syncExtraActionState();
+                }
+            });
+        } else {
+            console.error('[Recovery] Recovery button not found - cannot attach click handler!');
+        }
     });
 </script>
 @endsection
