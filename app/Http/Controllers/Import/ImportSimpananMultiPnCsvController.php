@@ -303,9 +303,25 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
         $absolutePath = (string) ($eligibility['absolute_path'] ?? '');
         $totalRows = (int) ($eligibility['total_rows'] ?? 0);
 
+        // Calculate file fingerprint untuk deduplication check
+        $contentHash = '';
+        try {
+            $contentHash = $this->calculateFileFingerprint($absolutePath);
+            Log::debug('Simpanan MultiPN: Content fingerprint calculated', [
+                'job_id' => $jobId,
+                'content_hash' => $contentHash,
+                'file_size' => @filesize($absolutePath),
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('Simpanan MultiPN: Fingerprint calculation failed (continuing): ' . $e->getMessage(), [
+                'job_id' => $jobId,
+                'file' => basename($absolutePath),
+            ]);
+        }
+
         request()->session()->save();
 
-        return response()->stream(function () use ($jobId, $relativePath, $absolutePath, $totalRows, $normalizedHeaders, $selectedColumns, $activeFilters, $params) {
+        return response()->stream(function () use ($jobId, $relativePath, $absolutePath, $totalRows, $normalizedHeaders, $selectedColumns, $activeFilters, $params, $contentHash) {
             $streamLock = null;
             $cleanupPaths = [];
             $usePolarsStage = !empty($activeFilters);
@@ -429,6 +445,23 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                     'speed' => 0,
                 ]);
 
+                // Validate file uniqueness before processing
+                if ($contentHash !== '') {
+                    try {
+                        $periodHints = $this->collectSimpananMultiPnSnapshotPeriods($absolutePath);
+                        if (!empty($periodHints)) {
+                            $this->validateFileUniqueness($contentHash, $periodHints);
+                            Log::info('Simpanan MultiPN: File uniqueness validation passed', [
+                                'job_id' => $jobId,
+                                'content_hash' => $contentHash,
+                                'periods_count' => count($periodHints),
+                            ]);
+                        }
+                    } catch (\RuntimeException $e) {
+                        throw new \RuntimeException('Validasi keunikan file gagal: ' . $e->getMessage());
+                    }
+                }
+
                 try {
                     if ($usePolarsStage) {
                         $preparedSource = $this->stageSimpananMultiPnCsvWithPolars(
@@ -449,13 +482,13 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                         $loadPlan = $this->buildDirectCsvLoadPlan($preparedSource['path'], $normalizedHeaders, $selectedColumns, $send, [
                             'prepared_source' => $preparedSource,
                             'delimiter' => $params['delimiter'] ?? null,
-                        ]);
+                        ], $contentHash);
                     } else {
                         $preparedSource = $this->prepareSimpananMultiPnDirectLoadSource($absolutePath, $params['delimiter'] ?? null, $send);
                         $loadPlan = $this->buildDirectCsvLoadPlan($absolutePath, $normalizedHeaders, $selectedColumns, $send, [
                             'prepared_source' => $preparedSource,
                             'delimiter' => $params['delimiter'] ?? null,
-                        ]);
+                        ], $contentHash);
                         if (!empty($loadPlan['cleanup_path']) && is_string($loadPlan['cleanup_path'])) {
                             $cleanupPaths[] = $loadPlan['cleanup_path'];
                         }
@@ -901,7 +934,8 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
         array $normalizedHeaders,
         array $selectedColumns,
         ?callable $send = null,
-        array $sourceMeta = []
+        array $sourceMeta = [],
+        string $contentHash = ''
     ): array
     {
         $assumeCleanSource = (bool) ($sourceMeta['assume_clean_source'] ?? false);
@@ -1135,6 +1169,10 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
             $plan['source_balance_total_cents'] = $sourceBalanceTotalCents;
         }
 
+        if ($contentHash !== '') {
+            $plan['content_hash'] = $contentHash;
+        }
+
         return $plan;
     }
 
@@ -1244,6 +1282,23 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
 
             try {
                 $pdo->beginTransaction();
+
+                // Capture MySQL connection ID for termination support
+                $mysqlThreadId = null;
+                try {
+                    $mysqlThreadId = (int) $pdo->query('SELECT CONNECTION_ID()')->fetchColumn();
+                    if ($mysqlThreadId > 0 && $jobId > 0) {
+                        $this->storeJobMetadataThreadId($jobId, $mysqlThreadId, (array) ($loadPlan['content_hash'] ?? ''));
+                        Log::debug('Simpanan MultiPN: MySQL thread ID captured', [
+                            'job_id' => $jobId,
+                            'mysql_thread_id' => $mysqlThreadId,
+                        ]);
+                    }
+                } catch (\Throwable $e) {
+                    Log::warning('Failed to capture MySQL thread ID: ' . $e->getMessage(), [
+                        'job_id' => $jobId,
+                    ]);
+                }
 
                 if ($send) {
                     $send('progress', [
@@ -1632,6 +1687,150 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
             Log::warning('Gagal menjalankan cleanup terpusat Simpanan MultiPN CSV: ' . $e->getMessage(), [
                 'job_id' => $jobId,
                 'relative_path' => $relativePath,
+            ]);
+        }
+    }
+
+    private function calculateFileFingerprint(string $absolutePath): string
+    {
+        if (!file_exists($absolutePath)) {
+            throw new \RuntimeException('File tidak ditemukan saat menghitung fingerprint: ' . $absolutePath);
+        }
+
+        $fileName = basename($absolutePath);
+        $fileSize = @filesize($absolutePath);
+
+        if ($fileSize === false) {
+            throw new \RuntimeException('Gagal membaca ukuran file untuk fingerprinting: ' . $absolutePath);
+        }
+
+        $handle = @fopen($absolutePath, 'rb');
+        if ($handle === false) {
+            throw new \RuntimeException('Gagal membuka file untuk fingerprinting: ' . $absolutePath);
+        }
+
+        try {
+            $sample = @fread($handle, 8192);
+            if ($sample === false) {
+                throw new \RuntimeException('Gagal membaca sampel file untuk fingerprinting: ' . $absolutePath);
+            }
+
+            return sha1($fileName . '|' . $fileSize . '|' . $sample);
+        } finally {
+            @fclose($handle);
+        }
+    }
+
+    private function validateFileUniqueness(string $contentHash, array $periodHints): void
+    {
+        $periodHints = array_values(array_unique(array_filter(array_map(
+            static fn ($value): string => trim((string) $value),
+            $periodHints
+        ), static fn (string $value): bool => $value !== '')));
+
+        if (empty($periodHints)) {
+            return;
+        }
+
+        try {
+            $existingJobs = DB::table('import_jobs')
+                ->where('status', 'completed')
+                ->where('id_report', self::REPORT_ID)
+                ->get(['id', 'job_context']);
+
+            foreach ($existingJobs as $job) {
+                $jobContext = $job->job_context;
+                if (!is_string($jobContext) || trim($jobContext) === '') {
+                    continue;
+                }
+
+                $context = @json_decode($jobContext, true);
+                if (!is_array($context)) {
+                    continue;
+                }
+
+                $storedHash = trim((string) ($context['content_hash'] ?? ''));
+                if ($storedHash === '' || $storedHash !== $contentHash) {
+                    continue;
+                }
+
+                $storedPeriods = (array) ($context['period_hints'] ?? []);
+                $storedPeriods = array_values(array_unique(array_filter(array_map(
+                    static fn ($value): string => trim((string) $value),
+                    $storedPeriods
+                ), static fn (string $value): bool => $value !== '')));
+
+                if (empty($storedPeriods)) {
+                    continue;
+                }
+
+                $hasOverlapPeriod = false;
+                foreach ($periodHints as $period) {
+                    if (in_array($period, $storedPeriods, true)) {
+                        $hasOverlapPeriod = true;
+                        break;
+                    }
+                }
+
+                if ($hasOverlapPeriod) {
+                    throw new \RuntimeException(
+                        'File sudah pernah di-import sebelumnya untuk periode yang sama. '
+                        . 'Gunakan file berbeda atau ubah periode upload.'
+                    );
+                }
+            }
+        } catch (\RuntimeException $e) {
+            throw $e;
+        } catch (\Throwable $e) {
+            Log::warning('Validasi keunikan file Simpanan MultiPN gagal (continuing without check): ' . $e->getMessage(), [
+                'content_hash' => $contentHash,
+            ]);
+        }
+    }
+
+    private function storeJobMetadataThreadId(int $jobId, int $mysqlThreadId, array $loadPlanMeta = []): void
+    {
+        if ($jobId <= 0 || $mysqlThreadId <= 0) {
+            return;
+        }
+
+        try {
+            $job = DB::table('import_jobs')->where('id', $jobId)->first(['job_context']);
+            if (!$job) {
+                return;
+            }
+
+            $jobContext = $job->job_context;
+            $context = is_string($jobContext) && trim($jobContext) !== ''
+                ? @json_decode($jobContext, true)
+                : [];
+
+            if (!is_array($context)) {
+                $context = [];
+            }
+
+            $context['mysql_thread_id'] = $mysqlThreadId;
+
+            if (!empty($loadPlanMeta) && isset($loadPlanMeta['content_hash'])) {
+                $context['content_hash'] = $loadPlanMeta['content_hash'];
+            }
+
+            $encoded = json_encode($context, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            if ($encoded === false) {
+                Log::warning('Failed to encode job context for thread ID storage', [
+                    'job_id' => $jobId,
+                    'mysql_thread_id' => $mysqlThreadId,
+                ]);
+                return;
+            }
+
+            DB::table('import_jobs')
+                ->where('id', $jobId)
+                ->update(['job_context' => $encoded]);
+        } catch (\Throwable $e) {
+            Log::warning('Failed to store job metadata thread ID: ' . $e->getMessage(), [
+                'job_id' => $jobId,
+                'mysql_thread_id' => $mysqlThreadId,
             ]);
         }
     }

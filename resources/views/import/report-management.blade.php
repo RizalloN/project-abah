@@ -262,13 +262,26 @@
             return Number(value || 0).toLocaleString('id-ID');
         }
 
+        function formatManagementBytes(value) {
+            const bytes = Number(value || 0);
+            if (!Number.isFinite(bytes) || bytes <= 0) {
+                return '0 B';
+            }
+
+            const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+            const unitIndex = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+            const scaled = bytes / Math.pow(1024, unitIndex);
+
+            return `${scaled.toFixed(unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+        }
+
         function humanizeRecoveryStage(stage) {
             const lookup = {
                 queued: 'Queued',
                 validating: 'Validasi',
                 extracting_backup: 'Ekstraksi',
                 importing_backup: 'Import SQL',
-                swapping_data: 'Pulihkan Data',
+                swapping_data: 'Tukar Tabel',
                 syncing: 'Sinkronisasi',
                 cleanup: 'Cleanup',
                 completed: 'Selesai',
@@ -454,8 +467,10 @@
                     managementRecoveryMeta.textContent = `${formatManagementNumber(result.restored_rows || 0)} baris dipulihkan ke tabel ${result.table_name || '-'}.`;
                 } else if (status === 'failed') {
                     managementRecoveryMeta.textContent = payload?.error || 'Recovery backup gagal.';
-                } else if (stage === 'extracting_backup' && payload?.bytes_read && payload?.total_bytes) {
-                    managementRecoveryMeta.textContent = `Memindai ${(Number(payload.bytes_read) / 1024 / 1024).toFixed(1)} MB dari ${(Number(payload.total_bytes) / 1024 / 1024).toFixed(1)} MB backup.`;
+                } else if (payload?.bytes_read !== undefined && payload?.total_bytes !== undefined) {
+                    managementRecoveryMeta.textContent = `Memindai ${formatManagementBytes(payload.bytes_read)} dari ${formatManagementBytes(payload.total_bytes)} backup.`;
+                } else if (payload?.bytes_written !== undefined && payload?.total_bytes !== undefined) {
+                    managementRecoveryMeta.textContent = `Mengimpor ${formatManagementBytes(payload.bytes_written)} dari ${formatManagementBytes(payload.total_bytes)} staging SQL.`;
                 } else {
                     managementRecoveryMeta.textContent = 'Recovery dilakukan per tabel agar lebih aman dibanding restore full database.';
                 }
@@ -483,7 +498,7 @@
                     return state;
                 }
 
-                await new Promise((resolve) => setTimeout(resolve, 1500));
+                await new Promise((resolve) => setTimeout(resolve, 1000));
             }
 
             return { status: 'warning', message: 'Recovery backup masih berjalan di background.' };

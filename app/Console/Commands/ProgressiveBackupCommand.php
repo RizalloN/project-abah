@@ -26,11 +26,15 @@ class ProgressiveBackupCommand extends Command
                 File::makeDirectory($backupDirectory, 0755, true);
             }
 
-            $filename = sprintf(
-                '%s_full_%s.sql.gz',
+            $baseName = sprintf(
+                '%s_full_%s',
                 preg_replace('/[^A-Za-z0-9_-]+/', '_', $database) ?: 'database',
                 now()->format('Ymd_His')
             );
+
+            $gzipPath = $this->resolveGzipPath();
+            $extension = $gzipPath !== '' ? '.sql.gz' : '.sql';
+            $filename = $baseName . $extension;
             $absolutePath = $backupDirectory . DIRECTORY_SEPARATOR . $filename;
 
             Cache::put($cacheKey, [
@@ -42,22 +46,29 @@ class ProgressiveBackupCommand extends Command
                 'message' => 'Memulai backup database dengan single-pass optimization...',
                 'updated_at' => now()->timestamp,
                 'backup_file' => $absolutePath,
+                'compression_enabled' => $gzipPath !== '',
             ], now()->addHours(1));
 
             // Single-pass optimized backup with compression
             $this->performOptimizedBackup($backupService, $cacheKey, $absolutePath, $database);
+
+            $actualFilename = basename($absolutePath);
+            if (!is_file($absolutePath)) {
+                $actualFilename = $baseName . (file_exists($baseName . '.sql.gz') ? '.sql.gz' : '.sql');
+                $absolutePath = $backupDirectory . DIRECTORY_SEPARATOR . $actualFilename;
+            }
 
             Cache::put($cacheKey, [
                 'status' => 'completed',
                 'progress_percent' => 100,
                 'current_table_index' => 1,
                 'total_tables' => 1,
-                'message' => 'Backup database selesai (compressed).',
+                'message' => 'Backup database selesai.',
                 'updated_at' => now()->timestamp,
                 'file' => [
-                    'name' => $filename,
-                    'relative_path' => 'private/database_backups/' . $filename,
-                    'download_url' => route('file-management.download', ['path' => 'private/database_backups/' . $filename]),
+                    'name' => $actualFilename,
+                    'relative_path' => 'private/database_backups/' . $actualFilename,
+                    'download_url' => route('file-management.download', ['path' => 'private/database_backups/' . $actualFilename]),
                     'size' => is_file($absolutePath) ? filesize($absolutePath) : 0,
                     'size_human' => is_file($absolutePath) ? $this->formatBytes(filesize($absolutePath)) : '0 B',
                 ],
@@ -212,12 +223,6 @@ class ProgressiveBackupCommand extends Command
 
     private function startWindowsBackupProcess(array $command, string $outputPath, array $environment)
     {
-        $descriptors = [
-            0 => ['pipe', 'r'],
-            1 => ['pipe', 'w'],
-            2 => ['pipe', 'w'],
-        ];
-
         $baseEnvironment = [];
         foreach (array_merge($_ENV, $_SERVER) as $key => $value) {
             if (!is_string($key) || $key === '' || is_array($value) || is_object($value)) {
@@ -227,9 +232,16 @@ class ProgressiveBackupCommand extends Command
         }
 
         $mergedEnvironment = array_merge($baseEnvironment, $environment);
-        
-        // Convert command array to string
+
+        // Add --result-file directly to command for direct disk write (avoids stream_copy_to_stream blocking)
+        $command[] = '--result-file=' . $outputPath;
         $commandStr = implode(' ', array_map('escapeshellarg', $command));
+
+        $descriptors = [
+            0 => ['pipe', 'r'],
+            1 => ['pipe', 'w'],
+            2 => ['pipe', 'w'],
+        ];
 
         $process = proc_open($commandStr, $descriptors, $pipes, base_path(), $mergedEnvironment, ['bypass_shell' => true]);
         if (!is_resource($process)) {
@@ -238,32 +250,19 @@ class ProgressiveBackupCommand extends Command
 
         fclose($pipes[0]);
 
-        // Try to compress with gzip if available
+        // Try to compress output with gzip if available (post-process)
         $gzipPath = $this->resolveGzipPath();
         if ($gzipPath !== '') {
             try {
-                $this->pipeToGzip($pipes[1], $outputPath, $gzipPath);
+                $this->compressFileWithGzip($outputPath, $gzipPath);
             } catch (\Exception $e) {
-                Log::warning('Gzip compression not available, writing uncompressed: ' . $e->getMessage());
-                $output = fopen($outputPath, 'wb');
-                if (is_resource($output)) {
-                    stream_copy_to_stream($pipes[1], $output);
-                    fclose($output);
-                }
-            }
-        } else {
-            // Fallback to uncompressed
-            $output = fopen($outputPath, 'wb');
-            if (is_resource($output)) {
-                stream_copy_to_stream($pipes[1], $output);
-                fclose($output);
+                Log::warning('Gzip compression failed, backup file left uncompressed: ' . $e->getMessage());
             }
         }
 
         fclose($pipes[1]);
 
         // Store pipes globally for cleanup in main process
-        $GLOBALS['backup_stdout_pipe'] = $pipes[1];
         $GLOBALS['backup_stderr_pipe'] = $pipes[2];
 
         return $process;
@@ -300,17 +299,23 @@ class ProgressiveBackupCommand extends Command
         return $process;
     }
 
-    private function pipeToGzip($source, string $outputPath, string $gzipPath): void
+    private function compressFileWithGzip(string $inputPath, string $gzipPath): void
     {
+        if (!is_file($inputPath)) {
+            throw new \RuntimeException("Input file tidak ditemukan: {$inputPath}");
+        }
+
+        $outputPath = $inputPath . '.gz';
+
         $descriptors = [
-            0 => $source,
+            0 => ['file', $inputPath, 'rb'],
             1 => ['file', $outputPath, 'wb'],
             2 => ['pipe', 'w'],
         ];
 
         $pipes = [];
         $process = proc_open(
-            escapeshellarg($gzipPath),
+            escapeshellarg($gzipPath) . ' --best --force',
             $descriptors,
             $pipes,
             base_path(),
@@ -323,7 +328,16 @@ class ProgressiveBackupCommand extends Command
         }
 
         fclose($pipes[2]);
-        proc_close($process);
+        $exitCode = proc_close($process);
+
+        if ($exitCode !== 0) {
+            throw new \RuntimeException("Gzip compression failed with exit code: {$exitCode}");
+        }
+
+        // Remove original uncompressed file
+        if (is_file($inputPath)) {
+            @unlink($inputPath);
+        }
     }
 
     private function resolveDumpBinaryPath(): string
@@ -351,6 +365,7 @@ class ProgressiveBackupCommand extends Command
         $candidates = [
             'C:\\xampp\\php\\gzip.exe',
             'C:\\Program Files\\Git\\usr\\bin\\gzip.exe',
+            'C:\\Windows\\System32\\gzip.exe',
             '/usr/bin/gzip',
             '/bin/gzip',
         ];

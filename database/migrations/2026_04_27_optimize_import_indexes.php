@@ -38,24 +38,23 @@ return new class extends Migration
         // SV Merchant - Duplicate Key + Covering Indexes
         // ───────────────────────────────────────────────────────────────
         if (Schema::hasTable('sv_merchant')) {
-            // Composite unique key untuk SV Merchant (periode + uniqueid)
+            // Composite unique key untuk SV Merchant (PERIODE + uniqueid)
             $this->ensureIndexExists('sv_merchant', 'idx_periode_uid', [
-                'periode',
+                'PERIODE',
                 'uniqueid_namareport',
             ], isUnique: false);
 
             // Covering index untuk POSISI queries
             $this->ensureIndexExists('sv_merchant', 'idx_posisi_periode_uid', [
-                'posisi',
-                'periode',
+                'POSISI',
+                'PERIODE',
                 'uniqueid_namareport',
             ], isUnique: false);
 
-            // Covering index untuk branch/kanwil filtering
-            $this->ensureIndexExists('sv_merchant', 'idx_branch_kanwil', [
-                'kode_branch',
-                'kode_kanwil',
-                'periode',
+            // Covering index untuk branch filtering
+            $this->ensureIndexExists('sv_merchant', 'idx_nama_branch_uid', [
+                'NAMA_BRANCH',
+                'uniqueid_namareport',
             ], isUnique: false);
         }
 
@@ -118,12 +117,13 @@ return new class extends Migration
         // ───────────────────────────────────────────────────────────────
         if (Schema::hasTable('simpanan_multipn')) {
             $this->ensureIndexExists('simpanan_multipn', 'idx_unique_id', [
-                'uniqueid_SimoPN',
+                'uniqueid_SMPN',
             ], isUnique: false);
 
-            $this->ensureIndexExists('simpanan_multipn', 'idx_periode_uid', [
-                'periode',
-                'uniqueid_SimoPN',
+            // Covering index untuk posisi + uniqueid queries
+            $this->ensureIndexExists('simpanan_multipn', 'idx_posisi_uid', [
+                'posisi',
+                'uniqueid_SMPN',
             ], isUnique: false);
         }
 
@@ -145,24 +145,26 @@ return new class extends Migration
 
     public function down(): void
     {
-        // Drop indexes (reverse operation)
+        // Drop indexes (reverse operation) using raw SQL with IF EXISTS
         $tables = [
             'jumlah_merchant_qris_detail' => ['idx_unique_id', 'idx_posisi_uid'],
-            'sv_merchant' => ['idx_periode_uid', 'idx_posisi_periode_uid', 'idx_branch_kanwil'],
+            'sv_merchant' => ['idx_periode_uid', 'idx_posisi_periode_uid', 'idx_nama_branch_uid'],
             'jumlah_merchant_qris' => ['idx_periode_uid', 'idx_posisi_uid'],
             'merchant_qris_volume' => ['idx_periode_uid'],
             'user_brimo_rpt_v2' => ['idx_unique_id', 'idx_periode_uid'],
             'brimo_fin' => ['idx_periode_uid', 'idx_posisi_uid'],
-            'simpanan_multipn' => ['idx_unique_id', 'idx_periode_uid'],
+            'simpanan_multipn' => ['idx_unique_id', 'idx_posisi_uid'],
             'pinjaman' => ['idx_periode_uid', 'idx_posisi_uid'],
         ];
 
         foreach ($tables as $tableName => $indexes) {
             if (Schema::hasTable($tableName)) {
                 foreach ($indexes as $indexName) {
-                    Schema::table($tableName, function (Blueprint $table) use ($indexName) {
-                        $table->dropIndexIfExists($indexName);
-                    });
+                    try {
+                        DB::statement("ALTER TABLE `{$tableName}` DROP INDEX `{$indexName}`");
+                    } catch (\Exception $e) {
+                        // Index might not exist, ignore error
+                    }
                 }
             }
         }

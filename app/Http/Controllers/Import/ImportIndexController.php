@@ -3112,13 +3112,22 @@ class ImportIndexController extends Controller
 
     private function managedDatabaseBackupOptions(): array
     {
-        $directory = storage_path('app/private/database_backups');
-        if (!is_dir($directory)) {
-            return [];
+        $directories = $this->managedDatabaseBackupDirectories();
+        $files = collect();
+
+        foreach ($directories as $directory) {
+            if (!is_dir($directory)) {
+                continue;
+            }
+
+            $files = $files->concat(
+                collect(File::files($directory))
+                    ->filter(static fn ($file): bool => in_array(strtolower($file->getExtension()), ['sql', 'gz'], true))
+            );
         }
 
-        return collect(File::files($directory))
-            ->filter(static fn ($file): bool => strtolower($file->getExtension()) === 'sql')
+        return $files
+            ->unique(static fn ($file): string => strtolower(str_replace('\\', '/', $file->getPathname())))
             ->sortByDesc(static fn ($file): int => (int) $file->getMTime())
             ->values()
             ->map(static function ($file): array {
@@ -3129,15 +3138,53 @@ class ImportIndexController extends Controller
                     ? substr($normalizedPath, strlen(rtrim($storageBase, '/')) + 1)
                     : $normalizedPath;
 
+                $size = (int) $file->getSize();
+
                 return [
                     'name' => $file->getFilename(),
                     'path' => $relativePath,
-                    'size' => (int) $file->getSize(),
-                    'size_human' => number_format(((int) $file->getSize()) / 1024 / 1024, 2, ',', '.') . ' MB',
+                    'size' => $size,
+                    'size_human' => number_format($size / 1024 / 1024, 2, ',', '.') . ' MB',
                     'modified_at' => date('d M Y H:i', (int) $file->getMTime()),
                 ];
             })
             ->all();
+    }
+
+    private function managedDatabaseBackupDirectories(): array
+    {
+        $directories = [storage_path('app/private/database_backups')];
+        $configured = trim((string) env('MANAGED_REPORT_RECOVERY_ALLOWED_BACKUP_DIRS', ''));
+
+        if ($configured !== '') {
+            foreach (preg_split('/[;,]+/', $configured) ?: [] as $entry) {
+                $entry = trim((string) $entry);
+                if ($entry === '') {
+                    continue;
+                }
+
+                $directories[] = $this->normalizeManagedRecoveryBackupPath($entry);
+            }
+        }
+
+        return array_values(array_unique(array_map(
+            static fn (string $path): string => rtrim(str_replace('\\', '/', $path), '/'),
+            $directories
+        )));
+    }
+
+    private function normalizeManagedRecoveryBackupPath(string $path): string
+    {
+        $normalized = trim(str_replace('\\', '/', $path));
+        if ($normalized === '') {
+            return storage_path('app/private/database_backups');
+        }
+
+        if (preg_match('/^[A-Za-z]:\//', $normalized) === 1 || str_starts_with($normalized, '/')) {
+            return $normalized;
+        }
+
+        return storage_path('app/' . ltrim($normalized, '/'));
     }
 
     private function resolveTemplateOption(string $templateKey, string $requestedFilename = ''): ?array

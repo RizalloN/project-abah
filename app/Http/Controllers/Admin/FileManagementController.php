@@ -210,7 +210,7 @@ class FileManagementController extends Controller
         File::put($launcherPath, implode(PHP_EOL, [
             '@echo off',
             'cd /D "' . base_path() . '"',
-            '"' . PHP_BINARY . '" "' . base_path('artisan') . '" db:backup-progressive "' . $backupId . '" >> "' . $logPath . '" 2>&1',
+            '"' . $this->resolvePhpCliBinary() . '" "' . base_path('artisan') . '" db:backup-progressive "' . $backupId . '" >> "' . $logPath . '" 2>&1',
             'del "%~f0" >NUL 2>&1',
             '',
         ]));
@@ -242,6 +242,26 @@ class FileManagementController extends Controller
         if ($exitCode !== 0) {
             throw new RuntimeException("Gagal menjalankan proses backup database di background. Lihat log: {$logPath}");
         }
+    }
+
+    private function resolvePhpCliBinary(): string
+    {
+        $candidates = [
+            PHP_BINARY,
+            PHP_BINDIR . DIRECTORY_SEPARATOR . 'php.exe',
+            PHP_BINDIR . DIRECTORY_SEPARATOR . 'php',
+            'C:\\xampp\\php\\php.exe',
+            'php',
+        ];
+
+        foreach ($candidates as $candidate) {
+            $name = strtolower((string) basename($candidate));
+            if (in_array($name, ['php.exe', 'php'], true) && ($candidate === 'php' || is_file($candidate))) {
+                return $candidate;
+            }
+        }
+
+        throw new RuntimeException('Binary PHP CLI tidak ditemukan untuk menjalankan backup database.');
     }
 
     public function destroy(Request $request): JsonResponse|RedirectResponse

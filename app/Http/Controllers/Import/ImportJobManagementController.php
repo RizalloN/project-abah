@@ -282,6 +282,21 @@ class ImportJobManagementController extends Controller
             ], 422);
         }
 
+        // Extract and kill MySQL connection if LOAD DATA is currently running
+        $killStatus = 'not_attempted';
+        if ($status === 'processing') {
+            $jobContext = $job->job_context;
+            if (is_string($jobContext) && trim($jobContext) !== '') {
+                $context = @json_decode($jobContext, true);
+                if (is_array($context)) {
+                    $mysqlThreadId = (int) ($context['mysql_thread_id'] ?? 0);
+                    if ($mysqlThreadId > 0) {
+                        $killStatus = $this->killMySqlConnection($mysqlThreadId, $jobId);
+                    }
+                }
+            }
+        }
+
         $progressService->requestTermination($jobId, auth()->id());
         $progressService->cleanupQueuedImportJobRowsForJob($jobId);
         $progressService->markTerminated(
@@ -291,11 +306,19 @@ class ImportJobManagementController extends Controller
             (int) ($job->total_failed ?? 0)
         );
 
+        $message = $status === 'queued'
+            ? 'Job queued berhasil dihentikan.'
+            : 'Job processing dihentikan paksa.';
+
+        if ($status === 'processing' && $killStatus === 'success') {
+            $message .= ' MySQL connection dipaksa disconnect untuk menghentikan LOAD DATA.';
+        } elseif ($status === 'processing' && $killStatus === 'not_found') {
+            $message .= ' MySQL thread tidak ditemukan atau sudah disconnect.';
+        }
+
         return response()->json([
             'status' => 'success',
-            'message' => $status === 'queued'
-                ? 'Job queued berhasil dihentikan.'
-                : 'Job processing dihentikan paksa. Jika worker lama masih aktif, status job tidak akan diaktifkan kembali.',
+            'message' => $message,
         ]);
     }
 
@@ -1162,5 +1185,70 @@ class ImportJobManagementController extends Controller
         }
 
         return floor($seconds / 3600) . ' jam ' . floor(($seconds % 3600) / 60) . ' mnt';
+    }
+
+    private function killMySqlConnection(int $threadId, int $jobId): string
+    {
+        if ($threadId <= 0) {
+            return 'invalid_thread_id';
+        }
+
+        try {
+            $connection = config('database.default', 'mysql');
+            $dbConfig = config("database.connections.{$connection}", []);
+            $charset = $dbConfig['charset'] ?? 'utf8mb4';
+            $host = $dbConfig['host'] ?? '127.0.0.1';
+            $port = $dbConfig['port'] ?? '3306';
+            $database = $dbConfig['database'] ?? '';
+            $username = $dbConfig['username'] ?? '';
+            $password = $dbConfig['password'] ?? '';
+            $unixSocket = $dbConfig['unix_socket'] ?? '';
+
+            $dsn = $unixSocket !== ''
+                ? "mysql:unix_socket={$unixSocket};dbname={$database};charset={$charset}"
+                : "mysql:host={$host};port={$port};dbname={$database};charset={$charset}";
+
+            $killPdo = new \PDO($dsn, $username, $password, [
+                \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
+                \PDO::ATTR_TIMEOUT => 5,
+            ]);
+
+            try {
+                $killPdo->exec("KILL CONNECTION {$threadId}");
+                Log::info('Successfully killed MySQL connection', [
+                    'job_id' => $jobId,
+                    'mysql_thread_id' => $threadId,
+                ]);
+                return 'success';
+            } finally {
+                $killPdo = null;
+            }
+        } catch (\PDOException $e) {
+            $errorMessage = strtolower($e->getMessage());
+
+            // Thread already gone or doesn't exist - not an error
+            if (str_contains($errorMessage, 'unknown thread')) {
+                Log::info('MySQL thread already terminated', [
+                    'job_id' => $jobId,
+                    'mysql_thread_id' => $threadId,
+                    'message' => $e->getMessage(),
+                ]);
+                return 'not_found';
+            }
+
+            Log::warning('Failed to kill MySQL connection', [
+                'job_id' => $jobId,
+                'mysql_thread_id' => $threadId,
+                'error' => $e->getMessage(),
+            ]);
+            return 'failed';
+        } catch (\Throwable $e) {
+            Log::warning('Unexpected error while killing MySQL connection', [
+                'job_id' => $jobId,
+                'mysql_thread_id' => $threadId,
+                'error' => $e->getMessage(),
+            ]);
+            return 'failed';
+        }
     }
 }

@@ -1,27 +1,30 @@
 <?php
-require dirname(__DIR__) . '/vendor/autoload.php';
-$app = require_once dirname(__DIR__) . '/bootstrap/app.php';
+require 'vendor/autoload.php';
+$app = require_once 'bootstrap/app.php';
 $kernel = $app->make(Illuminate\Contracts\Console\Kernel::class);
 $kernel->bootstrap();
 
 use Illuminate\Support\Facades\DB;
 
-function checkTable($name) {
-    echo "--- $name ---\n";
-    try {
-        $indexes = DB::select("SHOW INDEX FROM $name");
-        foreach ($indexes as $idx) {
-            echo "Index: {$idx->Key_name}, Column: {$idx->Column_name}\n";
-        }
-        $count = DB::table($name)->count();
-        echo "Total Rows: $count\n";
-    } catch (\Exception $e) {
-        echo "Error: " . $e->getMessage() . "\n";
-    }
-    echo "\n";
+echo "--- Top 10 Largest Tables ---\n";
+$res = DB::select("
+    SELECT table_name, 
+           round((data_length / 1024 / 1024), 2) as data_mb,
+           round((index_length / 1024 / 1024), 2) as index_mb,
+           round(((data_length + index_length) / 1024 / 1024), 2) as total_mb 
+    FROM information_schema.TABLES 
+    WHERE table_schema = DATABASE() 
+    ORDER BY (data_length + index_length) DESC 
+    LIMIT 10
+");
+
+foreach($res as $r) {
+    printf("%-30s | Data: %8s MB | Index: %8s MB | Total: %8s MB\n", 
+        $r->table_name, $r->data_mb, $r->index_mb, $r->total_mb);
 }
 
-checkTable('daily_loan_dinamis');
-checkTable('brihc');
-checkTable('performance_rm_snapshots');
-checkTable('wilayah_mbm');
+echo "\n--- simpanan_multipn Indexes ---\n";
+$indexes = DB::select("SHOW INDEX FROM simpanan_multipn");
+foreach ($indexes as $idx) {
+    printf("%-30s | %-30s | %-5s\n", $idx->Key_name, $idx->Column_name, $idx->Seq_in_index);
+}

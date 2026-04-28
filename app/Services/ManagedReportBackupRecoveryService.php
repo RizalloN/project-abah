@@ -132,8 +132,11 @@ class ManagedReportBackupRecoveryService
         }
 
         $backupName = basename($backupPath);
-        if (strtolower(pathinfo($backupName, PATHINFO_EXTENSION)) !== 'sql') {
-            throw new RuntimeException('File backup harus berformat `.sql`.');
+        $extension = strtolower(pathinfo($backupName, PATHINFO_EXTENSION));
+        $isSqlBackup = $extension === 'sql';
+        $isCompressedSqlBackup = $extension === 'gz' && str_ends_with(strtolower($backupName), '.sql.gz');
+        if (!$isSqlBackup && !$isCompressedSqlBackup) {
+            throw new RuntimeException('File backup harus berformat `.sql` atau `.sql.gz`.');
         }
 
         return [$report, $tableName, $backupPath, $backupName];
@@ -159,12 +162,27 @@ class ManagedReportBackupRecoveryService
             File::makeDirectory($workDirectory, 0755, true);
         }
 
-        $reader = fopen($backupPath, 'rb');
+        $nativeExtraction = $this->extractTableSqlWithNativeTool(
+            $backupPath,
+            $targetTable,
+            $tempTable,
+            $outputPath,
+            $progressCallback
+        );
+
+        if (is_array($nativeExtraction)) {
+            return $nativeExtraction;
+        }
+
+        $isCompressed = $this->isCompressedBackupPath($backupPath);
+        $reader = $isCompressed ? gzopen($backupPath, 'rb') : fopen($backupPath, 'rb');
         $writer = fopen($outputPath, 'wb');
 
-        if (!is_resource($reader) || !is_resource($writer)) {
-            if (is_resource($reader)) {
+        if ((!$isCompressed && !is_resource($reader)) || !is_resource($writer)) {
+            if (!$isCompressed && is_resource($reader)) {
                 fclose($reader);
+            } elseif ($isCompressed && is_resource($reader)) {
+                gzclose($reader);
             }
             if (is_resource($writer)) {
                 fclose($writer);
@@ -186,7 +204,7 @@ class ManagedReportBackupRecoveryService
         $dataMatched = false;
 
         try {
-            while (($line = fgets($reader)) !== false) {
+            while (($line = $isCompressed ? gzgets($reader) : fgets($reader)) !== false) {
                 $bytesRead += strlen($line);
                 $buffer .= $line;
 
@@ -216,7 +234,11 @@ class ManagedReportBackupRecoveryService
             fwrite($writer, "SET SQL_NOTES=1;\n");
             fwrite($writer, "SET UNIQUE_CHECKS=1;\n");
             fwrite($writer, "SET FOREIGN_KEY_CHECKS=1;\n");
-            fclose($reader);
+            if ($isCompressed) {
+                gzclose($reader);
+            } else {
+                fclose($reader);
+            }
             fclose($writer);
         }
 
@@ -270,7 +292,7 @@ class ManagedReportBackupRecoveryService
         $environment = $this->mysqlEnvironment($config);
         $nullDevice = strtoupper(substr(PHP_OS_FAMILY, 0, 7)) === 'WINDOWS' ? 'NUL' : '/dev/null';
         $descriptors = [
-            0 => ['file', $sqlPath, 'r'],
+            0 => ['pipe', 'r'],
             1 => ['file', $nullDevice, 'w'],
             2 => ['pipe', 'w'],
         ];
@@ -288,33 +310,71 @@ class ManagedReportBackupRecoveryService
             throw new RuntimeException('Gagal menjalankan proses import SQL recovery.');
         }
 
-        $startedAt = microtime(true);
+        $source = fopen($sqlPath, 'rb');
+        if (!is_resource($source)) {
+            @proc_terminate($process);
+            @proc_close($process);
+
+            throw new RuntimeException('SQL hasil ekstraksi tidak bisa dibaca untuk diimpor.');
+        }
+
+        $stdin = $pipes[0] ?? null;
+        $stderrPipe = $pipes[2] ?? null;
+        $totalBytes = max(1, (int) filesize($sqlPath));
+        $bytesWritten = 0;
 
         try {
+            while (!feof($source)) {
+                $chunk = fread($source, 1024 * 1024);
+                if ($chunk === false) {
+                    throw new RuntimeException('Gagal membaca hasil ekstraksi backup untuk import.');
+                }
+
+                if ($chunk === '') {
+                    continue;
+                }
+
+                $written = fwrite($stdin, $chunk);
+                if ($written === false) {
+                    throw new RuntimeException('Gagal menulis data hasil ekstraksi ke proses mysql.');
+                }
+
+                $bytesWritten += $written;
+                $progress = 58 + (int) round(min(1, $bytesWritten / $totalBytes) * 14);
+
+                $this->emitProgress($progressCallback, [
+                    'stage' => 'importing_backup',
+                    'message' => sprintf(
+                        'Mengimpor hasil ekstraksi backup ke staging sementara... (%s / %s)',
+                        $this->formatHumanBytes($bytesWritten),
+                        $this->formatHumanBytes($totalBytes)
+                    ),
+                    'completed_units' => 3,
+                    'total_units' => self::TOTAL_UNITS,
+                    'progress_percent' => $progress,
+                    'bytes_written' => $bytesWritten,
+                    'total_bytes' => $totalBytes,
+                ]);
+            }
+
+            fclose($source);
+            if (is_resource($stdin)) {
+                fclose($stdin);
+            }
+
             while (true) {
                 $status = proc_get_status($process);
                 if (!($status['running'] ?? false)) {
                     break;
                 }
 
-                $elapsedSeconds = max(0, (int) floor(microtime(true) - $startedAt));
-                $progress = min(72, 58 + max(0, min(14, $elapsedSeconds)));
-
-                $this->emitProgress($progressCallback, [
-                    'stage' => 'importing_backup',
-                    'message' => $elapsedSeconds > 0
-                        ? "Mengimpor hasil ekstraksi backup ke staging sementara... ({$elapsedSeconds} detik)"
-                        : 'Mengimpor hasil ekstraksi backup ke staging sementara...',
-                    'completed_units' => 3,
-                    'total_units' => self::TOTAL_UNITS,
-                    'progress_percent' => $progress,
-                ]);
-
-                usleep(500000);
+                usleep(200000);
             }
 
-            $stderr = stream_get_contents($pipes[2]);
-            fclose($pipes[2]);
+            $stderr = is_resource($stderrPipe) ? stream_get_contents($stderrPipe) : '';
+            if (is_resource($stderrPipe)) {
+                fclose($stderrPipe);
+            }
             $exitCode = proc_close($process);
 
             if ($exitCode !== 0) {
@@ -323,8 +383,14 @@ class ManagedReportBackupRecoveryService
                 );
             }
         } catch (Throwable $e) {
-            if (isset($pipes[2]) && is_resource($pipes[2])) {
-                fclose($pipes[2]);
+            if (isset($source) && is_resource($source)) {
+                fclose($source);
+            }
+            if (isset($stdin) && is_resource($stdin)) {
+                fclose($stdin);
+            }
+            if (isset($stderrPipe) && is_resource($stderrPipe)) {
+                fclose($stderrPipe);
             }
             @proc_terminate($process);
             @proc_close($process);
@@ -337,41 +403,32 @@ class ManagedReportBackupRecoveryService
     {
         $this->emitProgress($progressCallback, [
             'stage' => 'swapping_data',
-            'message' => 'Mengganti isi tabel report aktif dengan data hasil recovery...',
+            'message' => 'Menukar tabel staging ke tabel aktif secara atomik...',
             'completed_units' => 4,
             'total_units' => self::TOTAL_UNITS,
-            'progress_percent' => 76,
+            'progress_percent' => 80,
         ]);
-
-        $targetColumns = Schema::getColumnListing($targetTable);
-        $tempColumns = array_map(
-            static fn ($row): string => (string) ($row->Field ?? ''),
-            DB::select('SHOW COLUMNS FROM `' . str_replace('`', '``', $tempTable) . '`')
-        );
-
-        $tempLookup = array_fill_keys($tempColumns, true);
-        $matchedColumns = array_values(array_filter($targetColumns, static fn (string $column): bool => isset($tempLookup[$column])));
-
-        if ($matchedColumns === []) {
-            throw new RuntimeException("Tidak ada kolom yang cocok antara tabel aktif `{$targetTable}` dan hasil backup.");
-        }
-
-        $quotedColumns = implode(', ', array_map(
-            static fn (string $column): string => '`' . str_replace('`', '``', $column) . '`',
-            $matchedColumns
-        ));
 
         $restoredRows = (int) DB::table($tempTable)->count();
         DB::statement('SET SESSION foreign_key_checks = 0');
 
         try {
-            DB::statement('TRUNCATE TABLE `' . str_replace('`', '``', $targetTable) . '`');
+            $quotedTarget = '`' . str_replace('`', '``', $targetTable) . '`';
+            $quotedTemp = '`' . str_replace('`', '``', $tempTable) . '`';
+            $backupTable = $this->buildRecoveredTableSwapName($targetTable);
 
-            if ($restoredRows > 0) {
+            if (Schema::hasTable($backupTable)) {
+                Schema::dropIfExists($backupTable);
+            }
+
+            if (Schema::hasTable($targetTable)) {
                 DB::statement(
-                    'INSERT INTO `' . str_replace('`', '``', $targetTable) . '` (' . $quotedColumns . ') ' .
-                    'SELECT ' . $quotedColumns . ' FROM `' . str_replace('`', '``', $tempTable) . '`'
+                    'RENAME TABLE ' . $quotedTarget . ' TO `' . str_replace('`', '``', $backupTable) . '`, ' . $quotedTemp . ' TO ' . $quotedTarget
                 );
+
+                Schema::dropIfExists($backupTable);
+            } else {
+                DB::statement('RENAME TABLE ' . $quotedTemp . ' TO ' . $quotedTarget);
             }
         } finally {
             DB::statement('SET SESSION foreign_key_checks = 1');
@@ -447,19 +504,312 @@ class ManagedReportBackupRecoveryService
             return null;
         }
 
-        $base = storage_path('app/' . self::BACKUP_DIRECTORY);
-        $candidate = storage_path('app/' . ltrim($normalized, '/'));
+        $candidate = $this->normalizeManagedRecoveryPath($normalized);
         $real = realpath($candidate);
         if ($real === false) {
             return null;
         }
 
-        $normalizedBase = strtolower(str_replace('\\', '/', $base));
-        $normalizedReal = strtolower(str_replace('\\', '/', $real));
+        $allowedRoots = $this->managedBackupAllowedRoots();
+        if ($this->pathMatchesAllowedRoots($candidate, $allowedRoots) || $this->pathMatchesAllowedRoots($real, $allowedRoots)) {
+            return $real;
+        }
 
-        return str_starts_with($normalizedReal, rtrim($normalizedBase, '/') . '/')
-            ? $real
-            : null;
+        return null;
+    }
+
+    private function managedBackupAllowedRoots(): array
+    {
+        $roots = [storage_path('app/' . self::BACKUP_DIRECTORY)];
+        $configured = trim((string) env('MANAGED_REPORT_RECOVERY_ALLOWED_BACKUP_DIRS', ''));
+
+        if ($configured !== '') {
+            foreach (preg_split('/[;,]+/', $configured) ?: [] as $entry) {
+                $entry = trim((string) $entry);
+                if ($entry === '') {
+                    continue;
+                }
+
+                $roots[] = $this->normalizeManagedRecoveryPath($entry);
+            }
+        }
+
+        $resolved = [];
+        foreach ($roots as $root) {
+            $candidate = realpath($root);
+            $resolved[] = $candidate !== false ? $candidate : $root;
+        }
+
+        return array_values(array_unique(array_map(
+            static fn (string $path): string => strtolower(rtrim(str_replace('\\', '/', $path), '/')),
+            $resolved
+        )));
+    }
+
+    private function normalizeManagedRecoveryPath(string $path): string
+    {
+        $normalized = trim(str_replace('\\', '/', $path));
+        if ($normalized === '') {
+            return storage_path('app/' . self::BACKUP_DIRECTORY);
+        }
+
+        if (preg_match('/^[A-Za-z]:\//', $normalized) === 1 || str_starts_with($normalized, '/')) {
+            return $normalized;
+        }
+
+        return storage_path('app/' . ltrim($normalized, '/'));
+    }
+
+    private function pathMatchesAllowedRoots(string $path, array $allowedRoots): bool
+    {
+        $normalizedPath = strtolower(rtrim(str_replace('\\', '/', $path), '/'));
+
+        foreach ($allowedRoots as $root) {
+            $normalizedRoot = strtolower(rtrim(str_replace('\\', '/', $root), '/'));
+            if ($normalizedRoot === '') {
+                continue;
+            }
+
+            if ($normalizedPath === $normalizedRoot || str_starts_with($normalizedPath, $normalizedRoot . '/')) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function isCompressedBackupPath(string $backupPath): bool
+    {
+        return strtolower(pathinfo($backupPath, PATHINFO_EXTENSION)) === 'gz';
+    }
+
+    private function buildRecoveredTableSwapName(string $targetTable): string
+    {
+        $safe = preg_replace('/[^A-Za-z0-9_]+/', '_', $targetTable) ?: 'recovery';
+
+        return substr('__restore_old_' . $safe . '_' . now()->format('YmdHis') . '_' . substr(md5($targetTable . '|' . microtime(true)), 0, 6), 0, 64);
+    }
+
+    private function formatHumanBytes(int $bytes): string
+    {
+        $units = ['B', 'KB', 'MB', 'GB', 'TB'];
+        $bytes = max(0, $bytes);
+        if ($bytes === 0) {
+            return '0 B';
+        }
+
+        $pow = (int) floor(log($bytes, 1024));
+        $pow = max(0, min($pow, count($units) - 1));
+
+        return round($bytes / (1024 ** $pow), 2) . ' ' . $units[$pow];
+    }
+
+    private function resolveAwkBinaryPath(): string
+    {
+        $configured = trim((string) env('AWK_BINARY', ''));
+        $candidates = array_values(array_filter([
+            $configured !== '' ? $configured : null,
+            'C:\\Program Files\\Git\\usr\\bin\\awk.exe',
+            'C:\\Program Files (x86)\\Git\\usr\\bin\\awk.exe',
+            '/usr/bin/awk',
+            '/bin/awk',
+            'awk',
+        ]));
+
+        foreach ($candidates as $candidate) {
+            if ($candidate === 'awk' || is_file($candidate)) {
+                return $candidate;
+            }
+        }
+
+        return '';
+    }
+
+    private function resolveGzipBinaryPath(): string
+    {
+        $configured = trim((string) env('GZIP_BINARY', ''));
+        $candidates = array_values(array_filter([
+            $configured !== '' ? $configured : null,
+            'C:\\xampp\\php\\gzip.exe',
+            'C:\\Program Files\\Git\\usr\\bin\\gzip.exe',
+            'C:\\Program Files (x86)\\Git\\usr\\bin\\gzip.exe',
+            '/usr/bin/gzip',
+            '/bin/gzip',
+            'gzip',
+        ]));
+
+        foreach ($candidates as $candidate) {
+            if ($candidate === 'gzip' || is_file($candidate)) {
+                return $candidate;
+            }
+        }
+
+        return '';
+    }
+
+    private function buildAwkExtractionScript(string $targetTable, string $tempTable): string
+    {
+        $targetLower = strtolower($targetTable);
+        $tempEscaped = str_replace(['\\', '"'], ['\\\\', '\\"'], $tempTable);
+        $targetEscaped = str_replace(['\\', '"'], ['\\\\', '\\"'], $targetTable);
+
+        $script = <<<'AWK'
+BEGIN {
+    statement = "";
+    targetLower = "__TARGET_LOWER__";
+    targetQuotedLower = "`" targetLower "`";
+    targetQuoted = "`__TARGET__`";
+    tempQuoted = "`__TEMP__`";
+}
+{
+    statement = statement $0 "\n";
+    if ($0 !~ /;\s*$/) {
+        next;
+    }
+
+    trimmed = statement;
+    sub(/^[[:space:]]+/, "", trimmed);
+    lower = tolower(trimmed);
+
+    if (lower ~ /^(--|\/\*[^!]|use[[:space:]]+|create[[:space:]]+database|drop[[:space:]]+database|lock[[:space:]]+tables|unlock[[:space:]]+tables)/) {
+        statement = "";
+        next;
+    }
+
+    if (index(lower, "drop table if exists " targetQuotedLower) == 1 ||
+        index(lower, "create table " targetQuotedLower) == 1 ||
+        index(lower, "alter table " targetQuotedLower) == 1 ||
+        index(lower, "insert into " targetQuotedLower) == 1 ||
+        index(lower, "/*!" ) == 1 && index(lower, "alter table " targetQuotedLower) > 0) {
+        gsub(targetQuoted, tempQuoted, statement);
+        print statement;
+        print "";
+    }
+
+    statement = "";
+}
+AWK;
+
+        return str_replace(
+            ['__TARGET_LOWER__', '__TARGET__', '__TEMP__'],
+            [$targetLower, $targetEscaped, $tempEscaped],
+            $script
+        );
+    }
+
+    private function extractTableSqlWithNativeTool(
+        string $backupPath,
+        string $targetTable,
+        string $tempTable,
+        string $outputPath,
+        ?callable $progressCallback
+    ): ?array {
+        $awkBinary = $this->resolveAwkBinaryPath();
+        if ($awkBinary === '') {
+            return null;
+        }
+
+        $workDirectory = dirname($outputPath);
+        $scriptPath = $workDirectory . DIRECTORY_SEPARATOR . '.extract_' . uniqid('', true) . '.awk';
+        if (file_put_contents($scriptPath, $this->buildAwkExtractionScript($targetTable, $tempTable)) === false) {
+            return null;
+        }
+
+        try {
+            $isCompressed = $this->isCompressedBackupPath($backupPath);
+            $gzipBinary = $isCompressed ? $this->resolveGzipBinaryPath() : '';
+            if ($isCompressed && $gzipBinary === '') {
+                return null;
+            }
+
+            $command = $isCompressed
+                ? escapeshellarg($gzipBinary) . ' -dc ' . escapeshellarg($backupPath) . ' | '
+                    . escapeshellarg($awkBinary) . ' -f ' . escapeshellarg($scriptPath)
+                : escapeshellarg($awkBinary) . ' -f ' . escapeshellarg($scriptPath) . ' ' . escapeshellarg($backupPath);
+
+            $descriptors = [
+                0 => ['pipe', 'r'],
+                1 => ['file', $outputPath, 'wb'],
+                2 => ['pipe', 'w'],
+            ];
+
+            $process = proc_open($command, $descriptors, $pipes, base_path());
+            if (!is_resource($process)) {
+                return null;
+            }
+
+            fclose($pipes[0]);
+            $stderr = is_resource($pipes[2] ?? null) ? stream_get_contents($pipes[2]) : '';
+            if (isset($pipes[2]) && is_resource($pipes[2])) {
+                fclose($pipes[2]);
+            }
+
+            $exitCode = proc_close($process);
+            if ($exitCode !== 0 || !is_file($outputPath) || (int) filesize($outputPath) <= 0) {
+                @unlink($outputPath);
+                return null;
+            }
+
+            try {
+                $summary = $this->summarizeExtractedSqlFile($outputPath, $tempTable, $progressCallback);
+            } catch (Throwable) {
+                @unlink($outputPath);
+                return null;
+            }
+
+            return [
+                'matched_statements' => $summary['matched_statements'],
+                'has_data' => $summary['has_data'],
+                'output_path' => $outputPath,
+                'stderr' => trim((string) $stderr),
+            ];
+        } finally {
+            @unlink($scriptPath);
+        }
+    }
+
+    private function summarizeExtractedSqlFile(string $sqlPath, string $tableName, ?callable $progressCallback): array
+    {
+        $reader = fopen($sqlPath, 'rb');
+        if (!is_resource($reader)) {
+            throw new RuntimeException('File hasil ekstraksi tidak bisa dibaca.');
+        }
+
+        $buffer = '';
+        $matchedStatements = 0;
+        $schemaMatched = false;
+        $dataMatched = false;
+
+        try {
+            while (($line = fgets($reader)) !== false) {
+                $buffer .= $line;
+                if (!$this->statementEnds($line)) {
+                    continue;
+                }
+
+                $statement = trim($buffer);
+                $buffer = '';
+
+                if ($statement === '' || $this->shouldSkipStatement($statement)) {
+                    continue;
+                }
+
+                $matchedStatements++;
+                $schemaMatched = $schemaMatched || $this->isSchemaStatement($statement, $tableName);
+                $dataMatched = $dataMatched || $this->isDataStatement($statement, $tableName);
+            }
+        } finally {
+            fclose($reader);
+        }
+
+        if ($matchedStatements === 0 || !$schemaMatched) {
+            throw new RuntimeException("Tabel staging `{$tableName}` tidak ditemukan di hasil ekstraksi native.");
+        }
+
+        return [
+            'matched_statements' => $matchedStatements,
+            'has_data' => $dataMatched,
+        ];
     }
 
     private function databaseConfig(): array
