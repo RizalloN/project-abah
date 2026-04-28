@@ -39,7 +39,7 @@ Artisan::command('reports:sync-source {table} {--period=}', function () {
     $table = strtolower(trim((string) $this->argument('table')));
     $period = StrictDateParser::normalize((string) $this->option('period')) ?? $this->option('period');
 
-    $allowed = ['daily_loan_dinamis', 'loan_type', 'simpanan_multipn', 'lw325_ph', 'performance_pis_per_produk', 'performance_kurkecil_mikro', 'performance_mantri'];
+    $allowed = ['daily_loan_dinamis', 'loan_type', 'simpanan_multipn', 'ssa_simpanan', 'ssa_pinjaman', 'lw325_ph', 'performance_pis_per_produk', 'performance_kurkecil_mikro', 'performance_mantri'];
     if (!in_array($table, $allowed, true)) {
         $this->error('Table tidak didukung. Pilih: ' . implode(', ', $allowed));
         return;
@@ -183,6 +183,30 @@ Artisan::command('queue:health-sweep', function () {
 
 Schedule::command('queue:health-sweep')
     ->everyMinute()
+    ->withoutOverlapping();
+
+Schedule::command('import:health-check')
+    ->everyTenMinutes()
+    ->withoutOverlapping();
+
+Schedule::command('snapshot:validate-integrity --report=performance_rm')
+    ->dailyAt('09:00')
+    ->withoutOverlapping();
+
+Schedule::command('snapshot:validate-integrity --report=ssa_simpanan')
+    ->dailyAt('09:05')
+    ->withoutOverlapping();
+
+Schedule::command('snapshot:validate-integrity --report=dashboard_simpanan')
+    ->dailyAt('09:10')
+    ->withoutOverlapping();
+
+Schedule::command('snapshot:validate-integrity --report=dashboard_harian')
+    ->dailyAt('09:15')
+    ->withoutOverlapping();
+
+Schedule::command('snapshot:validate-integrity --report=dormant_account')
+    ->dailyAt('09:20')
     ->withoutOverlapping();
 
 Artisan::command('reports:dashboard-harian-sync-missing', function () {

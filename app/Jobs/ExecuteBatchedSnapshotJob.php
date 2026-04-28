@@ -42,6 +42,7 @@ class ExecuteBatchedSnapshotJob implements ShouldQueue
         $startTime = microtime(true);
         $processed = 0;
         $failed = 0;
+        $fatalErrors = [];
 
         Log::info('Processing batched snapshot requests.', [
             'batch_key' => $this->batchKey,
@@ -49,59 +50,71 @@ class ExecuteBatchedSnapshotJob implements ShouldQueue
             'original_request_count' => count($this->requests),
         ]);
 
-        try {
-            foreach ($requests as $request) {
-                try {
-                    $tableName = trim((string) ($request['table_name'] ?? ''));
-                    if ($tableName === '') {
-                        $failed++;
-                        continue;
-                    }
-
-                    $syncService->syncImportedTable(
-                        tableName: $tableName,
-                        periodHint: $request['period_hint'] ?? null,
-                        jobId: $request['job_id'] ?? null,
-                        source: $request['source'] ?? static::class,
-                        deleteId: null,
-                        rebuildId: $request['rebuild_id'] ?? null
-                    );
-
-                    $processed++;
-
-                    Log::debug('Processed snapshot sync in batch.', [
-                        'batch_key' => $this->batchKey,
-                        'table_name' => $tableName,
-                        'period_hint' => $request['period_hint'] ?? null,
-                    ]);
-                } catch (Throwable $e) {
+        foreach ($requests as $request) {
+            try {
+                $tableName = trim((string) ($request['table_name'] ?? ''));
+                if ($tableName === '') {
                     $failed++;
-
-                    Log::error('Failed to process snapshot sync in batch: ' . $e->getMessage(), [
-                        'batch_key' => $this->batchKey,
-                        'table_name' => $request['table_name'] ?? null,
-                        'exception' => $e::class,
-                    ]);
+                    continue;
                 }
+
+                $syncService->syncImportedTable(
+                    tableName: $tableName,
+                    periodHint: $request['period_hint'] ?? null,
+                    jobId: $request['job_id'] ?? null,
+                    source: $request['source'] ?? static::class,
+                    deleteId: null,
+                    rebuildId: $request['rebuild_id'] ?? null
+                );
+
+                $processed++;
+
+                Log::debug('Processed snapshot sync in batch.', [
+                    'batch_key' => $this->batchKey,
+                    'table_name' => $tableName,
+                    'period_hint' => $request['period_hint'] ?? null,
+                ]);
+            } catch (Throwable $e) {
+                $failed++;
+
+                $isFatal = $this->isFatalError($e);
+                if ($isFatal) {
+                    $fatalErrors[] = [
+                        'table' => $request['table_name'] ?? null,
+                        'exception' => $e::class,
+                        'message' => $e->getMessage(),
+                    ];
+                }
+
+                Log::error('Failed to process snapshot sync in batch: ' . $e->getMessage(), [
+                    'batch_key' => $this->batchKey,
+                    'table_name' => $request['table_name'] ?? null,
+                    'exception' => $e::class,
+                    'is_fatal' => $isFatal,
+                ]);
             }
+        }
 
-            $elapsed = max(microtime(true) - $startTime, 0.001);
+        $elapsed = max(microtime(true) - $startTime, 0.001);
 
-            Log::info('Completed batched snapshot processing.', [
+        Log::info('Completed batched snapshot processing.', [
+            'batch_key' => $this->batchKey,
+            'total_requests' => count($requests),
+            'original_request_count' => count($this->requests),
+            'processed' => $processed,
+            'failed' => $failed,
+            'fatal_errors' => count($fatalErrors),
+            'elapsed_seconds' => round($elapsed, 2),
+        ]);
+
+        if (!empty($fatalErrors) && $this->attempts() < 3) {
+            Log::warning('Batch has fatal errors but will retry. Releasing job back to queue.', [
                 'batch_key' => $this->batchKey,
-                'total_requests' => count($requests),
-                'original_request_count' => count($this->requests),
-                'processed' => $processed,
-                'failed' => $failed,
-                'elapsed_seconds' => round($elapsed, 2),
-            ]);
-        } catch (Throwable $e) {
-            Log::error('Fatal error processing batched snapshot: ' . $e->getMessage(), [
-                'batch_key' => $this->batchKey,
-                'exception' => $e::class,
+                'fatal_count' => count($fatalErrors),
+                'attempt' => $this->attempts(),
             ]);
 
-            throw $e;
+            $this->release(30);
         }
     }
 
@@ -110,6 +123,41 @@ class ExecuteBatchedSnapshotJob implements ShouldQueue
         return [
             new DeferSnapshotJobsDuringImport(),
         ];
+    }
+
+    private function isFatalError(Throwable $e): bool
+    {
+        $class = $e::class;
+        $message = strtolower($e->getMessage());
+
+        $fatalClasses = [
+            'OutOfMemoryError',
+            'Error',
+            'ParseError',
+            'CompileError',
+        ];
+
+        foreach ($fatalClasses as $fatalClass) {
+            if (str_contains($class, $fatalClass)) {
+                return true;
+            }
+        }
+
+        $fatalPatterns = [
+            'out of memory',
+            'allowed memory',
+            'fatal error',
+            'segmentation fault',
+            'killed',
+        ];
+
+        foreach ($fatalPatterns as $pattern) {
+            if (str_contains($message, $pattern)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

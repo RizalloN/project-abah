@@ -8,23 +8,35 @@ use Illuminate\Support\Facades\DB;
 
 class ValidateSnapshotDataIntegrityCommand extends Command
 {
-    protected $signature = 'snapshot:validate-integrity {--period= : Validate specific period} {--segment= : Validate specific segment} {--sample : Sample-based validation (faster)}';
+    protected $signature = 'snapshot:validate-integrity {--period= : Validate specific period} {--segment= : Validate specific segment} {--report= : Validate specific report (performance_rm|ssa_simpanan|dashboard_simpanan|dashboard_harian|dormant_account)} {--sample : Sample-based validation (faster)}';
 
-    protected $description = 'Validate Performance RM snapshot data integrity against source';
+    protected $description = 'Validate snapshot data integrity across all materialized snapshot tables';
 
     public function handle(): int
     {
         try {
             $period = trim((string) $this->option('period')) ?: null;
             $segment = trim((string) $this->option('segment')) ?: null;
+            $report = trim((string) $this->option('report')) ?: null;
             $useSample = (bool) $this->option('sample');
 
             $this->info('Starting snapshot data integrity validation...');
 
-            if ($useSample) {
-                $this->validateWithSampling($period, $segment);
+            if ($report === 'ssa_simpanan') {
+                $this->validateSsaSimpanan($period, $useSample);
+            } elseif ($report === 'dashboard_simpanan') {
+                $this->validateDashboardSimpanan($period, $useSample);
+            } elseif ($report === 'dashboard_harian') {
+                $this->validateDashboardHarian($period, $useSample);
+            } elseif ($report === 'dormant_account') {
+                $this->validateDormantAccount($period, $useSample);
             } else {
-                $this->validateAggregate($period, $segment);
+                // Default: validate performance_rm
+                if ($useSample) {
+                    $this->validateWithSampling($period, $segment);
+                } else {
+                    $this->validateAggregate($period, $segment);
+                }
             }
 
             return self::SUCCESS;
@@ -271,5 +283,105 @@ class ValidateSnapshotDataIntegrityCommand extends Command
             'KUR-SMALL' => ['KUR-SMALL', 'KUR-Small'],
             default => [$product],
         };
+    }
+
+    private function validateSsaSimpanan(?string $period = null, bool $useSample = false): void
+    {
+        $this->line('<fg=cyan>== SSA SIMPANAN SNAPSHOT VALIDATION ==</>');
+        $periods = $period ? [$period] : DB::table('ssa_simpanan_snapshots')
+            ->distinct('Month_Day_Year_of_Posisi')
+            ->orderByDesc('Month_Day_Year_of_Posisi')
+            ->limit(5)
+            ->pluck('Month_Day_Year_of_Posisi')
+            ->map(fn($p) => (string)$p)
+            ->toArray();
+
+        if (empty($periods)) {
+            $this->line('<fg=yellow>No SSA Simpanan snapshots found.</>');
+            return;
+        }
+
+        foreach ($periods as $p) {
+            $count = DB::table('ssa_simpanan_snapshots')
+                ->where('Month_Day_Year_of_Posisi', $p)
+                ->count();
+            $color = $count > 0 ? 'fg=green' : 'fg=yellow';
+            $this->line("  <{$color}>Period {$p}: {$count} records</>");
+        }
+    }
+
+    private function validateDashboardSimpanan(?string $period = null, bool $useSample = false): void
+    {
+        $this->line('<fg=cyan>== DASHBOARD SIMPANAN SNAPSHOT VALIDATION ==</>');
+        $periods = $period ? [$period] : DB::table('dashboard_simpanan_snapshots')
+            ->distinct('snapshot_period')
+            ->orderByDesc('snapshot_period')
+            ->limit(5)
+            ->pluck('snapshot_period')
+            ->map(fn($p) => (string)$p)
+            ->toArray();
+
+        if (empty($periods)) {
+            $this->line('<fg=yellow>No Dashboard Simpanan snapshots found.</>');
+            return;
+        }
+
+        foreach ($periods as $p) {
+            $count = DB::table('dashboard_simpanan_snapshots')
+                ->where('snapshot_period', $p)
+                ->count();
+            $color = $count > 0 ? 'fg=green' : 'fg=yellow';
+            $this->line("  <{$color}>Period {$p}: {$count} records</>");
+        }
+    }
+
+    private function validateDashboardHarian(?string $period = null, bool $useSample = false): void
+    {
+        $this->line('<fg=cyan>== DASHBOARD HARIAN SNAPSHOT VALIDATION ==</>');
+        $periods = $period ? [$period] : DB::table('dashboard_harian_snapshots')
+            ->distinct('snapshot_period')
+            ->orderByDesc('snapshot_period')
+            ->limit(5)
+            ->pluck('snapshot_period')
+            ->map(fn($p) => (string)$p)
+            ->toArray();
+
+        if (empty($periods)) {
+            $this->line('<fg=yellow>No Dashboard Harian snapshots found.</>');
+            return;
+        }
+
+        foreach ($periods as $p) {
+            $count = DB::table('dashboard_harian_snapshots')
+                ->where('snapshot_period', $p)
+                ->count();
+            $color = $count > 0 ? 'fg=green' : 'fg=yellow';
+            $this->line("  <{$color}>Period {$p}: {$count} records</>");
+        }
+    }
+
+    private function validateDormantAccount(?string $period = null, bool $useSample = false): void
+    {
+        $this->line('<fg=cyan>== REKENING DORMANT SNAPSHOT VALIDATION ==</>');
+        $periods = $period ? [$period] : DB::table('rekening_dormant_snapshots')
+            ->distinct('posisi')
+            ->orderByDesc('posisi')
+            ->limit(5)
+            ->pluck('posisi')
+            ->map(fn($p) => (string)$p)
+            ->toArray();
+
+        if (empty($periods)) {
+            $this->line('<fg=yellow>No Rekening Dormant snapshots found.</>');
+            return;
+        }
+
+        foreach ($periods as $p) {
+            $count = DB::table('rekening_dormant_snapshots')
+                ->where('posisi', $p)
+                ->count();
+            $color = $count > 0 ? 'fg=green' : 'fg=yellow';
+            $this->line("  <{$color}>Period {$p}: {$count} records</>");
+        }
     }
 }
