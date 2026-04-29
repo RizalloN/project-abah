@@ -109,8 +109,6 @@ class RkaLookupService
         ?int $year = null
     ): array {
         $monthColumn = strtolower(trim($monthColumn));
-        $normalizedKanca = $this->normalizeScopeValue($kanca);
-        $normalizedUnit = $this->normalizeScopeValue($unit);
         $rows = $this->loadRows([$monthColumn], $year);
 
         $result = [];
@@ -119,11 +117,7 @@ class RkaLookupService
         }
 
         foreach ($rows as $row) {
-            if ($normalizedKanca !== null && $row['kanca_key'] !== $normalizedKanca) {
-                continue;
-            }
-
-            if ($normalizedUnit !== null && $row['uker_key'] !== $normalizedUnit) {
+            if (!$this->matchesScope($row, $kanca, $unit)) {
                 continue;
             }
 
@@ -234,9 +228,14 @@ class RkaLookupService
 
     private function matchesDefinition(array $row, array $definition): bool
     {
-        $mataAnggarans = $this->normalizeLookupValues((array) ($definition['mata_anggaran'] ?? []));
-        if (!empty($mataAnggarans) && !in_array($row['mata_anggaran_key'], $mataAnggarans, true)) {
-            return false;
+        if (isset($definition['mata_anggaran'])) {
+            $mataAnggarans = $this->normalizeLookupValues((array) $definition['mata_anggaran']);
+            if (empty($mataAnggarans)) {
+                return false; // If filter is provided but empty, match nothing (safety)
+            }
+            if (!in_array($row['mata_anggaran_key'], $mataAnggarans, true)) {
+                return false;
+            }
         }
 
         $ukerContainsAny = $this->normalizeLookupValues((array) ($definition['uker_contains_any'] ?? []));
@@ -341,5 +340,58 @@ class RkaLookupService
         }
 
         return $groups;
+    }
+
+    private function matchesScope(array $row, ?string $kancaLabel, ?string $unitLabel): bool
+    {
+        if ($kancaLabel === null && $unitLabel === null) {
+            return true;
+        }
+
+        $kancaMatch = true;
+        if ($kancaLabel !== null) {
+            $kancaMatch = $this->flexibleMatch($row['kanca_key'], $kancaLabel);
+        }
+
+        $unitMatch = true;
+        if ($unitLabel !== null) {
+            $unitMatch = $this->flexibleMatch($row['uker_key'], $unitLabel);
+        }
+
+        return $kancaMatch && $unitMatch;
+    }
+
+    private function flexibleMatch(string $ukerKey, string $label): bool
+    {
+        $normalizedLabel = $this->normalizeScopeValue($label);
+        if ($normalizedLabel === null) {
+            return true;
+        }
+
+        // Exact match first
+        if ($ukerKey === $normalizedLabel) {
+            return true;
+        }
+
+        // Try slug-based matching for better flexibility (matches 'kc-madiun' to '45-KC MADIUN')
+        $ukerSlug = \Illuminate\Support\Str::slug($ukerKey);
+        $labelSlug = \Illuminate\Support\Str::slug($label);
+
+        if ($labelSlug !== '' && (str_contains($ukerSlug, $labelSlug) || str_contains($labelSlug, $ukerSlug))) {
+            return true;
+        }
+
+        // Last resort: keyword matching
+        $keywords = array_filter(explode('-', $labelSlug), fn($p) => !in_array($p, ['kc', 'kcp', 'unit']));
+        if (!empty($keywords)) {
+            foreach ($keywords as $word) {
+                if (!str_contains($ukerSlug, $word)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        return false;
     }
 }

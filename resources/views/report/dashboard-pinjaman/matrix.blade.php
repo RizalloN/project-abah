@@ -5,6 +5,231 @@
 @section('content')
 @include('report.dashboard-pinjaman._partials._styles')
 
+<style>
+    /* ── Modern Premium Selectors ── */
+    .loan-filter-modern {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr) auto;
+        gap: 1rem;
+        background: rgba(255, 255, 255, 0.8);
+        backdrop-filter: blur(20px);
+        padding: 1.5rem;
+        border-radius: 1.75rem;
+        border: 1px solid rgba(255, 255, 255, 0.9);
+        box-shadow: 
+            0 10px 15px -3px rgba(0, 0, 0, 0.05),
+            0 20px 40px -20px rgba(8, 87, 195, 0.15);
+        margin-bottom: 2.5rem;
+        position: relative;
+        z-index: 1000; /* Elevated base */
+        align-items: flex-end;
+    }
+
+    /* Prevent any clipping from parents */
+    .loan-shell, .loan-shell .card-body {
+        overflow: visible !important;
+    }
+
+    @media (max-width: 1400px) {
+        .loan-filter-modern {
+            grid-template-columns: repeat(3, 1fr); /* Wrap to 3 cols on smaller screens */
+        }
+    }
+
+    @media (max-width: 991px) {
+        .loan-filter-modern {
+            grid-template-columns: repeat(2, 1fr);
+        }
+    }
+
+    @media (max-width: 575px) {
+        .loan-filter-modern {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    .loan-filter-item {
+        display: flex;
+        flex-direction: column;
+        gap: 0.6rem;
+        position: relative;
+    }
+
+    /* Descending z-index for items (left to right) */
+    .loan-filter-item:nth-child(1) { z-index: 50; }
+    .loan-filter-item:nth-child(2) { z-index: 40; }
+    .loan-filter-item:nth-child(3) { z-index: 30; }
+    .loan-filter-item:nth-child(4) { z-index: 20; }
+    .loan-filter-item:nth-child(5) { z-index: 10; }
+
+    .loan-filter-modern .loan-filter-label {
+        font-size: 0.72rem;
+        font-weight: 800;
+        color: #64748b;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        margin-left: 0.5rem;
+    }
+
+    .loan-dropdown {
+        position: relative;
+        width: 100%;
+    }
+
+    .loan-dropdown-icon {
+        position: absolute;
+        left: 1.25rem;
+        top: 50%;
+        transform: translateY(-50%);
+        z-index: 10;
+        color: var(--loan-blue);
+        font-size: 1rem;
+        pointer-events: none;
+        opacity: 0.8;
+    }
+
+    .loan-dropdown-toggle {
+        width: 100%;
+        height: 54px;
+        background: #ffffff;
+        border: 2px solid #eef2f6;
+        border-radius: 16px;
+        padding: 0 1.25rem 0 3rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-weight: 700;
+        font-size: 0.9rem;
+        color: #1e293b;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        text-align: left;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+    }
+
+    .loan-dropdown-toggle:hover {
+        border-color: var(--loan-blue);
+        box-shadow: 0 8px 20px rgba(8, 87, 195, 0.08);
+        transform: translateY(-1px);
+    }
+
+    .loan-dropdown.is-open { z-index: 3100 !important; }
+    
+    .loan-dropdown-menu {
+        position: absolute;
+        top: calc(100% + 8px);
+        left: 0;
+        width: 100%;
+        min-width: 320px;
+        background: rgba(255, 255, 255, 0.98);
+        backdrop-filter: blur(25px);
+        border: 1px solid rgba(226, 232, 240, 0.9);
+        border-radius: 1.5rem;
+        box-shadow: 
+            0 20px 40px -5px rgba(0, 0, 0, 0.15),
+            0 40px 80px -20px rgba(8, 87, 195, 0.3);
+        z-index: 3000;
+        opacity: 0;
+        visibility: hidden;
+        transform: translateY(12px);
+        transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        max-height: 480px;
+        overflow-y: auto;
+        padding: 0.75rem;
+    }
+
+    /* Logic to prevent menu from going off-screen on the right */
+    .loan-filter-item:nth-last-child(-n+2) .loan-dropdown-menu {
+        left: auto;
+        right: 0;
+    }
+
+    .loan-dropdown.is-open .loan-dropdown-menu {
+        opacity: 1;
+        visibility: visible;
+        transform: translateY(0);
+    }
+
+    .loan-dropdown-option {
+        width: 100%;
+        padding: 0.75rem 1rem;
+        border: none;
+        background: transparent;
+        border-radius: 0.75rem;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        font-weight: 700;
+        font-size: 0.85rem;
+        color: #475569;
+        transition: all 0.2s;
+        text-align: left;
+        margin-bottom: 2px;
+    }
+
+    .loan-dropdown-option:hover {
+        background: #f1f5f9;
+        color: var(--loan-blue);
+    }
+
+    .loan-dropdown-option.is-active {
+        background: rgba(8, 87, 195, 0.08);
+        color: var(--loan-blue);
+    }
+
+    .loan-dropdown-check {
+        width: 1.25rem;
+        height: 1.25rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 2px solid #e2e8f0;
+        border-radius: 6px;
+        transition: all 0.2s;
+        font-size: 0.7rem;
+        color: white;
+    }
+
+    .loan-dropdown-option.is-active .loan-dropdown-check {
+        background: var(--loan-blue);
+        border-color: var(--loan-blue);
+    }
+
+    /* Scrollbar */
+    .loan-dropdown-menu::-webkit-scrollbar { width: 5px; }
+    .loan-dropdown-menu::-webkit-scrollbar-track { background: transparent; }
+    .loan-dropdown-menu::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
+
+    .btn-loan-modern-submit {
+        height: 54px;
+        min-width: 140px;
+        padding: 0 1.75rem;
+        border-radius: 16px;
+        background: linear-gradient(135deg, var(--loan-blue) 0%, #1e40af 100%);
+        color: white;
+        border: none;
+        font-weight: 800;
+        font-size: 0.9rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.75rem;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        box-shadow: 0 8px 15px rgba(8, 87, 195, 0.25);
+    }
+
+    .btn-loan-modern-submit:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 15px 25px -5px rgba(8, 87, 195, 0.4);
+    }
+
+    /* Hide Original Select2 & Native Selects */
+    .select2-container--bootstrap4, .loan-filter-control {
+        display: none !important;
+    }
+</style>
+
 <div class="loan-dashboard pt-4 px-3">
     <div class="loan-title-hero d-flex flex-wrap justify-content-center align-items-center">
         <div class="loan-title-hero__wrap">
@@ -21,71 +246,98 @@
         <div class="card loan-shell mb-4 animate-reveal">
             <div class="card-body p-4">
                 <form id="loanFilterForm" method="GET" action="{{ route('report.dashboard-pinjaman.matrix') }}">
-                    <div class="d-flex flex-column flex-lg-row justify-content-end align-items-lg-center mb-4 pb-3 border-bottom">
-                        <div class="mt-3 mt-lg-0 text-lg-right">
-                            <div class="loan-filter-meta">
-                                <span>Periode aktif: <strong id="loanActivePeriodMeta">{{ $selectedPeriod ? \Carbon\Carbon::parse($selectedPeriod)->format('d/m/Y') : '-' }}</strong></span>
-                                <span>Pembanding M-1: <strong id="loanComparisonPeriodMeta">{{ $comparisonPeriod ? \Carbon\Carbon::parse($comparisonPeriod)->format('d/m/Y') : '-' }}</strong></span>
+                    <div class="loan-filter-modern animate-reveal stagger-1">
+                        <div class="loan-filter-item">
+                            <label class="loan-filter-label">Periode Laporan</label>
+                            <div class="loan-dropdown" data-loan-dropdown="periode">
+                                <i class="fas fa-calendar-alt loan-dropdown-icon"></i>
+                                <button type="button" class="loan-dropdown-toggle" onclick="document.getElementById('loanPeriodeInput').showPicker()">
+                                    <span class="loan-dropdown-text" id="loanPeriodeDisplay">{{ $requestedPeriod ?: $selectedPeriod }}</span>
+                                    <i class="fas fa-chevron-down small opacity-50"></i>
+                                </button>
+                                <input id="loanPeriodeInput" type="date" name="periode" 
+                                    style="opacity: 0; position: absolute; width: 100%; height: 100%; top: 0; left: 0; pointer-events: none;" 
+                                    value="{{ $requestedPeriod ?: $selectedPeriod }}" max="{{ $periods->first() }}">
                             </div>
+                        </div>
+
+                        <div class="loan-filter-item">
+                            <label class="loan-filter-label">Segmen</label>
+                            <div class="loan-dropdown" data-loan-dropdown="segmen">
+                                <i class="fas fa-layer-group loan-dropdown-icon"></i>
+                                <button type="button" class="loan-dropdown-toggle" data-loan-dropdown-toggle="segmen">
+                                    <span class="loan-dropdown-text">Semua Segmen</span>
+                                    <i class="fas fa-chevron-down small opacity-50"></i>
+                                </button>
+                                <div class="loan-dropdown-menu" data-loan-dropdown-menu="segmen"></div>
+                                <select id="loanSegmenSelect" name="segmen_dashboard[]" class="d-none" multiple data-placeholder="Semua Segmen" data-selected='@json($filters["segmen"] ?? [])'></select>
+                            </div>
+                        </div>
+
+                        <div class="loan-filter-item">
+                            <label class="loan-filter-label">Produk</label>
+                            <div class="loan-dropdown" data-loan-dropdown="produk">
+                                <i class="fas fa-box loan-dropdown-icon"></i>
+                                <button type="button" class="loan-dropdown-toggle" data-loan-dropdown-toggle="produk">
+                                    <span class="loan-dropdown-text">Semua Produk</span>
+                                    <i class="fas fa-chevron-down small opacity-50"></i>
+                                </button>
+                                <div class="loan-dropdown-menu" data-loan-dropdown-menu="produk"></div>
+                                <select id="loanProdukSelect" name="produk_dashboard[]" class="d-none" multiple data-placeholder="Semua Produk" data-selected='@json($filters["produk"] ?? [])'></select>
+                            </div>
+                        </div>
+
+                        <div class="loan-filter-item">
+                            <label class="loan-filter-label">Kantor Cabang</label>
+                            <div class="loan-dropdown" data-loan-dropdown="cabang">
+                                <i class="fas fa-university loan-dropdown-icon"></i>
+                                <button type="button" class="loan-dropdown-toggle" data-loan-dropdown-toggle="cabang">
+                                    <span class="loan-dropdown-text">Semua Cabang</span>
+                                    <i class="fas fa-chevron-down small opacity-50"></i>
+                                </button>
+                                <div class="loan-dropdown-menu" data-loan-dropdown-menu="cabang"></div>
+                                <select id="loanCabangSelect" name="cabang1[]" class="d-none" multiple data-placeholder="Semua Kantor Cabang" data-selected='@json($filters["cabang"] ?? [])'></select>
+                            </div>
+                        </div>
+
+                        <div class="loan-filter-item">
+                            <label class="loan-filter-label">Unit Kerja</label>
+                            <div class="loan-dropdown" data-loan-dropdown="unit">
+                                <i class="fas fa-store loan-dropdown-icon"></i>
+                                <button type="button" class="loan-dropdown-toggle" data-loan-dropdown-toggle="unit">
+                                    <span class="loan-dropdown-text">Semua Unit</span>
+                                    <i class="fas fa-chevron-down small opacity-50"></i>
+                                </button>
+                                <div class="loan-dropdown-menu" data-loan-dropdown-menu="unit"></div>
+                                <select id="loanUnitSelect" name="unit1[]" class="d-none" multiple data-placeholder="Semua Unit Kerja" data-selected='@json($filters["unit"] ?? [])'></select>
+                            </div>
+                        </div>
+
+                        <div class="d-flex align-items-end" style="margin-bottom: 2px;">
+                            <button id="loanSubmitButton" type="submit" class="btn-loan-modern-submit w-100">
+                                <i class="fas fa-search"></i> FILTER
+                            </button>
                         </div>
                     </div>
 
-                    <div class="row loan-filter-grid">
+                    <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center mb-4 pb-3 border-bottom">
+                        <div class="loan-filter-meta">
+                            <span>Posisi Data: <strong id="loanActivePeriodMeta">{{ $selectedPeriod ? \Carbon\Carbon::parse($selectedPeriod)->format('d/m/Y') : '-' }}</strong></span>
+                            <span>M-1: <strong id="loanComparisonPeriodMeta">{{ $comparisonPeriod ? \Carbon\Carbon::parse($comparisonPeriod)->format('d/m/Y') : '-' }}</strong></span>
+                        </div>
+                        <div id="loanLoadingChip" class="loan-loading-chip d-none">
+                            <span class="loan-loading-dot"></span>
+                            MENYIAPKAN DATA...
+                        </div>
+                    </div>
+
+                    {{-- Original grid kept but hidden to avoid breaking existing script references if any --}}
+                    <div class="row loan-filter-grid d-none">
                         <div class="col-xl-2 col-lg-4 col-md-6">
                             <div class="form-group">
                                 <label class="loan-filter-label">Periode Laporan</label>
-                                <input id="loanPeriodeInput" type="date" name="periode" class="form-control loan-filter-control" value="{{ $requestedPeriod ?: $selectedPeriod }}" max="{{ $periods->first() }}">
+                                {{-- Input is already moved to modern section but kept here for fallback or ID reference if needed --}}
                             </div>
-                        </div>
-                        <div class="col-xl-2 col-lg-4 col-md-6">
-                            <div class="form-group">
-                                <label class="loan-filter-label">Segmen</label>
-                                <select id="loanSegmenSelect" name="segmen_dashboard[]" class="form-control select2 loan-filter-control loan-filter-multiselect" multiple data-placeholder="Semua Segmen" data-selected='@json($filters["segmen"] ?? [])'>
-                                    <option value="">Pilih periode dulu</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div class="col-xl-2 col-lg-4 col-md-6">
-                            <div class="form-group">
-                                <label class="loan-filter-label">Produk</label>
-                                <select id="loanProdukSelect" name="produk_dashboard[]" class="form-control select2 loan-filter-control loan-filter-multiselect" multiple data-placeholder="Semua Produk" data-selected='@json($filters["produk"] ?? [])'>
-                                    <option value="">Pilih periode dulu</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div class="col-xl-2 col-lg-4 col-md-6">
-                            <div class="form-group">
-                                <label class="loan-filter-label">Regional Office</label>
-                                <input type="text" class="form-control loan-filter-control" value="Area 6" disabled>
-                            </div>
-                        </div>
-                        <div class="col-xl-2 col-lg-4 col-md-6">
-                            <div class="form-group">
-                                <label class="loan-filter-label">Kantor Cabang</label>
-                                <select id="loanCabangSelect" name="cabang1[]" class="form-control select2 loan-filter-control loan-filter-multiselect" multiple data-placeholder="Semua Kantor Cabang" data-selected='@json($filters["cabang"] ?? [])'>
-                                    <option value="">Pilih periode dulu</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div class="col-xl-2 col-lg-4 col-md-6">
-                            <div class="form-group">
-                                <label class="loan-filter-label">Unit Kerja</label>
-                                <select id="loanUnitSelect" name="unit1[]" class="form-control select2 loan-filter-control loan-filter-multiselect" multiple data-placeholder="Semua Unit Kerja" data-selected='@json($filters["unit"] ?? [])'>
-                                    <option value="">Pilih periode dulu</option>
-                                </select>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="d-flex flex-wrap align-items-center loan-filter-actions mt-3" style="gap: 1rem; padding-top: 1.5rem; border-top: 1px dashed var(--loan-border-strong);">
-                        <button id="loanSubmitButton" type="submit" class="btn px-4 font-weight-bold" style="border-radius: 12px; height: 48px; letter-spacing: 0.05em; background: linear-gradient(135deg, var(--loan-blue), #307fe2); color: #ffffff; border: none; box-shadow: 0 4px 12px rgba(8, 87, 195, 0.2);">
-                            <i class="fas fa-search mr-2"></i>
-                            TAMPILKAN DATA
-                        </button>
-                        <a href="{{ route('report.dashboard-pinjaman.matrix') }}" class="btn btn-light px-4 font-weight-bold" style="border-radius: 12px; height: 48px; border: 1px solid var(--loan-border); color: var(--loan-blue-ink);">RESET</a>
-                        <div id="loanLoadingChip" class="loan-loading-chip d-none ml-2">
-                            <span class="loan-loading-dot"></span>
-                            SEDANG MENGOLAH DATA
                         </div>
                     </div>
                 </form>
@@ -704,6 +956,102 @@
                 }
             });
         });
+
+        // ── Modern Dropdown Sync Logic ──
+        function initModernDropdowns() {
+            const dropdownConfigs = [
+                { id: 'loanSegmenSelect', key: 'segmen' },
+                { id: 'loanProdukSelect', key: 'produk' },
+                { id: 'loanCabangSelect', key: 'cabang' },
+                { id: 'loanUnitSelect', key: 'unit' }
+            ];
+
+            dropdownConfigs.forEach(conf => {
+                const select = document.getElementById(conf.id);
+                const menu = document.querySelector(`[data-loan-dropdown-menu="${conf.key}"]`);
+                const toggle = document.querySelector(`[data-loan-dropdown-toggle="${conf.key}"]`);
+                if (!select || !menu || !toggle) return;
+                
+                const textSpan = toggle.querySelector('.loan-dropdown-text');
+
+                toggle.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const parent = toggle.closest('.loan-dropdown');
+                    const isOpen = parent.classList.contains('is-open');
+                    document.querySelectorAll('.loan-dropdown').forEach(d => d.classList.remove('is-open'));
+                    if (!isOpen) parent.classList.add('is-open');
+                });
+
+                // Update UI when select changes (manual or from original script)
+                window.jQuery(select).on('change.modern', () => syncCustomMenu(select, menu, textSpan));
+                
+                // Watch for DOM changes (when loadFilterOptions repopulates options)
+                const observer = new MutationObserver(() => syncCustomMenu(select, menu, textSpan));
+                observer.observe(select, { childList: true });
+
+                syncCustomMenu(select, menu, textSpan);
+            });
+
+            document.addEventListener('click', () => {
+                document.querySelectorAll('.loan-dropdown').forEach(d => d.classList.remove('is-open'));
+            });
+
+            // Date Input Sync
+            if (periodInput && periodDisplay) {
+                periodInput.addEventListener('change', () => {
+                    periodDisplay.textContent = periodInput.value;
+                });
+            }
+        }
+
+        function syncCustomMenu(select, menu, textSpan) {
+            const options = Array.from(select.options);
+            const selectedValues = Array.from(select.selectedOptions).map(o => o.value);
+            const placeholder = select.dataset.placeholder || 'Semua';
+
+            menu.innerHTML = '';
+            
+            if (options.length === 0 || (options.length === 1 && options[0].value === "")) {
+                menu.innerHTML = '<div class="px-3 py-3 text-center text-muted small"><i class="fas fa-spinner fa-spin mr-2"></i>Memuat...</div>';
+                return;
+            }
+
+            options.forEach(opt => {
+                if (opt.value === "") return;
+                const item = document.createElement('div');
+                const isActive = selectedValues.includes(opt.value);
+                item.className = `loan-dropdown-option ${isActive ? 'is-active' : ''}`;
+                item.innerHTML = `
+                    <div class="loan-dropdown-check">
+                        <i class="fas fa-check"></i>
+                    </div>
+                    <span>${opt.text}</span>
+                `;
+                item.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (select.hasAttribute('multiple')) {
+                        opt.selected = !opt.selected;
+                    } else {
+                        select.value = opt.value;
+                        document.querySelectorAll('.loan-dropdown').forEach(d => d.classList.remove('is-open'));
+                    }
+                    window.jQuery(select).trigger('change');
+                });
+                menu.appendChild(item);
+            });
+
+            if (selectedValues.length === 0) {
+                textSpan.textContent = placeholder;
+            } else if (selectedValues.length === 1) {
+                const text = select.selectedOptions[0].text;
+                textSpan.textContent = text.length > 22 ? text.substring(0, 19) + '...' : text;
+            } else {
+                textSpan.textContent = `${selectedValues.length} Terpilih`;
+            }
+        }
+
+        const periodDisplay = document.getElementById('loanPeriodeDisplay');
+        initModernDropdowns();
 
         if (periodInput.value) loadFilterOptions();
     });

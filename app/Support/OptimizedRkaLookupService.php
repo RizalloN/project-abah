@@ -37,10 +37,10 @@ class OptimizedRkaLookupService extends RkaLookupService
         string $groupBy = 'kanca',
         ?int $year = null
     ): array {
-        // Use parent's logic but with persistent cache
+        $defKey = md5(json_encode($definitions));
         return $this->withCaching(
             fn () => parent::aggregateByGroup($definitions, $monthColumn, $kancas, $units, $groupBy, $year),
-            "aggregate_by_group_{$monthColumn}_{$groupBy}_{$year}"
+            "aggregate_by_group_{$monthColumn}_{$groupBy}_{$year}_{$defKey}"
         );
     }
 
@@ -51,9 +51,10 @@ class OptimizedRkaLookupService extends RkaLookupService
         ?string $unit = null,
         ?int $year = null
     ): array {
+        $defKey = md5(json_encode($definitions));
         return $this->withCaching(
             fn () => parent::aggregateForScope($definitions, $monthColumn, $kanca, $unit, $year),
-            "aggregate_for_scope_{$monthColumn}_{$kanca}_{$unit}_{$year}"
+            "aggregate_for_scope_{$monthColumn}_{$kanca}_{$unit}_{$year}_{$defKey}"
         );
     }
 
@@ -73,9 +74,11 @@ class OptimizedRkaLookupService extends RkaLookupService
         $unitsKey = md5(json_encode($sortedUnits));
         $groupBy = strtolower(trim($groupBy)) === 'uker' ? 'uker' : 'region';
 
+        $defKey = md5(json_encode($definitions));
+
         return $this->withCaching(
             fn () => parent::aggregateByGroupWithRegionalFilter($definitions, $monthColumn, $regionPatterns, $year, $units, $groupBy),
-            "aggregate_regional_{$monthColumn}_{$patternsKey}_{$year}_{$unitsKey}_{$groupBy}"
+            "aggregate_regional_{$monthColumn}_{$patternsKey}_{$year}_{$unitsKey}_{$groupBy}_{$defKey}"
         );
     }
 

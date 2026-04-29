@@ -15,6 +15,25 @@ use Throwable;
 
 class ReportDataSyncService
 {
+    public static function analyzeTable(string $tableName): bool
+    {
+        if (!Schema::hasTable($tableName)) {
+            return false;
+        }
+
+        $driver = DB::getDriverName();
+        if (!in_array($driver, ['mysql', 'mariadb'], true)) {
+            return false;
+        }
+
+        try {
+            DB::statement('ANALYZE TABLE `' . str_replace('`', '``', $tableName) . '`');
+            return true;
+        } catch (Throwable) {
+            return false;
+        }
+    }
+
     private const AUDIT_TABLE = 'report_sync_audits';
     private const DASHBOARD_SNAPSHOT_TABLE = 'dashboard_pinjaman_snapshots';
     private const CHART_PERIODIK_SNAPSHOT_TABLE = 'dashboard_pinjaman_chart_periodik_snapshots';
@@ -148,7 +167,9 @@ class ReportDataSyncService
                 default => null,
             };
 
-            WarmReportCacheJob::dispatch();
+            if (!in_array($normalizedTable, ['daily_loan_dinamis', 'simpanan_multipn'], true)) {
+                WarmReportCacheJob::dispatch();
+            }
 
         } catch (Throwable $e) {
             $this->writeAudit($normalizedTable, $periodHint, $jobId, $source, 'snapshot_sync', 'failed', [
@@ -211,61 +232,35 @@ class ReportDataSyncService
 
     private function syncDailyLoan(?string $periodHint, ?int $jobId, ?string $source, ?string $deleteId = null): void
     {
-        $this->runSnapshotAudit('daily_loan_dinamis', $periodHint, $jobId, $source, 'snapshot_dashboard', function () use ($periodHint, $deleteId) {
-            return $this->snapshotBuilder->rebuildDashboard($periodHint, true, $this->makeHeartbeatCallback($deleteId, 'Rebuilding Dashboard snapshots...'));
-        });
-        if ($this->shouldRefreshDerivedSnapshotStatistics($periodHint)) {
-            $this->refreshTableStatistics(self::DASHBOARD_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
-        }
+        $normalizedPeriod = trim((string) $periodHint);
+        $periodForDispatch = $normalizedPeriod !== '' ? $normalizedPeriod : null;
+        $startedAt = microtime(true);
 
-        $this->runSnapshotAudit('daily_loan_dinamis', $periodHint, $jobId, $source, 'snapshot_dashboard_harian', function () use ($periodHint, $deleteId) {
-            if ($deleteId) { $this->heartbeat($deleteId, 'Rebuilding Daily Dashboard snapshots...'); }
-            return $this->dashboardHarianSnapshotService->rebuild($periodHint, true);
-        });
-        if ($this->shouldRefreshDerivedSnapshotStatistics($periodHint)) {
-            $this->refreshTableStatistics(self::DASHBOARD_HARIAN_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
-        }
+        try {
+            $batchId = ParallelSnapshotBatchCoordinator::dispatchDailyLoanParallelRebuild(
+                $periodForDispatch,
+                $deleteId,
+                $source
+            );
 
-        $this->runWithRasioSnapshotLock($periodHint, function () use ($periodHint, $jobId, $source) {
-            $this->runSnapshotAudit('daily_loan_dinamis', $periodHint, $jobId, $source, 'snapshot_rasio_casa', function () use ($periodHint) {
-                return $this->snapshotBuilder->rebuildRasioCasa($periodHint, true);
-            });
-        });
-        if ($this->shouldRefreshDerivedSnapshotStatistics($periodHint)) {
-            $this->refreshTableStatistics(self::RASIO_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
-            $this->refreshTableStatistics(self::RASIO_UKER_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
-        }
+            $this->writeAudit('daily_loan_dinamis', $periodHint, $jobId, $source, 'snapshot_parallel_dispatch', 'success', [
+                'duration_ms' => (int) round((microtime(true) - $startedAt) * 1000),
+                'context' => [
+                    'batch_id' => $batchId,
+                    'period_scope' => $periodForDispatch ?? 'all',
+                    'jobs' => ['dashboard_pinjaman', 'dashboard_harian', 'rasio_casa', 'performance_rm', 'chart_periodik'],
+                ],
+            ]);
+        } catch (Throwable $e) {
+            $this->writeAudit('daily_loan_dinamis', $periodHint, $jobId, $source, 'snapshot_parallel_dispatch', 'failed', [
+                'duration_ms' => (int) round((microtime(true) - $startedAt) * 1000),
+                'message' => $e->getMessage(),
+            ]);
 
-        $this->runSnapshotAudit('daily_loan_dinamis', $periodHint, $jobId, $source, 'snapshot_performance_rm', function () use ($periodHint) {
-            return $this->snapshotBuilder->rebuildPerformanceRm($periodHint, true);
-        });
-        if ($this->shouldRefreshDerivedSnapshotStatistics($periodHint)) {
-            $this->refreshTableStatistics(self::PERFORMANCE_RM_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
-        }
-
-        $this->runSnapshotAudit('daily_loan_dinamis', $periodHint, $jobId, $source, 'snapshot_chart_periodik', function () use ($periodHint) {
-            return $this->snapshotBuilder->rebuildChartPeriodik($periodHint, true);
-        });
-
-        if ($this->shouldRefreshDerivedSnapshotStatistics($periodHint)) {
-            $this->refreshTableStatistics(self::CHART_PERIODIK_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
+            throw $e;
         }
     }
 
-    /**
-     * Rebuild snapshots for Simpanan MultiPN import using PARALLEL jobs
-     *
-     * OPTIMIZED: Instead of sequential rebuild (40+ min):
-     *   - Dashboard Simpanan (5-10 min)
-     *   - Dashboard Harian (5-10 min)
-     *   - Rekening Dormant (5-10 min)
-     *   - Rasio CASA (5-10 min)
-     *   = 40+ minutes
-     *
-     * Now runs in parallel (8-10 min):
-     *   All 4 jobs run simultaneously via Bus::batch()
-     *   = 8-10 minutes (80% reduction!)
-     */
     private function syncSimpanan(?string $periodHint, ?int $jobId, ?string $source, ?string $deleteId = null): void
     {
         if ($this->shouldDeferSimpananSnapshotStart($periodHint)) {
@@ -288,28 +283,11 @@ class ReportDataSyncService
                     $source
                 );
 
-                Log::info('✓ Dispatched parallel snapshot rebuild batch for Simpanan MultiPN', [
+                Log::info('Dispatched parallel snapshot rebuild batch for Simpanan MultiPN', [
                     'period' => $periodHint,
                     'batch_id' => $batchId,
-                    'jobs' => [
-                        'Dashboard Simpanan',
-                        'Dashboard Harian',
-                        'Rekening Dormant',
-                        'Rasio CASA',
-                    ],
-                    'expected_duration_minutes' => '8-10',
-                    'improvement_vs_sequential' => '80%',
+                    'jobs' => ['Dashboard Simpanan', 'Dashboard Harian', 'Rekening Dormant', 'Rasio CASA', 'Performance RM'],
                 ]);
-
-                WarmReportCacheJob::dispatch();
-
-                $this->runSnapshotAudit('simpanan_multipn', $periodHint, $jobId, $source, 'snapshot_performance_rm', function () use ($periodHint) {
-                    return $this->snapshotBuilder->rebuildPerformanceRm($periodHint, true);
-                });
-
-                if ($this->shouldRefreshDerivedSnapshotStatistics($periodHint)) {
-                    $this->refreshTableStatistics(self::PERFORMANCE_RM_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
-                }
 
             } catch (Throwable $e) {
                 Log::error('Gagal mendispatch parallel snapshot rebuild batch', [

@@ -2,43 +2,40 @@
 
 namespace App\Support;
 
+use App\Jobs\RebuildLoanChartPeriodikSnapshotJob;
+use App\Jobs\RebuildLoanDashboardSnapshotJob;
 use App\Jobs\RebuildSnapshotDormantBatch;
 use App\Jobs\RebuildSnapshotHarianBatch;
+use App\Jobs\RebuildSnapshotPerformanceRmBatch;
 use App\Jobs\RebuildSnapshotRasioBatch;
 use App\Jobs\RebuildSnapshotSimpleBatch;
+use App\Jobs\WarmReportCacheJob;
 use Illuminate\Bus\Batch;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Cache;
 use Throwable;
 
 /**
- * Coordinates parallel execution of 4 snapshot rebuild jobs
+ * Coordinates parallel execution of snapshot rebuild jobs via Bus::batch().
  *
- * Instead of sequential rebuild (40+ minutes):
- *   Dashboard Simpanan (5-10 min)
- *   └─ Dashboard Harian (5-10 min)
- *   └─ Rekening Dormant (5-10 min)
- *   └─ Rasio CASA (5-10 min)
- *   = 40+ minutes total
+ * Simpanan (5 jobs in parallel, ~8-10 min):
+ *   Dashboard Simpanan, Dashboard Harian, Rekening Dormant, Rasio CASA, Performance RM
  *
- * Parallel rebuild (8-10 minutes):
- *   Dashboard Simpanan (5-10 min) ┐
- *   Dashboard Harian (5-10 min)   ├─ All 4 run simultaneously
- *   Rekening Dormant (5-10 min)   │
- *   Rasio CASA (5-10 min)         ┘
- *   = 8-10 minutes total (80% reduction!)
+ * Daily Loan (5 jobs in parallel, ~10-15 min):
+ *   Dashboard Pinjaman, Dashboard Harian, Rasio CASA, Performance RM, Chart Periodik
  *
- * Usage:
- *   ParallelSnapshotBatchCoordinator::dispatchParallelRebuild($periodHint, $deleteId, $source);
+ * All jobs run on the 'snapshots-parallel' queue.
+ * Workers must listen: php artisan queue:work --queue=snapshots-parallel,imports-high,default
  */
 class ParallelSnapshotBatchCoordinator
 {
     /**
-     * Dispatch 4 snapshot rebuild jobs to run in parallel
+     * Dispatch 5 Simpanan snapshot rebuild jobs to run in parallel.
      *
      * @param string $periodHint Period to rebuild (e.g., "202604")
      * @param string|null $deleteId Progress tracking ID for UI feedback
-     * @param string|null $source Source of the rebuild trigger (e.g., "import", "manual")
+     * @param string|null $source Source of the rebuild trigger
      * @return string Batch ID for monitoring
      */
     public static function dispatchParallelRebuild(
@@ -46,12 +43,10 @@ class ParallelSnapshotBatchCoordinator
         ?string $deleteId = null,
         ?string $source = null
     ): string {
-        Log::info('Dispatching parallel snapshot rebuild batch', [
+        Log::info('Dispatching parallel Simpanan snapshot rebuild batch', [
             'period' => $periodHint,
-            'delete_id' => $deleteId,
             'source' => $source,
-            'jobs_count' => 4,
-            'expected_duration_minutes' => '8-10',
+            'jobs_count' => 5,
         ]);
 
         $jobs = [
@@ -59,79 +54,121 @@ class ParallelSnapshotBatchCoordinator
             new RebuildSnapshotHarianBatch($periodHint, $deleteId),
             new RebuildSnapshotDormantBatch($periodHint, $deleteId),
             new RebuildSnapshotRasioBatch($periodHint, $deleteId),
+            new RebuildSnapshotPerformanceRmBatch($periodHint, $deleteId),
         ];
 
-        $batchId = Bus::batch($jobs)
+        $batch = Bus::batch($jobs)
             ->then(function (Batch $batch) use ($periodHint, $source) {
                 self::handleBatchSuccess($batch, $periodHint, $source);
+                WarmReportCacheJob::dispatch();
             })
-            ->catch(function (Batch $batch, Throwable $e) use ($periodHint) {
-                self::handleBatchFailure($batch, $periodHint, $e);
-            })
-            ->finally(function (Batch $batch) use ($periodHint) {
-                self::handleBatchCompletion($batch, $periodHint);
-            })
+            ->catch(fn (Batch $batch, Throwable $e) => self::handleBatchFailure($batch, $periodHint, $e))
+            ->finally(fn (Batch $batch) => self::handleBatchCompletion($batch, $periodHint))
+            ->name('simpanan:' . $periodHint)
             ->onQueue('snapshots-parallel')
             ->dispatch();
 
-        Log::info('Parallel snapshot rebuild batch dispatched', [
-            'batch_id' => $batchId,
+        Log::info('Simpanan parallel snapshot batch dispatched', [
+            'batch_id' => $batch->id,
             'period' => $periodHint,
         ]);
 
-        return $batchId;
+        return $batch->id;
     }
 
     /**
-     * Called when all 4 jobs complete successfully
+     * Dispatch 5 Daily Loan snapshot rebuild jobs to run in parallel.
+     *
+     * @param string|null $periodHint Period to rebuild (e.g., "202604"), null for global rebuild
+     * @param string|null $deleteId Progress tracking ID for UI feedback
+     * @param string|null $source Source of the rebuild trigger
+     * @return string Batch ID for monitoring
      */
-    private static function handleBatchSuccess(Batch $batch, string $periodHint, ?string $source): void
-    {
-        $duration = $batch->createdAt->diffInSeconds(now());
+    public static function dispatchDailyLoanParallelRebuild(
+        ?string $periodHint = null,
+        ?string $deleteId = null,
+        ?string $source = null
+    ): string {
+        Log::info('Dispatching parallel Daily Loan snapshot rebuild batch', [
+            'period' => $periodHint,
+            'source' => $source,
+            'jobs_count' => 5,
+        ]);
 
-        Log::info('✓ Parallel snapshot rebuild batch COMPLETED', [
+        $jobs = [
+            new RebuildLoanDashboardSnapshotJob($periodHint, $deleteId),
+            new RebuildSnapshotHarianBatch($periodHint, $deleteId),
+            new RebuildSnapshotRasioBatch($periodHint, $deleteId),
+            new RebuildSnapshotPerformanceRmBatch($periodHint, $deleteId),
+            new RebuildLoanChartPeriodikSnapshotJob($periodHint, $deleteId),
+        ];
+
+        $batch = Bus::batch($jobs)
+            ->then(function (Batch $batch) use ($periodHint, $source) {
+                self::handleBatchSuccess($batch, $periodHint, $source);
+                WarmReportCacheJob::dispatch();
+            })
+            ->catch(fn (Batch $batch, Throwable $e) => self::handleBatchFailure($batch, $periodHint, $e))
+            ->finally(fn (Batch $batch) => self::handleBatchCompletion($batch, $periodHint))
+            ->name('daily_loan:' . $periodHint)
+            ->onQueue('snapshots-parallel')
+            ->dispatch();
+
+        Log::info('Daily Loan parallel snapshot batch dispatched', [
             'batch_id' => $batch->id,
             'period' => $periodHint,
-            'total_jobs' => 4,
+        ]);
+
+        return $batch->id;
+    }
+
+    private static function handleBatchSuccess(Batch $batch, ?string $periodHint, ?string $source): void
+    {
+        $duration = $batch->createdAt->diffInSeconds(now());
+        $total = $batch->totalJobs;
+        $periodScope = $periodHint ?: 'all';
+
+        Log::info('Parallel snapshot rebuild batch COMPLETED', [
+            'batch_id' => $batch->id,
+            'batch_name' => $batch->name,
+            'period_scope' => $periodScope,
+            'total_jobs' => $total,
             'duration_seconds' => $duration,
             'duration_formatted' => self::formatDuration($duration),
             'source' => $source ?? 'unknown',
-            'throughput' => round(4 / max($duration, 1), 2) . ' jobs/sec',
         ]);
     }
 
-    /**
-     * Called if any job in the batch fails
-     */
-    private static function handleBatchFailure(Batch $batch, string $periodHint, Throwable $e): void
+    private static function handleBatchFailure(Batch $batch, ?string $periodHint, Throwable $e): void
     {
-        Log::error('✗ Parallel snapshot rebuild batch FAILED', [
+        $periodScope = $periodHint ?: 'all';
+
+        Log::error('Parallel snapshot rebuild batch FAILED', [
             'batch_id' => $batch->id,
-            'period' => $periodHint,
+            'batch_name' => $batch->name,
+            'period_scope' => $periodScope,
             'failed_jobs' => $batch->failedJobs,
-            'total_jobs' => 4,
+            'total_jobs' => $batch->totalJobs,
             'error_message' => $e->getMessage(),
             'error_class' => $e::class,
         ]);
     }
 
-    /**
-     * Called when batch completes (success or failure)
-     */
-    private static function handleBatchCompletion(Batch $batch, string $periodHint): void
+    private static function handleBatchCompletion(Batch $batch, ?string $periodHint): void
     {
+        $periodScope = $periodHint ?: 'all';
+
         $stats = [
             'batch_id' => $batch->id,
-            'period' => $periodHint,
-            'total_jobs' => 4,
+            'batch_name' => $batch->name,
+            'period_scope' => $periodScope,
+            'total_jobs' => $batch->totalJobs,
             'pending_jobs' => $batch->pendingJobs,
             'failed_jobs' => $batch->failedJobs,
-            'processed_jobs' => 4 - $batch->pendingJobs - $batch->failedJobs,
         ];
 
         Log::info('Parallel snapshot rebuild batch COMPLETION CALLBACK', $stats);
 
-        // Optional: Send notification to admins if any failures
         if ($batch->failedJobs > 0) {
             Log::warning('Parallel snapshot batch has failed jobs - manual intervention may be needed', $stats);
         }
@@ -152,14 +189,18 @@ class ParallelSnapshotBatchCoordinator
                 ];
             }
 
+            $total = max($batch->totalJobs, 1);
+            $completed = $total - $batch->pendingJobs - $batch->failedJobs;
+
             return [
                 'found' => true,
                 'batch_id' => $batchId,
+                'batch_name' => $batch->name,
                 'status' => $batch->failedJobs > 0 ? 'failed' : ($batch->pendingJobs > 0 ? 'processing' : 'completed'),
-                'progress_percent' => round(((4 - $batch->pendingJobs) / 4) * 100),
-                'completed_jobs' => 4 - $batch->pendingJobs - $batch->failedJobs,
+                'progress_percent' => round(($completed / $total) * 100),
+                'completed_jobs' => $completed,
                 'failed_jobs' => $batch->failedJobs,
-                'total_jobs' => 4,
+                'total_jobs' => $total,
                 'created_at' => $batch->createdAt?->toDateTimeString(),
                 'finished_at' => $batch->finishedAt?->toDateTimeString(),
                 'duration_seconds' => $batch->createdAt?->diffInSeconds(now() ?? $batch->finishedAt),

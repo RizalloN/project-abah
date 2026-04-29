@@ -314,7 +314,7 @@ class DashboardPinjamanKreditService
      */
     private function loadRkaForSegment(string $selectedPeriod, string $segment, array $branches): array
     {
-        $cacheKey = 'sme_segment_rka_v3:' . md5($selectedPeriod . '|' . $segment . '|' . implode(',', $branches));
+        $cacheKey = 'sme_segment_rka_v4_micro_loan_scope:' . md5($selectedPeriod . '|' . $segment . '|' . implode(',', $branches));
 
         // Check local cache first
         if (isset($this->rkaCache[$cacheKey])) {
@@ -498,8 +498,8 @@ class DashboardPinjamanKreditService
             ];
         } elseif ($type === 'npl') {
             return [
-                'kecil_non_cashcoll_npl' => ['mata_anggaran' => ['NPL Rp Kecil Non Cash Collateral', 'DPK Rp Kecil Non Cash Collateral'], 'uker_contains_any' => ['KC', 'KCP']],
-                'cashcoll_npl' => ['mata_anggaran' => ['NPL Rp Kecil Cash Collateral', 'DPK Rp Kecil Cash Collateral'], 'uker_contains_any' => ['KC', 'KCP']],
+                'kecil_non_cashcoll_npl' => ['mata_anggaran' => ['NPL Rp Kecil Non Cash Collateral'], 'uker_contains_any' => ['KC', 'KCP']],
+                'cashcoll_npl' => ['mata_anggaran' => ['NPL Rp Kecil Cash Collateral'], 'uker_contains_any' => ['KC', 'KCP']],
             ];
         }
 
@@ -520,8 +520,8 @@ class DashboardPinjamanKreditService
             ];
         } elseif ($type === 'npl') {
             return [
-                'briguna_konsumer_npl' => ['mata_anggaran' => ['NPL Rp Briguna', 'DPK Rp Briguna'], 'uker_contains_any' => ['KC', 'KCP']],
-                'kpr_npl' => ['mata_anggaran' => ['NPL Rp KPR', 'DPK Rp KPR'], 'uker_contains_any' => ['KC', 'KCP']],
+                'briguna_konsumer_npl' => ['mata_anggaran' => ['NPL Rp Briguna'], 'uker_contains_any' => ['KC', 'KCP']],
+                'kpr_npl' => ['mata_anggaran' => ['NPL Rp KPR'], 'uker_contains_any' => ['KC', 'KCP']],
             ];
         }
 
@@ -532,30 +532,30 @@ class DashboardPinjamanKreditService
     {
         if ($type === 'os') {
             return [
-                'micro_os' => ['mata_anggaran' => ['B.1. MIKRO'], 'uker_contains_any' => ['UNIT']],
-                'briguna_mikro_os' => ['mata_anggaran' => ['B.1.b. Briguna Mikro'], 'uker_contains_any' => ['UNIT']],
-                'kupedes_os' => ['mata_anggaran' => ['B.1.a. Kupedes Komersial'], 'uker_contains_any' => ['UNIT']],
-                'kur_mikro_os' => ['mata_anggaran' => ['B.1.c. KUR Mikro'], 'uker_contains_any' => ['UNIT']],
-                'kur_kecil_os' => ['mata_anggaran' => ['B.1.d. KUR Kecil'], 'uker_contains_any' => ['UNIT']],
-                'kur_kpp_os' => ['mata_anggaran' => ['B.1.e. KPP'], 'uker_contains_any' => ['UNIT']],
+                'micro_os' => ['mata_anggaran' => ['B.1. MIKRO']],
+                'briguna_mikro_os' => ['mata_anggaran' => ['B.1.b. Briguna Mikro']],
+                'kupedes_os' => ['mata_anggaran' => ['B.1.a. Kupedes Komersial']],
+                'kur_mikro_os' => ['mata_anggaran' => ['B.1.c. KUR Mikro']],
+                'kur_kecil_os' => ['mata_anggaran' => ['B.1.d. KUR Kecil']],
+                'kur_kpp_os' => ['mata_anggaran' => ['B.1.e. KPP']],
             ];
         } elseif ($type === 'sml') {
             return [
-                'micro_sml' => ['mata_anggaran' => ['DPK Rp Mikro'], 'uker_contains_any' => ['UNIT']],
-                'briguna_mikro_sml' => ['mata_anggaran' => ['DPK Rp Briguna Mikro'], 'uker_contains_any' => ['UNIT']],
-                'kupedes_sml' => ['mata_anggaran' => ['DPK Rp Kupedes Komersial'], 'uker_contains_any' => ['UNIT']],
-                'kur_mikro_sml' => ['mata_anggaran' => ['DPK Rp KUR Mikro'], 'uker_contains_any' => ['UNIT']],
-                'kur_kecil_sml' => ['mata_anggaran' => ['DPK Rp KUR Kecil'], 'uker_contains_any' => ['UNIT']],
-                'kur_kpp_sml' => ['mata_anggaran' => ['DPK Rp KPP'], 'uker_contains_any' => ['UNIT']],
+                'micro_sml' => ['mata_anggaran' => ['DPK Rp Mikro']],
+                'briguna_mikro_sml' => ['mata_anggaran' => ['DPK Rp Briguna Mikro']],
+                'kupedes_sml' => ['mata_anggaran' => ['DPK Rp Kupedes Komersial']],
+                'kur_mikro_sml' => ['mata_anggaran' => ['DPK Rp KUR Mikro']],
+                'kur_kecil_sml' => ['mata_anggaran' => ['DPK Rp KUR Kecil']],
+                'kur_kpp_sml' => ['mata_anggaran' => ['DPK Rp KPP']],
             ];
         } elseif ($type === 'npl') {
             return [
-                'micro_npl' => ['mata_anggaran' => ['NPL Rp Mikro', 'DPK Rp Mikro'], 'uker_contains_any' => ['UNIT']],
-                'briguna_mikro_npl' => ['mata_anggaran' => ['NPL Rp Briguna Mikro', 'DPK Rp Briguna Mikro'], 'uker_contains_any' => ['UNIT']],
-                'kupedes_npl' => ['mata_anggaran' => ['NPL Rp Kupedes Komersial', 'DPK Rp Kupedes Komersial'], 'uker_contains_any' => ['UNIT']],
-                'kur_mikro_npl' => ['mata_anggaran' => ['NPL Rp KUR Mikro', 'DPK Rp KUR Mikro'], 'uker_contains_any' => ['UNIT']],
-                'kur_kecil_npl' => ['mata_anggaran' => ['NPL Rp KUR Kecil', 'DPK Rp KUR Kecil'], 'uker_contains_any' => ['UNIT']],
-                'kur_kpp_npl' => ['mata_anggaran' => ['NPL Rp KPP', 'DPK Rp KPP'], 'uker_contains_any' => ['UNIT']],
+                'micro_npl' => ['mata_anggaran' => ['NPL Rp Mikro']],
+                'briguna_mikro_npl' => ['mata_anggaran' => ['NPL Rp Briguna Mikro']],
+                'kupedes_npl' => ['mata_anggaran' => ['NPL Rp Kupedes Komersial']],
+                'kur_mikro_npl' => ['mata_anggaran' => ['NPL Rp KUR Mikro']],
+                'kur_kecil_npl' => ['mata_anggaran' => ['NPL Rp KUR Kecil']],
+                'kur_kpp_npl' => ['mata_anggaran' => ['NPL Rp KPP']],
             ];
         }
 

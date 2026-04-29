@@ -6,94 +6,200 @@
 @include('report.dashboard-pinjaman._partials._styles')
 
 <style>
-    .loan-credit-hero {
+    .loan-filter-modern {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr) auto;
+        gap: 1.5rem;
+        background: rgba(255, 255, 255, 0.85);
+        backdrop-filter: blur(25px);
+        padding: 1.5rem;
+        border-radius: 2rem;
+        border: 1px solid rgba(255, 255, 255, 0.9);
+        box-shadow: 
+            0 10px 15px -3px rgba(0, 0, 0, 0.05),
+            0 30px 60px -20px rgba(8, 87, 195, 0.2);
+        margin-bottom: 2.5rem;
         position: relative;
-        isolation: isolate;
-        overflow: hidden;
-        margin-bottom: 1rem;
-        padding: 1.45rem 1.25rem;
-        border-radius: 0 0 1.4rem 1.4rem;
-        background:
-            radial-gradient(circle at 12% 18%, rgba(255, 103, 31, 0.16), transparent 26%),
-            radial-gradient(circle at 88% 10%, rgba(59, 130, 246, 0.22), transparent 28%),
-            linear-gradient(135deg, #003b75 0%, #00529c 48%, #0f4c97 100%);
-        color: #ffffff;
-        box-shadow: 0 18px 40px -30px rgba(0, 55, 116, 0.55);
+        z-index: 1000;
+        align-items: flex-end;
     }
 
-    .loan-credit-hero::before {
-        content: '';
-        position: absolute;
-        inset: 0;
-        z-index: -1;
-        background:
-            linear-gradient(120deg, rgba(255, 255, 255, 0.12), transparent 35%),
-            repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.08) 0 1px, transparent 1px 18px);
-        opacity: 0.72;
+    /* Prevent any clipping from parents */
+    .loan-shell, .loan-shell .card-body {
+        overflow: visible !important;
     }
 
-    .loan-credit-title-wrap {
-        width: min(100%, 860px);
-        text-align: center;
-        padding: 0.05rem 1rem;
+    .loan-filter-item {
+        display: flex;
+        flex-direction: column;
+        gap: 0.6rem;
+        position: relative;
     }
 
-    .loan-credit-title-badge {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.45rem;
-        margin-bottom: 0.6rem;
-        padding: 0.32rem 0.72rem;
-        border-radius: 999px;
-        background: rgba(255, 255, 255, 0.12);
-        border: 1px solid rgba(255, 255, 255, 0.24);
-        color: rgba(255, 255, 255, 0.92);
-        font-size: 0.64rem;
+    /* Descending z-index for items */
+    .loan-filter-item:nth-child(1) { z-index: 20; }
+    .loan-filter-item:nth-child(2) { z-index: 10; }
+
+    .loan-filter-modern .loan-filter-label {
+        font-size: 0.75rem;
         font-weight: 800;
-        letter-spacing: 0.12em;
+        color: #475569;
         text-transform: uppercase;
-        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+        letter-spacing: 0.1em;
+        margin-left: 0.65rem;
     }
 
-    .loan-credit-title-badge i {
-        color: #ffb15c;
+    .loan-dropdown {
+        position: relative;
+        width: 100%;
     }
 
-    .loan-credit-title {
-        margin: 0;
-        font-size: clamp(1.18rem, 2.05vw, 2rem);
-        font-weight: 900;
-        color: #ffffff;
-        letter-spacing: 0.035em;
-        line-height: 1.08;
+    .loan-dropdown-icon {
+        position: absolute;
+        left: 1.25rem;
+        top: 50%;
+        transform: translateY(-50%);
+        z-index: 10;
+        color: var(--loan-blue);
+        font-size: 1.1rem;
+        pointer-events: none;
+        opacity: 0.8;
+    }
+
+    .loan-dropdown-toggle {
+        width: 100%;
+        height: 60px;
+        background: #ffffff;
+        border: 2px solid #e2e8f0;
+        border-radius: 18px;
+        padding: 0 1.5rem 0 3.5rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-weight: 700;
+        font-size: 0.95rem;
+        color: #1e293b;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        text-align: left;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+    }
+
+    .loan-dropdown-toggle:hover {
+        border-color: var(--loan-blue);
+        box-shadow: 0 10px 25px rgba(8, 87, 195, 0.12);
+        transform: translateY(-2px);
+    }
+
+    .loan-dropdown.is-open { z-index: 3100 !important; }
+    .loan-dropdown.is-open .loan-dropdown-toggle {
+        border-color: var(--loan-blue);
+        box-shadow: 0 0 0 5px rgba(8, 87, 195, 0.1);
+    }
+
+    .loan-dropdown-menu {
+        position: absolute;
+        top: calc(100% + 12px);
+        left: 0;
+        width: 100%;
+        min-width: 340px;
+        background: rgba(255, 255, 255, 0.98);
+        backdrop-filter: blur(25px);
+        border: 1px solid rgba(226, 232, 240, 0.9);
+        border-radius: 1.75rem;
+        box-shadow: 
+            0 25px 50px -12px rgba(0, 0, 0, 0.2),
+            0 15px 30px -10px rgba(0, 0, 0, 0.1);
+        z-index: 3000;
+        opacity: 0;
+        visibility: hidden;
+        transform: translateY(15px);
+        transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        max-height: 500px;
+        overflow-y: auto;
+        padding: 0.85rem;
+    }
+
+    .loan-dropdown.is-open .loan-dropdown-menu {
+        opacity: 1;
+        visibility: visible;
+        transform: translateY(0);
+    }
+
+    .loan-dropdown-option {
+        width: 100%;
+        padding: 0.85rem 1.25rem;
+        border: none;
+        background: transparent;
+        border-radius: 1rem;
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        font-weight: 700;
+        font-size: 0.9rem;
+        color: #475569;
+        transition: all 0.2s;
+        text-align: left;
+        margin-bottom: 4px;
+    }
+
+    .loan-dropdown-option:hover {
+        background: #f1f5f9;
+        color: var(--loan-blue);
+    }
+
+    .loan-dropdown-option.is-active {
+        background: rgba(8, 87, 195, 0.08);
+        color: var(--loan-blue);
+    }
+
+    .loan-dropdown-check {
+        width: 1.4rem;
+        height: 1.4rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 2px solid #e2e8f0;
+        border-radius: 8px;
+        transition: all 0.2s;
+        font-size: 0.8rem;
+        color: white;
+    }
+
+    .loan-dropdown-option.is-active .loan-dropdown-check {
+        background: var(--loan-blue);
+        border-color: var(--loan-blue);
+    }
+
+    .btn-loan-modern-submit {
+        height: 60px;
+        min-width: 220px;
+        padding: 0 2rem;
+        border-radius: 18px;
+        background: linear-gradient(135deg, var(--loan-blue) 0%, #1e40af 100%);
+        color: white;
+        border: none;
+        font-weight: 800;
+        font-size: 0.95rem;
+        letter-spacing: 0.08em;
         text-transform: uppercase;
-        text-shadow: 0 10px 26px rgba(0, 18, 50, 0.28);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.85rem;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        box-shadow: 0 10px 20px rgba(8, 87, 195, 0.3);
     }
 
-    .loan-credit-title::after {
-        content: '';
-        display: block;
-        width: min(130px, 38vw);
-        height: 3px;
-        margin: 0.7rem auto 0;
-        border-radius: 999px;
-        background: linear-gradient(90deg, #ff671f, #f9b233, rgba(255, 255, 255, 0.9));
-        box-shadow: 0 8px 18px rgba(255, 103, 31, 0.28);
+    .btn-loan-modern-submit:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 15px 30px rgba(8, 87, 195, 0.4);
     }
 
-    .loan-credit-desc {
-        margin: 0.65rem auto 0;
-        color: rgba(255, 255, 255, 0.78);
-        font-size: 0.78rem;
-        line-height: 1.6;
-        max-width: 660px;
+    /* Hide Original */
+    .select2-container--bootstrap4, .loan-filter-control {
+        display: none !important;
     }
-
-    @media (max-width: 575.98px) {
-        .loan-credit-hero {
-            padding: 1.15rem 0.85rem;
-        }
-    }
+</style>
 </style>
 
 <div class="loan-dashboard pt-4 px-3" id="loanDashboardCaptureArea">
@@ -109,31 +215,60 @@
         </div>
     </div>
 
-    <!-- Filter Section -->
     <div class="card loan-shell mb-4 animate-reveal">
         <div class="card-body p-4">
-            <div class="row align-items-end g-3">
-                <div class="col-md-4 text-start">
-                    <label for="periodeSelector" class="loan-filter-label">Periode Terakhir</label>
-                    <select id="periodeSelector" class="form-control loan-filter-control select2">
-                        @foreach($periods as $periode)
-                            <option value="{{ $periode }}" @selected($periode === $selectedPeriod)>
-                                {{ \Carbon\Carbon::parse($periode)->format('d M Y') }}
-                            </option>
-                        @endforeach
-                    </select>
+            <div class="loan-filter-modern">
+                <div class="loan-filter-item">
+                    <label class="loan-filter-label">Periode Terakhir</label>
+                    <div class="loan-dropdown" data-loan-dropdown="periode">
+                        <i class="fas fa-calendar-day loan-dropdown-icon"></i>
+                        <button type="button" class="loan-dropdown-toggle" data-loan-dropdown-toggle="periode">
+                            <span class="loan-dropdown-text">Pilih Periode</span>
+                            <i class="fas fa-chevron-down small opacity-50"></i>
+                        </button>
+                        <div class="loan-dropdown-menu" data-loan-dropdown-menu="periode">
+                            @foreach($periods as $periode)
+                                <div class="loan-dropdown-option {{ $periode === $selectedPeriod ? 'is-active' : '' }}" data-value="{{ $periode }}">
+                                    <div class="loan-dropdown-check"><i class="fas fa-check"></i></div>
+                                    <span>{{ \Carbon\Carbon::parse($periode)->format('d M Y') }}</span>
+                                </div>
+                            @endforeach
+                        </div>
+                        <select id="periodeSelector" class="d-none">
+                            @foreach($periods as $periode)
+                                <option value="{{ $periode }}" @selected($periode === $selectedPeriod)>{{ $periode }}</option>
+                            @endforeach
+                        </select>
+                    </div>
                 </div>
-                <div class="col-md-4 text-start">
-                    <label for="kategoriSelector" class="loan-filter-label">Kategori</label>
-                    <select id="kategoriSelector" class="form-control loan-filter-control select2">
-                        @foreach($categories as $cat)
-                            <option value="{{ $cat }}" @selected($cat === $selectedCategory)>{{ $cat }}</option>
-                        @endforeach
-                    </select>
+
+                <div class="loan-filter-item">
+                    <label class="loan-filter-label">Kategori Portofolio</label>
+                    <div class="loan-dropdown" data-loan-dropdown="kategori">
+                        <i class="fas fa-tags loan-dropdown-icon"></i>
+                        <button type="button" class="loan-dropdown-toggle" data-loan-dropdown-toggle="kategori">
+                            <span class="loan-dropdown-text">{{ $selectedCategory }}</span>
+                            <i class="fas fa-chevron-down small opacity-50"></i>
+                        </button>
+                        <div class="loan-dropdown-menu" data-loan-dropdown-menu="kategori">
+                            @foreach($categories as $cat)
+                                <div class="loan-dropdown-option {{ $cat === $selectedCategory ? 'is-active' : '' }}" data-value="{{ $cat }}">
+                                    <div class="loan-dropdown-check"><i class="fas fa-check"></i></div>
+                                    <span>{{ $cat }}</span>
+                                </div>
+                            @endforeach
+                        </div>
+                        <select id="kategoriSelector" class="d-none">
+                            @foreach($categories as $cat)
+                                <option value="{{ $cat }}" @selected($cat === $selectedCategory)>{{ $cat }}</option>
+                            @endforeach
+                        </select>
+                    </div>
                 </div>
-                <div class="col-md-4">
-                    <button type="button" class="btn btn-primary w-100" id="btnLoadData" style="height: 40px; border-radius: 11px; font-weight: 700;">
-                        <i class="fas fa-sync-alt mr-2"></i> PERBARUI DASHBOARD
+
+                <div>
+                    <button type="button" class="btn-loan-modern-submit w-100" id="btnLoadData">
+                        <i class="fas fa-sync-alt"></i> PERBARUI DASHBOARD
                     </button>
                 </div>
             </div>
@@ -865,6 +1000,53 @@ document.addEventListener('DOMContentLoaded', function () {
 
     btnLoadData.addEventListener('click', loadDashboardData);
     
+    // --- Modern Dropdown Logic ---
+    function initModernSelectors() {
+        document.querySelectorAll('.loan-dropdown-toggle').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const parent = btn.closest('.loan-dropdown');
+                const isOpen = parent.classList.contains('is-open');
+                document.querySelectorAll('.loan-dropdown').forEach(d => d.classList.remove('is-open'));
+                if (!isOpen) parent.classList.add('is-open');
+            });
+        });
+
+        document.querySelectorAll('.loan-dropdown-option').forEach(opt => {
+            opt.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const parent = opt.closest('.loan-dropdown');
+                const select = parent.querySelector('select');
+                const textSpan = parent.querySelector('.loan-dropdown-text');
+                const val = opt.dataset.value;
+
+                select.value = val;
+                textSpan.textContent = opt.querySelector('span').textContent;
+                
+                parent.querySelectorAll('.loan-dropdown-option').forEach(o => o.classList.remove('is-active'));
+                opt.classList.add('is-active');
+                parent.classList.remove('is-open');
+                
+                $(select).trigger('change');
+            });
+        });
+
+        document.addEventListener('click', () => {
+            document.querySelectorAll('.loan-dropdown').forEach(d => d.classList.remove('is-open'));
+        });
+
+        // Sync initial text
+        document.querySelectorAll('.loan-dropdown').forEach(d => {
+            const select = d.querySelector('select');
+            const textSpan = d.querySelector('.loan-dropdown-text');
+            if (select && select.selectedIndex >= 0) {
+                textSpan.textContent = select.options[select.selectedIndex].text;
+            }
+        });
+    }
+
+    initModernSelectors();
+
     // Initial load
     if ($periodeSel.val()) {
         loadDashboardData();

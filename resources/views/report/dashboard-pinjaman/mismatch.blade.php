@@ -5,6 +5,181 @@
 @section('content')
 @include('report.dashboard-pinjaman._partials._styles')
 
+<style>
+    .loan-filter-modern {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr) auto;
+        gap: 1.5rem;
+        background: rgba(255, 255, 255, 0.85);
+        backdrop-filter: blur(25px);
+        padding: 1.5rem;
+        border-radius: 2rem;
+        border: 1px solid rgba(255, 255, 255, 0.9);
+        box-shadow: 
+            0 10px 15px -3px rgba(0, 0, 0, 0.05),
+            0 30px 60px -20px rgba(8, 87, 195, 0.2);
+        margin-bottom: 2.5rem;
+        position: relative;
+        z-index: 1000;
+        align-items: flex-end;
+    }
+
+    .loan-shell, .loan-shell .card-body {
+        overflow: visible !important;
+    }
+
+    .loan-filter-item {
+        display: flex;
+        flex-direction: column;
+        gap: 0.6rem;
+        position: relative;
+    }
+
+    .loan-filter-item:nth-child(1) { z-index: 20; }
+    .loan-filter-item:nth-child(2) { z-index: 10; }
+
+    .loan-filter-modern .loan-filter-label {
+        font-size: 0.75rem;
+        font-weight: 800;
+        color: #475569;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        margin-left: 0.65rem;
+    }
+
+    .loan-dropdown {
+        position: relative;
+        width: 100%;
+    }
+
+    .loan-dropdown-icon {
+        position: absolute;
+        left: 1.25rem;
+        top: 50%;
+        transform: translateY(-50%);
+        z-index: 10;
+        color: var(--loan-blue);
+        font-size: 1.1rem;
+        pointer-events: none;
+        opacity: 0.8;
+    }
+
+    .loan-dropdown-toggle {
+        width: 100%;
+        height: 60px;
+        background: #ffffff;
+        border: 2px solid #e2e8f0;
+        border-radius: 18px;
+        padding: 0 1.5rem 0 3.5rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-weight: 700;
+        font-size: 0.95rem;
+        color: #1e293b;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        text-align: left;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+    }
+
+    .loan-dropdown-toggle:hover {
+        border-color: var(--loan-blue);
+        box-shadow: 0 10px 25px rgba(8, 87, 195, 0.12);
+        transform: translateY(-2px);
+    }
+
+    .loan-dropdown.is-open { z-index: 3100 !important; }
+
+    .loan-dropdown-menu {
+        position: absolute;
+        top: calc(100% + 12px);
+        left: 0;
+        width: 100%;
+        min-width: 320px;
+        background: rgba(255, 255, 255, 0.98);
+        backdrop-filter: blur(25px);
+        border: 1px solid rgba(226, 232, 240, 0.9);
+        border-radius: 1.75rem;
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.2);
+        z-index: 3000;
+        opacity: 0;
+        visibility: hidden;
+        transform: translateY(15px);
+        transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        max-height: 480px;
+        overflow-y: auto;
+        padding: 0.75rem;
+    }
+
+    .loan-dropdown.is-open .loan-dropdown-menu {
+        opacity: 1;
+        visibility: visible;
+        transform: translateY(0);
+    }
+
+    .loan-dropdown-option {
+        width: 100%;
+        padding: 0.85rem 1.25rem;
+        border: none;
+        background: transparent;
+        border-radius: 1rem;
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        font-weight: 700;
+        font-size: 0.9rem;
+        color: #475569;
+        transition: all 0.2s;
+        text-align: left;
+        margin-bottom: 4px;
+    }
+
+    .loan-dropdown-option:hover { background: #f1f5f9; color: var(--loan-blue); }
+    .loan-dropdown-option.is-active { background: rgba(8, 87, 195, 0.08); color: var(--loan-blue); }
+
+    .loan-dropdown-check {
+        width: 1.4rem;
+        height: 1.4rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 2px solid #e2e8f0;
+        border-radius: 8px;
+        transition: all 0.2s;
+        font-size: 0.8rem;
+        color: white;
+    }
+
+    .loan-dropdown-option.is-active .loan-dropdown-check {
+        background: var(--loan-blue);
+        border-color: var(--loan-blue);
+    }
+
+    .btn-loan-modern-submit {
+        height: 60px;
+        min-width: 220px;
+        padding: 0 2rem;
+        border-radius: 18px;
+        background: linear-gradient(135deg, var(--loan-blue) 0%, #1e40af 100%);
+        color: white;
+        border: none;
+        font-weight: 800;
+        font-size: 0.95rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.85rem;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        box-shadow: 0 10px 20px rgba(8, 87, 195, 0.3);
+    }
+
+    .btn-loan-modern-submit:hover { transform: translateY(-3px); box-shadow: 0 15px 30px rgba(8, 87, 195, 0.4); }
+
+    .select2-container--bootstrap4, .loan-filter-control { display: none !important; }
+</style>
+
 <div class="loan-dashboard pt-4">
     <div class="loan-title-hero d-flex flex-wrap justify-content-center align-items-center">
         <div class="loan-title-hero__wrap">
@@ -27,30 +202,42 @@
                         </div>
                     </div>
 
-                    <div class="row loan-filter-grid">
-                        <div class="col-xl-3 col-lg-4 col-md-6">
-                            <div class="form-group">
-                                <label class="loan-filter-label">Periode Audit</label>
-                                <input id="loanMismatchPeriodeInput" type="date" name="mismatch_periode" class="form-control loan-filter-control" value="{{ $mismatchRequestedPeriod ?: $mismatchSelectedPeriod }}" max="{{ $periods->first() }}">
-                            </div>
-                        </div>
-                        <div class="col-xl-4 col-lg-5 col-md-6">
-                            <div class="form-group">
-                                <label class="loan-filter-label">Kantor Cabang</label>
-                                <select id="loanMismatchCabangSelect" name="mismatch_cabang1" class="form-control select2 loan-filter-control" data-selected="{{ $mismatchSelectedBranch }}">
-                                    <option value="">Pilih periode dulu</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div class="col-xl-5 col-lg-3 col-md-12 loan-mismatch-action-col">
-                            <div class="loan-mismatch-actions w-100">
-                                <button id="loanMismatchSubmitButton" type="submit" class="btn px-4 font-weight-bold" style="border-radius: 12px; height: 48px; background: linear-gradient(135deg, var(--loan-blue), #307fe2); color: #ffffff; border: none; box-shadow: 0 4px 12px rgba(8, 87, 195, 0.2);">
-                                    <i class="fas fa-search mr-1"></i> PROSES AUDIT
+                    <div class="loan-filter-modern animate-reveal">
+                        <div class="loan-filter-item">
+                            <label class="loan-filter-label">Periode Audit</label>
+                            <div class="loan-dropdown" data-loan-dropdown="periode">
+                                <i class="fas fa-calendar-check loan-dropdown-icon"></i>
+                                <button type="button" class="loan-dropdown-toggle" onclick="document.getElementById('loanMismatchPeriodeInput').showPicker()">
+                                    <span class="loan-dropdown-text" id="loanMismatchPeriodeDisplay">{{ $mismatchRequestedPeriod ?: $mismatchSelectedPeriod }}</span>
+                                    <i class="fas fa-chevron-down small opacity-50"></i>
                                 </button>
-                                <a href="{{ route('report.dashboard-pinjaman.kolek-tidak-sesuai') }}" class="btn btn-light px-4 font-weight-bold" style="border-radius: 12px; height: 48px; border: 1px solid var(--loan-border); color: var(--loan-blue-ink);">RESET</a>
-                                <div id="loanMismatchLoadingChip" class="loan-loading-chip d-none">
-                                    <span class="loan-loading-dot"></span> AUDIT SEDANG BERJALAN
+                                <input id="loanMismatchPeriodeInput" type="date" name="mismatch_periode" 
+                                    style="opacity: 0; position: absolute; width: 100%; height: 100%; top: 0; left: 0; pointer-events: none;" 
+                                    value="{{ $mismatchRequestedPeriod ?: $mismatchSelectedPeriod }}" max="{{ $periods->first() }}">
+                            </div>
+                        </div>
+
+                        <div class="loan-filter-item">
+                            <label class="loan-filter-label">Kantor Cabang</label>
+                            <div class="loan-dropdown" data-loan-dropdown="cabang">
+                                <i class="fas fa-university loan-dropdown-icon"></i>
+                                <button type="button" class="loan-dropdown-toggle" data-loan-dropdown-toggle="cabang">
+                                    <span class="loan-dropdown-text">Pilih Kantor Cabang</span>
+                                    <i class="fas fa-chevron-down small opacity-50"></i>
+                                </button>
+                                <div class="loan-dropdown-menu" data-loan-dropdown-menu="cabang">
+                                    <div class="px-3 py-3 text-center text-muted small">Pilih periode dulu</div>
                                 </div>
+                                <select id="loanMismatchCabangSelect" name="mismatch_cabang1" class="d-none" data-selected="{{ $mismatchSelectedBranch }}"></select>
+                            </div>
+                        </div>
+
+                        <div>
+                            <button id="loanMismatchSubmitButton" type="submit" class="btn-loan-modern-submit w-100">
+                                <i class="fas fa-search"></i> PROSES AUDIT
+                            </button>
+                            <div id="loanMismatchLoadingChip" class="loan-loading-chip d-none mt-2 justify-content-center">
+                                <span class="loan-loading-dot"></span> AUDIT BERJALAN
                             </div>
                         </div>
                     </div>
@@ -178,7 +365,65 @@
         }
 
         form.addEventListener('submit', e => { e.preventDefault(); loadData(); });
-        periodInput.addEventListener('change', loadBranches);
+        // --- Modern Selector Sync ---
+        function initModernSelectors() {
+            const cabangMenu = document.querySelector('[data-loan-dropdown-menu="cabang"]');
+            const cabangToggle = document.querySelector('[data-loan-dropdown-toggle="cabang"]');
+            const cabangText = cabangToggle.querySelector('.loan-dropdown-text');
+            const periodeDisplay = document.getElementById('loanMismatchPeriodeDisplay');
+
+            // Periode Sync
+            periodInput.addEventListener('change', () => {
+                periodeDisplay.textContent = periodInput.value;
+            });
+
+            // Dropdown Toggle
+            cabangToggle.addEventListener('click', (e) => {
+                e.stopPropagation();
+                cabangToggle.closest('.loan-dropdown').classList.toggle('is-open');
+            });
+
+            document.addEventListener('click', () => {
+                document.querySelectorAll('.loan-dropdown').forEach(d => d.classList.remove('is-open'));
+            });
+
+            // Mutation Observer to watch branch select options
+            const observer = new MutationObserver(() => {
+                const options = Array.from(branchSelect.options);
+                cabangMenu.innerHTML = '';
+                
+                if (options.length <= 1) {
+                    cabangMenu.innerHTML = '<div class="px-3 py-3 text-center text-muted small">Pilih periode dulu</div>';
+                    return;
+                }
+
+                options.forEach(opt => {
+                    if (!opt.value) return;
+                    const item = document.createElement('div');
+                    item.className = `loan-dropdown-option ${opt.selected ? 'is-active' : ''}`;
+                    item.innerHTML = `<div class="loan-dropdown-check"><i class="fas fa-check"></i></div><span>${opt.text}</span>`;
+                    item.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        branchSelect.value = opt.value;
+                        cabangText.textContent = opt.text;
+                        window.jQuery(branchSelect).trigger('change');
+                        document.querySelectorAll('.loan-dropdown').forEach(d => d.classList.remove('is-open'));
+                    });
+                    cabangMenu.appendChild(item);
+                });
+
+                if (branchSelect.selectedIndex >= 0 && branchSelect.value) {
+                    cabangText.textContent = branchSelect.options[branchSelect.selectedIndex].text;
+                } else {
+                    cabangText.textContent = 'Pilih Kantor Cabang';
+                }
+            });
+
+            observer.observe(branchSelect, { childList: true });
+        }
+
+        initModernSelectors();
+
         if (periodInput.value) loadBranches();
     });
 </script>

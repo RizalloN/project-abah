@@ -18,11 +18,11 @@
         --table-header-bg: var(--bri-blue-dark);
         --table-header-text: #ffffff;
         
-        --daily-no-width: 45px;
-        --daily-label-width: 240px;
-        --daily-position-width: 95px;
-        --daily-delta-width: 85px;
-        --daily-rka-width: 100px;
+        --daily-no-width: 35px;
+        --daily-label-width: 190px;
+        --daily-position-width: 82px;
+        --daily-delta-width: 72px;
+        --daily-rka-width: 82px;
     }
 
     .daily-dashboard {
@@ -779,7 +779,7 @@
     }
 
     .daily-table th, .daily-table td {
-        padding: 0.35rem 0.5rem;
+        padding: 0.18rem 0.35rem;
         vertical-align: middle;
         white-space: nowrap;
         border-bottom: 1px solid var(--border-color);
@@ -803,15 +803,15 @@
         color: var(--table-header-text);
         font-weight: 600;
         text-transform: uppercase;
-        font-size: 0.7rem;
-        letter-spacing: 0.05em;
+        font-size: 0.76rem;
+        letter-spacing: 0.02em;
         text-align: center;
         border-bottom: 2px solid rgba(0,0,0,0.1);
         border-right: 1px solid rgba(255,255,255,0.1);
     }
     .daily-table thead tr.column-row th {
         background: #274bba; /* Slightly lighter for sub-headers */
-        font-size: 0.65rem;
+        font-size: 0.72rem;
     }
     .daily-table thead th.rka-period-cell {
         background: var(--table-header-bg);
@@ -862,7 +862,7 @@
 
     /* Table Cells */
     .daily-table tbody td {
-        font-size: 0.75rem;
+        font-size: 0.82rem;
         color: var(--text-main);
         text-align: right; /* Numeric columns usually right aligned */
         font-variant-numeric: tabular-nums;
@@ -1070,7 +1070,7 @@
     .header-subnote {
         display: block;
         width: 100%;
-        font-size: 0.63rem;
+        font-size: 0.68rem;
         opacity: 0.9;
         margin-top: 4px;
         padding-top: 4px;
@@ -1205,8 +1205,14 @@
                             <label class="daily-filter-label" for="filter-posisi-terakhir">Posisi Terakhir</label>
                             <div class="daily-filter-control">
                                 <span class="daily-filter-control-icon"><i class="fas fa-calendar-day"></i></span>
-                                <select id="filter-posisi-terakhir" class="form-control daily-filter-select"></select>
-                                <span class="daily-filter-chevron"><i class="fas fa-chevron-down"></i></span>
+                                <div class="daily-dropdown" data-daily-dropdown="posisi">
+                                    <button type="button" class="daily-dropdown-toggle" data-daily-dropdown-toggle="posisi" aria-haspopup="listbox" aria-expanded="false">
+                                        <span class="daily-dropdown-toggle-text text-truncate">Belum ada data</span>
+                                        <i class="fas fa-chevron-down daily-dropdown-toggle-icon"></i>
+                                    </button>
+                                    <div class="daily-dropdown-menu" data-daily-dropdown-menu="posisi"></div>
+                                    <select id="filter-posisi-terakhir" class="form-control daily-filter-native"></select>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -1217,8 +1223,14 @@
                             <label class="daily-filter-label" for="filter-posisi-rka">Posisi RKA</label>
                             <div class="daily-filter-control">
                                 <span class="daily-filter-control-icon"><i class="fas fa-bullseye"></i></span>
-                                <select id="filter-posisi-rka" class="form-control daily-filter-select"></select>
-                                <span class="daily-filter-chevron"><i class="fas fa-chevron-down"></i></span>
+                                <div class="daily-dropdown" data-daily-dropdown="rka">
+                                    <button type="button" class="daily-dropdown-toggle" data-daily-dropdown-toggle="rka" aria-haspopup="listbox" aria-expanded="false">
+                                        <span class="daily-dropdown-toggle-text text-truncate">Belum ada data</span>
+                                        <i class="fas fa-chevron-down daily-dropdown-toggle-icon"></i>
+                                    </button>
+                                    <div class="daily-dropdown-menu" data-daily-dropdown-menu="rka"></div>
+                                    <select id="filter-posisi-rka" class="form-control daily-filter-native"></select>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -1254,23 +1266,23 @@
             <div class="daily-table-wrap">
                     <table class="table table-hover daily-table">
                         <colgroup>
-                            <col style="width: 45px;">
-                            <col style="width: 240px;">
-                            <col style="width: 95px;" class="numeric-col">
-                            <col style="width: 100px;" class="numeric-col">
-                            <col style="width: 95px;" class="numeric-col">
-                            <col style="width: 95px;" class="numeric-col">
-                            <col style="width: 100px;" class="numeric-col">
-                            <col style="width: 95px;" class="numeric-col">
-                            <col style="width: 95px;" class="numeric-col position-col-h1">
-                            <col style="width: 95px;" class="numeric-col">
-                            <col style="width: 85px;" class="numeric-col">
-                            <col style="width: 85px;" class="numeric-col">
-                            <col style="width: 85px;" class="numeric-col">
-                            <col style="width: 85px;" class="numeric-col">
-                            <col style="width: 95px;" class="numeric-col">
-                            <col style="width: 95px;" class="numeric-col">
-                            <col style="width: 95px;" class="numeric-col">
+                            <col style="width: var(--daily-no-width);">
+                            <col style="width: var(--daily-label-width);">
+                            <col style="width: var(--daily-position-width);" class="numeric-col">
+                            <col style="width: var(--daily-position-width);" class="numeric-col">
+                            <col style="width: var(--daily-position-width);" class="numeric-col">
+                            <col style="width: var(--daily-position-width);" class="numeric-col">
+                            <col style="width: var(--daily-position-width);" class="numeric-col">
+                            <col style="width: var(--daily-position-width);" class="numeric-col">
+                            <col style="width: var(--daily-position-width);" class="numeric-col position-col-h1">
+                            <col style="width: var(--daily-position-width);" class="numeric-col">
+                            <col style="width: var(--daily-delta-width);" class="numeric-col">
+                            <col style="width: var(--daily-delta-width);" class="numeric-col">
+                            <col style="width: var(--daily-delta-width);" class="numeric-col">
+                            <col style="width: var(--daily-delta-width);" class="numeric-col">
+                            <col style="width: var(--daily-rka-width);" class="numeric-col">
+                            <col style="width: var(--daily-rka-width);" class="numeric-col">
+                            <col style="width: var(--daily-rka-width);" class="numeric-col">
                         </colgroup>
                         <thead>
                             <tr class="group-row text-center">
@@ -1450,6 +1462,16 @@
                 root: document.querySelector('[data-daily-dropdown="unit"]'),
                 toggle: document.querySelector('[data-daily-dropdown-toggle="unit"]'),
                 menu: document.querySelector('[data-daily-dropdown-menu="unit"]'),
+            },
+            posisi: {
+                root: document.querySelector('[data-daily-dropdown="posisi"]'),
+                toggle: document.querySelector('[data-daily-dropdown-toggle="posisi"]'),
+                menu: document.querySelector('[data-daily-dropdown-menu="posisi"]'),
+            },
+            rka: {
+                root: document.querySelector('[data-daily-dropdown="rka"]'),
+                toggle: document.querySelector('[data-daily-dropdown-toggle="rka"]'),
+                menu: document.querySelector('[data-daily-dropdown-menu="rka"]'),
             },
         };
         let latestFilters = initialFilters;
@@ -1777,8 +1799,50 @@
                 return String(option.value || 'all') === String(selectedUnit);
             });
 
-            updateDropdownToggleText('unit', selectedOption ? (selectedOption.label || selectedOption.value || 'Semua Unit Kerja') : 'Semua Unit Kerja');
-        };
+        updateDropdownToggleText('unit', selectedOption ? (selectedOption.label || selectedOption.value || 'Semua Unit Kerja') : 'Semua Unit Kerja');
+    };
+
+    const syncPosisiSelect = function (options, selectedValue) {
+        const dropdown = dropdowns.posisi;
+        if (!dropdown || !dropdown.menu || !selects.posisi_terakhir) return;
+
+        const normalized = selectedValue || '';
+        setNativeSelectOptions(selects.posisi_terakhir, options, normalized, false);
+
+        dropdown.menu.innerHTML = options.length
+            ? options.map(function (option) {
+                const value = String(option.value || '');
+                const active = value === String(normalized);
+                return '<button type="button" class="daily-dropdown-option ' + (active ? 'is-active' : '') + '" data-posisi-option="' + escapeHtml(value) + '">' +
+                    '<span class="daily-dropdown-label">' + escapeHtml(option.label || value) + '</span>' +
+                '</button>';
+            }).join('')
+            : '<div class="daily-dropdown-empty">Tidak ada data posisi.</div>';
+
+        const selectedOption = options.find(function (option) { return String(option.value || '') === String(normalized); });
+        updateDropdownToggleText('posisi', selectedOption ? (selectedOption.label || selectedOption.value) : 'Belum ada data');
+    };
+
+    const syncRkaSelect = function (options, selectedValue) {
+        const dropdown = dropdowns.rka;
+        if (!dropdown || !dropdown.menu || !selects.posisi_rka) return;
+
+        const normalized = selectedValue || '';
+        setNativeSelectOptions(selects.posisi_rka, options, normalized, false);
+
+        dropdown.menu.innerHTML = options.length
+            ? options.map(function (option) {
+                const value = String(option.value || '');
+                const active = value === String(normalized);
+                return '<button type="button" class="daily-dropdown-option ' + (active ? 'is-active' : '') + '" data-rka-option="' + escapeHtml(value) + '">' +
+                    '<span class="daily-dropdown-label">' + escapeHtml(option.label || value) + '</span>' +
+                '</button>';
+            }).join('')
+            : '<div class="daily-dropdown-empty">Tidak ada data RKA.</div>';
+
+        const selectedOption = options.find(function (option) { return String(option.value || '') === String(normalized); });
+        updateDropdownToggleText('rka', selectedOption ? (selectedOption.label || selectedOption.value) : 'Belum ada data');
+    };
 
         const currentState = function () {
             return {
@@ -2156,8 +2220,8 @@
 
             renderKancaDropdown(filters.kanca || [], current.kanca);
             syncUnitSelect(filters, current.unit_kerja);
-            populateSelect(selects.posisi_terakhir, filters.posisi_terakhir || [], scopedPayload.selected_period || current.posisi_terakhir);
-            populateSelect(selects.posisi_rka, filters.posisi_rka || [], scopedPayload.selected_rka_period ? scopedPayload.selected_rka_period.slice(0, 7) : current.posisi_rka);
+            syncPosisiSelect(filters.posisi_terakhir || [], scopedPayload.selected_period || current.posisi_terakhir);
+            syncRkaSelect(filters.posisi_rka || [], scopedPayload.selected_rka_period ? scopedPayload.selected_rka_period.slice(0, 7) : current.posisi_rka);
 
             setTextContent(scopeKanca, summary.kanca_label || 'Semua Kanca');
             setTextContent(scopeUnit, summary.unit_label || 'Semua Unit Kerja');
@@ -2314,48 +2378,75 @@
             ctx.fillText(`${trimmed}...`, x, y);
         }
 
-        function drawExportHeader(ctx) {
+        function drawExportHeader(ctx, pageNum = 1) {
             const { width, marginX, marginY } = A4_EXPORT;
             const kancaText = scopeKanca?.textContent?.trim() || 'Semua Kanca';
             const unitText = scopeUnit?.textContent?.trim() || 'Semua Unit';
             const posisiText = scopePosisi?.textContent?.trim() || 'Belum Ada Data';
             const rkaText = scopeRka?.textContent?.trim() || 'Belum Ada Data';
 
+            // Top accent bar
             ctx.fillStyle = '#004685'; // BRI Blue Dark
-            ctx.fillRect(0, 0, width, 24);
+            ctx.fillRect(0, 0, width, 28);
 
+            // Title
             ctx.fillStyle = '#0f172a';
-            ctx.font = 'bold 62px "Inter", "Segoe UI", Arial, sans-serif';
-            ctx.fillText('Daily Dashboard Performance', marginX, marginY + 45);
+            ctx.font = 'bold 64px "Inter", "Segoe UI", Arial, sans-serif';
+            ctx.fillText('Daily Dashboard Performance', marginX, marginY + 48);
 
+            // Metadata info
             ctx.fillStyle = '#475569';
-            ctx.font = '600 30px "Inter", "Segoe UI", Arial, sans-serif';
-            drawTextEllipsis(ctx, `Kanca: ${kancaText}   |   Unit: ${unitText}`, marginX, marginY + 105, width - (marginX * 2));
-            drawTextEllipsis(ctx, `Periode: ${posisiText}   |   RKA: ${rkaText}`, marginX, marginY + 152, width - (marginX * 2));
+            ctx.font = '600 32px "Inter", "Segoe UI", Arial, sans-serif';
+            
+            const metaLine1 = `Kanca: ${kancaText}   |   Unit: ${unitText}`;
+            const metaLine2 = `Periode: ${posisiText}   |   RKA: ${rkaText}`;
+            
+            drawTextEllipsis(ctx, metaLine1, marginX, marginY + 112, width - (marginX * 2));
+            drawTextEllipsis(ctx, metaLine2, marginX, marginY + 162, width - (marginX * 2));
 
+            // Decorative line
             ctx.strokeStyle = '#e2e8f0';
-            ctx.lineWidth = 3;
+            ctx.lineWidth = 4;
             ctx.beginPath();
-            ctx.moveTo(marginX, marginY + 205);
-            ctx.lineTo(width - marginX, marginY + 205);
+            ctx.moveTo(marginX, marginY + 215);
+            ctx.lineTo(width - marginX, marginY + 215);
             ctx.stroke();
+            
+            // Page Indicator (Subtle top right)
+            if (pageNum > 1) {
+                ctx.fillStyle = '#94a3b8';
+                ctx.font = 'italic 24px "Inter", sans-serif';
+                ctx.textAlign = 'right';
+                ctx.fillText(`Sambungan Halaman ${pageNum}`, width - marginX, marginY + 48);
+                ctx.textAlign = 'left';
+            }
         }
 
-        function drawExportFooter(ctx) {
+        function drawExportFooter(ctx, pageNum = 1, totalPages = 1) {
             const { width, height, marginX } = A4_EXPORT;
+            
+            // Separator line
             ctx.strokeStyle = '#e2e8f0';
             ctx.lineWidth = 2;
             ctx.beginPath();
-            ctx.moveTo(marginX, height - 85);
-            ctx.lineTo(width - marginX, height - 85);
+            ctx.moveTo(marginX, height - 95);
+            ctx.lineTo(width - marginX, height - 95);
             ctx.stroke();
 
+            // Generation timestamp
             ctx.fillStyle = '#94a3b8';
-            ctx.font = '600 22px "Inter", "Segoe UI", Arial, sans-serif';
-            ctx.fillText(`Dashboard A-Six Generated: ${new Date().toLocaleString('id-ID')}`, marginX, height - 45);
+            ctx.font = '600 24px "Inter", "Segoe UI", Arial, sans-serif';
+            const dateStr = new Date().toLocaleString('id-ID', { 
+                day: '2-digit', month: '2-digit', year: 'numeric', 
+                hour: '2-digit', minute: '2-digit', second: '2-digit' 
+            }).replace(/\//g, '-');
+            ctx.fillText(`Dashboard A-Six Generated: ${dateStr}`, marginX, height - 50);
             
+            // Page numbering
             ctx.textAlign = 'right';
-            ctx.fillText('Halaman 1 / 1', width - marginX, height - 45);
+            ctx.font = 'bold 26px "Inter", "Segoe UI", Arial, sans-serif';
+            ctx.fillStyle = '#64748b';
+            ctx.fillText(`Halaman ${pageNum} dari ${totalPages}`, width - marginX, height - 50);
             ctx.textAlign = 'left';
         }
 
@@ -2371,8 +2462,17 @@
             captureBtn.disabled = true;
             captureBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> CAPTURING...';
 
+            // Explicit cleanup for modal backdrop issues
+            const cleanupModal = () => {
+                if (window.jQuery) {
+                    window.jQuery(captureModal).modal('hide');
+                    window.jQuery('.modal-backdrop').remove();
+                    window.jQuery('body').removeClass('modal-open').css('padding-right', '');
+                }
+            };
+
             try {
-                // 1. Group rows by segments
+                // 1. Group rows by segments (blocks)
                 const tbodyRows = Array.from(document.querySelectorAll('#daily-dashboard-body tr'));
                 const segments = [];
                 let currentSegment = null;
@@ -2387,9 +2487,7 @@
                     
                     const isNewBlock = blockClasses.some(cls => row.classList.contains(cls));
                     if (isNewBlock || segments.length === 0) {
-                        currentSegment = {
-                            rows: [row]
-                        };
+                        currentSegment = { rows: [row], canvas: null, height: 0 };
                         segments.push(currentSegment);
                     } else if (currentSegment) {
                         currentSegment.rows.push(row);
@@ -2398,94 +2496,164 @@
 
                 if (segments.length === 0) throw new Error('Tidak ada data untuk dicapture.');
 
-                // 2. Prepare Main Canvas
-                const reportCanvas = document.createElement('canvas');
-                reportCanvas.width = A4_EXPORT.width;
-                reportCanvas.height = A4_EXPORT.height;
-                const ctx = reportCanvas.getContext('2d');
-                ctx.fillStyle = '#ffffff';
-                ctx.fillRect(0, 0, reportCanvas.width, reportCanvas.height);
-
-                drawExportHeader(ctx);
-
-                // 3. Render Segments
-                let currentY = A4_EXPORT.marginY + A4_EXPORT.headerHeight;
+                // 2. Pre-render segments to get their heights and prepare canvases
                 const originalTable = document.querySelector('.daily-table');
                 const colgroupHtml = originalTable.querySelector('colgroup').outerHTML;
                 const theadHtml = originalTable.querySelector('thead').outerHTML;
+                const tableRealWidth = originalTable.offsetWidth; // Important for scaling
 
                 for (let i = 0; i < segments.length; i++) {
                     const segment = segments[i];
-                    
-                    // Create temporary table for this segment
                     const tempWrap = document.createElement('div');
                     tempWrap.style.position = 'absolute';
                     tempWrap.style.left = '-9999px';
                     tempWrap.style.top = '0';
-                    tempWrap.style.width = '1670px'; // Standard dashboard table width
+                    tempWrap.style.width = `${tableRealWidth}px`;
                     
-                    const tableHtml = `
-                        <table class="daily-table" style="width: 1670px; border-collapse: separate; border-spacing: 0; background: #ffffff;">
+                    tempWrap.innerHTML = `
+                        <table class="daily-table" style="width: ${tableRealWidth}px; border-collapse: separate; border-spacing: 0; background: #ffffff;">
                             ${colgroupHtml}
                             ${theadHtml}
                             <tbody>
                                 ${segment.rows.map(r => {
                                     const clone = r.cloneNode(true);
-                                    clone.querySelectorAll('.sticky-no, .sticky-label').forEach(cell => {
+                                    // Remove sticky and ensure visible headers
+                                    clone.querySelectorAll('.sticky-no, .sticky-label, td, th').forEach(cell => {
                                         cell.style.position = 'static';
                                         cell.style.backgroundColor = window.getComputedStyle(cell).backgroundColor;
+                                        cell.style.color = window.getComputedStyle(cell).color;
+                                        cell.style.visibility = 'visible';
+                                        cell.style.opacity = '1';
                                     });
                                     return clone.outerHTML;
                                 }).join('')}
                             </tbody>
                         </table>
                     `;
-                    tempWrap.innerHTML = tableHtml;
-                    document.body.appendChild(tempWrap);
+                    
+                    // Style the head as well in temp table
+                    tempWrap.querySelectorAll('thead th').forEach(th => {
+                        th.style.position = 'static';
+                        th.style.backgroundColor = '#004685';
+                        th.style.color = '#ffffff';
+                    });
 
+                    document.body.appendChild(tempWrap);
                     await waitFrame();
 
                     const segmentCanvas = await html2canvas(tempWrap.querySelector('table'), {
-                        scale: 1.5,
+                        scale: 2, // High resolution
                         useCORS: true,
                         backgroundColor: '#ffffff',
                         logging: false
                     });
 
                     document.body.removeChild(tempWrap);
-
-                    // Draw to main canvas
-                    const targetWidth = A4_EXPORT.width - (A4_EXPORT.marginX * 2);
-                    const targetHeight = (segmentCanvas.height * targetWidth) / segmentCanvas.width;
-
-                    ctx.drawImage(segmentCanvas, A4_EXPORT.marginX, currentY, targetWidth, targetHeight);
-                    currentY += targetHeight + A4_EXPORT.sectionGap;
                     
-                    await waitFrame();
+                    // Store canvas and calculate proportional height for A4
+                    const targetWidth = A4_EXPORT.width - (A4_EXPORT.marginX * 2);
+                    const scaleFactor = targetWidth / segmentCanvas.width;
+                    
+                    segment.canvas = segmentCanvas;
+                    segment.drawWidth = targetWidth;
+                    segment.drawHeight = segmentCanvas.height * scaleFactor;
                 }
 
-                drawExportFooter(ctx);
+                // 3. Logic to distribute segments across multiple pages
+                const pages = [];
+                let currentPage = { segments: [], totalHeight: 0 };
+                const maxContentHeight = A4_EXPORT.height - (A4_EXPORT.marginY + A4_EXPORT.headerHeight + A4_EXPORT.footerHeight);
 
-                // 4. Download
-                const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-                const link = document.createElement('a');
-                link.download = `Daily-Dashboard-A4-${timestamp}.jpg`;
-                link.href = reportCanvas.toDataURL('image/jpeg', 0.95);
-                link.click();
+                // Identify Special Segments (CASA, LDR, Rec DH)
+                const specialSegmentKeys = ['metric-block-casa', 'metric-block-ldr', 'metric-block-recdh'];
+                const regularSegments = segments.filter(seg => !specialSegmentKeys.some(key => seg.rows[0].classList.contains(key)));
+                const specialSegments = segments.filter(seg => specialSegmentKeys.some(key => seg.rows[0].classList.contains(key)));
 
-                progressUI.classList.add('d-none');
-                successUI.classList.remove('d-none');
-            } catch (err) {
-                console.error('Capture failed:', err);
-                progressUI.classList.add('d-none');
-                errorUI.classList.add('d-none'); // Hide progress if showing error
-                errorUI.classList.remove('d-none');
-                errorMessageUI.textContent = 'Gagal menyusun laporan A4. Silakan coba lagi.';
-            } finally {
-                captureBtn.disabled = false;
-                captureBtn.innerHTML = originalBtnHtml;
-            }
-        };
+                // Distribute Regular Segments (Pages 1 & 2)
+                regularSegments.forEach(seg => {
+                    const estimatedNewHeight = currentPage.totalHeight + (currentPage.segments.length > 0 ? A4_EXPORT.sectionGap : 0) + seg.drawHeight;
+                    if (estimatedNewHeight > maxContentHeight && currentPage.segments.length > 0) {
+                        pages.push(currentPage);
+                        currentPage = { segments: [seg], totalHeight: seg.drawHeight };
+                    } else {
+                        if (currentPage.segments.length > 0) currentPage.totalHeight += A4_EXPORT.sectionGap;
+                        currentPage.segments.push(seg);
+                        currentPage.totalHeight += seg.drawHeight;
+                    }
+                });
+                if (currentPage.segments.length > 0) pages.push(currentPage);
+
+                // Force Special Segments to Page 3 (or the next available page)
+                // If we have fewer than 2 pages, we add empty pages to reach Page 3
+                while (pages.length < 2) {
+                    pages.push({ segments: [], totalHeight: 0 });
+                }
+
+                if (specialSegments.length > 0) {
+                    pages.push({ 
+                        segments: specialSegments, 
+                        totalHeight: specialSegments.reduce((acc, s) => acc + s.drawHeight, 0) + (specialSegments.length - 1) * A4_EXPORT.sectionGap 
+                    });
+                }
+                // 4. Generate and download each page
+                for (let p = 0; p < pages.length; p++) {
+                    const pageData = pages[p];
+                    if (pageData.segments.length === 0) continue;
+
+                    const pageCanvas = document.createElement('canvas');
+                    pageCanvas.width = A4_EXPORT.width;
+                    pageCanvas.height = A4_EXPORT.height;
+                    const ctx = pageCanvas.getContext('2d');
+                    
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
+
+                    drawExportHeader(ctx, p + 1);
+
+                    let currentY = A4_EXPORT.marginY + A4_EXPORT.headerHeight;
+                    pageData.segments.forEach(seg => {
+                        ctx.drawImage(seg.canvas, A4_EXPORT.marginX, currentY, seg.drawWidth, seg.drawHeight);
+                        currentY += seg.drawHeight + A4_EXPORT.sectionGap;
+                    });
+
+                    drawExportFooter(ctx, p + 1, pages.length);
+
+                    // Download
+                    const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+            const link = document.createElement('a');
+            const pageSuffix = pages.length > 1 ? `_Page-${p + 1}` : '';
+            link.download = `Daily-Dashboard-A4-${timestamp}${pageSuffix}.jpg`;
+            link.href = pageCanvas.toDataURL('image/jpeg', 0.98);
+            link.click();
+            
+            await waitFrame(); // Yield to UI
+        }
+
+        progressUI.classList.add('d-none');
+        successUI.classList.remove('d-none');
+        
+        // Auto-close modal after a short delay to clear the blackout overlay
+        setTimeout(() => {
+            cleanupModal();
+        }, 1200);
+    } catch (err) {
+        console.error('Capture failed:', err);
+        progressUI.classList.add('d-none');
+        errorUI.classList.remove('d-none');
+        errorMessageUI.textContent = 'Gagal menyusun laporan A4. Silakan coba lagi.';
+    } finally {
+        captureBtn.disabled = false;
+        captureBtn.innerHTML = originalBtnHtml;
+    }
+};
+
+// Ensure modal cleanup on close to fix black overlay bug
+if (window.jQuery && captureModal) {
+    window.jQuery(captureModal).on('hidden.bs.modal', function() {
+        window.jQuery('.modal-backdrop').remove();
+        window.jQuery('body').removeClass('modal-open').css('padding-right', '');
+    });
+}
 
         if (captureBtn) {
             captureBtn.addEventListener('click', captureAllDailyDashboard);
@@ -2493,8 +2661,9 @@
 
         renderKancaDropdown(initialFilters.kanca || [], initialSelected.kanca || []);
         syncUnitSelect(initialFilters, initialSelected.unit_kerja || 'all');
-        populateSelect(selects.posisi_terakhir, initialFilters.posisi_terakhir || [], initialSelected.posisi_terakhir || '');
-        populateSelect(selects.posisi_rka, initialFilters.posisi_rka || [], initialSelected.posisi_rka || '');
+        syncPosisiSelect(initialFilters.posisi_terakhir || [], initialSelected.posisi_terakhir || '');
+        syncRkaSelect(initialFilters.posisi_rka || [], initialSelected.posisi_rka || '');
+
         body.innerHTML = '<tr><td colspan="15" class="daily-empty"><i class="fas fa-filter mr-2 text-muted"></i>Filter belum dijalankan. Pilih parameter lalu klik Terapkan Filter.</td></tr>';
 
         if (initialData && Object.keys(initialData).length) {
@@ -2508,13 +2677,13 @@
             applyButton.addEventListener('click', fetchData);
         }
 
+        // --- Event Listeners for Dropdowns ---
         if (dropdowns.kanca && dropdowns.kanca.toggle) {
             dropdowns.kanca.toggle.addEventListener('click', function () {
                 if (dropdowns.kanca.root.classList.contains('is-open')) {
                     closeDropdown('kanca');
                     return;
                 }
-
                 openDropdown('kanca');
             });
         }
@@ -2525,17 +2694,34 @@
                     closeDropdown('unit');
                     return;
                 }
-
                 openDropdown('unit');
+            });
+        }
+
+        if (dropdowns.posisi && dropdowns.posisi.toggle) {
+            dropdowns.posisi.toggle.addEventListener('click', function () {
+                if (dropdowns.posisi.root.classList.contains('is-open')) {
+                    closeDropdown('posisi');
+                    return;
+                }
+                openDropdown('posisi');
+            });
+        }
+
+        if (dropdowns.rka && dropdowns.rka.toggle) {
+            dropdowns.rka.toggle.addEventListener('click', function () {
+                if (dropdowns.rka.root.classList.contains('is-open')) {
+                    closeDropdown('rka');
+                    return;
+                }
+                openDropdown('rka');
             });
         }
 
         if (dropdowns.kanca && dropdowns.kanca.menu) {
             dropdowns.kanca.menu.addEventListener('click', function (event) {
                 const option = event.target.closest('[data-kanca-option]');
-                if (!option || !selects.kanca) {
-                    return;
-                }
+                if (!option || !selects.kanca) return;
 
                 const value = String(option.getAttribute('data-kanca-option') || 'all');
                 let nextValues = getSelectedKancaValues();
@@ -2562,14 +2748,36 @@
         if (dropdowns.unit && dropdowns.unit.menu) {
             dropdowns.unit.menu.addEventListener('click', function (event) {
                 const option = event.target.closest('[data-unit-option]');
-                if (!option || !selects.unit_kerja) {
-                    return;
-                }
+                if (!option || !selects.unit_kerja) return;
 
                 const value = String(option.getAttribute('data-unit-option') || 'all');
                 selects.unit_kerja.value = value;
                 syncUnitSelect(latestFilters, value);
                 closeDropdown('unit');
+            });
+        }
+
+        if (dropdowns.posisi && dropdowns.posisi.menu) {
+            dropdowns.posisi.menu.addEventListener('click', function (event) {
+                const option = event.target.closest('[data-posisi-option]');
+                if (!option || !selects.posisi_terakhir) return;
+
+                const value = String(option.getAttribute('data-posisi-option') || '');
+                selects.posisi_terakhir.value = value;
+                syncPosisiSelect(latestFilters.posisi_terakhir || [], value);
+                closeDropdown('posisi');
+            });
+        }
+
+        if (dropdowns.rka && dropdowns.rka.menu) {
+            dropdowns.rka.menu.addEventListener('click', function (event) {
+                const option = event.target.closest('[data-rka-option]');
+                if (!option || !selects.posisi_rka) return;
+
+                const value = String(option.getAttribute('data-rka-option') || '');
+                selects.posisi_rka.value = value;
+                syncRkaSelect(latestFilters.posisi_rka || [], value);
+                closeDropdown('rka');
             });
         }
 

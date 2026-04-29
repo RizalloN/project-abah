@@ -1463,7 +1463,7 @@ class DashboardHarianSnapshotService
     private function dashboardRkaMetricDefinitions(): array
     {
         return [
-            'total_simpanan' => ['mata_anggaran' => ['A.1. DPK Retail Funding Total']],
+            'total_simpanan' => ['mata_anggaran' => ['A.1. DPK Retail Funding Total', 'A.2. DPK Korporasi']],
             'simpanan_ritel' => ['mata_anggaran' => ['A.1. DPK Retail Funding Total'], 'uker_contains_any' => ['KC', 'KCP']],
             'giro_ritel' => ['mata_anggaran' => ['Giro Retail Funding Total'], 'uker_contains_any' => ['KC', 'KCP']],
             'deposito_ritel' => ['mata_anggaran' => ['Deposito Retail Funding Total'], 'uker_contains_any' => ['KC', 'KCP']],
@@ -1472,6 +1472,10 @@ class DashboardHarianSnapshotService
             'giro_mikro' => ['mata_anggaran' => ['Giro Retail Funding Total'], 'uker_contains_any' => ['UNIT']],
             'deposito_mikro' => ['mata_anggaran' => ['Deposito Retail Funding Total'], 'uker_contains_any' => ['UNIT']],
             'tabungan_mikro' => ['mata_anggaran' => ['Tabungan Retail Funding Total'], 'uker_contains_any' => ['UNIT']],
+            'simpanan_wholesale' => ['mata_anggaran' => ['A.2. DPK Korporasi']],
+            'giro_wholesale' => ['mata_anggaran' => ['A.2.a. Giro Korporasi']],
+            'deposito_wholesale' => ['mata_anggaran' => ['A.2.b. Deposito Korporasi']],
+            'tabungan_wholesale' => ['mata_anggaran' => ['A.2.c. Tabungan Korporasi']], // Use specific MA even if 0
             'total_os' => ['mata_anggaran' => ['B. KREDIT TOTAL']],
             'kecil_non_cashcoll_os' => ['mata_anggaran' => ['B.2.a. Kredit Kecil Non Cash Collateral'], 'uker_contains_any' => ['KC', 'KCP']],
             'cashcoll_os' => ['mata_anggaran' => ['B.2.b. Kredit Kecil Cash Collateral'], 'uker_contains_any' => ['KC', 'KCP']],
@@ -1479,12 +1483,12 @@ class DashboardHarianSnapshotService
             'briguna_konsumer_os' => ['mata_anggaran' => ['B.5.a. Briguna'], 'uker_contains_any' => ['KC', 'KCP']],
             'kpr_os' => ['mata_anggaran' => ['B.5.b. KPR'], 'uker_contains_any' => ['KC', 'KCP']],
             'kkb_os' => ['mata_anggaran' => ['B.5.c. KKB'], 'uker_contains_any' => ['KC', 'KCP']],
-            'micro_os' => ['mata_anggaran' => ['B.1. MIKRO'], 'uker_contains_any' => ['UNIT']],
-            'briguna_mikro_os' => ['mata_anggaran' => ['B.1.b. Briguna Mikro'], 'uker_contains_any' => ['UNIT']],
-            'kupedes_os' => ['mata_anggaran' => ['B.1.a. Kupedes Komersial'], 'uker_contains_any' => ['UNIT']],
-            'kur_mikro_os' => ['mata_anggaran' => ['B.1.c. KUR Mikro'], 'uker_contains_any' => ['UNIT']],
-            'kur_kecil_os' => ['mata_anggaran' => ['B.1.d. KUR Kecil'], 'uker_contains_any' => ['UNIT']],
-            'kur_kpp_os' => ['mata_anggaran' => ['B.1.e. KPP'], 'uker_contains_any' => ['UNIT']],
+            'micro_os' => ['mata_anggaran' => ['B.1. MIKRO']],
+            'briguna_mikro_os' => ['mata_anggaran' => ['B.1.b. Briguna Mikro']],
+            'kupedes_os' => ['mata_anggaran' => ['B.1.a. Kupedes Komersial']],
+            'kur_mikro_os' => ['mata_anggaran' => ['B.1.c. KUR Mikro']],
+            'kur_kecil_os' => ['mata_anggaran' => ['B.1.d. KUR Kecil']],
+            'kur_kpp_os' => ['mata_anggaran' => ['B.1.e. KPP']],
             'total_sml_pct_non_commercial' => ['mata_anggaran' => ['DPK % Total']],
             'kecil_non_cashcoll_sml' => ['mata_anggaran' => ['DPK Rp Kecil Non Cash Collateral']],
             'cashcoll_sml' => ['mata_anggaran' => ['DPK Rp Kecil Cash Collateral']],
@@ -1498,19 +1502,23 @@ class DashboardHarianSnapshotService
             'kur_mikro_sml' => ['mata_anggaran' => ['DPK Rp KUR Mikro']],
             'kur_kecil_sml' => ['mata_anggaran' => ['DPK Rp KUR Kecil']],
             'kur_kpp_sml' => ['mata_anggaran' => ['DPK Rp KPP']],
-            'total_npl_pct_non_commercial' => ['mata_anggaran' => ['NPL % Total', 'DPK % Total']],
-            'kecil_non_cashcoll_npl' => ['mata_anggaran' => ['NPL Rp Kecil Non Cash Collateral', 'DPK Rp Kecil Non Cash Collateral']],
-            'cashcoll_npl' => ['mata_anggaran' => ['NPL Rp Kecil Cash Collateral', 'DPK Rp Kecil Cash Collateral']],
-            'medium_npl' => ['mata_anggaran' => ['NPL Rp Medium', 'DPK Rp Medium']],
-            'briguna_konsumer_npl' => ['mata_anggaran' => ['NPL Rp Briguna', 'DPK Rp Briguna']],
-            'kpr_npl' => ['mata_anggaran' => ['NPL Rp KPR', 'DPK Rp KPR']],
-            'kkb_npl' => ['mata_anggaran' => ['NPL Rp KKB', 'DPK Rp KKB']],
-            'micro_npl' => ['mata_anggaran' => ['NPL Rp Mikro', 'DPK Rp Mikro']],
-            'briguna_mikro_npl' => ['mata_anggaran' => ['NPL Rp Briguna Mikro', 'DPK Rp Briguna Mikro']],
-            'kupedes_npl' => ['mata_anggaran' => ['NPL Rp Kupedes Komersial', 'DPK Rp Kupedes Komersial']],
-            'kur_mikro_npl' => ['mata_anggaran' => ['NPL Rp KUR Mikro', 'DPK Rp KUR Mikro']],
-            'kur_kecil_npl' => ['mata_anggaran' => ['NPL Rp KUR Kecil', 'DPK Rp KUR Kecil']],
-            'kur_kpp_npl' => ['mata_anggaran' => ['NPL Rp KPP', 'DPK Rp KPP']],
+            'total_npl_pct_non_commercial' => ['mata_anggaran' => ['NPL % Total']],
+            'kecil_non_cashcoll_npl' => ['mata_anggaran' => ['NPL Rp Kecil Non Cash Collateral']],
+            'cashcoll_npl' => ['mata_anggaran' => ['NPL Rp Kecil Cash Collateral']],
+            'medium_npl' => ['mata_anggaran' => ['NPL Rp Medium']],
+            'briguna_konsumer_npl' => ['mata_anggaran' => ['NPL Rp Briguna']],
+            'kpr_npl' => ['mata_anggaran' => ['NPL Rp KPR']],
+            'kkb_npl' => ['mata_anggaran' => ['NPL Rp KKB']],
+            'micro_npl' => ['mata_anggaran' => ['NPL Rp Mikro']],
+            'briguna_mikro_npl' => ['mata_anggaran' => ['NPL Rp Briguna Mikro']],
+            'kupedes_npl' => ['mata_anggaran' => ['NPL Rp Kupedes Komersial']],
+            'kur_mikro_npl' => ['mata_anggaran' => ['NPL Rp KUR Mikro']],
+            'kur_kecil_npl' => ['mata_anggaran' => ['NPL Rp KUR Kecil']],
+            'kur_kpp_npl' => ['mata_anggaran' => ['NPL Rp KPP']],
+            'rec_dh_total' => ['mata_anggaran' => ['C. RECOVERY EKSTRAKOMTABEL']],
+            'rec_dh_small' => ['mata_anggaran' => ['C. 2. Recovery Ekstrakomtabel Small']],
+            'rec_dh_consumer' => ['mata_anggaran' => ['C. 4. Recovery Ekstrakomtabel Konsumer']],
+            'rec_dh_micro' => ['mata_anggaran' => ['C. 1. a. Recovery Ekstrakomtabel Mikro', 'C. 1. b. Recovery Ekstrakomtabel Kece']],
         ];
     }
 
@@ -1556,7 +1564,12 @@ class DashboardHarianSnapshotService
         $final['ldr_non_commercial'] = $this->safePercent($final['total_os'], $final['total_simpanan']);
         $final['ldr_ritel_non_commercial'] = $this->safePercent($final['sme_os'] + $final['consumer_os'], $final['simpanan_ritel']);
         $final['ldr_mikro_non_commercial'] = $this->safePercent($final['micro_os'], $final['simpanan_mikro']);
-        $final['rec_dh_total'] = $final['rec_dh_small'] + $final['rec_dh_consumer'] + $final['rec_dh_micro'];
+        
+        // If rec_dh_total was explicitly loaded from RKA, keep it. 
+        // Otherwise fallback to sum of segments.
+        if ((float) ($final['rec_dh_total'] ?? 0) <= 0) {
+            $final['rec_dh_total'] = $final['rec_dh_small'] + $final['rec_dh_consumer'] + $final['rec_dh_micro'];
+        }
 
         return $final;
     }

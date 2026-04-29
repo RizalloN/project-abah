@@ -23,7 +23,7 @@ class ImportCleanupService
         'ssa_simpanan' => 'Month_Day_Year_of_Posisi',
         'lw325_ph' => 'periode',
     ];
-    private const USE_BATCHING = false;
+    private const USE_BATCHING = true;
 
     private ?SnapshotBatchAggregator $batchAggregator = null;
 

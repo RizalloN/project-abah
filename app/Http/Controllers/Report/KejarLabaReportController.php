@@ -251,14 +251,16 @@ class KejarLabaReportController extends Controller
     private function fetchRkaTargetsByCode(string $monthColumn, int $year): array
     {
         $rkaDefinitions = [
-            'micro' => 'C. 1. a. Recovery Ekstrakomtabel Mikro',
-            'small' => 'C. 2. Recovery Ekstrakomtabel Small',
-            'consumer' => 'C. 4. Recovery Ekstrakomtabel Konsumer',
-            'total' => 'C. RECOVERY EKSTRAKOMTABEL',
+            'micro' => ['C. 1. a. Recovery Ekstrakomtabel Mikro', 'C. 1. b. Recovery Ekstrakomtabel Kece'],
+            'small' => ['C. 2. Recovery Ekstrakomtabel Small'],
+            'consumer' => ['C. 4. Recovery Ekstrakomtabel Konsumer'],
+            'total' => ['C. RECOVERY EKSTRAKOMTABEL'],
         ];
 
+        $allMataAnggaran = array_merge(...array_values($rkaDefinitions));
+
         $results = DB::table('rka')
-            ->whereIn('mata_anggaran', array_values($rkaDefinitions))
+            ->whereIn('mata_anggaran', $allMataAnggaran)
             ->whereYear('created_at', $year)
             ->select('desc_uker', 'mata_anggaran', $monthColumn)
             ->get();
@@ -276,8 +278,8 @@ class KejarLabaReportController extends Controller
                 $rkaByCode[$code] = ['micro' => 0, 'small' => 0, 'consumer' => 0, 'total' => 0];
             }
 
-            foreach ($rkaDefinitions as $key => $mataAnggaran) {
-                if ($row->mata_anggaran === $mataAnggaran) {
+            foreach ($rkaDefinitions as $key => $mataAnggarans) {
+                if (in_array($row->mata_anggaran, $mataAnggarans, true)) {
                     $rkaByCode[$code][$key] += $val;
                     break;
                 }
@@ -291,20 +293,16 @@ class KejarLabaReportController extends Controller
     {
         $rkaDefinitions = [
             'micro' => [
-                'mata_anggaran' => ['C. 1. a. Recovery Ekstrakomtabel Mikro'],
-                'uker_contains_any' => ['KC', 'KCP'],
+                'mata_anggaran' => ['C. 1. a. Recovery Ekstrakomtabel Mikro', 'C. 1. b. Recovery Ekstrakomtabel Kece'],
             ],
             'small' => [
                 'mata_anggaran' => ['C. 2. Recovery Ekstrakomtabel Small'],
-                'uker_contains_any' => ['KC', 'KCP'],
             ],
             'consumer' => [
                 'mata_anggaran' => ['C. 4. Recovery Ekstrakomtabel Konsumer'],
-                'uker_contains_any' => ['KC', 'KCP'],
             ],
             'total' => [
                 'mata_anggaran' => ['C. RECOVERY EKSTRAKOMTABEL'],
-                'uker_contains_any' => ['KC', 'KCP'],
             ],
         ];
 

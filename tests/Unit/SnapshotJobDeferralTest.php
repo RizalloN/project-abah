@@ -51,10 +51,8 @@ class SnapshotJobDeferralTest extends TestCase
         Bus::assertDispatched(RunManagedReportSnapshotRebuildJob::class, 1);
     }
 
-    public function test_dashboard_harian_snapshot_job_requeues_itself_when_import_is_active(): void
+    public function test_dashboard_harian_snapshot_job_deferred_by_middleware_when_import_is_active(): void
     {
-        Bus::fake();
-
         $importProgressService = Mockery::mock(ImportProgressService::class);
         $importProgressService->shouldReceive('hasActiveProcessingJobs')
             ->once()
@@ -68,14 +66,17 @@ class SnapshotJobDeferralTest extends TestCase
         $dirtyQueue = Mockery::mock(DashboardHarianSnapshotDirtyPeriodQueue::class);
         $dirtyQueue->shouldNotReceive('consume');
 
-        app()->call([
-            new RebuildDashboardHarianSnapshotJob(['2026-04-01'], false, true),
-            'handle',
-        ], [
-            'service' => $dashboardHarianSnapshotService,
-            'dirtyPeriods' => $dirtyQueue,
-        ]);
+        $job = new RebuildDashboardHarianSnapshotJob(['2026-04-01'], false, true);
+        $job = Mockery::mock($job);
+        $job->shouldReceive('release')
+            ->once()
+            ->with(Mockery::on(fn ($delay) => is_int($delay) && $delay > 0));
 
-        Bus::assertDispatched(RebuildDashboardHarianSnapshotJob::class, 1);
+        $middleware = $job->middleware()[1];
+        $next = fn ($j) => $j;
+
+        $result = $middleware->handle($job, $next);
+
+        $this->assertNull($result);
     }
 }
