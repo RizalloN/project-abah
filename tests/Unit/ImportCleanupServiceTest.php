@@ -22,24 +22,45 @@ class ImportCleanupServiceTest extends TestCase
     {
         $service = new ImportCleanupService();
 
-        $service->dispatchImportedJobSync(10, 'simpanan_multipn', '2026-04-04', 'unit-test');
-        $service->dispatchImportedJobSync(11, 'simpanan_multipn', '2026-04-04', 'unit-test');
+        $service->dispatchImportedJobSync(10, 'daily_loan_dinamis', '2026-04-04', 'unit-test');
+        $service->dispatchImportedJobSync(11, 'daily_loan_dinamis', '2026-04-04', 'unit-test');
 
         Bus::assertDispatchedTimes(SyncImportedReportJob::class, 1);
         Bus::assertDispatched(SyncImportedReportJob::class, function (SyncImportedReportJob $job) {
-            return $job->tableName === 'simpanan_multipn'
+            return $job->tableName === 'daily_loan_dinamis'
                 && $job->periodHint === '2026-04-04';
         });
     }
 
-    public function test_finalize_imported_job_sync_dispatch_requeues_when_newer_request_arrives(): void
+    public function test_dispatch_imported_job_sync_marks_rerun_when_newer_request_arrives(): void
     {
         $service = new ImportCleanupService();
 
-        $service->dispatchImportedJobSync(10, 'simpanan_multipn', '2026-04-04', 'unit-test');
-        $service->dispatchImportedJobSync(11, 'simpanan_multipn', '2026-04-04', 'unit-test');
-        $service->finalizeImportedJobSyncDispatch(10, 'simpanan_multipn', '2026-04-04', 'unit-test');
+        $service->dispatchImportedJobSync(10, 'daily_loan_dinamis', '2026-04-04', 'unit-test');
+        $service->dispatchImportedJobSync(11, 'daily_loan_dinamis', '2026-04-04', 'unit-test');
+
+        Bus::assertDispatchedTimes(SyncImportedReportJob::class, 1);
+        $this->assertSame(
+            'imports-high',
+            Cache::get('snapshot:sync:rerun:daily_loan_dinamis:2026-04-04')
+        );
+    }
+
+    public function test_dispatch_imported_job_sync_bypasses_batching_for_lightweight_merchant_reports(): void
+    {
+        $service = new ImportCleanupService();
+
+        $service->dispatchImportedJobSync(26, 'jumlah_merchant_qris_detail', '2026-04-04', 'unit-test');
+        $service->dispatchImportedJobSync(27, 'sv_merchant', '2026-04-04', 'unit-test');
 
         Bus::assertDispatchedTimes(SyncImportedReportJob::class, 2);
+        Bus::assertDispatched(SyncImportedReportJob::class, function (SyncImportedReportJob $job) {
+            return $job->tableName === 'jumlah_merchant_qris_detail'
+                && $job->periodHint === '2026-04-04';
+        });
+        Bus::assertDispatched(SyncImportedReportJob::class, function (SyncImportedReportJob $job) {
+            return $job->tableName === 'sv_merchant'
+                && $job->periodHint === '2026-04-04';
+        });
     }
 }

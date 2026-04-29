@@ -208,6 +208,82 @@ class OptimizedBulkDeleteService
     }
 
     /**
+     * Best Effort for Clustered Index (Primary Key) Deletion.
+     * Searches for Min & Max ID, then deletes block by block.
+     * Fastest method for partial deletes in InnoDB without Table Swap.
+     */
+    public function deleteByClusteredIndex(
+        string $table,
+        array $whereConditions = [],
+        int $chunkSize = 50000,
+        string $primaryKey = 'id'
+    ): array {
+        $totalDeleted = 0;
+        $chunkCount = 0;
+
+        try {
+            // Find the MIN and MAX ID for the given condition to limit the scanning scope
+            $query = DB::table($table);
+            foreach ($whereConditions as $column => $value) {
+                if (is_array($value)) {
+                    $query->whereIn($column, $value);
+                } else {
+                    $query->where($column, $value);
+                }
+            }
+            
+            $range = $query->selectRaw("MIN({$primaryKey}) as min_id, MAX({$primaryKey}) as max_id")->first();
+            
+            if (!$range || current((array)$range) === null) {
+                return ['success' => true, 'table' => $table, 'total_deleted' => 0, 'strategy' => 'clustered_delete_empty'];
+            }
+
+            $currentId = (int) $range->min_id;
+            $maxId = (int) $range->max_id;
+
+            while ($currentId <= $maxId) {
+                $nextId = $currentId + $chunkSize - 1;
+
+                // We must still include conditions in case there are mixed data in the ID range
+                // but the DB engine will purely scan the IDs
+                $deleteQuery = DB::table($table)->whereBetween($primaryKey, [$currentId, $nextId]);
+                foreach ($whereConditions as $column => $value) {
+                    if (is_array($value)) {
+                        $deleteQuery->whereIn($column, $value);
+                    } else {
+                        $deleteQuery->where($column, $value);
+                    }
+                }
+
+                $deleted = $deleteQuery->delete();
+                $totalDeleted += $deleted;
+                $chunkCount++;
+
+                $currentId = $nextId + 1;
+            }
+
+            Log::info("OptimizedBulkDeleteService: Clustered Index delete completed for {$table}", [
+                'total_deleted' => $totalDeleted,
+                'chunk_count'   => $chunkCount,
+            ]);
+
+            return [
+                'success' => true,
+                'table' => $table,
+                'total_deleted' => $totalDeleted,
+                'chunk_count' => $chunkCount,
+                'strategy' => 'clustered_delete',
+            ];
+        } catch (\Throwable $e) {
+            Log::error("OptimizedBulkDeleteService: Clustered delete failed for {$table}", [
+                'error' => $e->getMessage(),
+            ]);
+
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    /**
      * Get table size and row count for optimization decisions.
      */
     public function getTableStats(string $table): array

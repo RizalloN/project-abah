@@ -62,7 +62,11 @@ class SnapshotBatchConfig
      * Some tables might have real-time requirements or compatibility issues.
      */
     public const BYPASS_BATCHING_TABLES = [
-        // Example: 'critical_table' => true,
+        'jumlah_merchant_detail' => true,
+        'sv_merchant' => true,
+        'jumlah_merchant_qris_detail' => true,
+        'merchant_qris' => true,
+        'merchant_qris_volume' => true,
     ];
 
     /**

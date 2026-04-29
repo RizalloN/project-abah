@@ -17,6 +17,8 @@ return [
 
     'report_queue' => env('REPORT_QUEUE', 'default'),
 
+    'shadow_backfill_queue' => env('SHADOW_BACKFILL_QUEUE', 'shadow-backfill'),
+
     /*
     |--------------------------------------------------------------------------
     | Queue Connections

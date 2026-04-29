@@ -645,18 +645,16 @@ class ManagedReportManagementService
 
         $estimatedSourceRows = $this->estimateTableRows($tableName);
         $perPage = $this->resolveEffectiveManagementPerPage($perPage, $estimatedSourceRows);
-        $useExactPeriodCount = $estimatedSourceRows <= self::MANAGEMENT_EXACT_PERIOD_COUNT_ROW_LIMIT;
-        $totalPeriods = $useExactPeriodCount
-            ? (int) DB::query()
-                ->fromSub(clone $periodBaseQuery, 'management_periods')
-                ->count()
-            : null;
-        $totalPages = $useExactPeriodCount
-            ? max(1, (int) ceil(((int) $totalPeriods) / $perPage))
-            : 1;
-        $currentPage = $useExactPeriodCount
-            ? min(max(1, $page), $totalPages)
-            : max(1, $page);
+        
+        // Optimize counting using indexed column and cache for 5 minutes
+        $cacheKey = "management_total_periods_{$tableName}_{$periodColumn}";
+        $totalPeriods = \Illuminate\Support\Facades\Cache::remember($cacheKey, 300, function () use ($tableName, $periodColumn) {
+            return DB::table($tableName)->distinct()->count($periodColumn);
+        });
+
+        $useExactPeriodCount = true;
+        $totalPages = max(1, (int) ceil($totalPeriods / $perPage));
+        $currentPage = min(max(1, $page), $totalPages);
         $offset = ($currentPage - 1) * $perPage;
 
         $periodRows = $periodBaseQuery

@@ -58,6 +58,13 @@ class ReportDataSyncService
         'lw325_ph',
         'performance_pis_per_produk',
     ];
+    private const LIGHTWEIGHT_IMPORT_TABLES = [
+        'jumlah_merchant_detail',
+        'sv_merchant',
+        'jumlah_merchant_qris_detail',
+        'merchant_qris',
+        'merchant_qris_volume',
+    ];
 
     public function __construct(
         private readonly ReportSnapshotBuilder $snapshotBuilder,
@@ -125,7 +132,7 @@ class ReportDataSyncService
 
         $periodHint = $this->normalizeAuditPeriodHint($periodHint);
 
-        if ($this->shouldDeferSnapshotSync($jobId, $deleteId, $rebuildId)) {
+        if (!$this->isLightweightImportTable($normalizedTable) && $this->shouldDeferSnapshotSync($jobId, $deleteId, $rebuildId)) {
             $this->dispatchDeferredSnapshotSync($jobId, $normalizedTable, $periodHint, $source, $deleteId, $rebuildId);
             return;
         }
@@ -167,7 +174,7 @@ class ReportDataSyncService
                 default => null,
             };
 
-            if (!in_array($normalizedTable, ['daily_loan_dinamis', 'simpanan_multipn'], true)) {
+            if ($this->shouldWarmReportCacheAfterImport($normalizedTable)) {
                 WarmReportCacheJob::dispatch();
             }
 
@@ -195,6 +202,19 @@ class ReportDataSyncService
 
             return false;
         }
+    }
+
+    private function isLightweightImportTable(string $tableName): bool
+    {
+        return in_array(strtolower(trim($tableName)), self::LIGHTWEIGHT_IMPORT_TABLES, true);
+    }
+
+    private function shouldWarmReportCacheAfterImport(string $tableName): bool
+    {
+        $normalizedTable = strtolower(trim($tableName));
+
+        return !in_array($normalizedTable, ['daily_loan_dinamis', 'simpanan_multipn'], true)
+            && !$this->isLightweightImportTable($normalizedTable);
     }
 
     private function dispatchDeferredSnapshotSync(

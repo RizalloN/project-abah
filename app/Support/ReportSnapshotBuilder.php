@@ -548,6 +548,10 @@ class ReportSnapshotBuilder
             DB::table(self::RASIO_SNAPSHOT_TABLE)->where('loan_period', $loanPeriod)->delete();
         }
 
+        if (DB::getDriverName() === 'mysql') {
+            return $this->buildRasioPeriodSnapshotSqlFirst($loanPeriod);
+        }
+
         $snapshot = $this->computeRasioSummary($loanPeriod);
 
         $rows = [];
@@ -595,6 +599,10 @@ class ReportSnapshotBuilder
             }
         }
 
+        if (DB::getDriverName() === 'mysql') {
+            return $this->buildRasioUkerPeriodSnapshotSqlFirst($loanPeriod);
+        }
+
         $rows = $this->computeRasioUkerSnapshotRows($loanPeriod);
 
         DB::table(self::RASIO_UKER_SNAPSHOT_TABLE)
@@ -612,6 +620,269 @@ class ReportSnapshotBuilder
         }
 
         return count($rows);
+    }
+
+    private function buildRasioPeriodSnapshotSqlFirst(string $loanPeriod): int
+    {
+        $casaDate = $this->resolveAvailableCasaPeriod($loanPeriod);
+        $loanKeyColumn = $this->resolveExistingColumn('daily_loan_dinamis', ['nocif', 'cifno', 'CIFNO'], 'cifno');
+        $casaKeyColumn = $this->resolveExistingColumn('simpanan_multipn', ['nocif', 'cifno', 'CIFNO'], 'CIFNO');
+        $loanBranchColumn = $this->resolveExistingColumn('daily_loan_dinamis', ['cabang1', 'cabang'], 'cabang1');
+        $loanSegmentColumn = $this->resolveExistingColumn('daily_loan_dinamis', ['segmen_dashboard'], 'segmen_dashboard');
+        $loanProductColumn = $this->resolveExistingColumn('daily_loan_dinamis', ['produk_dashboard'], 'produk_dashboard');
+        $loanBalanceColumn = $this->resolveExistingColumn('daily_loan_dinamis', ['baki_debet1', 'baki_debet'], 'baki_debet1');
+
+        $loanIdentitySql = "REGEXP_REPLACE(d.{$loanKeyColumn}, '[^0-9]', '')";
+        $brigunaFlagSql = $this->buildSegmentFlagExpression("d.{$loanSegmentColumn}", "d.{$loanProductColumn}", 'briguna');
+        $kprFlagSql = $this->buildSegmentFlagExpression("d.{$loanSegmentColumn}", "d.{$loanProductColumn}", 'kpr');
+        $mikroFlagSql = $this->buildSegmentFlagExpression("d.{$loanSegmentColumn}", "d.{$loanProductColumn}", 'mikro');
+        $smcFlagSql = $this->buildSegmentFlagExpression("d.{$loanSegmentColumn}", "d.{$loanProductColumn}", 'smc');
+
+        $casaSelectSql = $casaDate ? "
+            SUM(COALESCE(c.casa_balance, 0)) as total_casa,
+            SUM(CASE WHEN base.has_briguna = 1 THEN COALESCE(c.casa_balance, 0) ELSE 0 END) as briguna_casa,
+            SUM(CASE WHEN base.has_kpr = 1 THEN COALESCE(c.casa_balance, 0) ELSE 0 END) as kpr_casa,
+            SUM(CASE WHEN base.has_mikro = 1 THEN COALESCE(c.casa_balance, 0) ELSE 0 END) as mikro_casa,
+            SUM(CASE WHEN base.has_smc = 1 THEN COALESCE(c.casa_balance, 0) ELSE 0 END) as smc_casa
+        " : "
+            0 as total_casa, 0 as briguna_casa, 0 as kpr_casa, 0 as mikro_casa, 0 as smc_casa
+        ";
+
+        $casaJoinSql = '';
+        $bindings = [$loanPeriod, $loanPeriod, $loanPeriod];
+
+        if ($casaDate) {
+            $applyCasaTypeFilter = $this->shouldApplyCasaTypeFilter($casaDate);
+            $casaFilterSql = $applyCasaTypeFilter ? "AND (s.jenis_simpanan LIKE 'GIRO%' OR s.jenis_simpanan LIKE 'TABUNGAN%')" : "";
+            $casaIdentitySql = "REGEXP_REPLACE(s.{$casaKeyColumn}, '[^0-9]', '')";
+            $casaJoinSql = "
+                LEFT JOIN (
+                    SELECT
+                        {$casaIdentitySql} as identity_key,
+                        SUM(COALESCE(saldo_idr, 0)) as casa_balance
+                    FROM simpanan_multipn s
+                    WHERE s.posisi = ?
+                        AND s.{$casaKeyColumn} IS NOT NULL
+                        AND s.{$casaKeyColumn} <> ''
+                        {$casaFilterSql}
+                    GROUP BY identity_key
+                ) c ON c.identity_key = base.identity_key
+            ";
+            $bindings[] = $casaDate;
+        }
+
+        DB::statement("
+            INSERT INTO " . self::RASIO_SNAPSHOT_TABLE . " (
+                uniqueid_rcds, loan_period, casa_period, branch_key, 
+                branch_label, segment_key, os_amount, casa_amount, 
+                source_row_count, created_at, updated_at
+            )
+            SELECT
+                MD5(CONCAT_WS('|', 'rcds', ?, agg.branch_key, seg.segment_key)),
+                ?,
+                ?,
+                agg.branch_key,
+                agg.branch_key as branch_label,
+                seg.segment_key,
+                CASE seg.segment_key
+                    WHEN 'total' THEN agg.total_os
+                    WHEN 'briguna' THEN agg.briguna_os
+                    WHEN 'kpr' THEN agg.kpr_os
+                    WHEN 'mikro' THEN agg.mikro_os
+                    WHEN 'smc' THEN agg.smc_os
+                    ELSE 0
+                END as os_amount,
+                CASE seg.segment_key
+                    WHEN 'total' THEN agg.total_casa
+                    WHEN 'briguna' THEN agg.briguna_casa
+                    WHEN 'kpr' THEN agg.kpr_casa
+                    WHEN 'mikro' THEN agg.mikro_casa
+                    WHEN 'smc' THEN agg.smc_casa
+                    ELSE 0
+                END as casa_amount,
+                agg.source_row_count,
+                NOW(),
+                NOW()
+            FROM (
+                SELECT
+                    base.branch_key,
+                    SUM(base.loan_balance) as total_os,
+                    SUM(CASE WHEN base.has_briguna = 1 THEN base.loan_balance ELSE 0 END) as briguna_os,
+                    SUM(CASE WHEN base.has_kpr = 1 THEN base.loan_balance ELSE 0 END) as kpr_os,
+                    SUM(CASE WHEN base.has_mikro = 1 THEN base.loan_balance ELSE 0 END) as mikro_os,
+                    SUM(CASE WHEN base.has_smc = 1 THEN base.loan_balance ELSE 0 END) as smc_os,
+                    {$casaSelectSql},
+                    SUM(base.source_row_count) as source_row_count
+                FROM (
+                    SELECT
+                        UPPER(TRIM(d.{$loanBranchColumn})) as branch_key,
+                        {$loanIdentitySql} as identity_key,
+                        SUM(COALESCE(d.{$loanBalanceColumn}, 0)) as loan_balance,
+                        MAX({$brigunaFlagSql}) as has_briguna,
+                        MAX({$kprFlagSql}) as has_kpr,
+                        MAX({$mikroFlagSql}) as has_mikro,
+                        MAX({$smcFlagSql}) as has_smc,
+                        COUNT(*) as source_row_count
+                    FROM daily_loan_dinamis d
+                    WHERE d.periode = ?
+                        AND d.{$loanKeyColumn} IS NOT NULL AND d.{$loanKeyColumn} <> ''
+                        AND d.{$loanBranchColumn} IS NOT NULL AND d.{$loanBranchColumn} <> ''
+                    GROUP BY branch_key, identity_key
+                ) base
+                {$casaJoinSql}
+                GROUP BY base.branch_key
+            ) agg
+            CROSS JOIN (
+                SELECT 'total' as segment_key UNION ALL
+                SELECT 'briguna' UNION ALL
+                SELECT 'kpr' UNION ALL
+                SELECT 'mikro' UNION ALL
+                SELECT 'smc'
+            ) seg
+            ON DUPLICATE KEY UPDATE
+                casa_period = VALUES(casa_period),
+                branch_label = VALUES(branch_label),
+                os_amount = VALUES(os_amount),
+                casa_amount = VALUES(casa_amount),
+                source_row_count = VALUES(source_row_count),
+                updated_at = VALUES(updated_at)
+        ", $bindings);
+
+        return (int) DB::table(self::RASIO_SNAPSHOT_TABLE)->where('loan_period', $loanPeriod)->count();
+    }
+
+    private function buildRasioUkerPeriodSnapshotSqlFirst(string $loanPeriod): int
+    {
+        $casaDate = $this->resolveAvailableCasaPeriod($loanPeriod);
+        $loanKeyColumn = $this->resolveExistingColumn('daily_loan_dinamis', ['nocif', 'cifno', 'CIFNO'], 'cifno');
+        $casaKeyColumn = $this->resolveExistingColumn('simpanan_multipn', ['nocif', 'cifno', 'CIFNO'], 'CIFNO');
+        $loanBranchColumn = $this->resolveExistingColumn('daily_loan_dinamis', ['cabang1', 'cabang'], 'cabang1');
+        $loanUkerColumn = $this->resolveExistingColumn('daily_loan_dinamis', ['unit1', 'unit'], 'unit1');
+        $loanSegmentColumn = $this->resolveExistingColumn('daily_loan_dinamis', ['segmen_dashboard'], 'segmen_dashboard');
+        $loanProductColumn = $this->resolveExistingColumn('daily_loan_dinamis', ['produk_dashboard'], 'produk_dashboard');
+        $loanBalanceColumn = $this->resolveExistingColumn('daily_loan_dinamis', ['baki_debet1', 'baki_debet'], 'baki_debet1');
+
+        $loanIdentitySql = "REGEXP_REPLACE(d.{$loanKeyColumn}, '[^0-9]', '')";
+        $brigunaFlagSql = $this->buildSegmentFlagExpression("d.{$loanSegmentColumn}", "d.{$loanProductColumn}", 'briguna');
+        $kprFlagSql = $this->buildSegmentFlagExpression("d.{$loanSegmentColumn}", "d.{$loanProductColumn}", 'kpr');
+        $mikroFlagSql = $this->buildSegmentFlagExpression("d.{$loanSegmentColumn}", "d.{$loanProductColumn}", 'mikro');
+        $smcFlagSql = $this->buildSegmentFlagExpression("d.{$loanSegmentColumn}", "d.{$loanProductColumn}", 'smc');
+
+        $casaSelectSql = $casaDate ? "
+            SUM(COALESCE(c.casa_balance, 0)) as total_casa,
+            SUM(CASE WHEN base.has_briguna = 1 THEN COALESCE(c.casa_balance, 0) ELSE 0 END) as briguna_casa,
+            SUM(CASE WHEN base.has_kpr = 1 THEN COALESCE(c.casa_balance, 0) ELSE 0 END) as kpr_casa,
+            SUM(CASE WHEN base.has_mikro = 1 THEN COALESCE(c.casa_balance, 0) ELSE 0 END) as mikro_casa,
+            SUM(CASE WHEN base.has_smc = 1 THEN COALESCE(c.casa_balance, 0) ELSE 0 END) as smc_casa
+        " : "
+            0 as total_casa, 0 as briguna_casa, 0 as kpr_casa, 0 as mikro_casa, 0 as smc_casa
+        ";
+
+        $casaJoinSql = '';
+        $bindings = [$loanPeriod, $loanPeriod, $loanPeriod];
+
+        if ($casaDate) {
+            $applyCasaTypeFilter = $this->shouldApplyCasaTypeFilter($casaDate);
+            $casaFilterSql = $applyCasaTypeFilter ? "AND (s.jenis_simpanan LIKE 'GIRO%' OR s.jenis_simpanan LIKE 'TABUNGAN%')" : "";
+            $casaIdentitySql = "REGEXP_REPLACE(s.{$casaKeyColumn}, '[^0-9]', '')";
+            $casaJoinSql = "
+                LEFT JOIN (
+                    SELECT
+                        {$casaIdentitySql} as identity_key,
+                        SUM(COALESCE(saldo_idr, 0)) as casa_balance
+                    FROM simpanan_multipn s
+                    WHERE s.posisi = ?
+                        AND s.{$casaKeyColumn} IS NOT NULL
+                        AND s.{$casaKeyColumn} <> ''
+                        {$casaFilterSql}
+                    GROUP BY identity_key
+                ) c ON c.identity_key = base.identity_key
+            ";
+            $bindings[] = $casaDate;
+        }
+
+        DB::statement("
+            INSERT INTO " . self::RASIO_UKER_SNAPSHOT_TABLE . " (
+                uniqueid_rcdus, loan_period, casa_period, source_branch_key, 
+                uker_key, uker_label, segment_key, os_amount, casa_amount, 
+                source_row_count, created_at, updated_at
+            )
+            SELECT
+                MD5(CONCAT_WS('|', 'rcdus', ?, agg.source_branch_key, agg.uker_key, seg.segment_key)),
+                ?,
+                ?,
+                agg.source_branch_key,
+                agg.uker_key,
+                agg.uker_key as uker_label,
+                seg.segment_key,
+                CASE seg.segment_key
+                    WHEN 'total' THEN agg.total_os
+                    WHEN 'briguna' THEN agg.briguna_os
+                    WHEN 'kpr' THEN agg.kpr_os
+                    WHEN 'mikro' THEN agg.mikro_os
+                    WHEN 'smc' THEN agg.smc_os
+                    ELSE 0
+                END as os_amount,
+                CASE seg.segment_key
+                    WHEN 'total' THEN agg.total_casa
+                    WHEN 'briguna' THEN agg.briguna_casa
+                    WHEN 'kpr' THEN agg.kpr_casa
+                    WHEN 'mikro' THEN agg.mikro_casa
+                    WHEN 'smc' THEN agg.smc_casa
+                    ELSE 0
+                END as casa_amount,
+                agg.source_row_count,
+                NOW(),
+                NOW()
+            FROM (
+                SELECT
+                    base.source_branch_key,
+                    base.uker_key,
+                    SUM(base.loan_balance) as total_os,
+                    SUM(CASE WHEN base.has_briguna = 1 THEN base.loan_balance ELSE 0 END) as briguna_os,
+                    SUM(CASE WHEN base.has_kpr = 1 THEN base.loan_balance ELSE 0 END) as kpr_os,
+                    SUM(CASE WHEN base.has_mikro = 1 THEN base.loan_balance ELSE 0 END) as mikro_os,
+                    SUM(CASE WHEN base.has_smc = 1 THEN base.loan_balance ELSE 0 END) as smc_os,
+                    {$casaSelectSql},
+                    SUM(base.source_row_count) as source_row_count
+                FROM (
+                    SELECT
+                        UPPER(TRIM(d.{$loanBranchColumn})) as source_branch_key,
+                        UPPER(TRIM(d.{$loanUkerColumn})) as uker_key,
+                        {$loanIdentitySql} as identity_key,
+                        SUM(COALESCE(d.{$loanBalanceColumn}, 0)) as loan_balance,
+                        MAX({$brigunaFlagSql}) as has_briguna,
+                        MAX({$kprFlagSql}) as has_kpr,
+                        MAX({$mikroFlagSql}) as has_mikro,
+                        MAX({$smcFlagSql}) as has_smc,
+                        COUNT(*) as source_row_count
+                    FROM daily_loan_dinamis d
+                    WHERE d.periode = ?
+                        AND d.{$loanKeyColumn} IS NOT NULL AND d.{$loanKeyColumn} <> ''
+                        AND d.{$loanBranchColumn} IS NOT NULL AND d.{$loanBranchColumn} <> ''
+                        AND d.{$loanUkerColumn} IS NOT NULL AND d.{$loanUkerColumn} <> ''
+                    GROUP BY source_branch_key, uker_key, identity_key
+                ) base
+                {$casaJoinSql}
+                GROUP BY base.source_branch_key, base.uker_key
+            ) agg
+            CROSS JOIN (
+                SELECT 'total' as segment_key UNION ALL
+                SELECT 'briguna' UNION ALL
+                SELECT 'kpr' UNION ALL
+                SELECT 'mikro' UNION ALL
+                SELECT 'smc'
+            ) seg
+            ON DUPLICATE KEY UPDATE
+                casa_period = VALUES(casa_period),
+                uker_label = VALUES(uker_label),
+                os_amount = VALUES(os_amount),
+                casa_amount = VALUES(casa_amount),
+                source_row_count = VALUES(source_row_count),
+                updated_at = VALUES(updated_at)
+        ", $bindings);
+
+        return (int) DB::table(self::RASIO_UKER_SNAPSHOT_TABLE)->where('loan_period', $loanPeriod)->count();
     }
 
     private function buildDashboardSimpananPeriodSnapshot(string $period, bool $force): int
@@ -1837,22 +2108,370 @@ class ReportSnapshotBuilder
             }
         }
 
-        $rows = $this->computePerformanceRmRows($period);
-
         DB::table(self::PERFORMANCE_RM_SNAPSHOT_TABLE)
             ->where('periode', $period)
             ->delete();
 
-        if (!empty($rows)) {
-            foreach (array_chunk($rows, 500) as $chunk) {
-                DB::table(self::PERFORMANCE_RM_SNAPSHOT_TABLE)->insert($chunk);
+        if (DB::getDriverName() === 'mysql') {
+            $rowCount = $this->buildPerformanceRmPeriodSnapshotSqlFirst($period);
+        } else {
+            $rows = $this->computePerformanceRmRows($period);
+
+            if (!empty($rows)) {
+                foreach (array_chunk($rows, 500) as $chunk) {
+                    DB::table(self::PERFORMANCE_RM_SNAPSHOT_TABLE)->insert($chunk);
+                }
             }
+
+            $rowCount = count($rows);
         }
 
         // Build cabang-level summary snapshots after RM data is loaded
         $this->buildPerformanceRmCabangSnapshot($period, $force);
 
-        return count($rows);
+        return $rowCount;
+    }
+
+    private function buildPerformanceRmPeriodSnapshotSqlFirst(string $period): int
+    {
+        $snapshotColumns = array_flip(Schema::getColumnListing(self::PERFORMANCE_RM_SNAPSHOT_TABLE));
+        $latestSmpnPosisi = DB::table('simpanan_multipn')->max('posisi');
+
+        foreach (self::KINERJA_RM_SEGMENT_RULES as $segment => $rules) {
+            $normalizedRules = $this->normalizeKinerjaRmRules((array) $rules);
+            if ($normalizedRules === []) {
+                continue;
+            }
+
+            $this->insertPerformanceRmSegmentSnapshotSqlFirst(
+                $period,
+                $segment,
+                $normalizedRules,
+                $latestSmpnPosisi !== null ? (string) $latestSmpnPosisi : null,
+                $snapshotColumns
+            );
+        }
+
+        $this->updateSmallPerformanceRmQuadrantsSqlFirst($period);
+
+        return (int) DB::table(self::PERFORMANCE_RM_SNAPSHOT_TABLE)
+            ->where('periode', $period)
+            ->count();
+    }
+
+    /**
+     * @param array<int, array{segment: string, products: array<int, string>, descriptions: array<int, string>}> $normalizedRules
+     * @param array<string, int> $snapshotColumns
+     */
+    private function insertPerformanceRmSegmentSnapshotSqlFirst(
+        string $period,
+        string $segment,
+        array $normalizedRules,
+        ?string $latestSmpnPosisi,
+        array $snapshotColumns
+    ): void {
+        $periodDate = Carbon::parse($period);
+        $periodStart = $periodDate->copy()->startOfMonth()->toDateString();
+        $kurRitelDescriptionSql = $this->buildKinerjaRmNormalizedSql('d.description');
+        $kurRitelDescriptionToken = $this->normalizeKinerjaRmToken('Kredit Mikro - KUR Ritel 2015');
+        $realisasiDateColumn = 'd.' . $this->resolvePerformanceRmRealisasiDateColumn();
+        $weekRanges = [
+            'w1' => [$periodDate->copy()->startOfMonth(), $periodDate->copy()->startOfMonth()->addDays(6)],
+            'w2' => [$periodDate->copy()->startOfMonth()->addDays(7), $periodDate->copy()->startOfMonth()->addDays(13)],
+            'w3' => [$periodDate->copy()->startOfMonth()->addDays(14), $periodDate->copy()->startOfMonth()->addDays(20)],
+            'w4' => [$periodDate->copy()->startOfMonth()->addDays(21), $periodDate->copy()],
+        ];
+        $weekRanges = array_map(
+            fn (array $range): array => [
+                $range[0]->toDateString(),
+                $range[1]->greaterThan($periodDate) ? $periodDate->toDateString() : $range[1]->toDateString(),
+            ],
+            $weekRanges
+        );
+
+        [$ruleSql, $ruleBindings] = $this->buildKinerjaRmRuleSql($normalizedRules, 'd');
+        $canonicalProductSql = $this->buildKinerjaRmCanonicalProductSql($segment, 'd.produk_kinerja');
+        $groupColumns = [
+            "COALESCE(d.cabang_normalized, '')",
+            "COALESCE(d.unit_normalized, '')",
+            "COALESCE(d.branch_normalized, '')",
+            "COALESCE(d.rm_normalized, '')",
+            $canonicalProductSql,
+        ];
+        $groupBySql = implode(', ', $groupColumns);
+
+        $columns = [
+            'periode',
+            'cabang',
+            'unit',
+        ];
+        $selects = [
+            '? as periode',
+            "COALESCE(d.cabang_normalized, '') as cabang",
+            "COALESCE(d.unit_normalized, '') as unit",
+        ];
+        $bindings = [$period];
+
+        if (isset($snapshotColumns['branch_code'])) {
+            $columns[] = 'branch_code';
+            $selects[] = "COALESCE(d.branch_normalized, '') as branch_code";
+        }
+
+        array_push(
+            $columns,
+            'rm',
+            'segmen',
+            'produk',
+            'plafon',
+            'loan_os',
+            'lancar_os',
+            'sml_os',
+            'npl_os',
+            'restruk_os',
+            'total_deb'
+        );
+        array_push(
+            $selects,
+            "COALESCE(d.rm_normalized, '') as rm",
+            '? as segmen',
+            "{$canonicalProductSql} as produk",
+            'SUM(COALESCE(d.plafon, 0)) as plafon',
+            "SUM(CASE WHEN d.segmen_kinerja = 'MICRO' AND d.produk_kinerja = 'KURMIKRO' AND {$kurRitelDescriptionSql} = ? THEN COALESCE(d.plafon, 0) ELSE COALESCE(d.baki_debet1, 0) END) as loan_os",
+            'SUM(CASE WHEN d.kol_adk1 = 1 THEN COALESCE(d.baki_debet1, 0) ELSE 0 END) as lancar_os',
+            'SUM(CASE WHEN d.kol_adk1 = 2 THEN COALESCE(d.baki_debet1, 0) ELSE 0 END) as sml_os',
+            'SUM(CASE WHEN d.kol_adk1 > 2 THEN COALESCE(d.baki_debet1, 0) ELSE 0 END) as npl_os',
+            "SUM(CASE WHEN d.kol_adk1 = 1 AND COALESCE(d.flag_restruk, '') = 'Y' THEN COALESCE(d.baki_debet1, 0) ELSE 0 END) as restruk_os",
+            'COUNT(DISTINCT d.nomor_rekening1) as total_deb'
+        );
+        array_push($bindings, $segment, $kurRitelDescriptionToken);
+
+        $metricSelects = [
+            'lancar_deb' => 'COUNT(DISTINCT CASE WHEN d.kol_adk1 = 1 THEN d.nomor_rekening1 END) as lancar_deb',
+            'sml_deb' => 'COUNT(DISTINCT CASE WHEN d.kol_adk1 = 2 THEN d.nomor_rekening1 END) as sml_deb',
+            'npl_deb' => 'COUNT(DISTINCT CASE WHEN d.kol_adk1 > 2 THEN d.nomor_rekening1 END) as npl_deb',
+            'realisasi_deb' => "COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN d.nomor_rekening1 END) as realisasi_deb",
+            'realisasi_os' => "SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN COALESCE(d.plafon, 0) ELSE 0 END) as realisasi_os",
+            'w1_realisasi_deb' => "COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN d.nomor_rekening1 END) as w1_realisasi_deb",
+            'w1_realisasi_os' => "SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN COALESCE(d.plafon, 0) ELSE 0 END) as w1_realisasi_os",
+            'w2_realisasi_deb' => "COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN d.nomor_rekening1 END) as w2_realisasi_deb",
+            'w2_realisasi_os' => "SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN COALESCE(d.plafon, 0) ELSE 0 END) as w2_realisasi_os",
+            'w3_realisasi_deb' => "COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN d.nomor_rekening1 END) as w3_realisasi_deb",
+            'w3_realisasi_os' => "SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN COALESCE(d.plafon, 0) ELSE 0 END) as w3_realisasi_os",
+            'w4_realisasi_deb' => "COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN d.nomor_rekening1 END) as w4_realisasi_deb",
+            'w4_realisasi_os' => "SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN COALESCE(d.plafon, 0) ELSE 0 END) as w4_realisasi_os",
+            'lt_250_realisasi_deb' => "COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? AND COALESCE(d.plafon, 0) < 250000000 THEN d.nomor_rekening1 END) as lt_250_realisasi_deb",
+            'lt_250_realisasi_os' => "SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? AND COALESCE(d.plafon, 0) < 250000000 THEN COALESCE(d.plafon, 0) ELSE 0 END) as lt_250_realisasi_os",
+            'gt_250_realisasi_deb' => "COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? AND COALESCE(d.plafon, 0) > 250000000 THEN d.nomor_rekening1 END) as gt_250_realisasi_deb",
+            'gt_250_realisasi_os' => "SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? AND COALESCE(d.plafon, 0) > 250000000 THEN COALESCE(d.plafon, 0) ELSE 0 END) as gt_250_realisasi_os",
+        ];
+        $metricBindings = [
+            'realisasi_deb' => [$periodStart, $period],
+            'realisasi_os' => [$periodStart, $period],
+            'w1_realisasi_deb' => $weekRanges['w1'],
+            'w1_realisasi_os' => $weekRanges['w1'],
+            'w2_realisasi_deb' => $weekRanges['w2'],
+            'w2_realisasi_os' => $weekRanges['w2'],
+            'w3_realisasi_deb' => $weekRanges['w3'],
+            'w3_realisasi_os' => $weekRanges['w3'],
+            'w4_realisasi_deb' => $weekRanges['w4'],
+            'w4_realisasi_os' => $weekRanges['w4'],
+            'lt_250_realisasi_deb' => [$periodStart, $period],
+            'lt_250_realisasi_os' => [$periodStart, $period],
+            'gt_250_realisasi_deb' => [$periodStart, $period],
+            'gt_250_realisasi_os' => [$periodStart, $period],
+        ];
+
+        foreach ($metricSelects as $column => $selectSql) {
+            if (!isset($snapshotColumns[$column])) {
+                continue;
+            }
+
+            $columns[] = $column;
+            $selects[] = $selectSql;
+            array_push($bindings, ...($metricBindings[$column] ?? []));
+        }
+
+        array_push($columns, 'total_deposit', 'quadrant', 'created_at', 'updated_at');
+        array_push(
+            $selects,
+            $latestSmpnPosisi !== null ? 'COALESCE(MAX(dep.total_deposit), 0) as total_deposit' : '0 as total_deposit',
+            'NULL as quadrant',
+            'NOW() as created_at',
+            'NOW() as updated_at'
+        );
+
+        $depositJoinSql = $this->buildPerformanceRmDepositJoinSql($canonicalProductSql, $ruleSql, $latestSmpnPosisi);
+        $insertColumnsSql = implode(', ', $columns);
+        $selectSql = implode(",\n                ", $selects);
+
+        $sql = "
+            INSERT INTO " . self::PERFORMANCE_RM_SNAPSHOT_TABLE . " ({$insertColumnsSql})
+            SELECT
+                {$selectSql}
+            FROM daily_loan_dinamis d
+            {$depositJoinSql}
+            WHERE d.periode = ?
+                AND ({$ruleSql})
+                AND d.pn_pengelola1 IS NOT NULL
+                AND d.pn_pengelola1 <> ''
+            GROUP BY {$groupBySql}
+        ";
+
+        $depositBindings = $latestSmpnPosisi !== null
+            ? [$period, ...$ruleBindings, $latestSmpnPosisi]
+            : [];
+
+        $bindings = array_merge(
+            $bindings,
+            $depositBindings,
+            [$period],
+            $ruleBindings
+        );
+
+        DB::statement($sql, $bindings);
+    }
+
+    private function buildPerformanceRmDepositJoinSql(string $canonicalProductSql, string $ruleSql, ?string $latestSmpnPosisi): string
+    {
+        if ($latestSmpnPosisi === null) {
+            return '';
+        }
+
+        return "
+            LEFT JOIN (
+                SELECT
+                    cif_groups.cabang,
+                    cif_groups.unit,
+                    cif_groups.branch_code,
+                    cif_groups.rm,
+                    cif_groups.produk,
+                    SUM(COALESCE(deposits.saldo_idr, 0)) as total_deposit
+                FROM (
+                    SELECT DISTINCT
+                        COALESCE(d.cabang_normalized, '') as cabang,
+                        COALESCE(d.unit_normalized, '') as unit,
+                        COALESCE(d.branch_normalized, '') as branch_code,
+                        COALESCE(d.rm_normalized, '') as rm,
+                        {$canonicalProductSql} as produk,
+                        NULLIF(d.cifno_clean, '') as clean_cif
+                    FROM daily_loan_dinamis d
+                    WHERE d.periode = ?
+                        AND ({$ruleSql})
+                        AND d.pn_pengelola1 IS NOT NULL
+                        AND d.pn_pengelola1 <> ''
+                        AND d.cifno_clean IS NOT NULL
+                        AND d.cifno_clean <> ''
+                ) cif_groups
+                LEFT JOIN simpanan_multipn deposits FORCE INDEX (idx_smp_posisi_cif_covering)
+                    ON deposits.posisi = ?
+                    AND deposits.CIFNO = cif_groups.clean_cif
+                GROUP BY cif_groups.cabang, cif_groups.unit, cif_groups.branch_code, cif_groups.rm, cif_groups.produk
+            ) dep ON dep.cabang = COALESCE(d.cabang_normalized, '')
+                AND dep.unit = COALESCE(d.unit_normalized, '')
+                AND dep.branch_code = COALESCE(d.branch_normalized, '')
+                AND dep.rm = COALESCE(d.rm_normalized, '')
+                AND dep.produk = {$canonicalProductSql}
+        ";
+    }
+
+    /**
+     * @param array<int, array{segment: string, products: array<int, string>, descriptions: array<int, string>}> $normalizedRules
+     * @return array{0:string, 1:array<int, mixed>}
+     */
+    private function buildKinerjaRmRuleSql(array $normalizedRules, string $alias = 'd'): array
+    {
+        $parts = [];
+        $bindings = [];
+
+        foreach ($normalizedRules as $rule) {
+            $productPlaceholders = implode(', ', array_fill(0, count($rule['products']), '?'));
+            $part = "{$alias}.segmen_kinerja = ? AND {$alias}.produk_kinerja IN ({$productPlaceholders})";
+            $partBindings = [$rule['segment'], ...$rule['products']];
+
+            if (!empty($rule['descriptions'])) {
+                $descriptionSql = $this->buildKinerjaRmNormalizedSql("{$alias}.description");
+                $descriptionPlaceholders = implode(', ', array_fill(0, count($rule['descriptions']), '?'));
+                $part .= " AND {$descriptionSql} IN ({$descriptionPlaceholders})";
+                array_push($partBindings, ...$rule['descriptions']);
+            }
+
+            $parts[] = "({$part})";
+            array_push($bindings, ...$partBindings);
+        }
+
+        return [implode(' OR ', $parts), $bindings];
+    }
+
+    private function buildKinerjaRmCanonicalProductSql(string $segment, string $column): string
+    {
+        return match (strtoupper(trim($segment))) {
+            'CONSUMER' => "CASE {$column} WHEN 'BRIGUNAKONSUMER' THEN 'BRIGUNA-KONSUMER' WHEN 'KPR' THEN 'KPR' ELSE UPPER(TRIM(COALESCE({$column}, ''))) END",
+            'SMALL' => "CASE {$column} WHEN 'COMMERCIAL' THEN 'SMALL' WHEN 'CASHCALL' THEN 'SMALL' WHEN 'CASHCOLLATERAL' THEN 'SMALL' WHEN 'CASHCOLL' THEN 'SMALL' WHEN 'SMALL' THEN 'SMALL' ELSE UPPER(TRIM(COALESCE({$column}, ''))) END",
+            'MICRO' => "CASE {$column} WHEN 'BRIGUNAMIKRO' THEN 'BRIGUNA-MIKRO' WHEN 'KUPEDES' THEN 'KUPEDES' WHEN 'KURMIKRO' THEN 'KUR-MIKRO' WHEN 'CASHCOLLATERAL' THEN 'CASHCOLLATERAL' WHEN 'CASHCOLL' THEN 'CASHCOLLATERAL' WHEN 'KPR' THEN 'KPR' WHEN 'KURSMALL' THEN 'KUR-SMALL' ELSE UPPER(TRIM(COALESCE({$column}, ''))) END",
+            default => "UPPER(TRIM(COALESCE({$column}, '')))",
+        };
+    }
+
+    private function updateSmallPerformanceRmQuadrantsSqlFirst(string $period): void
+    {
+        if (!Schema::hasColumn(self::PERFORMANCE_RM_SNAPSHOT_TABLE, 'quadrant')) {
+            return;
+        }
+
+        $dateObj = Carbon::parse($period);
+        $yearStart = $dateObj->copy()->startOfYear()->toDateString();
+        $periodStart = $dateObj->copy()->startOfMonth()->toDateString();
+        $month = max(1, $dateObj->month);
+
+        DB::statement(
+            "
+            UPDATE " . self::PERFORMANCE_RM_SNAPSHOT_TABLE . " p
+            INNER JOIN (
+                SELECT
+                    curr.rm,
+                    curr.loan_os,
+                    curr.sml_os,
+                    curr.npl_os,
+                    curr.restruk_os,
+                    curr.realisasi_os,
+                    COALESCE(hist.history_realisasi_os, 0) as history_realisasi_os
+                FROM (
+                    SELECT
+                        rm,
+                        SUM(COALESCE(loan_os, 0)) as loan_os,
+                        SUM(COALESCE(sml_os, 0)) as sml_os,
+                        SUM(COALESCE(npl_os, 0)) as npl_os,
+                        SUM(COALESCE(restruk_os, 0)) as restruk_os,
+                        SUM(COALESCE(realisasi_os, 0)) as realisasi_os
+                    FROM " . self::PERFORMANCE_RM_SNAPSHOT_TABLE . "
+                    WHERE periode = ?
+                        AND segmen = 'SMALL'
+                    GROUP BY rm
+                ) curr
+                LEFT JOIN (
+                    SELECT
+                        rm,
+                        SUM(COALESCE(realisasi_os, 0)) as history_realisasi_os
+                    FROM " . self::PERFORMANCE_RM_SNAPSHOT_TABLE . "
+                    WHERE segmen = 'SMALL'
+                        AND produk IN ('SMALL', 'COMMERCIAL', 'CASHCALL', 'CASHCOLLATERAL', 'CASHCOLL')
+                        AND periode >= ?
+                        AND periode < ?
+                    GROUP BY rm
+                ) hist ON hist.rm = curr.rm
+            ) grade ON grade.rm = p.rm
+            SET p.quadrant = CASE
+                WHEN (((grade.history_realisasi_os + grade.realisasi_os) / ?) / 1000000) >= 1600
+                    AND (CASE WHEN grade.loan_os > 0 THEN ((grade.restruk_os + grade.sml_os + grade.npl_os) / grade.loan_os) * 100 ELSE 0 END) < 17.5 THEN 1
+                WHEN (((grade.history_realisasi_os + grade.realisasi_os) / ?) / 1000000) >= 1600 THEN 2
+                WHEN (CASE WHEN grade.loan_os > 0 THEN ((grade.restruk_os + grade.sml_os + grade.npl_os) / grade.loan_os) * 100 ELSE 0 END) < 17.5 THEN 3
+                ELSE 4
+            END
+            WHERE p.periode = ?
+                AND p.segmen = 'SMALL'
+            ",
+            [$period, $yearStart, $periodStart, $month, $month, $period]
+        );
     }
 
     private function buildPerformanceRmCabangSnapshot(string $period, bool $force): int

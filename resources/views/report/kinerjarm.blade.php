@@ -747,52 +747,53 @@
 
     .quadrant-badge {
         display: inline-flex;
-        flex-direction: column;
         align-items: center;
         justify-content: center;
-        gap: 2px;
-        padding: 4px;
-        border-radius: 6px;
-        background: #f8fafc;
-        border: 1px solid #e2e8f0;
-        min-width: 48px;
+        padding: 0.35rem 0.85rem;
+        border-radius: 8px;
+        min-width: 90px;
+        font-weight: 850;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        font-size: 0.65rem;
+        border-width: 2px;
+        border-style: solid;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    }
+
+    /* Q1: Dark Green */
+    .quadrant-badge.q1 {
+        background: #064e3b !important;
+        color: #ffffff !important;
+        border-color: #065f46 !important;
+    }
+    
+    /* Q2: Light Green */
+    .quadrant-badge.q2 {
+        background: #4ade80 !important;
+        color: #064e3b !important;
+        border-color: #22c55e !important;
+    }
+    
+    /* Q3: Yellow */
+    .quadrant-badge.q3 {
+        background: #fde047 !important;
+        color: #854d0e !important;
+        border-color: #eab308 !important;
+    }
+    
+    /* Q4: Dark Red */
+    .quadrant-badge.q4 {
+        background: #7f1d1d !important;
+        color: #ffffff !important;
+        border-color: #991b1b !important;
     }
 
     .quadrant-label {
-        font-size: 9px;
+        font-size: 0.65rem;
         font-weight: 900;
-        text-transform: uppercase;
-        letter-spacing: 0.02em;
-        line-height: 1;
-        margin-bottom: 2px;
+        text-shadow: 0 1px 2px rgba(0,0,0,0.1);
     }
-
-    .quadrant-visual {
-        display: grid;
-        grid-template-columns: repeat(2, 1fr);
-        gap: 2px;
-        width: 18px;
-        height: 18px;
-    }
-
-    .quad-cell {
-        width: 8px;
-        height: 8px;
-        background: #cbd5e1;
-        border-radius: 1px;
-    }
-
-    .quadrant-badge.q1 .quadrant-label { color: #15803d; }
-    .quadrant-badge.q1 .quad-cell:nth-child(1) { background: #22c55e; box-shadow: 0 0 4px rgba(34, 197, 94, 0.4); }
-    
-    .quadrant-badge.q2 .quadrant-label { color: #0369a1; }
-    .quadrant-badge.q2 .quad-cell:nth-child(2) { background: #0ea5e9; box-shadow: 0 0 4px rgba(14, 165, 233, 0.4); }
-    
-    .quadrant-badge.q3 .quadrant-label { color: #c2410c; }
-    .quadrant-badge.q3 .quad-cell:nth-child(3) { background: #f97316; box-shadow: 0 0 4px rgba(249, 115, 22, 0.4); }
-    
-    .quadrant-badge.q4 .quadrant-label { color: #b91c1c; }
-    .quadrant-badge.q4 .quad-cell:nth-child(4) { background: #ef4444; box-shadow: 0 0 4px rgba(239, 68, 68, 0.4); }
 
     .delta-indicator {
         display: inline-flex;

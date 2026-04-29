@@ -481,11 +481,23 @@
             const buttons = [];
             const startPage = Math.max(1, currentPage - 2);
             const endPage = Math.min(totalPages, currentPage + 2);
-            buttons.push(`<button type="button" class="report-management-page-btn" data-page="${currentPage - 1}" ${pagination.has_prev ? '' : 'disabled'}><i class="fas fa-chevron-left"></i></button>`);
+            
+            buttons.push(`<button type="button" class="report-management-page-btn" data-page="1" ${currentPage > 1 ? '' : 'disabled'} title="Halaman Pertama"><i class="fas fa-angle-double-left"></i></button>`);
+            buttons.push(`<button type="button" class="report-management-page-btn" data-page="${currentPage - 1}" ${pagination.has_prev ? '' : 'disabled'} title="Halaman Sebelumnya"><i class="fas fa-chevron-left"></i></button>`);
             for (let page = startPage; page <= endPage; page++) {
                 buttons.push(`<button type="button" class="report-management-page-btn ${page === currentPage ? 'is-active' : ''}" data-page="${page}">${page}</button>`);
             }
-            buttons.push(`<button type="button" class="report-management-page-btn" data-page="${currentPage + 1}" ${pagination.has_next ? '' : 'disabled'}><i class="fas fa-chevron-right"></i></button>`);
+            buttons.push(`<button type="button" class="report-management-page-btn" data-page="${currentPage + 1}" ${pagination.has_next ? '' : 'disabled'} title="Halaman Selanjutnya"><i class="fas fa-chevron-right"></i></button>`);
+            buttons.push(`<button type="button" class="report-management-page-btn" data-page="${totalPages}" ${currentPage < totalPages ? '' : 'disabled'} title="Halaman Terakhir"><i class="fas fa-angle-double-right"></i></button>`);
+            
+            buttons.push(`
+                <div class="report-management-page-jump ml-3 d-inline-flex align-items-center">
+                    <span class="mr-2 text-muted" style="font-size: 0.75rem; font-weight: 700;">Loncat ke:</span>
+                    <input type="number" min="1" max="${totalPages}" class="form-control form-control-sm text-center report-management-jump-input" style="width: 60px; height: 32px; border-radius: 6px; padding: 0.2rem;" value="${currentPage}">
+                    <button type="button" class="btn btn-sm btn-primary ml-1 report-management-jump-btn" style="height: 32px; border-radius: 6px; padding: 0 0.6rem;"><i class="fas fa-share"></i> Go</button>
+                </div>
+            `);
+            
             managementPagination.classList.remove('d-none');
             managementPagination.innerHTML = `<div class="report-management-pagination__meta">Menampilkan periode ${formatNumber(pagination.from_period || 0)}-${formatNumber(pagination.to_period || 0)} dari ${formatNumber(pagination.total_periods || 0)} periode</div><div class="report-management-pagination__actions">${buttons.join('')}</div>`;
         }
@@ -796,8 +808,29 @@
         });
 
         managementPagination?.addEventListener('click', async function (event) {
+            if (managementState.isLoading) return;
+
+            const jumpBtn = event.target.closest('.report-management-jump-btn');
+            if (jumpBtn) {
+                const input = managementPagination.querySelector('.report-management-jump-input');
+                let targetPage = Number(input?.value || 1);
+                const maxPage = Number(input?.max || 1);
+                if (targetPage < 1) targetPage = 1;
+                if (targetPage > maxPage) targetPage = maxPage;
+                if (targetPage === managementState.currentPage) return;
+                
+                try {
+                    await fetchManagementData(targetPage);
+                } catch (error) {
+                    themedSwal({ icon: 'error', title: 'Gagal Memuat Halaman', text: error.message || 'Terjadi kesalahan saat memuat halaman data.' });
+                } finally {
+                    setManagementLoadingState(false);
+                }
+                return;
+            }
+
             const button = event.target.closest('.report-management-page-btn');
-            if (!button || button.disabled || managementState.isLoading) return;
+            if (!button || button.disabled) return;
             const targetPage = Number(button.getAttribute('data-page') || 1);
             if (!targetPage || targetPage === managementState.currentPage) return;
             try {
@@ -806,6 +839,14 @@
                 themedSwal({ icon: 'error', title: 'Gagal Memuat Halaman', text: error.message || 'Terjadi kesalahan saat memuat halaman data.' });
             } finally {
                 setManagementLoadingState(false);
+            }
+        });
+
+        managementPagination?.addEventListener('keypress', function(event) {
+            if (event.target.classList.contains('report-management-jump-input') && event.key === 'Enter') {
+                event.preventDefault();
+                const btn = managementPagination.querySelector('.report-management-jump-btn');
+                if (btn) btn.click();
             }
         });
 

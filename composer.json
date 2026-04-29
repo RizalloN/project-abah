@@ -64,6 +64,11 @@
             "Composer\\Config::disableProcessTimeout",
             "npx concurrently -c \"#c4b5fd,#fb7185\" \"php artisan queue:work --queue=imports-high --tries=1 --timeout=0 --sleep=1\" \"php artisan queue:work --queue=default,reports-low --tries=1 --timeout=0 --sleep=1\" --names=import-queue,report-queue --kill-others"
         ],
+        "backfill:now": [
+            "Composer\\Config::disableProcessTimeout",
+            "php artisan shadow:backfill --queue --queue-name=shadow-backfill",
+            "npx concurrently -c \"#22c55e,#c4b5fd,#fb7185\" \"php artisan queue:work --queue=shadow-backfill --tries=1 --timeout=0 --sleep=1 --memory=2048\" \"php artisan queue:work --queue=imports-high --tries=1 --timeout=0 --sleep=1\" \"php artisan queue:work --queue=default,reports-low --tries=1 --timeout=0 --sleep=1\" --names=shadow-backfill,import-queue,report-queue --kill-others"
+        ],
         "test": [
             "@php artisan config:clear --ansi",
             "@php artisan test"

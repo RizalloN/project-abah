@@ -18,6 +18,13 @@ class ImportCleanupService
     private const DAILY_LOAN_TABLE = 'daily_loan_dinamis';
     private const DAILY_LOAN_REPORT_ID = 8;
     private const SSA_TABLES = ['ssa_simpanan', 'ssa_pinjaman'];
+    private const LIGHTWEIGHT_SYNC_TABLES = [
+        'jumlah_merchant_detail',
+        'sv_merchant',
+        'jumlah_merchant_qris_detail',
+        'merchant_qris',
+        'merchant_qris_volume',
+    ];
     private const IMPORT_PERIOD_COLUMNS = [
         'ssa_pinjaman' => 'month_day_year_of_periode',
         'ssa_simpanan' => 'Month_Day_Year_of_Posisi',
@@ -61,7 +68,10 @@ class ImportCleanupService
 
         $periodHints = $this->resolveSyncPeriodHints($jobId, $periodHint, $normalizedTableName);
 
-        if ($normalizedTableName === self::DAILY_LOAN_TABLE || in_array($normalizedTableName, self::SSA_TABLES, true)) {
+        if ($normalizedTableName === self::DAILY_LOAN_TABLE
+            || in_array($normalizedTableName, self::SSA_TABLES, true)
+            || $this->isLightweightSyncTable($normalizedTableName)
+        ) {
             foreach ($periodHints as $resolvedPeriodHint) {
                 $this->dispatchWithoutBatching($jobId, $normalizedTableName, $resolvedPeriodHint, $source, $queue);
             }
@@ -208,6 +218,11 @@ class ImportCleanupService
         }
 
         return $normalized !== '' ? $normalized : (string) config('queue.report_queue', self::DEFAULT_SYNC_QUEUE);
+    }
+
+    private function isLightweightSyncTable(string $tableName): bool
+    {
+        return in_array(strtolower(trim($tableName)), self::LIGHTWEIGHT_SYNC_TABLES, true);
     }
 
     private function resolveJobTableName(int $jobId): ?string

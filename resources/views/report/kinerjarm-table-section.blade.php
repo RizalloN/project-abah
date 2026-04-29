@@ -45,7 +45,7 @@
     };
     $formatCount = $formatCount ?? fn ($value) => number_format((int) round((float) $value), 0, ',', '.');
     $formatPercent = $formatPercent ?? fn ($value, int $decimals = 1) => number_format((float) $value, $decimals, ',', '.') . '%';
-    $quadrantLabel = $quadrantLabel ?? fn ($quadrant) => in_array((int) $quadrant, [1, 2, 3, 4], true) ? (int) $quadrant : '-';
+    $quadrantLabel = $quadrantLabel ?? fn ($quadrant) => in_array((int) $quadrant, [1, 2, 3, 4], true) ? 'Kuadran ' . (int) $quadrant : '-';
     $quadrantClass = $quadrantClass ?? fn ($quadrant) => in_array((int) $quadrant, [1, 2, 3, 4], true) ? 'q' . (int) $quadrant : '';
 @endphp
 
@@ -177,13 +177,7 @@
                                     <td rowspan="{{ $rmData['rm_rowspan'] }}" class="text-center-important">
                                         @if(!empty($rmData['quadrant']))
                                             <div class="quadrant-badge {{ $quadrantClass($rmData['quadrant']) }}">
-                                                <span class="quadrant-label">Q{{ $quadrantLabel($rmData['quadrant']) }}</span>
-                                                <div class="quadrant-visual">
-                                                    <div class="quad-cell"></div>
-                                                    <div class="quad-cell"></div>
-                                                    <div class="quad-cell"></div>
-                                                    <div class="quad-cell"></div>
-                                                </div>
+                                                <span class="quadrant-label">{{ $quadrantLabel($rmData['quadrant']) }}</span>
                                             </div>
                                         @else
                                             <span class="text-muted small">-</span>

@@ -8,6 +8,7 @@ use App\Support\PartitionMaintenanceService;
 use App\Support\ReportDataSyncService;
 use App\Support\ReportSnapshotBuilder;
 use App\Jobs\SyncImportedReportJob;
+use App\Jobs\WarmReportCacheJob;
 use Illuminate\Contracts\Cache\Lock;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Cache;
@@ -180,6 +181,31 @@ class ReportDataSyncServiceTest extends TestCase
                 && $job->source === 'unit-test';
         });
     }
+
+    public function test_sync_imported_table_uses_lightweight_path_for_merchant_reports(): void
+    {
+        Bus::fake();
+
+        $builder = Mockery::mock(ReportSnapshotBuilder::class);
+        $dashboardHarianSnapshotService = Mockery::mock(DashboardHarianSnapshotService::class);
+        $partitionMaintenance = Mockery::mock(PartitionMaintenanceService::class);
+        $dirtyPeriods = Mockery::mock(DashboardHarianSnapshotDirtyPeriodQueue::class);
+        $service = new ReportDataSyncService($builder, $dashboardHarianSnapshotService, $partitionMaintenance, $dirtyPeriods);
+
+        $importProgressService = Mockery::mock(\App\Services\Import\ImportProgressService::class);
+        $importProgressService->shouldNotReceive('hasActiveProcessingJobs');
+        $this->app->instance(\App\Services\Import\ImportProgressService::class, $importProgressService);
+
+        Cache::shouldReceive('add')->once()->andReturnTrue();
+        Cache::shouldReceive('increment')->once()->andReturn(2);
+        Schema::shouldReceive('hasTable')->andReturnFalse();
+
+        $service->syncImportedTable('jumlah_merchant_qris_detail', '2026-04-04', 77, 'unit-test');
+
+        Bus::assertNotDispatched(SyncImportedReportJob::class);
+        Bus::assertNotDispatched(WarmReportCacheJob::class);
+    }
+
     public function test_performance_sync_rebuilds_new_payroll_using_the_import_period_hint(): void
     {
         $builder = Mockery::mock(ReportSnapshotBuilder::class);
