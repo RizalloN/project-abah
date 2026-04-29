@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Import;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Import\Concerns\AllocatesGapIds;
 use App\Http\Controllers\Import\Concerns\SmartCsvImportSupport;
+use App\Jobs\PrepareCsvStagingJob;
 use App\Services\Import\MySqlBulkLoadService;
 use App\Services\Import\SchemaIntrospectionService;
 use App\Support\ReportDataSyncService;
@@ -1457,6 +1458,164 @@ class ImportFileController extends Controller
             }
             if (file_exists($bulkCsvPath)) {
                 @unlink($bulkCsvPath);
+            }
+        }
+    }
+
+    public function prepareCsvStaging(int $jobId, array $params, ImportProgressService $progressService): string
+    {
+        $filePath = $params['filePath'] ?? null;
+        $resolvedDelimiter = $params['delimiter'] ?? ',';
+        $selectedColumns = $params['selectedColumns'] ?? [];
+        $activeFilters = $params['activeFilters'] ?? [];
+        $tableName = $params['tableName'] ?? '';
+        $uniqueSuffix = $params['uniqueSuffix'] ?? '';
+        $isBrilinkSummary = $params['isBrilinkSummary'] ?? false;
+        $csvHeaders = $params['csvHeaders'] ?? [];
+        $posisiIndex = $params['posisiIndex'] ?? -1;
+        $tahunIndex = $params['tahunIndex'] ?? -1;
+        $totalRows = $params['totalRows'] ?? 0;
+        $columnBlueprint = $params['columnBlueprint'] ?? [];
+
+        $bulkColumns = $this->buildBulkLoadColumnsForMappedRows($tableName, $isBrilinkSummary, $columnBlueprint);
+        if (empty($bulkColumns)) {
+            throw new \Exception('Kolom bulk load kosong untuk tabel tujuan.');
+        }
+
+        $handle = @fopen($filePath, 'r');
+        if ($handle === false) {
+            throw new \Exception('File CSV tidak dapat dibaca.');
+        }
+
+        $bulkCsvPath = $this->createBulkLoadTempCsvPath($tableName, max(0, $jobId));
+        $bulkHandle = @fopen($bulkCsvPath, 'w');
+        if ($bulkHandle === false) {
+            fclose($handle);
+            throw new \Exception('Gagal membuat file staging CSV sementara.');
+        }
+
+        $rowCounter = 0;
+        $rowsDone = 0;
+        $lastProgressAt = 0;
+        $startTime = microtime(true);
+        $progressStep = strtolower($tableName) === 'daily_loan_dinamis' ? 1000 : 2000;
+
+        $csvFormatter = static function ($value): string {
+            return $value === null ? '\N' : $value;
+        };
+
+        $shouldInsertRow = function (array $row) use ($tableName, &$duplicateLookup) {
+            if (!$this->isJumlahMerchantDetailTable($tableName)) {
+                return true;
+            }
+
+            $duplicateKey = $this->extractJumlahMerchantDuplicateKey($row);
+            if ($duplicateKey === null) {
+                return true;
+            }
+
+            [$periode, $tid] = $duplicateKey;
+            $lookupKey = $periode . '|' . $tid;
+
+            if (isset($duplicateLookup[$lookupKey])) {
+                return false;
+            }
+
+            $duplicateLookup[$lookupKey] = true;
+            return true;
+        };
+
+        $duplicateLookup = [];
+
+        try {
+            while (($data = $this->readCsvRecord($handle, $resolvedDelimiter)) !== false) {
+                if (empty($data) || implode('', $data) === '') {
+                    continue;
+                }
+
+                if ($rowCounter === 0) {
+                    $rowCounter++;
+                    continue;
+                }
+
+                $parsedRow = $this->parseCsvRow($data, $isBrilinkSummary, $csvHeaders, $posisiIndex, $tahunIndex);
+                if ($parsedRow === null || !$this->passesActiveFilters($parsedRow, $activeFilters)) {
+                    $rowCounter++;
+                    continue;
+                }
+
+                $mappedRow = $this->mapRowForInsert(
+                    $parsedRow,
+                    $selectedColumns,
+                    $csvHeaders,
+                    $isBrilinkSummary,
+                    $uniqueSuffix,
+                    $columnBlueprint,
+                    $posisiIndex,
+                    $tahunIndex
+                );
+                if ($mappedRow === null) {
+                    $rowCounter++;
+                    continue;
+                }
+
+                $mappedRow = $this->applyImportTimestamps($mappedRow, $tableName);
+                if (!$shouldInsertRow($mappedRow)) {
+                    $rowCounter++;
+                    continue;
+                }
+
+                $bulkValues = $this->mapRowValuesForBulkLoad($mappedRow, $bulkColumns);
+                fputcsv($bulkHandle, array_map($csvFormatter, $bulkValues));
+
+                $rowsDone++;
+                $rowCounter++;
+
+                if ($rowsDone - $lastProgressAt >= $progressStep) {
+                    $lastProgressAt = $rowsDone;
+                    $elapsed = max(microtime(true) - $startTime, 0.001);
+                    $speed = (int) ($rowsDone / $elapsed);
+                    $percent = $totalRows > 0
+                        ? min(40, 5 + (int) (($rowsDone / $totalRows) * 35))
+                        : 30;
+
+                    $progressService->cacheProgress($jobId, [
+                        'status' => 'staging',
+                        'percent' => $percent,
+                        'message' => "Menyiapkan CSV staging... ({$speed} baris/detik)",
+                        'rows_done' => $rowsDone,
+                        'total' => $totalRows,
+                        'speed' => $speed,
+                    ]);
+                }
+            }
+
+            fclose($bulkHandle);
+            $bulkHandle = null;
+            fclose($handle);
+            $handle = null;
+
+            $progressService->cacheProgress($jobId, [
+                'status' => 'staging',
+                'percent' => 45,
+                'message' => 'CSV staging siap. Menunggu antrian LOAD DATA...',
+                'rows_done' => $rowsDone,
+                'total' => $totalRows > 0 ? $totalRows : $rowsDone,
+            ]);
+
+            return $bulkCsvPath;
+
+        } catch (\Throwable $e) {
+            if (file_exists($bulkCsvPath)) {
+                @unlink($bulkCsvPath);
+            }
+            throw $e;
+        } finally {
+            if (is_resource($handle)) {
+                fclose($handle);
+            }
+            if (is_resource($bulkHandle)) {
+                fclose($bulkHandle);
             }
         }
     }
@@ -4060,60 +4219,96 @@ class ImportFileController extends Controller
                 $fallbackReason = '';
 
                 if ($this->supportsNativeBulkLoad()) {
-                    $strictHandled = $this->processImportStreamViaStrictLocalInfile(
-                        $sendWithCacheSync,
-                        $filePath,
-                        $resolvedDelimiter,
-                        $selectedColumns,
-                        $activeFilters,
-                        $tableName,
-                        $uniqueSuffix,
-                        $isBrilinkSummary,
-                        $csvHeaders,
-                        $posisiIndex,
-                        $tahunIndex,
-                        $totalRows,
-                        $duplicateLookup,
-                        $duplicateSkipped,
-                        $totalSuccess,
-                        $totalFailed,
-                        $lastErrorMsg,
-                        $jobId,
-                        $columnBlueprint
-                    );
+                    $sendWithCacheSync('progress', [
+                        'percent' => 15,
+                        'message' => 'Worker menyiapkan CSV staging...',
+                        'rows_done' => 0,
+                        'total' => $totalRows,
+                        'speed' => 0,
+                    ]);
 
-                    if ($strictHandled) {
-                        $finalStatus = $totalFailed > 0 ? ($totalSuccess > 0 ? 'failed_partial' : 'failed') : 'completed';
-
-                        DB::table('import_jobs')->where('id', $jobId)->update([
-                            'status' => $finalStatus,
-                            'total_success' => $totalSuccess,
-                            'total_failed' => $totalFailed + $duplicateSkipped,
-                            'updated_at' => now(),
-                        ]);
-
-                        if ($totalSuccess > 0) {
-                            $this->syncReportArtifacts($tableName, $jobId, $syncPeriod);
-                        }
-
-                        $this->cleanupImportDirectory($filePath);
-
-                        $send('complete', [
-                            'total_success' => $totalSuccess,
-                            'total_failed' => $totalFailed + $duplicateSkipped,
-                            'total_rows' => $totalRows,
-                            'error_message' => $lastErrorMsg,
-                            'duplicates_skipped' => $duplicateSkipped,
-                            'skipped_count' => 0,
-                            'skipped_rows' => [],
-                            'skip_reasons_summary' => [],
-                        ]);
-                        return;
+                    $bulkColumns = [];
+                    if (!$isBrilinkSummary && !empty($columnBlueprint)) {
+                        $bulkColumns = array_keys($columnBlueprint);
+                    } elseif ($isBrilinkSummary && !empty($selectedColumns)) {
+                        $bulkColumns = array_map(function ($idx) use ($csvHeaders) {
+                            return $csvHeaders[$idx] ?? 'col_' . $idx;
+                        }, $selectedColumns);
                     }
 
-                    $fallbackReason = $lastErrorMsg !== ''
-                        ? 'LOAD DATA LOCAL INFILE gagal. Lanjut fallback insert batch...'
-                        : 'LOAD DATA LOCAL INFILE gagal. Lanjut fallback insert batch biasa...';
+                    $stagingParams = [
+                        'file_path' => $filePath,
+                        'delimiter' => $resolvedDelimiter,
+                        'selected_columns' => $selectedColumns,
+                        'normalized_filters' => $activeFilters,
+                        'table_name' => $tableName,
+                        'unique_suffix' => $uniqueSuffix,
+                        'is_brilink_summary' => $isBrilinkSummary,
+                        'headers' => $csvHeaders,
+                        'posisi_index' => $posisiIndex,
+                        'tahun_index' => $tahunIndex,
+                        'total_rows' => $totalRows,
+                        'duplicate_lookup' => $duplicateLookup,
+                        'column_blueprint' => $columnBlueprint,
+                        'bulk_columns' => $bulkColumns,
+                        'batch_size' => $batchSize,
+                        'sync_period' => $syncPeriod,
+                    ];
+
+                    Cache::put("csv_import_params_{$jobId}", $stagingParams, now()->addHours(2));
+
+                    \App\Jobs\PrepareCsvStagingJob::dispatch($jobId)->onQueue('imports-high');
+
+                    $pollingStart = microtime(true);
+                    while (true) {
+                        usleep(400_000); // 400ms
+
+                        $cached = $progressService->getCachedProgress($jobId);
+                        $status = $cached['status'] ?? 'staging';
+
+                        try {
+                            $sendWithCacheSync('progress', $cached);
+                        } catch (\Throwable $e) {
+                            Log::warning('Failed to send progress during staging job polling: ' . $e->getMessage());
+                        }
+
+                        if (in_array($status, ['completed', 'failed', 'failed_partial', 'terminated'], true)) {
+                            break;
+                        }
+
+                        if (microtime(true) - $pollingStart > 7200) {
+                            $send('error', ['message' => 'Import timeout (2 jam).']);
+                            $progressService->markFailed($jobId, 'Import timeout');
+                            return;
+                        }
+                    }
+
+                    $job = DB::table('import_jobs')->where('id', $jobId)->first();
+                    if ($job) {
+                        $totalSuccess = (int) ($job->total_success ?? 0);
+                        $totalFailed = (int) ($job->total_failed ?? 0);
+                        $lastErrorMsg = $job->error_message ?? '';
+                    }
+
+                    $finalStatus = $totalFailed > 0 ? ($totalSuccess > 0 ? 'failed_partial' : 'failed') : 'completed';
+
+                    if ($totalSuccess > 0) {
+                        $this->syncReportArtifacts($tableName, $jobId, $syncPeriod);
+                    }
+
+                    $this->cleanupImportDirectory($filePath);
+
+                    $send('complete', [
+                        'total_success' => $totalSuccess,
+                        'total_failed' => $totalFailed + $duplicateSkipped,
+                        'total_rows' => $totalRows,
+                        'error_message' => $lastErrorMsg,
+                        'duplicates_skipped' => $duplicateSkipped,
+                        'skipped_count' => 0,
+                        'skipped_rows' => [],
+                        'skip_reasons_summary' => [],
+                    ]);
+                    return;
                 } else {
                     $fallbackReason = 'LOCAL INFILE tidak aktif di MySQL/PDO. Lanjut fallback insert batch biasa...';
                 }

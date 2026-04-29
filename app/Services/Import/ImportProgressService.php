@@ -44,6 +44,11 @@ class ImportProgressService
         return $payload;
     }
 
+    public function getCachedProgress(int $jobId): array
+    {
+        return Cache::get($this->cacheKey($jobId), []);
+    }
+
     public function updateJob(int $jobId, array $attributes, ?array $progressPayload = null): void
     {
         if ($attributes !== []) {
@@ -187,6 +192,15 @@ class ImportProgressService
     public function markQueued(int $jobId, ?array $progressPayload = null): void
     {
         $this->updateJob($jobId, ['status' => 'queued'], $progressPayload);
+    }
+
+    public function markStaging(int $jobId, ?array $progressPayload = null): void
+    {
+        $this->updateJob($jobId, ['status' => 'staging'], array_merge($progressPayload ?? [], [
+            'status' => 'staging',
+            'percent' => 5,
+            'message' => 'Worker menyiapkan CSV staging...',
+        ]));
     }
 
     public function markProcessing(int $jobId, ?array $progressPayload = null): void
