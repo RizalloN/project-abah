@@ -57,6 +57,18 @@ return [
             'after_commit' => false,
         ],
 
+        // Parallel snapshot rebuild jobs (Bus::batch via ParallelSnapshotBatchCoordinator)
+        // Workers must explicitly listen to this queue:
+        //   php artisan queue:work --queue=snapshots-parallel,imports-high,default
+        'snapshots-parallel' => [
+            'driver' => 'database',
+            'connection' => env('DB_QUEUE_CONNECTION'),
+            'table' => env('DB_QUEUE_TABLE', 'jobs'),
+            'queue' => 'snapshots-parallel',
+            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 7200),
+            'after_commit' => false,
+        ],
+
         'beanstalkd' => [
             'driver' => 'beanstalkd',
             'host' => env('BEANSTALKD_QUEUE_HOST', 'localhost'),

@@ -147,6 +147,208 @@
         z-index: 50;
     }
 
+    /* ── Premium Modern Selectors ── */
+    .loan-filter-modern {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr) auto;
+        gap: 1rem;
+        background: rgba(255, 255, 255, 0.85);
+        backdrop-filter: blur(25px);
+        padding: 1.5rem;
+        border-radius: 2rem;
+        border: 1px solid rgba(255, 255, 255, 0.9);
+        box-shadow: 
+            0 10px 15px -3px rgba(0, 0, 0, 0.05),
+            0 30px 60px -20px rgba(8, 87, 195, 0.2);
+        margin-bottom: 2.5rem;
+        position: relative;
+        z-index: 1000;
+        align-items: flex-end;
+    }
+
+    .kejar-laba-card, .filter-section {
+        overflow: visible !important;
+    }
+
+    .loan-filter-item {
+        display: flex;
+        flex-direction: column;
+        gap: 0.6rem;
+        position: relative;
+    }
+
+    /* Descending z-index for items */
+    .loan-filter-item:nth-child(1) { z-index: 40; }
+    .loan-filter-item:nth-child(2) { z-index: 30; }
+    .loan-filter-item:nth-child(3) { z-index: 20; }
+    .loan-filter-item:nth-child(4) { z-index: 10; }
+
+    .loan-filter-modern .loan-filter-label {
+        font-size: 0.72rem;
+        font-weight: 800;
+        color: #475569;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        margin-left: 0.65rem;
+    }
+
+    .loan-dropdown {
+        position: relative;
+        width: 100%;
+    }
+
+    .loan-dropdown-icon {
+        position: absolute;
+        left: 1rem;
+        top: 50%;
+        transform: translateY(-50%);
+        z-index: 10;
+        color: var(--primary-blue);
+        font-size: 0.95rem;
+        pointer-events: none;
+        opacity: 0.8;
+    }
+
+    .loan-dropdown-toggle {
+        width: 100%;
+        height: 52px;
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 14px;
+        padding: 0 1rem 0 2.75rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-weight: 700;
+        font-size: 0.88rem;
+        color: #1e293b;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        text-align: left;
+    }
+
+    .loan-dropdown-toggle:hover {
+        border-color: var(--primary-blue-light);
+        background: #f8fafc;
+        transform: translateY(-1px);
+    }
+
+    .loan-dropdown.is-open { z-index: 3100 !important; }
+    .loan-dropdown.is-open .loan-dropdown-toggle {
+        border-color: var(--primary-blue);
+        box-shadow: 0 0 0 4px rgba(30, 64, 175, 0.1);
+    }
+
+    .loan-dropdown-menu {
+        position: absolute;
+        top: calc(100% + 8px);
+        left: 0;
+        width: 100%;
+        min-width: 280px;
+        background: rgba(255, 255, 255, 0.98);
+        backdrop-filter: blur(25px);
+        border: 1px solid rgba(226, 232, 240, 0.9);
+        border-radius: 1.25rem;
+        box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.15);
+        z-index: 3000;
+        opacity: 0;
+        visibility: hidden;
+        transform: translateY(12px);
+        transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        max-height: 400px;
+        overflow-y: auto;
+        padding: 0.65rem;
+    }
+
+    .loan-dropdown.is-open .loan-dropdown-menu {
+        opacity: 1;
+        visibility: visible;
+        transform: translateY(0);
+    }
+
+    .loan-dropdown-option {
+        width: 100%;
+        padding: 0.72rem 1rem;
+        border: none;
+        background: transparent;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        gap: 0.85rem;
+        font-weight: 700;
+        font-size: 0.85rem;
+        color: #475569;
+        transition: all 0.2s;
+        text-align: left;
+        margin-bottom: 2px;
+    }
+
+    .loan-dropdown-option:hover { background: #f1f5f9; color: var(--primary-blue); }
+    .loan-dropdown-option.is-active { background: rgba(30, 64, 175, 0.06); color: var(--primary-blue); }
+
+    .loan-dropdown-check {
+        width: 1.2rem;
+        height: 1.2rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 2px solid #e2e8f0;
+        border-radius: 6px;
+        transition: all 0.2s;
+        font-size: 0.75rem;
+        color: white;
+        flex-shrink: 0;
+    }
+
+    .loan-dropdown-option.is-active .loan-dropdown-check {
+        background: var(--primary-blue);
+        border-color: var(--primary-blue);
+    }
+
+    .btn-loan-modern-submit {
+        height: 52px;
+        min-width: 160px;
+        padding: 0 1.5rem;
+        border-radius: 14px;
+        background: linear-gradient(135deg, var(--primary-blue) 0%, #1e3a8a 100%);
+        color: white;
+        border: none;
+        font-weight: 800;
+        font-size: 0.9rem;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.65rem;
+        transition: all 0.3s;
+        box-shadow: 0 8px 16px rgba(30, 64, 175, 0.25);
+    }
+
+    .btn-loan-modern-submit:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 12px 24px rgba(30, 64, 175, 0.35);
+    }
+
+    .loan-dropdown-search {
+        padding: 0.5rem;
+        position: sticky;
+        top: -0.65rem;
+        background: white;
+        z-index: 10;
+        border-bottom: 1px solid #f1f5f9;
+        margin-bottom: 0.5rem;
+        border-radius: 1rem 1rem 0 0;
+    }
+
+    .loan-dropdown-search input {
+        width: 100%;
+        padding: 0.5rem 0.75rem;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        font-size: 0.82rem;
+        background: #f8fafc;
+    }
+
     .filter-container {
         display: flex;
         align-items: flex-end;
@@ -503,324 +705,295 @@
             $isArea6AllSelected = (bool) ($isArea6All ?? false);
         @endphp
 
-        <div class="filter-section">
-            <form action="{{ route('report.dashboard-pinjaman.kejar-laba') }}" method="GET" class="filter-container" id="filterForm">
-                {{-- Periode --}}
-                <div class="filter-item">
-                    <label class="filter-label">Periode</label>
-                    <select name="periode" class="select-custom">
-                        @foreach($availablePeriods as $period)
-                            <option value="{{ $period }}" {{ $selectedPeriod === $period ? 'selected' : '' }}>
-                                {{ \Carbon\Carbon::parse($period)->translatedFormat('d M Y') }}
-                            </option>
-                        @endforeach
-                    </select>
-                </div>
-
-                {{-- Kantor Cabang (Multi Select) --}}
-                <div class="filter-item" style="min-width: 250px;">
-                    <label class="filter-label">Kantor Cabang</label>
-                    <div class="daily-dropdown" id="kancaDropdown">
-                        <input type="hidden" name="kanca" id="kancaInput" value="{{ is_array($selected['kanca']) ? implode(',', $selected['kanca']) : $selected['kanca'] }}">
-                        <div class="daily-dropdown-toggle">
-                            <span class="daily-dropdown-toggle-text" id="kancaLabel">
-                                {{ $isArea6AllSelected ? 'AREA-6 All' : 'Pilih Kantor Cabang...' }}
-                            </span>
-                            <i class="fas fa-chevron-down daily-dropdown-toggle-icon"></i>
-                        </div>
-                        <div class="daily-dropdown-menu">
-                            <div class="daily-dropdown-option {{ $isArea6AllSelected ? 'is-active' : '' }}" data-value="all">
-                                <div class="daily-dropdown-check"><i class="fas fa-check"></i></div>
-                                <span class="daily-dropdown-label">AREA-6 All</span>
-                            </div>
-                            @foreach($filters['kanca'] as $kc)
-                                @if($kc['value'] !== 'all')
-                                    @php $active = is_array($selected['kanca']) && in_array($kc['value'], $selected['kanca']); @endphp
-                                    <div class="daily-dropdown-option {{ $active ? 'is-active' : '' }}" data-value="{{ $kc['value'] }}">
-                                        <div class="daily-dropdown-check"><i class="fas fa-check"></i></div>
-                                        <span class="daily-dropdown-label">{{ $kc['label'] }}</span>
+        <div class="filter-section p-4">
+            <form action="{{ route('report.dashboard-pinjaman.kejar-laba') }}" method="GET" id="filterForm">
+                <div class="loan-filter-modern">
+                    {{-- Periode --}}
+                    <div class="loan-filter-item">
+                        <label class="loan-filter-label">Periode</label>
+                        <div class="loan-dropdown" data-loan-dropdown="periode">
+                            <i class="fas fa-calendar-alt loan-dropdown-icon"></i>
+                            <button type="button" class="loan-dropdown-toggle" data-loan-dropdown-toggle="periode">
+                                <span class="loan-dropdown-text">Pilih Periode</span>
+                                <i class="fas fa-chevron-down small opacity-50"></i>
+                            </button>
+                            <div class="loan-dropdown-menu" data-loan-dropdown-menu="periode">
+                                @foreach($availablePeriods as $period)
+                                    <div class="loan-dropdown-option {{ $selectedPeriod === $period ? 'is-active' : '' }}" data-value="{{ $period }}">
+                                        <div class="loan-dropdown-check"><i class="fas fa-check"></i></div>
+                                        <span>{{ \Carbon\Carbon::parse($period)->translatedFormat('d M Y') }}</span>
                                     </div>
-                                @endif
-                            @endforeach
+                                @endforeach
+                            </div>
+                            <select name="periode" id="periodeInput" class="d-none">
+                                @foreach($availablePeriods as $period)
+                                    <option value="{{ $period }}" {{ $selectedPeriod === $period ? 'selected' : '' }}>{{ $period }}</option>
+                                @endforeach
+                            </select>
                         </div>
                     </div>
-                </div>
 
-                {{-- Unit Kerja (Searchable Dropdown) --}}
-                <div class="filter-item" style="min-width: 300px;">
-                    <label class="filter-label">Unit Kerja</label>
-                    <div class="daily-dropdown {{ $isArea6AllSelected ? 'is-disabled' : '' }}" id="unitDropdown">
-                        <input type="hidden" name="unit_kerja" id="unitInput" value="{{ $selected['unit_kerja'] }}">
-                        <div class="daily-dropdown-toggle {{ $isArea6AllSelected ? 'is-disabled' : '' }}" aria-disabled="{{ $isArea6AllSelected ? 'true' : 'false' }}">
-                            <span class="daily-dropdown-toggle-text" id="unitLabel">
-                                {{ $selected['unit_kerja'] === 'all' ? 'Semua Unit Kerja' : $selected['unit_kerja'] }}
-                            </span>
-                            <i class="fas fa-chevron-down daily-dropdown-toggle-icon"></i>
-                        </div>
-                        <div class="daily-dropdown-menu" style="padding: 0;">
-                            <div class="daily-search-shell">
-                                <div class="daily-search-inner">
-                                    <i class="fas fa-search"></i>
-                                    <input type="text" class="daily-search-input" placeholder="Cari unit kerja..." id="unitSearch" {{ $isArea6AllSelected ? 'disabled' : '' }}>
+                    {{-- Kantor Cabang --}}
+                    <div class="loan-filter-item">
+                        <label class="loan-filter-label">Kantor Cabang</label>
+                        <div class="loan-dropdown" data-loan-dropdown="kanca">
+                            <i class="fas fa-university loan-dropdown-icon"></i>
+                            <button type="button" class="loan-dropdown-toggle" data-loan-dropdown-toggle="kanca">
+                                <span class="loan-dropdown-text" id="kancaLabel">Pilih Kantor Cabang...</span>
+                                <i class="fas fa-chevron-down small opacity-50"></i>
+                            </button>
+                            <div class="loan-dropdown-menu" data-loan-dropdown-menu="kanca">
+                                <div class="loan-dropdown-option {{ $isArea6AllSelected ? 'is-active' : '' }}" data-value="all">
+                                    <div class="loan-dropdown-check"><i class="fas fa-check"></i></div>
+                                    <span>AREA-6 All</span>
                                 </div>
+                                @foreach($filters['kanca'] as $kc)
+                                    @if($kc['value'] !== 'all')
+                                        @php $active = is_array($selected['kanca']) && in_array($kc['value'], $selected['kanca']); @endphp
+                                        <div class="loan-dropdown-option {{ $active ? 'is-active' : '' }}" data-value="{{ $kc['value'] }}">
+                                            <div class="loan-dropdown-check"><i class="fas fa-check"></i></div>
+                                            <span>{{ $kc['label'] }}</span>
+                                        </div>
+                                    @endif
+                                @endforeach
                             </div>
-                            <div class="daily-dropdown-options-list" id="unitOptionsContainer">
-                                <div class="daily-dropdown-option {{ $selected['unit_kerja'] === 'all' ? 'is-active' : '' }}" data-value="all">
-                                    <div class="daily-dropdown-check"><i class="fas fa-check"></i></div>
-                                    <span class="daily-dropdown-label">Semua Unit Kerja</span>
-                                </div>
-                                {{-- Options will be populated by JS --}}
-                            </div>
+                            <input type="hidden" name="kanca" id="kancaInput" value="{{ is_array($selected['kanca']) ? implode(',', $selected['kanca']) : $selected['kanca'] }}">
                         </div>
                     </div>
-                </div>
 
-                {{-- RKA Month --}}
-                <div class="filter-item">
-                    <label class="filter-label">Posisi RKA</label>
-                    <select name="rka_period" class="select-custom">
-                        @foreach($posisi_rka_options as $opt)
-                            <option value="{{ $opt['value'] }}" {{ (isset($selectedRka) && $selectedRka === $opt['value']) ? 'selected' : '' }}>
-                                {{ $opt['label'] }}
-                            </option>
-                        @endforeach
-                    </select>
-                </div>
+                    {{-- Unit Kerja --}}
+                    <div class="loan-filter-item">
+                        <label class="loan-filter-label">Unit Kerja</label>
+                        <div class="loan-dropdown {{ $isArea6AllSelected ? 'is-disabled' : '' }}" data-loan-dropdown="unit" id="unitDropdown">
+                            <i class="fas fa-store loan-dropdown-icon"></i>
+                            <button type="button" class="loan-dropdown-toggle {{ $isArea6AllSelected ? 'is-disabled' : '' }}" data-loan-dropdown-toggle="unit">
+                                <span class="loan-dropdown-text" id="unitLabel">Semua Unit Kerja</span>
+                                <i class="fas fa-chevron-down small opacity-50"></i>
+                            </button>
+                            <div class="loan-dropdown-menu" data-loan-dropdown-menu="unit" style="padding: 0;">
+                                <div class="loan-dropdown-search">
+                                    <input type="text" placeholder="Cari unit..." id="unitSearchInput">
+                                </div>
+                                <div id="unitOptionsContainer">
+                                    {{-- Options by JS --}}
+                                </div>
+                            </div>
+                            <input type="hidden" name="unit_kerja" id="unitInput" value="{{ $selected['unit_kerja'] }}">
+                        </div>
+                    </div>
 
-                <div class="filter-item" style="min-width: auto;">
-                    <button type="submit" class="btn-apply">
-                        <i class="fas fa-search mr-1"></i> Telusuri
-                    </button>
+                    {{-- Posisi RKA --}}
+                    <div class="loan-filter-item">
+                        <label class="loan-filter-label">Posisi RKA</label>
+                        <div class="loan-dropdown" data-loan-dropdown="rka">
+                            <i class="fas fa-chart-line loan-dropdown-icon"></i>
+                            <button type="button" class="loan-dropdown-toggle" data-loan-dropdown-toggle="rka">
+                                <span class="loan-dropdown-text">Pilih Posisi</span>
+                                <i class="fas fa-chevron-down small opacity-50"></i>
+                            </button>
+                            <div class="loan-dropdown-menu" data-loan-dropdown-menu="rka">
+                                @foreach($posisi_rka_options as $opt)
+                                    <div class="loan-dropdown-option {{ (isset($selectedRka) && $selectedRka === $opt['value']) ? 'is-active' : '' }}" data-value="{{ $opt['value'] }}">
+                                        <div class="loan-dropdown-check"><i class="fas fa-check"></i></div>
+                                        <span>{{ $opt['label'] }}</span>
+                                    </div>
+                                @endforeach
+                            </div>
+                            <select name="rka_period" id="rkaInput" class="d-none">
+                                @foreach($posisi_rka_options as $opt)
+                                    <option value="{{ $opt['value'] }}" {{ (isset($selectedRka) && $selectedRka === $opt['value']) ? 'selected' : '' }}>{{ $opt['label'] }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                    </div>
+
+                    <div>
+                        <button type="submit" class="btn-loan-modern-submit w-100">
+                            <i class="fas fa-search"></i> Telusuri
+                        </button>
+                    </div>
                 </div>
             </form>
         </div>
 
         <script>
-            document.addEventListener('DOMContentLoaded', function() {
-                const area6Branches = @json($area6Branches ?? []);
-                const allUnitsData = @json($filters['unit_kerja']);
-
-                // Elements - Kanca
-                const kancaDropdown = document.getElementById('kancaDropdown');
-                const kancaToggle = kancaDropdown.querySelector('.daily-dropdown-toggle');
-                const kancaMenu = kancaDropdown.querySelector('.daily-dropdown-menu');
-                const kancaOptions = kancaDropdown.querySelectorAll('.daily-dropdown-option');
-                const kancaInput = document.getElementById('kancaInput');
-                const kancaLabel = document.getElementById('kancaLabel');
-
-                // Elements - Unit
-                const unitDropdown = document.getElementById('unitDropdown');
-                const unitToggle = unitDropdown.querySelector('.daily-dropdown-toggle');
-                const unitMenu = unitDropdown.querySelector('.daily-dropdown-menu');
-                const unitInput = document.getElementById('unitInput');
-                const unitLabel = document.getElementById('unitLabel');
-                const unitOptionsContainer = document.getElementById('unitOptionsContainer');
-                const unitSearchInput = document.getElementById('unitSearch');
-                const unitAllLabel = 'Semua Unit Kerja';
-
-                function getSelectedKancas() {
-                    return kancaInput.value
-                        ? kancaInput.value.split(',').filter(Boolean)
-                        : [];
-                }
-
-                function isArea6AllSelection(selected) {
-                    return selected.length === area6Branches.length
-                        && area6Branches.every(branch => selected.includes(branch));
-                }
-
-                function setUnitDisabled(disabled) {
-                    unitDropdown.classList.toggle('is-disabled', disabled);
-                    unitToggle.classList.toggle('is-disabled', disabled);
-                    unitSearchInput.disabled = disabled;
-
-                    if (disabled) {
-                        unitInput.value = 'all';
-                        unitLabel.textContent = unitAllLabel;
-                        unitDropdown.classList.remove('is-open');
-                        unitSearchInput.value = '';
-                    }
-                }
-
-                function selectUnit(value, label, closeDropdown = true) {
-                    unitInput.value = value;
-                    unitLabel.textContent = label;
-                    if (closeDropdown) {
-                        unitDropdown.classList.remove('is-open');
-                    }
-
-                    unitOptionsContainer.querySelectorAll('.daily-dropdown-option').forEach(option => {
-                        option.classList.toggle('is-active', option.dataset.value === value);
+                // --- Premium Sync Logic ---
+                function initPremiumSync() {
+                    // Close all on click outside
+                    document.addEventListener('click', () => {
+                        document.querySelectorAll('.loan-dropdown').forEach(d => d.classList.remove('is-open'));
                     });
-                }
 
-                function rebuildUnitOptions() {
-                    const selectedKancas = getSelectedKancas();
-                    const disableUnit = isArea6AllSelection(selectedKancas);
-                    const currentUnit = unitInput.value;
-                    let foundCurrentUnit = currentUnit === 'all';
+                    // General Toggles
+                    document.querySelectorAll('.loan-dropdown-toggle').forEach(toggle => {
+                        toggle.addEventListener('click', (e) => {
+                            const parent = toggle.closest('.loan-dropdown');
+                            if (parent.classList.contains('is-disabled')) return;
+                            e.stopPropagation();
+                            const wasOpen = parent.classList.contains('is-open');
+                            document.querySelectorAll('.loan-dropdown').forEach(d => d.classList.remove('is-open'));
+                            if (!wasOpen) parent.classList.add('is-open');
 
-                    setUnitDisabled(disableUnit);
-
-                    unitOptionsContainer.innerHTML = `
-                        <div class="daily-dropdown-option ${currentUnit === 'all' ? 'is-active' : ''}" data-value="all">
-                            <div class="daily-dropdown-check"><i class="fas fa-check"></i></div>
-                            <span class="daily-dropdown-label">${unitAllLabel}</span>
-                        </div>
-                    `;
-
-                    if (!disableUnit) {
-                        allUnitsData.forEach(unit => {
-                            if (unit.value === 'all') {
-                                return;
-                            }
-
-                            if (selectedKancas.includes(unit.kanca_value)) {
-                                const opt = document.createElement('div');
-                                opt.className = `daily-dropdown-option ${unit.value === currentUnit ? 'is-active' : ''}`;
-                                opt.dataset.value = unit.value;
-                                opt.innerHTML = `
-                                    <div class="daily-dropdown-check"><i class="fas fa-check"></i></div>
-                                    <span class="daily-dropdown-label">${unit.label}</span>
-                                `;
-
-                                if (unit.value === currentUnit) {
-                                    foundCurrentUnit = true;
-                                }
-
-                                opt.addEventListener('click', function() {
-                                    selectUnit(unit.value, unit.label);
-                                });
-
-                                unitOptionsContainer.appendChild(opt);
+                            if (!wasOpen && parent.dataset.loanDropdown === 'unit') {
+                                setTimeout(() => document.getElementById('unitSearchInput').focus(), 100);
                             }
                         });
-                    }
-
-                    unitOptionsContainer.querySelector('[data-value="all"]').addEventListener('click', () => {
-                        if (!unitDropdown.classList.contains('is-disabled')) {
-                            selectUnit('all', unitAllLabel);
-                        }
                     });
 
-                    if (disableUnit) {
-                        selectUnit('all', unitAllLabel, false);
-                        return;
-                    }
-
-                    if (!foundCurrentUnit) {
-                        selectUnit('all', unitAllLabel, false);
-                    }
-                }
-
-                function updateKancaUI() {
-                    const selected = getSelectedKancas();
-                    const allSelected = isArea6AllSelection(selected);
-
-                    if (allSelected) {
-                        kancaLabel.textContent = 'AREA-6 All';
-                        kancaOptions.forEach(option => option.classList.add('is-active'));
-                    } else if (selected.length === 1) {
-                        kancaLabel.textContent = selected[0];
-                        kancaOptions.forEach(option => option.classList.toggle('is-active', option.dataset.value === selected[0]));
-                        kancaOptions[0].classList.remove('is-active');
-                    } else if (selected.length > 1) {
-                        kancaLabel.textContent = `${selected.length} Cabang Dipilih`;
-                        kancaOptions.forEach(option => {
-                            if (option.dataset.value === 'all') {
-                                option.classList.remove('is-active');
-                                return;
-                            }
-
-                            option.classList.toggle('is-active', selected.includes(option.dataset.value));
+                    // Standard Select Sync (Periode & RKA)
+                    ['periode', 'rka'].forEach(type => {
+                        const parent = document.querySelector(`[data-loan-dropdown="${type}"]`);
+                        if (!parent) return;
+                        const select = parent.querySelector('select');
+                        const toggleText = parent.querySelector('.loan-dropdown-text');
+                        
+                        parent.querySelectorAll('.loan-dropdown-option').forEach(opt => {
+                            opt.addEventListener('click', (e) => {
+                                e.stopPropagation();
+                                const val = opt.dataset.value;
+                                select.value = val;
+                                toggleText.textContent = opt.querySelector('span').textContent;
+                                parent.querySelectorAll('.loan-dropdown-option').forEach(o => o.classList.remove('is-active'));
+                                opt.classList.add('is-active');
+                                parent.classList.remove('is-open');
+                            });
                         });
-                    } else {
-                        kancaLabel.textContent = 'Pilih Kantor Cabang...';
-                        kancaOptions.forEach(option => option.classList.remove('is-active'));
-                    }
 
-                    if (!allSelected) {
-                        kancaOptions[0].classList.remove('is-active');
-                    } else {
-                        kancaOptions[0].classList.add('is-active');
-                    }
+                        // Initial label
+                        if (select && select.selectedIndex >= 0) {
+                            toggleText.textContent = select.options[select.selectedIndex].text;
+                        }
+                    });
 
-                    kancaInput.value = selected.join(',');
-                    rebuildUnitOptions();
+                    // Unit Kerja Search Sync
+                    const unitSearchInput = document.getElementById('unitSearchInput');
+                    if (unitSearchInput) {
+                        unitSearchInput.addEventListener('click', e => e.stopPropagation());
+                        unitSearchInput.addEventListener('input', function() {
+                            const term = this.value.toLowerCase();
+                            document.querySelectorAll('#unitOptionsContainer .loan-dropdown-option').forEach(opt => {
+                                if (opt.dataset.value === 'all') return;
+                                const text = opt.querySelector('span').textContent.toLowerCase();
+                                opt.style.display = text.includes(term) ? 'flex' : 'none';
+                            });
+                        });
+                    }
                 }
 
-                // Toggle logic
-                [kancaToggle, unitToggle].forEach(toggle => {
-                    toggle.addEventListener('click', (e) => {
-                        if (toggle === unitToggle && unitDropdown.classList.contains('is-disabled')) {
-                            return;
-                        }
-
-                        e.stopPropagation();
-                        const target = toggle.parentElement;
-                        const wasOpen = target.classList.contains('is-open');
-
-                        // Close all
-                        document.querySelectorAll('.daily-dropdown').forEach(d => d.classList.remove('is-open'));
-
-                        if (!wasOpen) target.classList.add('is-open');
-
-                        // Focus search if it exists
-                        if (!wasOpen && target.id === 'unitDropdown' && !unitSearchInput.disabled) {
-                            setTimeout(() => unitSearchInput.focus(), 50);
-                        }
-                    });
-                });
-
-                document.addEventListener('click', () => {
-                    document.querySelectorAll('.daily-dropdown').forEach(d => d.classList.remove('is-open'));
-                });
-
-                [kancaMenu, unitMenu].forEach(menu => {
-                    menu.addEventListener('click', (e) => e.stopPropagation());
-                });
-
-                // Unit Search Logic
-                unitSearchInput.addEventListener('input', function() {
-                    const term = this.value.toLowerCase();
-                    const options = unitOptionsContainer.querySelectorAll('.daily-dropdown-option');
-                    options.forEach(opt => {
-                        if (opt.dataset.value === 'all') {
-                            return;
-                        }
-                        const text = opt.querySelector('.daily-dropdown-label').textContent.toLowerCase();
-                        opt.style.display = text.includes(term) ? 'flex' : 'none';
-                    });
-                });
+                initPremiumSync();
 
                 // Initial UI state
                 updateKancaUI();
 
                 // Kanca option events
-                kancaOptions.forEach(opt => {
-                    opt.addEventListener('click', function() {
+                document.querySelectorAll('[data-loan-dropdown="kanca"] .loan-dropdown-option').forEach(opt => {
+                    opt.addEventListener('click', function(e) {
+                        e.stopPropagation();
                         const val = this.dataset.value;
-                        let selected = getSelectedKancas();
+                        const kancaInput = document.getElementById('kancaInput');
+                        const area6Branches = @json($area6Branches ?? []);
+                        let selected = kancaInput.value ? kancaInput.value.split(',').filter(Boolean) : [];
+                        
+                        function isArea6AllSelection(s) {
+                            return s.length === area6Branches.length && area6Branches.every(v => s.includes(v));
+                        }
 
                         if (val === 'all') {
-                            selected = [...area6Branches];
-                            kancaOptions.forEach(option => {
-                                option.classList.toggle('is-active', option.dataset.value === 'all' || selected.includes(option.dataset.value));
-                            });
-                        } else if (selected.includes(val)) {
-                            selected = selected.filter(v => v !== val);
-                            if (selected.length === 0) {
-                                selected = [...area6Branches];
-                            }
+                            selected = isArea6AllSelection(selected) ? [] : [...area6Branches];
                         } else {
-                            selected.push(val);
+                            if (selected.includes(val)) {
+                                selected = selected.filter(v => v !== val);
+                            } else {
+                                selected.push(val);
+                            }
                         }
 
                         kancaInput.value = selected.join(',');
                         updateKancaUI();
                     });
                 });
-            });
+
+                function updateKancaUI() {
+                    const kancaInput = document.getElementById('kancaInput');
+                    const area6Branches = @json($area6Branches ?? []);
+                    const kancaLabel = document.getElementById('kancaLabel');
+                    const selected = kancaInput.value ? kancaInput.value.split(',').filter(Boolean) : [];
+                    
+                    function isArea6AllSelection(s) {
+                        return s.length === area6Branches.length && area6Branches.every(v => s.includes(v));
+                    }
+
+                    const allSelected = isArea6AllSelection(selected);
+                    const options = document.querySelectorAll('[data-loan-dropdown="kanca"] .loan-dropdown-option');
+
+                    if (allSelected) {
+                        kancaLabel.textContent = 'AREA-6 All';
+                        options.forEach(o => o.classList.add('is-active'));
+                    } else if (selected.length === 1) {
+                        kancaLabel.textContent = selected[0];
+                        options.forEach(o => o.classList.toggle('is-active', o.dataset.value === selected[0]));
+                        options[0].classList.remove('is-active');
+                    } else if (selected.length > 1) {
+                        kancaLabel.textContent = `${selected.length} Cabang`;
+                        options.forEach(o => {
+                            if (o.dataset.value === 'all') { o.classList.remove('is-active'); return; }
+                            o.classList.toggle('is-active', selected.includes(o.dataset.value));
+                        });
+                    } else {
+                        kancaLabel.textContent = 'Pilih Kantor Cabang...';
+                        options.forEach(o => o.classList.remove('is-active'));
+                    }
+
+                    const unitDropdown = document.getElementById('unitDropdown');
+                    const unitInput = document.getElementById('unitInput');
+                    const unitLabel = document.getElementById('unitLabel');
+                    const unitOptionsContainer = document.getElementById('unitOptionsContainer');
+                    const allUnitsData = @json($filters['unit_kerja']);
+                    
+                    const disableUnit = allSelected;
+                    unitDropdown.classList.toggle('is-disabled', disableUnit);
+                    unitDropdown.querySelector('.loan-dropdown-toggle').classList.toggle('is-disabled', disableUnit);
+
+                    unitOptionsContainer.innerHTML = `
+                        <div class="loan-dropdown-option ${unitInput.value === 'all' ? 'is-active' : ''}" data-value="all">
+                            <div class="loan-dropdown-check"><i class="fas fa-check"></i></div>
+                            <span>Semua Unit Kerja</span>
+                        </div>
+                    `;
+
+                    if (!disableUnit) {
+                        allUnitsData.forEach(unit => {
+                            if (unit.value === 'all') return;
+                            if (selected.includes(unit.kanca_value)) {
+                                const opt = document.createElement('div');
+                                opt.className = `loan-dropdown-option ${unit.value === unitInput.value ? 'is-active' : ''}`;
+                                opt.dataset.value = unit.value;
+                                opt.innerHTML = `<div class="loan-dropdown-check"><i class="fas fa-check"></i></div><span>${unit.label}</span>`;
+                                opt.addEventListener('click', (e) => {
+                                    e.stopPropagation();
+                                    unitInput.value = unit.value;
+                                    unitLabel.textContent = unit.label;
+                                    document.querySelectorAll('.loan-dropdown').forEach(d => d.classList.remove('is-open'));
+                                    updateKancaUI();
+                                });
+                                unitOptionsContainer.appendChild(opt);
+                            }
+                        });
+                    }
+
+                    unitOptionsContainer.querySelector('[data-value="all"]').addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        unitInput.value = 'all';
+                        unitLabel.textContent = 'Semua Unit Kerja';
+                        document.querySelectorAll('.loan-dropdown').forEach(d => d.classList.remove('is-open'));
+                        updateKancaUI();
+                    });
+
+                    if (disableUnit) {
+                        unitInput.value = 'all';
+                        unitLabel.textContent = 'Semua Unit Kerja';
+                    }
+                }
         </script>
 
         <div class="kejar-laba-table-shell">

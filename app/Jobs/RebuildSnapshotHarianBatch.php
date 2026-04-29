@@ -2,43 +2,47 @@
 
 namespace App\Jobs;
 
+use App\Jobs\Middleware\DeferSnapshotJobsDuringImport;
 use App\Support\DashboardHarianSnapshotService;
+use Illuminate\Bus\Batchable;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
-/**
- * Parallel job to rebuild Dashboard Harian snapshot
- *
- * Part of 4-job batch that runs in parallel with:
- * - RebuildSnapshotSimpleBatch
- * - RebuildSnapshotDormantBatch (this job)
- * - RebuildSnapshotRasioBatch
- *
- * Total batch time: ~8 minutes (vs. 40 min sequential)
- * This job typically: 5-10 minutes
- */
 class RebuildSnapshotHarianBatch implements ShouldQueue
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+    use Batchable, Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public $tries = 2;
     public $timeout = 1200; // 20 minutes
     public $backoff = [60, 300];
 
-    private string $periodHint;
+    private ?string $periodHint;
     private ?string $deleteId;
 
-    public function __construct(string $periodHint, ?string $deleteId = null)
+    public function __construct(?string $periodHint = null, ?string $deleteId = null)
     {
         $this->periodHint = $periodHint;
         $this->deleteId = $deleteId;
         $this->onQueue('snapshots-parallel');
+    }
+
+    public function middleware(): array
+    {
+        $scope = strtolower(trim((string) $this->periodHint)) ?: 'all';
+
+        return [
+            new DeferSnapshotJobsDuringImport(),
+            (new WithoutOverlapping('snapshot:dashboard_harian:' . $scope))
+                ->releaseAfter(60)
+                ->expireAfter($this->timeout + 300),
+        ];
     }
 
     public function handle(DashboardHarianSnapshotService $service): void

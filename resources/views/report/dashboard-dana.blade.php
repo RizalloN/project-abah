@@ -23,16 +23,62 @@
         background-color: var(--dana-bg);
         min-height: 100vh;
         padding-bottom: 4rem;
+        overflow-x: hidden;
     }
 
     .dana-hero {
+        position: relative;
         background: linear-gradient(135deg, #0f4c81 0%, #1e40af 100%);
-        padding: 4rem 2rem 6rem;
+        padding: 5rem 2rem 8rem;
         color: white;
-        margin-bottom: -4rem;
-        border-radius: 0 0 3rem 3rem;
-        box-shadow: 0 10px 30px rgba(15, 76, 129, 0.15);
+        margin-bottom: -5rem;
+        border-radius: 0 0 4rem 4rem;
+        overflow: hidden;
     }
+
+    .dana-hero-mesh {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-image: 
+            radial-gradient(at 0% 0%, rgba(59, 130, 246, 0.5) 0, transparent 50%),
+            radial-gradient(at 100% 0%, rgba(147, 51, 234, 0.3) 0, transparent 50%);
+        opacity: 0.6;
+        pointer-events: none;
+    }
+
+    .title-badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 0.5rem 1rem;
+        background: rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(8px);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 2rem;
+        font-size: 0.8rem;
+        font-weight: 700;
+        color: white;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+
+    .animate-reveal {
+        animation: reveal 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        opacity: 0;
+        transform: translateY(20px);
+    }
+
+    @keyframes reveal {
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    .stagger-2 { animation-delay: 0.1s; }
+    .stagger-3 { animation-delay: 0.2s; }
 
     .dana-container {
         max-width: 1600px;
@@ -51,6 +97,8 @@
     }
 
     .dana-filter-bar {
+        position: relative;
+        z-index: 100; /* Higher than table headers (z-index: 20-25) */
         background: rgba(255, 255, 255, 0.9);
         padding: 1.5rem;
         border-radius: 1.25rem;
@@ -99,6 +147,143 @@
         outline: none;
     }
 
+    .dana-dropdown {
+        position: relative;
+        width: 100%;
+    }
+
+    .dana-filter-icon {
+        position: absolute;
+        left: 1.25rem;
+        top: 50%;
+        transform: translateY(-50%);
+        z-index: 10;
+        color: var(--dana-accent);
+        font-size: 1rem;
+        pointer-events: none;
+    }
+
+    .dana-dropdown-toggle {
+        width: 100%;
+        height: 52px;
+        background: white;
+        border: 2px solid #eef2f6;
+        border-radius: 16px;
+        padding: 0 1.25rem 0 3rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-weight: 700;
+        font-size: 0.95rem;
+        color: #1e293b;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        text-align: left;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+    }
+
+    .dana-dropdown-toggle:hover {
+        border-color: var(--bri-blue);
+        box-shadow: 0 4px 12px rgba(0, 114, 187, 0.08);
+        transform: translateY(-1px);
+    }
+
+    .dana-dropdown.is-open .dana-dropdown-toggle {
+        border-color: var(--bri-blue);
+        box-shadow: 0 0 0 4px rgba(0, 114, 187, 0.1);
+        background: #f8fafc;
+    }
+
+    .dana-dropdown.is-open {
+        z-index: 1100; /* Ensure the active dropdown is on top of everything */
+    }
+
+    .dana-dropdown-menu {
+        position: absolute;
+        top: calc(100% + 10px);
+        left: 0;
+        width: 100%; /* Match the toggle width */
+        min-width: 280px; /* But allow it to be wider for long text */
+        background: rgba(255, 255, 255, 0.98);
+        backdrop-filter: blur(15px);
+        border: 1px solid rgba(226, 232, 240, 0.8);
+        border-radius: 1.5rem;
+        box-shadow: 
+            0 10px 15px -3px rgba(0, 0, 0, 0.1), 
+            0 4px 6px -2px rgba(0, 0, 0, 0.05),
+            0 25px 50px -12px rgba(0, 0, 0, 0.15);
+        z-index: 1100; /* Above sticky headers and loaders */
+        opacity: 0;
+        visibility: hidden;
+        transform: translateY(12px);
+        transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        max-height: 480px; /* Increased height as requested */
+        overflow-y: auto;
+        padding: 0.75rem;
+    }
+
+    /* Custom scrollbar for mewah feel */
+    .dana-dropdown-menu::-webkit-scrollbar {
+        width: 6px;
+    }
+    .dana-dropdown-menu::-webkit-scrollbar-track {
+        background: transparent;
+    }
+    .dana-dropdown-menu::-webkit-scrollbar-thumb {
+        background: #e2e8f0;
+        border-radius: 10px;
+    }
+    .dana-dropdown-menu::-webkit-scrollbar-thumb:hover {
+        background: #cbd5e1;
+    }
+
+    .dana-dropdown.is-open .dana-dropdown-menu {
+        opacity: 1;
+        visibility: visible;
+        transform: translateY(0);
+    }
+
+    .dana-dropdown-option {
+        width: 100%;
+        padding: 0.85rem 1.25rem; /* Increased padding for better tap target */
+        border: none;
+        background: transparent;
+        border-radius: 1rem;
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        font-weight: 700;
+        font-size: 0.92rem;
+        color: #334155;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        text-align: left;
+        margin-bottom: 2px;
+    }
+
+    .dana-dropdown-option:hover {
+        background: #f8fafc;
+        color: var(--dana-accent);
+        transform: translateX(4px);
+    }
+
+    .dana-dropdown-option.is-active {
+        background: linear-gradient(90deg, rgba(59, 130, 246, 0.1) 0%, rgba(59, 130, 246, 0.05) 100%);
+        color: var(--dana-accent);
+    }
+
+    .dana-dropdown-check {
+        width: 1.25rem;
+        height: 1.25rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        opacity: 0;
+        transition: all 0.2s;
+    }
+
+    .dana-dropdown-option.is-active .dana-dropdown-check {
+        opacity: 1;
+    }
+
     .btn-dana-refresh {
         background: linear-gradient(135deg, var(--dana-accent) 0%, #2563eb 100%);
         color: white;
@@ -122,8 +307,23 @@
         filter: brightness(1.1);
     }
 
+    .loading-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(255, 255, 255, 0.8);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 100;
+        backdrop-filter: blur(4px);
+    }
+
     .dana-table-container {
         margin: 0;
+        position: relative; /* For loader positioning */
     }
 
     .dana-table {
@@ -322,51 +522,82 @@
 
 <div class="dana-dashboard">
     <div class="dana-hero">
-        <div class="dana-container">
+        <div class="dana-hero-mesh"></div>
+        <div class="dana-container position-relative">
             <div class="d-flex justify-content-between align-items-center">
-                <div>
-                    <h1 class="display-4 font-weight-bold mb-2">Dashboard Dana</h1>
+                <div class="animate-reveal">
+                    <div class="title-badge mb-3">
+                        <i class="fas fa-coins mr-2"></i>
+                        <span>Dashboard Simpanan</span>
+                    </div>
+                    <h1 class="display-4 font-weight-bold mb-2 text-white" style="letter-spacing: -0.02em;">Dashboard Dana</h1>
                     <p class="h5 opacity-75">Monitoring Keragaan Dana Simpanan (SSA) Area 6</p>
-                    <div class="mt-3">
+                    <div class="mt-4">
                         <button id="captureAllBtn" class="btn-capture-all">
-                            <i class="fas fa-camera mr-2"></i> CAPTURE ALL A4
+                            <i class="fas fa-camera mr-2"></i> CAPTURE ALL 4K (A4)
                         </button>
                     </div>
                 </div>
-                <div class="text-right">
-                    <div class="h2 mb-0 font-weight-bold" id="headerTotalDana">-</div>
-                    <div class="small opacity-75 text-uppercase font-weight-bold">Total Dana Kelolaan</div>
+                <div class="text-right animate-reveal stagger-2">
+                    <div class="h2 mb-0 font-weight-bold" id="headerTotalDana" style="font-size: 3.5rem; letter-spacing: -0.02em;">-</div>
+                    <div class="small opacity-75 text-uppercase font-weight-bold mt-1">Total Dana Kelolaan (Miliar)</div>
                 </div>
             </div>
         </div>
     </div>
 
     <div class="dana-container">
-        <div class="dana-filter-bar">
+        <div class="dana-filter-bar animate-reveal stagger-3">
             <div class="filter-item">
                 <label class="filter-label">Periode Data</label>
-                <select id="filterPeriode" class="filter-select select2">
-                    @foreach($periods as $p)
-                        <option value="{{ $p }}" {{ $selectedPeriod == $p ? 'selected' : '' }}>{{ $p }}</option>
-                    @endforeach
-                </select>
+                <div class="dana-dropdown" data-dana-dropdown="periode">
+                    <i class="fas fa-calendar-alt dana-filter-icon"></i>
+                    <button type="button" class="dana-dropdown-toggle" data-dana-dropdown-toggle="periode">
+                        <span class="dana-dropdown-text">Pilih Periode</span>
+                        <i class="fas fa-chevron-down small opacity-50"></i>
+                    </button>
+                    <div class="dana-dropdown-menu" data-dana-dropdown-menu="periode"></div>
+                    <select id="filterPeriode" class="d-none">
+                        @foreach($periods as $p)
+                            <option value="{{ $p }}" {{ $selectedPeriod == $p ? 'selected' : '' }}>{{ $p }}</option>
+                        @endforeach
+                    </select>
+                </div>
             </div>
             <div class="filter-item">
                 <label class="filter-label">Periode RKA</label>
-                <select id="filterRka" class="filter-select">
-                    @foreach($rkaPeriods as $p)
-                        <option value="{{ $p }}" {{ $selectedRka == $p ? 'selected' : '' }}>{{ $p }}</option>
-                    @endforeach
-                </select>
+                <div class="dana-dropdown" data-dana-dropdown="rka">
+                    <i class="fas fa-bullseye dana-filter-icon"></i>
+                    <button type="button" class="dana-dropdown-toggle" data-dana-dropdown-toggle="rka">
+                        <span class="dana-dropdown-text">Pilih RKA</span>
+                        <i class="fas fa-chevron-down small opacity-50"></i>
+                    </button>
+                    <div class="dana-dropdown-menu" data-dana-dropdown-menu="rka"></div>
+                    <select id="filterRka" class="d-none">
+                        @foreach($rkaPeriods as $p)
+                            <option value="{{ $p }}" {{ $selectedRka == $p ? 'selected' : '' }}>
+                                {{ strtoupper(\Carbon\Carbon::parse($p)->translatedFormat('F Y')) }}
+                            </option>
+                        @endforeach
+                    </select>
+                </div>
             </div>
             <div class="filter-item">
                 <label class="filter-label">Segmentasi</label>
-                <select id="filterKategori" class="filter-select">
-                    <option value="all">SEMUA SEGMEN</option>
-                    @foreach($categories as $c)
-                        <option value="{{ $c }}" {{ $selectedCategory == $c ? 'selected' : '' }}>{{ strtoupper($c) }}</option>
-                    @endforeach
-                </select>
+                <div class="dana-dropdown" data-dana-dropdown="kategori">
+                    <i class="fas fa-layer-group dana-filter-icon"></i>
+                    <button type="button" class="dana-dropdown-toggle" data-dana-dropdown-toggle="kategori">
+                        <span class="dana-dropdown-text">Pilih Segmen</span>
+                        <i class="fas fa-chevron-down small opacity-50"></i>
+                    </button>
+                    <div class="dana-dropdown-menu" data-dana-dropdown-menu="kategori"></div>
+                    <select id="filterKategori" class="d-none">
+                        <option value="all">SEMUA SEGMEN</option>
+                        @foreach($categories as $c)
+                            <option value="{{ $c }}" {{ $selectedCategory == $c ? 'selected' : '' }}>{{ strtoupper($c) }}</option>
+                        @endforeach
+                    </select>
+                </div>
             </div>
             <button id="btnRefresh" class="btn-dana-refresh">
                 <i class="fas fa-sync-alt"></i> Tampilkan
@@ -419,9 +650,77 @@
 <script src="{{ asset('vendor/html2canvas/html2canvas.min.js') }}"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-        if ($.fn.select2) {
-            $('.select2').select2({ theme: 'bootstrap4', width: '100%' });
-        }
+        const selects = {
+            periode: document.getElementById('filterPeriode'),
+            rka: document.getElementById('filterRka'),
+            kategori: document.getElementById('filterKategori')
+        };
+
+        const dropdowns = {
+            periode: {
+                root: document.querySelector('[data-dana-dropdown="periode"]'),
+                toggle: document.querySelector('[data-dana-dropdown-toggle="periode"]'),
+                menu: document.querySelector('[data-dana-dropdown-menu="periode"]')
+            },
+            rka: {
+                root: document.querySelector('[data-dana-dropdown="rka"]'),
+                toggle: document.querySelector('[data-dana-dropdown-toggle="rka"]'),
+                menu: document.querySelector('[data-dana-dropdown-menu="rka"]')
+            },
+            kategori: {
+                root: document.querySelector('[data-dana-dropdown="kategori"]'),
+                toggle: document.querySelector('[data-dana-dropdown-toggle="kategori"]'),
+                menu: document.querySelector('[data-dana-dropdown-menu="kategori"]')
+            }
+        };
+
+        const initDanaDropdowns = () => {
+            Object.keys(dropdowns).forEach(key => {
+                const d = dropdowns[key];
+                const select = selects[key];
+                if (!d.root || !select) return;
+
+                const updateMenu = () => {
+                    const options = Array.from(select.options);
+                    d.menu.innerHTML = options.map(opt => {
+                        const active = opt.selected;
+                        return `
+                            <button type="button" class="dana-dropdown-option ${active ? 'is-active' : ''}" data-value="${opt.value}">
+                                <span class="dana-dropdown-check"><i class="fas fa-check"></i></span>
+                                <span>${opt.text}</span>
+                            </button>
+                        `;
+                    }).join('');
+                    
+                    const activeOpt = options.find(o => o.selected);
+                    d.toggle.querySelector('.dana-dropdown-text').textContent = activeOpt ? activeOpt.text : 'Pilih...';
+                };
+
+                updateMenu();
+
+                d.toggle.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const isOpen = d.root.classList.contains('is-open');
+                    Object.values(dropdowns).forEach(dd => dd.root.classList.remove('is-open'));
+                    if (!isOpen) d.root.classList.add('is-open');
+                });
+
+                d.menu.addEventListener('click', (e) => {
+                    const btn = e.target.closest('.dana-dropdown-option');
+                    if (!btn) return;
+                    
+                    select.value = btn.dataset.value;
+                    updateMenu();
+                    d.root.classList.remove('is-open');
+                });
+            });
+
+            document.addEventListener('click', () => {
+                Object.values(dropdowns).forEach(dd => dd.root.classList.remove('is-open'));
+            });
+        };
+
+        initDanaDropdowns();
 
         const formatMoney = (val) => {
             const num = parseFloat(val) || 0;
@@ -442,11 +741,6 @@ document.addEventListener('DOMContentLoaded', function() {
             return num > 0 ? 'text-pos' : (num < 0 ? 'text-neg' : '');
         };
 
-        const getKategoriBadge = (kat) => {
-            const slug = kat.toLowerCase();
-            return `<span class="kategori-badge badge-${slug}">${kat}</span>`;
-        };
-
         const getShortBranch = (name) => {
             const map = {
                 'KC MADIUN': 'KC MDN',
@@ -461,9 +755,9 @@ document.addEventListener('DOMContentLoaded', function() {
             $('#loader').fadeIn(200);
             
             const params = {
-                periode: $('#filterPeriode').val(),
-                rka_periode: $('#filterRka').val(),
-                kategori: $('#filterKategori').val()
+                periode: selects.periode.value,
+                rka_periode: selects.rka.value,
+                kategori: selects.kategori.value
             };
 
             $.get("{{ route('report.dashboard-dana.data') }}", params, function(res) {
@@ -471,7 +765,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 $('#headerSelectedDate').text(res.header_dates.selected);
                 
                 let html = '';
-                
                 res.rows.forEach((row, index) => {
                     const isTotal = row.is_total;
                     const isStartOfBranch = isTotal;
@@ -502,10 +795,8 @@ document.addEventListener('DOMContentLoaded', function() {
                             </td>
                         </tr>
                     `;
-
                 });
 
-                // Grand Total
                 const gt = res.total;
                 html += `
                     <tr class="grandtotal-row">
@@ -524,9 +815,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     </tr>
                 `;
 
-
                 $('#danaContent').html(html);
-                $('#headerTotalDana').text(formatMoney(res.total.selected));
+                $('#headerTotalDana').text(formatMoney(res.total.selected / 1000000000));
             }).fail(function() {
                 $('#loader').fadeOut(200);
                 alert('Terjadi kesalahan saat memuat data.');
@@ -536,17 +826,17 @@ document.addEventListener('DOMContentLoaded', function() {
         $('#btnRefresh').click(loadData);
         loadData();
 
-        // --- Capture All Logic (A4 Portrait) ---
+        // --- Capture All Logic (4K A4 Portrait) ---
         const captureBtn = document.getElementById('captureAllBtn');
         const captureModal = document.getElementById('captureStatusModal');
         
         const A4_EXPORT = {
-            width: 2480,
-            height: 3508,
-            marginX: 140,
-            marginY: 120,
-            headerHeight: 280,
-            footerHeight: 100,
+            width: 3508, // 4K-ish
+            height: 4961,
+            marginX: 180,
+            marginY: 160,
+            headerHeight: 380,
+            footerHeight: 120,
         };
 
         async function captureAllDanaDashboard() {
@@ -564,54 +854,48 @@ document.addEventListener('DOMContentLoaded', function() {
                 canvas.height = A4_EXPORT.height;
                 const ctx = canvas.getContext('2d');
 
-                // Fill background
                 ctx.fillStyle = '#ffffff';
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-                // 1. Draw Header
                 ctx.fillStyle = '#0f4c81';
-                ctx.fillRect(0, 0, A4_EXPORT.width, 30);
+                ctx.fillRect(0, 0, A4_EXPORT.width, 40);
                 
                 ctx.fillStyle = '#0f172a';
-                ctx.font = 'bold 64px "Inter", sans-serif';
-                ctx.fillText('Dashboard Dana Simpanan (SSA)', A4_EXPORT.marginX, A4_EXPORT.marginY + 60);
+                ctx.font = 'bold 88px "Plus Jakarta Sans", "Inter", sans-serif';
+                ctx.fillText('Dashboard Dana Simpanan (SSA)', A4_EXPORT.marginX, A4_EXPORT.marginY + 80);
                 
                 ctx.fillStyle = '#64748b';
-                ctx.font = '600 32px "Inter", sans-serif';
-                const periode = $('#filterPeriode').val();
-                const kategori = $('#filterKategori option:selected').text();
-                ctx.fillText(`Periode: ${periode} | Segmen: ${kategori}`, A4_EXPORT.marginX, A4_EXPORT.marginY + 120);
+                ctx.font = '600 42px "Plus Jakarta Sans", "Inter", sans-serif';
+                const periode = selects.periode.value;
+                const kategori = selects.kategori.options[selects.kategori.selectedIndex].text;
+                ctx.fillText(`Periode: ${periode} | Segmen: ${kategori}`, A4_EXPORT.marginX, A4_EXPORT.marginY + 160);
 
                 ctx.strokeStyle = '#e2e8f0';
-                ctx.lineWidth = 4;
+                ctx.lineWidth = 6;
                 ctx.beginPath();
-                ctx.moveTo(A4_EXPORT.marginX, A4_EXPORT.marginY + 180);
-                ctx.lineTo(A4_EXPORT.width - A4_EXPORT.marginX, A4_EXPORT.marginY + 180);
+                ctx.moveTo(A4_EXPORT.marginX, A4_EXPORT.marginY + 230);
+                ctx.lineTo(A4_EXPORT.width - A4_EXPORT.marginX, A4_EXPORT.marginY + 230);
                 ctx.stroke();
 
-                // 2. Capture Table
                 const tableWrap = document.querySelector('.table-responsive');
                 const capturedTable = await html2canvas(tableWrap, {
-                    scale: 2.5,
+                    scale: 3, // Ultra HD
                     useCORS: true,
                     backgroundColor: '#ffffff'
                 });
 
-                // Calculate aspect ratio to fit width
                 const targetWidth = A4_EXPORT.width - (A4_EXPORT.marginX * 2);
                 const targetHeight = (capturedTable.height * targetWidth) / capturedTable.width;
                 
-                ctx.drawImage(capturedTable, A4_EXPORT.marginX, A4_EXPORT.marginY + 250, targetWidth, targetHeight);
+                ctx.drawImage(capturedTable, A4_EXPORT.marginX, A4_EXPORT.marginY + 320, targetWidth, targetHeight);
 
-                // 3. Draw Footer
                 ctx.fillStyle = '#94a3b8';
-                ctx.font = '600 24px "Inter", sans-serif';
+                ctx.font = '600 32px "Plus Jakarta Sans", "Inter", sans-serif';
                 const now = new Date().toLocaleString('id-ID');
-                ctx.fillText(`Generated by A-Six Dashboard: ${now}`, A4_EXPORT.marginX, A4_EXPORT.height - 60);
+                ctx.fillText(`Generated by A-Six Dashboard: ${now}`, A4_EXPORT.marginX, A4_EXPORT.height - 80);
 
-                // 4. Download
                 const link = document.createElement('a');
-                link.download = `Dashboard-Dana-${periode.replace(/-/g, '')}.jpg`;
+                link.download = `Dashboard-Dana-${periode.replace(/-/g, '')}-4K.jpg`;
                 link.href = canvas.toDataURL('image/jpeg', 0.95);
                 link.click();
 

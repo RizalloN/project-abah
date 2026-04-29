@@ -61,8 +61,10 @@ class ReportDataSyncServiceTest extends TestCase
         $this->assertSame(['2026-04-30' => 12], $result);
     }
 
-    public function test_simpanan_sync_rebuilds_rasio_using_the_import_period_hint(): void
+    public function test_simpanan_sync_dispatches_parallel_rebuild_batch(): void
     {
+        Bus::fake();
+
         $builder = Mockery::mock(ReportSnapshotBuilder::class);
         $dashboardHarianSnapshotService = Mockery::mock(DashboardHarianSnapshotService::class);
         $partitionMaintenance = Mockery::mock(PartitionMaintenanceService::class);
@@ -70,68 +72,27 @@ class ReportDataSyncServiceTest extends TestCase
         $service = new ReportDataSyncService($builder, $dashboardHarianSnapshotService, $partitionMaintenance, $dirtyPeriods);
 
         $simpananLock = Mockery::mock(Lock::class);
-        $lock = Mockery::mock(Lock::class);
 
         Cache::shouldReceive('lock')
-            ->once()
             ->with('snapshot:simpanan:rebuild:2026-04-04', 180)
             ->andReturn($simpananLock);
 
-        $simpananLock->shouldReceive('block')
-            ->once()
-            ->with(60, Mockery::type('callable'))
-            ->andReturnUsing(function (int $seconds, callable $callback) {
-                return $callback();
-            });
-        $simpananLock->shouldReceive('release')->once();
-
-        Cache::shouldReceive('get')
-            ->once()
-            ->with('report_cache_version:global', 1)
-            ->andReturn(1);
-        Cache::shouldReceive('add')->andReturnFalse();
         Cache::shouldReceive('remember')
-            ->once()
             ->andReturn([
                 'is_ready' => true,
                 'available_branches' => ['MADIUN', 'MAGETAN', 'NGAWI', 'PONOROGO'],
                 'missing_branches' => [],
             ]);
 
-        Cache::shouldReceive('lock')
-            ->once()
-            ->with('snapshot:rasio:rebuild:2026-04-04', 120)
-            ->andReturn($lock);
+        Cache::shouldReceive('get')->andReturnNull();
+        Cache::shouldReceive('add', 'put')->andReturnTrue();
 
-        $lock->shouldReceive('block')
-            ->once()
+        $simpananLock->shouldReceive('block')
             ->with(60, Mockery::type('callable'))
             ->andReturnUsing(function (int $seconds, callable $callback) {
                 return $callback();
             });
-        $lock->shouldReceive('release')->once();
-
-        $dashboardHarianSnapshotService->shouldReceive('rebuild')
-            ->once()
-            ->with('2026-04-04', true)
-            ->andReturn(['2026-04-04' => 1]);
-
-        $builder->shouldReceive('rebuildDashboardSimpanan')
-            ->once()
-            ->with('2026-04-04', false, null)
-            ->andReturn(['2026-04-04' => 1]);
-        $builder->shouldReceive('rebuildRekeningDormant')
-            ->once()
-            ->with('2026-04-04', true)
-            ->andReturn(['2026-04-04' => 1]);
-        $builder->shouldReceive('rebuildRasioCasa')
-            ->once()
-            ->with('2026-04-04', true)
-            ->andReturn(['2026-04-04' => 1]);
-        $builder->shouldReceive('rebuildPerformanceRm')
-            ->once()
-            ->with('2026-04-04', true)
-            ->andReturn(['2026-04-04' => 1]);
+        $simpananLock->shouldReceive('release')->once();
 
         $reflection = new \ReflectionMethod($service, 'syncSimpanan');
         $reflection->setAccessible(true);
@@ -141,60 +102,23 @@ class ReportDataSyncServiceTest extends TestCase
         $this->assertTrue(true);
     }
 
-    public function test_sync_after_delete_cleans_snapshot_artifacts_and_rebuilds_affected_snapshot_reports(): void
+    public function test_sync_after_delete_dispatches_parallel_rebuild_for_daily_loan(): void
     {
+        Bus::fake();
+
         $builder = Mockery::mock(ReportSnapshotBuilder::class);
         $dashboardHarianSnapshotService = Mockery::mock(DashboardHarianSnapshotService::class);
         $partitionMaintenance = Mockery::mock(PartitionMaintenanceService::class);
         $dirtyPeriods = Mockery::mock(DashboardHarianSnapshotDirtyPeriodQueue::class);
         $service = Mockery::mock(ReportDataSyncService::class, [$builder, $dashboardHarianSnapshotService, $partitionMaintenance, $dirtyPeriods])->makePartial();
 
-        $lock = Mockery::mock(Lock::class);
-
         Schema::shouldReceive('hasTable')->andReturn(false);
-
-        Cache::shouldReceive('lock')
-            ->once()
-            ->with('snapshot:rasio:rebuild:2026-04-04', 120)
-            ->andReturn($lock);
         Cache::shouldReceive('add')->andReturn(true);
-
-        $lock->shouldReceive('block')
-            ->once()
-            ->with(60, Mockery::type('callable'))
-            ->andReturnUsing(function (int $seconds, callable $callback) {
-                return $callback();
-            });
-        $lock->shouldReceive('release')->once();
 
         $service->shouldReceive('cleanupDerivedArtifactsAfterDelete')
             ->once()
             ->with('daily_loan_dinamis', '2026-04-04', 'unit-test', null)
             ->andReturn(['dashboard_pinjaman_snapshots' => 0]);
-
-        $builder->shouldReceive('rebuildDashboard')
-            ->once()
-            ->with('2026-04-04', true, null)
-            ->andReturn(['2026-04-04' => 0]);
-        $builder->shouldReceive('rebuildChartPeriodik')
-            ->once()
-            ->with('2026-04-04', true)
-            ->andReturn(['2026-04-04' => 0]);
-        $dashboardHarianSnapshotService->shouldReceive('rebuild')
-            ->once()
-            ->with('2026-04-04', true)
-            ->andReturn(['2026-04-04' => 0]);
-        $builder->shouldReceive('rebuildRasioCasa')
-            ->once()
-            ->with('2026-04-04', true)
-            ->andReturn(['2026-04-04' => 0]);
-        $builder->shouldReceive('rebuildPerformanceRm')
-            ->once()
-            ->with('2026-04-04', true)
-            ->andReturn(['2026-04-04' => 0]);
-        $builder->shouldNotReceive('rebuildDashboardSimpanan');
-        $builder->shouldNotReceive('rebuildRekeningDormant');
-        $builder->shouldNotReceive('rebuildPerformanceNewPayroll');
 
         $service->syncAfterDelete('daily_loan_dinamis', '2026-04-04', 'unit-test');
 

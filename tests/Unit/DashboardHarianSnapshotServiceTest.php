@@ -52,27 +52,28 @@ class DashboardHarianSnapshotServiceTest extends TestCase
 
         $definitions = $reflection->invoke($service);
 
-        $this->assertSame(['NPL % Total', 'DPK % Total'], $definitions['total_npl_pct_non_commercial']['mata_anggaran']);
-        $this->assertSame(['A.1. DPK Retail Funding Total'], $definitions['total_simpanan']['mata_anggaran']);
+        $this->assertSame(['NPL % Total'], $definitions['total_npl_pct_non_commercial']['mata_anggaran']);
+        $this->assertSame(['A.1. DPK Retail Funding Total', 'A.2. DPK Korporasi'], $definitions['total_simpanan']['mata_anggaran']);
         $this->assertSame(['KC', 'KCP'], $definitions['simpanan_ritel']['uker_contains_any']);
         $this->assertSame(['UNIT'], $definitions['simpanan_mikro']['uker_contains_any']);
         $this->assertSame(['KC', 'KCP'], $definitions['kecil_non_cashcoll_os']['uker_contains_any']);
         $this->assertSame(['KC', 'KCP'], $definitions['briguna_konsumer_os']['uker_contains_any']);
         $this->assertSame(['KC', 'KCP'], $definitions['kpr_os']['uker_contains_any']);
         $this->assertSame(['KC', 'KCP'], $definitions['kkb_os']['uker_contains_any']);
-        $this->assertSame(['UNIT'], $definitions['micro_os']['uker_contains_any']);
-        $this->assertSame(['NPL Rp Kecil Non Cash Collateral', 'DPK Rp Kecil Non Cash Collateral'], $definitions['kecil_non_cashcoll_npl']['mata_anggaran']);
-        $this->assertSame(['NPL Rp Kecil Cash Collateral', 'DPK Rp Kecil Cash Collateral'], $definitions['cashcoll_npl']['mata_anggaran']);
-        $this->assertSame(['NPL Rp Medium', 'DPK Rp Medium'], $definitions['medium_npl']['mata_anggaran']);
-        $this->assertSame(['NPL Rp Briguna', 'DPK Rp Briguna'], $definitions['briguna_konsumer_npl']['mata_anggaran']);
-        $this->assertSame(['NPL Rp KPR', 'DPK Rp KPR'], $definitions['kpr_npl']['mata_anggaran']);
-        $this->assertSame(['NPL Rp KKB', 'DPK Rp KKB'], $definitions['kkb_npl']['mata_anggaran']);
-        $this->assertSame(['NPL Rp Mikro', 'DPK Rp Mikro'], $definitions['micro_npl']['mata_anggaran']);
-        $this->assertSame(['NPL Rp Briguna Mikro', 'DPK Rp Briguna Mikro'], $definitions['briguna_mikro_npl']['mata_anggaran']);
-        $this->assertSame(['NPL Rp Kupedes Komersial', 'DPK Rp Kupedes Komersial'], $definitions['kupedes_npl']['mata_anggaran']);
-        $this->assertSame(['NPL Rp KUR Mikro', 'DPK Rp KUR Mikro'], $definitions['kur_mikro_npl']['mata_anggaran']);
-        $this->assertSame(['NPL Rp KUR Kecil', 'DPK Rp KUR Kecil'], $definitions['kur_kecil_npl']['mata_anggaran']);
-        $this->assertSame(['NPL Rp KPP', 'DPK Rp KPP'], $definitions['kur_kpp_npl']['mata_anggaran']);
+        $this->assertArrayNotHasKey('uker_contains_any', $definitions['micro_os']);
+        $this->assertArrayNotHasKey('uker_contains_any', $definitions['kur_kecil_os']);
+        $this->assertSame(['NPL Rp Kecil Non Cash Collateral'], $definitions['kecil_non_cashcoll_npl']['mata_anggaran']);
+        $this->assertSame(['NPL Rp Kecil Cash Collateral'], $definitions['cashcoll_npl']['mata_anggaran']);
+        $this->assertSame(['NPL Rp Medium'], $definitions['medium_npl']['mata_anggaran']);
+        $this->assertSame(['NPL Rp Briguna'], $definitions['briguna_konsumer_npl']['mata_anggaran']);
+        $this->assertSame(['NPL Rp KPR'], $definitions['kpr_npl']['mata_anggaran']);
+        $this->assertSame(['NPL Rp KKB'], $definitions['kkb_npl']['mata_anggaran']);
+        $this->assertSame(['NPL Rp Mikro'], $definitions['micro_npl']['mata_anggaran']);
+        $this->assertSame(['NPL Rp Briguna Mikro'], $definitions['briguna_mikro_npl']['mata_anggaran']);
+        $this->assertSame(['NPL Rp Kupedes Komersial'], $definitions['kupedes_npl']['mata_anggaran']);
+        $this->assertSame(['NPL Rp KUR Mikro'], $definitions['kur_mikro_npl']['mata_anggaran']);
+        $this->assertSame(['NPL Rp KUR Kecil'], $definitions['kur_kecil_npl']['mata_anggaran']);
+        $this->assertSame(['NPL Rp KPP'], $definitions['kur_kpp_npl']['mata_anggaran']);
     }
 
     public function test_finalize_rka_metrics_keeps_raw_total_os_value(): void

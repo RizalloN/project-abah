@@ -231,10 +231,10 @@ class DashboardDanaService
         }
 
         $definitions = [
-            'Giro' => ['mata_anggaran' => ['Giro Retail Funding Total']],
+            'Giro' => ['mata_anggaran' => ['Giro Retail Funding Total', 'A.2.a. Giro Korporasi']],
             'Tabungan' => ['mata_anggaran' => ['Tabungan Retail Funding Total']],
-            'Deposito' => ['mata_anggaran' => ['Deposito Retail Funding Total']],
-            'CASA' => ['mata_anggaran' => ['Giro Retail Funding Total', 'Tabungan Retail Funding Total']],
+            'Deposito' => ['mata_anggaran' => ['Deposito Retail Funding Total', 'A.2.b. Deposito Korporasi']],
+            'CASA' => ['mata_anggaran' => ['Giro Retail Funding Total', 'Tabungan Retail Funding Total', 'A.2.a. Giro Korporasi']],
         ];
 
         if (!empty($ukerFilter)) {
@@ -279,8 +279,18 @@ class DashboardDanaService
         $service = app(RkaLookupService::class);
         $years = $service->availableYears();
 
-        // Return years as period options
-        return collect($years)->map(fn($year) => (string) $year);
+        $periods = collect();
+        foreach ($years as $year) {
+            // Generate months from current month down to January, or all 12 if not current year
+            $maxMonth = ($year == date('Y')) ? (int) date('n') : 12;
+            
+            for ($month = $maxMonth; $month >= 1; $month--) {
+                $date = Carbon::createFromDate($year, $month, 1);
+                $periods->push($date->toDateString());
+            }
+        }
+
+        return $periods;
     }
 
     protected function getRkaVal(array $rkaData, string $branch, string $kategori): float
