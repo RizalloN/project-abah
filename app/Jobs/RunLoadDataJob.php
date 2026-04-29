@@ -23,7 +23,6 @@ class RunLoadDataJob implements ShouldQueue
 
     public int $timeout = 0;
     public int $tries = 1;
-    public string $queue = 'imports-high';
 
     public function __construct(
         public readonly int $jobId,
@@ -31,6 +30,7 @@ class RunLoadDataJob implements ShouldQueue
         public readonly string $tableName,
         public readonly array $bulkColumns,
     ) {
+        $this->queue = 'imports-high';
     }
 
     public function handle(ImportProgressService $progressService, MySqlBulkLoadService $bulkLoader): void

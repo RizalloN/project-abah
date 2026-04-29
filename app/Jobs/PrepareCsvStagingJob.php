@@ -21,10 +21,10 @@ class PrepareCsvStagingJob implements ShouldQueue
 
     public int $timeout = 0;
     public int $tries = 1;
-    public string $queue = 'imports-high';
 
     public function __construct(public readonly int $jobId)
     {
+        $this->queue = 'imports-high';
     }
 
     public function handle(ImportProgressService $progressService, ImportFileController $controller): void
