@@ -395,6 +395,7 @@ def load_csv_polars(source_path: str, delimiter: str, skip_rows: int, raw_header
     Eliminasi sanitize_csv_source yang sebelumnya butuh 2 full Python loop.
     """
     schema_overrides = {str(h).strip(): pl.Utf8 for h in raw_headers if str(h).strip()}
+    expected_fields = len([h for h in raw_headers if str(h).strip()])
     base_kwargs = {
         "separator": delimiter,
         "skip_rows": skip_rows,
@@ -420,7 +421,13 @@ def load_csv_polars(source_path: str, delimiter: str, skip_rows: int, raw_header
                 except TypeError:
                     df = pl.read_csv(source_path, **kw)
 
-            if is_csv_dataframe_usable(df):
+            if is_csv_dataframe_usable(df) and csv_source_samples_are_aligned(
+                source_path,
+                delimiter,
+                skip_rows,
+                expected_fields,
+                max_rows,
+            ):
                 return df
         except Exception:
             if enc is None:
@@ -449,6 +456,66 @@ def is_csv_dataframe_usable(df: pl.DataFrame) -> bool:
     ]).row(0)
 
     return all(int(value or 0) > 0 for value in required_non_null)
+
+
+def csv_source_samples_are_aligned(
+    source_path: str,
+    delimiter: str,
+    skip_rows: int,
+    expected_fields: int,
+    max_rows=None,
+) -> bool:
+    if expected_fields <= 0:
+        return False
+
+    first_rows = []
+    last_rows = []
+    scanned_data_rows = 0
+
+    try:
+        with open(source_path, "r", encoding="utf-8-sig", errors="replace", newline="") as fh:
+            for line_index, line in enumerate(fh):
+                if line_index < skip_rows + 1:
+                    continue
+                if max_rows is not None and scanned_data_rows >= max_rows:
+                    break
+
+                parsed = smart_parse_csv_row(line, delimiter, False)
+                if not parsed or all(not str(value).strip() for value in parsed):
+                    continue
+
+                scanned_data_rows += 1
+                if len(first_rows) < 10:
+                    first_rows.append(parsed)
+                last_rows.append(parsed)
+                if len(last_rows) > 10:
+                    last_rows.pop(0)
+    except Exception:
+        return False
+
+    samples = first_rows + last_rows
+    if not samples:
+        return False
+
+    for row in samples:
+        row_len = len(row)
+        if row_len > expected_fields:
+            send_event(
+                "debug",
+                message=f"LW325_PH source sample has {row_len} columns, expected {expected_fields}; using repair loader.",
+            )
+            return False
+
+        if row_len < expected_fields:
+            missing = expected_fields - row_len
+            if missing > 3:
+                send_event(
+                    "debug",
+                    message=f"LW325_PH source sample is missing {missing} columns; using repair loader.",
+                )
+                return False
+
+    return True
 
 
 def parse_malformed_csv_row(line: str, delimiter: str, expected_fields: int):

@@ -4,6 +4,21 @@ namespace App\Services\Import\Strategies;
 
 class GenericCsvImportStrategy implements ImportStrategyInterface
 {
+    private const SPECIALIZED_TABLES = [
+        'daily_loan_dinamis',
+        'simpanan_multipn',
+        'gi405_rec_dh',
+        'ssa_pinjaman',
+        'ssa_simpanan',
+        'lw325_ph',
+        'cognos_ph',
+        'cognos_recovery',
+        'performance_pis_per_produk',
+        'rka',
+        'brihc',
+        'wilayah_mbm',
+    ];
+
     public function key(): string
     {
         return 'generic_csv';
@@ -11,7 +26,9 @@ class GenericCsvImportStrategy implements ImportStrategyInterface
 
     public function supports(?object $report, ?string $tableName = null): bool
     {
-        return true;
+        $table = strtolower(trim((string) ($tableName ?? $report->table_name ?? '')));
+
+        return $table === '' || !in_array($table, self::SPECIALIZED_TABLES, true);
     }
 
     public function prepareContext(array $context): array

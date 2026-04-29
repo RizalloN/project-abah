@@ -5,6 +5,13 @@
 @php
     $formatAmount = $formatAmount ?? fn ($value, int $decimals = 1) => number_format(((float) $value) / 1000000, $decimals, ',', '.');
     $formatPercent = $formatPercent ?? fn ($value, int $decimals = 2) => number_format((float) $value, $decimals, ',', '.');
+    $visibleDetails = collect($details ?? [])->filter(function ($detail) {
+        $realisasiOs = (float) ($detail['realisasi_os'] ?? 0);
+        $larValue = (float) ($detail['lar_value'] ?? 0);
+        $pctLar = (float) ($detail['pct_lar'] ?? 0);
+
+        return abs($realisasiOs) > 0 || abs($larValue) > 0 || abs($pctLar) > 0;
+    })->values();
 @endphp
 <div class="modal-body p-0">
     <div class="table-responsive">
@@ -20,7 +27,7 @@
                 </tr>
             </thead>
             <tbody>
-                @forelse($details as $detail)
+                @forelse($visibleDetails as $detail)
                     <tr>
                         <td class="text-center fw-bold">{{ $detail['periode'] }}</td>
                         <td class="text-center">{{ $detail['cabang'] }}</td>

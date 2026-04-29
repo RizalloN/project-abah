@@ -5,12 +5,15 @@ namespace App\Http\Controllers\Import;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Import\Concerns\AllocatesGapIds;
 use App\Http\Controllers\Import\Concerns\SmartCsvImportSupport;
+use App\Http\Controllers\Import\Concerns\GeneratesFileIdentifiers;
 use App\Services\Import\ExcelImportJobService;
 use App\Services\Import\ExcelStagingService;
 use App\Services\Import\ImportExecutionService;
 use App\Services\Import\ImportProgressService;
+use App\Services\Import\ImportNotificationSyncService;
 use App\Services\Import\MySqlBulkLoadService;
 use App\Support\ReportDataSyncService;
+use App\Support\ImportPreviewErrorHandler;
 use App\Support\StrictDateParser;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -25,6 +28,7 @@ class ImportReportPhController extends Controller
 {
     use AllocatesGapIds;
     use SmartCsvImportSupport;
+    use GeneratesFileIdentifiers;
 
     private const TABLE_NAME = 'lw325_ph';
     private const UNIQUE_SUFFIX = '_RPH';
@@ -1257,7 +1261,7 @@ class ImportReportPhController extends Controller
 
         $this->releaseSessionLockIfNeeded();
 
-        $selectedColumns = array_map('intval', $request->input('selected_columns', []));
+        $selectedColumns = $this->normalizeSelectedColumns($request->input('selected_columns', []));
         $activeFilters = json_decode($request->input('active_filters_json', '{}'), true) ?: [];
         $previewStateKey = trim((string) $request->input('preview_state_key', ''));
         $previewState = $previewStateKey !== ''
@@ -1454,7 +1458,7 @@ class ImportReportPhController extends Controller
             ], 422);
         }
 
-        $selectedColumns = array_map('intval', $request->input('selected_columns', []));
+        $selectedColumns = $this->normalizeSelectedColumns($request->input('selected_columns', []));
         $activeFilters = json_decode($request->input('active_filters_json', '{}'), true) ?: [];
 
         try {
@@ -1501,6 +1505,15 @@ class ImportReportPhController extends Controller
         if ($polarsResult !== null) {
             $filteredCsvPath = (string) ($polarsResult['path'] ?? '');
             $bulkLoadColumns = array_values((array) ($polarsResult['load_columns'] ?? []));
+            $validationColumns = $bulkLoadColumns !== [] ? $bulkLoadColumns : $this->buildPolarsLoadColumns($selectedColumns);
+            if ($filteredCsvPath === '' || !file_exists($filteredCsvPath) || !$this->validateReportPhBulkStage($filteredCsvPath, $validationColumns, (string) $context['periode'])) {
+                if ($filteredCsvPath !== '' && file_exists($filteredCsvPath)) {
+                    @unlink($filteredCsvPath);
+                }
+                $filteredCsvPath = null;
+                $bulkLoadColumns = [];
+                $polarsResult = null;
+            }
         }
 
         if ($filteredCsvPath !== null && file_exists($filteredCsvPath)) {
@@ -1529,14 +1542,7 @@ class ImportReportPhController extends Controller
                         $stagingPath,
                         self::TABLE_NAME,
                         $loadColumns,
-                        function (int $processed, int $total, int $inserted) use ($jobId) {
-                            $this->progressService()->cacheProgress($jobId, [
-                                'processed_rows' => $processed,
-                                'total_rows' => $total,
-                                'percent' => (int) (($processed / max(1, $total)) * 100),
-                                'message' => "Menulis ke DB: {$inserted} baris masuk...",
-                            ]);
-                        },
+                        null,
                         8000,
                         $preparedRows
                     );
@@ -1610,7 +1616,7 @@ class ImportReportPhController extends Controller
                 }
 
                 $insertRow = $this->buildInsertRow($context['headers'], $row, $selectedColumns);
-                if ($insertRow === null) {
+                if ($insertRow === null || !$this->isValidPreparedReportPhRow($insertRow, (string) $context['periode'])) {
                     continue;
                 }
 
@@ -1667,7 +1673,7 @@ class ImportReportPhController extends Controller
             ];
         }
 
-        $selectedColumns = array_map('intval', (array) ($params['selected_columns'] ?? []));
+        $selectedColumns = $this->normalizeSelectedColumns((array) ($params['selected_columns'] ?? []));
         $activeFilters = (array) ($params['active_filters'] ?? []);
         $delimiter = (string) ($params['delimiter'] ?? self::COLUMN_DELIMITER);
         $sourcePath = $absolutePath;
@@ -1715,18 +1721,28 @@ class ImportReportPhController extends Controller
         }
 
         if ($polarsResult === null) {
-            return app(ImportExcelController::class)->executeQueuedImport($state, $send);
+            return $this->executeQueuedCsvFallback($sourcePath, $selectedColumns, $activeFilters, $params, $send);
         }
 
         $filteredCsvPath = (string) ($polarsResult['path'] ?? '');
         if ($filteredCsvPath === '' || !file_exists($filteredCsvPath)) {
-            return app(ImportExcelController::class)->executeQueuedImport($state, $send);
+            return $this->executeQueuedCsvFallback($sourcePath, $selectedColumns, $activeFilters, $params, $send);
         }
 
         $cleanupPaths[] = $filteredCsvPath;
         $loadColumns = array_values((array) ($polarsResult['load_columns'] ?? []));
         if ($loadColumns === []) {
             $loadColumns = $this->buildPolarsLoadColumns($selectedColumns);
+        }
+
+        if (!$this->validateReportPhBulkStage($filteredCsvPath, $loadColumns, (string) ($params['periode'] ?? ''))) {
+            foreach (array_unique($cleanupPaths) as $cleanupPath) {
+                if (is_string($cleanupPath) && $cleanupPath !== '' && file_exists($cleanupPath)) {
+                    @unlink($cleanupPath);
+                }
+            }
+
+            return $this->executeQueuedCsvFallback($sourcePath, $selectedColumns, $activeFilters, $params, $send);
         }
 
         $preparedRows = (int) ($polarsResult['written_rows'] ?? 0);
@@ -1834,6 +1850,146 @@ class ImportReportPhController extends Controller
             'total_failed' => 0,
             'total_rows' => $preparedRows,
         ]);
+
+        return [
+            'status' => 'completed',
+            'total_success' => $totalSuccess,
+            'total_failed' => 0,
+            'total_rows' => $preparedRows,
+        ];
+    }
+
+    private function executeQueuedCsvFallback(
+        string $sourcePath,
+        array $selectedColumns,
+        array $activeFilters,
+        array $params,
+        callable $send
+    ): array {
+        $jobId = (int) ($params['job_id'] ?? 0);
+
+        try {
+            $context = $this->buildCsvContext($sourcePath);
+        } catch (\Throwable $e) {
+            return [
+                'status' => 'failed',
+                'message' => 'Fallback CSV LW325 - PH gagal membaca struktur file: ' . $e->getMessage(),
+                'total_success' => 0,
+                'total_failed' => 0,
+                'total_rows' => 0,
+            ];
+        }
+
+        $expectedPeriod = StrictDateParser::normalize($params['periode'] ?? null);
+        $detectedPeriod = StrictDateParser::normalize($context['periode'] ?? null);
+        if ($expectedPeriod === null || $detectedPeriod === null || $expectedPeriod !== $detectedPeriod) {
+            return [
+                'status' => 'failed',
+                'message' => 'Fallback CSV LW325 - PH ditolak karena periode file tidak konsisten.',
+                'total_success' => 0,
+                'total_failed' => 0,
+                'total_rows' => 0,
+            ];
+        }
+
+        $handle = fopen($sourcePath, 'r');
+        if ($handle === false) {
+            return [
+                'status' => 'failed',
+                'message' => 'Fallback CSV LW325 - PH gagal membuka file sumber.',
+                'total_success' => 0,
+                'total_failed' => 0,
+                'total_rows' => 0,
+            ];
+        }
+
+        $send('progress', [
+            'percent' => 18,
+            'message' => 'Polars tidak tersedia. Menjalankan fallback CSV khusus LW325 - PH...',
+            'rows_done' => 0,
+            'total' => (int) ($params['total_rows'] ?? 0),
+            'speed' => 0,
+        ]);
+
+        $rows = [];
+        $totalSuccess = 0;
+        $totalFailed = 0;
+        $lastErrorMsg = '';
+        $lineNumber = 0;
+        $processedRows = 0;
+        $startTime = microtime(true);
+        $totalRows = max(1, (int) ($params['total_rows'] ?? 0));
+
+        try {
+            while (($row = $this->readCsvRecord($handle, $context['delimiter'])) !== false) {
+                $lineNumber++;
+                if ($lineNumber <= $context['header_line']) {
+                    continue;
+                }
+
+                $row = $this->mapCsvRow($context, $row);
+                if ($row === null || !$this->passesFilters($row, $activeFilters)) {
+                    continue;
+                }
+
+                $insertRow = $this->buildInsertRow($context['headers'], $row, $selectedColumns);
+                if ($insertRow === null || !$this->isValidPreparedReportPhRow($insertRow, $expectedPeriod)) {
+                    continue;
+                }
+
+                $rows[] = $insertRow;
+                if (count($rows) >= self::INSERT_BATCH_SIZE) {
+                    $this->insertBatch($rows, $totalSuccess, $totalFailed, $lastErrorMsg);
+                    $rows = [];
+                    $processedRows = $totalSuccess + $totalFailed;
+                    $elapsed = max(microtime(true) - $startTime, 0.001);
+                    $speed = (int) round($processedRows / $elapsed);
+                    $percent = min(96, 20 + (int) floor(($processedRows / $totalRows) * 74));
+                    $send('progress', [
+                        'percent' => $percent,
+                        'message' => "Fallback CSV LW325 - PH... ({$speed} baris/detik)",
+                        'rows_done' => $processedRows,
+                        'total' => $totalRows,
+                        'speed' => $speed,
+                    ]);
+                }
+            }
+        } finally {
+            fclose($handle);
+        }
+
+        if ($rows !== []) {
+            $this->insertBatch($rows, $totalSuccess, $totalFailed, $lastErrorMsg);
+        }
+
+        $preparedRows = $totalSuccess + $totalFailed;
+
+        try {
+            $this->assertReportPhImportIntegrity($expectedPeriod, $preparedRows);
+        } catch (\Throwable $e) {
+            $lastErrorMsg = Str::limit($e->getMessage(), 800, '...');
+            $totalFailed = max(1, $totalFailed);
+        }
+
+        if ($jobId > 0) {
+            $this->progressService()->updateTotals(
+                $jobId,
+                $totalSuccess,
+                $totalFailed,
+                $preparedRows,
+                $totalFailed === 0 ? 'completed' : ($totalSuccess > 0 ? 'failed_partial' : 'failed')
+            );
+        }
+
+        if ($totalFailed > 0 || $preparedRows <= 0) {
+            return [
+                'status' => $totalSuccess > 0 ? 'failed_partial' : 'failed',
+                'message' => $lastErrorMsg !== '' ? $lastErrorMsg : 'Fallback CSV LW325 - PH gagal menyiapkan data valid.',
+                'total_success' => $totalSuccess,
+                'total_failed' => max($totalFailed, $preparedRows <= 0 ? 1 : 0),
+                'total_rows' => $preparedRows,
+            ];
+        }
 
         return [
             'status' => 'completed',
@@ -2381,7 +2537,6 @@ class ImportReportPhController extends Controller
     private function buildInsertRow(array $headers, array $row, array $selectedColumns): ?array
     {
         $insertRow = [
-            'uniqueid_namareport' => (string) Str::uuid() . self::UNIQUE_SUFFIX,
             'created_at' => now(),
             'updated_at' => now(),
         ];
@@ -2404,6 +2559,11 @@ class ImportReportPhController extends Controller
             $insertRow[$column] = $value;
         }
 
+        $insertRow['uniqueid_namareport'] = $this->makeReportPhUniqueId(
+            $insertRow['periode'] ?? null,
+            $insertRow['acctno'] ?? null
+        );
+
         return $this->hasMeaningfulImportData($insertRow, ['uniqueid_namareport', 'created_at', 'updated_at', 'periode'])
             ? $insertRow
             : null;
@@ -2412,7 +2572,6 @@ class ImportReportPhController extends Controller
     private function buildInsertRowFromPolarsRecord(array $rowByColumn, array $selectedColumns): ?array
     {
         $insertRow = [
-            'uniqueid_namareport' => (string) Str::uuid() . self::UNIQUE_SUFFIX,
             'created_at' => now(),
             'updated_at' => now(),
         ];
@@ -2438,9 +2597,47 @@ class ImportReportPhController extends Controller
             $insertRow[$column] = $value;
         }
 
+        $insertRow['uniqueid_namareport'] = $this->makeReportPhUniqueId(
+            $insertRow['periode'] ?? null,
+            $insertRow['acctno'] ?? null
+        );
+
         return $this->hasMeaningfulImportData($insertRow, ['uniqueid_namareport', 'created_at', 'updated_at', 'periode'])
             ? $insertRow
             : null;
+    }
+
+    private function makeReportPhUniqueId(mixed $periode, mixed $acctno): string
+    {
+        $normalizedPeriod = StrictDateParser::normalize($periode) ?? 'unknown';
+        $account = trim((string) ($acctno ?? 'missing'));
+        $account = $account !== '' ? preg_replace('/[^A-Za-z0-9]+/', '', $account) : 'missing';
+        $account = $account !== '' ? $account : 'missing';
+
+        return $normalizedPeriod . '_' . $account . '_' . Str::uuid()->toString() . self::UNIQUE_SUFFIX;
+    }
+
+    private function normalizeSelectedColumns(array $selectedColumns): array
+    {
+        $selected = array_map('intval', $selectedColumns);
+        $required = [
+            array_search('periode', self::TARGET_COLUMNS, true),
+            array_search('acctno', self::TARGET_COLUMNS, true),
+            array_search('kanca', self::TARGET_COLUMNS, true),
+            array_search('unit', self::TARGET_COLUMNS, true),
+            array_search('nama_debitur', self::TARGET_COLUMNS, true),
+        ];
+
+        foreach ($required as $index) {
+            if ($index !== false) {
+                $selected[] = (int) $index;
+            }
+        }
+
+        return array_values(array_unique(array_filter(
+            $selected,
+            static fn (int $index): bool => isset(self::TARGET_COLUMNS[$index])
+        )));
     }
 
     private function bulkLoadService(): MySqlBulkLoadService
@@ -2718,6 +2915,63 @@ class ImportReportPhController extends Controller
             'total_failed' => $totalFailed,
             'last_error' => $lastError,
         ];
+    }
+
+    private function validateReportPhBulkStage(string $csvPath, array $columns, string $expectedPeriod): bool
+    {
+        $expectedPeriod = StrictDateParser::normalize($expectedPeriod);
+        if ($expectedPeriod === null || $csvPath === '' || !is_file($csvPath)) {
+            return false;
+        }
+
+        $periodIndex = array_search('periode', $columns, true);
+        $acctnoIndex = array_search('acctno', $columns, true);
+        if ($periodIndex === false || $acctnoIndex === false) {
+            return false;
+        }
+
+        $handle = fopen($csvPath, 'r');
+        if ($handle === false) {
+            return false;
+        }
+
+        $checked = 0;
+
+        try {
+            while (($data = fgetcsv($handle, 0, self::BULK_STAGE_DELIMITER)) !== false) {
+                if (empty(array_filter((array) $data, static fn ($value): bool => trim((string) $value) !== ''))) {
+                    continue;
+                }
+
+                $period = StrictDateParser::normalize($this->decodeBulkStageValue($data[$periodIndex] ?? null));
+                $acctno = trim((string) $this->decodeBulkStageValue($data[$acctnoIndex] ?? null));
+
+                if ($period !== $expectedPeriod || $acctno === '' || str_contains(strtolower($acctno), 'periode data')) {
+                    return false;
+                }
+
+                $checked++;
+                if ($checked >= 25) {
+                    return true;
+                }
+            }
+        } finally {
+            fclose($handle);
+        }
+
+        return $checked > 0;
+    }
+
+    private function isValidPreparedReportPhRow(array $row, string $expectedPeriod): bool
+    {
+        $expectedPeriod = StrictDateParser::normalize($expectedPeriod);
+        $period = StrictDateParser::normalize($row['periode'] ?? null);
+        $acctno = trim((string) ($row['acctno'] ?? ''));
+
+        return $expectedPeriod !== null
+            && $period === $expectedPeriod
+            && $acctno !== ''
+            && !str_contains(strtolower($acctno), 'periode data');
     }
 
     private function encodeBulkStageValue(mixed $value): string

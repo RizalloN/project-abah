@@ -3,6 +3,7 @@
 namespace Tests\Unit;
 
 use App\Services\Import\Strategies\DailyLoanImportStrategy;
+use App\Services\Import\Strategies\ConfiguredExcelImportStrategy;
 use App\Services\Import\Strategies\Gi405RecDhImportStrategy;
 use App\Services\Import\Strategies\GenericCsvImportStrategy;
 use App\Services\Import\Strategies\SimpananMultiPnImportStrategy;
@@ -22,7 +23,7 @@ class ImportStrategiesTest extends TestCase
         $this->assertTrue($valid['ok']);
         $this->assertFalse($invalid['ok']);
         $this->assertSame('bulk_csv_direct', $strategy->importMode(['active_filters' => []]));
-        $this->assertSame('bulk_csv_filtered', $strategy->importMode(['active_filters' => [0 => ['A']]]));
+        $this->assertSame('bulk_csv_direct', $strategy->importMode(['active_filters' => [0 => ['A']]]));
     }
 
     public function test_simpanan_strategy_transforms_row_number_headers(): void
@@ -66,7 +67,24 @@ class ImportStrategiesTest extends TestCase
         $strategy = new GenericCsvImportStrategy();
 
         $this->assertTrue($strategy->supports(null, 'anything'));
+        $this->assertFalse($strategy->supports(null, 'lw325_ph'));
+        $this->assertFalse($strategy->supports(null, 'daily_loan_dinamis'));
+        $this->assertFalse($strategy->supports(null, 'simpanan_multipn'));
+        $this->assertFalse($strategy->supports(null, 'rka'));
+        $this->assertFalse($strategy->supports(null, 'brihc'));
+        $this->assertFalse($strategy->supports(null, 'wilayah_mbm'));
         $this->assertSame(['A', 'B'], $strategy->transformHeaders(['A', 'B']));
+        $this->assertSame('bulk_csv_staging', $strategy->importMode());
+    }
+
+    public function test_configured_excel_strategy_owns_small_excel_reports_with_custom_logic(): void
+    {
+        $strategy = new ConfiguredExcelImportStrategy();
+
+        $this->assertTrue($strategy->supports(null, 'rka'));
+        $this->assertTrue($strategy->supports(null, 'brihc'));
+        $this->assertTrue($strategy->supports(null, 'wilayah_mbm'));
+        $this->assertFalse($strategy->supports(null, 'daily_loan_dinamis'));
         $this->assertSame('bulk_csv_staging', $strategy->importMode());
     }
 

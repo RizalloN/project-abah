@@ -31,7 +31,7 @@ class PolarsArchitectureTest extends TestCase
     {
         $cases = [
             [DailyLoanImportStrategy::class, 'bulk_csv_direct', []],
-            [DailyLoanImportStrategy::class, 'bulk_csv_filtered', ['active_filters' => [[0 => ['A']]]]],
+            [DailyLoanImportStrategy::class, 'bulk_csv_direct', ['active_filters' => [[0 => ['A']]]]],
             [SimpananMultiPnImportStrategy::class, 'bulk_csv_filtered', []],
             [SsaSimpananImportStrategy::class, 'bulk_csv_staging', []],
             [SsaPinjamanImportStrategy::class, 'bulk_csv_staging', []],
@@ -97,8 +97,10 @@ class PolarsArchitectureTest extends TestCase
 
         $generic = new GenericCsvImportStrategy();
         foreach ($cases as [$class, $table]) {
-            $this->assertTrue($generic->supports(null, $table), 'GenericCsvImportStrategy must be a universal fallback');
+            $this->assertFalse($generic->supports(null, $table), 'GenericCsvImportStrategy must not handle specialized table ' . $table);
         }
+
+        $this->assertTrue($generic->supports(null, 'unknown_report_table'));
     }
 
     public function test_factory_resolves_ssa_simpanan_correctly(): void
@@ -115,5 +117,13 @@ class PolarsArchitectureTest extends TestCase
         $resolved = $factory->resolve(null, 'ssa_pinjaman');
 
         $this->assertInstanceOf(SsaPinjamanImportStrategy::class, $resolved);
+    }
+
+    public function test_factory_resolves_unknown_tables_to_generic_strategy(): void
+    {
+        $factory = app(ImportStrategyFactory::class);
+        $resolved = $factory->resolve(null, 'custom_unmapped_report');
+
+        $this->assertInstanceOf(GenericCsvImportStrategy::class, $resolved);
     }
 }

@@ -67,7 +67,7 @@
         "backfill:now": [
             "Composer\\Config::disableProcessTimeout",
             "php artisan shadow:backfill --queue --queue-name=shadow-backfill",
-            "npx concurrently -c \"#22c55e,#c4b5fd,#fb7185\" \"php artisan queue:work --queue=shadow-backfill --tries=1 --timeout=0 --sleep=1 --memory=2048\" \"php artisan queue:work --queue=imports-high --tries=1 --timeout=0 --sleep=1\" \"php artisan queue:work --queue=default,reports-low --tries=1 --timeout=0 --sleep=1\" --names=shadow-backfill,import-queue,report-queue --kill-others"
+            "npx concurrently -c \"#22c55e,#c4b5fd,#38bdf8,#fb7185,#fdba74\" \"powershell -ExecutionPolicy Bypass -File .\\scripts\\queue-persistent.ps1 -Queues shadow-backfill -Memory 2048\" \"powershell -ExecutionPolicy Bypass -File .\\scripts\\queue-persistent.ps1 -Queues imports-high -Memory 1024\" \"powershell -ExecutionPolicy Bypass -File .\\scripts\\queue-persistent.ps1 -Queues snapshots-parallel -Memory 2048\" \"powershell -ExecutionPolicy Bypass -File .\\scripts\\queue-persistent.ps1 -Queues default,reports-low -Memory 1024\" \"powershell -ExecutionPolicy Bypass -File .\\scripts\\schedule-persistent.ps1\" --names=shadow-backfill,import-queue,snapshot-queue,report-queue,scheduler --kill-others"
         ],
         "test": [
             "@php artisan config:clear --ansi",

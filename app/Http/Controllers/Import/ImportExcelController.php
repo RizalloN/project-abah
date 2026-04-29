@@ -443,12 +443,12 @@ class ImportExcelController extends Controller
 
     private function isDailyLoanTable(?string $tableName = null): bool
     {
-        return ($tableName ?? $this->resolveExcelTableName()) === 'daily_loan_dinamis';
+        return strtolower(trim((string) ($tableName ?? $this->resolveExcelTableName()))) === 'daily_loan_dinamis';
     }
 
     private function isSimpananMultiPnTable(?string $tableName = null): bool
     {
-        return ($tableName ?? $this->resolveExcelTableName()) === 'simpanan_multipn';
+        return strtolower(trim((string) ($tableName ?? $this->resolveExcelTableName()))) === 'simpanan_multipn';
     }
 
     private function shouldDisableImportFilters(?string $tableName = null): bool
@@ -469,22 +469,22 @@ class ImportExcelController extends Controller
 
     private function isSsaSimpananTable(?string $tableName = null): bool
     {
-        return ($tableName ?? $this->resolveExcelTableName()) === 'ssa_simpanan';
+        return strtolower(trim((string) ($tableName ?? $this->resolveExcelTableName()))) === 'ssa_simpanan';
     }
 
     private function isSsaPinjamanTable(?string $tableName = null): bool
     {
-        return ($tableName ?? $this->resolveExcelTableName()) === 'ssa_pinjaman';
+        return strtolower(trim((string) ($tableName ?? $this->resolveExcelTableName()))) === 'ssa_pinjaman';
     }
 
     private function isGi405RecDhTable(?string $tableName = null): bool
     {
-        return ($tableName ?? $this->resolveExcelTableName()) === 'gi405_rec_dh';
+        return strtolower(trim((string) ($tableName ?? $this->resolveExcelTableName()))) === 'gi405_rec_dh';
     }
 
     private function isLw325PhTable(?string $tableName = null): bool
     {
-        return ($tableName ?? $this->resolveExcelTableName()) === 'lw325_ph';
+        return strtolower(trim((string) ($tableName ?? $this->resolveExcelTableName()))) === 'lw325_ph';
     }
 
     private function usesSerializedCsvRepair(?string $tableName = null): bool
@@ -2803,6 +2803,9 @@ class ImportExcelController extends Controller
             $uniqueIdCol = $tableColumnsByLower['uniqueid_namareport'] ?? 'uniqueid_namareport';
             $suffix = '';
             $uniqueIdPrefix = 'uuid_405RDH';
+        } elseif ($tableName === 'lw325_ph' && isset($tableColumnsLookup['uniqueid_namareport'])) {
+            $uniqueIdCol = $tableColumnsByLower['uniqueid_namareport'] ?? 'uniqueid_namareport';
+            $suffix = '_RPH';
         } elseif (isset($tableColumnsLookup['uniqueid_namareport'])) {
             $uniqueIdCol = $tableColumnsByLower['uniqueid_namareport'] ?? 'uniqueid_namareport';
         }
@@ -5331,12 +5334,12 @@ class ImportExcelController extends Controller
                     $row = array_slice($row, 0, $expectedColumns);
                 }
 
+                if (!$this->isValidLw325PhDataRow($headerRow, $row)) {
+                    continue;
+                }
+
                 fputcsv($outputHandle, $row, $delimiter, '"', '\\');
                 $writtenRows++;
-
-                if ($jobId > 0 && $writtenRows % 5000 === 0) {
-                    $this->checkJobTermination($jobId);
-                }
             }
         } catch (\Throwable $e) {
             fclose($inputHandle);
@@ -6902,15 +6905,23 @@ class ImportExcelController extends Controller
             $loadBackend = (string) ($loadSource['backend'] ?? 'php');
             $skippedRows = array_values(array_unique(array_map('intval', (array) ($loadSource['skipped_rows'] ?? []))));
             $skippedCount = (int) ($loadSource['skipped_count'] ?? count($skippedRows));
+            $effectiveHeaders = $normalizedHeaders;
+            if (!$isDailyLoanTable && $sourceWasNormalized && !empty($loadSource['headers']) && is_array($loadSource['headers'])) {
+                $effectiveHeaders = array_values(array_filter(
+                    array_map(static fn ($header): string => trim((string) $header), $loadSource['headers']),
+                    static fn (string $header): bool => $header !== ''
+                ));
+            }
+            $effectiveImportOptions = array_merge($importOptions, [
+                'source_backend' => $loadBackend,
+                'source_pre_normalized' => $sourcePreNormalized,
+                'prepared_source' => $loadSource,
+                'delimiter' => (string) $delimiter,
+            ]);
 
             $loadPlan = $isDailyLoanTable
-                ? $this->buildDirectDailyLoanCsvLoadPlan($sourcePath, $normalizedHeaders, array_merge($importOptions, [
-                    'source_backend' => $loadBackend,
-                    'source_pre_normalized' => $sourcePreNormalized,
-                    'prepared_source' => $loadSource,
-                    'delimiter' => (string) $delimiter,
-                ]))
-                : $this->buildDirectGenericCsvLoadPlan($tableName, $sourcePath, $normalizedHeaders, $importOptions);
+                ? $this->buildDirectDailyLoanCsvLoadPlan($sourcePath, $effectiveHeaders, $effectiveImportOptions)
+                : $this->buildDirectGenericCsvLoadPlan($tableName, $sourcePath, $effectiveHeaders, $effectiveImportOptions);
             $baseTotal = !empty($loadSource['written_rows'])
                 ? max(0, (int) $loadSource['written_rows'])
                 : max(0, $estimatedTotalRows - $skippedCount);
@@ -6963,6 +6974,10 @@ class ImportExcelController extends Controller
                 ? $this->executeDirectDailyLoanCsvLoad($sourcePath, $loadPlan)
                 : $this->executeDirectGenericCsvLoad($tableName, $sourcePath, $loadPlan);
 
+            if ($jobId > 0 && $isDailyLoanTable) {
+                $this->rememberDetectedImportPeriods($jobId, $loadPlan['period_hints'] ?? $loadPlan['replace_periods'] ?? []);
+            }
+
             $failed = max(0, $baseTotal - $inserted);
             $status = $failed > 0
                 ? ($inserted > 0 ? 'failed_partial' : 'failed')
@@ -7010,6 +7025,44 @@ class ImportExcelController extends Controller
             if (!empty($loadSource['cleanup']) && !empty($loadSource['path']) && file_exists((string) $loadSource['path'])) {
                 @unlink((string) $loadSource['path']);
             }
+        }
+    }
+
+    private function rememberDetectedImportPeriods(int $jobId, array $periods): void
+    {
+        if ($jobId <= 0) {
+            return;
+        }
+
+        $normalizedPeriods = $this->normalizeDailyLoanReplacePeriods($periods);
+        if ($normalizedPeriods === []) {
+            return;
+        }
+
+        try {
+            $job = $this->progressService()->findJob($jobId);
+            if (!$job) {
+                return;
+            }
+
+            $context = json_decode((string) ($job->job_context ?? ''), true);
+            if (!is_array($context)) {
+                $context = [];
+            }
+
+            $context['backend_detected_periods'] = $normalizedPeriods;
+            $context['detected_periods'] = $normalizedPeriods;
+            $context['table_name'] = $context['table_name'] ?? 'daily_loan_dinamis';
+
+            $this->progressService()->updateJob($jobId, [
+                'job_context' => json_encode($context, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('Failed to persist detected Daily Loan import periods.', [
+                'job_id' => $jobId,
+                'periods' => $normalizedPeriods,
+                'message' => $e->getMessage(),
+            ]);
         }
     }
 
@@ -7441,14 +7494,18 @@ class ImportExcelController extends Controller
                 foreach ($rowGen as $row) {
                     $currentRow++;
                     
-                    if ($currentRow === 1) continue; // Skip header
-                    
-                    if (($currentRow - 1) % $samplingInterval === 0) {
+                    if ($currentRow <= ($headerIndex + 1)) {
+                        continue;
+                    }
+
+                    $dataRowNumber = $currentRow - ($headerIndex + 1);
+                    if ($dataRowNumber % $samplingInterval === 0) {
                         if (count($cleanPreview) >= $previewLimit) {
                             break;
                         }
                         
                         if (!empty(array_filter($row, fn ($v) => ($v !== '' && $v !== null)))) {
+                            $row = $this->normalizeCsvRow($row, $delimiter, $headerCount);
                             $cleanPreview[] = $row;
                             $previewCount++;
                         }
@@ -7467,13 +7524,16 @@ class ImportExcelController extends Controller
                 foreach ($rowGen as $row) {
                     $currentRow++;
                     
-                    if ($currentRow === 1) continue; // Skip header
+                    if ($currentRow <= ($headerIndex + 1)) {
+                        continue;
+                    }
                     
                     if (count($cleanPreview) >= $previewLimit) {
                         break;
                     }
                     
                     if (!empty(array_filter($row, fn ($v) => ($v !== '' && $v !== null)))) {
+                        $row = $this->normalizeCsvRow($row, $delimiter, $headerCount);
                         $cleanPreview[] = $row;
                     }
                 }
@@ -7509,6 +7569,32 @@ class ImportExcelController extends Controller
             'formattedUniqueValues' => $formattedUniqueValues,
             'delimiter' => $delimiter,
         ];
+    }
+
+    private function isValidLw325PhDataRow(array $headers, array $row): bool
+    {
+        $normalizedHeaders = array_map(
+            fn ($value): string => $this->normalizeImportColumnName((string) $value),
+            array_values($headers)
+        );
+
+        $periodeIndex = array_search('periode', $normalizedHeaders, true);
+        $acctnoIndex = array_search('acctno', $normalizedHeaders, true);
+        $rowNumberIndex = array_search('textbox3', $normalizedHeaders, true);
+
+        if ($rowNumberIndex !== false) {
+            $rowNumber = trim((string) ($row[$rowNumberIndex] ?? ''));
+            if ($rowNumber === '' || preg_match('/^\d+$/', $rowNumber) !== 1) {
+                return false;
+            }
+        }
+
+        $periode = $periodeIndex !== false ? trim((string) ($row[$periodeIndex] ?? '')) : '';
+        $acctno = $acctnoIndex !== false ? trim((string) ($row[$acctnoIndex] ?? '')) : '';
+
+        return $periode !== ''
+            && $acctno !== ''
+            && StrictDateParser::normalize($periode) !== null;
     }
 
     private function collectUniqueValuesFromRow(array $row, array $validIndexes, array &$uniqueValues, int $maxUniqueValuesPerColumn, array $normalizedHeaders, array &$normalizedValueCache): void

@@ -543,16 +543,22 @@ class ImportFileController extends Controller
     private function resolveTableName($reportData): string
     {
         $tableName = 'jumlah_merchant_detail';
+        $hasExplicitTableName = false;
 
         if ($reportData) {
             if (!empty($reportData->table_name)) {
                 $tableName = $reportData->table_name;
+                $hasExplicitTableName = true;
             } else {
                 $tableName = strtolower(str_replace(' ', '_', $reportData->nama_report));
             }
         }
 
         if (!DB::getSchemaBuilder()->hasTable($tableName)) {
+            if ($reportData || $hasExplicitTableName) {
+                throw new \RuntimeException("Tabel tujuan import `{$tableName}` tidak ditemukan. Periksa konfigurasi nama_report.table_name.");
+            }
+
             return 'jumlah_merchant_detail';
         }
 

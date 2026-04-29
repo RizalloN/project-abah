@@ -663,7 +663,8 @@ class ImportProgressService
         try {
             DB::table('jobs')
                 ->where('payload', 'like', '%' . class_basename(RunImportJob::class) . '%')
-                ->where('payload', 'like', '%jobId";i:' . $jobId . ';%')
+                ->where('payload', 'like', '%jobId%')
+                ->where('payload', 'like', '%i:' . $jobId . ';%')
                 ->delete();
         } catch (\Throwable $e) {
             Log::warning('Failed to clean queued import job rows: ' . $e->getMessage(), [
@@ -963,7 +964,8 @@ class ImportProgressService
         try {
             return DB::table('jobs')
                 ->where('payload', 'like', '%' . class_basename(RunImportJob::class) . '%')
-                ->where('payload', 'like', '%jobId";i:' . $jobId . ';%')
+                ->where('payload', 'like', '%jobId%')
+                ->where('payload', 'like', '%i:' . $jobId . ';%')
                 ->orderByDesc('id')
                 ->first(['id', 'queue', 'reserved_at', 'available_at', 'created_at']);
         } catch (\Throwable) {

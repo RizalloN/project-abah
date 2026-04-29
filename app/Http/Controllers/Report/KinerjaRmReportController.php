@@ -23,7 +23,7 @@ class KinerjaRmReportController extends Controller
     // Mapping segmen ke product options
     private const SEGMENT_PRODUCT_MAP = [
         'CONSUMER' => ['BRIGUNA-KONSUMER', 'KPR'],
-        'SMALL' => ['SMALL'],
+        'SMALL' => ['COMMERCIAL', 'CASHCALL', 'CASHCOLLATERAL', 'SMALL'],
         'MICRO' => ['BRIGUNA-MIKRO', 'KUPEDES', 'KUR-MIKRO', 'CASHCOLLATERAL', 'KPR', 'KUR-SMALL'],
     ];
     
@@ -55,7 +55,7 @@ class KinerjaRmReportController extends Controller
 
         $currentDate = Carbon::parse($selectedPeriod);
         
-        $yoyPeriod = $this->resolveClosestPeriod(
+        $yoyPeriod = $this->resolveClosestPeriodInMonth(
             $availablePeriods,
             $currentDate->copy()->subYear()
         ) ?? $selectedPeriod;
@@ -165,13 +165,22 @@ class KinerjaRmReportController extends Controller
             return [
                 'periode' => Carbon::parse($latestDate)->translatedFormat('M Y'),
                 'cabang' => $group->first()->cabang,
+                'loan_os' => $loanOs,
+                'lar_value' => $lar,
                 'realisasi_os' => $realisasiOs,
                 'penc_realisasi' => $isRealizA ? 'A' : 'B',
                 'pct_lar' => $pctLar,
                 'penc_lar' => $isLarA ? 'A' : 'B',
                 'sort_date' => $latestDate
             ];
-        })->sortBy('sort_date')->values();
+        })->filter(function (array $detail) {
+            return abs((float) $detail['lar_value']) > 0
+                || abs((float) $detail['realisasi_os']) > 0
+                || abs((float) $detail['pct_lar']) > 0;
+        })->sortBy([
+            ['sort_date', 'desc'],
+            ['cabang', 'asc'],
+        ])->values();
         
         return view('report.kinerjarm-detail-modal', [
             'rm' => $rm,
@@ -184,12 +193,10 @@ class KinerjaRmReportController extends Controller
 
     private function fetchAvailablePeriods(): Collection
     {
-        $cacheKey = 'kinerja_rm_periods_v3:' . $this->reportCacheVersion();
+        $cacheKey = 'kinerja_rm_periods_v4:' . $this->reportCacheVersion();
 
         return Cache::remember($cacheKey, 600, function () {
-            return collect()
-                ->merge($this->fetchPeriodList(self::SOURCE_TABLE, 'periode'))
-                ->merge($this->fetchPeriodList(self::SNAPSHOT_TABLE, 'periode'))
+            return $this->fetchPeriodList(self::SNAPSHOT_TABLE, 'periode')
                 ->unique()
                 ->sortDesc()
                 ->values();
@@ -289,6 +296,19 @@ class KinerjaRmReportController extends Controller
             });
     }
 
+    private function resolveClosestPeriodInMonth(Collection $periods, Carbon $target): ?string
+    {
+        $targetDate = $target->toDateString();
+        $targetMonth = $target->format('Y-m');
+
+        return $periods
+            ->first(function (string $period) use ($targetDate, $targetMonth) {
+                return str_starts_with($period, $targetMonth)
+                    && $period <= $targetDate;
+            })
+            ?? $periods->first(fn (string $period) => str_starts_with($period, $targetMonth));
+    }
+
     private function fetchBranchRows(
         string $segmen,
         string $selectedPeriod,
@@ -300,7 +320,7 @@ class KinerjaRmReportController extends Controller
         ?string $qualityType = null
     ): array
     {
-            $cacheKey = 'kinerja_rm_rows_v9:' . $this->reportCacheVersion() . ':' . md5(json_encode([
+            $cacheKey = 'kinerja_rm_rows_v10:' . $this->reportCacheVersion() . ':' . md5(json_encode([
             'segmen' => $segmen,
             'selected' => $selectedPeriod,
             'yoy' => $yoyPeriod,
@@ -341,10 +361,12 @@ class KinerjaRmReportController extends Controller
                 ->get();
 
             // Always fetch from snapshot (Zero Fallback Policy)
-            $manualTargets = DB::table('performance_targets')
-                ->get()
-                ->groupBy('category')
-                ->map(fn ($items) => $items->keyBy('rm_name'));
+            $manualTargets = Schema::hasTable('performance_targets')
+                ? DB::table('performance_targets')
+                    ->get()
+                    ->groupBy('category')
+                    ->map(fn ($items) => $items->keyBy('rm_name'))
+                : collect();
 
             $branches = [];
             $grandTotals = [
@@ -415,9 +437,13 @@ class KinerjaRmReportController extends Controller
                     ? in_array($row->periode, $averagePeriods, true)
                     : ($row->periode === $selectedPeriod);
 
-                if ($useForRealisasiAverage) {
-                    $pivoted[$key]['realisasi_deb_sum'] += (float) ($row->realisasi_deb ?? 0);
-                    $pivoted[$key]['realisasi_os_sum'] += (float) ($row->realisasi_os ?? 0);
+                $realisasiDeb = (float) ($row->realisasi_deb ?? 0);
+                $realisasiOs = (float) ($row->realisasi_os ?? 0);
+                $hasRealisasiValue = abs($realisasiDeb) > 0 || abs($realisasiOs) > 0;
+
+                if ($useForRealisasiAverage && $hasRealisasiValue) {
+                    $pivoted[$key]['realisasi_deb_sum'] += $realisasiDeb;
+                    $pivoted[$key]['realisasi_os_sum'] += $realisasiOs;
                     $pivoted[$key]['realisasi_period_count']++;
                 }
 
@@ -511,6 +537,12 @@ class KinerjaRmReportController extends Controller
                 $target = $this->resolveManualTargetForProduct($manualTargets, $productLabel, $nameOnly);
                 $tDeb = (int) ($target['target_jg_deb'] ?? 0);
                 $tOs = (float) ($target['target_jg_os'] ?? 0.0);
+                $achDeb = $data['realisasi_period_count'] > 0
+                    ? (int) round($data['realisasi_deb_sum'] / $data['realisasi_period_count'])
+                    : null;
+                $achOs = $data['realisasi_period_count'] > 0
+                    ? ($data['realisasi_os_sum'] / $data['realisasi_period_count'])
+                    : null;
 
                 $item = [
                     'segmen' => $segmen,
@@ -525,8 +557,8 @@ class KinerjaRmReportController extends Controller
                     'delta_mtd' => $data['curr'] - $data['mtd'],
                     'target_jg_deb' => $tDeb,
                     'target_jg_os' => $tOs,
-                    'ach_deb' => $data['realisasi_period_count'] > 0 ? ($data['realisasi_deb_sum'] / $data['realisasi_period_count']) : null,
-                    'ach_os' => $data['realisasi_period_count'] > 0 ? ($data['realisasi_os_sum'] / $data['realisasi_period_count']) : null,
+                    'ach_deb' => $achDeb,
+                    'ach_os' => $achOs,
                     'ach_has_data' => $data['realisasi_period_count'] > 0,
                     'lar_pct' => $data['lar_has_data'] ? $data['lar_pct'] : null,
                     'lar_has_data' => $data['lar_has_data'],
@@ -546,10 +578,8 @@ class KinerjaRmReportController extends Controller
                 $branches[$cabangKey]['subtotal']['target_jg_os'] += $tOs;
                 if ($data['realisasi_period_count'] > 0) {
                     $branches[$cabangKey]['subtotal']['ach_count']++;
-                    $achDeb = $data['realisasi_deb_sum'] / $data['realisasi_period_count'];
-                    $achOs = $data['realisasi_os_sum'] / $data['realisasi_period_count'];
-                    $branches[$cabangKey]['subtotal']['ach_deb'] = ($branches[$cabangKey]['subtotal']['ach_deb'] ?? 0) + $achDeb;
-                    $branches[$cabangKey]['subtotal']['ach_os'] = ($branches[$cabangKey]['subtotal']['ach_os'] ?? 0.0) + $achOs;
+                    $branches[$cabangKey]['subtotal']['ach_deb'] = ($branches[$cabangKey]['subtotal']['ach_deb'] ?? 0) + (int) $achDeb;
+                    $branches[$cabangKey]['subtotal']['ach_os'] = ($branches[$cabangKey]['subtotal']['ach_os'] ?? 0.0) + (float) $achOs;
                 }
                 $branches[$cabangKey]['subtotal']['lar_loan_os'] = ($branches[$cabangKey]['subtotal']['lar_loan_os'] ?? 0.0) + $data['lar_loan_os'];
                 $branches[$cabangKey]['subtotal']['lar_value'] = ($branches[$cabangKey]['subtotal']['lar_value'] ?? 0.0) + $data['lar_value'];
@@ -567,10 +597,8 @@ class KinerjaRmReportController extends Controller
                 $grandTotals['target_jg_os'] += $tOs;
                 if ($data['realisasi_period_count'] > 0) {
                     $grandTotals['ach_count']++;
-                    $achDeb = $data['realisasi_deb_sum'] / $data['realisasi_period_count'];
-                    $achOs = $data['realisasi_os_sum'] / $data['realisasi_period_count'];
-                    $grandTotals['ach_deb'] = ($grandTotals['ach_deb'] ?? 0) + $achDeb;
-                    $grandTotals['ach_os'] = ($grandTotals['ach_os'] ?? 0.0) + $achOs;
+                    $grandTotals['ach_deb'] = ($grandTotals['ach_deb'] ?? 0) + (int) $achDeb;
+                    $grandTotals['ach_os'] = ($grandTotals['ach_os'] ?? 0.0) + (float) $achOs;
                 }
                 $grandTotals['lar_loan_os'] = ($grandTotals['lar_loan_os'] ?? 0.0) + $data['lar_loan_os'];
                 $grandTotals['lar_value'] = ($grandTotals['lar_value'] ?? 0.0) + $data['lar_value'];
@@ -586,25 +614,29 @@ class KinerjaRmReportController extends Controller
                 $branches[$key]['subtotal']['delta_ytd'] = $b_curr - $branches[$key]['subtotal']['ytd'];
                 $branches[$key]['subtotal']['delta_mtd'] = $b_curr - $branches[$key]['subtotal']['mtd'];
                 $branches[$key]['subtotal']['ach_deb'] = ($branches[$key]['subtotal']['ach_count'] ?? 0) > 0
-                    ? ($branches[$key]['subtotal']['ach_deb'] ?? 0)
+                    ? (int) ($branches[$key]['subtotal']['ach_deb'] ?? 0)
                     : null;
                 $branches[$key]['subtotal']['ach_os'] = ($branches[$key]['subtotal']['ach_count'] ?? 0) > 0
                     ? ($branches[$key]['subtotal']['ach_os'] ?? 0)
                     : null;
                 $branches[$key]['subtotal']['lar_pct'] = ($branches[$key]['subtotal']['lar_count'] ?? 0) > 0
+                    && (float) ($branches[$key]['subtotal']['lar_loan_os'] ?? 0) > 0
                     ? ((($branches[$key]['subtotal']['lar_value'] ?? 0) / $branches[$key]['subtotal']['lar_loan_os']) * 100)
                     : null;
             }
 
             $grandTotals['ach_deb'] = ($grandTotals['ach_count'] ?? 0) > 0
-                ? ($grandTotals['ach_deb'] ?? 0)
+                ? (int) ($grandTotals['ach_deb'] ?? 0)
                 : null;
             $grandTotals['ach_os'] = ($grandTotals['ach_count'] ?? 0) > 0
                 ? ($grandTotals['ach_os'] ?? 0)
                 : null;
             $grandTotals['lar_pct'] = ($grandTotals['lar_count'] ?? 0) > 0
+                && (float) ($grandTotals['lar_loan_os'] ?? 0) > 0
                 ? ((($grandTotals['lar_value'] ?? 0) / $grandTotals['lar_loan_os']) * 100)
                 : null;
+
+            $branches = $this->sortKinerjaRmBranches($branches, $segmen);
 
             $totalRecord = [
                 'segmen' => $segmen,
@@ -632,6 +664,48 @@ class KinerjaRmReportController extends Controller
                 'total' => $totalRecord,
             ];
         });
+    }
+
+    private function sortKinerjaRmBranches(array $branches, string $segmen): array
+    {
+        uksort($branches, fn (string $left, string $right): int => strnatcasecmp($left, $right));
+
+        foreach ($branches as $branchKey => $branch) {
+            $rms = (array) ($branch['rms'] ?? []);
+            uksort($rms, fn (string $left, string $right): int => strnatcasecmp($left, $right));
+
+            foreach ($rms as $rmKey => $rmData) {
+                $items = array_values((array) ($rmData['items'] ?? []));
+                usort($items, function (array $left, array $right) use ($segmen): int {
+                    $leftOrder = $this->productSortOrder((string) ($left['product'] ?? ''), $segmen);
+                    $rightOrder = $this->productSortOrder((string) ($right['product'] ?? ''), $segmen);
+
+                    return $leftOrder === $rightOrder
+                        ? strnatcasecmp((string) ($left['product'] ?? ''), (string) ($right['product'] ?? ''))
+                        : $leftOrder <=> $rightOrder;
+                });
+
+                $rms[$rmKey]['items'] = $items;
+                $rms[$rmKey]['rm_rowspan'] = count($items);
+            }
+
+            $branches[$branchKey]['rms'] = $rms;
+            $branches[$branchKey]['branch_rowspan'] = 1 + array_sum(array_map(
+                static fn (array $rmData): int => max(0, (int) ($rmData['rm_rowspan'] ?? 0)),
+                $rms
+            ));
+        }
+
+        return $branches;
+    }
+
+    private function productSortOrder(string $product, string $segmen): int
+    {
+        $orderedProducts = self::SEGMENT_PRODUCT_MAP[$segmen] ?? [];
+        $normalized = $this->normalizeProductLabel($product, $segmen) ?? strtoupper(trim($product));
+        $position = array_search($normalized, $orderedProducts, true);
+
+        return $position === false ? 999 : (int) $position;
     }
 
     private function reportCacheVersion(): int
@@ -725,7 +799,10 @@ class KinerjaRmReportController extends Controller
         return match ($product) {
             'BRIGUNA-KONSUMER' => ['Briguna-Konsumer', 'BRIGUNA-KONSUMER'],
             'KPR' => ['KPR'],
-            'SMALL' => ['Commercial', 'COMMERCIAL', 'Cashcall', 'CASHCALL', 'Cash Collateral', 'CashCollateral', 'CASHCOLLATERAL', 'Cashcoll', 'CASHCOLL'],
+            'SMALL' => ['Commercial', 'COMMERCIAL', 'Cashcall', 'CASHCALL', 'Cash Collateral', 'CashCollateral', 'CASHCOLLATERAL'],
+            'COMMERCIAL' => ['Commercial', 'COMMERCIAL'],
+            'CASHCALL' => ['Cashcall', 'CASHCALL'],
+            'CASHCOLLATERAL' => ['Cash Collateral', 'CashCollateral', 'CASHCOLLATERAL', 'Cashcoll', 'CASHCOLL'],
             'BRIGUNA-MIKRO' => ['Briguna-Mikro', 'BRIGUNA-MIKRO'],
             'KUPEDES' => ['Kupedes', 'KUPEDES'],
             'KUR-MIKRO' => ['KUR-Mikro', 'KUR-MIKRO'],
@@ -748,7 +825,8 @@ class KinerjaRmReportController extends Controller
         }
 
         return match ($normalized) {
-            'SMALL' => ['SMALL', 'COMMERCIAL', 'CASHCALL', 'CASHCOLLATERAL', 'CASHCOLL'],
+            'SMALL' => ['SMALL', 'COMMERCIAL', 'CASHCALL', 'CASHCOLLATERAL'],
+            'CASHCOLLATERAL' => ['CASHCOLLATERAL', 'CASHCOLL'],
             default => [$normalized],
         };
     }
@@ -1029,10 +1107,9 @@ class KinerjaRmReportController extends Controller
                 'KPR' => 'KPR',
             ],
             'SMALL' => [
-                'COMMERCIAL' => 'SMALL',
-                'CASHCALL' => 'SMALL',
-                'CASHCOLLATERAL' => 'SMALL',
-                'CASHCOLL' => 'SMALL',
+                'COMMERCIAL' => 'COMMERCIAL',
+                'CASHCALL' => 'CASHCALL',
+                'CASHCOLLATERAL' => 'CASHCOLLATERAL',
                 'SMALL' => 'SMALL',
             ],
             'MICRO' => [
@@ -1081,11 +1158,38 @@ class KinerjaRmReportController extends Controller
             return null;
         }
 
-        try {
-            return Carbon::parse($value)->toDateString();
-        } catch (\Throwable) {
+        $strict = StrictDateParser::normalize($value);
+        if ($strict !== null) {
+            return $strict;
+        }
+
+        $clamped = $this->normalizeInvalidMonthEndDate($value);
+        if ($clamped !== null) {
+            return $clamped;
+        }
+
+        return null;
+    }
+
+    private function normalizeInvalidMonthEndDate(string $value): ?string
+    {
+        if (preg_match('/^(\d{2})(\d{2})(\d{4})$/', $value, $matches) !== 1) {
             return null;
         }
+
+        $day = (int) $matches[1];
+        $month = (int) $matches[2];
+        $year = (int) $matches[3];
+
+        if ($year < 1900 || $year > 2100 || $month < 1 || $month > 12 || $day < 1) {
+            return null;
+        }
+
+        $endOfMonth = Carbon::create($year, $month, 1)->endOfMonth();
+
+        return $day > $endOfMonth->day
+            ? $endOfMonth->toDateString()
+            : null;
     }
 
     private function normalizeNumericValue(mixed $value): ?float

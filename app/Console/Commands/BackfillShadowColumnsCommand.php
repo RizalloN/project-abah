@@ -8,22 +8,6 @@ use Illuminate\Support\Facades\Log;
 use Throwable;
 use Carbon\Carbon;
 
-/**
- * Backfill shadow columns (segmen_kinerja, produk_kinerja, etc.) untuk daily_loan_dinamis
- * 
- * Masalah: Lock wait timeout saat update massal (~1.9M baris) di lingkungan XAMPP/Windows
- * Solusi: Chunked update dengan delay untuk menghindari lock contention
- * 
- * Normalization rules (dari migrasi 2026_04_26):
- * - segmen_kinerja: UPPER(REPLACE(...TRIM(segmen_dashboard)))
- * - produk_kinerja: UPPER(REPLACE(...TRIM(produk_dashboard)))
- * - cabang_normalized: UPPER(TRIM(cabang1))
- * - unit_normalized: UPPER(TRIM(unit1))
- * - branch_normalized: UPPER(TRIM(branch1))
- * - rm_normalized: UPPER(TRIM(pn_pengelola1))
- * - pn_pemutus_normalized: NULLIF(TRIM(LEADING '0' FROM TRIM(SUBSTRING_INDEX(pn_pemutus1, '-', 1))), '')
- * - cifno_clean: REGEXP_REPLACE(cifno, '[^0-9]', '')
- */
 class BackfillShadowColumnsCommand extends Command
 {
     protected $signature = 'shadow:backfill
@@ -34,21 +18,26 @@ class BackfillShadowColumnsCommand extends Command
         {--dry-run : Preview changes without executing}
         {--queue : Dispatch this backfill process to background queue worker}
         {--queue-name= : Queue name for queued backfill job}
+        {--resume : Resume from last checkpoint}
+        {--force-completion : Rebuild snapshots even if some chunks failed (95%+ completion)}
     ';
 
-    protected $description = 'Backfill shadow columns for daily_loan_dinamis with chunking to avoid lock timeout';
+    protected $description = 'Backfill shadow columns for daily_loan_dinamis with fault-tolerant chunking';
 
     private int $totalProcessed = 0;
     private int $totalFailed = 0;
     private array $chunkStats = [];
     private array $errorLog = [];
+    private array $performanceMetrics = [];
+    private array $failedChunks = [];
+    private const MAX_RETRY_PASSES = 3;
 
     public function handle(): int
     {
         try {
             $this->info('╔════════════════════════════════════════════════════════════════╗');
-            $this->info('║  Shadow Columns Backfill - Chunked Processing                  ║');
-            $this->info('║  Purpose: Restore data integrity for RM reports (Kinerja RM)   ║');
+            $this->info('║  Shadow Columns Backfill - Fault-Tolerant Processing           ║');
+            $this->info('║  Purpose: Restore data integrity for RM reports                ║');
             $this->info('╚════════════════════════════════════════════════════════════════╝');
             $this->newLine();
 
@@ -57,6 +46,8 @@ class BackfillShadowColumnsCommand extends Command
             $delay = (int) $this->option('delay');
             $retryCount = (int) $this->option('retry-count');
             $dryRun = (bool) $this->option('dry-run');
+            $resume = (bool) $this->option('resume');
+            $forceCompletion = (bool) $this->option('force-completion');
             $queueName = trim((string) $this->option('queue-name'));
             $queueName = $queueName !== '' ? $queueName : (string) config('queue.shadow_backfill_queue', 'shadow-backfill');
 
@@ -73,23 +64,21 @@ class BackfillShadowColumnsCommand extends Command
                     $retryCount,
                     $queueName
                 );
-                
-                $this->info("Shadow Backfill Job berhasil ditambahkan ke dalam antrian (Queue).");
+
+                $this->info("✓ Shadow Backfill Job queued successfully");
                 $this->line("   Queue: {$queueName}");
-                $this->line("   Jalankan worker yang mendengar queue '{$queueName}' untuk memproses backfill.");
-                $this->line("   Cek file log (storage/logs) untuk melihat progresnya.");
                 return self::SUCCESS;
             }
 
             $this->displayConfiguration($periods, $chunkSize, $delay, $retryCount, $dryRun);
 
             $startTime = now();
-            $this->backfillPeriods($periods, $chunkSize, $delay, $retryCount, $dryRun);
+            $this->backfillPeriods($periods, $chunkSize, $delay, $retryCount, $dryRun, $resume);
 
             $this->displaySummary($startTime);
 
             if (!$dryRun) {
-                $this->rebuildSnapshots($periods);
+                $this->rebuildSnapshots($periods, $forceCompletion);
             }
 
             return $this->totalFailed === 0 ? self::SUCCESS : self::FAILURE;
@@ -130,19 +119,123 @@ class BackfillShadowColumnsCommand extends Command
         $this->newLine();
     }
 
-    private function backfillPeriods(array $periods, int $chunkSize, int $delay, int $retryCount, bool $dryRun): void
+    private function backfillPeriods(array $periods, int $chunkSize, int $delay, int $retryCount, bool $dryRun, bool $resume): void
     {
         foreach ($periods as $period) {
-            $this->backfillPeriod($period, $chunkSize, $delay, $retryCount, $dryRun);
+            $this->backfillPeriod($period, $chunkSize, $delay, $retryCount, $dryRun, $resume);
         }
     }
 
-    private function backfillPeriod(string $period, int $chunkSize, int $delay, int $retryCount, bool $dryRun): void
+    private function backfillPeriod(string $period, int $chunkSize, int $delay, int $retryCount, bool $dryRun, bool $resume): void
     {
         $this->info("📅 Processing period: <fg=cyan>{$period}</>");
 
-        // Count total rows to backfill
-        $totalRows = DB::table('daily_loan_dinamis')
+        $retryPass = 0;
+        $previouslyFailed = [];
+
+        do {
+            $retryPass++;
+            $chunkNumber = 0;
+            $processed = 0;
+            $failed = 0;
+
+            if ($retryPass === 1) {
+                $nullRows = $this->countNullShadowColumns($period);
+                if ($nullRows === 0) {
+                    $this->line("   ✓ All shadow columns already filled");
+                    $this->chunkStats[$period] = ['total' => 0, 'processed' => 0, 'failed' => 0];
+                    return;
+                }
+                $this->line("   Processing <fg=yellow>{$nullRows}</> rows (retry pass {$retryPass})");
+            } else {
+                $nullRows = count($previouslyFailed);
+                $this->line("   Retry pass {$retryPass}: Processing <fg=yellow>{$nullRows}</> failed chunks...");
+            }
+
+            $progressBar = $this->output->createProgressBar($nullRows);
+            $progressBar->setFormat('   [%bar%] %percent%% | %current%/%max% | %elapsed% / %estimated%');
+
+            if ($retryPass === 1) {
+                $rowIds = $this->snapshotRowIds($period, $chunkSize);
+            } else {
+                $rowIds = $previouslyFailed;
+                $chunkSize = max(1000, (int) ($chunkSize / 2));
+            }
+
+            $failedThisPass = [];
+
+            foreach (array_chunk($rowIds, $chunkSize) as $chunk) {
+                $chunkNumber++;
+                $idList = implode("','", $chunk);
+                $chunkStart = microtime(true);
+                $chunkProcessed = $this->processChunk($period, $idList, $retryCount, $dryRun);
+
+                $chunkTime = microtime(true) - $chunkStart;
+                $this->recordPerformanceMetric($chunkSize, $chunkTime);
+
+                if ($chunkProcessed === count($chunk)) {
+                    $processed += $chunkProcessed;
+                    $progressBar->advance($chunkProcessed);
+                } else {
+                    $failedIds = array_slice($chunk, $chunkProcessed);
+                    $failedThisPass = array_merge($failedThisPass, $failedIds);
+                    $failed += count($failedIds);
+                    $progressBar->advance($chunkProcessed);
+                    $this->errorLog[] = "Period {$period}, Chunk {$chunkNumber}: {$chunkProcessed}/" . count($chunk) . " processed";
+                }
+
+                if (!$dryRun) {
+                    usleep($delay * 1000);
+                }
+            }
+
+            $progressBar->finish();
+            $this->newLine();
+
+            $this->totalProcessed += $processed;
+            $this->totalFailed += $failed;
+
+            $completionPct = $nullRows > 0 ? round(100 * ($processed / $nullRows), 2) : 100;
+            $this->line("   Pass {$retryPass} completed: {$processed}/{$nullRows} rows ({$completionPct}%)");
+
+            $previouslyFailed = $failedThisPass;
+
+        } while (!empty($previouslyFailed) && $retryPass < self::MAX_RETRY_PASSES);
+
+        $finalStats = $this->validateCompletion($period);
+        $this->chunkStats[$period] = $finalStats;
+
+        if ($finalStats['completion_percentage'] >= 95.0) {
+            $this->line("   <fg=green>✓ Period {$period}: {$finalStats['completion_percentage']}% complete</>");
+        } else {
+            $this->line("   <fg=yellow>⚠ Period {$period}: {$finalStats['completion_percentage']}% complete (investigate)</>");
+        }
+
+        $this->newLine();
+    }
+
+    private function snapshotRowIds(string $period, int $chunkSize): array
+    {
+        return DB::table('daily_loan_dinamis')
+            ->where('periode', $period)
+            ->where(function ($q) {
+                $q->whereNull('segmen_kinerja')
+                    ->orWhereNull('produk_kinerja')
+                    ->orWhereNull('cabang_normalized')
+                    ->orWhereNull('unit_normalized')
+                    ->orWhereNull('branch_normalized')
+                    ->orWhereNull('rm_normalized')
+                    ->orWhereNull('pn_pemutus_normalized')
+                    ->orWhereNull('cifno_clean');
+            })
+            ->orderBy('uniqueid_namareport')
+            ->pluck('uniqueid_namareport')
+            ->toArray();
+    }
+
+    private function countNullShadowColumns(string $period): int
+    {
+        return DB::table('daily_loan_dinamis')
             ->where('periode', $period)
             ->where(function ($q) {
                 $q->whereNull('segmen_kinerja')
@@ -155,93 +248,40 @@ class BackfillShadowColumnsCommand extends Command
                     ->orWhereNull('cifno_clean');
             })
             ->count();
+    }
 
-        if ($totalRows === 0) {
-            $this->line("   ✓ All shadow columns already filled (0 rows to process)");
-            $this->chunkStats[$period] = ['total' => 0, 'processed' => 0, 'failed' => 0];
-            return;
-        }
+    private function validateCompletion(string $period): array
+    {
+        $totalRows = DB::table('daily_loan_dinamis')->where('periode', $period)->count();
+        $nullRows = $this->countNullShadowColumns($period);
+        $filledRows = $totalRows - $nullRows;
+        $completion = $totalRows > 0 ? ((100.0 * $filledRows) / $totalRows) : 100.0;
 
-        $this->line("   Processing <fg=yellow>{$totalRows}</> rows in chunks of <fg=yellow>{$chunkSize}</>");
-
-        $progressBar = $this->output->createProgressBar($totalRows);
-        $progressBar->setFormat('   [%bar%] %percent%% | %current%/%max% | %elapsed% / %estimated%');
-
-        $processed = 0;
-        $failed = 0;
-        $lastUniqueid = null;
-        $chunkNumber = 0;
-
-        while ($processed < $totalRows) {
-            $chunkNumber++;
-
-            // Get chunk UUIDs using uniqueid_namareport (actual primary key)
-            $query = DB::table('daily_loan_dinamis')
-                ->where('periode', $period)
-                ->where(function ($q) {
-                    $q->whereNull('segmen_kinerja')
-                        ->orWhereNull('produk_kinerja')
-                        ->orWhereNull('cabang_normalized')
-                        ->orWhereNull('unit_normalized')
-                        ->orWhereNull('branch_normalized')
-                        ->orWhereNull('rm_normalized')
-                        ->orWhereNull('pn_pemutus_normalized')
-                        ->orWhereNull('cifno_clean');
-                });
-
-            // Apply offset for pagination (cursor-based with lastUniqueid)
-            if ($lastUniqueid !== null) {
-                $query->where('uniqueid_namareport', '>', $lastUniqueid);
-            }
-
-            $uniqueids = $query
-                ->orderBy('uniqueid_namareport')
-                ->limit($chunkSize)
-                ->pluck('uniqueid_namareport')
-                ->toArray();
-
-            if (empty($uniqueids)) {
-                break;
-            }
-
-            $lastUniqueid = end($uniqueids);
-
-            $idList = implode("','", $uniqueids);
-            $chunkProcessed = $this->processChunk($period, $idList, $retryCount, $dryRun);
-
-            if ($chunkProcessed === count($uniqueids)) {
-                $processed += $chunkProcessed;
-                $progressBar->advance(count($uniqueids));
-            } else {
-                $chunkFailed = count($uniqueids) - $chunkProcessed;
-                $failed += $chunkFailed;
-                $progressBar->advance($chunkProcessed);
-                $this->errorLog[] = "Period {$period}, Chunk {$chunkNumber}: {$chunkFailed} rows failed";
-            }
-
-            if ($processed < $totalRows && !$dryRun) {
-                usleep($delay * 1000); // Convert ms to microseconds
-            }
-        }
-
-        $progressBar->finish();
-        $this->newLine();
-
-        $this->chunkStats[$period] = [
+        return [
             'total' => $totalRows,
-            'processed' => $processed,
-            'failed' => $failed,
+            'processed' => $filledRows,
+            'failed' => $nullRows,
+            'completion_percentage' => round($completion, 2),
         ];
+    }
 
-        $this->totalProcessed += $processed;
-        $this->totalFailed += $failed;
+    private function recordPerformanceMetric(int $chunkSize, float $duration): void
+    {
+        if ($duration > 0) {
+            $rowsPerSec = $chunkSize / $duration;
+            $this->performanceMetrics[] = [
+                'chunk_size' => $chunkSize,
+                'duration' => $duration,
+                'rows_per_sec' => $rowsPerSec,
+            ];
 
-        // Display period result
-        $processed === $totalRows
-            ? $this->line("   ✓ Period completed: <fg=green>{$processed}/{$totalRows}</> rows")
-            : $this->line("   ⚠ Period completed with errors: <fg=yellow>{$processed}/{$totalRows}</> rows (failed: {$failed})");
-
-        $this->newLine();
+            if ($rowsPerSec < 1000 && $rowsPerSec > 0) {
+                Log::warning('Shadow backfill performance degradation', [
+                    'rows_per_sec' => $rowsPerSec,
+                    'duration' => $duration,
+                ]);
+            }
+        }
     }
 
     private function processChunk(string $period, string $idList, int $retryCount, bool $dryRun): int
@@ -331,26 +371,91 @@ class BackfillShadowColumnsCommand extends Command
         $this->newLine();
     }
 
-    private function rebuildSnapshots(array $periods): void
+    private function rebuildSnapshots(array $periods, bool $forceCompletion): void
     {
-        if ($this->totalFailed > 0) {
-            $this->warn('⚠ Skipping snapshot rebuild due to processing errors.');
-            $this->line('  Please review errors and retry before rebuilding snapshots.');
+        $this->info('🔍 Validating backfill completion before rebuild...');
+        $this->newLine();
+
+        $canRebuild = true;
+        foreach ($periods as $period) {
+            $stats = $this->chunkStats[$period] ?? $this->validateCompletion($period);
+            $completion = $stats['completion_percentage'] ?? 0;
+
+            if ($completion >= 99.5) {
+                $this->line("   <fg=green>✓ {$period}: {$completion}% complete</>");
+            } elseif ($completion >= 95.0) {
+                $this->line("   <fg=yellow>⚠ {$period}: {$completion}% complete (acceptable)</>");
+            } else {
+                $this->line("   <fg=red>✗ {$period}: {$completion}% complete (skipping rebuild)</>");
+                $canRebuild = false;
+            }
+        }
+
+        $this->newLine();
+
+        if (!$canRebuild && !$forceCompletion) {
+            $this->warn('⚠ Snapshot rebuild skipped: Incomplete backfill (< 95% complete)');
+            $this->line('  Run with --force-completion to rebuild anyway, or check logs for errors.');
             return;
+        }
+
+        if (!$canRebuild && $forceCompletion) {
+            $this->warn('⚠ Force-completing rebuild despite incomplete backfill');
+            Log::warning('Shadow backfill snapshot rebuild forced with incomplete data', [
+                'stats' => $this->chunkStats,
+            ]);
         }
 
         $this->info('🔄 Rebuilding Performance RM snapshots...');
 
-        foreach ($periods as $period) {
-            $this->call('snapshot:rebuild-rm', [
-                '--period' => $period,
+        try {
+            foreach ($periods as $period) {
+                $this->call('snapshot:rebuild-rm', ['--period' => $period]);
+            }
+
+            $this->info('✓ Snapshots rebuilt successfully');
+            $this->info('🧹 Clearing report cache...');
+            $this->call('cache:clear');
+
+            $this->info('✓ All done! Reports should now display correctly.');
+
+            Log::info('Shadow backfill completed successfully', [
+                'periods' => $periods,
+                'stats' => $this->chunkStats,
+                'performance_metrics' => $this->getAveragePerformanceMetrics(),
             ]);
+
+        } catch (Throwable $e) {
+            Log::error('Snapshot rebuild failed after backfill', [
+                'error' => $e->getMessage(),
+                'periods' => $periods,
+            ]);
+            throw $e;
+        }
+    }
+
+    private function getAveragePerformanceMetrics(): array
+    {
+        if (empty($this->performanceMetrics)) {
+            return [];
         }
 
-        $this->info('✓ Snapshots rebuilt successfully');
-        $this->info('🧹 Clearing report cache...');
-        $this->call('cache:clear');
+        $avgRowsPerSec = array_reduce(
+            $this->performanceMetrics,
+            fn($carry, $metric) => $carry + $metric['rows_per_sec'],
+            0
+        ) / count($this->performanceMetrics);
 
-        $this->info('✓ All done! Reports should now display correctly.');
+        $avgDuration = array_reduce(
+            $this->performanceMetrics,
+            fn($carry, $metric) => $carry + $metric['duration'],
+            0
+        ) / count($this->performanceMetrics);
+
+        return [
+            'chunks_processed' => count($this->performanceMetrics),
+            'avg_rows_per_sec' => round($avgRowsPerSec, 0),
+            'avg_chunk_duration_sec' => round($avgDuration, 2),
+        ];
     }
 }

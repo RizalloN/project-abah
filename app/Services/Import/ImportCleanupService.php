@@ -5,6 +5,7 @@ namespace App\Services\Import;
 use App\Jobs\SyncImportedReportJob;
 use App\Support\ReportDataSyncService;
 use App\Support\SnapshotBatchAggregator;
+use App\Support\StrictDateParser;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -12,12 +13,20 @@ use Illuminate\Support\Facades\Log;
 class ImportCleanupService
 {
     private const SYNC_PENDING_TTL_MINUTES = 15;
+    private const SYNC_STALE_PENDING_SECONDS = 60;
     private const SYNC_COORDINATOR_LOCK_SECONDS = 5;
     private const DEFAULT_SYNC_QUEUE = 'default';
     private const DAILY_LOAN_SYNC_QUEUE = 'imports-high';
     private const DAILY_LOAN_TABLE = 'daily_loan_dinamis';
     private const DAILY_LOAN_REPORT_ID = 8;
     private const SSA_TABLES = ['ssa_simpanan', 'ssa_pinjaman'];
+    private const IMMEDIATE_SYNC_TABLES = [
+        self::DAILY_LOAN_TABLE,
+        'ssa_simpanan',
+        'ssa_pinjaman',
+        'lw325_ph',
+        'performance_pis_per_produk',
+    ];
     private const LIGHTWEIGHT_SYNC_TABLES = [
         'jumlah_merchant_detail',
         'sv_merchant',
@@ -68,8 +77,7 @@ class ImportCleanupService
 
         $periodHints = $this->resolveSyncPeriodHints($jobId, $periodHint, $normalizedTableName);
 
-        if ($normalizedTableName === self::DAILY_LOAN_TABLE
-            || in_array($normalizedTableName, self::SSA_TABLES, true)
+        if ($this->shouldDispatchSyncImmediately($normalizedTableName)
             || $this->isLightweightSyncTable($normalizedTableName)
         ) {
             foreach ($periodHints as $resolvedPeriodHint) {
@@ -132,17 +140,44 @@ class ImportCleanupService
     {
         $normalizedTableName = $this->normalizeSyncScopeValue($tableName)
             ?? $this->resolveJobTableName($jobId);
+        if ($normalizedTableName === null) {
+            return;
+        }
+
         $resolvedQueue = $this->resolveSyncQueue($queue, $normalizedTableName, $jobId);
 
-        $pendingKey = $this->syncPendingKey((string) $normalizedTableName, $periodHint);
-        $rerunKey = $this->syncRerunKey((string) $normalizedTableName, $periodHint);
-        $lock = Cache::lock($this->syncCoordinatorLockKey((string) $normalizedTableName, $periodHint), self::SYNC_COORDINATOR_LOCK_SECONDS);
+        $pendingKey = $this->syncPendingKey($normalizedTableName, $periodHint);
+        $rerunKey = $this->syncRerunKey($normalizedTableName, $periodHint);
+        $lock = Cache::lock($this->syncCoordinatorLockKey($normalizedTableName, $periodHint), self::SYNC_COORDINATOR_LOCK_SECONDS);
 
         try {
             $lock->block(2, function () use ($jobId, $normalizedTableName, $periodHint, $source, $pendingKey, $rerunKey, $resolvedQueue): void {
                 if (Cache::add($pendingKey, now()->toIso8601String(), now()->addMinutes(self::SYNC_PENDING_TTL_MINUTES))) {
                     SyncImportedReportJob::dispatch($jobId > 0 ? $jobId : null, $normalizedTableName, $periodHint, $source)
                         ->onQueue($resolvedQueue);
+                    return;
+                }
+
+                $pendingSince = Cache::get($pendingKey);
+                if ($this->isPendingMarkerStillFresh($pendingSince)) {
+                    Cache::put($rerunKey, $resolvedQueue, now()->addMinutes(self::SYNC_PENDING_TTL_MINUTES));
+                    return;
+                }
+
+                if (!$this->hasActiveQueuedSyncJob($normalizedTableName, $periodHint)) {
+                    Cache::put($pendingKey, now()->toIso8601String(), now()->addMinutes(self::SYNC_PENDING_TTL_MINUTES));
+                    Cache::forget($rerunKey);
+
+                    SyncImportedReportJob::dispatch($jobId > 0 ? $jobId : null, $normalizedTableName, $periodHint, $source)
+                        ->onQueue($resolvedQueue);
+
+                    Log::warning('Recovered stale snapshot sync pending marker by dispatching a fresh job.', [
+                        'table_name' => $normalizedTableName,
+                        'period_hint' => $periodHint,
+                        'job_id' => $jobId,
+                        'queue' => $resolvedQueue,
+                    ]);
+
                     return;
                 }
 
@@ -225,6 +260,11 @@ class ImportCleanupService
         return in_array(strtolower(trim($tableName)), self::LIGHTWEIGHT_SYNC_TABLES, true);
     }
 
+    private function shouldDispatchSyncImmediately(string $tableName): bool
+    {
+        return in_array(strtolower(trim($tableName)), self::IMMEDIATE_SYNC_TABLES, true);
+    }
+
     private function resolveJobTableName(int $jobId): ?string
     {
         if ($jobId <= 0) {
@@ -271,7 +311,7 @@ class ImportCleanupService
     {
         $normalizedPeriodHint = trim((string) $periodHint);
         if ($normalizedPeriodHint !== '') {
-            return [$normalizedPeriodHint];
+            return [$this->normalizeSnapshotPeriodHint($normalizedPeriodHint) ?? $normalizedPeriodHint];
         }
 
         if ($jobId <= 0) {
@@ -297,7 +337,8 @@ class ImportCleanupService
             foreach ($periods as $period) {
                 $value = trim((string) $period);
                 if ($value !== '') {
-                    $normalized[$value] = $value;
+                    $normalizedValue = $this->normalizeSnapshotPeriodHint($value) ?? $value;
+                    $normalized[$normalizedValue] = $normalizedValue;
                 }
             }
 
@@ -355,6 +396,7 @@ class ImportCleanupService
                 ->pluck($periodColumn)
                 ->map(fn ($value) => trim((string) $value))
                 ->filter()
+                ->map(fn (string $value) => $this->normalizeSnapshotPeriodHint($value) ?? $value)
                 ->values()
                 ->all();
 
@@ -378,12 +420,23 @@ class ImportCleanupService
     {
         try {
             $latest = DB::table($tableName)->max($periodColumn);
-            $normalized = trim((string) $latest);
+            $normalized = $this->normalizeSnapshotPeriodHint((string) $latest)
+                ?? trim((string) $latest);
 
             return $normalized !== '' ? [$normalized] : [];
         } catch (\Throwable) {
             return [];
         }
+    }
+
+    private function normalizeSnapshotPeriodHint(?string $periodHint): ?string
+    {
+        $value = trim((string) $periodHint);
+        if ($value === '') {
+            return null;
+        }
+
+        return StrictDateParser::normalize($value) ?? $value;
     }
 
     private function normalizeSyncPeriodHint(?string $periodHint): string
@@ -411,5 +464,46 @@ class ImportCleanupService
     private function syncCoordinatorLockKey(string $tableName, ?string $periodHint): string
     {
         return 'snapshot:sync:coord:' . $this->syncScopeFragment($tableName, $periodHint);
+    }
+
+    private function hasActiveQueuedSyncJob(string $tableName, ?string $periodHint): bool
+    {
+        try {
+            $period = trim((string) $periodHint);
+            $query = DB::table('jobs')
+                ->where('payload', 'like', '%' . class_basename(SyncImportedReportJob::class) . '%')
+                ->where('payload', 'like', '%' . $tableName . '%');
+
+            if ($period !== '') {
+                $query->where('payload', 'like', '%' . $period . '%');
+            } else {
+                $query->where('payload', 'like', '%periodHint%');
+            }
+
+            return $query->exists();
+        } catch (\Throwable $e) {
+            Log::debug('Unable to inspect active snapshot sync jobs.', [
+                'table_name' => $tableName,
+                'period_hint' => $periodHint,
+                'message' => $e->getMessage(),
+            ]);
+
+            return true;
+        }
+    }
+
+    private function isPendingMarkerStillFresh(mixed $pendingSince): bool
+    {
+        if (!is_string($pendingSince) || trim($pendingSince) === '') {
+            return true;
+        }
+
+        try {
+            return \Carbon\Carbon::parse($pendingSince)
+                ->addSeconds(self::SYNC_STALE_PENDING_SECONDS)
+                ->greaterThan(now());
+        } catch (\Throwable) {
+            return true;
+        }
     }
 }

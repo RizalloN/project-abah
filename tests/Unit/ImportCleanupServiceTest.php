@@ -63,4 +63,30 @@ class ImportCleanupServiceTest extends TestCase
                 && $job->periodHint === '2026-04-04';
         });
     }
+
+    public function test_dispatch_imported_job_sync_normalizes_compact_date_period_hints(): void
+    {
+        $service = new ImportCleanupService();
+
+        $service->dispatchImportedJobSync(10, 'daily_loan_dinamis', '27042026', 'unit-test');
+
+        Bus::assertDispatched(SyncImportedReportJob::class, function (SyncImportedReportJob $job) {
+            return $job->tableName === 'daily_loan_dinamis'
+                && $job->periodHint === '2026-04-27';
+        });
+    }
+
+    public function test_dispatch_imported_job_sync_dispatches_lw325_ph_immediately(): void
+    {
+        $service = new ImportCleanupService();
+
+        $service->dispatchImportedJobSync(10, 'lw325_ph', '27042026', 'unit-test');
+
+        Bus::assertDispatched(SyncImportedReportJob::class, function (SyncImportedReportJob $job) {
+            return $job->tableName === 'lw325_ph'
+                && $job->periodHint === '2026-04-27';
+        });
+
+        $this->assertNull(Cache::get('snapshot:batch:lw325_ph:2026-04-27'));
+    }
 }

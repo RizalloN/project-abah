@@ -390,6 +390,7 @@ class DashboardHarianSnapshotService
 
         if (!$this->sourcePeriodExists(self::LOAN_TABLE, $period) || !$this->sourcePeriodExists(self::SAVINGS_TABLE, $period)) {
             DB::table(self::SNAPSHOT_TABLE)->where('snapshot_period', $period)->delete();
+            $this->bumpReportCacheVersion();
 
             return 0;
         }
@@ -400,6 +401,7 @@ class DashboardHarianSnapshotService
 
         if ($payload === []) {
             DB::table(self::SNAPSHOT_TABLE)->where('snapshot_period', $period)->delete();
+            $this->bumpReportCacheVersion();
 
             return 0;
         }
@@ -426,6 +428,8 @@ class DashboardHarianSnapshotService
                 ->delete();
         }
 
+        $this->bumpReportCacheVersion();
+
         return count($payload);
     }
 
@@ -451,6 +455,25 @@ class DashboardHarianSnapshotService
     public function resolveEffectivePeriod(?string $requestedPeriod): ?string
     {
         $targetDate = $this->normalizeDate($requestedPeriod);
+        $sourcePeriod = $this->resolveSharedPeriods($targetDate)[0] ?? null;
+
+        if ($sourcePeriod !== null) {
+            try {
+                $snapshotCount = Schema::hasTable(self::SNAPSHOT_TABLE)
+                    ? (int) DB::table(self::SNAPSHOT_TABLE)->where('snapshot_period', $sourcePeriod)->count()
+                    : 0;
+
+                if ($snapshotCount <= 0) {
+                    $snapshotCount = $this->buildPeriodSnapshot($sourcePeriod, false);
+                }
+
+                if ($snapshotCount > 0) {
+                    return $sourcePeriod;
+                }
+            } catch (Throwable) {
+                // Fall through to existing snapshot lookup.
+            }
+        }
 
         try {
             if (Schema::hasTable(self::SNAPSHOT_TABLE) && DB::table(self::SNAPSHOT_TABLE)->exists()) {
@@ -460,15 +483,16 @@ class DashboardHarianSnapshotService
                     $query->where('snapshot_period', '<=', $targetDate);
                 }
 
-                return $query->max('snapshot_period');
+                $snapshotPeriod = $this->normalizeDate((string) $query->max('snapshot_period'));
+                if ($snapshotPeriod !== null) {
+                    return $snapshotPeriod;
+                }
             }
         } catch (Throwable) {
             // Fall through to source lookup.
         }
 
-        $periods = $this->resolveSharedPeriods($targetDate);
-
-        return $periods[0] ?? null;
+        return $sourcePeriod;
     }
 
     public function resolveEffectiveRkaPeriod(?string $requestedMonth, ?string $fallbackPeriod = null): ?string
@@ -1232,10 +1256,10 @@ class DashboardHarianSnapshotService
                     ->where('n.periode', '=', $currentPhPeriod)
                     ->where('o.periode', '=', $previousPhPeriod);
             })
-            ->selectRaw("n.kanca as n_kanca")
-            ->selectRaw("n.unit as n_unit")
-            ->selectRaw("n.segmen_dashboard as n_segment")
-            ->selectRaw("COALESCE(o.pokok, 0) as amount")
+            ->selectRaw("o.kanca as n_kanca")
+            ->selectRaw("o.unit as n_unit")
+            ->selectRaw("o.segmen_dashboard as n_segment")
+            ->selectRaw("(COALESCE(o.pokok, 0) - COALESCE(n.pokok, 0)) as amount")
             ->selectRaw("'tupok' as recovery_type")
             ->whereRaw('(COALESCE(o.pokok, 0) - COALESCE(n.pokok, 0)) > 0')
             ->whereNotNull('n.acctno')
@@ -2144,6 +2168,15 @@ class DashboardHarianSnapshotService
 
         return count($signatures) === 1
             && (string) $signatures[0] === (string) ($sourceMetadata['source_signature'] ?? '');
+    }
+
+    private function bumpReportCacheVersion(): void
+    {
+        try {
+            Cache::put('report_cache_version:global', (int) Cache::get('report_cache_version:global', 1) + 1, now()->addHours(24));
+        } catch (Throwable) {
+            // Cache refresh is best-effort; the snapshot rows remain the source of truth.
+        }
     }
 
     private function filterSourceMetadataForPayload(?array $sourceMetadata): array

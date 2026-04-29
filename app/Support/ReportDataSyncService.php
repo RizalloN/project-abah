@@ -268,7 +268,7 @@ class ReportDataSyncService
                 'context' => [
                     'batch_id' => $batchId,
                     'period_scope' => $periodForDispatch ?? 'all',
-                    'jobs' => ['dashboard_pinjaman', 'dashboard_harian', 'rasio_casa', 'performance_rm', 'chart_periodik'],
+                    'jobs' => ['dashboard_pinjaman', 'dashboard_harian', 'chart_periodik', 'performance_rm', 'rasio_casa'],
                 ],
             ]);
         } catch (Throwable $e) {
@@ -306,7 +306,7 @@ class ReportDataSyncService
                 Log::info('Dispatched parallel snapshot rebuild batch for Simpanan MultiPN', [
                     'period' => $periodHint,
                     'batch_id' => $batchId,
-                    'jobs' => ['Dashboard Simpanan', 'Dashboard Harian', 'Rekening Dormant', 'Rasio CASA', 'Performance RM'],
+                    'jobs' => ['Dashboard Simpanan', 'Dashboard Harian', 'Rekening Dormant', 'Performance RM', 'Rasio CASA'],
                 ]);
 
             } catch (Throwable $e) {

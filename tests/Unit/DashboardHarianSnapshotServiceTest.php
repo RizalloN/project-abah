@@ -283,6 +283,91 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         ], $service->builtPeriods);
     }
 
+    public function test_yoy_period_falls_back_to_ssa_source_when_snapshot_is_missing(): void
+    {
+        $this->createSourceMetadataTables();
+
+        foreach (['2025-04-30', '2026-04-27'] as $period) {
+            DB::table('ssa_pinjaman')->insert([
+                'month_day_year_of_periode' => $period,
+                'baki_debet' => 1000,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+            DB::table('ssa_simpanan')->insert([
+                'Month_Day_Year_of_Posisi' => $period,
+                'saldo' => 500,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+
+        DB::table('dashboard_harian_snapshots')->insert([
+            'uniqueid_dhs' => 'current-only',
+            'snapshot_period' => '2026-04-27',
+            'kanca_key' => 'kc',
+            'unit_key' => 'kc',
+            'source_signature' => 'current',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $service = new DashboardHarianSnapshotService();
+
+        $this->assertSame('2025-04-30', $service->resolveEffectivePeriod('2025-04-30'));
+        $this->assertSame('2025-04-30', $service->resolveComparisonPeriods('2026-04-27')['yoy']);
+    }
+
+    public function test_effective_period_builds_latest_shared_source_when_snapshot_is_missing(): void
+    {
+        $this->createSourceMetadataTables();
+
+        foreach (['2026-04-27', '2026-04-28'] as $period) {
+            DB::table('ssa_pinjaman')->insert([
+                'month_day_year_of_periode' => $period,
+                'baki_debet' => 1000,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+            DB::table('ssa_simpanan')->insert([
+                'Month_Day_Year_of_Posisi' => $period,
+                'saldo' => 500,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+
+        DB::table('dashboard_harian_snapshots')->insert([
+            'uniqueid_dhs' => 'previous',
+            'snapshot_period' => '2026-04-27',
+            'kanca_key' => 'kc',
+            'unit_key' => 'kc',
+            'source_signature' => 'previous',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $service = new class extends DashboardHarianSnapshotService {
+            public function buildPeriodSnapshot(string $period, bool $force = false): int
+            {
+                DB::table(self::SNAPSHOT_TABLE)->insert([
+                    'uniqueid_dhs' => 'built-' . $period,
+                    'snapshot_period' => $period,
+                    'kanca_key' => 'kc',
+                    'unit_key' => 'kc',
+                    'source_signature' => 'built',
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+
+                return 1;
+            }
+        };
+
+        $this->assertSame('2026-04-28', $service->resolveEffectivePeriod(null));
+        $this->assertSame(1, DB::table('dashboard_harian_snapshots')->where('snapshot_period', '2026-04-28')->count());
+    }
+
     public function test_lw325_recovery_source_uses_latest_ph_before_snapshot_period(): void
     {
         $this->createSourceMetadataTables();
@@ -320,6 +405,56 @@ class DashboardHarianSnapshotServiceTest extends TestCase
 
         $this->assertSame('2026-04-20', $metadata['source_recovery_period']);
         $this->assertSame(1, $metadata['source_recovery_row_count']);
+    }
+
+    public function test_ph_recovery_uses_balance_delta_for_tupok_and_previous_segment_for_lunas(): void
+    {
+        $this->createSourceMetadataTables();
+
+        DB::table('lw325_ph')->insert([
+            'periode' => '2026-04-20',
+            'acctno' => 'A1',
+            'kanca' => 'KC Madiun',
+            'unit' => 'Unit A',
+            'segmen_dashboard' => 'SMALL',
+            'pokok' => 100000000,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('lw325_ph')->insert([
+            'periode' => '2026-04-21',
+            'acctno' => 'A1',
+            'kanca' => 'KC Madiun',
+            'unit' => 'Unit A',
+            'segmen_dashboard' => null,
+            'pokok' => 99000000,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('lw325_ph')->insert([
+            'periode' => '2026-04-20',
+            'acctno' => 'A2',
+            'kanca' => 'KC Madiun',
+            'unit' => 'Unit A',
+            'segmen_dashboard' => 'MICRO',
+            'pokok' => 50000000,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $service = new DashboardHarianSnapshotService();
+        $reflection = new \ReflectionMethod($service, 'fetchPhAggregates');
+        $reflection->setAccessible(true);
+
+        $rows = $reflection->invoke($service, '2026-04-21');
+        $row = $rows->first();
+
+        $this->assertNotNull($row);
+        $this->assertSame(1000000.0, (float) $row->ph_tupok);
+        $this->assertSame(50000000.0, (float) $row->ph_lunas);
+        $this->assertSame(1000000.0, (float) $row->rec_dh_small);
+        $this->assertSame(50000000.0, (float) $row->rec_dh_micro);
+        $this->assertSame(51000000.0, (float) $row->rec_dh_total);
     }
 
     private function createSourceMetadataTables(): void
@@ -366,6 +501,10 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         Schema::create('lw325_ph', function (Blueprint $table): void {
             $table->id();
             $table->date('periode')->nullable();
+            $table->string('acctno')->nullable();
+            $table->string('kanca')->nullable();
+            $table->string('unit')->nullable();
+            $table->string('segmen_dashboard')->nullable();
             $table->decimal('pokok', 20, 2)->nullable();
             $table->timestamps();
         });

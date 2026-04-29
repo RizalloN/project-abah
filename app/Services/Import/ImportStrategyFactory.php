@@ -3,6 +3,7 @@
 namespace App\Services\Import;
 
 use App\Services\Import\Strategies\DailyLoanImportStrategy;
+use App\Services\Import\Strategies\ConfiguredExcelImportStrategy;
 use App\Services\Import\Strategies\CognosPhImportStrategy;
 use App\Services\Import\Strategies\CognosRecoveryImportStrategy;
 use App\Services\Import\Strategies\Gi405RecDhImportStrategy;
@@ -31,18 +32,32 @@ class ImportStrategyFactory
             app(CognosPhImportStrategy::class),
             app(CognosRecoveryImportStrategy::class),
             app(PerformancePisImportStrategy::class),
+            app(ConfiguredExcelImportStrategy::class),
             app(GenericCsvImportStrategy::class),
         ];
     }
 
     public function resolve(?object $report, ?string $tableName = null): ImportStrategyInterface
     {
+        $generic = null;
+
         foreach ($this->all() as $strategy) {
+            if ($strategy instanceof GenericCsvImportStrategy) {
+                $generic = $strategy;
+                continue;
+            }
+
             if ($strategy->supports($report, $tableName)) {
                 return $strategy;
             }
         }
 
-        return app(GenericCsvImportStrategy::class);
+        $generic ??= app(GenericCsvImportStrategy::class);
+        if ($generic->supports($report, $tableName)) {
+            return $generic;
+        }
+
+        $table = strtolower(trim((string) ($tableName ?? $report->table_name ?? 'unknown')));
+        throw new \RuntimeException("Import strategy khusus untuk tabel `{$table}` tidak ditemukan. Fallback generic ditolak.");
     }
 }

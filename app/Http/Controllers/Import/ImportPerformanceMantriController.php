@@ -3,7 +3,10 @@
 namespace App\Http\Controllers\Import;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Import\Concerns\GeneratesFileIdentifiers;
+use App\Services\Import\ImportNotificationSyncService;
 use App\Support\ReportDataSyncService;
+use App\Support\ImportPreviewErrorHandler;
 use App\Support\StrictDateParser;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -17,6 +20,8 @@ use PhpOffice\PhpSpreadsheet\Shared\Date as SpreadsheetDate;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
 class ImportPerformanceMantriController extends Controller
+{
+    use GeneratesFileIdentifiers;
 {
     private const TABLE_NAME = 'performance_mantri';
     private const REPORT_LABEL = 'Kinerja Mantri';
@@ -115,7 +120,12 @@ class ImportPerformanceMantriController extends Controller
         $sourcePath = $this->resolveSourcePath($request);
         request()->session()->save();
 
-        return response()->stream(function () use ($sourcePath) {
+        // ✅ CRITICAL: Generate consistent file identifier for state tracking
+        $fileIdentifier = $this->generateFileIdentifier($sourcePath);
+        $syncService = app(ImportNotificationSyncService::class);
+        $errorHandler = app(ImportPreviewErrorHandler::class);
+
+        return response()->stream(function () use ($sourcePath, $fileIdentifier, $syncService, $errorHandler) {
             $send = function (string $event, array $data): void {
                 echo "event: {$event}\n";
                 echo 'data: ' . json_encode($data) . "\n\n";
@@ -127,17 +137,35 @@ class ImportPerformanceMantriController extends Controller
 
             try {
                 if ($sourcePath === null) {
+                    // ✅ Record validation error in sync service
+                    $errorHandler->recordPreviewError(
+                        fileIdentifier: $fileIdentifier,
+                        errorMessage: 'Sesi upload Kinerja Mantri tidak ditemukan. Silakan upload ulang.'
+                    );
                     $send('error_msg', ['message' => 'Sesi upload Kinerja Mantri tidak ditemukan. Silakan upload ulang.']);
                     return;
                 }
 
                 if (!file_exists($sourcePath)) {
+                    // ✅ Record validation error
+                    $errorHandler->recordPreviewError(
+                        fileIdentifier: $fileIdentifier,
+                        errorMessage: 'File Kinerja Mantri tidak ditemukan di server.'
+                    );
                     $send('error_msg', ['message' => 'File Kinerja Mantri tidak ditemukan di server.']);
                     return;
                 }
 
                 $send('progress', ['percent' => 20, 'message' => 'Membaca struktur workbook Kinerja Mantri...']);
                 $summary = $this->inspectWorkbook($sourcePath);
+
+                // ✅ Record successful validation in sync service
+                $syncService->recordPreviewValidation(
+                    fileIdentifier: $fileIdentifier,
+                    isValid: true,
+                    errors: []
+                );
+
                 session([
                     'mantri_preview_summary' => array_merge($summary, [
                         'source_path' => $sourcePath,
@@ -151,6 +179,13 @@ class ImportPerformanceMantriController extends Controller
                     'summary' => $summary,
                 ]);
             } catch (\Throwable $e) {
+                // ✅ Record validation error atomically
+                $errorHandler->recordPreviewError(
+                    fileIdentifier: $fileIdentifier,
+                    errorMessage: $e->getMessage(),
+                    errorCode: 'PREVIEW_VALIDATION_ERROR'
+                );
+
                 Log::error('Performance Mantri prepare preview error: ' . $e->getMessage(), [
                     'file' => $sourcePath,
                 ]);
@@ -221,9 +256,32 @@ class ImportPerformanceMantriController extends Controller
         }
 
         try {
+            // ✅ CRITICAL: Validate preview BEFORE job creation
+            $fileIdentifier = $this->generateFileIdentifier($sourcePath);
+            $syncService = app(ImportNotificationSyncService::class);
+
+            $previewValidation = $syncService->validateBeforeImportDispatch(
+                jobId: 0,  // No job yet
+                fileIdentifier: $fileIdentifier
+            );
+
+            if (!$previewValidation['can_proceed']) {
+                Log::warning('Import blocked: preview validation failed', [
+                    'file_identifier' => $fileIdentifier,
+                    'errors' => $previewValidation['validation_errors'] ?? [],
+                ]);
+
+                return response()->json([
+                    'status' => 'error',
+                    'title' => 'Preview Validation Gagal!',
+                    'message' => $previewValidation['message'],
+                    'validation_errors' => $previewValidation['validation_errors'] ?? [],
+                ], 422);
+            }
+
             $summary = (array) session('mantri_preview_summary', []);
             $totalRows = (int) ($summary['total_meaningful_rows'] ?? 0);
-            
+
             if ($totalRows <= 0) {
                 $totalRows = max(0, (int) ($summary['highest_row'] ?? 0) - self::DATA_START_ROW + 1);
                 if ($totalRows <= 0) {

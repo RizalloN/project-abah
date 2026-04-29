@@ -3,6 +3,7 @@
 namespace App\Services\Import;
 
 use App\Http\Controllers\Import\ImportExcelController;
+use App\Http\Controllers\Import\ImportReportPhController;
 use App\Jobs\RunImportJob;
 use App\Jobs\SyncImportedReportJob;
 use Illuminate\Http\Request;
@@ -539,7 +540,8 @@ class ImportExecutionService
             return \Illuminate\Support\Facades\DB::table('jobs')
                 ->whereIn('queue', [self::DAILY_LOAN_IMPORT_QUEUE, self::IMPORT_QUEUE])
                 ->where('payload', 'like', '%' . str_replace('\\', '\\\\', RunImportJob::class) . '%')
-                ->where('payload', 'like', '%jobId";i:' . $jobId . ';%')
+                ->where('payload', 'like', '%jobId%')
+                ->where('payload', 'like', '%i:' . $jobId . ';%')
                 ->exists();
         } catch (\Throwable) {
             return false;
@@ -601,6 +603,11 @@ class ImportExecutionService
             if (is_array($decoded)) {
                 $jobContext = $decoded;
             }
+        }
+
+        $tableName = strtolower(trim((string) (is_array($jobContext) ? ($jobContext['table_name'] ?? '') : '')));
+        if ($tableName === 'lw325_ph') {
+            return ImportReportPhController::class;
         }
 
         $controller = is_array($jobContext) ? (string) ($jobContext['controller'] ?? '') : '';

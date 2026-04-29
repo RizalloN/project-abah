@@ -122,6 +122,39 @@ class ImportCognosRecoveryController extends Controller
         'recovery_non_klaim',
     ];
 
+    private const SOURCE_HEADER_ALIASES = [
+        'periode' => ['PERIODE', 'PERIODE DATA'],
+        'keterangan' => ['KETERANGAN'],
+        'cifno' => ['CIFNO'],
+        'bc' => ['BC', 'MB', 'BRANCH CODE', 'KODE KANCA'],
+        'sub_bc' => ['SUB BC', 'SUB BRANCH CODE', 'SUB BRANCH', 'BRANCH', 'KODE UKER'],
+        'kanwil' => ['KANWIL'],
+        'ro_fix' => ['RO FIX'],
+        'region' => ['REGION'],
+        'cabang' => ['CABANG', 'KANCA'],
+        'unit_kerja' => ['UNIT KERJA', 'UNIT_KERJA'],
+        'gl_account' => ['GL ACCOUNT', 'GL_ACCOUNT'],
+        'produk_code' => ['PRODUK CODE', 'PRODUK_CODE'],
+        'segmen_fpsl' => ['SEGMEN FPSL', 'SEGMEN_FPSL'],
+        'rekening' => ['REKENING', 'ACCTNO'],
+        'status' => ['STATUS'],
+        'stsdt_dt_raw' => ['STSDT DT', 'STSDT_DT'],
+        'sname' => ['SNAME'],
+        'segmen' => ['SEGMEN'],
+        'segmen_bisnis' => ['SEGMEN BISNIS', 'SEGMEN_BISNIS'],
+        'segmen_bisnis_2025' => ['SEGMEN BISNIS 2025', 'SEGMEN_BISNIS_2025'],
+        'produk' => ['PRODUK'],
+        'segmen_kur' => ['SEGMEN KUR'],
+        'segmen_repeat' => ['SEGMEN'],
+        'segmen_2' => ['SEGMEN 2'],
+        'compliance' => ['COMPLIANCE'],
+        'recovery' => ['RECOVERY MASUK', 'RECOVERY'],
+        'recovery_klaim' => ['RECOVERY KLAIM', 'RECOVERY KLAIM ASURANSI', 'RECOVERY_KLAIM_ASURANSI'],
+        'recovery_olsib' => ['RECOVERY OLSIB', 'RECOVERY_OLSIB'],
+        'total_recovery' => ['TOTAL RECOVERY', 'TOTAL_RECOVERY'],
+        'recovery_non_klaim' => ['RECOVERY MASUK NON KLAIM', 'RECOVERY NON KLAIM', 'RECOVERY_NON_KLAIM'],
+    ];
+
     public function upload(Request $request)
     {
         $request->validate([

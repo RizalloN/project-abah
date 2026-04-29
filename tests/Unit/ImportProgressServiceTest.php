@@ -151,7 +151,15 @@ class ImportProgressServiceTest extends TestCase
             ->withArgs(static function (string $column, string $operator, string $value): bool {
                 return $column === 'payload'
                     && $operator === 'like'
-                    && str_contains($value, 'jobId";i:77;');
+                    && str_contains($value, 'jobId');
+            })
+            ->andReturnSelf();
+        $jobsTable->shouldReceive('where')
+            ->once()
+            ->withArgs(static function (string $column, string $operator, string $value): bool {
+                return $column === 'payload'
+                    && $operator === 'like'
+                    && str_contains($value, 'i:77;');
             })
             ->andReturnSelf();
         $jobsTable->shouldReceive('delete')->once()->andReturn(1);
@@ -203,7 +211,15 @@ class ImportProgressServiceTest extends TestCase
             ->withArgs(static function (string $column, string $operator, string $value): bool {
                 return $column === 'payload'
                     && $operator === 'like'
-                    && str_contains($value, 'jobId";i:91;');
+                    && str_contains($value, 'jobId');
+            })
+            ->andReturnSelf();
+        $jobsTable->shouldReceive('where')
+            ->once()
+            ->withArgs(static function (string $column, string $operator, string $value): bool {
+                return $column === 'payload'
+                    && $operator === 'like'
+                    && str_contains($value, 'i:91;');
             })
             ->andReturnSelf();
         $jobsTable->shouldReceive('delete')->once()->andReturn(1);
@@ -256,7 +272,15 @@ class ImportProgressServiceTest extends TestCase
             ->withArgs(static function (string $column, string $operator, string $value): bool {
                 return $column === 'payload'
                     && $operator === 'like'
-                    && str_contains($value, 'jobId";i:88;');
+                    && str_contains($value, 'jobId');
+            })
+            ->andReturnSelf();
+        $jobsTable->shouldReceive('where')
+            ->once()
+            ->withArgs(static function (string $column, string $operator, string $value): bool {
+                return $column === 'payload'
+                    && $operator === 'like'
+                    && str_contains($value, 'i:88;');
             })
             ->andReturnSelf();
         $jobsTable->shouldReceive('delete')->once()->andReturn(1);
@@ -496,7 +520,14 @@ class ImportProgressServiceTest extends TestCase
                 ->withArgs(static function (string $column, string $operator, string $value): bool {
                     return $column === 'payload'
                         && $operator === 'like'
-                        && str_contains($value, 'jobId";i:77;');
+                        && str_contains($value, 'jobId');
+                })
+                ->andReturnSelf();
+            $jobsTable->shouldReceive('where')
+                ->withArgs(static function (string $column, string $operator, string $value): bool {
+                    return $column === 'payload'
+                        && $operator === 'like'
+                        && str_contains($value, 'i:77;');
                 })
                 ->andReturnSelf();
             $jobsTable->shouldReceive('delete')->once()->andReturn(1);

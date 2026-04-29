@@ -3,6 +3,7 @@
 namespace Tests\Unit;
 
 use App\Jobs\RunImportJob;
+use App\Http\Controllers\Import\ImportReportPhController;
 use App\Services\Import\ImportExecutionService;
 use App\Services\Import\ImportProgressService;
 use Illuminate\Support\Facades\Cache;
@@ -299,6 +300,23 @@ class ImportExecutionServiceTest extends TestCase
         );
 
         $this->assertSame('Menyiapkan sanitasi CSV Daily Loan...', $message);
+    }
+
+    public function test_lw325_jobs_never_fall_back_to_generic_import_controller(): void
+    {
+        $progressService = Mockery::mock(ImportProgressService::class);
+        $service = new ImportExecutionService($progressService);
+        $method = new \ReflectionMethod($service, 'resolveControllerClass');
+        $method->setAccessible(true);
+
+        $job = (object) [
+            'job_context' => json_encode([
+                'table_name' => 'lw325_ph',
+                'controller' => 'Missing\\Controller',
+            ]),
+        ];
+
+        $this->assertSame(ImportReportPhController::class, $method->invoke($service, $job));
     }
 
     public function test_inline_fallback_grace_seconds_uses_import_config_and_defaults_to_zero(): void

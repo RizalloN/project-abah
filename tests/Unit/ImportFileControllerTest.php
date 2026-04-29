@@ -3,10 +3,26 @@
 namespace Tests\Unit;
 
 use App\Http\Controllers\Import\ImportFileController;
+use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 class ImportFileControllerTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        Config::set('database.default', 'sqlite');
+        Config::set('database.connections.sqlite.database', ':memory:');
+
+        DB::purge('sqlite');
+        DB::reconnect('sqlite');
+
+        Schema::dropAllTables();
+    }
+
     public function test_raw_load_data_fast_path_is_disabled_for_qris_detail_report(): void
     {
         $controller = new ImportFileController();
@@ -59,6 +75,21 @@ class ImportFileControllerTest extends TestCase
         } finally {
             @unlink($csvPath);
         }
+    }
+
+    public function test_merchant_import_does_not_fallback_when_configured_table_is_missing(): void
+    {
+        $controller = new ImportFileController();
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('missing_merchant_table');
+
+        $this->invokeMethod($controller, 'resolveTableName', [
+            (object) [
+                'nama_report' => 'Jumlah Merchant Detail',
+                'table_name' => 'missing_merchant_table',
+            ],
+        ]);
     }
 
     private function invokeMethod(object $target, string $method, array $args = [])

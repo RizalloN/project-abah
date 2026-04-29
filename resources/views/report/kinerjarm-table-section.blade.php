@@ -136,11 +136,11 @@
                                 $branchAchOs = $branch['subtotal']['ach_os'] ?? null;
                                 $branchLarPct = $branch['subtotal']['lar_pct'] ?? null;
                             @endphp
-                            <td class="text-center-important {{ is_null($branchAchDeb) ? 'kinerja-empty-highlight' : '' }}">{{ is_null($branchAchDeb) ? '' : $formatCount($branchAchDeb) }}</td>
+                            <td class="{{ is_null($branchAchDeb) ? 'text-center-important kinerja-empty-highlight' : 'text-center-important' }}">{{ is_null($branchAchDeb) ? '' : $formatCount($branchAchDeb) }}</td>
                             <td class="{{ is_null($branchAchOs) ? 'kinerja-empty-highlight' : '' }}">{{ is_null($branchAchOs) ? '' : $formatAmount($branchAchOs) }}</td>
                         @endif
                         @if($showLarColumn)
-                            <td class="text-center-important {{ is_null($branchLarPct) ? 'kinerja-empty-highlight' : '' }}">{{ is_null($branchLarPct) ? '' : $formatPercent($branchLarPct) }}</td>
+                            <td class="{{ is_null($branchLarPct) ? 'text-center-important kinerja-empty-highlight' : 'text-center-important' }}">{{ is_null($branchLarPct) ? '' : $formatPercent($branchLarPct) }}</td>
                         @endif
                     </tr>
 
@@ -202,11 +202,11 @@
                                         $itemAchOs = $item['ach_os'] ?? null;
                                         $itemLarPct = $item['lar_pct'] ?? null;
                                     @endphp
-                                    <td class="text-center-important {{ is_null($itemAchDeb) ? 'kinerja-empty-highlight' : '' }}">{{ is_null($itemAchDeb) ? '' : $formatCount($itemAchDeb) }}</td>
+                                    <td class="{{ is_null($itemAchDeb) ? 'text-center-important kinerja-empty-highlight' : 'text-center-important' }}">{{ is_null($itemAchDeb) ? '' : $formatCount($itemAchDeb) }}</td>
                                     <td class="{{ is_null($itemAchOs) ? 'kinerja-empty-highlight' : '' }}">{{ is_null($itemAchOs) ? '' : $formatAmount($itemAchOs) }}</td>
                                 @endif
                                 @if($showLarColumn)
-                                    <td class="text-center-important {{ is_null($itemLarPct) ? 'kinerja-empty-highlight' : '' }}">{{ is_null($itemLarPct) ? '' : $formatPercent($itemLarPct) }}</td>
+                                    <td class="{{ is_null($itemLarPct) ? 'text-center-important kinerja-empty-highlight' : 'text-center-important' }}">{{ is_null($itemLarPct) ? '' : $formatPercent($itemLarPct) }}</td>
                                 @endif
                             </tr>
                         @endforeach
@@ -243,11 +243,11 @@
                                 $totalAchOs = $total['ach_os'] ?? null;
                                 $totalLarPct = $total['lar_pct'] ?? null;
                             @endphp
-                            <td class="text-center-important {{ is_null($totalAchDeb) ? 'kinerja-empty-highlight' : '' }}">{{ is_null($totalAchDeb) ? '' : $formatCount($totalAchDeb) }}</td>
+                            <td class="{{ is_null($totalAchDeb) ? 'text-center-important kinerja-empty-highlight' : 'text-center-important' }}">{{ is_null($totalAchDeb) ? '' : $formatCount($totalAchDeb) }}</td>
                             <td class="{{ is_null($totalAchOs) ? 'kinerja-empty-highlight' : '' }}">{{ is_null($totalAchOs) ? '' : $formatAmount($totalAchOs) }}</td>
                         @endif
                         @if($showLarColumn)
-                            <td class="text-center-important {{ is_null($totalLarPct) ? 'kinerja-empty-highlight' : '' }}">{{ is_null($totalLarPct) ? '' : $formatPercent($totalLarPct) }}</td>
+                            <td class="{{ is_null($totalLarPct) ? 'text-center-important kinerja-empty-highlight' : 'text-center-important' }}">{{ is_null($totalLarPct) ? '' : $formatPercent($totalLarPct) }}</td>
                         @endif
                     </tr>
                 @endif

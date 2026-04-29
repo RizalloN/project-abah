@@ -4,6 +4,9 @@ namespace App\Http\Controllers\Import;
 
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Import\Concerns\AllocatesGapIds;
+use App\Http\Controllers\Import\Concerns\GeneratesFileIdentifiers;
+use App\Services\Import\ImportNotificationSyncService;
+use App\Support\ImportPreviewErrorHandler;
 use App\Support\ReportDataSyncService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -15,7 +18,7 @@ use Illuminate\Support\Str;
 
 class ImportCasaBrilinkController extends Controller
 {
-    use AllocatesGapIds;
+    use AllocatesGapIds, GeneratesFileIdentifiers;
 
     private const HEADER_MAP = [
         'row_num',
@@ -72,7 +75,12 @@ class ImportCasaBrilinkController extends Controller
         $periodeInput = session('casa_brilink_periode');
         request()->session()->save();
 
-        return response()->stream(function () use ($relativePath, $periodeInput) {
+        // ✅ CRITICAL: Generate consistent file identifier for state tracking
+        $fileIdentifier = $this->generateFileIdentifier($relativePath);
+        $syncService = app(ImportNotificationSyncService::class);
+        $errorHandler = app(ImportPreviewErrorHandler::class);
+
+        return response()->stream(function () use ($relativePath, $periodeInput, $fileIdentifier, $syncService, $errorHandler) {
             $send = function (string $event, array $data) {
                 echo "event: {$event}\n";
                 echo 'data: ' . json_encode($data) . "\n\n";
@@ -84,18 +92,35 @@ class ImportCasaBrilinkController extends Controller
 
             try {
                 if (!$relativePath || !$periodeInput) {
+                    // ✅ Record validation error in sync service
+                    $errorHandler->recordPreviewError(
+                        fileIdentifier: $fileIdentifier,
+                        errorMessage: 'Sesi upload CASA BRILINK tidak lengkap.'
+                    );
                     $send('error_msg', ['message' => 'Sesi upload CASA BRILINK tidak lengkap.']);
                     return;
                 }
 
                 $absolutePath = Storage::path($relativePath);
                 if (!file_exists($absolutePath)) {
+                    // ✅ Record validation error
+                    $errorHandler->recordPreviewError(
+                        fileIdentifier: $fileIdentifier,
+                        errorMessage: 'File CSV CASA BRILINK tidak ditemukan di server.'
+                    );
                     $send('error_msg', ['message' => 'File CSV CASA BRILINK tidak ditemukan di server.']);
                     return;
                 }
 
                 $send('progress', ['percent' => 20, 'message' => 'Memvalidasi struktur CSV CASA BRILINK...']);
                 $context = $this->buildCsvContext($absolutePath, $periodeInput, 'auto');
+
+                // ✅ Record successful validation in sync service
+                $syncService->recordPreviewValidation(
+                    fileIdentifier: $fileIdentifier,
+                    isValid: true,
+                    errors: []
+                );
 
                 $send('progress', ['percent' => 75, 'message' => 'Struktur valid. Menyiapkan halaman preview...']);
                 $send('ready', [
@@ -106,6 +131,13 @@ class ImportCasaBrilinkController extends Controller
                     ]),
                 ]);
             } catch (\Throwable $e) {
+                // ✅ Record validation error atomically
+                $errorHandler->recordPreviewError(
+                    fileIdentifier: $fileIdentifier,
+                    errorMessage: $e->getMessage(),
+                    errorCode: 'PREVIEW_VALIDATION_ERROR'
+                );
+
                 Log::error('CASA BRILINK PREPARE PREVIEW ERROR: ' . $e->getMessage() . ' | ' . $e->getFile() . ':' . $e->getLine());
                 $send('error_msg', ['message' => 'Gagal menyiapkan preview CASA BRILINK: ' . $e->getMessage()]);
             }
@@ -249,6 +281,29 @@ class ImportCasaBrilinkController extends Controller
             ], 422);
         }
 
+        // ✅ CRITICAL: Validate preview BEFORE job creation
+        $fileIdentifier = $this->generateFileIdentifier($relativePath);
+        $syncService = app(ImportNotificationSyncService::class);
+
+        $previewValidation = $syncService->validateBeforeImportDispatch(
+            jobId: 0,  // No job yet
+            fileIdentifier: $fileIdentifier
+        );
+
+        if (!$previewValidation['can_proceed']) {
+            Log::warning('Import blocked: preview validation failed', [
+                'file_identifier' => $fileIdentifier,
+                'errors' => $previewValidation['validation_errors'] ?? [],
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'title' => 'Preview Validation Gagal!',
+                'text' => $previewValidation['message'],
+                'validation_errors' => $previewValidation['validation_errors'] ?? [],
+            ], 422);
+        }
+
         $selectedColumns = array_map('intval', $request->input('selected_columns', []));
         $activeFilters = json_decode($request->input('active_filters_json', '{}'), true) ?: [];
 
@@ -273,6 +328,7 @@ class ImportCasaBrilinkController extends Controller
             ], 422);
         }
 
+        // ✅ ONLY NOW create job (after preview validation passed)
         $jobId = app(\App\Services\Import\ImportProgressService::class)->createJob([
             'id_report' => $activeReportId,
             'file_name' => basename($absolutePath),
@@ -289,6 +345,7 @@ class ImportCasaBrilinkController extends Controller
                 'periode' => $context['periode'] ?? null,
                 'active_filters_hash' => sha1(json_encode($context)),
                 'file_hash' => sha1($absolutePath),
+                'file_identifier' => $fileIdentifier,  // ✅ Store for reference
             ],
             'created_at' => now(),
             'updated_at' => now(),

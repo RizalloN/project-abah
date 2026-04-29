@@ -136,6 +136,57 @@ CSV;
         }
     }
 
+    public function test_lw325_preview_skips_report_metadata_before_header(): void
+    {
+        $controller = new class extends ImportExcelController {
+            protected function resolveExcelTableName(): string
+            {
+                return 'lw325_ph';
+            }
+
+            protected function resolveActiveTableName(string $default = 'daily_loan_dinamis'): string
+            {
+                return 'lw325_ph';
+            }
+        };
+
+        $headerLine = <<<'CSV'
+Textbox3,PERIODE,ACCTNO,KANWIL,KANCA,UNIT,NAMA_DEBITUR,CIF1,FKSEGMEN,SEGMEN_DASHBOARD,DESCRIPTION,PRODUK_DASHBOARD,TGL_PH,TGL_REALISASI,CURTYP,SALDO_PERTAMA_PH_POKOK,SALDO_PERTAMA_PH_BUNGA,BESAR_REALISASI,PLAFON,JW,AT,CIF,POKOK,BUNGA,ANGPOK,ANGBUNG,SISAPOK,SISABUN,CLMAMT1,CLMAPR1,OS_PENUH_BERJALAN1,KECAMATAN_T_TINGGAL,KELURAHAN_T_TINGGAL,KODEPOS_T_TINGGAL,KECAMATAN_T_USAHA,KELURAHAN_T_USAHA,KODEPOS_T_USAHA,PN_PENGELOLA,PN_PEMRAKARSA,PN_REFERRAL,PN_RESTRUK,PN_PENGELOLA2,PN_PEMUTUS,PN_CRM,PN_CRR1,PN_REFERRAL_NAIK_KELAS,JUMLAH_PN,JUMLAH_PN_ALL,SALDO_PERTAMA_KALI_CHARGE_OFF,DEFFERED_BUNGA,SAI_DEFFERED,SAI_TUNGGAKAN,DEFFERED_BUNGA_PH,SAI_TUNGGAKAN_PH,SAI_DEFFERED_PH,WCBAL,WACCINT,WADVPMT,WPENINT,WMISC,WOTHCHG,WPMTAMT,WPSTDT,WPSTDT6,WAMOUNT,FLAG_KLAIM,CLMAMT,CLMAPR
+CSV;
+
+        $rawLine = <<<'CSV'
+1,4/27/2026 12:00:00 AM,814601005128100,KANWIL MALANG,KC Ponorogo,UNIT PASAR CONDONG PONOROGO,AGUNG SISWANTO,ACKX989,11400,Micro,KUR Mikro Baru,KUR-Mikro,23/12/2025,11/11/2022,IDR ,"102,218,225.00","4,126,020.24","75,000,000.00",51290989.00,59,1,ACKX989,"51,090,489.00","-2,691,224.76","51,127,736.00","6,817,245.00","51,090,489.00","-2,691,224.76",,0.00,51090489.00,JAMBON PONOROGO,KEC JAMBON KAB PONOROGO,63456,KELAPA GADING JAKARTA UTARA,JAKARTA UTARA,14250,00245631 - Siti Nurahfia,00152264 - Yuanita Purbasari,,,,00023211 - Adin Darmawan,,,,1,3,"153,345,961",0.00,0.00,0.00,0.00,0.00,0.00,,,,,,,,,,,N,,0.00
+CSV;
+
+        $tempPath = storage_path('app/testing/lw325_metadata_preview_' . uniqid() . '.csv');
+        if (!is_dir(dirname($tempPath))) {
+            @mkdir(dirname($tempPath), 0777, true);
+        }
+
+        file_put_contents($tempPath, implode("\n", [
+            'textbox1,Textbox38,Textbox45',
+            'Laporan Nominatif PH,Periode Data : 27/04/2026,Date Printed : 29 Apr 2026 11:56:17 AM',
+            '',
+            $headerLine,
+            $rawLine,
+        ]) . "\n");
+
+        try {
+            $previewMethod = new ReflectionMethod(ImportExcelController::class, 'prepareCsvPreviewPayload');
+            $previewMethod->setAccessible(true);
+            $payload = $previewMethod->invoke($controller, $tempPath);
+
+            $this->assertSame(3, $payload['header_index']);
+            $this->assertSame(1, $payload['total_rows']);
+            $this->assertSame('Textbox3', $payload['headers'][0] ?? null);
+            $this->assertSame('1', $payload['preview'][0][0] ?? null);
+            $this->assertSame('4/27/2026 12:00:00 AM', $payload['preview'][0][1] ?? null);
+            $this->assertSame('814601005128100', $payload['preview'][0][2] ?? null);
+        } finally {
+            @unlink($tempPath);
+        }
+    }
+
     public function test_prepare_lw325_ph_direct_load_source_exposes_prepared_metadata(): void
     {
         $controller = new class extends ImportExcelController {

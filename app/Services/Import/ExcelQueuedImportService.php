@@ -637,7 +637,7 @@ class ExcelQueuedImportService
                 ]);
             }
 
-            if ($jobId > 0 && $totalInserted > 0 && $finalStatus !== 'completed') {
+            if ($jobId > 0 && $totalInserted > 0 && in_array($finalStatus, ['completed', 'failed_partial'], true)) {
                 try {
                     ($callbacks['cleanup_service_dispatch_imported_job_sync'])($jobId, $finalStatus);
                 } catch (\Throwable $e) {

@@ -98,18 +98,29 @@ class ValidateShadowColumnsCommand extends Command
 
     private function validatePeriod(string $period, bool $verbose): array
     {
+        $cacheKey = "shadow_validation:{$period}";
+
+        if (!$this->option('watch')) {
+            $cached = cache()->get($cacheKey);
+            if ($cached) {
+                return $cached;
+            }
+        }
+
         $totalRows = DB::table('daily_loan_dinamis')
             ->where('periode', $period)
             ->count();
 
         if ($totalRows === 0) {
-            return [
+            $result = [
                 'period' => $period,
                 'total_rows' => 0,
                 'status' => 'EMPTY',
                 'columns' => [],
                 'issues' => ['No data found for this period'],
             ];
+            cache()->put($cacheKey, $result, 300);
+            return $result;
         }
 
         $shadowColumns = [
@@ -126,21 +137,18 @@ class ValidateShadowColumnsCommand extends Command
         $columnStats = [];
         $issues = [];
 
-        // OPTIMIZATION: Single scan for all columns using COUNT() which ignores NULLs
-        $selects = [];
-        foreach ($shadowColumns as $column) {
-            $selects[] = "COUNT({$column}) as `filled_{$column}`";
-        }
-
         $stats = DB::table('daily_loan_dinamis')
             ->where('periode', $period)
-            ->selectRaw(implode(', ', $selects))
+            ->selectRaw(implode(', ', array_map(
+                fn ($col) => "COUNT({$col}) as `filled_{$col}`",
+                $shadowColumns
+            )))
             ->first();
 
         foreach ($shadowColumns as $column) {
             $filledCount = $stats->{"filled_{$column}"};
             $nullCount = $totalRows - $filledCount;
-            $fillPercentage = ($filledCount / $totalRows) * 100;
+            $fillPercentage = $totalRows > 0 ? (100.0 * $filledCount / $totalRows) : 100.0;
 
             $columnStats[$column] = [
                 'filled' => $filledCount,
@@ -158,7 +166,6 @@ class ValidateShadowColumnsCommand extends Command
             }
         }
 
-        // Data consistency check
         $consistencyIssues = $this->checkDataConsistency($period);
         $issues = array_merge($issues, $consistencyIssues);
 
@@ -167,13 +174,19 @@ class ValidateShadowColumnsCommand extends Command
             fn ($stat) => $stat['percentage'] === 100.0
         )) === count($shadowColumns);
 
-        return [
+        $result = [
             'period' => $period,
             'total_rows' => $totalRows,
             'status' => $allFilled ? 'OK' : ($issues ? 'WARNING' : 'EMPTY'),
             'columns' => $columnStats,
             'issues' => $issues,
         ];
+
+        if (!$this->option('watch')) {
+            cache()->put($cacheKey, $result, 300);
+        }
+
+        return $result;
     }
 
     private function checkDataConsistency(string $period): array

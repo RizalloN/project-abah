@@ -136,16 +136,22 @@ class ImportFileBrimoController extends Controller
     private function resolveTableName($reportData): string
     {
         $tableName = 'user_brimo_rpt_v2';
+        $hasExplicitTableName = false;
 
         if ($reportData) {
             if (!empty($reportData->table_name)) {
                 $tableName = $reportData->table_name;
+                $hasExplicitTableName = true;
             } elseif (!empty($reportData->nama_report) && stripos($reportData->nama_report, 'fin') !== false) {
                 $tableName = 'user_brimo_fin';
             }
         }
 
         if (!DB::getSchemaBuilder()->hasTable($tableName)) {
+            if ($reportData || $hasExplicitTableName) {
+                throw new \RuntimeException("Tabel tujuan import Brimo `{$tableName}` tidak ditemukan. Periksa konfigurasi nama_report.table_name.");
+            }
+
             return 'user_brimo_rpt_v2';
         }
 

@@ -53,11 +53,12 @@ class ParallelSnapshotBatchCoordinator
             new RebuildSnapshotSimpleBatch($periodHint, $deleteId),
             new RebuildSnapshotHarianBatch($periodHint, $deleteId),
             new RebuildSnapshotDormantBatch($periodHint, $deleteId),
-            new RebuildSnapshotRasioBatch($periodHint, $deleteId),
             new RebuildSnapshotPerformanceRmBatch($periodHint, $deleteId),
+            new RebuildSnapshotRasioBatch($periodHint, $deleteId),
         ];
 
         $batch = Bus::batch($jobs)
+            ->allowFailures()
             ->then(function (Batch $batch) use ($periodHint, $source) {
                 self::handleBatchSuccess($batch, $periodHint, $source);
                 WarmReportCacheJob::dispatch();
@@ -98,12 +99,13 @@ class ParallelSnapshotBatchCoordinator
         $jobs = [
             new RebuildLoanDashboardSnapshotJob($periodHint, $deleteId),
             new RebuildSnapshotHarianBatch($periodHint, $deleteId),
-            new RebuildSnapshotRasioBatch($periodHint, $deleteId),
-            new RebuildSnapshotPerformanceRmBatch($periodHint, $deleteId),
             new RebuildLoanChartPeriodikSnapshotJob($periodHint, $deleteId),
+            new RebuildSnapshotPerformanceRmBatch($periodHint, $deleteId),
+            new RebuildSnapshotRasioBatch($periodHint, $deleteId),
         ];
 
         $batch = Bus::batch($jobs)
+            ->allowFailures()
             ->then(function (Batch $batch) use ($periodHint, $source) {
                 self::handleBatchSuccess($batch, $periodHint, $source);
                 WarmReportCacheJob::dispatch();

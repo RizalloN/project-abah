@@ -649,7 +649,7 @@ class ReportSnapshotBuilder
         ";
 
         $casaJoinSql = '';
-        $bindings = [$loanPeriod, $loanPeriod, $loanPeriod];
+        $bindings = [$loanPeriod, $loanPeriod, $loanPeriod, $loanPeriod];
 
         if ($casaDate) {
             $applyCasaTypeFilter = $this->shouldApplyCasaTypeFilter($casaDate);
@@ -739,6 +739,7 @@ class ReportSnapshotBuilder
                 SELECT 'mikro' UNION ALL
                 SELECT 'smc'
             ) seg
+            WHERE 1 = 1
             ON DUPLICATE KEY UPDATE
                 casa_period = VALUES(casa_period),
                 branch_label = VALUES(branch_label),
@@ -779,7 +780,7 @@ class ReportSnapshotBuilder
         ";
 
         $casaJoinSql = '';
-        $bindings = [$loanPeriod, $loanPeriod, $loanPeriod];
+        $bindings = [$loanPeriod, $loanPeriod, $loanPeriod, $loanPeriod];
 
         if ($casaDate) {
             $applyCasaTypeFilter = $this->shouldApplyCasaTypeFilter($casaDate);
@@ -873,6 +874,7 @@ class ReportSnapshotBuilder
                 SELECT 'mikro' UNION ALL
                 SELECT 'smc'
             ) seg
+            WHERE 1 = 1
             ON DUPLICATE KEY UPDATE
                 casa_period = VALUES(casa_period),
                 uker_label = VALUES(uker_label),
