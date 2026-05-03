@@ -9,6 +9,7 @@ use App\Services\Import\Strategies\DailyLoanImportStrategy;
 use App\Services\Import\Strategies\GenericCsvImportStrategy;
 use App\Services\Import\Strategies\Gi405RecDhImportStrategy;
 use App\Services\Import\Strategies\Lw325PhImportStrategy;
+use App\Services\Import\Strategies\L1133ImportStrategy;
 use App\Services\Import\Strategies\PerformancePisImportStrategy;
 use App\Services\Import\Strategies\SimpananMultiPnImportStrategy;
 use App\Services\Import\Strategies\SsaPinjamanImportStrategy;
@@ -35,11 +36,12 @@ class PolarsArchitectureTest extends TestCase
             [SimpananMultiPnImportStrategy::class, 'bulk_csv_filtered', []],
             [SsaSimpananImportStrategy::class, 'bulk_csv_staging', []],
             [SsaPinjamanImportStrategy::class, 'bulk_csv_staging', []],
-            [Gi405RecDhImportStrategy::class, 'bulk_csv_staging', []],
+            [Gi405RecDhImportStrategy::class, 'bulk_csv_filtered', []],
             [GenericCsvImportStrategy::class, 'bulk_csv_staging', []],
             [CognosPhImportStrategy::class, 'bulk_csv_staging', []],
             [CognosRecoveryImportStrategy::class, 'bulk_csv_staging', []],
             [PerformancePisImportStrategy::class, 'bulk_csv_staging', []],
+            [L1133ImportStrategy::class, 'bulk_csv_staging', []],
             [Lw325PhImportStrategy::class, 'bulk_csv_direct', []],
         ];
 
@@ -80,11 +82,12 @@ class PolarsArchitectureTest extends TestCase
             [SimpananMultiPnImportStrategy::class, 'simpanan_multipn'],
             [SsaSimpananImportStrategy::class, 'ssa_simpanan'],
             [SsaPinjamanImportStrategy::class, 'ssa_pinjaman'],
-            [Gi405RecDhImportStrategy::class, 'gi405_rec_dh'],
+            [Gi405RecDhImportStrategy::class, 'gi405_singlerow'],
             [Lw325PhImportStrategy::class, 'lw325_ph'],
             [CognosPhImportStrategy::class, 'cognos_ph'],
             [CognosRecoveryImportStrategy::class, 'cognos_recovery'],
             [PerformancePisImportStrategy::class, 'performance_pis_per_produk'],
+            [L1133ImportStrategy::class, 'l1133'],
         ];
 
         foreach ($cases as [$class, $table]) {

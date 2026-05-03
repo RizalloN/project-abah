@@ -2,18 +2,20 @@
 
 namespace App\Services\Import\Strategies;
 
-class Gi405RecDhImportStrategy implements ImportStrategyInterface
+use App\Services\Import\L1133CsvImporter;
+
+class L1133ImportStrategy implements ImportStrategyInterface
 {
     public function key(): string
     {
-        return 'gi405_singlerow';
+        return L1133CsvImporter::TABLE;
     }
 
     public function supports(?object $report, ?string $tableName = null): bool
     {
         $table = strtolower(trim((string) ($tableName ?? $report->table_name ?? '')));
 
-        return $table === 'gi405_singlerow';
+        return $table === L1133CsvImporter::TABLE;
     }
 
     public function prepareContext(array $context): array
@@ -23,30 +25,12 @@ class Gi405RecDhImportStrategy implements ImportStrategyInterface
 
     public function validateSchema(array $availableColumns): array
     {
-        $required = [
-            'uniqueid_namareport',
-            'periode',
-            'branch',
-            'currency',
-            'posting_control',
-            'account_number',
-            'c_c',
-            'p_c',
-            'f_c',
-            'description',
-            'begining_balance',
-            'equivalents_idr',
-            'equivalents_usd',
-            'today_debit',
-            'today_credit',
-            'ending_balance',
-        ];
-
+        $required = array_merge(['uniqueid_namareport', 'created_at', 'updated_at'], L1133CsvImporter::NORMALIZED_HEADERS);
         $lookup = array_fill_keys(array_map('strtolower', $availableColumns), true);
         $missing = [];
 
         foreach ($required as $column) {
-            if (!isset($lookup[$column])) {
+            if (!isset($lookup[strtolower($column)])) {
                 $missing[] = $column;
             }
         }
@@ -54,7 +38,7 @@ class Gi405RecDhImportStrategy implements ImportStrategyInterface
         if ($missing !== []) {
             return [
                 'ok' => false,
-                'message' => 'Schema GI405 Single Row tidak lengkap. Kolom yang hilang: ' . implode(', ', $missing),
+                'message' => 'Schema L1133 tidak lengkap. Kolom yang hilang: ' . implode(', ', $missing),
             ];
         }
 
@@ -63,11 +47,11 @@ class Gi405RecDhImportStrategy implements ImportStrategyInterface
 
     public function transformHeaders(array $headers): array
     {
-        return $headers;
+        return L1133CsvImporter::NORMALIZED_HEADERS;
     }
 
     public function importMode(array $context = []): string
     {
-        return 'bulk_csv_filtered';
+        return 'bulk_csv_staging';
     }
 }

@@ -44,10 +44,8 @@ class ImportDlyKapResegmentasiCommand extends Command
         if ($sample !== []) {
             $this->components->info('Sample hasil mapping:');
             $this->table(
-                ['line', 'section', 'segmen', 'keterangan', 'L_rp', 'L_deb', 'DPK_rp', 'DPK_deb', 'TL_rp', 'TL_deb'],
+                ['segmen', 'keterangan', 'L_rp', 'L_deb', 'DPK_rp', 'DPK_deb', 'TL_rp', 'TL_deb'],
                 array_map(static fn (array $row): array => [
-                    $row['source_row_number'],
-                    $row['source_section'],
                     $row['segmen'],
                     $row['keterangan'],
                     $row['l_rp'],

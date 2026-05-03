@@ -198,7 +198,7 @@ return new class extends Migration
             ['id_report' => 16, 'nama_report' => 'Rencana Kerja Anggaran (RKA)', 'table_name' => 'rka', 'active' => 1, 'import_controller' => 'ImportRkaController', 'requires_manual_periode' => 1, 'manual_periode_type' => 'year', 'manual_periode_label' => 'Tahun RKA', 'manual_periode_help' => 'Pilih tahun untuk target RKA.'],
             ['id_report' => 17, 'nama_report' => 'SSA Simpanan (Export)', 'table_name' => 'ssa_simpanan', 'active' => 1, 'import_controller' => 'ImportSsaSimpananController', 'requires_manual_periode' => 0],
             ['id_report' => 18, 'nama_report' => 'SSA Pinjaman (Export)', 'table_name' => 'ssa_pinjaman', 'active' => 1, 'import_controller' => 'ImportSsaPinjamanController', 'requires_manual_periode' => 0],
-            ['id_report' => 19, 'nama_report' => 'GI405 Rec DH', 'table_name' => 'gi405_rec_dh', 'active' => 1, 'import_controller' => 'ImportRecDhController', 'requires_manual_periode' => 0],
+            ['id_report' => 19, 'nama_report' => 'GI405 Single Row', 'table_name' => 'gi405_singlerow', 'active' => 1, 'import_controller' => 'Gi405RecDhImportExcelController', 'requires_manual_periode' => 0],
             ['id_report' => 20, 'nama_report' => 'Cognos Recovery', 'table_name' => 'cognos_recovery', 'active' => 1, 'import_controller' => 'ImportCognosController', 'requires_manual_periode' => 0],
             ['id_report' => 21, 'nama_report' => 'Cognos PH', 'table_name' => 'cognos_ph', 'active' => 1, 'import_controller' => 'ImportCognosController', 'requires_manual_periode' => 0],
         ];

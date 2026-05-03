@@ -4,10 +4,37 @@ namespace App\Services\Import;
 
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+use PhpOffice\PhpSpreadsheet\IOFactory;
 
 class DlyKapResegmentasiCsvImporter
 {
     public const TABLE = 'dly_kap_resegmentasi';
+
+    public const NORMALIZED_HEADERS = [
+        'uniqueid_dly_kap',
+        'periode',
+        'kanwil',
+        'kode_cabang',
+        'kode_unit',
+        'segmen',
+        'keterangan',
+        'l_rp',
+        'l_deb',
+        'dpk_rp',
+        'dpk_deb',
+        'kl_rp',
+        'kl_deb',
+        'd_rp',
+        'd_deb',
+        'm_rp',
+        'm_deb',
+        'npl_rp',
+        'npl_deb',
+        'tl_rp',
+        'tl_deb',
+    ];
 
     private const METRIC_COLUMNS = [
         'l_rp' => 2,
@@ -32,9 +59,11 @@ class DlyKapResegmentasiCsvImporter
     public function parse(string $path): array
     {
         if (!is_file($path)) {
-            throw new \InvalidArgumentException("File CSV tidak ditemukan: {$path}");
+            throw new \InvalidArgumentException("File DLY KAP tidak ditemukan: {$path}");
         }
 
+        $cleanupPath = null;
+        $path = $this->ensureCsvSource($path, $cleanupPath);
         $handle = fopen($path, 'rb');
         if ($handle === false) {
             throw new \RuntimeException("File CSV tidak bisa dibuka: {$path}");
@@ -115,6 +144,9 @@ class DlyKapResegmentasiCsvImporter
             }
         } finally {
             fclose($handle);
+            if ($cleanupPath !== null) {
+                @unlink($cleanupPath);
+            }
         }
 
         foreach (['periode', 'kanwil', 'kode_cabang', 'kode_unit'] as $key) {
@@ -127,6 +159,73 @@ class DlyKapResegmentasiCsvImporter
             'metadata' => $metadata,
             'rows' => $rows,
             'warnings' => $warnings,
+        ];
+    }
+
+    /**
+     * @return array{absolute_path: string, relative_path: string, total_rows: int, metadata: array<string, mixed>, warnings: array<int, string>}
+     */
+    public function stageNormalizedCsv(string $sourcePath, ?string $relativeDirectory = null): array
+    {
+        $relativeDirectory ??= 'excel_imports/dly_kap';
+        $relativeDirectory = trim($relativeDirectory, '/\\');
+        $absoluteDirectory = Storage::path($relativeDirectory);
+        if (!is_dir($absoluteDirectory)) {
+            mkdir($absoluteDirectory, 0777, true);
+        }
+
+        // Fingerprint-based filename: same source file reuses staged CSV (no re-parsing)
+        $fingerprint = md5($sourcePath . '|' . (@filemtime($sourcePath) ?: 0) . '|' . (@filesize($sourcePath) ?: 0));
+        $fileName = 'dly_kap_normalized_' . $fingerprint . '.csv';
+        $absolutePath = $absoluteDirectory . DIRECTORY_SEPARATOR . $fileName;
+        $relativePath = $relativeDirectory . '/' . $fileName;
+
+        $legacyAbsolutePath = storage_path('app/' . $relativePath);
+        if (!file_exists($absolutePath) && file_exists($legacyAbsolutePath)) {
+            @copy($legacyAbsolutePath, $absolutePath);
+        }
+
+        if (file_exists($absolutePath) && filesize($absolutePath) > 0) {
+            if ($this->csvHasNormalizedHeaders($absolutePath)) {
+                $totalRows = max(0, (int) substr_count((string) file_get_contents($absolutePath), "\n") - 1);
+                return [
+                    'absolute_path' => $absolutePath,
+                    'relative_path' => $relativePath,
+                    'total_rows' => $totalRows,
+                    'metadata' => [],
+                    'warnings' => [],
+                ];
+            }
+
+            @unlink($absolutePath);
+        }
+
+        $parsed = $this->parse($sourcePath);
+
+        $output = fopen($absolutePath, 'wb');
+        if ($output === false) {
+            throw new \RuntimeException('Gagal membuat CSV staging DLY KAP Resegmentasi.');
+        }
+
+        try {
+            fputcsv($output, self::NORMALIZED_HEADERS);
+            foreach ($parsed['rows'] as $row) {
+                fputcsv($output, array_map(static fn (string $header) => $row[$header] ?? null, self::NORMALIZED_HEADERS));
+            }
+        } catch (\Throwable $e) {
+            fclose($output);
+            @unlink($absolutePath);
+            throw $e;
+        }
+
+        fclose($output);
+
+        return [
+            'absolute_path' => $absolutePath,
+            'relative_path' => $relativePath,
+            'total_rows' => count($parsed['rows']),
+            'metadata' => $parsed['metadata'],
+            'warnings' => $parsed['warnings'],
         ];
     }
 
@@ -195,6 +294,56 @@ class DlyKapResegmentasiCsvImporter
         }, $row);
     }
 
+    private function ensureCsvSource(string $path, ?string &$cleanupPath): string
+    {
+        $extension = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+        if (in_array($extension, ['csv', 'txt'], true)) {
+            return $path;
+        }
+
+        if (!in_array($extension, ['xlsx', 'xls'], true)) {
+            throw new \InvalidArgumentException('Format DLY KAP Resegmentasi harus CSV, TXT, XLSX, atau XLS.');
+        }
+
+        $directory = Storage::path('import_staging');
+        if (!is_dir($directory)) {
+            mkdir($directory, 0777, true);
+        }
+
+        $csvPath = $directory . DIRECTORY_SEPARATOR . 'dly_kap_source_' . Str::uuid()->toString() . '.csv';
+
+        // Native XLSX streaming (10-50x faster than PhpSpreadsheet)
+        if ($extension === 'xlsx' && app(ExcelStagingService::class)->dumpFlatXlsxToCsv($path, $csvPath)) {
+            $cleanupPath = $csvPath;
+            return $csvPath;
+        }
+
+        // Fallback: PhpSpreadsheet (for .xls or when native streaming fails)
+        $reader = IOFactory::createReaderForFile($path);
+        $reader->setReadDataOnly(true);
+        $spreadsheet = $reader->load($path);
+        $sheet = $spreadsheet->getActiveSheet();
+        $output = fopen($csvPath, 'wb');
+        if ($output === false) {
+            $spreadsheet->disconnectWorksheets();
+            throw new \RuntimeException('Gagal membuat staging CSV dari Excel DLY KAP.');
+        }
+
+        try {
+            foreach ($sheet->toArray(null, true, true, false) as $row) {
+                fputcsv($output, $row);
+            }
+        } finally {
+            fclose($output);
+            $spreadsheet->disconnectWorksheets();
+            unset($spreadsheet);
+        }
+
+        $cleanupPath = $csvPath;
+
+        return $csvPath;
+    }
+
     /**
      * @param array<string, mixed> $metadata
      * @param array<int, string|null> $row
@@ -215,8 +364,6 @@ class DlyKapResegmentasiCsvImporter
             'kanwil' => $metadata['kanwil'],
             'kode_cabang' => $metadata['kode_cabang'],
             'kode_unit' => $metadata['kode_unit'],
-            'source_section' => $sectionHeader,
-            'source_row_number' => $lineNumber,
             'segmen' => $segmen,
             'keterangan' => $keterangan,
         ];
@@ -243,6 +390,28 @@ class DlyKapResegmentasiCsvImporter
         }
 
         return true;
+    }
+
+    private function csvHasNormalizedHeaders(string $path): bool
+    {
+        $handle = fopen($path, 'rb');
+        if ($handle === false) {
+            return false;
+        }
+
+        try {
+            $headers = fgetcsv($handle);
+        } finally {
+            fclose($handle);
+        }
+
+        if (!is_array($headers)) {
+            return false;
+        }
+
+        $headers = $this->normalizeRow($headers);
+
+        return array_map(static fn ($header): string => strtolower((string) $header), $headers) === self::NORMALIZED_HEADERS;
     }
 
     private function blankToNull($value): ?string

@@ -15,6 +15,7 @@ use App\Jobs\RebuildSnapshotHarianBatch;
 use App\Jobs\RebuildSnapshotPerformanceRmBatch;
 use App\Jobs\RebuildSnapshotRasioBatch;
 use App\Jobs\RebuildSnapshotSimpleBatch;
+use App\Jobs\EnsureImportedSnapshotsFreshJob;
 use App\Jobs\WarmReportCacheJob;
 use Illuminate\Bus\Batch;
 use Illuminate\Support\Facades\Bus;
@@ -70,7 +71,7 @@ class ParallelSnapshotBatchCoordinator
                 WarmReportCacheJob::dispatch();
             })
             ->catch(fn (Batch $batch, Throwable $e) => self::handleBatchFailure($batch, $periodHint, $e))
-            ->finally(fn (Batch $batch) => self::handleBatchCompletion($batch, $periodHint))
+            ->finally(fn (Batch $batch) => self::handleBatchCompletion($batch, $periodHint, 'simpanan_multipn', $source))
             ->name('simpanan:' . $periodHint)
             ->onQueue('snapshots-parallel')
             ->dispatch();
@@ -117,7 +118,7 @@ class ParallelSnapshotBatchCoordinator
                 WarmReportCacheJob::dispatch();
             })
             ->catch(fn (Batch $batch, Throwable $e) => self::handleBatchFailure($batch, $periodHint, $e))
-            ->finally(fn (Batch $batch) => self::handleBatchCompletion($batch, $periodHint))
+            ->finally(fn (Batch $batch) => self::handleBatchCompletion($batch, $periodHint, 'daily_loan_dinamis', $source))
             ->name('daily_loan:' . $periodHint)
             ->onQueue('snapshots-parallel')
             ->dispatch();
@@ -162,7 +163,7 @@ class ParallelSnapshotBatchCoordinator
         ]);
     }
 
-    private static function handleBatchCompletion(Batch $batch, ?string $periodHint): void
+    private static function handleBatchCompletion(Batch $batch, ?string $periodHint, ?string $tableName = null, ?string $source = null): void
     {
         $periodScope = $periodHint ?: 'all';
 
@@ -179,6 +180,14 @@ class ParallelSnapshotBatchCoordinator
 
         if ($batch->failedJobs > 0) {
             Log::warning('Parallel snapshot batch has failed jobs - manual intervention may be needed', $stats);
+        }
+
+        if (in_array($tableName, ['daily_loan_dinamis', 'simpanan_multipn'], true)) {
+            EnsureImportedSnapshotsFreshJob::dispatch(
+                $tableName,
+                $periodHint,
+                $source ?? static::class . '::batchCompletion'
+            )->onQueue('snapshots-parallel');
         }
     }
 

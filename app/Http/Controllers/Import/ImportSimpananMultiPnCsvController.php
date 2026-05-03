@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Import;
 
 use App\Services\Import\MySqlBulkLoadService;
 use App\Services\Import\ImportCleanupService;
+use App\Services\Import\ImportDuplicateGuardService;
 use App\Support\StrictDateParser;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -638,10 +639,11 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
         $absolutePath = (string) ($eligibility['absolute_path'] ?? '');
         $totalRows = (int) ($eligibility['total_rows'] ?? 0);
 
-        // Calculate file fingerprint untuk deduplication check
+        // Calculate file fingerprint using centralized duplicate guard service
+        $guard = app(ImportDuplicateGuardService::class);
         $contentHash = '';
         try {
-            $contentHash = $this->calculateFileFingerprint($absolutePath);
+            $contentHash = $guard->fingerprint($absolutePath);
             Log::debug('Simpanan MultiPN: Content fingerprint calculated', [
                 'job_id' => $jobId,
                 'content_hash' => $contentHash,
@@ -654,28 +656,30 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
             ]);
         }
 
-        // Acquire atomic lock to prevent simultaneous import of identical file
-        // This prevents race condition where two jobs upload same file simultaneously
-        $contentLock = null;
+        // Layer A: cross-report duplicate file check + process-safe MySQL advisory lock
+        $advisoryLockName = null;
         if ($contentHash !== '') {
-            $contentLock = Cache::lock("import_lock_content_{$contentHash}", 3600);
-            if (!$contentLock->get()) {
-                return response()->stream(function () use ($jobId) {
+            try {
+                $guard->assertFileNotImportedAnywhere($contentHash, $jobId > 0 ? $jobId : 0);
+                $advisoryLockName = $guard->acquireAdvisoryLock('simpanan_multipn', ['content' => $contentHash]);
+                Log::info('Simpanan MultiPN: Advisory lock acquired', [
+                    'job_id' => $jobId,
+                    'content_hash' => $contentHash,
+                ]);
+            } catch (\RuntimeException $e) {
+                return response()->stream(function () use ($jobId, $e) {
                     echo "event: error\n";
-                    echo 'data: ' . json_encode([
-                        'message' => 'File identik sedang diproses oleh job lain. Mohon tunggu beberapa saat atau reload halaman.'
-                    ]) . "\n\n";
+                    echo 'data: ' . json_encode(['message' => $e->getMessage()]) . "\n\n";
                     if (ob_get_level() > 0) {
                         ob_flush();
                     }
                     flush();
-
                     if ($jobId > 0) {
                         $this->updateImportJobStatusSafely($jobId, [
                             'status' => 'failed',
                             'updated_at' => now(),
                         ]);
-                        $this->progressService()->markFailed($jobId, 'File identik sedang diproses oleh job lain.');
+                        $this->progressService()->markFailed($jobId, $e->getMessage());
                     }
                 }, 200, [
                     'Content-Type' => 'text/event-stream',
@@ -684,16 +688,11 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                     'Connection' => 'keep-alive',
                 ]);
             }
-
-            Log::info('Simpanan MultiPN: Content lock acquired', [
-                'job_id' => $jobId,
-                'content_hash' => $contentHash,
-            ]);
         }
 
         request()->session()->save();
 
-        return response()->stream(function () use ($jobId, $relativePath, $absolutePath, $totalRows, $normalizedHeaders, $selectedColumns, $activeFilters, $params, $contentHash, $contentLock) {
+        return response()->stream(function () use ($jobId, $relativePath, $absolutePath, $totalRows, $normalizedHeaders, $selectedColumns, $activeFilters, $params, $contentHash, $advisoryLockName) {
             $streamLock = null;
             $cleanupPaths = [];
             $usePolarsStage = !empty($activeFilters);
@@ -842,16 +841,22 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                     'speed' => 0,
                 ]);
 
-                // Validate file uniqueness before processing
+                // Layer B: validate slot availability (posisi + kantor_cabang) before processing
                 if ($contentHash !== '') {
                     try {
-                        $periodHints = $this->collectSimpananMultiPnSnapshotPeriods($absolutePath, 10000);
+                        $scopeHints = $this->collectSimpananMultiPnSnapshotScopes($absolutePath);
+                        $periodHints = (array) ($scopeHints['periods'] ?? []);
+                        $branchHints = (array) ($scopeHints['branches'] ?? []);
                         if (!empty($periodHints)) {
-                            $this->validateFileUniqueness($contentHash, $periodHints);
-                            Log::info('Simpanan MultiPN: File uniqueness validation passed', [
+                            $slotGuard = app(ImportDuplicateGuardService::class);
+                            $slotValues = $slotGuard->buildSlotValues('simpanan_multipn', $periodHints, $branchHints);
+                            foreach ($slotValues as $slot) {
+                                $slotGuard->assertSlotEmpty('simpanan_multipn', $slot);
+                            }
+                            Log::info('Simpanan MultiPN: Slot availability validated', [
                                 'job_id' => $jobId,
                                 'content_hash' => $contentHash,
-                                'periods_count' => count($periodHints),
+                                'slots_checked' => count($slotValues),
                             ]);
                         }
                     } catch (\RuntimeException $e) {
@@ -925,6 +930,13 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                 if ($plannedTotalRows <= 0) {
                     $plannedTotalRows = $totalRows > 0 ? $totalRows : $plannedLoadRows;
                 }
+
+                $this->storeSimpananMultiPnJobMetadata($jobId, [
+                    'content_hash' => $contentHash,
+                    'period_hints' => (array) ($loadPlan['period_hints'] ?? []),
+                    'branch_hints' => (array) ($loadPlan['branch_hints'] ?? []),
+                    'table_name' => 'simpanan_multipn',
+                ]);
 
                 $send('progress', [
                     'status' => 'processing',
@@ -1032,15 +1044,15 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                         : $this->formatSafeImportFailureMessage('Fast import CSV gagal: ', $e),
                 ]);
                 } finally {
-                    // Release content lock (atomic lock preventing simultaneous imports)
-                    if ($contentLock) {
+                    // Release advisory lock (process-safe MySQL GET_LOCK)
+                    if ($advisoryLockName !== null) {
                         try {
-                            $contentLock->release();
-                            Log::debug('Simpanan MultiPN: Content lock released', [
+                            app(ImportDuplicateGuardService::class)->releaseAdvisoryLock($advisoryLockName);
+                            Log::debug('Simpanan MultiPN: Advisory lock released', [
                                 'job_id' => $jobId,
                             ]);
                         } catch (\Throwable $e) {
-                            Log::warning('Failed to release Simpanan MultiPN content lock: ' . $e->getMessage());
+                            Log::warning('Failed to release Simpanan MultiPN advisory lock: ' . $e->getMessage());
                         }
                     }
 
@@ -1618,6 +1630,7 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
             'period_hints' => $periodHints !== []
                 ? $periodHints
                 : ($assumeCleanSource ? [] : $this->collectSimpananMultiPnSnapshotPeriods($sourcePath)),
+            'branch_hints' => $this->collectSimpananMultiPnSnapshotBranchesFromHeaders($sourcePath, $delimiter, $sourceHeaders, 10000),
             'source_headers' => $sourceHeaders,
             'source_rows' => $sourceRows,
         ];
@@ -1702,6 +1715,7 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
         $this->configureLongRunningImportRuntime();
         $bulkLoadService = app(MySqlBulkLoadService::class);
         $bulkLoadService->assertTransactionalTable('simpanan_multipn', 'import CSV Simpanan MultiPN');
+        $lockWaitSeconds = max(10, (int) config('import.direct_load.table_write_lock_wait_seconds', 300));
 
         return $bulkLoadService->withTableWriteLock('simpanan_multipn', function () use ($absolutePath, $loadPlan, $beforeLoad, $send, $jobId): int {
             $connection = config('database.default', 'mysql');
@@ -1745,7 +1759,11 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                 try {
                     $mysqlThreadId = (int) $pdo->query('SELECT CONNECTION_ID()')->fetchColumn();
                     if ($mysqlThreadId > 0 && $jobId > 0) {
-                        $this->storeJobMetadataThreadId($jobId, $mysqlThreadId, (array) ($loadPlan['content_hash'] ?? ''));
+                        $this->storeJobMetadataThreadId($jobId, $mysqlThreadId, [
+                            'content_hash' => (string) ($loadPlan['content_hash'] ?? ''),
+                            'period_hints' => (array) ($loadPlan['period_hints'] ?? []),
+                            'branch_hints' => (array) ($loadPlan['branch_hints'] ?? []),
+                        ]);
                         Log::debug('Simpanan MultiPN: MySQL thread ID captured', [
                             'job_id' => $jobId,
                             'mysql_thread_id' => $mysqlThreadId,
@@ -1853,7 +1871,7 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
             }
 
             return $affected;
-        });
+        }, $lockWaitSeconds);
     }
 
     private function executeLoadDataWithSnapshotInvalidationBypassed(
@@ -2099,6 +2117,132 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
         }
     }
 
+    private function collectSimpananMultiPnSnapshotScopes(string $absolutePath, int $maxRows = 0): array
+    {
+        $delimiter = $this->detectCsvDelimiter($absolutePath);
+        $handle = @fopen($absolutePath, 'rb');
+        if ($handle === false) {
+            return ['periods' => [], 'branches' => []];
+        }
+
+        try {
+            $headers = $this->readCsvRecord($handle, $delimiter);
+            if ($headers === false || empty($headers)) {
+                return ['periods' => [], 'branches' => []];
+            }
+
+            $posisiIndex = null;
+            $branchIndex = null;
+            foreach ($headers as $index => $header) {
+                $normalized = $this->normalizeHeaderName((string) $header);
+                if ($posisiIndex === null && $normalized === 'posisi') {
+                    $posisiIndex = (int) $index;
+                }
+                if ($branchIndex === null && $normalized === 'kantor_cabang') {
+                    $branchIndex = (int) $index;
+                }
+            }
+
+            $periods = [];
+            $branches = [];
+            $scannedRows = 0;
+
+            while (($row = $this->readCsvRecord($handle, $delimiter)) !== false) {
+                if (empty(array_filter((array) $row, static fn ($value): bool => trim((string) $value) !== ''))) {
+                    continue;
+                }
+
+                $scannedRows++;
+                if ($posisiIndex !== null) {
+                    $period = trim((string) ($row[$posisiIndex] ?? ''));
+                    if ($period !== '') {
+                        $periods[StrictDateParser::normalize($period) ?? $period] = true;
+                    }
+                }
+
+                if ($branchIndex !== null) {
+                    $branch = trim((string) ($row[$branchIndex] ?? ''));
+                    if ($branch !== '') {
+                        $branches[$branch] = true;
+                    }
+                }
+
+                if ($maxRows > 0 && $scannedRows >= $maxRows) {
+                    break;
+                }
+            }
+
+            $periodHints = array_values(array_keys($periods));
+            $branchHints = array_values(array_keys($branches));
+            sort($periodHints);
+            sort($branchHints);
+
+            return [
+                'periods' => $periodHints,
+                'branches' => $branchHints,
+            ];
+        } finally {
+            fclose($handle);
+        }
+    }
+
+    private function collectSimpananMultiPnSnapshotBranchesFromHeaders(
+        string $absolutePath,
+        string $delimiter,
+        array $headers,
+        int $maxRows = 10000
+    ): array {
+        if ($absolutePath === '' || !file_exists($absolutePath)) {
+            return [];
+        }
+
+        $branchIndex = null;
+        foreach ($headers as $index => $header) {
+            if ($this->normalizeHeaderName((string) $header) === 'kantor_cabang') {
+                $branchIndex = (int) $index;
+                break;
+            }
+        }
+
+        if ($branchIndex === null) {
+            return [];
+        }
+
+        $handle = @fopen($absolutePath, 'rb');
+        if ($handle === false) {
+            return [];
+        }
+
+        try {
+            $this->readCsvRecord($handle, $delimiter);
+            $branches = [];
+            $scannedRows = 0;
+
+            while (($row = $this->readCsvRecord($handle, $delimiter)) !== false) {
+                if (empty(array_filter((array) $row, static fn ($value): bool => trim((string) $value) !== ''))) {
+                    continue;
+                }
+
+                $scannedRows++;
+                $branch = trim((string) ($row[$branchIndex] ?? ''));
+                if ($branch !== '') {
+                    $branches[$branch] = true;
+                }
+
+                if ($maxRows > 0 && $scannedRows >= $maxRows) {
+                    break;
+                }
+            }
+
+            $branchHints = array_values(array_keys($branches));
+            sort($branchHints);
+
+            return $branchHints;
+        } finally {
+            fclose($handle);
+        }
+    }
+
     private function collectImportedBatchPeriods(string $importBatchTimestamp): array
     {
         $normalizedTimestamp = trim($importBatchTimestamp);
@@ -2162,6 +2306,12 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                 $jobId,
                 array_values(array_filter([$relativePath, $absolutePath]))
             );
+
+            // Reactively resume paused snapshot queues rather than waiting for the 1-minute scheduler
+            try {
+                app(\App\Services\Import\SnapshotQueuePauseService::class)->resumeWhenNoActiveImports();
+            } catch (\Throwable) {}
+
         } catch (\Throwable $e) {
             Log::warning('Gagal menjalankan cleanup terpusat Simpanan MultiPN CSV: ' . $e->getMessage(), [
                 'job_id' => $jobId,
@@ -2176,31 +2326,21 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
             throw new \RuntimeException('File tidak ditemukan saat menghitung fingerprint: ' . $absolutePath);
         }
 
-        $fileName = basename($absolutePath);
         $fileSize = @filesize($absolutePath);
 
         if ($fileSize === false) {
             throw new \RuntimeException('Gagal membaca ukuran file untuk fingerprinting: ' . $absolutePath);
         }
 
-        $handle = @fopen($absolutePath, 'rb');
-        if ($handle === false) {
-            throw new \RuntimeException('Gagal membuka file untuk fingerprinting: ' . $absolutePath);
+        $hash = @hash_file('sha256', $absolutePath);
+        if (!is_string($hash) || $hash === '') {
+            throw new \RuntimeException('Gagal menghitung hash isi file untuk fingerprinting: ' . $absolutePath);
         }
 
-        try {
-            $sample = @fread($handle, 8192);
-            if ($sample === false) {
-                throw new \RuntimeException('Gagal membaca sampel file untuk fingerprinting: ' . $absolutePath);
-            }
-
-            return sha1($fileName . '|' . $fileSize . '|' . $sample);
-        } finally {
-            @fclose($handle);
-        }
+        return $hash;
     }
 
-    private function validateFileUniqueness(string $contentHash, array $periodHints): void
+    private function validateFileUniqueness(string $contentHash, array $periodHints, array $branchHints = []): void
     {
         if (empty($contentHash)) {
             return;
@@ -2210,89 +2350,208 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
             static fn ($value): string => trim((string) $value),
             $periodHints
         ), static fn (string $value): bool => $value !== '')));
+        $branchHints = array_values(array_unique(array_filter(array_map(
+            static fn ($value): string => trim((string) $value),
+            $branchHints
+        ), static fn (string $value): bool => $value !== '')));
 
-        try {
-            // Safety check: Verify that job_content_hash column exists before querying
-            if (!Schema::hasColumn('import_jobs', 'job_content_hash')) {
-                Log::info('Simpanan MultiPN: job_content_hash column not available yet, skipping uniqueness check');
-                return;
+        if ($periodHints === []) {
+            throw new \RuntimeException(
+                'Periode pada file tidak terdeteksi. Verifikasi kolom POSISI sebelum import Simpanan MultiPN.'
+            );
+        }
+
+        $existingJobs = $this->findCompletedSimpananMultiPnJobsByContentHash($contentHash);
+        if ($existingJobs->isEmpty()) {
+            $activeScopes = $this->filterSimpananMultiPnScopesStillPresent($periodHints, $branchHints);
+            if ($activeScopes !== []) {
+                throw new \RuntimeException(
+                    'Data periode/kanca dari file ini masih ada di database: '
+                    . implode(', ', array_slice($activeScopes, 0, 8)) . '. '
+                    . 'Hapus report untuk periode/kanca terkait terlebih dahulu sebelum import ulang.'
+                );
             }
 
-            // OPTIMIZED: Query menggunakan virtual column index (O(log N))
-            // Jika migration belum dijalankan, query akan tetap berfungsi (fallback tanpa index)
-            $existingJob = DB::table('import_jobs')
-                ->where('status', 'completed')
-                ->where('id_report', self::REPORT_ID)
-                ->where('job_content_hash', $contentHash)
-                ->first(['job_context']);
+            return;
+        }
 
-            if (!$existingJob) {
-                // Tidak ada job dengan hash yang sama, aman untuk import
-                return;
-            }
+        Log::warning('Simpanan MultiPN: Identical file hash found in completed jobs', [
+            'content_hash' => $contentHash,
+            'new_periods' => $periodHints,
+            'matching_jobs' => $existingJobs->pluck('id')->all(),
+        ]);
 
-            // Ada job dengan hash yang sama - ini adalah suspicious
-            Log::warning('Simpanan MultiPN: Identical file hash found in completed jobs', [
-                'content_hash' => $contentHash,
-                'new_periods' => $periodHints,
-            ]);
+        foreach ($existingJobs as $existingJob) {
+            $context = json_decode((string) ($existingJob->job_context ?? ''), true);
+            $context = is_array($context) ? $context : [];
 
-            // Jika ada job dengan hash yang sama, cek periode overlap
-            $jobContext = $existingJob->job_context;
-            if (!is_string($jobContext) || trim($jobContext) === '') {
-                // Safety check: Jika tidak ada context dari job lama (corrupted), tetap reject
-                if (empty($periodHints)) {
-                    throw new \RuntimeException(
-                        'File identik telah diimpor sebelumnya (periode tidak terdeteksi pada file baru). '
-                        . 'Verifikasi bahwa kolom POSISI pada CSV sudah benar.'
-                    );
-                }
-                return;
-            }
-
-            $context = @json_decode($jobContext, true);
-            if (!is_array($context)) {
-                // Corrupted job context dari import lama
-                if (empty($periodHints)) {
-                    throw new \RuntimeException(
-                        'File identik telah diimpor sebelumnya (periode tidak terdeteksi pada file baru). '
-                        . 'Verifikasi bahwa kolom POSISI pada CSV sudah benar.'
-                    );
-                }
-                return;
-            }
-
-            $storedPeriods = (array) ($context['period_hints'] ?? []);
+            $storedPeriods = (array) ($context['period_hints'] ?? $context['detected_periods'] ?? []);
             $storedPeriods = array_values(array_unique(array_filter(array_map(
                 static fn ($value): string => trim((string) $value),
                 $storedPeriods
             ), static fn (string $value): bool => $value !== '')));
 
-            // SAFEGUARD: Jika file baru tidak punya periode terdeteksi, tapi ada file lama dengan periode
-            // Ini mungkin indikasi kolom POSISI berubah atau CSV format salah
-            if (empty($periodHints) && !empty($storedPeriods)) {
-                throw new \RuntimeException(
-                    'File identik telah diimpor sebelumnya untuk periode: ' . implode(', ', array_slice($storedPeriods, 0, 3)) . '. '
-                    . 'Periode pada file baru tidak terdeteksi - verifikasi kolom POSISI pada CSV Anda.'
-                );
+            $overlapPeriods = $storedPeriods === []
+                ? $periodHints
+                : array_values(array_intersect($periodHints, $storedPeriods));
+
+            if ($overlapPeriods === []) {
+                continue;
             }
 
-            if (empty($storedPeriods)) {
+            $activePeriods = $this->filterSimpananMultiPnPeriodsStillPresent($overlapPeriods);
+            if ($activePeriods !== []) {
+                $activeScopes = $this->filterSimpananMultiPnScopesStillPresent($activePeriods, $branchHints);
+                if ($activeScopes === []) {
+                    continue;
+                }
+
+                throw new \RuntimeException(
+                    'File CSV ini sudah pernah di-import dan data periode/kanca berikut masih ada di database: '
+                    . implode(', ', array_slice($activeScopes, 0, 8)) . '. '
+                    . 'Hapus report untuk periode/kanca terkait terlebih dahulu sebelum import ulang file yang sama.'
+                );
+            }
+        }
+    }
+
+    private function findCompletedSimpananMultiPnJobsByContentHash(string $contentHash): \Illuminate\Support\Collection
+    {
+        if (!Schema::hasTable('import_jobs')) {
+            return collect();
+        }
+
+        $query = DB::table('import_jobs')
+            ->where('status', 'completed')
+            ->where('id_report', self::REPORT_ID)
+            ->orderByDesc('id')
+            ->limit(25);
+
+        if (Schema::hasColumn('import_jobs', 'job_content_hash')) {
+            $query->where('job_content_hash', $contentHash);
+        } else {
+            $escapedHash = addcslashes($contentHash, '\\%_');
+            $query->where('job_context', 'like', '%"content_hash":"' . $escapedHash . '"%');
+        }
+
+        return $query->get(['id', 'job_context']);
+    }
+
+    private function filterSimpananMultiPnPeriodsStillPresent(array $periods): array
+    {
+        $periods = array_values(array_unique(array_filter(array_map(
+            static fn ($value): string => trim((string) $value),
+            $periods
+        ), static fn (string $value): bool => $value !== '')));
+
+        if ($periods === [] || !Schema::hasTable('simpanan_multipn')) {
+            return [];
+        }
+
+        return DB::table('simpanan_multipn')
+            ->whereIn('posisi', $periods)
+            ->distinct()
+            ->orderBy('posisi')
+            ->pluck('posisi')
+            ->map(static fn ($value): string => trim((string) $value))
+            ->filter(static fn (string $value): bool => $value !== '')
+            ->values()
+            ->all();
+    }
+
+    private function filterSimpananMultiPnScopesStillPresent(array $periods, array $branches): array
+    {
+        $periods = array_values(array_unique(array_filter(array_map(
+            static fn ($value): string => trim((string) $value),
+            $periods
+        ), static fn (string $value): bool => $value !== '')));
+        $branches = array_values(array_unique(array_filter(array_map(
+            static fn ($value): string => trim((string) $value),
+            $branches
+        ), static fn (string $value): bool => $value !== '')));
+
+        if ($periods === [] || !Schema::hasTable('simpanan_multipn')) {
+            return [];
+        }
+
+        if ($branches === []) {
+            return $periods;
+        }
+
+        return DB::table('simpanan_multipn')
+            ->whereIn('posisi', $periods)
+            ->whereIn('kantor_cabang', $branches)
+            ->select('posisi', 'kantor_cabang')
+            ->distinct()
+            ->orderBy('posisi')
+            ->orderBy('kantor_cabang')
+            ->limit(25)
+            ->get()
+            ->map(static function ($row): string {
+                return trim((string) ($row->posisi ?? '')) . ' / ' . trim((string) ($row->kantor_cabang ?? ''));
+            })
+            ->filter(static fn (string $value): bool => trim($value, ' /') !== '')
+            ->values()
+            ->all();
+    }
+
+    private function storeSimpananMultiPnJobMetadata(int $jobId, array $metadata): void
+    {
+        if ($jobId <= 0 || $metadata === []) {
+            return;
+        }
+
+        try {
+            $job = DB::table('import_jobs')->where('id', $jobId)->first(['job_context']);
+            if (!$job) {
                 return;
             }
 
-            // Cek overlap periode
-            $hasOverlapPeriod = !empty(array_intersect($periodHints, $storedPeriods));
-
-            if ($hasOverlapPeriod) {
-                throw new \RuntimeException(
-                    'File sudah pernah di-import sebelumnya untuk periode yang sama: ' . implode(', ', array_intersect($periodHints, $storedPeriods)) . '. '
-                    . 'Gunakan file berbeda atau ubah periode upload.'
-                );
+            $context = json_decode((string) ($job->job_context ?? ''), true);
+            if (!is_array($context)) {
+                $context = [];
             }
+
+            $contentHash = trim((string) ($metadata['content_hash'] ?? ''));
+            if ($contentHash !== '') {
+                $context['content_hash'] = $contentHash;
+            }
+
+            $periodHints = array_values(array_unique(array_filter(array_map(
+                static fn ($value): string => trim((string) $value),
+                (array) ($metadata['period_hints'] ?? [])
+            ), static fn (string $value): bool => $value !== '')));
+
+            if ($periodHints !== []) {
+                sort($periodHints);
+                $context['period_hints'] = $periodHints;
+                $context['detected_periods'] = $periodHints;
+            }
+
+            $branchHints = array_values(array_unique(array_filter(array_map(
+                static fn ($value): string => trim((string) $value),
+                (array) ($metadata['branch_hints'] ?? [])
+            ), static fn (string $value): bool => $value !== '')));
+
+            if ($branchHints !== []) {
+                sort($branchHints);
+                $context['branch_hints'] = $branchHints;
+            }
+
+            $tableName = trim((string) ($metadata['table_name'] ?? ''));
+            if ($tableName !== '') {
+                $context['table_name'] = $tableName;
+            }
+
+            DB::table('import_jobs')
+                ->where('id', $jobId)
+                ->update([
+                    'job_context' => json_encode($context, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                    'updated_at' => now(),
+                ]);
         } catch (\Throwable $e) {
-            Log::warning('Validasi keunikan file Simpanan MultiPN gagal (continuing without check): ' . $e->getMessage(), [
-                'content_hash' => $contentHash,
+            Log::warning('Failed to store Simpanan MultiPN import metadata: ' . $e->getMessage(), [
+                'job_id' => $jobId,
             ]);
         }
     }
@@ -2320,8 +2579,30 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
 
             $context['mysql_thread_id'] = $mysqlThreadId;
 
-            if (!empty($loadPlanMeta) && isset($loadPlanMeta['content_hash'])) {
-                $context['content_hash'] = $loadPlanMeta['content_hash'];
+            $contentHash = trim((string) ($loadPlanMeta['content_hash'] ?? ''));
+            if ($contentHash !== '') {
+                $context['content_hash'] = $contentHash;
+            }
+
+            $periodHints = array_values(array_unique(array_filter(array_map(
+                static fn ($value): string => trim((string) $value),
+                (array) ($loadPlanMeta['period_hints'] ?? [])
+            ), static fn (string $value): bool => $value !== '')));
+
+            if ($periodHints !== []) {
+                sort($periodHints);
+                $context['period_hints'] = $periodHints;
+                $context['detected_periods'] = $periodHints;
+            }
+
+            $branchHints = array_values(array_unique(array_filter(array_map(
+                static fn ($value): string => trim((string) $value),
+                (array) ($loadPlanMeta['branch_hints'] ?? [])
+            ), static fn (string $value): bool => $value !== '')));
+
+            if ($branchHints !== []) {
+                sort($branchHints);
+                $context['branch_hints'] = $branchHints;
             }
 
             $encoded = json_encode($context, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);

@@ -1540,12 +1540,14 @@
             const isCognosRecovery = reportName.includes('cognos recovery');
             const isMantri = tableName === 'performance_mantri' || importController.includes('ImportPerformanceMantriController');
             const isKurMikro = tableName === 'performance_kurkecil_mikro' || importController.includes('ImportKurMikroController');
-            const isGi405RecDh = tableName === 'gi405_rec_dh' || importController.includes('Gi405RecDhImportExcelController');
+            const isGi405RecDh = tableName === 'gi405_singlerow' || importController.includes('Gi405RecDhImportExcelController');
             const isSsaSimpanan = tableName === 'ssa_simpanan';
             const isSsaPinjaman = tableName === 'ssa_pinjaman';
             const isInputRekanan = tableName === 'input_rekanan';
             const isBodBoc = tableName === 'bod_boc';
             const isRka = tableName === 'rka';
+            const isDlyKapResegmentasi = tableName === 'dly_kap_resegmentasi';
+            const isL1133 = tableName === 'l1133';
             const usesGenericExcelFlow = importController.includes('ImportExcelController') && !isDailyLoan && !isSimpanan;
 
             formRAR.style.display = 'none';
@@ -1612,7 +1614,7 @@
                 formImport.dataset.preparePreviewUrl = "{{ route('import.gi405.prepare-preview') }}";
 
                 if (excelLabel) {
-                    excelLabel.innerHTML = '<i class="fas fa-file-excel mr-1"></i> Upload File Excel GI405 - Rec. DH (.xlsx, .xls)';
+                    excelLabel.innerHTML = '<i class="fas fa-file-excel mr-1"></i> Upload File Excel GI405 Single Row (.xlsx, .xls)';
                 }
 
                 if (excelHelp) {
@@ -1799,6 +1801,26 @@
                     label: 'Tanggal Periode',
                     help: 'Wajib isi tanggal periode manual (YYYY-MM-DD) untuk Performance PIS per Produk.',
                 }));
+                configureKancaInput({ visible: false });
+                updateReportSummary();
+                updateFileSelectionUI();
+                return;
+            }
+
+            if (isDlyKapResegmentasi || isL1133) {
+                const label = isDlyKapResegmentasi ? 'DLY KAP Resegmentasi' : 'L1133';
+                formCsv.style.display = 'block';
+                inputCsv.disabled = false;
+                inputCsv.required = true;
+                inputCsv.setAttribute('accept', '.csv,.txt,.xlsx,.xls');
+                formImport.action = "{{ route('import.excel.upload') }}";
+                formImport.dataset.preparePreviewUrl = "{{ route('import.excel.prepare-preview') }}";
+
+                csvLabel.innerHTML = `<i class="fas fa-file-upload mr-1"></i> Upload File ${label} (.csv, .txt, .xlsx, .xls)`;
+                csvHelp.textContent = `File CSV dan Excel didukung untuk ${label}. Format RAR tidak digunakan.`;
+
+                applyButtonState('csv', '<i class="fas fa-file-upload"></i> Upload File');
+                configurePeriodeInput({ visible: false });
                 configureKancaInput({ visible: false });
                 updateReportSummary();
                 updateFileSelectionUI();

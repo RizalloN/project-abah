@@ -21,7 +21,7 @@ use Illuminate\Support\Facades\Log;
  * 2. When new SSA Simpanan data is imported (trigger in import controller)
  * 3. Runs in background queue - doesn't block the user response
  * 
- * Queue: imports-high (priority queue for import-related tasks)
+ * Queue: snapshots-parallel (paused while imports are active)
  */
 class RebuildDashboardHarianSnapshotJob implements ShouldQueue
 {

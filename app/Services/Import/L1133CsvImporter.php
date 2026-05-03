@@ -4,7 +4,9 @@ namespace App\Services\Import;
 
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use PhpOffice\PhpSpreadsheet\IOFactory;
 
 class L1133CsvImporter
 {
@@ -60,15 +62,34 @@ class L1133CsvImporter
      */
     public function stageNormalizedCsv(string $sourcePath, ?string $relativeDirectory = null): array
     {
-        $relativeDirectory ??= 'import_staging';
-        $absoluteDirectory = storage_path('app/' . trim($relativeDirectory, '/\\'));
+        $relativeDirectory ??= 'excel_imports/l1133';
+        $relativeDirectory = trim($relativeDirectory, '/\\');
+        $absoluteDirectory = Storage::path($relativeDirectory);
         if (!is_dir($absoluteDirectory)) {
             mkdir($absoluteDirectory, 0777, true);
         }
 
-        $fileName = 'l1133_normalized_' . Str::uuid()->toString() . '.csv';
+        // Fingerprint-based filename: same source file reuses staged CSV (no re-parsing)
+        $fingerprint = md5($sourcePath . '|' . (@filemtime($sourcePath) ?: 0) . '|' . (@filesize($sourcePath) ?: 0));
+        $fileName = 'l1133_normalized_' . $fingerprint . '.csv';
         $absolutePath = $absoluteDirectory . DIRECTORY_SEPARATOR . $fileName;
-        $relativePath = trim($relativeDirectory, '/\\') . '/' . $fileName;
+        $relativePath = $relativeDirectory . '/' . $fileName;
+
+        $legacyAbsolutePath = storage_path('app/' . $relativePath);
+        if (!file_exists($absolutePath) && file_exists($legacyAbsolutePath)) {
+            @copy($legacyAbsolutePath, $absolutePath);
+        }
+
+        if (file_exists($absolutePath) && filesize($absolutePath) > 0) {
+            $totalRows = max(0, (int) substr_count((string) file_get_contents($absolutePath), "\n") - 1);
+            return [
+                'absolute_path' => $absolutePath,
+                'relative_path' => $relativePath,
+                'total_rows' => $totalRows,
+                'metadata' => [],
+                'warnings' => [],
+            ];
+        }
 
         $output = fopen($absolutePath, 'wb');
         if ($output === false) {
@@ -155,9 +176,11 @@ class L1133CsvImporter
     private function streamNormalizedRows(string $path, callable $onRow, array &$warnings): array
     {
         if (!is_file($path)) {
-            throw new \InvalidArgumentException("File CSV tidak ditemukan: {$path}");
+            throw new \InvalidArgumentException("File L1133 tidak ditemukan: {$path}");
         }
 
+        $cleanupPath = null;
+        $path = $this->ensureCsvSource($path, $cleanupPath);
         $handle = fopen($path, 'rb');
         if ($handle === false) {
             throw new \RuntimeException("File CSV tidak bisa dibuka: {$path}");
@@ -234,6 +257,9 @@ class L1133CsvImporter
             }
         } finally {
             fclose($handle);
+            if ($cleanupPath !== null) {
+                @unlink($cleanupPath);
+            }
         }
 
         if (!$headerFound) {
@@ -247,6 +273,56 @@ class L1133CsvImporter
         }
 
         return ['metadata' => $metadata];
+    }
+
+    private function ensureCsvSource(string $path, ?string &$cleanupPath): string
+    {
+        $extension = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+        if (in_array($extension, ['csv', 'txt'], true)) {
+            return $path;
+        }
+
+        if (!in_array($extension, ['xlsx', 'xls'], true)) {
+            throw new \InvalidArgumentException('Format L1133 harus CSV, TXT, XLSX, atau XLS.');
+        }
+
+        $directory = Storage::path('import_staging');
+        if (!is_dir($directory)) {
+            mkdir($directory, 0777, true);
+        }
+
+        $csvPath = $directory . DIRECTORY_SEPARATOR . 'l1133_source_' . Str::uuid()->toString() . '.csv';
+
+        // Native XLSX streaming (10-50x faster than PhpSpreadsheet)
+        if ($extension === 'xlsx' && app(ExcelStagingService::class)->dumpFlatXlsxToCsv($path, $csvPath)) {
+            $cleanupPath = $csvPath;
+            return $csvPath;
+        }
+
+        // Fallback: PhpSpreadsheet (for .xls or when native streaming fails)
+        $reader = IOFactory::createReaderForFile($path);
+        $reader->setReadDataOnly(true);
+        $spreadsheet = $reader->load($path);
+        $sheet = $spreadsheet->getActiveSheet();
+        $output = fopen($csvPath, 'wb');
+        if ($output === false) {
+            $spreadsheet->disconnectWorksheets();
+            throw new \RuntimeException('Gagal membuat staging CSV dari Excel L1133.');
+        }
+
+        try {
+            foreach ($sheet->toArray(null, true, true, false) as $row) {
+                fputcsv($output, $row);
+            }
+        } finally {
+            fclose($output);
+            $spreadsheet->disconnectWorksheets();
+            unset($spreadsheet);
+        }
+
+        $cleanupPath = $csvPath;
+
+        return $csvPath;
     }
 
     /**

@@ -40,21 +40,21 @@ class FileManagementBackupStatusTest extends TestCase
         $this->assertSame('Menunggu proses backup database dimulai...', $payload['message']);
     }
 
-    public function test_stale_running_backup_status_is_reported_as_failed(): void
+    public function test_stale_running_backup_status_is_reported_as_stalled_not_failed(): void
     {
         Cache::put('backup_progress:backup_test', [
             'status' => 'processing',
             'progress_percent' => 12,
             'message' => 'Mencadangkan tabel besar...',
-            'updated_at' => now()->subMinutes(4)->timestamp,
+            'updated_at' => now()->subMinutes(6)->timestamp,
         ], now()->addHour());
 
         $response = (new FileManagementController())->getBackupStatus('backup_test');
         $payload = $response->getData(true);
 
         $this->assertSame(200, $response->getStatusCode());
-        $this->assertSame('failed', $payload['status']);
+        $this->assertSame('stalled', $payload['status']);
         $this->assertSame(12, $payload['progress_percent']);
-        $this->assertStringContainsString('tidak memberi progress', $payload['message']);
+        $this->assertStringContainsString('tidak ada update progress', $payload['message']);
     }
 }

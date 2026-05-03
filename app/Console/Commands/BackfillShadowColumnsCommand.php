@@ -57,6 +57,12 @@ class BackfillShadowColumnsCommand extends Command
             $queueName = $queueName !== '' ? $queueName : (string) config('queue.shadow_backfill_queue', 'shadow-backfill');
 
             if (empty($periods)) {
+                // Auto-discover found nothing: all shadow columns are filled
+                if (empty(trim((string) $this->option('periods')))) {
+                    $this->info('✓ All shadow columns are already filled — nothing to backfill.');
+                    return self::SUCCESS;
+                }
+
                 $this->error('No periods specified. Use --periods=2026-04-25,2026-04-26');
                 return self::FAILURE;
             }
@@ -107,11 +113,53 @@ class BackfillShadowColumnsCommand extends Command
     private function getPeriods(): array
     {
         $periodInput = trim((string) $this->option('periods'));
-        if (empty($periodInput)) {
-            // Default: latest affected periods
-            return ['2026-04-25', '2026-04-26'];
+        if (!empty($periodInput)) {
+            return array_values(array_filter(array_map('trim', explode(',', $periodInput))));
         }
-        return array_map('trim', explode(',', $periodInput));
+
+        return $this->autoDiscoverPeriodsNeedingBackfill();
+    }
+
+    private function autoDiscoverPeriodsNeedingBackfill(): array
+    {
+        if (!Schema::hasTable('daily_loan_dinamis')) {
+            return [];
+        }
+
+        $requiredColumns = [
+            'segmen_kinerja', 'produk_kinerja', 'cabang_normalized', 'unit_normalized',
+            'branch_normalized', 'rm_normalized', 'pn_pemutus_normalized', 'cifno_clean',
+        ];
+
+        foreach ($requiredColumns as $col) {
+            if (!Schema::hasColumn('daily_loan_dinamis', $col)) {
+                $this->line("   Auto-discover: column {$col} not yet migrated, skipping.");
+                return [];
+            }
+        }
+
+        $periods = DB::table('daily_loan_dinamis')
+            ->select('periode')
+            ->where(function ($q) use ($requiredColumns) {
+                foreach ($requiredColumns as $col) {
+                    $q->orWhereNull($col);
+                }
+            })
+            ->distinct()
+            ->orderByDesc('periode')
+            ->limit(10)
+            ->pluck('periode')
+            ->filter()
+            ->values()
+            ->all();
+
+        if (empty($periods)) {
+            $this->line('   Auto-discover: No periods with NULL shadow columns found.');
+        } else {
+            $this->info('   Auto-discover: Found ' . count($periods) . ' period(s) needing backfill: ' . implode(', ', $periods));
+        }
+
+        return $periods;
     }
 
     private function displayConfiguration(array $periods, int $chunkSize, int $delay, int $retryCount, bool $dryRun, bool $live): void

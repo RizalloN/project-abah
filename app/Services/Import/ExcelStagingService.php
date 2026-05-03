@@ -665,6 +665,166 @@ class ExcelStagingService
         }
     }
 
+    public function stageXlsxSheetWithHeadersToCsv(
+        string $sourcePath,
+        array $requiredHeaders,
+        string $stagedCsvPath,
+        ?callable $send = null
+    ): ?array {
+        if (!$this->supportsNativeXlsxStreaming($sourcePath) || empty($requiredHeaders)) {
+            return null;
+        }
+
+        $zip = new \ZipArchive();
+        if ($zip->open($sourcePath) !== true) {
+            return null;
+        }
+
+        $outputHandle = @fopen($stagedCsvPath, 'wb');
+        if ($outputHandle === false) {
+            $zip->close();
+            return null;
+        }
+
+        try {
+            $worksheetEntry = $this->resolveFirstWorksheetEntry($zip);
+            if ($worksheetEntry === null) {
+                return null;
+            }
+
+            $sharedStrings = $this->readSharedStrings($zip);
+            $reader = new \XMLReader();
+            if (!$reader->open('zip://' . str_replace('\\', '/', $sourcePath) . '#' . $worksheetEntry, null, LIBXML_NONET | LIBXML_COMPACT)) {
+                return null;
+            }
+
+            $requiredLookup = [];
+            foreach ($requiredHeaders as $header) {
+                $requiredLookup[$this->normalizeHeaderForStreamingComparison((string) $header)] = (string) $header;
+            }
+
+            $headerRowNumber = null;
+            $sourceIndexByHeader = [];
+            $writtenRows = 0;
+            $processedRows = 0;
+            $lastProgressAt = 0;
+            $buffer = '';
+            $bufferSize = 0;
+            $maxBufferSize = 4194304;
+
+            while ($reader->read()) {
+                if ($reader->nodeType !== self::ELEMENT || $reader->name !== 'row') {
+                    continue;
+                }
+
+                $rowNumber = max(1, (int) $reader->getAttribute('r'));
+
+                if ($headerRowNumber === null) {
+                    if ($rowNumber > 50) {
+                        break;
+                    }
+
+                    $rowValues = $this->extractWorksheetRowValues($reader, $sharedStrings, 256);
+                    $candidateLookup = [];
+                    foreach ($rowValues as $index => $value) {
+                        $normalized = $this->normalizeHeaderForStreamingComparison((string) ($value ?? ''));
+                        if ($normalized !== '') {
+                            $candidateLookup[$normalized] = (int) $index;
+                        }
+                    }
+
+                    foreach ($requiredLookup as $normalizedHeader => $originalHeader) {
+                        if (isset($candidateLookup[$normalizedHeader])) {
+                            $sourceIndexByHeader[$originalHeader] = $candidateLookup[$normalizedHeader];
+                        }
+                    }
+
+                    if (count($sourceIndexByHeader) === count($requiredHeaders)) {
+                        $headerRowNumber = $rowNumber;
+                        fwrite($outputHandle, $this->buildCsvLine(array_values($requiredHeaders)));
+                    } else {
+                        $sourceIndexByHeader = [];
+                    }
+
+                    continue;
+                }
+
+                $maxSourceIndex = max($sourceIndexByHeader);
+                $rowValues = $this->extractWorksheetRowValues($reader, $sharedStrings, $maxSourceIndex + 1);
+                $row = [];
+                $hasData = false;
+
+                foreach ($requiredHeaders as $header) {
+                    $sourceIndex = $sourceIndexByHeader[$header] ?? null;
+                    $value = $sourceIndex === null ? null : ($rowValues[$sourceIndex] ?? null);
+                    $value = $this->normalizeStreamingCellValue((string) $header, $value);
+
+                    if ($value !== null && trim((string) $value) !== '') {
+                        $hasData = true;
+                    }
+
+                    $row[] = $value;
+                }
+
+                if (!$hasData) {
+                    continue;
+                }
+
+                $line = $this->buildCsvLine($row);
+                $buffer .= $line;
+                $bufferSize += strlen($line);
+                $writtenRows++;
+                $processedRows++;
+
+                if ($bufferSize >= $maxBufferSize) {
+                    fwrite($outputHandle, $buffer);
+                    $buffer = '';
+                    $bufferSize = 0;
+                }
+
+                if ($send !== null && ($processedRows - $lastProgressAt) >= 100000) {
+                    $lastProgressAt = $processedRows;
+                    if ($bufferSize > 0) {
+                        fwrite($outputHandle, $buffer);
+                        $buffer = '';
+                        $bufferSize = 0;
+                    }
+                    $send('progress', [
+                        'percent' => 38,
+                        'message' => 'Menyiapkan CSV staging GI405 Single Row... (' . number_format($processedRows, 0, ',', '.') . ' baris)',
+                        'rows_done' => $processedRows,
+                        'total' => 0,
+                        'speed' => 0,
+                    ]);
+                }
+            }
+
+            if ($bufferSize > 0) {
+                fwrite($outputHandle, $buffer);
+            }
+
+            $reader->close();
+
+            if ($headerRowNumber === null) {
+                @unlink($stagedCsvPath);
+                return null;
+            }
+
+            return [
+                'staged_csv_path' => $stagedCsvPath,
+                'total_rows' => $writtenRows,
+                'header_index' => 0,
+                'headers' => array_values($requiredHeaders),
+            ];
+        } catch (\Throwable) {
+            @unlink($stagedCsvPath);
+            return null;
+        } finally {
+            fclose($outputHandle);
+            $zip->close();
+        }
+    }
+
     public function extractIndexedPreviewViaNativeXlsx(string $path, int $maxPreviewRows = 100): ?array
     {
         if (!$this->supportsNativeXlsxStreaming($path)) {
@@ -761,6 +921,32 @@ class ExcelStagingService
         }
 
         return 0;
+    }
+
+    private function normalizeHeaderForStreamingComparison(string $value): string
+    {
+        return strtolower(preg_replace('/\s+/', ' ', trim($value)) ?? '');
+    }
+
+    private function normalizeStreamingCellValue(string $header, $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $value = trim(str_replace(["\r", "\n"], ' ', (string) $value));
+        if ($value === '') {
+            return null;
+        }
+
+        if ($this->normalizeHeaderForStreamingComparison($header) === 'periode' && is_numeric($value)) {
+            $serial = (float) $value;
+            if ($serial > 20000 && $serial < 60000) {
+                return gmdate('Y-m-d', (int) round(($serial - 25569) * 86400));
+            }
+        }
+
+        return $value;
     }
 
     private function resolveFirstWorksheetEntry(\ZipArchive $zip): ?string
@@ -998,6 +1184,93 @@ class ExcelStagingService
         }
 
         return $result;
+    }
+
+    /**
+     * Dump all rows from the first worksheet of an XLSX file to a flat CSV.
+     * Uses native ZipArchive + XMLReader — 10-50x faster than PhpSpreadsheet.
+     * Returns true on success, false if the file is unsupported or an error occurs.
+     * The caller is responsible for creating/cleaning up the destination file.
+     */
+    public function dumpFlatXlsxToCsv(string $sourcePath, string $destCsvPath): bool
+    {
+        if (!$this->supportsNativeXlsxStreaming($sourcePath)) {
+            return false;
+        }
+
+        $zip = new \ZipArchive();
+        if ($zip->open($sourcePath) !== true) {
+            return false;
+        }
+
+        $outputHandle = @fopen($destCsvPath, 'wb');
+        if ($outputHandle === false) {
+            $zip->close();
+            return false;
+        }
+
+        try {
+            $worksheetEntry = $this->resolveFirstWorksheetEntry($zip);
+            if ($worksheetEntry === null) {
+                return false;
+            }
+
+            $sharedStrings = $this->readSharedStrings($zip);
+            $reader = new \XMLReader();
+            if (!$reader->open('zip://' . str_replace('\\', '/', $sourcePath) . '#' . $worksheetEntry, null, LIBXML_NONET | LIBXML_COMPACT)) {
+                return false;
+            }
+
+            try {
+                $buffer = '';
+                $bufferSize = 0;
+                $maxBufferSize = 4194304;
+
+                while ($reader->read()) {
+                    if ($reader->nodeType !== self::ELEMENT || $reader->name !== 'row') {
+                        continue;
+                    }
+
+                    $rowValues = $this->extractWorksheetRowValues($reader, $sharedStrings, 256);
+
+                    $hasData = false;
+                    foreach ($rowValues as $value) {
+                        if ($value !== null && trim((string) $value) !== '') {
+                            $hasData = true;
+                            break;
+                        }
+                    }
+
+                    if (!$hasData) {
+                        continue;
+                    }
+
+                    $line = $this->buildCsvLine($rowValues);
+                    $buffer .= $line;
+                    $bufferSize += strlen($line);
+
+                    if ($bufferSize >= $maxBufferSize) {
+                        fwrite($outputHandle, $buffer);
+                        $buffer = '';
+                        $bufferSize = 0;
+                    }
+                }
+
+                if ($bufferSize > 0) {
+                    fwrite($outputHandle, $buffer);
+                }
+            } finally {
+                $reader->close();
+            }
+
+            return true;
+        } catch (\Throwable) {
+            @unlink($destCsvPath);
+            return false;
+        } finally {
+            fclose($outputHandle);
+            $zip->close();
+        }
     }
 
     /**

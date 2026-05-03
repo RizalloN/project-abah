@@ -176,24 +176,24 @@ class ImportDataFixtureTest extends TestCase
         $this->assertSame('kanca', $kancaColumn);
     }
 
-    public function test_gi405_rec_dh_fixture_inserts_and_resolves_scope(): void
+    public function test_gi405_singlerow_fixture_inserts_and_resolves_scope(): void
     {
-        Schema::create('gi405_rec_dh', function (Blueprint $table) {
+        Schema::create('gi405_singlerow', function (Blueprint $table) {
             $table->string('uniqueid_namareport')->primary();
-            $table->string('tanggal');
-            $table->string('kc_konsol');
-            $table->string('kode')->nullable();
-            $table->string('segmen')->nullable();
+            $table->string('periode');
+            $table->string('branch');
+            $table->string('posting_control')->nullable();
+            $table->string('account_number')->nullable();
         });
 
         $filled = [];
         for ($i = 1; $i <= 5; $i++) {
             $filled[] = [
                 'uniqueid_namareport' => "GI-FULL-{$i}",
-                'tanggal' => '2026-04-30',
-                'kc_konsol' => 'KC Madiun',
-                'kode' => "K0{$i}",
-                'segmen' => 'MIKRO',
+                'periode' => '2026-05-01',
+                'branch' => '45',
+                'posting_control' => '*POST',
+                'account_number' => "10001099200{$i}",
             ];
         }
 
@@ -201,27 +201,27 @@ class ImportDataFixtureTest extends TestCase
         for ($i = 1; $i <= 5; $i++) {
             $nullable[] = [
                 'uniqueid_namareport' => "GI-NULL-{$i}",
-                'tanggal' => '2026-04-30',
-                'kc_konsol' => 'KC Madiun',
-                'kode' => null,
-                'segmen' => null,
+                'periode' => '2026-05-01',
+                'branch' => '45',
+                'posting_control' => null,
+                'account_number' => null,
             ];
         }
 
-        DB::table('gi405_rec_dh')->insert(array_merge($filled, $nullable));
+        DB::table('gi405_singlerow')->insert(array_merge($filled, $nullable));
 
-        $this->assertSame(10, DB::table('gi405_rec_dh')->count());
-        $this->assertSame(10, DB::table('gi405_rec_dh')->whereNotNull('tanggal')->count());
-        $this->assertSame(5, DB::table('gi405_rec_dh')->whereNull('kode')->count());
+        $this->assertSame(10, DB::table('gi405_singlerow')->count());
+        $this->assertSame(10, DB::table('gi405_singlerow')->whereNotNull('periode')->count());
+        $this->assertSame(5, DB::table('gi405_singlerow')->whereNull('account_number')->count());
 
         $service = new ManagedReportManagementService();
         [$periodColumn, $kancaColumn] = $service->resolveManagementScopeColumns(
-            'gi405_rec_dh',
-            Schema::getColumnListing('gi405_rec_dh')
+            'gi405_singlerow',
+            Schema::getColumnListing('gi405_singlerow')
         );
 
-        $this->assertSame('tanggal', $periodColumn);
-        $this->assertSame('kc_konsol', $kancaColumn);
+        $this->assertSame('periode', $periodColumn);
+        $this->assertSame('branch', $kancaColumn);
     }
 
     public function test_ssa_simpanan_fixture_inserts_and_resolves_scope(): void

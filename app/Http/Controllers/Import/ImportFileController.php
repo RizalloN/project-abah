@@ -7,6 +7,7 @@ use App\Http\Controllers\Import\Concerns\AllocatesGapIds;
 use App\Http\Controllers\Import\Concerns\SmartCsvImportSupport;
 use App\Jobs\PrepareCsvStagingJob;
 use App\Services\Import\ImportProgressService;
+use App\Services\Import\ImportDuplicateGuardService;
 use App\Services\Import\MySqlBulkLoadService;
 use App\Services\Import\SchemaIntrospectionService;
 use App\Support\ReportDataSyncService;
@@ -4016,6 +4017,25 @@ class ImportFileController extends Controller
             ], 422);
         }
 
+        // Layer A: cross-report duplicate file check via SHA256 content fingerprint
+        $contentHash = '';
+        try {
+            $fileGuard = app(ImportDuplicateGuardService::class);
+            $contentHash = $fileGuard->fingerprint($filePath);
+            $fileGuard->assertFileNotImportedAnywhere($contentHash);
+        } catch (\RuntimeException $e) {
+            $this->cleanupImportDirectory($filePath);
+            return response()->json([
+                'status' => 'warning',
+                'title' => 'File Sudah Diimport!',
+                'text' => $e->getMessage(),
+                'duplicate_detected' => true,
+                'redirect_url' => route('import.index'),
+            ], 422);
+        } catch (\Throwable $e) {
+            Log::warning('ImportFileController: Fingerprint calculation failed (continuing): ' . $e->getMessage());
+        }
+
         $isDuplicate = false;
         $duplicateText = '';
 
@@ -4066,7 +4086,7 @@ class ImportFileController extends Controller
                 'controller' => static::class,
                 'mode' => 'file_import',
                 'table_name' => $tableName,
-                'file_hash' => sha1($filePath),
+                'content_hash' => $contentHash,
                 'total_rows' => (int) $meta['total_rows'],
                 'import_params' => [
                     'file_path' => $filePath,
@@ -4883,6 +4903,28 @@ class ImportFileController extends Controller
             $samplePeriode = $dataToInsert[0]['periode'] ?? ($dataToInsert[0]['POSISI'] ?? null);
         }
 
+        // Layer A: cross-report duplicate file check via SHA256 content fingerprint
+        $contentHash = '';
+        try {
+            $fileGuard = app(ImportDuplicateGuardService::class);
+            $contentHash = $fileGuard->fingerprint($filePath);
+            $fileGuard->assertFileNotImportedAnywhere($contentHash);
+        } catch (\RuntimeException $e) {
+            $this->cleanupImportDirectory($filePath);
+            $response = [
+                'status' => 'warning',
+                'title' => 'File Sudah Diimport!',
+                'text' => $e->getMessage(),
+                'duplicate_detected' => true,
+                'redirect_url' => route('import.index'),
+            ];
+            return $request->expectsJson()
+                ? response()->json($response, 422)
+                : redirect()->route('import.index')->with('sweet_warning', $response);
+        } catch (\Throwable $e) {
+            Log::warning('ImportFileController: Fingerprint calculation failed (continuing): ' . $e->getMessage());
+        }
+
         $isDuplicate = false;
         $duplicateText = "";
 
@@ -4945,7 +4987,7 @@ class ImportFileController extends Controller
                 'controller' => static::class,
                 'mode' => 'file_import_preview',
                 'table_name' => $tableName,
-                'file_hash' => sha1($filePath),
+                'content_hash' => $contentHash,
                 'data_rows_count' => count($dataToInsert),
             ],
             'created_at' => now(),
@@ -5074,6 +5116,13 @@ class ImportFileController extends Controller
                 'table_name' => $tableName,
                 'period_hint' => $periodHint,
             ]);
+        }
+
+        // Reactively resume paused snapshot queues — don't wait for the 1-minute scheduler
+        try {
+            app(\App\Services\Import\SnapshotQueuePauseService::class)->resumeWhenNoActiveImports();
+        } catch (\Throwable $e) {
+            Log::debug('Reactive queue resume skipped: ' . $e->getMessage());
         }
     }
 }

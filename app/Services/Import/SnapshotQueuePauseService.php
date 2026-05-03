@@ -73,7 +73,10 @@ class SnapshotQueuePauseService
 
         $pausedQueues = $this->getPausedQueues();
         if ($pausedQueues === []) {
-            return;
+            $pausedQueues = $this->resolveTargetQueues();
+            if ($pausedQueues === []) {
+                return;
+            }
         }
 
         $lock = Cache::lock(self::LOCK_KEY, 15);
@@ -130,7 +133,7 @@ class SnapshotQueuePauseService
         ), static fn (string $value): bool => $value !== ''));
 
         if ($configured === []) {
-            $configured = [strtolower(trim((string) config('queue.report_queue', 'default')))];
+            $configured = ['snapshots-parallel', 'shadow-backfill'];
         }
 
         $excluded = (array) config('import.snapshot.pause_excluded_queues', ['imports-high']);
@@ -176,4 +179,3 @@ class SnapshotQueuePauseService
         }
     }
 }
-

@@ -8,20 +8,28 @@ use Tests\TestCase;
 
 class ImportExcelControllerGi405RecDhTest extends TestCase
 {
-    public function test_gi405_rows_are_normalized_before_insert(): void
+    public function test_gi405_single_row_rows_are_normalized_before_insert(): void
     {
         $controller = new class extends ImportExcelController {
             protected function schemaColumnsForBulkImport(string $tableName): array
             {
                 return [
                     'uniqueid_namareport',
-                    'kode',
-                    'pendapatan_koreksi_ppap_dr_angsuran_ph',
-                    'recovery_non_klaim',
-                    'kc_konsol',
-                    'nama_uker',
-                    'segmen',
-                    'tanggal',
+                    'periode',
+                    'branch',
+                    'currency',
+                    'posting_control',
+                    'account_number',
+                    'c_c',
+                    'p_c',
+                    'f_c',
+                    'description',
+                    'begining_balance',
+                    'equivalents_idr',
+                    'equivalents_usd',
+                    'today_debit',
+                    'today_credit',
+                    'ending_balance',
                     'created_at',
                     'updated_at',
                 ];
@@ -33,78 +41,55 @@ class ImportExcelControllerGi405RecDhTest extends TestCase
             }
         };
 
+        $headers = [
+            'PERIODE',
+            'BRANCH',
+            'CURRENCY',
+            'POSTING CONTROL',
+            'ACCOUNT NUMBER',
+            'C/C',
+            'P/C',
+            'F/C',
+            'DESCRIPTION',
+            'BEGINING BALANCE',
+            'EQUIVALENTS IDR',
+            'EQUIVALENTS USD',
+            'TODAY DEBIT',
+            'TODAY CREDIT',
+            'ENDING BALANCE',
+        ];
+
         $contextMethod = new ReflectionMethod(ImportExcelController::class, 'buildImportContext');
         $contextMethod->setAccessible(true);
-        $context = $contextMethod->invoke($controller, 'gi405_rec_dh', [
-            'KODE',
-            'Pendapatan Koreksi PPAP-dr Angsuran PH',
-            'Recovery Non Klaim',
-            'KC Konsol',
-            'Nama Uker',
-            'Segmen',
-            'Tanggal',
-        ]);
+        $context = $contextMethod->invoke($controller, 'gi405_singlerow', $headers);
 
         $mapMethod = new ReflectionMethod(ImportExcelController::class, 'mapExcelRowForInsert');
         $mapMethod->setAccessible(true);
         $row = $mapMethod->invoke($controller, [
+            '01/05/2026',
             45,
-            '-61806903',
-            '61806903',
-            '00045 -- KC Madiun (Konsolidasi-MB)',
-            '00045 -- KC Madiun',
-            'Ritel',
-            '19 Januari 2026',
-        ], [
-            'KODE',
-            'Pendapatan Koreksi PPAP-dr Angsuran PH',
-            'Recovery Non Klaim',
-            'KC Konsol',
-            'Nama Uker',
-            'Segmen',
-            'Tanggal',
-        ], $context, '2026-04-17 07:00:00');
+            'AED',
+            '*POST',
+            '100010992000',
+            '',
+            '',
+            'AED',
+            'Kas - Money Changer',
+            '35.00',
+            '164,937.50',
+            '9.52',
+            '0.00',
+            '0.00',
+            '35.00',
+        ], $headers, $context, '2026-05-01 07:00:00');
 
         $this->assertIsArray($row);
-        $this->assertSame('00045', $row['kode']);
-        $this->assertSame('2026-01-19', $row['tanggal']);
-        $this->assertNotEmpty($row['uniqueid_namareport']);
-        $this->assertStringStartsWith('uuid_405RDH_', $row['uniqueid_namareport']);
-        $this->assertSame('-61806903.00', $row['pendapatan_koreksi_ppap_dr_angsuran_ph']);
-        $this->assertSame('61806903.00', $row['recovery_non_klaim']);
-    }
-
-    public function test_gi405_rows_without_business_key_are_rejected(): void
-    {
-        $controller = new class extends ImportExcelController {
-            protected function schemaColumnsForBulkImport(string $tableName): array
-            {
-                return [
-                    'uniqueid_namareport',
-                    'kode',
-                    'tanggal',
-                    'created_at',
-                    'updated_at',
-                ];
-            }
-
-            protected function tableColumnMetadataForBulkImport(string $tableName): array
-            {
-                return [];
-            }
-        };
-
-        $contextMethod = new ReflectionMethod(ImportExcelController::class, 'buildImportContext');
-        $contextMethod->setAccessible(true);
-        $context = $contextMethod->invoke($controller, 'gi405_rec_dh', ['KODE', 'Tanggal']);
-
-        $mapMethod = new ReflectionMethod(ImportExcelController::class, 'mapExcelRowForInsert');
-        $mapMethod->setAccessible(true);
-
-        $missingKode = $mapMethod->invoke($controller, ['', '19 Januari 2026'], ['KODE', 'Tanggal'], $context, '2026-04-17 07:00:00');
-        $missingTanggal = $mapMethod->invoke($controller, [45, ''], ['KODE', 'Tanggal'], $context, '2026-04-17 07:00:00');
-
-        $this->assertNull($missingKode);
-        $this->assertNull($missingTanggal);
+        $this->assertSame('2026-05-01', $row['periode']);
+        $this->assertSame('45', $row['branch']);
+        $this->assertSame('*POST', $row['posting_control']);
+        $this->assertSame('100010992000', $row['account_number']);
+        $this->assertStringStartsWith('uuid_gi405_', $row['uniqueid_namareport']);
+        $this->assertSame('164937.50', $row['equivalents_idr']);
+        $this->assertSame('35.00', $row['ending_balance']);
     }
 }

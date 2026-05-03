@@ -345,7 +345,7 @@ class ExcelQueuedImportService
                         $delimiter,
                         $params
                     ): array {
-                        $forceDirectLoad = in_array($tableName, ['simpanan_multipn', 'lw325_ph', 'ssa_simpanan', 'ssa_pinjaman', 'brihc', 'wilayah_mbm'], true);
+                        $forceDirectLoad = in_array($tableName, ['simpanan_multipn', 'lw325_ph', 'ssa_simpanan', 'ssa_pinjaman', 'l1133', 'brihc', 'wilayah_mbm'], true);
 
                         return [
                             'handled' => ($callbacks['process_staged_csv_stream'])(
@@ -677,6 +677,6 @@ class ExcelQueuedImportService
     {
         $resolvedTable = strtolower(trim($tableName));
 
-        return in_array($resolvedTable, ['daily_loan_dinamis', 'simpanan_multipn'], true);
+        return in_array($resolvedTable, ['daily_loan_dinamis', 'simpanan_multipn', 'gi405_singlerow'], true);
     }
 }

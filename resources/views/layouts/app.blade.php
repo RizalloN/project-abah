@@ -84,8 +84,17 @@
                 const body = document.body;
                 const prefetchCache = new Set();
                 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-                const isLoopbackHost = ['127.0.0.1', 'localhost'].includes(window.location.hostname);
-                const shouldPrefetch = !isLoopbackHost;
+                const shouldPrefetch = document.documentElement.dataset.prefetchDocuments === 'true';
+                let transitionTimeout = null;
+
+                const clearPageTransition = function () {
+                    if (transitionTimeout) {
+                        window.clearTimeout(transitionTimeout);
+                        transitionTimeout = null;
+                    }
+
+                    body.classList.remove('page-transition-active', 'page-transition-leaving', 'page-transition-finishing');
+                };
 
                 const isInternalNavigableLink = function (link) {
                     if (!link || link.target === '_blank' || link.hasAttribute('download')) {
@@ -157,11 +166,16 @@
                         window.setTimeout(function () {
                             body.classList.add('page-transition-finishing');
                         }, 140);
+                        transitionTimeout = window.setTimeout(clearPageTransition, 1200);
                     }
                 }, true);
 
-                window.addEventListener('pageshow', function () {
-                    body.classList.remove('page-transition-active', 'page-transition-leaving', 'page-transition-finishing');
+                window.addEventListener('pageshow', clearPageTransition);
+                window.addEventListener('pagehide', clearPageTransition);
+                document.addEventListener('visibilitychange', function () {
+                    if (document.visibilityState === 'hidden') {
+                        clearPageTransition();
+                    }
                 });
             });
         </script>

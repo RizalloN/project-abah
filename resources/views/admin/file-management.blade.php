@@ -175,7 +175,7 @@
                                 <div class="file-management-time">{{ $file['modified_human'] }}</div>
                             </td>
                             <td class="text-center">
-                                @if(strtolower(pathinfo($file['name'], PATHINFO_EXTENSION)) === 'sql')
+                                @if(str_ends_with(strtolower($file['name']), '.sql') || str_ends_with(strtolower($file['name']), '.sql.gz'))
                                     <a href="{{ route('file-management.download', ['path' => $file['relative_path']]) }}" class="btn btn-sm btn-outline-primary file-management-download-btn mr-2">
                                         <i class="fas fa-download mr-1"></i>Unduh
                                     </a>
@@ -447,7 +447,7 @@
                                 const status = await response.json();
                                 if (!response.ok) throw new Error(status.message || 'Gagal mengambil status backup.');
 
-                                if (status.status === 'processing' || status.status === 'starting') {
+                                if (status.status === 'processing' || status.status === 'starting' || status.status === 'stalled') {
                                     const percent = status.progress_percent || 0;
                                     const bar = document.getElementById('backup-progress-bar');
                                     const text = document.getElementById('backup-status-text');
@@ -456,9 +456,9 @@
                                         bar.style.width = percent + '%';
                                         bar.innerText = percent + '%';
                                     }
-                                    if (text) text.innerText = status.message || 'Mencadangkan data...';
+                                    if (text) text.innerText = status.message || (status.status === 'stalled' ? 'Backup masih berjalan, menunggu update ukuran file...' : 'Mencadangkan data...');
 
-                                    setTimeout(poll, 700);
+                                    setTimeout(poll, status.status === 'stalled' ? 2000 : 700);
                                 } else if (status.status === 'completed') {
                                     polling = false;
                                     Swal.close();

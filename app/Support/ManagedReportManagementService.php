@@ -112,9 +112,9 @@ class ManagedReportManagementService
             'period_priority' => ['periode'],
             'kanca_priority' => ['mbdesc'],
         ],
-        'gi405_rec_dh' => [
-            'period_priority' => ['tanggal'],
-            'kanca_priority' => ['kc_konsol'],
+        'gi405_singlerow' => [
+            'period_priority' => ['periode'],
+            'kanca_priority' => ['branch'],
         ],
         'cognos_ph' => [
             'period_priority' => ['periode'],

@@ -11,7 +11,7 @@ class DashboardHarianSnapshotDirtyPeriodQueue
     private const PENDING_DISPATCH_KEY = 'snapshot:dashboard_harian:dirty_periods:pending';
     private const LOCK_KEY = 'snapshot:dashboard_harian:dirty_periods:lock';
     private const ALL_PERIODS_TOKEN = '__all__';
-    private const CACHE_TTL_SECONDS = 600;
+    private const CACHE_TTL_SECONDS = 21600;
     private const DEBOUNCE_SECONDS = 20;
 
     /**

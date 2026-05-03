@@ -44,7 +44,7 @@ class RebuildDashboardHarianCommand extends Command
             if ($period !== '') {
                 if ($async) {
                     dispatch(new RebuildDashboardHarianSnapshotJob($period, false, true))
-                        ->onQueue('imports-high');
+                        ->onQueue('snapshots-parallel');
                     $this->info("Queued force rebuild for Dashboard Harian period {$period}.");
                     Log::info('Dashboard Harian period rebuild dispatched', ['period' => $period]);
 

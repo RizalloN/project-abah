@@ -18,8 +18,6 @@ return new class extends Migration
                 $table->string('kanwil', 20)->nullable();
                 $table->string('kode_cabang', 20)->nullable();
                 $table->string('kode_unit', 20)->nullable();
-                $table->string('source_section', 30)->nullable();
-                $table->unsignedInteger('source_row_number')->nullable();
                 $table->string('segmen', 30)->nullable();
                 $table->string('keterangan', 255)->nullable();
                 $table->decimal('l_rp', 22, 2)->nullable();

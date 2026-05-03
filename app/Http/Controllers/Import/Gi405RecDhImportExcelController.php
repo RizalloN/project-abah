@@ -17,8 +17,25 @@ use ReflectionMethod;
 
 class Gi405RecDhImportExcelController extends ImportExcelController
 {
-    private const TABLE_NAME = 'gi405_rec_dh';
+    private const TABLE_NAME = 'gi405_singlerow';
     private const MAX_ERROR_SAMPLES = 8;
+    private const REQUIRED_HEADERS = [
+        'PERIODE',
+        'BRANCH',
+        'CURRENCY',
+        'POSTING CONTROL',
+        'ACCOUNT NUMBER',
+        'C/C',
+        'P/C',
+        'F/C',
+        'DESCRIPTION',
+        'BEGINING BALANCE',
+        'EQUIVALENTS IDR',
+        'EQUIVALENTS USD',
+        'TODAY DEBIT',
+        'TODAY CREDIT',
+        'ENDING BALANCE',
+    ];
 
     public function uploadExcel(Request $request, array $allowedExtensions = ['xlsx', 'xls'])
     {
@@ -64,17 +81,24 @@ class Gi405RecDhImportExcelController extends ImportExcelController
                     return;
                 }
 
-                $path = Storage::path(urldecode($sessionPath));
+                $relativePath = urldecode($sessionPath);
+                $path = Storage::path($relativePath);
                 if (!file_exists($path)) {
                     $send('error_msg', ['message' => 'File tidak ditemukan di server. Silakan upload ulang.']);
                     return;
                 }
 
+                $source = $this->prepareGi405PreviewSource($relativePath, $path, $send);
+                $relativePath = $source['relative_path'];
+                $path = $source['absolute_path'];
+                session(['excel_path' => $relativePath]);
+                request()->session()->save();
+
                 $useCacheKey = $cacheKey ?: ('excel_preview_' . md5(urldecode($sessionPath) . '|' . microtime(true)));
                 $redirect = route('import.gi405.preview', ['ck' => $useCacheKey]);
 
                 $send('progress', ['percent' => 20, 'message' => 'File ditemukan. Menyiapkan preview...', 'step' => 1]);
-                $this->primeExcelPreviewCache(urldecode($sessionPath), $path, $useCacheKey, $send);
+                $this->primeExcelPreviewCache($relativePath, $path, $useCacheKey, $send);
                 $send('progress', ['percent' => 85, 'message' => 'Mengalihkan ke halaman preview...', 'step' => 2]);
                 $send('ready', ['redirect' => $redirect]);
             } catch (\Throwable $e) {
@@ -94,6 +118,8 @@ class Gi405RecDhImportExcelController extends ImportExcelController
 
     public function previewExcel(Request $request)
     {
+        $this->ensureGi405SessionUsesPreviewSource();
+
         $response = parent::previewExcel($request);
 
         if ($response instanceof View) {
@@ -107,6 +133,8 @@ class Gi405RecDhImportExcelController extends ImportExcelController
 
     public function initExcelImport(Request $request)
     {
+        $this->ensureGi405SessionUsesPreviewSource();
+
         if ($this->resolveActiveTableName() === self::TABLE_NAME) {
             $validationError = $this->validateGi405DuplicateGuard();
             if ($validationError !== null) {
@@ -122,6 +150,200 @@ class Gi405RecDhImportExcelController extends ImportExcelController
         return parent::initExcelImport($request);
     }
 
+    private function ensureGi405SessionUsesPreviewSource(): void
+    {
+        $relativePath = urldecode((string) session('excel_path', ''));
+        if ($relativePath === '') {
+            return;
+        }
+
+        $path = Storage::path($relativePath);
+        if (!file_exists($path)) {
+            return;
+        }
+
+        try {
+            $source = $this->prepareGi405PreviewSource($relativePath, $path);
+            if ($source['relative_path'] !== $relativePath) {
+                session(['excel_path' => $source['relative_path']]);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('GI405 session source normalization skipped: ' . $e->getMessage(), [
+                'path' => $path,
+            ]);
+        }
+    }
+
+    private function prepareGi405PreviewSource(string $relativePath, string $absolutePath, ?callable $send = null): array
+    {
+        if ($this->isCsvFile($absolutePath)) {
+            return [
+                'relative_path' => $relativePath,
+                'absolute_path' => $absolutePath,
+            ];
+        }
+
+        $send && $send('progress', [
+            'percent' => 35,
+            'message' => 'Memilih worksheet GI405 dan menormalisasi sumber preview...',
+            'step' => 1,
+        ]);
+
+        return $this->stageGi405WorkbookSheetToCsv($absolutePath, $send);
+    }
+
+    private function stageGi405WorkbookSheetToCsv(string $path, ?callable $send = null): array
+    {
+        $fingerprint = md5($path . '|' . ((string) (@filemtime($path) ?: '0')) . '|' . ((string) (@filesize($path) ?: '0')));
+        $directory = 'excel_imports/gi405_singlerow';
+        $relativeCsvPath = $directory . '/gi405_singlerow_' . $fingerprint . '.csv';
+        $absoluteCsvPath = Storage::path($relativeCsvPath);
+
+        if (file_exists($absoluteCsvPath) && filesize($absoluteCsvPath) > 0) {
+            return [
+                'relative_path' => $relativeCsvPath,
+                'absolute_path' => $absoluteCsvPath,
+            ];
+        }
+
+        Storage::makeDirectory($directory);
+
+        $nativeStage = $this->excelStagingService()->stageXlsxSheetWithHeadersToCsv(
+            $path,
+            self::REQUIRED_HEADERS,
+            $absoluteCsvPath,
+            $send
+        );
+
+        if ($nativeStage !== null && file_exists($absoluteCsvPath) && filesize($absoluteCsvPath) > 0) {
+            return [
+                'relative_path' => $relativeCsvPath,
+                'absolute_path' => $absoluteCsvPath,
+            ];
+        }
+
+        $reader = IOFactory::createReaderForFile($path);
+        $reader->setReadDataOnly(false);
+        $reader->setReadEmptyCells(false);
+
+        $spreadsheet = $reader->load($path);
+        try {
+            [$sheet, $headerRow] = $this->resolveGi405WorksheetAndHeaderRow($spreadsheet);
+
+            $output = @fopen($absoluteCsvPath, 'wb');
+            if ($output === false) {
+                throw new \RuntimeException('Gagal membuat CSV staging GI405 Single Row.');
+            }
+
+            try {
+                fputcsv($output, self::REQUIRED_HEADERS);
+
+                $highestRow = (int) $sheet->getHighestRow();
+                $highestColumnIndex = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::columnIndexFromString($sheet->getHighestColumn());
+                $headerMap = $this->buildGi405HeaderColumnMap($sheet, $headerRow, $highestColumnIndex);
+
+                for ($rowIndex = $headerRow + 1; $rowIndex <= $highestRow; $rowIndex++) {
+                    $row = [];
+                    $hasData = false;
+
+                    foreach (self::REQUIRED_HEADERS as $header) {
+                        $columnIndex = $headerMap[$header] ?? null;
+                        $value = $columnIndex === null ? '' : $this->readGi405FormattedCell($sheet, $columnIndex, $rowIndex);
+                        if (trim((string) $value) !== '') {
+                            $hasData = true;
+                        }
+                        $row[] = $value;
+                    }
+
+                    if ($hasData) {
+                        fputcsv($output, $row);
+                    }
+                }
+            } finally {
+                fclose($output);
+            }
+        } finally {
+            $spreadsheet->disconnectWorksheets();
+            unset($spreadsheet);
+        }
+
+        return [
+            'relative_path' => $relativeCsvPath,
+            'absolute_path' => $absoluteCsvPath,
+        ];
+    }
+
+    private function resolveGi405WorksheetAndHeaderRow(\PhpOffice\PhpSpreadsheet\Spreadsheet $spreadsheet): array
+    {
+        foreach ($spreadsheet->getWorksheetIterator() as $sheet) {
+            $headerRow = $this->findGi405HeaderRow($sheet);
+            if ($headerRow !== null) {
+                return [$sheet, $headerRow];
+            }
+        }
+
+        throw new \RuntimeException('Worksheet GI405 dengan header wajib tidak ditemukan.');
+    }
+
+    private function findGi405HeaderRow(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet): ?int
+    {
+        $highestColumnIndex = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::columnIndexFromString($sheet->getHighestColumn());
+        $highestRow = min(50, (int) $sheet->getHighestRow());
+
+        for ($rowIndex = 1; $rowIndex <= $highestRow; $rowIndex++) {
+            $headers = [];
+            for ($columnIndex = 1; $columnIndex <= $highestColumnIndex; $columnIndex++) {
+                $headers[] = $this->normalizeGi405HeaderLabel(
+                    $this->readGi405FormattedCell($sheet, $columnIndex, $rowIndex)
+                );
+            }
+
+            $matched = 0;
+            foreach (self::REQUIRED_HEADERS as $requiredHeader) {
+                if (in_array($this->normalizeGi405HeaderLabel($requiredHeader), $headers, true)) {
+                    $matched++;
+                }
+            }
+
+            if ($matched === count(self::REQUIRED_HEADERS)) {
+                return $rowIndex;
+            }
+        }
+
+        return null;
+    }
+
+    private function buildGi405HeaderColumnMap(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet, int $headerRow, int $highestColumnIndex): array
+    {
+        $lookup = [];
+        for ($columnIndex = 1; $columnIndex <= $highestColumnIndex; $columnIndex++) {
+            $lookup[$this->normalizeGi405HeaderLabel($this->readGi405FormattedCell($sheet, $columnIndex, $headerRow))] = $columnIndex;
+        }
+
+        $map = [];
+        foreach (self::REQUIRED_HEADERS as $header) {
+            $normalized = $this->normalizeGi405HeaderLabel($header);
+            if (!isset($lookup[$normalized])) {
+                throw new \RuntimeException("Kolom wajib GI405 tidak ditemukan: {$header}");
+            }
+            $map[$header] = $lookup[$normalized];
+        }
+
+        return $map;
+    }
+
+    private function readGi405FormattedCell(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet, int $columnIndex, int $rowIndex): string
+    {
+        $coordinate = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($columnIndex) . $rowIndex;
+
+        return trim(str_replace(["\r", "\n"], ' ', (string) $sheet->getCell($coordinate)->getFormattedValue()));
+    }
+
+    private function normalizeGi405HeaderLabel(string $value): string
+    {
+        return strtolower(preg_replace('/\s+/', ' ', trim($value)) ?? '');
+    }
+
     private function validateGi405DuplicateGuard(): ?string
     {
         $path = Storage::path((string) session('excel_path', ''));
@@ -129,51 +351,28 @@ class Gi405RecDhImportExcelController extends ImportExcelController
             return null;
         }
 
-        $pairs = $this->extractGi405BusinessKeys($path);
-        if (($pairs['count'] ?? 0) === 0) {
+        $periods = $this->extractGi405Periods($path);
+        if ($periods === []) {
             return null;
         }
 
-        $fileDuplicates = (array) ($pairs['duplicates_in_file'] ?? []);
-        if ($fileDuplicates !== []) {
-            $samples = (array) ($pairs['duplicate_row_samples'] ?? []);
-            $sample = implode(', ', array_slice($samples !== [] ? $samples : $fileDuplicates, 0, 5));
-
-            return 'File GI405 - Rec. DH mengandung duplikat pasangan tanggal + kode unit pada file yang sama.<br><br>'
-                . 'Contoh: <b>' . e($sample) . '</b><br>'
-                . 'Perbaiki file terlebih dahulu sebelum import.';
-        }
-
-        $grouped = (array) ($pairs['grouped'] ?? []);
-        $allSearchPairs = [];
-        foreach ($grouped as $date => $codes) {
-            foreach ($codes as $code) {
-                $allSearchPairs[] = [$date, $code];
-            }
-        }
-
-        if (empty($allSearchPairs)) {
-            return null;
-        }
-
-        // BATCH QUERY: Search for all existing date+code pairs in one go
-        $existing = [];
+        // GI405 Single Row tidak memakai filter. Cukup cegah import ulang untuk periode yang sudah ada.
         $existingRows = DB::table(self::TABLE_NAME)
-            ->whereIn(['tanggal', 'kode'], $allSearchPairs)
+            ->whereIn('periode', $periods)
+            ->select('periode')
+            ->distinct()
             ->limit(10)
-            ->get(['tanggal', 'kode']);
+            ->pluck('periode')
+            ->map(static fn ($value): string => (string) $value)
+            ->all();
 
-        foreach ($existingRows as $row) {
-            $existing[] = trim((string) $row->tanggal) . ' / ' . trim((string) $row->kode);
-        }
-
-        if ($existing === []) {
+        if ($existingRows === []) {
             return null;
         }
 
-        return 'Data GI405 - Rec. DH untuk kombinasi periode/tanggal dan kode unit sudah ada di database.<br><br>'
-            . 'Contoh yang bentrok: <b>' . e(implode(', ', array_slice($existing, 0, 5))) . '</b><br>'
-            . 'Import dibatalkan agar tidak ada data periode yang sama dengan kode unit yang sama.';
+        return 'Data GI405 Single Row untuk periode yang sama sudah ada di database.<br><br>'
+            . 'Periode bentrok: <b>' . e(implode(', ', array_slice($existingRows, 0, 5))) . '</b><br>'
+            . 'Import dibatalkan agar file/periode yang sama tidak masuk dua kali.';
     }
 
     protected function processStagedCsvStream(
@@ -190,7 +389,7 @@ class Gi405RecDhImportExcelController extends ImportExcelController
         array $importOptions = [],
         bool $fullVectorization = false
     ): bool {
-        if ($tableName !== self::TABLE_NAME) {
+        if ($tableName !== 'gi405_rec_dh') {
             return parent::processStagedCsvStream(
                 $send,
                 $csvPath,
@@ -512,6 +711,86 @@ class Gi405RecDhImportExcelController extends ImportExcelController
             : $this->extractGi405BusinessKeysFromExcel($path);
     }
 
+    private function extractGi405Periods(string $path): array
+    {
+        $extension = strtolower((string) pathinfo($path, PATHINFO_EXTENSION));
+
+        return in_array($extension, ['csv', 'txt'], true)
+            ? $this->extractGi405PeriodsFromCsv($path)
+            : $this->extractGi405PeriodsFromExcel($path);
+    }
+
+    private function extractGi405PeriodsFromCsv(string $path): array
+    {
+        $handle = @fopen($path, 'r');
+        if ($handle === false) {
+            return [];
+        }
+
+        try {
+            $delimiter = $this->detectGi405CsvDelimiter($path);
+            $headers = fgetcsv($handle, 0, $delimiter);
+            if (!is_array($headers)) {
+                return [];
+            }
+
+            $periodeIndex = $this->findGi405HeaderIndex($headers, 'periode');
+            if ($periodeIndex === null) {
+                return [];
+            }
+
+            return $this->collectGi405Periods(static function () use ($handle, $delimiter) {
+                $row = fgetcsv($handle, 0, $delimiter);
+                return $row === false ? null : $row;
+            }, $periodeIndex);
+        } finally {
+            fclose($handle);
+        }
+    }
+
+    private function extractGi405PeriodsFromExcel(string $path): array
+    {
+        $staged = $this->stageGi405WorkbookSheetToCsv($path);
+
+        return $this->extractGi405PeriodsFromCsv((string) $staged['absolute_path']);
+    }
+
+    private function findGi405HeaderIndex(array $headers, string $expected): ?int
+    {
+        $expected = $this->normalizeGi405HeaderLabel($expected);
+        foreach ($headers as $index => $header) {
+            if ($this->normalizeGi405HeaderLabel((string) $header) === $expected) {
+                return (int) $index;
+            }
+        }
+
+        return null;
+    }
+
+    private function collectGi405Periods(callable $nextRow, int $periodeIndex): array
+    {
+        $periods = [];
+
+        while (($row = $nextRow()) !== null) {
+            $rawPeriod = trim((string) ($row[$periodeIndex] ?? ''));
+            if ($rawPeriod === '') {
+                continue;
+            }
+
+            try {
+                $period = StrictDateParser::normalize($rawPeriod);
+            } catch (\Throwable) {
+                $period = null;
+            }
+
+            if ($period !== null) {
+                $periods[$period] = true;
+            }
+        }
+
+        return array_keys($periods);
+    }
+
     private function extractGi405BusinessKeysFromCsv(string $path): array
     {
         $handle = @fopen($path, 'r');
@@ -542,26 +821,11 @@ class Gi405RecDhImportExcelController extends ImportExcelController
 
         $spreadsheet = $reader->load($path);
         try {
-            $sheet = $spreadsheet->getActiveSheet();
-            $headerIndex = 1;
+            [$sheet, $headerIndex] = $this->resolveGi405WorksheetAndHeaderRow($spreadsheet);
+            $highestColumnIndex = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::columnIndexFromString($sheet->getHighestColumn());
             $headers = [];
-
-            foreach ($sheet->getRowIterator(1, min(20, $sheet->getHighestRow())) as $row) {
-                $cells = [];
-                foreach ($row->getCellIterator() as $cell) {
-                    $cells[] = trim((string) $cell->getFormattedValue());
-                }
-
-                $normalized = array_map(static fn ($value): string => strtoupper(trim((string) $value)), $cells);
-                if (in_array('KODE', $normalized, true) && in_array('TANGGAL', $normalized, true)) {
-                    $headerIndex = $row->getRowIndex();
-                    $headers = $cells;
-                    break;
-                }
-            }
-
-            if ($headers === []) {
-                return ['count' => 0, 'duplicates_in_file' => [], 'grouped' => []];
+            for ($columnIndex = 1; $columnIndex <= $highestColumnIndex; $columnIndex++) {
+                $headers[] = $this->readGi405FormattedCell($sheet, $columnIndex, $headerIndex);
             }
 
             $rowIterator = $sheet->getRowIterator($headerIndex + 1);
@@ -588,19 +852,25 @@ class Gi405RecDhImportExcelController extends ImportExcelController
 
     private function collectGi405BusinessKeys(array $headers, callable $nextRow): array
     {
-        $kodeIndex = null;
-        $tanggalIndex = null;
+        $periodeIndex = null;
+        $branchIndex = null;
+        $postingControlIndex = null;
+        $accountNumberIndex = null;
 
         foreach ($headers as $index => $header) {
-            $normalized = strtoupper(trim((string) $header));
-            if ($normalized === 'KODE') {
-                $kodeIndex = (int) $index;
-            } elseif ($normalized === 'TANGGAL') {
-                $tanggalIndex = (int) $index;
+            $normalized = $this->normalizeGi405HeaderLabel((string) $header);
+            if ($normalized === 'periode') {
+                $periodeIndex = (int) $index;
+            } elseif ($normalized === 'branch') {
+                $branchIndex = (int) $index;
+            } elseif ($normalized === 'posting control') {
+                $postingControlIndex = (int) $index;
+            } elseif ($normalized === 'account number') {
+                $accountNumberIndex = (int) $index;
             }
         }
 
-        if ($kodeIndex === null || $tanggalIndex === null) {
+        if ($periodeIndex === null || $branchIndex === null || $postingControlIndex === null || $accountNumberIndex === null) {
             return ['count' => 0, 'duplicates_in_file' => [], 'grouped' => []];
         }
 
@@ -612,20 +882,22 @@ class Gi405RecDhImportExcelController extends ImportExcelController
 
         while (($row = $nextRow()) !== null) {
             $rowNumber++;
-            $kode = $this->normalizeGi405RecDhKodeValue($row[$kodeIndex] ?? '');
-            $tanggalRaw = trim((string) ($row[$tanggalIndex] ?? ''));
+            $periodeRaw = trim((string) ($row[$periodeIndex] ?? ''));
+            $branch = trim((string) ($row[$branchIndex] ?? ''));
+            $postingControl = trim((string) ($row[$postingControlIndex] ?? ''));
+            $accountNumber = trim((string) ($row[$accountNumberIndex] ?? ''));
 
-            if ($kode === null || $kode === '' || $tanggalRaw === '') {
+            if ($periodeRaw === '' || $branch === '' || $postingControl === '' || $accountNumber === '') {
                 continue;
             }
 
             try {
-                $tanggal = StrictDateParser::normalize($tanggalRaw);
+                $periode = StrictDateParser::normalize($periodeRaw);
             } catch (\Throwable) {
                 continue;
             }
 
-            $pair = $tanggal . ' / ' . $kode;
+            $pair = $periode . ' / ' . $branch . ' / ' . $postingControl . ' / ' . $accountNumber;
             if (isset($seen[$pair])) {
                 $duplicates[$pair] = true;
                 if (count($duplicateRowSamples) < 5) {
@@ -635,7 +907,7 @@ class Gi405RecDhImportExcelController extends ImportExcelController
             }
 
             $seen[$pair] = $rowNumber;
-            $grouped[$tanggal][$kode] = $kode;
+            $grouped[$periode][$branch][$postingControl][$accountNumber] = $accountNumber;
         }
 
         return [

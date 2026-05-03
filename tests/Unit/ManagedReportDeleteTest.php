@@ -1271,29 +1271,29 @@ class ManagedReportDeleteTest extends TestCase
 
     public function test_delete_management_matches_date_period_columns_with_month_scope_filters(): void
     {
-        Schema::create('gi405_rec_dh', function (Blueprint $table) {
+        Schema::create('gi405_singlerow', function (Blueprint $table) {
             $table->string('uniqueid_namareport')->primary();
-            $table->date('tanggal')->nullable();
-            $table->string('kc_konsol')->nullable();
-            $table->string('kode')->nullable();
+            $table->date('periode')->nullable();
+            $table->string('branch')->nullable();
+            $table->string('account_number')->nullable();
         });
 
         DB::table('nama_report')->insert([
             'id_report' => 14,
-            'nama_report' => 'GI405 REC DH',
-            'table_name' => 'gi405_rec_dh',
+            'nama_report' => 'GI405 Single Row',
+            'table_name' => 'gi405_singlerow',
             'active' => 1,
         ]);
 
-        DB::table('gi405_rec_dh')->insert([
-            ['uniqueid_namareport' => 'REC-1', 'tanggal' => '2026-04-04', 'kc_konsol' => 'KANWIL MALANG', 'kode' => '001'],
-            ['uniqueid_namareport' => 'REC-2', 'tanggal' => '2026-04-17', 'kc_konsol' => 'KC Banyuwangi', 'kode' => '002'],
-            ['uniqueid_namareport' => 'REC-3', 'tanggal' => '2026-05-01', 'kc_konsol' => 'KC Banyuwangi', 'kode' => '003'],
+        DB::table('gi405_singlerow')->insert([
+            ['uniqueid_namareport' => 'REC-1', 'periode' => '2026-04-04', 'branch' => '45', 'account_number' => '001'],
+            ['uniqueid_namareport' => 'REC-2', 'periode' => '2026-04-17', 'branch' => '49', 'account_number' => '002'],
+            ['uniqueid_namareport' => 'REC-3', 'periode' => '2026-05-01', 'branch' => '49', 'account_number' => '003'],
         ]);
 
         $syncService = \Mockery::mock(ReportDataSyncService::class);
-        $syncService->shouldReceive('resolvePostDeleteMaintenanceMode')->with('gi405_rec_dh')->andReturn('lightweight');
-        $syncService->shouldReceive('syncAfterDeleteLightweight')->once()->with('gi405_rec_dh', '2026-04-17', \Mockery::type('string'))->andReturnNull();
+        $syncService->shouldReceive('resolvePostDeleteMaintenanceMode')->with('gi405_singlerow')->andReturn('lightweight');
+        $syncService->shouldReceive('syncAfterDeleteLightweight')->once()->with('gi405_singlerow', '2026-04-17', \Mockery::type('string'))->andReturnNull();
         app()->instance(ReportDataSyncService::class, $syncService);
 
         $controller = app(ImportIndexController::class);
@@ -1303,8 +1303,8 @@ class ManagedReportDeleteTest extends TestCase
                 [
                     'period_filter' => '2026-04-17',
                     'period_label' => '2026-04-17',
-                    'kanca_filter' => 'KC Banyuwangi',
-                    'kanca_label' => 'KC Banyuwangi',
+                    'kanca_filter' => '49',
+                    'kanca_label' => '49',
                     'period_is_null' => false,
                     'kanca_is_null' => false,
                 ],
@@ -1319,9 +1319,9 @@ class ManagedReportDeleteTest extends TestCase
         $this->assertSame(200, $response->status());
         $this->assertSame('completed', $payload['status']);
         $this->assertSame(1, $payload['deleted_rows']);
-        $this->assertSame(0, DB::table('gi405_rec_dh')->where('tanggal', '2026-04-17')->where('kc_konsol', 'KC Banyuwangi')->count());
-        $this->assertSame(1, DB::table('gi405_rec_dh')->where('tanggal', '2026-04-04')->where('kc_konsol', 'KANWIL MALANG')->count());
-        $this->assertSame(1, DB::table('gi405_rec_dh')->where('tanggal', '2026-05-01')->where('kc_konsol', 'KC Banyuwangi')->count());
+        $this->assertSame(0, DB::table('gi405_singlerow')->where('periode', '2026-04-17')->where('branch', '49')->count());
+        $this->assertSame(1, DB::table('gi405_singlerow')->where('periode', '2026-04-04')->where('branch', '45')->count());
+        $this->assertSame(1, DB::table('gi405_singlerow')->where('periode', '2026-05-01')->where('branch', '49')->count());
         Queue::assertNothingPushed();
     }
 

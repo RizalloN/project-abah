@@ -4,6 +4,7 @@ namespace App\Support;
 
 use App\Jobs\WarmReportCacheJob;
 use App\Jobs\SyncImportedReportJob;
+use App\Jobs\EnsureImportedSnapshotsFreshJob;
 use App\Services\Import\ImportProgressService;
 use App\Support\ParallelSnapshotBatchCoordinator;
 use App\Support\SimpananMultiPnSnapshotGate;
@@ -349,6 +350,39 @@ class ReportDataSyncService
                     ));
                 }
             });
+        } catch (\Illuminate\Contracts\Cache\LockTimeoutException $e) {
+            // Another process is already running backfill for this period.
+            // Dispatch a deferred freshness check so snapshot is built once backfill finishes.
+            $this->writeAudit('daily_loan_dinamis', $normalizedPeriod, $jobId, $source, 'shadow_backfill_pre_snapshot', 'deferred', [
+                'duration_ms' => $this->elapsedMs($startedAt),
+                'context' => [
+                    'reason' => 'lock_timeout_another_worker_running',
+                    'missing_rows' => $missing,
+                ],
+            ]);
+
+            Log::info('Shadow backfill sedang dijalankan oleh worker lain; snapshot dijadwalkan ulang setelah 5 menit.', [
+                'period' => $normalizedPeriod,
+                'missing_rows' => $missing,
+            ]);
+
+            try {
+                \App\Jobs\EnsureImportedSnapshotsFreshJob::dispatch(
+                    'daily_loan_dinamis',
+                    $normalizedPeriod,
+                    $source ?? static::class . '::ensureDailyLoanShadowColumnsReady'
+                )
+                    ->delay(now()->addMinutes(5))
+                    ->onQueue('snapshots-parallel');
+            } catch (Throwable $dispatchErr) {
+                Log::warning('Gagal dispatch deferred freshness check setelah lock timeout.', [
+                    'period' => $normalizedPeriod,
+                    'error' => $dispatchErr->getMessage(),
+                ]);
+            }
+
+            // Return normally — snapshot will be handled by the deferred job
+            return;
         } finally {
             try {
                 optional($lock)->release();
@@ -392,14 +426,23 @@ class ReportDataSyncService
 
     private function syncSimpanan(?string $periodHint, ?int $jobId, ?string $source, ?string $deleteId = null): void
     {
+        // Force-invalidate the branch coverage cache so the gate reads fresh DB state,
+        // not the 5-minute stale cache from a previous import
+        try {
+            app(SimpananMultiPnSnapshotGate::class)->invalidatePeriodCache($periodHint);
+        } catch (Throwable) {}
+
         if ($this->shouldDeferSimpananSnapshotStart($periodHint)) {
+            $gate = app(SimpananMultiPnSnapshotGate::class);
             Log::info('Snapshot simpanan multipn ditunda karena Area 6 belum lengkap.', [
                 'period' => $periodHint,
                 'job_id' => $jobId,
                 'source' => $source,
-                'missing_branches' => app(SimpananMultiPnSnapshotGate::class)->getMissingBranches($periodHint),
+                'available_branches' => $gate->getAvailableBranches($periodHint),
+                'missing_branches' => $gate->getMissingBranches($periodHint),
             ]);
 
+            $this->dispatchSnapshotFreshnessCheck('simpanan_multipn', $periodHint, $source);
             return;
         }
 
@@ -417,6 +460,8 @@ class ReportDataSyncService
                     'batch_id' => $batchId,
                     'jobs' => ['Dashboard Simpanan', 'Dashboard Harian', 'Rekening Dormant', 'Performance RM', 'Rasio CASA'],
                 ]);
+
+                $this->dispatchSnapshotFreshnessCheck('simpanan_multipn', $periodHint, $source);
 
             } catch (Throwable $e) {
                 Log::error('Gagal mendispatch parallel snapshot rebuild batch', [
@@ -457,6 +502,12 @@ class ReportDataSyncService
         if ($this->shouldRefreshDerivedSnapshotStatistics($periodHint)) {
             $this->refreshTableStatistics(self::DASHBOARD_HARIAN_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
         }
+
+        EnsureImportedSnapshotsFreshJob::dispatch(
+            'lw325_ph',
+            $periodHint,
+            $source ?? static::class . '::syncReportPh'
+        )->onQueue('snapshots-parallel');
     }
 
     private function syncPerformanceNewPayroll(?string $periodHint, ?int $jobId, ?string $source, ?string $deleteId = null): void
@@ -495,27 +546,55 @@ class ReportDataSyncService
         };
     }
 
-    private function syncSsaSimpanan(?string $periodHint, ?int $jobId, ?string $source): void
+    private function syncSsaSimpanan(?string $periodHint, ?int $jobId, ?string $source, ?string $deleteId = null): void
     {
-        // Rebuild the new SSA Simpanan Snapshot (Phase 2)
+        // Priority: rebuild SSA Simpanan aggregation snapshot immediately (used by Dashboard Dana)
         $this->runSnapshotAudit('ssa_simpanan', $periodHint, $jobId, $source, 'snapshot_ssa_simpanan', function () use ($periodHint) {
             return app(\App\Support\SsaSimpananSnapshotBuilder::class)->rebuild($periodHint, true);
         });
 
-        // Dispatch background job for dashboard harian snapshot rebuild
-        $this->dispatchDashboardHarianSnapshotRebuildJob($periodHint);
+        $this->dispatchSnapshotFreshnessCheck('ssa_simpanan', $periodHint, $source);
 
-        Log::info('Triggered SSA Simpanan snapshot rebuild and background Dashboard Harian sync', [
-            'period' => $periodHint,
-            'job_id' => $jobId,
-        ]);
+        // Dispatch Dashboard Harian rebuild only if SSA Pinjaman is also ready for this period
+        $ssaStatus = $this->resolveSsaReadinessForPeriod($periodHint);
+
+        if ($ssaStatus['both_ready']) {
+            $this->dispatchDashboardHarianSnapshotRebuildJob($periodHint);
+            Log::info('SSA Simpanan imported — both SSA tables ready, Dashboard Harian rebuild dispatched.', [
+                'period' => $periodHint,
+                'job_id' => $jobId,
+            ]);
+        } else {
+            // Pinjaman not yet present; Dashboard Harian will be triggered when it arrives
+            Log::info('SSA Simpanan imported — waiting for SSA Pinjaman before Dashboard Harian rebuild.', [
+                'period' => $periodHint,
+                'job_id' => $jobId,
+                'missing' => $ssaStatus['missing'],
+            ]);
+        }
     }
 
-    private function syncSsaPinjaman(?string $periodHint, ?int $jobId, ?string $source): void
+    private function syncSsaPinjaman(?string $periodHint, ?int $jobId, ?string $source, ?string $deleteId = null): void
     {
-        // Dispatch background job for snapshot rebuild instead of blocking
-        // This allows the import to complete immediately instead of waiting 0.4-60+ seconds
-        $this->dispatchDashboardHarianSnapshotRebuildJob($periodHint);
+        $this->dispatchSnapshotFreshnessCheck('ssa_pinjaman', $periodHint, $source);
+
+        // Dispatch Dashboard Harian rebuild only if SSA Simpanan is also ready for this period
+        $ssaStatus = $this->resolveSsaReadinessForPeriod($periodHint);
+
+        if ($ssaStatus['both_ready']) {
+            $this->dispatchDashboardHarianSnapshotRebuildJob($periodHint);
+            Log::info('SSA Pinjaman imported — both SSA tables ready, Dashboard Harian rebuild dispatched.', [
+                'period' => $periodHint,
+                'job_id' => $jobId,
+            ]);
+        } else {
+            // Simpanan not yet present; will be triggered when simpanan arrives
+            Log::info('SSA Pinjaman imported — waiting for SSA Simpanan before Dashboard Harian rebuild.', [
+                'period' => $periodHint,
+                'job_id' => $jobId,
+                'missing' => $ssaStatus['missing'],
+            ]);
+        }
 
         // Skip audit and stats for now - background job will handle them
         Log::info('Dispatched background Dashboard Harian snapshot rebuild for SSA Pinjaman', [
@@ -556,11 +635,11 @@ class ReportDataSyncService
             $job = new $jobClass(null, true);
             dispatch($job)
                 ->delay(now()->addSeconds($this->dashboardHarianDirtyPeriods->debounceSeconds()))
-                ->onQueue('imports-high');
+                ->onQueue('snapshots-parallel');
 
             Log::info('Dispatched RebuildDashboardHarianSnapshotJob', [
                 'periods' => $periods,
-                'queue' => 'imports-high',
+                'queue' => 'snapshots-parallel',
                 'debounce_seconds' => $this->dashboardHarianDirtyPeriods->debounceSeconds(),
             ]);
         } catch (\Throwable $e) {
@@ -570,6 +649,70 @@ class ReportDataSyncService
             ]);
             
             $this->syncDashboardHarianDuePeriodsNow($period);
+        }
+    }
+
+    /**
+     * Check whether both ssa_simpanan and ssa_pinjaman have data for the given period.
+     * Returns ['both_ready' => bool, 'missing' => string[]].
+     *
+     * DashboardHarianSnapshotService.resolveSharedPeriods() already handles this at build time,
+     * but checking here prevents dispatching a rebuild job that would be a guaranteed no-op.
+     */
+    private function resolveSsaReadinessForPeriod(?string $periodHint): array
+    {
+        $period = trim((string) $periodHint);
+        $missing = [];
+
+        if ($period === '') {
+            // No specific period — let the rebuild job auto-detect via syncDuePeriods()
+            return ['both_ready' => true, 'missing' => []];
+        }
+
+        try {
+            if (!Schema::hasTable('ssa_simpanan') || !DB::table('ssa_simpanan')->where('Month_Day_Year_of_Posisi', 'like', '%' . $period . '%')->exists()) {
+                // Try normalized date match
+                $hasSimpanan = DB::table('ssa_simpanan')
+                    ->whereRaw("DATE(STR_TO_DATE(Month_Day_Year_of_Posisi, '%m/%d/%Y')) = ?", [$period])
+                    ->exists();
+                if (!$hasSimpanan) {
+                    $missing[] = 'ssa_simpanan';
+                }
+            }
+        } catch (Throwable) {
+            // Table or column not available — assume ready to avoid blocking
+        }
+
+        try {
+            if (!Schema::hasTable('ssa_pinjaman') || !DB::table('ssa_pinjaman')->where('month_day_year_of_periode', 'like', '%' . $period . '%')->exists()) {
+                $hasPinjaman = DB::table('ssa_pinjaman')
+                    ->whereRaw("DATE(STR_TO_DATE(month_day_year_of_periode, '%m/%d/%Y')) = ?", [$period])
+                    ->exists();
+                if (!$hasPinjaman) {
+                    $missing[] = 'ssa_pinjaman';
+                }
+            }
+        } catch (Throwable) {
+            // Assume ready
+        }
+
+        return ['both_ready' => $missing === [], 'missing' => $missing];
+    }
+
+    private function dispatchSnapshotFreshnessCheck(string $tableName, ?string $periodHint, ?string $source): void
+    {
+        try {
+            EnsureImportedSnapshotsFreshJob::dispatch(
+                $tableName,
+                $periodHint,
+                $source ?? static::class . '::dispatchSnapshotFreshnessCheck'
+            )->onQueue('snapshots-parallel');
+        } catch (Throwable $e) {
+            Log::debug('Gagal dispatch snapshot freshness check.', [
+                'table' => $tableName,
+                'period_hint' => $periodHint,
+                'message' => $e->getMessage(),
+            ]);
         }
     }
 

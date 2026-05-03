@@ -7,6 +7,8 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use ReflectionMethod;
 use Tests\TestCase;
 
@@ -24,40 +26,36 @@ class Gi405RecDhImportExcelControllerTest extends TestCase
 
         Schema::dropAllTables();
 
-        Schema::create('gi405_rec_dh', function (Blueprint $table) {
+        Schema::create('gi405_singlerow', function (Blueprint $table) {
             $table->string('uniqueid_namareport')->primary();
-            $table->string('kode', 20);
-            $table->decimal('pendapatan_koreksi_ppap_dr_angsuran_ph', 20, 2)->nullable();
-            $table->decimal('recovery_non_klaim', 20, 2)->nullable();
-            $table->string('kc_konsol', 150)->nullable();
-            $table->string('nama_uker', 150)->nullable();
-            $table->string('segmen', 50)->nullable();
-            $table->date('tanggal')->nullable();
+            $table->date('periode')->nullable();
+            $table->string('branch', 20)->nullable();
+            $table->string('currency', 10)->nullable();
+            $table->string('posting_control', 30)->nullable();
+            $table->string('account_number', 50)->nullable();
+            $table->string('c_c', 20)->nullable();
+            $table->string('p_c', 20)->nullable();
+            $table->string('f_c', 20)->nullable();
+            $table->string('description', 255)->nullable();
+            $table->decimal('begining_balance', 24, 2)->nullable();
+            $table->decimal('equivalents_idr', 24, 2)->nullable();
+            $table->decimal('equivalents_usd', 24, 2)->nullable();
+            $table->decimal('today_debit', 24, 2)->nullable();
+            $table->decimal('today_credit', 24, 2)->nullable();
+            $table->decimal('ending_balance', 24, 2)->nullable();
             $table->timestamp('created_at')->nullable();
             $table->timestamp('updated_at')->nullable();
-        });
-
-        Schema::create('import_jobs', function (Blueprint $table) {
-            $table->increments('id');
-            $table->string('status')->nullable();
-            $table->integer('total_success')->default(0);
-            $table->integer('total_failed')->default(0);
-            $table->integer('total_files')->default(0);
-            $table->timestamp('created_at')->nullable();
-            $table->timestamp('updated_at')->nullable();
-            $table->text('job_context')->nullable();
-            $table->string('job_fingerprint')->nullable();
         });
     }
 
-    public function test_collect_business_keys_reports_duplicate_row_samples(): void
+    public function test_collect_business_keys_reports_duplicate_single_row_samples(): void
     {
         $csvPath = tempnam(sys_get_temp_dir(), 'gi405_dup_');
         file_put_contents($csvPath, implode("\n", [
-            'KODE,Tanggal',
-            '45,19 Januari 2026',
-            '45,19 Januari 2026',
-            '46,20 Januari 2026',
+            'PERIODE,BRANCH,CURRENCY,POSTING CONTROL,ACCOUNT NUMBER,C/C,P/C,F/C,DESCRIPTION,BEGINING BALANCE,EQUIVALENTS IDR,EQUIVALENTS USD,TODAY DEBIT,TODAY CREDIT,ENDING BALANCE',
+            '01/05/2026,45,AED,*POST,100010992000,,,AED,Kas - Money Changer,35.00,164937.50,9.52,0.00,0.00,35.00',
+            '01/05/2026,45,AED,*POST,100010992000,,,AED,Kas - Money Changer,35.00,164937.50,9.52,0.00,0.00,35.00',
+            '01/05/2026,49,AED,*POST,100010992000,,,AED,Kas - Money Changer,35.00,164937.50,9.52,0.00,0.00,35.00',
         ]));
 
         $controller = new Gi405RecDhImportExcelController();
@@ -67,133 +65,45 @@ class Gi405RecDhImportExcelControllerTest extends TestCase
 
         @unlink($csvPath);
 
-        $this->assertSame(['2026-01-19 / 00045'], $result['duplicates_in_file']);
+        $this->assertSame(['2026-05-01 / 45 / *POST / 100010992000'], $result['duplicates_in_file']);
         $this->assertNotEmpty($result['duplicate_row_samples']);
         $this->assertStringContainsString('baris 2 & 3', $result['duplicate_row_samples'][0]);
     }
 
-    private function makeController(): Gi405RecDhImportExcelController
+    public function test_gi405_excel_staging_uses_single_row_format_and_skips_blank_rows(): void
     {
-        return new class extends Gi405RecDhImportExcelController {
-            protected function schemaColumnsForBulkImport(string $tableName): array
-            {
-                return [
-                    'uniqueid_namareport',
-                    'kode',
-                    'pendapatan_koreksi_ppap_dr_angsuran_ph',
-                    'recovery_non_klaim',
-                    'kc_konsol',
-                    'nama_uker',
-                    'segmen',
-                    'tanggal',
-                    'created_at',
-                    'updated_at',
-                ];
-            }
+        $xlsxPath = tempnam(sys_get_temp_dir(), 'gi405_sheet_') . '.xlsx';
 
-            protected function tableColumnMetadataForBulkImport(string $tableName): array
-            {
-                return [];
-            }
-        };
-    }
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('GI405Singlerow');
+        $sheet->fromArray([
+            ['PERIODE', 'BRANCH', 'CURRENCY', 'POSTING CONTROL', 'ACCOUNT NUMBER', 'C/C', 'P/C', 'F/C', 'DESCRIPTION', 'BEGINING BALANCE', 'EQUIVALENTS IDR', 'EQUIVALENTS USD', 'TODAY DEBIT', 'TODAY CREDIT', 'ENDING BALANCE'],
+            ['', '', '', '', '', '', '', '', '', '', '', '', '', '', ''],
+            ['01/05/2026', 45, 'AED', '*POST', '100010992000', '', '', 'AED', 'Kas - Money Changer', '35.00', '164,937.50', '9.52', '0.00', '0.00', '35.00'],
+        ]);
 
-    public function test_gi405_staged_import_persists_negative_pendapatan_values(): void
-    {
-        $csvPath = tempnam(sys_get_temp_dir(), 'gi405_ok_');
-        file_put_contents($csvPath, implode("\n", [
-            'KODE,"Pendapatan Koreksi PPAP-dr Angsuran PH","Recovery Non Klaim","KC Konsol","Nama Uker","Segmen",Tanggal',
-            '45,-61806903,61806903,"00045 -- KC Madiun (Konsolidasi-MB)","00045 -- KC Madiun",Ritel,"19 Januari 2026"',
-            '46,-3029000,3029000,"00046 -- KC Madiun (Konsolidasi-MB)","00046 -- KC Madiun",Ritel,"19 Januari 2026"',
-        ]));
+        (new Xlsx($spreadsheet))->save($xlsxPath);
+        $spreadsheet->disconnectWorksheets();
 
-        $events = [];
-        $controller = $this->makeController();
-        $method = new ReflectionMethod(Gi405RecDhImportExcelController::class, 'processStagedCsvStream');
+        $controller = new Gi405RecDhImportExcelController();
+        $method = new ReflectionMethod(Gi405RecDhImportExcelController::class, 'stageGi405WorkbookSheetToCsv');
         $method->setAccessible(true);
+        $stage = $method->invoke($controller, $xlsxPath);
 
-        $result = $method->invoke(
-            $controller,
-            function (string $event, array $payload) use (&$events): void {
-                $events[] = compact('event', 'payload');
-            },
-            $csvPath,
-            'gi405_rec_dh',
-            [],
-            [
-                'KODE',
-                'Pendapatan Koreksi PPAP-dr Angsuran PH',
-                'Recovery Non Klaim',
-                'KC Konsol',
-                'Nama Uker',
-                'Segmen',
-                'Tanggal',
-            ],
-            0,
-            2,
-            ',',
-            false,
-            null
-        );
+        @unlink($xlsxPath);
 
-        @unlink($csvPath);
+        $handle = fopen($stage['absolute_path'], 'r');
+        $headers = fgetcsv($handle);
+        $row = fgetcsv($handle);
+        $end = fgetcsv($handle);
+        fclose($handle);
 
-        $this->assertTrue($result);
-        $this->assertSame(2, DB::table('gi405_rec_dh')->count());
-        $this->assertSame('-61806903', (string) DB::table('gi405_rec_dh')->orderBy('kode')->value('pendapatan_koreksi_ppap_dr_angsuran_ph'));
-        $this->assertSame('61806903', (string) DB::table('gi405_rec_dh')->orderBy('kode')->value('recovery_non_klaim'));
-        $this->assertStringStartsWith(
-            'uuid_405RDH_',
-            (string) DB::table('gi405_rec_dh')->orderBy('kode')->value('uniqueid_namareport')
-        );
-        $this->assertSame('complete', $events[array_key_last($events)]['event']);
-    }
-
-    public function test_gi405_staged_import_returns_diagnostic_error_samples_when_source_is_invalid(): void
-    {
-        $csvPath = tempnam(sys_get_temp_dir(), 'gi405_bad_');
-        file_put_contents($csvPath, implode("\n", [
-            'KODE,"Pendapatan Koreksi PPAP-dr Angsuran PH","Recovery Non Klaim","KC Konsol","Nama Uker","Segmen",Tanggal',
-            '45,abc,61806903,"00045 -- KC Madiun (Konsolidasi-MB)","00045 -- KC Madiun",Ritel,"19 Januari 2026"',
-            '45,-100,100,"00045 -- KC Madiun (Konsolidasi-MB)","00045 -- KC Madiun",Ritel,"19 Januari 2026"',
-        ]));
-
-        $events = [];
-        $controller = $this->makeController();
-        $method = new ReflectionMethod(Gi405RecDhImportExcelController::class, 'processStagedCsvStream');
-        $method->setAccessible(true);
-
-        $result = $method->invoke(
-            $controller,
-            function (string $event, array $payload) use (&$events): void {
-                $events[] = compact('event', 'payload');
-            },
-            $csvPath,
-            'gi405_rec_dh',
-            [],
-            [
-                'KODE',
-                'Pendapatan Koreksi PPAP-dr Angsuran PH',
-                'Recovery Non Klaim',
-                'KC Konsol',
-                'Nama Uker',
-                'Segmen',
-                'Tanggal',
-            ],
-            0,
-            2,
-            ',',
-            false,
-            null
-        );
-
-        @unlink($csvPath);
-
-        $this->assertTrue($result);
-        $this->assertSame(0, DB::table('gi405_rec_dh')->count());
-        $this->assertSame('error', $events[array_key_last($events)]['event']);
-        $this->assertStringContainsString('Contoh baris error', $events[array_key_last($events)]['payload']['message']);
-        $this->assertStringContainsString('baris 2', $events[array_key_last($events)]['payload']['message']);
-        $this->assertStringContainsString('abc', $events[array_key_last($events)]['payload']['message']);
+        $this->assertSame(['PERIODE', 'BRANCH', 'CURRENCY', 'POSTING CONTROL', 'ACCOUNT NUMBER', 'C/C', 'P/C', 'F/C', 'DESCRIPTION', 'BEGINING BALANCE', 'EQUIVALENTS IDR', 'EQUIVALENTS USD', 'TODAY DEBIT', 'TODAY CREDIT', 'ENDING BALANCE'], $headers);
+        $this->assertSame('01/05/2026', (string) $row[0]);
+        $this->assertSame('45', (string) $row[1]);
+        $this->assertSame('*POST', (string) $row[3]);
+        $this->assertSame('100010992000', (string) $row[4]);
+        $this->assertFalse($end);
     }
 }

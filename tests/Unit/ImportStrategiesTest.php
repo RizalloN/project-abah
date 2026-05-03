@@ -6,6 +6,7 @@ use App\Services\Import\Strategies\DailyLoanImportStrategy;
 use App\Services\Import\Strategies\ConfiguredExcelImportStrategy;
 use App\Services\Import\Strategies\Gi405RecDhImportStrategy;
 use App\Services\Import\Strategies\GenericCsvImportStrategy;
+use App\Services\Import\Strategies\L1133ImportStrategy;
 use App\Services\Import\Strategies\SimpananMultiPnImportStrategy;
 use App\Services\Import\Strategies\SsaPinjamanImportStrategy;
 use App\Services\Import\Strategies\SsaSimpananImportStrategy;
@@ -73,6 +74,7 @@ class ImportStrategiesTest extends TestCase
         $this->assertFalse($strategy->supports(null, 'rka'));
         $this->assertFalse($strategy->supports(null, 'brihc'));
         $this->assertFalse($strategy->supports(null, 'wilayah_mbm'));
+        $this->assertFalse($strategy->supports(null, 'l1133'));
         $this->assertSame(['A', 'B'], $strategy->transformHeaders(['A', 'B']));
         $this->assertSame('bulk_csv_staging', $strategy->importMode());
     }
@@ -100,11 +102,44 @@ class ImportStrategiesTest extends TestCase
         $this->assertSame('bulk_csv_staging', $ssaPinjaman->importMode());
     }
 
-    public function test_gi405_strategy_uses_staging_mode_for_safer_imports(): void
+    public function test_gi405_strategy_uses_bulk_csv_fast_path_for_imports(): void
     {
         $strategy = new Gi405RecDhImportStrategy();
 
-        $this->assertTrue($strategy->supports(null, 'gi405_rec_dh'));
+        $this->assertTrue($strategy->supports(null, 'gi405_singlerow'));
+        $this->assertSame('bulk_csv_filtered', $strategy->importMode());
+    }
+
+    public function test_l1133_strategy_registers_normalized_headers_for_bulk_csv(): void
+    {
+        $strategy = new L1133ImportStrategy();
+
+        $headers = $strategy->transformHeaders(['Kode_Br', 'MBDesc', 'Jenis']);
+
+        $this->assertTrue($strategy->supports(null, 'l1133'));
         $this->assertSame('bulk_csv_staging', $strategy->importMode());
+        $this->assertSame('periode', $headers[0]);
+        $this->assertSame('kode_kanwil', $headers[1]);
+        $this->assertSame('dpk', $headers[14]);
+        $this->assertTrue($strategy->validateSchema([
+            'uniqueid_namareport',
+            'created_at',
+            'updated_at',
+            'periode',
+            'kode_kanwil',
+            'nama_kanwil',
+            'kode_kanca',
+            'nama_kanca',
+            'kode_uker',
+            'nama_uker',
+            'jenis',
+            'jumlah_debitur',
+            'jumlah_rekening',
+            'outstanding',
+            'jumlah_debitur_npl',
+            'npl',
+            'jumlah_debitur_dpk',
+            'dpk',
+        ])['ok']);
     }
 }

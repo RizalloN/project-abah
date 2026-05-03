@@ -379,6 +379,60 @@ class ImportSimpananMultiPnCsvControllerTest extends TestCase
         ], $plan['period_hints'] ?? []);
     }
 
+    public function test_simpanan_file_fingerprint_uses_content_not_storage_filename(): void
+    {
+        $controller = new ImportSimpananMultiPnCsvController();
+        $firstPath = storage_path('framework/testing/simpanan_fingerprint_a.csv');
+        $secondPath = storage_path('framework/testing/simpanan_fingerprint_b.csv');
+        if (!is_dir(dirname($firstPath))) {
+            @mkdir(dirname($firstPath), 0777, true);
+        }
+
+        $content = implode("\n", [
+            'POSISI;KANTOR_CABANG;CIFNO;NO_REKENING',
+            '04-04-2026;KC MADIUN;A001;1001',
+        ]);
+
+        file_put_contents($firstPath, $content);
+        file_put_contents($secondPath, $content);
+
+        try {
+            $firstHash = $this->invokeMethod($controller, 'calculateFileFingerprint', [$firstPath]);
+            $secondHash = $this->invokeMethod($controller, 'calculateFileFingerprint', [$secondPath]);
+        } finally {
+            @unlink($firstPath);
+            @unlink($secondPath);
+        }
+
+        $this->assertSame($firstHash, $secondHash);
+        $this->assertSame(64, strlen($firstHash));
+    }
+
+    public function test_simpanan_scope_collection_reads_periods_and_kantor_cabang(): void
+    {
+        $controller = new ImportSimpananMultiPnCsvController();
+        $csvPath = storage_path('framework/testing/simpanan_scope_hints.csv');
+        if (!is_dir(dirname($csvPath))) {
+            @mkdir(dirname($csvPath), 0777, true);
+        }
+
+        file_put_contents($csvPath, implode("\n", [
+            'POSISI;KANTOR_CABANG;CIFNO;NO_REKENING',
+            '04-04-2026;KC MADIUN;A001;1001',
+            '2026-04-04;KC MADIUN;A002;1002',
+            '05/04/2026;KC NGAWI;A003;1003',
+        ]));
+
+        try {
+            $scopes = $this->invokeMethod($controller, 'collectSimpananMultiPnSnapshotScopes', [$csvPath]);
+        } finally {
+            @unlink($csvPath);
+        }
+
+        $this->assertSame(['2026-04-04', '2026-04-05'], $scopes['periods'] ?? []);
+        $this->assertSame(['KC MADIUN', 'KC NGAWI'], $scopes['branches'] ?? []);
+    }
+
     public function test_prepare_simpanan_direct_load_source_preserves_duplicates_and_skips_malformed_rows(): void
     {
         $controller = new class extends ImportSimpananMultiPnCsvController {

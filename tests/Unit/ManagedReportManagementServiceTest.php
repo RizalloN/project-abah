@@ -8,23 +8,20 @@ use ReflectionClass;
 
 class ManagedReportManagementServiceTest extends TestCase
 {
-    public function test_gi405_report_management_scope_uses_kc_konsol(): void
+    public function test_gi405_report_management_scope_uses_branch(): void
     {
         $service = new ManagedReportManagementService();
 
-        [$periodColumn, $kancaColumn] = $service->resolveManagementScopeColumns('gi405_rec_dh', [
+        [$periodColumn, $kancaColumn] = $service->resolveManagementScopeColumns('gi405_singlerow', [
             'uniqueid_namareport',
-            'kode',
-            'pendapatan_koreksi_ppap_dr_angsuran_ph',
-            'recovery_non_klaim',
-            'kc_konsol',
-            'nama_uker',
-            'segmen',
-            'tanggal',
+            'periode',
+            'branch',
+            'posting_control',
+            'account_number',
         ]);
 
-        $this->assertSame('tanggal', $periodColumn);
-        $this->assertSame('kc_konsol', $kancaColumn);
+        $this->assertSame('periode', $periodColumn);
+        $this->assertSame('branch', $kancaColumn);
     }
 
     public function test_cognos_ph_report_management_scope_uses_kanca(): void

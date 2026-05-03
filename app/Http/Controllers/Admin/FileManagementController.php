@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\View\View;
 use App\Services\Import\ImportProgressService;
+use App\Support\DatabaseBackupStatusStore;
 use RuntimeException;
 
 class FileManagementController extends Controller
@@ -120,17 +121,26 @@ class FileManagementController extends Controller
     public function backupDatabase(DatabaseBackupService $backupService): JsonResponse
     {
         try {
+            $runningBackup = DatabaseBackupStatusStore::latestRunning();
+            if ($runningBackup !== null && !empty($runningBackup['backup_id'])) {
+                return response()->json([
+                    'status' => 'running',
+                    'backup_id' => $runningBackup['backup_id'],
+                    'message' => 'Backup database masih berjalan. Menyambungkan modal ke proses yang sedang aktif.',
+                ]);
+            }
+
             $backupId = 'backup_' . uniqid();
             $tables = $backupService->getTables();
             
-            Cache::put("backup_progress:{$backupId}", [
+            DatabaseBackupStatusStore::put($backupId, [
                 'status' => 'starting',
                 'progress_percent' => 0,
                 'current_table_index' => 0,
                 'total_tables' => count($tables),
                 'message' => 'Menyiapkan backup database...',
                 'updated_at' => now()->timestamp,
-            ], now()->addHours(1));
+            ]);
             Cache::put("backup_meta:{$backupId}", [
                 'created_at' => now()->timestamp,
             ], now()->addHours(1));
@@ -162,7 +172,7 @@ class FileManagementController extends Controller
 
     public function getBackupStatus(string $backupId): JsonResponse
     {
-        $status = Cache::get("backup_progress:{$backupId}");
+        $status = DatabaseBackupStatusStore::get($backupId);
 
         if (!$status) {
             $meta = Cache::get("backup_meta:{$backupId}");
@@ -180,6 +190,8 @@ class FileManagementController extends Controller
             ], 404);
         }
 
+        $status = $this->enrichBackupStatusWithLiveFileState($status);
+
         // Enhanced timeout logic: only fail if no updates for 5+ minutes AND progress is stalled
         // (this accommodates large table processing without false positives)
         $lastUpdate = (int) ($status['updated_at'] ?? 0);
@@ -192,10 +204,66 @@ class FileManagementController extends Controller
                 'status' => 'stalled',
                 'progress_percent' => (int) ($status['progress_percent'] ?? 0),
                 'message' => 'Backup sudah tidak ada update progress selama 5 menit. Proses mungkin sedang memproses tabel yang sangat besar. Silakan tunggu lebih lama atau check log di storage/logs/database-backup-*.log',
+                'file' => $status['file'] ?? null,
+                'backup_file' => $status['backup_file'] ?? null,
             ]);
         }
 
         return response()->json($status);
+    }
+
+    /**
+     * @param array<string, mixed> $status
+     * @return array<string, mixed>
+     */
+    private function enrichBackupStatusWithLiveFileState(array $status): array
+    {
+        $candidatePaths = [];
+        if (!empty($status['backup_file']) && is_string($status['backup_file'])) {
+            $candidatePaths[] = $status['backup_file'];
+            if (!str_ends_with($status['backup_file'], '.gz')) {
+                $candidatePaths[] = $status['backup_file'] . '.gz';
+            }
+        }
+
+        $file = is_array($status['file'] ?? null) ? $status['file'] : [];
+        if (!empty($file['relative_path']) && is_string($file['relative_path'])) {
+            $candidatePaths[] = storage_path('app/' . ltrim($file['relative_path'], '/\\'));
+        }
+
+        $existingPath = null;
+        foreach (array_unique($candidatePaths) as $candidatePath) {
+            if (is_file($candidatePath)) {
+                $existingPath = $candidatePath;
+                break;
+            }
+        }
+
+        if ($existingPath === null) {
+            return $status;
+        }
+
+        clearstatcache(true, $existingPath);
+        $relativePath = $this->toRelativeStoragePath($existingPath);
+        $status['backup_file'] = $existingPath;
+        $status['file'] = array_merge($file, [
+            'name' => basename($existingPath),
+            'relative_path' => $relativePath,
+            'download_url' => route('file-management.download', ['path' => $relativePath]),
+            'size' => filesize($existingPath) ?: 0,
+            'size_human' => $this->formatBytes((int) (filesize($existingPath) ?: 0)),
+            'modified_at' => filemtime($existingPath) ?: null,
+        ]);
+
+        if (in_array($status['status'] ?? null, ['starting', 'processing', 'stalled'], true)) {
+            $status['message'] = sprintf(
+                '%s Ukuran file saat ini: %s.',
+                rtrim((string) ($status['message'] ?? 'Backup sedang berjalan.'), '.'),
+                $status['file']['size_human']
+            );
+        }
+
+        return $status;
     }
 
     private function startWindowsBackupProcess(string $backupId): void

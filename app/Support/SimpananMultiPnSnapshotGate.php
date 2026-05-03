@@ -36,6 +36,22 @@ class SimpananMultiPnSnapshotGate
     }
 
     /**
+     * Force-invalidate the branch coverage cache for a specific period.
+     * Call this immediately after a simpanan_multipn import so the gate
+     * re-reads from DB rather than serving stale cache data.
+     */
+    public function invalidatePeriodCache(?string $period): void
+    {
+        $normalizedPeriod = $this->normalizePeriod($period);
+        if ($normalizedPeriod === null) {
+            return;
+        }
+
+        $version = (int) Cache::get('report_cache_version:global', 1);
+        Cache::forget('snapshot:simpanan_multipn:coverage:v' . $version . ':' . $normalizedPeriod);
+    }
+
+    /**
      * Mengembalikan branch Area 6 yang belum tersedia pada periode tertentu.
      *
      * @return array<int, string>

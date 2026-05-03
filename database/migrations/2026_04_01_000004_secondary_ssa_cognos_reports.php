@@ -55,18 +55,28 @@ return new class extends Migration
             });
         }
 
-        // 3. GI405 Rec DH
-        if (!Schema::hasTable('gi405_rec_dh')) {
-            Schema::create('gi405_rec_dh', function (Blueprint $table) {
-            $table->string('uniqueid_namareport', 255)->primary();
-            $table->date('tanggal')->nullable()->index();
-            $table->string('kode', 50)->nullable();
-            $table->string('kc_konsol', 150)->nullable();
-            $table->string('nama_uker', 180)->nullable()->index();
-            $table->string('segmen', 100)->nullable();
-            $table->decimal('pendapatan_koreksi_ppap_dr_angsuran_ph', 20, 2)->default(0);
-            $table->decimal('recovery_non_klaim', 20, 2)->default(0);
+        // 3. GI405 Single Row
+        if (!Schema::hasTable('gi405_singlerow')) {
+            Schema::create('gi405_singlerow', function (Blueprint $table) {
+                $table->string('uniqueid_namareport', 255)->primary();
+                $table->date('periode')->nullable()->index();
+                $table->string('branch', 20)->nullable()->index();
+                $table->string('currency', 10)->nullable();
+                $table->string('posting_control', 30)->nullable()->index();
+                $table->string('account_number', 50)->nullable()->index();
+                $table->string('c_c', 20)->nullable();
+                $table->string('p_c', 20)->nullable();
+                $table->string('f_c', 20)->nullable();
+                $table->string('description', 255)->nullable();
+                $table->decimal('begining_balance', 24, 2)->default(0);
+                $table->decimal('equivalents_idr', 24, 2)->default(0);
+                $table->decimal('equivalents_usd', 24, 2)->default(0);
+                $table->decimal('today_debit', 24, 2)->default(0);
+                $table->decimal('today_credit', 24, 2)->default(0);
+                $table->decimal('ending_balance', 24, 2)->default(0);
                 $table->timestamps();
+
+                $table->index(['periode', 'branch', 'posting_control'], 'idx_gi405_sr_period_branch_posting');
             });
         }
 
@@ -143,7 +153,7 @@ return new class extends Migration
     {
         Schema::dropIfExists('cognos_ph');
         Schema::dropIfExists('cognos_recovery');
-        Schema::dropIfExists('gi405_rec_dh');
+        Schema::dropIfExists('gi405_singlerow');
         Schema::dropIfExists('ssa_pinjaman');
         Schema::dropIfExists('ssa_simpanan');
     }

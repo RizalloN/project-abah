@@ -78,17 +78,18 @@ class MySqlBulkLoadService
         );
     }
 
-    public function withTableWriteLock(string $tableName, callable $callback, int $timeoutSeconds = 10)
+    public function withTableWriteLock(string $tableName, callable $callback, ?int $timeoutSeconds = null)
     {
         $tableName = trim($tableName);
         if ($tableName === '' || !$this->usesMysqlFamilyConnection()) {
             return $callback();
         }
 
+        $timeoutSeconds ??= max(10, (int) config('import.direct_load.table_write_lock_wait_seconds', 300));
         $lockName = $this->tableWriteLockName($tableName);
         $row = DB::selectOne('SELECT GET_LOCK(?, ?) AS lock_result', [$lockName, $timeoutSeconds]);
         if ((int) ($row->lock_result ?? 0) !== 1) {
-            throw new \RuntimeException("Tabel `{$tableName}` sedang diproses oleh operasi tulis lain. Tunggu proses sebelumnya selesai.");
+            throw new \RuntimeException("Tabel `{$tableName}` masih dipakai oleh import/delete lain setelah menunggu {$timeoutSeconds} detik. Tunggu proses sebelumnya selesai lalu ulangi.");
         }
 
         try {

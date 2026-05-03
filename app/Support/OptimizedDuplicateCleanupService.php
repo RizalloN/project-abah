@@ -162,8 +162,8 @@ class OptimizedDuplicateCleanupService
     private function getPrimaryKeyColumn(string $tableName): string
     {
         // Standard Laravel convention
-        if ($tableName === 'gi405_rec_dh') {
-            return 'id';
+        if ($tableName === 'gi405_singlerow') {
+            return 'uniqueid_namareport';
         }
 
         if ($tableName === 'simpanan_multipn') {

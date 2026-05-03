@@ -3,8 +3,8 @@
 namespace App\Console\Commands;
 
 use App\Services\DatabaseBackupService;
+use App\Support\DatabaseBackupStatusStore;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 
@@ -40,7 +40,7 @@ class ProgressiveBackupCommand extends Command
             $absolutePath = $backupDirectory . DIRECTORY_SEPARATOR . $filename;
             $gzipPath = $this->resolveGzipPath();
 
-            Cache::put($cacheKey, [
+            $this->putStatus($backupId, [
                 'status' => 'processing',
                 'progress_percent' => 2,
                 'current_table_index' => 0,
@@ -50,18 +50,17 @@ class ProgressiveBackupCommand extends Command
                 'updated_at' => now()->timestamp,
                 'backup_file' => $absolutePath,
                 'compression_enabled' => $gzipPath !== '',
-            ], now()->addHours(1));
+            ]);
 
             // Single-pass optimized backup with compression
             $this->performOptimizedBackup($backupService, $cacheKey, $absolutePath, $database);
 
-            $actualFilename = basename($absolutePath);
-            if (!is_file($absolutePath)) {
-                $actualFilename = $baseName . (file_exists($baseName . '.sql.gz') ? '.sql.gz' : '.sql');
-                $absolutePath = $backupDirectory . DIRECTORY_SEPARATOR . $actualFilename;
+            if (is_file($absolutePath . '.gz')) {
+                $absolutePath .= '.gz';
             }
+            $actualFilename = basename($absolutePath);
 
-            Cache::put($cacheKey, [
+            $this->putStatus($backupId, [
                 'status' => 'completed',
                 'progress_percent' => 100,
                 'current_table_index' => 1,
@@ -75,15 +74,15 @@ class ProgressiveBackupCommand extends Command
                     'size' => is_file($absolutePath) ? filesize($absolutePath) : 0,
                     'size_human' => is_file($absolutePath) ? $this->formatBytes(filesize($absolutePath)) : '0 B',
                 ],
-            ], now()->addHours(1));
+            ]);
 
         } catch (\Throwable $e) {
             Log::error("Backup failed for {$backupId}: " . $e->getMessage());
-            Cache::put($cacheKey, [
+            $this->putStatus($backupId, [
                 'status' => 'failed',
                 'message' => $e->getMessage(),
                 'updated_at' => now()->timestamp,
-            ], now()->addHours(1));
+            ]);
             
             if (isset($absolutePath) && is_file($absolutePath)) {
                 @unlink($absolutePath);
@@ -114,7 +113,7 @@ class ProgressiveBackupCommand extends Command
                 $loopCount++;
                 if ($loopCount % 20 === 0) {
                     $currentSize = @filesize($outputPath) ?: 0;
-                    Cache::put($cacheKey, [
+                    $this->putStatusFromCacheKey($cacheKey, [
                         'status' => 'processing',
                         'progress_percent' => min(95, 2 + (($currentSize % 100000) / 100000) * 93),
                         'current_table_index' => 0,
@@ -123,7 +122,7 @@ class ProgressiveBackupCommand extends Command
                         'message' => sprintf('Mencadangkan database... (%s)', $this->formatBytes($currentSize)),
                         'updated_at' => now()->timestamp,
                         'backup_file' => $outputPath,
-                    ], now()->addHours(1));
+                    ]);
                 }
 
                 // Check process status
@@ -147,7 +146,7 @@ class ProgressiveBackupCommand extends Command
 
                         // Update cache with progress
                         if ($loopCount % 20 === 0) {
-                            Cache::put($cacheKey, [
+                            $this->putStatusFromCacheKey($cacheKey, [
                                 'status' => 'processing',
                                 'progress_percent' => (int) $progress,
                                 'current_table_index' => 0,
@@ -159,7 +158,7 @@ class ProgressiveBackupCommand extends Command
                                 ),
                                 'updated_at' => now()->timestamp,
                                 'backup_file' => $outputPath,
-                            ], now()->addHours(1));
+                            ]);
                         }
 
                         // If size hasn't changed for too long, don't fail - just keep waiting
@@ -214,6 +213,26 @@ class ProgressiveBackupCommand extends Command
         } else {
             return $this->startUnixBackupProcess($command, $outputPath, $environment);
         }
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    private function putStatus(string $backupId, array $payload): void
+    {
+        DatabaseBackupStatusStore::put($backupId, $payload);
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    private function putStatusFromCacheKey(string $cacheKey, array $payload): void
+    {
+        $backupId = str_starts_with($cacheKey, 'backup_progress:')
+            ? substr($cacheKey, strlen('backup_progress:'))
+            : $cacheKey;
+
+        $this->putStatus($backupId, $payload);
     }
 
     private function buildOptimizedCommand(array $config, string $database): array
@@ -343,14 +362,13 @@ class ProgressiveBackupCommand extends Command
         $outputPath = $inputPath . '.gz';
 
         $descriptors = [
-            0 => ['file', $inputPath, 'rb'],
             1 => ['file', $outputPath, 'wb'],
             2 => ['pipe', 'w'],
         ];
 
         $pipes = [];
         $process = proc_open(
-            escapeshellarg($gzipPath) . ' --best --force',
+            [$gzipPath, '--best', '--force', '--stdout', $inputPath],
             $descriptors,
             $pipes,
             base_path(),
@@ -362,15 +380,17 @@ class ProgressiveBackupCommand extends Command
             throw new \RuntimeException('Gagal menjalankan gzip.');
         }
 
+        $stderr = stream_get_contents($pipes[2]);
         fclose($pipes[2]);
         $exitCode = proc_close($process);
 
         if ($exitCode !== 0) {
-            throw new \RuntimeException("Gzip compression failed with exit code: {$exitCode}");
+            @unlink($outputPath);
+            throw new \RuntimeException("Gzip compression failed with exit code: {$exitCode}" . ($stderr !== '' ? ". {$stderr}" : ''));
         }
 
         // Remove original uncompressed file
-        if (is_file($inputPath)) {
+        if (is_file($outputPath) && filesize($outputPath) > 0 && is_file($inputPath)) {
             @unlink($inputPath);
         }
     }

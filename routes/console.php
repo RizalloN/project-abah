@@ -1,12 +1,14 @@
 <?php
 
 use App\Services\JobHealthService;
+use App\Jobs\EnsureImportedSnapshotsFreshJob;
 use App\Support\ManagedReportDeleteRecoveryService;
 use App\Support\ReportDataSyncService;
 use App\Support\ReportSnapshotBuilder;
 use App\Support\DashboardHarianSnapshotService;
 use App\Support\SnapshotBatchAggregator;
 use App\Support\StrictDateParser;
+use App\Services\Import\SnapshotQueuePauseService;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -193,6 +195,20 @@ Schedule::command('import:health-check')
     ->everyTenMinutes()
     ->withoutOverlapping();
 
+Artisan::command('reports:resume-snapshot-queues-if-idle', function () {
+    app(SnapshotQueuePauseService::class)->resumeWhenNoActiveImports();
+    $flushed = app(SnapshotBatchAggregator::class)->flushDueBatches();
+
+    $this->line(json_encode([
+        'resumed_if_idle' => true,
+        'flushed_batches' => count($flushed),
+    ], JSON_UNESCAPED_SLASHES));
+})->purpose('Resume paused snapshot/shadow queues and flush pending snapshot batches when imports are idle');
+
+Schedule::command('reports:resume-snapshot-queues-if-idle')
+    ->everyMinute()
+    ->withoutOverlapping();
+
 Schedule::command('snapshot:validate-integrity --report=performance_rm')
     ->dailyAt('09:00')
     ->withoutOverlapping();
@@ -222,6 +238,62 @@ Artisan::command('reports:dashboard-harian-sync-missing', function () {
         'snapshot_sync' => $result,
     ], JSON_UNESCAPED_SLASHES));
 })->purpose('Flush pending snapshot batches and build missing/stale Dashboard Harian SSA snapshots');
+
+Artisan::command('reports:ensure-fresh-snapshots {--period=}', function () {
+    $period = StrictDateParser::normalize((string) $this->option('period')) ?? trim((string) $this->option('period'));
+    $period = $period !== '' ? $period : null;
+
+    app(SnapshotBatchAggregator::class)->flushDueBatches();
+
+    EnsureImportedSnapshotsFreshJob::dispatch('daily_loan_dinamis', $period, 'schedule:reports:ensure-fresh-snapshots')
+        ->onQueue('snapshots-parallel');
+    EnsureImportedSnapshotsFreshJob::dispatch('simpanan_multipn', $period, 'schedule:reports:ensure-fresh-snapshots')
+        ->onQueue('snapshots-parallel');
+    EnsureImportedSnapshotsFreshJob::dispatch('ssa_simpanan', $period, 'schedule:reports:ensure-fresh-snapshots')
+        ->onQueue('snapshots-parallel');
+    EnsureImportedSnapshotsFreshJob::dispatch('ssa_pinjaman', $period, 'schedule:reports:ensure-fresh-snapshots')
+        ->onQueue('snapshots-parallel');
+    EnsureImportedSnapshotsFreshJob::dispatch('lw325_ph', $period, 'schedule:reports:ensure-fresh-snapshots')
+        ->onQueue('snapshots-parallel');
+
+    $this->info('Snapshot freshness check dispatched.');
+})->purpose('Dispatch self-healing checks for imported report snapshots');
+
+Schedule::command('reports:ensure-fresh-snapshots')
+    ->everyFiveMinutes()
+    ->withoutOverlapping();
+
+Schedule::command('reports:dashboard-harian-sync-missing')
+    ->everyFiveMinutes()
+    ->withoutOverlapping();
+
+// Auto-discover and backfill shadow columns for daily_loan_dinamis every 15 minutes.
+// Runs shadow:backfill with no --periods flag, which now auto-discovers periods that have NULL shadow columns.
+// Uses --queue to dispatch to the shadow-backfill queue so it doesn't block the scheduler.
+// Skips snapshot rebuild (--skip-snapshot) because the snapshot will be triggered separately by ensureDailyLoanShadowColumnsReady.
+Artisan::command('shadow:auto-backfill-scheduler', function () {
+    $hasActiveImports = app(\App\Services\Import\ImportProgressService::class)->hasActiveProcessingJobs();
+
+    if ($hasActiveImports) {
+        $this->line('Shadow auto-backfill skipped: import still active.');
+        return 0;
+    }
+
+    $exitCode = \Illuminate\Support\Facades\Artisan::call('shadow:backfill', [
+        '--queue' => true,
+        '--skip-snapshot' => true,
+        '--chunk-size' => 50000,
+        '--retry-count' => 3,
+    ]);
+
+    $this->line('Shadow auto-backfill dispatched (exit: ' . $exitCode . ').');
+    return $exitCode;
+})->purpose('Auto-discover and queue shadow column backfill for daily_loan_dinamis');
+
+Schedule::command('shadow:auto-backfill-scheduler')
+    ->everyFifteenMinutes()
+    ->withoutOverlapping()
+    ->runInBackground();
 
 Artisan::command('reports:delete-scope {table} {--period=} {--blank-kanca} {--chunk=10000}', function () {
     $table = strtolower(trim((string) $this->argument('table')));
