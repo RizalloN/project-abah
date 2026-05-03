@@ -19,6 +19,15 @@ return [
 
     'shadow_backfill_queue' => env('SHADOW_BACKFILL_QUEUE', 'shadow-backfill'),
 
+    'worker_queues' => env(
+        'QUEUE_WORKER_QUEUES',
+        'imports-high,imports-daily-loan,snapshots-parallel,default,reports-low,shadow-backfill'
+    ),
+
+    'worker_timeout' => (int) env('QUEUE_WORKER_TIMEOUT', 0),
+
+    'worker_memory' => (int) env('QUEUE_WORKER_MEMORY', 512),
+
     /*
     |--------------------------------------------------------------------------
     | Queue Connections

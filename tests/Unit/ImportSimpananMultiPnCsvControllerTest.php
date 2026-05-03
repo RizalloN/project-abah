@@ -18,6 +18,28 @@ class ImportSimpananMultiPnCsvControllerTest extends TestCase
         parent::tearDown();
     }
 
+    public function test_csv_physical_data_rows_are_counted_exactly_for_large_preview_totals(): void
+    {
+        $controller = new ImportSimpananMultiPnCsvController();
+        $csvPath = storage_path('framework/testing/simpanan_exact_row_count.csv');
+        if (!is_dir(dirname($csvPath))) {
+            @mkdir(dirname($csvPath), 0777, true);
+        }
+
+        file_put_contents($csvPath, implode("\r\n", [
+            'No;Posisi;CIFNO;No Rekening;Status;Jenis Simpanan;Saldo IDR',
+            '1;28-04-2026;SRVG283;636001000001;9;TABUNGAN;1000',
+            '2;28-04-2026;SRVG284;636001000002;9;GIRO;2000',
+            '3;28-04-2026;SRVG285;636001000003;9;DEPOSITO;3000',
+        ]) . "\r\n");
+
+        try {
+            $this->assertSame(3, $this->invokeMethod($controller, 'estimateCsvPhysicalDataRows', [$csvPath]));
+        } finally {
+            @unlink($csvPath);
+        }
+    }
+
     public function test_direct_csv_load_plan_keeps_posisi_assignment_in_set_clause(): void
     {
         $controller = new ImportSimpananMultiPnCsvController();

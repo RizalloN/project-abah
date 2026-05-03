@@ -39,7 +39,8 @@ class ImportExecutionService
             return false;
         }
 
-        $lock = Cache::lock('import_excel_dispatch_job_' . $jobId, 30);
+        $cache = $this->importCache();
+        $lock = $cache->lock('import_excel_dispatch_job_' . $jobId, 30);
 
         try {
             if (!$lock->get()) {
@@ -53,7 +54,7 @@ class ImportExecutionService
                 return false;
             }
 
-            if (Cache::has($this->dispatchedKey($jobId)) && !$this->shouldRedispatchQueuedJob($job)) {
+            if ($cache->has($this->dispatchedKey($jobId)) && !$this->shouldRedispatchQueuedJob($job)) {
                 return false;
             }
 
@@ -73,8 +74,12 @@ class ImportExecutionService
             ]);
 
             $this->progressService->cleanupQueuedImportJobRowsForJob($jobId);
-            Cache::put($this->dispatchedKey($jobId), true, now()->addHours(self::DISPATCHED_TTL_HOURS));
-            dispatch((new RunImportJob($jobId))->onQueue($queue));
+            $cache->put($this->dispatchedKey($jobId), true, now()->addHours(self::DISPATCHED_TTL_HOURS));
+            dispatch(
+                (new RunImportJob($jobId))
+                    ->onConnection('database')
+                    ->onQueue($queue)
+            );
             return true;
         } catch (\Throwable $e) {
             $this->releaseDispatchMarker($jobId);
@@ -336,7 +341,7 @@ class ImportExecutionService
             return;
         }
 
-        $lock = Cache::lock('import_excel_execute_job_' . $jobId, 7200);
+        $lock = $this->importCache()->lock('import_excel_execute_job_' . $jobId, 7200);
         if (!$lock->get()) {
             $job = $this->progressService->findJob($jobId);
             if ($job && $this->shouldRedispatchQueuedJob($job)) {
@@ -532,7 +537,7 @@ class ImportExecutionService
             return false;
         }
 
-        if (Cache::has($this->dispatchedKey($jobId))) {
+        if ($this->importCache()->has($this->dispatchedKey($jobId))) {
             return true;
         }
 
@@ -550,7 +555,14 @@ class ImportExecutionService
 
     private function releaseDispatchMarker(int $jobId): void
     {
-        Cache::forget($this->dispatchedKey($jobId));
+        $this->importCache()->forget($this->dispatchedKey($jobId));
+    }
+
+    private function importCache()
+    {
+        $store = trim((string) config('import.cache_store', 'file'));
+
+        return $store !== '' ? Cache::store($store) : Cache::store();
     }
 
     private function shouldRedispatchQueuedJob(object $job): bool

@@ -1,5 +1,6 @@
 param(
-    [int]$RestartDelaySeconds = 3
+    [int]$RestartDelaySeconds = 3,
+    [string]$WorkerName = 'scheduler'
 )
 
 $ErrorActionPreference = 'Continue'
@@ -8,6 +9,7 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $projectRoot
 
 Write-Host "Persistent scheduler started."
+Write-Host "Worker name: $WorkerName"
 Write-Host "Press Ctrl+C to stop."
 Write-Host ""
 

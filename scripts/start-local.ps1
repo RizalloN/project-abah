@@ -1,6 +1,11 @@
 param(
     [switch]$WithVite,
-    [switch]$OpenBrowser
+    [switch]$OpenBrowser,
+    [Nullable[int]]$ImportWorkers = $null,
+    [Nullable[int]]$ReportWorkers = $null,
+    [Nullable[int]]$SnapshotWorkers = $null,
+    [Nullable[int]]$ShadowWorkers = $null,
+    [Nullable[int]]$WorkerMemory = $null
 )
 
 $ErrorActionPreference = 'Stop'
@@ -8,17 +13,45 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $projectRoot
 
-$importQueueLog = Join-Path $projectRoot 'storage\logs\local-import-queue-worker.log'
-$reportQueueLog = Join-Path $projectRoot 'storage\logs\local-report-queue-worker.log'
-$scheduleLog = Join-Path $projectRoot 'storage\logs\local-scheduler.log'
+$scheduleLog = Join-Path $projectRoot 'storage\logs\persistent-scheduler.log'
 
-New-Item -ItemType Directory -Force -Path (Split-Path -Parent $importQueueLog) | Out-Null
+New-Item -ItemType Directory -Force -Path (Split-Path -Parent $scheduleLog) | Out-Null
 
-function Test-ProcessCommand {
+function Get-IntSetting {
+    param(
+        [Nullable[int]]$Value,
+        [string]$EnvName,
+        [int]$Default
+    )
+
+    if ($null -ne $Value) {
+        return [Math]::Max(0, [int]$Value)
+    }
+
+    $envValue = [Environment]::GetEnvironmentVariable($EnvName)
+    if (-not [string]::IsNullOrWhiteSpace($envValue)) {
+        $parsed = 0
+        if ([int]::TryParse($envValue, [ref]$parsed)) {
+            return [Math]::Max(0, $parsed)
+        }
+    }
+
+    return $Default
+}
+
+$importWorkerCount = Get-IntSetting -Value $ImportWorkers -EnvName 'ABAH_IMPORT_WORKERS' -Default 3
+$reportWorkerCount = Get-IntSetting -Value $ReportWorkers -EnvName 'ABAH_REPORT_WORKERS' -Default 3
+$snapshotWorkerCount = Get-IntSetting -Value $SnapshotWorkers -EnvName 'ABAH_SNAPSHOT_WORKERS' -Default 2
+$shadowWorkerCount = Get-IntSetting -Value $ShadowWorkers -EnvName 'ABAH_SHADOW_WORKERS' -Default 2
+$queueWorkerMemory = Get-IntSetting -Value $WorkerMemory -EnvName 'ABAH_WORKER_MEMORY' -Default 512
+
+function Get-ProcessCommandCount {
     param([string]$Pattern)
 
+    $count = 0
+
     try {
-        $processes = Get-CimInstance Win32_Process -Filter "Name = 'php.exe'" -ErrorAction Stop
+        $processes = Get-CimInstance Win32_Process -ErrorAction Stop
 
         foreach ($process in $processes) {
             $commandLine = $process.CommandLine
@@ -27,51 +60,110 @@ function Test-ProcessCommand {
             }
 
             if ($commandLine -like "*$Pattern*") {
-                return $true
+                $count++
             }
         }
     } catch {
-        return $false
+        return 0
     }
 
-    return $false
+    return $count
 }
 
-function Start-PhpBackground {
+function Start-PersistentQueuePool {
     param(
         [string]$Name,
-        [string]$Arguments,
+        [string]$Queues,
         [string]$LogPath,
-        [string]$DetectPattern
+        [string]$WorkerKey,
+        [int]$DesiredCount = 1
     )
 
-    if (Test-ProcessCommand -Pattern $DetectPattern) {
-        Write-Host "$Name sudah berjalan."
+    if ($DesiredCount -le 0) {
+        Write-Host "$Name dilewati (jumlah worker 0)."
         return
     }
 
-    $command = "cd /d `"$projectRoot`" && php $Arguments >> `"$LogPath`" 2>&1"
-    Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', $command -WindowStyle Hidden | Out-Null
-    Write-Host "$Name dijalankan. Log: $LogPath"
+    $runningSlots = 0
+    for ($slot = 1; $slot -le $DesiredCount; $slot++) {
+        if ((Get-ProcessCommandCount -Pattern "queue-persistent.ps1*$WorkerKey-$slot") -gt 0) {
+            $runningSlots++
+        }
+    }
+
+    if ($runningSlots -ge $DesiredCount) {
+        Write-Host "$Name sudah berjalan ($runningSlots/$DesiredCount worker)."
+        return
+    }
+
+    for ($slot = 1; $slot -le $DesiredCount; $slot++) {
+        if ((Get-ProcessCommandCount -Pattern "queue-persistent.ps1*$WorkerKey-$slot") -gt 0) {
+            continue
+        }
+
+        $slotLogPath = $LogPath
+        if ($DesiredCount -gt 1) {
+            $directory = Split-Path -Parent $LogPath
+            $baseName = [IO.Path]::GetFileNameWithoutExtension($LogPath)
+            $extension = [IO.Path]::GetExtension($LogPath)
+            $slotLogPath = Join-Path $directory ("{0}-{1}{2}" -f $baseName, $slot, $extension)
+        }
+
+        $slotWorkerName = "$WorkerKey-$slot"
+        $scriptPath = Join-Path $projectRoot 'scripts\queue-persistent.ps1'
+        $command = "cd /d `"$projectRoot`" && powershell -NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`" -Queues `"$Queues`" -Tries 1 -Timeout 0 -Sleep 1 -Memory $queueWorkerMemory -RestartDelaySeconds 3 -WorkerName `"$slotWorkerName`" >> `"$slotLogPath`" 2>&1"
+        Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', $command -WindowStyle Hidden | Out-Null
+        Write-Host "$Name persistent worker $slot/$DesiredCount dijalankan. Log: $slotLogPath"
+    }
 }
 
-Start-PhpBackground `
+function Start-PersistentScheduler {
+    param(
+        [string]$LogPath
+    )
+
+    $workerKey = 'abah-scheduler'
+    $runningCount = Get-ProcessCommandCount -Pattern "schedule-persistent.ps1*$workerKey"
+    if ($runningCount -gt 0) {
+        Write-Host "Laravel scheduler sudah berjalan persistent."
+        return
+    }
+
+    $scriptPath = Join-Path $projectRoot 'scripts\schedule-persistent.ps1'
+    $command = "cd /d `"$projectRoot`" && powershell -NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`" -RestartDelaySeconds 3 -WorkerName `"$workerKey`" >> `"$LogPath`" 2>&1"
+    Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', $command -WindowStyle Hidden | Out-Null
+    Write-Host "Laravel scheduler persistent dijalankan. Log: $LogPath"
+}
+
+Start-PersistentQueuePool `
     -Name 'Import queue worker' `
-    -Arguments 'artisan queue:work --queue=imports-high,imports-daily-loan --tries=1 --timeout=0 --sleep=1 --memory=256' `
-    -LogPath $importQueueLog `
-    -DetectPattern 'artisan queue:work --queue=imports-high,imports-daily-loan'
+    -Queues 'imports-high,imports-daily-loan' `
+    -LogPath (Join-Path $projectRoot 'storage\logs\persistent-import-queue-worker.log') `
+    -WorkerKey 'abah-import-worker' `
+    -DesiredCount $importWorkerCount
 
-Start-PhpBackground `
+Start-PersistentQueuePool `
     -Name 'Report queue worker' `
-    -Arguments 'artisan queue:work --queue=default,reports-low,imports-daily-loan --tries=1 --timeout=0 --sleep=1 --memory=256' `
-    -LogPath $reportQueueLog `
-    -DetectPattern 'artisan queue:work --queue=default,reports-low,imports-daily-loan'
+    -Queues 'default,reports-low,imports-daily-loan' `
+    -LogPath (Join-Path $projectRoot 'storage\logs\persistent-report-queue-worker.log') `
+    -WorkerKey 'abah-report-worker' `
+    -DesiredCount $reportWorkerCount
 
-Start-PhpBackground `
-    -Name 'Laravel scheduler' `
-    -Arguments 'artisan schedule:work' `
-    -LogPath $scheduleLog `
-    -DetectPattern 'artisan schedule:work'
+Start-PersistentQueuePool `
+    -Name 'Snapshot queue worker' `
+    -Queues 'snapshots-parallel' `
+    -LogPath (Join-Path $projectRoot 'storage\logs\persistent-snapshot-queue-worker.log') `
+    -WorkerKey 'abah-snapshot-worker' `
+    -DesiredCount $snapshotWorkerCount
+
+Start-PersistentQueuePool `
+    -Name 'Shadow backfill queue worker' `
+    -Queues 'shadow-backfill' `
+    -LogPath (Join-Path $projectRoot 'storage\logs\persistent-shadow-backfill-worker.log') `
+    -WorkerKey 'abah-shadow-worker' `
+    -DesiredCount $shadowWorkerCount
+
+Start-PersistentScheduler -LogPath $scheduleLog
 
 if ($WithVite) {
     if (Get-Command npm.cmd -ErrorAction SilentlyContinue) {

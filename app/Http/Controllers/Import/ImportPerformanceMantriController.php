@@ -22,7 +22,7 @@ use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 class ImportPerformanceMantriController extends Controller
 {
     use GeneratesFileIdentifiers;
-{
+
     private const TABLE_NAME = 'performance_mantri';
     private const REPORT_LABEL = 'Kinerja Mantri';
     private const STORAGE_DIR = 'performance_mantri_imports';

@@ -278,15 +278,15 @@
                             </tr>
                             <tr class="bg-header-sub">
                                 <!-- AGEN BRILINK -->
-                                <th><span class="lbl-curr text-primary ml-1"></span></th> <th>MtD</th> <th>YtD</th> <th>YoY</th> <th class="rka-col text-dark">RKA</th> <th class="rka-col text-dark">Penc(%)</th>
+                                <th><span class="lbl-curr-short text-primary ml-1">Curr</span></th> <th><span class="lbl-mtd-short">MtD</span></th> <th><span class="lbl-ytd-short">YtD</span></th> <th><span class="lbl-yoy-short">YoY</span></th> <th class="rka-col text-dark">RKA</th> <th class="rka-col text-dark">Penc(%)</th>
                                 <!-- AGEN JURAGAN -->
-                                <th>Curr</th> <th>MtD</th> <th>YtD</th> <th>YoY</th> <th class="rka-col text-dark">RKA</th> <th class="rka-col text-dark">Penc(%)</th>
+                                <th><span class="lbl-curr-short text-primary">Curr</span></th> <th><span class="lbl-mtd-short">MtD</span></th> <th><span class="lbl-ytd-short">YtD</span></th> <th><span class="lbl-yoy-short">YoY</span></th> <th class="rka-col text-dark">RKA</th> <th class="rka-col text-dark">Penc(%)</th>
                                 <!-- AGEN BEP -->
-                                <th>Curr</th> <th>MtD</th> <th>YtD</th> <th>YoY</th> <th class="rka-col text-dark">RKA</th> <th class="rka-col text-dark">Penc(%)</th>
+                                <th><span class="lbl-curr-short text-primary">Curr</span></th> <th><span class="lbl-mtd-short">MtD</span></th> <th><span class="lbl-ytd-short">YtD</span></th> <th><span class="lbl-yoy-short">YoY</span></th> <th class="rka-col text-dark">RKA</th> <th class="rka-col text-dark">Penc(%)</th>
                                 <!-- TRANSAKSI -->
-                                <th>Curr</th> <th>MtD</th> <th>YoY</th> <th class="rka-col text-dark">RKA</th>
+                                <th><span class="lbl-curr-short text-primary">Curr</span></th> <th><span class="lbl-mtd-short">MtD</span></th> <th><span class="lbl-yoy-short">YoY</span></th> <th class="rka-col text-dark">RKA</th>
                                 <!-- VOLUME -->
-                                <th>Curr</th> <th>MtD</th> <th>YoY</th> <th class="rka-col text-dark">RKA</th>
+                                <th><span class="lbl-curr-short text-primary">Curr</span></th> <th><span class="lbl-mtd-short">MtD</span></th> <th><span class="lbl-yoy-short">YoY</span></th> <th class="rka-col text-dark">RKA</th>
                             </tr>
                         </thead>
                         <tbody id="tbody-brilink">
@@ -305,10 +305,10 @@
                                 <th colspan="10" class="bg-brilink-mid">Jumlah Agen Brilink</th>
                             </tr>
                             <tr class="bg-header-sub">
-                                <th class="lbl-casa-curr text-primary">Feb-26</th>
-                                <th class="lbl-casa-dec">Des'25</th>
-                                <th class="lbl-casa-prev">31-Jan</th>
-                                <th class="lbl-casa-end">28-Feb</th>
+                                <th class="lbl-yoy-short">YoY</th>
+                                <th class="lbl-ytd-short">YtD</th>
+                                <th class="lbl-mtd-short">MtD</th>
+                                <th class="lbl-curr-short text-primary">Curr</th>
                                 <th>MtD</th>
                                 <th>MtD (%)</th>
                                 <th>YtD</th>
@@ -331,10 +331,10 @@
                                 <th colspan="12" class="bg-brilink-mid">Agen Juragan+Jawara</th>
                             </tr>
                             <tr class="bg-header-sub">
-                                <th class="lbl-curr text-primary">Feb-26</th>
-                                <th>Des'25</th>
-                                <th>31-Jan</th>
-                                <th>28-Feb</th>
+                                <th class="lbl-yoy-short">YoY</th>
+                                <th class="lbl-ytd-short">YtD</th>
+                                <th class="lbl-mtd-short">MtD</th>
+                                <th class="lbl-curr-short text-primary">Curr</th>
                                 <th>MtD</th>
                                 <th>MtD (%)</th>
                                 <th>YtD</th>
@@ -359,10 +359,10 @@
                                 <th colspan="12" class="bg-brilink-mid">Agen BEP</th>
                             </tr>
                             <tr class="bg-header-sub">
-                                <th class="lbl-curr text-primary">Feb-26</th>
-                                <th>Des'25</th>
-                                <th>31-Jan</th>
-                                <th>28-Feb</th>
+                                <th class="lbl-yoy-short">YoY</th>
+                                <th class="lbl-ytd-short">YtD</th>
+                                <th class="lbl-mtd-short">MtD</th>
+                                <th class="lbl-curr-short text-primary">Curr</th>
                                 <th>MtD</th>
                                 <th>MtD (%)</th>
                                 <th>YtD</th>
@@ -387,9 +387,9 @@
                                 <th colspan="5" class="bg-brilink-mid">Transaksi Agen Brilink</th>
                             </tr>
                             <tr class="bg-header-sub">
-                                <th class="lbl-curr text-primary">Feb-26</th>
-                                <th>Des'25</th>
-                                <th>28-Feb</th>
+                                <th class="lbl-curr-short text-primary">Feb-26</th>
+                                <th class="lbl-yoy-short">YoY</th>
+                                <th class="lbl-curr-short">Curr</th>
                                 <th>YoY</th>
                                 <th>YoY(%)</th>
                             </tr>
@@ -408,10 +408,10 @@
                                 <th colspan="10" class="bg-brilink-mid">CASA Agen Brilink <br><small>(Rp. Juta)</small></th>
                             </tr>
                             <tr class="bg-header-sub">
-                                <th class="lbl-curr text-primary">Feb-26</th>
-                                <th>Des'25</th>
-                                <th>31-Jan</th>
-                                <th>28-Feb</th>
+                                <th class="lbl-yoy-short">YoY</th>
+                                <th class="lbl-ytd-short">YtD</th>
+                                <th class="lbl-mtd-short">MtD</th>
+                                <th class="lbl-curr-short text-primary">Curr</th>
                                 <th>MtD</th>
                                 <th>MtD (%)</th>
                                 <th>YtD</th>
@@ -500,7 +500,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         return `<tr>
             <td class="text-left font-weight-bold text-dark">${label}</td>
-            <td>${formatter(curr)}</td>
+            <td>${formatter(yoyPrev)}</td>
             <td>${formatter(dec)}</td>
             <td>${formatter(prev)}</td>
             <td>${formatter(curr)}</td>
@@ -525,7 +525,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         return `<tr>
             <td class="text-left font-weight-bold text-dark">${label}</td>
-            <td>${formatJuta(curr)}</td>
+            <td>${formatJuta(yoyPrev)}</td>
             <td>${formatJuta(dec)}</td>
             <td>${formatJuta(prev)}</td>
             <td>${formatJuta(curr)}</td>
@@ -549,7 +549,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         return `<tr class="row-total">
             <td class="text-left">${label}</td>
-            <td>${formatJuta(curr)}</td>
+            <td>${formatJuta(yoyPrev)}</td>
             <td>${formatJuta(dec)}</td>
             <td>${formatJuta(prev)}</td>
             <td>${formatJuta(curr)}</td>
@@ -579,7 +579,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         return `<tr class="row-total">
             <td class="text-left">${label}</td>
-            <td>${formatter(curr)}</td>
+            <td>${formatter(yoyPrev)}</td>
             <td>${formatter(dec)}</td>
             <td>${formatter(prev)}</td>
             <td>${formatter(curr)}</td>
@@ -722,6 +722,17 @@ document.addEventListener('DOMContentLoaded', function () {
                     
                     if (res.labels) {
                         $('.lbl-curr').text('Bulan Berjalan (' + res.labels.curr + ')');
+                        $('.lbl-curr-short').text(res.labels.curr_short);
+                        $('.lbl-mtd-short').text(res.labels.prev_short);
+                        $('.lbl-ytd-short').text(res.labels.ytd_short);
+                        $('.lbl-yoy-short').text(res.labels.yoy_short);
+                        
+                        // CASA/Agen User specific
+                        $('.lbl-casa-curr').text(res.labels.casa_curr);
+                        $('.lbl-casa-dec').text(res.labels.casa_dec);
+                        $('.lbl-casa-prev').text(res.labels.casa_prev);
+                        $('.lbl-casa-end').text(res.labels.casa_end);
+
                         if (filterPosisiRka) {
                             filterPosisiRka.value = res.labels.rka || '--------';
                         }

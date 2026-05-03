@@ -2,7 +2,7 @@
 
 namespace App\Jobs;
 
-use App\Services\Import\ImportFileController;
+use App\Http\Controllers\Import\ImportFileController;
 use App\Services\Import\ImportProgressService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -45,17 +45,21 @@ class PrepareCsvStagingJob implements ShouldQueue
 
             Cache::put("import_staging_csv:{$this->jobId}", $stagingCsvPath, now()->addHours(2));
 
+            $params = Cache::get("csv_import_params_{$this->jobId}", $params);
+            $tableName = (string) ($params['tableName'] ?? $params['table_name'] ?? '');
+            $bulkColumns = (array) ($params['bulkColumns'] ?? $params['bulk_columns'] ?? []);
+
             Log::info('CSV staging prepared', [
                 'job_id' => $this->jobId,
                 'staging_csv' => $stagingCsvPath,
-                'table' => $params['tableName'] ?? 'unknown',
+                'table' => $tableName ?: 'unknown',
             ]);
 
             RunLoadDataJob::dispatch(
                 $this->jobId,
                 $stagingCsvPath,
-                $params['tableName'] ?? '',
-                $params['bulkColumns'] ?? []
+                $tableName,
+                $bulkColumns
             )->onQueue('imports-high');
 
         } catch (\Throwable $e) {

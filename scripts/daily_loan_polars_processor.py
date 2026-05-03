@@ -289,7 +289,7 @@ def build_non_date_like_expr(expr):
     return compact.ne("") & (~invalid if invalid is not None else True)
 
 
-def normalize_decimal_value(value: object) -> str | None:
+def normalize_decimal_value(value: object, scale: int = 2) -> str | None:
     text = normalize_cell(value)
     if text == "":
         return None
@@ -336,7 +336,7 @@ def normalize_decimal_value(value: object) -> str | None:
         value_float = float(text)
         if is_negative:
             value_float *= -1
-        return f"{value_float:.2f}"
+        return f"{value_float:.{scale}f}"
     except Exception:
         return None
 
@@ -532,7 +532,7 @@ def classify_daily_loan_columns(headers: list[str]) -> dict:
     return classified
 
 
-def normalize_decimal_optimized_daily_loan(val: str) -> str:
+def normalize_decimal_optimized_daily_loan(val: str, scale: int = 2) -> str:
     """
     Normalize Daily Loan decimal values after vectorized pre-cleaning.
 
@@ -541,7 +541,7 @@ def normalize_decimal_optimized_daily_loan(val: str) -> str:
     required amount columns such as BAKI_DEBET1 are never blanked by an
     over-aggressive fast path.
     """
-    normalized = normalize_decimal_value(val)
+    normalized = normalize_decimal_value(val, scale)
     if normalized is None:
         return ""
 
@@ -575,6 +575,8 @@ def normalize_daily_loan_with_polars_optimized(df, column_classes: dict):
         if col not in df.columns:
             continue
 
+        scale = 6 if normalize_header_name(col) == 'RATE' else 2
+
         # Pre-clean: vectorized (entire column in one pass)
         col_expr = pl.col(col).cast(pl.Utf8).str.strip_chars()
         col_expr = col_expr.str.replace_all(r"[^0-9,.\-()]", "")
@@ -585,7 +587,7 @@ def normalize_daily_loan_with_polars_optimized(df, column_classes: dict):
         # Optimized pass: 70% less work per row
         df = df.with_columns(
             col_expr.map_elements(
-                lambda val: normalize_decimal_optimized_daily_loan(val),
+                lambda val: normalize_decimal_optimized_daily_loan(val, scale),
                 return_dtype=pl.Utf8,
                 skip_nulls=True
             ).alias(col)

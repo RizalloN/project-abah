@@ -1119,6 +1119,42 @@ class ManagedReportDeleteTest extends TestCase
         $this->assertSame(1, DB::table('ssa_pinjaman')->where('month_day_year_of_periode', 'like', '2026-04%')->where('nama_cabang', '00045 -- KC Madiun (Konsolidasi-MB)')->count());
     }
 
+    public function test_delete_management_matches_brilink_summary_text_month_period(): void
+    {
+        Schema::create('brilink_web_laporan_summary_transaksi_brilink_web', function (Blueprint $table) {
+            $table->string('uniqueid_namareport')->primary();
+            $table->string('periode')->nullable();
+            $table->string('cabang')->nullable();
+            $table->string('uker')->nullable();
+        });
+
+        DB::table('brilink_web_laporan_summary_transaksi_brilink_web')->insert([
+            ['uniqueid_namareport' => 'BL-1', 'periode' => 'April 2026', 'cabang' => 'KC Madiun', 'uker' => 'A'],
+            ['uniqueid_namareport' => 'BL-2', 'periode' => 'April 2026', 'cabang' => 'KC Madiun', 'uker' => 'B'],
+            ['uniqueid_namareport' => 'BL-3', 'periode' => 'April 2026', 'cabang' => 'KC Magetan', 'uker' => 'C'],
+            ['uniqueid_namareport' => 'BL-4', 'periode' => 'March 2026', 'cabang' => 'KC Madiun', 'uker' => 'D'],
+        ]);
+
+        $controller = app(ImportIndexController::class);
+        $buildMethod = new \ReflectionMethod($controller, 'buildDeleteScopeQueryFromScopes');
+        $buildMethod->setAccessible(true);
+        [$scopeQuery, $hasWhereClause] = $buildMethod->invoke(
+            $controller,
+            'brilink_web_laporan_summary_transaksi_brilink_web',
+            'periode',
+            'cabang',
+            [[
+                'period_filter' => '2026-04',
+                'kanca_filter' => 'KC Madiun',
+                'period_is_null' => false,
+                'kanca_is_null' => false,
+            ]]
+        );
+
+        $this->assertTrue($hasWhereClause);
+        $this->assertSame(2, (int) $scopeQuery->count());
+    }
+
     public function test_delete_management_accepts_period_and_kanca_filters_from_scopes_payload(): void
     {
         Schema::create('user_brimo_rpt_v2', function (Blueprint $table) {

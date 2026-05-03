@@ -16,6 +16,10 @@ use Illuminate\Support\Str;
 class ImportSimpananMultiPnCsvController extends ImportExcelController
 {
     private const REPORT_ID = 9;
+    private const PREVIEW_ROW_LIMIT = 80;
+    private const PREVIEW_UNIQUE_SCAN_LIMIT = 250;
+    private const PREVIEW_MAX_UNIQUE_VALUES = 120;
+    private const ROW_COUNT_ESTIMATE_SAMPLE_BYTES = 1048576;
 
     private function useSimpananReport(Request $request): Request
     {
@@ -142,6 +146,9 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                     'normalizedHeaders' => $payload['normalized_headers'] ?? [],
                     'path' => urldecode($sessionPath),
                     'stagedCsvPath' => $path,
+                    'delimiter' => $payload['delimiter'] ?? ';',
+                    'currentDelimiter' => $payload['delimiter'] ?? ';',
+                    'total_rows' => $payload['total_rows'] ?? ($payload['total_sample_rows'] ?? null),
                 ];
 
                 $useCacheKey = $cacheKey ?: ('excel_preview_' . md5(urldecode($sessionPath) . '|simpanan_csv_preview|' . microtime(true)));
@@ -165,7 +172,92 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
 
     public function preview(Request $request)
     {
-        return parent::previewExcel($this->useSimpananReport($request));
+        $request = $this->useSimpananReport($request);
+        $cacheKey = (string) $request->query('ck', '');
+        $payload = $cacheKey !== '' ? Cache::get($cacheKey) : null;
+
+        if (!is_array($payload)) {
+            $sessionPath = session('excel_path', $request->path);
+            if (!$sessionPath) {
+                return redirect()->route('import.index')->with('sweet_warning', [
+                    'title' => 'Sesi Berakhir',
+                    'text' => 'Silakan upload ulang.',
+                ]);
+            }
+
+            $relativePath = urldecode((string) $sessionPath);
+            $absolutePath = Storage::path($relativePath);
+            if (!file_exists($absolutePath)) {
+                return redirect()->route('import.index')->with('sweet_warning', [
+                    'title' => 'File Tidak Ditemukan',
+                    'text' => 'File mungkin sudah terhapus.',
+                ]);
+            }
+
+            $built = $this->buildPreviewPayloadFromCsvFile($absolutePath);
+            $payload = [
+                'headers' => $built['headers'],
+                'preview' => $built['preview'],
+                'formattedUniqueValues' => $built['formattedUniqueValues'],
+                'displayFilterMap' => $built['displayFilterMap'],
+                'headerIndex' => $built['header_index'] ?? 0,
+                'normalizedHeaders' => $built['normalized_headers'] ?? [],
+                'path' => $relativePath,
+                'stagedCsvPath' => $absolutePath,
+                'delimiter' => $built['delimiter'] ?? ';',
+                'currentDelimiter' => $built['delimiter'] ?? ';',
+                'total_rows' => $built['total_rows'] ?? ($built['total_sample_rows'] ?? null),
+            ];
+            $cacheKey = 'excel_preview_' . md5($relativePath . '|simpanan_csv_direct|' . microtime(true));
+            Cache::put($cacheKey, $payload, now()->addMinutes(10));
+        }
+
+        $previewMeta = [
+            'path' => $payload['path'] ?? null,
+            'staged_csv_path' => $payload['stagedCsvPath'] ?? null,
+            'header_index' => isset($payload['headerIndex']) ? (int) $payload['headerIndex'] : 0,
+            'normalized_headers' => (array) ($payload['normalizedHeaders'] ?? []),
+            'source_headers' => (array) ($payload['sourceHeaders'] ?? ($payload['normalizedHeaders'] ?? [])),
+            'total_rows' => isset($payload['total_rows']) ? (int) $payload['total_rows'] : null,
+            'delimiter' => isset($payload['delimiter']) ? (string) $payload['delimiter'] : ';',
+        ];
+
+        $this->excelImportJobService()->putPreviewState($cacheKey, [
+            'displayFilterMap' => $payload['displayFilterMap'] ?? [],
+            'previewMeta' => $previewMeta,
+        ]);
+
+        session([
+            'excel_display_filter_map' => $payload['displayFilterMap'] ?? [],
+            'import_display_to_source_map' => $payload['displayFilterMap'] ?? [],
+            'excel_preview_meta' => $previewMeta,
+            'excel_headers' => (array) ($payload['normalizedHeaders'] ?? []),
+        ]);
+
+        $delimiter = (string) ($payload['delimiter'] ?? $payload['currentDelimiter'] ?? ';');
+
+        return view('import.preview', [
+            'headers' => $payload['headers'] ?? [],
+            'previewData' => $this->buildSimpananLegacyPreviewRows(
+                (array) ($payload['headers'] ?? []),
+                (array) ($payload['preview'] ?? [])
+            ),
+            'formattedUniqueValues' => [],
+            'filePath' => $payload['path'] ?? null,
+            'currentDelimiter' => $delimiter,
+            'lockDelimiterSelector' => true,
+            'fixedDelimiterLabel' => $this->describeDelimiter($delimiter),
+            'hideDelimiterCard' => true,
+            'processRoute' => '',
+            'backRoute' => route('import.index'),
+            'initRoute' => route('import.simpanan.csv.init'),
+            'streamRoute' => route('import.simpanan.csv.stream'),
+            'previewStateKey' => $cacheKey,
+            'forceAllFiltersCheckedOnLoad' => true,
+            'filtersDisabled' => true,
+            'pageTitle' => 'Preview Simpanan Multi PN',
+            'previewBannerTitle' => 'Preview Simpanan Multi PN',
+        ]);
     }
 
     public function initImport(Request $request)
@@ -198,10 +290,18 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                 return;
             }
 
-            $payload = $this->buildPreviewPayloadFromCsvFile($path);
-            $headers = $payload['normalized_headers'] ?? [];
             $previewMeta = (array) session('excel_preview_meta', []);
-            $dataRows = $this->countCsvPhysicalDataRows($path);
+            $payload = [];
+            $headers = array_values(array_filter(
+                (array) ($previewMeta['normalized_headers'] ?? []),
+                static fn ($header): bool => trim((string) $header) !== ''
+            ));
+            if ($headers === []) {
+                $payload = $this->buildPreviewPayloadFromCsvFile($path);
+                $headers = $payload['normalized_headers'] ?? [];
+            }
+
+            $dataRows = $this->estimateCsvPhysicalDataRows($path);
             if ($dataRows <= 0) {
                 $dataRows = (int) ($previewMeta['total_rows'] ?? ($payload['total_sample_rows'] ?? 0));
             }
@@ -231,6 +331,241 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
         } catch (\Throwable $e) {
             Log::warning('Failed to populate direct import state for Simpanan MultiPN job ' . $jobId . ': ' . $e->getMessage());
         }
+    }
+
+    protected function buildPreviewPayloadFromCsvFile(string $csvPath): array
+    {
+        if (!file_exists($csvPath)) {
+            throw new \RuntimeException('File CSV tidak ditemukan.');
+        }
+
+        $fileSize = @filesize($csvPath);
+        $fileMtime = @filemtime($csvPath);
+        $cacheKey = 'simpanan_multipn_preview:v2:' . md5($csvPath . '|' . $fileSize . '|' . $fileMtime);
+        $cached = Cache::get($cacheKey);
+        if (is_array($cached) && !empty($cached['headers'])) {
+            return $cached;
+        }
+
+        $delimiterCacheKey = 'csv_delimiter:' . md5($csvPath . '|' . $fileSize);
+        $delimiter = Cache::get($delimiterCacheKey);
+        if (!is_string($delimiter) || $delimiter === '') {
+            $delimiter = $this->detectCsvDelimiter($csvPath);
+            Cache::put($delimiterCacheKey, $delimiter, now()->addHours(24));
+        }
+
+        $handle = fopen($csvPath, 'r');
+        if ($handle === false) {
+            throw new \RuntimeException('Gagal membuka file CSV.');
+        }
+
+        $startedAt = microtime(true);
+
+        try {
+            $headers = $this->readCsvRecord($handle, $delimiter);
+            if ($headers === false || empty($headers)) {
+                throw new \RuntimeException('Header CSV tidak ditemukan.');
+            }
+
+            foreach ($headers as $index => $header) {
+                $header = preg_replace('/^\xEF\xBB\xBF/', '', (string) $header);
+                $headers[$index] = trim($header) !== '' ? trim($header) : 'COL_' . $index;
+            }
+
+            $cleanPreview = [];
+            $formattedUniqueValues = [];
+            $rowsProcessedForUniques = 0;
+            $sampledRows = 0;
+
+            foreach (array_keys($headers) as $index) {
+                $formattedUniqueValues[$index] = [];
+            }
+
+            while (($row = $this->readCsvRecord($handle, $delimiter)) !== false) {
+                if (empty(array_filter((array) $row, static fn ($value): bool => trim((string) $value) !== ''))) {
+                    continue;
+                }
+
+                $sampledRows++;
+                $row = $this->padPreviewRow((array) $row, count($headers));
+                $displayRow = [];
+
+                foreach ($headers as $index => $header) {
+                    $value = $this->normalizePreviewValue($row[$index] ?? null);
+                    $displayRow[$header] = $value;
+
+                    if ($rowsProcessedForUniques < self::PREVIEW_UNIQUE_SCAN_LIMIT) {
+                        $formattedValue = $value === null || $value === '' ? '(Blank)' : (string) $value;
+                        if (
+                            isset($formattedUniqueValues[$index][$formattedValue])
+                            || count($formattedUniqueValues[$index]) < self::PREVIEW_MAX_UNIQUE_VALUES
+                        ) {
+                            $formattedUniqueValues[$index][$formattedValue] = true;
+                        }
+                    }
+                }
+
+                if (!$this->hasMeaningfulImportData($displayRow)) {
+                    continue;
+                }
+
+                if (count($cleanPreview) < self::PREVIEW_ROW_LIMIT) {
+                    $cleanPreview[] = $displayRow;
+                }
+
+                if ($rowsProcessedForUniques < self::PREVIEW_UNIQUE_SCAN_LIMIT) {
+                    $rowsProcessedForUniques++;
+                }
+
+                if (count($cleanPreview) >= self::PREVIEW_ROW_LIMIT && $rowsProcessedForUniques >= self::PREVIEW_UNIQUE_SCAN_LIMIT) {
+                    break;
+                }
+            }
+
+            foreach ($formattedUniqueValues as $index => $valuesMap) {
+                $keys = array_keys($valuesMap);
+                usort($keys, 'strnatcmp');
+                $formattedUniqueValues[$index] = $keys;
+            }
+
+            $filteredPreview = $this->stripIgnoredPreviewColumns(
+                $headers,
+                $cleanPreview,
+                $formattedUniqueValues,
+                'simpanan_multipn'
+            );
+
+            $orderedPreview = $this->orderPreviewColumns(
+                $filteredPreview['headers'],
+                $filteredPreview['formatted_unique_values'],
+                $filteredPreview['rows'],
+                'simpanan_multipn'
+            );
+
+            $estimatedRows = $this->estimateCsvPhysicalDataRows($csvPath);
+            Log::info('Simpanan MultiPN CSV preview prepared with bounded sampling.', [
+                'file' => basename($csvPath),
+                'sampled_rows' => $sampledRows,
+                'preview_rows' => count($cleanPreview),
+                'estimated_rows' => $estimatedRows,
+                'duration_ms' => (int) round((microtime(true) - $startedAt) * 1000),
+            ]);
+
+            $result = [
+                'headers' => $orderedPreview['headers'],
+                'preview' => $orderedPreview['preview'],
+                'formattedUniqueValues' => $orderedPreview['formatted_unique_values'],
+                'displayFilterMap' => $orderedPreview['display_filter_map'],
+                'header_index' => 0,
+                'header_row' => 1,
+                'normalized_headers' => $filteredPreview['headers'],
+                'rows_scanned' => min($rowsProcessedForUniques, $sampledRows),
+                'total_sample_rows' => $estimatedRows > 0 ? $estimatedRows : $sampledRows,
+                'total_rows' => $estimatedRows > 0 ? $estimatedRows : null,
+                'delimiter' => $delimiter,
+            ];
+
+            Cache::put($cacheKey, $result, now()->addHours(6));
+
+            return $result;
+        } finally {
+            fclose($handle);
+        }
+    }
+
+    private function buildSimpananLegacyPreviewRows(array $headers, array $previewRows): array
+    {
+        $indexedRows = [];
+
+        foreach ($previewRows as $row) {
+            $row = is_array($row) ? $row : (array) $row;
+            $indexedRow = [];
+            foreach ($headers as $header) {
+                $value = $row[$header] ?? null;
+                $indexedRow[] = $value === null ? '' : (string) $value;
+            }
+            $indexedRows[] = $indexedRow;
+        }
+
+        return $indexedRows;
+    }
+
+    private function describeDelimiter(string $delimiter): string
+    {
+        return match ($delimiter) {
+            ';' => 'Titik Koma ( ; )',
+            "\t" => 'Tab',
+            '|' => 'Garis Lurus / Pipe ( | )',
+            '.' => 'Titik ( . )',
+            default => 'Koma ( , )',
+        };
+    }
+
+    private function padPreviewRow(array $row, int $expectedColumns): array
+    {
+        if (count($row) < $expectedColumns) {
+            return array_pad($row, $expectedColumns, null);
+        }
+
+        if (count($row) > $expectedColumns) {
+            return array_slice($row, 0, $expectedColumns);
+        }
+
+        return $row;
+    }
+
+    private function normalizePreviewValue($value)
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        if (is_string($value)) {
+            $value = trim($value);
+            return $value === '' ? null : $value;
+        }
+
+        return $value;
+    }
+
+    private function estimateCsvPhysicalDataRows(string $csvPath): int
+    {
+        $fileSize = @filesize($csvPath);
+        if ($fileSize === false || $fileSize <= 0) {
+            return 0;
+        }
+
+        $handle = @fopen($csvPath, 'rb');
+        if ($handle === false) {
+            return 0;
+        }
+
+        $lineCount = 0;
+        $lastByte = '';
+
+        try {
+            while (!feof($handle)) {
+                $chunk = (string) fread($handle, 4 * 1024 * 1024);
+                if ($chunk === '') {
+                    continue;
+                }
+
+                $lineCount += substr_count($chunk, "\n");
+                $lastByte = substr($chunk, -1);
+            }
+        } finally {
+            @fclose($handle);
+        }
+
+        if ($lineCount <= 0 && $lastByte === '') {
+            return 0;
+        }
+
+        if ($lastByte !== "\n") {
+            $lineCount++;
+        }
+
+        return max(0, $lineCount - 1);
     }
 
     public function processImportStream(Request $request)
@@ -385,6 +720,13 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                         'total_rows' => $resolvedTotalRows,
                         'processed_rows' => $resolvedProcessedRows,
                     ]));
+
+                    $jobAttributes = ['status' => 'processing'];
+                    if ($resolvedTotalRows > 0) {
+                        $jobAttributes['total_files'] = $resolvedTotalRows;
+                    }
+
+                    $this->progressService()->updateJob($jobId, $jobAttributes);
                 }
 
                 echo "event: {$event}\n";
@@ -401,53 +743,71 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
 
                     if (!$streamLock->get()) {
                         $job = DB::table('import_jobs')->where('id', $jobId)->first();
+                        $progress = $this->progressService()->getCachedProgress($jobId);
 
-                        if ($job && in_array($job->status, ['completed', 'failed', 'failed_partial'], true)) {
-                            $send('complete', [
-                                'total_success' => (int) ($job->total_success ?? 0),
-                                'total_failed' => (int) ($job->total_failed ?? 0),
-                                'total_rows' => (int) ($job->total_files ?? 0),
+                        if ($job && $this->shouldRecoverStalledSimpananMultiPnStreamLock($job, $progress)) {
+                            Log::warning('Simpanan MultiPN import stream lock recovered from stale early processing state.', [
+                                'job_id' => $jobId,
+                                'status' => $job->status ?? null,
+                                'updated_at' => $job->updated_at ?? null,
+                                'progress_percent' => $progress['percent'] ?? null,
                             ]);
-                            return;
-                        }
 
-                        // Already processing: poll progress
-                        $send('progress', [
-                            'percent' => 5,
-                            'message' => 'Job sedang diproses. Menyambung ke progress...',
-                        ]);
+                            Cache::lock('import_excel_stream_job_' . $jobId, 1)->forceRelease();
+                            $streamLock = Cache::lock('import_excel_stream_job_' . $jobId, 7200);
 
-                        while (true) {
-                            $currentJob = DB::table('import_jobs')->where('id', $jobId)->first();
-                            if (!$currentJob) break;
-
-                             $progress = $this->progressService()->getStatusPayload($jobId);
-                            if ($progress) {
-                                $send('progress', $progress);
+                            if (!$streamLock->get()) {
+                                throw new \RuntimeException('Import Simpanan MultiPN masih dikunci proses lama. Silakan ulangi beberapa detik lagi.');
                             }
+                        } else {
 
-                            if (in_array($currentJob->status, ['completed', 'failed', 'failed_partial', 'terminated'], true)) {
-                                if ($currentJob->status === 'completed') {
-                                    $send('complete', [
-                                        'total_success' => (int) ($currentJob->total_success ?? 0),
-                                        'total_failed' => (int) ($currentJob->total_failed ?? 0),
-                                        'total_rows' => (int) ($currentJob->total_files ?? 0),
-                                    ]);
-                                } else {
-                                    $send('error', [
-                                        'message' => $this->resolveImportJobFailureMessage(
-                                            $currentJob,
-                                            'Import gagal diproses (status: ' . $currentJob->status . ')'
-                                        ),
-                                    ]);
-                                }
+                            if ($job && in_array($job->status, ['completed', 'failed', 'failed_partial'], true)) {
+                                $send('complete', [
+                                    'total_success' => (int) ($job->total_success ?? 0),
+                                    'total_failed' => (int) ($job->total_failed ?? 0),
+                                    'total_rows' => (int) ($job->total_files ?? 0),
+                                ]);
                                 return;
                             }
 
-                            sleep(1);
-                            if (connection_aborted()) return;
+                            // Already processing: poll progress
+                            $send('progress', [
+                                'percent' => 5,
+                                'message' => 'Job sedang diproses. Menyambung ke progress...',
+                            ]);
+
+                            while (true) {
+                                $currentJob = DB::table('import_jobs')->where('id', $jobId)->first();
+                                if (!$currentJob) break;
+
+                                $progress = $this->progressService()->getStatusPayload($jobId);
+                                if ($progress) {
+                                    $send('progress', $progress);
+                                }
+
+                                if (in_array($currentJob->status, ['completed', 'failed', 'failed_partial', 'terminated'], true)) {
+                                    if ($currentJob->status === 'completed') {
+                                        $send('complete', [
+                                            'total_success' => (int) ($currentJob->total_success ?? 0),
+                                            'total_failed' => (int) ($currentJob->total_failed ?? 0),
+                                            'total_rows' => (int) ($currentJob->total_files ?? 0),
+                                        ]);
+                                    } else {
+                                        $send('error', [
+                                            'message' => $this->resolveImportJobFailureMessage(
+                                                $currentJob,
+                                                'Import gagal diproses (status: ' . $currentJob->status . ')'
+                                            ),
+                                        ]);
+                                    }
+                                    return;
+                                }
+
+                                sleep(1);
+                                if (connection_aborted()) return;
+                            }
+                            return;
                         }
-                        return;
                     }
                 }
 
@@ -485,7 +845,7 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                 // Validate file uniqueness before processing
                 if ($contentHash !== '') {
                     try {
-                        $periodHints = $this->collectSimpananMultiPnSnapshotPeriods($absolutePath);
+                        $periodHints = $this->collectSimpananMultiPnSnapshotPeriods($absolutePath, 10000);
                         if (!empty($periodHints)) {
                             $this->validateFileUniqueness($contentHash, $periodHints);
                             Log::info('Simpanan MultiPN: File uniqueness validation passed', [
@@ -559,6 +919,13 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                     return;
                 }
 
+                $plannedLoadRows = max(0, (int) ($loadPlan['validation_written_rows'] ?? $loadPlan['source_rows'] ?? 0));
+                $plannedSkippedRows = max(0, (int) ($loadPlan['validation_skipped_count'] ?? 0));
+                $plannedTotalRows = $plannedLoadRows + $plannedSkippedRows;
+                if ($plannedTotalRows <= 0) {
+                    $plannedTotalRows = $totalRows > 0 ? $totalRows : $plannedLoadRows;
+                }
+
                 $send('progress', [
                     'status' => 'processing',
                     'phase' => 'preparing_load_plan',
@@ -567,7 +934,7 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                         ? 'Menyiapkan direct LOAD DATA untuk filtered Simpanan MultiPN...'
                         : 'Menyiapkan direct LOAD DATA untuk Simpanan MultiPN...',
                     'rows_done' => 0,
-                    'total' => $totalRows,
+                    'total' => $plannedTotalRows,
                     'speed' => 0,
                 ]);
 
@@ -576,36 +943,61 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                 $inserted = $this->executeDirectCsvLoad($loadPlan, $beforeLoad, $send, $jobId);
                 $elapsed = max(microtime(true) - $startTime, 0.001);
                 $speed = (int) ($inserted / $elapsed);
-                $failed = max(0, $totalRows - $inserted);
+                $expectedLoadRows = max(0, (int) ($loadPlan['validation_written_rows'] ?? $loadPlan['source_rows'] ?? 0));
+                $validationSkipped = max(0, (int) ($loadPlan['validation_skipped_count'] ?? 0));
+                $finalTotalRows = $expectedLoadRows + $validationSkipped;
+                if ($finalTotalRows <= 0) {
+                    $finalTotalRows = $totalRows > 0 ? $totalRows : $inserted;
+                }
+
+                $failed = $validationSkipped + max(0, $expectedLoadRows - $inserted);
+
+                $send('progress', [
+                    'status' => 'processing',
+                    'phase' => 'finalizing',
+                    'percent' => 98,
+                    'message' => 'LOAD DATA selesai. Menyelesaikan status import Simpanan MultiPN...',
+                    'rows_done' => $inserted,
+                    'total' => $finalTotalRows,
+                    'speed' => $speed,
+                ]);
 
                 if ($jobId > 0) {
-                    $this->updateImportJobStatusSafely($jobId, [
-                        'status' => $failed > 0 ? ($inserted > 0 ? 'failed_partial' : 'failed') : 'completed',
-                        'total_files' => $totalRows > 0 ? $totalRows : $inserted,
-                        'total_success' => $inserted,
-                        'total_failed' => $failed,
-                        'updated_at' => now(),
-                    ]);
-                    $this->cacheFastImportProgress($jobId, [
-                        'status' => $failed > 0 ? ($inserted > 0 ? 'failed_partial' : 'failed') : 'completed',
+                    $terminalPayload = [
                         'phase' => 'completed',
                         'percent' => 100,
                         'message' => $failed > 0 ? 'Fast import Simpanan MultiPN selesai dengan kegagalan parsial.' : 'Fast import Simpanan MultiPN selesai.',
                         'processed_rows' => $inserted + $failed,
-                        'total_rows' => $totalRows > 0 ? $totalRows : $inserted,
+                        'total_rows' => $finalTotalRows,
                         'total_success' => $inserted,
                         'total_failed' => $failed,
-                    ]);
+                    ];
+
+                    if ($failed > 0) {
+                        $terminalStatus = $inserted > 0 ? 'failed_partial' : 'failed';
+                        $this->progressService()->updateTotals(
+                            $jobId,
+                            $inserted,
+                            $failed,
+                            $finalTotalRows,
+                            $terminalStatus,
+                            array_merge(['status' => $terminalStatus], $terminalPayload)
+                        );
+                    } else {
+                        $this->progressService()->markCompleted(
+                            $jobId,
+                            $inserted,
+                            0,
+                            $finalTotalRows,
+                            array_merge(['status' => 'completed'], $terminalPayload)
+                        );
+                    }
                 }
 
-                $send('progress', [
-                    'status' => 'processing',
-                    'phase' => 'syncing_report',
-                    'percent' => 98,
-                    'message' => 'LOAD DATA selesai. Menyusun snapshot akhir Simpanan MultiPN...',
-                    'rows_done' => $inserted,
-                    'total' => $totalRows > 0 ? $totalRows : $inserted,
-                    'speed' => 0,
+                $send('complete', [
+                    'total_success' => $inserted,
+                    'total_failed' => $failed,
+                    'total_rows' => $finalTotalRows,
                 ]);
 
                 $this->cleanupSuccessfulImportArtifacts(
@@ -615,12 +1007,6 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                     (array) ($loadPlan['period_hints'] ?? []),
                     importBatchTimestamp: (string) ($loadPlan['import_batch_timestamp'] ?? '')
                 );
-
-                $send('complete', [
-                    'total_success' => $inserted,
-                    'total_failed' => $failed,
-                    'total_rows' => $totalRows > 0 ? $totalRows : $inserted,
-                ]);
             } catch (\Throwable $e) {
                 if ($this->isTerminationInterruption($e, $jobId)) {
                     $this->handleTerminationInterruption($jobId, $send);
@@ -701,6 +1087,32 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
         $send('error', [
             'message' => 'Import dihentikan oleh pengguna.',
         ]);
+    }
+
+    private function shouldRecoverStalledSimpananMultiPnStreamLock(object $job, array $progress): bool
+    {
+        if (strtolower(trim((string) ($job->status ?? ''))) !== 'processing') {
+            return false;
+        }
+
+        $success = (int) ($job->total_success ?? 0);
+        $failed = (int) ($job->total_failed ?? 0);
+        if ($success > 0 || $failed > 0) {
+            return false;
+        }
+
+        $processedRows = (int) ($progress['processed_rows'] ?? $progress['rows_done'] ?? 0);
+        $percent = (int) ($progress['percent'] ?? 0);
+        $phase = strtolower(trim((string) ($progress['phase'] ?? '')));
+        if ($processedRows > 0 || $percent > 5 || !in_array($phase, ['', 'polars', 'validating'], true)) {
+            return false;
+        }
+
+        try {
+            return now()->diffInSeconds(\Carbon\Carbon::parse((string) ($job->updated_at ?? $job->created_at ?? now()))) >= 180;
+        } catch (\Throwable) {
+            return false;
+        }
     }
 
     private function updateImportJobStatusSafely(int $jobId, array $attributes): void
@@ -1089,22 +1501,17 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                     : (int) $loadSource['balance_total_cents'];
             }
 
-            // Avoid double-scan: Only calculate balance if NOT already from Python processor
-            // For large files (680k+ rows), double scan causes 6h+ delay. Skip it for now.
-            // Balance validation can be deferred to post-import snapshot audit if needed.
-            $balanceCrosscheckMaxRows = max(0, (int) config('import.direct_load.simpanan_multipn.balance_crosscheck_max_rows', 0));
-            if ($sourceBalanceTotalCents === null && ($balanceCrosscheckMaxRows === 0 || $sourceRows <= $balanceCrosscheckMaxRows)) {
-                // DISABLED: Double scan causes massive slowdown (6h+ for 680k rows)
-                // $sourceBalanceTotalCents = $this->calculateSimpananMultiPnSourceBalanceTotal($sourcePath, $delimiter);
-
-                // Log when balance check is skipped (for audit trail)
-                if ($sourceRows > 0) {
-                    Log::debug('Simpanan MultiPN balance crosscheck skipped to avoid double-scan', [
-                        'source_rows' => $sourceRows,
-                        'backend' => $validationBackend,
-                        'reason' => 'File processing would require second pass (680k+ rows = 6h+ delay)',
-                    ]);
-                }
+            // Keep strict balance validation for small/medium imports, but avoid a second
+            // full scan on very large files where Polars/post-import snapshot audit is safer.
+            $balanceCrosscheckMaxRows = max(0, (int) config('import.direct_load.simpanan_multipn.balance_crosscheck_max_rows', 50000));
+            if ($sourceBalanceTotalCents === null && $sourceRows > 0 && $sourceRows <= $balanceCrosscheckMaxRows) {
+                $sourceBalanceTotalCents = $this->calculateSimpananMultiPnSourceBalanceTotal($sourcePath, $delimiter);
+            } elseif ($sourceBalanceTotalCents === null && $sourceRows > $balanceCrosscheckMaxRows) {
+                Log::debug('Simpanan MultiPN balance crosscheck skipped to avoid large-file double scan', [
+                    'source_rows' => $sourceRows,
+                    'max_rows' => $balanceCrosscheckMaxRows,
+                    'backend' => $validationBackend,
+                ]);
             }
 
             if ($sourceHeaders === []) {
@@ -1186,7 +1593,7 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
 
             $setClauses[] = match (strtolower($dbColumn)) {
                 'saldo_idr' => "`{$dbColumn}` = " . $this->buildDirectLoadDecimalExpression($variable),
-                'posisi' => "`{$dbColumn}` = " . StrictDateParser::buildMySqlCaseExpression("NULLIF(TRIM({$variable}), '')"),
+                'posisi' => "`{$dbColumn}` = " . StrictDateParser::buildMySqlCaseExpression("TRIM({$variable})"),
                 default => "`{$dbColumn}` = NULLIF(TRIM({$variable}), '')",
             };
         }
@@ -1456,19 +1863,6 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
     ): int
     {
         try {
-            // CRITICAL OPTIMIZATION: Optimize constraint checking for bulk load
-            // For 680k rows with 23+ indexes, index enforcement causes significant slowdown
-            // Using SET unique_checks/foreign_key_checks is safer than DISABLE KEYS (no implicit commit)
-            // These settings affect index enforcement but NOT index maintenance
-            try {
-                $pdo->exec('SET SESSION unique_checks = 0');
-                $pdo->exec('SET SESSION foreign_key_checks = 0');
-                Log::debug('Simpanan MultiPN: Constraint checking optimized for LOAD DATA');
-            } catch (\Throwable $e) {
-                Log::warning('Failed to optimize constraint checking (continuing): ' . $e->getMessage());
-                // Continue anyway - constraint checks are secondary to data integrity
-            }
-
             $pdo->exec('SET @skip_snapshot_invalidation = 1');
 
             if ($beforeLoad !== null) {
@@ -1482,31 +1876,12 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                 throw new \RuntimeException('LOAD DATA LOCAL INFILE gagal dieksekusi untuk Simpanan MultiPN.');
             }
 
-            // Re-enable constraint checking
-            try {
-                $pdo->exec('SET SESSION unique_checks = 1');
-                $pdo->exec('SET SESSION foreign_key_checks = 1');
-                Log::debug('Simpanan MultiPN: Constraint checking re-enabled after LOAD DATA', [
-                    'affected_rows' => $affected
-                ]);
-            } catch (\Throwable $e) {
-                Log::warning('Failed to re-enable constraint checking: ' . $e->getMessage());
-            }
-
             return (int) $affected;
         } finally {
             try {
                 $pdo->exec('SET @skip_snapshot_invalidation = NULL');
             } catch (\Throwable) {
                 // abaikan reset session variable bila koneksi sudah gagal
-            }
-
-            // Safety: Ensure constraint checking is re-enabled even if exception occurs
-            try {
-                $pdo->exec('SET SESSION unique_checks = 1');
-                $pdo->exec('SET SESSION foreign_key_checks = 1');
-            } catch (\Throwable) {
-                // Best effort cleanup
             }
         }
     }
@@ -1653,13 +2028,18 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
         @set_time_limit(0);
     }
 
-    private function collectSimpananMultiPnSnapshotPeriods(string $absolutePath): array
+    private function collectSimpananMultiPnSnapshotPeriods(string $absolutePath, int $maxRows = 0): array
     {
         if ($absolutePath === '' || !file_exists($absolutePath)) {
             return [];
         }
 
-        $periods = $this->collectCsvNormalizedValuesForHeaders($absolutePath, ['POSISI']);
+        if ($maxRows <= 0) {
+            $periods = $this->collectCsvNormalizedValuesForHeaders($absolutePath, ['POSISI']);
+        } else {
+            $periods = $this->collectSimpananMultiPnSnapshotPeriodsFromSample($absolutePath, $maxRows);
+        }
+
         $periods = array_values(array_unique(array_filter(array_map(
             static fn ($value) => trim((string) $value),
             $periods
@@ -1668,6 +2048,55 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
         sort($periods);
 
         return $periods;
+    }
+
+    private function collectSimpananMultiPnSnapshotPeriodsFromSample(string $absolutePath, int $maxRows): array
+    {
+        $delimiter = $this->detectCsvDelimiter($absolutePath);
+        $handle = @fopen($absolutePath, 'rb');
+        if ($handle === false) {
+            return [];
+        }
+
+        try {
+            $headers = $this->readCsvRecord($handle, $delimiter);
+            if ($headers === false || empty($headers)) {
+                return [];
+            }
+
+            $posisiIndex = null;
+            foreach ($headers as $index => $header) {
+                if ($this->normalizeHeaderName((string) $header) === 'posisi') {
+                    $posisiIndex = (int) $index;
+                    break;
+                }
+            }
+
+            if ($posisiIndex === null) {
+                return [];
+            }
+
+            $periods = [];
+            $scannedRows = 0;
+            while ($scannedRows < $maxRows && ($row = $this->readCsvRecord($handle, $delimiter)) !== false) {
+                if (empty(array_filter((array) $row, static fn ($value): bool => trim((string) $value) !== ''))) {
+                    continue;
+                }
+
+                $scannedRows++;
+                $value = trim((string) ($row[$posisiIndex] ?? ''));
+                if ($value === '') {
+                    continue;
+                }
+
+                $normalized = StrictDateParser::normalize($value) ?? $value;
+                $periods[$normalized] = true;
+            }
+
+            return array_values(array_keys($periods));
+        } finally {
+            fclose($handle);
+        }
     }
 
     private function collectImportedBatchPeriods(string $importBatchTimestamp): array

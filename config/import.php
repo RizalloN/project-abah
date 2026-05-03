@@ -1,6 +1,8 @@
 <?php
 
 return [
+    'cache_store' => env('IMPORT_CACHE_STORE', 'file'),
+
     'queue' => [
         'inline_fallback_grace_seconds' => env('IMPORT_QUEUE_INLINE_FALLBACK_GRACE_SECONDS', 0),
         'inline_start_tables' => array_values(array_filter(array_map(
@@ -35,6 +37,7 @@ return [
         'simpanan_multipn' => [
             'enabled' => env('IMPORT_DIRECT_LOAD_SIMPANAN_MULTIPN_ENABLED', true),
             'max_rows' => env('IMPORT_DIRECT_LOAD_SIMPANAN_MULTIPN_MAX_ROWS', 0),
+            'balance_crosscheck_max_rows' => env('IMPORT_DIRECT_LOAD_SIMPANAN_MULTIPN_BALANCE_CROSSCHECK_MAX_ROWS', 50000),
         ],
         'ssa_simpanan' => [
             'enabled' => env('IMPORT_DIRECT_LOAD_SSA_SIMPANAN_ENABLED', true),

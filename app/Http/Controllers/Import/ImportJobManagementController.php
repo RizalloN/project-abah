@@ -285,7 +285,7 @@ class ImportJobManagementController extends Controller
         // Extract and kill MySQL connection if LOAD DATA is currently running
         $killStatus = 'not_attempted';
         if ($status === 'processing') {
-            $jobContext = $job->job_context;
+            $jobContext = $job->job_context ?? null;
             if (is_string($jobContext) && trim($jobContext) !== '') {
                 $context = @json_decode($jobContext, true);
                 if (is_array($context)) {
@@ -308,7 +308,7 @@ class ImportJobManagementController extends Controller
 
         $message = $status === 'queued'
             ? 'Job queued berhasil dihentikan.'
-            : 'Job processing dihentikan paksa.';
+            : 'Job processing dihentikan paksa. Jika worker lama masih aktif, status job tidak akan diaktifkan kembali.';
 
         if ($status === 'processing' && $killStatus === 'success') {
             $message .= ' MySQL connection dipaksa disconnect untuk menghentikan LOAD DATA.';
@@ -548,10 +548,7 @@ class ImportJobManagementController extends Controller
 
         $filterClass = trim((string) ($validated['class_name'] ?? ''));
 
-        $configuredReportQueue = trim((string) config('queue.report_queue', 'default')) ?: 'default';
-        $queues = array_values(array_unique(array_filter([
-            $configuredReportQueue, 'default', 'reports-low', 'imports-high',
-        ])));
+        $queues = $this->monitoredQueueNames();
 
         $allBasenames = $this->allKnownJobBasenames();
 
@@ -782,7 +779,8 @@ class ImportJobManagementController extends Controller
         }
 
         $configuredReportQueue = trim((string) config('queue.report_queue', 'default')) ?: 'default';
-        $queues = array_values(array_unique(array_filter([$configuredReportQueue, 'default', 'reports-low', 'imports-high'])));
+        $queues = $this->monitoredQueueNames();
+        $knownBasenames = $this->allKnownJobBasenames();
         $reportBasenames = $this->reportQueueBasenames();
         $managedDeleteBasename = class_basename(\App\Jobs\RunManagedReportDeleteJob::class);
         $snapshotRebuildBasename = class_basename(\App\Jobs\RunManagedReportSnapshotRebuildJob::class);
@@ -792,14 +790,9 @@ class ImportJobManagementController extends Controller
             ->select(['id', 'queue', 'reserved_at', 'created_at', 'available_at', 'payload'])
             ->orderBy('id')
             ->get()
-            ->filter(function ($job) use ($reportBasenames, $managedDeleteBasename) {
+            ->filter(function ($job) use ($knownBasenames) {
                 $payload = (string) ($job->payload ?? '');
-
-                if ($managedDeleteBasename !== '' && str_contains($payload, $managedDeleteBasename)) {
-                    return true;
-                }
-
-                foreach ($reportBasenames as $basename) {
+                foreach ($knownBasenames as $basename) {
                     if ($basename !== '' && str_contains($payload, $basename)) {
                         return true;
                     }
@@ -819,14 +812,9 @@ class ImportJobManagementController extends Controller
             ->select(['id', 'queue', 'created_at', 'available_at', 'payload'])
             ->orderBy('id')
             ->get()
-            ->filter(function ($job) use ($reportBasenames, $managedDeleteBasename) {
+            ->filter(function ($job) use ($knownBasenames) {
                 $payload = (string) ($job->payload ?? '');
-
-                if ($managedDeleteBasename !== '' && str_contains($payload, $managedDeleteBasename)) {
-                    return true;
-                }
-
-                foreach ($reportBasenames as $basename) {
+                foreach ($knownBasenames as $basename) {
                     if ($basename !== '' && str_contains($payload, $basename)) {
                         return true;
                     }
@@ -837,8 +825,11 @@ class ImportJobManagementController extends Controller
             ->values();
 
         $pendingManagedDeleteJobs = $jobs->filter(fn ($job) => str_contains((string) ($job->payload ?? ''), $managedDeleteBasename))->count();
-        $pendingReportJobs = max(0, $jobs->count() - $pendingManagedDeleteJobs);
+        $pendingImportJobs = $jobs->filter(fn ($job) => str_contains((string) ($job->payload ?? ''), class_basename(\App\Jobs\RunImportJob::class)))->count();
         $pendingSnapshotRebuilds = $jobs->filter(fn ($job) => str_contains((string) ($job->payload ?? ''), $snapshotRebuildBasename))->count();
+        $pendingSnapshotParallelJobs = $jobs->where('queue', 'snapshots-parallel')->count();
+        $pendingShadowJobs = $jobs->where('queue', 'shadow-backfill')->count();
+        $pendingReportJobs = max(0, $jobs->count() - $pendingManagedDeleteJobs - $pendingImportJobs - $pendingSnapshotParallelJobs - $pendingShadowJobs);
         $legacyReportsLowPending = $jobs->where('queue', 'reports-low')->count();
         $oldestPending = $jobs->first();
         $oldestAgeSeconds = $oldestPending ? $this->queueRowAgeSeconds($oldestPending) : null;
@@ -852,16 +843,23 @@ class ImportJobManagementController extends Controller
             }
         }
 
-        if ($pendingReportJobs === 0 && $pendingManagedDeleteJobs === 0 && $staleReservedSnapshotJobs === 0) {
+        $pendingKnownJobs = $jobs->count();
+        $reservedKnownJobs = $reservedJobs->count();
+
+        if ($pendingKnownJobs === 0 && $reservedKnownJobs === 0 && $staleReservedSnapshotJobs === 0) {
             return [
                 'status' => 'ok',
                 'tone' => 'info',
                 'is_active' => true,
-                'message' => 'Queue report sehat. Tidak ada job report atau delete yang menunggu.',
+                'message' => 'Queue sehat. Tidak ada job terpantau yang sedang pending atau reserved.',
                 'configured_report_queue' => $configuredReportQueue,
                 'pending_report_jobs' => 0,
                 'pending_managed_delete_jobs' => 0,
+                'pending_import_jobs' => 0,
                 'pending_snapshot_rebuilds' => 0,
+                'pending_snapshot_parallel_jobs' => 0,
+                'pending_shadow_jobs' => 0,
+                'reserved_known_jobs' => 0,
                 'legacy_reports_low_pending' => 0,
                 'oldest_pending_age_seconds' => 0,
                 'stale_reserved_snapshot_jobs' => 0,
@@ -871,28 +869,36 @@ class ImportJobManagementController extends Controller
         }
 
         // Check if there's any job currently being processed (reserved)
-        $processingCount = DB::table('jobs')->whereNotNull('reserved_at')->count();
-        $isProcessing = $processingCount > 0;
+        $isProcessing = $reservedKnownJobs > 0;
+        $messageParts = [];
 
+        if ($pendingImportJobs > 0) {
+            $messageParts[] = sprintf('%d job import pending', $pendingImportJobs);
+        }
         if ($pendingReportJobs > 0) {
-            $message = sprintf(
-                'Ada %d job report menunggu di queue `%s`.',
-                $pendingReportJobs,
-                $configuredReportQueue
-            );
-            if (!empty($perTypeBreakdown)) {
-                $message .= ' Rincian: ' . implode(', ', $perTypeBreakdown) . '.';
-            }
-            if ($pendingSnapshotRebuilds > 0) {
-                $message .= sprintf(' Termasuk %d snapshot rebuild.', $pendingSnapshotRebuilds);
-            }
-            if ($pendingManagedDeleteJobs > 0) {
-                $message .= sprintf(' Ada %d job managed delete menunggu di queue `imports-high`.', $pendingManagedDeleteJobs);
-            }
-        } elseif ($pendingManagedDeleteJobs > 0) {
-            $message = sprintf('Ada %d job managed delete yang masih menunggu di queue `imports-high`.', $pendingManagedDeleteJobs);
-        } else {
-            $message = 'Ada job snapshot yang sudah di-reserve worker tetapi terlalu lama tidak selesai.';
+            $messageParts[] = sprintf('%d job report pending', $pendingReportJobs);
+        }
+        if ($pendingManagedDeleteJobs > 0) {
+            $messageParts[] = sprintf('%d job managed delete pending', $pendingManagedDeleteJobs);
+        }
+        if ($pendingSnapshotParallelJobs > 0) {
+            $messageParts[] = sprintf('%d job snapshot parallel pending', $pendingSnapshotParallelJobs);
+        }
+        if ($pendingShadowJobs > 0) {
+            $messageParts[] = sprintf('%d job shadow backfill pending', $pendingShadowJobs);
+        }
+        if ($reservedKnownJobs > 0) {
+            $messageParts[] = sprintf('%d job reserved/sedang diproses worker', $reservedKnownJobs);
+        }
+
+        $message = !empty($messageParts)
+            ? 'Queue terpantau: ' . implode(', ', $messageParts) . '.'
+            : 'Queue terpantau memiliki job stale yang perlu diperiksa.';
+        if (!empty($perTypeBreakdown)) {
+            $message .= ' Rincian pending: ' . implode(', ', $perTypeBreakdown) . '.';
+        }
+        if ($pendingSnapshotRebuilds > 0) {
+            $message .= sprintf(' Termasuk %d snapshot rebuild utama.', $pendingSnapshotRebuilds);
         }
 
         if ($legacyReportsLowPending > 0 && $configuredReportQueue !== 'reports-low') {
@@ -907,7 +913,7 @@ class ImportJobManagementController extends Controller
         if (($oldestAgeSeconds ?? 0) >= 300) {
             if (!$isProcessing) {
                 $message .= ' Indikasinya worker report tidak sedang mengonsumsi queue. Semua job ini dapat dipantau di bagian "Queue Jobs" di bawah.';
-                $message .= ' Jalankan `composer queue` untuk import umum, report, dan Daily Loan Dinamis.';
+                $message .= ' Jalankan `composer start:power` atau `composer queue` untuk memastikan worker aktif.';
                 $status = 'warning';
             } else {
                 $message .= ' Worker sedang memproses job berat, antrean bergerak lambat.';
@@ -925,7 +931,11 @@ class ImportJobManagementController extends Controller
             'configured_report_queue' => $configuredReportQueue,
             'pending_report_jobs' => $pendingReportJobs,
             'pending_managed_delete_jobs' => $pendingManagedDeleteJobs,
+            'pending_import_jobs' => $pendingImportJobs,
             'pending_snapshot_rebuilds' => $pendingSnapshotRebuilds,
+            'pending_snapshot_parallel_jobs' => $pendingSnapshotParallelJobs,
+            'pending_shadow_jobs' => $pendingShadowJobs,
+            'reserved_known_jobs' => $reservedKnownJobs,
             'legacy_reports_low_pending' => $legacyReportsLowPending,
             'oldest_pending_age_seconds' => $oldestAgeSeconds ?? 0,
             'stale_reserved_snapshot_jobs' => $staleReservedSnapshotJobs,
@@ -942,8 +952,24 @@ class ImportJobManagementController extends Controller
             \App\Jobs\SyncImportedReportJob::class,
             \App\Jobs\EnsureDashboardSnapshotJob::class,
             \App\Jobs\EnsureDashboardSimpananSnapshotJob::class,
+            \App\Jobs\EnsurePerformanceRmSnapshotJob::class,
             \App\Jobs\EnsureRasioCasaSnapshotJob::class,
             \App\Jobs\EnsureRekeningDormantSnapshotJob::class,
+            \App\Jobs\RebuildChartPeriodikPeriodJob::class,
+            \App\Jobs\RebuildDashboardHarianSnapshotJob::class,
+            \App\Jobs\RebuildDashboardPeriodJob::class,
+            \App\Jobs\RebuildDormantPeriodJob::class,
+            \App\Jobs\RebuildHarianPeriodJob::class,
+            \App\Jobs\RebuildLoanChartPeriodikSnapshotJob::class,
+            \App\Jobs\RebuildLoanDashboardSnapshotJob::class,
+            \App\Jobs\RebuildRasioPeriodJob::class,
+            \App\Jobs\RebuildSimpananPeriodJob::class,
+            \App\Jobs\RebuildSnapshotDormantBatch::class,
+            \App\Jobs\RebuildSnapshotHarianBatch::class,
+            \App\Jobs\RebuildSnapshotPerformanceRmBatch::class,
+            \App\Jobs\RebuildSnapshotRasioBatch::class,
+            \App\Jobs\RebuildSnapshotSimpleBatch::class,
+            \App\Jobs\SmartPartialSnapshotRebuildJob::class,
         ]);
     }
 
@@ -952,11 +978,41 @@ class ImportJobManagementController extends Controller
         return array_values(array_unique(array_merge(
             $this->reportQueueBasenames(),
             array_map('class_basename', [
+                \App\Jobs\DistributedShadowBackfillJob::class,
+                \App\Jobs\ExecuteBatchedSnapshotJob::class,
+                \App\Jobs\PrepareCsvStagingJob::class,
+                \App\Jobs\ProcessPolarsImportPhJob::class,
+                \App\Jobs\ProcessShadowBackfillJob::class,
                 \App\Jobs\RunImportJob::class,
+                \App\Jobs\RunLoadDataJob::class,
                 \App\Jobs\RunManagedReportLoadJob::class,
                 \App\Jobs\RunManagedReportDeleteJob::class,
+                \App\Jobs\RunManagedReportRecoveryJob::class,
             ])
         )));
+    }
+
+    private function monitoredQueueNames(): array
+    {
+        $configuredWorkerQueues = explode(
+            ',',
+            (string) config('queue.worker_queues', 'imports-high,snapshots-parallel,default,reports-low,shadow-backfill,imports-daily-loan')
+        );
+
+        return array_values(array_unique(array_filter(array_map(
+            static fn ($queue): string => trim((string) $queue),
+            array_merge($configuredWorkerQueues, [
+                config('queue.report_queue', 'default'),
+                config('queue.shadow_backfill_queue', 'shadow-backfill'),
+                config('queue.connections.database.queue', 'default'),
+                'default',
+                'reports-low',
+                'imports-high',
+                'imports-daily-loan',
+                'snapshots-parallel',
+                'shadow-backfill',
+            ])
+        ), static fn (string $queue): bool => $queue !== '')));
     }
 
     private function resolveRawQueueJobs(array $trackedManagedDeleteIds = [], array $trackedSnapshotIds = []): array
@@ -965,10 +1021,7 @@ class ImportJobManagementController extends Controller
             return [];
         }
 
-        $configuredReportQueue = trim((string) config('queue.report_queue', 'default')) ?: 'default';
-        $queues = array_values(array_unique(array_filter([
-            $configuredReportQueue, 'default', 'reports-low', 'imports-high',
-        ])));
+        $queues = $this->monitoredQueueNames();
         $allBasenames = $this->allKnownJobBasenames();
 
         $rows = DB::table('jobs')

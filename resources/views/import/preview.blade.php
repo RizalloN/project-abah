@@ -239,6 +239,9 @@
         const basePreviewTbodyHtml = previewTbody ? previewTbody.innerHTML : '';
         const filterOptionsUrl = importFormElement?.dataset.filterOptionsUrl || '';
         const warmIndexUrl = importFormElement?.dataset.warmIndexUrl || '';
+        const prefetchFilterOptionsOnLoad = @json(!empty($prefetchFilterOptionsOnLoad));
+        const warmPreviewIndexOnLoad = @json(!empty($warmPreviewIndexOnLoad));
+        const disableFilterOptionsLocalCache = @json(!empty($disableFilterOptionsLocalCache));
         const filePathValue = importFormElement?.querySelector('input[name="file_path"]')?.value || '';
         const previewStateKey = importFormElement?.querySelector('input[name="preview_state_key"]')?.value || '';
         const delimiterValue = importFormElement?.querySelector('input[name="delimiter"]')?.value || 'auto';
@@ -378,7 +381,7 @@
             return (hash >>> 0).toString(36);
         }
 
-        const storageKeyPrefix = 'preview_filter_v4_' + stableHash(JSON.stringify({
+        const storageKeyPrefix = 'preview_filter_v5_' + stableHash(JSON.stringify({
             file: filePathValue,
             delimiter: delimiterValue,
             headers: headers,
@@ -394,6 +397,10 @@
         }
 
         function getFromLocalStorage(col) {
+            if (disableFilterOptionsLocalCache) {
+                return null;
+            }
+
             try {
                 const key = getStorageKey(col);
                 const data = localStorage.getItem(key);
@@ -414,6 +421,10 @@
         }
 
         function saveToLocalStorage(col, values) {
+            if (disableFilterOptionsLocalCache) {
+                return;
+            }
+
             try {
                 localStorage.setItem(getStorageKey(col), JSON.stringify(values));
                 localStorage.setItem(getStorageTimestampKey(col), String(Date.now()));
@@ -989,7 +1000,7 @@
         }
 
         function prewarmPreviewIndex() {
-            if (!filePathValue || !warmIndexUrl) {
+            if (!warmPreviewIndexOnLoad || !filePathValue || !warmIndexUrl) {
                 return;
             }
 
@@ -1228,6 +1239,18 @@
 
                 const col = container.getAttribute('data-col');
                 ensureFullFilterOptions(col);
+            });
+        });
+
+        document.querySelectorAll('.filter-btn').forEach(function (button) {
+            button.addEventListener('click', function () {
+                const dropdown = button.closest('.dropdown');
+                const container = dropdown ? dropdown.querySelector('[id^="list_container_"]') : null;
+                if (!container) {
+                    return;
+                }
+
+                ensureFullFilterOptions(container.getAttribute('data-col'));
             });
         });
 
@@ -1606,11 +1629,6 @@
                     isDailyLoanPreview ? 'record' : ''
                 );
 
-                if (!pollStarted) {
-                    pollStarted = true;
-                    startIndependentPolling(initResult.job_id);
-                }
-
                 const streamUrl = streamUrlBase + '?job_id=' + encodeURIComponent(initResult.job_id);
                 const statusUrlTemplate = @json(route('import.jobs.status', ['jobId' => '__JOB_ID__']));
                 const forceStartUrlTemplate = @json(route('job-management.force-start', ['jobId' => '__JOB_ID__']));
@@ -1849,6 +1867,11 @@
                     }, 4000);
                 };
 
+                if (!pollStarted) {
+                    pollStarted = true;
+                    startIndependentPolling(initResult.job_id);
+                }
+
                 const connectSSE = function () {
                     if (streamDone) {
                         return;
@@ -2011,9 +2034,16 @@
             renderFilterList(col);
         });
         updatePreviewTable();
-        setTimeout(prefetchAllFilterOptions, 0);
-        setTimeout(prewarmPreviewIndex, 50);
-        if (filePathValue && filterOptionsUrl) {
+        if (prefetchFilterOptionsOnLoad) {
+            setTimeout(prefetchAllFilterOptions, 0);
+        }
+        if (disableFilterOptionsLocalCache) {
+            setTimeout(prefetchAllFilterOptions, 250);
+        }
+        if (warmPreviewIndexOnLoad) {
+            setTimeout(prewarmPreviewIndex, 50);
+        }
+        if (prefetchFilterOptionsOnLoad && filePathValue && filterOptionsUrl) {
             prefetchAllFilterOptions().catch(function (error) {
                 console.warn('Prefetch filter options failed:', error);
             });

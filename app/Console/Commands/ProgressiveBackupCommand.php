@@ -26,16 +26,19 @@ class ProgressiveBackupCommand extends Command
                 File::makeDirectory($backupDirectory, 0755, true);
             }
 
+            // Normalize path separators for Windows
+            $backupDirectory = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $backupDirectory);
+
             $baseName = sprintf(
                 '%s_full_%s',
                 preg_replace('/[^A-Za-z0-9_-]+/', '_', $database) ?: 'database',
                 now()->format('Ymd_His')
             );
 
-            $gzipPath = $this->resolveGzipPath();
-            $extension = $gzipPath !== '' ? '.sql.gz' : '.sql';
-            $filename = $baseName . $extension;
+            // On Windows, always use .sql first, then compress post-process if gzip available
+            $filename = $baseName . '.sql';
             $absolutePath = $backupDirectory . DIRECTORY_SEPARATOR . $filename;
+            $gzipPath = $this->resolveGzipPath();
 
             Cache::put($cacheKey, [
                 'status' => 'processing',
@@ -91,77 +94,116 @@ class ProgressiveBackupCommand extends Command
     private function performOptimizedBackup(DatabaseBackupService $backupService, string $cacheKey, string $outputPath, string $database): void
     {
         // Start backup process in background
-        $backupProcess = $this->startBackupProcess($backupService, $outputPath);
-        
-        if (!is_resource($backupProcess)) {
+        $processInfo = $this->startBackupProcess($backupService, $outputPath);
+
+        if (!is_resource($processInfo['process'])) {
             throw new \RuntimeException('Gagal memulai proses backup.');
         }
+
+        $backupProcess = $processInfo['process'];
+        $stderrPipe = $processInfo['stderr'] ?? null;
 
         // Monitor progress by watching output file size
         $lastSize = 0;
         $noProgressCount = 0;
         $maxNoProgressIterations = 120; // ~2 minutes with 1s checks
+        $loopCount = 0;
 
-        while (true) {
-            // Check process status
-            $status = proc_get_status($backupProcess);
-            if (!$status['running']) {
-                break;
-            }
-
-            // Monitor file size for progress
-            if (is_file($outputPath)) {
-                $currentSize = @filesize($outputPath);
-                if ($currentSize !== false) {
-                    $progress = min(95, 2 + (($currentSize % 100000) / 100000) * 93);
-                    
-                    if ($currentSize > $lastSize) {
-                        $lastSize = $currentSize;
-                        $noProgressCount = 0;
-                    } else {
-                        $noProgressCount++;
-                    }
-
+        try {
+            while (true) {
+                $loopCount++;
+                if ($loopCount % 20 === 0) {
+                    $currentSize = @filesize($outputPath) ?: 0;
                     Cache::put($cacheKey, [
                         'status' => 'processing',
-                        'progress_percent' => (int) $progress,
+                        'progress_percent' => min(95, 2 + (($currentSize % 100000) / 100000) * 93),
                         'current_table_index' => 0,
                         'total_tables' => 1,
                         'current_table' => 'Full Database (Optimized Single-Pass)',
-                        'message' => sprintf(
-                            'Mencadangkan database... (%s)',
-                            $this->formatBytes($currentSize)
-                        ),
+                        'message' => sprintf('Mencadangkan database... (%s)', $this->formatBytes($currentSize)),
                         'updated_at' => now()->timestamp,
                         'backup_file' => $outputPath,
                     ], now()->addHours(1));
+                }
 
-                    // If size hasn't changed for too long, don't fail - just keep waiting
-                    if ($noProgressCount > $maxNoProgressIterations) {
-                        Log::warning("Backup file size hasn't changed for 2 minutes, but process still running. Continuing...");
-                        $noProgressCount = 0; // Reset counter
+                // Check process status
+                $status = proc_get_status($backupProcess);
+                if (!$status['running']) {
+                    break;
+                }
+
+                // Monitor file size for progress (every 20 iterations)
+                if (is_file($outputPath)) {
+                    $currentSize = @filesize($outputPath);
+                    if ($currentSize !== false) {
+                        $progress = min(95, 2 + (($currentSize % 100000) / 100000) * 93);
+
+                        if ($currentSize > $lastSize) {
+                            $lastSize = $currentSize;
+                            $noProgressCount = 0;
+                        } else {
+                            $noProgressCount++;
+                        }
+
+                        // Update cache with progress
+                        if ($loopCount % 20 === 0) {
+                            Cache::put($cacheKey, [
+                                'status' => 'processing',
+                                'progress_percent' => (int) $progress,
+                                'current_table_index' => 0,
+                                'total_tables' => 1,
+                                'current_table' => 'Full Database (Optimized Single-Pass)',
+                                'message' => sprintf(
+                                    'Mencadangkan database... (%s)',
+                                    $this->formatBytes($currentSize)
+                                ),
+                                'updated_at' => now()->timestamp,
+                                'backup_file' => $outputPath,
+                            ], now()->addHours(1));
+                        }
+
+                        // If size hasn't changed for too long, don't fail - just keep waiting
+                        if ($noProgressCount > $maxNoProgressIterations) {
+                            $noProgressCount = 0; // Reset counter
+                        }
+                    }
+                }
+
+                usleep(500000); // Check every 0.5 seconds
+            }
+
+            // Wait for final output
+            $stderr = is_resource($stderrPipe) ? stream_get_contents($stderrPipe) : '';
+            $exitCode = proc_close($backupProcess);
+
+            if ($exitCode !== 0) {
+                throw new \RuntimeException('mysqldump gagal: ' . ($stderr ?: 'Unknown error'));
+            }
+
+            // Post-compression if gzip available and output is .sql (not .sql.gz)
+            if (!str_ends_with($outputPath, '.gz')) {
+                $gzipPath = $this->resolveGzipPath();
+                if ($gzipPath !== '' && is_file($outputPath)) {
+                    try {
+                        $this->compressFileWithGzip($outputPath, $gzipPath);
+                    } catch (\Exception $e) {
+                        Log::warning("Gzip compression failed, leaving file uncompressed: " . $e->getMessage());
                     }
                 }
             }
-
-            usleep(500000); // Check every 0.5 seconds
-        }
-
-        // Wait for final output
-        $stdout = stream_get_contents($GLOBALS['backup_stdout_pipe'] ?? STDIN);
-        $stderr = stream_get_contents($GLOBALS['backup_stderr_pipe'] ?? STDIN);
-        $exitCode = proc_close($backupProcess);
-
-        if ($exitCode !== 0) {
-            throw new \RuntimeException('mysqldump gagal: ' . ($stderr ?: 'Unknown error'));
+        } finally {
+            // Cleanup pipes
+            if (is_resource($stderrPipe)) {
+                fclose($stderrPipe);
+            }
         }
     }
 
-    private function startBackupProcess(DatabaseBackupService $backupService, string $outputPath)
+    private function startBackupProcess(DatabaseBackupService $backupService, string $outputPath): array
     {
         $config = $backupService->getDatabaseConfig();
         $database = $config['database'];
-        
+
         // Build optimized single-pass command
         $command = $this->buildOptimizedCommand($config, $database);
         $environment = $this->buildEnvironment($config);
@@ -221,7 +263,7 @@ class ProgressiveBackupCommand extends Command
         return ['MYSQL_PWD' => $password];
     }
 
-    private function startWindowsBackupProcess(array $command, string $outputPath, array $environment)
+    private function startWindowsBackupProcess(array $command, string $outputPath, array $environment): array
     {
         $baseEnvironment = [];
         foreach (array_merge($_ENV, $_SERVER) as $key => $value) {
@@ -249,26 +291,16 @@ class ProgressiveBackupCommand extends Command
         }
 
         fclose($pipes[0]);
+        fclose($pipes[1]); // Close stdout since we're using --result-file
 
-        // Try to compress output with gzip if available (post-process)
-        $gzipPath = $this->resolveGzipPath();
-        if ($gzipPath !== '') {
-            try {
-                $this->compressFileWithGzip($outputPath, $gzipPath);
-            } catch (\Exception $e) {
-                Log::warning('Gzip compression failed, backup file left uncompressed: ' . $e->getMessage());
-            }
-        }
-
-        fclose($pipes[1]);
-
-        // Store pipes globally for cleanup in main process
-        $GLOBALS['backup_stderr_pipe'] = $pipes[2];
-
-        return $process;
+        // Return process with stderr pipe for monitoring
+        return [
+            'process' => $process,
+            'stderr' => $pipes[2],
+        ];
     }
 
-    private function startUnixBackupProcess(array $command, string $outputPath, array $environment)
+    private function startUnixBackupProcess(array $command, string $outputPath, array $environment): array
     {
         $baseEnvironment = [];
         foreach (array_merge($_ENV, $_SERVER) as $key => $value) {
@@ -279,7 +311,7 @@ class ProgressiveBackupCommand extends Command
         }
 
         $mergedEnvironment = array_merge($baseEnvironment, $environment);
-        
+
         // Build shell command with gzip pipe
         $commandStr = implode(' ', array_map('escapeshellarg', $command)) . ' | gzip > ' . escapeshellarg($outputPath);
 
@@ -294,9 +326,12 @@ class ProgressiveBackupCommand extends Command
         }
 
         fclose($pipes[1]);
-        $GLOBALS['backup_stderr_pipe'] = $pipes[2];
 
-        return $process;
+        // Return process with stderr pipe for monitoring
+        return [
+            'process' => $process,
+            'stderr' => $pipes[2],
+        ];
     }
 
     private function compressFileWithGzip(string $inputPath, string $gzipPath): void

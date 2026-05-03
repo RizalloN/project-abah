@@ -139,9 +139,9 @@ class EdcReportService
             ->selectRaw('COUNT(CASE WHEN DATE(POSISI)=? AND SALES_VOLUME >= 15000000 THEN 1 END) as prod_mtd', [$ctx['dateMtD']])
             ->selectRaw('COUNT(CASE WHEN DATE(POSISI)=? AND SALES_VOLUME >= 15000000 THEN 1 END) as prod_ytd', [$ctx['dateYtD']])
             ->selectRaw('COUNT(CASE WHEN DATE(POSISI)=? AND SALES_VOLUME >= 15000000 THEN 1 END) as prod_yoy', [$ctx['dateYoY']])
-            ->selectRaw('SUM(CASE WHEN DATE(POSISI)=? THEN SALES_VOLUME ELSE 0 END) as sv_curr', [$ctx['dateCurr']])
-            ->selectRaw('SUM(CASE WHEN DATE(POSISI)=? THEN SALES_VOLUME ELSE 0 END) as sv_mtd', [$ctx['dateMtD']])
-            ->selectRaw('SUM(CASE WHEN DATE(POSISI)=? THEN SALES_VOLUME ELSE 0 END) as sv_yoy', [$ctx['dateYoY']]);
+            ->selectRaw('SUM(CASE WHEN DATE(POSISI)=? THEN AKUMULASI_SALES_VOLUME ELSE 0 END) as sv_curr', [$ctx['dateCurr']])
+            ->selectRaw('SUM(CASE WHEN DATE(POSISI)=? THEN AKUMULASI_SALES_VOLUME ELSE 0 END) as sv_mtd', [$ctx['dateMtD']])
+            ->selectRaw('SUM(CASE WHEN DATE(POSISI)=? THEN AKUMULASI_SALES_VOLUME ELSE 0 END) as sv_yoy', [$ctx['dateYoY']]);
 
         $this->applyBranchFilter($q, $ctx);
         $rows = $q->groupBy('branch')->get();
@@ -305,10 +305,10 @@ class EdcReportService
 
         $query = DB::table('jumlah_merchant_detail')
             ->select(DB::raw("UPPER({$ctx['groupColumn']}) as branch"))
-            ->selectRaw('SUM(CASE WHEN DATE(POSISI) = ? THEN SALES_VOLUME ELSE 0 END) as sv_curr', [$ctx['dateCurr']])
-            ->selectRaw('SUM(CASE WHEN DATE(POSISI) = ? THEN SALES_VOLUME ELSE 0 END) as sv_dec_prev', [$ctx['dateYtD']])
-            ->selectRaw('SUM(CASE WHEN DATE(POSISI) = ? THEN SALES_VOLUME ELSE 0 END) as sv_jan_prev', [$ctx['datePrevMoM']])
-            ->selectRaw('SUM(CASE WHEN DATE(POSISI) = ? THEN SALES_VOLUME ELSE 0 END) as sv_feb_prev', [$ctx['dateYoY']]);
+            ->selectRaw('SUM(CASE WHEN DATE(POSISI) = ? THEN AKUMULASI_SALES_VOLUME ELSE 0 END) as sv_curr', [$ctx['dateCurr']])
+            ->selectRaw('SUM(CASE WHEN DATE(POSISI) = ? THEN AKUMULASI_SALES_VOLUME ELSE 0 END) as sv_dec_prev', [$ctx['dateYtD']])
+            ->selectRaw('SUM(CASE WHEN DATE(POSISI) = ? THEN AKUMULASI_SALES_VOLUME ELSE 0 END) as sv_jan_prev', [$ctx['datePrevMoM']])
+            ->selectRaw('SUM(CASE WHEN DATE(POSISI) = ? THEN AKUMULASI_SALES_VOLUME ELSE 0 END) as sv_feb_prev', [$ctx['dateYoY']]);
 
         $this->applyBranchFilter($query, $ctx);
         $rows = $query->groupBy('branch')->get();
@@ -319,11 +319,11 @@ class EdcReportService
 
         foreach ($rows as $row) {
             $branchKey  = strtoupper(trim((string) ($row->branch ?? '')));
-            $svCurr     = round(((float) ($row->sv_curr ?? 0)) / 1000000, 0);
-            $svDecPrev  = round(((float) ($row->sv_dec_prev ?? 0)) / 1000000, 0);
-            $svJanPrev  = round(((float) ($row->sv_jan_prev ?? 0)) / 1000000, 0);
-            $svFebPrev  = round(((float) ($row->sv_feb_prev ?? 0)) / 1000000, 0);
-            $svRka      = round((float) ($svRkaGroups['sv'][$branchKey] ?? 0) / 1000000, 0);
+            $svCurr     = round(((float) ($row->sv_curr ?? 0)) / 1000000000, 0);
+            $svDecPrev  = round(((float) ($row->sv_dec_prev ?? 0)) / 1000000000, 0);
+            $svJanPrev  = round(((float) ($row->sv_jan_prev ?? 0)) / 1000000000, 0);
+            $svFebPrev  = round(((float) ($row->sv_feb_prev ?? 0)) / 1000000000, 0);
+            $svRka      = round((float) ($svRkaGroups['sv'][$branchKey] ?? 0) / 1000000000, 0);
             $svPencPct  = $svRka > 0 ? (($svCurr / $svRka) * 100) : 0;
 
             $data[] = [

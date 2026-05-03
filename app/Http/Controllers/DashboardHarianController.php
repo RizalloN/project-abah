@@ -10,6 +10,8 @@ use Illuminate\Support\Facades\Cache;
 
 class DashboardHarianController extends Controller
 {
+    private const AREA_6_KANCA = ['KC Madiun', 'KC Magetan', 'KC Ponorogo', 'KC Ngawi'];
+
     public function __construct(
         private readonly DashboardHarianSnapshotService $dashboardHarianSnapshotService
     ) {
@@ -19,6 +21,7 @@ class DashboardHarianController extends Controller
     {
         $selectedKanca = $this->normalizeFilter($request->input('kanca'));
         $selectedUnit = $this->normalizeFilter($request->input('unit_kerja'));
+        $selectedKanca = $this->defaultArea6KancaWhenAll($selectedKanca, $selectedUnit);
         $selectedPeriod = $this->dashboardHarianSnapshotService->resolveEffectivePeriod($request->input('posisi_terakhir'));
         $selectedRka = $this->dashboardHarianSnapshotService->resolveEffectiveRkaPeriod($request->input('posisi_rka'), $selectedPeriod);
         $baseUrl = rtrim($request->getSchemeAndHttpHost() . $request->getBaseUrl(), '/');
@@ -101,6 +104,7 @@ class DashboardHarianController extends Controller
     {
         $selectedKanca = $this->normalizeFilter($request->input('kanca'));
         $selectedUnit = $this->normalizeFilter($request->input('unit_kerja'));
+        $selectedKanca = $this->defaultArea6KancaWhenAll($selectedKanca, $selectedUnit);
         $selectedPeriod = $this->dashboardHarianSnapshotService->resolveEffectivePeriod($request->input('posisi_terakhir'));
         $selectedRka = $this->dashboardHarianSnapshotService->resolveEffectiveRkaPeriod($request->input('posisi_rka'), $selectedPeriod);
 
@@ -113,7 +117,7 @@ class DashboardHarianController extends Controller
     private function payload(?string $selectedPeriod, ?string $selectedRka, array|string|null $selectedKanca, array|string|null $selectedUnit): array
     {
         $cacheKey = 'dashboard_harian:payload:' . md5(json_encode([
-            'schema' => 'penc-pct-v4-rka-micro-loan-cognos-recovery',
+            'schema' => 'penc-pct-v8-rka-micro-loan-cognos-recovery-area6-monthly-ph-normalized-acct',
             'version' => (int) Cache::get('report_cache_version:global', 1),
             'period' => $selectedPeriod,
             'rka' => $selectedRka,
@@ -258,5 +262,14 @@ class DashboardHarianController extends Controller
         }
 
         return $normalized;
+    }
+
+    private function defaultArea6KancaWhenAll(array|string|null $selectedKanca, array|string|null $selectedUnit): array|string|null
+    {
+        if ($selectedKanca !== null || $selectedUnit !== null) {
+            return $selectedKanca;
+        }
+
+        return self::AREA_6_KANCA;
     }
 }

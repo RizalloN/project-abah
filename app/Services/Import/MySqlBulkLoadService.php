@@ -381,7 +381,7 @@ class MySqlBulkLoadService
     ): int {
         $this->assertTransactionalTable($tableName, 'bulk import');
 
-        if ($totalLines === null && file_exists($csvPath)) {
+        if (($totalLines === null || $totalLines <= 0) && file_exists($csvPath)) {
             $totalLines = $this->countFileLines($csvPath);
         }
 

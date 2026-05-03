@@ -22,7 +22,7 @@ class DistributedShadowBackfillJob implements ShouldQueue
     protected array $tables;
     protected array $rules;
     protected bool $dryRun;
-    protected ?callable $progressCallback;
+    protected $progressCallback = null;
 
     /**
      * Create a new job instance

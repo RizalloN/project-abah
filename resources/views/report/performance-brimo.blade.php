@@ -454,11 +454,15 @@ document.addEventListener('DOMContentLoaded', function () {
         let val = parseFloat(num);
         return new Intl.NumberFormat('id-ID', { minimumFractionDigits: decimals, maximumFractionDigits: decimals }).format(val);
     }
+
+    function formatUreg(num) {
+        return formatNum(num, 3);
+    }
     
-    function formatGrowth(val, isPct = false) {
+    function formatGrowth(val, isPct = false, decimals = 0) {
         if (val === null || val === undefined || isNaN(parseFloat(val))) return '-';
         let num = parseFloat(val);
-        let text = isPct ? formatNum(Math.abs(num), 1) + '%' : formatNum(Math.abs(num), 0);
+        let text = isPct ? formatNum(Math.abs(num), 1) + '%' : formatNum(Math.abs(num), decimals);
         if (num > 0) return `${text} <i class="fas fa-arrow-up text-success"></i>`;
         if (num < 0) return `${text} <i class="fas fa-arrow-down text-danger"></i>`;
         return `${text} -`;
@@ -514,15 +518,15 @@ document.addEventListener('DOMContentLoaded', function () {
 
                         htmlBrimo += `<tr>
                             <td class="text-left font-weight-bold">${row.branch || '-'}</td>
-                            <td>${formatNum(rek.curr)}</td>
-                            <td>${formatGrowth(rek.mtd)}</td>
-                            <td>${formatGrowth(rek.ytd)}</td>
-                            <td>${formatGrowth(rek.yoy)}</td>
+                            <td>${formatUreg(rek.curr)}</td>
+                            <td>${formatGrowth(rek.mtd, false, 3)}</td>
+                            <td>${formatGrowth(rek.ytd, false, 3)}</td>
+                            <td>${formatGrowth(rek.yoy, false, 3)}</td>
                             <td>${formatGrowth(rek.yoy_pct, true)}</td>
-                            <td style="background-color: #f6f9fc;">${formatNum(fin.curr)}</td>
-                            <td>${formatGrowth(fin.mtd)}</td>
-                            <td>${formatGrowth(fin.ytd)}</td>
-                            <td>${formatGrowth(fin.yoy)}</td>
+                            <td style="background-color: #f6f9fc;">${formatUreg(fin.curr)}</td>
+                            <td>${formatGrowth(fin.mtd, false, 3)}</td>
+                            <td>${formatGrowth(fin.ytd, false, 3)}</td>
+                            <td>${formatGrowth(fin.yoy, false, 3)}</td>
                             <td>${formatGrowth(fin.yoy_pct, true)}</td>
                             <td class="text-center">-</td> <td class="text-center">-</td> <td class="text-center">-</td> <td class="text-center">-</td> <td class="text-center">-</td>
                             <td class="text-center">-</td> <td class="text-center">-</td> <td class="text-center">-</td> <td class="text-center">-</td> <td class="text-center">-</td>
@@ -530,26 +534,26 @@ document.addEventListener('DOMContentLoaded', function () {
 
                         htmlUregRek += `<tr>
                             <td class="text-left font-weight-bold">${row.branch || '-'}</td>
-                            <td>${formatNum(rek.yoy_prev)}</td>
-                            <td>${formatNum(rek.dec)}</td>
-                            <td>${formatNum(rek.prev)}</td>
-                            <td class="font-weight-bold" style="background-color: #f6f9fc;">${formatNum(rek.curr)}</td>
-                            <td>${formatGrowth(rek.mtd)}</td>
+                            <td>${formatUreg(rek.yoy_prev)}</td>
+                            <td>${formatUreg(rek.dec)}</td>
+                            <td>${formatUreg(rek.prev)}</td>
+                            <td class="font-weight-bold" style="background-color: #f6f9fc;">${formatUreg(rek.curr)}</td>
+                            <td>${formatGrowth(rek.mtd, false, 3)}</td>
                             <td>${formatGrowth(rek.mtd_pct, true)}</td>
-                            <td>${formatGrowth(rek.ytd)}</td>
-                            <td>${formatGrowth(rek.yoy)}</td>
+                            <td>${formatGrowth(rek.ytd, false, 3)}</td>
+                            <td>${formatGrowth(rek.yoy, false, 3)}</td>
                         </tr>`;
 
                         htmlUregFin += `<tr>
                             <td class="text-left font-weight-bold">${row.branch || '-'}</td>
-                            <td>${formatNum(fin.yoy_prev)}</td>
-                            <td>${formatNum(fin.dec)}</td>
-                            <td>${formatNum(fin.prev)}</td>
-                            <td class="font-weight-bold" style="background-color: #f6f9fc;">${formatNum(fin.curr)}</td>
-                            <td>${formatGrowth(fin.mtd)}</td>
+                            <td>${formatUreg(fin.yoy_prev)}</td>
+                            <td>${formatUreg(fin.dec)}</td>
+                            <td>${formatUreg(fin.prev)}</td>
+                            <td class="font-weight-bold" style="background-color: #f6f9fc;">${formatUreg(fin.curr)}</td>
+                            <td>${formatGrowth(fin.mtd, false, 3)}</td>
                             <td>${formatGrowth(fin.mtd_pct, true)}</td>
-                            <td>${formatGrowth(fin.ytd)}</td>
-                            <td>${formatGrowth(fin.yoy)}</td>
+                            <td>${formatGrowth(fin.ytd, false, 3)}</td>
+                            <td>${formatGrowth(fin.yoy, false, 3)}</td>
                         </tr>`;
                     });
                     
@@ -559,15 +563,15 @@ document.addEventListener('DOMContentLoaded', function () {
 
                     htmlBrimo += `<tr class="row-total">
                         <td class="text-left">${totalData.branch || 'TOTAL AREA 6'}</td>
-                        <td>${formatNum(t_rek.curr)}</td>
-                        <td>${formatGrowth(t_rek.mtd)}</td>
-                        <td>${formatGrowth(t_rek.ytd)}</td>
-                        <td>${formatGrowth(t_rek.yoy)}</td>
+                        <td>${formatUreg(t_rek.curr)}</td>
+                        <td>${formatGrowth(t_rek.mtd, false, 3)}</td>
+                        <td>${formatGrowth(t_rek.ytd, false, 3)}</td>
+                        <td>${formatGrowth(t_rek.yoy, false, 3)}</td>
                         <td>${formatGrowth(t_rek.yoy_pct, true)}</td>
-                        <td style="background-color: #e2e8f0;">${formatNum(t_fin.curr)}</td>
-                        <td>${formatGrowth(t_fin.mtd)}</td>
-                        <td>${formatGrowth(t_fin.ytd)}</td>
-                        <td>${formatGrowth(t_fin.yoy)}</td>
+                        <td style="background-color: #e2e8f0;">${formatUreg(t_fin.curr)}</td>
+                        <td>${formatGrowth(t_fin.mtd, false, 3)}</td>
+                        <td>${formatGrowth(t_fin.ytd, false, 3)}</td>
+                        <td>${formatGrowth(t_fin.yoy, false, 3)}</td>
                         <td>${formatGrowth(t_fin.yoy_pct, true)}</td>
                         <td class="text-center">-</td><td class="text-center">-</td><td class="text-center">-</td><td class="text-center">-</td><td class="text-center">-</td>
                         <td class="text-center">-</td><td class="text-center">-</td><td class="text-center">-</td><td class="text-center">-</td><td class="text-center">-</td>
@@ -575,26 +579,26 @@ document.addEventListener('DOMContentLoaded', function () {
 
                     htmlUregRek += `<tr class="row-total-blue">
                         <td class="text-left">${totalData.branch || 'TOTAL AREA 6'}</td>
-                        <td>${formatNum(t_rek.yoy_prev)}</td>
-                        <td>${formatNum(t_rek.dec)}</td>
-                        <td>${formatNum(t_rek.prev)}</td>
-                        <td class="font-weight-bold">${formatNum(t_rek.curr)}</td>
-                        <td>${formatGrowth(t_rek.mtd)}</td>
+                        <td>${formatUreg(t_rek.yoy_prev)}</td>
+                        <td>${formatUreg(t_rek.dec)}</td>
+                        <td>${formatUreg(t_rek.prev)}</td>
+                        <td class="font-weight-bold">${formatUreg(t_rek.curr)}</td>
+                        <td>${formatGrowth(t_rek.mtd, false, 3)}</td>
                         <td>${formatGrowth(t_rek.mtd_pct, true)}</td>
-                        <td>${formatGrowth(t_rek.ytd)}</td>
-                        <td>${formatGrowth(t_rek.yoy)}</td>
+                        <td>${formatGrowth(t_rek.ytd, false, 3)}</td>
+                        <td>${formatGrowth(t_rek.yoy, false, 3)}</td>
                     </tr>`;
 
                     htmlUregFin += `<tr class="row-total-blue">
                         <td class="text-left">${totalData.branch || 'TOTAL AREA 6'}</td>
-                        <td>${formatNum(t_fin.yoy_prev)}</td>
-                        <td>${formatNum(t_fin.dec)}</td>
-                        <td>${formatNum(t_fin.prev)}</td>
-                        <td class="font-weight-bold">${formatNum(t_fin.curr)}</td>
-                        <td>${formatGrowth(t_fin.mtd)}</td>
+                        <td>${formatUreg(t_fin.yoy_prev)}</td>
+                        <td>${formatUreg(t_fin.dec)}</td>
+                        <td>${formatUreg(t_fin.prev)}</td>
+                        <td class="font-weight-bold">${formatUreg(t_fin.curr)}</td>
+                        <td>${formatGrowth(t_fin.mtd, false, 3)}</td>
                         <td>${formatGrowth(t_fin.mtd_pct, true)}</td>
-                        <td>${formatGrowth(t_fin.ytd)}</td>
-                        <td>${formatGrowth(t_fin.yoy)}</td>
+                        <td>${formatGrowth(t_fin.ytd, false, 3)}</td>
+                        <td>${formatGrowth(t_fin.yoy, false, 3)}</td>
                     </tr>`;
 
                     $('#tbody-brimo').html(htmlBrimo);

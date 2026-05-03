@@ -25,7 +25,8 @@ class ImportProgressService
 
     public function cacheProgress(int $jobId, array $payload): array
     {
-        $existing = Cache::get($this->cacheKey($jobId));
+        $cache = $this->importCache();
+        $existing = $cache->get($this->cacheKey($jobId));
         if (is_array($existing)) {
             $payload = array_merge($existing, $payload);
         }
@@ -38,7 +39,7 @@ class ImportProgressService
 
         $payload['job_id'] = $jobId;
         $payload['updated_at'] = now()->toIso8601String();
-        Cache::put($this->cacheKey($jobId), $payload, now()->addHours(6));
+        $cache->put($this->cacheKey($jobId), $payload, now()->addHours(6));
         $this->syncActiveJobHeartbeat($jobId, $payload);
 
         return $payload;
@@ -46,7 +47,7 @@ class ImportProgressService
 
     public function getCachedProgress(int $jobId): array
     {
-        return Cache::get($this->cacheKey($jobId), []);
+        return $this->importCache()->get($this->cacheKey($jobId), []);
     }
 
     public function updateJob(int $jobId, array $attributes, ?array $progressPayload = null): void
@@ -104,14 +105,107 @@ class ImportProgressService
 
     public function cacheJobState(int $jobId, array $payload): void
     {
-        Cache::put($this->stateKey($jobId), $payload, now()->addHours(6));
+        $this->importCache()->put($this->stateKey($jobId), $payload, now()->addHours(6));
+        $this->persistJobStateToContext($jobId, $payload);
     }
 
     public function getJobState(int $jobId): array
     {
-        $cached = Cache::get($this->stateKey($jobId));
+        $cached = $this->importCache()->get($this->stateKey($jobId));
 
-        return is_array($cached) ? $cached : [];
+        if (is_array($cached)) {
+            return $cached;
+        }
+
+        return $this->getPersistedJobStateFromContext($jobId);
+    }
+
+    private function persistJobStateToContext(int $jobId, array $payload): void
+    {
+        if ($jobId <= 0 || $payload === []) {
+            return;
+        }
+
+        try {
+            $job = DB::table('import_jobs')
+                ->where('id', $jobId)
+                ->first(['job_context']);
+
+            if (!$job) {
+                return;
+            }
+
+            $context = json_decode((string) ($job->job_context ?? ''), true);
+            if (!is_array($context)) {
+                $context = [];
+            }
+
+            $context['state'] = $payload;
+
+            DB::table('import_jobs')
+                ->where('id', $jobId)
+                ->update([
+                    'job_context' => json_encode($context, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                    'updated_at' => now(),
+                ]);
+        } catch (\Throwable $e) {
+            Log::warning('Failed to persist import job state to context.', [
+                'job_id' => $jobId,
+                'message' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function getPersistedJobStateFromContext(int $jobId): array
+    {
+        if ($jobId <= 0) {
+            return [];
+        }
+
+        try {
+            $job = DB::table('import_jobs')
+                ->where('id', $jobId)
+                ->first(['job_context']);
+
+            if (!$job) {
+                return [];
+            }
+
+            $context = json_decode((string) ($job->job_context ?? ''), true);
+            if (!is_array($context) || $context === []) {
+                return [];
+            }
+
+            $state = $context['state'] ?? null;
+            if (is_array($state)) {
+                return $state;
+            }
+
+            $filePath = trim((string) ($context['file_path'] ?? ''));
+            $tableName = trim((string) ($context['table_name'] ?? ''));
+
+            if ($filePath === '' && $tableName === '') {
+                return [];
+            }
+
+            $params = $context;
+            unset($params['state'], $params['controller'], $params['mode']);
+            $params['file_path'] = $filePath;
+            $params['table_name'] = $tableName;
+            $params['job_id'] = $jobId;
+
+            return [
+                'params' => $params,
+                'headers' => [],
+            ];
+        } catch (\Throwable $e) {
+            Log::warning('Failed to read import job state from context.', [
+                'job_id' => $jobId,
+                'message' => $e->getMessage(),
+            ]);
+
+            return [];
+        }
     }
 
     public function deleteJobsForSourcePath(string $sourcePath): array
@@ -250,7 +344,7 @@ class ImportProgressService
         $metadata = $passedMetadata;
 
         if ($metadata === null) {
-            $progress = Cache::get($this->cacheKey($jobId));
+            $progress = $this->importCache()->get($this->cacheKey($jobId));
             if (is_array($progress) && !empty($progress['rollback_metadata'])) {
                 $metadata = $progress['rollback_metadata'];
             }
@@ -454,6 +548,13 @@ class ImportProgressService
             }
         }
 
+        $message = is_array($progressPayload ?? null)
+            ? trim((string) ($progressPayload['message'] ?? ''))
+            : '';
+        if ($message !== '' && $this->importJobsHasMessageColumn()) {
+            $attributes['message'] = $message;
+        }
+
         $this->updateJob($jobId, $attributes, $progressPayload);
 
         if ($this->isTerminalStatus($status)) {
@@ -504,7 +605,7 @@ class ImportProgressService
             return;
         }
 
-        Cache::put($this->terminationKey($jobId), [
+        $this->importCache()->put($this->terminationKey($jobId), [
             'requested' => true,
             'requested_by' => $requestedBy,
             'requested_at' => now()->toIso8601String(),
@@ -517,7 +618,7 @@ class ImportProgressService
             return [];
         }
 
-        $cached = Cache::get($this->terminationKey($jobId));
+        $cached = $this->importCache()->get($this->terminationKey($jobId));
 
         return is_array($cached) ? $cached : [];
     }
@@ -533,7 +634,7 @@ class ImportProgressService
             return;
         }
 
-        Cache::forget($this->terminationKey($jobId));
+        $this->importCache()->forget($this->terminationKey($jobId));
     }
 
     public function getStatusPayload(int $jobId): array
@@ -560,7 +661,7 @@ class ImportProgressService
         } else {
             $job = $reconciledJob;
         }
-        $progress = Cache::get($this->cacheKey($jobId));
+        $progress = $this->importCache()->get($this->cacheKey($jobId));
         $progress = is_array($progress) ? $progress : [];
 
         $totalRows = max(
@@ -604,7 +705,7 @@ class ImportProgressService
             'percent' => max(0, min(100, $percent)),
             'phase' => (string) ($progress['phase'] ?? ''),
             'mode' => (string) ($progress['mode'] ?? ''),
-            'message' => (string) ($progress['message'] ?? 'Import sedang diproses.'),
+            'message' => $this->resolveStatusMessage($job, $progress),
             'updated_at' => $progress['updated_at'] ?? (string) $job->updated_at,
             'queued_for_seconds' => $queuedForSeconds,
             'is_stale_queue' => $isStaleQueue,
@@ -850,7 +951,7 @@ class ImportProgressService
         if ($status === 'queued') {
             $queueRow = $this->findActiveQueueRowForJob($jobId);
             if ($queueRow !== null && $queueRow->reserved_at !== null) {
-                $cachedProgress = Cache::get($this->cacheKey($jobId));
+                $cachedProgress = $this->importCache()->get($this->cacheKey($jobId));
                 $cachedProgress = is_array($cachedProgress) ? $cachedProgress : [];
 
                 $this->markProcessing($jobId, [
@@ -953,6 +1054,30 @@ class ImportProgressService
             $failed,
             $terminalStatus
         );
+    }
+
+    private function resolveStatusMessage(object $job, array $progress): string
+    {
+        $progressMessage = trim((string) ($progress['message'] ?? ''));
+        if ($progressMessage !== '') {
+            return $progressMessage;
+        }
+
+        $databaseMessage = trim((string) ($job->message ?? ''));
+        if ($databaseMessage !== '') {
+            return $databaseMessage;
+        }
+
+        return match (strtolower(trim((string) ($job->status ?? '')))) {
+            'queued' => 'Job import sedang menunggu di antrian.',
+            'staging' => 'Worker menyiapkan CSV staging.',
+            'processing' => 'Import sedang diproses.',
+            'completed' => 'Import selesai diproses.',
+            'failed_partial' => 'Import selesai dengan sebagian baris gagal.',
+            'failed' => 'Import gagal diproses.',
+            'terminated' => 'Job dihentikan melalui Job Management.',
+            default => 'Import sedang diproses.',
+        };
     }
 
     private function findActiveQueueRowForJob(int $jobId): ?object
@@ -1105,9 +1230,9 @@ class ImportProgressService
             ]);
         }
 
-        Cache::forget($this->cacheKey($jobId));
-        Cache::forget($this->stateKey($jobId));
-        Cache::forget($this->heartbeatKey($jobId));
+        $this->importCache()->forget($this->cacheKey($jobId));
+        $this->importCache()->forget($this->stateKey($jobId));
+        $this->importCache()->forget($this->heartbeatKey($jobId));
         $this->clearTerminationRequest($jobId);
         $this->cleanupQueuedImportJobRows($jobId);
     }
@@ -1118,20 +1243,27 @@ class ImportProgressService
             return;
         }
 
-        Cache::forget($this->cacheKey($jobId));
-        Cache::forget($this->stateKey($jobId));
-        Cache::forget($this->heartbeatKey($jobId));
-        Cache::forget($this->terminationKey($jobId));
-        Cache::forget('import_excel_dispatched_job_' . $jobId);
+        $cache = $this->importCache();
+        $cache->forget($this->cacheKey($jobId));
+        $cache->forget($this->stateKey($jobId));
+        $cache->forget($this->heartbeatKey($jobId));
+        $cache->forget($this->terminationKey($jobId));
+        $cache->forget('import_excel_dispatched_job_' . $jobId);
 
         try {
-            Cache::lock('import_excel_execute_job_' . $jobId, 1)->forceRelease();
+            $cache->lock('import_excel_execute_job_' . $jobId, 1)->forceRelease();
         } catch (\Throwable) {
             // Ignore lock reset failures; runtime flow can still self-heal on next dispatch.
         }
 
         try {
-            Cache::lock('import_excel_dispatch_job_' . $jobId, 1)->forceRelease();
+            $cache->lock('import_excel_dispatch_job_' . $jobId, 1)->forceRelease();
+        } catch (\Throwable) {
+            // Ignore lock reset failures; runtime flow can still self-heal on next dispatch.
+        }
+
+        try {
+            $cache->lock('import_file_stream_job_' . $jobId, 1)->forceRelease();
         } catch (\Throwable) {
             // Ignore lock reset failures; runtime flow can still self-heal on next dispatch.
         }
@@ -1144,6 +1276,15 @@ class ImportProgressService
         return in_array($status, ['completed', 'failed', 'failed_partial', 'terminated'], true);
     }
 
+    private function importJobsHasMessageColumn(): bool
+    {
+        try {
+            return Schema::hasTable('import_jobs') && Schema::hasColumn('import_jobs', 'message');
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
     private function syncActiveJobHeartbeat(int $jobId, array $payload): void
     {
         if ($jobId <= 0) {
@@ -1153,19 +1294,20 @@ class ImportProgressService
         $status = strtolower(trim((string) ($payload['status'] ?? '')));
         if (!in_array($status, ['queued', 'processing'], true)) {
             if ($status !== '') {
-                Cache::forget($this->heartbeatKey($jobId));
+                $this->importCache()->forget($this->heartbeatKey($jobId));
             }
 
             return;
         }
 
         $heartbeatKey = $this->heartbeatKey($jobId);
-        $lastHeartbeat = Cache::get($heartbeatKey);
+        $cache = $this->importCache();
+        $lastHeartbeat = $cache->get($heartbeatKey);
         if (is_numeric($lastHeartbeat) && ((time() - (int) $lastHeartbeat) < self::ACTIVE_HEARTBEAT_SECONDS)) {
             return;
         }
 
-        Cache::put($heartbeatKey, time(), now()->addHours(6));
+        $cache->put($heartbeatKey, time(), now()->addHours(6));
 
         try {
             DB::table('import_jobs')
@@ -1180,5 +1322,12 @@ class ImportProgressService
                 'status' => $status,
             ]);
         }
+    }
+
+    private function importCache()
+    {
+        $store = trim((string) config('import.cache_store', 'file'));
+
+        return $store !== '' ? Cache::store($store) : Cache::store();
     }
 }

@@ -3,6 +3,9 @@
 namespace App\Providers;
 
 use Illuminate\Console\Events\CommandStarting;
+use Illuminate\Queue\Events\JobQueued;
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -35,6 +38,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        $this->registerQueueWorkerAutoEnsure();
+
         // 🔥 PROTECT FROM ACCIDENTAL DATA LOSS
         // Mencegah perintah destruktif yang dapat menghapus seluruh database secara tidak sengaja.
         if (!app()->runningUnitTests()) {
@@ -74,6 +79,42 @@ class AppServiceProvider extends ServiceProvider
             }
 
             $view->with('activeImportJobCount', $activeImportJobCount);
+        });
+    }
+
+    private function registerQueueWorkerAutoEnsure(): void
+    {
+        if (app()->runningUnitTests()) {
+            return;
+        }
+
+        Event::listen(JobQueued::class, function (JobQueued $event): void {
+            if ((string) $event->connectionName !== 'database') {
+                return;
+            }
+
+            $queue = trim((string) ($event->queue ?: 'default'));
+            $monitoredQueues = array_values(array_filter(array_map(
+                static fn (string $name): string => trim($name),
+                explode(',', (string) config('queue.worker_queues', 'imports-high,imports-daily-loan,snapshots-parallel,default,reports-low,shadow-backfill'))
+            )));
+
+            if (!in_array($queue, $monitoredQueues, true)) {
+                return;
+            }
+
+            if (!Cache::add('queue_worker_auto_ensure:throttle', true, now()->addSeconds(10))) {
+                return;
+            }
+
+            try {
+                Artisan::call('queue:ensure-running', [
+                    '--once' => true,
+                    '--queues' => implode(',', $monitoredQueues),
+                ]);
+            } catch (\Throwable $e) {
+                report($e);
+            }
         });
     }
 

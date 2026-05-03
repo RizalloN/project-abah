@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Throwable;
 use Carbon\Carbon;
 
@@ -20,6 +21,8 @@ class BackfillShadowColumnsCommand extends Command
         {--queue-name= : Queue name for queued backfill job}
         {--resume : Resume from last checkpoint}
         {--force-completion : Rebuild snapshots even if some chunks failed (95%+ completion)}
+        {--live : Print chunk-level heartbeat and persist status after every chunk}
+        {--skip-snapshot : Only backfill shadow columns without rebuilding RM snapshots}
     ';
 
     protected $description = 'Backfill shadow columns for daily_loan_dinamis with fault-tolerant chunking';
@@ -48,6 +51,8 @@ class BackfillShadowColumnsCommand extends Command
             $dryRun = (bool) $this->option('dry-run');
             $resume = (bool) $this->option('resume');
             $forceCompletion = (bool) $this->option('force-completion');
+            $live = (bool) $this->option('live');
+            $skipSnapshot = (bool) $this->option('skip-snapshot');
             $queueName = trim((string) $this->option('queue-name'));
             $queueName = $queueName !== '' ? $queueName : (string) config('queue.shadow_backfill_queue', 'shadow-backfill');
 
@@ -70,18 +75,24 @@ class BackfillShadowColumnsCommand extends Command
                 return self::SUCCESS;
             }
 
-            $this->displayConfiguration($periods, $chunkSize, $delay, $retryCount, $dryRun);
+            $this->displayConfiguration($periods, $chunkSize, $delay, $retryCount, $dryRun, $live);
 
             $startTime = now();
-            $this->backfillPeriods($periods, $chunkSize, $delay, $retryCount, $dryRun, $resume);
+            $this->backfillPeriods($periods, $chunkSize, $delay, $retryCount, $dryRun, $resume, $live);
 
             $this->displaySummary($startTime);
 
-            if (!$dryRun) {
+            if (!$dryRun && !$skipSnapshot) {
                 $this->rebuildSnapshots($periods, $forceCompletion);
+            } elseif (!$dryRun && $skipSnapshot) {
+                $this->info('Snapshot rebuild skipped by --skip-snapshot. Caller will rebuild dependent snapshots.');
             }
 
-            return $this->totalFailed === 0 ? self::SUCCESS : self::FAILURE;
+            if ($dryRun || $forceCompletion || $this->allPeriodsReachedMinimumCompletion()) {
+                return self::SUCCESS;
+            }
+
+            return self::FAILURE;
 
         } catch (Throwable $e) {
             $this->error("Fatal error: {$e->getMessage()}");
@@ -103,7 +114,7 @@ class BackfillShadowColumnsCommand extends Command
         return array_map('trim', explode(',', $periodInput));
     }
 
-    private function displayConfiguration(array $periods, int $chunkSize, int $delay, int $retryCount, bool $dryRun): void
+    private function displayConfiguration(array $periods, int $chunkSize, int $delay, int $retryCount, bool $dryRun, bool $live): void
     {
         $this->table(
             ['Configuration', 'Value'],
@@ -113,25 +124,29 @@ class BackfillShadowColumnsCommand extends Command
                 ['Delay Between Chunks', $delay . ' ms'],
                 ['Retry Attempts', $retryCount],
                 ['Dry Run', $dryRun ? 'YES (no data changes)' : 'NO'],
+                ['Live Heartbeat', $live ? 'YES' : 'NO'],
                 ['Mode', 'Safe chunked processing'],
             ]
         );
         $this->newLine();
     }
 
-    private function backfillPeriods(array $periods, int $chunkSize, int $delay, int $retryCount, bool $dryRun, bool $resume): void
+    private function backfillPeriods(array $periods, int $chunkSize, int $delay, int $retryCount, bool $dryRun, bool $resume, bool $live): void
     {
         foreach ($periods as $period) {
-            $this->backfillPeriod($period, $chunkSize, $delay, $retryCount, $dryRun, $resume);
+            $this->backfillPeriod($period, $chunkSize, $delay, $retryCount, $dryRun, $resume, $live);
         }
     }
 
-    private function backfillPeriod(string $period, int $chunkSize, int $delay, int $retryCount, bool $dryRun, bool $resume): void
+    private function backfillPeriod(string $period, int $chunkSize, int $delay, int $retryCount, bool $dryRun, bool $resume, bool $live): void
     {
         $this->info("📅 Processing period: <fg=cyan>{$period}</>");
 
         $retryPass = 0;
         $previouslyFailed = [];
+        $initialNullRows = 0;
+        $lastProcessedId = null;
+        $chunksCompleted = 0;
 
         do {
             $retryPass++;
@@ -141,9 +156,13 @@ class BackfillShadowColumnsCommand extends Command
 
             if ($retryPass === 1) {
                 $nullRows = $this->countNullShadowColumns($period);
+                $initialNullRows = $nullRows;
                 if ($nullRows === 0) {
                     $this->line("   ✓ All shadow columns already filled");
-                    $this->chunkStats[$period] = ['total' => 0, 'processed' => 0, 'failed' => 0];
+                    $this->chunkStats[$period] = ['total' => 0, 'processed' => 0, 'failed' => 0, 'completion_percentage' => 100.0];
+                    if (!$dryRun) {
+                        $this->persistBackfillCheckpoint($period, null, 0, 0, 100.0);
+                    }
                     return;
                 }
                 $this->line("   Processing <fg=yellow>{$nullRows}</> rows (retry pass {$retryPass})");
@@ -152,8 +171,11 @@ class BackfillShadowColumnsCommand extends Command
                 $this->line("   Retry pass {$retryPass}: Processing <fg=yellow>{$nullRows}</> failed chunks...");
             }
 
-            $progressBar = $this->output->createProgressBar($nullRows);
-            $progressBar->setFormat('   [%bar%] %percent%% | %current%/%max% | %elapsed% / %estimated%');
+            $progressBar = null;
+            if (!$live) {
+                $progressBar = $this->output->createProgressBar($nullRows);
+                $progressBar->setFormat('   [%bar%] %percent%% | %current%/%max% | %elapsed% / %estimated%');
+            }
 
             if ($retryPass === 1) {
                 $rowIds = $this->snapshotRowIds($period, $chunkSize);
@@ -168,20 +190,55 @@ class BackfillShadowColumnsCommand extends Command
                 $chunkNumber++;
                 $idList = implode("','", $chunk);
                 $chunkStart = microtime(true);
+                $chunkCount = count($chunk);
+                $lastProcessedId = (string) end($chunk);
+
+                if ($live) {
+                    $this->line(sprintf(
+                        '   [%s] chunk %d pass %d: updating %s rows...',
+                        now()->format('H:i:s'),
+                        $chunkNumber,
+                        $retryPass,
+                        number_format($chunkCount)
+                    ));
+                }
+
                 $chunkProcessed = $this->processChunk($period, $idList, $retryCount, $dryRun);
 
                 $chunkTime = microtime(true) - $chunkStart;
                 $this->recordPerformanceMetric($chunkSize, $chunkTime);
+                $chunksCompleted++;
 
-                if ($chunkProcessed === count($chunk)) {
+                if ($chunkProcessed === $chunkCount) {
                     $processed += $chunkProcessed;
-                    $progressBar->advance($chunkProcessed);
+                    $progressBar?->advance($chunkProcessed);
                 } else {
                     $failedIds = array_slice($chunk, $chunkProcessed);
                     $failedThisPass = array_merge($failedThisPass, $failedIds);
                     $failed += count($failedIds);
-                    $progressBar->advance($chunkProcessed);
-                    $this->errorLog[] = "Period {$period}, Chunk {$chunkNumber}: {$chunkProcessed}/" . count($chunk) . " processed";
+                    $progressBar?->advance($chunkProcessed);
+                    $this->errorLog[] = "Period {$period}, Chunk {$chunkNumber}: {$chunkProcessed}/" . $chunkCount . " processed";
+                }
+
+                $rowsHandled = $processed + $failed;
+                $completionPct = $initialNullRows > 0 ? round(min(100, 100 * ($rowsHandled / $initialNullRows)), 2) : 100.0;
+                if (!$dryRun) {
+                    $this->persistBackfillCheckpoint($period, $lastProcessedId, $rowsHandled, $chunksCompleted, $completionPct);
+                    $this->persistBackfillMetric($period, $chunkNumber, $chunkCount, $chunkTime, $chunkProcessed === $chunkCount);
+                }
+
+                if ($live) {
+                    $rowsPerSecond = $chunkTime > 0 ? (int) round($chunkProcessed / $chunkTime) : 0;
+                    $this->line(sprintf(
+                        '   [%s] chunk %d done: %s/%s rows in %.2fs (%s rows/sec), progress %.2f%%',
+                        now()->format('H:i:s'),
+                        $chunkNumber,
+                        number_format($chunkProcessed),
+                        number_format($chunkCount),
+                        $chunkTime,
+                        number_format($rowsPerSecond),
+                        $completionPct
+                    ));
                 }
 
                 if (!$dryRun) {
@@ -189,8 +246,10 @@ class BackfillShadowColumnsCommand extends Command
                 }
             }
 
-            $progressBar->finish();
-            $this->newLine();
+            if ($progressBar !== null) {
+                $progressBar->finish();
+                $this->newLine();
+            }
 
             $this->totalProcessed += $processed;
             $this->totalFailed += $failed;
@@ -212,6 +271,70 @@ class BackfillShadowColumnsCommand extends Command
         }
 
         $this->newLine();
+    }
+
+    private function persistBackfillCheckpoint(
+        string $period,
+        ?string $lastProcessedId,
+        int $rowsProcessed,
+        int $chunksCompleted,
+        float $completionPercentage
+    ): void {
+        if (!Schema::hasTable('shadow_backfill_checkpoints')) {
+            return;
+        }
+
+        try {
+            $now = now();
+            DB::table('shadow_backfill_checkpoints')->updateOrInsert(
+                ['period' => $period],
+                [
+                    'last_processed_id' => $lastProcessedId,
+                    'rows_processed' => $rowsProcessed,
+                    'chunks_completed' => $chunksCompleted,
+                    'completion_percentage' => $completionPercentage,
+                    'started_at' => DB::raw('COALESCE(started_at, NOW())'),
+                    'last_updated_at' => $now,
+                    'created_at' => DB::raw('COALESCE(created_at, NOW())'),
+                    'updated_at' => $now,
+                ]
+            );
+        } catch (Throwable $e) {
+            Log::debug('Unable to persist shadow backfill checkpoint', [
+                'period' => $period,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function persistBackfillMetric(
+        string $period,
+        int $chunkNumber,
+        int $chunkSize,
+        float $durationSeconds,
+        bool $success
+    ): void {
+        if (!Schema::hasTable('shadow_backfill_metrics')) {
+            return;
+        }
+
+        try {
+            DB::table('shadow_backfill_metrics')->insert([
+                'period' => $period,
+                'chunk_number' => $chunkNumber,
+                'chunk_size' => $chunkSize,
+                'duration_seconds' => round($durationSeconds, 3),
+                'rows_per_second' => $durationSeconds > 0 ? (int) round($chunkSize / $durationSeconds) : 0,
+                'success' => $success,
+                'executed_at' => now(),
+            ]);
+        } catch (Throwable $e) {
+            Log::debug('Unable to persist shadow backfill metric', [
+                'period' => $period,
+                'chunk_number' => $chunkNumber,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     private function snapshotRowIds(string $period, int $chunkSize): array
@@ -333,7 +456,7 @@ class BackfillShadowColumnsCommand extends Command
 
     private function displaySummary(Carbon $startTime): void
     {
-        $duration = now()->diffInSeconds($startTime);
+        $duration = max(0, (int) $startTime->diffInSeconds(now()));
 
         $this->newLine();
         $this->info('╔════════════════════════════════════════════════════════════════╗');
@@ -432,6 +555,17 @@ class BackfillShadowColumnsCommand extends Command
             ]);
             throw $e;
         }
+    }
+
+    private function allPeriodsReachedMinimumCompletion(): bool
+    {
+        foreach ($this->chunkStats as $stats) {
+            if (($stats['completion_percentage'] ?? 0) < 95.0) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private function getAveragePerformanceMetrics(): array

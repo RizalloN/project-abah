@@ -139,7 +139,7 @@ CREATE TABLE `daily_loan_dinamis` (
   `status_rekening1` varchar(100) DEFAULT NULL,
   `ln_type` varchar(100) DEFAULT NULL,
   `nama_debitur1` varchar(150) DEFAULT NULL,
-  `rate` decimal(20,2) DEFAULT NULL,
+  `rate` decimal(20,6) DEFAULT NULL,
   `jangka_waktu1` varchar(50) DEFAULT NULL,
   `plafon` decimal(20,2) DEFAULT NULL,
   `baki_debet1` decimal(20,2) DEFAULT NULL,

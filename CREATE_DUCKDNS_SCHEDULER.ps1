@@ -1,16 +1,14 @@
 # DuckDNS Automatic Task Scheduler Setup
 # Script ini mendaftarkan UPDATE_DUCKDNS_IP.ps1 ke Windows Task Scheduler
-# agar berjalan otomatis setiap 5 menit tanpa intervensi manual
 # PENTING: Jalankan sebagai Administrator!
-# Run: powershell -ExecutionPolicy Bypass -File CREATE_DUCKDNS_SCHEDULER.ps1
 
-# CONFIGURATION
+$ErrorActionPreference = 'Stop'
+
+# Configuration
 $TASK_NAME = "DuckDNS-AutoUpdate"
-$TASK_DESCRIPTION = "Automatic DuckDNS IP update every 5 minutes when IP changes"
+$TASK_DESCRIPTION = "Automatic DuckDNS IP update every 5 minutes"
 $SCRIPT_PATH = "D:\XAMPP\htdocs\project-ABAH\UPDATE_DUCKDNS_IP.ps1"
-$LOG_PATH = "D:\XAMPP\htdocs\project-ABAH\logs\duckdns.log"
-
-# HELPER FUNCTIONS
+$LOG_PATH = "D:\XAMPP\htdocs\project-ABAH\logs\duckdns_update.log"
 
 function Write-ColorOutput {
     param([string]$message, [string]$color = "White")
@@ -18,154 +16,163 @@ function Write-ColorOutput {
 }
 
 function Test-IsAdmin {
-    $currentUser = [Security.Principal.WindowsIdentity]::GetCurrent()
-    $principal = New-Object Security.Principal.WindowsPrincipal($currentUser)
+    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = New-Object Security.Principal.WindowsPrincipal($identity)
     return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
-function Test-ScriptExists {
-    return (Test-Path $SCRIPT_PATH)
-}
-
-function Test-TokenConfigured {
-    $content = Get-Content $SCRIPT_PATH -Raw
-    return -not ($content -like '*YOUR_TOKEN_HERE*')
-}
-
-# MAIN EXECUTION
-
-Write-Host ""
-Write-ColorOutput "========================================" "Cyan"
-Write-ColorOutput "  DuckDNS Task Scheduler Setup" "Cyan"
-Write-ColorOutput "========================================" "Cyan"
-Write-Host ""
-
-# Check: Administrator
-if (-not (Test-IsAdmin)) {
-    Write-ColorOutput "ERROR: Script harus dijalankan sebagai Administrator!" "Red"
+function Invoke-TaskSchedulerSetup {
     Write-Host ""
-    Write-Host "Cara menjalankan sebagai Administrator:"
-    Write-Host "1. Buka PowerShell"
-    Write-Host "2. Klik kanan -> Run as Administrator"
-    Write-Host "3. Jalankan command ini:"
-    Write-Host "   powershell -ExecutionPolicy Bypass -File ""D:\XAMPP\htdocs\project-ABAH\CREATE_DUCKDNS_SCHEDULER.ps1"""
+    Write-ColorOutput "========================================" "Cyan"
+    Write-ColorOutput "  DuckDNS Task Scheduler Setup" "Cyan"
+    Write-ColorOutput "========================================" "Cyan"
     Write-Host ""
-    exit 1
-}
 
-Write-ColorOutput "[+] Running as Administrator" "Green"
+    # Validate admin
+    if (-not (Test-IsAdmin)) {
+        Write-ColorOutput "ERROR: Must run as Administrator" "Red"
+        exit 1
+    }
+    Write-ColorOutput "[+] Running as Administrator" "Green"
 
-# Check: Script exists
-if (-not (Test-ScriptExists)) {
-    Write-ColorOutput "ERROR: Script tidak ditemukan: $SCRIPT_PATH" "Red"
-    exit 1
-}
+    # Validate script exists
+    if (-not (Test-Path $SCRIPT_PATH -PathType Leaf)) {
+        Write-ColorOutput "ERROR: Script not found: $SCRIPT_PATH" "Red"
+        exit 1
+    }
+    Write-ColorOutput "[+] Update script found" "Green"
 
-Write-ColorOutput "[+] Update script found" "Green"
+    # Ensure log directory exists
+    $logDir = Split-Path -Parent $LOG_PATH
+    if (-not (Test-Path $logDir -PathType Container)) {
+        New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+        Write-ColorOutput "[+] Created log directory" "Green"
+    } else {
+        Write-ColorOutput "[+] Log directory exists" "Green"
+    }
 
-# Check: Token configured
-if (-not (Test-TokenConfigured)) {
-    Write-ColorOutput "ERROR: Token DuckDNS belum dikonfigurasi!" "Red"
     Write-Host ""
-    Write-Host "Edit file: $SCRIPT_PATH"
-    Write-Host "Cari baris dengan YOUR_TOKEN_HERE"
-    Write-Host "Ganti dengan token Anda dari: https://www.duckdns.org/"
+    Write-Host "Setting up scheduled task..."
     Write-Host ""
-    exit 1
+
+    # Remove existing task
+    $existingTask = Get-ScheduledTask -TaskName $TASK_NAME -ErrorAction SilentlyContinue
+    if ($null -ne $existingTask) {
+        Write-Host "[*] Removing existing task..."
+        Unregister-ScheduledTask -TaskName $TASK_NAME -Confirm:$false -ErrorAction SilentlyContinue | Out-Null
+        Start-Sleep -Milliseconds 500
+    }
+
+    # Build PowerShell command with proper escaping
+    $psCommand = "powershell.exe"
+    $psArgs = "-NoProfile -ExecutionPolicy Bypass -File `"$SCRIPT_PATH`""
+    $workDir = Split-Path -Parent $SCRIPT_PATH
+
+    try {
+        # Create trigger for 5-minute interval starting now
+        $now = Get-Date
+        $trigger = New-ScheduledTaskTrigger `
+            -Once `
+            -At $now `
+            -RepetitionInterval (New-TimeSpan -Minutes 5)
+
+        # Configure trigger for infinite repetition (no duration end)
+        # This avoids the duration validation issue
+        $trigger.Repetition.StopAtDurationEnd = $false
+
+        # Create action
+        $action = New-ScheduledTaskAction `
+            -Execute $psCommand `
+            -Argument $psArgs `
+            -WorkingDirectory $workDir
+
+        # Create settings with Windows Task Scheduler best practices
+        $settings = New-ScheduledTaskSettingsSet `
+            -AllowStartIfOnBatteries `
+            -DontStopIfGoingOnBatteries `
+            -StartWhenAvailable `
+            -RunOnlyIfNetworkAvailable `
+            -MultipleInstances IgnoreNew `
+            -ExecutionTimeLimit (New-TimeSpan -Hours 1)
+
+        # Register the task with SYSTEM principal (highest privilege)
+        $principal = New-ScheduledTaskPrincipal `
+            -UserId "SYSTEM" `
+            -RunLevel Highest
+
+        # Register task
+        Register-ScheduledTask `
+            -TaskName $TASK_NAME `
+            -Description $TASK_DESCRIPTION `
+            -Trigger $trigger `
+            -Action $action `
+            -Settings $settings `
+            -Principal $principal `
+            -Force `
+            -ErrorAction Stop | Out-Null
+
+        Write-ColorOutput "[+] Task registered successfully!" "Green"
+
+        # Verify creation
+        $task = Get-ScheduledTask -TaskName $TASK_NAME -ErrorAction SilentlyContinue
+        if ($null -ne $task) {
+            Write-ColorOutput "[+] Verification: Task created in Task Scheduler" "Green"
+            Write-Host ""
+            Write-Host "Task Details:"
+            Write-Host "  Name: $TASK_NAME"
+            Write-Host "  Status: $(if ($task.State -eq 'Ready') { 'Enabled' } else { $task.State })"
+            Write-Host "  Description: $TASK_DESCRIPTION"
+            Write-Host "  Schedule: Every 5 minutes"
+            Write-Host "  Log File: $LOG_PATH"
+            Write-Host ""
+        } else {
+            throw "Task verification failed"
+        }
+
+    } catch {
+        Write-ColorOutput "ERROR: Failed to register task" "Red"
+        Write-Host "Details: $_"
+        exit 1
+    }
+
+    # Display completion info
+    Write-Host ""
+    Write-ColorOutput "========================================" "Cyan"
+    Write-ColorOutput "Setup Complete!" "Cyan"
+    Write-ColorOutput "========================================" "Cyan"
+    Write-Host ""
+
+    Write-Host "DuckDNS automation is now ACTIVE:"
+    Write-Host "  [+] Runs every 5 minutes automatically"
+    Write-Host "  [+] Monitors and updates IP changes"
+    Write-Host "  [+] Logs activity to: $LOG_PATH"
+    Write-Host ""
+
+    Write-Host "Useful commands:"
+    Write-Host "  Monitor logs:"
+    Write-Host "    Get-Content ""$LOG_PATH"" -Tail 20 -Wait"
+    Write-Host ""
+    Write-Host "  Disable task temporarily:"
+    Write-Host "    Disable-ScheduledTask -TaskName ""$TASK_NAME"""
+    Write-Host ""
+    Write-Host "  Enable task:"
+    Write-Host "    Enable-ScheduledTask -TaskName ""$TASK_NAME"""
+    Write-Host ""
+    Write-Host "  Remove task permanently:"
+    Write-Host "    Unregister-ScheduledTask -TaskName ""$TASK_NAME"" -Confirm:`$false"
+    Write-Host ""
+    Write-Host "  Run task immediately (for testing):"
+    Write-Host "    Start-ScheduledTask -TaskName ""$TASK_NAME"""
+    Write-Host ""
+
+    Write-ColorOutput "OK: Ready for production" "Green"
+    Write-Host ""
 }
 
-Write-ColorOutput "[+] Token is configured" "Green"
-
-# Check: Log directory
-$logDir = Split-Path $LOG_PATH
-if (-not (Test-Path $logDir)) {
-    New-Item -ItemType Directory -Path $logDir -Force | Out-Null
-    Write-ColorOutput "[+] Created log directory" "Green"
-}
-else {
-    Write-ColorOutput "[+] Log directory exists" "Green"
-}
-
-Write-Host ""
-Write-Host "Setting up Task Scheduler task..."
-Write-Host ""
-
-# Remove existing task if exists
-$existingTask = Get-ScheduledTask -TaskName $TASK_NAME -ErrorAction SilentlyContinue
-if ($null -ne $existingTask) {
-    Write-Host "Found existing task, removing..."
-    Unregister-ScheduledTask -TaskName $TASK_NAME -Confirm:$false -ErrorAction SilentlyContinue
-    Start-Sleep -Seconds 1
-}
-
-# Create task trigger (every 5 minutes)
-$trigger = New-ScheduledTaskTrigger -RepetitionInterval (New-TimeSpan -Minutes 5) -Once -At (Get-Date)
-$trigger.Repetition.Duration = [timespan]::MaxValue
-
-# Create task action
-$action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$SCRIPT_PATH`""
-
-# Create task settings
-$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -RunOnlyIfNetworkAvailable
-
-# Register the task
+# Execute
 try {
-    Register-ScheduledTask -TaskName $TASK_NAME -Action $action -Trigger $trigger -Settings $settings -Description $TASK_DESCRIPTION -Force -ErrorAction Stop | Out-Null
-    Write-ColorOutput "[+] Task registered successfully!" "Green"
-}
-catch {
-    Write-ColorOutput "ERROR: Failed to register task: $_" "Red"
+    Invoke-TaskSchedulerSetup
+} catch {
+    Write-ColorOutput "Fatal error: $_" "Red"
     exit 1
 }
-
-Write-Host ""
-
-# Verify task creation
-$task = Get-ScheduledTask -TaskName $TASK_NAME -ErrorAction SilentlyContinue
-if ($null -ne $task) {
-    Write-ColorOutput "[+] Verification: Task exists in Task Scheduler" "Green"
-    Write-Host ""
-    Write-Host "Task Details:"
-    Write-Host "  Name: $TASK_NAME"
-    Write-Host "  Status: Enabled"
-    Write-Host "  Trigger: Every 5 minutes"
-    Write-Host "  Action: Update DuckDNS IP automatically"
-    Write-Host "  Log: $LOG_PATH"
-}
-else {
-    Write-ColorOutput "ERROR: Task verification failed" "Red"
-    exit 1
-}
-
-Write-Host ""
-Write-ColorOutput "========================================" "Cyan"
-Write-ColorOutput "Setup Complete!" "Cyan"
-Write-ColorOutput "========================================" "Cyan"
-Write-Host ""
-
-Write-Host "Apa yang terjadi sekarang:"
-Write-Host "[+] DuckDNS update akan berjalan setiap 5 menit otomatis"
-Write-Host "[+] Jika IP berubah, domain akan terupdate dalam 5 menit"
-Write-Host "[+] Semua aktivitas dicatat di: $LOG_PATH"
-Write-Host ""
-
-Write-Host "Untuk memverifikasi setup:"
-Write-Host "1. Buka Windows Task Scheduler"
-Write-Host "2. Cari task: $TASK_NAME"
-Write-Host "3. Klik kanan -> Run untuk menjalankan segera (testing)"
-Write-Host ""
-
-Write-Host "Untuk melihat log:"
-Write-Host "  Get-Content ""$LOG_PATH"" -Tail 20"
-Write-Host ""
-
-Write-Host "Untuk stop otomasi (jika diperlukan):"
-Write-Host "  Disable-ScheduledTask -TaskName ""$TASK_NAME"""
-Write-Host ""
-
-Write-Host "Untuk remove otomasi sepenuhnya:"
-Write-Host "  Unregister-ScheduledTask -TaskName ""$TASK_NAME"" -Confirm:`$false"
-Write-Host ""
-
-Write-ColorOutput "OK: DuckDNS automation is now ACTIVE!" "Green"
-Write-Host ""

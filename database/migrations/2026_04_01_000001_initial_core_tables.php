@@ -130,6 +130,7 @@ return new class extends Migration
                 $table->unsignedInteger('total_success')->default(0);
                 $table->unsignedInteger('total_failed')->default(0);
                 $table->unsignedBigInteger('created_by');
+                $table->text('message')->nullable();
                 $table->longText('job_context')->nullable();
                 $table->string('job_fingerprint', 64)->nullable()->unique();
                 $table->timestamps();

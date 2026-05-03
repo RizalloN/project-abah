@@ -4,7 +4,8 @@ param(
     [int]$Timeout = 0,
     [int]$Sleep = 1,
     [int]$Memory = 1024,
-    [int]$RestartDelaySeconds = 3
+    [int]$RestartDelaySeconds = 3,
+    [string]$WorkerName = ''
 )
 
 $ErrorActionPreference = 'Continue'
@@ -13,6 +14,9 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $projectRoot
 
 Write-Host "Persistent queue worker started."
+if (-not [string]::IsNullOrWhiteSpace($WorkerName)) {
+    Write-Host "Worker name: $WorkerName"
+}
 Write-Host "Queues: $Queues"
 Write-Host "Memory limit: ${Memory}MB"
 Write-Host "Press Ctrl+C to stop."

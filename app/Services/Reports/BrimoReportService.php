@@ -42,49 +42,48 @@ class BrimoReportService
         $displayItems     = !empty($selectedUkers)
             ? $selectedUkers
             : ($isBranchFiltered ? $this->getBrimoUkersForBranches($branches) : $branches);
+        $groupColumn      = $isBranchFiltered ? 'brdesc' : 'mbdesc';
 
         $groupLabel  = $isBranchFiltered ? 'UKER' : 'BRANCH OFFICE';
         $totalLabel  = $isBranchFiltered ? 'TOTAL ' . implode(', ', $branches) : 'TOTAL AREA 6';
 
-        $dateCurr = $currDate->toDateString();
-        $datePrev = $prevDate->toDateString();
-        $dateDec  = $decDate->toDateString();
-        $dateYoy  = $yoyDate->toDateString();
+        $dateCurr = $this->resolveEffectivePeriod($currDate->toDateString(), $branches) ?? $currDate->toDateString();
+        $datePrev = $this->resolveEffectivePeriod($prevDate->toDateString(), $branches) ?? $prevDate->toDateString();
+        $dateDec  = $this->resolveEffectivePeriod($decDate->toDateString(), $branches) ?? $decDate->toDateString();
+        $dateYoy  = $this->resolveEffectivePeriod($yoyDate->toDateString(), $branches) ?? $yoyDate->toDateString();
 
         // ✅ SINGLE QUERY untuk user_brimo_rpt_v2 (semua 4 periode sekaligus)
         $rekData = DB::table('user_brimo_rpt_v2')
-            ->select(DB::raw('UPPER(COALESCE(brdesc, branch)) as branch'))
-            ->selectRaw('SUM(CASE WHEN posisi <= ? THEN jumlah ELSE 0 END) as ureg_curr', [$dateCurr])
-            ->selectRaw('SUM(CASE WHEN posisi <= ? THEN jumlah ELSE 0 END) as ureg_prev', [$datePrev])
-            ->selectRaw('SUM(CASE WHEN posisi <= ? THEN jumlah ELSE 0 END) as ureg_dec', [$dateDec])
-            ->selectRaw('SUM(CASE WHEN posisi <= ? THEN jumlah ELSE 0 END) as ureg_yoy', [$dateYoy])
-            ->where(function ($q) use ($branches, $isBranchFiltered, $displayItems) {
-                if ($isBranchFiltered) {
-                    $q->whereIn(DB::raw('UPPER(COALESCE(brdesc, branch))'), $displayItems)
-                      ->whereIn(DB::raw('UPPER(COALESCE(mbdesc, branch))'), $branches);
-                } else {
-                    $q->whereIn(DB::raw('UPPER(COALESCE(brdesc, branch))'), $displayItems);
-                }
+            ->select(DB::raw("UPPER(TRIM({$groupColumn})) as branch"))
+            ->selectRaw('SUM(CASE WHEN posisi = ? THEN jumlah ELSE 0 END) as ureg_curr', [$dateCurr])
+            ->selectRaw('SUM(CASE WHEN posisi = ? THEN jumlah ELSE 0 END) as ureg_prev', [$datePrev])
+            ->selectRaw('SUM(CASE WHEN posisi = ? THEN jumlah ELSE 0 END) as ureg_dec', [$dateDec])
+            ->selectRaw('SUM(CASE WHEN posisi = ? THEN jumlah ELSE 0 END) as ureg_yoy', [$dateYoy])
+            ->whereIn(DB::raw('UPPER(TRIM(mbdesc))'), $branches)
+            ->when($isBranchFiltered, function ($q) use ($displayItems) {
+                $q->whereIn(DB::raw('UPPER(TRIM(brdesc))'), $displayItems);
             })
-            ->groupBy(DB::raw('UPPER(COALESCE(brdesc, branch))'))
+            ->whereIn('posisi', [$dateCurr, $datePrev, $dateDec, $dateYoy])
+            ->whereNotNull($groupColumn)
+            ->whereRaw("TRIM({$groupColumn}) <> ''")
+            ->groupBy(DB::raw("UPPER(TRIM({$groupColumn}))"))
             ->get()->keyBy('branch');
 
         // ✅ SINGLE QUERY untuk user_brimo_fin (semua 4 periode sekaligus)
         $finData = DB::table('user_brimo_fin')
-            ->select(DB::raw('UPPER(COALESCE(brdesc, branch)) as branch'))
-            ->selectRaw('SUM(CASE WHEN posisi <= ? THEN jumlah ELSE 0 END) as ureg_curr', [$dateCurr])
-            ->selectRaw('SUM(CASE WHEN posisi <= ? THEN jumlah ELSE 0 END) as ureg_prev', [$datePrev])
-            ->selectRaw('SUM(CASE WHEN posisi <= ? THEN jumlah ELSE 0 END) as ureg_dec', [$dateDec])
-            ->selectRaw('SUM(CASE WHEN posisi <= ? THEN jumlah ELSE 0 END) as ureg_yoy', [$dateYoy])
-            ->where(function ($q) use ($branches, $isBranchFiltered, $displayItems) {
-                if ($isBranchFiltered) {
-                    $q->whereIn(DB::raw('UPPER(COALESCE(brdesc, branch))'), $displayItems)
-                      ->whereIn(DB::raw('UPPER(COALESCE(mbdesc, branch))'), $branches);
-                } else {
-                    $q->whereIn(DB::raw('UPPER(COALESCE(brdesc, branch))'), $displayItems);
-                }
+            ->select(DB::raw("UPPER(TRIM({$groupColumn})) as branch"))
+            ->selectRaw('SUM(CASE WHEN posisi = ? THEN jumlah ELSE 0 END) as ureg_curr', [$dateCurr])
+            ->selectRaw('SUM(CASE WHEN posisi = ? THEN jumlah ELSE 0 END) as ureg_prev', [$datePrev])
+            ->selectRaw('SUM(CASE WHEN posisi = ? THEN jumlah ELSE 0 END) as ureg_dec', [$dateDec])
+            ->selectRaw('SUM(CASE WHEN posisi = ? THEN jumlah ELSE 0 END) as ureg_yoy', [$dateYoy])
+            ->whereIn(DB::raw('UPPER(TRIM(mbdesc))'), $branches)
+            ->when($isBranchFiltered, function ($q) use ($displayItems) {
+                $q->whereIn(DB::raw('UPPER(TRIM(brdesc))'), $displayItems);
             })
-            ->groupBy(DB::raw('UPPER(COALESCE(brdesc, branch))'))
+            ->whereIn('posisi', [$dateCurr, $datePrev, $dateDec, $dateYoy])
+            ->whereNotNull($groupColumn)
+            ->whereRaw("TRIM({$groupColumn}) <> ''")
+            ->groupBy(DB::raw("UPPER(TRIM({$groupColumn}))"))
             ->get()->keyBy('branch');
 
         $data  = [];
@@ -99,10 +98,10 @@ class BrimoReportService
             $rek     = $rekData->get($item);
             $fin     = $finData->get($item);
 
-            $rek_curr = (float) ($rek->ureg_curr ?? 0); $rek_prev = (float) ($rek->ureg_prev ?? 0);
-            $rek_dec  = (float) ($rek->ureg_dec ?? 0);  $rek_yoy  = (float) ($rek->ureg_yoy ?? 0);
-            $fin_curr = (float) ($fin->ureg_curr ?? 0); $fin_prev = (float) ($fin->ureg_prev ?? 0);
-            $fin_dec  = (float) ($fin->ureg_dec ?? 0);  $fin_yoy  = (float) ($fin->ureg_yoy ?? 0);
+            $rek_curr = ((float) ($rek->ureg_curr ?? 0)) / 1000; $rek_prev = ((float) ($rek->ureg_prev ?? 0)) / 1000;
+            $rek_dec  = ((float) ($rek->ureg_dec ?? 0)) / 1000;  $rek_yoy  = ((float) ($rek->ureg_yoy ?? 0)) / 1000;
+            $fin_curr = ((float) ($fin->ureg_curr ?? 0)) / 1000; $fin_prev = ((float) ($fin->ureg_prev ?? 0)) / 1000;
+            $fin_dec  = ((float) ($fin->ureg_dec ?? 0)) / 1000;  $fin_yoy  = ((float) ($fin->ureg_yoy ?? 0)) / 1000;
 
             $total['ureg_rekening']['curr']    += $rek_curr;
             $total['ureg_rekening']['prev']    += $rek_prev;
@@ -123,17 +122,21 @@ class BrimoReportService
         $total['ureg_rekening']  = $this->calculateMetrics($total['ureg_rekening']['curr'], $total['ureg_rekening']['prev'], $total['ureg_rekening']['dec'], $total['ureg_rekening']['yoy_prev']);
         $total['ureg_finansial'] = $this->calculateMetrics($total['ureg_finansial']['curr'], $total['ureg_finansial']['prev'], $total['ureg_finansial']['dec'], $total['ureg_finansial']['yoy_prev']);
 
+        $labelCurrDate = Carbon::parse($dateCurr);
+        $labelPrevDate = Carbon::parse($datePrev);
+        $labelDecDate = Carbon::parse($dateDec);
+        $labelYoyDate = Carbon::parse($dateYoy);
         $bulanIndo = [1 => 'Jan', 2 => 'Feb', 3 => 'Mar', 4 => 'Apr', 5 => 'Mei', 6 => 'Jun', 7 => 'Jul', 8 => 'Agu', 9 => 'Sep', 10 => 'Okt', 11 => 'Nov', 12 => 'Des'];
 
         return response()->json([
             'status'      => 'success',
             'group_label' => $groupLabel,
             'labels'      => [
-                'curr_date'  => $currDate->format('d') . ' ' . $bulanIndo[$currDate->month] . "'" . $currDate->format('y'),
-                'curr_month' => $bulanIndo[$currDate->month] . "'" . $currDate->format('y'),
-                'mtd'        => $bulanIndo[$prevDate->month] . "'" . $prevDate->format('y'),
-                'ytd'        => $bulanIndo[$decDate->month] . "'" . $decDate->format('y'),
-                'yoy'        => $bulanIndo[$yoyDate->month] . "'" . $yoyDate->format('y'),
+                'curr_date'  => $labelCurrDate->format('d') . ' ' . $bulanIndo[$labelCurrDate->month] . "'" . $labelCurrDate->format('y'),
+                'curr_month' => $bulanIndo[$labelCurrDate->month] . "'" . $labelCurrDate->format('y'),
+                'mtd'        => $bulanIndo[$labelPrevDate->month] . "'" . $labelPrevDate->format('y'),
+                'ytd'        => $bulanIndo[$labelDecDate->month] . "'" . $labelDecDate->format('y'),
+                'yoy'        => $bulanIndo[$labelYoyDate->month] . "'" . $labelYoyDate->format('y'),
             ],
             'data'  => $data,
             'total' => $total,
@@ -196,5 +199,24 @@ class BrimoReportService
         }
         
         return array_keys($ukers);
+    }
+
+    private function resolveEffectivePeriod(string $targetDate, array $branches): ?string
+    {
+        $latestRpt = DB::table('user_brimo_rpt_v2')
+            ->whereIn(DB::raw('UPPER(TRIM(mbdesc))'), $branches)
+            ->whereDate('posisi', '<=', $targetDate)
+            ->max('posisi');
+
+        $latestFin = DB::table('user_brimo_fin')
+            ->whereIn(DB::raw('UPPER(TRIM(mbdesc))'), $branches)
+            ->whereDate('posisi', '<=', $targetDate)
+            ->max('posisi');
+
+        return collect([$latestRpt, $latestFin])
+            ->filter()
+            ->map(fn ($period) => Carbon::parse($period)->toDateString())
+            ->sortDesc()
+            ->first();
     }
 }

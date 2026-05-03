@@ -14,6 +14,7 @@ use App\Services\Import\ImportExecutionService;
 use App\Services\Import\ImportPipelineService;
 use App\Services\Import\ImportProgressService;
 use App\Services\Import\ImportStrategyFactory;
+use App\Services\Import\L1133CsvImporter;
 use App\Services\Import\MySqlBulkLoadService;
 use App\Services\Import\SchemaIntrospectionService;
 use App\Support\StrictDateParser;
@@ -210,6 +211,16 @@ class ImportExcelController extends Controller
         return ($reportData && !empty($reportData->table_name))
             ? (string) $reportData->table_name
             : $default;
+    }
+
+    private function isL1133Table(?string $tableName = null): bool
+    {
+        return strtolower(trim((string) ($tableName ?? $this->resolveActiveTableName()))) === L1133CsvImporter::TABLE;
+    }
+
+    private function l1133Importer(): L1133CsvImporter
+    {
+        return app(L1133CsvImporter::class);
     }
 
     private function resolvePreviewReportLabel(): string
@@ -1298,12 +1309,6 @@ class ImportExcelController extends Controller
             return false;
         }
 
-        // If it's just 1 or 2 columns short, we might allow it to be padded later in the pipeline
-        // unless strict mode is requested.
-        if ($actualColumns < $expectedColumns && ($expectedColumns - $actualColumns) <= 2) {
-             return false; 
-        }
-
         $resolvedTableName = $tableName ?: ($this->isLw325PhTable() ? 'lw325_ph' : 'daily_loan_dinamis');
         $primaryAccountKey = $resolvedTableName === 'lw325_ph' ? 'acctno' : 'nomor_rekening1';
 
@@ -1549,6 +1554,7 @@ class ImportExcelController extends Controller
                     // lanjut cek format berikutnya
                 }
             }
+            // Jika 8-digit tidak valid, fallback ke format tanggal berikut
         }
 
         if (is_numeric($value)) {
@@ -1567,7 +1573,8 @@ class ImportExcelController extends Controller
             }
         }
 
-        foreach (['Y-m-d', 'd/m/Y', 'm/d/Y', 'd-m-Y', 'm-d-Y'] as $format) {
+        // Try various date formats, including ISO format dan dengan/tanpa leading zeros
+        foreach (['Y-m-d', 'd/m/Y', 'm/d/Y', 'd-m-Y', 'm-d-Y', 'Y/m/d', 'd.m.Y', 'Y.m.d'] as $format) {
             try {
                 $date = Carbon::createFromFormat($format, $value);
                 if ($date !== false) {
@@ -5507,9 +5514,14 @@ class ImportExcelController extends Controller
 
     private function createNormalizedDailyLoanDirectLoadCsv(string $csvPath, ?string $delimiter = null, ?callable $send = null, int $jobId = 0): array
     {
-        $polarsResult = $this->stageDailyLoanCsvWithPolars($send, $csvPath, $delimiter, $jobId);
-        if ($polarsResult !== null) {
-            return $polarsResult;
+        $fileSize = @filesize($csvPath);
+        $shouldUsePolars = $jobId > 0 || ($fileSize !== false && $fileSize >= 10 * 1024 * 1024);
+
+        if ($shouldUsePolars) {
+            $polarsResult = $this->stageDailyLoanCsvWithPolars($send, $csvPath, $delimiter, $jobId);
+            if ($polarsResult !== null) {
+                return $polarsResult;
+            }
         }
 
         $delimiter = ($delimiter !== null && $delimiter !== '')
@@ -7374,6 +7386,12 @@ class ImportExcelController extends Controller
         }
 
         $tableName = $this->resolveActiveTableName();
+        $stagedCsvPath = null;
+        if ($this->isL1133Table($tableName)) {
+            $stage = $this->l1133Importer()->stageNormalizedCsv($path);
+            $path = $stage['absolute_path'];
+            $stagedCsvPath = $stage['absolute_path'];
+        }
         
         // OPTIMIZATION 1: Cache delimiter detection (expensive operation)
         $cacheKey = "csv_delimiter:" . md5($path . filesize($path));
@@ -7568,6 +7586,7 @@ class ImportExcelController extends Controller
             'preview' => $cleanPreview,
             'formattedUniqueValues' => $formattedUniqueValues,
             'delimiter' => $delimiter,
+            'staged_csv_path' => $stagedCsvPath,
         ];
     }
 
@@ -8183,7 +8202,10 @@ class ImportExcelController extends Controller
         // normalizeExcelValue already handles decimal columns via is_decimal lookup
         // No need to call it again here
         if (!empty($rule['is_decimal'])) {
-            return $this->normalizeDecimalValue($value);
+            return $this->normalizeDecimalValue(
+                $value,
+                strtoupper(trim($headerName)) === 'RATE' ? 6 : 2
+            );
         }
         
         return $this->normalizeExcelValue($headerName, $value);
@@ -8285,20 +8307,20 @@ class ImportExcelController extends Controller
         $this->insertBatchWithFallback($rightBatch, $tableName, $totalInserted, $totalFailed);
     }
 
-    protected function normalizeDecimalValue($value): ?string
+    protected function normalizeDecimalValue($value, int $scale = 2): ?string
     {
         if ($value === null) {
             return null;
         }
 
         // OPTIMIZED: Check decimal value cache first (60-80% hit rate in financial data)
-        $valueKey = (string) $value;
+        $valueKey = $scale . ':' . (string) $value;
         if (isset($this->decimalValueCache[$valueKey])) {
             return $this->decimalValueCache[$valueKey];
         }
 
         if (is_int($value) || is_float($value)) {
-            $result = number_format((float) $value, 2, '.', '');
+            $result = number_format((float) $value, $scale, '.', '');
             $this->decimalValueCache[$valueKey] = $result;
             return $result;
         }
@@ -8371,7 +8393,7 @@ class ImportExcelController extends Controller
             $value = '-' . ltrim((string) $value, '+');
         }
 
-        $result = number_format((float) $value, 2, '.', '');
+        $result = number_format((float) $value, $scale, '.', '');
 
         // OPTIMIZED: Cache if under 10,000 unique values (typical financial data has 50-200 unique formats)
         if (count($this->decimalValueCache) < 10000) {
@@ -8461,7 +8483,7 @@ class ImportExcelController extends Controller
         }
 
         if (isset($this->excelDecimalColumnsLookupCache[$normalizedHeader])) {
-            return $this->normalizeDecimalValue($value);
+            return $this->normalizeDecimalValue($value, $normalizedHeader === 'RATE' ? 6 : 2);
         }
 
         if (isset($this->excelIntegerColumnsLookupCache[$normalizedHeader])) {
@@ -8768,7 +8790,7 @@ class ImportExcelController extends Controller
                 'formattedUniqueValues' => $reorderedPayload['formattedUniqueValues'],
                 'displayFilterMap' => $reorderedPayload['display_filter_map'] ?? [],
                 'path' => $relativePath,
-                'stagedCsvPath' => $path,
+                'stagedCsvPath' => $csvPayload['staged_csv_path'] ?? $path,
                 'headerIndex' => (int) ($csvPayload['header_index'] ?? 0),
                 'normalizedHeaders' => $reorderedPayload['headers'],
                 'sourceHeaders' => $reorderedPayload['sourceHeaders'],
@@ -8961,7 +8983,7 @@ class ImportExcelController extends Controller
             $previewStateKey = 'excel_preview_' . md5($relativePath . '|csv_direct|' . microtime(true));
             $previewMeta = [
                 'path' => $relativePath,
-                'staged_csv_path' => $path,
+                'staged_csv_path' => $csvPayload['staged_csv_path'] ?? $path,
                 'header_index' => isset($csvPayload['header_index']) ? (int) $csvPayload['header_index'] : 0,
                 'normalized_headers' => $reorderedPayload['headers'],
                 'source_headers' => $reorderedPayload['sourceHeaders'],
@@ -9389,17 +9411,26 @@ class ImportExcelController extends Controller
             }
 
             // ── Ambil active filters dan manual params dari session ─────
-            $activeFilters = json_decode(session('excel_active_filters_json', '{}'), true) ?: [];
-            $displayFilterMap = session('excel_display_filter_map', []);
-            $normalizedActiveFilters = [];
+            if (array_key_exists('active_filters', $minimalParams) && is_array($minimalParams['active_filters'])) {
+                $normalizedActiveFilters = $this->normalizeImportActiveFilters((array) $minimalParams['active_filters'], $tableName);
+            } else {
+                $activeFilters = json_decode(session('excel_active_filters_json', '{}'), true) ?: [];
+                $displayFilterMap = session('excel_display_filter_map', []);
+                $normalizedActiveFilters = [];
 
-            foreach ($activeFilters as $displayIndex => $values) {
-                $mappedIndex = $displayFilterMap[$displayIndex] ?? $displayIndex;
-                $normalizedActiveFilters[(int) $mappedIndex] = array_values((array) $values);
+                foreach ($activeFilters as $displayIndex => $values) {
+                    $mappedIndex = $displayFilterMap[$displayIndex] ?? $displayIndex;
+                    $normalizedActiveFilters[(int) $mappedIndex] = array_values((array) $values);
+                }
+
+                ksort($normalizedActiveFilters);
+                $normalizedActiveFilters = $this->normalizeImportActiveFilters($normalizedActiveFilters, $tableName);
             }
 
-            ksort($normalizedActiveFilters);
-            $normalizedActiveFilters = $this->normalizeImportActiveFilters($normalizedActiveFilters, $tableName);
+            $manualKanca = trim((string) ($minimalParams['manual_kanca'] ?? session('excel_manual_kanca', '')));
+            $manualPeriode = trim((string) ($minimalParams['manual_periode'] ?? session('excel_manual_periode', '')));
+            $derivedKanca = trim((string) ($minimalParams['derived_kanca'] ?? session('excel_derived_kanca', '')));
+            $derivedTahun = trim((string) ($minimalParams['derived_tahun'] ?? session('excel_derived_tahun', '')));
 
             // ── Update job state dengan full params dan headers ────────
             try {
@@ -9411,10 +9442,10 @@ class ImportExcelController extends Controller
                     'active_filters' => $normalizedActiveFilters,
                     'total_rows' => $totalRows,
                     'delimiter' => $delimiter ?? null,
-                    'manual_kanca' => $tableName === 'rka' ? trim((string) session('excel_manual_kanca', '')) : null,
-                    'manual_periode' => $tableName === 'rka' ? trim((string) session('excel_manual_periode', '')) : null,
-                    'derived_kanca' => $tableName === 'rka' ? trim((string) session('excel_derived_kanca', '')) : null,
-                    'derived_tahun' => $tableName === 'rka' ? trim((string) session('excel_derived_tahun', '')) : null,
+                    'manual_kanca' => $tableName === 'rka' ? $manualKanca : null,
+                    'manual_periode' => $tableName === 'rka' ? $manualPeriode : null,
+                    'derived_kanca' => $tableName === 'rka' ? $derivedKanca : null,
+                    'derived_tahun' => $tableName === 'rka' ? $derivedTahun : null,
                     'disable_inline_fallback' => $disableInlineFallback,
                     'job_id' => $jobId,
                 ];
@@ -9535,6 +9566,25 @@ class ImportExcelController extends Controller
         $normalizedActiveFilters = $this->normalizeImportActiveFilters($normalizedActiveFilters, $tableName);
 
         $disableInlineFallback = $tableName === 'lw325_ph';
+
+        if ($this->isL1133Table($tableName)) {
+            try {
+                $stage = $this->l1133Importer()->stageNormalizedCsv($path);
+                $relativePath = (string) $stage['relative_path'];
+                $path = (string) $stage['absolute_path'];
+            } catch (\Throwable $e) {
+                Log::error('initExcelImport: Gagal staging normalisasi L1133', [
+                    'path' => $path,
+                    'exception' => $e::class,
+                    'message' => $e->getMessage(),
+                ]);
+
+                return response()->json([
+                    'status' => 'error',
+                    'text' => 'Gagal menyiapkan CSV L1133: ' . $e->getMessage(),
+                ], 422);
+            }
+        }
 
         // ────────────────────────────────────────────────────────────────
         // UNIFIED ASYNC OPTIMIZATION: Deteksi header dilakukan di job execution

@@ -57,10 +57,9 @@ class ProcessShadowBackfillJob implements ShouldQueue
 
             $completion = $this->checkCompletionStatus();
             if ($completion['overall_percentage'] >= 95.0) {
-                Log::warning("ProcessShadowBackfillJob: Partial backfill success (>95%)", [
+                Log::warning("ProcessShadowBackfillJob: Partial backfill accepted (>95%); job will not be requeued", [
                     'completion' => $completion,
                 ]);
-                $this->release(delay: $this->getBackoffDelay());
                 return;
             }
 

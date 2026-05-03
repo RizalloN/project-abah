@@ -5,17 +5,31 @@ namespace Tests\Feature\Import;
 use App\Models\ImportJob;
 use App\Services\Import\ImportProgressService;
 use App\Services\Import\ImportExecutionService;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 class StatusSyncValidationTest extends TestCase
 {
     private ImportProgressService $progressService;
     private ImportExecutionService $executionService;
+    private string $originalDefaultConnection;
+    private mixed $originalSqliteDatabase;
 
     protected function setUp(): void
     {
         parent::setUp();
+        $this->originalDefaultConnection = (string) Config::get('database.default');
+        $this->originalSqliteDatabase = Config::get('database.connections.sqlite.database');
+
+        Config::set('database.default', 'sqlite');
+        Config::set('database.connections.sqlite.database', ':memory:');
+        DB::purge('sqlite');
+        DB::reconnect('sqlite');
+        $this->createImportJobsTable();
         Cache::flush();
         $this->progressService = app(ImportProgressService::class);
         $this->executionService = app(ImportExecutionService::class);
@@ -24,6 +38,10 @@ class StatusSyncValidationTest extends TestCase
     protected function tearDown(): void
     {
         Cache::flush();
+        Config::set('database.default', $this->originalDefaultConnection);
+        Config::set('database.connections.sqlite.database', $this->originalSqliteDatabase);
+        DB::purge('sqlite');
+        DB::reconnect('sqlite');
         parent::tearDown();
     }
 
@@ -187,9 +205,43 @@ class StatusSyncValidationTest extends TestCase
             'created_by' => 'test-user',
             'total_success' => 0,
             'total_failed' => 0,
+            'created_at' => now(),
+            'updated_at' => now(),
         ];
 
-        $job = \DB::table('import_jobs')->insertGetId(array_merge($defaults, $attributes));
-        return $job;
+        \DB::table('import_jobs')->insert(array_merge($defaults, $attributes));
+
+        return $jobId;
+    }
+
+    private function createImportJobsTable(): void
+    {
+        Schema::dropIfExists('import_jobs');
+        Schema::dropIfExists('jobs');
+
+        Schema::create('import_jobs', function (Blueprint $table): void {
+            $table->integer('id')->primary();
+            $table->integer('id_report')->nullable();
+            $table->string('file_name')->nullable();
+            $table->string('folder_path')->nullable();
+            $table->string('status')->nullable();
+            $table->integer('total_files')->default(0);
+            $table->integer('total_success')->default(0);
+            $table->integer('total_failed')->default(0);
+            $table->string('created_by')->nullable();
+            $table->text('message')->nullable();
+            $table->longText('job_context')->nullable();
+            $table->timestamp('created_at')->nullable();
+            $table->timestamp('updated_at')->nullable();
+        });
+
+        Schema::create('jobs', function (Blueprint $table): void {
+            $table->increments('id');
+            $table->string('queue')->index();
+            $table->integer('reserved_at')->nullable();
+            $table->integer('available_at')->nullable();
+            $table->integer('created_at')->nullable();
+            $table->longText('payload');
+        });
     }
 }

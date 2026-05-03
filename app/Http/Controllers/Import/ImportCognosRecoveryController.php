@@ -1071,7 +1071,8 @@ class ImportCognosRecoveryController extends Controller
             fclose($handle);
         }
 
-        if ($headerLine === null || count($sourceHeaders) < 30) {
+        $sourceHeaderMap = $this->buildSourceHeaderMap($sourceHeaders);
+        if ($headerLine === null || !$this->sourceHeaderMapHasRequiredColumns($sourceHeaderMap)) {
             throw new \RuntimeException('Header CSV ' . self::REPORT_LABEL . ' tidak ditemukan atau tidak lengkap.');
         }
 
@@ -1079,6 +1080,7 @@ class ImportCognosRecoveryController extends Controller
             'delimiter' => $delimiter,
             'header_line' => $headerLine,
             'source_headers' => $sourceHeaders,
+            'source_header_map' => $sourceHeaderMap,
             'headers' => self::TARGET_COLUMNS,
             'periode' => $this->findPeriodeValue($path, $headerLine, $delimiter),
         ];
@@ -1156,21 +1158,135 @@ class ImportCognosRecoveryController extends Controller
             return null;
         }
 
-        $data = $this->normalizeSourceRowShape($data);
-
         $previewRow = [];
         $normalizedRow = [];
         foreach ($context['headers'] as $column) {
-            $sourceIndex = self::SOURCE_INDEX_MAP[$column] ?? null;
-            $sourceValue = $sourceIndex !== null ? ($data[$sourceIndex] ?? null) : null;
+            $sourceValue = $this->sourceValueForColumn($column, $data, $context);
             $previewRow[] = $this->formatPreviewCellValue($column, $sourceValue);
             $normalizedRow[] = $this->normalizeCellValue($column, $sourceValue);
+        }
+
+        $periodeIndex = array_search('periode', $context['headers'], true);
+        if ($periodeIndex !== false && ($normalizedRow[$periodeIndex] ?? null) === null) {
+            return null;
         }
 
         return [
             'row' => $previewRow,
             'normalized_row' => $normalizedRow,
         ];
+    }
+
+    private function sourceValueForColumn(string $column, array $data, array $context)
+    {
+        if ($column === 'segmen_bisnis_2025') {
+            $direct = $this->sourceValueByAliases($data, $context, self::SOURCE_HEADER_ALIASES[$column] ?? []);
+            if (trim((string) $direct) !== '') {
+                return $direct;
+            }
+
+            return $this->deriveDashboardSegment(
+                $this->sourceValueByAliases($data, $context, self::SOURCE_HEADER_ALIASES['segmen_fpsl']),
+                $this->sourceValueByAliases($data, $context, self::SOURCE_HEADER_ALIASES['segmen_bisnis']),
+                $this->sourceValueByAliases($data, $context, self::SOURCE_HEADER_ALIASES['segmen_kur']),
+                $this->sourceValueByAliases($data, $context, self::SOURCE_HEADER_ALIASES['segmen']),
+                $this->sourceValueByAliases($data, $context, self::SOURCE_HEADER_ALIASES['segmen_2']),
+                $this->sourceValueByAliases($data, $context, self::SOURCE_HEADER_ALIASES['produk'])
+            );
+        }
+
+        $aliases = self::SOURCE_HEADER_ALIASES[$column] ?? [];
+        $occurrence = $column === 'segmen_repeat' ? 1 : 0;
+        $value = $this->sourceValueByAliases($data, $context, $aliases, $occurrence);
+        if ($value !== null) {
+            return $value;
+        }
+
+        $sourceIndex = self::SOURCE_INDEX_MAP[$column] ?? null;
+
+        return $sourceIndex !== null ? ($this->normalizeSourceRowShape($data)[$sourceIndex] ?? null) : null;
+    }
+
+    private function sourceValueByAliases(array $data, array $context, array $aliases, int $occurrence = 0): ?string
+    {
+        $sourceHeaderMap = $context['source_header_map'] ?? [];
+        foreach ($aliases as $alias) {
+            $key = $this->normalizeSourceHeaderName($alias);
+            if (!isset($sourceHeaderMap[$key])) {
+                continue;
+            }
+
+            $indexes = (array) $sourceHeaderMap[$key];
+            $index = $indexes[$occurrence] ?? $indexes[0] ?? null;
+            if ($index !== null) {
+                return (string) ($data[$index] ?? '');
+            }
+        }
+
+        return null;
+    }
+
+    private function buildSourceHeaderMap(array $headers): array
+    {
+        $map = [];
+        foreach ($headers as $index => $header) {
+            $key = $this->normalizeSourceHeaderName((string) $header);
+            if ($key === '') {
+                continue;
+            }
+
+            $map[$key] ??= [];
+            $map[$key][] = $index;
+        }
+
+        return $map;
+    }
+
+    private function sourceHeaderMapHasRequiredColumns(array $sourceHeaderMap): bool
+    {
+        foreach (['periode', 'total_recovery'] as $column) {
+            $found = false;
+            foreach (self::SOURCE_HEADER_ALIASES[$column] ?? [] as $alias) {
+                if (isset($sourceHeaderMap[$this->normalizeSourceHeaderName($alias)])) {
+                    $found = true;
+                    break;
+                }
+            }
+
+            if (!$found) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private function normalizeSourceHeaderName(string $value): string
+    {
+        $value = preg_replace('/^\xEF\xBB\xBF/', '', $value) ?? $value;
+        $value = strtoupper(trim($value));
+        $value = str_replace(['_', '-'], ' ', $value);
+        $value = preg_replace('/\s+/', ' ', $value) ?? $value;
+
+        return trim($value);
+    }
+
+    private function deriveDashboardSegment(...$values): ?string
+    {
+        $text = strtoupper(implode(' ', array_filter($values, fn ($value) => trim((string) $value) !== '')));
+        if (str_contains($text, 'MIKRO') || str_contains($text, 'MICRO')) {
+            return 'MICRO';
+        }
+
+        if (str_contains($text, 'KONSUMER') || str_contains($text, 'CONSUMER') || str_contains($text, 'BRIGUNA') || str_contains($text, 'KPR') || str_contains($text, 'KKB')) {
+            return 'CONSUMER';
+        }
+
+        if (str_contains($text, 'KECIL') || str_contains($text, 'RITEL') || str_contains($text, 'PROGRAM') || str_contains($text, 'SMALL')) {
+            return 'SMALL';
+        }
+
+        return null;
     }
 
     private function normalizeSourceRowShape(array $data): array
@@ -1228,6 +1344,19 @@ class ImportCognosRecoveryController extends Controller
             return $this->normalizeDecimalValue($value);
         }
 
+        if ($column === 'segmen_bisnis_2025') {
+            $upper = strtoupper($value);
+            if ($upper === 'MIKRO') {
+                return 'MICRO';
+            }
+
+            return in_array($upper, ['SMALL', 'CONSUMER', 'MICRO'], true) ? $upper : ($value === '' ? null : $value);
+        }
+
+        if (in_array($column, ['kanwil', 'ro_fix', 'cabang', 'unit_kerja'], true)) {
+            return $this->normalizeOrgLabel($value);
+        }
+
         return $value === '' ? null : $value;
     }
 
@@ -1242,7 +1371,29 @@ class ImportCognosRecoveryController extends Controller
             return $this->normalizePeriodeValue($value);
         }
 
+        if (in_array($column, ['kanwil', 'ro_fix', 'cabang', 'unit_kerja'], true)) {
+            return $this->normalizeOrgLabel($value);
+        }
+
         return $value;
+    }
+
+    private function normalizeOrgLabel(?string $value): ?string
+    {
+        $value = trim((string) $value);
+        if ($value === '') {
+            return null;
+        }
+
+        if (str_contains($value, '--')) {
+            $parts = explode('--', $value, 2);
+            $value = trim($parts[1]);
+        }
+
+        $value = preg_replace('/\s*\([^)]*\)\s*/', ' ', $value) ?? $value;
+        $value = preg_replace('/\s+/', ' ', $value) ?? $value;
+
+        return trim($value) ?: null;
     }
 
     private function normalizePeriodeValue(?string $value): ?string
@@ -1284,13 +1435,19 @@ class ImportCognosRecoveryController extends Controller
             return null;
         }
 
+        $parenthesesNegative = false;
+        if (preg_match('/^\((.*)\)$/', $value, $matches) === 1) {
+            $parenthesesNegative = true;
+            $value = (string) $matches[1];
+        }
+
         $value = preg_replace('/\s+/', '', $value);
         $value = preg_replace('/[^0-9,\.\-]/', '', $value);
         if ($value === '' || $value === '-') {
             return null;
         }
 
-        $negative = str_starts_with($value, '-');
+        $negative = $parenthesesNegative || str_starts_with($value, '-');
         $unsignedValue = ltrim($value, '-');
         if ($unsignedValue === '') {
             return null;

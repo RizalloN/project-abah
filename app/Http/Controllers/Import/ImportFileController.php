@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Controllers\Import\Concerns\AllocatesGapIds;
 use App\Http\Controllers\Import\Concerns\SmartCsvImportSupport;
 use App\Jobs\PrepareCsvStagingJob;
+use App\Services\Import\ImportProgressService;
 use App\Services\Import\MySqlBulkLoadService;
 use App\Services\Import\SchemaIntrospectionService;
 use App\Support\ReportDataSyncService;
@@ -136,7 +137,7 @@ class ImportFileController extends Controller
 
     private function previewFilterCacheKey(string $filePath, string $delimiter, int $columnIndex, string $tableName, string $contextSignature = ''): string
     {
-        return 'preview_filter_options:v2:' . md5($filePath . '|' . $delimiter . '|' . $columnIndex . '|' . $tableName . '|' . $contextSignature);
+        return 'preview_filter_options:v3:' . md5($filePath . '|' . $delimiter . '|' . $columnIndex . '|' . $tableName . '|' . $contextSignature);
     }
 
     private function normalizeDisplayFilterMap(array $displayFilterMap, int $maxValidIndex = -1): array
@@ -1470,18 +1471,21 @@ class ImportFileController extends Controller
 
     public function prepareCsvStaging(int $jobId, array $params, ImportProgressService $progressService): string
     {
-        $filePath = $params['filePath'] ?? null;
+        $filePath = $params['filePath'] ?? $params['file_path'] ?? null;
         $resolvedDelimiter = $params['delimiter'] ?? ',';
-        $selectedColumns = $params['selectedColumns'] ?? [];
-        $activeFilters = $params['activeFilters'] ?? [];
-        $tableName = $params['tableName'] ?? '';
-        $uniqueSuffix = $params['uniqueSuffix'] ?? '';
-        $isBrilinkSummary = $params['isBrilinkSummary'] ?? false;
-        $csvHeaders = $params['csvHeaders'] ?? [];
-        $posisiIndex = $params['posisiIndex'] ?? -1;
-        $tahunIndex = $params['tahunIndex'] ?? -1;
-        $totalRows = $params['totalRows'] ?? 0;
-        $columnBlueprint = $params['columnBlueprint'] ?? [];
+        $selectedColumns = $params['selectedColumns'] ?? $params['selected_columns'] ?? [];
+        $activeFilters = $params['activeFilters'] ?? $params['active_filters'] ?? $params['normalized_filters'] ?? [];
+        $tableName = $params['tableName'] ?? $params['table_name'] ?? '';
+        $uniqueSuffix = $params['uniqueSuffix'] ?? $params['unique_suffix'] ?? '';
+        $isBrilinkSummary = $params['isBrilinkSummary'] ?? $params['is_brilink_summary'] ?? false;
+        $csvHeaders = $params['csvHeaders'] ?? $params['headers'] ?? [];
+        $posisiIndex = $params['posisiIndex'] ?? $params['posisi_index'] ?? -1;
+        $tahunIndex = $params['tahunIndex'] ?? $params['tahun_index'] ?? -1;
+        $totalRows = $params['totalRows'] ?? $params['total_rows'] ?? 0;
+        $columnBlueprint = $params['columnBlueprint'] ?? $params['column_blueprint'] ?? [];
+        if (!$isBrilinkSummary && empty($columnBlueprint)) {
+            $columnBlueprint = $this->buildColumnImportBlueprint($selectedColumns, $csvHeaders);
+        }
 
         $bulkColumns = $this->buildBulkLoadColumnsForMappedRows($tableName, $isBrilinkSummary, $columnBlueprint);
         if (empty($bulkColumns)) {
@@ -1608,6 +1612,12 @@ class ImportFileController extends Controller
                 'rows_done' => $rowsDone,
                 'total' => $totalRows > 0 ? $totalRows : $rowsDone,
             ]);
+
+            Cache::put("csv_import_params_{$jobId}", array_merge($params, [
+                'tableName' => $tableName,
+                'bulkColumns' => $bulkColumns,
+                'prepared_rows' => $rowsDone,
+            ]), now()->addHours(2));
 
             return $bulkCsvPath;
 
@@ -1975,7 +1985,10 @@ class ImportFileController extends Controller
             } elseif ($columnMeta['type'] === 'date') {
                 $cellValue = $this->normalizeDailyLoanDate($cellValue);
             } elseif ($columnMeta['type'] === 'numeric') {
-                $cellValue = $this->normalizeDecimalValue($cellValue);
+                $cellValue = $this->normalizeDecimalValue(
+                    $cellValue,
+                    ($columnMeta['column'] ?? '') === 'rate' ? 6 : 2
+                );
             } else {
                 $cellValue = $this->normalizeImportedString($cellValue);
             }
@@ -2094,6 +2107,121 @@ class ImportFileController extends Controller
         ];
     }
 
+    private function resolveImportStreamParams(int $jobId, array $params): array
+    {
+        if ($jobId <= 0) {
+            return $params;
+        }
+
+        $filePath = trim((string) ($params['file_path'] ?? $params['filePath'] ?? ''));
+        if ($filePath !== '' && is_file($filePath)) {
+            return $params;
+        }
+
+        $job = DB::table('import_jobs')->where('id', $jobId)->first();
+        if (!$job) {
+            return $params;
+        }
+
+        $context = [];
+        if (is_string($job->job_context ?? null) && trim((string) $job->job_context) !== '') {
+            $decoded = json_decode((string) $job->job_context, true);
+            $context = is_array($decoded) ? $decoded : [];
+        }
+
+        $contextParams = $context['import_params'] ?? null;
+        if (is_array($contextParams) && trim((string) ($contextParams['file_path'] ?? '')) !== '') {
+            $resolved = array_merge($contextParams, ['job_id' => $jobId]);
+            Cache::put('csv_import_params_' . $jobId, $resolved, now()->addHours(4));
+
+            return $resolved;
+        }
+
+        $sourcePath = $this->resolveImportJobSourcePath($job);
+        if ($sourcePath === null || !is_file($sourcePath)) {
+            return $params;
+        }
+
+        $tableName = trim((string) ($context['table_name'] ?? ''));
+        if ($tableName === '') {
+            $report = DB::table('nama_report')->where('id_report', (int) ($job->id_report ?? 0))->first();
+            $tableName = $report ? $this->resolveTableName($report) : 'jumlah_merchant_detail';
+        }
+
+        $isBrilinkSummary = $tableName === 'brilink_web_laporan_summary_transaksi_brilink_web';
+        $meta = $this->collectImportMeta($sourcePath, [], [], 'auto', $isBrilinkSummary, $this->isJumlahMerchantDetailTable($tableName));
+        $normalizedFilters = [];
+        $selectedColumns = $this->inferImportSelectedColumns($tableName, $meta['headers'] ?? []);
+
+        $resolved = [
+            'job_id' => $jobId,
+            'file_path' => $sourcePath,
+            'delimiter' => $meta['delimiter'] ?? 'auto',
+            'selected_columns' => $selectedColumns,
+            'active_filters' => $normalizedFilters,
+            'normalized_filters' => $normalizedFilters,
+            'table_name' => $tableName,
+            'unique_suffix' => $this->resolveUniqueSuffix($tableName),
+            'is_brilink_summary' => $isBrilinkSummary,
+            'headers' => $meta['headers'] ?? [],
+            'posisi_index' => (int) ($meta['posisi_index'] ?? -1),
+            'tahun_index' => (int) ($meta['tahun_index'] ?? -1),
+            'total_rows' => (int) ($meta['total_rows'] ?? ($job->total_files ?? 0)),
+            'sample_posisi' => $meta['sample_posisi'] ?? null,
+            'sample_periode' => $meta['sample_periode'] ?? null,
+            'duplicate_lookup' => [],
+        ];
+
+        Cache::put('csv_import_params_' . $jobId, $resolved, now()->addHours(4));
+
+        return $resolved;
+    }
+
+    private function resolveImportJobSourcePath(object $job): ?string
+    {
+        $folderPath = trim((string) ($job->folder_path ?? ''));
+        $fileName = trim((string) ($job->file_name ?? ''));
+        if ($folderPath === '' || $fileName === '') {
+            return null;
+        }
+
+        if (preg_match('/^[A-Za-z]:[\\\\\\/]/', $folderPath) === 1 || str_starts_with($folderPath, '\\\\')) {
+            return rtrim($folderPath, "\\/") . DIRECTORY_SEPARATOR . $fileName;
+        }
+
+        return storage_path('app/' . trim(str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $folderPath), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . $fileName);
+    }
+
+    private function inferImportSelectedColumns(string $tableName, array $headers): array
+    {
+        if ($headers === []) {
+            return [];
+        }
+
+        if ($tableName === 'brilink_web_laporan_summary_transaksi_brilink_web') {
+            return range(0, max(0, count($headers) - 1));
+        }
+
+        $tableColumns = array_fill_keys(array_map(
+            static fn ($column): string => strtolower((string) $column),
+            $this->cachedSchemaColumnListing($tableName)
+        ), true);
+
+        $selected = [];
+        foreach ($headers as $index => $header) {
+            $normalized = $this->normalizeDailyLoanHeader(str_replace(' ', '_', (string) $header));
+            if ($normalized === '' || $normalized === 'id' || $normalized === 'uniqueid_namareport') {
+                continue;
+            }
+
+            if (isset($tableColumns[strtolower($normalized)])) {
+                $selected[] = (int) $index;
+            }
+        }
+
+        return $selected !== [] ? $selected : range(0, max(0, count($headers) - 1));
+    }
+
     private function hasManualNumberingColumn(array $row): bool
     {
         $candidate = trim((string) ($row[1] ?? ''));
@@ -2130,14 +2258,14 @@ class ImportFileController extends Controller
         ];
     }
 
-    private function normalizeDecimalValue($value): ?string
+    private function normalizeDecimalValue($value, int $scale = 2): ?string
     {
         if ($value === null) {
             return null;
         }
 
         if (is_int($value) || is_float($value)) {
-            return number_format((float) $value, 2, '.', '');
+            return number_format((float) $value, $scale, '.', '');
         }
 
         $value = trim((string) $value);
@@ -2146,7 +2274,7 @@ class ImportFileController extends Controller
         }
 
         // OPTIMIZATION: Cache normalization results for repeated values (common in imports)
-        $cacheKey = 'decimal:' . $value;
+        $cacheKey = 'decimal:' . $scale . ':' . $value;
         if (isset($this->decimalNormalizationCache[$cacheKey])) {
             return $this->decimalNormalizationCache[$cacheKey];
         }
@@ -2168,7 +2296,7 @@ class ImportFileController extends Controller
             if ($isNegative && str_starts_with($value, '-') === false) {
                 $value = '-' . $value;
             }
-            $result = $value . '.00';
+            $result = $value . '.' . str_repeat('0', $scale);
             $this->decimalNormalizationCache[$cacheKey] = $result;
             return $result;
         }
@@ -2177,7 +2305,7 @@ class ImportFileController extends Controller
             if ($isNegative && str_starts_with($value, '-') === false) {
                 $value = '-' . $value;
             }
-            $result = number_format((float) $value, 2, '.', '');
+            $result = number_format((float) $value, $scale, '.', '');
             $this->decimalNormalizationCache[$cacheKey] = $result;
             return $result;
         }
@@ -2225,7 +2353,7 @@ class ImportFileController extends Controller
             $value = '-' . ltrim((string) $value, '+');
         }
 
-        $result = number_format((float) $value, 2, '.', '');
+        $result = number_format((float) $value, $scale, '.', '');
         $this->decimalNormalizationCache[$cacheKey] = $result;
         return $result;
     }
@@ -2510,7 +2638,10 @@ class ImportFileController extends Controller
                                 if ($this->isDailyLoanDateColumn($normalizedColumn)) {
                                     $normalized[$i] = $this->normalizeDailyLoanDate(is_string($cellValue) ? trim($cellValue) : $cellValue);
                                 } elseif ($this->isDailyLoanNumericColumn($normalizedColumn)) {
-                                    $normalized[$i] = $this->normalizeDecimalValue(is_string($cellValue) ? trim($cellValue) : $cellValue);
+                                    $normalized[$i] = $this->normalizeDecimalValue(
+                                        is_string($cellValue) ? trim($cellValue) : $cellValue,
+                                        $normalizedColumn === 'rate' ? 6 : 2
+                                    );
                                 } else {
                                     $normalized[$i] = is_string($cellValue) && $cellValue !== '' ? trim($cellValue) : null;
                                 }
@@ -2620,7 +2751,9 @@ class ImportFileController extends Controller
             }
         }
 
-        if (in_array($extension, ['csv', 'txt'], true) && !empty($filterableColumnIndices)) {
+        $shouldWarmPreviewIndexOnLoad = !$isJumlahMerchantQrisDetail;
+
+        if ($shouldWarmPreviewIndexOnLoad && in_array($extension, ['csv', 'txt'], true) && !empty($filterableColumnIndices)) {
             $this->dispatchPreviewIndexWarmup($filePath, $currentDelimiter, $tableName, $isBrilinkSummary, $filterableColumnIndices);
         }
 
@@ -2668,8 +2801,10 @@ class ImportFileController extends Controller
             'area6ColumnHints' => $area6ColumnHints,
             'initialArea6Selections' => $initialArea6Selections,
             'filterOptionsRoute' => route('import.preview.filter-options'),
-            'warmIndexRoute' => route('import.preview.warm-index'),
+            'warmIndexRoute' => $shouldWarmPreviewIndexOnLoad ? route('import.preview.warm-index') : '',
             'prefetchFilterOptionsOnLoad' => false,
+            'warmPreviewIndexOnLoad' => $shouldWarmPreviewIndexOnLoad,
+            'disableFilterOptionsLocalCache' => $isJumlahMerchantQrisDetail,
         ]);
     }
 
@@ -2995,7 +3130,10 @@ class ImportFileController extends Controller
                         if ($this->isDailyLoanDateColumn($normalizedColumn)) {
                             $data[$i] = $this->normalizeDailyLoanDate($cellValue);
                         } elseif ($this->isDailyLoanNumericColumn($normalizedColumn)) {
-                            $data[$i] = $this->normalizeDecimalValue($cellValue);
+                            $data[$i] = $this->normalizeDecimalValue(
+                                $cellValue,
+                                $normalizedColumn === 'rate' ? 6 : 2
+                            );
                         } else {
                             $data[$i] = $cellValue === '' ? null : $cellValue;
                         }
@@ -3930,6 +4068,23 @@ class ImportFileController extends Controller
                 'table_name' => $tableName,
                 'file_hash' => sha1($filePath),
                 'total_rows' => (int) $meta['total_rows'],
+                'import_params' => [
+                    'file_path' => $filePath,
+                    'delimiter' => $meta['delimiter'],
+                    'selected_columns' => $selectedColumns,
+                    'active_filters' => $activeFilters,
+                    'normalized_filters' => $normalizedFilters,
+                    'table_name' => $tableName,
+                    'unique_suffix' => $uniqueSuffix,
+                    'is_brilink_summary' => $isBrilinkSummary,
+                    'headers' => $meta['headers'],
+                    'posisi_index' => $meta['posisi_index'],
+                    'tahun_index' => $meta['tahun_index'],
+                    'total_rows' => $meta['total_rows'],
+                    'sample_posisi' => $meta['sample_posisi'] ?? null,
+                    'sample_periode' => $meta['sample_periode'] ?? null,
+                    'duplicate_lookup' => $duplicateLookup,
+                ],
             ],
             'created_at' => now(),
             'updated_at' => now(),
@@ -3969,8 +4124,9 @@ class ImportFileController extends Controller
         DB::disableQueryLog();
 
         $sessionParams = session('csv_import_params', []);
-        $jobId = (int) ($sessionParams['job_id'] ?? $request->query('job_id', 0));
+        $jobId = (int) ($request->query('job_id', 0) ?: ($sessionParams['job_id'] ?? 0));
         $params = Cache::get('csv_import_params_' . $jobId, $sessionParams);
+        $params = $this->resolveImportStreamParams($jobId, is_array($params) ? $params : []);
 
         request()->session()->save();
 

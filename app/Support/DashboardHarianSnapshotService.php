@@ -800,9 +800,36 @@ class DashboardHarianSnapshotService
             if (!isset($metricsByPeriod[$period])) {
                 $metricsByPeriod[$period] = $this->buildMetricsFromSource($period, $normalizedKanca, $normalizedUnit);
             }
+
+            $metricsByPeriod[$period] = $this->overlayRecoveryMetricsFromSource(
+                $metricsByPeriod[$period],
+                $period,
+                $normalizedKanca,
+                $normalizedUnit
+            );
         }
 
         return $metricsByPeriod;
+    }
+
+    private function overlayRecoveryMetricsFromSource(array $metrics, string $period, array|string|null $kancaKey, array|string|null $unitKey): array
+    {
+        $recoveryMetrics = $this->emptyMetrics();
+
+        foreach ($this->fetchRecoveryAggregates($period, $kancaKey, $unitKey) as $row) {
+            $recoveryMetrics['ph_tupok'] += (float) ($row->ph_tupok ?? 0);
+            $recoveryMetrics['ph_lunas'] += (float) ($row->ph_lunas ?? 0);
+            $recoveryMetrics['rec_dh_small'] += (float) ($row->rec_dh_small ?? 0);
+            $recoveryMetrics['rec_dh_consumer'] += (float) ($row->rec_dh_consumer ?? 0);
+            $recoveryMetrics['rec_dh_micro'] += (float) ($row->rec_dh_micro ?? 0);
+            $recoveryMetrics['rec_dh_total'] += (float) ($row->rec_dh_total ?? 0);
+        }
+
+        foreach (['ph_tupok', 'ph_lunas', 'rec_dh_small', 'rec_dh_consumer', 'rec_dh_micro', 'rec_dh_total'] as $metricKey) {
+            $metrics[$metricKey] = (float) ($recoveryMetrics[$metricKey] ?? 0);
+        }
+
+        return $this->finalizeMetrics($metrics);
     }
 
     private function buildMetricsFromSource(string $period, array|string|null $kancaKey, array|string|null $unitKey): array
@@ -1220,18 +1247,16 @@ class DashboardHarianSnapshotService
             return collect();
         }
 
-        // Instead of exact match, find latest available PH period <= requested period
-        $currentPhPeriod = DB::table('lw325_ph')
-            ->where('periode', '<=', $normalizedCurrentPeriod)
-            ->orderBy('periode', 'desc')
-            ->pluck('periode')
-            ->first();
+        $hasCurrentPhPeriod = DB::table('lw325_ph')
+            ->where('periode', $normalizedCurrentPeriod)
+            ->exists();
 
-        if ($currentPhPeriod === null) {
+        if (!$hasCurrentPhPeriod) {
             return collect();
         }
 
-        $previousPhPeriod = $this->resolvePreviousPhPeriod($currentPhPeriod);
+        $currentPhPeriod = $normalizedCurrentPeriod;
+        $previousPhPeriod = $this->resolvePreviousMonthPhPeriod($currentPhPeriod);
 
         if ($previousPhPeriod === null) {
             return collect();
@@ -1239,6 +1264,8 @@ class DashboardHarianSnapshotService
 
         $normalizedKanca = $this->normalizeFilterValues($kancaKey);
         $normalizedUnit = $this->normalizeFilterValues($unitKey);
+        $currentAccountKeySql = $this->phAccountKeySql('n');
+        $previousAccountKeySql = $this->phAccountKeySql('o');
 
         // OPTIMIZATION: Single combined query for TUPOK + LUNAS
         // Instead of 2 separate queries with UNION ALL, we create a single subquery
@@ -1249,8 +1276,8 @@ class DashboardHarianSnapshotService
         // Expected performance gain: 10-15%
 
         $tupokQuery = DB::table('lw325_ph as n')
-            ->join('lw325_ph as o', function ($join) use ($previousPhPeriod, $currentPhPeriod) {
-                $join->on('n.acctno', '=', 'o.acctno')
+            ->join('lw325_ph as o', function ($join) use ($previousPhPeriod, $currentPhPeriod, $currentAccountKeySql, $previousAccountKeySql) {
+                $join->whereRaw("{$currentAccountKeySql} = {$previousAccountKeySql}")
                     ->on('n.kanca', '=', 'o.kanca')
                     ->on('n.unit', '=', 'o.unit')
                     ->where('n.periode', '=', $currentPhPeriod)
@@ -1274,8 +1301,8 @@ class DashboardHarianSnapshotService
         }
 
         $lumasQuery = DB::table('lw325_ph as o')
-            ->leftJoin('lw325_ph as n', function ($join) use ($previousPhPeriod, $currentPhPeriod) {
-                $join->on('o.acctno', '=', 'n.acctno')
+            ->leftJoin('lw325_ph as n', function ($join) use ($previousPhPeriod, $currentPhPeriod, $currentAccountKeySql, $previousAccountKeySql) {
+                $join->whereRaw("{$previousAccountKeySql} = {$currentAccountKeySql}")
                     ->on('o.kanca', '=', 'n.kanca')
                     ->on('o.unit', '=', 'n.unit')
                     ->where('o.periode', '=', $previousPhPeriod)
@@ -2128,21 +2155,20 @@ class DashboardHarianSnapshotService
             return ['none', null, ['row_count' => 0]];
         }
 
-        $currentPhPeriod = DB::table('lw325_ph')
-            ->where('periode', '<', $normalizedPeriod)
-            ->orderBy('periode', 'desc')
-            ->value('periode');
+        $hasCurrentPhPeriod = DB::table('lw325_ph')
+            ->where('periode', $normalizedPeriod)
+            ->exists();
 
-        if (!$currentPhPeriod) {
+        if (!$hasCurrentPhPeriod) {
             return ['lw325_ph', null, ['row_count' => 0]];
         }
 
-        $previousPhPeriod = $this->resolvePreviousPhPeriod((string) $currentPhPeriod);
-        $periods = array_values(array_filter([(string) $currentPhPeriod, $previousPhPeriod]));
+        $previousPhPeriod = $this->resolvePreviousMonthPhPeriod($normalizedPeriod);
+        $periods = array_values(array_filter([$normalizedPeriod, $previousPhPeriod]));
 
         return [
             'lw325_ph',
-            (string) $currentPhPeriod,
+            $normalizedPeriod,
             $this->sourceAggregateState('lw325_ph', 'periode', $periods, ['pokok']),
         ];
     }
@@ -2223,6 +2249,31 @@ class DashboardHarianSnapshotService
         } catch (Throwable) {
             return null;
         }
+    }
+
+    private function resolvePreviousMonthPhPeriod(string $period): ?string
+    {
+        try {
+            $current = Carbon::parse($period);
+            $target = $current->copy()->subMonthNoOverflow();
+            $monthStart = $target->copy()->startOfMonth()->toDateString();
+            $targetDate = $target->toDateString();
+            $monthEnd = $target->copy()->endOfMonth()->toDateString();
+
+            return DB::table('lw325_ph')
+                ->whereBetween('periode', [$monthStart, $targetDate])
+                ->max('periode')
+                ?: DB::table('lw325_ph')
+                    ->whereBetween('periode', [$monthStart, $monthEnd])
+                    ->max('periode');
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    private function phAccountKeySql(string $alias): string
+    {
+        return "TRIM(LEADING '0' FROM TRIM(COALESCE({$alias}.acctno, '')))";
     }
 
     private function canUseSnapshotMetrics(): bool

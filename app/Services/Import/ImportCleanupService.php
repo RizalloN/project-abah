@@ -35,6 +35,8 @@ class ImportCleanupService
         'merchant_qris_volume',
     ];
     private const IMPORT_PERIOD_COLUMNS = [
+        'daily_loan_dinamis' => 'periode',
+        'simpanan_multipn' => 'posisi',
         'ssa_pinjaman' => 'month_day_year_of_periode',
         'ssa_simpanan' => 'Month_Day_Year_of_Posisi',
         'lw325_ph' => 'periode',

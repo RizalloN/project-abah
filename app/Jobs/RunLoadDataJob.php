@@ -85,9 +85,22 @@ class RunLoadDataJob implements ShouldQueue
             ]);
 
             $jobParams = Cache::get("csv_import_params_{$this->jobId}", []);
-            if ($totalSuccess > 0 && !empty($jobParams['syncPeriod'])) {
-                SyncImportedReportJob::dispatch($this->tableName, $jobParams['syncPeriod'])
-                    ->onQueue('imports-high');
+            $syncPeriod = $jobParams['syncPeriod'] ?? $jobParams['sync_period'] ?? null;
+            if ($totalSuccess > 0 && !empty($syncPeriod)) {
+                try {
+                    SyncImportedReportJob::dispatch(
+                        $this->jobId,
+                        $this->tableName,
+                        $syncPeriod,
+                        static::class
+                    )->onQueue('imports-high');
+                } catch (\Throwable $e) {
+                    Log::warning('Post-import sync dispatch skipped after successful load: ' . $e->getMessage(), [
+                        'job_id' => $this->jobId,
+                        'table' => $this->tableName,
+                        'period' => $syncPeriod,
+                    ]);
+                }
             }
 
             Log::info('Load data completed', [

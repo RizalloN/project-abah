@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class ValidateSnapshotDataIntegrityCommand extends Command
 {
@@ -170,10 +171,18 @@ class ValidateSnapshotDataIntegrityCommand extends Command
     private function getSourceAggregate(string $period, string $segment): object
     {
         $sourceSegments = $this->getSourceSegments($segment);
+        $sourceSegmentTokens = $this->getSourceSegmentTokens($segment);
 
-        return DB::table('daily_loan_dinamis')
-            ->where('periode', $period)
-            ->whereIn('segmen_dashboard', $sourceSegments)
+        $query = DB::table('daily_loan_dinamis')
+            ->where('periode', $period);
+
+        if (Schema::hasColumn('daily_loan_dinamis', 'segmen_kinerja')) {
+            $query->whereIn('segmen_kinerja', $sourceSegmentTokens);
+        } else {
+            $query->whereIn('segmen_dashboard', $sourceSegments);
+        }
+
+        return $query
             ->selectRaw('SUM(COALESCE(baki_debet1, 0)) as total_loan')
             ->selectRaw('SUM(CASE WHEN kol_adk1 = 1 THEN COALESCE(baki_debet1, 0) ELSE 0 END) as total_lancar')
             ->selectRaw('SUM(CASE WHEN tgl_realisasi BETWEEN DATE_FORMAT(?, "%Y-%m-01") AND ? THEN COALESCE(plafon, 0) ELSE 0 END) as total_real', [
@@ -191,16 +200,13 @@ class ValidateSnapshotDataIntegrityCommand extends Command
     {
         $sourceProducts = $this->getSourceProducts($produk);
         $sourceSegments = $this->getSourceSegments($segment);
+        $sourceProductTokens = $this->getSourceProductTokens($produk);
+        $sourceSegmentTokens = $this->getSourceSegmentTokens($segment);
         $isMicroKur = $segment === 'MICRO' && $produk === 'KUR-MIKRO';
         $normalizedDescriptionSql = "UPPER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(TRIM(COALESCE(description, '')), ' ', ''), '-', ''), '_', ''), '/', ''), '.', ''))";
 
         $query = DB::table('daily_loan_dinamis')
             ->where('periode', $period)
-            ->whereIn('segmen_dashboard', $sourceSegments)
-            ->whereIn('produk_dashboard', $sourceProducts)
-            ->whereRaw("UPPER(TRIM(cabang1)) = ?", [strtoupper(trim($cabang))])
-            ->whereRaw("UPPER(TRIM(unit1)) = ?", [strtoupper(trim($unit))])
-            ->whereRaw("UPPER(TRIM(pn_pengelola1)) = ?", [strtoupper(trim($rm))])
             ->selectRaw('SUM(COALESCE(plafon, 0)) as plafon')
             ->selectRaw($isMicroKur ? 'SUM(COALESCE(plafon, 0)) as loan_os' : 'SUM(COALESCE(baki_debet1, 0)) as loan_os')
             ->selectRaw('SUM(CASE WHEN kol_adk1 = 1 THEN COALESCE(baki_debet1, 0) ELSE 0 END) as lancar_os')
@@ -208,8 +214,21 @@ class ValidateSnapshotDataIntegrityCommand extends Command
             ->selectRaw('SUM(CASE WHEN tgl_realisasi BETWEEN DATE_FORMAT(?, "%Y-%m-01") AND ? THEN COALESCE(plafon, 0) ELSE 0 END) as realisasi_os', [
                 Carbon::parse($period)->startOfMonth()->toDateString(),
                 $period,
-            ])
-            ;
+            ]);
+
+        if (Schema::hasColumn('daily_loan_dinamis', 'segmen_kinerja') && Schema::hasColumn('daily_loan_dinamis', 'produk_kinerja')) {
+            $query->whereIn('segmen_kinerja', $sourceSegmentTokens)
+                ->whereIn('produk_kinerja', $sourceProductTokens)
+                ->whereRaw("COALESCE(NULLIF(cabang_normalized, ''), UPPER(TRIM(cabang1))) = ?", [strtoupper(trim($cabang))])
+                ->whereRaw("COALESCE(NULLIF(unit_normalized, ''), UPPER(TRIM(unit1))) = ?", [strtoupper(trim($unit))])
+                ->whereRaw("COALESCE(NULLIF(rm_normalized, ''), UPPER(TRIM(pn_pengelola1))) = ?", [strtoupper(trim($rm))]);
+        } else {
+            $query->whereIn('segmen_dashboard', $sourceSegments)
+                ->whereIn('produk_dashboard', $sourceProducts)
+                ->whereRaw("UPPER(TRIM(cabang1)) = ?", [strtoupper(trim($cabang))])
+                ->whereRaw("UPPER(TRIM(unit1)) = ?", [strtoupper(trim($unit))])
+                ->whereRaw("UPPER(TRIM(pn_pengelola1)) = ?", [strtoupper(trim($rm))]);
+        }
 
         if ($isMicroKur) {
             $query->whereRaw("{$normalizedDescriptionSql} = ?", ['KREDITMIKROKURRITEL2015']);
@@ -274,6 +293,7 @@ class ValidateSnapshotDataIntegrityCommand extends Command
         return match ($product) {
             'BRIGUNA-KONSUMER' => ['BRIGUNA-KONSUMER', 'Briguna-Konsumer'],
             'KPR' => ['KPR'],
+            'SMALL' => ['SMALL', 'COMMERCIAL', 'Commercial', 'CASHCALL', 'Cashcall', 'CASHCOLLATERAL', 'CashCollateral', 'Cash Collateral', 'Cashcoll'],
             'COMMERCIAL' => ['COMMERCIAL', 'Commercial'],
             'CASHCALL' => ['CASHCALL', 'Cashcall'],
             'BRIGUNA-MIKRO' => ['BRIGUNA-MIKRO', 'Briguna-Mikro'],
@@ -283,6 +303,38 @@ class ValidateSnapshotDataIntegrityCommand extends Command
             'KUR-SMALL' => ['KUR-SMALL', 'KUR-Small'],
             default => [$product],
         };
+    }
+
+    private function getSourceSegmentTokens(string $segment): array
+    {
+        return match ($segment) {
+            'CONSUMER' => ['CONSUMER'],
+            'SMALL' => ['SMALL'],
+            'MICRO' => ['MICRO'],
+            default => [$this->normalizeToken($segment)],
+        };
+    }
+
+    private function getSourceProductTokens(string $product): array
+    {
+        return match ($product) {
+            'BRIGUNA-KONSUMER' => ['BRIGUNAKONSUMER'],
+            'KPR' => ['KPR'],
+            'SMALL' => ['SMALL', 'COMMERCIAL', 'CASHCALL', 'CASHCOLLATERAL', 'CASHCOLL'],
+            'COMMERCIAL' => ['COMMERCIAL'],
+            'CASHCALL' => ['CASHCALL'],
+            'BRIGUNA-MIKRO' => ['BRIGUNAMIKRO'],
+            'KUPEDES' => ['KUPEDES'],
+            'KUR-MIKRO' => ['KURMIKRO'],
+            'CASHCOLLATERAL' => ['CASHCOLLATERAL', 'CASHCOLL'],
+            'KUR-SMALL' => ['KURSMALL'],
+            default => [$this->normalizeToken($product)],
+        };
+    }
+
+    private function normalizeToken(string $value): string
+    {
+        return preg_replace('/[^A-Z0-9]/', '', strtoupper(trim($value))) ?? '';
     }
 
     private function validateSsaSimpanan(?string $period = null, bool $useSample = false): void

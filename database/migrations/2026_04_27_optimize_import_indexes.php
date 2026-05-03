@@ -20,18 +20,11 @@ return new class extends Migration
     public function up(): void
     {
         // ───────────────────────────────────────────────────────────────
-        // Merchant QRIS Detail - Duplicate Key + Covering Index
+        // Merchant QRIS Detail already has PRIMARY and POSISI-prefixed covering indexes.
         // ───────────────────────────────────────────────────────────────
         if (Schema::hasTable('jumlah_merchant_qris_detail')) {
-            $this->ensureIndexExists('jumlah_merchant_qris_detail', 'idx_unique_id', [
-                'uniqueid_namareport',
-            ], isUnique: false);
-
-            // Covering index untuk snapshot queries
-            $this->ensureIndexExists('jumlah_merchant_qris_detail', 'idx_posisi_uid', [
-                'posisi',
-                'uniqueid_namareport',
-            ], isUnique: false);
+            $this->dropIndexIfExists('jumlah_merchant_qris_detail', 'idx_unique_id');
+            $this->dropIndexIfExists('jumlah_merchant_qris_detail', 'idx_posisi_uid');
         }
 
         // ───────────────────────────────────────────────────────────────
@@ -202,5 +195,23 @@ return new class extends Migration
         } catch (\Exception $e) {
             echo "⚠ Gagal membuat index {$indexName}: " . $e->getMessage() . "\n";
         }
+    }
+
+    private function dropIndexIfExists(string $tableName, string $indexName): void
+    {
+        $indexes = DB::select(
+            "SELECT INDEX_NAME FROM INFORMATION_SCHEMA.STATISTICS
+             WHERE TABLE_SCHEMA = DATABASE()
+             AND TABLE_NAME = ?
+             AND INDEX_NAME = ?
+             LIMIT 1",
+            [$tableName, $indexName]
+        );
+
+        if (empty($indexes)) {
+            return;
+        }
+
+        DB::statement("ALTER TABLE `{$tableName}` DROP INDEX `{$indexName}`");
     }
 };

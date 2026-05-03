@@ -290,7 +290,10 @@ class OptimizedDashboardHarianSnapshotServiceV3
 
     private function buildMetricSelects(): string
     {
-        return implode(', SUM(', array_map(fn($col) => "{$col}") ELSE 0 END", self::METRIC_COLUMNS)) . ', 0) as ' . implode(', 0 as ', self::METRIC_COLUMNS);
+        return implode(', ', array_map(
+            static fn (string $col): string => "SUM(COALESCE(`{$col}`, 0)) as `{$col}`",
+            self::METRIC_COLUMNS
+        ));
     }
 
     private function buildSourceMetadataSelects(): string

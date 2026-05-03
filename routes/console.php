@@ -185,6 +185,10 @@ Schedule::command('queue:health-sweep')
     ->everyMinute()
     ->withoutOverlapping();
 
+Schedule::command('queue:ensure-running --once')
+    ->everyMinute()
+    ->withoutOverlapping();
+
 Schedule::command('import:health-check')
     ->everyTenMinutes()
     ->withoutOverlapping();

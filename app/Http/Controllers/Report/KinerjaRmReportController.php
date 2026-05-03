@@ -197,6 +197,7 @@ class KinerjaRmReportController extends Controller
 
         return Cache::remember($cacheKey, 600, function () {
             return $this->fetchPeriodList(self::SNAPSHOT_TABLE, 'periode')
+                ->merge($this->fetchPeriodList(self::SOURCE_TABLE, 'periode'))
                 ->unique()
                 ->sortDesc()
                 ->values();

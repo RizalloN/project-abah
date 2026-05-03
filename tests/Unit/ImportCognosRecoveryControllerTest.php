@@ -15,44 +15,41 @@ class ImportCognosRecoveryControllerTest extends TestCase
     {
         parent::setUp();
 
-        if (!Schema::hasTable('cognos_recovery')) {
-            Schema::create('cognos_recovery', function (Blueprint $table) {
-                $table->string('uniqueid_namareport')->primary();
-                $table->date('periode')->nullable();
-                $table->string('keterangan')->nullable();
-                $table->string('cifno')->nullable();
-                $table->string('bc')->nullable();
-                $table->string('sub_bc')->nullable();
-                $table->string('kanwil')->nullable();
-                $table->string('ro_fix')->nullable();
-                $table->string('region')->nullable();
-                $table->string('cabang')->nullable();
-                $table->string('unit_kerja')->nullable();
-                $table->string('gl_account')->nullable();
-                $table->string('produk_code')->nullable();
-                $table->string('segmen_fpsl')->nullable();
-                $table->string('rekening')->nullable();
-                $table->string('status')->nullable();
-                $table->string('stsdt_dt_raw')->nullable();
-                $table->string('sname')->nullable();
-                $table->string('segmen')->nullable();
-                $table->string('segmen_bisnis')->nullable();
-                $table->string('segmen_bisnis_2025')->nullable();
-                $table->string('produk')->nullable();
-                $table->string('segmen_kur')->nullable();
-                $table->string('segmen_repeat')->nullable();
-                $table->string('segmen_2')->nullable();
-                $table->string('compliance')->nullable();
-                $table->decimal('recovery', 20, 2)->nullable();
-                $table->decimal('recovery_klaim', 20, 2)->nullable();
-                $table->decimal('recovery_olsib', 20, 2)->nullable();
-                $table->decimal('total_recovery', 20, 2)->nullable();
-                $table->decimal('recovery_non_klaim', 20, 2)->nullable();
-                $table->timestamps();
-            });
-        } else {
-            DB::table('cognos_recovery')->delete();
-        }
+        Schema::dropIfExists('cognos_recovery');
+        Schema::create('cognos_recovery', function (Blueprint $table) {
+            $table->string('uniqueid_namareport')->primary();
+            $table->date('periode')->nullable();
+            $table->string('keterangan')->nullable();
+            $table->string('cifno')->nullable();
+            $table->string('bc')->nullable();
+            $table->string('sub_bc')->nullable();
+            $table->string('kanwil')->nullable();
+            $table->string('ro_fix')->nullable();
+            $table->string('region')->nullable();
+            $table->string('cabang')->nullable();
+            $table->string('unit_kerja')->nullable();
+            $table->string('gl_account')->nullable();
+            $table->string('produk_code')->nullable();
+            $table->string('segmen_fpsl')->nullable();
+            $table->string('rekening')->nullable();
+            $table->string('status')->nullable();
+            $table->string('stsdt_dt_raw')->nullable();
+            $table->string('sname')->nullable();
+            $table->string('segmen')->nullable();
+            $table->string('segmen_bisnis')->nullable();
+            $table->string('segmen_bisnis_2025')->nullable();
+            $table->string('produk')->nullable();
+            $table->string('segmen_kur')->nullable();
+            $table->string('segmen_repeat')->nullable();
+            $table->string('segmen_2')->nullable();
+            $table->string('compliance')->nullable();
+            $table->decimal('recovery', 20, 2)->nullable();
+            $table->decimal('recovery_klaim', 20, 2)->nullable();
+            $table->decimal('recovery_olsib', 20, 2)->nullable();
+            $table->decimal('total_recovery', 20, 2)->nullable();
+            $table->decimal('recovery_non_klaim', 20, 2)->nullable();
+            $table->timestamps();
+        });
     }
 
     public function test_build_csv_context_detects_semicolon_header_and_end_of_month_period(): void
@@ -106,8 +103,68 @@ class ImportCognosRecoveryControllerTest extends TestCase
 
         $this->assertSame('493809.00', $this->invokeMethod($controller, 'normalizeDecimalValue', ['493.809']));
         $this->assertSame('6413092.00', $this->invokeMethod($controller, 'normalizeDecimalValue', ['6.413.092']));
+        $this->assertSame('-3307500.00', $this->invokeMethod($controller, 'normalizeDecimalValue', ['(3.307.500)']));
         $this->assertNull($this->invokeMethod($controller, 'normalizeDecimalValue', ['']));
         $this->assertNull($this->invokeMethod($controller, 'normalizeDecimalValue', ['-']));
+    }
+
+    public function test_legacy_short_header_is_mapped_by_name_not_fixed_position(): void
+    {
+        $controller = new ImportCognosRecoveryController();
+        $csvPath = $this->createFixtureCsv([
+            'PERIODE_DATA;KANWIL;RO FIX;KANCA;UNIT_KERJA;ACCTNO;CIFNO;SNAME;PRODUK;SEGMEN KUR;SEGMEN;SEGMEN 2;COMPLIANCE; SALDO_PH ; RECOVERY ; RECOVERY_KLAIM_ASURANSI ; RECOVERY_OLSIB ; TOTAL_RECOVERY ; RECOVERY NON KLAIM ',
+            '202501;R -- KANWIL MALANG;Malang;00049 -- KC Magetan (Konsolidasi-MB);03504 -- UNIT MAOSPATI MAGETAN;701500314157;SA94997;SUTIYEM;KUR Kupedes Baru;Mikro KUR;Mikro;Mikro;KUR Mikro; - ; 1.600.000 ; - ; - ; 1.600.000 ; 1.600.000 ',
+        ]);
+
+        try {
+            $context = $this->invokeMethod($controller, 'buildCsvContext', [$csvPath]);
+            $line = file($csvPath, FILE_IGNORE_NEW_LINES)[1];
+            $mapped = $this->invokeMethod($controller, 'mapCsvRow', [
+                $context,
+                $this->invokeMethod($controller, 'parseCsvLine', [$line, ';']),
+                2,
+            ]);
+
+            $headers = $context['headers'];
+            $this->assertSame('2025-01-31', $mapped['normalized_row'][array_search('periode', $headers, true)]);
+            $this->assertSame('KC Magetan', $mapped['normalized_row'][array_search('cabang', $headers, true)]);
+            $this->assertSame('UNIT MAOSPATI MAGETAN', $mapped['normalized_row'][array_search('unit_kerja', $headers, true)]);
+            $this->assertSame('701500314157', $mapped['normalized_row'][array_search('rekening', $headers, true)]);
+            $this->assertSame('MICRO', $mapped['normalized_row'][array_search('segmen_bisnis_2025', $headers, true)]);
+            $this->assertSame('1600000.00', $mapped['normalized_row'][array_search('total_recovery', $headers, true)]);
+            $this->assertSame('1600000.00', $mapped['normalized_row'][array_search('recovery_non_klaim', $headers, true)]);
+        } finally {
+            @unlink($csvPath);
+        }
+    }
+
+    public function test_modern_shuffled_header_aliases_are_importable(): void
+    {
+        $controller = new ImportCognosRecoveryController();
+        $csvPath = $this->createFixtureCsv([
+            'PERIODE;KETERANGAN;MB;SUB BC;KANWIL;RO FIX;REGION;CABANG;UNIT_KERJA;GL_ACCOUNT;PRODUK_CODE;SEGMEN_FPSL;REKENING;STATUS;STSDT_DT;CIFNO;SNAME;SEGMEN;SEGMEN_BISNIS;SEGMEN_BISNIS_2025;PRODUK;SEGMEN KUR;SEGMEN;SEGMEN 2;COMPLIANCE; Recovery ; Recovery Klaim ; Recovery Olsib ; Total Recovery ; Recovery Non Klaim ',
+            '202510;Klaim Asuransi;65;65;KANWIL MALANG;Malang;Region 13;KC Pasuruan;00065 -- KC Pasuruan;4080005000;RV;Small;6,50105E+12;8;45899;ENW5641;ENDANG;Kecil;KECIL;Small;KUR Kecil;Program KUR;Program;Kecil;KUR Ritel; - ;150.637.413; - ;150.637.413; - ',
+        ]);
+
+        try {
+            $context = $this->invokeMethod($controller, 'buildCsvContext', [$csvPath]);
+            $line = file($csvPath, FILE_IGNORE_NEW_LINES)[1];
+            $mapped = $this->invokeMethod($controller, 'mapCsvRow', [
+                $context,
+                $this->invokeMethod($controller, 'parseCsvLine', [$line, ';']),
+                2,
+            ]);
+
+            $headers = $context['headers'];
+            $this->assertSame('65', $mapped['normalized_row'][array_search('bc', $headers, true)]);
+            $this->assertSame('65', $mapped['normalized_row'][array_search('sub_bc', $headers, true)]);
+            $this->assertSame('KC Pasuruan', $mapped['normalized_row'][array_search('unit_kerja', $headers, true)]);
+            $this->assertSame('SMALL', $mapped['normalized_row'][array_search('segmen_bisnis_2025', $headers, true)]);
+            $this->assertSame('150637413.00', $mapped['normalized_row'][array_search('recovery_klaim', $headers, true)]);
+            $this->assertSame('150637413.00', $mapped['normalized_row'][array_search('total_recovery', $headers, true)]);
+        } finally {
+            @unlink($csvPath);
+        }
     }
 
     public function test_footer_row_is_detected_and_skipped(): void

@@ -7,6 +7,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Throwable;
 
+require_once __DIR__ . '/SnapshotQueryOptimizer.php';
+
 class ReportSnapshotBuilder
 {
     private const DASHBOARD_SNAPSHOT_TABLE = 'dashboard_pinjaman_snapshots';
@@ -67,9 +69,15 @@ class ReportSnapshotBuilder
     /** @var array<string, string> */
     private array $dormantBranchFilterExpressionCache = [];
 
+    private ?string $rasioCasaTempTablePeriod = null;
+    private ?bool $rasioCasaTempTableTypeFilter = null;
+
+    private readonly SnapshotQueryOptimizer $queryOptimizer;
+
     public function __construct(
         private readonly DashboardHarianSnapshotService $dashboardHarianSnapshotService
     ) {
+        $this->queryOptimizer = new SnapshotQueryOptimizer();
     }
 
     public function rebuild(string $report = 'all', ?string $period = null, bool $force = false): array
@@ -632,7 +640,8 @@ class ReportSnapshotBuilder
         $loanProductColumn = $this->resolveExistingColumn('daily_loan_dinamis', ['produk_dashboard'], 'produk_dashboard');
         $loanBalanceColumn = $this->resolveExistingColumn('daily_loan_dinamis', ['baki_debet1', 'baki_debet'], 'baki_debet1');
 
-        $loanIdentitySql = "REGEXP_REPLACE(d.{$loanKeyColumn}, '[^0-9]', '')";
+        $loanIdentitySql = $this->buildLoanIdentityExpression($loanKeyColumn);
+        $loanBranchSql = $this->buildLoanNormalizedExpression($loanBranchColumn, 'cabang_normalized');
         $brigunaFlagSql = $this->buildSegmentFlagExpression("d.{$loanSegmentColumn}", "d.{$loanProductColumn}", 'briguna');
         $kprFlagSql = $this->buildSegmentFlagExpression("d.{$loanSegmentColumn}", "d.{$loanProductColumn}", 'kpr');
         $mikroFlagSql = $this->buildSegmentFlagExpression("d.{$loanSegmentColumn}", "d.{$loanProductColumn}", 'mikro');
@@ -653,22 +662,10 @@ class ReportSnapshotBuilder
 
         if ($casaDate) {
             $applyCasaTypeFilter = $this->shouldApplyCasaTypeFilter($casaDate);
-            $casaFilterSql = $applyCasaTypeFilter ? "AND (s.jenis_simpanan LIKE 'GIRO%' OR s.jenis_simpanan LIKE 'TABUNGAN%')" : "";
-            $casaIdentitySql = "REGEXP_REPLACE(s.{$casaKeyColumn}, '[^0-9]', '')";
+            $this->ensureRasioCasaTempTable($casaDate, $casaKeyColumn, $applyCasaTypeFilter);
             $casaJoinSql = "
-                LEFT JOIN (
-                    SELECT
-                        {$casaIdentitySql} as identity_key,
-                        SUM(COALESCE(saldo_idr, 0)) as casa_balance
-                    FROM simpanan_multipn s
-                    WHERE s.posisi = ?
-                        AND s.{$casaKeyColumn} IS NOT NULL
-                        AND s.{$casaKeyColumn} <> ''
-                        {$casaFilterSql}
-                    GROUP BY identity_key
-                ) c ON c.identity_key = base.identity_key
+                LEFT JOIN tmp_rasio_casa_balances c ON c.identity_key = base.identity_key
             ";
-            $bindings[] = $casaDate;
         }
 
         DB::statement("
@@ -715,7 +712,7 @@ class ReportSnapshotBuilder
                     SUM(base.source_row_count) as source_row_count
                 FROM (
                     SELECT
-                        UPPER(TRIM(d.{$loanBranchColumn})) as branch_key,
+                        {$loanBranchSql} as branch_key,
                         {$loanIdentitySql} as identity_key,
                         SUM(COALESCE(d.{$loanBalanceColumn}, 0)) as loan_balance,
                         MAX({$brigunaFlagSql}) as has_briguna,
@@ -763,7 +760,9 @@ class ReportSnapshotBuilder
         $loanProductColumn = $this->resolveExistingColumn('daily_loan_dinamis', ['produk_dashboard'], 'produk_dashboard');
         $loanBalanceColumn = $this->resolveExistingColumn('daily_loan_dinamis', ['baki_debet1', 'baki_debet'], 'baki_debet1');
 
-        $loanIdentitySql = "REGEXP_REPLACE(d.{$loanKeyColumn}, '[^0-9]', '')";
+        $loanIdentitySql = $this->buildLoanIdentityExpression($loanKeyColumn);
+        $loanBranchSql = $this->buildLoanNormalizedExpression($loanBranchColumn, 'cabang_normalized');
+        $loanUkerSql = $this->buildLoanNormalizedExpression($loanUkerColumn, 'unit_normalized');
         $brigunaFlagSql = $this->buildSegmentFlagExpression("d.{$loanSegmentColumn}", "d.{$loanProductColumn}", 'briguna');
         $kprFlagSql = $this->buildSegmentFlagExpression("d.{$loanSegmentColumn}", "d.{$loanProductColumn}", 'kpr');
         $mikroFlagSql = $this->buildSegmentFlagExpression("d.{$loanSegmentColumn}", "d.{$loanProductColumn}", 'mikro');
@@ -784,22 +783,10 @@ class ReportSnapshotBuilder
 
         if ($casaDate) {
             $applyCasaTypeFilter = $this->shouldApplyCasaTypeFilter($casaDate);
-            $casaFilterSql = $applyCasaTypeFilter ? "AND (s.jenis_simpanan LIKE 'GIRO%' OR s.jenis_simpanan LIKE 'TABUNGAN%')" : "";
-            $casaIdentitySql = "REGEXP_REPLACE(s.{$casaKeyColumn}, '[^0-9]', '')";
+            $this->ensureRasioCasaTempTable($casaDate, $casaKeyColumn, $applyCasaTypeFilter);
             $casaJoinSql = "
-                LEFT JOIN (
-                    SELECT
-                        {$casaIdentitySql} as identity_key,
-                        SUM(COALESCE(saldo_idr, 0)) as casa_balance
-                    FROM simpanan_multipn s
-                    WHERE s.posisi = ?
-                        AND s.{$casaKeyColumn} IS NOT NULL
-                        AND s.{$casaKeyColumn} <> ''
-                        {$casaFilterSql}
-                    GROUP BY identity_key
-                ) c ON c.identity_key = base.identity_key
+                LEFT JOIN tmp_rasio_casa_balances c ON c.identity_key = base.identity_key
             ";
-            $bindings[] = $casaDate;
         }
 
         DB::statement("
@@ -848,8 +835,8 @@ class ReportSnapshotBuilder
                     SUM(base.source_row_count) as source_row_count
                 FROM (
                     SELECT
-                        UPPER(TRIM(d.{$loanBranchColumn})) as source_branch_key,
-                        UPPER(TRIM(d.{$loanUkerColumn})) as uker_key,
+                        {$loanBranchSql} as source_branch_key,
+                        {$loanUkerSql} as uker_key,
                         {$loanIdentitySql} as identity_key,
                         SUM(COALESCE(d.{$loanBalanceColumn}, 0)) as loan_balance,
                         MAX({$brigunaFlagSql}) as has_briguna,
@@ -1428,7 +1415,9 @@ class ReportSnapshotBuilder
         $mikroFlagSql = $this->buildSegmentFlagExpression("d.{$loanSegmentColumn}", "d.{$loanProductColumn}", 'mikro');
         $smcFlagSql = $this->buildSegmentFlagExpression("d.{$loanSegmentColumn}", "d.{$loanProductColumn}", 'smc');
 
-        $loanBase = DB::table('daily_loan_dinamis as d')
+        $dldTable = DB::raw($this->queryOptimizer->optimizeSnapshotQuery('daily_loan_dinamis', 'd', ['idx_daily_loan_periode', 'idx_daily_loan_periode_cabang']));
+
+        $loanBase = DB::table($dldTable)
             ->where('d.periode', $loanPeriod)
             ->whereNotNull("d.{$loanKeyColumn}")
             ->where("d.{$loanKeyColumn}", '<>', '')
@@ -1470,17 +1459,23 @@ class ReportSnapshotBuilder
             $applyCasaTypeFilter = $this->shouldApplyCasaTypeFilter($casaDate);
             $casaIdentitySql = $this->buildJoinableIdentitySql($casaKeyColumn);
 
-            $casaBase = DB::table('simpanan_multipn')
-                ->where('posisi', $casaDate)
-                ->whereNotNull($casaKeyColumn)
-                ->where($casaKeyColumn, '<>', '')
+            // Apply FORCE INDEX for optimal MySQL Optimizer behavior on large simpanan_multipn tables
+            $smTable = DB::raw($this->queryOptimizer->optimizeSnapshotQuery('simpanan_multipn', 'c', [
+                'idx_smp_posisi_distinct_queries',
+                'idx_smp_period_covering_counts',
+            ]));
+
+            $casaBase = DB::table($smTable)
+                ->where('c.posisi', $casaDate)
+                ->whereNotNull("c.{$casaKeyColumn}")
+                ->where("c.{$casaKeyColumn}", '<>', '')
                 ->when($applyCasaTypeFilter, function ($query) {
                     $query->where(function ($inner) {
-                        $inner->where('jenis_simpanan', 'like', 'GIRO%')
-                            ->orWhere('jenis_simpanan', 'like', 'TABUNGAN%');
+                        $inner->where('c.jenis_simpanan', 'like', 'GIRO%')
+                            ->orWhere('c.jenis_simpanan', 'like', 'TABUNGAN%');
                     });
                 })
-                ->selectRaw("{$casaIdentitySql} as identity_key, SUM(COALESCE(saldo_idr, 0)) as casa_balance")
+                ->selectRaw("{$casaIdentitySql} as identity_key, SUM(COALESCE(c.saldo_idr, 0)) as casa_balance")
                 ->groupBy('identity_key');
 
             $joined->leftJoinSub($casaBase, 'casa_base', function ($join) {
@@ -1939,6 +1934,64 @@ class ReportSnapshotBuilder
             ",
             default => '0',
         };
+    }
+
+    private function buildLoanIdentityExpression(string $fallbackColumn): string
+    {
+        if (Schema::hasColumn('daily_loan_dinamis', 'cifno_clean')) {
+            return "COALESCE(NULLIF(d.cifno_clean, ''), REGEXP_REPLACE(d.{$fallbackColumn}, '[^0-9]', ''))";
+        }
+
+        return "REGEXP_REPLACE(d.{$fallbackColumn}, '[^0-9]', '')";
+    }
+
+    private function buildLoanNormalizedExpression(string $fallbackColumn, string $shadowColumn): string
+    {
+        $fallbackExpression = "UPPER(TRIM(d.{$fallbackColumn}))";
+
+        if (Schema::hasColumn('daily_loan_dinamis', $shadowColumn)) {
+            return "COALESCE(NULLIF(d.{$shadowColumn}, ''), {$fallbackExpression})";
+        }
+
+        return $fallbackExpression;
+    }
+
+    private function ensureRasioCasaTempTable(string $casaDate, string $casaKeyColumn, bool $applyCasaTypeFilter): void
+    {
+        if (
+            $this->rasioCasaTempTablePeriod === $casaDate
+            && $this->rasioCasaTempTableTypeFilter === $applyCasaTypeFilter
+        ) {
+            return;
+        }
+
+        DB::statement("
+            CREATE TEMPORARY TABLE IF NOT EXISTS tmp_rasio_casa_balances (
+                identity_key VARCHAR(64) COLLATE utf8mb4_unicode_ci NOT NULL PRIMARY KEY,
+                casa_balance DECIMAL(22, 2) NOT NULL DEFAULT 0
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+        DB::statement('TRUNCATE TABLE tmp_rasio_casa_balances');
+
+        $casaFilterSql = $applyCasaTypeFilter
+            ? "AND (s.jenis_simpanan LIKE 'GIRO%' OR s.jenis_simpanan LIKE 'TABUNGAN%')"
+            : '';
+
+        DB::statement("
+            INSERT INTO tmp_rasio_casa_balances (identity_key, casa_balance)
+            SELECT
+                REGEXP_REPLACE(s.{$casaKeyColumn}, '[^0-9]', '') as identity_key,
+                SUM(COALESCE(s.saldo_idr, 0)) as casa_balance
+            FROM simpanan_multipn s
+            WHERE s.posisi = ?
+                AND s.{$casaKeyColumn} IS NOT NULL
+                AND s.{$casaKeyColumn} <> ''
+                {$casaFilterSql}
+            GROUP BY identity_key
+        ", [$casaDate]);
+
+        $this->rasioCasaTempTablePeriod = $casaDate;
+        $this->rasioCasaTempTableTypeFilter = $applyCasaTypeFilter;
     }
 
     private function resolveExistingColumn(string $table, array $candidates, string $fallback): string

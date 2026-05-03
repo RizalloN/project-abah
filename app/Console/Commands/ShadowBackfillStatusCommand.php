@@ -3,11 +3,12 @@
 namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 class ShadowBackfillStatusCommand extends Command
 {
-    protected $signature = 'shadow:status
+    protected $signature = 'shadow:backfill-status
         {--failures : Show recent failures}
         {--metrics : Show performance metrics}
         {--checkpoints : Show all checkpoints}
@@ -67,7 +68,7 @@ class ShadowBackfillStatusCommand extends Command
                 number_format($checkpoint->rows_processed),
                 $checkpoint->completion_percentage . '%',
                 $status,
-                $checkpoint->updated_at->format('Y-m-d H:i'),
+                $this->formatTimestamp($checkpoint->updated_at),
             ];
         }
 
@@ -99,7 +100,7 @@ class ShadowBackfillStatusCommand extends Command
             $tableRows[] = [
                 $failure->periods,
                 $failure->attempts,
-                $failure->failed_at->format('Y-m-d H:i'),
+                $this->formatTimestamp($failure->failed_at),
                 substr($failure->error_message, 0, 50) . '...',
             ];
         }
@@ -181,7 +182,7 @@ class ShadowBackfillStatusCommand extends Command
                 number_format($cp->chunks_completed),
                 $cp->completion_percentage . '%',
                 $completionBar,
-                $cp->updated_at->format('Y-m-d H:i:s'),
+                $this->formatTimestamp($cp->updated_at, 'Y-m-d H:i:s'),
             ];
         }
 
@@ -200,5 +201,18 @@ class ShadowBackfillStatusCommand extends Command
         $filled = (int) ($percentage / 5);
         $empty = 20 - $filled;
         return '[' . str_repeat('█', $filled) . str_repeat('░', $empty) . ']';
+    }
+
+    private function formatTimestamp(mixed $value, string $format = 'Y-m-d H:i'): string
+    {
+        if ($value === null || $value === '') {
+            return '-';
+        }
+
+        try {
+            return Carbon::parse($value)->format($format);
+        } catch (\Throwable) {
+            return (string) $value;
+        }
     }
 }

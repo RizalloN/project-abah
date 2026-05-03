@@ -8,6 +8,7 @@ use App\Services\Import\ImportProgressService;
 use App\Support\ParallelSnapshotBatchCoordinator;
 use App\Support\SimpananMultiPnSnapshotGate;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
@@ -257,6 +258,8 @@ class ReportDataSyncService
         $startedAt = microtime(true);
 
         try {
+            $this->ensureDailyLoanShadowColumnsReady($periodForDispatch, $jobId, $source);
+
             $batchId = ParallelSnapshotBatchCoordinator::dispatchDailyLoanParallelRebuild(
                 $periodForDispatch,
                 $deleteId,
@@ -279,6 +282,112 @@ class ReportDataSyncService
 
             throw $e;
         }
+    }
+
+    private function ensureDailyLoanShadowColumnsReady(?string $period, ?int $jobId, ?string $source): void
+    {
+        $normalizedPeriod = trim((string) $period);
+        if ($normalizedPeriod === '' || !Schema::hasTable('daily_loan_dinamis')) {
+            return;
+        }
+
+        $missing = $this->countDailyLoanRowsMissingShadowColumns($normalizedPeriod);
+        if ($missing <= 0) {
+            $this->writeAudit('daily_loan_dinamis', $normalizedPeriod, $jobId, $source, 'shadow_backfill_pre_snapshot', 'skipped', [
+                'context' => ['reason' => 'shadow_columns_already_ready'],
+            ]);
+
+            return;
+        }
+
+        $lock = Cache::lock('shadow:backfill:auto:' . $normalizedPeriod, 1800);
+        $startedAt = microtime(true);
+
+        try {
+            $lock->block(30, function () use ($normalizedPeriod, $jobId, $source, $missing, $startedAt): void {
+                $remainingAfterWait = $this->countDailyLoanRowsMissingShadowColumns($normalizedPeriod);
+                if ($remainingAfterWait <= 0) {
+                    $this->writeAudit('daily_loan_dinamis', $normalizedPeriod, $jobId, $source, 'shadow_backfill_pre_snapshot', 'skipped', [
+                        'duration_ms' => $this->elapsedMs($startedAt),
+                        'context' => ['reason' => 'completed_by_parallel_worker'],
+                    ]);
+
+                    return;
+                }
+
+                $exitCode = Artisan::call('shadow:backfill', [
+                    '--periods' => $normalizedPeriod,
+                    '--chunk-size' => 10000,
+                    '--retry-count' => 5,
+                    '--skip-snapshot' => true,
+                ]);
+
+                $remaining = $this->countDailyLoanRowsMissingShadowColumns($normalizedPeriod);
+                $total = (int) DB::table('daily_loan_dinamis')
+                    ->where('periode', $normalizedPeriod)
+                    ->count();
+                $completion = $total > 0 ? round((100 * ($total - $remaining)) / $total, 2) : 100.0;
+
+                $this->writeAudit('daily_loan_dinamis', $normalizedPeriod, $jobId, $source, 'shadow_backfill_pre_snapshot', $exitCode === 0 ? 'success' : 'failed', [
+                    'duration_ms' => $this->elapsedMs($startedAt),
+                    'affected_rows' => max(0, $missing - $remaining),
+                    'message' => $exitCode === 0 ? null : 'Shadow backfill command returned exit code ' . $exitCode,
+                    'context' => [
+                        'missing_before' => $missing,
+                        'missing_after' => $remaining,
+                        'total_rows' => $total,
+                        'completion_percentage' => $completion,
+                    ],
+                ]);
+
+                if ($exitCode !== 0 || $completion < 95.0) {
+                    throw new \RuntimeException(sprintf(
+                        'Shadow column Daily Loan periode %s belum siap untuk snapshot (%.2f%% lengkap, sisa %s row).',
+                        $normalizedPeriod,
+                        $completion,
+                        number_format($remaining)
+                    ));
+                }
+            });
+        } finally {
+            try {
+                optional($lock)->release();
+            } catch (Throwable $e) {
+                Log::debug('Gagal melepas lock auto shadow backfill.', [
+                    'period' => $normalizedPeriod,
+                    'message' => $e->getMessage(),
+                ]);
+            }
+        }
+    }
+
+    private function countDailyLoanRowsMissingShadowColumns(string $period): int
+    {
+        $requiredColumns = [
+            'segmen_kinerja',
+            'produk_kinerja',
+            'cabang_normalized',
+            'unit_normalized',
+            'branch_normalized',
+            'rm_normalized',
+            'pn_pemutus_normalized',
+            'cifno_clean',
+        ];
+
+        foreach ($requiredColumns as $column) {
+            if (!Schema::hasColumn('daily_loan_dinamis', $column)) {
+                return 0;
+            }
+        }
+
+        return (int) DB::table('daily_loan_dinamis')
+            ->where('periode', $period)
+            ->where(function ($query) use ($requiredColumns) {
+                foreach ($requiredColumns as $column) {
+                    $query->orWhereNull($column);
+                }
+            })
+            ->count();
     }
 
     private function syncSimpanan(?string $periodHint, ?int $jobId, ?string $source, ?string $deleteId = null): void

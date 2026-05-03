@@ -54,6 +54,18 @@
         "start:vite": [
             "powershell -ExecutionPolicy Bypass -File .\\scripts\\start-local.ps1 -WithVite"
         ],
+        "start:staging": [
+            "powershell -ExecutionPolicy Bypass -File .\\scripts\\start-local.ps1 -ImportWorkers 4 -ReportWorkers 4 -SnapshotWorkers 3 -ShadowWorkers 3 -WorkerMemory 1024"
+        ],
+        "start:power": [
+            "powershell -ExecutionPolicy Bypass -File .\\scripts\\start-local.ps1 -ImportWorkers 6 -ReportWorkers 6 -SnapshotWorkers 4 -ShadowWorkers 4 -WorkerMemory 1024"
+        ],
+        "stop:power": [
+            "powershell -ExecutionPolicy Bypass -File .\\scripts\\stop-power.ps1"
+        ],
+        "stop:workers": [
+            "powershell -ExecutionPolicy Bypass -File .\\scripts\\stop-power.ps1 -IncludeLegacy"
+        ],
         "queue": [
             "Composer\\Config::disableProcessTimeout",
             "powershell -ExecutionPolicy Bypass -File .\\scripts\\queue-persistent.ps1"
@@ -66,8 +78,7 @@
         ],
         "backfill:now": [
             "Composer\\Config::disableProcessTimeout",
-            "php artisan shadow:backfill --queue --queue-name=shadow-backfill",
-            "npx concurrently -c \"#22c55e,#c4b5fd,#38bdf8,#fb7185,#fdba74\" \"powershell -ExecutionPolicy Bypass -File .\\scripts\\queue-persistent.ps1 -Queues shadow-backfill -Memory 2048\" \"powershell -ExecutionPolicy Bypass -File .\\scripts\\queue-persistent.ps1 -Queues imports-high -Memory 1024\" \"powershell -ExecutionPolicy Bypass -File .\\scripts\\queue-persistent.ps1 -Queues snapshots-parallel -Memory 2048\" \"powershell -ExecutionPolicy Bypass -File .\\scripts\\queue-persistent.ps1 -Queues default,reports-low -Memory 1024\" \"powershell -ExecutionPolicy Bypass -File .\\scripts\\schedule-persistent.ps1\" --names=shadow-backfill,import-queue,snapshot-queue,report-queue,scheduler --kill-others"
+            "php artisan shadow:backfill --chunk-size=10000 --retry-count=5 --live"
         ],
         "test": [
             "@php artisan config:clear --ansi",

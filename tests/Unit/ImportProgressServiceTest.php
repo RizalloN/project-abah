@@ -444,7 +444,7 @@ class ImportProgressServiceTest extends TestCase
 
             $this->assertSame('failed', $payload['status']);
             $this->assertSame(55, $payload['job_id']);
-            $this->assertSame('Import sedang diproses.', $payload['message']);
+            $this->assertSame('Import gagal diproses.', $payload['message']);
         } finally {
             if (is_file($stagedFile)) {
                 @unlink($stagedFile);

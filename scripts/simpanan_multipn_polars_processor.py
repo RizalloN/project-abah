@@ -648,6 +648,17 @@ def sanitize_source_optimized(source_path: str, delimiter: str, config: dict | N
             if existing_target:
                 df_collected = df_collected.select(existing_target)
 
+        dates = []
+        if "posisi" in df_collected.columns:
+            try:
+                dates = [
+                    str(value).strip()
+                    for value in df_collected.get_column("posisi").unique().sort().to_list()
+                    if str(value).strip()
+                ]
+            except Exception:
+                dates = []
+
         # 7. Periodic termination check
         job_id = config.get("job_id")
         db_config = config.get("db_config")
@@ -669,7 +680,7 @@ def sanitize_source_optimized(source_path: str, delimiter: str, config: dict | N
         speed = int(valid_rows / elapsed)
         send_progress(90, "Optimasi selesai.", valid_rows, valid_rows, speed, "baris/detik", "polars")
 
-        return write_path, df_collected.columns, total_input_rows + 1, 0, skipped_count, 0, True, [], valid_rows, int(balance_total_cents), account_samples, direct_output_written
+        return write_path, df_collected.columns, total_input_rows + 1, 0, skipped_count, 0, True, [], valid_rows, int(balance_total_cents), account_samples, direct_output_written, dates
 
     except Exception as e:
         if temp_path and os.path.exists(temp_path):
@@ -891,6 +902,7 @@ def stage_simpanan_multipn(config: dict) -> None:
         balance_total_cents,
         account_samples,
         direct_output_written,
+        dates,
     ) = sanitize_source_optimized(source_path, delimiter, config)
     total_data_rows = max(0, total_records - 1)
 
@@ -934,6 +946,7 @@ def stage_simpanan_multipn(config: dict) -> None:
                 "balance_total_cents": int(balance_total_cents),
                 "account_samples": account_samples,
                 "headers": output_headers,
+                "dates": dates,
                 "full_vectorization": bool(config.get("full_vectorization", False)),
             },
         )

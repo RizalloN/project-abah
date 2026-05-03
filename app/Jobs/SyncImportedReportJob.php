@@ -22,13 +22,34 @@ class SyncImportedReportJob implements ShouldQueue, ShouldBeUniqueUntilProcessin
 
     public int $timeout = 0;
 
+    public ?int $jobId = null;
+    public ?string $tableName = null;
+    public ?string $periodHint = null;
+    public ?string $source = null;
+    public ?string $rebuildId = null;
+
     public function __construct(
-        public ?int $jobId = null,
-        public ?string $tableName = null,
-        public ?string $periodHint = null,
-        public ?string $source = null,
-        public ?string $rebuildId = null
+        mixed $jobId = null,
+        ?string $tableName = null,
+        ?string $periodHint = null,
+        ?string $source = null,
+        ?string $rebuildId = null
     ) {
+        if (is_string($jobId) && !is_numeric($jobId)) {
+            $this->jobId = null;
+            $this->tableName = $jobId;
+            $this->periodHint = $tableName;
+            $this->source = $periodHint;
+            $this->rebuildId = $source;
+
+            return;
+        }
+
+        $this->jobId = $jobId === null || $jobId === '' ? null : (int) $jobId;
+        $this->tableName = $tableName;
+        $this->periodHint = $periodHint;
+        $this->source = $source;
+        $this->rebuildId = $rebuildId;
     }
 
     public function uniqueId(): string

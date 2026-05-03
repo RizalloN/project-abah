@@ -3895,11 +3895,65 @@ class ImportIndexController extends Controller
         $normalizedFilter = trim($periodFilter);
         if (preg_match('/^\d{4}-\d{2}$/', $normalizedFilter) === 1) {
             $safeColumn = str_replace('`', '``', $periodColumn);
-            $query->whereRaw("SUBSTR(CAST(`{$safeColumn}` AS CHAR), 1, 7) = ?", [$normalizedFilter]);
+            $periodVariants = $this->buildManagedMonthPeriodVariants($normalizedFilter);
+            $query->where(function ($periodQuery) use ($periodColumn, $safeColumn, $normalizedFilter, $periodVariants) {
+                $periodQuery->whereRaw("SUBSTR(CAST(`{$safeColumn}` AS CHAR), 1, 7) = ?", [$normalizedFilter]);
+
+                if ($periodVariants !== []) {
+                    $periodQuery->orWhereIn($periodColumn, $periodVariants);
+                }
+            });
             return;
         }
 
         $query->where($periodColumn, $periodFilter);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function buildManagedMonthPeriodVariants(string $normalizedMonth): array
+    {
+        if (preg_match('/^(\d{4})-(\d{2})$/', trim($normalizedMonth), $matches) !== 1) {
+            return [];
+        }
+
+        $year = (int) $matches[1];
+        $month = (int) $matches[2];
+        if ($year < 1900 || $month < 1 || $month > 12) {
+            return [];
+        }
+
+        $englishLong = [
+            1 => 'January', 2 => 'February', 3 => 'March', 4 => 'April',
+            5 => 'May', 6 => 'June', 7 => 'July', 8 => 'August',
+            9 => 'September', 10 => 'October', 11 => 'November', 12 => 'December',
+        ];
+        $englishShort = [
+            1 => 'Jan', 2 => 'Feb', 3 => 'Mar', 4 => 'Apr',
+            5 => 'May', 6 => 'Jun', 7 => 'Jul', 8 => 'Aug',
+            9 => 'Sep', 10 => 'Oct', 11 => 'Nov', 12 => 'Dec',
+        ];
+        $indonesianLong = [
+            1 => 'Januari', 2 => 'Februari', 3 => 'Maret', 4 => 'April',
+            5 => 'Mei', 6 => 'Juni', 7 => 'Juli', 8 => 'Agustus',
+            9 => 'September', 10 => 'Oktober', 11 => 'November', 12 => 'Desember',
+        ];
+        $indonesianShort = [
+            1 => 'Jan', 2 => 'Feb', 3 => 'Mar', 4 => 'Apr',
+            5 => 'Mei', 6 => 'Jun', 7 => 'Jul', 8 => 'Agu',
+            9 => 'Sep', 10 => 'Okt', 11 => 'Nov', 12 => 'Des',
+        ];
+
+        return array_values(array_unique(array_filter([
+            sprintf('%04d-%02d', $year, $month),
+            sprintf('%02d-%04d', $month, $year),
+            sprintf('%02d/%04d', $month, $year),
+            $englishLong[$month] . ' ' . $year,
+            $englishShort[$month] . ' ' . $year,
+            $indonesianLong[$month] . ' ' . $year,
+            $indonesianShort[$month] . ' ' . $year,
+        ], static fn (string $value): bool => trim($value) !== '')));
     }
 
     private function normalizeDeleteScopes(array $validated): array

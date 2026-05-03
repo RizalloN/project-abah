@@ -2,8 +2,14 @@
 
 namespace App\Support;
 
+use App\Jobs\RebuildChartPeriodikPeriodJob;
+use App\Jobs\RebuildDashboardPeriodJob;
+use App\Jobs\RebuildDormantPeriodJob;
+use App\Jobs\RebuildHarianPeriodJob;
 use App\Jobs\RebuildLoanChartPeriodikSnapshotJob;
 use App\Jobs\RebuildLoanDashboardSnapshotJob;
+use App\Jobs\RebuildRasioPeriodJob;
+use App\Jobs\RebuildSimpananPeriodJob;
 use App\Jobs\RebuildSnapshotDormantBatch;
 use App\Jobs\RebuildSnapshotHarianBatch;
 use App\Jobs\RebuildSnapshotPerformanceRmBatch;
@@ -174,6 +180,119 @@ class ParallelSnapshotBatchCoordinator
         if ($batch->failedJobs > 0) {
             Log::warning('Parallel snapshot batch has failed jobs - manual intervention may be needed', $stats);
         }
+    }
+
+    /**
+     * Dispatch individual period jobs for Simpanan snapshots (4x-6x faster with 4-6 workers).
+     *
+     * Instead of one batch job processing all periods sequentially, dispatch individual
+     * jobs per period to the queue. With 4-6 workers, periods process in parallel.
+     *
+     * @param array<string> $periods Periods to rebuild (e.g., ["202604", "202605"])
+     * @param string|null $deleteId Progress tracking ID
+     * @param string|null $source Source of the rebuild trigger
+     * @return string Batch ID
+     */
+    public static function dispatchParallelPeriodRebuild(
+        array $periods,
+        ?string $deleteId = null,
+        ?string $source = null
+    ): string {
+        if (empty($periods)) {
+            throw new \InvalidArgumentException('At least one period must be provided');
+        }
+
+        $jobsCount = count($periods) * 5; // 5 snapshots per period
+
+        Log::info('Dispatching individual period jobs for parallel Simpanan snapshot rebuild', [
+            'periods' => $periods,
+            'source' => $source,
+            'jobs_count' => $jobsCount,
+            'workers_recommended' => 4,
+        ]);
+
+        $jobs = [];
+        foreach ($periods as $period) {
+            $jobs[] = new RebuildSimpananPeriodJob($period, true, $deleteId);
+            $jobs[] = new RebuildHarianPeriodJob($period, true, $deleteId);
+            $jobs[] = new RebuildDormantPeriodJob($period, true, $deleteId);
+            $jobs[] = new RebuildRasioPeriodJob($period, true, $deleteId);
+        }
+
+        $batch = Bus::batch($jobs)
+            ->allowFailures()
+            ->then(function (Batch $batch) use ($periods, $source) {
+                self::handleBatchSuccess($batch, implode(',', $periods), $source);
+                WarmReportCacheJob::dispatch();
+            })
+            ->catch(fn (Batch $batch, Throwable $e) => self::handleBatchFailure($batch, implode(',', $periods), $e))
+            ->finally(fn (Batch $batch) => self::handleBatchCompletion($batch, implode(',', $periods)))
+            ->name('simpanan-periods:' . implode('_', $periods))
+            ->onQueue('snapshots-parallel')
+            ->dispatch();
+
+        Log::info('Individual period jobs dispatched', [
+            'batch_id' => $batch->id,
+            'periods' => $periods,
+            'total_jobs' => $jobsCount,
+        ]);
+
+        return $batch->id;
+    }
+
+    /**
+     * Dispatch individual period jobs for Daily Loan snapshots.
+     *
+     * @param array<string> $periods Periods to rebuild
+     * @param string|null $deleteId Progress tracking ID
+     * @param string|null $source Source of the rebuild trigger
+     * @return string Batch ID
+     */
+    public static function dispatchDailyLoanParallelPeriodRebuild(
+        array $periods,
+        ?string $deleteId = null,
+        ?string $source = null
+    ): string {
+        if (empty($periods)) {
+            throw new \InvalidArgumentException('At least one period must be provided');
+        }
+
+        $jobsCount = count($periods) * 5; // 5 snapshots per period
+
+        Log::info('Dispatching individual period jobs for parallel Daily Loan snapshot rebuild', [
+            'periods' => $periods,
+            'source' => $source,
+            'jobs_count' => $jobsCount,
+            'workers_recommended' => 4,
+        ]);
+
+        $jobs = [];
+        foreach ($periods as $period) {
+            $jobs[] = new RebuildDashboardPeriodJob($period, true, $deleteId);
+            $jobs[] = new RebuildHarianPeriodJob($period, true, $deleteId);
+            $jobs[] = new RebuildChartPeriodikPeriodJob($period, true, $deleteId);
+            $jobs[] = new RebuildRasioPeriodJob($period, true, $deleteId);
+        }
+
+        $batch = Bus::batch($jobs)
+            ->allowFailures()
+            ->then(function (Batch $batch) use ($periods, $source) {
+                self::handleBatchSuccess($batch, implode(',', $periods), $source);
+                WarmReportCacheJob::dispatch();
+            })
+            ->catch(fn (Batch $batch, Throwable $e) => self::handleBatchFailure($batch, implode(',', $periods), $e))
+            ->finally(fn (Batch $batch) => self::handleBatchCompletion($batch, implode(',', $periods)))
+            ->name('daily-loan-periods:' . implode('_', $periods))
+            ->onQueue('snapshots-parallel')
+            ->dispatch();
+
+        Log::info('Individual Daily Loan period jobs dispatched', [
+            'batch_id' => $batch->id,
+            'periods' => $periods,
+            'total_jobs' => $jobsCount,
+        ]);
+
+        return $batch->id;
     }
 
     /**

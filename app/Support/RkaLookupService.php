@@ -283,8 +283,8 @@ class RkaLookupService
     }
 
     /**
-     * Aggregate RKA data by regional filter (matches regional names in desc_uker)
-     * Used for branches like KC Madiun, KC Ngawi, KC Magetan stored as sub-units under KC Ponorogo
+     * Aggregate RKA data by regional filter (matches regional names in kanca)
+     * Used for branches like KC Madiun, KC Ngawi, KC Magetan to retrieve RKA by UKER
      */
     public function aggregateByGroupWithRegionalFilter(
         array $definitions,
@@ -314,10 +314,10 @@ class RkaLookupService
                     continue;
                 }
 
-                // For each region pattern, check if it matches this row's uker_key (desc_uker)
+                // For each region pattern, check if it matches this row's kanca_key (region)
                 foreach ($regionPatterns as $region) {
                     $regionUpper = strtoupper(trim($region));
-                    if ($regionUpper !== '' && str_contains($row['uker_key'], $regionUpper)) {
+                    if ($regionUpper !== '' && str_contains($row['kanca_key'], $regionUpper)) {
                         if (!empty($normalizedUnits) && !in_array($row['uker_key'], $normalizedUnits, true)) {
                             continue;
                         }

@@ -5,25 +5,33 @@ namespace App\Console\Commands;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Symfony\Component\Process\PhpExecutableFinder;
 
 class EnsureQueueWorkerRunning extends Command
 {
     protected $signature = 'queue:ensure-running
-                          {--queues=imports-high,default,reports-low : Queues to monitor}
-                          {--timeout=0 : Queue worker timeout in seconds (0 = unlimited)}
-                          {--memory=256 : Queue worker memory limit in MB}
+                          {--queues= : Queues to monitor}
+                          {--timeout= : Queue worker timeout in seconds (0 = unlimited)}
+                          {--memory= : Queue worker memory limit in MB}
                           {--max-jobs=0 : Maximum jobs before restart (0 = unlimited)}
-                          {--check-interval=60 : How often to check if worker is running}';
+                          {--check-interval=60 : How often to check if worker is running}
+                          {--once : Run one check and exit}';
 
     protected $description = 'Ensure queue worker is running, restart if stopped';
 
     public function handle(): int
     {
         $checkInterval = (int) $this->option('check-interval');
-        $queues = $this->option('queues');
-        $timeout = $this->option('timeout');
-        $memory = $this->option('memory');
+        $queues = $this->normalizeQueues((string) ($this->option('queues') ?: config('queue.worker_queues', 'imports-high,imports-daily-loan,snapshots-parallel,default,reports-low,shadow-backfill')));
+        $timeout = (string) ($this->option('timeout') ?? config('queue.worker_timeout', 0));
+        $memory = (string) ($this->option('memory') ?? config('queue.worker_memory', 512));
         $maxJobs = (int) $this->option('max-jobs');
+
+        if ((bool) $this->option('once')) {
+            $this->checkAndEnsureWorker($queues, $timeout, $memory, $maxJobs);
+
+            return 0;
+        }
 
         $this->info('Queue worker monitor started.');
         $this->line("Monitoring queues: {$queues}");
@@ -41,8 +49,19 @@ class EnsureQueueWorkerRunning extends Command
     private function checkAndEnsureWorker(string $queues, string $timeout, string $memory, int $maxJobs): void
     {
         try {
-            $isRunning = $this->isQueueWorkerRunning();
-            $pendingJobs = DB::table('jobs')->count();
+            $queueNames = $this->queueNames($queues);
+            $pendingQueueNames = DB::table('jobs')
+                ->whereIn('queue', $queueNames)
+                ->whereNull('reserved_at')
+                ->distinct()
+                ->pluck('queue')
+                ->map(static fn ($queue): string => (string) $queue)
+                ->all();
+            $pendingJobs = DB::table('jobs')
+                ->whereIn('queue', $queueNames)
+                ->whereNull('reserved_at')
+                ->count();
+            $isRunning = $this->isQueueWorkerRunning(implode(',', $pendingQueueNames ?: $queueNames));
 
             if ($pendingJobs === 0) {
                 // No jobs to process, don't need worker
@@ -74,45 +93,131 @@ class EnsureQueueWorkerRunning extends Command
         }
     }
 
-    private function isQueueWorkerRunning(): bool
+    private function isQueueWorkerRunning(string $queues): bool
     {
         // If a job is reserved, a worker is actively processing it.
-        $reservedCount = DB::table('jobs')->whereNotNull('reserved_at')->count();
+        $queueNames = $this->queueNames($queues);
+        $reservedCount = DB::table('jobs')
+            ->whereIn('queue', $queueNames)
+            ->whereNotNull('reserved_at')
+            ->count();
         if ($reservedCount > 0) {
             return true;
         }
 
         // On Windows, only count php.exe processes that actually run queue workers/listeners.
-        $output = shell_exec('wmic process where "name=\'php.exe\'" get CommandLine /value 2>NUL') ?? '';
+        $output = $this->phpProcessCommandLines();
         if ($output !== '') {
-            $normalized = strtolower($output);
-            if (str_contains($normalized, 'queue:work') || str_contains($normalized, 'queue:listen')) {
-                return true;
+            foreach (preg_split('/\R+/', trim($output)) ?: [] as $commandLine) {
+                $normalized = strtolower((string) preg_replace('/\s+/', ' ', $commandLine));
+                if (!$this->commandLineLooksLikeQueueWorker($normalized)) {
+                    continue;
+                }
+
+                if ($this->commandLineCoversQueues($normalized, $queueNames)) {
+                    return true;
+                }
             }
         }
 
         return false;
     }
 
+    private function phpProcessCommandLines(): string
+    {
+        $output = shell_exec('wmic process where "name=\'php.exe\'" get CommandLine /value 2>NUL') ?? '';
+        if (trim($output) !== '') {
+            return $output;
+        }
+
+        if (strtoupper(substr(PHP_OS, 0, 3)) !== 'WIN') {
+            return '';
+        }
+
+        $script = "Get-CimInstance Win32_Process -Filter \"Name = 'php.exe'\" | ForEach-Object { \$_.CommandLine }";
+        $encoded = base64_encode(mb_convert_encoding($script, 'UTF-16LE', 'UTF-8'));
+
+        return shell_exec('powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand ' . escapeshellarg($encoded) . ' 2>NUL') ?? '';
+    }
+
     private function startQueueWorker(string $queues, string $timeout, string $memory, int $maxJobs): void
     {
-        $command = "php artisan queue:work --queue={$queues} --timeout={$timeout} --memory={$memory}";
+        $php = (new PhpExecutableFinder())->find(false) ?: PHP_BINARY ?: 'php';
+        $artisan = base_path('artisan');
+        $logBase = storage_path('logs/queue-worker-' . now()->format('Ymd-His') . '-' . getmypid());
 
+        $workerArgs = [
+            $artisan,
+            'queue:work',
+            '--queue=' . $queues,
+            '--timeout=' . $timeout,
+            '--memory=' . $memory,
+        ];
         if ($maxJobs > 0) {
-            $command .= " --max-jobs={$maxJobs}";
+            $workerArgs[] = '--max-jobs=' . $maxJobs;
         }
 
-        // Start worker in background (non-blocking)
-        $command .= " > storage/logs/queue-worker.log 2>&1 &";
-
-        // For Windows, use different syntax
+        // Start worker in background (non-blocking).
         if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
-            $command = "start /B php artisan queue:work --queue={$queues} --timeout={$timeout} --memory={$memory}";
-            if ($maxJobs > 0) {
-                $command .= " --max-jobs={$maxJobs}";
-            }
+            $psCommand = sprintf(
+                'Start-Process -FilePath %s -ArgumentList @(%s) -WorkingDirectory %s -WindowStyle Hidden -RedirectStandardOutput %s -RedirectStandardError %s',
+                $this->powershellQuote($php),
+                implode(',', array_map([$this, 'powershellQuote'], $workerArgs)),
+                $this->powershellQuote(base_path()),
+                $this->powershellQuote($logBase . '.out.log'),
+                $this->powershellQuote($logBase . '.err.log')
+            );
+
+            $command = 'powershell -NoProfile -ExecutionPolicy Bypass -Command ' . escapeshellarg($psCommand);
+        } else {
+            $args = array_map('escapeshellarg', array_merge([$php], $workerArgs));
+            $command = sprintf(
+                'cd %s && %s > %s 2>&1 &',
+                escapeshellarg(base_path()),
+                implode(' ', $args),
+                escapeshellarg($logBase . '.log')
+            );
         }
 
-        shell_exec($command);
+        $process = @popen($command, 'r');
+        if (is_resource($process)) {
+            @pclose($process);
+        }
+    }
+
+    private function powershellQuote(string $value): string
+    {
+        return "'" . str_replace("'", "''", $value) . "'";
+    }
+
+    private function normalizeQueues(string $queues): string
+    {
+        return implode(',', $this->queueNames($queues));
+    }
+
+    private function queueNames(string $queues): array
+    {
+        $names = array_values(array_unique(array_filter(array_map(
+            static fn (string $queue): string => trim($queue),
+            explode(',', $queues)
+        ))));
+
+        return $names !== [] ? $names : ['default'];
+    }
+
+    private function commandLineLooksLikeQueueWorker(string $commandLine): bool
+    {
+        return str_contains($commandLine, 'queue:work') || str_contains($commandLine, 'queue:listen');
+    }
+
+    private function commandLineCoversQueues(string $commandLine, array $queueNames): bool
+    {
+        if (!preg_match('/--queue(?:=|\s+)([^\s"]+|"[^"]+"|\'[^\']+\')/', $commandLine, $matches)) {
+            return in_array('default', $queueNames, true);
+        }
+
+        $workerQueues = $this->queueNames(trim($matches[1], '"\''));
+
+        return count(array_intersect($queueNames, $workerQueues)) > 0;
     }
 }
