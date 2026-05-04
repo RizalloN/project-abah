@@ -92,13 +92,16 @@ class ImportNotificationSyncService
 
     public function validateBeforeImportDispatch(int $jobId, string $fileIdentifier): array
     {
-        $job = DB::table('import_jobs')->where('id', $jobId)->first();
-        if (!$job) {
-            return [
-                'status' => 'error',
-                'message' => 'Job tidak ditemukan',
-                'can_proceed' => false,
-            ];
+        // ✅ Support preview-only validation (jobId=0) for controllers that validate before creating job
+        if ($jobId > 0) {
+            $job = DB::table('import_jobs')->where('id', $jobId)->first();
+            if (!$job) {
+                return [
+                    'status' => 'error',
+                    'message' => 'Job tidak ditemukan',
+                    'can_proceed' => false,
+                ];
+            }
         }
 
         $preview = $this->getPreviewValidation($fileIdentifier);
