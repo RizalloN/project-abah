@@ -4437,7 +4437,9 @@ class ImportFileController extends Controller
                         'sync_period' => $syncPeriod,
                     ];
 
-                    Cache::put("csv_import_params_{$jobId}", $stagingParams, now()->addHours(2));
+                    $cacheStore = trim((string) config('import.cache_store', 'file'));
+                    $cache = $cacheStore !== '' ? Cache::store($cacheStore) : Cache::store();
+                    $cache->put("csv_import_params_{$jobId}", $stagingParams, now()->addHours(2));
 
                     \App\Jobs\PrepareCsvStagingJob::dispatch($jobId)->onQueue('imports-high');
 
