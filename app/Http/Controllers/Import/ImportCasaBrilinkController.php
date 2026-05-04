@@ -41,16 +41,43 @@ class ImportCasaBrilinkController extends Controller
     public function upload(Request $request)
     {
         $request->validate([
-            'id_report' => 'required',
+            'id_report' => 'required|integer',
             'file' => 'required|file|mimes:csv,txt',
             'periode' => 'required|date_format:Y-m',
         ]);
 
+        $idReport = (int) $request->input('id_report', 0);
+
+        // ✅ Validate that id_report is a valid CASA BRILINK report
+        $reportData = DB::table('nama_report')
+            ->where('id_report', $idReport)
+            ->whereIn('table_name', ['casa_brilink_web', 'casa_brilink_edc'])
+            ->first();
+
+        if (!$reportData) {
+            return response()->json([
+                'status' => 'error',
+                'title' => 'Laporan Invalid!',
+                'text' => 'ID Report ' . $idReport . ' bukan report CASA BRILINK yang valid.',
+            ], 422);
+        }
+
         $file = $request->file('file');
         $path = $file->store('casa_brilink_imports');
 
+        Log::info('CASA BRILINK UPLOAD', [
+            'id_report' => $idReport,
+            'table_name' => $reportData->table_name,
+            'report_name' => $reportData->nama_report,
+            'file_name' => $file->getClientOriginalName(),
+            'periode' => $request->input('periode'),
+        ]);
+
+        // ✅ Clear OLD casa brilink session state before setting new one
+        session()->forget(['casa_brilink_file', 'casa_brilink_periode']);
+
         session([
-            'active_id_report' => $request->input('id_report'),
+            'active_id_report' => $idReport,
             'import_type' => 'casa_brilink',
             'casa_brilink_file' => $path,
             'casa_brilink_periode' => $request->input('periode'),
@@ -268,18 +295,39 @@ class ImportCasaBrilinkController extends Controller
         }
 
         $activeReportId = (int) session('active_id_report', 0);
-        $reportData = DB::table('nama_report')->where('id_report', $activeReportId)->first();
-        $tableName = $reportData->table_name ?? '';
-        $uniqueSuffix = $tableName === 'casa_brilink_edc' ? '_CBE' : '_CBW';
-        $this->releaseSessionLockIfNeeded();
 
-        if (!in_array($tableName, ['casa_brilink_web', 'casa_brilink_edc'], true)) {
+        // ✅ Validate report is a valid CASA BRILINK report
+        $reportData = DB::table('nama_report')
+            ->where('id_report', $activeReportId)
+            ->whereIn('table_name', ['casa_brilink_web', 'casa_brilink_edc'])
+            ->first();
+
+        if (!$reportData) {
+            Log::warning('CASA BRILINK INIT - Invalid session report', [
+                'active_id_report' => $activeReportId,
+                'session_keys' => array_keys(session()->all()),
+            ]);
+
             return response()->json([
                 'status' => 'error',
-                'title' => 'Gagal!',
-                'text' => 'Table tujuan CASA BRILINK tidak valid.',
+                'title' => 'Sesi Impor Tidak Valid!',
+                'text' => 'Session impor CASA BRILINK tidak ditemukan atau tidak valid. Silakan upload ulang file.',
+                'validation_errors' => [
+                    'id_report' => 'Report ID ' . $activeReportId . ' bukan valid CASA BRILINK report',
+                ],
             ], 422);
         }
+
+        $tableName = $reportData->table_name;
+        $uniqueSuffix = $tableName === 'casa_brilink_edc' ? '_CBE' : '_CBW';
+
+        Log::info('CASA BRILINK INIT IMPORT', [
+            'id_report' => $activeReportId,
+            'table_name' => $tableName,
+            'report_name' => $reportData->nama_report,
+        ]);
+
+        $this->releaseSessionLockIfNeeded();
 
         // ✅ CRITICAL: Validate preview BEFORE job creation
         $fileIdentifier = $this->generateFileIdentifier($relativePath);
@@ -600,18 +648,28 @@ class ImportCasaBrilinkController extends Controller
         }
 
         $activeReportId = (int) session('active_id_report', 0);
-        $reportData = DB::table('nama_report')->where('id_report', $activeReportId)->first();
-        $tableName = $reportData->table_name ?? '';
-        $uniqueSuffix = $tableName === 'casa_brilink_edc' ? '_CBE' : '_CBW';
-        $this->releaseSessionLockIfNeeded();
 
-        if (!in_array($tableName, ['casa_brilink_web', 'casa_brilink_edc'], true)) {
+        // ✅ Validate report is a valid CASA BRILINK report
+        $reportData = DB::table('nama_report')
+            ->where('id_report', $activeReportId)
+            ->whereIn('table_name', ['casa_brilink_web', 'casa_brilink_edc'])
+            ->first();
+
+        if (!$reportData) {
+            Log::warning('CASA BRILINK PROCESS - Invalid session report', [
+                'active_id_report' => $activeReportId,
+            ]);
+
             return response()->json([
                 'status' => 'error',
-                'title' => 'Gagal!',
-                'text' => 'Table tujuan CASA BRILINK tidak valid.',
+                'title' => 'Sesi Impor Tidak Valid!',
+                'text' => 'Session impor CASA BRILINK tidak ditemukan atau tidak valid. Silakan upload ulang file.',
             ], 422);
         }
+
+        $tableName = $reportData->table_name;
+        $uniqueSuffix = $tableName === 'casa_brilink_edc' ? '_CBE' : '_CBW';
+        $this->releaseSessionLockIfNeeded();
 
         $selectedColumns = array_map('intval', $request->input('selected_columns', []));
         $activeFilters = json_decode($request->input('active_filters_json', '{}'), true) ?: [];
