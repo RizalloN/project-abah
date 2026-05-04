@@ -978,24 +978,11 @@ class ImportFileController extends Controller
         $startTime = microtime(true);
 
         $shouldInsertRow = function (array $row) use ($tableName, &$duplicateLookup, &$duplicateSkipped) {
-            if (!$this->isJumlahMerchantDetailTable($tableName)) {
-                return true;
-            }
-
-            $duplicateKey = $this->extractJumlahMerchantDuplicateKey($row);
-            if ($duplicateKey === null) {
-                return true;
-            }
-
-            [$periode, $tid] = $duplicateKey;
-            $lookupKey = $periode . '|' . $tid;
-
-            if (isset($duplicateLookup[$lookupKey])) {
+            if ($this->shouldSkipDuplicateImportRow($tableName, $row, $duplicateLookup)) {
                 $duplicateSkipped++;
                 return false;
             }
 
-            $duplicateLookup[$lookupKey] = true;
             return true;
         };
 
@@ -1330,24 +1317,11 @@ class ImportFileController extends Controller
         };
 
         $shouldInsertRow = function (array $row) use ($tableName, &$duplicateLookup, &$duplicateSkipped) {
-            if (!$this->isJumlahMerchantDetailTable($tableName)) {
-                return true;
-            }
-
-            $duplicateKey = $this->extractJumlahMerchantDuplicateKey($row);
-            if ($duplicateKey === null) {
-                return true;
-            }
-
-            [$periode, $tid] = $duplicateKey;
-            $lookupKey = $periode . '|' . $tid;
-
-            if (isset($duplicateLookup[$lookupKey])) {
+            if ($this->shouldSkipDuplicateImportRow($tableName, $row, $duplicateLookup)) {
                 $duplicateSkipped++;
                 return false;
             }
 
-            $duplicateLookup[$lookupKey] = true;
             return true;
         };
 
@@ -1484,6 +1458,11 @@ class ImportFileController extends Controller
         $tahunIndex = $params['tahunIndex'] ?? $params['tahun_index'] ?? -1;
         $totalRows = $params['totalRows'] ?? $params['total_rows'] ?? 0;
         $columnBlueprint = $params['columnBlueprint'] ?? $params['column_blueprint'] ?? [];
+        $duplicateLookup = $params['duplicateLookup'] ?? $params['duplicate_lookup'] ?? [];
+        if (!is_array($duplicateLookup)) {
+            $duplicateLookup = [];
+        }
+
         if (!$isBrilinkSummary && empty($columnBlueprint)) {
             $columnBlueprint = $this->buildColumnImportBlueprint($selectedColumns, $csvHeaders);
         }
@@ -1516,27 +1495,8 @@ class ImportFileController extends Controller
         };
 
         $shouldInsertRow = function (array $row) use ($tableName, &$duplicateLookup) {
-            if (!$this->isJumlahMerchantDetailTable($tableName)) {
-                return true;
-            }
-
-            $duplicateKey = $this->extractJumlahMerchantDuplicateKey($row);
-            if ($duplicateKey === null) {
-                return true;
-            }
-
-            [$periode, $tid] = $duplicateKey;
-            $lookupKey = $periode . '|' . $tid;
-
-            if (isset($duplicateLookup[$lookupKey])) {
-                return false;
-            }
-
-            $duplicateLookup[$lookupKey] = true;
-            return true;
+            return !$this->shouldSkipDuplicateImportRow($tableName, $row, $duplicateLookup);
         };
-
-        $duplicateLookup = [];
 
         try {
             while (($data = $this->readCsvRecord($handle, $resolvedDelimiter)) !== false) {
@@ -1614,9 +1574,12 @@ class ImportFileController extends Controller
                 'total' => $totalRows > 0 ? $totalRows : $rowsDone,
             ]);
 
-            Cache::put("csv_import_params_{$jobId}", array_merge($params, [
+            $cacheStore = trim((string) config('import.cache_store', 'file'));
+            $cache = $cacheStore !== '' ? Cache::store($cacheStore) : Cache::store();
+            $cache->put("csv_import_params_{$jobId}", array_merge($params, [
                 'tableName' => $tableName,
                 'bulkColumns' => $bulkColumns,
+                'bulk_columns' => $bulkColumns,
                 'prepared_rows' => $rowsDone,
             ]), now()->addHours(2));
 
@@ -1640,6 +1603,11 @@ class ImportFileController extends Controller
     private function isJumlahMerchantDetailTable(string $tableName): bool
     {
         return strtolower($tableName) === 'jumlah_merchant_detail';
+    }
+
+    private function isBrilinkSummaryTable(string $tableName): bool
+    {
+        return strtolower($tableName) === 'brilink_web_laporan_summary_transaksi_brilink_web';
     }
 
     private function extractJumlahMerchantDuplicateKey(array $rowData): ?array
@@ -1693,6 +1661,87 @@ class ImportFileController extends Controller
         }
 
         return $lookup;
+    }
+
+    private function extractBrilinkSummaryDuplicateKey(array $rowData): ?array
+    {
+        $periode = trim((string) ($rowData['periode'] ?? $rowData[0] ?? ''));
+        $merchantCode = trim((string) ($rowData['merchant_code'] ?? $rowData[8] ?? ''));
+        $outletCode = trim((string) ($rowData['outlet_code'] ?? $rowData[10] ?? ''));
+
+        if ($periode === '' || $merchantCode === '' || $outletCode === '') {
+            return null;
+        }
+
+        return [$periode, $merchantCode, $outletCode];
+    }
+
+    private function buildBrilinkSummaryDuplicateLookup(array $summaryKeys): array
+    {
+        $normalizedKeys = [];
+        $periods = [];
+
+        foreach ($summaryKeys as $keyData) {
+            $periode = trim((string) ($keyData['periode'] ?? ''));
+            $merchantCode = trim((string) ($keyData['merchant_code'] ?? ''));
+            $outletCode = trim((string) ($keyData['outlet_code'] ?? ''));
+
+            if ($periode === '' || $merchantCode === '' || $outletCode === '') {
+                continue;
+            }
+
+            $normalizedKeys[$periode . '|' . $merchantCode . '|' . $outletCode] = true;
+            $periods[$periode] = true;
+        }
+
+        if ($normalizedKeys === [] || $periods === []) {
+            return [];
+        }
+
+        $lookup = [];
+        $existingRows = DB::table('brilink_web_laporan_summary_transaksi_brilink_web')
+            ->select(['periode', 'merchant_code', 'outlet_code'])
+            ->whereIn('periode', array_keys($periods))
+            ->whereNotNull('periode')
+            ->whereNotNull('merchant_code')
+            ->whereNotNull('outlet_code')
+            ->get();
+
+        foreach ($existingRows as $existingRow) {
+            $periode = trim((string) ($existingRow->periode ?? ''));
+            $merchantCode = trim((string) ($existingRow->merchant_code ?? ''));
+            $outletCode = trim((string) ($existingRow->outlet_code ?? ''));
+            $key = $periode . '|' . $merchantCode . '|' . $outletCode;
+
+            if (isset($normalizedKeys[$key])) {
+                $lookup[$key] = true;
+            }
+        }
+
+        return $lookup;
+    }
+
+    private function shouldSkipDuplicateImportRow(string $tableName, array $row, array &$duplicateLookup): bool
+    {
+        $duplicateKey = null;
+
+        if ($this->isJumlahMerchantDetailTable($tableName)) {
+            $duplicateKey = $this->extractJumlahMerchantDuplicateKey($row);
+        } elseif ($this->isBrilinkSummaryTable($tableName)) {
+            $duplicateKey = $this->extractBrilinkSummaryDuplicateKey($row);
+        }
+
+        if ($duplicateKey === null) {
+            return false;
+        }
+
+        $lookupKey = implode('|', $duplicateKey);
+        if (isset($duplicateLookup[$lookupKey])) {
+            return true;
+        }
+
+        $duplicateLookup[$lookupKey] = true;
+        return false;
     }
 
     private function summarizeFailedRow(array $row): array
@@ -2017,6 +2066,7 @@ class ImportFileController extends Controller
         $samplePosisi = null;
         $samplePeriode = null;
         $periodeTidPairs = [];
+        $brilinkSummaryKeys = [];
         $periodeIndex = -1;
         $tidIndex = -1;
 
@@ -2037,20 +2087,18 @@ class ImportFileController extends Controller
 
                 if ($rowCounter === 0) {
                     $headers = $this->formatCsvHeaders($data, $isBrilinkSummary);
-                    if (!$isBrilinkSummary) {
-                        foreach ($headers as $i => $header) {
-                            if (stripos($header, 'posisi') !== false) {
-                                $posisiIndex = $i;
-                            }
-                            if (stripos($header, 'tahun') !== false) {
-                                $tahunIndex = $i;
-                            }
-                            if (strcasecmp(trim((string) $header), 'PERIODE') === 0) {
-                                $periodeIndex = $i;
-                            }
-                            if (strcasecmp(trim((string) $header), 'TID') === 0) {
-                                $tidIndex = $i;
-                            }
+                    foreach ($headers as $i => $header) {
+                        if (stripos($header, 'posisi') !== false) {
+                            $posisiIndex = $i;
+                        }
+                        if (stripos($header, 'tahun') !== false) {
+                            $tahunIndex = $i;
+                        }
+                        if (strcasecmp(trim((string) $header), 'PERIODE') === 0) {
+                            $periodeIndex = $i;
+                        }
+                        if (strcasecmp(trim((string) $header), 'TID') === 0) {
+                            $tidIndex = $i;
                         }
                     }
 
@@ -2090,6 +2138,18 @@ class ImportFileController extends Controller
                     }
                 }
 
+                if ($isBrilinkSummary) {
+                    $summaryKey = $this->extractBrilinkSummaryDuplicateKey($parsedRow);
+                    if ($summaryKey !== null) {
+                        [$periodeValue, $merchantCode, $outletCode] = $summaryKey;
+                        $brilinkSummaryKeys[$periodeValue . '|' . $merchantCode . '|' . $outletCode] = [
+                            'periode' => $periodeValue,
+                            'merchant_code' => $merchantCode,
+                            'outlet_code' => $outletCode,
+                        ];
+                    }
+                }
+
                 $rowCounter++;
             }
         } finally {
@@ -2105,6 +2165,7 @@ class ImportFileController extends Controller
             'sample_posisi' => $samplePosisi,
             'sample_periode' => $samplePeriode,
             'periode_tid_pairs' => array_values($periodeTidPairs),
+            'brilink_summary_keys' => array_values($brilinkSummaryKeys),
         ];
     }
 
@@ -2424,6 +2485,24 @@ class ImportFileController extends Controller
         }
 
         $request->validate(['id_report' => 'required', 'file' => 'required|file|mimes:rar,csv,txt']);
+        $requestedReport = DB::table('nama_report')
+            ->where('id_report', (int) $request->input('id_report'))
+            ->first();
+        $requestedTableName = strtolower(trim((string) ($requestedReport->table_name ?? '')));
+
+        if (in_array($requestedTableName, ['casa_brilink_web', 'casa_brilink_edc'], true)) {
+            $message = 'Report CASA BRILINK wajib diproses lewat jalur upload CASA BRILINK. Silakan pilih ulang report lalu upload file CASA.';
+
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => $message,
+                ], 422);
+            }
+
+            return back()->with('error', $message);
+        }
+
         $folderName = 'import_' . date('Ymd_His') . '_' . Str::random(5);
         $storagePath = storage_path('app/imports/' . $folderName);
         if (!file_exists($storagePath)) { mkdir($storagePath, 0777, true); }
@@ -4022,7 +4101,9 @@ class ImportFileController extends Controller
         try {
             $fileGuard = app(ImportDuplicateGuardService::class);
             $contentHash = $fileGuard->fingerprint($filePath);
-            $fileGuard->assertFileNotImportedAnywhere($contentHash);
+            if (!$isBrilinkSummary) {
+                $fileGuard->assertFileNotImportedAnywhere($contentHash);
+            }
         } catch (\RuntimeException $e) {
             $this->cleanupImportDirectory($filePath);
             return response()->json([
@@ -4038,6 +4119,7 @@ class ImportFileController extends Controller
 
         $isDuplicate = false;
         $duplicateText = '';
+        $duplicateLookup = [];
 
         if ($this->isJumlahMerchantDetailTable($tableName)) {
             $duplicateLookup = $this->buildJumlahMerchantDuplicateLookup($meta['periode_tid_pairs'] ?? []);
@@ -4046,11 +4128,12 @@ class ImportFileController extends Controller
                 $isDuplicate = true;
                 $duplicateText = 'Semua kombinasi <b>PERIODE + TID</b> pada file ini sudah ada di tabel <b class="text-uppercase">' . $tableName . '</b>.<br><br>Sistem membatalkan proses untuk mencegah data dobel.';
             }
-        } elseif ($isBrilinkSummary && $meta['sample_periode']) {
-            $isDuplicate = $this->cachedSchemaHasColumn($tableName, 'periode')
-                && DB::table($tableName)->where('periode', $meta['sample_periode'])->exists();
-            if ($isDuplicate) {
-                $duplicateText = "Data untuk PERIODE <b>{$meta['sample_periode']}</b> sudah pernah diunggah sebelumnya ke tabel <b class='text-uppercase'>{$tableName}</b>.<br><br>Sistem membatalkan proses ini.";
+        } elseif ($isBrilinkSummary) {
+            $duplicateLookup = $this->buildBrilinkSummaryDuplicateLookup($meta['brilink_summary_keys'] ?? []);
+
+            if (!empty($meta['brilink_summary_keys']) && count($duplicateLookup) === count($meta['brilink_summary_keys'])) {
+                $isDuplicate = true;
+                $duplicateText = 'Semua kombinasi <b>PERIODE + MERCHANT_CODE + OUTLET_CODE</b> pada file ini sudah ada di tabel <b class="text-uppercase">' . $tableName . '</b>.<br><br>Sistem membatalkan proses untuk mencegah data dobel.';
             }
         } elseif ($meta['sample_posisi']) {
             // BUG-03: Guard against tables that don't have a POSISI column
@@ -4103,6 +4186,7 @@ class ImportFileController extends Controller
                     'total_rows' => $meta['total_rows'],
                     'sample_posisi' => $meta['sample_posisi'] ?? null,
                     'sample_periode' => $meta['sample_periode'] ?? null,
+                    'brilink_summary_keys' => $meta['brilink_summary_keys'] ?? [],
                     'duplicate_lookup' => $duplicateLookup,
                 ],
             ],
@@ -4126,6 +4210,7 @@ class ImportFileController extends Controller
             'total_rows' => $meta['total_rows'],
             'sample_posisi' => $meta['sample_posisi'] ?? null,
             'sample_periode' => $meta['sample_periode'] ?? null,
+            'brilink_summary_keys' => $meta['brilink_summary_keys'] ?? [],
             'duplicate_lookup' => $duplicateLookup,
         ];
         session(['csv_import_params' => $importParams]);
@@ -4249,6 +4334,9 @@ class ImportFileController extends Controller
                 $tahunIndex = (int) ($params['tahun_index'] ?? -1);
                 $totalRows = (int) ($params['total_rows'] ?? 0);
                 $duplicateLookup = $params['duplicate_lookup'] ?? [];
+                if (!is_array($duplicateLookup)) {
+                    $duplicateLookup = [];
+                }
                 $columnBlueprint = $isBrilinkSummary ? [] : $this->buildColumnImportBlueprint($selectedColumns, $csvHeaders);
                 $batchSize = $this->resolveImportBatchSize($tableName);
                 $progressStep = strtolower($tableName) === 'daily_loan_dinamis' ? 200 : 500;
@@ -4304,24 +4392,11 @@ class ImportFileController extends Controller
                 $duplicateSkipped = 0;
 
                 $shouldInsertRow = function (array $row) use ($tableName, &$duplicateLookup, &$duplicateSkipped) {
-                    if (!$this->isJumlahMerchantDetailTable($tableName)) {
-                        return true;
-                    }
-
-                    $duplicateKey = $this->extractJumlahMerchantDuplicateKey($row);
-                    if ($duplicateKey === null) {
-                        return true;
-                    }
-
-                    [$periode, $tid] = $duplicateKey;
-                    $lookupKey = $periode . '|' . $tid;
-
-                    if (isset($duplicateLookup[$lookupKey])) {
+                    if ($this->shouldSkipDuplicateImportRow($tableName, $row, $duplicateLookup)) {
                         $duplicateSkipped++;
                         return false;
                     }
 
-                    $duplicateLookup[$lookupKey] = true;
                     return true;
                 };
 
@@ -4409,14 +4484,7 @@ class ImportFileController extends Controller
                         'speed' => 0,
                     ]);
 
-                    $bulkColumns = [];
-                    if (!$isBrilinkSummary && !empty($columnBlueprint)) {
-                        $bulkColumns = array_keys($columnBlueprint);
-                    } elseif ($isBrilinkSummary && !empty($selectedColumns)) {
-                        $bulkColumns = array_map(function ($idx) use ($csvHeaders) {
-                            return $csvHeaders[$idx] ?? 'col_' . $idx;
-                        }, $selectedColumns);
-                    }
+                    $bulkColumns = $this->buildBulkLoadColumnsForMappedRows($tableName, $isBrilinkSummary, $columnBlueprint);
 
                     $stagingParams = [
                         'file_path' => $filePath,
@@ -4432,6 +4500,7 @@ class ImportFileController extends Controller
                         'total_rows' => $totalRows,
                         'duplicate_lookup' => $duplicateLookup,
                         'column_blueprint' => $columnBlueprint,
+                        'bulkColumns' => $bulkColumns,
                         'bulk_columns' => $bulkColumns,
                         'batch_size' => $batchSize,
                         'sync_period' => $syncPeriod,
@@ -4910,7 +4979,9 @@ class ImportFileController extends Controller
         try {
             $fileGuard = app(ImportDuplicateGuardService::class);
             $contentHash = $fileGuard->fingerprint($filePath);
-            $fileGuard->assertFileNotImportedAnywhere($contentHash);
+            if (!$isBrilinkSummary) {
+                $fileGuard->assertFileNotImportedAnywhere($contentHash);
+            }
         } catch (\RuntimeException $e) {
             $this->cleanupImportDirectory($filePath);
             $response = [
@@ -4950,10 +5021,26 @@ class ImportFileController extends Controller
                 $isDuplicate = true;
                 $duplicateText = "Semua kombinasi <b>PERIODE + TID</b> pada file ini sudah ada di tabel <b class='text-uppercase'>$tableName</b>.<br><br>Sistem membatalkan proses ini.";
             }
-        } elseif ($isBrilinkSummary && $samplePeriode) {
-            $isDuplicate = DB::table($tableName)->where('periode', $samplePeriode)->exists();
-            if ($isDuplicate) {
-                $duplicateText = "Data untuk PERIODE <b>$samplePeriode</b> sudah pernah diunggah sebelumnya ke tabel <b class='text-uppercase'>$tableName</b>.<br><br>Sistem membatalkan proses ini.";
+        } elseif ($isBrilinkSummary) {
+            $brilinkSummaryKeys = [];
+            foreach ($dataToInsert as $rowData) {
+                $duplicateKey = $this->extractBrilinkSummaryDuplicateKey($rowData);
+                if ($duplicateKey === null) {
+                    continue;
+                }
+
+                [$periode, $merchantCode, $outletCode] = $duplicateKey;
+                $brilinkSummaryKeys[$periode . '|' . $merchantCode . '|' . $outletCode] = [
+                    'periode' => $periode,
+                    'merchant_code' => $merchantCode,
+                    'outlet_code' => $outletCode,
+                ];
+            }
+
+            $duplicateLookup = $this->buildBrilinkSummaryDuplicateLookup(array_values($brilinkSummaryKeys));
+            if (!empty($brilinkSummaryKeys) && count($duplicateLookup) === count($brilinkSummaryKeys)) {
+                $isDuplicate = true;
+                $duplicateText = "Semua kombinasi <b>PERIODE + MERCHANT_CODE + OUTLET_CODE</b> pada file ini sudah ada di tabel <b class='text-uppercase'>$tableName</b>.<br><br>Sistem membatalkan proses ini.";
             }
         } elseif ($samplePosisi) {
             $isDuplicate = DB::table($tableName)->whereDate('POSISI', $samplePosisi)->exists();
@@ -5003,24 +5090,11 @@ class ImportFileController extends Controller
         $lastErrorMsg = '';
         $duplicateSkipped = 0;
         $shouldInsertRow = function (array $row) use ($tableName, &$duplicateLookup, &$duplicateSkipped) {
-            if (!$this->isJumlahMerchantDetailTable($tableName)) {
-                return true;
-            }
-
-            $duplicateKey = $this->extractJumlahMerchantDuplicateKey($row);
-            if ($duplicateKey === null) {
-                return true;
-            }
-
-            [$periode, $tid] = $duplicateKey;
-            $lookupKey = $periode . '|' . $tid;
-
-            if (isset($duplicateLookup[$lookupKey])) {
+            if ($this->shouldSkipDuplicateImportRow($tableName, $row, $duplicateLookup)) {
                 $duplicateSkipped++;
                 return false;
             }
 
-            $duplicateLookup[$lookupKey] = true;
             return true;
         };
 
