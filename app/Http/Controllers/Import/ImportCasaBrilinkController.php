@@ -833,8 +833,34 @@ class ImportCasaBrilinkController extends Controller
         $headers = str_getcsv($headerLine, $delimiter);
         $normalizedHeaders = array_map(fn ($header) => $this->normalizeHeader($header), $headers);
 
+        // ✅ IMPROVED: Validate headers with better error messages and flexibility
         if ($normalizedHeaders !== self::HEADER_MAP) {
-            throw new \RuntimeException('Header CSV tidak sesuai format CASA BRILINK yang diharapkan.');
+            // Try to provide helpful debugging info
+            $expectedHeaders = implode(', ', self::HEADER_MAP);
+            $receivedHeaders = implode(', ', $normalizedHeaders);
+            $mismatchCount = count(array_diff_assoc($normalizedHeaders, self::HEADER_MAP));
+
+            Log::warning('CASA BRILINK header mismatch', [
+                'expected' => $expectedHeaders,
+                'received' => $receivedHeaders,
+                'expected_count' => count(self::HEADER_MAP),
+                'received_count' => count($normalizedHeaders),
+                'mismatch_count' => $mismatchCount,
+                'delimiter_detected' => $delimiter,
+                'raw_header_line' => substr($headerLine, 0, 200),
+            ]);
+
+            // Provide detailed error message
+            $errorMsg = 'Header CSV tidak sesuai format CASA BRILINK. ';
+            if (count($normalizedHeaders) !== count(self::HEADER_MAP)) {
+                $errorMsg .= 'Jumlah kolom: diterima ' . count($normalizedHeaders) . ', diharapkan ' . count(self::HEADER_MAP) . '. ';
+            }
+            if ($mismatchCount > 0) {
+                $errorMsg .= 'Ada ' . $mismatchCount . ' kolom yang tidak cocok. ';
+            }
+            $errorMsg .= 'Silakan pastikan file CSV memiliki kolom: ' . $expectedHeaders;
+
+            throw new \RuntimeException($errorMsg);
         }
 
         return [
