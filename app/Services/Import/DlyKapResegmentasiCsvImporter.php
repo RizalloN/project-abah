@@ -12,6 +12,8 @@ class DlyKapResegmentasiCsvImporter
 {
     public const TABLE = 'dly_kap_resegmentasi';
 
+    private const NORMALIZATION_VERSION = '2026-05-05-segmen-medium';
+
     public const NORMALIZED_HEADERS = [
         'uniqueid_dly_kap',
         'periode',
@@ -58,7 +60,7 @@ class DlyKapResegmentasiCsvImporter
         'TEXTBOX171' => 'SEGMEN MICRO',
         'TEXTBOX161' => 'SEGMEN CONSUMER',
         'TEXTBOX226' => 'SEGMEN SMALL',
-        'TEXTBOX254' => 'MEDIUM',
+        'TEXTBOX254' => 'SEGMEN MEDIUM',
         'TEXTBOX282' => 'SEGMEN COMMERCIAL',
         'TEXTBOX310' => 'SEGMEN CORPORATE',
     ];
@@ -188,7 +190,7 @@ class DlyKapResegmentasiCsvImporter
         }
 
         // Fingerprint-based filename: same source file reuses staged CSV (no re-parsing)
-        $fingerprint = md5($sourcePath . '|' . (@filemtime($sourcePath) ?: 0) . '|' . (@filesize($sourcePath) ?: 0));
+        $fingerprint = md5(self::NORMALIZATION_VERSION . '|' . $sourcePath . '|' . (@filemtime($sourcePath) ?: 0) . '|' . (@filesize($sourcePath) ?: 0));
         $fileName = 'dly_kap_normalized_' . $fingerprint . '.csv';
         $absolutePath = $absoluteDirectory . DIRECTORY_SEPARATOR . $fileName;
         $relativePath = $relativeDirectory . '/' . $fileName;
@@ -239,6 +241,109 @@ class DlyKapResegmentasiCsvImporter
             'total_rows' => count($parsed['rows']),
             'metadata' => $parsed['metadata'],
             'warnings' => $parsed['warnings'],
+        ];
+    }
+
+    /**
+     * @return array{metadata: array<string, mixed>, rows: array<int, array<string, mixed>>, warnings: array<int, string>}
+     */
+    public function parseForImport(string $path): array
+    {
+        if (!is_file($path)) {
+            throw new \InvalidArgumentException("File DLY KAP tidak ditemukan: {$path}");
+        }
+
+        if ($this->csvHasNormalizedHeaders($path)) {
+            return $this->parseNormalizedCsv($path);
+        }
+
+        return $this->parse($path);
+    }
+
+    /**
+     * @return array{metadata: array<string, mixed>, rows: array<int, array<string, mixed>>, warnings: array<int, string>}
+     */
+    private function parseNormalizedCsv(string $path): array
+    {
+        $handle = fopen($path, 'rb');
+        if ($handle === false) {
+            throw new \RuntimeException("File CSV tidak bisa dibuka: {$path}");
+        }
+
+        $warnings = [];
+        $rows = [];
+        $metadata = [
+            'periode' => null,
+            'kanwil' => null,
+            'kode_cabang' => null,
+            'kode_unit' => null,
+        ];
+
+        try {
+            $headers = $this->normalizeRow((array) fgetcsv($handle));
+            $headers = array_map(static fn ($header): string => strtolower((string) $header), $headers);
+
+            if ($headers !== self::NORMALIZED_HEADERS) {
+                throw new \InvalidArgumentException('Header normalized DLY KAP tidak sesuai.');
+            }
+
+            $lineNumber = 1;
+            while (($row = fgetcsv($handle)) !== false) {
+                $lineNumber++;
+                $row = $this->normalizeRow($row);
+
+                if ($this->isBlankRow($row)) {
+                    continue;
+                }
+
+                $record = array_combine(self::NORMALIZED_HEADERS, array_pad($row, count(self::NORMALIZED_HEADERS), null));
+                if ($record === false) {
+                    $warnings[] = "Baris {$lineNumber} dilewati karena jumlah kolom normalized tidak sesuai.";
+                    continue;
+                }
+
+                $record['periode'] = $this->normalizeDate($record['periode'] ?? null);
+                foreach (['uniqueid_dly_kap', 'kanwil', 'kode_cabang', 'kode_unit', 'segmen_kategori', 'segmen', 'keterangan'] as $column) {
+                    $record[$column] = $this->blankToNull($record[$column] ?? null);
+                }
+                $record['segmen_kategori'] = $this->normalizeSegmenKategori($record['segmen_kategori'] ?? null);
+
+                foreach (array_keys(self::METRIC_COLUMNS) as $column) {
+                    $record[$column] = str_ends_with($column, '_deb')
+                        ? $this->normalizeInteger($record[$column] ?? null)
+                        : $this->normalizeDecimal($record[$column] ?? null);
+                }
+
+                if ($record['uniqueid_dly_kap'] === null) {
+                    $warnings[] = "Baris {$lineNumber} dilewati karena uniqueid_dly_kap kosong.";
+                    continue;
+                }
+
+                if ($rows === []) {
+                    $metadata = [
+                        'periode' => $record['periode'],
+                        'kanwil' => $record['kanwil'],
+                        'kode_cabang' => $record['kode_cabang'],
+                        'kode_unit' => $record['kode_unit'],
+                    ];
+                }
+
+                $rows[] = $record;
+            }
+        } finally {
+            fclose($handle);
+        }
+
+        foreach (['periode', 'kanwil', 'kode_cabang', 'kode_unit'] as $key) {
+            if ($metadata[$key] === null) {
+                $warnings[] = "Metadata {$key} kosong atau tidak terbaca dari CSV normalized.";
+            }
+        }
+
+        return [
+            'metadata' => $metadata,
+            'rows' => $rows,
+            'warnings' => $warnings,
         ];
     }
 
@@ -308,7 +413,7 @@ class DlyKapResegmentasiCsvImporter
             'SEGMEN MICRO',
             'SEGMEN CONSUMER',
             'SEGMEN SMALL',
-            'MEDIUM',
+            'SEGMEN MEDIUM',
             'SEGMEN COMMERCIAL',
             'SEGMEN CORPORATE',
         ];
@@ -483,7 +588,17 @@ class DlyKapResegmentasiCsvImporter
     {
         $marker = strtoupper(trim((string) ($headerMarker ?? '')));
 
-        return self::SEGMEN_KATEGORI_BY_HEADER[$marker] ?? null;
+        return $this->normalizeSegmenKategori(self::SEGMEN_KATEGORI_BY_HEADER[$marker] ?? null);
+    }
+
+    private function normalizeSegmenKategori(?string $value): ?string
+    {
+        $value = $this->blankToNull($value);
+        if ($value === null) {
+            return null;
+        }
+
+        return strtoupper($value) === 'MEDIUM' ? 'SEGMEN MEDIUM' : $value;
     }
 
     private function blankToNull($value): ?string

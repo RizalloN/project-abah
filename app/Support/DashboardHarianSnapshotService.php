@@ -16,6 +16,8 @@ class DashboardHarianSnapshotService
 {
     public const SNAPSHOT_TABLE = 'dashboard_harian_snapshots';
     private const LOAN_TABLE = 'ssa_pinjaman';
+    private const DLY_KAP_TABLE = 'dly_kap_resegmentasi';
+    private const L1133_TABLE = 'l1133';
     private const SAVINGS_TABLE = 'ssa_simpanan';
     private const AUTO_SYNC_RECENT_SOURCE_HOURS = 6;
     private const METRIC_COLUMNS = [
@@ -104,7 +106,9 @@ class DashboardHarianSnapshotService
         'source_recovery_period',
     ];
     private ?array $availableSourceMetadataColumnsCache = null;
+    private ?array $availableSnapshotColumnsCache = null;
     private ?bool $canUseSnapshotMetricsCache = null;
+    private array $unitScopeMapCache = [];
     private const ROW_DEFINITIONS = [
         ['key' => 'total_simpanan', 'label' => '1. Simpanan', 'type' => 'currency', 'depth' => 0, 'accent' => 'strong'],
         ['key' => 'simpanan_ritel', 'label' => 'A. Ritel', 'type' => 'currency', 'depth' => 1, 'accent' => 'section'],
@@ -362,14 +366,14 @@ class DashboardHarianSnapshotService
         } catch (LockTimeoutException) {
             return (int) DB::table(self::SNAPSHOT_TABLE)->where('snapshot_period', $period)->count();
         } catch (Throwable $e) {
-            Log::warning('Dashboard Harian snapshot build lock unavailable, continuing without lock.', [
+            Log::warning('Dashboard Harian snapshot build skipped because snapshot lock is unavailable.', [
                 'period' => $period,
                 'force' => $force,
                 'exception' => $e::class,
                 'error' => $e->getMessage(),
             ]);
 
-            return $this->buildPeriodSnapshotUnlocked($period, $force);
+            return (int) DB::table(self::SNAPSHOT_TABLE)->where('snapshot_period', $period)->count();
         }
     }
 
@@ -398,6 +402,11 @@ class DashboardHarianSnapshotService
         [$payload] = $this->buildAggregatedRowsForPeriod($period, null, null, $sourceMetadata);
 
         $payload = $this->deduplicateSnapshotPayload($payload);
+        $availableColumns = array_flip($this->availableSnapshotColumns());
+        $payload = array_map(
+            static fn (array $row): array => array_intersect_key($row, $availableColumns),
+            $payload
+        );
 
         if ($payload === []) {
             DB::table(self::SNAPSHOT_TABLE)->where('snapshot_period', $period)->delete();
@@ -412,7 +421,7 @@ class DashboardHarianSnapshotService
                 ['snapshot_period', 'kanca_key', 'unit_key'],
                 array_merge(
                     ['kanca_label', 'unit_label'],
-                    self::METRIC_COLUMNS,
+                    $this->availableMetricColumns(),
                     ['source_row_count'],
                     $this->availableSourceMetadataColumns(),
                     ['updated_at']
@@ -464,7 +473,11 @@ class DashboardHarianSnapshotService
                     : 0;
 
                 if ($snapshotCount <= 0) {
-                    $snapshotCount = $this->buildPeriodSnapshot($sourcePeriod, false);
+                    if (app()->runningInConsole() || app()->runningUnitTests()) {
+                        $snapshotCount = $this->buildPeriodSnapshot($sourcePeriod, false);
+                    } else {
+                        $this->dispatchSnapshotRebuild($sourcePeriod);
+                    }
                 }
 
                 if ($snapshotCount > 0) {
@@ -493,6 +506,24 @@ class DashboardHarianSnapshotService
         }
 
         return $sourcePeriod;
+    }
+
+    private function dispatchSnapshotRebuild(string $period): void
+    {
+        try {
+            if (!class_exists(\App\Jobs\RebuildDashboardHarianSnapshotJob::class)) {
+                return;
+            }
+
+            \App\Jobs\RebuildDashboardHarianSnapshotJob::dispatch($period)
+                ->onQueue('snapshots-parallel');
+        } catch (Throwable $e) {
+            Log::warning('Failed to dispatch Dashboard Harian snapshot rebuild from web request.', [
+                'period' => $period,
+                'exception' => $e::class,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     public function resolveEffectiveRkaPeriod(?string $requestedMonth, ?string $fallbackPeriod = null): ?string
@@ -569,8 +600,8 @@ class DashboardHarianSnapshotService
 
                 $unitQuery = DB::table(self::SNAPSHOT_TABLE)
                     ->where('snapshot_period', $effectivePeriod)
-                    ->selectRaw("unit_label as label, unit_label as value, kanca_label as kanca_value")
-                    ->whereRaw('unit_label <> kanca_label'); // Exclude summary rows
+                    ->selectRaw("unit_label as label, unit_key as value, kanca_label as kanca_value")
+                    ->whereColumn('unit_key', '<>', 'kanca_key'); // Exclude summary rows, not KC/KCP detail labels
 
                 if ($normalizedKanca !== []) {
                     $unitQuery->whereIn('kanca_label', $normalizedKanca);
@@ -751,12 +782,9 @@ class DashboardHarianSnapshotService
         $normalizedKanca = $this->normalizeFilterValues($kancaKey);
         $normalizedUnit = $this->normalizeFilterValues($unitKey);
 
-        // Use snapshot when:
-        // 1. No filters at all, OR
-        // 2. Kanca filter only (no unit filter)
         $hasKancaFilter = $normalizedKanca !== [];
         $hasUnitFilter = $normalizedUnit !== [];
-        $useSnapshot = $this->canUseSnapshotMetrics() && !$hasUnitFilter;
+        $useSnapshot = $this->canUseSnapshotMetrics();
 
         if ($useSnapshot) {
             $selects = collect(self::METRIC_COLUMNS)
@@ -764,25 +792,27 @@ class DashboardHarianSnapshotService
                 ->implode(",\n");
 
             $query = DB::table(self::SNAPSHOT_TABLE)
-                ->whereIn('snapshot_period', $normalizedPeriods)
-                ->whereColumn('kanca_key', 'unit_key');
+                ->whereIn('snapshot_period', $normalizedPeriods);
 
-            // If kanca filter applied, filter by kanca_key (use slug format)
             if ($hasKancaFilter) {
-                // Convert both raw and normalized kanca values to slugified keys
                 $slugifiedKanca = collect($normalizedKanca)
                     ->map(function (string $value) {
-                        // First try to normalize as a kanca label (handles raw db values)
                         $normalized = $this->normalizeKancaLabel($value);
                         if ($normalized !== '') {
                             return $this->slugKey($normalized);
                         }
-                        // If that doesn't work, just slugify the value directly
+
                         return $this->slugKey($value);
                     })
                     ->unique()
                     ->all();
                 $query->whereIn('kanca_key', $slugifiedKanca);
+            }
+
+            if ($hasUnitFilter) {
+                $query->whereIn('unit_key', $this->normalizeUnitFilterKeys($normalizedUnit));
+            } else {
+                $query->whereColumn('kanca_key', 'unit_key');
             }
 
             $query->groupBy('snapshot_period')
@@ -861,9 +891,11 @@ class DashboardHarianSnapshotService
                 continue;
             }
 
-            $unitLabel = $this->normalizeUnitLabel($row->raw_unit_kerja ?? null, $kancaLabel);
-            $bucketKey = $this->makeBucketKey($kancaLabel, $unitLabel);
-            $this->initializeBucket($buckets, $bucketKey, $kancaLabel, $unitLabel);
+            $rawUnit = $row->raw_unit_kerja ?? null;
+            $unitLabel = $this->normalizeUnitLabel($rawUnit, $kancaLabel);
+            $unitKey = $this->resolveDetailUnitKey($rawUnit, $unitLabel, $kancaLabel);
+            $bucketKey = $this->makeBucketKey($kancaLabel, $unitLabel, $unitKey);
+            $this->initializeBucket($buckets, $bucketKey, $kancaLabel, $unitLabel, $unitKey);
 
             foreach ([
                 'giro_ritel',
@@ -889,9 +921,11 @@ class DashboardHarianSnapshotService
                 continue;
             }
 
-            $unitLabel = $this->normalizeUnitLabel($row->raw_unit ?? null, $kancaLabel);
-            $bucketKey = $this->makeBucketKey($kancaLabel, $unitLabel);
-            $this->initializeBucket($buckets, $bucketKey, $kancaLabel, $unitLabel);
+            $rawUnit = $row->raw_unit ?? null;
+            $unitLabel = $this->normalizeUnitLabel($rawUnit, $kancaLabel);
+            $unitKey = $this->resolveDetailUnitKey($rawUnit, $unitLabel, $kancaLabel);
+            $bucketKey = $this->makeBucketKey($kancaLabel, $unitLabel, $unitKey);
+            $this->initializeBucket($buckets, $bucketKey, $kancaLabel, $unitLabel, $unitKey);
 
             foreach ($this->loanMetricKeys() as $metric) {
                 $buckets[$bucketKey][$metric] += (float) ($row->{$metric} ?? 0);
@@ -906,9 +940,11 @@ class DashboardHarianSnapshotService
                 continue;
             }
 
-            $unitLabel = $this->normalizeUnitLabel($row->raw_unit ?? null, $kancaLabel);
-            $bucketKey = $this->makeBucketKey($kancaLabel, $unitLabel);
-            $this->initializeBucket($buckets, $bucketKey, $kancaLabel, $unitLabel);
+            $rawUnit = $row->raw_unit ?? null;
+            $unitLabel = $this->normalizeUnitLabel($rawUnit, $kancaLabel);
+            $unitKey = $this->resolveDetailUnitKey($rawUnit, $unitLabel, $kancaLabel);
+            $bucketKey = $this->makeBucketKey($kancaLabel, $unitLabel, $unitKey);
+            $this->initializeBucket($buckets, $bucketKey, $kancaLabel, $unitLabel, $unitKey);
 
             $buckets[$bucketKey]['ph_tupok'] += (float) ($row->ph_tupok ?? 0);
             $buckets[$bucketKey]['ph_lunas'] += (float) ($row->ph_lunas ?? 0);
@@ -1180,9 +1216,13 @@ class DashboardHarianSnapshotService
         }
 
         // NOTE: total_os, total_sml_abs_non_commercial, total_npl_abs_non_commercial are computed in finalizeMetrics
-        return $query
+        $rows = $query
             ->groupBy('raw_cabang', 'raw_unit')
             ->get();
+
+        $rows = $this->overlayDlyKapPriorityLoanAggregates($period, $rows, $kancaKey, $unitKey);
+
+        return $this->overlayL1133MicroLoanAggregates($period, $rows, $kancaKey, $unitKey);
     }
 
     private function fetchRecoveryAggregates(string $period, array|string|null $kancaKey = null, array|string|null $unitKey = null): Collection
@@ -1199,6 +1239,377 @@ class DashboardHarianSnapshotService
 
         // Tier 2: Fallback to DH Recovery logic (PH-based)
         return $this->fetchPhAggregates($period, $kancaKey, $unitKey);
+    }
+
+    private function overlayDlyKapPriorityLoanAggregates(string $period, Collection $ssaRows, array|string|null $kancaKey = null, array|string|null $unitKey = null): Collection
+    {
+        $normalizedPeriod = $this->normalizeDate($period);
+        if (!$normalizedPeriod || !$this->dlyKapResegmentasiAvailable($normalizedPeriod)) {
+            return $ssaRows;
+        }
+
+        $dlyRows = $this->fetchDlyKapPriorityLoanAggregates($normalizedPeriod, $kancaKey, $unitKey);
+        if ($dlyRows->isEmpty()) {
+            return $ssaRows;
+        }
+
+        return $this->overlayPriorityLoanRows($ssaRows, $dlyRows, $this->dlyKapPriorityMetricKeys());
+    }
+
+    private function overlayPriorityLoanRows(Collection $baseRows, Collection $priorityRows, array $priorityMetrics): Collection
+    {
+        $allLoanMetrics = $this->loanMetricKeys();
+        $rowsByUnit = collect();
+
+        foreach ($baseRows as $baseRow) {
+            $key = $this->loanRowMergeKey($baseRow);
+            if ($key === '') {
+                continue;
+            }
+
+            $existing = $rowsByUnit->get($key);
+            if (!$existing) {
+                $rowsByUnit->put($key, $baseRow);
+                continue;
+            }
+
+            foreach ($allLoanMetrics as $metric) {
+                $existing->{$metric} = (float) ($existing->{$metric} ?? 0) + (float) ($baseRow->{$metric} ?? 0);
+            }
+        }
+
+        foreach ($priorityRows as $priorityRow) {
+            $key = $this->loanRowMergeKey($priorityRow);
+            if ($key === '') {
+                continue;
+            }
+
+            $row = $rowsByUnit->get($key);
+            if (!$row) {
+                $row = (object) array_merge(
+                    [
+                        'raw_cabang' => $priorityRow->raw_cabang ?? null,
+                        'raw_unit' => $priorityRow->raw_unit ?? null,
+                    ],
+                    array_fill_keys($allLoanMetrics, 0.0)
+                );
+            }
+
+            foreach ($priorityMetrics as $metric) {
+                $row->{$metric} = (float) ($priorityRow->{$metric} ?? 0);
+            }
+
+            $rowsByUnit->put($key, $row);
+        }
+
+        return $rowsByUnit->values();
+    }
+
+    private function loanRowMergeKey(object $row): string
+    {
+        $unitCode = trim((string) ($row->unit_code ?? ''));
+        if ($unitCode !== '' && $unitCode !== '0') {
+            return (string) ((int) $unitCode);
+        }
+
+        $extractedUnitCode = $this->extractUnitCode($row->raw_unit ?? null);
+        if ($extractedUnitCode !== '') {
+            return $extractedUnitCode;
+        }
+
+        return $this->slugKey(implode('|', [
+            (string) ($row->raw_cabang ?? ''),
+            (string) ($row->raw_unit ?? ''),
+        ]));
+    }
+
+    private function fetchDlyKapPriorityLoanAggregates(string $period, array|string|null $kancaKey = null, array|string|null $unitKey = null): Collection
+    {
+        $unitMap = $this->dlyKapUnitScopeMap($period);
+        if ($unitMap->isEmpty()) {
+            return collect();
+        }
+
+        $category = "UPPER(TRIM(COALESCE(d.segmen_kategori, '')))";
+        $description = "UPPER(COALESCE(d.keterangan, ''))";
+        $smallSegment = "{$category} = 'SEGMEN SMALL'";
+        $kecilNonCashcoll = "{$smallSegment} AND {$description} NOT LIKE '%CASHCOL%' AND {$description} NOT LIKE '%- CASH COLATERAL%'";
+        $cashcoll = "{$smallSegment} AND {$description} NOT LIKE '%NON CASH COLATERAL%' AND ({$description} LIKE '%CASHCOL%' OR {$description} LIKE '%- CASH COLATERAL%')";
+        $medium = "{$category} IN ('SEGMEN MEDIUM', 'SEGMEN COMMERCIAL')";
+        $briguna = "{$category} = 'SEGMEN CONSUMER' AND ({$description} LIKE '%BRIGUNA%' OR {$description} LIKE '%KREDIT PEGAWAI BRI%')";
+        $kpr = "{$category} = 'SEGMEN CONSUMER' AND {$description} LIKE '%(KPR)%'";
+        $kkb = "{$category} = 'SEGMEN CONSUMER' AND {$description} LIKE '%KKB%'";
+        $kurRitel = "{$category} = 'SEGMEN MICRO' AND {$description} LIKE '%KUR RITEL 2015%'";
+
+        $rows = DB::table(self::DLY_KAP_TABLE . ' as d')
+            ->where('d.periode', $period)
+            ->selectRaw("CAST(TRIM(COALESCE(d.kode_unit, '')) AS UNSIGNED) as unit_code")
+            ->selectRaw("SUM(CASE WHEN {$kecilNonCashcoll} THEN COALESCE(d.tl_rp, 0) ELSE 0 END) as kecil_non_cashcoll_os")
+            ->selectRaw("SUM(CASE WHEN {$kecilNonCashcoll} THEN COALESCE(d.dpk_rp, 0) ELSE 0 END) as kecil_non_cashcoll_sml")
+            ->selectRaw("SUM(CASE WHEN {$kecilNonCashcoll} THEN COALESCE(d.npl_rp, 0) ELSE 0 END) as kecil_non_cashcoll_npl")
+            ->selectRaw("SUM(CASE WHEN {$cashcoll} THEN COALESCE(d.tl_rp, 0) ELSE 0 END) as cashcoll_os")
+            ->selectRaw("SUM(CASE WHEN {$cashcoll} THEN COALESCE(d.dpk_rp, 0) ELSE 0 END) as cashcoll_sml")
+            ->selectRaw("SUM(CASE WHEN {$cashcoll} THEN COALESCE(d.npl_rp, 0) ELSE 0 END) as cashcoll_npl")
+            ->selectRaw("SUM(CASE WHEN {$medium} THEN COALESCE(d.tl_rp, 0) ELSE 0 END) as medium_os")
+            ->selectRaw("SUM(CASE WHEN {$medium} THEN COALESCE(d.dpk_rp, 0) ELSE 0 END) as medium_sml")
+            ->selectRaw("SUM(CASE WHEN {$medium} THEN COALESCE(d.npl_rp, 0) ELSE 0 END) as medium_npl")
+            ->selectRaw("SUM(CASE WHEN {$briguna} THEN COALESCE(d.tl_rp, 0) ELSE 0 END) as briguna_konsumer_os")
+            ->selectRaw("SUM(CASE WHEN {$briguna} THEN COALESCE(d.dpk_rp, 0) ELSE 0 END) as briguna_konsumer_sml")
+            ->selectRaw("SUM(CASE WHEN {$briguna} THEN COALESCE(d.npl_rp, 0) ELSE 0 END) as briguna_konsumer_npl")
+            ->selectRaw("SUM(CASE WHEN {$kpr} THEN COALESCE(d.tl_rp, 0) ELSE 0 END) as kpr_os")
+            ->selectRaw("SUM(CASE WHEN {$kpr} THEN COALESCE(d.dpk_rp, 0) ELSE 0 END) as kpr_sml")
+            ->selectRaw("SUM(CASE WHEN {$kpr} THEN COALESCE(d.npl_rp, 0) ELSE 0 END) as kpr_npl")
+            ->selectRaw("SUM(CASE WHEN {$kkb} THEN COALESCE(d.tl_rp, 0) ELSE 0 END) as kkb_os")
+            ->selectRaw("SUM(CASE WHEN {$kkb} THEN COALESCE(d.dpk_rp, 0) ELSE 0 END) as kkb_sml")
+            ->selectRaw("SUM(CASE WHEN {$kkb} THEN COALESCE(d.npl_rp, 0) ELSE 0 END) as kkb_npl")
+            ->selectRaw("SUM(CASE WHEN {$kurRitel} THEN COALESCE(d.tl_rp, 0) ELSE 0 END) as kur_kecil_os")
+            ->selectRaw("SUM(CASE WHEN {$kurRitel} THEN COALESCE(d.dpk_rp, 0) ELSE 0 END) as kur_kecil_sml")
+            ->selectRaw("SUM(CASE WHEN {$kurRitel} THEN COALESCE(d.npl_rp, 0) ELSE 0 END) as kur_kecil_npl")
+            ->groupBy('unit_code')
+            ->get();
+
+        $normalizedKanca = $this->normalizeFilterValues($kancaKey);
+        $normalizedUnit = $this->normalizeFilterValues($unitKey);
+
+        return $rows
+            ->map(function ($row) use ($unitMap) {
+                $scope = $unitMap->get((string) ($row->unit_code ?? ''));
+                if (!$scope) {
+                    return null;
+                }
+
+                $row->raw_cabang = $scope['raw_cabang'];
+                $row->raw_unit = $scope['raw_unit'];
+                $row->unit_key = $scope['unit_key'];
+                $row->kanca_label = $scope['kanca_label'];
+
+                return $row;
+            })
+            ->filter()
+            ->filter(function ($row) use ($normalizedKanca, $normalizedUnit) {
+                if ($normalizedKanca !== []) {
+                    $kancaMatches = collect($normalizedKanca)->contains(function (string $value) use ($row): bool {
+                        $normalized = $this->normalizeKancaLabel($value);
+                        $expected = $normalized !== '' ? $this->slugKey($normalized) : $this->slugKey($value);
+
+                        return $this->slugKey((string) ($row->kanca_label ?? '')) === $expected;
+                    });
+
+                    if (!$kancaMatches) {
+                        return false;
+                    }
+                }
+
+                if ($normalizedUnit !== []) {
+                    $unitKey = (string) ($row->unit_key ?? '');
+
+                    return in_array($unitKey, $this->normalizeUnitFilterKeys($normalizedUnit), true);
+                }
+
+                return true;
+            })
+            ->values();
+    }
+
+    private function dlyKapUnitScopeMap(string $period): Collection
+    {
+        $period = $this->normalizeDate($period) ?: $period;
+        if (isset($this->unitScopeMapCache[$period])) {
+            return $this->unitScopeMapCache[$period];
+        }
+
+        if (!Schema::hasTable(self::LOAN_TABLE)) {
+            return $this->unitScopeMapCache[$period] = collect();
+        }
+
+        $periods = DB::table(self::LOAN_TABLE)
+            ->where('month_day_year_of_periode', '<=', $period)
+            ->select('month_day_year_of_periode')
+            ->distinct()
+            ->orderByDesc('month_day_year_of_periode')
+            ->limit(7)
+            ->pluck('month_day_year_of_periode')
+            ->all();
+
+        if ($periods === []) {
+            return $this->unitScopeMapCache[$period] = collect();
+        }
+
+        return $this->unitScopeMapCache[$period] = DB::table(self::LOAN_TABLE)
+            ->whereIn('month_day_year_of_periode', $periods)
+            ->selectRaw("CAST(COALESCE(NULLIF(TRIM(id_uker), ''), REGEXP_SUBSTR(TRIM(COALESCE(nama_uker, '')), '^[0-9]+')) AS UNSIGNED) as unit_code")
+            ->selectRaw("SUBSTRING_INDEX(MAX(CONCAT(month_day_year_of_periode, '|', TRIM(COALESCE(nama_cabang, '')))), '|', -1) as raw_cabang")
+            ->selectRaw("SUBSTRING_INDEX(MAX(CONCAT(month_day_year_of_periode, '|', TRIM(COALESCE(nama_uker, '')))), '|', -1) as raw_unit")
+            ->groupBy('unit_code')
+            ->get()
+            ->filter(fn ($row) => (string) ($row->unit_code ?? '') !== '')
+            ->mapWithKeys(function ($row): array {
+                $kancaLabel = $this->normalizeKancaLabel($row->raw_cabang ?? $row->raw_unit ?? null);
+                $unitLabel = $this->normalizeUnitLabel($row->raw_unit ?? null, $kancaLabel);
+                $unitKey = $this->resolveDetailUnitKey($row->raw_unit ?? null, $unitLabel, $kancaLabel) ?: $this->slugKey($unitLabel);
+
+                return [
+                    (string) $row->unit_code => [
+                        'raw_cabang' => $row->raw_cabang,
+                        'raw_unit' => $row->raw_unit,
+                        'kanca_label' => $kancaLabel,
+                        'unit_key' => $unitKey,
+                    ],
+                ];
+            });
+    }
+
+    private function dlyKapResegmentasiAvailable(string $period): bool
+    {
+        return Schema::hasTable(self::DLY_KAP_TABLE)
+            && DB::table(self::DLY_KAP_TABLE)->where('periode', $period)->exists();
+    }
+
+    private function dlyKapPriorityMetricKeys(): array
+    {
+        return [
+            'kecil_non_cashcoll_os',
+            'kecil_non_cashcoll_sml',
+            'kecil_non_cashcoll_npl',
+            'cashcoll_os',
+            'cashcoll_sml',
+            'cashcoll_npl',
+            'medium_os',
+            'medium_sml',
+            'medium_npl',
+            'briguna_konsumer_os',
+            'briguna_konsumer_sml',
+            'briguna_konsumer_npl',
+            'kpr_os',
+            'kpr_sml',
+            'kpr_npl',
+            'kkb_os',
+            'kkb_sml',
+            'kkb_npl',
+            'kur_kecil_os',
+            'kur_kecil_sml',
+            'kur_kecil_npl',
+        ];
+    }
+
+    private function overlayL1133MicroLoanAggregates(string $period, Collection $loanRows, array|string|null $kancaKey = null, array|string|null $unitKey = null): Collection
+    {
+        $normalizedPeriod = $this->normalizeDate($period);
+        if (!$normalizedPeriod || !$this->l1133Available($normalizedPeriod)) {
+            return $loanRows;
+        }
+
+        $l1133Rows = $this->fetchL1133MicroLoanAggregates($normalizedPeriod, $kancaKey, $unitKey);
+        if ($l1133Rows->isEmpty()) {
+            return $loanRows;
+        }
+
+        return $this->overlayPriorityLoanRows($loanRows, $l1133Rows, $this->l1133MicroMetricKeys());
+    }
+
+    private function fetchL1133MicroLoanAggregates(string $period, array|string|null $kancaKey = null, array|string|null $unitKey = null): Collection
+    {
+        $unitMap = $this->dlyKapUnitScopeMap($period);
+        if ($unitMap->isEmpty()) {
+            return collect();
+        }
+
+        $jenis = "UPPER(TRIM(COALESCE(l.jenis, '')))";
+        $brigunaMikro = "{$jenis} = 'KUPEDES GBT'";
+        $kupedes = "{$jenis} IN ('KUPEDES KOMERSIAL', 'KUPEDES RAKYAT')";
+        $kurMikro = "{$jenis} = 'KUR MIKRO BARU'";
+        $kurKpp = "{$jenis} = 'KPR'";
+
+        $rows = DB::table(self::L1133_TABLE . ' as l')
+            ->where('l.periode', $period)
+            ->selectRaw("CAST(TRIM(COALESCE(l.kode_uker, '')) AS UNSIGNED) as unit_code")
+            ->selectRaw("MAX(TRIM(COALESCE(l.nama_kanca, ''))) as raw_cabang")
+            ->selectRaw("MAX(TRIM(COALESCE(l.nama_uker, ''))) as raw_unit")
+            ->selectRaw("SUM(CASE WHEN {$brigunaMikro} THEN COALESCE(l.outstanding, 0) ELSE 0 END) as briguna_mikro_os")
+            ->selectRaw("SUM(CASE WHEN {$brigunaMikro} THEN COALESCE(l.dpk, 0) ELSE 0 END) as briguna_mikro_sml")
+            ->selectRaw("SUM(CASE WHEN {$brigunaMikro} THEN COALESCE(l.npl, 0) ELSE 0 END) as briguna_mikro_npl")
+            ->selectRaw("SUM(CASE WHEN {$kupedes} THEN COALESCE(l.outstanding, 0) ELSE 0 END) as kupedes_os")
+            ->selectRaw("SUM(CASE WHEN {$kupedes} THEN COALESCE(l.dpk, 0) ELSE 0 END) as kupedes_sml")
+            ->selectRaw("SUM(CASE WHEN {$kupedes} THEN COALESCE(l.npl, 0) ELSE 0 END) as kupedes_npl")
+            ->selectRaw("SUM(CASE WHEN {$kurMikro} THEN COALESCE(l.outstanding, 0) ELSE 0 END) as kur_mikro_os")
+            ->selectRaw("SUM(CASE WHEN {$kurMikro} THEN COALESCE(l.dpk, 0) ELSE 0 END) as kur_mikro_sml")
+            ->selectRaw("SUM(CASE WHEN {$kurMikro} THEN COALESCE(l.npl, 0) ELSE 0 END) as kur_mikro_npl")
+            ->selectRaw("SUM(CASE WHEN {$kurKpp} THEN COALESCE(l.outstanding, 0) ELSE 0 END) as kur_kpp_os")
+            ->selectRaw("SUM(CASE WHEN {$kurKpp} THEN COALESCE(l.dpk, 0) ELSE 0 END) as kur_kpp_sml")
+            ->selectRaw("SUM(CASE WHEN {$kurKpp} THEN COALESCE(l.npl, 0) ELSE 0 END) as kur_kpp_npl")
+            ->groupBy('unit_code')
+            ->get();
+
+        $normalizedKanca = $this->normalizeFilterValues($kancaKey);
+        $normalizedUnit = $this->normalizeFilterValues($unitKey);
+
+        return $rows
+            ->map(function ($row) use ($unitMap) {
+                $scope = $unitMap->get((string) ($row->unit_code ?? ''));
+                if (!$scope) {
+                    return null;
+                }
+
+                $row->raw_cabang = $scope['raw_cabang'];
+                $row->raw_unit = $scope['raw_unit'];
+                $row->kanca_label = $scope['kanca_label'];
+                $row->unit_key = $scope['unit_key'];
+
+                return $row;
+            })
+            ->filter()
+            ->filter(function ($row) use ($normalizedKanca, $normalizedUnit) {
+                if ($normalizedKanca !== []) {
+                    $kancaMatches = collect($normalizedKanca)->contains(function (string $value) use ($row): bool {
+                        $normalized = $this->normalizeKancaLabel($value);
+                        $expected = $normalized !== '' ? $this->slugKey($normalized) : $this->slugKey($value);
+
+                        return $this->slugKey((string) ($row->kanca_label ?? '')) === $expected;
+                    });
+
+                    if (!$kancaMatches) {
+                        return false;
+                    }
+                }
+
+                if ($normalizedUnit !== []) {
+                    return in_array((string) ($row->unit_key ?? ''), $this->normalizeUnitFilterKeys($normalizedUnit), true);
+                }
+
+                return true;
+            })
+            ->values();
+    }
+
+    private function l1133Available(string $period): bool
+    {
+        return Schema::hasTable(self::L1133_TABLE)
+            && DB::table(self::L1133_TABLE)->where('periode', $period)->exists();
+    }
+
+    private function l1133MicroMetricKeys(): array
+    {
+        return [
+            'briguna_mikro_os',
+            'briguna_mikro_sml',
+            'briguna_mikro_npl',
+            'kupedes_os',
+            'kupedes_sml',
+            'kupedes_npl',
+            'kur_mikro_os',
+            'kur_mikro_sml',
+            'kur_mikro_npl',
+            'kur_kpp_os',
+            'kur_kpp_sml',
+            'kur_kpp_npl',
+        ];
+    }
+
+    private function extractUnitCode($value): string
+    {
+        $clean = trim((string) $value);
+
+        return preg_match('/^0*(\d+)/', $clean, $matches) === 1 ? (string) ((int) $matches[1]) : '';
     }
 
     private function fetchCognosRecoveryAggregates(string $normalizedPeriod, array|string|null $kancaKey = null, array|string|null $unitKey = null): Collection
@@ -1256,7 +1667,7 @@ class DashboardHarianSnapshotService
         }
 
         $currentPhPeriod = $normalizedCurrentPeriod;
-        $previousPhPeriod = $this->resolvePreviousMonthPhPeriod($currentPhPeriod);
+        $previousPhPeriod = $this->resolvePreviousPhPeriod($currentPhPeriod);
 
         if ($previousPhPeriod === null) {
             return collect();
@@ -1280,8 +1691,8 @@ class DashboardHarianSnapshotService
                 $join->whereRaw("{$currentAccountKeySql} = {$previousAccountKeySql}")
                     ->on('n.kanca', '=', 'o.kanca')
                     ->on('n.unit', '=', 'o.unit')
-                    ->where('n.periode', '=', $currentPhPeriod)
-                    ->where('o.periode', '=', $previousPhPeriod);
+                    ->whereRaw('n.periode = ?', [$currentPhPeriod])
+                    ->whereRaw('o.periode = ?', [$previousPhPeriod]);
             })
             ->selectRaw("o.kanca as n_kanca")
             ->selectRaw("o.unit as n_unit")
@@ -1301,12 +1712,11 @@ class DashboardHarianSnapshotService
         }
 
         $lumasQuery = DB::table('lw325_ph as o')
-            ->leftJoin('lw325_ph as n', function ($join) use ($previousPhPeriod, $currentPhPeriod, $currentAccountKeySql, $previousAccountKeySql) {
+            ->leftJoin('lw325_ph as n', function ($join) use ($currentPhPeriod, $currentAccountKeySql, $previousAccountKeySql) {
                 $join->whereRaw("{$previousAccountKeySql} = {$currentAccountKeySql}")
                     ->on('o.kanca', '=', 'n.kanca')
                     ->on('o.unit', '=', 'n.unit')
-                    ->where('o.periode', '=', $previousPhPeriod)
-                    ->where('n.periode', '=', $currentPhPeriod);
+                    ->whereRaw('n.periode = ?', [$currentPhPeriod]);
             })
             ->where('o.periode', $previousPhPeriod)
             ->whereNull('n.acctno')
@@ -1657,7 +2067,7 @@ class DashboardHarianSnapshotService
         $target['source_row_count'] = (int) ($target['source_row_count'] ?? 0) + (int) ($source['source_row_count'] ?? 0);
     }
 
-    private function initializeBucket(array &$buckets, string $bucketKey, string $kancaLabel, string $unitLabel): void
+    private function initializeBucket(array &$buckets, string $bucketKey, string $kancaLabel, string $unitLabel, ?string $unitKey = null): void
     {
         if (isset($buckets[$bucketKey])) {
             return;
@@ -1666,13 +2076,38 @@ class DashboardHarianSnapshotService
         $buckets[$bucketKey] = $this->emptyMetrics();
         $buckets[$bucketKey]['kanca_key'] = $this->slugKey($kancaLabel);
         $buckets[$bucketKey]['kanca_label'] = $kancaLabel;
-        $buckets[$bucketKey]['unit_key'] = $this->slugKey($unitLabel);
+        $buckets[$bucketKey]['unit_key'] = $unitKey ?: $this->slugKey($unitLabel);
         $buckets[$bucketKey]['unit_label'] = $unitLabel;
     }
 
-    private function makeBucketKey(string $kancaLabel, string $unitLabel): string
+    private function makeBucketKey(string $kancaLabel, string $unitLabel, ?string $unitKey = null): string
     {
-        return $this->slugKey($kancaLabel) . '|' . $this->slugKey($unitLabel);
+        return $this->slugKey($kancaLabel) . '|' . ($unitKey ?: $this->slugKey($unitLabel));
+    }
+
+    private function resolveDetailUnitKey($rawUnit, string $unitLabel, string $kancaLabel): ?string
+    {
+        $cleanRawUnit = $this->cleanBranchValue((string) $rawUnit);
+
+        if ($cleanRawUnit === '') {
+            return null;
+        }
+
+        $unitSlug = $this->slugKey($unitLabel);
+        if ($unitSlug === $this->slugKey($kancaLabel)) {
+            return $unitSlug . '-detail';
+        }
+
+        return null;
+    }
+
+    private function normalizeUnitFilterKeys(array $normalizedUnit): array
+    {
+        return collect($normalizedUnit)
+            ->map(fn (string $value) => $this->slugKey($value))
+            ->unique()
+            ->values()
+            ->all();
     }
 
     private function slugKey(string $value): string
@@ -1712,15 +2147,31 @@ class DashboardHarianSnapshotService
         $upper = strtoupper($clean);
 
         if (str_contains($upper, 'KC ') || str_contains($upper, 'KCP ')) {
-            $kanca = $this->normalizeKancaLabel($clean);
-
-            return $kanca !== '' ? $kanca : Str::title(Str::lower($clean));
+            return $this->normalizeOfficeUnitLabel($clean);
         }
 
         if (str_contains($upper, 'UNIT ')) {
             $suffix = trim(substr($clean, stripos($upper, 'UNIT ') + 5));
 
             return 'UNIT ' . Str::title(Str::lower($suffix));
+        }
+
+        return Str::title(Str::lower($clean));
+    }
+
+    private function normalizeOfficeUnitLabel(string $value): string
+    {
+        $clean = $this->cleanBranchValue($value);
+        if ($clean === '') {
+            return '';
+        }
+
+        if (preg_match('/\bKCP\b\s*(.+)$/i', $clean, $matches) === 1) {
+            return 'KCP ' . Str::title(Str::lower(trim($matches[1])));
+        }
+
+        if (preg_match('/\bKC\b\s*(.+)$/i', $clean, $matches) === 1) {
+            return 'KC ' . Str::title(Str::lower(trim($matches[1])));
         }
 
         return Str::title(Str::lower($clean));
@@ -1749,19 +2200,14 @@ class DashboardHarianSnapshotService
             return null;
         }
 
-        // Try to extract meaningful parts from the filter value
         $parts = [];
         
         // If it looks like a slug (contains hyphens), un-slug it
         if (str_contains($filterValue, '-')) {
-            // "kc-ponorogo" -> "ponorogo", "unit-babadan-ponorogo" -> "babadan ponorogo"
-            $unsluggedParts = explode('-', $filterValue);
-            if (str_starts_with($filterValue, 'unit-')) {
-                // Remove 'unit' prefix for extraction
-                $parts = array_slice($unsluggedParts, 1);
-            } else {
-                $parts = array_slice($unsluggedParts, 1); // Skip 'kc'
-            }
+            $parts = array_values(array_filter(
+                explode('-', Str::lower($filterValue)),
+                fn (string $part) => $part !== '' && $part !== 'detail'
+            ));
         } else {
             // Clean the value and extract parts
             $cleaned = $this->cleanBranchValue($filterValue);
@@ -1784,14 +2230,13 @@ class DashboardHarianSnapshotService
             }
         }
 
-        // Build a WHERE clause that matches if any part is found in the column
         if (empty($parts)) {
             return null;
         }
 
         $conditions = collect($parts)
             ->map(fn (string $part) => "UPPER({$column}) LIKE '%" . strtoupper($part) . "%'")
-            ->implode(' OR ');
+            ->implode(' AND ');
 
         return "({$conditions})";
     }
@@ -1870,6 +2315,34 @@ class DashboardHarianSnapshotService
             ->filter()
             ->values()
             ->all();
+
+        if (Schema::hasTable(self::DLY_KAP_TABLE)) {
+            $loanPeriods = array_values(array_unique(array_merge(
+                $loanPeriods,
+                DB::table(self::DLY_KAP_TABLE)
+                    ->select('periode')
+                    ->distinct()
+                    ->pluck('periode')
+                    ->map(fn ($value) => $this->normalizeDate((string) $value))
+                    ->filter()
+                    ->values()
+                    ->all()
+            )));
+        }
+
+        if (Schema::hasTable(self::L1133_TABLE)) {
+            $loanPeriods = array_values(array_unique(array_merge(
+                $loanPeriods,
+                DB::table(self::L1133_TABLE)
+                    ->select('periode')
+                    ->distinct()
+                    ->pluck('periode')
+                    ->map(fn ($value) => $this->normalizeDate((string) $value))
+                    ->filter()
+                    ->values()
+                    ->all()
+            )));
+        }
 
         $savingsPeriods = DB::table(self::SAVINGS_TABLE)
             ->select('Month_Day_Year_of_Posisi')
@@ -2070,6 +2543,18 @@ class DashboardHarianSnapshotService
                 $this->sourcePeriodRawCandidates(self::LOAN_TABLE, $period),
                 ['baki_debet']
             );
+            $dlyKapState = $this->sourceAggregateState(
+                self::DLY_KAP_TABLE,
+                $this->sourcePeriodColumn(self::DLY_KAP_TABLE),
+                $this->sourcePeriodRawCandidates(self::DLY_KAP_TABLE, $period),
+                ['tl_rp', 'dpk_rp', 'npl_rp']
+            );
+            $l1133State = $this->sourceAggregateState(
+                self::L1133_TABLE,
+                $this->sourcePeriodColumn(self::L1133_TABLE),
+                $this->sourcePeriodRawCandidates(self::L1133_TABLE, $period),
+                ['outstanding', 'dpk', 'npl']
+            );
 
             $savingsState = $this->sourceAggregateState(
                 self::SAVINGS_TABLE,
@@ -2083,6 +2568,8 @@ class DashboardHarianSnapshotService
             $signaturePayload = [
                 'period' => $this->normalizeDate($period) ?? $period,
                 'loan' => $loanState,
+                'dly_kap' => $dlyKapState,
+                'l1133' => $l1133State,
                 'savings' => $savingsState,
                 'recovery_source' => $recoverySource,
                 'recovery_period' => $recoveryPeriod,
@@ -2091,7 +2578,9 @@ class DashboardHarianSnapshotService
 
             return [
                 'source_signature' => hash('sha256', json_encode($signaturePayload, JSON_UNESCAPED_UNICODE)),
-                'source_loan_row_count' => (int) ($loanState['row_count'] ?? 0),
+                'source_loan_row_count' => (int) ($loanState['row_count'] ?? 0)
+                    + (int) ($dlyKapState['row_count'] ?? 0)
+                    + (int) ($l1133State['row_count'] ?? 0),
                 'source_savings_row_count' => (int) ($savingsState['row_count'] ?? 0),
                 'source_recovery_row_count' => (int) ($recoveryState['row_count'] ?? 0),
                 'source_recovery_period' => $recoveryPeriod,
@@ -2163,13 +2652,11 @@ class DashboardHarianSnapshotService
             return ['lw325_ph', null, ['row_count' => 0]];
         }
 
-        $previousPhPeriod = $this->resolvePreviousMonthPhPeriod($normalizedPeriod);
-        $periods = array_values(array_filter([$normalizedPeriod, $previousPhPeriod]));
-
+        $previousPhPeriod = $this->resolvePreviousPhPeriod($normalizedPeriod);
         return [
             'lw325_ph',
-            $normalizedPeriod,
-            $this->sourceAggregateState('lw325_ph', 'periode', $periods, ['pokok']),
+            $previousPhPeriod,
+            $this->sourceAggregateState('lw325_ph', 'periode', [$previousPhPeriod], ['pokok']),
         ];
     }
 
@@ -2235,6 +2722,29 @@ class DashboardHarianSnapshotService
         ));
     }
 
+    private function availableSnapshotColumns(): array
+    {
+        if ($this->availableSnapshotColumnsCache !== null) {
+            return $this->availableSnapshotColumnsCache;
+        }
+
+        if (!Schema::hasTable(self::SNAPSHOT_TABLE)) {
+            return $this->availableSnapshotColumnsCache = [];
+        }
+
+        return $this->availableSnapshotColumnsCache = Schema::getColumnListing(self::SNAPSHOT_TABLE);
+    }
+
+    private function availableMetricColumns(): array
+    {
+        $availableColumns = array_flip($this->availableSnapshotColumns());
+
+        return array_values(array_filter(
+            self::METRIC_COLUMNS,
+            static fn (string $column): bool => isset($availableColumns[$column])
+        ));
+    }
+
     private function sourceMetadataColumnsAvailable(): bool
     {
         return count($this->availableSourceMetadataColumns()) === count(self::SOURCE_METADATA_COLUMNS);
@@ -2273,6 +2783,10 @@ class DashboardHarianSnapshotService
 
     private function phAccountKeySql(string $alias): string
     {
+        if (DB::connection()->getDriverName() === 'sqlite') {
+            return "LTRIM(TRIM(COALESCE({$alias}.acctno, '')), '0')";
+        }
+
         return "TRIM(LEADING '0' FROM TRIM(COALESCE({$alias}.acctno, '')))";
     }
 
@@ -2560,9 +3074,12 @@ class DashboardHarianSnapshotService
 
     private function sourcePeriodColumn(string $table): string
     {
-        return $table === self::LOAN_TABLE
-            ? 'month_day_year_of_periode'
-            : 'Month_Day_Year_of_Posisi';
+        return match ($table) {
+            self::LOAN_TABLE => 'month_day_year_of_periode',
+            self::DLY_KAP_TABLE => 'periode',
+            self::L1133_TABLE => 'periode',
+            default => 'Month_Day_Year_of_Posisi',
+        };
     }
 
     private function sourcePeriodRawCandidates(string $table, string $period): array
@@ -2576,6 +3093,13 @@ class DashboardHarianSnapshotService
             return array_values(array_unique(array_filter([
                 $period,
                 $this->formatIndonesianDate($normalizedPeriod),
+                Carbon::parse($normalizedPeriod)->format('Y-m-d'),
+            ])));
+        }
+
+        if ($table === self::DLY_KAP_TABLE || $table === self::L1133_TABLE) {
+            return array_values(array_unique(array_filter([
+                $period,
                 Carbon::parse($normalizedPeriod)->format('Y-m-d'),
             ])));
         }

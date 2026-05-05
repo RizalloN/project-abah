@@ -2942,9 +2942,6 @@ class ImportExcelController extends Controller
         } elseif ($tableName === 'lw325_ph' && isset($tableColumnsLookup['uniqueid_namareport'])) {
             $uniqueIdCol = $tableColumnsByLower['uniqueid_namareport'] ?? 'uniqueid_namareport';
             $suffix = '_RPH';
-        } elseif ($this->isDlyKapResegmentasiTable($tableName) && isset($tableColumnsLookup['uniqueid_dly_kap'])) {
-            $uniqueIdCol = $tableColumnsByLower['uniqueid_dly_kap'] ?? 'uniqueid_dly_kap';
-            $suffix = '_DLY_KAP';
         } elseif (isset($tableColumnsLookup['uniqueid_namareport'])) {
             $uniqueIdCol = $tableColumnsByLower['uniqueid_namareport'] ?? 'uniqueid_namareport';
         }
@@ -9937,6 +9934,14 @@ class ImportExcelController extends Controller
             $mustRefreshStagedCsv = $this->isSsaSimpananTable($tableName) || $this->isSsaPinjamanTable($tableName);
 
             if (
+                $this->isDlyKapResegmentasiTable($tableName)
+                && $this->isCsvFile($path)
+                && $this->csvLooksLikeNormalizedHeaders($path, DlyKapResegmentasiCsvImporter::NORMALIZED_HEADERS)
+            ) {
+                $stagedCsvPath = $relativePath;
+            }
+
+            if (
                 !$this->isCsvFile($path)
                 && ($mustRefreshStagedCsv || !$this->shouldDeferExcelStagingToQueue($tableName, $path))
             ) {
@@ -10130,23 +10135,16 @@ class ImportExcelController extends Controller
 
         if ($this->isDlyKapResegmentasiTable($tableName)) {
             try {
-                $previewMeta = (array) session('excel_preview_meta', []);
-                $previewStagedPath = (string) ($previewMeta['staged_csv_path'] ?? '');
-
-                if (
-                    $previewStagedPath !== ''
-                    && file_exists($previewStagedPath)
-                    && $this->csvLooksLikeNormalizedHeaders($previewStagedPath, DlyKapResegmentasiCsvImporter::NORMALIZED_HEADERS)
-                ) {
-                    $preparedPath = $this->prepareStagedCsvPathForQueuedImport($previewStagedPath);
-                    $path = $preparedPath['absolute_path'];
-                    $relativePath = $preparedPath['relative_path'];
-                    $stagedCsvPath = $relativePath;
-                } elseif (!$this->csvLooksLikeNormalizedHeaders($path, DlyKapResegmentasiCsvImporter::NORMALIZED_HEADERS)) {
+                if (!$this->csvLooksLikeNormalizedHeaders($path, DlyKapResegmentasiCsvImporter::NORMALIZED_HEADERS)) {
                     $stage = $this->dlyKapResegmentasiImporter()->stageNormalizedCsv($path);
                     $preparedPath = $this->prepareStagedCsvPathForQueuedImport((string) $stage['absolute_path']);
                     $relativePath = $preparedPath['relative_path'];
                     $path = $preparedPath['absolute_path'];
+                    $stagedCsvPath = $relativePath;
+                } else {
+                    $preparedPath = $this->prepareStagedCsvPathForQueuedImport($path);
+                    $path = $preparedPath['absolute_path'];
+                    $relativePath = $preparedPath['relative_path'];
                     $stagedCsvPath = $relativePath;
                 }
             } catch (\Throwable $e) {
@@ -11280,6 +11278,10 @@ class ImportExcelController extends Controller
             return false;
         }
 
+        if ($this->isDlyKapResegmentasiTable($tableName)) {
+            return true;
+        }
+
         $inlineTables = array_values(array_filter(array_map(
             static fn ($value): string => strtolower(trim((string) $value)),
             (array) config('import.queue.inline_start_tables', [])
@@ -11362,6 +11364,14 @@ class ImportExcelController extends Controller
 
             if ($this->isDlyKapResegmentasiTable((string) $tableName)) {
                 $normalizedHeaders = DlyKapResegmentasiCsvImporter::NORMALIZED_HEADERS;
+
+                if (!$this->csvLooksLikeNormalizedHeaders($path, DlyKapResegmentasiCsvImporter::NORMALIZED_HEADERS)) {
+                    $stage = $this->dlyKapResegmentasiImporter()->stageNormalizedCsv($path);
+                    $path = (string) $stage['absolute_path'];
+                    $headerIndex = 0;
+                    $startRow = 1;
+                    $endExclusive = $startRow + $chunkSize;
+                }
             }
 
             $this->releaseSessionLockIfNeeded();

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Support\DashboardHarianSnapshotService;
 use Illuminate\Contracts\View\View;
+use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -125,7 +126,7 @@ class DashboardHarianController extends Controller
             'unit' => $selectedUnit,
         ]));
 
-        return Cache::remember($cacheKey, now()->addMinutes(3), function () use ($selectedPeriod, $selectedRka, $selectedKanca, $selectedUnit) {
+        return $this->rememberDashboardPayload($cacheKey, function () use ($selectedPeriod, $selectedRka, $selectedKanca, $selectedUnit) {
             return $this->dashboardHarianSnapshotService->buildDashboardPayload(
                 $selectedPeriod,
                 $selectedRka,
@@ -148,7 +149,7 @@ class DashboardHarianController extends Controller
             'period_month' => $resolvedMonth,
         ]));
 
-        return Cache::remember($cacheKey, now()->addMinutes(3), function () use ($category, $selectedKanca, $selectedUnit, $monthOptions, $resolvedMonth) {
+        return $this->rememberDashboardPayload($cacheKey, function () use ($category, $selectedKanca, $selectedUnit, $monthOptions, $resolvedMonth) {
             $emptyPayload = [
                 'months' => [],
                 'series' => [],
@@ -181,6 +182,40 @@ class DashboardHarianController extends Controller
                 'available_months' => $monthOptions,
             ];
         });
+    }
+
+    private function rememberDashboardPayload(string $cacheKey, callable $callback): array
+    {
+        $cached = Cache::get($cacheKey);
+        if (is_array($cached)) {
+            return $cached;
+        }
+
+        $lock = Cache::lock($cacheKey . ':lock', 30);
+
+        try {
+            return $lock->block(2, function () use ($cacheKey, $callback): array {
+                $cached = Cache::get($cacheKey);
+                if (is_array($cached)) {
+                    return $cached;
+                }
+
+                $payload = $callback();
+                Cache::put($cacheKey, $payload, now()->addMinutes(15));
+
+                return $payload;
+            });
+        } catch (LockTimeoutException) {
+            $cached = Cache::get($cacheKey);
+            if (is_array($cached)) {
+                return $cached;
+            }
+
+            return [
+                'status' => 'warming',
+                'message' => 'Dashboard sedang menyiapkan cache terbaru. Silakan muat ulang beberapa saat lagi.',
+            ];
+        }
     }
 
     private function timeseriesMonthOptions(): array

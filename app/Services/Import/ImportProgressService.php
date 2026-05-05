@@ -105,6 +105,8 @@ class ImportProgressService
 
     public function cacheJobState(int $jobId, array $payload): void
     {
+        $payload = $this->normalizeDlyKapResegmentasiState($payload);
+
         $this->importCache()->put($this->stateKey($jobId), $payload, now()->addHours(6));
         $this->persistJobStateToContext($jobId, $payload);
     }
@@ -125,6 +127,8 @@ class ImportProgressService
         if ($jobId <= 0 || $payload === []) {
             return;
         }
+
+        $payload = $this->normalizeDlyKapResegmentasiState($payload);
 
         try {
             $job = DB::table('import_jobs')
@@ -178,7 +182,7 @@ class ImportProgressService
 
             $state = $context['state'] ?? null;
             if (is_array($state)) {
-                return $state;
+                return $this->normalizeDlyKapResegmentasiState($state);
             }
 
             $filePath = trim((string) ($context['file_path'] ?? ''));
@@ -196,7 +200,9 @@ class ImportProgressService
 
             return [
                 'params' => $params,
-                'headers' => [],
+                'headers' => $this->isDlyKapResegmentasiTableName($tableName)
+                    ? DlyKapResegmentasiCsvImporter::NORMALIZED_HEADERS
+                    : [],
             ];
         } catch (\Throwable $e) {
             Log::warning('Failed to read import job state from context.', [
@@ -206,6 +212,23 @@ class ImportProgressService
 
             return [];
         }
+    }
+
+    private function normalizeDlyKapResegmentasiState(array $payload): array
+    {
+        $tableName = (string) ($payload['params']['table_name'] ?? '');
+        if (!$this->isDlyKapResegmentasiTableName($tableName)) {
+            return $payload;
+        }
+
+        $payload['headers'] = DlyKapResegmentasiCsvImporter::NORMALIZED_HEADERS;
+
+        return $payload;
+    }
+
+    private function isDlyKapResegmentasiTableName(?string $tableName): bool
+    {
+        return strtolower(trim((string) $tableName)) === DlyKapResegmentasiCsvImporter::TABLE;
     }
 
     public function deleteJobsForSourcePath(string $sourcePath): array

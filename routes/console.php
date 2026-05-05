@@ -187,6 +187,19 @@ Schedule::command('queue:health-sweep')
     ->everyMinute()
     ->withoutOverlapping();
 
+Schedule::command('logs:maintenance')
+    ->everyThirtyMinutes()
+    ->withoutOverlapping();
+
+Schedule::command('cache:maintenance')
+    ->hourly()
+    ->withoutOverlapping()
+    ->runInBackground();
+
+Schedule::command('optimize')
+    ->dailyAt('03:00')
+    ->withoutOverlapping();
+
 Schedule::command('queue:ensure-running --once')
     ->everyMinute()
     ->withoutOverlapping();

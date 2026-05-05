@@ -146,7 +146,13 @@ class DashboardPinjamanReportController extends Controller
             $cacheKey,
             now()->addMinutes(10),
             fn () => app(DashboardPinjamanKreditService::class)->getUnifiedSegmentData($selectedPeriod, $selectedCategory),
-            $forceRefresh
+            $forceRefresh,
+            fn () => [
+                'status' => 'warming',
+                'os' => [],
+                'sml' => [],
+                'npl' => [],
+            ]
         );
 
         return response()->json(array_merge([
@@ -258,7 +264,16 @@ class DashboardPinjamanReportController extends Controller
                 'selected_units' => $unitSelection['selected_values'],
                 'is_all_uker' => $unitSelection['is_all_uker'],
             ];
-        }, $forceRefresh);
+        }, $forceRefresh, fn () => [
+            'status' => 'warming',
+            'branch_options' => $this->smallArrearsBranchOptions()->all(),
+            'unit_options' => [],
+            'selected_branches' => $selectedBranches,
+            'effective_branches' => $effectiveBranches,
+            'is_area_all' => $branchSelection['is_area_all'],
+            'selected_units' => $unitSelection['selected_values'],
+            'is_all_uker' => $unitSelection['is_all_uker'],
+        ]);
 
         return response()->json([
             'available_periods' => $availablePeriods->all(),
@@ -318,7 +333,17 @@ class DashboardPinjamanReportController extends Controller
 
         $payload = $this->rememberPayload($cacheKey, now()->addMinutes(3), function () use ($selectedPeriod, $effectiveBranches, $effectiveUnits, $branchSelection) {
             return $this->buildSmallArrearsPayload($selectedPeriod, $effectiveBranches, $effectiveUnits, $branchSelection['is_area_all']);
-        }, $forceRefresh);
+        }, $forceRefresh, fn () => [
+            'status' => 'warming',
+            'group_label' => $branchSelection['is_area_all'] ? 'BRANCH OFFICE' : 'UNIT KERJA',
+            'rows' => [],
+            'total' => [
+                'current' => 0,
+                'ytd' => 0,
+                'mtd' => 0,
+                'total_tunggakan' => 0.0,
+            ],
+        ]);
 
         return response()->json(array_merge([
             'selected_period' => $selectedPeriod,
@@ -520,7 +545,13 @@ class DashboardPinjamanReportController extends Controller
                     $this->applyFilterConstraint($query, 'cabang1', $filters['cabang']);
                 }),
             ];
-        }, $forceRefresh);
+        }, $forceRefresh, fn () => [
+            'status' => 'warming',
+            'segments' => collect(),
+            'products' => collect(),
+            'branches' => collect(),
+            'units' => collect(),
+        ]);
 
         return response()->json([
             'selected_period' => $selectedPeriod,
@@ -563,7 +594,8 @@ class DashboardPinjamanReportController extends Controller
             $cacheKey,
             now()->addMinutes(3),
             fn () => $this->buildMatrixData($selectedPeriod, $comparisonPeriod, $filters),
-            $forceRefresh
+            $forceRefresh,
+            fn () => [[], [], 0.0]
         );
 
         $usesSnapshot = $this->shouldUseSnapshot($selectedPeriod, $filters)
@@ -750,7 +782,17 @@ class DashboardPinjamanReportController extends Controller
 
         $payload = $this->rememberPayload($cacheKey, now()->addMinutes(3), function () use ($selectedPeriod, $selectedBranch) {
             return $this->buildKolekMismatchSummary($selectedPeriod, $selectedBranch);
-        }, $forceRefresh);
+        }, $forceRefresh, fn () => [
+            'status' => 'warming',
+            'summary_rows' => [],
+            'audit' => [
+                'rule' => self::KOLEK_MISMATCH_RULE_LABEL,
+                'scanned_rows' => 0,
+                'matched_rows' => 0,
+                'mismatch_rows' => 0,
+                'units_with_mismatch' => 0,
+            ],
+        ]);
 
         return response()->json([
             'selected_period' => $selectedPeriod,
@@ -2092,7 +2134,7 @@ class DashboardPinjamanReportController extends Controller
         }
     }
 
-    private function rememberPayload(string $cacheKey, $ttl, callable $callback, bool $forceRefresh = false)
+    private function rememberPayload(string $cacheKey, $ttl, callable $callback, bool $forceRefresh = false, ?callable $fallback = null)
     {
         $latestKey = $cacheKey . ':latest';
 
@@ -2131,11 +2173,11 @@ class DashboardPinjamanReportController extends Controller
                 return $cached;
             }
 
-            $payload = $callback();
-            Cache::put($cacheKey, $payload, $ttl);
-            Cache::put($latestKey, $payload, now()->addMinutes(10));
+            if ($fallback) {
+                return $fallback();
+            }
 
-            return $payload;
+            return $callback();
         } finally {
             optional($lock)->release();
         }

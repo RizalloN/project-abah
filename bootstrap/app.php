@@ -17,7 +17,6 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->web(append: [
-            \App\Http\Middleware\JobHealthSweepMiddleware::class,
             \App\Http\Middleware\SecurityHeadersMiddleware::class,
         ]);
 

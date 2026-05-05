@@ -473,9 +473,10 @@ class RasioCasaDebiturController extends Controller
                 return $cached;
             }
 
-            $payload = $this->computeSummarySnapshot($loanPeriod);
-            Cache::put($cacheKey, $payload, now()->addMinutes(3));
-            Cache::put($latestKey, $payload, now()->addMinutes(10));
+            $payload = $this->emptySnapshot();
+            $payload['loan_date'] = $loanPeriod;
+            $payload['status'] = 'warming';
+            $payload['message'] = 'Rasio CASA sedang menyiapkan cache terbaru.';
 
             return $payload;
         } finally {
@@ -702,7 +703,6 @@ class RasioCasaDebiturController extends Controller
 
         if ($payload === null) {
             $this->ensureRasioSnapshot($loanPeriod);
-            $this->rebuildRasioSnapshotInline($loanPeriod);
             $payload = $this->loadPersistedFilteredSummarySnapshot($loanPeriod, $selectedBranches, $selectedUkers)
                 ?? $this->computeFilteredSummarySnapshot($loanPeriod, $selectedBranches, $selectedUkers);
         }
@@ -1047,8 +1047,8 @@ class RasioCasaDebiturController extends Controller
             return;
         }
 
-        if ($this->hasActiveImportProcessing()) {
-            Log::info('Inline rebuild rasio snapshot ditunda karena import masih aktif.', [
+        if ($this->hasActiveImportProcessing() || !app()->runningInConsole()) {
+            Log::info('Inline rebuild rasio snapshot ditunda; rebuild akan dijalankan oleh queue.', [
                 'loan_period' => $loanPeriod,
             ]);
 
@@ -1729,11 +1729,12 @@ class RasioCasaDebiturController extends Controller
                 return $cached;
             }
 
-            $payload = $this->buildRmSnapshot($loanPeriod, $selectedBranch, $selectedUnit);
-            Cache::put($cacheKey, $payload, now()->addMinutes(3));
-            Cache::put($latestKey, $payload, now()->addMinutes(10));
-
-            return $payload;
+            return [
+                'status' => 'warming',
+                'message' => 'Rasio CASA per RM sedang menyiapkan cache terbaru.',
+                'rows' => [],
+                'summary' => [],
+            ];
         } finally {
             optional($lock)->release();
         }

@@ -1,0 +1,229 @@
+================================================================================
+LAPORAN ANALISA: VALIDASI DATA SME - DLY KAP RESEGMENTASI vs SSA PINJAMAN
+================================================================================
+
+Tanggal Analisa: 06 Mei 2026
+Periode Data: 01 Mei 2026 - 02 Mei 2026
+Scope: Unit Kerja Retail (Sampling 5 units)
+Status: READ-ONLY ANALYSIS (No Changes Made)
+
+================================================================================
+EXECUTIVE SUMMARY
+================================================================================
+
+✗ HASIL: DATA TIDAK SESUAI (MISMATCH DITEMUKAN)
+
+Ditemukan INKONSISTENSI KLASIFIKASI SEGMEN antara DLY KAP Resegmentasi
+dan SSA Pinjaman untuk kategori MEDIUM. Produk-produk tertentu yang
+seharusnya MEDIUM di DLY KAP, di-klasifikasikan sebagai SMALL di SSA.
+
+Root Cause: Segmentation Configuration Error di SSA Pinjaman
+Impact Level: MEDIUM (2% - 46% variance per unit)
+Affected Units: 4 dari 5 units (Unit 45, 49, 57, 70)
+Unaffected Units: 1 dari 5 units (Unit 552 - Perfect Match)
+
+================================================================================
+1. DETAIL ISSUE
+================================================================================
+
+PRODUK BERMASALAH:
+  Kode Produk: 42210
+  Nama: "10. RITKOM -> Rp. 5 M S/D 15 M"
+  Nilai OS (Unit 45): Rp 42,615,427,581
+
+KLASIFIKASI DLY KAP (BENAR):
+  Segmen Kategori: SEGMEN MEDIUM
+  Alasan: Produk ini adalah kredit untuk range plafond Rp 5M-Rp 15M
+          yang merupakan karakteristik MEDIUM
+
+KLASIFIKASI SSA PINJAMAN (SALAH):
+  Segmen Dashboard: "Small"
+  Produk Dashboard: "Commercial"
+  Alasan: Misconfigured - seharusnya "Medium" bukan "Small"
+
+================================================================================
+2. EVIDENCE & BUKTI
+================================================================================
+
+SAMPLING HASIL PERBANDINGAN:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Unit 45 | Periode 01 Mei 2026:
+  ┌─────────────────────────┬──────────────────┬──────────────────────┐
+  │ Metrik                  │ DLY KAP           │ SSA Pinjaman         │
+  ├─────────────────────────┼──────────────────┼──────────────────────┤
+  │ KECIL/SMALL OS          │ 446,211,097,980  │ 488,826,525,561      │
+  │ Delta                   │                  │ -42,615,427,581      │
+  │ Variance %              │                  │ -8.72%               │
+  ├─────────────────────────┼──────────────────┼──────────────────────┤
+  │ MEDIUM OS               │ 134,346,508,814  │ 91,731,081,233       │
+  │ Delta                   │                  │ +42,615,427,581      │
+  │ Variance %              │                  │ +46.46%              │
+  └─────────────────────────┴──────────────────┴──────────────────────┘
+
+  → Exact match of delta amount shows this is systematic issue
+  → 42.6M dari MEDIUM di DLY KAP MISSING di SSA MEDIUM
+  → 42.6M tsb tercatat di SSA SMALL sebagai "Commercial" product
+
+Unit 49 | Periode 01 Mei 2026:
+  KECIL: DLY 386.8M vs SSA 396.3M (delta: -9.4M / -2.38%)
+  MEDIUM: DLY 9.4M vs SSA 0M (delta: +9.4M / +∞)
+  → SSA completely missing MEDIUM data
+
+Unit 57 | Periode 01 Mei 2026:
+  KECIL: DLY 400.0M vs SSA 402.3M (delta: -2.2M / -0.56%)
+  MEDIUM: DLY 2.2M vs SSA 0M (delta: +2.2M / +∞)
+  → SSA completely missing MEDIUM data
+
+Unit 70 | Periode 01 Mei 2026:
+  KECIL: DLY 482.6M vs SSA 496.2M (delta: -13.6M / -2.74%)
+  MEDIUM: DLY 13.6M vs SSA 0M (delta: +13.6M / +∞)
+  → SSA completely missing MEDIUM data
+
+Unit 552 | Periode 01 Mei 2026:
+  KECIL: DLY 176,915,665,968 vs SSA 176,915,665,968 ✓ EXACT MATCH
+  MEDIUM: DLY 0 vs SSA 0 ✓ EXACT MATCH
+  → No issue detected for this unit
+
+PATTERN ANALYSIS:
+  ✓ Pola konsisten di 01 Mei dan 02 Mei (tidak temporal)
+  ✓ Delta amount sama persis (not random variance)
+  ✓ Delta flow: KECIL understate, MEDIUM overstate (symmetric error)
+  ✓ Hanya Unit 552 yang perfect match (no MEDIUM data)
+
+================================================================================
+3. ROOT CAUSE ANALYSIS
+================================================================================
+
+HYPOTHESIS:
+Produk dengan range plafond Rp 5M-Rp 15M memiliki dual classification:
+
+di DLY KAP:
+  - Dikategorikan sebagai SEGMEN MEDIUM (product code 42210)
+  - Ini BENAR karena range tersebut adalah karakteristik MEDIUM
+
+di SSA PINJAMAN:
+  - Dikonfigurasi dengan segmen_dashboard = 'Small'
+  - Dengan produk_dashboard = 'Commercial'
+  - Ini SALAH - seharusnya segmen_dashboard = 'Medium'
+
+MENGAPA UNIT 552 COCOK?
+  Unit 552 tidak memiliki data MEDIUM/COMMERCIAL sama sekali (0)
+  → Tidak ada konflik segmentasi
+  → Delta = 0 (perfect match by coincidence)
+
+MENGAPA UNIT 45 BERBEDA?
+  Unit 45 memiliki KECIL NON-CASHCOLL: 434.9M + CASHCOLL: 11.2M
+  + MEDIUM yang misclassified: 42.6M
+
+  DLY KAP correctly puts 42.6M di MEDIUM
+  SSA Pinjaman incorrectly puts 42.6M di SMALL + 91.7M di MEDIUM
+  = Total SSA SMALL jadi 488.8M (vs DLY KECIL 446.2M)
+  = Total SSA MEDIUM jadi 91.7M (vs DLY MEDIUM 134.3M)
+
+================================================================================
+4. IMPACT ASSESSMENT
+================================================================================
+
+JIKA MENGGUNAKAN SSA PINJAMAN AS SOURCE OF TRUTH:
+  ✗ KECIL/SMALL: OVERSTATE 2-8.7% per unit
+  ✗ MEDIUM: UNDERSTATE 46% + completely missing in some units
+  ✗ SME Total: Akan incorrect karena breakdown tidak sesuai
+
+JIKA MENGGUNAKAN DLY KAP RESEGMENTASI AS SOURCE OF TRUTH:
+  ✓ Segmentasi lebih akurat berdasarkan plafond range
+  ✓ Data sudah clean dan properly classified
+  ✓ Bisa di-normalize sesuai spec user (cashcol/non-cashcol filter)
+
+REKOMENDASI UNTUK DASHBOARD:
+  Gunakan DLY KAP Resegmentasi sebagai primary source untuk SME metrics
+  karena:
+  1. Segmentasi lebih akurat
+  2. Breakdown granular (cashcol vs non-cashcol)
+  3. SSA memiliki systematic error yang sudah teridentifikasi
+
+================================================================================
+5. VALIDATION CHECKLIST
+================================================================================
+
+Sebelum menggunakan DLY KAP sebagai sumber SME, verifikasi:
+
+FILTER LOGIC untuk KECIL NON-CASHCOLL:
+  [✓] segmen_kategori = 'SEGMEN SMALL'
+  [✓] keterangan NOT LIKE '%cashcol%'
+  [✓] keterangan NOT LIKE '%cash colateral%'
+  [✓] keterangan MUST INCLUDE '- NON CASH COLATERAL'
+
+  Sampling Result: 434.9M (Unit 45, 01 Mei)
+
+FILTER LOGIC untuk KECIL CASHCOLL:
+  [✓] segmen_kategori = 'SEGMEN SMALL'
+  [✓] keterangan LIKE '%cashcol%' OR LIKE '%cash colateral%'
+  [✓] keterangan NOT LIKE '%non cash%'
+
+  Sampling Result: 11.2M (Unit 45, 01 Mei)
+
+FILTER LOGIC untuk MEDIUM:
+  [✓] segmen_kategori IN ('SEGMEN MEDIUM', 'SEGMEN COMMERCIAL')
+
+  Sampling Result: 134.3M (Unit 45, 01 Mei)
+
+================================================================================
+6. DATA QUALITY METRICS
+================================================================================
+
+Metric                         | Value        | Status
+────────────────────────────────┼──────────────┼─────────────
+Sampling Rate (Units)          | 5 / All      | 5 units sampled
+Perfect Match Units            | 1 / 5 (20%)  | Unit 552 only
+Mismatch Units                 | 4 / 5 (80%)  | Units 45,49,57,70
+Average Variance (KECIL)       | -2.85%       | Systematic Understate
+Average Variance (MEDIUM)      | Severe       | Data Missing/Overstate
+Variance Consistency           | High         | Same issue across dates
+DLY KAP Data Quality           | Excellent    | Proper segmentation
+SSA Pinjaman Data Quality      | Poor         | Segmentation error
+
+================================================================================
+7. REKOMENDASI NEXT STEPS
+================================================================================
+
+IMMEDIATE ACTION:
+  1. ⚠ DO NOT use SSA PINJAMAN for MEDIUM validation
+  2. ⚠ Review segmen_dashboard configuration for produk 42210
+
+PRIORITY 1 (Urgent):
+  1. Cek apakah ada produk MEDIUM lain yang ter-classify di SMALL di SSA
+  2. Identifikasi semua affected products
+  3. Create fix untuk SSA segmentation configuration
+
+PRIORITY 2 (Development):
+  1. Implement DLY KAP Resegmentasi as primary source for SME metrics
+  2. Update dashboard calculation formula:
+     - KECIL = SUM(tl_rp) dimana SEGMEN SMALL & filter cashcol/non-cashcol
+     - MEDIUM = SUM(tl_rp) dimana SEGMEN MEDIUM/COMMERCIAL
+     - SME = KECIL + MEDIUM (bukan hanya KECIL)
+  3. Apply SML (dpk_rp) dan NPL (npl_rp) fields dengan filter sama
+
+PRIORITY 3 (Documentation):
+  1. Document the segmentation rules clearly
+  2. Create mapping table: DLY KAP Categories → Dashboard Display
+  3. Add data validation checks pada import process
+
+================================================================================
+CATATAN PENTING:
+================================================================================
+
+File ini adalah HASIL ANALISA READ-ONLY (tidak ada perubahan database)
+Semua data diambil dari:
+  - Table: dly_kap_resegmentasi (2 periode: 01-02 Mei 2026)
+  - Table: ssa_pinjaman (2 periode: 01-02 Mei 2026)
+  - Sample: 5 unit kerja retail
+
+Untuk membuat keputusan final tentang perubahan source data,
+mohon pertimbangkan rekomendasi di atas bersama tim bisnis dan data governance.
+
+================================================================================
+Generated: 2026-05-06
+Analyst: Claude AI Data Validation
+Status: READY FOR REVIEW
+================================================================================

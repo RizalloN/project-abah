@@ -955,7 +955,7 @@ class RekeningDormantController extends Controller
             ->all();
     }
 
-    private function rememberPayload(string $cacheKey, $ttl, callable $callback, bool $forceRefresh = false)
+    private function rememberPayload(string $cacheKey, $ttl, callable $callback, bool $forceRefresh = false, ?callable $fallback = null)
     {
         $latestKey = $cacheKey . ':latest';
 
@@ -994,11 +994,11 @@ class RekeningDormantController extends Controller
                 return $cached;
             }
 
-            $payload = $callback();
-            Cache::put($cacheKey, $payload, $ttl);
-            Cache::put($latestKey, $payload, now()->addMinutes(10));
+            if ($fallback) {
+                return $fallback();
+            }
 
-            return $payload;
+            return $callback();
         } finally {
             optional($lock)->release();
         }

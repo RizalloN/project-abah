@@ -679,4 +679,5 @@ class ExcelQueuedImportService
 
         return in_array($resolvedTable, ['daily_loan_dinamis', 'simpanan_multipn', 'gi405_singlerow'], true);
     }
+
 }

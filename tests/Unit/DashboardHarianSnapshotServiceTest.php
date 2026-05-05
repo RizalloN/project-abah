@@ -124,6 +124,42 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         $this->assertEqualsWithDelta(6.6666666667, $result['ldr_mikro_non_commercial'], 0.0001);
     }
 
+    public function test_unit_normalization_preserves_kc_and_kcp_detail_labels(): void
+    {
+        $service = new DashboardHarianSnapshotService();
+        $reflection = new \ReflectionMethod($service, 'normalizeUnitLabel');
+        $reflection->setAccessible(true);
+
+        $this->assertSame(
+            'KCP Sudirman Madiun',
+            $reflection->invoke($service, '00912 -- KCP SUDIRMAN MADIUN', 'KC Madiun')
+        );
+        $this->assertSame(
+            'KC Madiun',
+            $reflection->invoke($service, '00070 -- KC MADIUN', 'KC Madiun')
+        );
+        $this->assertSame(
+            'UNIT Sudirman Madiun',
+            $reflection->invoke($service, 'UNIT SUDIRMAN MADIUN', 'KC Madiun')
+        );
+    }
+
+    public function test_slug_filter_conditions_match_all_scope_parts(): void
+    {
+        $service = new DashboardHarianSnapshotService();
+        $reflection = new \ReflectionMethod($service, 'buildFilterCondition');
+        $reflection->setAccessible(true);
+
+        $this->assertSame(
+            "(UPPER(ss.nama_uker) LIKE '%KCP%' AND UPPER(ss.nama_uker) LIKE '%SUDIRMAN%' AND UPPER(ss.nama_uker) LIKE '%MADIUN%')",
+            $reflection->invoke($service, 'ss.nama_uker', 'kcp-sudirman-madiun')
+        );
+        $this->assertSame(
+            "(UPPER(ss.nama_uker) LIKE '%KC%' AND UPPER(ss.nama_uker) LIKE '%MADIUN%')",
+            $reflection->invoke($service, 'ss.nama_uker', 'kc-madiun-detail')
+        );
+    }
+
     public function test_source_metadata_signature_changes_when_source_values_change(): void
     {
         $this->createSourceMetadataTables();
@@ -368,6 +404,32 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         $this->assertSame(1, DB::table('dashboard_harian_snapshots')->where('snapshot_period', '2026-04-28')->count());
     }
 
+    public function test_shared_period_can_use_dly_kap_when_ssa_pinjaman_is_not_available_yet(): void
+    {
+        $this->createSourceMetadataTables();
+
+        DB::table('ssa_simpanan')->insert([
+            'Month_Day_Year_of_Posisi' => '2026-05-03',
+            'saldo' => 1000,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('dly_kap_resegmentasi')->insert([
+            'periode' => '2026-05-03',
+            'tl_rp' => 1000,
+            'dpk_rp' => 100,
+            'npl_rp' => 10,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $service = new DashboardHarianSnapshotService();
+        $reflection = new \ReflectionMethod($service, 'resolveSharedPeriods');
+        $reflection->setAccessible(true);
+
+        $this->assertContains('2026-05-03', $reflection->invoke($service));
+    }
+
     public function test_lw325_recovery_source_uses_latest_ph_before_snapshot_period(): void
     {
         $this->createSourceMetadataTables();
@@ -459,7 +521,7 @@ class DashboardHarianSnapshotServiceTest extends TestCase
 
     private function createSourceMetadataTables(): void
     {
-        foreach (['dashboard_harian_snapshots', 'ssa_pinjaman', 'ssa_simpanan', 'cognos_recovery', 'lw325_ph'] as $table) {
+        foreach (['dashboard_harian_snapshots', 'ssa_pinjaman', 'ssa_simpanan', 'dly_kap_resegmentasi', 'cognos_recovery', 'lw325_ph'] as $table) {
             Schema::dropIfExists($table);
         }
 
@@ -488,6 +550,15 @@ class DashboardHarianSnapshotServiceTest extends TestCase
             $table->id();
             $table->date('Month_Day_Year_of_Posisi')->nullable();
             $table->decimal('saldo', 20, 2)->nullable();
+            $table->timestamps();
+        });
+
+        Schema::create('dly_kap_resegmentasi', function (Blueprint $table): void {
+            $table->id();
+            $table->date('periode')->nullable();
+            $table->decimal('tl_rp', 20, 2)->nullable();
+            $table->decimal('dpk_rp', 20, 2)->nullable();
+            $table->decimal('npl_rp', 20, 2)->nullable();
             $table->timestamps();
         });
 
