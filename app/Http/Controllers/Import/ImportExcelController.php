@@ -2942,6 +2942,9 @@ class ImportExcelController extends Controller
         } elseif ($tableName === 'lw325_ph' && isset($tableColumnsLookup['uniqueid_namareport'])) {
             $uniqueIdCol = $tableColumnsByLower['uniqueid_namareport'] ?? 'uniqueid_namareport';
             $suffix = '_RPH';
+        } elseif ($this->isDlyKapResegmentasiTable($tableName) && isset($tableColumnsLookup['uniqueid_dly_kap'])) {
+            $uniqueIdCol = $tableColumnsByLower['uniqueid_dly_kap'] ?? 'uniqueid_dly_kap';
+            $suffix = '_DLY_KAP';
         } elseif (isset($tableColumnsLookup['uniqueid_namareport'])) {
             $uniqueIdCol = $tableColumnsByLower['uniqueid_namareport'] ?? 'uniqueid_namareport';
         }
@@ -3346,8 +3349,15 @@ class ImportExcelController extends Controller
             $columns[] = 'id';
         }
 
-        $columns[] = 'created_at';
-        $columns[] = 'updated_at';
+        $hasCreatedAt = in_array('created_at', $normalizedHeaders, true);
+        $hasUpdatedAt = in_array('updated_at', $normalizedHeaders, true);
+
+        if ($hasCreatedAt) {
+            $columns[] = 'created_at';
+        }
+        if ($hasUpdatedAt) {
+            $columns[] = 'updated_at';
+        }
 
         foreach ($context['valid_indexes'] as $originalIndex) {
             $rule = $context['header_rules'][$originalIndex] ?? null;
