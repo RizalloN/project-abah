@@ -10160,13 +10160,11 @@ class ImportExcelController extends Controller
                     $preparedPath = $this->prepareStagedCsvPathForQueuedImport($previewStagedPath);
                     $path = $preparedPath['absolute_path'];
                     $relativePath = $preparedPath['relative_path'];
-                    $stagedCsvPath = $relativePath;
                 } elseif (!$this->csvLooksLikeNormalizedHeaders($path, L1133CsvImporter::NORMALIZED_HEADERS)) {
                     $stage = $this->l1133Importer()->stageNormalizedCsv($path);
                     $preparedPath = $this->prepareStagedCsvPathForQueuedImport((string) $stage['absolute_path']);
                     $relativePath = $preparedPath['relative_path'];
                     $path = $preparedPath['absolute_path'];
-                    $stagedCsvPath = $relativePath;
                 }
             } catch (\Throwable $e) {
                 Log::error('initExcelImport: Gagal staging normalisasi L1133', [
