@@ -121,6 +121,13 @@ class ImportIndexController extends Controller
             'identity' => 'uniqueid_SMPN',
             'chunk_size' => 50000,
         ],
+        'dly_kap_resegmentasi' => [
+            'index' => 'idx_dlykap_period_cab_unit',
+            'period' => 'periode',
+            'kanca' => 'kode_cabang',
+            'identity' => 'uniqueid_dly_kap',
+            'chunk_size' => 25000,
+        ],
     ];
 
     public function __construct(
@@ -4105,7 +4112,12 @@ class ImportIndexController extends Controller
 
     private function resolveIdentityColumn(array $tableColumns): ?string
     {
-        return $this->resolveColumnName($tableColumns, ['uniqueid_namareport', 'uniqueid_SMPN', 'id']);
+        return $this->resolveColumnName($tableColumns, [
+            'uniqueid_namareport',
+            'uniqueid_SMPN',
+            'uniqueid_dly_kap',
+            'id',
+        ]);
     }
 
     private function resolveDeleteChunkSize(string $tableName, ?string $identityColumn): int

@@ -2869,6 +2869,10 @@ class ImportExcelController extends Controller
             $normalizedHeaders = $this->canonicalizeDailyLoanSourceHeaders($normalizedHeaders);
         }
 
+        if ($this->isDlyKapResegmentasiTable($tableName)) {
+            $normalizedHeaders = DlyKapResegmentasiCsvImporter::NORMALIZED_HEADERS;
+        }
+
         $cacheKey = $tableName . '|' . sha1(json_encode([
             'headers' => array_values($normalizedHeaders),
             'filters' => $activeFilters,
@@ -3687,6 +3691,10 @@ class ImportExcelController extends Controller
     ): bool {
         if ($csvPath === '' || !file_exists($csvPath) || empty($normalizedHeaders)) {
             return false;
+        }
+
+        if ($this->isDlyKapResegmentasiTable($tableName)) {
+            $normalizedHeaders = DlyKapResegmentasiCsvImporter::NORMALIZED_HEADERS;
         }
 
         $delimiter = $this->detectCsvDelimiter($csvPath);
@@ -6872,6 +6880,103 @@ class ImportExcelController extends Controller
         return 'WHERE ' . implode(' AND ', $whereClauses);
     }
 
+    private function deleteDlyKapResegmentasiScopesFromFastPathStage(string $stagingTable, string $innerSelectSql, string $whereClauses): int
+    {
+        $scopeSql = "SELECT DISTINCT src.`periode`, src.`kanwil`, src.`kode_cabang`, src.`kode_unit`\n"
+            . "FROM (\n"
+            . "  SELECT \n{$innerSelectSql}\n"
+            . "  FROM `{$stagingTable}`\n"
+            . ") AS src\n"
+            . $whereClauses;
+
+        $scopes = DB::select($scopeSql);
+        $deleted = 0;
+
+        foreach ($scopes as $scope) {
+            $periode = $scope->periode ?? null;
+
+            if ($periode === null || trim((string) $periode) === '') {
+                continue;
+            }
+
+            $deleted += DB::table(DlyKapResegmentasiCsvImporter::TABLE)
+                ->where('periode', $periode)
+                ->where('kanwil', $scope->kanwil ?? null)
+                ->where('kode_cabang', $scope->kode_cabang ?? null)
+                ->where('kode_unit', $scope->kode_unit ?? null)
+                ->delete();
+        }
+
+        return $deleted;
+    }
+
+    private function backfillDlyKapResegmentasiSegmenKategoriFromFastPathStage(string $stagingTable, array $context): int
+    {
+        $sourceIndexes = $this->resolveDlyKapFastPathSourceIndexes($context, ['uniqueid_dly_kap', 'segmen_kategori']);
+        $uniqueIdIndex = $sourceIndexes['uniqueid_dly_kap'] ?? null;
+        $segmenKategoriIndex = $sourceIndexes['segmen_kategori'] ?? null;
+
+        if ($uniqueIdIndex === null || $segmenKategoriIndex === null) {
+            throw new \RuntimeException('Mapping segmen_kategori DLY KAP tidak lengkap pada temp CSV staging.');
+        }
+
+        $sourceUniqueId = $this->quoteSqlIdentifier('c' . $uniqueIdIndex);
+        $sourceSegmenKategori = $this->quoteSqlIdentifier('c' . $segmenKategoriIndex);
+
+        $sql = "UPDATE `" . DlyKapResegmentasiCsvImporter::TABLE . "` AS target\n"
+            . "JOIN (\n"
+            . "  SELECT NULLIF(TRIM({$sourceUniqueId}), '') AS `uniqueid_dly_kap`, NULLIF(TRIM({$sourceSegmenKategori}), '') AS `segmen_kategori`\n"
+            . "  FROM `{$stagingTable}`\n"
+            . ") AS src ON BINARY src.`uniqueid_dly_kap` = BINARY target.`uniqueid_dly_kap`\n"
+            . "SET target.`segmen_kategori` = src.`segmen_kategori`, target.`updated_at` = NOW()\n"
+            . "WHERE src.`uniqueid_dly_kap` IS NOT NULL\n"
+            . "  AND src.`segmen_kategori` IS NOT NULL\n"
+            . "  AND (target.`segmen_kategori` IS NULL OR TRIM(target.`segmen_kategori`) = '' OR BINARY target.`segmen_kategori` <> BINARY src.`segmen_kategori`)";
+
+        return DB::affectingStatement($sql);
+    }
+
+    private function countDlyKapResegmentasiMissingSegmenKategoriFromFastPathStage(string $stagingTable, array $context): int
+    {
+        $sourceIndexes = $this->resolveDlyKapFastPathSourceIndexes($context, ['uniqueid_dly_kap']);
+        $uniqueIdIndex = $sourceIndexes['uniqueid_dly_kap'] ?? null;
+
+        if ($uniqueIdIndex === null) {
+            throw new \RuntimeException('Mapping uniqueid_dly_kap DLY KAP tidak lengkap pada temp CSV staging.');
+        }
+
+        $sourceUniqueId = $this->quoteSqlIdentifier('c' . $uniqueIdIndex);
+        $sql = "SELECT COUNT(*) AS aggregate_count\n"
+            . "FROM `" . DlyKapResegmentasiCsvImporter::TABLE . "` AS target\n"
+            . "JOIN (\n"
+            . "  SELECT NULLIF(TRIM({$sourceUniqueId}), '') AS `uniqueid_dly_kap`\n"
+            . "  FROM `{$stagingTable}`\n"
+            . ") AS src ON BINARY src.`uniqueid_dly_kap` = BINARY target.`uniqueid_dly_kap`\n"
+            . "WHERE src.`uniqueid_dly_kap` IS NOT NULL\n"
+            . "  AND (target.`segmen_kategori` IS NULL OR TRIM(target.`segmen_kategori`) = '')";
+
+        $row = DB::selectOne($sql);
+
+        return (int) ($row->aggregate_count ?? $row->AGGREGATE_COUNT ?? 0);
+    }
+
+    private function resolveDlyKapFastPathSourceIndexes(array $context, array $columns): array
+    {
+        $wanted = array_fill_keys(array_map('strtolower', $columns), true);
+        $resolved = [];
+
+        foreach ((array) ($context['header_rules'] ?? []) as $sourceIndex => $rule) {
+            foreach ((array) ($rule['db_candidates'] ?? []) as $candidateColumn) {
+                $candidateLower = strtolower((string) $candidateColumn);
+                if (isset($wanted[$candidateLower]) && !isset($resolved[$candidateLower])) {
+                    $resolved[$candidateLower] = (int) $sourceIndex;
+                }
+            }
+        }
+
+        return $resolved;
+    }
+
     private function processFastPathBulkCsvStream(
         callable $send,
         string $csvPath,
@@ -6894,6 +6999,10 @@ class ImportExcelController extends Controller
 
         if (!$this->supportsNativeBulkLoad()) {
             return false;
+        }
+
+        if ($isDlyKapResegmentasi) {
+            $normalizedHeaders = DlyKapResegmentasiCsvImporter::NORMALIZED_HEADERS;
         }
 
         $delimiter = ($delimiter !== null && $delimiter !== '')
@@ -7043,7 +7152,21 @@ class ImportExcelController extends Controller
                     }));
                     DB::statement('SET SESSION sql_mode = ?', [implode(',', $relaxedModes)]);
 
+                    if ($isDlyKapResegmentasi) {
+                        $this->deleteDlyKapResegmentasiScopesFromFastPathStage($stagingTable, $innerSelectSql, $whereClauses);
+                    }
+
                     $inserted = DB::affectingStatement($sql);
+
+                    if ($isDlyKapResegmentasi) {
+                        $this->backfillDlyKapResegmentasiSegmenKategoriFromFastPathStage($stagingTable, $context);
+
+                        $missingSegmenKategori = $this->countDlyKapResegmentasiMissingSegmenKategoriFromFastPathStage($stagingTable, $context);
+                        if ($missingSegmenKategori > 0) {
+                            throw new \RuntimeException("Import DLY KAP Resegmentasi gagal mengisi segmen_kategori pada {$missingSegmenKategori} baris.");
+                        }
+                    }
+
                     DB::commit();
                 } catch (\Throwable $e) {
                     if (DB::connection()->transactionLevel() > 0) {
@@ -9795,6 +9918,10 @@ class ImportExcelController extends Controller
                 return false;
             }
 
+            if ($this->isDlyKapResegmentasiTable($tableName)) {
+                $normalizedHeadersForSession = DlyKapResegmentasiCsvImporter::NORMALIZED_HEADERS;
+            }
+
             // ── Staging Excel to CSV (jika perlu) ───────────────────────
             $stagedCsvPath = '';
             $mustRefreshStagedCsv = $this->isSsaSimpananTable($tableName) || $this->isSsaPinjamanTable($tableName);
@@ -9989,6 +10116,8 @@ class ImportExcelController extends Controller
 
         $disableInlineFallback = $tableName === 'lw325_ph';
 
+        $stagedCsvPath = '';
+
         if ($this->isDlyKapResegmentasiTable($tableName)) {
             try {
                 $previewMeta = (array) session('excel_preview_meta', []);
@@ -10002,11 +10131,13 @@ class ImportExcelController extends Controller
                     $preparedPath = $this->prepareStagedCsvPathForQueuedImport($previewStagedPath);
                     $path = $preparedPath['absolute_path'];
                     $relativePath = $preparedPath['relative_path'];
+                    $stagedCsvPath = $relativePath;
                 } elseif (!$this->csvLooksLikeNormalizedHeaders($path, DlyKapResegmentasiCsvImporter::NORMALIZED_HEADERS)) {
                     $stage = $this->dlyKapResegmentasiImporter()->stageNormalizedCsv($path);
                     $preparedPath = $this->prepareStagedCsvPathForQueuedImport((string) $stage['absolute_path']);
                     $relativePath = $preparedPath['relative_path'];
                     $path = $preparedPath['absolute_path'];
+                    $stagedCsvPath = $relativePath;
                 }
             } catch (\Throwable $e) {
                 Log::error('initExcelImport: Gagal staging normalisasi DLY KAP Resegmentasi', [
@@ -10029,11 +10160,13 @@ class ImportExcelController extends Controller
                     $preparedPath = $this->prepareStagedCsvPathForQueuedImport($previewStagedPath);
                     $path = $preparedPath['absolute_path'];
                     $relativePath = $preparedPath['relative_path'];
+                    $stagedCsvPath = $relativePath;
                 } elseif (!$this->csvLooksLikeNormalizedHeaders($path, L1133CsvImporter::NORMALIZED_HEADERS)) {
                     $stage = $this->l1133Importer()->stageNormalizedCsv($path);
                     $preparedPath = $this->prepareStagedCsvPathForQueuedImport((string) $stage['absolute_path']);
                     $relativePath = $preparedPath['relative_path'];
                     $path = $preparedPath['absolute_path'];
+                    $stagedCsvPath = $relativePath;
                 }
             } catch (\Throwable $e) {
                 Log::error('initExcelImport: Gagal staging normalisasi L1133', [
@@ -10062,20 +10195,30 @@ class ImportExcelController extends Controller
             'file_path' => $relativePath,
         ]);
 
+        $initialHeaders = $this->isDlyKapResegmentasiTable($tableName)
+            ? DlyKapResegmentasiCsvImporter::NORMALIZED_HEADERS
+            : [];
+
         // Set minimal job state untuk digunakan di import execution
+        $jobParams = [
+            'table_name' => $tableName,
+            'file_path' => $relativePath,
+            'active_filters' => $normalizedActiveFilters,
+            'manual_kanca' => $tableName === 'rka' ? trim((string) session('excel_manual_kanca', '')) : null,
+            'manual_periode' => $tableName === 'rka' ? trim((string) session('excel_manual_periode', '')) : null,
+            'derived_kanca' => $tableName === 'rka' ? trim((string) session('excel_derived_kanca', '')) : null,
+            'derived_tahun' => $tableName === 'rka' ? trim((string) session('excel_derived_tahun', '')) : null,
+            'disable_inline_fallback' => $disableInlineFallback,
+            'job_id' => $jobId,
+        ];
+
+        if ($stagedCsvPath !== '') {
+            $jobParams['staged_csv_path'] = $stagedCsvPath;
+        }
+
         $this->excelImportJobService()->putImportJobState($jobId, [
-            'params' => [
-                'table_name' => $tableName,
-                'file_path' => $relativePath,
-                'active_filters' => $normalizedActiveFilters,
-                'manual_kanca' => $tableName === 'rka' ? trim((string) session('excel_manual_kanca', '')) : null,
-                'manual_periode' => $tableName === 'rka' ? trim((string) session('excel_manual_periode', '')) : null,
-                'derived_kanca' => $tableName === 'rka' ? trim((string) session('excel_derived_kanca', '')) : null,
-                'derived_tahun' => $tableName === 'rka' ? trim((string) session('excel_derived_tahun', '')) : null,
-                'disable_inline_fallback' => $disableInlineFallback,
-                'job_id' => $jobId,
-            ],
-            'headers' => [], // Will be populated during initialization
+            'params' => $jobParams,
+            'headers' => $initialHeaders, // Will be populated during initialization for generic reports
         ]);
 
         // Store active filters di session untuk diambil saat initialization
@@ -10187,6 +10330,10 @@ class ImportExcelController extends Controller
 
         if (!$pythonExe || !file_exists($scriptPath) || !$this->supportsNativeBulkLoad()) {
             return false;
+        }
+
+        if ($this->isDlyKapResegmentasiTable($tableName)) {
+            $normalizedHeaders = DlyKapResegmentasiCsvImporter::NORMALIZED_HEADERS;
         }
 
         $importContext = $this->buildImportContext($tableName, $normalizedHeaders, $activeFilters, $importOptions);
@@ -10429,6 +10576,11 @@ class ImportExcelController extends Controller
         $delimiter = ($delimiter !== null && $delimiter !== '')
             ? $delimiter
             : $this->detectCsvDelimiter($csvPath);
+
+        if ($this->isDlyKapResegmentasiTable($tableName)) {
+            $normalizedHeaders = DlyKapResegmentasiCsvImporter::NORMALIZED_HEADERS;
+        }
+
         $estimatedTotalRows = $estimatedTotalRows !== null
             ? max(0, $estimatedTotalRows)
             : $this->countCsvDataRows($csvPath);
@@ -11199,6 +11351,11 @@ class ImportExcelController extends Controller
                     'text'   => 'Header session hilang. Silakan ulangi import dari awal.',
                 ], 422);
             }
+
+            if ($this->isDlyKapResegmentasiTable((string) $tableName)) {
+                $normalizedHeaders = DlyKapResegmentasiCsvImporter::NORMALIZED_HEADERS;
+            }
+
             $this->releaseSessionLockIfNeeded();
 
             $importOptions = [

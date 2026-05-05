@@ -18,6 +18,7 @@ class DlyKapResegmentasiCsvImporter
         'kanwil',
         'kode_cabang',
         'kode_unit',
+        'segmen_kategori',
         'segmen',
         'keterangan',
         'l_rp',
@@ -53,6 +54,15 @@ class DlyKapResegmentasiCsvImporter
         'tl_deb' => 15,
     ];
 
+    private const SEGMEN_KATEGORI_BY_HEADER = [
+        'TEXTBOX171' => 'SEGMEN MICRO',
+        'TEXTBOX161' => 'SEGMEN CONSUMER',
+        'TEXTBOX226' => 'SEGMEN SMALL',
+        'TEXTBOX254' => 'MEDIUM',
+        'TEXTBOX282' => 'SEGMEN COMMERCIAL',
+        'TEXTBOX310' => 'SEGMEN CORPORATE',
+    ];
+
     /**
      * @return array{metadata: array<string, mixed>, rows: array<int, array<string, mixed>>, warnings: array<int, string>}
      */
@@ -79,6 +89,7 @@ class DlyKapResegmentasiCsvImporter
         $rows = [];
         $lineNumber = 0;
         $sectionHeader = null;
+        $segmenKategori = null;
         $skipNextFooterTotalRow = false;
         $delimiter = ',';
 
@@ -119,10 +130,11 @@ class DlyKapResegmentasiCsvImporter
 
                 if (str_starts_with($firstCell, 'SEGMEN')) {
                     $sectionHeader = $firstCell;
+                    $segmenKategori = $this->resolveSegmenKategori($row[1] ?? null);
                     continue;
                 }
 
-                if ($sectionHeader === null) {
+                if ($sectionHeader === null || $segmenKategori === null) {
                     $warnings[] = "Baris {$lineNumber} dilewati karena muncul sebelum header SEGMEN.";
                     continue;
                 }
@@ -135,6 +147,7 @@ class DlyKapResegmentasiCsvImporter
                 $rows[] = $this->makeMetricRecord(
                     $metadata,
                     $sectionHeader,
+                    $segmenKategori,
                     $lineNumber,
                     $this->blankToNull($row[0] ?? null),
                     $this->blankToNull($row[1] ?? null),
@@ -268,8 +281,58 @@ class DlyKapResegmentasiCsvImporter
                 );
             }
 
+            $this->fixSegmenKategoriFromSegmen($rows[0] ?? null);
+
             return ['inserted' => count($rows), 'deleted' => $deleted];
         });
+    }
+
+    private function fixSegmenKategoriFromSegmen(?array $firstRow): void
+    {
+        if ($firstRow === null) {
+            return;
+        }
+
+        $periode = $firstRow['periode'] ?? null;
+        $kanwil = $firstRow['kanwil'] ?? null;
+        $kodeCabang = $firstRow['kode_cabang'] ?? null;
+        $kodeUnit = $firstRow['kode_unit'] ?? null;
+
+        if (empty($periode) || empty($kanwil) || empty($kodeCabang) || empty($kodeUnit)) {
+            return;
+        }
+
+        $table = self::TABLE;
+
+        $validSegmen = [
+            'SEGMEN MICRO',
+            'SEGMEN CONSUMER',
+            'SEGMEN SMALL',
+            'MEDIUM',
+            'SEGMEN COMMERCIAL',
+            'SEGMEN CORPORATE',
+        ];
+
+        $caseWhen = [];
+        foreach ($validSegmen as $seg) {
+            $caseWhen[] = "WHEN `segmen` = '$seg' THEN '$seg'";
+        }
+        $caseClause = implode(' ', $caseWhen);
+
+        DB::affectingStatement("
+            UPDATE `{$table}`
+            SET `segmen_kategori` = CASE
+                {$caseClause}
+                ELSE `segmen_kategori`
+            END,
+            `updated_at` = NOW()
+            WHERE (`segmen_kategori` IS NULL OR TRIM(`segmen_kategori`) = '')
+              AND `periode` = ?
+              AND `kanwil` = ?
+              AND `kode_cabang` = ?
+              AND `kode_unit` = ?
+              AND `segmen` IN ('" . implode("','", $validSegmen) . "')
+        ", [$periode, $kanwil, $kodeCabang, $kodeUnit]);
     }
 
     /**
@@ -352,6 +415,7 @@ class DlyKapResegmentasiCsvImporter
     private function makeMetricRecord(
         array $metadata,
         string $sectionHeader,
+        string $segmenKategori,
         int $lineNumber,
         ?string $segmen,
         ?string $keterangan,
@@ -364,6 +428,7 @@ class DlyKapResegmentasiCsvImporter
             'kanwil' => $metadata['kanwil'],
             'kode_cabang' => $metadata['kode_cabang'],
             'kode_unit' => $metadata['kode_unit'],
+            'segmen_kategori' => $segmenKategori,
             'segmen' => $segmen,
             'keterangan' => $keterangan,
         ];
@@ -412,6 +477,13 @@ class DlyKapResegmentasiCsvImporter
         $headers = $this->normalizeRow($headers);
 
         return array_map(static fn ($header): string => strtolower((string) $header), $headers) === self::NORMALIZED_HEADERS;
+    }
+
+    private function resolveSegmenKategori(?string $headerMarker): ?string
+    {
+        $marker = strtoupper(trim((string) ($headerMarker ?? '')));
+
+        return self::SEGMEN_KATEGORI_BY_HEADER[$marker] ?? null;
     }
 
     private function blankToNull($value): ?string

@@ -2,10 +2,11 @@
 
 namespace App\Http\Requests\Auth;
 
+use App\Models\User;
 use Illuminate\Auth\Events\Lockout;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -44,44 +45,26 @@ class LoginRequest extends FormRequest
      *
      * @throws ValidationException
      */
-    public function authenticate(): void
+    public function authenticate(): User
     {
-        $this->ensureIsNotRateLimited();
+        $isRateLimited = $this->isRateLimited();
+        $user = $this->validUserForCredentials();
 
-        $credentials = [
-            'pn' => $this->normalizedPn(),
-            'password' => (string) $this->input('password'),
-        ];
-
-        try {
-            $authenticated = Auth::attempt($credentials, $this->boolean('remember'));
-        } catch (RuntimeException $e) {
-            if (! $this->isInvalidStoredPasswordHash($e)) {
-                throw $e;
+        if ($user === null) {
+            if ($isRateLimited) {
+                $this->throwRateLimitedValidationException();
             }
 
-            $authenticated = false;
-        }
-
-        if (! $authenticated) {
             $this->hitRateLimiters();
 
             throw ValidationException::withMessages([
-                'pn' => trans('auth.failed'),
-            ]);
-        }
-
-        $user = Auth::user();
-        if (!$user || !in_array((string) ($user->role ?? ''), ['admin', 'user'], true)) {
-            Auth::logout();
-            $this->hitRateLimiters();
-
-            throw ValidationException::withMessages([
-                'pn' => trans('auth.failed'),
+                'pn' => 'PN atau password salah.',
             ]);
         }
 
         $this->clearRateLimiters();
+
+        return $user;
     }
 
     /**
@@ -91,13 +74,45 @@ class LoginRequest extends FormRequest
      */
     public function ensureIsNotRateLimited(): void
     {
-        if (
-            !RateLimiter::tooManyAttempts($this->throttleKey(), self::MAX_ATTEMPTS_PER_IDENTITY)
-            && !RateLimiter::tooManyAttempts($this->ipThrottleKey(), self::MAX_ATTEMPTS_PER_IP)
-        ) {
+        if (!$this->isRateLimited()) {
             return;
         }
 
+        if ($this->validUserForCredentials() === null) {
+            $this->throwRateLimitedValidationException();
+        }
+    }
+
+    private function isRateLimited(): bool
+    {
+        return RateLimiter::tooManyAttempts($this->throttleKey(), self::MAX_ATTEMPTS_PER_IDENTITY)
+            || RateLimiter::tooManyAttempts($this->ipThrottleKey(), self::MAX_ATTEMPTS_PER_IP);
+    }
+
+    /**
+     * Let the real account owner recover from a stale throttle lock.
+     */
+    private function validUserForCredentials(): ?User
+    {
+        $user = User::query()->where('pn', $this->normalizedPn())->first();
+
+        if (!$user || !in_array((string) ($user->role ?? ''), ['admin', 'user'], true)) {
+            return null;
+        }
+
+        try {
+            if (!Hash::check((string) $this->input('password'), (string) $user->password)) {
+                return null;
+            }
+        } catch (RuntimeException) {
+            return null;
+        }
+
+        return $user;
+    }
+
+    private function throwRateLimitedValidationException(): void
+    {
         event(new Lockout($this));
 
         $seconds = max(
@@ -106,10 +121,7 @@ class LoginRequest extends FormRequest
         );
 
         throw ValidationException::withMessages([
-            'pn' => trans('auth.throttle', [
-                'seconds' => $seconds,
-                'minutes' => ceil($seconds / 60),
-            ]),
+            'pn' => 'Terlalu banyak percobaan. Coba lagi dalam ' . max(1, (int) ceil($seconds / 60)) . ' menit.',
         ]);
     }
 
@@ -143,8 +155,4 @@ class LoginRequest extends FormRequest
         RateLimiter::clear($this->ipThrottleKey());
     }
 
-    private function isInvalidStoredPasswordHash(RuntimeException $e): bool
-    {
-        return str_contains(Str::lower($e->getMessage()), 'bcrypt');
-    }
 }

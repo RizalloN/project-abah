@@ -5,17 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Login - Dashboard A-Six</title>
     <link rel="icon" type="image/svg+xml" href="{{ asset('images/a-six-logo.svg') }}">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
         :root {
-            --asix-primary: #f97316;
-            --asix-secondary: #fb923c;
-            --asix-soft: #fed7aa;
-            --asix-night: #111827;
-            --asix-ink: #2f3b52;
-            --asix-bg: #fff7ed;
+            --primary: #f97316;
+            --primary-dark: #ea580c;
+            --bg: #f8fafc;
+            --border: #e2e8f0;
+            --text: #0f172a;
+            --muted: #64748b;
+            --danger: #dc2626;
         }
 
         * {
@@ -23,434 +21,176 @@
         }
 
         body {
+            min-height: 100vh;
             margin: 0;
-            font-family: "Inter", sans-serif;
-            background: var(--asix-bg);
-            color: #0f172a;
-            min-height: 100vh;
-        }
-
-        .login-shell {
-            min-height: 100vh;
-            padding: 28px;
-            background:
-                radial-gradient(circle at 10% 5%, rgba(251, 146, 60, 0.22), transparent 34%),
-                radial-gradient(circle at 95% 0%, rgba(253, 186, 116, 0.18), transparent 26%),
-                linear-gradient(135deg, #111827 0%, #1f2937 48%, #f97316 100%);
             display: flex;
             align-items: center;
             justify-content: center;
+            padding: 24px;
+            background:
+                linear-gradient(135deg, rgba(15, 23, 42, 0.82), rgba(249, 115, 22, 0.58)),
+                url("{{ asset('images/bri-logo.png') }}") center center / min(520px, 70vw) no-repeat,
+                var(--bg);
+            color: var(--text);
+            font-family: Arial, Helvetica, sans-serif;
         }
 
         .login-card {
             width: 100%;
-            max-width: 1220px;
-            display: grid;
-            grid-template-columns: 1.05fr 0.95fr;
-            border-radius: 30px;
-            overflow: hidden;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            box-shadow: 0 42px 90px -36px rgba(4, 42, 95, 0.66);
+            max-width: 420px;
+            padding: 32px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.96);
+            box-shadow: 0 18px 45px rgba(15, 23, 42, 0.08);
             backdrop-filter: blur(8px);
-            background: rgba(255, 255, 255, 0.08);
         }
 
-        .left-panel {
-            padding: 48px;
-            color: #ffffff;
-            border-right: 1px solid rgba(255, 255, 255, 0.18);
+        .brand {
             display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-            gap: 30px;
-        }
-
-        .left-brand {
-            display: inline-flex;
             align-items: center;
             gap: 12px;
+            margin-bottom: 28px;
             text-decoration: none;
-            color: rgba(255, 255, 255, 0.92);
-            font-size: 0.8rem;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.28em;
-        }
-
-        .left-brand-badge {
-            width: 44px;
-            height: 44px;
-            border-radius: 14px;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            border: 1px solid rgba(255, 255, 255, 0.34);
-            background: rgba(255, 255, 255, 0.14);
-            padding: 7px;
-        }
-
-        .left-brand-badge img {
-            width: 100%;
-            height: 100%;
-            object-fit: contain;
-        }
-
-        .left-eyebrow {
-            margin-top: 54px;
-            font-size: 0.72rem;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.35em;
-            color: #ffd8b4;
-        }
-
-        .left-title {
-            margin: 14px 0 0;
-            font-size: clamp(2rem, 3.4vw, 3.15rem);
-            line-height: 1.1;
-            font-weight: 800;
-        }
-
-        .left-copy {
-            margin: 20px 0 0;
-            max-width: 560px;
-            color: #d8ebff;
-            font-size: 1rem;
-            line-height: 1.7;
-        }
-
-        .left-features {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 14px;
-        }
-
-        .left-feature {
-            padding: 18px;
-            border-radius: 18px;
-            border: 1px solid rgba(255, 255, 255, 0.26);
-            background: rgba(255, 255, 255, 0.1);
-        }
-
-        .left-feature-title {
-            margin: 0;
-            font-size: 0.92rem;
+            color: var(--text);
             font-weight: 700;
         }
 
-        .left-feature-copy {
-            margin: 8px 0 0;
-            font-size: 0.87rem;
-            line-height: 1.6;
-            color: #d6e9ff;
+        .brand img {
+            width: 36px;
+            height: 36px;
         }
 
-        .right-panel {
-            background: rgba(255, 255, 255, 0.97);
-            padding: 52px 56px;
-        }
-
-        .mobile-brand {
-            display: none;
-        }
-
-        .right-eyebrow {
-            margin: 0;
-            font-size: 0.76rem;
-            font-weight: 800;
-            letter-spacing: 0.34em;
-            text-transform: uppercase;
-            color: var(--asix-primary);
-        }
-
-        .right-title {
-            margin: 12px 0 0;
-            font-size: clamp(1.95rem, 3vw, 2.5rem);
-            line-height: 1.15;
-            color: var(--asix-night);
-            font-weight: 800;
-        }
-
-        .right-copy {
-            margin: 14px 0 0;
-            color: #5b6f8c;
-            font-size: 1rem;
-            line-height: 1.65;
-            max-width: 500px;
+        h1 {
+            margin: 0 0 24px;
+            font-size: 1.35rem;
+            line-height: 1.25;
         }
 
         .status-box {
-            margin-top: 22px;
-            border-radius: 14px;
+            margin-bottom: 18px;
+            padding: 10px 12px;
             border: 1px solid #bbf7d0;
-            background: #ecfdf3;
+            border-radius: 6px;
+            background: #f0fdf4;
             color: #166534;
-            padding: 12px 14px;
-            font-size: 0.88rem;
-            font-weight: 600;
-        }
-
-        .login-form {
-            margin-top: 28px;
+            font-size: 0.9rem;
         }
 
         .field {
             margin-bottom: 16px;
         }
 
-        .field label {
+        label {
             display: block;
-            font-size: 0.95rem;
+            margin-bottom: 7px;
+            font-size: 0.92rem;
             font-weight: 700;
-            color: var(--asix-ink);
-            margin-bottom: 8px;
         }
 
-        .field input[type="text"],
-        .field input[type="password"] {
+        input[type="text"],
+        input[type="password"] {
             width: 100%;
-            border-radius: 16px;
-            border: 1px solid #fed7aa;
-            background: #fffaf5;
-            padding: 12px 14px;
-            font-size: 0.94rem;
-            color: #0f172a;
+            padding: 11px 12px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 0.95rem;
             outline: none;
-            transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
         }
 
-        .field input::placeholder {
-            color: #b08968;
-        }
-
-        .field input:focus {
-            border-color: var(--asix-secondary);
-            background: #ffffff;
-            box-shadow: 0 0 0 4px rgba(249, 115, 22, 0.14);
+        input:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.14);
         }
 
         .error {
-            margin-top: 6px;
-            font-size: 0.86rem;
-            color: #dc2626;
+            margin: 6px 0 0;
+            color: var(--danger);
+            font-size: 0.85rem;
             font-weight: 600;
-        }
-
-        .form-foot {
-            margin-top: 4px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 16px;
         }
 
         .remember {
             display: inline-flex;
             align-items: center;
-            gap: 10px;
-            font-size: 0.95rem;
-            color: #4d6382;
+            gap: 8px;
+            margin: 2px 0 20px;
+            color: var(--muted);
+            font-size: 0.92rem;
         }
 
-        .remember input[type="checkbox"] {
+        .remember input {
             width: 16px;
             height: 16px;
-            accent-color: var(--asix-primary);
+            accent-color: var(--primary);
         }
 
-        .internal-label {
-            font-size: 0.74rem;
-            font-weight: 700;
-            letter-spacing: 0.25em;
-            text-transform: uppercase;
-            color: #6d87ab;
-        }
-
-        .submit-wrap {
-            margin-top: 20px;
-        }
-
-        .submit-btn {
+        button {
             width: 100%;
-            border: none;
-            border-radius: 16px;
-            padding: 13px 16px;
-            background: linear-gradient(130deg, var(--asix-primary), var(--asix-secondary));
+            padding: 12px 16px;
+            border: 0;
+            border-radius: 6px;
+            background: var(--primary);
             color: #ffffff;
-            text-transform: uppercase;
-            letter-spacing: 0.22em;
-            font-size: 0.82rem;
-            font-weight: 800;
+            font-weight: 700;
             cursor: pointer;
-            box-shadow: 0 16px 26px -18px rgba(249, 115, 22, 0.62);
-            transition: transform 0.15s ease, filter 0.15s ease;
         }
 
-        .submit-btn:hover {
-            filter: brightness(1.08);
-            transform: translateY(-1px);
+        button:hover,
+        button:focus {
+            background: var(--primary-dark);
         }
 
-        .submit-btn:focus {
-            outline: none;
-            box-shadow: 0 0 0 4px rgba(249, 115, 22, 0.18);
-        }
-
-        @media (max-width: 1024px) {
-            .login-card {
-                grid-template-columns: 1fr;
-                max-width: 780px;
-            }
-
-            .left-panel {
-                display: none;
-            }
-
-            .right-panel {
-                padding: 34px 28px;
-            }
-
-            .mobile-brand {
-                display: inline-flex;
-                align-items: center;
-                gap: 10px;
-                text-decoration: none;
-                color: var(--asix-primary);
-                text-transform: uppercase;
-                letter-spacing: 0.22em;
-                font-weight: 700;
-                font-size: 0.76rem;
-                margin-bottom: 22px;
-            }
-
-            .mobile-brand-badge {
-                width: 38px;
-                height: 38px;
-                border-radius: 12px;
-                display: inline-flex;
-                align-items: center;
-                justify-content: center;
-                padding: 6px;
-                background: rgba(249, 115, 22, 0.08);
-                box-shadow: 0 12px 20px -14px rgba(249, 115, 22, 0.4);
-            }
-
-            .mobile-brand-badge img {
-                width: 100%;
-                height: 100%;
-                object-fit: contain;
-            }
-        }
-
-        @media (max-width: 640px) {
-            .login-shell {
+        @media (max-width: 480px) {
+            body {
                 padding: 16px;
             }
 
-            .right-panel {
-                padding: 26px 18px;
+            .login-card {
+                padding: 24px;
             }
         }
     </style>
 </head>
 <body>
-<div class="login-shell">
-    <div class="login-card">
-        <section class="left-panel">
-            <div>
-                <a href="{{ url('/') }}" class="left-brand">
-                    <span class="left-brand-badge">
-                        <img src="{{ asset('images/a-six-logo.svg') }}" alt="Logo A-Six">
-                    </span>
-                    Dashboard A-Six
-                </a>
+    <main class="login-card">
+        <a href="{{ url('/') }}" class="brand">
+            <img src="{{ asset('images/a-six-logo.svg') }}" alt="Logo A-Six">
+            <span>Dashboard A-Six</span>
+        </a>
 
-                <p class="left-eyebrow">A-Six Analytics Suite</p>
-                <h1 class="left-title">Dashboard A-Six</h1>
-                <p class="left-copy">Akses ringkas ke laporan utama dalam satu portal kerja dengan identitas visual A-Six yang lebih tegas dan modern.</p>
+        <h1>Login</h1>
+
+        @if (session('status'))
+            <div class="status-box">{{ session('status') }}</div>
+        @endif
+
+        <form method="POST" action="{{ route('login') }}">
+            @csrf
+
+            <div class="field">
+                <label for="pn">PN</label>
+                <input id="pn" type="text" name="pn" value="{{ old('pn') }}" required autofocus autocomplete="username">
+                @error('pn')
+                    <p class="error">{{ $message }}</p>
+                @enderror
             </div>
 
-            <div class="left-features">
-                <article class="left-feature">
-                    <p class="left-feature-title">Identitas A-Six Konsisten</p>
-                    <p class="left-feature-copy">Nama, logo, dan warna portal kini seragam di seluruh halaman utama.</p>
-                </article>
-                <article class="left-feature">
-                    <p class="left-feature-title">Akses Internal Aman</p>
-                    <p class="left-feature-copy">Masuk dengan PN dan password.</p>
-                </article>
+            <div class="field">
+                <label for="password">Password</label>
+                <input id="password" type="password" name="password" required autocomplete="current-password">
+                @error('password')
+                    <p class="error">{{ $message }}</p>
+                @enderror
             </div>
-        </section>
 
-        <section class="right-panel">
-            <a href="{{ url('/') }}" class="mobile-brand">
-                <span class="mobile-brand-badge">
-                    <img src="{{ asset('images/a-six-logo.svg') }}" alt="Logo A-Six">
-                </span>
-                Dashboard A-Six
-            </a>
+            <label for="remember_me" class="remember">
+                <input id="remember_me" type="checkbox" name="remember" value="1">
+                <span>Ingat saya</span>
+            </label>
 
-            <p class="right-eyebrow">Selamat Datang</p>
-            <h2 class="right-title">Masuk ke akun</h2>
-            <p class="right-copy">Masuk dengan PN dan password.</p>
-
-            @if (session('status'))
-                <div class="status-box">{{ session('status') }}</div>
-            @endif
-
-            <form method="POST" action="{{ route('login') }}" class="login-form">
-                @csrf
-
-                <div class="field">
-                    <label for="pn">PN</label>
-                    <input
-                        id="pn"
-                        type="text"
-                        name="pn"
-                        value="{{ old('pn') }}"
-                        placeholder="PN Anda"
-                        required
-                        autofocus
-                    />
-                    @error('pn')
-                        <p class="error">{{ $message }}</p>
-                    @enderror
-                    @error('personal_number')
-                        <p class="error">{{ $message }}</p>
-                    @enderror
-                    @error('email')
-                        <p class="error">{{ $message }}</p>
-                    @enderror
-                </div>
-
-                <div class="field">
-                    <label for="password">Password</label>
-                    <input
-                        id="password"
-                        type="password"
-                        name="password"
-                        placeholder="Password Anda"
-                        required
-                    />
-                    @error('password')
-                        <p class="error">{{ $message }}</p>
-                    @enderror
-                </div>
-
-                <div class="form-foot">
-                    <label for="remember_me" class="remember">
-                        <input id="remember_me" type="checkbox" name="remember">
-                        <span>Ingat saya</span>
-                    </label>
-                    <span class="internal-label">A-Six Internal</span>
-                </div>
-
-                <div class="submit-wrap">
-                    <button type="submit" class="submit-btn">Masuk</button>
-                </div>
-            </form>
-        </section>
-    </div>
-</div>
+            <button type="submit">Masuk</button>
+        </form>
+    </main>
 </body>
 </html>

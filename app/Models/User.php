@@ -2,7 +2,6 @@
 
 namespace App\Models;
 
-use Database\Factories\UserFactory;
 use App\Traits\IdReusable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -12,9 +11,6 @@ class User extends Authenticatable
 {
     use HasFactory, IdReusable, Notifiable;
 
-    /**
-     * Mass assignable
-     */
     protected $fillable = [
         'name',
         'pn',
@@ -22,17 +18,11 @@ class User extends Authenticatable
         'password',
     ];
 
-    /**
-     * Hidden fields
-     */
     protected $hidden = [
         'password',
         'remember_token',
     ];
 
-    /**
-     * Casts
-     */
     protected function casts(): array
     {
         return [
@@ -40,33 +30,12 @@ class User extends Authenticatable
         ];
     }
 
-    /**
-     * Get the name of the unique identifier / primary key field.
-     *
-     * @return string
-     */
-    public function getAuthIdentifierName(): string
-    {
-        return 'pn';
-    }
-
-    /**
-     * Get the name of the password field.
-     *
-     * @return string
-     */
-    public function getAuthPasswordName(): string
-    {
-        return 'password';
-    }
-
-    // 🔥 HELPER ROLE
-    public function isAdmin()
+    public function isAdmin(): bool
     {
         return $this->role === 'admin';
     }
 
-    public function isUser()
+    public function isUser(): bool
     {
         return $this->role === 'user';
     }

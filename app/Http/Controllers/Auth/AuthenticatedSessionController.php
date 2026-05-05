@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
+use App\Models\User;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -29,7 +30,7 @@ class AuthenticatedSessionController extends Controller
     {
         try {
             $this->ensureDatabaseIsReachable();
-            $request->authenticate();
+            $user = $request->authenticate();
         } catch (QueryException|PDOException $e) {
             if ($this->isDatabaseConnectionError($e)) {
                 return back()
@@ -42,10 +43,21 @@ class AuthenticatedSessionController extends Controller
             throw $e;
         }
 
-        $request->session()->regenerate();
-        $request->session()->regenerateToken();
+        $this->startFreshAuthenticatedSession($request, $user);
 
         return redirect()->intended(route('dashboard'));
+    }
+
+    private function startFreshAuthenticatedSession(LoginRequest $request, User $user): void
+    {
+        Auth::guard('web')->logout();
+
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
+
+        Auth::guard('web')->login($user, $request->boolean('remember'));
+
+        $request->session()->regenerate();
     }
 
     private function ensureDatabaseIsReachable(): void

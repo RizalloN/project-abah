@@ -49,6 +49,11 @@ class ExcelImportJobService
             return;
         }
 
+        $tableName = strtolower(trim((string) ($payload['params']['table_name'] ?? '')));
+        if ($tableName === DlyKapResegmentasiCsvImporter::TABLE) {
+            $payload['headers'] = DlyKapResegmentasiCsvImporter::NORMALIZED_HEADERS;
+        }
+
         $this->progressService->cacheJobState($jobId, $payload);
     }
 
