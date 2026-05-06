@@ -7,6 +7,7 @@ use App\Services\Import\Strategies\ConfiguredExcelImportStrategy;
 use App\Services\Import\Strategies\Gi405RecDhImportStrategy;
 use App\Services\Import\Strategies\GenericCsvImportStrategy;
 use App\Services\Import\Strategies\L1133ImportStrategy;
+use App\Services\Import\Strategies\Lw321PnImportStrategy;
 use App\Services\Import\Strategies\SimpananMultiPnImportStrategy;
 use App\Services\Import\Strategies\SsaPinjamanImportStrategy;
 use App\Services\Import\Strategies\SsaSimpananImportStrategy;
@@ -75,6 +76,7 @@ class ImportStrategiesTest extends TestCase
         $this->assertFalse($strategy->supports(null, 'brihc'));
         $this->assertFalse($strategy->supports(null, 'wilayah_mbm'));
         $this->assertFalse($strategy->supports(null, 'l1133'));
+        $this->assertFalse($strategy->supports(null, 'lw321pn'));
         $this->assertSame(['A', 'B'], $strategy->transformHeaders(['A', 'B']));
         $this->assertSame('bulk_csv_staging', $strategy->importMode());
     }
@@ -141,5 +143,27 @@ class ImportStrategiesTest extends TestCase
             'jumlah_debitur_dpk',
             'dpk',
         ])['ok']);
+    }
+
+    public function test_lw321pn_strategy_uses_fast_path_and_validates_schema(): void
+    {
+        $strategy = new Lw321PnImportStrategy();
+
+        $this->assertTrue($strategy->supports(null, 'lw321pn'));
+        $this->assertSame('bulk_csv_filtered', $strategy->importMode());
+        $this->assertTrue($strategy->validateSchema([
+            'uniqueid_namareport',
+            'periode',
+            'kode_kanwil',
+            'kanwil',
+            'kode_kanca',
+            'kanca',
+            'kode_uker',
+            'uker',
+            'no_rekening',
+            'nama_debitur',
+            'balance_dalam_idr',
+        ])['ok']);
+        $this->assertFalse($strategy->validateSchema(['periode', 'no_rekening'])['ok']);
     }
 }

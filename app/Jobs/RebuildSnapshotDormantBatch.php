@@ -11,8 +11,8 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Queue\SerializesModels;
+use App\Support\ReportDataSyncService;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class RebuildSnapshotDormantBatch implements ShouldQueue
@@ -58,8 +58,7 @@ class RebuildSnapshotDormantBatch implements ShouldQueue
                 $this->makeHeartbeatCallback()
             );
 
-            $this->updateProgress('Menyegarkan statistik Database Dormant...');
-            $this->refreshTableStatistics('rekening_dormant_snapshots', $this->periodHint);
+            ReportDataSyncService::analyzeTable('rekening_dormant_snapshots');
 
             $duration = $startTime->diffInSeconds(now());
 
@@ -82,17 +81,6 @@ class RebuildSnapshotDormantBatch implements ShouldQueue
 
             $this->updateProgress('Gagal: ' . $e->getMessage(), 'failed');
             throw $e;
-        }
-    }
-
-    private function refreshTableStatistics(string $tableName, ?string $period): void
-    {
-        try {
-            DB::statement("ANALYZE TABLE `{$tableName}`");
-        } catch (\Exception $e) {
-            Log::warning("Gagal refresh statistics untuk {$tableName}", [
-                'error' => $e->getMessage(),
-            ]);
         }
     }
 

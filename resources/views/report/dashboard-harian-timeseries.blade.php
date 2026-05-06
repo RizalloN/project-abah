@@ -28,15 +28,9 @@
         position: relative;
         isolation: isolate;
         overflow: hidden;
-        border-radius: 0 0 1.4rem 1.4rem;
-        margin: -1rem -0.25rem 1rem;
-        padding: 1.45rem 1.25rem;
-        background:
-            radial-gradient(circle at 10% 18%, rgba(255, 103, 31, 0.18), transparent 27%),
-            radial-gradient(circle at 88% 12%, rgba(59, 130, 246, 0.22), transparent 30%),
-            linear-gradient(135deg, #003b75 0%, #00529c 48%, #0f4c97 100%);
+        background: linear-gradient(135deg, #003b75 0%, #00529c 100%);
+        border-bottom: 1px solid rgba(219, 229, 239, 0.92);
         color: #ffffff;
-        box-shadow: 0 18px 40px -30px rgba(0, 55, 116, 0.55);
     }
 
     .timeseries-hero::before {
@@ -44,9 +38,7 @@
         position: absolute;
         inset: 0;
         z-index: -1;
-        background:
-            linear-gradient(120deg, rgba(255, 255, 255, 0.13), transparent 36%),
-            repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.08) 0 1px, transparent 1px 18px);
+        background: linear-gradient(120deg, rgba(255, 255, 255, 0.05), transparent 40%);
         opacity: 0.72;
     }
 
@@ -697,23 +689,14 @@
 @section('content')
 <div class="dashboard-timeseries">
     <!-- Header -->
-    <div class="timeseries-hero d-flex align-items-center justify-content-between">
-        <div class="timeseries-title-wrap">
-            <div class="timeseries-title-badge">
-                <i class="fas fa-university"></i>
-                <span>BRI Monthly Trend</span>
-            </div>
-            <h1 class="timeseries-title">TIMESERIES DASHBOARD</h1>
-            <p class="timeseries-subtitle">Tren keragaan harian berdasarkan perspektif bulanan untuk memantau pergerakan metrik utama Area secara lebih tajam.</p>
+    <div class="timeseries-hero px-4 py-3 d-flex align-items-center justify-content-between">
+        <div class="d-flex align-items-center">
+            <h1 class="timeseries-title m-0" style="font-size: 1.5rem; font-weight: 800; letter-spacing: 0.02em;">TIMESERIES DASHBOARD</h1>
         </div>
-        <div class="timeseries-hero-actions">
-            <button id="captureAllBtn" class="btn btn-sm px-3 btn-export-all">
-                <i class="fas fa-file-image mr-2"></i> EXPORT A4 (PORTRAIT)
+        <div class="d-flex align-items-center gap-2">
+            <button id="captureAllBtn" class="btn btn-sm btn-export-all">
+                <i class="fas fa-file-image mr-1"></i> EXPORT A4
             </button>
-            <div class="timeseries-unit-badge">
-                <i class="fas fa-layer-group"></i>
-                <span>Satuan: Dalam Rp Miliar (Rp M)</span>
-            </div>
         </div>
     </div>
 

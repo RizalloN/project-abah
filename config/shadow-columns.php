@@ -135,14 +135,7 @@ return [
             'description' => 'Normalize personnel/officer numbers',
             'transformation' => 'numeric_only',
             'query_pattern' => "REGEXP_REPLACE(?, '[^0-9]', '')",
-            'apply_to_tables' => [
-                'performance_mantri' => [
-                    'source_column' => 'pn',
-                    'shadow_column' => 'pn_normalized',
-                    'priority' => 'HIGH',
-                    'index_hint' => 'Enables personnel lookup without function eval',
-                ],
-            ],
+            'apply_to_tables' => [],
         ],
     ],
 

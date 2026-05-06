@@ -12,7 +12,6 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class RebuildChartPeriodikPeriodJob implements ShouldQueue
@@ -50,9 +49,6 @@ class RebuildChartPeriodikPeriodJob implements ShouldQueue
 
             $result = $builder->buildChartPeriodikPeriodSnapshot($this->period, $this->force);
 
-            $this->updateProgress("Menyegarkan statistik Chart Periodik untuk {$this->period}...");
-            $this->refreshTableStatistics('dashboard_pinjaman_chart_periodik_snapshots', $this->period);
-
             $duration = $startTime->diffInSeconds(now());
 
             Log::info('RebuildChartPeriodikPeriodJob selesai', [
@@ -74,17 +70,6 @@ class RebuildChartPeriodikPeriodJob implements ShouldQueue
 
             $this->updateProgress("Periode {$this->period} gagal: " . $e->getMessage(), 'failed');
             throw $e;
-        }
-    }
-
-    private function refreshTableStatistics(string $tableName, string $period): void
-    {
-        try {
-            DB::statement("ANALYZE TABLE `{$tableName}`");
-        } catch (\Exception $e) {
-            Log::warning("Gagal refresh statistics untuk {$tableName}", [
-                'error' => $e->getMessage(),
-            ]);
         }
     }
 

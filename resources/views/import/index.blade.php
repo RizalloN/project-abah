@@ -1538,8 +1538,6 @@
             const isReportPh = reportName.includes('report nominatif rekening pinjaman ph');
             const isCognosPh = reportName.includes('cognos ph');
             const isCognosRecovery = reportName.includes('cognos recovery');
-            const isMantri = tableName === 'performance_mantri' || importController.includes('ImportPerformanceMantriController');
-            const isKurMikro = tableName === 'performance_kurkecil_mikro' || importController.includes('ImportKurMikroController');
             const isGi405RecDh = tableName === 'gi405_singlerow' || importController.includes('Gi405RecDhImportExcelController');
             const isSsaSimpanan = tableName === 'ssa_simpanan';
             const isSsaPinjaman = tableName === 'ssa_pinjaman';
@@ -1548,6 +1546,7 @@
             const isRka = tableName === 'rka';
             const isDlyKapResegmentasi = tableName === 'dly_kap_resegmentasi';
             const isL1133 = tableName === 'l1133';
+            const isLw321Pn = tableName === 'lw321pn';
             const usesGenericExcelFlow = importController.includes('ImportExcelController') && !isDailyLoan && !isSimpanan;
 
             formRAR.style.display = 'none';
@@ -1719,54 +1718,6 @@
                 return;
             }
 
-            if (isKurMikro) {
-                formExcel.style.display = 'block';
-                inputExcel.disabled = false;
-                inputExcel.required = true;
-                inputExcel.setAttribute('accept', '.xlsx,.xls');
-                formImport.action = "{{ route('import.kurmikro.upload') }}";
-                formImport.dataset.preparePreviewUrl = "{{ route('import.kurmikro.prepare-preview') }}";
-
-                if (excelLabel) {
-                    excelLabel.innerHTML = '<i class="fas fa-file-excel mr-1"></i> Upload File KUR Mikro (.xlsx, .xls)';
-                }
-
-                if (excelHelp) {
-                    excelHelp.textContent = 'Gunakan workbook Excel KUR Mikro resmi. Struktur header bertingkat akan diproses lewat jalur khusus agar kolom database tetap sesuai.';
-                }
-
-                configurePeriodeInput({ visible: false });
-                configureKancaInput({ visible: false });
-                applyButtonState('excel', '<i class="fas fa-file-excel"></i> Upload Excel');
-                updateReportSummary();
-                updateFileSelectionUI();
-                return;
-            }
-
-            if (isMantri) {
-                formExcel.style.display = 'block';
-                inputExcel.disabled = false;
-                inputExcel.required = true;
-                inputExcel.setAttribute('accept', '.xlsx,.xls');
-                formImport.action = "{{ route('import.mantri.upload') }}";
-                formImport.dataset.preparePreviewUrl = "{{ route('import.mantri.prepare-preview') }}";
-
-                if (excelLabel) {
-                    excelLabel.innerHTML = '<i class="fas fa-file-excel mr-1"></i> Upload File Kinerja Mantri (.xlsx, .xls)';
-                }
-
-                if (excelHelp) {
-                    excelHelp.textContent = 'Gunakan workbook Excel Kinerja Mantri resmi. Header harus sesuai dengan format file yang disiapkan.';
-                }
-
-                configurePeriodeInput({ visible: false });
-                configureKancaInput({ visible: false });
-                applyButtonState('excel', '<i class="fas fa-file-excel"></i> Upload Excel');
-                updateReportSummary();
-                updateFileSelectionUI();
-                return;
-            }
-
             if (isCognosPh) {
                 formCsv.style.display = 'block';
                 inputCsv.disabled = false;
@@ -1807,8 +1758,10 @@
                 return;
             }
 
-            if (isDlyKapResegmentasi || isL1133) {
-                const label = isDlyKapResegmentasi ? 'DLY KAP Resegmentasi' : 'L1133';
+            if (isDlyKapResegmentasi || isL1133 || isLw321Pn) {
+                const label = isDlyKapResegmentasi
+                    ? 'DLY KAP Resegmentasi'
+                    : (isLw321Pn ? 'LW321PN' : 'L1133');
                 formCsv.style.display = 'block';
                 inputCsv.disabled = false;
                 inputCsv.required = true;
@@ -1817,7 +1770,9 @@
                 formImport.dataset.preparePreviewUrl = "{{ route('import.excel.prepare-preview') }}";
 
                 csvLabel.innerHTML = `<i class="fas fa-file-upload mr-1"></i> Upload File ${label} (.csv, .txt, .xlsx, .xls)`;
-                csvHelp.textContent = `File CSV dan Excel didukung untuk ${label}. Format RAR tidak digunakan.`;
+                csvHelp.textContent = isLw321Pn
+                    ? 'Gunakan CSV LW321PN hasil optimasi untuk import tercepat. File Excel tetap didukung dan akan distage ke CSV.'
+                    : `File CSV dan Excel didukung untuk ${label}. Format RAR tidak digunakan.`;
 
                 applyButtonState('csv', '<i class="fas fa-file-upload"></i> Upload File');
                 configurePeriodeInput({ visible: false });
@@ -3337,5 +3292,150 @@
             font-size: 1.15rem;
         }
     }
+    /* Modern Select2 & Custom Select Styling */
+    .select2-container--default .select2-selection--single {
+        height: 52px !important;
+        padding: 0 1rem !important;
+        border-radius: 16px !important;
+        border: 2px solid #eef2f6 !important;
+        background-color: #ffffff !important;
+        display: flex !important;
+        align-items: center !important;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.02) !important;
+    }
+
+    .select2-container--default.select2-container--open .select2-selection--single,
+    .select2-container--default.select2-container--focus .select2-selection--single {
+        border-color: #2563eb !important;
+        box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1) !important;
+        background-color: #f8fafc !important;
+    }
+
+    .select2-container--default .select2-selection--single .select2-selection__rendered {
+        color: #1e293b !important;
+        font-weight: 700 !important;
+        font-size: 0.95rem !important;
+        padding-left: 0 !important;
+    }
+
+    .select2-container--default .select2-selection--single .select2-selection__arrow {
+        height: 50px !important;
+        right: 12px !important;
+    }
+
+    .select2-container--default .select2-selection--single .select2-selection__arrow b {
+        border-color: #64748b transparent transparent transparent !important;
+        border-width: 6px 5px 0 5px !important;
+    }
+
+    .select2-container--default.select2-container--open .select2-selection--single .select2-selection__arrow b {
+        border-color: transparent transparent #2563eb transparent !important;
+        border-width: 0 5px 6px 5px !important;
+    }
+
+    .select2-dropdown {
+        border: 1px solid rgba(226, 232, 240, 0.8) !important;
+        border-radius: 20px !important;
+        box-shadow: 0 20px 50px -12px rgba(15, 23, 42, 0.15) !important;
+        overflow: hidden !important;
+        margin-top: 8px !important;
+        background: rgba(255, 255, 255, 0.98) !important;
+        backdrop-filter: blur(10px) !important;
+        z-index: 9999 !important;
+    }
+
+    .select2-results__option {
+        padding: 0.85rem 1.25rem !important;
+        font-weight: 600 !important;
+        font-size: 0.92rem !important;
+        color: #475569 !important;
+        transition: all 0.2s ease !important;
+    }
+
+    .select2-results__option--highlighted[aria-selected] {
+        background-color: #f1f5f9 !important;
+        color: #2563eb !important;
+    }
+
+    .select2-results__option[aria-selected=true] {
+        background-color: rgba(37, 99, 235, 0.05) !important;
+        color: #2563eb !important;
+    }
+
+    .select2-search--dropdown {
+        padding: 12px 12px 8px !important;
+    }
+
+    .select2-search--dropdown .select2-search__field {
+        border-radius: 12px !important;
+        border: 1.5px solid #e2e8f0 !important;
+        padding: 8px 12px !important;
+        font-weight: 600 !important;
+    }
+
+    /* Native select styling for consistency */
+    select.form-control:not(.select2-hidden-accessible) {
+        height: 52px !important;
+        border-radius: 16px !important;
+        border: 2px solid #eef2f6 !important;
+        padding: 0 1.25rem !important;
+        font-weight: 700 !important;
+        font-size: 0.95rem !important;
+        color: #1e293b !important;
+        appearance: none !important;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2364748b' stroke-width='2'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E") !important;
+        background-repeat: no-repeat !important;
+        background-position: right 1.25rem center !important;
+        background-size: 1.25rem !important;
+    }
+
+    select.form-control:not(.select2-hidden-accessible):focus {
+        border-color: #2563eb !important;
+        box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1) !important;
+        outline: none !important;
+    }
+
+    /* Form group hover effects */
+    .form-group {
+        transition: transform 0.2s ease;
+    }
+    .form-group:focus-within {
+        transform: translateX(4px);
+    }
+    .form-group:focus-within label {
+        color: #2563eb !important;
+    }
+
+    @keyframes selectDropdownReveal {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    .select2-container--open .select2-dropdown {
+        animation: selectDropdownReveal 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
 </style>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Enhance Select2 behavior without changing original scripts
+        const $selects = $('.select2');
+        
+        $selects.on('select2:open', function() {
+            const dropdown = $('.select2-dropdown');
+            dropdown.css('opacity', 0);
+            setTimeout(() => {
+                dropdown.css('opacity', 1);
+            }, 10);
+        });
+
+        // Add visual feedback to parent form groups
+        $('select, input, textarea').on('focus', function() {
+            $(this).closest('.form-group').addClass('is-focused');
+        }).on('blur', function() {
+            $(this).closest('.form-group').removeClass('is-focused');
+        });
+    });
+</script>
 @endsection

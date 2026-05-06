@@ -102,18 +102,6 @@ class ImportIndexController extends Controller
             'kanca' => 'kanca',
             'identity' => 'uniqueid_namareport',
         ],
-        'performance_kurkecil_mikro' => [
-            'index' => 'idx_pkm_delete_scope',
-            'period' => 'tanggal_bl',
-            'kanca' => 'kanca',
-            'identity' => 'uniqueid_namareport',
-        ],
-        'performance_mantri' => [
-            'index' => 'idx_pm_delete_scope',
-            'period' => 'snapshot_period',
-            'kanca' => 'cabang',
-            'identity' => 'uniqueid_namareport',
-        ],
         'simpanan_multipn' => [
             'index' => 'idx_smp_posisi_updated',
             'period' => 'posisi',
@@ -127,6 +115,13 @@ class ImportIndexController extends Controller
             'kanca' => 'kode_cabang',
             'identity' => 'uniqueid_dly_kap',
             'chunk_size' => 25000,
+        ],
+        'lw321pn' => [
+            'index' => 'idx_lw321pn_period_kanca_uker',
+            'period' => 'periode',
+            'kanca' => 'kode_kanca',
+            'identity' => 'uniqueid_namareport',
+            'chunk_size' => 50000,
         ],
     ];
 
@@ -3200,7 +3195,7 @@ class ImportIndexController extends Controller
 
     private function deleteProgressStore()
     {
-        return Cache::store('file');
+        return Cache::store();
     }
 
     private function downloadTemplateOptions(): array

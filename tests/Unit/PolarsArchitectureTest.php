@@ -8,8 +8,9 @@ use App\Services\Import\Strategies\CognosRecoveryImportStrategy;
 use App\Services\Import\Strategies\DailyLoanImportStrategy;
 use App\Services\Import\Strategies\GenericCsvImportStrategy;
 use App\Services\Import\Strategies\Gi405RecDhImportStrategy;
-use App\Services\Import\Strategies\Lw325PhImportStrategy;
 use App\Services\Import\Strategies\L1133ImportStrategy;
+use App\Services\Import\Strategies\Lw321PnImportStrategy;
+use App\Services\Import\Strategies\Lw325PhImportStrategy;
 use App\Services\Import\Strategies\PerformancePisImportStrategy;
 use App\Services\Import\Strategies\SimpananMultiPnImportStrategy;
 use App\Services\Import\Strategies\SsaPinjamanImportStrategy;
@@ -84,6 +85,7 @@ class PolarsArchitectureTest extends TestCase
             [SsaPinjamanImportStrategy::class, 'ssa_pinjaman'],
             [Gi405RecDhImportStrategy::class, 'gi405_singlerow'],
             [Lw325PhImportStrategy::class, 'lw325_ph'],
+            [Lw321PnImportStrategy::class, 'lw321pn'],
             [CognosPhImportStrategy::class, 'cognos_ph'],
             [CognosRecoveryImportStrategy::class, 'cognos_recovery'],
             [PerformancePisImportStrategy::class, 'performance_pis_per_produk'],

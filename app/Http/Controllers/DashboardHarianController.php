@@ -191,10 +191,15 @@ class DashboardHarianController extends Controller
             return $cached;
         }
 
-        $lock = Cache::lock($cacheKey . ':lock', 30);
+        // Lock TTL must comfortably exceed the worst-case build time.
+        // Block timeout of 10 s gives concurrent requests a real chance to be
+        // served from cache once the first request finishes building the payload,
+        // instead of all of them falling back to a "warming" response.
+        $lock = Cache::lock($cacheKey . ':lock', 90);
 
         try {
-            return $lock->block(2, function () use ($cacheKey, $callback): array {
+            return $lock->block(10, function () use ($cacheKey, $callback): array {
+                // Double-check inside lock: a parallel request may have already built it.
                 $cached = Cache::get($cacheKey);
                 if (is_array($cached)) {
                     return $cached;
@@ -206,6 +211,7 @@ class DashboardHarianController extends Controller
                 return $payload;
             });
         } catch (LockTimeoutException) {
+            // Serve whatever is in cache; if still empty, return warming signal.
             $cached = Cache::get($cacheKey);
             if (is_array($cached)) {
                 return $cached;

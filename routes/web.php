@@ -21,8 +21,6 @@ use App\Http\Controllers\Import\ImportIndexController;
 use App\Http\Controllers\Import\ImportJobStatusController;
 use App\Http\Controllers\Import\ImportJobManagementController;
 use App\Http\Controllers\Import\ImportPerformancePisPerProdukController;
-use App\Http\Controllers\Import\ImportKurMikroController;
-use App\Http\Controllers\Import\ImportPerformanceMantriController;
 use App\Http\Controllers\Import\ImportReportPhController;
 use App\Http\Controllers\Import\ImportSimpananMultiPnCsvController;
 use App\Http\Controllers\Import\SnapshotAuditController;
@@ -104,15 +102,6 @@ Route::middleware(['auth', 'release.session.lock', 'throttle:240,1'])->group(fun
         ->name('report.dashboard-pinjaman.kinerjarm.history');
     Route::get('/report/dashboard-pinjaman/kinerjarmmikro', [KinerjaRmMikroReportController::class, 'index'])
         ->name('report.dashboard-pinjaman.kinerjarmmikro');
-    Route::get('/report/dashboard-pinjaman/kur-mikro', [DashboardPinjamanReportController::class, 'kurMikroIndex'])
-        ->name('report.dashboard-pinjaman.kurmikro');
-    Route::get('/report/dashboard-pinjaman/kur-mikro/filters', [DashboardPinjamanReportController::class, 'kurMikroFilters'])
-        ->name('report.dashboard-pinjaman.kurmikro.filters');
-    Route::get('/report/dashboard-pinjaman/mantri', [DashboardPinjamanReportController::class, 'mantriIndex'])
-        ->name('report.dashboard-pinjaman.mantri');
-    Route::get('/report/dashboard-pinjaman/mantri/filters', [DashboardPinjamanReportController::class, 'mantriFilters'])
-        ->name('report.dashboard-pinjaman.mantri.filters');
-
     // Digital Performance Reports (EDC, QRIS, Brilink) — dihandle oleh DigitalPerformanceController
     Route::get('/report/optimalisasi-digital/edc', [DigitalPerformanceController::class, 'performanceEdc'])->name('report.edc');
     Route::get('/report/optimalisasi-digital/qris', [DigitalPerformanceController::class, 'performanceQris'])->name('report.qris');
@@ -231,20 +220,6 @@ Route::middleware(['auth', 'role:admin', 'release.session.lock'])->group(functio
     Route::post('/import/performance-pis/init', [ImportPerformancePisPerProdukController::class, 'initImport'])->name('import.performancepis.init');
     Route::get('/import/performance-pis/stream', [ImportPerformancePisPerProdukController::class, 'processImportStream'])->name('import.performancepis.stream');
     Route::post('/import/performance-pis/process', [ImportPerformancePisPerProdukController::class, 'processImport'])->name('import.performancepis.process');
-    Route::post('/import/kurmikro/upload', [ImportKurMikroController::class, 'upload'])->name('import.kurmikro.upload');
-    Route::get('/import/kurmikro/preview', [ImportKurMikroController::class, 'preview'])->name('import.kurmikro.preview');
-    Route::post('/import/kurmikro/preview', [ImportKurMikroController::class, 'preview'])->name('import.kurmikro.preview.refresh');
-    Route::get('/import/kurmikro/prepare-preview', [ImportKurMikroController::class, 'preparePreviewStream'])->name('import.kurmikro.prepare-preview');
-    Route::post('/import/kurmikro/init', [ImportKurMikroController::class, 'initImport'])->name('import.kurmikro.init');
-    Route::get('/import/kurmikro/stream', [ImportKurMikroController::class, 'processImportStream'])->name('import.kurmikro.stream');
-    Route::post('/import/kurmikro/process', [ImportKurMikroController::class, 'processImport'])->name('import.kurmikro.process');
-    Route::post('/import/mantri/upload', [ImportPerformanceMantriController::class, 'upload'])->name('import.mantri.upload');
-    Route::get('/import/mantri/preview', [ImportPerformanceMantriController::class, 'preview'])->name('import.mantri.preview');
-    Route::post('/import/mantri/preview', [ImportPerformanceMantriController::class, 'preview'])->name('import.mantri.preview.refresh');
-    Route::get('/import/mantri/prepare-preview', [ImportPerformanceMantriController::class, 'preparePreviewStream'])->name('import.mantri.prepare-preview');
-    Route::post('/import/mantri/init', [ImportPerformanceMantriController::class, 'initImport'])->name('import.mantri.init');
-    Route::get('/import/mantri/stream', [ImportPerformanceMantriController::class, 'processImportStream'])->name('import.mantri.stream');
-    Route::post('/import/mantri/process', [ImportPerformanceMantriController::class, 'processImport'])->name('import.mantri.process');
     Route::post('/import/report-ph/upload', [ImportReportPhController::class, 'upload'])->name('import.reportph.upload');
     Route::get('/import/report-ph/preview', [ImportReportPhController::class, 'preview'])->name('import.reportph.preview');
     Route::post('/import/report-ph/preview', [ImportReportPhController::class, 'preview'])->name('import.reportph.preview.refresh');

@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Jobs\RebuildChartPeriodikPeriodJob;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
@@ -25,12 +26,17 @@ class DashboardPinjamanChartPeriodikService
 
     private const DEFAULT_BRANCH_LABEL = 'Area 6 - All';
     private const DEFAULT_TREND_WINDOW = 6;
-    private const CACHE_NAMESPACE_VERSION = 5;
+    private const CACHE_NAMESPACE_VERSION = 6;
+    private const RECOVERY_DISPATCH_TTL_SECONDS = 900;
+
+    /** Prevents triple-call of queueMissingSnapshotRecovery within a single request. */
+    private bool $snapshotRecoveryChecked = false;
 
     public function buildIndexPayload(?string $requestedPeriod, ?string $selectedBranch = null, array|string|null $selectedUnits = null): array
     {
         $sourceTable = $this->resolveSourceTable();
         $selectedPeriod = $this->resolveEffectivePeriod($requestedPeriod, $sourceTable);
+        $this->queueMissingSnapshotRecovery($requestedPeriod, $selectedPeriod);
         $normalizedBranch = $this->normalizeBranchSelection($selectedBranch);
         $unitPayload = $this->buildUnitOptions($selectedPeriod, $normalizedBranch, $sourceTable);
         $normalizedUnits = $this->normalizeUnitSelections($selectedUnits);
@@ -51,6 +57,7 @@ class DashboardPinjamanChartPeriodikService
     {
         $sourceTable = $this->resolveSourceTable();
         $selectedPeriod = $this->resolveEffectivePeriod($requestedPeriod, $sourceTable);
+        $this->queueMissingSnapshotRecovery($requestedPeriod, $selectedPeriod);
         $normalizedBranch = $this->normalizeBranchSelection($selectedBranch);
 
         return array_merge([
@@ -63,6 +70,7 @@ class DashboardPinjamanChartPeriodikService
     {
         $sourceTable ??= $this->resolveSourceTable();
         $resolvedPeriod = $this->resolveEffectivePeriod($selectedPeriod, $sourceTable);
+        $this->queueMissingSnapshotRecovery($selectedPeriod, $resolvedPeriod);
         if ($resolvedPeriod === null) {
             return $this->emptyChartPayload($selectedBranch, $selectedUnits);
         }
@@ -273,9 +281,7 @@ class DashboardPinjamanChartPeriodikService
         }
 
         return DB::table(self::RAW_TABLE . ' as d')
-            ->leftJoin(self::LOOKUP_TABLE . ' as lt', function ($join) {
-                $join->on(DB::raw('d.ln_type'), '=', DB::raw('lt.loan_type'));
-            })
+            ->leftJoin(self::LOOKUP_TABLE . ' as lt', 'd.ln_type', '=', 'lt.loan_type')
             ->whereIn('d.periode', $periods)
             ->whereIn('d.cabang1', $branches)
             ->when(!empty($selectedUnits), function ($q) use ($selectedUnits, $sourceTable) {
@@ -676,14 +682,70 @@ class DashboardPinjamanChartPeriodikService
         $cacheKey = $this->cacheKey('source_table');
 
         return Cache::remember($cacheKey, now()->addMinutes(10), function () {
-            $hasSnapshot = DB::table(self::SNAPSHOT_TABLE)->exists();
-
-            if ($hasSnapshot) {
+            if (Schema::hasTable(self::SNAPSHOT_TABLE)) {
                 return self::SNAPSHOT_TABLE;
             }
 
             return self::RAW_TABLE;
         });
+    }
+
+    private function queueMissingSnapshotRecovery(?string $requestedPeriod, ?string $selectedSnapshotPeriod): void
+    {
+        // buildIndexPayload and buildChartPayload both call this method; guard against
+        // redundant DB lookups and duplicate job dispatches within a single request.
+        if ($this->snapshotRecoveryChecked) {
+            return;
+        }
+        $this->snapshotRecoveryChecked = true;
+
+        if (!Schema::hasTable(self::SNAPSHOT_TABLE) || !Schema::hasTable(self::RAW_TABLE)) {
+            return;
+        }
+
+        $targetPeriod = null;
+        $normalizedRequested = $this->normalizePeriod($requestedPeriod);
+
+        if ($normalizedRequested !== null) {
+            $targetPeriod = $this->resolveClosestPeriodFromSource(self::RAW_TABLE, 'periode', $normalizedRequested);
+        } else {
+            $targetPeriod = $this->resolveLatestPeriodFromSource(self::RAW_TABLE, 'periode');
+        }
+
+        if ($targetPeriod === null || $targetPeriod === $selectedSnapshotPeriod) {
+            return;
+        }
+
+        $snapshotExists = DB::table(self::SNAPSHOT_TABLE)
+            ->where('periode', $targetPeriod)
+            ->exists();
+
+        if ($snapshotExists) {
+            return;
+        }
+
+        $dispatchKey = $this->cacheKey('recovery_dispatch', $targetPeriod);
+        if (!Cache::add($dispatchKey, now()->toIso8601String(), self::RECOVERY_DISPATCH_TTL_SECONDS)) {
+            return;
+        }
+
+        try {
+            RebuildChartPeriodikPeriodJob::dispatch($targetPeriod, true)
+                ->onQueue('snapshots-parallel');
+
+            Log::warning('DashboardPinjamanChartPeriodikService: queued missing snapshot recovery.', [
+                'target_period' => $targetPeriod,
+                'selected_snapshot_period' => $selectedSnapshotPeriod,
+                'requested_period' => $requestedPeriod,
+            ]);
+        } catch (Throwable $e) {
+            Cache::forget($dispatchKey);
+
+            Log::error('DashboardPinjamanChartPeriodikService: failed to queue missing snapshot recovery.', [
+                'target_period' => $targetPeriod,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     private function reportCacheVersion(): int

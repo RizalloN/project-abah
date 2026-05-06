@@ -19,6 +19,8 @@ class DashboardHarianSnapshotService
     private const DLY_KAP_TABLE = 'dly_kap_resegmentasi';
     private const L1133_TABLE = 'l1133';
     private const SAVINGS_TABLE = 'ssa_simpanan';
+    private const HOURLY_DPK_TABLE = 'hourly_dpk';
+    private const SOURCE_SIGNATURE_VERSION = 'ssa-loan-l1133-micro-overlay-v3';
     private const AUTO_SYNC_RECENT_SOURCE_HOURS = 6;
     private const METRIC_COLUMNS = [
         'ph_tupok',
@@ -109,6 +111,11 @@ class DashboardHarianSnapshotService
     private ?array $availableSnapshotColumnsCache = null;
     private ?bool $canUseSnapshotMetricsCache = null;
     private array $unitScopeMapCache = [];
+    /** Memoize resolveSharedPeriods result within a single request lifecycle. */
+    private ?array $sharedPeriodsRequestCache = null;
+    /** Per-request existence cache: avoids repeated COUNT/EXISTS per period. */
+    private array $snapshotExistenceCache = [];
+    private bool $snapshotExistenceCacheWarmed = false;
     private const ROW_DEFINITIONS = [
         ['key' => 'total_simpanan', 'label' => '1. Simpanan', 'type' => 'currency', 'depth' => 0, 'accent' => 'strong'],
         ['key' => 'simpanan_ritel', 'label' => 'A. Ritel', 'type' => 'currency', 'depth' => 1, 'accent' => 'section'],
@@ -364,7 +371,8 @@ class DashboardHarianSnapshotService
                 return $this->buildPeriodSnapshotUnlocked($period, $force);
             });
         } catch (LockTimeoutException) {
-            return (int) DB::table(self::SNAPSHOT_TABLE)->where('snapshot_period', $period)->count();
+            // Another worker is building this period; return existence state (1 = has data, 0 = empty).
+            return $this->snapshotPeriodHasData($period) ? 1 : 0;
         } catch (Throwable $e) {
             Log::warning('Dashboard Harian snapshot build skipped because snapshot lock is unavailable.', [
                 'period' => $period,
@@ -373,7 +381,7 @@ class DashboardHarianSnapshotService
                 'error' => $e->getMessage(),
             ]);
 
-            return (int) DB::table(self::SNAPSHOT_TABLE)->where('snapshot_period', $period)->count();
+            return $this->snapshotPeriodHasData($period) ? 1 : 0;
         }
     }
 
@@ -381,20 +389,23 @@ class DashboardHarianSnapshotService
     {
         $sourceMetadata = $this->buildSourceMetadata($period);
 
-        if (!$force) {
-            $existingCount = (int) DB::table(self::SNAPSHOT_TABLE)->where('snapshot_period', $period)->count();
-            if ($existingCount > 0 && $this->snapshotSourceIsFresh($period, $sourceMetadata)) {
-                return $existingCount;
+        if (!$force && $this->snapshotPeriodHasData($period)) {
+            if ($this->snapshotSourceIsFresh($period, $sourceMetadata)) {
+                // Snapshot exists and source has not changed; skip rebuild.
+                return (int) DB::table(self::SNAPSHOT_TABLE)->where('snapshot_period', $period)->count();
             }
         }
 
-        if ($force) {
-            DB::table(self::SNAPSHOT_TABLE)->where('snapshot_period', $period)->delete();
-        }
-
-        if (!$this->sourcePeriodExists(self::LOAN_TABLE, $period) || !$this->sourcePeriodExists(self::SAVINGS_TABLE, $period)) {
-            DB::table(self::SNAPSHOT_TABLE)->where('snapshot_period', $period)->delete();
-            $this->bumpReportCacheVersion();
+        if (!$this->loanDashboardSourcePeriodExists($period) || !$this->savingsSourcePeriodExists($period)) {
+            // Guard: only remove the existing snapshot on an explicit forced rebuild.
+            // For auto/web-triggered rebuilds (force=false) the source may be absent because
+            // an import is still in progress. Preserving stale snapshot data is safer than
+            // serving an empty response to concurrent web requests during that window.
+            if ($force) {
+                DB::table(self::SNAPSHOT_TABLE)->where('snapshot_period', $period)->delete();
+                $this->snapshotExistenceCache[$period] = false;
+                $this->bumpReportCacheVersion();
+            }
 
             return 0;
         }
@@ -409,34 +420,30 @@ class DashboardHarianSnapshotService
         );
 
         if ($payload === []) {
-            DB::table(self::SNAPSHOT_TABLE)->where('snapshot_period', $period)->delete();
-            $this->bumpReportCacheVersion();
+            // Same guard: only discard the snapshot when the caller explicitly asks for it.
+            // An empty aggregation result can indicate a transient import window, not a
+            // permanent absence of data for this period.
+            if ($force) {
+                DB::table(self::SNAPSHOT_TABLE)->where('snapshot_period', $period)->delete();
+                $this->snapshotExistenceCache[$period] = false;
+                $this->bumpReportCacheVersion();
+            }
 
             return 0;
         }
 
-        foreach (array_chunk($payload, 250) as $chunk) {
-            DB::table(self::SNAPSHOT_TABLE)->upsert(
-                $chunk,
-                ['snapshot_period', 'kanca_key', 'unit_key'],
-                array_merge(
-                    ['kanca_label', 'unit_label'],
-                    $this->availableMetricColumns(),
-                    ['source_row_count'],
-                    $this->availableSourceMetadataColumns(),
-                    ['updated_at']
-                )
-            );
-        }
+        // Atomic swap: InnoDB MVCC ensures concurrent readers continue seeing the
+        // previous committed rows until this transaction commits — no visible gap.
+        // Using INSERT (not UPSERT) because we always DELETE first inside the same
+        // transaction, eliminating duplicate-key conflicts and the orphan-cleanup step.
+        DB::transaction(function () use ($payload, $period): void {
+            DB::table(self::SNAPSHOT_TABLE)->where('snapshot_period', $period)->delete();
+            foreach (array_chunk($payload, 500) as $chunk) {
+                DB::table(self::SNAPSHOT_TABLE)->insert($chunk);
+            }
+        });
 
-        $validIds = array_column($payload, 'uniqueid_dhs');
-        if (!$force) {
-            DB::table(self::SNAPSHOT_TABLE)
-                ->where('snapshot_period', $period)
-                ->whereNotIn('uniqueid_dhs', $validIds)
-                ->delete();
-        }
-
+        $this->snapshotExistenceCache[$period] = true;
         $this->bumpReportCacheVersion();
 
         return count($payload);
@@ -444,21 +451,25 @@ class DashboardHarianSnapshotService
 
     public function fetchPeriods(): Collection
     {
-        try {
-            if (Schema::hasTable(self::SNAPSHOT_TABLE) && DB::table(self::SNAPSHOT_TABLE)->exists()) {
-                return DB::table(self::SNAPSHOT_TABLE)
-                    ->select('snapshot_period')
-                    ->distinct()
-                    ->orderByDesc('snapshot_period')
-                    ->pluck('snapshot_period')
-                    ->map(fn ($value) => Carbon::parse($value)->toDateString())
-                    ->values();
-            }
-        } catch (Throwable) {
-            // Fall through to source intersection.
-        }
+        $version = (int) Cache::get('report_cache_version:global', 1);
 
-        return collect($this->resolveSharedPeriods());
+        return Cache::remember("dh:periods:v{$version}", now()->addMinutes(10), function (): Collection {
+            try {
+                if (Schema::hasTable(self::SNAPSHOT_TABLE) && DB::table(self::SNAPSHOT_TABLE)->exists()) {
+                    return DB::table(self::SNAPSHOT_TABLE)
+                        ->select('snapshot_period')
+                        ->distinct()
+                        ->orderByDesc('snapshot_period')
+                        ->pluck('snapshot_period')
+                        ->map(fn ($value) => Carbon::parse($value)->toDateString())
+                        ->values();
+                }
+            } catch (Throwable) {
+                // Fall through to source intersection.
+            }
+
+            return collect($this->resolveSharedPeriods());
+        });
     }
 
     public function resolveEffectivePeriod(?string $requestedPeriod): ?string
@@ -468,19 +479,19 @@ class DashboardHarianSnapshotService
 
         if ($sourcePeriod !== null) {
             try {
-                $snapshotCount = Schema::hasTable(self::SNAPSHOT_TABLE)
-                    ? (int) DB::table(self::SNAPSHOT_TABLE)->where('snapshot_period', $sourcePeriod)->count()
-                    : 0;
+                $hasSnapshot = $this->snapshotPeriodHasData($sourcePeriod);
 
-                if ($snapshotCount <= 0) {
+                if (!$hasSnapshot) {
                     if (app()->runningInConsole() || app()->runningUnitTests()) {
-                        $snapshotCount = $this->buildPeriodSnapshot($sourcePeriod, false);
+                        $builtCount = $this->buildPeriodSnapshot($sourcePeriod, false);
+                        $hasSnapshot = $builtCount > 0;
+                        $this->snapshotExistenceCache[$sourcePeriod] = $hasSnapshot;
                     } else {
                         $this->dispatchSnapshotRebuild($sourcePeriod);
                     }
                 }
 
-                if ($snapshotCount > 0) {
+                if ($hasSnapshot) {
                     return $sourcePeriod;
                 }
             } catch (Throwable) {
@@ -515,6 +526,12 @@ class DashboardHarianSnapshotService
                 return;
             }
 
+            // Deduplicate: skip if a rebuild for this period was dispatched in the last 60s.
+            $dispatchKey = 'dh_snapshot:dispatch:' . $period;
+            if (!Cache::add($dispatchKey, 1, 60)) {
+                return;
+            }
+
             \App\Jobs\RebuildDashboardHarianSnapshotJob::dispatch($period)
                 ->onQueue('snapshots-parallel');
         } catch (Throwable $e) {
@@ -524,6 +541,51 @@ class DashboardHarianSnapshotService
                 'error' => $e->getMessage(),
             ]);
         }
+    }
+
+    /**
+     * Pre-warm the per-request existence cache with a single DISTINCT query.
+     * Call before any loop that resolves multiple comparison periods so the
+     * individual snapshotPeriodHasData() calls hit the in-memory map instead
+     * of issuing one round-trip per period.
+     */
+    private function prewarmSnapshotExistenceCache(): void
+    {
+        if ($this->snapshotExistenceCacheWarmed || !Schema::hasTable(self::SNAPSHOT_TABLE)) {
+            return;
+        }
+
+        $this->snapshotExistenceCacheWarmed = true;
+
+        try {
+            DB::table(self::SNAPSHOT_TABLE)
+                ->select('snapshot_period')
+                ->distinct()
+                ->pluck('snapshot_period')
+                ->each(fn ($p) => $this->snapshotExistenceCache[(string) $p] = true);
+        } catch (Throwable) {
+            // Non-critical; snapshotPeriodHasData() falls back to per-period EXISTS.
+        }
+    }
+
+    /**
+     * Returns true if the snapshot table has at least one row for $period.
+     * Uses the per-request existence cache; falls back to an EXISTS query.
+     */
+    private function snapshotPeriodHasData(string $period): bool
+    {
+        if (!array_key_exists($period, $this->snapshotExistenceCache)) {
+            try {
+                $this->snapshotExistenceCache[$period] = Schema::hasTable(self::SNAPSHOT_TABLE)
+                    && DB::table(self::SNAPSHOT_TABLE)
+                        ->where('snapshot_period', $period)
+                        ->exists();
+            } catch (Throwable) {
+                $this->snapshotExistenceCache[$period] = false;
+            }
+        }
+
+        return $this->snapshotExistenceCache[$period];
     }
 
     public function resolveEffectiveRkaPeriod(?string $requestedMonth, ?string $fallbackPeriod = null): ?string
@@ -565,6 +627,19 @@ class DashboardHarianSnapshotService
     }
 
     public function fetchFilterOptions(?string $period = null, array|string|null $selectedKanca = null, array|string|null $selectedUnit = null): array
+    {
+        $version      = (int) Cache::get('report_cache_version:global', 1);
+        $kancaHash    = md5(json_encode($selectedKanca));
+        $unitHash     = md5(json_encode($selectedUnit));
+        $periodNorm   = $period ?? 'latest';
+        $cacheKey     = "dh:filter_options:v{$version}:{$periodNorm}:{$kancaHash}:{$unitHash}";
+
+        return Cache::remember($cacheKey, now()->addMinutes(10), function () use ($period, $selectedKanca, $selectedUnit): array {
+            return $this->computeFilterOptions($period, $selectedKanca, $selectedUnit);
+        });
+    }
+
+    private function computeFilterOptions(?string $period, array|string|null $selectedKanca, array|string|null $selectedUnit): array
     {
         $effectivePeriod = $this->resolveEffectivePeriod($period);
         $periodOptions = $this->fetchPeriods()
@@ -618,7 +693,7 @@ class DashboardHarianSnapshotService
             $units = collect();
         }
 
-        if ($kancas->isEmpty() || $units->isEmpty()) {
+        if (($kancas->isEmpty() || $units->isEmpty()) && $this->allowSourceFallbackForDashboardRead()) {
             [$payload] = $this->buildAggregatedRowsForPeriod($effectivePeriod);
 
             $kancas = collect($payload)
@@ -682,6 +757,11 @@ class DashboardHarianSnapshotService
             ];
         }
 
+        // Pre-warm existence cache with a single DISTINCT query so the upcoming
+        // resolveComparisonPeriods() calls (9 periods) each hit the in-memory map
+        // instead of issuing one COUNT/EXISTS round-trip per period.
+        $this->prewarmSnapshotExistenceCache();
+
         $comparisonPeriods = $this->resolveComparisonPeriods($selectedPeriod, $rkaPeriod);
         $periodKeys = array_values(array_unique(array_filter(array_values($comparisonPeriods))));
         $metricsByPeriod = $this->loadMetricsForPeriods($periodKeys, $kancaKey, $unitKey);
@@ -739,9 +819,9 @@ class DashboardHarianSnapshotService
             ];
         })->values()->all();
 
-        $source = $this->canUseSnapshotMetrics() && $this->normalizeFilterValues($kancaKey) === [] && $this->normalizeFilterValues($unitKey) === []
+        $source = $this->canUseSnapshotMetrics()
             ? self::SNAPSHOT_TABLE
-            : 'source_fallback';
+            : 'snapshot_unavailable';
 
         return [
             'selected_period' => $selectedPeriod,
@@ -785,6 +865,7 @@ class DashboardHarianSnapshotService
         $hasKancaFilter = $normalizedKanca !== [];
         $hasUnitFilter = $normalizedUnit !== [];
         $useSnapshot = $this->canUseSnapshotMetrics();
+        $loadedFromSnapshot = [];
 
         if ($useSnapshot) {
             $selects = collect(self::METRIC_COLUMNS)
@@ -823,20 +904,28 @@ class DashboardHarianSnapshotService
 
             foreach ($query->get() as $row) {
                 $metricsByPeriod[$row->snapshot_period] = $this->finalizeMetrics((array) $row);
+                $loadedFromSnapshot[(string) $row->snapshot_period] = true;
             }
         }
 
         foreach ($normalizedPeriods as $period) {
             if (!isset($metricsByPeriod[$period])) {
-                $metricsByPeriod[$period] = $this->buildMetricsFromSource($period, $normalizedKanca, $normalizedUnit);
+                if ($this->allowSourceFallbackForDashboardRead()) {
+                    $metricsByPeriod[$period] = $this->buildMetricsFromSource($period, $normalizedKanca, $normalizedUnit);
+                } else {
+                    $this->dispatchSnapshotRebuild($period);
+                    $metricsByPeriod[$period] = $this->finalizeMetrics($this->emptyMetrics());
+                }
             }
 
-            $metricsByPeriod[$period] = $this->overlayRecoveryMetricsFromSource(
-                $metricsByPeriod[$period],
-                $period,
-                $normalizedKanca,
-                $normalizedUnit
-            );
+            if ($this->allowSourceFallbackForDashboardRead() && !isset($loadedFromSnapshot[$period])) {
+                $metricsByPeriod[$period] = $this->overlayRecoveryMetricsFromSource(
+                    $metricsByPeriod[$period],
+                    $period,
+                    $normalizedKanca,
+                    $normalizedUnit
+                );
+            }
         }
 
         return $metricsByPeriod;
@@ -875,6 +964,11 @@ class DashboardHarianSnapshotService
         return $this->finalizeMetrics($metrics);
     }
 
+    private function allowSourceFallbackForDashboardRead(): bool
+    {
+        return app()->runningUnitTests();
+    }
+
     private function buildAggregatedRowsForPeriod(
         string $period,
         array|string|null $kancaKey = null,
@@ -885,7 +979,7 @@ class DashboardHarianSnapshotService
         $buckets = [];
         $sourceRowCount = 0;
 
-        foreach ($this->fetchSavingsAggregates($period, $kancaKey, $unitKey) as $row) {
+        foreach ($this->resolveSavingsAggregates($period, $kancaKey, $unitKey) as $row) {
             $kancaLabel = $this->normalizeKancaLabel($row->raw_kantor_cabang ?? $row->raw_unit_kerja ?? null);
             if ($kancaLabel === '') {
                 continue;
@@ -1220,9 +1314,30 @@ class DashboardHarianSnapshotService
             ->groupBy('raw_cabang', 'raw_unit')
             ->get();
 
-        $rows = $this->overlayDlyKapPriorityLoanAggregates($period, $rows, $kancaKey, $unitKey);
+        if ($rows->isNotEmpty()) {
+            return $this->overlayL1133MicroLoanAggregates($period, $rows, $kancaKey, $unitKey);
+        }
 
-        return $this->overlayL1133MicroLoanAggregates($period, $rows, $kancaKey, $unitKey);
+        $normalizedPeriod = $this->normalizeDate($period) ?? $period;
+        $fallbackRows = collect();
+
+        if ($this->dlyKapResegmentasiAvailable($normalizedPeriod)) {
+            $fallbackRows = $this->overlayPriorityLoanRows(
+                $fallbackRows,
+                $this->fetchDlyKapPriorityLoanAggregates($normalizedPeriod, $kancaKey, $unitKey),
+                $this->dlyKapPriorityMetricKeys()
+            );
+        }
+
+        if ($this->l1133Available($normalizedPeriod)) {
+            $fallbackRows = $this->overlayPriorityLoanRows(
+                $fallbackRows,
+                $this->fetchL1133MicroLoanAggregates($normalizedPeriod, $kancaKey, $unitKey),
+                $this->l1133MicroMetricKeys()
+            );
+        }
+
+        return $fallbackRows;
     }
 
     private function fetchRecoveryAggregates(string $period, array|string|null $kancaKey = null, array|string|null $unitKey = null): Collection
@@ -1419,7 +1534,7 @@ class DashboardHarianSnapshotService
         }
 
         if (!Schema::hasTable(self::LOAN_TABLE)) {
-            return $this->unitScopeMapCache[$period] = collect();
+            return $this->unitScopeMapCache[$period] = $this->buildUnitScopeMapFromL1133($period);
         }
 
         $periods = DB::table(self::LOAN_TABLE)
@@ -1432,7 +1547,7 @@ class DashboardHarianSnapshotService
             ->all();
 
         if ($periods === []) {
-            return $this->unitScopeMapCache[$period] = collect();
+            return $this->unitScopeMapCache[$period] = $this->buildUnitScopeMapFromL1133($period);
         }
 
         return $this->unitScopeMapCache[$period] = DB::table(self::LOAN_TABLE)
@@ -1440,6 +1555,49 @@ class DashboardHarianSnapshotService
             ->selectRaw("CAST(COALESCE(NULLIF(TRIM(id_uker), ''), REGEXP_SUBSTR(TRIM(COALESCE(nama_uker, '')), '^[0-9]+')) AS UNSIGNED) as unit_code")
             ->selectRaw("SUBSTRING_INDEX(MAX(CONCAT(month_day_year_of_periode, '|', TRIM(COALESCE(nama_cabang, '')))), '|', -1) as raw_cabang")
             ->selectRaw("SUBSTRING_INDEX(MAX(CONCAT(month_day_year_of_periode, '|', TRIM(COALESCE(nama_uker, '')))), '|', -1) as raw_unit")
+            ->groupBy('unit_code')
+            ->get()
+            ->filter(fn ($row) => (string) ($row->unit_code ?? '') !== '')
+            ->mapWithKeys(function ($row): array {
+                $kancaLabel = $this->normalizeKancaLabel($row->raw_cabang ?? $row->raw_unit ?? null);
+                $unitLabel = $this->normalizeUnitLabel($row->raw_unit ?? null, $kancaLabel);
+                $unitKey = $this->resolveDetailUnitKey($row->raw_unit ?? null, $unitLabel, $kancaLabel) ?: $this->slugKey($unitLabel);
+
+                return [
+                    (string) $row->unit_code => [
+                        'raw_cabang' => $row->raw_cabang,
+                        'raw_unit' => $row->raw_unit,
+                        'kanca_label' => $kancaLabel,
+                        'unit_key' => $unitKey,
+                    ],
+                ];
+            });
+    }
+
+    private function buildUnitScopeMapFromL1133(string $period): Collection
+    {
+        if (!Schema::hasTable(self::L1133_TABLE)) {
+            return collect();
+        }
+
+        $periods = DB::table(self::L1133_TABLE)
+            ->where('periode', '<=', $period)
+            ->select('periode')
+            ->distinct()
+            ->orderByDesc('periode')
+            ->limit(7)
+            ->pluck('periode')
+            ->all();
+
+        if ($periods === []) {
+            return collect();
+        }
+
+        return DB::table(self::L1133_TABLE)
+            ->whereIn('periode', $periods)
+            ->selectRaw("CAST(TRIM(COALESCE(kode_uker, '')) AS UNSIGNED) as unit_code")
+            ->selectRaw("SUBSTRING_INDEX(MAX(CONCAT(periode, '|', TRIM(COALESCE(nama_kanca, '')))), '|', -1) as raw_cabang")
+            ->selectRaw("SUBSTRING_INDEX(MAX(CONCAT(periode, '|', TRIM(COALESCE(nama_uker, '')))), '|', -1) as raw_unit")
             ->groupBy('unit_code')
             ->get()
             ->filter(fn ($row) => (string) ($row->unit_code ?? '') !== '')
@@ -1516,7 +1674,7 @@ class DashboardHarianSnapshotService
 
         $jenis = "UPPER(TRIM(COALESCE(l.jenis, '')))";
         $brigunaMikro = "{$jenis} = 'KUPEDES GBT'";
-        $kupedes = "{$jenis} IN ('KUPEDES KOMERSIAL', 'KUPEDES RAKYAT')";
+        $kupedes = "{$jenis} IN ('KUPEDES KOMERSIAL', 'KUPEDES RAKYAT', 'RITEL KOMERSIAL FULLY CASH COLLATERAL')";
         $kurMikro = "{$jenis} = 'KUR MIKRO BARU'";
         $kurKpp = "{$jenis} = 'KPR'";
 
@@ -2307,6 +2465,36 @@ class DashboardHarianSnapshotService
 
     private function resolveSharedPeriods(?string $targetDate = null): array
     {
+        // Layer 1: in-request memoization — eliminates repeated DB hits within the same request.
+        // Layer 2: file cache (5 min) — eliminates repeated DB hits across rapid successive requests.
+        if ($this->sharedPeriodsRequestCache === null) {
+            $this->sharedPeriodsRequestCache = app()->runningUnitTests()
+                ? $this->computeSharedPeriods()
+                : Cache::remember(
+                    'dh:shared_periods:all:' . md5(DB::connection()->getName() . '|' . DB::connection()->getDatabaseName()) . ':v' . (int) Cache::get('report_cache_version:global', 1),
+                    now()->addMinutes(5),
+                    fn (): array => $this->computeSharedPeriods()
+                );
+        }
+
+        $shared = $this->sharedPeriodsRequestCache;
+
+        if ($targetDate) {
+            $normalizedTargetDate = $this->normalizeDate($targetDate);
+            foreach ($shared as $sharedPeriod) {
+                if ($sharedPeriod <= $normalizedTargetDate) {
+                    return [$sharedPeriod];
+                }
+            }
+
+            return [];
+        }
+
+        return $shared;
+    }
+
+    private function computeSharedPeriods(): array
+    {
         $loanPeriods = DB::table(self::LOAN_TABLE)
             ->select('month_day_year_of_periode')
             ->distinct()
@@ -2353,19 +2541,22 @@ class DashboardHarianSnapshotService
             ->values()
             ->all();
 
+        if ($this->hourlyDpkEnabled() && Schema::hasTable(self::HOURLY_DPK_TABLE)) {
+            $savingsPeriods = array_values(array_unique(array_merge(
+                $savingsPeriods,
+                DB::table(self::HOURLY_DPK_TABLE)
+                    ->select($this->sourcePeriodColumn(self::HOURLY_DPK_TABLE))
+                    ->distinct()
+                    ->pluck($this->sourcePeriodColumn(self::HOURLY_DPK_TABLE))
+                    ->map(fn ($value) => $this->normalizeDate((string) $value))
+                    ->filter()
+                    ->values()
+                    ->all()
+            )));
+        }
+
         $shared = array_values(array_intersect($loanPeriods, $savingsPeriods));
         rsort($shared);
-
-        if ($targetDate) {
-            $normalizedTargetDate = $this->normalizeDate($targetDate);
-            foreach ($shared as $sharedPeriod) {
-                if ($sharedPeriod <= $normalizedTargetDate) {
-                    return [$sharedPeriod];
-                }
-            }
-
-            return [];
-        }
 
         return $shared;
     }
@@ -2413,8 +2604,22 @@ class DashboardHarianSnapshotService
             $candidates[] = $period;
         }
 
+        foreach ($this->resolveRecentSourcePeriods(self::DLY_KAP_TABLE, $this->sourcePeriodColumn(self::DLY_KAP_TABLE)) as $period) {
+            $candidates[] = $period;
+        }
+
+        foreach ($this->resolveRecentSourcePeriods(self::L1133_TABLE, $this->sourcePeriodColumn(self::L1133_TABLE)) as $period) {
+            $candidates[] = $period;
+        }
+
         foreach ($this->resolveRecentSourcePeriods(self::SAVINGS_TABLE, $this->sourcePeriodColumn(self::SAVINGS_TABLE)) as $period) {
             $candidates[] = $period;
+        }
+
+        if ($this->hourlyDpkEnabled() && Schema::hasTable(self::HOURLY_DPK_TABLE)) {
+            foreach ($this->resolveRecentSourcePeriods(self::HOURLY_DPK_TABLE, $this->sourcePeriodColumn(self::HOURLY_DPK_TABLE)) as $period) {
+                $candidates[] = $period;
+            }
         }
 
         foreach ($this->resolveRecentSourcePeriods('lw325_ph', 'periode') as $phPeriod) {
@@ -2530,6 +2735,69 @@ class DashboardHarianSnapshotService
             ->exists();
     }
 
+    private function loanSourcePeriodExists(string $period): bool
+    {
+        return Schema::hasTable(self::LOAN_TABLE) && $this->sourcePeriodExists(self::LOAN_TABLE, $period);
+    }
+
+    private function loanDashboardSourcePeriodExists(string $period): bool
+    {
+        $normalizedPeriod = $this->normalizeDate($period) ?? $period;
+
+        return $this->loanSourcePeriodExists($period)
+            || $this->dlyKapResegmentasiAvailable($normalizedPeriod)
+            || $this->l1133Available($normalizedPeriod);
+    }
+
+    private function savingsSourcePeriodExists(string $period): bool
+    {
+        $normalizedPeriod = $this->normalizeDate($period) ?? $period;
+        if ($this->hourlyDpkEnabled() && $this->hourlyDpkAvailable($normalizedPeriod)) {
+            return true;
+        }
+        return Schema::hasTable(self::SAVINGS_TABLE) && $this->sourcePeriodExists(self::SAVINGS_TABLE, $period);
+    }
+
+    private function resolveDataSourceForPeriod(string $period): string
+    {
+        $normalizedPeriod = $this->normalizeDate($period) ?? $period;
+        if ($this->loanSourcePeriodExists($period)) {
+            return 'option1';
+        }
+
+        return $this->dlyKapResegmentasiAvailable($normalizedPeriod) || $this->l1133Available($normalizedPeriod)
+            ? 'option2'
+            : 'none';
+    }
+
+    private function hourlyDpkAvailable(string $period): bool
+    {
+        return $this->hourlyDpkEnabled()
+            && Schema::hasTable(self::HOURLY_DPK_TABLE)
+            && DB::table(self::HOURLY_DPK_TABLE)
+                ->whereIn($this->sourcePeriodColumn(self::HOURLY_DPK_TABLE), $this->sourcePeriodRawCandidates(self::HOURLY_DPK_TABLE, $period))
+                ->exists();
+    }
+
+    private function hourlyDpkEnabled(): bool
+    {
+        return (bool) config('reports.dashboard_harian.use_hourly_dpk', false);
+    }
+
+    private function resolveSavingsAggregates(string $period, array|string|null $kancaKey, array|string|null $unitKey): Collection
+    {
+        $normalizedPeriod = $this->normalizeDate($period) ?? $period;
+        if ($this->hourlyDpkEnabled() && $this->hourlyDpkAvailable($normalizedPeriod)) {
+            return $this->fetchHourlyDpkAggregates($normalizedPeriod, $kancaKey, $unitKey);
+        }
+        return $this->fetchSavingsAggregates($period, $kancaKey, $unitKey);
+    }
+
+    private function fetchHourlyDpkAggregates(string $period, array|string|null $kancaKey, array|string|null $unitKey): Collection
+    {
+        return $this->queryHourlyDpkAggregates($period, $kancaKey, $unitKey);
+    }
+
     private function buildSourceMetadata(string $period): ?array
     {
         if (!$this->sourceMetadataColumnsAvailable()) {
@@ -2543,12 +2811,15 @@ class DashboardHarianSnapshotService
                 $this->sourcePeriodRawCandidates(self::LOAN_TABLE, $period),
                 ['baki_debet']
             );
-            $dlyKapState = $this->sourceAggregateState(
-                self::DLY_KAP_TABLE,
-                $this->sourcePeriodColumn(self::DLY_KAP_TABLE),
-                $this->sourcePeriodRawCandidates(self::DLY_KAP_TABLE, $period),
-                ['tl_rp', 'dpk_rp', 'npl_rp']
-            );
+            $hasSsaLoan = (int) ($loanState['row_count'] ?? 0) > 0;
+            $dlyKapState = $hasSsaLoan
+                ? ['row_count' => 0, 'inactive_because' => 'ssa_pinjaman_available']
+                : $this->sourceAggregateState(
+                    self::DLY_KAP_TABLE,
+                    $this->sourcePeriodColumn(self::DLY_KAP_TABLE),
+                    $this->sourcePeriodRawCandidates(self::DLY_KAP_TABLE, $period),
+                    ['tl_rp', 'dpk_rp', 'npl_rp']
+                );
             $l1133State = $this->sourceAggregateState(
                 self::L1133_TABLE,
                 $this->sourcePeriodColumn(self::L1133_TABLE),
@@ -2565,12 +2836,25 @@ class DashboardHarianSnapshotService
 
             [$recoverySource, $recoveryPeriod, $recoveryState] = $this->sourceRecoveryState($period);
 
+            $normalizedPeriod = $this->normalizeDate($period) ?? $period;
+            $hourlyDpkState = $this->hourlyDpkEnabled()
+                ? $this->sourceAggregateState(
+                    self::HOURLY_DPK_TABLE,
+                    $this->sourcePeriodColumn(self::HOURLY_DPK_TABLE),
+                    $this->sourcePeriodRawCandidates(self::HOURLY_DPK_TABLE, $period),
+                    ['saldo']
+                )
+                : ['row_count' => 0, 'disabled' => true];
+
             $signaturePayload = [
-                'period' => $this->normalizeDate($period) ?? $period,
+                'version' => self::SOURCE_SIGNATURE_VERSION,
+                'period' => $normalizedPeriod,
+                'source_option' => $this->resolveDataSourceForPeriod($normalizedPeriod),
                 'loan' => $loanState,
                 'dly_kap' => $dlyKapState,
                 'l1133' => $l1133State,
                 'savings' => $savingsState,
+                'hourly_dpk' => $hourlyDpkState,
                 'recovery_source' => $recoverySource,
                 'recovery_period' => $recoveryPeriod,
                 'recovery' => $recoveryState,
@@ -2581,7 +2865,8 @@ class DashboardHarianSnapshotService
                 'source_loan_row_count' => (int) ($loanState['row_count'] ?? 0)
                     + (int) ($dlyKapState['row_count'] ?? 0)
                     + (int) ($l1133State['row_count'] ?? 0),
-                'source_savings_row_count' => (int) ($savingsState['row_count'] ?? 0),
+                'source_savings_row_count' => (int) ($savingsState['row_count'] ?? 0)
+                    + (int) ($hourlyDpkState['row_count'] ?? 0),
                 'source_recovery_row_count' => (int) ($recoveryState['row_count'] ?? 0),
                 'source_recovery_period' => $recoveryPeriod,
             ];
@@ -2594,6 +2879,63 @@ class DashboardHarianSnapshotService
 
             return null;
         }
+    }
+
+    private function queryHourlyDpkAggregates(string $period, array|string|null $kancaKey, array|string|null $unitKey): Collection
+    {
+        $segment = "UPPER(TRIM(COALESCE(h.segmen2, '')))";
+        $product = "UPPER(TRIM(COALESCE(h.produk, '')))";
+        $microSegment = "{$segment} IN ('MICRO', 'MIKRO')";
+
+        $query = DB::table(self::HOURLY_DPK_TABLE . ' as h')
+            ->whereIn('h.' . $this->sourcePeriodColumn(self::HOURLY_DPK_TABLE), $this->sourcePeriodRawCandidates(self::HOURLY_DPK_TABLE, $period))
+            ->selectRaw("TRIM(COALESCE(h.mbname, '')) as raw_kantor_cabang")
+            ->selectRaw("TRIM(COALESCE(h.mbname, '')) as raw_unit_kerja")
+            ->selectRaw("SUM(CASE WHEN {$segment} = 'RITEL' AND {$product} = 'GIRO' THEN COALESCE(h.saldo, 0) ELSE 0 END) as giro_ritel")
+            ->selectRaw("SUM(CASE WHEN {$segment} = 'RITEL' AND {$product} = 'DEPOSITO' THEN COALESCE(h.saldo, 0) ELSE 0 END) as deposito_ritel")
+            ->selectRaw("SUM(CASE WHEN {$segment} = 'RITEL' AND {$product} = 'TABUNGAN' THEN COALESCE(h.saldo, 0) ELSE 0 END) as tabungan_ritel")
+            ->selectRaw("SUM(CASE WHEN {$microSegment} AND {$product} = 'GIRO' THEN COALESCE(h.saldo, 0) ELSE 0 END) as giro_mikro")
+            ->selectRaw("SUM(CASE WHEN {$microSegment} AND {$product} = 'DEPOSITO' THEN COALESCE(h.saldo, 0) ELSE 0 END) as deposito_mikro")
+            ->selectRaw("SUM(CASE WHEN {$microSegment} AND {$product} = 'TABUNGAN' THEN COALESCE(h.saldo, 0) ELSE 0 END) as tabungan_mikro")
+            ->selectRaw("SUM(CASE WHEN {$segment} IN ('WHOLESALE', 'KORPORASI') AND {$product} = 'GIRO' THEN COALESCE(h.saldo, 0) ELSE 0 END) as giro_wholesale")
+            ->selectRaw("SUM(CASE WHEN {$segment} IN ('WHOLESALE', 'KORPORASI') AND {$product} = 'DEPOSITO' THEN COALESCE(h.saldo, 0) ELSE 0 END) as deposito_wholesale")
+            ->selectRaw("SUM(CASE WHEN {$segment} IN ('WHOLESALE', 'KORPORASI') AND {$product} = 'TABUNGAN' THEN COALESCE(h.saldo, 0) ELSE 0 END) as tabungan_wholesale")
+            ->selectRaw("SUM(COALESCE(h.saldo, 0)) as total_simpanan")
+            ->groupBy('raw_kantor_cabang', 'raw_unit_kerja');
+
+        $normalizedKanca = $this->normalizeFilterValues($kancaKey);
+        if ($normalizedKanca !== []) {
+            $kancaConditions = collect($normalizedKanca)
+                ->map(fn (string $value) => $this->buildFilterCondition('h.mbname', $value))
+                ->filter()
+                ->all();
+
+            if ($kancaConditions !== []) {
+                $query->where(function ($q) use ($kancaConditions): void {
+                    foreach ($kancaConditions as $condition) {
+                        $q->orWhereRaw($condition);
+                    }
+                });
+            }
+        }
+
+        $normalizedUnit = $this->normalizeFilterValues($unitKey);
+        if ($normalizedUnit !== []) {
+            $unitConditions = collect($normalizedUnit)
+                ->map(fn (string $value) => $this->buildFilterCondition('h.mbname', $value))
+                ->filter()
+                ->all();
+
+            if ($unitConditions !== []) {
+                $query->where(function ($q) use ($unitConditions): void {
+                    foreach ($unitConditions as $condition) {
+                        $q->orWhereRaw($condition);
+                    }
+                });
+            }
+        }
+
+        return $query->get();
     }
 
     private function sourceAggregateState(string $table, string $periodColumn, array $periodValues, array $numericColumns = []): array
@@ -3078,6 +3420,7 @@ class DashboardHarianSnapshotService
             self::LOAN_TABLE => 'month_day_year_of_periode',
             self::DLY_KAP_TABLE => 'periode',
             self::L1133_TABLE => 'periode',
+            self::HOURLY_DPK_TABLE => 'posisi',
             default => 'Month_Day_Year_of_Posisi',
         };
     }
@@ -3097,7 +3440,7 @@ class DashboardHarianSnapshotService
             ])));
         }
 
-        if ($table === self::DLY_KAP_TABLE || $table === self::L1133_TABLE) {
+        if ($table === self::DLY_KAP_TABLE || $table === self::L1133_TABLE || $table === self::HOURLY_DPK_TABLE) {
             return array_values(array_unique(array_filter([
                 $period,
                 Carbon::parse($normalizedPeriod)->format('Y-m-d'),

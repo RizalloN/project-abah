@@ -430,6 +430,58 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         $this->assertContains('2026-05-03', $reflection->invoke($service));
     }
 
+    public function test_l1133_micro_aggregates_include_fully_cash_collateral_in_kupedes(): void
+    {
+        $this->createSourceMetadataTables();
+
+        $baseRow = [
+            'periode' => '2026-05-03',
+            'kode_kanca' => '001',
+            'nama_kanca' => 'KC Madiun',
+            'kode_uker' => '00070',
+            'nama_uker' => '00070 -- UNIT A',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ];
+
+        DB::table('l1133')->insert([
+            $baseRow + ['jenis' => 'KUPEDES KOMERSIAL', 'outstanding' => 100, 'dpk' => 10, 'npl' => 1],
+            $baseRow + ['jenis' => 'KUPEDES RAKYAT', 'outstanding' => 200, 'dpk' => 20, 'npl' => 2],
+            $baseRow + ['jenis' => 'RITEL KOMERSIAL FULLY CASH COLLATERAL', 'outstanding' => 300, 'dpk' => 30, 'npl' => 3],
+            $baseRow + ['jenis' => 'KUPEDES GBT', 'outstanding' => 400, 'dpk' => 40, 'npl' => 4],
+            $baseRow + ['jenis' => 'KUR MIKRO BARU', 'outstanding' => 500, 'dpk' => 50, 'npl' => 5],
+            $baseRow + ['jenis' => 'KPR', 'outstanding' => 600, 'dpk' => 60, 'npl' => 6],
+        ]);
+
+        $service = new DashboardHarianSnapshotService();
+        $scopeCache = new \ReflectionProperty($service, 'unitScopeMapCache');
+        $scopeCache->setAccessible(true);
+        $scopeCache->setValue($service, [
+            '2026-05-03' => collect([
+                '70' => [
+                    'raw_cabang' => 'KC Madiun',
+                    'raw_unit' => '00070 -- UNIT A',
+                    'kanca_label' => 'KC Madiun',
+                    'unit_key' => 'unit-a',
+                ],
+            ]),
+        ]);
+
+        $reflection = new \ReflectionMethod($service, 'fetchL1133MicroLoanAggregates');
+        $reflection->setAccessible(true);
+
+        $rows = $reflection->invoke($service, '2026-05-03');
+        $row = $rows->first();
+
+        $this->assertCount(1, $rows);
+        $this->assertSame(600.0, (float) $row->kupedes_os);
+        $this->assertSame(60.0, (float) $row->kupedes_sml);
+        $this->assertSame(6.0, (float) $row->kupedes_npl);
+        $this->assertSame(400.0, (float) $row->briguna_mikro_os);
+        $this->assertSame(500.0, (float) $row->kur_mikro_os);
+        $this->assertSame(600.0, (float) $row->kur_kpp_os);
+    }
+
     public function test_lw325_recovery_source_uses_latest_ph_before_snapshot_period(): void
     {
         $this->createSourceMetadataTables();
@@ -521,7 +573,7 @@ class DashboardHarianSnapshotServiceTest extends TestCase
 
     private function createSourceMetadataTables(): void
     {
-        foreach (['dashboard_harian_snapshots', 'ssa_pinjaman', 'ssa_simpanan', 'dly_kap_resegmentasi', 'cognos_recovery', 'lw325_ph'] as $table) {
+        foreach (['dashboard_harian_snapshots', 'ssa_pinjaman', 'ssa_simpanan', 'dly_kap_resegmentasi', 'l1133', 'cognos_recovery', 'lw325_ph'] as $table) {
             Schema::dropIfExists($table);
         }
 
@@ -559,6 +611,20 @@ class DashboardHarianSnapshotServiceTest extends TestCase
             $table->decimal('tl_rp', 20, 2)->nullable();
             $table->decimal('dpk_rp', 20, 2)->nullable();
             $table->decimal('npl_rp', 20, 2)->nullable();
+            $table->timestamps();
+        });
+
+        Schema::create('l1133', function (Blueprint $table): void {
+            $table->id();
+            $table->date('periode')->nullable();
+            $table->string('kode_kanca')->nullable();
+            $table->string('nama_kanca')->nullable();
+            $table->string('kode_uker')->nullable();
+            $table->string('nama_uker')->nullable();
+            $table->string('jenis')->nullable();
+            $table->decimal('outstanding', 20, 2)->nullable();
+            $table->decimal('dpk', 20, 2)->nullable();
+            $table->decimal('npl', 20, 2)->nullable();
             $table->timestamps();
         });
 

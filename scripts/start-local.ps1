@@ -135,6 +135,12 @@ function Start-PersistentScheduler {
     Write-Host "Laravel scheduler persistent dijalankan. Log: $LogPath"
 }
 
+# --- Queue routing rationale ---
+# imports-daily-loan is handled exclusively by import workers to prevent 12-worker
+# competition for a single-worker job. Report workers focus on their own queues.
+# Snapshot and shadow workers drain reports-low when idle, making use of spare
+# capacity instead of leaving those pools completely idle between builds.
+
 Start-PersistentQueuePool `
     -Name 'Import queue worker' `
     -Queues 'imports-high,imports-daily-loan' `
@@ -144,21 +150,21 @@ Start-PersistentQueuePool `
 
 Start-PersistentQueuePool `
     -Name 'Report queue worker' `
-    -Queues 'default,reports-low,imports-daily-loan' `
+    -Queues 'default,reports-low' `
     -LogPath (Join-Path $projectRoot 'storage\logs\persistent-report-queue-worker.log') `
     -WorkerKey 'abah-report-worker' `
     -DesiredCount $reportWorkerCount
 
 Start-PersistentQueuePool `
     -Name 'Snapshot queue worker' `
-    -Queues 'snapshots-parallel' `
+    -Queues 'snapshots-parallel,reports-low' `
     -LogPath (Join-Path $projectRoot 'storage\logs\persistent-snapshot-queue-worker.log') `
     -WorkerKey 'abah-snapshot-worker' `
     -DesiredCount $snapshotWorkerCount
 
 Start-PersistentQueuePool `
     -Name 'Shadow backfill queue worker' `
-    -Queues 'shadow-backfill' `
+    -Queues 'shadow-backfill,reports-low' `
     -LogPath (Join-Path $projectRoot 'storage\logs\persistent-shadow-backfill-worker.log') `
     -WorkerKey 'abah-shadow-worker' `
     -DesiredCount $shadowWorkerCount

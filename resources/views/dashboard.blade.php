@@ -59,29 +59,12 @@
         opacity: 0.8;
     }
 
-    .dashboard-hero::before,
-    .dashboard-hero::after {
-        content: "";
-        position: absolute;
-        border-radius: 999px;
-        opacity: 0.18;
-        pointer-events: none;
-    }
-
-    .dashboard-hero::before {
-        width: 280px;
-        height: 280px;
-        background: #71c5e8;
-        top: -90px;
-        right: -80px;
-    }
-
-    .dashboard-hero::after {
-        width: 220px;
-        height: 220px;
-        background: #307fe2;
-        bottom: -110px;
-        left: -70px;
+    .dashboard-hero {
+        background: linear-gradient(135deg, #053b82 0%, #0857c3 52%, #307fe2 100%);
+        border-radius: 1rem;
+        color: #fff;
+        overflow: hidden;
+        position: relative;
     }
 
     .metric-card {
@@ -455,17 +438,12 @@
                             <img src="{{ $dashboardLogo }}" alt="Logo A-SIX">
                         </div>
                         <div class="mb-3">
-                            <span class="badge badge-light px-3 py-2 text-uppercase" style="letter-spacing: 0.12em;">{{ data_get($hero, 'badge', 'A-SIX OVERVIEW') }}</span>
-                            <div class="hero-kicker mt-2">{{ data_get($hero, 'kicker', 'DASHBOARD AREA 6') }}</div>
                             <h1 class="mt-2 mb-0 font-weight-bold" style="font-size: 2.35rem; line-height: 1.08;">
                                 {{ data_get($hero, 'title', 'A-SIX') }}
                             </h1>
                         </div>
                     </div>
-                    <p class="mb-4 text-white-50" style="max-width: 700px; font-size: 1rem;">
-                        {{ data_get($hero, 'subtitle', 'Ringkasan dashboard belum tersedia.') }}
-                    </p>
-                    <div class="d-flex flex-wrap">
+                    <div class="d-flex flex-wrap mt-4">
                         @forelse($heroStats as $stat)
                             <div class="mr-4 mb-3">
                                 <div class="text-white-50 text-uppercase small">{{ data_get($stat, 'label', '-') }}</div>

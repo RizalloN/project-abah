@@ -12,6 +12,7 @@ return [
     ],
 
     'snapshot' => [
+        'enable_analyze_table' => env('SNAPSHOT_ENABLE_ANALYZE_TABLE', false),
         'defer_seconds' => env('IMPORT_SNAPSHOT_DEFER_SECONDS', 60),
         'pause_during_import' => env('IMPORT_SNAPSHOT_PAUSE_DURING_IMPORT', true),
         'pause_queues' => array_values(array_filter(array_map(
@@ -44,6 +45,10 @@ return [
         'ssa_simpanan' => [
             'enabled' => env('IMPORT_DIRECT_LOAD_SSA_SIMPANAN_ENABLED', true),
             'max_rows' => env('IMPORT_DIRECT_LOAD_SSA_SIMPANAN_MAX_ROWS', 0),
+        ],
+        'hourly_dpk' => [
+            'enabled' => env('IMPORT_DIRECT_LOAD_HOURLY_DPK_ENABLED', true),
+            'max_rows' => env('IMPORT_DIRECT_LOAD_HOURLY_DPK_MAX_ROWS', 0),
         ],
         'ssa_pinjaman' => [
             'enabled' => env('IMPORT_DIRECT_LOAD_SSA_PINJAMAN_ENABLED', true),

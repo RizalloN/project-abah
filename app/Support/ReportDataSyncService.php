@@ -19,6 +19,10 @@ class ReportDataSyncService
 {
     public static function analyzeTable(string $tableName): bool
     {
+        if (!config('import.snapshot.enable_analyze_table', false)) {
+            return false;
+        }
+
         if (!Schema::hasTable($tableName)) {
             return false;
         }
@@ -954,6 +958,10 @@ class ReportDataSyncService
 
     private function refreshTableStatistics(string $tableName, ?string $periodHint, ?int $jobId, ?string $source): void
     {
+        if (!config('import.snapshot.enable_analyze_table', false)) {
+            return;
+        }
+
         if (!Schema::hasTable($tableName)) {
             return;
         }

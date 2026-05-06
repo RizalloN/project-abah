@@ -224,6 +224,11 @@ class ImportExcelController extends Controller
         return strtolower(trim((string) ($tableName ?? $this->resolveActiveTableName()))) === DlyKapResegmentasiCsvImporter::TABLE;
     }
 
+    private function isLw321PnTable(?string $tableName = null): bool
+    {
+        return strtolower(trim((string) ($tableName ?? $this->resolveActiveTableName()))) === 'lw321pn';
+    }
+
     private function l1133Importer(): L1133CsvImporter
     {
         return app(L1133CsvImporter::class);
@@ -354,6 +359,7 @@ class ImportExcelController extends Controller
         return match ($tableName) {
             'daily_loan_dinamis' => 'Daily Loan Dinamis',
             'simpanan_multipn' => 'Simpanan MultiPN',
+            'lw321pn' => 'LW321PN - Kolektibilitas dan Tunggakan Per AO',
             'gi405_singlerow' => 'GI405 Single Row',
             L1133CsvImporter::TABLE => 'L1133 - Laporan Harian Pinjaman Kanwil',
             default => $this->resolveActiveReport()?->nama_report ?? 'Preview Data',
@@ -591,7 +597,7 @@ class ImportExcelController extends Controller
     {
         $resolvedTable = strtolower(trim((string) ($tableName ?? $this->resolveExcelTableName())));
 
-        return in_array($resolvedTable, ['daily_loan_dinamis', 'simpanan_multipn', 'gi405_singlerow'], true);
+        return in_array($resolvedTable, ['daily_loan_dinamis', 'simpanan_multipn', 'gi405_singlerow', 'lw321pn'], true);
     }
 
     private function normalizeImportActiveFilters(array $filters, ?string $tableName = null): array
@@ -2942,6 +2948,10 @@ class ImportExcelController extends Controller
         } elseif ($tableName === 'lw325_ph' && isset($tableColumnsLookup['uniqueid_namareport'])) {
             $uniqueIdCol = $tableColumnsByLower['uniqueid_namareport'] ?? 'uniqueid_namareport';
             $suffix = '_RPH';
+        } elseif ($tableName === 'lw321pn' && isset($tableColumnsLookup['uniqueid_namareport'])) {
+            $uniqueIdCol = $tableColumnsByLower['uniqueid_namareport'] ?? 'uniqueid_namareport';
+            $suffix = '';
+            $uniqueIdPrefix = 'uuid_lw321pn_' . str_replace('.', '', uniqid('', true));
         } elseif (isset($tableColumnsLookup['uniqueid_namareport'])) {
             $uniqueIdCol = $tableColumnsByLower['uniqueid_namareport'] ?? 'uniqueid_namareport';
         }
@@ -2953,6 +2963,40 @@ class ImportExcelController extends Controller
         $dateColumnsLookup = $this->getExcelDateColumnsLookup();
         $decimalColumnsLookup = $this->getExcelDecimalColumnsLookup();
         $integerColumnsLookup = $this->getExcelIntegerColumnsLookup();
+        if ($this->isLw321PnTable($tableName)) {
+            foreach ([
+                'PERIODE',
+                'NEXT_PMT_DATE',
+                'TGL_MENUNGGAK',
+                'NEXT_INT_PMT_DATE',
+                'TGL_REALISASI',
+                'TGL_JATUH_TEMPO',
+            ] as $columnName) {
+                $dateColumnsLookup[$columnName] = true;
+            }
+            foreach ([
+                'PLAFON',
+                'RATE',
+                'KOLEKTIBILITAS_LANCAR',
+                'KOLEKTIBILITAS_DPK',
+                'KOLEKTIBILITAS_KURANG_LANCAR',
+                'KOLEKTIBILITAS_DIRAGUKAN',
+                'KOLEKTIBILITAS_MACET',
+                'TUNGGAKAN_POKOK',
+                'TUNGGAKAN_BUNGA',
+                'TUNGGAKAN_PINALTI',
+                'PLAFON_DALAM_IDR',
+                'BALANCE_DALAM_IDR',
+            ] as $columnName) {
+                $decimalColumnsLookup[$columnName] = true;
+            }
+            foreach ([
+                'FREQ_PAYMENT',
+                'FREQ_INT_PAYMENT',
+            ] as $columnName) {
+                $integerColumnsLookup[$columnName] = true;
+            }
+        }
         $sourceBackend = strtolower(trim((string) ($importOptions['source_backend'] ?? '')));
         $sourcePreNormalized = (bool) ($importOptions['source_pre_normalized'] ?? false);
         $fastSourcePreNormalized = $sourcePreNormalized && $sourceBackend === 'polars';
@@ -2971,6 +3015,7 @@ class ImportExcelController extends Controller
         foreach ($validIndexes as $filterIdx => $originalIndex) {
             $headerName = $normalizedHeaders[$originalIndex];
             $normalizedHeader = preg_replace('/[^A-Z0-9]+/', '_', strtoupper(trim((string) $headerName)));
+            $normalizedHeader = trim((string) $normalizedHeader, '_');
             $dbColumn = $this->normalizeImportColumnName($headerName);
 
             if (!isset($tableColumnsLookup[$dbColumn])) {
@@ -6843,6 +6888,10 @@ class ImportExcelController extends Controller
             return $this->buildDlyKapResegmentasiBulkImportSqlParts($context, $stagingTable);
         }
 
+        if ($this->isLw321PnTable($tableName)) {
+            return $this->buildGenericFastPathBulkImportSqlParts($context, 'lw321pn');
+        }
+
         return $this->buildDailyLoanBulkImportSqlParts($context, $stagingTable);
     }
 
@@ -6876,6 +6925,10 @@ class ImportExcelController extends Controller
 
         if ($this->isDlyKapResegmentasiTable($tableName)) {
             return 'WHERE src.`uniqueid_dly_kap` IS NOT NULL AND src.`periode` IS NOT NULL';
+        }
+
+        if ($this->isLw321PnTable($tableName)) {
+            return 'WHERE src.`periode` IS NOT NULL AND src.`no_rekening` IS NOT NULL';
         }
 
         $whereClauses = [
@@ -6999,8 +7052,9 @@ class ImportExcelController extends Controller
         $isLw325Ph = $this->isLw325PhTable($tableName);
         $isGi405RecDh = $this->isGi405RecDhTable($tableName);
         $isDlyKapResegmentasi = $this->isDlyKapResegmentasiTable($tableName);
+        $isLw321Pn = $this->isLw321PnTable($tableName);
 
-        if ($csvPath === '' || !file_exists($csvPath) || (!$isDailyLoan && !$isLw325Ph && !$isGi405RecDh && !$isDlyKapResegmentasi)) {
+        if ($csvPath === '' || !file_exists($csvPath) || (!$isDailyLoan && !$isLw325Ph && !$isGi405RecDh && !$isDlyKapResegmentasi && !$isLw321Pn)) {
             return false;
         }
 
@@ -7026,7 +7080,7 @@ class ImportExcelController extends Controller
                 ? 'LW325 - PH'
                 : ($isGi405RecDh
                     ? 'GI405 Single Row'
-                    : ($isDlyKapResegmentasi ? 'DLY KAP Resegmentasi' : 'Daily Loan'));
+                    : ($isDlyKapResegmentasi ? 'DLY KAP Resegmentasi' : ($isLw321Pn ? 'LW321PN' : 'Daily Loan')));
             $send('progress', [
                 'percent' => 18,
                 'message' => empty($activeFilters)
@@ -7041,7 +7095,7 @@ class ImportExcelController extends Controller
                 $loadSource = $this->prepareLw325PhDirectLoadSource($csvPath, $delimiter, $send);
             } elseif ($isGi405RecDh) {
                 $loadSource = $this->prepareGi405RecDhDirectLoadSource($csvPath, $delimiter, $send);
-            } elseif ($isDlyKapResegmentasi) {
+            } elseif ($isDlyKapResegmentasi || $isLw321Pn) {
                 $loadSource = [
                     'path' => $csvPath,
                     'backend' => 'csv_stage',
@@ -7137,7 +7191,9 @@ class ImportExcelController extends Controller
                 ? 'LW325_PH_IMPORT_LOCK'
                 : ($isGi405RecDh
                     ? 'GI405_SINGLE_ROW_IMPORT_LOCK'
-                    : ($isDlyKapResegmentasi ? 'DLY_KAP_RESEGMENTASI_IMPORT_LOCK' : self::DAILY_LOAN_IMPORT_LOCK_NAME));
+                    : ($isDlyKapResegmentasi
+                        ? 'DLY_KAP_RESEGMENTASI_IMPORT_LOCK'
+                        : ($isLw321Pn ? 'LW321PN_IMPORT_LOCK' : self::DAILY_LOAN_IMPORT_LOCK_NAME)));
 
             if (!$this->acquireMysqlAdvisoryLockOnDb($lockName, 10)) {
                 throw new \RuntimeException("Import {$label} sedang berjalan di background. Silakan tunggu.");
@@ -7803,6 +7859,10 @@ class ImportExcelController extends Controller
             return $this->prepareGi405CsvPreviewFastPath($path);
         }
 
+        if ($this->isLw321PnTable($tableName)) {
+            return $this->prepareLw321PnCsvPreviewFastPath($path);
+        }
+
         $stagedCsvPath = null;
         if (
             $this->isDlyKapResegmentasiTable($tableName)
@@ -8014,6 +8074,108 @@ class ImportExcelController extends Controller
             'formattedUniqueValues' => $formattedUniqueValues,
             'delimiter' => $delimiter,
             'staged_csv_path' => $stagedCsvPath,
+        ];
+    }
+
+    private function prepareLw321PnCsvPreviewFastPath(string $path): array
+    {
+        $delimiterCacheKey = 'csv_delimiter:' . md5($path . (@filesize($path) ?: 0));
+        $delimiter = Cache::get($delimiterCacheKey);
+        if ($delimiter === null) {
+            $delimiter = $this->detectCsvDelimiter($path);
+            Cache::put($delimiterCacheKey, $delimiter, now()->addHours(24));
+        }
+
+        $handle = @fopen($path, 'r');
+        if (!$handle) {
+            throw new \RuntimeException('Gagal membuka file CSV LW321PN.');
+        }
+
+        $previewLimit = 75;
+        $maxUniqueValuesPerColumn = 75;
+        $lineNumber = 0;
+        $headerIndex = null;
+        $headers = [];
+        $preview = [];
+        $uniqueValues = [];
+
+        try {
+            while (($row = $this->readCsvRecord($handle, $delimiter)) !== false) {
+                $lineNumber++;
+
+                if ($headerIndex === null) {
+                    if ($this->detectHeaderIndex([$row], 'lw321pn') !== 0) {
+                        continue;
+                    }
+
+                    $headerIndex = $lineNumber - 1;
+                    foreach ($row as $index => $header) {
+                        $headerValue = trim((string) preg_replace('/^\xEF\xBB\xBF/u', '', (string) $header));
+                        $headers[$index] = $headerValue !== '' ? $headerValue : 'COL_' . $index;
+                        if (!str_starts_with($headers[$index], 'COL_')) {
+                            $uniqueValues[$index] = [];
+                        }
+                    }
+
+                    continue;
+                }
+
+                if (empty(array_filter($row, static fn ($value): bool => trim((string) $value) !== ''))) {
+                    continue;
+                }
+
+                $row = $this->normalizeCsvRow((array) $row, $delimiter, count($headers));
+                if (count($preview) < $previewLimit) {
+                    $preview[] = $row;
+
+                    foreach ($headers as $index => $header) {
+                        if (str_starts_with((string) $header, 'COL_')) {
+                            continue;
+                        }
+
+                        $value = trim((string) ($row[$index] ?? ''));
+                        $key = $value === '' ? '(Blank)' : $value;
+                        if (count($uniqueValues[$index] ?? []) < $maxUniqueValuesPerColumn) {
+                            $uniqueValues[$index][$key] = true;
+                        }
+                    }
+                }
+
+                if (count($preview) >= $previewLimit) {
+                    break;
+                }
+            }
+        } finally {
+            fclose($handle);
+        }
+
+        if ($headerIndex === null) {
+            throw new \RuntimeException($this->headerNotFoundMessage('lw321pn'));
+        }
+
+        $displayHeaders = [];
+        $formattedUniqueValues = [];
+        foreach ($headers as $index => $header) {
+            $header = (string) $header;
+            if (str_starts_with($header, 'COL_')) {
+                continue;
+            }
+
+            $displayHeaders[] = $header;
+            $keys = array_keys($uniqueValues[$index] ?? []);
+            sort($keys);
+            $formattedUniqueValues[] = $keys;
+        }
+
+        return [
+            'total_rows' => null,
+            'header_index' => $headerIndex,
+            'headers' => $displayHeaders,
+            'sourceHeaders' => array_values($headers),
+            'preview' => $preview,
+            'formattedUniqueValues' => $formattedUniqueValues,
+            'delimiter' => $delimiter,
+            'staged_csv_path' => null,
         ];
     }
 
@@ -9291,6 +9453,11 @@ class ImportExcelController extends Controller
 
         $tableName = $this->resolveActiveTableName();
 
+        if ($this->isLw321PnTable($tableName) && !$this->isCsvFile($path)) {
+            $this->primeLw321PnPreviewCache($relativePath, $path, $cacheKey, $send);
+            return;
+        }
+
         if (($this->isDlyKapResegmentasiTable($tableName) || $this->isL1133Table($tableName)) && !$this->isCsvFile($path)) {
             $send && $send('progress', ['percent' => 44, 'message' => 'Menormalisasi file Excel ke CSV staging...', 'step' => 1]);
 
@@ -9305,7 +9472,11 @@ class ImportExcelController extends Controller
                 $csvPayload['preview'],
                 $this->cachedSchemaColumnListing($tableName)
             );
-            $reorderedPayload = $this->applyManualPreviewColumns($tableName, $reorderedPayload, array_values($csvPayload['headers']));
+            $reorderedPayload = $this->applyManualPreviewColumns(
+                $tableName,
+                $reorderedPayload,
+                array_values((array) ($csvPayload['sourceHeaders'] ?? $csvPayload['headers']))
+            );
 
             Cache::put($cacheKey, [
                 'headers' => $reorderedPayload['headers'],
@@ -9334,7 +9505,11 @@ class ImportExcelController extends Controller
                 $csvPayload['preview'],
                 $this->cachedSchemaColumnListing($tableName)
             );
-            $reorderedPayload = $this->applyManualPreviewColumns($tableName, $reorderedPayload, array_values($csvPayload['headers']));
+            $reorderedPayload = $this->applyManualPreviewColumns(
+                $tableName,
+                $reorderedPayload,
+                array_values((array) ($csvPayload['sourceHeaders'] ?? $csvPayload['headers']))
+            );
 
             Cache::put($cacheKey, [
                 'headers' => $reorderedPayload['headers'],
@@ -9410,6 +9585,188 @@ class ImportExcelController extends Controller
         ], now()->addHour());
 
         $send && $send('progress', ['percent' => 72, 'message' => 'Preview cepat siap. Menyusun filter kolom...', 'step' => 1]);
+    }
+
+    private function primeLw321PnPreviewCache(string $relativePath, string $path, string $cacheKey, ?callable $send = null): void
+    {
+        $send && $send('progress', ['percent' => 35, 'message' => 'Menyiapkan CSV staging streaming untuk LW321PN...', 'step' => 1]);
+
+        $stage = $this->stageLw321PnExcelToCsv($path, $send, true);
+        $headers = array_values((array) ($stage['headers'] ?? []));
+        $previewRows = [];
+
+        foreach ((array) ($stage['preview_rows'] ?? []) as $row) {
+            $mapped = [];
+            foreach ($headers as $index => $headerLabel) {
+                if (str_starts_with((string) $headerLabel, 'COL_')) {
+                    continue;
+                }
+                $mapped[$headerLabel] = $this->normalizeExcelValue((string) $headerLabel, $row[$index] ?? null);
+            }
+            if ($this->hasMeaningfulImportData($mapped)) {
+                $previewRows[] = $mapped;
+            }
+        }
+
+        $formattedUniqueValues = [];
+        $displayHeaders = [];
+        foreach ($headers as $index => $headerLabel) {
+            $headerLabel = (string) $headerLabel;
+            if (str_starts_with($headerLabel, 'COL_')) {
+                continue;
+            }
+
+            $displayHeaders[] = $headerLabel;
+            $values = (array) (($stage['unique_values'] ?? [])[(string) $index] ?? []);
+            sort($values);
+            $formattedUniqueValues[] = $values;
+        }
+
+        $reorderedPayload = $this->reorderPreviewPayload(
+            $displayHeaders,
+            $formattedUniqueValues,
+            $previewRows,
+            $this->cachedSchemaColumnListing('lw321pn')
+        );
+
+        Cache::put($cacheKey, [
+            'headers' => $reorderedPayload['headers'],
+            'preview' => $reorderedPayload['preview'],
+            'formattedUniqueValues' => $reorderedPayload['formattedUniqueValues'],
+            'displayFilterMap' => $reorderedPayload['displayFilterMap'] ?? [],
+            'path' => $relativePath,
+            'stagedCsvPath' => null,
+            'headerIndex' => 0,
+            'normalizedHeaders' => $headers,
+            'sourceHeaders' => $headers,
+            'total_rows' => (int) ($stage['total_rows'] ?? 0),
+            'delimiter' => ',',
+        ], now()->addHour());
+
+        $send && $send('progress', ['percent' => 72, 'message' => 'Preview LW321PN siap. Menyusun filter kolom...', 'step' => 1]);
+    }
+
+    private function stageLw321PnExcelToCsv(string $path, ?callable $send = null, bool $previewOnly = false): array
+    {
+        $pythonExe = $this->findPython();
+        $scriptPath = base_path('scripts/lw321pn_xlsx_to_csv.py');
+
+        if (!$pythonExe || !file_exists($scriptPath)) {
+            throw new \RuntimeException('Python/openpyxl tidak tersedia untuk staging preview LW321PN.');
+        }
+
+        $tempDirectory = storage_path('app/excel_stage');
+        if (!is_dir($tempDirectory)) {
+            @mkdir($tempDirectory, 0777, true);
+        }
+
+        $outputPath = $tempDirectory . DIRECTORY_SEPARATOR . 'lw321pn_stage_' . Str::uuid()->toString() . '.csv';
+        $cmd = escapeshellarg($pythonExe)
+            . ' ' . escapeshellarg($scriptPath)
+            . ' --input ' . escapeshellarg($path);
+
+        if ($previewOnly) {
+            $cmd .= ' --preview-only --preview-limit 75';
+        } else {
+            $cmd .= ' --output ' . escapeshellarg($outputPath);
+        }
+
+        $descriptors = [
+            0 => ['pipe', 'r'],
+            1 => ['pipe', 'w'],
+            2 => ['pipe', 'w'],
+        ];
+
+        $process = proc_open($cmd, $descriptors, $pipes);
+        if (!is_resource($process)) {
+            throw new \RuntimeException('Gagal menjalankan staging Python LW321PN.');
+        }
+
+        fclose($pipes[0]);
+        stream_set_blocking($pipes[1], false);
+        stream_set_blocking($pipes[2], false);
+
+        $buffer = '';
+        $stderr = '';
+        $donePayload = null;
+        $lastKeepAlive = time();
+
+        try {
+            while (true) {
+                $status = proc_get_status($process);
+                $stdout = stream_get_contents($pipes[1]);
+                if ($stdout !== false && $stdout !== '') {
+                    $buffer .= $stdout;
+                    while (($pos = strpos($buffer, "\n")) !== false) {
+                        $line = trim(substr($buffer, 0, $pos));
+                        $buffer = substr($buffer, $pos + 1);
+                        if ($line === '') {
+                            continue;
+                        }
+
+                        $payload = json_decode($line, true);
+                        if (!is_array($payload)) {
+                            continue;
+                        }
+
+                        $type = (string) ($payload['type'] ?? '');
+                        if ($type === 'progress') {
+                            $send && $send('progress', [
+                                'percent' => (int) ($payload['percent'] ?? 45),
+                                'message' => (string) ($payload['message'] ?? 'Menyiapkan CSV staging LW321PN...'),
+                                'step' => 1,
+                            ]);
+                        } elseif ($type === 'done') {
+                            $donePayload = $payload;
+                        } elseif ($type === 'error') {
+                            throw new \RuntimeException((string) ($payload['message'] ?? 'Staging Python LW321PN gagal.'));
+                        }
+                    }
+                }
+
+                $err = stream_get_contents($pipes[2]);
+                if ($err !== false && $err !== '') {
+                    $stderr .= $err;
+                }
+
+                if (!$status['running']) {
+                    break;
+                }
+
+                if ((time() - $lastKeepAlive) >= 10) {
+                    $send && $send('progress', [
+                        'percent' => 44,
+                        'message' => 'Masih menyiapkan CSV staging LW321PN...',
+                        'step' => 1,
+                    ]);
+                    $lastKeepAlive = time();
+                }
+
+                usleep(100000);
+            }
+        } finally {
+            if (isset($pipes[1]) && is_resource($pipes[1])) {
+                fclose($pipes[1]);
+            }
+            if (isset($pipes[2]) && is_resource($pipes[2])) {
+                fclose($pipes[2]);
+            }
+            $exitCode = proc_close($process);
+        }
+
+        if ($donePayload === null || (!$previewOnly && !file_exists($outputPath))) {
+            @unlink($outputPath);
+            throw new \RuntimeException('Staging CSV LW321PN gagal' . ($stderr !== '' ? ': ' . trim($stderr) : '.'));
+        }
+
+        return [
+            'absolute_path' => $previewOnly ? null : $outputPath,
+            'headers' => array_values((array) ($donePayload['headers'] ?? [])),
+            'preview_rows' => array_values((array) ($donePayload['preview_rows'] ?? [])),
+            'unique_values' => (array) ($donePayload['unique_values'] ?? []),
+            'total_rows' => (int) ($donePayload['total_rows'] ?? 0),
+            'header_index' => 0,
+        ];
     }
 
     public function previewExcel(Request $request)
@@ -9530,7 +9887,11 @@ class ImportExcelController extends Controller
                 $csvPayload['preview'],
                 $this->cachedSchemaColumnListing($tableName)
             );
-            $reorderedPayload = $this->applyManualPreviewColumns($tableName, $reorderedPayload, array_values($csvPayload['headers']));
+            $reorderedPayload = $this->applyManualPreviewColumns(
+                $tableName,
+                $reorderedPayload,
+                array_values((array) ($csvPayload['sourceHeaders'] ?? $csvPayload['headers']))
+            );
 
             $previewStateKey = 'excel_preview_' . md5($relativePath . '|csv_direct|' . microtime(true));
             $previewMeta = [
@@ -9787,6 +10148,7 @@ class ImportExcelController extends Controller
             $totalRows = 0;
             $sheet = null;
             $delimiter = null;
+            $lw321PnStagedCsvPath = '';
 
             if ($this->isCsvFile($path)) {
                 try {
@@ -9838,45 +10200,55 @@ class ImportExcelController extends Controller
             } else {
                 // Excel file: coba Python dulu (openpyxl read-only, lebih cepat)
                 try {
-                    $pythonResult = $this->detectHeaderViaPython($path);
-
-                    if ($pythonResult !== null) {
-                        $headerIndex = $pythonResult['header_index'];
-                        $totalRows = $pythonResult['total_rows'];
-                        $headerValues = $pythonResult['header_values'];
-                        $sheet = [];
-                        $sheet[$headerIndex] = $headerValues;
+                    if ($this->isLw321PnTable($tableName)) {
+                        $stageResult = $this->stageLw321PnExcelToCsv($path, null, false);
+                        $lw321PnStagedCsvPath = (string) ($stageResult['absolute_path'] ?? '');
+                        $headerIndex = 0;
+                        $totalRows = max(1, ((int) ($stageResult['total_rows'] ?? 0)) + 1);
+                        $sheet = [
+                            0 => array_values((array) ($stageResult['headers'] ?? [])),
+                        ];
                     } else {
-                        // Fallback: PhpSpreadsheet
-                        Log::info('initializeQueuedImportJobForExecution: Python tidak tersedia, fallback ke PhpSpreadsheet', [
-                            'job_id' => $jobId,
-                        ]);
+                        $pythonResult = $this->detectHeaderViaPython($path);
 
-                        $reader = IOFactory::createReaderForFile($path);
-                        $reader->setReadDataOnly(true);
-                        $reader->setReadEmptyCells(false);
-
-                        $chunkFilter = new ChunkReadFilter();
-                        $chunkFilter->setRows(1, 200);
-                        $reader->setReadFilter($chunkFilter);
-
-                        $spreadsheet = $reader->load($path);
-                        $sheet = $spreadsheet->getActiveSheet()->toArray(null, true, true, false);
-                        $spreadsheet->disconnectWorksheets();
-                        unset($spreadsheet);
-
-                        $headerIndex = $this->detectHeaderIndex($sheet, $tableName);
-                        if ($headerIndex === null) {
-                            Log::error('initializeQueuedImportJobForExecution: Header tidak ditemukan di Excel', [
+                        if ($pythonResult !== null) {
+                            $headerIndex = $pythonResult['header_index'];
+                            $totalRows = $pythonResult['total_rows'];
+                            $headerValues = $pythonResult['header_values'];
+                            $sheet = [];
+                            $sheet[$headerIndex] = $headerValues;
+                        } else {
+                            // Fallback: PhpSpreadsheet
+                            Log::info('initializeQueuedImportJobForExecution: Python tidak tersedia, fallback ke PhpSpreadsheet', [
                                 'job_id' => $jobId,
-                                'path' => $path,
-                                'table_name' => $tableName,
                             ]);
-                            return false;
-                        }
 
-                        $worksheetInfo = $reader->listWorksheetInfo($path);
-                        $totalRows = $worksheetInfo[0]['totalRows'];
+                            $reader = IOFactory::createReaderForFile($path);
+                            $reader->setReadDataOnly(true);
+                            $reader->setReadEmptyCells(false);
+
+                            $chunkFilter = new ChunkReadFilter();
+                            $chunkFilter->setRows(1, 200);
+                            $reader->setReadFilter($chunkFilter);
+
+                            $spreadsheet = $reader->load($path);
+                            $sheet = $spreadsheet->getActiveSheet()->toArray(null, true, true, false);
+                            $spreadsheet->disconnectWorksheets();
+                            unset($spreadsheet);
+
+                            $headerIndex = $this->detectHeaderIndex($sheet, $tableName);
+                            if ($headerIndex === null) {
+                                Log::error('initializeQueuedImportJobForExecution: Header tidak ditemukan di Excel', [
+                                    'job_id' => $jobId,
+                                    'path' => $path,
+                                    'table_name' => $tableName,
+                                ]);
+                                return false;
+                            }
+
+                            $worksheetInfo = $reader->listWorksheetInfo($path);
+                            $totalRows = $worksheetInfo[0]['totalRows'];
+                        }
                     }
                 } catch (\Throwable $e) {
                     Log::error('initializeQueuedImportJobForExecution: Gagal membaca Excel file', [
@@ -9930,7 +10302,7 @@ class ImportExcelController extends Controller
             }
 
             // ── Staging Excel to CSV (jika perlu) ───────────────────────
-            $stagedCsvPath = '';
+            $stagedCsvPath = $lw321PnStagedCsvPath;
             $mustRefreshStagedCsv = $this->isSsaSimpananTable($tableName) || $this->isSsaPinjamanTable($tableName);
 
             if (
@@ -9942,7 +10314,8 @@ class ImportExcelController extends Controller
             }
 
             if (
-                !$this->isCsvFile($path)
+                !$this->isLw321PnTable($tableName)
+                && !$this->isCsvFile($path)
                 && ($mustRefreshStagedCsv || !$this->shouldDeferExcelStagingToQueue($tableName, $path))
             ) {
                 try {
@@ -9975,6 +10348,10 @@ class ImportExcelController extends Controller
             }
 
             // ── Ambil active filters dan manual params dari session ─────
+            if ($this->isLw321PnTable($tableName) && $stagedCsvPath !== '') {
+                $delimiter = ',';
+            }
+
             if (array_key_exists('active_filters', $minimalParams) && is_array($minimalParams['active_filters'])) {
                 $normalizedActiveFilters = $this->normalizeImportActiveFilters((array) $minimalParams['active_filters'], $tableName);
             } else {
@@ -10201,9 +10578,16 @@ class ImportExcelController extends Controller
             'file_path' => $relativePath,
         ]);
 
+        $previewMetaForHeaders = (array) session('excel_preview_meta', []);
         $initialHeaders = $this->isDlyKapResegmentasiTable($tableName)
             ? DlyKapResegmentasiCsvImporter::NORMALIZED_HEADERS
-            : [];
+            : ($this->isLw321PnTable($tableName)
+                ? array_values((array) (
+                    $previewMetaForHeaders['source_headers']
+                    ?? $previewMetaForHeaders['normalized_headers']
+                    ?? []
+                ))
+                : []);
 
         // Set minimal job state untuk digunakan di import execution
         $jobParams = [

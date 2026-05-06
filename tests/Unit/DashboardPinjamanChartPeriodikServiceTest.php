@@ -4,9 +4,11 @@ uses(\Tests\TestCase::class);
 
 use App\Support\ReportSnapshotBuilder;
 use App\Support\DashboardPinjamanChartPeriodikService;
+use App\Jobs\RebuildChartPeriodikPeriodJob;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
 
 beforeEach(function () {
@@ -180,4 +182,50 @@ it('normalizes composite unit keys from the request format', function () {
     expect($chart['selected_units'][0]['unit'])->toBe('NGRAYUN');
     expect($chart['summary']['branch_count'])->toBe(4);
     expect($chart['summary']['unit_count'])->toBe(1);
+});
+
+it('does not scan raw daily loan data from web requests when chart periodik snapshot is empty', function () {
+    Queue::fake();
+    DB::table('dashboard_pinjaman_chart_periodik_snapshots')->truncate();
+
+    Schema::create('daily_loan_dinamis', function (Blueprint $table) {
+        $table->string('uniqueid_namareport', 255)->primary();
+        $table->date('periode')->index();
+        $table->string('cabang1', 150)->nullable()->index();
+        $table->string('unit1', 150)->nullable()->index();
+        $table->string('branch1', 180)->nullable()->index();
+        $table->string('ln_type', 100)->nullable();
+        $table->decimal('baki_debet1', 20, 2)->default(0);
+        $table->string('segmen_dashboard', 100)->nullable();
+        $table->string('produk_dashboard', 150)->nullable();
+        $table->string('nomor_rekening1', 50)->nullable();
+        $table->timestamps();
+    });
+
+    DB::table('daily_loan_dinamis')->insert([
+        'uniqueid_namareport' => 'dld-latest',
+        'periode' => '2026-04-25',
+        'cabang1' => 'KC MADIUN',
+        'unit1' => 'BALEREJO',
+        'branch1' => '3883',
+        'ln_type' => 'LT01',
+        'baki_debet1' => 12000,
+        'segmen_dashboard' => 'SME',
+        'produk_dashboard' => 'BRIGUNA-KONSUMER',
+        'nomor_rekening1' => 'ACC-LATEST',
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    $payload = app(DashboardPinjamanChartPeriodikService::class)->buildIndexPayload(null);
+
+    expect($payload['selected_period'])->toBeNull();
+    expect($payload['chart']['summary']['total_rekening'])->toBe(0);
+
+    Queue::assertPushed(RebuildChartPeriodikPeriodJob::class, function (RebuildChartPeriodikPeriodJob $job) {
+        $period = new ReflectionProperty($job, 'period');
+        $period->setAccessible(true);
+
+        return $period->getValue($job) === '2026-04-25';
+    });
 });

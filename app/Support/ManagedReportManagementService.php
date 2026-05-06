@@ -131,6 +131,11 @@ class ManagedReportManagementService
             'kanca_priority' => ['nama_cabang'],
             'normalize_kanca_whitespace' => true,
         ],
+        'lw321pn' => [
+            'period_priority' => ['periode'],
+            'kanca_priority' => ['kode_kanca'],
+            'kanca_label_fallback_priority' => ['kanca'],
+        ],
     ];
 
     public function resolveReportManagementData(
@@ -1212,6 +1217,15 @@ class ManagedReportManagementService
         $kancaRaw = trim($kancaRaw);
         if ($kancaRaw === '') {
             return '(Blank)';
+        }
+
+        if ($tableName === 'lw321pn') {
+            $fallback = trim((string) ($fallbackRaw ?? ''));
+            if ($fallback !== '') {
+                return $fallback;
+            }
+
+            return $kancaRaw;
         }
 
         if ($tableName !== 'cognos_ph') {

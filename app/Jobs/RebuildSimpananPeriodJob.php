@@ -11,8 +11,8 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Queue\SerializesModels;
+use App\Support\ReportDataSyncService;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class RebuildSimpananPeriodJob implements ShouldQueue
@@ -50,8 +50,7 @@ class RebuildSimpananPeriodJob implements ShouldQueue
 
             $result = $builder->buildDashboardSimpananPeriodSnapshot($this->period, $this->force);
 
-            $this->updateProgress("Menyegarkan statistik Dashboard Simpanan untuk {$this->period}...");
-            $this->refreshTableStatistics('dashboard_simpanan_snapshots', $this->period);
+            ReportDataSyncService::analyzeTable('dashboard_simpanan_snapshots');
 
             $duration = $startTime->diffInSeconds(now());
 
@@ -74,17 +73,6 @@ class RebuildSimpananPeriodJob implements ShouldQueue
 
             $this->updateProgress("Periode {$this->period} gagal: " . $e->getMessage(), 'failed');
             throw $e;
-        }
-    }
-
-    private function refreshTableStatistics(string $tableName, string $period): void
-    {
-        try {
-            DB::statement("ANALYZE TABLE `{$tableName}`");
-        } catch (\Exception $e) {
-            Log::warning("Gagal refresh statistics untuk {$tableName}", [
-                'error' => $e->getMessage(),
-            ]);
         }
     }
 

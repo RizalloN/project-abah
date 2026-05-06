@@ -28,8 +28,7 @@ trait GeneratesFileIdentifiers
         ?Request $request = null,
         ?int $userId = null
     ): string {
-        $filePath = $filePath ?? session('performance_mantri_file')
-                            ?? session('casa_brilink_file')
+        $filePath = $filePath ?? session('casa_brilink_file')
                             ?? session('import_file')
                             ?? '';
 
@@ -58,8 +57,7 @@ trait GeneratesFileIdentifiers
     {
         return $this->generateFileIdentifier(
             filePath: $request->input('file_path')
-                   ?? $request->input('relative_path')
-                   ?? session('performance_mantri_file'),
+                   ?? $request->input('relative_path'),
             request: $request,
             userId: auth()->id()
         );

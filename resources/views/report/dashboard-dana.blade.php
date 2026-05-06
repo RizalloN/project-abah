@@ -28,25 +28,22 @@
 
     .dana-hero {
         position: relative;
-        background: linear-gradient(135deg, #0f4c81 0%, #1e40af 100%);
-        padding: 5rem 2rem 8rem;
-        color: white;
-        margin-bottom: -5rem;
-        border-radius: 0 0 4rem 4rem;
+        isolation: isolate;
         overflow: hidden;
+        background: linear-gradient(135deg, #003b75 0%, #00529c 100%);
+        border-bottom: 1px solid rgba(219, 229, 239, 0.92);
+        color: #ffffff;
+        padding: 1.5rem 2rem;
+        margin-bottom: 2rem;
     }
 
-    .dana-hero-mesh {
+    .dana-hero::before {
+        content: '';
         position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background-image: 
-            radial-gradient(at 0% 0%, rgba(59, 130, 246, 0.5) 0, transparent 50%),
-            radial-gradient(at 100% 0%, rgba(147, 51, 234, 0.3) 0, transparent 50%);
-        opacity: 0.6;
-        pointer-events: none;
+        inset: 0;
+        z-index: -1;
+        background: linear-gradient(120deg, rgba(255, 255, 255, 0.05), transparent 40%);
+        opacity: 0.72;
     }
 
     .title-badge {
@@ -521,27 +518,17 @@
 </style>
 
 <div class="dana-dashboard">
-    <div class="dana-hero">
-        <div class="dana-hero-mesh"></div>
-        <div class="dana-container position-relative">
-            <div class="d-flex justify-content-between align-items-center">
-                <div class="animate-reveal">
-                    <div class="title-badge mb-3">
-                        <i class="fas fa-coins mr-2"></i>
-                        <span>Dashboard Simpanan</span>
-                    </div>
-                    <h1 class="display-4 font-weight-bold mb-2 text-white" style="letter-spacing: -0.02em;">Dashboard Dana</h1>
-                    <p class="h5 opacity-75">Monitoring Keragaan Dana Simpanan (SSA) Area 6</p>
-                    <div class="mt-4">
-                        <button id="captureAllBtn" class="btn-capture-all">
-                            <i class="fas fa-camera mr-2"></i> CAPTURE ALL 4K (A4)
-                        </button>
-                    </div>
-                </div>
-                <div class="text-right animate-reveal stagger-2">
-                    <div class="h2 mb-0 font-weight-bold" id="headerTotalDana" style="font-size: 3.5rem; letter-spacing: -0.02em;">-</div>
-                    <div class="small opacity-75 text-uppercase font-weight-bold mt-1">Total Dana Kelolaan (Miliar)</div>
-                </div>
+    <div class="dana-hero d-flex align-items-center justify-content-between">
+        <div class="d-flex align-items-center">
+            <h1 class="m-0" style="font-size: 1.5rem; font-weight: 800; letter-spacing: 0.02em; text-transform: uppercase;">DASHBOARD DANA</h1>
+        </div>
+        <div class="d-flex align-items-center gap-3">
+            <button id="captureAllBtn" class="btn btn-sm btn-capture-all">
+                <i class="fas fa-file-image mr-1"></i> EXPORT A4
+            </button>
+            <div class="dana-total-display text-right">
+                <span style="font-size: 0.7rem; font-weight: 700; opacity: 0.8; text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: -2px;">Total Dana Kelolaan</span>
+                <span style="font-size: 1.25rem; font-weight: 800;" id="headerTotalDana">-</span>
             </div>
         </div>
     </div>

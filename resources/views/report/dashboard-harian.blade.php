@@ -56,10 +56,7 @@
         position: relative;
         isolation: isolate;
         overflow: hidden;
-        background:
-            radial-gradient(circle at 12% 18%, rgba(255, 103, 31, 0.16), transparent 26%),
-            radial-gradient(circle at 88% 10%, rgba(59, 130, 246, 0.22), transparent 28%),
-            linear-gradient(135deg, #003b75 0%, #00529c 48%, #0f4c97 100%);
+        background: linear-gradient(135deg, #003b75 0%, #00529c 100%);
         border-bottom: 1px solid rgba(219, 229, 239, 0.92);
         color: #ffffff;
     }
@@ -69,9 +66,7 @@
         position: absolute;
         inset: 0;
         z-index: -1;
-        background:
-            linear-gradient(120deg, rgba(255, 255, 255, 0.12), transparent 35%),
-            repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.08) 0 1px, transparent 1px 18px);
+        background: linear-gradient(120deg, rgba(255, 255, 255, 0.05), transparent 40%);
         opacity: 0.72;
     }
 
@@ -104,25 +99,15 @@
 
     .daily-panel-title {
         margin: 0;
-        font-size: clamp(1.18rem, 2.05vw, 2rem);
-        font-weight: 900;
+        font-size: 1.5rem;
+        font-weight: 800;
         color: #ffffff;
-        letter-spacing: 0.035em;
-        line-height: 1.08;
+        letter-spacing: 0.02em;
+        line-height: 1.1;
         text-transform: uppercase;
-        text-shadow: 0 10px 26px rgba(0, 18, 50, 0.28);
     }
 
-    .daily-panel-title::after {
-        content: '';
-        display: block;
-        width: min(130px, 38vw);
-        height: 3px;
-        margin: 0.7rem auto 0;
-        border-radius: 999px;
-        background: linear-gradient(90deg, #ff671f, #f9b233, rgba(255, 255, 255, 0.9));
-        box-shadow: 0 8px 18px rgba(255, 103, 31, 0.28);
-    }
+    /* Removed title underline decor */
 
     .daily-panel-desc {
         margin: 0.65rem auto 0;
@@ -357,13 +342,12 @@
         left: 0.95rem;
         top: 50%;
         transform: translateY(-50%);
-        width: 1rem;
         text-align: center;
         color: #5b78a8;
         font-size: 0.78rem;
         pointer-events: none;
-        z-index: 2;
-        transition: color 0.2s ease;
+        z-index: 90;
+        transition: color 0.1s ease;
         width: 1.5rem;
         height: 1.5rem;
         border-radius: 999px;
@@ -833,8 +817,16 @@
         letter-spacing: 0.06em;
         border-right: 1px solid rgba(255, 255, 255, 0.1);
     }
+    .daily-table thead .group-position {
+        background: linear-gradient(180deg, #005bb7 0%, #004685 100%) !important;
+        color: #ffffff;
+    }
+    .daily-table thead .group-delta {
+        background: linear-gradient(180deg, #475569 0%, #334155 100%) !important;
+        color: #ffffff;
+    }
     .daily-table thead .group-rka {
-        background: var(--table-header-bg);
+        background: linear-gradient(180deg, #16a34a 0%, #15803d 100%) !important;
         color: #ffffff;
     }
     .daily-table thead .rka-period-label {
@@ -885,14 +877,27 @@
     .daily-table .position-col {
         width: var(--daily-position-width);
         min-width: var(--daily-position-width);
+        background-color: rgba(0, 82, 156, 0.02);
     }
     .daily-table .delta-col {
         width: var(--daily-delta-width);
         min-width: var(--daily-delta-width);
+        background-color: rgba(71, 85, 105, 0.02);
+        border-left: 1px solid rgba(0, 0, 0, 0.05);
     }
     .daily-table .rka-col {
         width: var(--daily-rka-width);
         min-width: var(--daily-rka-width);
+        background-color: rgba(22, 163, 74, 0.02);
+        border-left: 1px solid rgba(0, 0, 0, 0.05);
+    }
+    
+    /* Stronger group dividers */
+    .daily-table .group-delta, .daily-table .delta-col:first-of-type {
+        border-left: 2px solid rgba(0,0,0,0.12) !important;
+    }
+    .daily-table .group-rka, .daily-table .rka-col:first-of-type {
+        border-left: 2px solid rgba(0,0,0,0.12) !important;
     }
 
     .daily-rka-subnote {
@@ -1132,19 +1137,14 @@
 @section('content')
 <div class="daily-dashboard pt-4" id="daily-dashboard-root">
     <div class="daily-surface" id="daily-surface">
-        <div class="daily-panel-head px-3 py-4 d-flex flex-wrap justify-content-center align-items-center">
-            <div class="daily-title-wrap">
-                <div class="daily-title-badge">
-                    <i class="fas fa-university"></i>
-                    <span>BRI Daily Performance</span>
-                </div>
+        <div class="daily-panel-head px-4 py-3 d-flex justify-content-between align-items-center">
+            <div class="d-flex align-items-center">
                 <h1 class="daily-panel-title">DASHBOARD KERAGAAN HARIAN</h1>
-                <p class="daily-panel-desc">Monitoring posisi, target, dan pertumbuhan kinerja harian secara ringkas untuk mendukung keputusan bisnis Area.</p>
-                <div class="mt-3 d-flex justify-content-center">
-                    <button id="captureAllBtn" class="btn btn-sm btn-export-all">
-                        <i class="fas fa-file-image mr-2"></i> EXPORT A4 (PORTRAIT)
-                    </button>
-                </div>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+                <button id="captureAllBtn" class="btn btn-sm btn-export-all">
+                    <i class="fas fa-file-image mr-1"></i> EXPORT A4
+                </button>
             </div>
             
             <!-- Hidden elements to preserve JS functionality -->
@@ -1258,7 +1258,7 @@
             </div>
             <div class="col-auto">
                 <span class="daily-meta-chip py-1 px-2 border-primary-soft" style="background: rgba(0, 82, 156, 0.05); color: var(--bri-blue-main); font-size: 0.75rem;">
-                    <i class="fas fa-coins mr-1"></i> Satuan: Dalam <strong>Rp Miliar (Rp M)</strong>
+                    <i class="fas fa-coins mr-1"></i> Satuan: Dalam <strong>Rp Juta (Rp J)</strong>
                 </span>
             </div>
         </div>
@@ -1288,7 +1288,7 @@
                             <tr class="group-row text-center">
                                 <th class="sticky-no group-no" rowspan="3">No</th>
                                 <th class="sticky-label group-label" rowspan="3">Keterangan</th>
-                                <th class="group-position" colspan="7" data-position-group-colspan>Perbandingan Posisi</th>
+                                <th class="group-position" colspan="7" data-position-group-colspan>Posisi</th>
                                 <th class="group-delta" colspan="4">Delta Terhadap</th>
                                 <th class="group-rka" colspan="4">Perbandingan RKA</th>
                             </tr>
@@ -1477,25 +1477,29 @@
         let latestFilters = initialFilters;
         const MILLION_UNIT = 1000000;
         const BILLION_UNIT = 1000000000;
-        const TABLE_MONEY_UNIT = BILLION_UNIT;
+        const TABLE_MONEY_UNIT = MILLION_UNIT;
         const TABLE_MONEY_LABEL = '';
         const TABLE_VISIBLE_ROW_LIMIT = 25;
         const TABLE_STICKY_TOP_TRIM = 24;
         const currencyFormatter = new Intl.NumberFormat('id-ID', {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2,
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 0,
+        });
+        const percentFormatter = new Intl.NumberFormat('id-ID', {
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 0,
         });
 
         const formatCurrency = function (value) {
             return currencyFormatter.format(Number(value || 0) / TABLE_MONEY_UNIT) + ' ' + TABLE_MONEY_LABEL;
         };
 
-        const formatMiliar = function (value) {
-            return currencyFormatter.format(Number(value || 0) / BILLION_UNIT) + ' M';
+        const formatJuta = function (value) {
+            return currencyFormatter.format(Number(value || 0) / MILLION_UNIT) + ' J';
         };
 
         const formatPercent = function (value) {
-            return Number(value || 0).toFixed(2).replace('.', ',') + '%';
+            return percentFormatter.format(Number(value || 0)) + '%';
         };
 
         const formatDateSlash = function (value) {
@@ -1716,8 +1720,17 @@
 
         const buildKancaToggleLabel = function (options, selectedValues) {
             const normalized = normalizeArraySelection(selectedValues);
+            const kancaOptions = (options || []).filter(function (opt) {
+                return opt.value && opt.value !== 'all';
+            });
+            const totalKancaCount = kancaOptions.length;
+
             if (!normalized.length) {
                 return 'Semua Kanca';
+            }
+
+            if (totalKancaCount > 0 && normalized.length === totalKancaCount) {
+                return 'Area 6';
             }
 
             const labels = (options || [])
@@ -1729,11 +1742,11 @@
                 })
                 .filter(Boolean);
 
-            if (labels.length <= 2) {
-                return labels.join(', ');
+            if (labels.length === 1) {
+                return labels[0];
             }
 
-            return labels[0] + ' +' + (labels.length - 1) + ' lainnya';
+            return labels[0] + ', +' + (labels.length - 1) + ' KC';
         };
 
         const renderKancaDropdown = function (options, selectedValues) {
@@ -1940,7 +1953,7 @@
         };
 
         const formatAchievement = function (value) {
-            return Number(value || 0).toFixed(2).replace('.', ',') + '%';
+            return percentFormatter.format(Number(value || 0)) + '%';
         };
 
         const computeRkaComparison = function (row) {
@@ -2109,9 +2122,8 @@
         };
 
         const renderTable = function (payload) {
-            const scopedPayload = applyScopeToPayload(payload);
-            const rows = scopedPayload.rows || [];
-            const periods = scopedPayload.comparison_periods || {};
+            const rows = payload.rows || [];
+            const periods = payload.comparison_periods || {};
             const hasH1 = Boolean(periods.h1 && periods.h1.period);
             const emptyColspan = hasH1 ? 16 : 15;
             const blockClassMap = {
@@ -2143,7 +2155,7 @@
                 rec_dh_consumer: 'section-consumer',
                 rec_dh_micro: 'section-mikro',
             };
-            const scopeMode = getUnitScopeMode();
+            const scopeMode = 'all';
 
             togglePositionColumns(hasH1);
 
@@ -2170,7 +2182,17 @@
                 };
                 const rkaComparison = computeRkaComparison(row);
 
-                rowCells.push('<td class="sticky-no font-weight-bold text-center">' + (index + 1) + '</td>');
+                const numberedKeys = {
+                    total_simpanan: '1',
+                    total_os: '2',
+                    total_sml_pct_non_commercial: '3',
+                    total_npl_pct_non_commercial: '4',
+                    casa_pct: '5',
+                    ldr_non_commercial: '6',
+                    rec_dh_total: '7'
+                };
+                const rowNumber = numberedKeys[row.key] || '';
+                rowCells.push('<td class="sticky-no font-weight-bold text-center">' + rowNumber + '</td>');
                 rowCells.push('<td class="sticky-label"><span class="metric-label" title="' + escapeHtml(row.label) + '">' + escapeHtml(row.label) + '</span></td>');
                 rowCells.push('<td class="value-col position-col"><span class="cell-text">' + formatValue(value.yoy, row.type) + '</span></td>');
                 rowCells.push('<td class="value-col position-col"><span class="cell-text">' + formatValue(value.ytd, row.type) + '</span></td>');
@@ -2210,29 +2232,28 @@
         };
 
         const applyPayload = function (payload) {
-            const scopedPayload = applyScopeToPayload(payload);
-            const summary = scopedPayload.summary || {};
-            const periods = scopedPayload.comparison_periods || {};
-            const filters = scopedPayload.available_filters || payload.available_filters || initialFilters;
+            const summary = payload.summary || {};
+            const periods = payload.comparison_periods || {};
+            const filters = payload.available_filters || initialFilters;
             const hasH1 = Boolean(periods.h1 && periods.h1.period);
             latestFilters = filters;
             const current = currentState();
 
             renderKancaDropdown(filters.kanca || [], current.kanca);
             syncUnitSelect(filters, current.unit_kerja);
-            syncPosisiSelect(filters.posisi_terakhir || [], scopedPayload.selected_period || current.posisi_terakhir);
-            syncRkaSelect(filters.posisi_rka || [], scopedPayload.selected_rka_period ? scopedPayload.selected_rka_period.slice(0, 7) : current.posisi_rka);
+            syncPosisiSelect(filters.posisi_terakhir || [], payload.selected_period || current.posisi_terakhir);
+            syncRkaSelect(filters.posisi_rka || [], payload.selected_rka_period ? payload.selected_rka_period.slice(0, 7) : current.posisi_rka);
 
             setTextContent(scopeKanca, summary.kanca_label || 'Semua Kanca');
             setTextContent(scopeUnit, summary.unit_label || 'Semua Unit Kerja');
-            setTextContent(scopePosisi, scopedPayload.selected_period_label || 'Belum ada data');
+            setTextContent(scopePosisi, payload.selected_period_label || 'Belum ada data');
             setTextContent(scopeRka, periods.rka ? formatMonthYear(periods.rka.period) : 'Belum ada data');
             if (scopeSummary) {
                 scopeSummary.innerHTML = '<i class="fas fa-list mr-1"></i> Baris tampil: ' + (summary.row_count || 0).toLocaleString('id-ID') + '. <br><small class="text-muted font-weight-normal mt-1 d-block">Data dari: ' + (summary.source || 'source_fallback') + '</small>';
             }
             setTextContent(sourceLabel, summary.source || 'source_fallback');
-            setTextContent(kpiSimpanan, formatMiliar(summary.current_total_simpanan || 0));
-            setTextContent(kpiOs, formatMiliar(summary.current_total_os_non_commercial || 0));
+            setTextContent(kpiSimpanan, formatJuta(summary.current_total_simpanan || 0));
+            setTextContent(kpiOs, formatJuta(summary.current_total_os_non_commercial || 0));
             setTextContent(kpiCasa, formatPercent(summary.current_casa_pct || 0));
 
             setTextContent(headerLabels.yoy, periods.yoy ? formatDateSlash(periods.yoy.period) : '-');
@@ -2241,7 +2262,7 @@
             setTextContent(headerLabels.mtm, periods.mtm ? formatDateSlash(periods.mtm.period) : '-');
             setTextContent(headerLabels.mtd, periods.mtd ? formatDateSlash(periods.mtd.period) : '-');
             setTextContent(headerLabels.h1, hasH1 ? formatDateSlash(periods.h1.period) : '-');
-            setTextContent(headerLabels.current, scopedPayload.selected_period ? formatDateSlash(scopedPayload.selected_period) : '-');
+            setTextContent(headerLabels.current, payload.selected_period ? formatDateSlash(payload.selected_period) : '-');
             setTextContent(headerLabels.rka, periods.rka ? 'RKA ' + String(formatMonthYear(periods.rka.period)).toUpperCase() : 'RKA');
             setTextContent(headerLabels.rkaDec, periods.rka_dec ? 'RKA ' + String(formatMonthYear(periods.rka_dec.period)).toUpperCase() : 'RKA Des');
             setTextContent(headerLabels.deltaYoy, periods.yoy ? formatDateSlash(periods.yoy.period) : '-');
@@ -2251,7 +2272,7 @@
 
             togglePositionColumns(hasH1);
 
-            renderTable(scopedPayload);
+            renderTable(payload);
         };
 
         const fetchData = function () {
@@ -2305,41 +2326,7 @@
         };
 
         const refreshUnitOptions = function () {
-            if (!dataUrl) {
-                syncUnitSelect(latestFilters, selects.unit_kerja.value || 'all');
-                return;
-            }
-
-            const params = buildQueryParams();
-
-            fetch(dataUrl + '?' + params.toString(), {
-                headers: {
-                    'X-Requested-With': 'XMLHttpRequest'
-                }
-            })
-                .then(function (response) {
-                    if (!response.ok) {
-                        return response.text().then(function (text) {
-                            throw new Error('HTTP ' + response.status + ': ' + text.slice(0, 180));
-                        });
-                    }
-
-                    const contentType = response.headers.get('content-type') || '';
-                    if (contentType.indexOf('application/json') === -1) {
-                        return response.text().then(function (text) {
-                            throw new Error('Invalid content type: ' + contentType + ' :: ' + text.slice(0, 180));
-                        });
-                    }
-
-                    return response.json();
-                })
-                .then(function (payload) {
-                    latestFilters = payload.available_filters || initialFilters;
-                    syncUnitSelect(latestFilters, selects.unit_kerja.value || 'all');
-                })
-                .catch(function () {
-                    syncUnitSelect(latestFilters, selects.unit_kerja.value || 'all');
-                });
+            syncUnitSelect(latestFilters, selects.unit_kerja.value || 'all');
         };
 
         // --- Capture All Logic (A4 Portrait Composer) ---
@@ -2356,7 +2343,7 @@
             marginX: 140,
             marginY: 130,
             headerHeight: 280,
-            footerHeight: 80,
+            footerHeight: 120, // Increased footer safety
             sectionGap: 72,
         };
 
@@ -2500,7 +2487,7 @@
                 const originalTable = document.querySelector('.daily-table');
                 const colgroupHtml = originalTable.querySelector('colgroup').outerHTML;
                 const theadHtml = originalTable.querySelector('thead').outerHTML;
-                const tableRealWidth = originalTable.offsetWidth; // Important for scaling
+                const tableRealWidth = originalTable.scrollWidth + 2; // Use scrollWidth for full width capture
 
                 for (let i = 0; i < segments.length; i++) {
                     const segment = segments[i];
@@ -2562,15 +2549,10 @@
                 // 3. Logic to distribute segments across multiple pages
                 const pages = [];
                 let currentPage = { segments: [], totalHeight: 0 };
-                const maxContentHeight = A4_EXPORT.height - (A4_EXPORT.marginY + A4_EXPORT.headerHeight + A4_EXPORT.footerHeight);
+                const maxContentHeight = A4_EXPORT.height - (A4_EXPORT.marginY + A4_EXPORT.headerHeight + A4_EXPORT.footerHeight + 40);
 
-                // Identify Special Segments (CASA, LDR, Rec DH)
-                const specialSegmentKeys = ['metric-block-casa', 'metric-block-ldr', 'metric-block-recdh'];
-                const regularSegments = segments.filter(seg => !specialSegmentKeys.some(key => seg.rows[0].classList.contains(key)));
-                const specialSegments = segments.filter(seg => specialSegmentKeys.some(key => seg.rows[0].classList.contains(key)));
-
-                // Distribute Regular Segments (Pages 1 & 2)
-                regularSegments.forEach(seg => {
+                // Distribute ALL segments naturally across pages
+                segments.forEach(seg => {
                     const estimatedNewHeight = currentPage.totalHeight + (currentPage.segments.length > 0 ? A4_EXPORT.sectionGap : 0) + seg.drawHeight;
                     if (estimatedNewHeight > maxContentHeight && currentPage.segments.length > 0) {
                         pages.push(currentPage);
@@ -2582,19 +2564,6 @@
                     }
                 });
                 if (currentPage.segments.length > 0) pages.push(currentPage);
-
-                // Force Special Segments to Page 3 (or the next available page)
-                // If we have fewer than 2 pages, we add empty pages to reach Page 3
-                while (pages.length < 2) {
-                    pages.push({ segments: [], totalHeight: 0 });
-                }
-
-                if (specialSegments.length > 0) {
-                    pages.push({ 
-                        segments: specialSegments, 
-                        totalHeight: specialSegments.reduce((acc, s) => acc + s.drawHeight, 0) + (specialSegments.length - 1) * A4_EXPORT.sectionGap 
-                    });
-                }
                 // 4. Generate and download each page
                 for (let p = 0; p < pages.length; p++) {
                     const pageData = pages[p];
