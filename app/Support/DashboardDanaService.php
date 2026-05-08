@@ -166,11 +166,26 @@ class DashboardDanaService
     protected function calculatePeriodReferences(string $selectedPeriod): array
     {
         try {
-            $selected = Carbon::parse($selectedPeriod);
+            $selectedDate = Carbon::parse($selectedPeriod);
+            
+            // Target dates
+            $ytdTarget = $selectedDate->copy()->subYear()->endOfYear()->format('Y-m-d');
+            $mtdTarget = $selectedDate->copy()->subMonth()->endOfMonth()->format('Y-m-d');
+            
+            // Dashboard Dana reads balances from ssa_simpanan, so comparison
+            // dates must exist in that same source table.
+            $ytdSimpanan = DB::table('ssa_simpanan')
+                ->where('Month_Day_Year_of_Posisi', '<=', $ytdTarget)
+                ->max('Month_Day_Year_of_Posisi');
+                
+            $mtdSimpanan = DB::table('ssa_simpanan')
+                ->where('Month_Day_Year_of_Posisi', '<=', $mtdTarget)
+                ->max('Month_Day_Year_of_Posisi');
+
             return [
-                'selected' => $selected->format('Y-m-d'),
-                'mtd' => $selected->copy()->subMonth()->endOfMonth()->format('Y-m-d'),
-                'ytd' => $selected->copy()->subYear()->endOfYear()->format('Y-m-d'),
+                'selected' => $selectedPeriod,
+                'mtd' => $mtdSimpanan,
+                'ytd' => $ytdSimpanan,
             ];
         } catch (Throwable) {
             return ['selected' => $selectedPeriod, 'mtd' => null, 'ytd' => null];

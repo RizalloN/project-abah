@@ -674,33 +674,48 @@ class ReportDataSyncService
         }
 
         try {
-            if (!Schema::hasTable('ssa_simpanan') || !DB::table('ssa_simpanan')->where('Month_Day_Year_of_Posisi', 'like', '%' . $period . '%')->exists()) {
-                // Try normalized date match
-                $hasSimpanan = DB::table('ssa_simpanan')
-                    ->whereRaw("DATE(STR_TO_DATE(Month_Day_Year_of_Posisi, '%m/%d/%Y')) = ?", [$period])
-                    ->exists();
-                if (!$hasSimpanan) {
-                    $missing[] = 'ssa_simpanan';
-                }
+            if (!$this->sourcePeriodHasRows('ssa_simpanan', 'Month_Day_Year_of_Posisi', $period)) {
+                $missing[] = 'ssa_simpanan';
             }
         } catch (Throwable) {
             // Table or column not available — assume ready to avoid blocking
         }
 
         try {
-            if (!Schema::hasTable('ssa_pinjaman') || !DB::table('ssa_pinjaman')->where('month_day_year_of_periode', 'like', '%' . $period . '%')->exists()) {
-                $hasPinjaman = DB::table('ssa_pinjaman')
-                    ->whereRaw("DATE(STR_TO_DATE(month_day_year_of_periode, '%m/%d/%Y')) = ?", [$period])
-                    ->exists();
-                if (!$hasPinjaman) {
-                    $missing[] = 'ssa_pinjaman';
-                }
+            if (!$this->dashboardHarianLoanSourcePeriodHasRows($period)) {
+                $missing[] = 'loan_source';
             }
         } catch (Throwable) {
             // Assume ready
         }
 
         return ['both_ready' => $missing === [], 'missing' => $missing];
+    }
+
+    private function dashboardHarianLoanSourcePeriodHasRows(string $period): bool
+    {
+        return $this->sourcePeriodHasRows('ssa_pinjaman', 'month_day_year_of_periode', $period)
+            || $this->sourcePeriodHasRows('dly_kap_resegmentasi', 'periode', $period)
+            || $this->sourcePeriodHasRows('l1133', 'periode', $period);
+    }
+
+    private function sourcePeriodHasRows(string $table, string $periodColumn, string $period): bool
+    {
+        if (!Schema::hasTable($table) || !Schema::hasColumn($table, $periodColumn)) {
+            return false;
+        }
+
+        if (DB::table($table)->where($periodColumn, $period)->exists()) {
+            return true;
+        }
+
+        try {
+            return DB::table($table)
+                ->whereRaw("DATE(STR_TO_DATE({$periodColumn}, '%m/%d/%Y')) = ?", [$period])
+                ->exists();
+        } catch (Throwable) {
+            return false;
+        }
     }
 
     private function dispatchSnapshotFreshnessCheck(string $tableName, ?string $periodHint, ?string $source): void

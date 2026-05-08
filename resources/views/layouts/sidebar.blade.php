@@ -456,7 +456,7 @@
                         <li class="nav-item">
                             <a href="{{ route('report.dashboard-pinjaman.chart-periodik') }}" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman.chart-periodik') ? 'active' : '' }}">
                                 <i class="far fa-circle nav-icon"></i>
-                                <p>Chart Periodik</p>
+                                <p>Trend Periode Pembayaran</p>
                             </a>
                         </li>
                         <li class="nav-item">
@@ -475,6 +475,12 @@
                             <a href="{{ route('report.dashboard-pinjaman.kinerjarmmikro') }}" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman.kinerjarmmikro') ? 'active' : '' }}">
                                 <i class="far fa-circle nav-icon"></i>
                                 <p>Kinerja RM Mikro</p>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="{{ route('report.dashboard-pinjaman.kinerja-ptp') }}" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman.kinerja-ptp') ? 'active' : '' }}">
+                                <i class="far fa-circle nav-icon"></i>
+                                <p>Kinerja PTP</p>
                             </a>
                         </li>
                     </ul>

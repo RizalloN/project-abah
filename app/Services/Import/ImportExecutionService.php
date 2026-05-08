@@ -122,6 +122,31 @@ class ImportExecutionService
         return $queue !== '' ? $queue : 'default';
     }
 
+    private function dispatchPostImportSyncForTerminalJob(int $jobId, object $job, array $params): void
+    {
+        $status = (string) ($job->status ?? '');
+        $hasImportedRows = (int) ($job->total_success ?? 0) > 0;
+
+        if ($status !== 'completed' && !($status === 'failed_partial' && $hasImportedRows)) {
+            return;
+        }
+
+        try {
+            app(ImportCleanupService::class)->dispatchImportedJobSync(
+                $jobId,
+                null,
+                null,
+                static::class,
+                $this->resolvePostImportSyncQueue($jobId, $params)
+            );
+        } catch (\Throwable $syncError) {
+            Log::warning('Import already terminal but failed to dispatch post-import sync: ' . $syncError->getMessage(), [
+                'job_id' => $jobId,
+                'status' => $status,
+            ]);
+        }
+    }
+
     public function streamStatus(Request $request, int $jobId, bool $startInlineImmediately = false): StreamedResponse
     {
         return response()->stream(function () use ($request, $jobId, $startInlineImmediately) {
@@ -276,17 +301,23 @@ class ImportExecutionService
         $state = $this->progressService->getJobState($jobId);
         $params = (array) ($state['params'] ?? []);
         $headers = array_values((array) ($state['headers'] ?? []));
+        $tableName = strtolower(trim((string) ($params['table_name'] ?? '')));
+        $requiresPreparedStaging = in_array($tableName, ['lw321_npd', 'lw321_npdd'], true)
+            && empty($params['staged_csv_path']);
 
         // ── OPTIMIZATION: Initialize job jika belum sepenuhnya ready ──────
         // Deteksi header dan staging CSV dilakukan ASYNC (dalam job execution)
         // Berlaku untuk SEMUA table: Simpanan, Pinjaman, Daily Loan, dll
         if (
-            (
-                empty($headers)
-                || !array_key_exists('header_index', $params)
-                || $params['header_index'] === null
+            $requiresPreparedStaging
+            || (
+                (
+                    empty($headers)
+                    || !array_key_exists('header_index', $params)
+                    || $params['header_index'] === null
+                )
+                && !empty($params['file_path'])
             )
-            && !empty($params['file_path'])
         ) {
             $controllerClass = $this->resolveControllerClass($job);
             /** @var ImportExcelController $controller */
@@ -403,6 +434,7 @@ class ImportExecutionService
 
             $job = $this->progressService->findJob($jobId);
             if ($job && in_array($job->status, ['completed', 'failed', 'failed_partial', 'terminated'], true)) {
+                $this->dispatchPostImportSyncForTerminalJob($jobId, $job, $params);
                 $this->releaseDispatchMarker($jobId);
                 return;
             }

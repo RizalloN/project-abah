@@ -7,6 +7,8 @@ use App\Services\Import\Strategies\ConfiguredExcelImportStrategy;
 use App\Services\Import\Strategies\Gi405RecDhImportStrategy;
 use App\Services\Import\Strategies\GenericCsvImportStrategy;
 use App\Services\Import\Strategies\L1133ImportStrategy;
+use App\Services\Import\Strategies\Lw321NpdImportStrategy;
+use App\Services\Import\Strategies\Lw321NpddImportStrategy;
 use App\Services\Import\Strategies\Lw321PnImportStrategy;
 use App\Services\Import\Strategies\SimpananMultiPnImportStrategy;
 use App\Services\Import\Strategies\SsaPinjamanImportStrategy;
@@ -165,5 +167,252 @@ class ImportStrategiesTest extends TestCase
             'balance_dalam_idr',
         ])['ok']);
         $this->assertFalse($strategy->validateSchema(['periode', 'no_rekening'])['ok']);
+    }
+
+    public function test_lw321_npd_strategy_uses_fast_path_and_validates_schema(): void
+    {
+        $strategy = new Lw321NpdImportStrategy();
+
+        $this->assertTrue($strategy->supports(null, 'lw321_npd'));
+        $this->assertSame('bulk_csv_filtered', $strategy->importMode());
+        $this->assertTrue($strategy->validateSchema([
+            'uniqueid_namareport',
+            'periode',
+            'billing',
+            'kanca',
+            'bc',
+            'uker',
+            'no_rekening',
+            'nama_debitur',
+            'update_npd',
+            'm_min_1_os',
+            'now_t_total',
+        ])['ok']);
+        $this->assertFalse($strategy->validateSchema(['billing', 'no_rekening'])['ok']);
+    }
+
+    public function test_lw321_npd_strategy_maps_old_source_headers_to_new_schema(): void
+    {
+        $strategy = new Lw321NpdImportStrategy();
+
+        $headers = [
+            'posisi_30_april_2026_kol',
+            'posisi_30_april_2026_detail',
+            'posisi_30_april_2026_os',
+            'ref_kol',
+            'ref_detai',
+            'ref_detail',
+            'ref_os',
+            't_pokok',
+            't_bunga',
+            't_total',
+        ];
+
+        $this->assertSame([
+            'm_min_1_kol',
+            'm_min_1_detail',
+            'm_min_1_os',
+            'now_kol',
+            'now_detail',
+            'now_detail',
+            'now_os',
+            'now_t_pokok',
+            'now_t_bunga',
+            'now_t_total',
+        ], $strategy->transformHeaders($headers));
+    }
+
+    public function test_lw321_npd_strategy_maps_raw_workbook_position_headers(): void
+    {
+        $strategy = new Lw321NpdImportStrategy();
+
+        $headers = [
+            'PERIODE',
+            'BILLING',
+            'KANCA',
+            'BC',
+            'MBM',
+            'UKER',
+            'PN',
+            'MANTRI',
+            'NOMOR REKENING',
+            'NAMA DEBITUR',
+            'PLAFON',
+            'NEXT PMT DATE',
+            'UPDATE NPD',
+            'TGL REALISASI',
+            'TGL JATUH TEMPO',
+            'JANGKA WAKTU',
+            'FLAG RESTRUK',
+            'POSISI 30 APRIL 2026',
+            'DETAIL',
+            'OS',
+            '18',
+            'Posisi 6 Mei 2026',
+            'DETAIL',
+            'OS',
+            'T. POKOK',
+            'T. BUNGA',
+            'T. TOTAL',
+            'PTP',
+        ];
+
+        $transformed = $strategy->transformHeaders($headers);
+
+        $this->assertSame([
+            'm_min_1_kol',
+            'm_min_1_detail',
+            'm_min_1_os',
+            'wba',
+        ], array_slice($transformed, 17, 4));
+        $this->assertSame([
+            'now_kol',
+            'now_detail',
+            'now_os',
+            'now_t_pokok',
+            'now_t_bunga',
+            'now_t_total',
+            'ptp',
+        ], array_slice($transformed, 21, 7));
+
+        foreach (['6 Mei 2026', '6 May 2026', '06/05/2026'] as $positionHeader) {
+            $headers[17] = $positionHeader;
+            $headers[21] = $positionHeader;
+            $transformed = $strategy->transformHeaders($headers);
+
+            $this->assertSame([
+                'm_min_1_kol',
+                'm_min_1_detail',
+                'm_min_1_os',
+                'wba',
+            ], array_slice($transformed, 17, 4));
+            $this->assertSame([
+                'now_kol',
+                'now_detail',
+                'now_os',
+                'now_t_pokok',
+                'now_t_bunga',
+                'now_t_total',
+                'ptp',
+            ], array_slice($transformed, 21, 7));
+        }
+    }
+
+    public function test_lw321_npdd_strategy_uses_fast_path_and_validates_schema(): void
+    {
+        $strategy = new Lw321NpddImportStrategy();
+
+        $this->assertTrue($strategy->supports(null, 'lw321_npdd'));
+        $this->assertSame('bulk_csv_filtered', $strategy->importMode());
+        $this->assertTrue($strategy->validateSchema([
+            'uniqueid_namareport',
+            'periode',
+            'billing',
+            'kanca',
+            'bc',
+            'uker',
+            'no_rekening',
+            'nama_debitur',
+            'npdd',
+            'npdd_update',
+            'os',
+            'now_t_total',
+        ])['ok']);
+        $this->assertFalse($strategy->validateSchema(['billing', 'no_rekening'])['ok']);
+    }
+
+    public function test_lw321_npdd_strategy_maps_old_source_headers_to_new_schema(): void
+    {
+        $strategy = new Lw321NpddImportStrategy();
+
+        $headers = [
+            'ref_kol',
+            'ref_detai',
+            'ref_os',
+            't_pokok',
+            't_bunga',
+            't_total',
+        ];
+
+        $this->assertSame([
+            'now_kol',
+            'now_detail',
+            'now_os',
+            'now_t_pokok',
+            'now_t_bunga',
+            'now_t_total',
+        ], $strategy->transformHeaders($headers));
+    }
+
+    public function test_lw321_npdd_strategy_maps_broken_workbook_reference_headers(): void
+    {
+        $strategy = new Lw321NpddImportStrategy();
+
+        $headers = [
+            'PERIODE',
+            'BILLING',
+            'KANCA',
+            'BC',
+            'MBM',
+            'UKER',
+            'PN',
+            'MANTRI',
+            'NOMOR REKENING',
+            'NAMA DEBITUR',
+            'PLAFON',
+            'NPDD',
+            'NPDD UPDATE',
+            'TGL REALISASI',
+            'TGL JATUH TEMPO',
+            'JANGKA WAKTU',
+            'FLAG RESTRUK',
+            'KOL',
+            'DETAIL',
+            'OS',
+            'WBA',
+            '#REF!',
+            'COL_22',
+            'COL_23',
+            'COL_24',
+            'COL_25',
+            'COL_26',
+            'COL_27',
+        ];
+
+        $this->assertSame([
+            'now_kol',
+            'now_detail',
+            'now_os',
+            'now_t_pokok',
+            'now_t_bunga',
+            'now_t_total',
+            'ptp',
+        ], array_slice($strategy->transformHeaders($headers), 21));
+
+        $headers[21] = 'Posisi 6 Mei 2026';
+
+        $this->assertSame([
+            'now_kol',
+            'now_detail',
+            'now_os',
+            'now_t_pokok',
+            'now_t_bunga',
+            'now_t_total',
+            'ptp',
+        ], array_slice($strategy->transformHeaders($headers), 21));
+
+        foreach (['6 Mei 2026', '6 May 2026', '06/05/2026'] as $positionHeader) {
+            $headers[21] = $positionHeader;
+
+            $this->assertSame([
+                'now_kol',
+                'now_detail',
+                'now_os',
+                'now_t_pokok',
+                'now_t_bunga',
+                'now_t_total',
+                'ptp',
+            ], array_slice($strategy->transformHeaders($headers), 21));
+        }
     }
 }

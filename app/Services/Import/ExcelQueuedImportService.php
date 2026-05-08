@@ -31,6 +31,9 @@ class ExcelQueuedImportService
             $activeFilters = [];
         }
         $strategy = ($callbacks['resolve_import_strategy'])($tableName);
+        if (in_array(strtolower(trim($tableName)), ['lw321_npd', 'lw321_npdd'], true)) {
+            $normalizedHeaders = array_values($strategy->transformHeaders($normalizedHeaders));
+        }
         $relativePath = (string) ($params['file_path'] ?? '');
         $stagedCsvPath = (string) ($params['staged_csv_path'] ?? '');
         $estimatedTotalRows = isset($params['total_rows']) ? (int) $params['total_rows'] : null;

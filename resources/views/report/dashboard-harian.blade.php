@@ -735,6 +735,7 @@
         top: var(--daily-table-sticky-top);
         background: #ffffff;
         z-index: 14;
+        overscroll-behavior: contain;
     }
 
     .daily-table-wrap::-webkit-scrollbar {
@@ -852,9 +853,16 @@
         padding: 4px 0;
     }
 
+    .daily-table thead .column-heading .main {
+        line-height: 1.15;
+    }
+
     /* Table Cells */
     .daily-table tbody td {
         font-size: 0.82rem;
+        line-height: 1.15;
+        padding-top: 0.12rem;
+        padding-bottom: 0.12rem;
         color: var(--text-main);
         text-align: right; /* Numeric columns usually right aligned */
         font-variant-numeric: tabular-nums;
@@ -902,8 +910,9 @@
 
     .daily-rka-subnote {
         display: block;
-        margin-top: 0.2rem;
-        font-size: 0.68rem;
+        margin-top: 0.05rem;
+        font-size: 0.62rem;
+        line-height: 1.05;
         color: var(--text-muted);
         font-weight: 600;
     }
@@ -921,7 +930,7 @@
         left: var(--daily-no-width);
         z-index: 10;
         background: #ffffff;
-        box-shadow: 2px 0 5px rgba(0,0,0,0.05);
+        box-shadow: 5px 0 10px -9px rgba(15, 23, 42, 0.62);
     }
     
     .daily-table thead .sticky-no, 
@@ -1005,6 +1014,11 @@
     .daily-table tbody tr.metric-block-recdh:hover .sticky-no,
     .daily-table tbody tr.metric-block-recdh:hover .sticky-label {
         background-color: #dbeafe;
+    }
+
+    .daily-table .metric-label,
+    .daily-table .cell-text {
+        line-height: 1.15;
     }
 
     .daily-table .row-depth-1 .metric-label { padding-left: 0.5rem; font-weight: 600; color: var(--text-main); }
@@ -1098,10 +1112,23 @@
 
     @media (max-width: 575.98px) {
         .daily-dashboard {
-            --daily-label-width: 220px;
-            --daily-position-width: 94px;
-            --daily-delta-width: 94px;
-            --daily-rka-width: 94px;
+            --daily-no-width: 32px;
+            --daily-label-width: 142px;
+            --daily-position-width: 80px;
+            --daily-delta-width: 78px;
+            --daily-rka-width: 78px;
+        }
+
+        .daily-panel-head {
+            padding-left: 1rem !important;
+            padding-right: 1rem !important;
+            flex-direction: column;
+            align-items: flex-start !important;
+            gap: 1rem;
+        }
+
+        .daily-panel-title {
+            font-size: 1.15rem;
         }
 
         .daily-filter-shell {
@@ -1109,26 +1136,173 @@
         }
 
         .daily-filter-card {
-            min-height: 110px;
-            padding: 0.72rem;
+            min-height: 100px;
+            padding: 0.65rem;
         }
 
         .daily-filter-select,
         .daily-dropdown-toggle,
         .daily-apply-button {
-            min-height: 40px;
+            min-height: 38px;
+            font-size: 0.8rem;
         }
 
         .daily-table-region {
-            padding-bottom: 2rem;
+            padding-bottom: 1rem;
+            margin-left: -0.35rem;
+            margin-right: -0.35rem;
         }
 
+        .daily-table-region::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            right: 0;
+            bottom: 1rem;
+            width: 22px;
+            pointer-events: none;
+            z-index: 30;
+            background: linear-gradient(90deg, rgba(255, 255, 255, 0), rgba(15, 23, 42, 0.08));
+            border-radius: 0 14px 14px 0;
+        }
+
+        .daily-table-wrap {
+            max-height: min(72vh, 640px);
+            border-radius: 14px;
+            box-shadow: 0 12px 22px -18px rgba(15, 23, 42, 0.32);
+        }
+
+        .daily-table-wrap::-webkit-scrollbar {
+            height: 7px;
+            width: 7px;
+        }
+
+        .daily-table thead th {
+            font-size: 0.62rem;
+            padding: 0.42rem 0.18rem;
+            letter-spacing: 0;
+            line-height: 1.15;
+        }
+
+        .daily-table thead .group-row th {
+            font-size: 0.64rem;
+            padding-top: 0.46rem;
+            padding-bottom: 0.46rem;
+        }
+
+        .daily-table thead .column-heading {
+            min-height: 38px;
+            padding: 2px 0;
+        }
+
+        .daily-table thead .column-heading .main {
+            font-size: 0.66rem;
+            font-weight: 800;
+        }
+
+        .daily-table tbody td {
+            font-size: 0.7rem;
+            padding: 0.28rem 0.24rem;
+            line-height: 1.15;
+        }
+
+        .daily-table .sticky-no,
+        .daily-table .group-no {
+            font-size: 0.68rem;
+        }
+
+        .daily-table .sticky-label,
+        .daily-table .group-label {
+            padding-left: 0.42rem;
+            padding-right: 0.42rem;
+            white-space: normal;
+            line-height: 1.18;
+        }
+
+        .daily-table .metric-label {
+            display: block;
+            max-width: calc(var(--daily-label-width) - 0.9rem);
+        }
+
+        .daily-table .cell-text {
+            display: inline-block;
+            max-width: 100%;
+        }
+
+        .daily-table .metric-value .cell-text {
+            font-weight: 800;
+        }
+
+        /* Compact Indentation for hierarchy on mobile */
+        .daily-table .row-depth-1 .metric-label { padding-left: 0.2rem; }
+        .daily-table .row-depth-2 .metric-label { padding-left: 0.58rem; }
+        .daily-table .row-depth-3 .metric-label { padding-left: 0.95rem; font-size: 0.66rem; }
+
         .daily-table col.numeric-col {
-            width: 94px !important;
+            width: 80px !important;
+        }
+
+        .header-subnote {
+            margin-top: 3px;
+            padding-top: 3px;
+            font-size: 0.56rem;
+            line-height: 1.05;
+            letter-spacing: 0;
+        }
+
+        .section-ritel td,
+        .section-mikro td,
+        .section-wholesale td,
+        .section-consumer td,
+        .section-commercial td {
+            background: #eef5ff !important;
+            border-top-color: #b9cbe3 !important;
+            border-bottom-color: #b9cbe3 !important;
+        }
+
+        .section-ritel .sticky-label,
+        .section-mikro .sticky-label,
+        .section-wholesale .sticky-label,
+        .section-consumer .sticky-label,
+        .section-commercial .sticky-label {
+            border-left: 3px solid var(--primary-blue) !important;
+            background: #eaf2ff !important;
+        }
+
+        .daily-table .metric-block-simpanan td,
+        .daily-table .metric-block-os td,
+        .daily-table .metric-block-sml td,
+        .daily-table .metric-block-npl td,
+        .daily-table .metric-block-casa td,
+        .daily-table .metric-block-ldr td,
+        .daily-table .metric-block-recdh td,
+        .daily-table .metric-block-simpanan .sticky-no,
+        .daily-table .metric-block-simpanan .sticky-label,
+        .daily-table .metric-block-os .sticky-no,
+        .daily-table .metric-block-os .sticky-label,
+        .daily-table .metric-block-sml .sticky-no,
+        .daily-table .metric-block-sml .sticky-label,
+        .daily-table .metric-block-npl .sticky-no,
+        .daily-table .metric-block-npl .sticky-label,
+        .daily-table .metric-block-casa .sticky-no,
+        .daily-table .metric-block-casa .sticky-label,
+        .daily-table .metric-block-ldr .sticky-no,
+        .daily-table .metric-block-ldr .sticky-label,
+        .daily-table .metric-block-recdh .sticky-no,
+        .daily-table .metric-block-recdh .sticky-label {
+            background-color: #dbeafe !important;
         }
 
         .daily-kpi-grid {
             grid-template-columns: 1fr;
+        }
+
+        .daily-kpi {
+            padding: 1.15rem;
+        }
+
+        .daily-kpi .value {
+            font-size: 1.5rem;
         }
     }
 </style>
@@ -1502,7 +1676,7 @@
             return percentFormatter.format(Number(value || 0)) + '%';
         };
 
-        const formatDateSlash = function (value) {
+        const formatDateShort = function (value) {
             if (!value) {
                 return '-';
             }
@@ -1512,7 +1686,12 @@
                 return String(value);
             }
 
-            return parts[2] + '/' + parts[1] + '/' + parts[0];
+            const months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Ags', 'Sep', 'Okt', 'Nov', 'Des'];
+            const day = parts[2];
+            const month = months[parseInt(parts[1], 10) - 1];
+            const year = parts[0].slice(2);
+
+            return day + ' ' + month + ' ' + year;
         };
 
         const formatMonthYear = function (value) {
@@ -2256,19 +2435,19 @@
             setTextContent(kpiOs, formatJuta(summary.current_total_os_non_commercial || 0));
             setTextContent(kpiCasa, formatPercent(summary.current_casa_pct || 0));
 
-            setTextContent(headerLabels.yoy, periods.yoy ? formatDateSlash(periods.yoy.period) : '-');
-            setTextContent(headerLabels.ytd, periods.ytd ? formatDateSlash(periods.ytd.period) : '-');
-            setTextContent(headerLabels.m2, periods.m2 ? formatDateSlash(periods.m2.period) : '-');
-            setTextContent(headerLabels.mtm, periods.mtm ? formatDateSlash(periods.mtm.period) : '-');
-            setTextContent(headerLabels.mtd, periods.mtd ? formatDateSlash(periods.mtd.period) : '-');
-            setTextContent(headerLabels.h1, hasH1 ? formatDateSlash(periods.h1.period) : '-');
-            setTextContent(headerLabels.current, payload.selected_period ? formatDateSlash(payload.selected_period) : '-');
+            setTextContent(headerLabels.yoy, periods.yoy ? formatDateShort(periods.yoy.period) : '-');
+            setTextContent(headerLabels.ytd, periods.ytd ? formatDateShort(periods.ytd.period) : '-');
+            setTextContent(headerLabels.m2, periods.m2 ? formatDateShort(periods.m2.period) : '-');
+            setTextContent(headerLabels.mtm, periods.mtm ? formatDateShort(periods.mtm.period) : '-');
+            setTextContent(headerLabels.mtd, periods.mtd ? formatDateShort(periods.mtd.period) : '-');
+            setTextContent(headerLabels.h1, hasH1 ? formatDateShort(periods.h1.period) : '-');
+            setTextContent(headerLabels.current, payload.selected_period ? formatDateShort(payload.selected_period) : '-');
             setTextContent(headerLabels.rka, periods.rka ? 'RKA ' + String(formatMonthYear(periods.rka.period)).toUpperCase() : 'RKA');
             setTextContent(headerLabels.rkaDec, periods.rka_dec ? 'RKA ' + String(formatMonthYear(periods.rka_dec.period)).toUpperCase() : 'RKA Des');
-            setTextContent(headerLabels.deltaYoy, periods.yoy ? formatDateSlash(periods.yoy.period) : '-');
-            setTextContent(headerLabels.deltaYtd, periods.ytd ? formatDateSlash(periods.ytd.period) : '-');
-            setTextContent(headerLabels.deltaMtd, periods.mtd ? formatDateSlash(periods.mtd.period) : '-');
-            setTextContent(headerLabels.deltaDtd, hasH1 ? formatDateSlash(periods.h1.period) : '-');
+            setTextContent(headerLabels.deltaYoy, periods.yoy ? formatDateShort(periods.yoy.period) : '-');
+            setTextContent(headerLabels.deltaYtd, periods.ytd ? formatDateShort(periods.ytd.period) : '-');
+            setTextContent(headerLabels.deltaMtd, periods.mtd ? formatDateShort(periods.mtd.period) : '-');
+            setTextContent(headerLabels.deltaDtd, hasH1 ? formatDateShort(periods.h1.period) : '-');
 
             togglePositionColumns(hasH1);
 
@@ -2338,13 +2517,13 @@
         const errorMessageUI = document.getElementById('captureErrorMessage');
 
         const A4_EXPORT = {
-            width: 2480,
-            height: 3508,
-            marginX: 140,
-            marginY: 130,
-            headerHeight: 280,
-            footerHeight: 120, // Increased footer safety
-            sectionGap: 72,
+            width: 3840, // 4K Width
+            height: 5430, // A4 Portrait Aspect Ratio (1:1.414)
+            marginX: 180,
+            marginY: 120,
+            headerHeight: 340,
+            footerHeight: 150,
+            sectionGap: 60,
         };
 
         function waitFrame() {
@@ -2365,7 +2544,7 @@
             ctx.fillText(`${trimmed}...`, x, y);
         }
 
-        function drawExportHeader(ctx, pageNum = 1) {
+        function drawExportHeader(ctx, pageNum = 1, groupLabel = '') {
             const { width, marginX, marginY } = A4_EXPORT;
             const kancaText = scopeKanca?.textContent?.trim() || 'Semua Kanca';
             const unitText = scopeUnit?.textContent?.trim() || 'Semua Unit';
@@ -2373,40 +2552,41 @@
             const rkaText = scopeRka?.textContent?.trim() || 'Belum Ada Data';
 
             // Top accent bar
-            ctx.fillStyle = '#004685'; // BRI Blue Dark
-            ctx.fillRect(0, 0, width, 28);
+            ctx.fillStyle = '#004685'; 
+            ctx.fillRect(0, 0, width, 36);
 
             // Title
             ctx.fillStyle = '#0f172a';
-            ctx.font = 'bold 64px "Inter", "Segoe UI", Arial, sans-serif';
-            ctx.fillText('Daily Dashboard Performance', marginX, marginY + 48);
+            ctx.font = 'bold 88px "Inter", "Segoe UI", Arial, sans-serif';
+            ctx.fillText('Daily Dashboard Performance', marginX, marginY + 60);
 
             // Metadata info
             ctx.fillStyle = '#475569';
-            ctx.font = '600 32px "Inter", "Segoe UI", Arial, sans-serif';
+            ctx.font = '600 42px "Inter", "Segoe UI", Arial, sans-serif';
             
             const metaLine1 = `Kanca: ${kancaText}   |   Unit: ${unitText}`;
             const metaLine2 = `Periode: ${posisiText}   |   RKA: ${rkaText}`;
             
-            drawTextEllipsis(ctx, metaLine1, marginX, marginY + 112, width - (marginX * 2));
-            drawTextEllipsis(ctx, metaLine2, marginX, marginY + 162, width - (marginX * 2));
+            drawTextEllipsis(ctx, metaLine1, marginX, marginY + 135, width - (marginX * 2));
+            drawTextEllipsis(ctx, metaLine2, marginX, marginY + 195, width - (marginX * 2));
 
             // Decorative line
             ctx.strokeStyle = '#e2e8f0';
-            ctx.lineWidth = 4;
+            ctx.lineWidth = 5;
             ctx.beginPath();
-            ctx.moveTo(marginX, marginY + 215);
-            ctx.lineTo(width - marginX, marginY + 215);
+            ctx.moveTo(marginX, marginY + 265);
+            ctx.lineTo(width - marginX, marginY + 265);
             ctx.stroke();
             
-            // Page Indicator (Subtle top right)
-            if (pageNum > 1) {
-                ctx.fillStyle = '#94a3b8';
-                ctx.font = 'italic 24px "Inter", sans-serif';
-                ctx.textAlign = 'right';
-                ctx.fillText(`Sambungan Halaman ${pageNum}`, width - marginX, marginY + 48);
-                ctx.textAlign = 'left';
+            // Group Label & Page Indicator (Subtle top right)
+            ctx.fillStyle = '#94a3b8';
+            ctx.font = 'italic 34px "Inter", sans-serif';
+            ctx.textAlign = 'right';
+            const indicatorText = groupLabel ? `${groupLabel}${pageNum > 1 ? ` (Hal ${pageNum})` : ''}` : (pageNum > 1 ? `Sambungan Halaman ${pageNum}` : '');
+            if (indicatorText) {
+                ctx.fillText(indicatorText, width - marginX, marginY + 60);
             }
+            ctx.textAlign = 'left';
         }
 
         function drawExportFooter(ctx, pageNum = 1, totalPages = 1) {
@@ -2416,24 +2596,24 @@
             ctx.strokeStyle = '#e2e8f0';
             ctx.lineWidth = 2;
             ctx.beginPath();
-            ctx.moveTo(marginX, height - 95);
-            ctx.lineTo(width - marginX, height - 95);
+            ctx.moveTo(marginX, height - 120);
+            ctx.lineTo(width - marginX, height - 120);
             ctx.stroke();
 
             // Generation timestamp
             ctx.fillStyle = '#94a3b8';
-            ctx.font = '600 24px "Inter", "Segoe UI", Arial, sans-serif';
+            ctx.font = '600 32px "Inter", "Segoe UI", Arial, sans-serif';
             const dateStr = new Date().toLocaleString('id-ID', { 
                 day: '2-digit', month: '2-digit', year: 'numeric', 
                 hour: '2-digit', minute: '2-digit', second: '2-digit' 
             }).replace(/\//g, '-');
-            ctx.fillText(`Dashboard A-Six Generated: ${dateStr}`, marginX, height - 50);
+            ctx.fillText(`Dashboard A-Six Generated: ${dateStr}`, marginX, height - 60);
             
             // Page numbering
             ctx.textAlign = 'right';
-            ctx.font = 'bold 26px "Inter", "Segoe UI", Arial, sans-serif';
+            ctx.font = 'bold 36px "Inter", "Segoe UI", Arial, sans-serif';
             ctx.fillStyle = '#64748b';
-            ctx.fillText(`Halaman ${pageNum} dari ${totalPages}`, width - marginX, height - 50);
+            ctx.fillText(`Halaman ${pageNum} dari ${totalPages}`, width - marginX, height - 60);
             ctx.textAlign = 'left';
         }
 
@@ -2449,7 +2629,6 @@
             captureBtn.disabled = true;
             captureBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> CAPTURING...';
 
-            // Explicit cleanup for modal backdrop issues
             const cleanupModal = () => {
                 if (window.jQuery) {
                     window.jQuery(captureModal).modal('hide');
@@ -2461,159 +2640,175 @@
             try {
                 // 1. Group rows by segments (blocks)
                 const tbodyRows = Array.from(document.querySelectorAll('#daily-dashboard-body tr'));
-                const segments = [];
-                let currentSegment = null;
-
                 const blockClasses = [
                     'metric-block-simpanan', 'metric-block-os', 'metric-block-sml', 
                     'metric-block-npl', 'metric-block-casa', 'metric-block-ldr', 'metric-block-recdh'
                 ];
 
+                const blockSegments = [];
+                let currentBlock = null;
+                const MAX_ROWS_PER_SUB_SEGMENT = 25; // More dense segments
+
                 tbodyRows.forEach(row => {
                     if (row.classList.contains('row-hidden-by-scope')) return;
                     
-                    const isNewBlock = blockClasses.some(cls => row.classList.contains(cls));
-                    if (isNewBlock || segments.length === 0) {
-                        currentSegment = { rows: [row], canvas: null, height: 0 };
-                        segments.push(currentSegment);
-                    } else if (currentSegment) {
-                        currentSegment.rows.push(row);
+                    const blockIndex = blockClasses.findIndex(cls => row.classList.contains(cls));
+                    const isNewBlock = blockIndex !== -1;
+                    
+                    if (isNewBlock || !currentBlock) {
+                        currentBlock = { 
+                            blockId: isNewBlock ? blockIndex + 1 : (currentBlock ? currentBlock.blockId : 1),
+                            rows: [row],
+                            canvases: [] 
+                        };
+                        blockSegments.push(currentBlock);
+                    } else {
+                        currentBlock.rows.push(row);
                     }
                 });
 
-                if (segments.length === 0) throw new Error('Tidak ada data untuk dicapture.');
+                if (blockSegments.length === 0) throw new Error('Tidak ada data untuk dicapture.');
 
-                // 2. Pre-render segments to get their heights and prepare canvases
+                // 2. Pre-render each block's segments
                 const originalTable = document.querySelector('.daily-table');
                 const colgroupHtml = originalTable.querySelector('colgroup').outerHTML;
                 const theadHtml = originalTable.querySelector('thead').outerHTML;
-                const tableRealWidth = originalTable.scrollWidth + 2; // Use scrollWidth for full width capture
+                const tableRealWidth = Math.ceil(originalTable.scrollWidth) + 12; 
 
-                for (let i = 0; i < segments.length; i++) {
-                    const segment = segments[i];
-                    const tempWrap = document.createElement('div');
-                    tempWrap.style.position = 'absolute';
-                    tempWrap.style.left = '-9999px';
-                    tempWrap.style.top = '0';
-                    tempWrap.style.width = `${tableRealWidth}px`;
-                    
-                    tempWrap.innerHTML = `
-                        <table class="daily-table" style="width: ${tableRealWidth}px; border-collapse: separate; border-spacing: 0; background: #ffffff;">
-                            ${colgroupHtml}
-                            ${theadHtml}
-                            <tbody>
-                                ${segment.rows.map(r => {
-                                    const clone = r.cloneNode(true);
-                                    // Remove sticky and ensure visible headers
-                                    clone.querySelectorAll('.sticky-no, .sticky-label, td, th').forEach(cell => {
-                                        cell.style.position = 'static';
-                                        cell.style.backgroundColor = window.getComputedStyle(cell).backgroundColor;
-                                        cell.style.color = window.getComputedStyle(cell).color;
-                                        cell.style.visibility = 'visible';
-                                        cell.style.opacity = '1';
-                                    });
-                                    return clone.outerHTML;
-                                }).join('')}
-                            </tbody>
-                        </table>
-                    `;
-                    
-                    // Style the head as well in temp table
-                    tempWrap.querySelectorAll('thead th').forEach(th => {
-                        th.style.position = 'static';
-                        th.style.backgroundColor = '#004685';
-                        th.style.color = '#ffffff';
-                    });
+                for (let b = 0; b < blockSegments.length; b++) {
+                    const block = blockSegments[b];
+                    const subGroups = [];
+                    for (let i = 0; i < block.rows.length; i += MAX_ROWS_PER_SUB_SEGMENT) {
+                        subGroups.push(block.rows.slice(i, i + MAX_ROWS_PER_SUB_SEGMENT));
+                    }
 
-                    document.body.appendChild(tempWrap);
-                    await waitFrame();
+                    for (let s = 0; s < subGroups.length; s++) {
+                        const rows = subGroups[s];
+                        const tempWrap = document.createElement('div');
+                        tempWrap.className = 'daily-capture-temp-wrap';
+                        tempWrap.style.cssText = `position: absolute; left: -9999px; top: 0; width: ${tableRealWidth}px; background: #ffffff; padding: 2px;`;
+                        
+                        const tempStyle = document.createElement('style');
+                        tempStyle.textContent = `
+                            .daily-table { width: 100% !important; border-collapse: separate !important; border-spacing: 0 !important; }
+                            .daily-table th, .daily-table td { border: 1px solid #dbe5ef !important; padding: 4px 6px !important; }
+                            .daily-table thead th { background: #004685 !important; color: #ffffff !important; font-weight: bold !important; font-size: 11px !important; }
+                            .daily-table .group-position { background: #004685 !important; }
+                            .daily-table .group-delta { background: #334155 !important; }
+                            .daily-table .group-rka { background: #15803d !important; }
+                            .daily-table .delta-positive { color: #16a34a !important; font-weight: bold !important; }
+                            .daily-table .delta-negative { color: #dc2626 !important; font-weight: bold !important; }
+                        `;
+                        tempWrap.appendChild(tempStyle);
 
-                    const segmentCanvas = await html2canvas(tempWrap.querySelector('table'), {
-                        scale: 2, // High resolution
-                        useCORS: true,
-                        backgroundColor: '#ffffff',
-                        logging: false
-                    });
-
-                    document.body.removeChild(tempWrap);
-                    
-                    // Store canvas and calculate proportional height for A4
-                    const targetWidth = A4_EXPORT.width - (A4_EXPORT.marginX * 2);
-                    const scaleFactor = targetWidth / segmentCanvas.width;
-                    
-                    segment.canvas = segmentCanvas;
-                    segment.drawWidth = targetWidth;
-                    segment.drawHeight = segmentCanvas.height * scaleFactor;
+                        const tableHtml = `<table class="daily-table" style="width: ${tableRealWidth}px;">${colgroupHtml}${theadHtml}<tbody>${rows.map(r => {
+                            const clone = r.cloneNode(true);
+                            clone.querySelectorAll('.sticky-no, .sticky-label, td, th').forEach(cell => {
+                                cell.style.position = 'static';
+                                cell.style.backgroundColor = window.getComputedStyle(cell).backgroundColor;
+                                cell.style.color = window.getComputedStyle(cell).color;
+                                cell.style.visibility = 'visible';
+                                cell.style.opacity = '1';
+                            });
+                            return clone.outerHTML;
+                        }).join('')}</tbody></table>`;
+                        
+                        const tableContainer = document.createElement('div');
+                        tableContainer.innerHTML = tableHtml;
+                        tempWrap.appendChild(tableContainer);
+                        document.body.appendChild(tempWrap);
+                        
+                        await waitFrame();
+                        const segmentCanvas = await html2canvas(tempWrap.querySelector('table'), {
+                            scale: 3.0, 
+                            useCORS: true,
+                            backgroundColor: '#ffffff',
+                            logging: false,
+                            width: tableRealWidth,
+                            height: tempWrap.querySelector('table').offsetHeight
+                        });
+                        document.body.removeChild(tempWrap);
+                        
+                        const targetWidth = A4_EXPORT.width - (A4_EXPORT.marginX * 2);
+                        const scaleFactor = targetWidth / segmentCanvas.width;
+                        block.canvases.push({
+                            canvas: segmentCanvas,
+                            drawWidth: targetWidth,
+                            drawHeight: segmentCanvas.height * scaleFactor
+                        });
+                    }
                 }
 
-                // 3. Logic to distribute segments across multiple pages
-                const pages = [];
-                let currentPage = { segments: [], totalHeight: 0 };
-                const maxContentHeight = A4_EXPORT.height - (A4_EXPORT.marginY + A4_EXPORT.headerHeight + A4_EXPORT.footerHeight + 40);
+                // 3. Compact Grouping into 2 Master Pages
+                const masterGroups = [
+                    { label: 'SIMPANAN, OS, SML & NPL', blocks: blockSegments.filter(b => b.blockId <= 4), filename: 'Part-1_Main-Performance' },
+                    { label: 'CASA, LDR & REC DH', blocks: blockSegments.filter(b => b.blockId >= 5), filename: 'Part-2_Ratios-Recovery' }
+                ];
 
-                // Distribute ALL segments naturally across pages
-                segments.forEach(seg => {
-                    const estimatedNewHeight = currentPage.totalHeight + (currentPage.segments.length > 0 ? A4_EXPORT.sectionGap : 0) + seg.drawHeight;
-                    if (estimatedNewHeight > maxContentHeight && currentPage.segments.length > 0) {
-                        pages.push(currentPage);
-                        currentPage = { segments: [seg], totalHeight: seg.drawHeight };
-                    } else {
-                        if (currentPage.segments.length > 0) currentPage.totalHeight += A4_EXPORT.sectionGap;
-                        currentPage.segments.push(seg);
-                        currentPage.totalHeight += seg.drawHeight;
-                    }
-                });
-                if (currentPage.segments.length > 0) pages.push(currentPage);
-                // 4. Generate and download each page
-                for (let p = 0; p < pages.length; p++) {
-                    const pageData = pages[p];
-                    if (pageData.segments.length === 0) continue;
+                for (let g = 0; g < masterGroups.length; g++) {
+                    const group = masterGroups[g];
+                    if (group.blocks.length === 0) continue;
 
-                    const pageCanvas = document.createElement('canvas');
-                    pageCanvas.width = A4_EXPORT.width;
-                    pageCanvas.height = A4_EXPORT.height;
-                    const ctx = pageCanvas.getContext('2d');
-                    
-                    ctx.fillStyle = '#ffffff';
-                    ctx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
+                    const groupCanvases = group.blocks.flatMap(b => b.canvases);
+                    const pages = [];
+                    let currentPage = { items: [], totalHeight: 0 };
+                    // Extra buffer for compact content
+                    const maxContentHeight = A4_EXPORT.height - (A4_EXPORT.marginY + A4_EXPORT.headerHeight + A4_EXPORT.footerHeight + 80);
 
-                    drawExportHeader(ctx, p + 1);
-
-                    let currentY = A4_EXPORT.marginY + A4_EXPORT.headerHeight;
-                    pageData.segments.forEach(seg => {
-                        ctx.drawImage(seg.canvas, A4_EXPORT.marginX, currentY, seg.drawWidth, seg.drawHeight);
-                        currentY += seg.drawHeight + A4_EXPORT.sectionGap;
+                    groupCanvases.forEach(item => {
+                        const estimatedNewHeight = currentPage.totalHeight + (currentPage.items.length > 0 ? A4_EXPORT.sectionGap : 0) + item.drawHeight;
+                        if (estimatedNewHeight > maxContentHeight && currentPage.items.length > 0) {
+                            pages.push(currentPage);
+                            currentPage = { items: [item], totalHeight: item.drawHeight };
+                        } else {
+                            if (currentPage.items.length > 0) currentPage.totalHeight += A4_EXPORT.sectionGap;
+                            currentPage.items.push(item);
+                            currentPage.totalHeight += item.drawHeight;
+                        }
                     });
+                    if (currentPage.items.length > 0) pages.push(currentPage);
 
-                    drawExportFooter(ctx, p + 1, pages.length);
+                    for (let p = 0; p < pages.length; p++) {
+                        const pageData = pages[p];
+                        const pageCanvas = document.createElement('canvas');
+                        pageCanvas.width = A4_EXPORT.width;
+                        pageCanvas.height = A4_EXPORT.height;
+                        const ctx = pageCanvas.getContext('2d');
+                        
+                        ctx.fillStyle = '#ffffff';
+                        ctx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
+                        drawExportHeader(ctx, p + 1, group.label);
 
-                    // Download
-                    const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-            const link = document.createElement('a');
-            const pageSuffix = pages.length > 1 ? `_Page-${p + 1}` : '';
-            link.download = `Daily-Dashboard-A4-${timestamp}${pageSuffix}.jpg`;
-            link.href = pageCanvas.toDataURL('image/jpeg', 0.98);
-            link.click();
-            
-            await waitFrame(); // Yield to UI
-        }
+                        let currentY = A4_EXPORT.marginY + A4_EXPORT.headerHeight;
+                        pageData.items.forEach(item => {
+                            ctx.drawImage(item.canvas, A4_EXPORT.marginX, currentY, item.drawWidth, item.drawHeight);
+                            currentY += item.drawHeight + A4_EXPORT.sectionGap;
+                        });
 
-        progressUI.classList.add('d-none');
-        successUI.classList.remove('d-none');
-        
-        // Auto-close modal after a short delay to clear the blackout overlay
-        setTimeout(() => {
-            cleanupModal();
-        }, 1200);
-    } catch (err) {
-        console.error('Capture failed:', err);
-        progressUI.classList.add('d-none');
-        errorUI.classList.remove('d-none');
-        errorMessageUI.textContent = 'Gagal menyusun laporan A4. Silakan coba lagi.';
-    } finally {
-        captureBtn.disabled = false;
-        captureBtn.innerHTML = originalBtnHtml;
-    }
+                        drawExportFooter(ctx, p + 1, pages.length);
+
+                        const timestamp = new Date().toISOString().slice(0, 10);
+                        const link = document.createElement('a');
+                        const pageSuffix = pages.length > 1 ? `_Hal-${p + 1}` : '';
+                        link.download = `Daily-Dashboard_${group.filename}_${timestamp}${pageSuffix}.jpg`;
+                        link.href = pageCanvas.toDataURL('image/jpeg', 0.94); // Slightly lower quality for smaller file size but high res
+                        link.click();
+                        await waitFrame();
+                    }
+                }
+
+                progressUI.classList.add('d-none');
+                successUI.classList.remove('d-none');
+                setTimeout(() => cleanupModal(), 1500);
+            } catch (err) {
+                console.error('Capture failed:', err);
+                progressUI.classList.add('d-none');
+                errorUI.classList.remove('d-none');
+                errorMessageUI.textContent = 'Gagal menyusun laporan 4K. Silakan coba lagi.';
+            } finally {
+                captureBtn.disabled = false;
+                captureBtn.innerHTML = originalBtnHtml;
+            }
 };
 
 // Ensure modal cleanup on close to fix black overlay bug

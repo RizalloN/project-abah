@@ -11,6 +11,8 @@ use App\Services\Import\Strategies\Gi405RecDhImportStrategy;
 use App\Services\Import\Strategies\GenericCsvImportStrategy;
 use App\Services\Import\Strategies\ImportStrategyInterface;
 use App\Services\Import\Strategies\L1133ImportStrategy;
+use App\Services\Import\Strategies\Lw321NpdImportStrategy;
+use App\Services\Import\Strategies\Lw321NpddImportStrategy;
 use App\Services\Import\Strategies\Lw321PnImportStrategy;
 use App\Services\Import\Strategies\Lw325PhImportStrategy;
 use App\Services\Import\Strategies\PerformancePisImportStrategy;
@@ -33,6 +35,8 @@ class ImportStrategyFactory
             app(SsaSimpananImportStrategy::class),
             app(L1133ImportStrategy::class),
             app(Lw321PnImportStrategy::class),
+            app(Lw321NpdImportStrategy::class),
+            app(Lw321NpddImportStrategy::class),
             app(Lw325PhImportStrategy::class),
             app(DlyKapResegmentasiImportStrategy::class),
             app(CognosPhImportStrategy::class),

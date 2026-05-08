@@ -229,6 +229,16 @@ class ImportExcelController extends Controller
         return strtolower(trim((string) ($tableName ?? $this->resolveActiveTableName()))) === 'lw321pn';
     }
 
+    private function isLw321NpdTable(?string $tableName = null): bool
+    {
+        return strtolower(trim((string) ($tableName ?? $this->resolveActiveTableName()))) === 'lw321_npd';
+    }
+
+    private function isLw321NpddTable(?string $tableName = null): bool
+    {
+        return strtolower(trim((string) ($tableName ?? $this->resolveActiveTableName()))) === 'lw321_npdd';
+    }
+
     private function l1133Importer(): L1133CsvImporter
     {
         return app(L1133CsvImporter::class);
@@ -360,6 +370,8 @@ class ImportExcelController extends Controller
             'daily_loan_dinamis' => 'Daily Loan Dinamis',
             'simpanan_multipn' => 'Simpanan MultiPN',
             'lw321pn' => 'LW321PN - Kolektibilitas dan Tunggakan Per AO',
+            'lw321_npd' => 'LW321 NPD Micro',
+            'lw321_npdd' => 'LW321 NPDD Micro',
             'gi405_singlerow' => 'GI405 Single Row',
             L1133CsvImporter::TABLE => 'L1133 - Laporan Harian Pinjaman Kanwil',
             default => $this->resolveActiveReport()?->nama_report ?? 'Preview Data',
@@ -597,7 +609,7 @@ class ImportExcelController extends Controller
     {
         $resolvedTable = strtolower(trim((string) ($tableName ?? $this->resolveExcelTableName())));
 
-        return in_array($resolvedTable, ['daily_loan_dinamis', 'simpanan_multipn', 'gi405_singlerow', 'lw321pn'], true);
+        return in_array($resolvedTable, ['daily_loan_dinamis', 'simpanan_multipn', 'gi405_singlerow', 'lw321pn', 'lw321_npd', 'lw321_npdd'], true);
     }
 
     private function normalizeImportActiveFilters(array $filters, ?string $tableName = null): array
@@ -2952,6 +2964,14 @@ class ImportExcelController extends Controller
             $uniqueIdCol = $tableColumnsByLower['uniqueid_namareport'] ?? 'uniqueid_namareport';
             $suffix = '';
             $uniqueIdPrefix = 'uuid_lw321pn_' . str_replace('.', '', uniqid('', true));
+        } elseif ($tableName === 'lw321_npd' && isset($tableColumnsLookup['uniqueid_namareport'])) {
+            $uniqueIdCol = $tableColumnsByLower['uniqueid_namareport'] ?? 'uniqueid_namareport';
+            $suffix = '';
+            $uniqueIdPrefix = 'uuid_lw321_npd_' . str_replace('.', '', uniqid('', true));
+        } elseif ($tableName === 'lw321_npdd' && isset($tableColumnsLookup['uniqueid_namareport'])) {
+            $uniqueIdCol = $tableColumnsByLower['uniqueid_namareport'] ?? 'uniqueid_namareport';
+            $suffix = '';
+            $uniqueIdPrefix = 'uuid_lw321_npdd_' . str_replace('.', '', uniqid('', true));
         } elseif (isset($tableColumnsLookup['uniqueid_namareport'])) {
             $uniqueIdCol = $tableColumnsByLower['uniqueid_namareport'] ?? 'uniqueid_namareport';
         }
@@ -2995,6 +3015,58 @@ class ImportExcelController extends Controller
                 'FREQ_INT_PAYMENT',
             ] as $columnName) {
                 $integerColumnsLookup[$columnName] = true;
+            }
+        }
+        if ($this->isLw321NpddTable($tableName)) {
+            foreach ([
+                'PERIODE',
+                'NPDD',
+                'NPDD_UPDATE',
+                'TGL_REALISASI',
+                'TGL_JATUH_TEMPO',
+            ] as $columnName) {
+                $dateColumnsLookup[$columnName] = true;
+            }
+            foreach ([
+                'PLAFON',
+                'OS',
+                'WBA',
+                'REF_OS',
+                'NOW_OS',
+                'T_POKOK',
+                'NOW_T_POKOK',
+                'T_BUNGA',
+                'NOW_T_BUNGA',
+                'T_TOTAL',
+                'NOW_T_TOTAL',
+            ] as $columnName) {
+                $decimalColumnsLookup[$columnName] = true;
+            }
+        }
+        if ($this->isLw321NpdTable($tableName)) {
+            foreach ([
+                'PERIODE',
+                'NEXT_PMT_DATE',
+                'TGL_REALISASI',
+                'TGL_JATUH_TEMPO',
+            ] as $columnName) {
+                $dateColumnsLookup[$columnName] = true;
+            }
+            foreach ([
+                'PLAFON',
+                'POSISI_30_APRIL_2026_OS',
+                'M_MIN_1_OS',
+                'WBA',
+                'REF_OS',
+                'NOW_OS',
+                'T_POKOK',
+                'NOW_T_POKOK',
+                'T_BUNGA',
+                'NOW_T_BUNGA',
+                'T_TOTAL',
+                'NOW_T_TOTAL',
+            ] as $columnName) {
+                $decimalColumnsLookup[$columnName] = true;
             }
         }
         $sourceBackend = strtolower(trim((string) ($importOptions['source_backend'] ?? '')));
@@ -3854,6 +3926,9 @@ class ImportExcelController extends Controller
 
                     $finalRow = $this->mapExcelRowForInsert($row, $normalizedHeaders, $context, $timestamp);
                     if ($finalRow === null) {
+                        continue;
+                    }
+                    if ($this->isLw321NpddTable($tableName) && (empty($finalRow['periode']) || empty($finalRow['no_rekening']))) {
                         continue;
                     }
 
@@ -6892,6 +6967,14 @@ class ImportExcelController extends Controller
             return $this->buildGenericFastPathBulkImportSqlParts($context, 'lw321pn');
         }
 
+        if ($this->isLw321NpdTable($tableName)) {
+            return $this->buildGenericFastPathBulkImportSqlParts($context, 'lw321_npd');
+        }
+
+        if ($this->isLw321NpddTable($tableName)) {
+            return $this->buildGenericFastPathBulkImportSqlParts($context, 'lw321_npdd');
+        }
+
         return $this->buildDailyLoanBulkImportSqlParts($context, $stagingTable);
     }
 
@@ -6928,6 +7011,14 @@ class ImportExcelController extends Controller
         }
 
         if ($this->isLw321PnTable($tableName)) {
+            return 'WHERE src.`periode` IS NOT NULL AND src.`no_rekening` IS NOT NULL';
+        }
+
+        if ($this->isLw321NpdTable($tableName)) {
+            return 'WHERE src.`periode` IS NOT NULL AND src.`no_rekening` IS NOT NULL';
+        }
+
+        if ($this->isLw321NpddTable($tableName)) {
             return 'WHERE src.`periode` IS NOT NULL AND src.`no_rekening` IS NOT NULL';
         }
 
@@ -7053,8 +7144,10 @@ class ImportExcelController extends Controller
         $isGi405RecDh = $this->isGi405RecDhTable($tableName);
         $isDlyKapResegmentasi = $this->isDlyKapResegmentasiTable($tableName);
         $isLw321Pn = $this->isLw321PnTable($tableName);
+        $isLw321Npd = $this->isLw321NpdTable($tableName);
+        $isLw321Npdd = $this->isLw321NpddTable($tableName);
 
-        if ($csvPath === '' || !file_exists($csvPath) || (!$isDailyLoan && !$isLw325Ph && !$isGi405RecDh && !$isDlyKapResegmentasi && !$isLw321Pn)) {
+        if ($csvPath === '' || !file_exists($csvPath) || (!$isDailyLoan && !$isLw325Ph && !$isGi405RecDh && !$isDlyKapResegmentasi && !$isLw321Pn && !$isLw321Npd && !$isLw321Npdd)) {
             return false;
         }
 
@@ -7080,7 +7173,7 @@ class ImportExcelController extends Controller
                 ? 'LW325 - PH'
                 : ($isGi405RecDh
                     ? 'GI405 Single Row'
-                    : ($isDlyKapResegmentasi ? 'DLY KAP Resegmentasi' : ($isLw321Pn ? 'LW321PN' : 'Daily Loan')));
+                    : ($isDlyKapResegmentasi ? 'DLY KAP Resegmentasi' : ($isLw321Pn ? 'LW321PN' : ($isLw321Npd ? 'LW321 NPD' : ($isLw321Npdd ? 'LW321 NPDD' : 'Daily Loan')))));
             $send('progress', [
                 'percent' => 18,
                 'message' => empty($activeFilters)
@@ -7095,7 +7188,7 @@ class ImportExcelController extends Controller
                 $loadSource = $this->prepareLw325PhDirectLoadSource($csvPath, $delimiter, $send);
             } elseif ($isGi405RecDh) {
                 $loadSource = $this->prepareGi405RecDhDirectLoadSource($csvPath, $delimiter, $send);
-            } elseif ($isDlyKapResegmentasi || $isLw321Pn) {
+            } elseif ($isDlyKapResegmentasi || $isLw321Pn || $isLw321Npd || $isLw321Npdd) {
                 $loadSource = [
                     'path' => $csvPath,
                     'backend' => 'csv_stage',
@@ -7220,6 +7313,14 @@ class ImportExcelController extends Controller
                     }
 
                     $inserted = DB::affectingStatement($sql);
+
+                    if ($isLw321Npd) {
+                        $this->assertLw321NpdPositionColumnsLoaded($context, $inserted);
+                    }
+
+                    if ($isLw321Npdd) {
+                        $this->assertLw321NpddNowColumnsLoaded($context, $inserted);
+                    }
 
                     if ($isDlyKapResegmentasi) {
                         $this->backfillDlyKapResegmentasiSegmenKategoriFromFastPathStage($stagingTable, $context);
@@ -9253,6 +9354,12 @@ class ImportExcelController extends Controller
             'SALDO',
             'SALDO_IDR',
             'PENDAPATAN_KOREKSI_PPAP_DR_ANGSURAN_PH',
+            'OS',
+            'WBA',
+            'REF_OS',
+            'T_POKOK',
+            'T_BUNGA',
+            'T_TOTAL',
             'RECOVERY_NON_KLAIM',
             'BEGINING_BALANCE',
             'EQUIVALENTS_IDR',
@@ -9455,6 +9562,16 @@ class ImportExcelController extends Controller
 
         if ($this->isLw321PnTable($tableName) && !$this->isCsvFile($path)) {
             $this->primeLw321PnPreviewCache($relativePath, $path, $cacheKey, $send);
+            return;
+        }
+
+        if ($this->isLw321NpdTable($tableName) && !$this->isCsvFile($path)) {
+            $this->primeLw321NpdPreviewCache($relativePath, $path, $cacheKey, $send);
+            return;
+        }
+
+        if ($this->isLw321NpddTable($tableName) && !$this->isCsvFile($path)) {
+            $this->primeLw321NpddPreviewCache($relativePath, $path, $cacheKey, $send);
             return;
         }
 
@@ -9757,6 +9874,276 @@ class ImportExcelController extends Controller
         if ($donePayload === null || (!$previewOnly && !file_exists($outputPath))) {
             @unlink($outputPath);
             throw new \RuntimeException('Staging CSV LW321PN gagal' . ($stderr !== '' ? ': ' . trim($stderr) : '.'));
+        }
+
+        return [
+            'absolute_path' => $previewOnly ? null : $outputPath,
+            'headers' => array_values((array) ($donePayload['headers'] ?? [])),
+            'preview_rows' => array_values((array) ($donePayload['preview_rows'] ?? [])),
+            'unique_values' => (array) ($donePayload['unique_values'] ?? []),
+            'total_rows' => (int) ($donePayload['total_rows'] ?? 0),
+            'header_index' => 0,
+        ];
+    }
+
+    private function primeLw321NpddPreviewCache(string $relativePath, string $path, string $cacheKey, ?callable $send = null): void
+    {
+        $send && $send('progress', ['percent' => 35, 'message' => 'Menyiapkan CSV staging streaming untuk LW321 NPDD...', 'step' => 1]);
+
+        $stage = $this->stageLw321NpddExcelToCsv($path, $send, true);
+        $headers = array_values((array) ($stage['headers'] ?? []));
+        $previewRows = [];
+
+        foreach ((array) ($stage['preview_rows'] ?? []) as $row) {
+            $mapped = [];
+            foreach ($headers as $index => $headerLabel) {
+                if (str_starts_with((string) $headerLabel, 'COL_')) {
+                    continue;
+                }
+                $mapped[$headerLabel] = $this->normalizeExcelValue((string) $headerLabel, $row[$index] ?? null);
+            }
+            if ($this->hasMeaningfulImportData($mapped)) {
+                $previewRows[] = $mapped;
+            }
+        }
+
+        $formattedUniqueValues = [];
+        $displayHeaders = [];
+        foreach ($headers as $index => $headerLabel) {
+            $headerLabel = (string) $headerLabel;
+            if (str_starts_with($headerLabel, 'COL_')) {
+                continue;
+            }
+
+            $displayHeaders[] = $headerLabel;
+            $values = (array) (($stage['unique_values'] ?? [])[(string) $index] ?? []);
+            sort($values);
+            $formattedUniqueValues[] = $values;
+        }
+
+        $reorderedPayload = $this->reorderPreviewPayload(
+            $displayHeaders,
+            $formattedUniqueValues,
+            $previewRows,
+            $this->cachedSchemaColumnListing('lw321_npdd')
+        );
+
+        Cache::put($cacheKey, [
+            'headers' => $reorderedPayload['headers'],
+            'preview' => $reorderedPayload['preview'],
+            'formattedUniqueValues' => $reorderedPayload['formattedUniqueValues'],
+            'displayFilterMap' => $reorderedPayload['displayFilterMap'] ?? [],
+            'path' => $relativePath,
+            'stagedCsvPath' => null,
+            'headerIndex' => 0,
+            'normalizedHeaders' => $headers,
+            'sourceHeaders' => $headers,
+            'total_rows' => (int) ($stage['total_rows'] ?? 0),
+            'delimiter' => ',',
+        ], now()->addHour());
+
+        $send && $send('progress', ['percent' => 72, 'message' => 'Preview LW321 NPDD siap. Menyusun filter kolom...', 'step' => 1]);
+    }
+
+    private function primeLw321NpdPreviewCache(string $relativePath, string $path, string $cacheKey, ?callable $send = null): void
+    {
+        $send && $send('progress', ['percent' => 35, 'message' => 'Menyiapkan CSV staging streaming untuk LW321 NPD...', 'step' => 1]);
+
+        $stage = $this->stageLw321NpdExcelToCsv($path, $send, true);
+        $headers = array_values((array) ($stage['headers'] ?? []));
+        $previewRows = [];
+
+        foreach ((array) ($stage['preview_rows'] ?? []) as $row) {
+            $mapped = [];
+            foreach ($headers as $index => $headerLabel) {
+                if (str_starts_with((string) $headerLabel, 'COL_')) {
+                    continue;
+                }
+                $mapped[$headerLabel] = $this->normalizeExcelValue((string) $headerLabel, $row[$index] ?? null);
+            }
+            if ($this->hasMeaningfulImportData($mapped)) {
+                $previewRows[] = $mapped;
+            }
+        }
+
+        $formattedUniqueValues = [];
+        $displayHeaders = [];
+        foreach ($headers as $index => $headerLabel) {
+            $headerLabel = (string) $headerLabel;
+            if (str_starts_with($headerLabel, 'COL_')) {
+                continue;
+            }
+
+            $displayHeaders[] = $headerLabel;
+            $values = (array) (($stage['unique_values'] ?? [])[(string) $index] ?? []);
+            sort($values);
+            $formattedUniqueValues[] = $values;
+        }
+
+        $reorderedPayload = $this->reorderPreviewPayload(
+            $displayHeaders,
+            $formattedUniqueValues,
+            $previewRows,
+            $this->cachedSchemaColumnListing('lw321_npd')
+        );
+
+        Cache::put($cacheKey, [
+            'headers' => $reorderedPayload['headers'],
+            'preview' => $reorderedPayload['preview'],
+            'formattedUniqueValues' => $reorderedPayload['formattedUniqueValues'],
+            'displayFilterMap' => $reorderedPayload['displayFilterMap'] ?? [],
+            'path' => $relativePath,
+            'stagedCsvPath' => null,
+            'headerIndex' => 0,
+            'normalizedHeaders' => $headers,
+            'sourceHeaders' => $headers,
+            'total_rows' => (int) ($stage['total_rows'] ?? 0),
+            'delimiter' => ',',
+        ], now()->addHour());
+
+        $send && $send('progress', ['percent' => 72, 'message' => 'Preview LW321 NPD siap. Menyusun filter kolom...', 'step' => 1]);
+    }
+
+    private function stageLw321NpdExcelToCsv(string $path, ?callable $send = null, bool $previewOnly = false): array
+    {
+        return $this->runLw321VariantExcelToCsv(
+            $path,
+            $send,
+            $previewOnly,
+            base_path('scripts/lw321_npd_xlsx_to_csv.py'),
+            'lw321_npd_stage_',
+            'LW321 NPD'
+        );
+    }
+
+    private function stageLw321NpddExcelToCsv(string $path, ?callable $send = null, bool $previewOnly = false): array
+    {
+        return $this->runLw321VariantExcelToCsv(
+            $path,
+            $send,
+            $previewOnly,
+            base_path('scripts/lw321_npdd_xlsx_to_csv.py'),
+            'lw321_npdd_stage_',
+            'LW321 NPDD'
+        );
+    }
+
+    private function runLw321VariantExcelToCsv(
+        string $path,
+        ?callable $send,
+        bool $previewOnly,
+        string $scriptPath,
+        string $outputPrefix,
+        string $reportLabel
+    ): array {
+        $pythonExe = $this->findPython();
+
+        if (!$pythonExe || !file_exists($scriptPath)) {
+            throw new \RuntimeException("Python/openpyxl tidak tersedia untuk staging preview {$reportLabel}.");
+        }
+
+        $tempDirectory = storage_path('app/excel_stage');
+        if (!is_dir($tempDirectory)) {
+            @mkdir($tempDirectory, 0777, true);
+        }
+
+        $outputPath = $tempDirectory . DIRECTORY_SEPARATOR . $outputPrefix . Str::uuid()->toString() . '.csv';
+        $cmd = escapeshellarg($pythonExe)
+            . ' ' . escapeshellarg($scriptPath)
+            . ' --input ' . escapeshellarg($path);
+
+        if ($previewOnly) {
+            $cmd .= ' --preview-only --preview-limit 75';
+        } else {
+            $cmd .= ' --output ' . escapeshellarg($outputPath);
+        }
+
+        $descriptors = [
+            0 => ['pipe', 'r'],
+            1 => ['pipe', 'w'],
+            2 => ['pipe', 'w'],
+        ];
+
+        $process = proc_open($cmd, $descriptors, $pipes);
+        if (!is_resource($process)) {
+            throw new \RuntimeException("Gagal menjalankan staging Python {$reportLabel}.");
+        }
+
+        fclose($pipes[0]);
+        stream_set_blocking($pipes[1], false);
+        stream_set_blocking($pipes[2], false);
+
+        $buffer = '';
+        $stderr = '';
+        $donePayload = null;
+        $lastKeepAlive = time();
+
+        try {
+            while (true) {
+                $status = proc_get_status($process);
+                $stdout = stream_get_contents($pipes[1]);
+                if ($stdout !== false && $stdout !== '') {
+                    $buffer .= $stdout;
+                    while (($pos = strpos($buffer, "\n")) !== false) {
+                        $line = trim(substr($buffer, 0, $pos));
+                        $buffer = substr($buffer, $pos + 1);
+                        if ($line === '') {
+                            continue;
+                        }
+
+                        $payload = json_decode($line, true);
+                        if (!is_array($payload)) {
+                            continue;
+                        }
+
+                        $type = (string) ($payload['type'] ?? '');
+                        if ($type === 'progress') {
+                            $send && $send('progress', [
+                                'percent' => (int) ($payload['percent'] ?? 45),
+                                'message' => (string) ($payload['message'] ?? "Menyiapkan CSV staging {$reportLabel}..."),
+                                'step' => 1,
+                            ]);
+                        } elseif ($type === 'done') {
+                            $donePayload = $payload;
+                        } elseif ($type === 'error') {
+                            throw new \RuntimeException((string) ($payload['message'] ?? "Staging Python {$reportLabel} gagal."));
+                        }
+                    }
+                }
+
+                $err = stream_get_contents($pipes[2]);
+                if ($err !== false && $err !== '') {
+                    $stderr .= $err;
+                }
+
+                if (!$status['running']) {
+                    break;
+                }
+
+                if ((time() - $lastKeepAlive) >= 10) {
+                    $send && $send('progress', [
+                        'percent' => 44,
+                        'message' => "Masih menyiapkan CSV staging {$reportLabel}...",
+                        'step' => 1,
+                    ]);
+                    $lastKeepAlive = time();
+                }
+
+                usleep(100000);
+            }
+        } finally {
+            if (isset($pipes[1]) && is_resource($pipes[1])) {
+                fclose($pipes[1]);
+            }
+            if (isset($pipes[2]) && is_resource($pipes[2])) {
+                fclose($pipes[2]);
+            }
+            $exitCode = proc_close($process);
+        }
+
+        if ($donePayload === null || (!$previewOnly && !file_exists($outputPath))) {
+            @unlink($outputPath);
+            throw new \RuntimeException("Staging CSV {$reportLabel} gagal" . ($stderr !== '' ? ': ' . trim($stderr) : '.'));
         }
 
         return [
@@ -10208,6 +10595,22 @@ class ImportExcelController extends Controller
                         $sheet = [
                             0 => array_values((array) ($stageResult['headers'] ?? [])),
                         ];
+                    } elseif ($this->isLw321NpdTable($tableName)) {
+                        $stageResult = $this->stageLw321NpdExcelToCsv($path, null, false);
+                        $lw321PnStagedCsvPath = (string) ($stageResult['absolute_path'] ?? '');
+                        $headerIndex = 0;
+                        $totalRows = max(1, ((int) ($stageResult['total_rows'] ?? 0)) + 1);
+                        $sheet = [
+                            0 => array_values((array) ($stageResult['headers'] ?? [])),
+                        ];
+                    } elseif ($this->isLw321NpddTable($tableName)) {
+                        $stageResult = $this->stageLw321NpddExcelToCsv($path, null, false);
+                        $lw321PnStagedCsvPath = (string) ($stageResult['absolute_path'] ?? '');
+                        $headerIndex = 0;
+                        $totalRows = max(1, ((int) ($stageResult['total_rows'] ?? 0)) + 1);
+                        $sheet = [
+                            0 => array_values((array) ($stageResult['headers'] ?? [])),
+                        ];
                     } else {
                         $pythonResult = $this->detectHeaderViaPython($path);
 
@@ -10315,6 +10718,8 @@ class ImportExcelController extends Controller
 
             if (
                 !$this->isLw321PnTable($tableName)
+                && !$this->isLw321NpdTable($tableName)
+                && !$this->isLw321NpddTable($tableName)
                 && !$this->isCsvFile($path)
                 && ($mustRefreshStagedCsv || !$this->shouldDeferExcelStagingToQueue($tableName, $path))
             ) {
@@ -10348,7 +10753,7 @@ class ImportExcelController extends Controller
             }
 
             // ── Ambil active filters dan manual params dari session ─────
-            if ($this->isLw321PnTable($tableName) && $stagedCsvPath !== '') {
+            if (($this->isLw321PnTable($tableName) || $this->isLw321NpdTable($tableName) || $this->isLw321NpddTable($tableName)) && $stagedCsvPath !== '') {
                 $delimiter = ',';
             }
 
@@ -10509,6 +10914,7 @@ class ImportExcelController extends Controller
         $disableInlineFallback = $tableName === 'lw325_ph';
 
         $stagedCsvPath = '';
+        $lw321NpddStagedHeaders = [];
 
         if ($this->isDlyKapResegmentasiTable($tableName)) {
             try {
@@ -10563,6 +10969,27 @@ class ImportExcelController extends Controller
                     'text' => 'Gagal menyiapkan CSV L1133: ' . $e->getMessage(),
                 ], 422);
             }
+        } elseif ($this->isLw321NpddTable($tableName) && !$this->isCsvFile($path)) {
+            try {
+                $stage = $this->stageLw321NpddExcelToCsv($path, null, false);
+                $stagedCsvPath = (string) ($stage['absolute_path'] ?? '');
+                $lw321NpddStagedHeaders = array_values((array) ($stage['headers'] ?? []));
+
+                if ($stagedCsvPath === '' || !file_exists($stagedCsvPath)) {
+                    throw new \RuntimeException('CSV staging LW321 NPDD tidak terbentuk.');
+                }
+            } catch (\Throwable $e) {
+                Log::error('initExcelImport: Gagal staging normalisasi LW321 NPDD', [
+                    'path' => $path,
+                    'exception' => $e::class,
+                    'message' => $e->getMessage(),
+                ]);
+
+                return response()->json([
+                    'status' => 'error',
+                    'text' => 'Gagal menyiapkan CSV LW321 NPDD: ' . $e->getMessage(),
+                ], 422);
+            }
         }
 
         // ────────────────────────────────────────────────────────────────
@@ -10581,13 +11008,19 @@ class ImportExcelController extends Controller
         $previewMetaForHeaders = (array) session('excel_preview_meta', []);
         $initialHeaders = $this->isDlyKapResegmentasiTable($tableName)
             ? DlyKapResegmentasiCsvImporter::NORMALIZED_HEADERS
-            : ($this->isLw321PnTable($tableName)
+            : ($this->isLw321NpddTable($tableName) && $lw321NpddStagedHeaders !== []
+                ? $lw321NpddStagedHeaders
+                : (($this->isLw321PnTable($tableName) || $this->isLw321NpdTable($tableName) || $this->isLw321NpddTable($tableName))
                 ? array_values((array) (
                     $previewMetaForHeaders['source_headers']
                     ?? $previewMetaForHeaders['normalized_headers']
                     ?? []
                 ))
-                : []);
+                : []));
+
+        if ($this->isLw321NpddTable($tableName) && $initialHeaders !== []) {
+            $initialHeaders = array_values($this->resolveImportStrategy($tableName)->transformHeaders($initialHeaders));
+        }
 
         // Set minimal job state untuk digunakan di import execution
         $jobParams = [
@@ -11716,6 +12149,95 @@ class ImportExcelController extends Controller
             'cleanup_service_dispatch_imported_job_sync' => fn(int $jobId, string $status) => $this->cleanupService()->dispatchImportedJobSync($jobId, source: static::class),
         ], $send);
     }
+
+    private function assertLw321NpdPositionColumnsLoaded(array $context, int $insertedRows): void
+    {
+        if ($insertedRows <= 0) {
+            return;
+        }
+
+        $uniqueIdColumn = (string) ($context['unique_id_col'] ?? 'uniqueid_namareport');
+        $uniqueIdPrefix = trim((string) ($context['unique_id_prefix'] ?? ''));
+        if ($uniqueIdPrefix === '') {
+            return;
+        }
+
+        $likePrefix = addcslashes($uniqueIdPrefix . '_', '\\%_') . '%';
+        $query = DB::table('lw321_npd')
+            ->where($uniqueIdColumn, 'like', $likePrefix);
+
+        $loadedRows = (clone $query)->count();
+        if ($loadedRows <= 0) {
+            return;
+        }
+
+        $positionRows = (clone $query)
+            ->where(function ($where): void {
+                foreach ([
+                    'm_min_1_kol',
+                    'm_min_1_detail',
+                    'm_min_1_os',
+                    'wba',
+                    'now_kol',
+                    'now_detail',
+                    'now_os',
+                    'now_t_pokok',
+                    'now_t_bunga',
+                    'now_t_total',
+                    'ptp',
+                ] as $column) {
+                    $where->orWhereNotNull($column);
+                }
+            })
+            ->count();
+
+        if ($positionRows <= 0) {
+            throw new \RuntimeException('Import LW321 NPD dibatalkan: mapping kolom M-1/Now tidak terisi dari file sumber.');
+        }
+    }
+
+    private function assertLw321NpddNowColumnsLoaded(array $context, int $insertedRows): void
+    {
+        if ($insertedRows <= 0) {
+            return;
+        }
+
+        $uniqueIdColumn = (string) ($context['unique_id_col'] ?? 'uniqueid_namareport');
+        $uniqueIdPrefix = trim((string) ($context['unique_id_prefix'] ?? ''));
+        if ($uniqueIdPrefix === '') {
+            return;
+        }
+
+        $likePrefix = addcslashes($uniqueIdPrefix . '_', '\\%_') . '%';
+        $query = DB::table('lw321_npdd')
+            ->where($uniqueIdColumn, 'like', $likePrefix);
+
+        $loadedRows = (clone $query)->count();
+        if ($loadedRows <= 0) {
+            return;
+        }
+
+        $nowRows = (clone $query)
+            ->where(function ($where): void {
+                foreach ([
+                    'now_kol',
+                    'now_detail',
+                    'now_os',
+                    'now_t_pokok',
+                    'now_t_bunga',
+                    'now_t_total',
+                    'ptp',
+                ] as $column) {
+                    $where->orWhereNotNull($column);
+                }
+            })
+            ->count();
+
+        if ($nowRows <= 0) {
+            throw new \RuntimeException('Import LW321 NPDD dibatalkan: mapping kolom Now tidak terisi dari file sumber.');
+        }
+    }
+
     public function processExcelChunk(Request $request)
     {
         ini_set('memory_limit', '2048M');

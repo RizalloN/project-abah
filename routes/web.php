@@ -7,6 +7,7 @@ use App\Http\Controllers\Report\DigitalPerformanceController;
 use App\Http\Controllers\Report\KejarLabaReportController;
 use App\Http\Controllers\Report\KinerjaRmReportController;
 use App\Http\Controllers\Report\KinerjaRmMikroReportController;
+use App\Http\Controllers\Report\KinerjaPtpReportController;
 use App\Http\Controllers\Report\KolaborasiReportController;
 use App\Http\Controllers\Report\NewPayrollReportController;
 use App\Http\Controllers\Import\ImportCasaBrilinkController;
@@ -94,6 +95,8 @@ Route::middleware(['auth', 'release.session.lock', 'throttle:240,1'])->group(fun
         ->name('report.dashboard-pinjaman.tunggakan-kecil.filters');
     Route::get('/report/dashboard-pinjaman/tunggakan-kecil/data', [DashboardPinjamanReportController::class, 'smallArrearsData'])
         ->name('report.dashboard-pinjaman.tunggakan-kecil.data');
+    Route::get('/report/dashboard-pinjaman/tunggakan-kecil/export', [DashboardPinjamanReportController::class, 'smallArrearsExport'])
+        ->name('report.dashboard-pinjaman.tunggakan-kecil.export');
     Route::get('/report/dashboard-pinjaman/kejar-laba', [KejarLabaReportController::class, 'index'])
         ->name('report.dashboard-pinjaman.kejar-laba');
     Route::get('/report/dashboard-pinjaman/kinerjarm', [KinerjaRmReportController::class, 'index'])
@@ -102,6 +105,8 @@ Route::middleware(['auth', 'release.session.lock', 'throttle:240,1'])->group(fun
         ->name('report.dashboard-pinjaman.kinerjarm.history');
     Route::get('/report/dashboard-pinjaman/kinerjarmmikro', [KinerjaRmMikroReportController::class, 'index'])
         ->name('report.dashboard-pinjaman.kinerjarmmikro');
+    Route::get('/report/dashboard-pinjaman/kinerja-ptp', [KinerjaPtpReportController::class, 'index'])
+        ->name('report.dashboard-pinjaman.kinerja-ptp');
     // Digital Performance Reports (EDC, QRIS, Brilink) — dihandle oleh DigitalPerformanceController
     Route::get('/report/optimalisasi-digital/edc', [DigitalPerformanceController::class, 'performanceEdc'])->name('report.edc');
     Route::get('/report/optimalisasi-digital/qris', [DigitalPerformanceController::class, 'performanceQris'])->name('report.qris');

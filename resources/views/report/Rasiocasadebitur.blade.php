@@ -1183,9 +1183,10 @@ document.addEventListener('DOMContentLoaded', function () {
             filterMetaPeriod.innerHTML = `<i class="fas fa-clock text-primary mr-1"></i> <strong>Periode aktif:</strong> ${labels.curr || '-'} | <strong>Perbandingan:</strong> ${labels.prev || '-'}`;
 
             if (!hasAnyData) {
-                renderMessage(`Tidak ada data untuk tanggal ${currentDate}. Coba pilih tanggal lain.`);
+                const emptyMessage = res.message || `Tidak ada data untuk tanggal ${currentDate}. Coba pilih tanggal lain.`;
+                renderMessage(emptyMessage);
                 summaryBadge.innerHTML = '<i class="fas fa-info-circle text-warning mr-1"></i> Data kosong';
-                setOverlay('Tidak Ada Data', `Tidak ada data untuk periode <strong>${currentDate}</strong>.`, true);
+                setOverlay('Tidak Ada Data', emptyMessage, true);
                 return;
             }
 

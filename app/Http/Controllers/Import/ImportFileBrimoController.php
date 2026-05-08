@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Import;
 
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Import\Concerns\AllocatesGapIds;
+use App\Http\Controllers\Import\Concerns\SmartCsvImportSupport;
+use App\Services\Import\MySqlBulkLoadService;
 use App\Support\ReportDataSyncService;
 use App\Support\StrictDateParser;
 use Illuminate\Http\Request;
@@ -16,6 +18,14 @@ use Carbon\Carbon;
 class ImportFileBrimoController extends Controller
 {
     use AllocatesGapIds;
+    use SmartCsvImportSupport;
+
+    private const BULK_LOAD_TEMP_DIR = 'app/import_bulk';
+
+    private function bulkLoadService(): MySqlBulkLoadService
+    {
+        return app(MySqlBulkLoadService::class);
+    }
 
     private function normalizeBrimoPeriodValue($value, $fallbackPosisi = null, $fallbackTahun = null): ?string
     {
@@ -160,7 +170,99 @@ class ImportFileBrimoController extends Controller
 
     private function resolveUniqueSuffix(string $tableName): string
     {
-        return $tableName === 'user_brimo_fin' ? '_UBFin' : '_UBv2';
+        return match ($tableName) {
+            'user_brimo_fin' => '_UBFin',
+            'brimo_fin_all' => '_BFA',
+            default => '_UBv2',
+        };
+    }
+
+    private function normalizeBrimoHeader(string $header): string
+    {
+        $header = preg_replace('/^\xEF\xBB\xBF/', '', $header);
+        $header = preg_replace('/[^A-Za-z0-9]+/', '_', trim((string) $header));
+
+        return strtolower(trim((string) $header, '_'));
+    }
+
+    private function normalizeBrimoDecimalValue($value): ?string
+    {
+        $value = trim((string) $value);
+        if ($value === '') {
+            return null;
+        }
+
+        $value = str_replace(["\xc2\xa0", ' '], '', $value);
+
+        if (str_contains($value, ',') && str_contains($value, '.')) {
+            $lastComma = strrpos($value, ',');
+            $lastDot = strrpos($value, '.');
+            $value = $lastComma > $lastDot
+                ? str_replace('.', '', str_replace(',', '.', $value))
+                : str_replace(',', '', $value);
+        } elseif (str_contains($value, ',')) {
+            $value = str_replace(',', '.', $value);
+        }
+
+        $clean = preg_replace('/[^0-9.\-]/', '', $value);
+        if ($clean === '' || $clean === '-' || $clean === '.' || !is_numeric($clean)) {
+            return null;
+        }
+
+        return number_format((float) $clean, 2, '.', '');
+    }
+
+    private function isBrimoNumericColumn(string $column): bool
+    {
+        foreach (['jumlah', 'nominal', 'fee', 'saldo', 'volume', 'transaksi', 'sales'] as $needle) {
+            if (str_contains($column, $needle)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function readCsvRecord($handle, string $delimiter)
+    {
+        $line = fgets($handle);
+        if ($line === false) {
+            return false;
+        }
+
+        $row = $this->smartParseCsvLine((string) $line, $delimiter, false);
+
+        return $row !== [] ? $row : false;
+    }
+
+    private function writableColumnsForTable(string $tableName): array
+    {
+        return array_fill_keys(DB::getSchemaBuilder()->getColumnListing($tableName), true);
+    }
+
+    private function writeBulkTempCsv(array $rows, array $columns, string $tableName, int $jobId): string
+    {
+        $directory = storage_path(self::BULK_LOAD_TEMP_DIR);
+        $path = $this->bulkLoadService()->createBulkLoadTempCsvPath($directory, $tableName, $jobId);
+        $handle = @fopen($path, 'w');
+        if ($handle === false) {
+            throw new \RuntimeException('Gagal membuat CSV sementara untuk bulk import Brimo.');
+        }
+
+        try {
+            foreach ($rows as $row) {
+                $values = [];
+                foreach ($columns as $column) {
+                    $value = $row[$column] ?? null;
+                    $values[] = $value === null ? '\N' : $value;
+                }
+                fputcsv($handle, $values);
+            }
+        } finally {
+            fclose($handle);
+        }
+
+        return $path;
     }
 
     public function upload(Request $request)
@@ -376,11 +478,13 @@ class ImportFileBrimoController extends Controller
         $csvHeaders = [];
         $posisiIndex = -1;
         $tahunIndex = -1;
+        $periodeIndex = -1;
+        $writableColumns = $this->writableColumnsForTable($tableName);
 
         if (($handle = fopen($filePath, "r")) !== FALSE) {
             if ($currentDelimiter === 'auto') {
                 $firstLine = fgets($handle);
-                $delimiters = [',' => 0, ';' => 0, '|' => 0, "\t" => 0, '.' => 0];
+                $delimiters = [',' => 0, ';' => 0, '|' => 0, "\t" => 0];
                 foreach ($delimiters as $delim => &$count) {
                     $count = substr_count($firstLine, $delim);
                 }
@@ -392,7 +496,7 @@ class ImportFileBrimoController extends Controller
             }
 
             $rowCounter = 0;
-            while (($data = fgetcsv($handle, 10000, $delimiter)) !== FALSE) {
+            while (($data = $this->readCsvRecord($handle, $delimiter)) !== FALSE) {
                 if (empty($data) || implode('', $data) === '') continue;
 
                 if ($rowCounter == 0) {
@@ -403,6 +507,7 @@ class ImportFileBrimoController extends Controller
                     foreach ($csvHeaders as $idx => $hdr) {
                         if (stripos($hdr, 'posisi') !== false) { $posisiIndex = $idx; }
                         if (stripos($hdr, 'tahun') !== false) { $tahunIndex = $idx; }
+                        if (stripos($hdr, 'periode') !== false) { $periodeIndex = $idx; }
                     }
                     
                     $rowCounter++;
@@ -467,30 +572,16 @@ class ImportFileBrimoController extends Controller
                 foreach ($selectedColumns as $index) {
                     if (!isset($csvHeaders[$index])) continue;
                     
-                    $colName = str_replace(' ', '_', strtolower($csvHeaders[$index]));
+                    $colName = $this->normalizeBrimoHeader((string) $csvHeaders[$index]);
 
-                    if (strtolower($colName) === 'id' || strtolower($colName) === 'uniqueid_namareport') {
+                    if ($colName === 'id' || $colName === 'uniqueid_namareport' || !isset($writableColumns[$colName])) {
                         continue;
                     }
 
                     $cellValue = isset($data[$index]) ? trim($data[$index]) : '';
 
-                    // Membersihkan format angka seperti pada kolom jumlah/nominal/volume/fee
-                    $numericColumns = ['jumlah', 'nominal', 'fee', 'saldo', 'volume', 'transaksi'];
-                    $isNumericColumn = false;
-                    foreach ($numericColumns as $numCol) {
-                        if (stripos($colName, $numCol) !== false) {
-                            $isNumericColumn = true;
-                            break;
-                        }
-                    }
-
-                    if ($isNumericColumn) {
-                        $clean = preg_replace('/[^0-9.-]/', '', $cellValue);
-                        if (!is_numeric($clean)) {
-                            $clean = null;
-                        }
-                        $cellValue = $clean;
+                    if ($this->isBrimoNumericColumn($colName)) {
+                        $cellValue = $this->normalizeBrimoDecimalValue($cellValue);
                     }
 
                     if ($colName === 'periode') {
@@ -583,32 +674,66 @@ class ImportFileBrimoController extends Controller
         $totalSuccess = 0;
         $totalFailed = 0;
         $lastErrorMsg = '';
+        $bulkLoadHandled = false;
 
-        foreach ($chunks as $chunk) {
-            $chunk = $this->allocateGapIdsForRows($tableName, $chunk);
+        if (!empty($dataToInsert)) {
+            $bulkColumns = array_values(array_keys($dataToInsert[0]));
+            $bulkCsvPath = null;
 
             try {
-                DB::table($tableName)->insert($chunk);
-                $totalSuccess += count($chunk);
-            } catch (\Exception $e) {
-                $totalFailed += count($chunk);
+                $bulkCsvPath = $this->writeBulkTempCsv($dataToInsert, $bulkColumns, $tableName, $jobId);
+                $totalSuccess = $this->bulkLoadService()->loadCsvIntoMysqlChunked(
+                    $bulkCsvPath,
+                    $tableName,
+                    $bulkColumns,
+                    null,
+                    8000,
+                    count($dataToInsert),
+                    true
+                );
+                $totalFailed = max(0, count($dataToInsert) - $totalSuccess);
+                $bulkLoadHandled = true;
+            } catch (\Throwable $e) {
                 $lastErrorMsg = substr($e->getMessage(), 0, 800) . '...';
-                
-                // Menyimpan kegagalan import seperti pada ImportFileController
-                DB::table('failed_jobs')->insert([
-                    'uuid' => (string) Str::uuid(),
-                    'connection' => 'database',
-                    'queue' => 'import_' . $tableName,
-                    'payload' => json_encode(['error' => 'Batch failed. Showing 1 sample:', 'sample' => $chunk[0] ?? []]),
-                    'exception' => $lastErrorMsg,
-                    'failed_at' => now(),
+                Log::warning('Bulk import Brimo gagal, fallback ke insert batch: ' . $e->getMessage(), [
+                    'table' => $tableName,
+                    'job_id' => $jobId,
                 ]);
+            } finally {
+                if ($bulkCsvPath !== null && file_exists($bulkCsvPath)) {
+                    @unlink($bulkCsvPath);
+                }
+            }
+        }
+
+        if (!$bulkLoadHandled) {
+            foreach ($chunks as $chunk) {
+                $chunk = $this->allocateGapIdsForRows($tableName, $chunk);
+
+                try {
+                    DB::table($tableName)->insert($chunk);
+                    $totalSuccess += count($chunk);
+                } catch (\Exception $e) {
+                    $totalFailed += count($chunk);
+                    $lastErrorMsg = substr($e->getMessage(), 0, 800) . '...';
+
+                    DB::table('failed_jobs')->insert([
+                        'uuid' => (string) Str::uuid(),
+                        'connection' => 'database',
+                        'queue' => 'import_' . $tableName,
+                        'payload' => json_encode(['error' => 'Batch failed. Showing 1 sample:', 'sample' => $chunk[0] ?? []]),
+                        'exception' => $lastErrorMsg,
+                        'failed_at' => now(),
+                    ]);
+                }
             }
         }
 
         $finalStatus = $totalFailed > 0 ? ($totalSuccess > 0 ? 'failed_partial' : 'failed') : 'completed';
         DB::table('import_jobs')->where('id', $jobId)->update([
             'status' => $finalStatus,
+            'total_success' => $totalSuccess,
+            'total_failed' => $totalFailed,
             'updated_at' => now(),
         ]);
 

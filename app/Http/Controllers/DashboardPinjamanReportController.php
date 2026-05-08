@@ -38,11 +38,12 @@ class DashboardPinjamanReportController extends Controller
     private const SMALL_ARREARS_AREA_ALL = 'AREA_6_ALL';
     private const SMALL_ARREARS_AREA_BRANCHES = ['KC Madiun', 'KC Magetan', 'KC Ngawi', 'KC Ponorogo'];
     private const SMALL_ARREARS_ALL_UKER = 'ALL_UKER';
+    private const KOLEK_MISMATCH_AREA_ALL = 'AREA_6_ALL';
 
     private const BEFORE_ROWS = ['New Account', 'L', 'LR', 'DPK 1', 'DPK 2', 'DPK 3', 'KL', 'D1', 'D2', 'M'];
 
     private const OUTPUT_COLUMNS = ['Turunan Pokok', 'Suplesi', 'PH', 'Lunas'];
-    private const KOLEK_MISMATCH_RULE_LABEL = 'kol_adk1_vs_umur_tunggakan_v1';
+    private const KOLEK_MISMATCH_RULE_LABEL = 'kolek_vs_umur_tunggakan_v2';
     private const MATRIX_MODAL_COLUMNS = [
         'pivot_before_bucket',
         'pivot_after_bucket',
@@ -317,12 +318,15 @@ class DashboardPinjamanReportController extends Controller
                     'current' => 0,
                     'ytd' => 0,
                     'mtd' => 0,
+                    'current_tunggakan' => 0.0,
+                    'ytd_tunggakan' => 0.0,
+                    'mtd_tunggakan' => 0.0,
                     'total_tunggakan' => 0.0,
                 ],
             ]);
         }
 
-        $cacheKey = 'dashboard_pinjaman_tunggakan_kecil_data:v1:' . md5(json_encode([
+        $cacheKey = 'dashboard_pinjaman_tunggakan_kecil_data:v3:' . md5(json_encode([
             'cache_version' => $this->reportCacheVersion(),
             'periode' => $selectedPeriod,
             'cabang1' => $selectedBranches,
@@ -339,6 +343,9 @@ class DashboardPinjamanReportController extends Controller
                 'current' => 0,
                 'ytd' => 0,
                 'mtd' => 0,
+                'current_tunggakan' => 0.0,
+                'ytd_tunggakan' => 0.0,
+                'mtd_tunggakan' => 0.0,
                 'total_tunggakan' => 0.0,
             ],
         ]);
@@ -352,6 +359,71 @@ class DashboardPinjamanReportController extends Controller
             'effective_units' => $effectiveUnits,
             'is_all_uker' => $unitSelection['is_all_uker'],
         ], $payload));
+    }
+
+    public function smallArrearsExport(Request $request)
+    {
+        @set_time_limit(0);
+        DB::connection()->disableQueryLog();
+        $this->releaseSessionLockIfNeeded();
+
+        $availablePeriods = $this->fetchPeriods();
+        $selectedPeriod = $this->resolveSmallArrearsSelectedPeriod($request->input('periode'), $availablePeriods);
+        $branchSelection = $this->resolveSmallArrearsBranchSelection($request->input('cabang1'));
+        $unitSelection = $this->resolveSmallArrearsUnitSelection($request->input('unit1'), $branchSelection['is_area_all']);
+
+        abort_if(!$selectedPeriod, 422, 'Periode wajib dipilih.');
+
+        $effectiveBranches = $branchSelection['effective_branches'];
+        $effectiveUnits = $unitSelection['effective_units'];
+        $exportColumns = $this->collectSmallArrearsExportColumns();
+
+        $filename = sprintf(
+            'tunggakan-kecil_%s_%s_%s.xlsx',
+            str_replace('-', '', $selectedPeriod),
+            $branchSelection['is_area_all']
+                ? 'area-6'
+                : $this->sanitizeExportToken(implode('-', $branchSelection['selected_values'])),
+            $effectiveUnits === []
+                ? 'all-uker'
+                : $this->sanitizeExportToken(implode('-', $effectiveUnits))
+        );
+
+        Log::info('Dashboard pinjaman small arrears export generated.', [
+            'selected_period' => $selectedPeriod,
+            'selected_branches' => $branchSelection['selected_values'],
+            'effective_branches' => $effectiveBranches,
+            'effective_units' => $effectiveUnits,
+        ]);
+
+        return response()->streamDownload(function () use ($selectedPeriod, $effectiveBranches, $effectiveUnits, $exportColumns) {
+            $spreadsheet = new Spreadsheet();
+            $sheet = $spreadsheet->getActiveSheet();
+            $sheet->setTitle('Tunggakan Kecil');
+
+            foreach ($exportColumns as $index => $column) {
+                $sheet->setCellValue(Coordinate::stringFromColumnIndex($index + 1) . '1', $column);
+            }
+
+            $rowIndex = 2;
+            foreach ($this->buildSmallArrearsExportQuery($selectedPeriod, $effectiveBranches, $effectiveUnits)->cursor() as $row) {
+                $rowData = (array) $row;
+                foreach ($exportColumns as $columnIndex => $column) {
+                    $sheet->setCellValue(
+                        Coordinate::stringFromColumnIndex($columnIndex + 1) . $rowIndex,
+                        $rowData[$column] ?? ''
+                    );
+                }
+                $rowIndex++;
+            }
+
+            $writer = new Xlsx($spreadsheet);
+            $writer->save('php://output');
+            $spreadsheet->disconnectWorksheets();
+        }, $filename, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Cache-Control' => 'no-store, no-cache',
+        ]);
     }
 
     private function fetchKreditPeriods(): Collection
@@ -409,7 +481,7 @@ class DashboardPinjamanReportController extends Controller
             'selectedMode' => $this->normalizeReportMode($mode),
             'mismatchRequestedPeriod' => $request->input('mismatch_periode'),
             'mismatchSelectedPeriod' => $this->resolveEffectivePeriod($request->input('mismatch_periode')),
-            'mismatchSelectedBranch' => trim((string) $request->input('mismatch_cabang1', '')),
+            'mismatchSelectedBranches' => $this->resolveKolekMismatchBranchSelection($request->input('mismatch_cabang1'))['selected_values'],
         ]);
     }
 
@@ -499,11 +571,12 @@ class DashboardPinjamanReportController extends Controller
 
         $phPeriod = $this->resolvePhPeriod($selectedPeriod);
 
-        $cacheKey = 'dashboard_pinjaman_matrix_direct:v1:' . md5(json_encode([
+        $cacheKey = 'dashboard_pinjaman_matrix_direct:v2:' . md5(json_encode([
             'cache_version' => $this->reportCacheVersion(),
             'periode' => $selectedPeriod,
             'comparison' => $comparisonPeriod,
             'ph_period' => $phPeriod,
+            'recovery_source' => $this->shouldUseLw325RecoveryMetrics($selectedPeriod) ? self::PH_TABLE : 'loan_movement',
             'filters' => $filters,
         ]));
 
@@ -642,13 +715,13 @@ class DashboardPinjamanReportController extends Controller
             ]);
         }
 
-        $cacheKey = 'dashboard_pinjaman_kolek_mismatch_filters:v1:' . md5(json_encode([
+        $cacheKey = 'dashboard_pinjaman_kolek_mismatch_filters:v2:' . md5(json_encode([
             'cache_version' => $this->reportCacheVersion(),
             'periode' => $selectedPeriod,
         ]));
 
         $branches = $this->rememberPayload($cacheKey, now()->addMinutes(3), function () use ($selectedPeriod) {
-            return DB::table('daily_loan_dinamis')
+            $availableBranches = DB::table('daily_loan_dinamis')
                 ->where('periode', $selectedPeriod)
                 ->whereNotNull('cabang1')
                 ->where('cabang1', '<>', '')
@@ -657,6 +730,16 @@ class DashboardPinjamanReportController extends Controller
                 ->pluck('cabang1')
                 ->map(fn ($value) => trim((string) $value))
                 ->filter()
+                ->values();
+
+            $areaBranches = collect(self::SMALL_ARREARS_AREA_BRANCHES)
+                ->filter(fn (string $branch) => $availableBranches->contains($branch))
+                ->values();
+
+            return collect([self::KOLEK_MISMATCH_AREA_ALL])
+                ->merge($areaBranches)
+                ->merge($availableBranches->reject(fn ($branch) => $areaBranches->contains($branch)))
+                ->unique()
                 ->values();
         });
 
@@ -673,13 +756,17 @@ class DashboardPinjamanReportController extends Controller
         $this->releaseSessionLockIfNeeded();
 
         $selectedPeriod = $this->resolveEffectivePeriod($request->input('periode'));
-        $selectedBranch = trim((string) $request->input('cabang1', ''));
+        $branchSelection = $this->resolveKolekMismatchBranchSelection($request->input('cabang1'));
+        $selectedBranches = $branchSelection['effective_branches'];
         $forceRefresh = $request->boolean('refresh');
 
-        if (!$selectedPeriod || $selectedBranch === '') {
+        if (!$selectedPeriod || $selectedBranches === []) {
             return response()->json([
                 'selected_period' => $selectedPeriod,
-                'selected_branch' => $selectedBranch !== '' ? $selectedBranch : null,
+                'selected_branch' => null,
+                'selected_branches' => $branchSelection['selected_values'],
+                'effective_branches' => $selectedBranches,
+                'is_area_all' => $branchSelection['is_area_all'],
                 'summary_rows' => [],
                 'audit' => [
                     'rule' => self::KOLEK_MISMATCH_RULE_LABEL,
@@ -687,18 +774,19 @@ class DashboardPinjamanReportController extends Controller
                     'matched_rows' => 0,
                     'mismatch_rows' => 0,
                     'units_with_mismatch' => 0,
+                    'total_outstanding_balance' => 0.0,
                 ],
             ]);
         }
 
-        $cacheKey = 'dashboard_pinjaman_kolek_mismatch_data:v1:' . md5(json_encode([
+        $cacheKey = 'dashboard_pinjaman_kolek_mismatch_data:v8:' . md5(json_encode([
             'cache_version' => $this->reportCacheVersion(),
             'periode' => $selectedPeriod,
-            'cabang1' => $selectedBranch,
+            'cabang1' => $selectedBranches,
         ]));
 
-        $payload = $this->rememberPayload($cacheKey, now()->addMinutes(3), function () use ($selectedPeriod, $selectedBranch) {
-            return $this->buildKolekMismatchSummary($selectedPeriod, $selectedBranch);
+        $payload = $this->rememberPayload($cacheKey, now()->addMinutes(3), function () use ($selectedPeriod, $selectedBranches) {
+            return $this->buildKolekMismatchSummary($selectedPeriod, $selectedBranches, count($selectedBranches) > 1);
         }, $forceRefresh, fn () => [
             'status' => 'warming',
             'summary_rows' => [],
@@ -708,12 +796,16 @@ class DashboardPinjamanReportController extends Controller
                 'matched_rows' => 0,
                 'mismatch_rows' => 0,
                 'units_with_mismatch' => 0,
+                'total_outstanding_balance' => 0.0,
             ],
         ]);
 
         return response()->json([
             'selected_period' => $selectedPeriod,
-            'selected_branch' => $selectedBranch,
+            'selected_branch' => $branchSelection['label'],
+            'selected_branches' => $branchSelection['selected_values'],
+            'effective_branches' => $selectedBranches,
+            'is_area_all' => $branchSelection['is_area_all'],
             'summary_rows' => $payload['summary_rows'],
             'audit' => $payload['audit'],
         ]);
@@ -726,10 +818,10 @@ class DashboardPinjamanReportController extends Controller
         $this->releaseSessionLockIfNeeded();
 
         $selectedPeriod = $this->resolveEffectivePeriod($request->input('periode'));
-        $selectedBranch = trim((string) $request->input('cabang1', ''));
+        $selectedBranch = trim((string) (is_array($request->input('cabang1')) ? ($request->input('cabang1')[0] ?? '') : $request->input('cabang1', '')));
         $selectedUnit = trim((string) $request->input('unit1', ''));
 
-        abort_if(!$selectedPeriod || $selectedBranch === '' || $selectedUnit === '', 422, 'Periode, cabang, dan unit kerja wajib dipilih.');
+        abort_if(!$selectedPeriod || $selectedBranch === '', 422, 'Periode dan cabang wajib dipilih.');
 
         $rows = $this->fetchKolekMismatchRows($selectedPeriod, $selectedBranch, $selectedUnit);
         $exportColumns = $this->collectKolekExportColumns();
@@ -737,7 +829,7 @@ class DashboardPinjamanReportController extends Controller
         Log::info('Dashboard pinjaman mismatch export generated.', [
             'selected_period' => $selectedPeriod,
             'selected_branch' => $selectedBranch,
-            'selected_unit' => $selectedUnit,
+            'selected_unit' => $selectedUnit !== '' ? $selectedUnit : 'ALL UKER',
             'mismatch_rows' => count($rows),
             'rule' => self::KOLEK_MISMATCH_RULE_LABEL,
         ]);
@@ -746,7 +838,7 @@ class DashboardPinjamanReportController extends Controller
             'kolek-tidak-sesuai_%s_%s_%s.xlsx',
             str_replace('-', '', $selectedPeriod),
             $this->sanitizeExportToken($selectedBranch),
-            $this->sanitizeExportToken($selectedUnit)
+            $selectedUnit !== '' ? $this->sanitizeExportToken($selectedUnit) : 'all-uker'
         );
 
         return response()->streamDownload(function () use ($rows, $exportColumns) {
@@ -812,6 +904,7 @@ class DashboardPinjamanReportController extends Controller
         $phPeriod = $this->resolvePhPeriod($selectedPeriod);
         $useCurrentSnapshot = $this->shouldUseSnapshot($selectedPeriod, $filters);
         $useComparisonSnapshot = $comparisonPeriod ? $this->shouldUseSnapshot($comparisonPeriod, $filters) : false;
+        $useLw325RecoveryMetrics = $this->shouldUseLw325RecoveryMetrics($selectedPeriod);
 
         // Ensure both periods use the same source to avoid account_number format mismatches
         // If one period doesn't have snapshot, both must use daily_loan_dinamis
@@ -854,7 +947,8 @@ class DashboardPinjamanReportController extends Controller
                 $phPeriod,
                 $filters,
                 $useCurrentSnapshot,
-                $useComparisonSnapshot
+                $useComparisonSnapshot,
+                $useLw325RecoveryMetrics
             )->get();
             
             $metricRowsCount = $metricRowsRaw->count();
@@ -1088,13 +1182,16 @@ class DashboardPinjamanReportController extends Controller
         ?string $phPeriod,
         array $filters,
         ?bool $useCurrentSnapshot = null,
-        ?bool $useComparisonSnapshot = null
+        ?bool $useComparisonSnapshot = null,
+        bool $useLw325RecoveryMetrics = false
     )
     {
         $currentSnapshot = $this->buildAggregatedLoanSnapshotQuery($selectedPeriod, $filters, 'curr', $useCurrentSnapshot);
         $previousSnapshot = $comparisonPeriod
             ? $this->buildAggregatedLoanSnapshotQuery($comparisonPeriod, $filters, 'prev', $useComparisonSnapshot)
             : $this->buildEmptyAggregatedLoanSnapshotQuery();
+        $principalReductionMetric = $useLw325RecoveryMetrics ? 'NULL' : "'principal_reduction'";
+        $lunasMetric = $useLw325RecoveryMetrics ? 'NULL' : "'lunas'";
 
         // Consolidated metrics query: single pass instead of 4 UNIONs
         $joinedMetrics = DB::query()
@@ -1111,7 +1208,7 @@ class DashboardPinjamanReportController extends Controller
                     WHEN COALESCE(prev.balance_cents, 0) > 0 
                         AND curr.balance_cents > 0 
                         AND prev.balance_cents > curr.balance_cents
-                    THEN 'principal_reduction'
+                    THEN {$principalReductionMetric}
                     WHEN curr.balance_cents > 0
                     THEN 'suplesi'
                     ELSE NULL
@@ -1141,7 +1238,7 @@ class DashboardPinjamanReportController extends Controller
             })
             ->selectRaw("
                 prev.bucket as before_bucket,
-                CASE WHEN ph.account_number IS NOT NULL THEN 'ph' ELSE 'lunas' END as metric_type,
+                CASE WHEN ph.account_number IS NOT NULL THEN 'ph' ELSE {$lunasMetric} END as metric_type,
                 prev.balance_cents as amount_cents
             ")
             ->whereNull('curr.account_number')
@@ -1153,18 +1250,86 @@ class DashboardPinjamanReportController extends Controller
             ->fromSub($this->buildAnonymousCurrentMovementQuery($selectedPeriod, $filters), 'anon_metric')
             ->selectRaw("before_bucket, 'suplesi' as metric_type, amount_cents");
 
+        $movementMetrics = $joinedMetrics
+            ->unionAll($exitMetrics)
+            ->unionAll($anonMetrics);
+
+        if ($useLw325RecoveryMetrics) {
+            $movementMetrics->unionAll(
+                $this->buildLw325RecoveryMetricQuery($selectedPeriod, $comparisonPeriod, $filters, $useComparisonSnapshot)
+            );
+        }
+
         return DB::query()
-            ->fromSub(
-                $joinedMetrics
-                    ->unionAll($exitMetrics)
-                    ->unionAll($anonMetrics),
-                'movement_metrics'
-            )
+            ->fromSub($movementMetrics, 'movement_metrics')
             ->selectRaw('before_bucket, metric_type, SUM(amount_cents) as amount_cents')
             ->whereNotNull('metric_type')
             ->whereIn('before_bucket', self::BEFORE_ROWS)
             ->where('amount_cents', '>', 0)
             ->groupBy('before_bucket', 'metric_type');
+    }
+
+    private function buildLw325RecoveryMetricQuery(
+        string $selectedPeriod,
+        ?string $comparisonPeriod,
+        array $filters,
+        ?bool $useComparisonSnapshot = null
+    ) {
+        $currentPhPeriod = $this->resolveExactPhPeriod($selectedPeriod);
+        $previousPhPeriod = $currentPhPeriod ? $this->resolvePreviousMonthPhPeriod($currentPhPeriod) : null;
+
+        if (!$currentPhPeriod || !$previousPhPeriod || !$comparisonPeriod) {
+            return DB::query()
+                ->selectRaw("'New Account' as before_bucket, 'principal_reduction' as metric_type, 0 as amount_cents")
+                ->whereRaw('1 = 0');
+        }
+
+        $previousSnapshot = $this->buildAggregatedLoanSnapshotQuery($comparisonPeriod, $filters, 'prev_recovery', $useComparisonSnapshot);
+        $currentAccountKeySql = $this->phAccountKeySql('n');
+        $previousAccountKeySql = $this->phAccountKeySql('o');
+
+        $tupokQuery = DB::table('lw325_ph as n')
+            ->join('lw325_ph as o', function ($join) use ($previousPhPeriod, $currentPhPeriod, $currentAccountKeySql, $previousAccountKeySql) {
+                $join->whereRaw("{$currentAccountKeySql} = {$previousAccountKeySql}")
+                    ->on('n.kanca', '=', 'o.kanca')
+                    ->on('n.unit', '=', 'o.unit')
+                    ->whereRaw('n.periode = ?', [$currentPhPeriod])
+                    ->whereRaw('o.periode = ?', [$previousPhPeriod]);
+            })
+            ->leftJoinSub($previousSnapshot, 'prev_bucket', function ($join) use ($previousAccountKeySql) {
+                $join->whereRaw("{$previousAccountKeySql} = prev_bucket.account_number");
+            })
+            ->selectRaw("COALESCE(prev_bucket.bucket, 'New Account') as before_bucket")
+            ->selectRaw("'principal_reduction' as metric_type")
+            ->selectRaw("CAST(ROUND((COALESCE(o.pokok, 0) - COALESCE(n.pokok, 0)) * 100, 0) AS SIGNED) as amount_cents")
+            ->whereRaw('(COALESCE(o.pokok, 0) - COALESCE(n.pokok, 0)) > 0')
+            ->whereNotNull('n.acctno')
+            ->where('n.acctno', '<>', '');
+
+        $this->applyLw325RecoveryFilters($tupokQuery, 'n', $filters);
+
+        $previousSnapshotForLunas = $this->buildAggregatedLoanSnapshotQuery($comparisonPeriod, $filters, 'prev_recovery_lunas', $useComparisonSnapshot);
+        $lunasQuery = DB::table('lw325_ph as o')
+            ->leftJoin('lw325_ph as n', function ($join) use ($currentPhPeriod, $currentAccountKeySql, $previousAccountKeySql) {
+                $join->whereRaw("{$previousAccountKeySql} = {$currentAccountKeySql}")
+                    ->on('o.kanca', '=', 'n.kanca')
+                    ->on('o.unit', '=', 'n.unit')
+                    ->whereRaw('n.periode = ?', [$currentPhPeriod]);
+            })
+            ->leftJoinSub($previousSnapshotForLunas, 'prev_bucket', function ($join) use ($previousAccountKeySql) {
+                $join->whereRaw("{$previousAccountKeySql} = prev_bucket.account_number");
+            })
+            ->where('o.periode', $previousPhPeriod)
+            ->whereNull('n.acctno')
+            ->whereNotNull('o.acctno')
+            ->where('o.acctno', '<>', '')
+            ->selectRaw("COALESCE(prev_bucket.bucket, 'New Account') as before_bucket")
+            ->selectRaw("'lunas' as metric_type")
+            ->selectRaw("CAST(ROUND(COALESCE(o.pokok, 0) * 100, 0) AS SIGNED) as amount_cents");
+
+        $this->applyLw325RecoveryFilters($lunasQuery, 'o', $filters);
+
+        return $tupokQuery->unionAll($lunasQuery);
     }
 
     private function buildAggregatedLoanSnapshotQuery(string $period, array $filters, string $alias, ?bool $useSnapshot = null)
@@ -1504,6 +1669,39 @@ class DashboardPinjamanReportController extends Controller
         return collect([self::SMALL_ARREARS_AREA_ALL, ...self::SMALL_ARREARS_AREA_BRANCHES]);
     }
 
+    private function resolveKolekMismatchBranchSelection($value): array
+    {
+        $normalized = $this->normalizeFilterValues($value);
+
+        if ($normalized === [] || in_array(self::KOLEK_MISMATCH_AREA_ALL, $normalized, true)) {
+            return [
+                'selected_values' => [self::KOLEK_MISMATCH_AREA_ALL],
+                'effective_branches' => self::SMALL_ARREARS_AREA_BRANCHES,
+                'is_area_all' => true,
+                'label' => 'Area 6 - All',
+            ];
+        }
+
+        $selectedBranch = collect($normalized)
+            ->first(fn (string $branch) => in_array($branch, self::SMALL_ARREARS_AREA_BRANCHES, true));
+
+        if ($selectedBranch === null) {
+            return [
+                'selected_values' => [self::KOLEK_MISMATCH_AREA_ALL],
+                'effective_branches' => self::SMALL_ARREARS_AREA_BRANCHES,
+                'is_area_all' => true,
+                'label' => 'Area 6 - All',
+            ];
+        }
+
+        return [
+            'selected_values' => [$selectedBranch],
+            'effective_branches' => [$selectedBranch],
+            'is_area_all' => false,
+            'label' => $selectedBranch,
+        ];
+    }
+
     private function resolveSmallArrearsBranchSelection($value): array
     {
         $normalized = $this->normalizeFilterValues($value);
@@ -1635,13 +1833,13 @@ class DashboardPinjamanReportController extends Controller
         if ($penaltyColumn !== null) {
             $totalExpression .= " + COALESCE({$penaltyColumn}, 0)";
         }
-        $qualifiedAccountExpression = "CASE WHEN ({$totalExpression}) >= 0 AND ({$totalExpression}) < 100000 THEN {$accountColumn} END";
-        $qualifiedAmountExpression = "CASE WHEN ({$totalExpression}) >= 0 AND ({$totalExpression}) < 100000 THEN ({$totalExpression}) ELSE 0 END";
+        $qualifiedAccountExpression = "CASE WHEN ({$totalExpression}) > 0 AND ({$totalExpression}) <= 100000 THEN {$accountColumn} END";
+        $qualifiedAmountExpression = "CASE WHEN ({$totalExpression}) > 0 AND ({$totalExpression}) <= 100000 THEN ({$totalExpression}) ELSE 0 END";
         $currentPeriodHasData = DB::table('daily_loan_dinamis')
             ->where('periode', $selectedPeriod)
             ->when($selectedBranches !== [], fn (Builder $query) => $query->whereIn('cabang1', $selectedBranches))
             ->when($selectedUnits !== [], fn (Builder $query) => $query->whereIn('unit1', $selectedUnits))
-            ->whereRaw("({$totalExpression}) >= 0 AND ({$totalExpression}) < 100000")
+            ->whereRaw("({$totalExpression}) > 0 AND ({$totalExpression}) <= 100000")
             ->exists();
 
         $periodsToQuery = collect([
@@ -1656,6 +1854,8 @@ class DashboardPinjamanReportController extends Controller
             ->selectRaw("COUNT(DISTINCT CASE WHEN periode = ? THEN {$qualifiedAccountExpression} END) as ytd_base", [$comparisonPeriods['ytd']])
             ->selectRaw("COUNT(DISTINCT CASE WHEN periode = ? THEN {$qualifiedAccountExpression} END) as mtd_base", [$comparisonPeriods['mtd']])
             ->selectRaw("SUM(CASE WHEN periode = ? THEN {$qualifiedAmountExpression} ELSE 0 END) as current_total_tunggakan", [$selectedPeriod])
+            ->selectRaw("SUM(CASE WHEN periode = ? THEN {$qualifiedAmountExpression} ELSE 0 END) as ytd_total_tunggakan", [$comparisonPeriods['ytd']])
+            ->selectRaw("SUM(CASE WHEN periode = ? THEN {$qualifiedAmountExpression} ELSE 0 END) as mtd_total_tunggakan", [$comparisonPeriods['mtd']])
             ->whereIn('periode', $periodsToQuery)
             ->whereNotNull($groupColumn)
             ->where($groupColumn, '<>', '')
@@ -1670,6 +1870,9 @@ class DashboardPinjamanReportController extends Controller
             'current' => 0,
             'ytd' => 0,
             'mtd' => 0,
+            'current_tunggakan' => 0.0,
+            'ytd_tunggakan' => 0.0,
+            'mtd_tunggakan' => 0.0,
             'total_tunggakan' => 0.0,
         ];
 
@@ -1683,12 +1886,17 @@ class DashboardPinjamanReportController extends Controller
             $ytdBase = (int) ($row->ytd_base ?? 0);
             $mtdBase = (int) ($row->mtd_base ?? 0);
             $currentTotalTunggakan = (float) ($row->current_total_tunggakan ?? 0);
+            $ytdTotalTunggakan = (float) ($row->ytd_total_tunggakan ?? 0);
+            $mtdTotalTunggakan = (float) ($row->mtd_total_tunggakan ?? 0);
 
             $mappedRow = [
                 'label' => $label,
                 'ytd' => $currentPeriodHasData ? $ytdBase : 0,
                 'mtd' => $currentPeriodHasData ? $mtdBase : 0,
                 'current' => $currentPeriodHasData ? $current : 0,
+                'ytd_tunggakan' => $currentPeriodHasData ? $ytdTotalTunggakan : 0.0,
+                'mtd_tunggakan' => $currentPeriodHasData ? $mtdTotalTunggakan : 0.0,
+                'current_tunggakan' => $currentPeriodHasData ? $currentTotalTunggakan : 0.0,
                 'total_tunggakan' => $currentPeriodHasData ? $currentTotalTunggakan : 0.0,
             ];
 
@@ -1696,6 +1904,9 @@ class DashboardPinjamanReportController extends Controller
             $totals['current'] += $mappedRow['current'];
             $totals['ytd'] += $mappedRow['ytd'];
             $totals['mtd'] += $mappedRow['mtd'];
+            $totals['current_tunggakan'] += $mappedRow['current_tunggakan'];
+            $totals['ytd_tunggakan'] += $mappedRow['ytd_tunggakan'];
+            $totals['mtd_tunggakan'] += $mappedRow['mtd_tunggakan'];
             $totals['total_tunggakan'] += $mappedRow['total_tunggakan'];
         }
 
@@ -1712,6 +1923,9 @@ class DashboardPinjamanReportController extends Controller
                     'ytd' => 0,
                     'mtd' => 0,
                     'current' => 0,
+                    'ytd_tunggakan' => 0.0,
+                    'mtd_tunggakan' => 0.0,
+                    'current_tunggakan' => 0.0,
                     'total_tunggakan' => 0.0,
                 ];
             }
@@ -1729,6 +1943,49 @@ class DashboardPinjamanReportController extends Controller
         ];
     }
 
+    private function buildSmallArrearsExportQuery(string $selectedPeriod, array $selectedBranches, array $selectedUnits): Builder
+    {
+        $penaltyColumn = Schema::hasColumn('daily_loan_dinamis', 'tunggakan_penalti')
+            ? 'tunggakan_penalti'
+            : (Schema::hasColumn('daily_loan_dinamis', 'tunggakan_pinalti') ? 'tunggakan_pinalti' : null);
+        $totalExpression = 'COALESCE(tunggakan_pokok, 0) + COALESCE(tunggakan_bunga, 0)';
+        if ($penaltyColumn !== null) {
+            $totalExpression .= " + COALESCE({$penaltyColumn}, 0)";
+        }
+
+        $orderingColumn = Schema::hasColumn('daily_loan_dinamis', 'nomor_rekening1')
+            ? 'nomor_rekening1'
+            : $this->resolveIdentityColumn('daily_loan_dinamis');
+
+        return DB::table('daily_loan_dinamis')
+            ->select('daily_loan_dinamis.*')
+            ->selectRaw("({$totalExpression}) as total_tunggakan_terhitung")
+            ->where('periode', $selectedPeriod)
+            ->whereRaw("({$totalExpression}) > 0 AND ({$totalExpression}) <= 100000")
+            ->when($selectedBranches !== [], fn (Builder $query) => $query->whereIn('cabang1', $selectedBranches))
+            ->when($selectedUnits !== [], fn (Builder $query) => $query->whereIn('unit1', $selectedUnits))
+            ->orderBy('cabang1')
+            ->orderBy('unit1')
+            ->orderBy($orderingColumn);
+    }
+
+    private function collectSmallArrearsExportColumns(): array
+    {
+        static $cached = null;
+        if ($cached !== null) {
+            return $cached;
+        }
+
+        $excluded = ['created_at', 'updated_at', 'uniqueid_namareport'];
+        $cached = array_values(array_filter(
+            Schema::getColumnListing('daily_loan_dinamis'),
+            fn (string $col) => !in_array($col, $excluded, true)
+        ));
+        $cached[] = 'total_tunggakan_terhitung';
+
+        return $cached;
+    }
+
     private function completeSmallArrearsBranchRows(array $rows, array $branches): array
     {
         $rowsByLabel = collect($rows)->keyBy('label');
@@ -1740,6 +1997,9 @@ class DashboardPinjamanReportController extends Controller
                 'ytd' => 0,
                 'mtd' => 0,
                 'current' => 0,
+                'ytd_tunggakan' => 0.0,
+                'mtd_tunggakan' => 0.0,
+                'current_tunggakan' => 0.0,
                 'total_tunggakan' => 0.0,
             ]);
         }
@@ -1818,6 +2078,64 @@ class DashboardPinjamanReportController extends Controller
             return DB::table(self::PH_TABLE)
                 ->where('periode', '<=', $selectedPeriod)
                 ->max('periode');
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    private function shouldUseLw325RecoveryMetrics(?string $selectedPeriod): bool
+    {
+        if (!$selectedPeriod || !Schema::hasTable('lw325_ph')) {
+            return false;
+        }
+
+        try {
+            $normalizedPeriod = Carbon::parse($selectedPeriod)->format('Y-m-d');
+
+            if (Schema::hasTable('cognos_recovery')
+                && DB::table('cognos_recovery')->where('periode', $normalizedPeriod)->exists()
+            ) {
+                return false;
+            }
+
+            return DB::table('lw325_ph')->where('periode', $normalizedPeriod)->exists();
+        } catch (Throwable) {
+            return false;
+        }
+    }
+
+    private function resolveExactPhPeriod(?string $selectedPeriod): ?string
+    {
+        if (!$selectedPeriod) {
+            return null;
+        }
+
+        try {
+            $normalizedPeriod = Carbon::parse($selectedPeriod)->format('Y-m-d');
+
+            return DB::table('lw325_ph')->where('periode', $normalizedPeriod)->exists()
+                ? $normalizedPeriod
+                : null;
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    private function resolvePreviousMonthPhPeriod(string $period): ?string
+    {
+        try {
+            $current = Carbon::parse($period);
+            $target = $current->copy()->subMonthNoOverflow();
+            $monthStart = $target->copy()->startOfMonth()->toDateString();
+            $targetDate = $target->toDateString();
+            $monthEnd = $target->copy()->endOfMonth()->toDateString();
+
+            return DB::table('lw325_ph')
+                ->whereBetween('periode', [$monthStart, $targetDate])
+                ->max('periode')
+                ?: DB::table('lw325_ph')
+                    ->whereBetween('periode', [$monthStart, $monthEnd])
+                    ->max('periode');
         } catch (Throwable) {
             return null;
         }
@@ -1937,18 +2255,19 @@ class DashboardPinjamanReportController extends Controller
         return $this->hasDashboardSnapshot($period);
     }
 
-    private function buildKolekMismatchSummary(string $selectedPeriod, string $selectedBranch): array
+    private function buildKolekMismatchSummary(string $selectedPeriod, array $selectedBranches, bool $groupByBranch = false): array
     {
         $startedAt = microtime(true);
         $scannedRows = 0;
         $matchedRows = 0;
         $mismatchRows = 0;
-        $unitCounts = [];
+        $totalOutstandingBalance = 0.0;
+        $unitSummaries = [];
 
-        foreach ($this->buildKolekMismatchBaseQuery($selectedPeriod, $selectedBranch)->cursor() as $row) {
+        foreach ($this->buildKolekMismatchBaseQuery($selectedPeriod, $selectedBranches)->cursor() as $row) {
             $scannedRows++;
 
-            $actualKolek = $this->normalizeKolekValue($row->kol_adk1 ?? null);
+            $actualKolek = $this->normalizeKolekValue($row->kolek ?? null);
             $expectedKolek = $this->expectedKolekFromUmurTunggakan($row->umur_tunggakan ?? null);
 
             if ($actualKolek === null || $expectedKolek === null) {
@@ -1961,30 +2280,107 @@ class DashboardPinjamanReportController extends Controller
             }
 
             $mismatchRows++;
+            $branch = trim((string) ($row->cabang1 ?? 'Tanpa Cabang'));
+            $branch = $branch !== '' ? $branch : 'Tanpa Cabang';
             $unit = trim((string) ($row->unit1 ?? 'Tanpa Unit'));
             $unit = $unit !== '' ? $unit : 'Tanpa Unit';
-            $unitCounts[$unit] = ($unitCounts[$unit] ?? 0) + 1;
+            $summaryKey = $groupByBranch ? $branch : $branch . "\n" . $unit;
+            $keterangan = $this->determineKeterangan($row);
+
+            if (!isset($unitSummaries[$summaryKey])) {
+                $unitSummaries[$summaryKey] = [
+                    'branch' => $branch,
+                    'unit' => $groupByBranch ? '' : $unit,
+                    'label' => $groupByBranch ? $branch : $unit,
+                    'is_branch_summary' => $groupByBranch,
+                    'mismatch_count' => 0,
+                    'memburuk_count' => 0,
+                    'memburuk_os' => 0.0,
+                    'belum_waktunya_penyesuaian_count' => 0,
+                    'belum_waktunya_penyesuaian_os' => 0.0,
+                    'kolek_membaik_count' => 0,
+                    'kolek_membaik_os' => 0.0,
+                    'outstanding_balance' => 0.0,
+                ];
+            }
+
+            $outstandingBalance = $this->normalizeAmountValue($row->baki_debet1 ?? 0);
+            $unitSummaries[$summaryKey]['mismatch_count']++;
+            $unitSummaries[$summaryKey]['outstanding_balance'] += $outstandingBalance;
+            $totalOutstandingBalance += $outstandingBalance;
+
+            if ($keterangan === 'memburuk') {
+                $unitSummaries[$summaryKey]['memburuk_count']++;
+                $unitSummaries[$summaryKey]['memburuk_os'] += $outstandingBalance;
+            } elseif ($keterangan === 'belum waktunya penyesuaian') {
+                $unitSummaries[$summaryKey]['belum_waktunya_penyesuaian_count']++;
+                $unitSummaries[$summaryKey]['belum_waktunya_penyesuaian_os'] += $outstandingBalance;
+            } elseif ($keterangan === 'kolek membaik') {
+                $unitSummaries[$summaryKey]['kolek_membaik_count']++;
+                $unitSummaries[$summaryKey]['kolek_membaik_os'] += $outstandingBalance;
+            }
         }
 
-        $summaryRows = collect($unitCounts)
-            ->map(fn (int $count, string $unit) => [
-                'unit' => $unit,
-                'mismatch_count' => $count,
+        if ($groupByBranch) {
+            foreach ($selectedBranches as $branch) {
+                if (isset($unitSummaries[$branch])) {
+                    continue;
+                }
+
+                $unitSummaries[$branch] = [
+                    'branch' => $branch,
+                    'unit' => '',
+                    'label' => $branch,
+                    'is_branch_summary' => true,
+                    'mismatch_count' => 0,
+                    'memburuk_count' => 0,
+                    'memburuk_os' => 0.0,
+                    'belum_waktunya_penyesuaian_count' => 0,
+                    'belum_waktunya_penyesuaian_os' => 0.0,
+                    'kolek_membaik_count' => 0,
+                    'kolek_membaik_os' => 0.0,
+                    'outstanding_balance' => 0.0,
+                ];
+            }
+        }
+
+        $summaryRows = collect($unitSummaries)
+            ->map(fn (array $summary) => [
+                'branch' => $summary['branch'],
+                'unit' => $summary['unit'],
+                'label' => $summary['label'],
+                'is_branch_summary' => $summary['is_branch_summary'],
+                'unit_sort_group' => $this->unitLabelSortGroup($summary['unit']),
+                'mismatch_count' => $summary['mismatch_count'],
+                'memburuk_count' => $summary['memburuk_count'],
+                'memburuk_os' => $summary['memburuk_os'],
+                'belum_waktunya_penyesuaian_count' => $summary['belum_waktunya_penyesuaian_count'],
+                'belum_waktunya_penyesuaian_os' => $summary['belum_waktunya_penyesuaian_os'],
+                'kolek_membaik_count' => $summary['kolek_membaik_count'],
+                'kolek_membaik_os' => $summary['kolek_membaik_os'],
+                'outstanding_balance' => $summary['outstanding_balance'],
             ])
             ->sortBy([
+                ['branch', 'asc'],
+                ['unit_sort_group', 'asc'],
                 ['mismatch_count', 'desc'],
                 ['unit', 'asc'],
             ])
+            ->map(function (array $summary) {
+                unset($summary['unit_sort_group']);
+
+                return $summary;
+            })
             ->values()
             ->all();
 
         Log::info('Dashboard pinjaman mismatch scan completed.', [
             'selected_period' => $selectedPeriod,
-            'selected_branch' => $selectedBranch,
+            'selected_branches' => $selectedBranches,
             'scanned_rows' => $scannedRows,
             'matched_rows' => $matchedRows,
             'mismatch_rows' => $mismatchRows,
-            'units_with_mismatch' => count($summaryRows),
+            'units_with_mismatch' => collect($summaryRows)->where('mismatch_count', '>', 0)->count(),
             'duration_ms' => (int) round((microtime(true) - $startedAt) * 1000),
             'rule' => self::KOLEK_MISMATCH_RULE_LABEL,
         ]);
@@ -1996,18 +2392,19 @@ class DashboardPinjamanReportController extends Controller
                 'scanned_rows' => $scannedRows,
                 'matched_rows' => $matchedRows,
                 'mismatch_rows' => $mismatchRows,
-                'units_with_mismatch' => count($summaryRows),
+                'units_with_mismatch' => collect($summaryRows)->where('mismatch_count', '>', 0)->count(),
+                'total_outstanding_balance' => $totalOutstandingBalance,
             ],
         ];
     }
 
-    private function fetchKolekMismatchRows(string $selectedPeriod, string $selectedBranch, string $selectedUnit): array
+    private function fetchKolekMismatchRows(string $selectedPeriod, string $selectedBranch, ?string $selectedUnit = null): array
     {
         $rows = [];
         $excluded = ['created_at', 'updated_at'];
 
-        foreach ($this->buildKolekMismatchBaseQuery($selectedPeriod, $selectedBranch, $selectedUnit)->cursor() as $row) {
-            $actualKolek = $this->normalizeKolekValue($row->kol_adk1 ?? null);
+        foreach ($this->buildKolekMismatchBaseQuery($selectedPeriod, [$selectedBranch], $selectedUnit)->cursor() as $row) {
+            $actualKolek = $this->normalizeKolekValue($row->kolek ?? null);
             $expectedKolek = $this->expectedKolekFromUmurTunggakan($row->umur_tunggakan ?? null);
 
             if ($actualKolek === null || $expectedKolek === null || $actualKolek === $expectedKolek) {
@@ -2025,7 +2422,7 @@ class DashboardPinjamanReportController extends Controller
         return $rows;
     }
 
-    private function buildKolekMismatchBaseQuery(string $selectedPeriod, string $selectedBranch, ?string $selectedUnit = null): Builder
+    private function buildKolekMismatchBaseQuery(string $selectedPeriod, array $selectedBranches, ?string $selectedUnit = null): Builder
     {
         // Cache schema check per request lifecycle to avoid repeated inspections (B4, B5, P1)
         static $orderingColumn = null;
@@ -2037,7 +2434,7 @@ class DashboardPinjamanReportController extends Controller
 
         $query = DB::table('daily_loan_dinamis')
             ->where('periode', $selectedPeriod)
-            ->where('cabang1', $selectedBranch)
+            ->whereIn('cabang1', $selectedBranches)
             ->orderBy('unit1')
             ->orderBy($orderingColumn);
 
@@ -2093,7 +2490,7 @@ class DashboardPinjamanReportController extends Controller
         }
 
         return match (true) {
-            $umurTunggakan <= 9 => 1,
+            $umurTunggakan <= 0 => 1,
             $umurTunggakan <= 90 => 2,
             $umurTunggakan <= 120 => 3,
             $umurTunggakan <= 180 => 4,
@@ -2103,6 +2500,13 @@ class DashboardPinjamanReportController extends Controller
 
     private function determineKeterangan($row): string
     {
+        $actualKolek = $this->normalizeKolekValue($row->kolek ?? null);
+        $expectedKolek = $this->expectedKolekFromUmurTunggakan($row->umur_tunggakan ?? null);
+
+        if ($actualKolek !== null && $expectedKolek !== null && $actualKolek === $expectedKolek) {
+            return 'tetap';
+        }
+
         $periode = $row->periode ?? null;
         $tglAkad = $row->tgl_akad_restruk ?? null;
 
@@ -2124,6 +2528,10 @@ class DashboardPinjamanReportController extends Controller
             } catch (\Throwable) {
                 // Fallback to memburuk on parse error
             }
+        }
+
+        if ($actualKolek !== null && $expectedKolek !== null && $actualKolek > $expectedKolek) {
+            return 'kolek membaik';
         }
 
         return 'memburuk';
@@ -2167,6 +2575,52 @@ class DashboardPinjamanReportController extends Controller
         }
 
         return null;
+    }
+
+    private function normalizeAmountValue($value): float
+    {
+        if ($value === null || $value === '') {
+            return 0.0;
+        }
+
+        if (is_numeric($value)) {
+            return (float) $value;
+        }
+
+        $normalized = trim((string) $value);
+        if ($normalized === '') {
+            return 0.0;
+        }
+
+        $normalized = str_replace(' ', '', $normalized);
+        $hasComma = str_contains($normalized, ',');
+        $hasDot = str_contains($normalized, '.');
+
+        if ($hasComma && $hasDot) {
+            $normalized = str_replace('.', '', $normalized);
+            $normalized = str_replace(',', '.', $normalized);
+        } elseif ($hasComma) {
+            $normalized = str_replace(',', '.', $normalized);
+        } else {
+            $normalized = str_replace(',', '', $normalized);
+        }
+
+        return is_numeric($normalized) ? (float) $normalized : 0.0;
+    }
+
+    private function unitLabelSortGroup(string $unit): int
+    {
+        $normalized = trim($unit);
+
+        if (preg_match('/^KC\b/i', $normalized) === 1) {
+            return 0;
+        }
+
+        if (preg_match('/^KCP\b/i', $normalized) === 1) {
+            return 1;
+        }
+
+        return 2;
     }
 
     private function normalizeReportMode(?string $value): string
@@ -2246,6 +2700,23 @@ class DashboardPinjamanReportController extends Controller
         if (!empty($values)) {
             $query->whereIn($column, $values);
         }
+    }
+
+    private function applyLw325RecoveryFilters(Builder $query, string $alias, array $filters): void
+    {
+        $this->applyFilterConstraint($query, "{$alias}.segmen_dashboard", $filters['segmen']);
+        $this->applyFilterConstraint($query, "{$alias}.produk_dashboard", $filters['produk']);
+        $this->applyFilterConstraint($query, "{$alias}.kanca", $filters['cabang']);
+        $this->applyFilterConstraint($query, "{$alias}.unit", $filters['unit']);
+    }
+
+    private function phAccountKeySql(string $alias): string
+    {
+        if (DB::connection()->getDriverName() === 'sqlite') {
+            return "LTRIM(TRIM(COALESCE({$alias}.acctno, '')), '0')";
+        }
+
+        return "TRIM(LEADING '0' FROM TRIM(COALESCE({$alias}.acctno, '')))";
     }
 
     private function applyTrimmedInConstraint(Builder $query, string $column, array $values): void

@@ -123,6 +123,20 @@ class ImportIndexController extends Controller
             'identity' => 'uniqueid_namareport',
             'chunk_size' => 50000,
         ],
+        'lw321_npd' => [
+            'index' => 'idx_lw321_npd_period_kanca_uker',
+            'period' => 'periode',
+            'kanca' => 'kanca',
+            'identity' => 'uniqueid_namareport',
+            'chunk_size' => 50000,
+        ],
+        'lw321_npdd' => [
+            'index' => 'idx_lw321_npdd_period_kanca_uker',
+            'period' => 'periode',
+            'kanca' => 'kanca',
+            'identity' => 'uniqueid_namareport',
+            'chunk_size' => 50000,
+        ],
     ];
 
     public function __construct(

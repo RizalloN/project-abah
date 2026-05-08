@@ -94,6 +94,11 @@ class RasioCasaDebiturController extends Controller
                 ]);
             }
 
+            $currentCasaPeriod = $this->resolveAvailableCasaPeriod($currentPeriod);
+            if ($currentCasaPeriod === null) {
+                return response()->json($this->buildMissingCasaPeriodPayload($currentPeriod, $isBranchFiltered));
+            }
+
             $currDate = Carbon::parse($currentPeriod);
             $prevCandidate = $currDate->copy()->subMonthNoOverflow()->endOfMonth()->toDateString();
             $previousPeriod = $this->resolveAvailableLoanPeriod($prevCandidate);
@@ -244,6 +249,11 @@ class RasioCasaDebiturController extends Controller
                     'data' => [],
                     'total' => [],
                 ]);
+            }
+
+            $currentCasaPeriod = $this->resolveAvailableCasaPeriod($currentPeriod);
+            if ($currentCasaPeriod === null) {
+                return response()->json($this->buildMissingCasaPeriodPayload($currentPeriod, true, 'RM / MANTRI'));
             }
 
             $currDate = Carbon::parse($currentPeriod);
@@ -889,6 +899,12 @@ class RasioCasaDebiturController extends Controller
             return null;
         }
 
+        $expectedCasaPeriod = $this->resolveAvailableCasaPeriod($loanPeriod);
+        $persistedCasaPeriod = $this->normalizeDate((string) ($rows->first()->casa_period ?? ''));
+        if ($persistedCasaPeriod !== $expectedCasaPeriod) {
+            return null;
+        }
+
         $snapshot = $this->emptySnapshot();
         $snapshot['loan_date'] = $loanPeriod;
         $snapshot['casa_date'] = $rows->first()->casa_period;
@@ -946,6 +962,12 @@ class RasioCasaDebiturController extends Controller
             return null;
         }
 
+        $expectedCasaPeriod = $this->resolveAvailableCasaPeriod($loanPeriod);
+        $persistedCasaPeriod = $this->normalizeDate((string) ($rows->first()->casa_period ?? ''));
+        if ($persistedCasaPeriod !== $expectedCasaPeriod) {
+            return null;
+        }
+
         $snapshot = $this->emptySnapshot();
         $snapshot['loan_date'] = $loanPeriod;
         $snapshot['casa_date'] = $rows->first()->casa_period;
@@ -991,12 +1013,17 @@ class RasioCasaDebiturController extends Controller
             return;
         }
 
-        $summaryExists = !$hasSummarySnapshotTable || DB::table(self::SNAPSHOT_TABLE)
-            ->where('loan_period', $loanPeriod)
-            ->exists();
-        $ukerExists = !$hasUkerSnapshotTable || DB::table(self::UKER_SNAPSHOT_TABLE)
-            ->where('loan_period', $loanPeriod)
-            ->exists();
+        $expectedCasaPeriod = $this->resolveAvailableCasaPeriod($loanPeriod);
+        $summaryExists = !$hasSummarySnapshotTable || $this->snapshotExistsForCasaPeriod(
+            self::SNAPSHOT_TABLE,
+            $loanPeriod,
+            $expectedCasaPeriod
+        );
+        $ukerExists = !$hasUkerSnapshotTable || $this->snapshotExistsForCasaPeriod(
+            self::UKER_SNAPSHOT_TABLE,
+            $loanPeriod,
+            $expectedCasaPeriod
+        );
         $exists = $summaryExists && $ukerExists;
 
         if ($exists) {
@@ -1058,12 +1085,9 @@ class RasioCasaDebiturController extends Controller
             return;
         }
 
-        $summaryExists = DB::table(self::SNAPSHOT_TABLE)
-            ->where('loan_period', $loanPeriod)
-            ->exists();
-        $ukerExists = DB::table(self::UKER_SNAPSHOT_TABLE)
-            ->where('loan_period', $loanPeriod)
-            ->exists();
+        $expectedCasaPeriod = $this->resolveAvailableCasaPeriod($loanPeriod);
+        $summaryExists = $this->snapshotExistsForCasaPeriod(self::SNAPSHOT_TABLE, $loanPeriod, $expectedCasaPeriod);
+        $ukerExists = $this->snapshotExistsForCasaPeriod(self::UKER_SNAPSHOT_TABLE, $loanPeriod, $expectedCasaPeriod);
 
         if ($summaryExists && $ukerExists) {
             Cache::put('rasio_casa:snapshot_exists:v' . $this->reportCacheVersion() . ':' . $loanPeriod, true, now()->addMinutes(10));
@@ -1074,12 +1098,9 @@ class RasioCasaDebiturController extends Controller
 
         try {
             $lock->block(5, function () use ($loanPeriod) {
-                $summaryExists = DB::table(self::SNAPSHOT_TABLE)
-                    ->where('loan_period', $loanPeriod)
-                    ->exists();
-                $ukerExists = DB::table(self::UKER_SNAPSHOT_TABLE)
-                    ->where('loan_period', $loanPeriod)
-                    ->exists();
+                $expectedCasaPeriod = $this->resolveAvailableCasaPeriod($loanPeriod);
+                $summaryExists = $this->snapshotExistsForCasaPeriod(self::SNAPSHOT_TABLE, $loanPeriod, $expectedCasaPeriod);
+                $ukerExists = $this->snapshotExistsForCasaPeriod(self::UKER_SNAPSHOT_TABLE, $loanPeriod, $expectedCasaPeriod);
 
                 if ($summaryExists && $ukerExists) {
                     return;
@@ -1095,6 +1116,19 @@ class RasioCasaDebiturController extends Controller
         } finally {
             optional($lock)->release();
         }
+    }
+
+    private function snapshotExistsForCasaPeriod(string $table, string $loanPeriod, ?string $casaPeriod): bool
+    {
+        $query = DB::table($table)->where('loan_period', $loanPeriod);
+
+        if ($casaPeriod === null) {
+            $query->whereNull('casa_period');
+        } else {
+            $query->where('casa_period', $casaPeriod);
+        }
+
+        return $query->exists();
     }
 
     private function hasActiveImportProcessing(): bool
@@ -1139,7 +1173,9 @@ class RasioCasaDebiturController extends Controller
 
                 $row[$segmentKey] = $this->calculateMetrics(
                     ['os' => $prevOs, 'casa' => $prevCasa],
-                    ['os' => $currOs, 'casa' => $currCasa]
+                    ['os' => $currOs, 'casa' => $currCasa],
+                    $previousSummary['casa_date'] !== null,
+                    $currentSummary['casa_date'] !== null
                 );
 
                 $total[$segmentKey]['os_prev'] += $prevOs;
@@ -1155,7 +1191,9 @@ class RasioCasaDebiturController extends Controller
             $segmentKey = strtolower($segment);
             $total[$segmentKey] = $this->calculateMetrics(
                 ['os' => $total[$segmentKey]['os_prev'], 'casa' => $total[$segmentKey]['casa_prev']],
-                ['os' => $total[$segmentKey]['os_curr'], 'casa' => $total[$segmentKey]['casa_curr']]
+                ['os' => $total[$segmentKey]['os_curr'], 'casa' => $total[$segmentKey]['casa_curr']],
+                $previousSummary['casa_date'] !== null,
+                $currentSummary['casa_date'] !== null
             );
         }
 
@@ -1190,7 +1228,9 @@ class RasioCasaDebiturController extends Controller
 
                 $row[$segmentKey] = $this->calculateMetrics(
                     ['os' => $prevOs, 'casa' => $prevCasa],
-                    ['os' => $currOs, 'casa' => $currCasa]
+                    ['os' => $currOs, 'casa' => $currCasa],
+                    $previousSummary['casa_date'] !== null,
+                    $currentSummary['casa_date'] !== null
                 );
 
                 $total[$segmentKey]['os_prev'] += $prevOs;
@@ -1206,7 +1246,9 @@ class RasioCasaDebiturController extends Controller
             $segmentKey = strtolower($segment);
             $total[$segmentKey] = $this->calculateMetrics(
                 ['os' => $total[$segmentKey]['os_prev'], 'casa' => $total[$segmentKey]['casa_prev']],
-                ['os' => $total[$segmentKey]['os_curr'], 'casa' => $total[$segmentKey]['casa_curr']]
+                ['os' => $total[$segmentKey]['os_curr'], 'casa' => $total[$segmentKey]['casa_curr']],
+                $previousSummary['casa_date'] !== null,
+                $currentSummary['casa_date'] !== null
             );
         }
 
@@ -1255,6 +1297,36 @@ class RasioCasaDebiturController extends Controller
         return $total;
     }
 
+    private function buildMissingCasaPeriodPayload(string $currentPeriod, bool $isBranchFiltered = false, string $groupLabel = 'BRANCH OFFICE'): array
+    {
+        return [
+            'status' => 'success',
+            'message' => 'Data Rasio CASA belum bisa ditampilkan karena Simpanan MultiPN untuk periode yang sama belum tersedia.',
+            'labels' => $this->buildLabels(null, $currentPeriod),
+            'group_label' => $groupLabel,
+            'is_branch_filtered' => $isBranchFiltered,
+            'effective_dates' => [
+                'prev' => null,
+                'curr' => $currentPeriod,
+                'casa_prev' => null,
+                'casa_curr' => null,
+            ],
+            'meta' => [
+                'has_rows' => false,
+                'missing_required_sources' => ['simpanan_multipn'],
+                'row_count_prev' => 0,
+                'row_count_curr' => 0,
+                'branch_count' => 0,
+            ],
+            'data' => [],
+            'total' => [],
+            'ritel_data' => [],
+            'ritel_total' => [],
+            'micro_data' => [],
+            'micro_total' => [],
+        ];
+    }
+
     private function resolveAvailableLoanPeriod(?string $targetDate): ?string
     {
         $cacheKey = $targetDate ? 'target:' . $this->normalizeDate($targetDate) : 'latest';
@@ -1289,10 +1361,17 @@ class RasioCasaDebiturController extends Controller
             return $this->availableCasaPeriodMemo[$cacheKey];
         }
 
+        $normalizedTarget = $this->normalizeDate($targetDate);
+        if ($normalizedTarget === null) {
+            return $this->availableCasaPeriodMemo[$cacheKey] = null;
+        }
+
         try {
-            return $this->availableCasaPeriodMemo[$cacheKey] = DB::table('simpanan_multipn')
-                ->where('posisi', '<=', $targetDate)
-                ->max('posisi');
+            $exists = DB::table('simpanan_multipn')
+                ->where('posisi', $normalizedTarget)
+                ->exists();
+
+            return $this->availableCasaPeriodMemo[$cacheKey] = $exists ? $normalizedTarget : null;
         } catch (Throwable) {
             return $this->availableCasaPeriodMemo[$cacheKey] = null;
         }
@@ -1646,12 +1725,27 @@ class RasioCasaDebiturController extends Controller
         return $this->resolvedColumnMemo[$cacheKey] = ($map[strtolower($fallback)] ?? $fallback);
     }
 
-    private function calculateMetrics($prev, $curr)
+    private function calculateMetrics($prev, $curr, bool $prevCasaAvailable = true, bool $currCasaAvailable = true)
     {
         $osPrev = (float) ($prev['os'] ?? 0);
         $casaPrev = (float) ($prev['casa'] ?? 0);
         $osCurr = (float) ($curr['os'] ?? 0);
         $casaCurr = (float) ($curr['casa'] ?? 0);
+
+        if (!$prevCasaAvailable || !$currCasaAvailable) {
+            $ratioPrev = $prevCasaAvailable && $osPrev > 0 ? ($casaPrev / $osPrev) * 100 : null;
+            $ratioCurr = $currCasaAvailable && $osCurr > 0 ? ($casaCurr / $osCurr) * 100 : null;
+
+            return [
+                'os_prev' => $osPrev > 0 ? $osPrev : null,
+                'casa_prev' => $prevCasaAvailable && $casaPrev > 0 ? $casaPrev : null,
+                'rasio_prev' => $ratioPrev,
+                'os_curr' => $osCurr > 0 ? $osCurr : null,
+                'casa_curr' => $currCasaAvailable && $casaCurr > 0 ? $casaCurr : null,
+                'rasio_curr' => $ratioCurr,
+                'mtd' => $ratioPrev !== null && $ratioCurr !== null ? ($ratioCurr - $ratioPrev) : null,
+            ];
+        }
 
         if ($osCurr == 0.0 && $casaCurr == 0.0) {
             return [
@@ -1917,7 +2011,9 @@ class RasioCasaDebiturController extends Controller
 
                 $row[$segmentKey] = $this->calculateMetrics(
                     ['os' => $prevOs, 'casa' => $prevCasa],
-                    ['os' => $currOs, 'casa' => $currCasa]
+                    ['os' => $currOs, 'casa' => $currCasa],
+                    $previousSummary['casa_date'] !== null,
+                    $currentSummary['casa_date'] !== null
                 );
 
                 $total[$segmentKey]['os_prev'] += $prevOs;
@@ -1933,7 +2029,9 @@ class RasioCasaDebiturController extends Controller
             $segmentKey = strtolower($segment);
             $total[$segmentKey] = $this->calculateMetrics(
                 ['os' => $total[$segmentKey]['os_prev'], 'casa' => $total[$segmentKey]['casa_prev']],
-                ['os' => $total[$segmentKey]['os_curr'], 'casa' => $total[$segmentKey]['casa_curr']]
+                ['os' => $total[$segmentKey]['os_curr'], 'casa' => $total[$segmentKey]['casa_curr']],
+                $previousSummary['casa_date'] !== null,
+                $currentSummary['casa_date'] !== null
             );
         }
 

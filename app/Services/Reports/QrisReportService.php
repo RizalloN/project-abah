@@ -82,11 +82,11 @@ class QrisReportService
         $rkaMonthLabel  = $this->rkaLookup->resolveMonthLabel($selectedDate);
 
         $labels = [
-            'curr'     => Carbon::parse($dateCurr)->translatedFormat('d F Y'),
-            'mtd'      => Carbon::parse($dateMtD)->translatedFormat("M'y"),
-            'ytd'      => Carbon::parse($dateYtD)->translatedFormat("M'y"),
-            'yoy'      => Carbon::parse($dateYoY)->translatedFormat("M'y"),
-            'prev_mom' => Carbon::parse($datePrevMoM)->translatedFormat('d M Y'),
+            'curr'     => Carbon::parse($dateCurr)->translatedFormat('d M y'),
+            'mtd'      => Carbon::parse($dateMtD)->translatedFormat('d M y'),
+            'ytd'      => Carbon::parse($dateYtD)->translatedFormat('d M y'),
+            'yoy'      => Carbon::parse($dateYoY)->translatedFormat('d M y'),
+            'prev_mom' => Carbon::parse($datePrevMoM)->translatedFormat('d M y'),
             'rka'      => $rkaMonthLabel,
         ];
 

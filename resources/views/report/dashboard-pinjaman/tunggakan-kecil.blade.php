@@ -124,26 +124,33 @@
 
     .loan-small-table-wrap {
         overflow-x: auto;
-        border-radius: 12px;
-        border: 1px solid var(--loan-border);
+        border-radius: 8px;
+        border: 1px solid #cbd5e1;
         background: #ffffff;
+        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
     }
 
     .loan-small-table {
         width: 100%;
-        min-width: 980px;
+        min-width: 790px;
         table-layout: fixed;
         border-collapse: separate;
         border-spacing: 0;
+        color: #1f2937;
+        font-size: 0.78rem;
     }
 
     .loan-small-table col.col-group {
-        width: 260px;
+        width: 210px;
     }
 
-    .loan-small-table col.col-position,
-    .loan-small-table col.col-total {
-        width: 180px;
+    .loan-small-table col.col-position-count,
+    .loan-small-table col.col-position-rp {
+        width: 70px;
+    }
+
+    .loan-small-table col.col-export {
+        width: 110px;
     }
 
     .loan-small-table thead th,
@@ -151,14 +158,44 @@
     .loan-small-table tbody td,
     .loan-small-table tfoot th,
     .loan-small-table tfoot td {
-        height: 58px;
-        padding: 0.95rem 1rem;
-        vertical-align: middle;
-        white-space: nowrap;
+        height: 30px;
+        padding: 0.42rem 0.5rem !important;
+        vertical-align: middle !important;
+        white-space: normal;
+        line-height: 1.25;
+        border-right: 1px solid #dbe3ef !important;
+        border-bottom: 1px solid #dbe3ef !important;
+    }
+
+    .loan-small-table thead th:last-child,
+    .loan-small-table tbody td:last-child,
+    .loan-small-table tfoot td:last-child {
+        border-right: none !important;
     }
 
     .loan-small-table thead th {
+        background: var(--loan-blue-deep) !important;
+        color: #ffffff !important;
         text-align: center;
+        letter-spacing: 0;
+        text-transform: none;
+        font-size: 0.72rem;
+        font-weight: 800;
+        padding: 0.46rem 0.5rem !important;
+        white-space: nowrap;
+        border-right: 1px solid rgba(255, 255, 255, 0.18) !important;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.18) !important;
+    }
+
+    .loan-small-table thead tr:first-child th {
+        background: var(--loan-blue-ink) !important;
+        color: #ffffff !important;
+    }
+
+    .loan-small-table thead tr:nth-child(2) th,
+    .loan-small-table thead tr:nth-child(3) th {
+        background: var(--loan-blue) !important;
+        color: #ffffff !important;
     }
 
     .loan-small-table .sticky-first,
@@ -176,14 +213,21 @@
     .loan-small-table tbody th,
     .loan-small-table tfoot th {
         background: #ffffff;
-        color: var(--loan-blue-ink);
+        color: #0f172a;
         text-align: left;
-        width: 260px;
-        min-width: 260px;
-        max-width: 260px;
+        width: 210px;
+        min-width: 210px;
+        max-width: 210px;
         box-shadow: 2px 0 6px rgba(4, 42, 95, 0.05);
         overflow: hidden;
         text-overflow: ellipsis;
+        font-weight: 800;
+    }
+
+    .loan-small-table tbody td {
+        background: #ffffff;
+        font-weight: 600;
+        height: 34px;
     }
 
     .loan-small-table tbody td.metric-positive {
@@ -210,19 +254,63 @@
 
     .loan-small-table tbody tr:hover th,
     .loan-small-table tbody tr:hover td {
-        background: #f8fbff;
+        background: #f1f7ff;
+    }
+
+    .loan-small-table tbody tr:nth-child(even) th,
+    .loan-small-table tbody tr:nth-child(even) td {
+        background: #fbfdff;
     }
 
     .loan-small-table tbody td,
     .loan-small-table tfoot td {
-        text-align: right;
+        text-align: center;
         overflow: hidden;
         text-overflow: ellipsis;
     }
 
     .loan-small-table .sub-head {
-        min-width: 180px;
-        max-width: 180px;
+        min-width: 70px;
+        max-width: 70px;
+    }
+
+    .loan-small-table .position-group-head {
+        border-left: 2px solid rgba(255, 255, 255, 0.34) !important;
+        border-right: 2px solid rgba(255, 255, 255, 0.34) !important;
+    }
+
+    .loan-small-table .position-start {
+        border-left: 2px solid #94a3b8 !important;
+    }
+
+    .loan-small-table .position-end {
+        border-right: 2px solid #94a3b8 !important;
+    }
+
+    .loan-small-table .position-count {
+        text-align: center;
+        font-variant-numeric: tabular-nums;
+        font-weight: 800;
+    }
+
+    .loan-small-table .position-rp {
+        text-align: center;
+        font-variant-numeric: tabular-nums;
+        font-weight: 800;
+        padding-right: 0.5rem !important;
+        padding-left: 0.5rem !important;
+    }
+
+    .loan-small-table .text-start-important {
+        text-align: left !important;
+    }
+
+    .loan-small-table .btn {
+        min-height: 26px;
+        padding: 0.18rem 0.45rem;
+        border-radius: 6px;
+        font-size: 0.7rem;
+        line-height: 1.2;
     }
 
     .loan-small-empty {
@@ -349,27 +437,37 @@
                 <table class="table loan-summary-table loan-small-table mb-0">
                     <colgroup>
                         <col class="col-group">
-                        <col class="col-position">
-                        <col class="col-position">
-                        <col class="col-position">
-                        <col class="col-total">
+                        <col class="col-position-count">
+                        <col class="col-position-rp">
+                        <col class="col-position-count">
+                        <col class="col-position-rp">
+                        <col class="col-position-count">
+                        <col class="col-position-rp">
+                        <col class="col-export">
                     </colgroup>
                     <thead>
                         <tr>
-                            <th id="smallArrearsGroupHead" rowspan="2" class="sticky-first text-start-important" data-default-label="Branch Office" data-filtered-label="Uker">Branch Office</th>
-                            <th colspan="3">Posisi</th>
-                            <th id="smallArrearsCurrentHead" colspan="1">Total Tunggakan</th>
+                            <th id="smallArrearsGroupHead" rowspan="3" class="sticky-first text-start-important" data-default-label="Branch Office" data-filtered-label="Uker">Branch Office</th>
+                            <th colspan="6">Posisi</th>
+                            <th rowspan="3" class="sub-head">Export Detail</th>
                         </tr>
                         <tr>
-                            <th id="smallArrearsYtdHead" class="sub-head">31/12</th>
-                            <th id="smallArrearsMtdHead" class="sub-head">Bulan Lalu</th>
-                            <th id="smallArrearsCurrentSubHead" class="sub-head">{{ $selectedPeriod ? \Carbon\Carbon::parse($selectedPeriod)->format('d/m/Y') : 'Hari Ini' }}</th>
-                            <th class="sub-head">Jumlah</th>
+                            <th id="smallArrearsYtdHead" colspan="2" class="sub-head position-group-head">31/12</th>
+                            <th id="smallArrearsMtdHead" colspan="2" class="sub-head position-group-head">Bulan Lalu</th>
+                            <th id="smallArrearsCurrentSubHead" colspan="2" class="sub-head position-group-head">{{ $selectedPeriod ? \Carbon\Carbon::parse($selectedPeriod)->format('d/m/Y') : 'Hari Ini' }}</th>
+                        </tr>
+                        <tr>
+                            <th class="sub-head position-start position-count">Rek</th>
+                            <th class="sub-head position-end position-rp">Rp</th>
+                            <th class="sub-head position-start position-count">Rek</th>
+                            <th class="sub-head position-end position-rp">Rp</th>
+                            <th class="sub-head position-start position-count">Rek</th>
+                            <th class="sub-head position-end position-rp">Rp</th>
                         </tr>
                     </thead>
                     <tbody id="smallArrearsBody">
                         <tr>
-                            <td colspan="6" class="loan-small-empty">
+                            <td colspan="8" class="loan-small-empty">
                                 <strong>Belum ada data</strong>
                                 Klik <strong>Tampilkan Data</strong> untuk memuat tabel.
                             </td>
@@ -381,7 +479,10 @@
                             <td>0</td>
                             <td>0</td>
                             <td>0</td>
-                            <td>Rp 0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>-</td>
                         </tr>
                     </tfoot>
                 </table>
@@ -415,6 +516,7 @@
 
         const filtersUrl = @json(route('report.dashboard-pinjaman.tunggakan-kecil.filters'));
         const dataUrl = @json(route('report.dashboard-pinjaman.tunggakan-kecil.data'));
+        const exportUrl = @json(route('report.dashboard-pinjaman.tunggakan-kecil.export'));
         const pageUrl = @json(route('report.dashboard-pinjaman.tunggakan-kecil'));
         const defaultPeriod = @json($selectedPeriod);
         const areaAllValue = 'AREA_6_ALL';
@@ -587,7 +689,7 @@
 
         function formatCurrency(value) {
             const amount = Number(value || 0);
-            return `Rp ${formatNumber(amount)}`;
+            return formatNumber(amount);
         }
 
         function updateBadge(period, branches, units, areaAll = false) {
@@ -618,10 +720,13 @@
         function renderFoot(total = {}) {
             foot.innerHTML = `
                 <th>Grand Total</th>
-                <td>${formatCount(total.ytd)}</td>
-                <td>${formatCount(total.mtd)}</td>
-                <td>${formatCount(total.current)}</td>
-                <td>${formatCurrency(total.total_tunggakan)}</td>
+                <td class="position-start position-count">${formatCount(total.ytd)}</td>
+                <td class="position-end position-rp">${formatCurrency(total.ytd_tunggakan)}</td>
+                <td class="position-start position-count">${formatCount(total.mtd)}</td>
+                <td class="position-end position-rp">${formatCurrency(total.mtd_tunggakan)}</td>
+                <td class="position-start position-count">${formatCount(total.current)}</td>
+                <td class="position-end position-rp">${formatCurrency(total.current_tunggakan ?? total.total_tunggakan)}</td>
+                <td>-</td>
             `;
         }
 
@@ -630,7 +735,7 @@
             updateHeaders(payload);
             body.innerHTML = `
                 <tr>
-                    <td colspan="6" class="loan-small-empty">
+                    <td colspan="8" class="loan-small-empty">
                         <strong>Data tidak ditemukan</strong>
                         ${message}
                     </td>
@@ -643,6 +748,22 @@
                 payload.selected_units || [],
                 payload.is_area_all === true
             );
+        }
+
+        function buildExportUrl(payload, row) {
+            const params = new URLSearchParams();
+            if (payload.selected_period) {
+                params.set('periode', payload.selected_period);
+            }
+
+            if (payload.is_area_all === true) {
+                params.append('cabang1[]', row.label);
+            } else {
+                (payload.effective_branches || []).forEach(value => params.append('cabang1[]', value));
+                params.append('unit1[]', row.label);
+            }
+
+            return `${exportUrl}?${params.toString()}`;
         }
 
         function renderRows(payload) {
@@ -660,10 +781,17 @@
             body.innerHTML = rows.map(row => `
                 <tr>
                     <th class="text-start-important">${row.label}</th>
-                    <td>${formatCount(row.ytd)}</td>
-                    <td>${formatCount(row.mtd)}</td>
-                    <td>${formatCount(row.current)}</td>
-                    <td>${formatCurrency(row.total_tunggakan)}</td>
+                    <td class="position-start position-count">${formatCount(row.ytd)}</td>
+                    <td class="position-end position-rp">${formatCurrency(row.ytd_tunggakan)}</td>
+                    <td class="position-start position-count">${formatCount(row.mtd)}</td>
+                    <td class="position-end position-rp">${formatCurrency(row.mtd_tunggakan)}</td>
+                    <td class="position-start position-count">${formatCount(row.current)}</td>
+                    <td class="position-end position-rp">${formatCurrency(row.current_tunggakan ?? row.total_tunggakan)}</td>
+                    <td>
+                        <a class="btn btn-sm btn-outline-success" href="${buildExportUrl(payload, row)}">
+                            <i class="fas fa-file-excel mr-1"></i>Export Excel
+                        </a>
+                    </td>
                 </tr>
             `).join('');
 
@@ -738,7 +866,7 @@
                     selected_period: periodInput.value,
                     selected_branches: selectedBranches,
                     selected_units: selectedUnits,
-                    total: { current: 0, ytd: 0, mtd: 0, total_tunggakan: 0 },
+                    total: { current: 0, ytd: 0, mtd: 0, current_tunggakan: 0, ytd_tunggakan: 0, mtd_tunggakan: 0, total_tunggakan: 0 },
                 });
             } finally {
                 chip.classList.add('d-none');

@@ -19,12 +19,12 @@ class UserManagementController extends Controller
         $users = User::query()
             ->orderByRaw("CASE WHEN role = 'admin' THEN 0 ELSE 1 END")
             ->orderBy('name')
-            ->get();
+            ->paginate(5);
 
         $stats = [
-            'total' => $users->count(),
-            'admins' => $users->where('role', 'admin')->count(),
-            'users' => $users->where('role', 'user')->count(),
+            'total' => User::count(),
+            'admins' => User::where('role', 'admin')->count(),
+            'users' => User::where('role', 'user')->count(),
         ];
 
         return view('admin.user-management', compact('users', 'stats'));
@@ -46,8 +46,7 @@ class UserManagementController extends Controller
             'password' => Hash::make($data['password']),
         ]);
 
-        return redirect()
-            ->route('user-management.index')
+        return back()
             ->with('success', 'User baru berhasil ditambahkan.');
     }
 
@@ -61,8 +60,7 @@ class UserManagementController extends Controller
         ]);
 
         if ($validator->fails()) {
-            return redirect()
-                ->route('user-management.index')
+            return back()
                 ->withErrors($validator, 'updateUser')
                 ->withInput()
                 ->with('open_edit_user', $user->getKey());
@@ -80,8 +78,7 @@ class UserManagementController extends Controller
 
         $currentUser = Auth::user();
         if ($currentUser && (int) $currentUser->getKey() === (int) $user->getKey() && $data['role'] !== 'admin') {
-            return redirect()
-                ->route('user-management.index')
+            return back()
                 ->withErrors(['user_management' => 'Akun admin yang sedang aktif tidak boleh diturunkan menjadi user biasa.'], 'updateUser')
                 ->withInput()
                 ->with('open_edit_user', $user->getKey());
@@ -89,8 +86,7 @@ class UserManagementController extends Controller
 
         $user->save();
 
-        return redirect()
-            ->route('user-management.index')
+        return back()
             ->with('success', 'Data user berhasil diperbarui.');
     }
 
@@ -99,15 +95,13 @@ class UserManagementController extends Controller
         $currentUser = Auth::user();
 
         if ($currentUser && (int) $currentUser->getKey() === (int) $user->getKey()) {
-            return redirect()
-                ->route('user-management.index')
+            return back()
                 ->withErrors(['user_management' => 'Akun yang sedang digunakan tidak dapat dihapus.']);
         }
 
         $user->delete();
 
-        return redirect()
-            ->route('user-management.index')
+        return back()
             ->with('success', 'User berhasil dihapus.');
     }
 }

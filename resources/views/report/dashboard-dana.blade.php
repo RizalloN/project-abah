@@ -612,8 +612,8 @@
                                 <th colspan="2" class="text-center border-bottom border-left group-rka">Performa RKA</th>
                             </tr>
                             <tr>
-                                <th class="text-right group-position">YTD</th>
-                                <th class="text-right group-position">MTD</th>
+                                <th class="text-right group-position" id="headerYtd">YTD</th>
+                                <th class="text-right group-position" id="headerMtd">MTD</th>
                                 <th class="text-right group-position" id="headerSelectedDate">Posisi</th>
                                 <th class="text-right border-left group-delta">YTD</th>
                                 <th class="text-right group-delta">MTD</th>
@@ -750,6 +750,8 @@ document.addEventListener('DOMContentLoaded', function() {
             $.get("{{ route('report.dashboard-dana.data') }}", params, function(res) {
                 $('#loader').fadeOut(200);
                 $('#headerSelectedDate').text(res.header_dates.selected);
+                $('#headerYtd').text(res.header_dates.ytd);
+                $('#headerMtd').text(res.header_dates.mtd);
                 
                 let html = '';
                 res.rows.forEach((row, index) => {

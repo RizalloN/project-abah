@@ -28,7 +28,7 @@
 @endif
 
 <div class="row align-items-stretch">
-    <div class="col-xl-5 col-lg-5 mb-4">
+    <div class="col-xl-4 col-lg-5 mb-4">
         <div class="card shadow-sm border-0 user-management-card h-100">
             <div class="card-header bg-white border-0 user-management-card__header">
                 <span class="user-management-card__eyebrow">Create User</span>
@@ -84,7 +84,7 @@
         </div>
     </div>
 
-    <div class="col-xl-7 col-lg-7 mb-4 d-flex">
+    <div class="col-xl-8 col-lg-7 mb-4 d-flex">
         <div class="user-management-directory-column w-100">
             <div class="row align-items-stretch user-management-stat-row">
             <div class="col-lg-4 col-md-12 col-sm-12 mb-3">

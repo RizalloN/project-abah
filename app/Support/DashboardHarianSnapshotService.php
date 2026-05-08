@@ -238,29 +238,32 @@ class DashboardHarianSnapshotService
     public function syncDuePeriods(?array $candidatePeriods = null): array
     {
         try {
-            $sharedPeriods = $this->resolveSharedPeriods();
-            if ($sharedPeriods === []) {
-                return ['built' => 0, 'failed' => 0, 'missing' => [], 'stale' => [], 'checked' => 0];
+            if ($candidatePeriods !== null) {
+                $periodsToCheck = $this->normalizeExplicitCandidatePeriods($candidatePeriods);
+                $existingSnapshots = $this->snapshotCountsForPeriods($periodsToCheck);
+
+                $missingPeriods = [];
+                $staleCandidatePeriods = $periodsToCheck;
+            } else {
+                $sharedPeriods = $this->resolveSharedPeriods();
+                if ($sharedPeriods === []) {
+                    return ['built' => 0, 'failed' => 0, 'missing' => [], 'stale' => [], 'checked' => 0];
+                }
+
+                $existingSnapshots = $this->snapshotCountsForPeriods();
+
+                $missingPeriods = array_values(array_filter(
+                    $sharedPeriods,
+                    fn (string $period) => ($existingSnapshots[$period] ?? 0) <= 0
+                ));
+                $staleCandidatePeriods = $this->normalizeCandidatePeriods(
+                    $this->resolveAutomaticStaleCandidatePeriods($sharedPeriods),
+                    $sharedPeriods
+                );
+
+                $periodsToCheck = array_values(array_unique(array_merge($missingPeriods, $staleCandidatePeriods)));
             }
 
-            $existingSnapshots = DB::table(self::SNAPSHOT_TABLE)
-                ->select('snapshot_period')
-                ->selectRaw('COUNT(*) as row_count')
-                ->groupBy('snapshot_period')
-                ->pluck('row_count', 'snapshot_period')
-                ->mapWithKeys(fn ($count, $period) => [(string) $period => (int) $count])
-                ->all();
-
-            $missingPeriods = array_values(array_filter(
-                $sharedPeriods,
-                fn (string $period) => ($existingSnapshots[$period] ?? 0) <= 0
-            ));
-            $staleCandidatePeriods = $this->normalizeCandidatePeriods(
-                $candidatePeriods ?? $this->resolveAutomaticStaleCandidatePeriods($sharedPeriods),
-                $sharedPeriods
-            );
-
-            $periodsToCheck = array_values(array_unique(array_merge($missingPeriods, $staleCandidatePeriods)));
             if ($periodsToCheck === []) {
                 return ['built' => 0, 'failed' => 0, 'missing' => [], 'stale' => [], 'checked' => 0];
             }
@@ -2586,6 +2589,56 @@ class DashboardHarianSnapshotService
         rsort($periods);
 
         return $periods;
+    }
+
+    /**
+     * @param array<int, string|null> $candidatePeriods
+     * @return array<int, string>
+     */
+    private function normalizeExplicitCandidatePeriods(array $candidatePeriods): array
+    {
+        $normalized = [];
+
+        foreach ($candidatePeriods as $period) {
+            $value = $this->normalizeDate((string) $period);
+            if ($value !== null && $this->loanDashboardSourcePeriodExists($value) && $this->savingsSourcePeriodExists($value)) {
+                $normalized[$value] = $value;
+            }
+        }
+
+        $periods = array_values($normalized);
+        rsort($periods);
+
+        return $periods;
+    }
+
+    /**
+     * @param array<int, string>|null $periods
+     * @return array<string, int>
+     */
+    private function snapshotCountsForPeriods(?array $periods = null): array
+    {
+        if (!Schema::hasTable(self::SNAPSHOT_TABLE)) {
+            return [];
+        }
+
+        $query = DB::table(self::SNAPSHOT_TABLE)
+            ->select('snapshot_period')
+            ->selectRaw('COUNT(*) as row_count')
+            ->groupBy('snapshot_period');
+
+        if ($periods !== null) {
+            if ($periods === []) {
+                return [];
+            }
+
+            $query->whereIn('snapshot_period', $periods);
+        }
+
+        return $query
+            ->pluck('row_count', 'snapshot_period')
+            ->mapWithKeys(fn ($count, $period) => [(string) $period => (int) $count])
+            ->all();
     }
 
     /**

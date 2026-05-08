@@ -178,17 +178,257 @@
     .btn-loan-modern-submit:hover { transform: translateY(-3px); box-shadow: 0 15px 30px rgba(8, 87, 195, 0.4); }
 
     .select2-container--bootstrap4, .loan-filter-control { display: none !important; }
+
+    .loan-dashboard .loan-title-hero {
+        justify-content: flex-start !important;
+        margin-bottom: 1rem;
+        padding: 1rem 0;
+        border-radius: 0;
+        background: transparent;
+        color: #0f172a;
+        box-shadow: none;
+        border-bottom: 1px solid #e5e7eb;
+    }
+
+    .loan-dashboard .loan-title-hero__wrap {
+        width: 100%;
+        text-align: left;
+    }
+
+    .loan-dashboard .loan-title-hero__badge {
+        margin-bottom: 0.35rem;
+        padding: 0;
+        background: transparent;
+        color: #64748b;
+        letter-spacing: 0;
+        text-transform: none;
+    }
+
+    .loan-dashboard .loan-title-hero__badge i {
+        color: #0f766e;
+    }
+
+    .loan-dashboard .loan-title-hero__title {
+        color: #0f172a;
+        font-size: 1.45rem;
+        letter-spacing: 0;
+        text-transform: none;
+    }
+
+    .loan-dashboard .loan-title-hero__desc {
+        display: none;
+    }
+
+    .loan-filter-modern {
+        grid-template-columns: minmax(180px, 240px) minmax(240px, 1fr) auto;
+        gap: 1rem;
+        background: #ffffff;
+        backdrop-filter: none;
+        padding: 1rem;
+        border-radius: 8px;
+        border: 1px solid #e5e7eb;
+        box-shadow: none;
+        margin-bottom: 0;
+    }
+
+    .loan-dropdown-toggle,
+    .btn-loan-modern-submit {
+        height: 46px;
+        border-radius: 8px;
+        transform: none !important;
+    }
+
+    .btn-loan-modern-submit {
+        min-width: 150px;
+        background: #0f766e;
+        box-shadow: none;
+        letter-spacing: 0;
+        text-transform: none;
+        font-weight: 700;
+    }
+
+    .btn-loan-modern-submit:hover {
+        background: #115e59;
+        box-shadow: none;
+    }
+
+    .loan-mismatch-summary {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 1rem;
+        margin: 1rem 0;
+    }
+
+    .loan-mismatch-card {
+        border-radius: 8px;
+        padding: 1rem;
+        background: #ffffff;
+        box-shadow: none;
+        transition: none;
+    }
+
+    .loan-mismatch-card:hover {
+        transform: none;
+        box-shadow: none;
+    }
+
+    .loan-mismatch-card::before {
+        display: none;
+    }
+
+    .loan-audit-label {
+        letter-spacing: 0;
+        text-transform: none;
+    }
+
+    .loan-audit-value {
+        font-size: 1.35rem;
+    }
+
+    .loan-mismatch-table-wrap {
+        border-radius: 8px;
+        overflow: auto;
+        border: 1px solid #cbd5e1;
+        background: #ffffff;
+        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+    }
+
+    .loan-mismatch-table {
+        border-collapse: separate;
+        border-spacing: 0;
+        table-layout: fixed;
+        min-width: 1280px;
+        color: #1f2937;
+        font-size: 0.78rem;
+    }
+
+    .loan-mismatch-table th,
+    .loan-mismatch-table td {
+        border-right: 1px solid #dbe3ef !important;
+        border-bottom: 1px solid #dbe3ef !important;
+        line-height: 1.25;
+        padding: 0.42rem 0.5rem !important;
+        vertical-align: middle !important;
+        white-space: normal;
+    }
+
+    .loan-mismatch-table th:last-child,
+    .loan-mismatch-table td:last-child {
+        border-right: none !important;
+    }
+
+    .loan-mismatch-table thead th {
+        background: var(--loan-blue-deep) !important;
+        color: #ffffff !important;
+        letter-spacing: 0;
+        text-transform: none;
+        border-right: 1px solid rgba(255, 255, 255, 0.18) !important;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.18) !important;
+        font-size: 0.72rem;
+        font-weight: 800;
+        padding: 0.46rem 0.5rem !important;
+        white-space: nowrap;
+    }
+
+    .loan-mismatch-table thead tr:first-child th {
+        background: var(--loan-blue-ink) !important;
+        color: #ffffff !important;
+    }
+
+    .loan-mismatch-table thead tr:nth-child(2) th {
+        background: var(--loan-blue) !important;
+        color: #ffffff !important;
+    }
+
+    .loan-mismatch-table tbody td {
+        background: #ffffff;
+        font-weight: 600;
+        height: 34px;
+    }
+
+    .loan-mismatch-table tbody tr:nth-child(even) td {
+        background: #fbfdff;
+    }
+
+    .loan-mismatch-table tbody tr:hover td {
+        background: #f1f7ff;
+    }
+
+    .loan-mismatch-table tbody td:first-child {
+        color: #64748b;
+        text-align: center;
+        font-weight: 700;
+    }
+
+    .loan-mismatch-table tbody td:nth-child(2) {
+        color: #0f172a;
+        font-weight: 800;
+        word-break: break-word;
+    }
+
+    .loan-mismatch-table tbody td:nth-child(3),
+    .loan-mismatch-table tbody td:nth-child(5),
+    .loan-mismatch-table tbody td:nth-child(7),
+    .loan-mismatch-table tbody td:nth-child(9) {
+        text-align: center;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .loan-mismatch-table tbody td:nth-child(4),
+    .loan-mismatch-table tbody td:nth-child(6),
+    .loan-mismatch-table tbody td:nth-child(8),
+    .loan-mismatch-table tbody td:nth-child(10) {
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+    }
+
+    .loan-mismatch-table tbody td:nth-child(11) {
+        text-align: center;
+    }
+
+    .loan-mismatch-table tfoot th,
+    .loan-mismatch-table tfoot td {
+        background: var(--loan-blue-ink) !important;
+        color: #ffffff !important;
+        font-weight: 800;
+        border-right: 1px solid rgba(255, 255, 255, 0.18) !important;
+        border-bottom: none !important;
+    }
+
+    .loan-mismatch-table tfoot td {
+        text-align: center;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+    }
+
+    .loan-mismatch-table tfoot td.text-right {
+        text-align: right !important;
+    }
+
+    .loan-mismatch-table .btn {
+        min-height: 28px;
+        padding: 0.22rem 0.5rem;
+        border-radius: 6px;
+        font-size: 0.72rem;
+        line-height: 1.2;
+    }
+
+    @media (max-width: 991.98px) {
+        .loan-filter-modern,
+        .loan-mismatch-summary {
+            grid-template-columns: 1fr;
+        }
+    }
 </style>
 
 <div class="loan-dashboard pt-4">
     <div class="loan-title-hero d-flex flex-wrap justify-content-center align-items-center">
         <div class="loan-title-hero__wrap">
             <div class="loan-title-hero__badge">
-                <i class="fas fa-university"></i>
-                <span>BRI Loan Audit</span>
+                <i class="fas fa-clipboard-check"></i>
+                <span>Dashboard Pinjaman</span>
             </div>
-            <h1 class="loan-title-hero__title">KOLEK TIDAK SESUAI</h1>
-            <p class="loan-title-hero__desc">Verifikasi konsistensi bucket kualitas pinjaman berdasarkan rule audit agar anomali kolektibilitas lebih cepat terbaca.</p>
+            <h1 class="loan-title-hero__title">Kolek Tidak Sesuai</h1>
         </div>
     </div>
 
@@ -198,7 +438,7 @@
                 <form id="loanMismatchForm" method="GET" action="{{ route('report.dashboard-pinjaman.kolek-tidak-sesuai') }}">
                     <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center mb-3">
                         <div>
-                            <h5 class="mb-1 font-weight-bold text-dark">Filter Audit</h5>
+                            <h5 class="mb-1 font-weight-bold text-dark">Filter</h5>
                         </div>
                     </div>
 
@@ -228,16 +468,16 @@
                                 <div class="loan-dropdown-menu" data-loan-dropdown-menu="cabang">
                                     <div class="px-3 py-3 text-center text-muted small">Pilih periode dulu</div>
                                 </div>
-                                <select id="loanMismatchCabangSelect" name="mismatch_cabang1" class="d-none" data-selected="{{ $mismatchSelectedBranch }}"></select>
+                                <select id="loanMismatchCabangSelect" name="mismatch_cabang1" class="d-none" data-selected="{{ ($mismatchSelectedBranches ?? ['AREA_6_ALL'])[0] ?? 'AREA_6_ALL' }}"></select>
                             </div>
                         </div>
 
                         <div>
                             <button id="loanMismatchSubmitButton" type="submit" class="btn-loan-modern-submit w-100">
-                                <i class="fas fa-search"></i> PROSES AUDIT
+                                <i class="fas fa-search"></i> Proses
                             </button>
                             <div id="loanMismatchLoadingChip" class="loan-loading-chip d-none mt-2 justify-content-center">
-                                <span class="loan-loading-dot"></span> AUDIT BERJALAN
+                                <span class="loan-loading-dot"></span> Memuat
                             </div>
                         </div>
                     </div>
@@ -248,53 +488,76 @@
         <div class="card loan-table-shell loan-mismatch-table-shell animate-reveal">
             <div class="card-body p-4">
                 <div class="loan-table-heading">
-                    <div><h5>Hasil Audit Mismatch</h5></div>
+                    <div><h5>Kolek Tidak Sesuai</h5></div>
                     <div class="loan-table-badge">
                         <i class="fas fa-calendar-alt mr-1"></i>
                         <span id="loanMismatchPeriodBadge">
-                            {{ $mismatchSelectedPeriod ? \Carbon\Carbon::parse($mismatchSelectedPeriod)->format('d/m/Y') : '-' }} | {{ $mismatchSelectedBranch ?: 'Belum pilih cabang' }}
+                            {{ $mismatchSelectedPeriod ? \Carbon\Carbon::parse($mismatchSelectedPeriod)->format('d/m/Y') : '-' }} | Area 6 - All
                         </span>
                     </div>
                 </div>
 
                 <div class="loan-mismatch-summary">
                     <div class="loan-mismatch-card">
-                        <div class="loan-audit-label">Baris Discanning</div>
-                        <div id="loanMismatchScanned" class="loan-audit-value">0</div>
-                    </div>
-                    <div class="loan-mismatch-card">
-                        <div class="loan-audit-label">Mismatch</div>
+                        <div class="loan-audit-label">Total Rekening KTS</div>
                         <div id="loanMismatchTotal" class="loan-audit-value text-danger">0</div>
                     </div>
                     <div class="loan-mismatch-card">
-                        <div class="loan-audit-label">Sesuai</div>
-                        <div id="loanMismatchMatched" class="loan-audit-value text-success">0</div>
+                        <div class="loan-audit-label">Unit Terdampak</div>
+                        <div id="loanMismatchUnits" class="loan-audit-value">0</div>
                     </div>
                     <div class="loan-mismatch-card">
-                        <div class="loan-audit-label">Unit Bermasalah</div>
-                        <div id="loanMismatchUnits" class="loan-audit-value">0</div>
+                        <div class="loan-audit-label">Total OS</div>
+                        <div id="loanMismatchOutstanding" class="loan-audit-value">0</div>
                     </div>
                 </div>
 
                 <div class="table-responsive mt-4">
                     <div class="loan-mismatch-table-wrap">
-                        <table class="table table-hover mb-0">
+                        <table class="table table-hover loan-mismatch-table mb-0">
                             <thead>
                                 <tr>
-                                    <th style="width: 72px; text-align: center;">No</th>
-                                    <th style="text-align: left;">Unit Kerja</th>
-                                    <th style="width: 220px; text-align: center;">Jumlah Kolek Tidak Sesuai</th>
-                                    <th style="width: 180px; text-align: center;">Export Detail</th>
+                                    <th rowspan="2" style="width: 54px; text-align: center;">No</th>
+                                    <th rowspan="2" style="width: 230px; text-align: left;">Unit Kerja</th>
+                                    <th colspan="2" style="text-align: center;">Memburuk</th>
+                                    <th colspan="2" style="text-align: center;">Membaik</th>
+                                    <th colspan="2" style="text-align: center;">Belum Waktunya Penyesuaian</th>
+                                    <th colspan="2" style="text-align: center;">Total</th>
+                                    <th rowspan="2" style="width: 105px; text-align: center;">Export</th>
+                                </tr>
+                                <tr>
+                                    <th style="width: 72px; text-align: center;">Rek</th>
+                                    <th style="width: 130px; text-align: right;">Rp</th>
+                                    <th style="width: 72px; text-align: center;">Rek</th>
+                                    <th style="width: 130px; text-align: right;">Rp</th>
+                                    <th style="width: 72px; text-align: center;">Rek</th>
+                                    <th style="width: 130px; text-align: right;">Rp</th>
+                                    <th style="width: 72px; text-align: center;">Rek</th>
+                                    <th style="width: 130px; text-align: right;">Rp</th>
                                 </tr>
                             </thead>
                             <tbody id="loanMismatchBody">
                                 <tr>
-                                    <td colspan="4" class="loan-empty-state">
+                                    <td colspan="11" class="loan-empty-state">
                                         <strong>Audit belum dijalankan</strong>
                                         Pilih periode dan cabang lalu klik <strong>Proses</strong>.
                                     </td>
                                 </tr>
                             </tbody>
+                            <tfoot>
+                                <tr id="loanMismatchFoot">
+                                    <th colspan="2">Grand Total</th>
+                                    <td>0</td>
+                                    <td class="text-right">0</td>
+                                    <td>0</td>
+                                    <td class="text-right">0</td>
+                                    <td>0</td>
+                                    <td class="text-right">0</td>
+                                    <td>0</td>
+                                    <td class="text-right">0</td>
+                                    <td>-</td>
+                                </tr>
+                            </tfoot>
                         </table>
                     </div>
                 </div>
@@ -311,6 +574,7 @@
         const periodInput = document.getElementById('loanMismatchPeriodeInput');
         const branchSelect = document.getElementById('loanMismatchCabangSelect');
         const body = document.getElementById('loanMismatchBody');
+        const foot = document.getElementById('loanMismatchFoot');
         const chip = document.getElementById('loanMismatchLoadingChip');
         const submitButton = document.getElementById('loanMismatchSubmitButton');
         const badge = document.getElementById('loanMismatchPeriodBadge');
@@ -318,49 +582,146 @@
         const filterUrl = @json(route('report.dashboard-pinjaman.kolek-tidak-sesuai.filters'));
         const dataUrl = @json(route('report.dashboard-pinjaman.kolek-tidak-sesuai.data'));
         const exportUrl = @json(route('report.dashboard-pinjaman.kolek-tidak-sesuai.export'));
+        const areaAllValue = 'AREA_6_ALL';
+        const areaBranches = ['KC Madiun', 'KC Magetan', 'KC Ngawi', 'KC Ponorogo'];
+        const initialSelectedBranch = @json(($mismatchSelectedBranches ?? ['AREA_6_ALL'])[0] ?? 'AREA_6_ALL');
 
         initMultiSelect(branchSelect, 'Pilih Kantor Cabang');
+
+        function getSelectedBranch() {
+            return normalizeBranchSelection([branchSelect.value])[0];
+        }
+
+        function normalizeBranchSelection(values) {
+            const selected = (values || []).filter(Boolean);
+            if (selected.length === 0 || selected.includes(areaAllValue)) {
+                return [areaAllValue];
+            }
+
+            const selectedBranch = selected.find(value => areaBranches.includes(value));
+            return selectedBranch ? [selectedBranch] : [areaAllValue];
+        }
+
+        function getBranchLabel(value = getSelectedBranch()) {
+            if (value === areaAllValue) {
+                return 'Area 6 - All';
+            }
+
+            return value || 'Area 6 - All';
+        }
+
+        function syncHiddenBranchSelect(options, selectedValue) {
+            const selected = normalizeBranchSelection([selectedValue])[0];
+            branchSelect.innerHTML = '';
+            (options || []).forEach(branch => {
+                const label = branch === areaAllValue ? 'Area 6 - All' : branch;
+                branchSelect.add(new Option(label, branch, false, selected === branch));
+            });
+        }
 
         async function loadBranches() {
             if (!periodInput.value) return;
             const res = await fetch(`${filterUrl}?periode=${periodInput.value}`);
             const payload = await res.json();
-            branchSelect.innerHTML = '<option value="">Pilih kantor cabang</option>';
-            payload.branches.forEach(b => {
-                branchSelect.add(new Option(b, b, false, b === branchSelect.dataset.selected));
-            });
+            syncHiddenBranchSelect(payload.branches || [], branchSelect.dataset.selected || initialSelectedBranch);
             branchSelect.disabled = false;
             window.jQuery(branchSelect).trigger('change');
         }
 
         async function loadData() {
-            if (!periodInput.value || !branchSelect.value) return;
+            const selectedBranch = getSelectedBranch();
+
+            if (!periodInput.value || !selectedBranch) return;
             chip.classList.remove('d-none');
             submitButton.disabled = true;
             
             try {
-                const res = await fetch(`${dataUrl}?periode=${periodInput.value}&cabang1=${branchSelect.value}`);
+                const params = new URLSearchParams();
+                params.set('periode', periodInput.value);
+                params.set('cabang1', selectedBranch);
+
+                const res = await fetch(`${dataUrl}?${params.toString()}`);
                 const payload = await res.json();
                 renderTable(payload.summary_rows, payload.selected_period, payload.selected_branch);
-                document.getElementById('loanMismatchScanned').textContent = formatNumber(payload.audit.scanned_rows);
                 document.getElementById('loanMismatchTotal').textContent = formatNumber(payload.audit.mismatch_rows);
-                document.getElementById('loanMismatchMatched').textContent = formatNumber(payload.audit.matched_rows);
                 document.getElementById('loanMismatchUnits').textContent = formatNumber(payload.audit.units_with_mismatch);
+                document.getElementById('loanMismatchOutstanding').textContent = formatCurrency(payload.audit.total_outstanding_balance);
             } finally {
                 chip.classList.add('d-none');
                 submitButton.disabled = false;
             }
         }
 
+        function formatCurrency(value) {
+            const amount = Number(value || 0);
+            return formatNumber(amount);
+        }
+
+        function sumRows(rows, key) {
+            return rows.reduce((total, row) => total + Number(row[key] || 0), 0);
+        }
+
+        function renderFoot(rows = []) {
+            const tableRows = Array.isArray(rows) ? rows : [];
+            foot.innerHTML = `
+                <th colspan="2">Grand Total</th>
+                <td>${formatNumber(sumRows(tableRows, 'memburuk_count'))}</td>
+                <td class="text-right">${formatCurrency(sumRows(tableRows, 'memburuk_os'))}</td>
+                <td>${formatNumber(sumRows(tableRows, 'kolek_membaik_count'))}</td>
+                <td class="text-right">${formatCurrency(sumRows(tableRows, 'kolek_membaik_os'))}</td>
+                <td>${formatNumber(sumRows(tableRows, 'belum_waktunya_penyesuaian_count'))}</td>
+                <td class="text-right">${formatCurrency(sumRows(tableRows, 'belum_waktunya_penyesuaian_os'))}</td>
+                <td>${formatNumber(sumRows(tableRows, 'mismatch_count'))}</td>
+                <td class="text-right">${formatCurrency(sumRows(tableRows, 'outstanding_balance'))}</td>
+                <td>-</td>
+            `;
+        }
+
+        function buildExportUrl(period, branch, row) {
+            const params = new URLSearchParams();
+            params.set('periode', period);
+            params.set('cabang1', row.branch || branch);
+
+            if (!row.is_branch_summary && row.unit) {
+                params.set('unit1', row.unit);
+            }
+
+            return `${exportUrl}?${params.toString()}`;
+        }
+
         function renderTable(rows, period, branch) {
-            body.innerHTML = rows.map((row, i) => `
+            const tableRows = Array.isArray(rows) ? rows : [];
+
+            if (!tableRows.length) {
+                body.innerHTML = `
+                    <tr>
+                        <td colspan="11" class="loan-empty-state">
+                            <strong>Tidak ada mismatch</strong>
+                            Data pada periode dan cabang ini tidak memiliki kolek tidak sesuai.
+                        </td>
+                    </tr>
+                `;
+                renderFoot([]);
+                badge.textContent = `${formatDate(period)} | ${branch}`;
+                return;
+            }
+
+            body.innerHTML = tableRows.map((row, i) => `
                 <tr>
                     <td>${i+1}</td>
-                    <td>${row.unit}</td>
+                    <td>${row.label || row.unit}</td>
+                    <td>${formatNumber(row.memburuk_count)}</td>
+                    <td class="text-right">${formatCurrency(row.memburuk_os)}</td>
+                    <td>${formatNumber(row.kolek_membaik_count)}</td>
+                    <td class="text-right">${formatCurrency(row.kolek_membaik_os)}</td>
+                    <td>${formatNumber(row.belum_waktunya_penyesuaian_count)}</td>
+                    <td class="text-right">${formatCurrency(row.belum_waktunya_penyesuaian_os)}</td>
                     <td class="text-danger font-weight-bold">${formatNumber(row.mismatch_count)}</td>
-                    <td><a href="${exportUrl}?periode=${period}&cabang1=${branch}&unit1=${row.unit}" class="btn btn-sm btn-outline-success"><i class="fas fa-file-excel mr-1"></i> Excel</a></td>
+                    <td class="text-right">${formatCurrency(row.outstanding_balance)}</td>
+                    <td><a href="${buildExportUrl(period, branch, row)}" class="btn btn-sm btn-outline-success"><i class="fas fa-file-excel mr-1"></i> Excel</a></td>
                 </tr>
             `).join('');
+            renderFoot(tableRows);
             badge.textContent = `${formatDate(period)} | ${branch}`;
         }
 
@@ -375,6 +736,8 @@
             // Periode Sync
             periodInput.addEventListener('change', () => {
                 periodeDisplay.textContent = periodInput.value;
+                branchSelect.dataset.selected = areaAllValue;
+                loadBranches().catch(() => null);
             });
 
             // Dropdown Toggle
@@ -392,31 +755,37 @@
                 const options = Array.from(branchSelect.options);
                 cabangMenu.innerHTML = '';
                 
-                if (options.length <= 1) {
+                if (options.length === 0) {
                     cabangMenu.innerHTML = '<div class="px-3 py-3 text-center text-muted small">Pilih periode dulu</div>';
                     return;
                 }
 
                 options.forEach(opt => {
-                    if (!opt.value) return;
                     const item = document.createElement('div');
                     item.className = `loan-dropdown-option ${opt.selected ? 'is-active' : ''}`;
                     item.innerHTML = `<div class="loan-dropdown-check"><i class="fas fa-check"></i></div><span>${opt.text}</span>`;
                     item.addEventListener('click', (e) => {
                         e.stopPropagation();
+                        if (opt.value === areaAllValue) {
+                            options.forEach(option => option.selected = option.value === areaAllValue);
+                        } else {
+                            options.forEach(option => option.selected = option === opt);
+                        }
+
                         branchSelect.value = opt.value;
-                        cabangText.textContent = opt.text;
+                        branchSelect.dataset.selected = getSelectedBranch();
+                        cabangText.textContent = getBranchLabel();
+                        options.forEach((option, index) => {
+                            if (cabangMenu.children[index]) {
+                                cabangMenu.children[index].classList.toggle('is-active', option.selected);
+                            }
+                        });
                         window.jQuery(branchSelect).trigger('change');
-                        document.querySelectorAll('.loan-dropdown').forEach(d => d.classList.remove('is-open'));
                     });
                     cabangMenu.appendChild(item);
                 });
 
-                if (branchSelect.selectedIndex >= 0 && branchSelect.value) {
-                    cabangText.textContent = branchSelect.options[branchSelect.selectedIndex].text;
-                } else {
-                    cabangText.textContent = 'Pilih Kantor Cabang';
-                }
+                cabangText.textContent = getBranchLabel();
             });
 
             observer.observe(branchSelect, { childList: true });

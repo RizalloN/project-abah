@@ -545,8 +545,21 @@ class ReportSnapshotBuilder
 
     private function buildRasioPeriodSnapshot(string $loanPeriod, bool $force): int
     {
+        $casaDate = $this->resolveAvailableCasaPeriod($loanPeriod);
+
+        if ($casaDate === null) {
+            if ($force) {
+                DB::table(self::RASIO_SNAPSHOT_TABLE)->where('loan_period', $loanPeriod)->delete();
+            }
+
+            return 0;
+        }
+
         if (!$force) {
-            $existingCount = (int) DB::table(self::RASIO_SNAPSHOT_TABLE)->where('loan_period', $loanPeriod)->count();
+            $existingQuery = DB::table(self::RASIO_SNAPSHOT_TABLE)->where('loan_period', $loanPeriod);
+            $existingQuery->where('casa_period', $casaDate);
+
+            $existingCount = (int) $existingQuery->count();
             if ($existingCount > 0) {
                 return $existingCount;
             }
@@ -600,8 +613,21 @@ class ReportSnapshotBuilder
             return 0;
         }
 
+        $casaDate = $this->resolveAvailableCasaPeriod($loanPeriod);
+
+        if ($casaDate === null) {
+            if ($force) {
+                DB::table(self::RASIO_UKER_SNAPSHOT_TABLE)->where('loan_period', $loanPeriod)->delete();
+            }
+
+            return 0;
+        }
+
         if (!$force) {
-            $existingCount = (int) DB::table(self::RASIO_UKER_SNAPSHOT_TABLE)->where('loan_period', $loanPeriod)->count();
+            $existingQuery = DB::table(self::RASIO_UKER_SNAPSHOT_TABLE)->where('loan_period', $loanPeriod);
+            $existingQuery->where('casa_period', $casaDate);
+
+            $existingCount = (int) $existingQuery->count();
             if ($existingCount > 0) {
                 return $existingCount;
             }
@@ -658,7 +684,7 @@ class ReportSnapshotBuilder
         ";
 
         $casaJoinSql = '';
-        $bindings = [$loanPeriod, $loanPeriod, $loanPeriod, $loanPeriod];
+        $bindings = [$loanPeriod, $loanPeriod, $casaDate, $loanPeriod];
 
         if ($casaDate) {
             $applyCasaTypeFilter = $this->shouldApplyCasaTypeFilter($casaDate);
@@ -779,7 +805,7 @@ class ReportSnapshotBuilder
         ";
 
         $casaJoinSql = '';
-        $bindings = [$loanPeriod, $loanPeriod, $loanPeriod, $loanPeriod];
+        $bindings = [$loanPeriod, $loanPeriod, $casaDate, $loanPeriod];
 
         if ($casaDate) {
             $applyCasaTypeFilter = $this->shouldApplyCasaTypeFilter($casaDate);
@@ -1735,9 +1761,11 @@ class ReportSnapshotBuilder
         }
 
         try {
-            return $this->availableCasaPeriodCache[$normalizedTargetDate] = DB::table('simpanan_multipn')
-                ->where('posisi', '<=', $normalizedTargetDate)
-                ->max('posisi');
+            $exists = DB::table('simpanan_multipn')
+                ->where('posisi', $normalizedTargetDate)
+                ->exists();
+
+            return $this->availableCasaPeriodCache[$normalizedTargetDate] = $exists ? $normalizedTargetDate : null;
         } catch (Throwable) {
             $this->availableCasaPeriodCache[$normalizedTargetDate] = null;
             return null;
@@ -1938,11 +1966,7 @@ class ReportSnapshotBuilder
 
     private function buildLoanIdentityExpression(string $fallbackColumn): string
     {
-        if (Schema::hasColumn('daily_loan_dinamis', 'cifno_clean')) {
-            return "COALESCE(NULLIF(d.cifno_clean, ''), REGEXP_REPLACE(d.{$fallbackColumn}, '[^0-9]', ''))";
-        }
-
-        return "REGEXP_REPLACE(d.{$fallbackColumn}, '[^0-9]', '')";
+        return $this->buildRasioIdentityExpression("d.{$fallbackColumn}");
     }
 
     private function buildLoanNormalizedExpression(string $fallbackColumn, string $shadowColumn): string
@@ -1980,7 +2004,7 @@ class ReportSnapshotBuilder
         DB::statement("
             INSERT INTO tmp_rasio_casa_balances (identity_key, casa_balance)
             SELECT
-                REGEXP_REPLACE(s.{$casaKeyColumn}, '[^0-9]', '') as identity_key,
+                {$this->buildRasioIdentityExpression("s.{$casaKeyColumn}")} as identity_key,
                 SUM(COALESCE(s.saldo_idr, 0)) as casa_balance
             FROM simpanan_multipn s
             WHERE s.posisi = ?
@@ -1992,6 +2016,11 @@ class ReportSnapshotBuilder
 
         $this->rasioCasaTempTablePeriod = $casaDate;
         $this->rasioCasaTempTableTypeFilter = $applyCasaTypeFilter;
+    }
+
+    private function buildRasioIdentityExpression(string $column): string
+    {
+        return "CONVERT(UPPER(REPLACE(TRIM(COALESCE({$column}, '')), '''', '')) USING utf8mb4) COLLATE utf8mb4_unicode_ci";
     }
 
     private function resolveExistingColumn(string $table, array $candidates, string $fallback): string

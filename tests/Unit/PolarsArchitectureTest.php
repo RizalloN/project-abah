@@ -9,6 +9,8 @@ use App\Services\Import\Strategies\DailyLoanImportStrategy;
 use App\Services\Import\Strategies\GenericCsvImportStrategy;
 use App\Services\Import\Strategies\Gi405RecDhImportStrategy;
 use App\Services\Import\Strategies\L1133ImportStrategy;
+use App\Services\Import\Strategies\Lw321NpdImportStrategy;
+use App\Services\Import\Strategies\Lw321NpddImportStrategy;
 use App\Services\Import\Strategies\Lw321PnImportStrategy;
 use App\Services\Import\Strategies\Lw325PhImportStrategy;
 use App\Services\Import\Strategies\PerformancePisImportStrategy;
@@ -38,6 +40,8 @@ class PolarsArchitectureTest extends TestCase
             [SsaSimpananImportStrategy::class, 'bulk_csv_staging', []],
             [SsaPinjamanImportStrategy::class, 'bulk_csv_staging', []],
             [Gi405RecDhImportStrategy::class, 'bulk_csv_filtered', []],
+            [Lw321NpdImportStrategy::class, 'bulk_csv_filtered', []],
+            [Lw321NpddImportStrategy::class, 'bulk_csv_filtered', []],
             [GenericCsvImportStrategy::class, 'bulk_csv_staging', []],
             [CognosPhImportStrategy::class, 'bulk_csv_staging', []],
             [CognosRecoveryImportStrategy::class, 'bulk_csv_staging', []],
@@ -86,6 +90,8 @@ class PolarsArchitectureTest extends TestCase
             [Gi405RecDhImportStrategy::class, 'gi405_singlerow'],
             [Lw325PhImportStrategy::class, 'lw325_ph'],
             [Lw321PnImportStrategy::class, 'lw321pn'],
+            [Lw321NpdImportStrategy::class, 'lw321_npd'],
+            [Lw321NpddImportStrategy::class, 'lw321_npdd'],
             [CognosPhImportStrategy::class, 'cognos_ph'],
             [CognosRecoveryImportStrategy::class, 'cognos_recovery'],
             [PerformancePisImportStrategy::class, 'performance_pis_per_produk'],

@@ -34,9 +34,11 @@ class OptimizedDashboardDanaService extends DashboardDanaService
             ];
         }
 
+        $periods = $this->calculatePeriodReferences($selectedPeriod);
+
         // Use snapshot if available, otherwise fallback to raw table
-        if ($this->hasSnapshot($selectedPeriod)) {
-            return $this->getDashboardDataFromSnapshot($selectedPeriod, $category, $rkaPeriod);
+        if ($this->hasSnapshotsForPeriods($periods)) {
+            return $this->getDashboardDataFromSnapshot($selectedPeriod, $category, $rkaPeriod, $periods);
         }
 
         return $this->getDashboardDataFromRaw($selectedPeriod, $category, $rkaPeriod);
@@ -48,9 +50,9 @@ class OptimizedDashboardDanaService extends DashboardDanaService
      * This is the fast path - snapshots have already aggregated data,
      * so we just need to SELECT without GROUP BY.
      */
-    private function getDashboardDataFromSnapshot(string $selectedPeriod, ?string $category, ?string $rkaPeriod): array
+    private function getDashboardDataFromSnapshot(string $selectedPeriod, ?string $category, ?string $rkaPeriod, ?array $periods = null): array
     {
-        $periods = $this->calculatePeriodReferences($selectedPeriod);
+        $periods ??= $this->calculatePeriodReferences($selectedPeriod);
         $allPeriodValues = array_filter($periods);
 
         // Query snapshot instead of raw table - no aggregation needed
@@ -195,14 +197,23 @@ class OptimizedDashboardDanaService extends DashboardDanaService
     /**
      * Check if snapshot exists for the given period.
      */
-    private function hasSnapshot(string $period): bool
+    private function hasSnapshotsForPeriods(array $periods): bool
     {
         if (!Schema::hasTable(self::SNAPSHOT_TABLE)) {
             return false;
         }
 
-        return DB::table(self::SNAPSHOT_TABLE)
-            ->where('periode', $period)
-            ->exists();
+        $requiredPeriods = array_values(array_unique(array_filter($periods)));
+        if ($requiredPeriods === []) {
+            return false;
+        }
+
+        $availablePeriods = DB::table(self::SNAPSHOT_TABLE)
+            ->whereIn('Month_Day_Year_of_Posisi', $requiredPeriods)
+            ->distinct()
+            ->pluck('Month_Day_Year_of_Posisi')
+            ->all();
+
+        return count(array_diff($requiredPeriods, $availablePeriods)) === 0;
     }
 }

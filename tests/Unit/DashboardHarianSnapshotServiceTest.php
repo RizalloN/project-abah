@@ -404,6 +404,56 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         $this->assertSame(1, DB::table('dashboard_harian_snapshots')->where('snapshot_period', '2026-04-28')->count());
     }
 
+    public function test_explicit_sync_candidate_builds_missing_period_even_when_shared_period_cache_is_stale(): void
+    {
+        $this->createSourceMetadataTables();
+
+        DB::table('ssa_pinjaman')->insert([
+            'month_day_year_of_periode' => '2026-04-28',
+            'baki_debet' => 1000,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('ssa_simpanan')->insert([
+            'Month_Day_Year_of_Posisi' => '2026-04-28',
+            'saldo' => 500,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $service = new class extends DashboardHarianSnapshotService {
+            public array $builtPeriods = [];
+
+            public function buildPeriodSnapshot(string $period, bool $force = false): int
+            {
+                $this->builtPeriods[] = [$period, $force];
+
+                DB::table(self::SNAPSHOT_TABLE)->insert([
+                    'uniqueid_dhs' => 'built-' . $period,
+                    'snapshot_period' => $period,
+                    'kanca_key' => 'kc',
+                    'unit_key' => 'kc',
+                    'source_signature' => 'built',
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+
+                return 1;
+            }
+        };
+
+        $sharedPeriods = new \ReflectionProperty(DashboardHarianSnapshotService::class, 'sharedPeriodsRequestCache');
+        $sharedPeriods->setAccessible(true);
+        $sharedPeriods->setValue($service, ['2026-04-27']);
+
+        $result = $service->syncDuePeriods(['2026-04-28']);
+
+        $this->assertSame(1, $result['built']);
+        $this->assertSame(['2026-04-28'], $result['missing']);
+        $this->assertSame([['2026-04-28', false]], $service->builtPeriods);
+        $this->assertSame(1, DB::table('dashboard_harian_snapshots')->where('snapshot_period', '2026-04-28')->count());
+    }
+
     public function test_shared_period_can_use_dly_kap_when_ssa_pinjaman_is_not_available_yet(): void
     {
         $this->createSourceMetadataTables();

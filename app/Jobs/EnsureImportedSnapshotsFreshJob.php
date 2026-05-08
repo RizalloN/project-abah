@@ -317,7 +317,11 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
 
     private function dashboardHarianSourcesAreAvailable(string $period): bool
     {
-        return $this->sourceHasRows('ssa_pinjaman', 'month_day_year_of_periode', $period)
-            && $this->sourceHasRows('ssa_simpanan', 'Month_Day_Year_of_Posisi', $period);
+        return $this->sourceHasRows('ssa_simpanan', 'Month_Day_Year_of_Posisi', $period)
+            && (
+                $this->sourceHasRows('ssa_pinjaman', 'month_day_year_of_periode', $period)
+                || $this->sourceHasRows('dly_kap_resegmentasi', 'periode', $period)
+                || $this->sourceHasRows('l1133', 'periode', $period)
+            );
     }
 }

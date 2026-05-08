@@ -5,6 +5,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use PhpOffice\PhpSpreadsheet\IOFactory;
 
 beforeEach(function () {
     Schema::dropIfExists('daily_loan_dinamis');
@@ -150,6 +151,9 @@ it('aggregates current total and raw posisi counts by branch office', function (
     $response->assertJsonPath('rows.0.ytd', 1);
     $response->assertJsonPath('rows.0.mtd', 1);
     $response->assertJsonPath('rows.0.current', 1);
+    $response->assertJsonPath('rows.0.ytd_tunggakan', 30000);
+    $response->assertJsonPath('rows.0.mtd_tunggakan', 30000);
+    $response->assertJsonPath('rows.0.current_tunggakan', 80000);
     $response->assertJsonPath('rows.0.total_tunggakan', 80000);
     $response->assertJsonPath('rows.1.label', 'KC Magetan');
     $response->assertJsonPath('rows.1.current', 0);
@@ -163,6 +167,9 @@ it('aggregates current total and raw posisi counts by branch office', function (
     $response->assertJsonPath('total.ytd', 1);
     $response->assertJsonPath('total.mtd', 1);
     $response->assertJsonPath('total.current', 2);
+    $response->assertJsonPath('total.ytd_tunggakan', 30000);
+    $response->assertJsonPath('total.mtd_tunggakan', 30000);
+    $response->assertJsonPath('total.current_tunggakan', 95000);
     $response->assertJsonPath('total.total_tunggakan', 95000);
 });
 
@@ -185,10 +192,16 @@ it('switches grouping to uker when unit filter is selected', function () {
     $response->assertJsonPath('rows.0.ytd', 1);
     $response->assertJsonPath('rows.0.mtd', 1);
     $response->assertJsonPath('rows.0.current', 1);
+    $response->assertJsonPath('rows.0.ytd_tunggakan', 30000);
+    $response->assertJsonPath('rows.0.mtd_tunggakan', 30000);
+    $response->assertJsonPath('rows.0.current_tunggakan', 80000);
     $response->assertJsonPath('rows.0.total_tunggakan', 80000);
     $response->assertJsonPath('total.ytd', 1);
     $response->assertJsonPath('total.mtd', 1);
     $response->assertJsonPath('total.current', 1);
+    $response->assertJsonPath('total.ytd_tunggakan', 30000);
+    $response->assertJsonPath('total.mtd_tunggakan', 30000);
+    $response->assertJsonPath('total.current_tunggakan', 80000);
     $response->assertJsonPath('total.total_tunggakan', 80000);
 });
 
@@ -229,6 +242,49 @@ it('keeps branch scope when all uker is selected for a branch', function () {
     $response->assertJsonPath('rows.1.total_tunggakan', 20000);
     $response->assertJsonPath('total.current', 2);
     $response->assertJsonPath('total.total_tunggakan', 100000);
+});
+
+it('excludes zero arrears and includes exactly one hundred thousand', function () {
+    seedSmallArrearsRows();
+
+    DB::table('daily_loan_dinamis')->insert([
+        [
+            'uniqueid_namareport' => 'curr-kc-mdn-zero',
+            'periode' => '2026-04-22',
+            'cabang1' => 'KC Madiun',
+            'unit1' => 'Unit A',
+            'nomor_rekening1' => 'LN-ZERO',
+            'tunggakan_pokok' => 0,
+            'tunggakan_bunga' => 0,
+            'tunggakan_penalti' => 0,
+        ],
+        [
+            'uniqueid_namareport' => 'curr-kc-mdn-exact-100k',
+            'periode' => '2026-04-22',
+            'cabang1' => 'KC Madiun',
+            'unit1' => 'Unit A',
+            'nomor_rekening1' => 'LN-100K',
+            'tunggakan_pokok' => 50000,
+            'tunggakan_bunga' => 30000,
+            'tunggakan_penalti' => 20000,
+        ],
+    ]);
+
+    $user = User::factory()->create();
+
+    $response = $this
+        ->actingAs($user)
+        ->getJson('/report/dashboard-pinjaman/tunggakan-kecil/data?' . http_build_query([
+            'periode' => '2026-04-22',
+            'cabang1' => ['KC Madiun'],
+            'unit1' => ['Unit A'],
+        ]));
+
+    $response->assertOk();
+    $response->assertJsonPath('rows.0.current', 2);
+    $response->assertJsonPath('rows.0.total_tunggakan', 180000);
+    $response->assertJsonPath('total.current', 2);
+    $response->assertJsonPath('total.total_tunggakan', 180000);
 });
 
 it('keeps user selected period and returns zero totals when no data exists on that date', function () {
@@ -298,4 +354,68 @@ it('filters unit selector based on selected branch offices', function () {
     $response->assertJsonPath('unit_options.0', 'ALL_UKER');
     $response->assertJsonPath('unit_options.1', 'Unit C');
     $response->assertJsonPath('selected_units.0', 'ALL_UKER');
+});
+
+it('streams small arrears export as excel workbook for selected unit', function () {
+    seedSmallArrearsRows();
+
+    DB::table('daily_loan_dinamis')->insert([
+        [
+            'uniqueid_namareport' => 'curr-kc-mdn-zero-export',
+            'periode' => '2026-04-22',
+            'cabang1' => 'KC Madiun',
+            'unit1' => 'Unit A',
+            'nomor_rekening1' => 'LN-ZERO-EXPORT',
+            'tunggakan_pokok' => 0,
+            'tunggakan_bunga' => 0,
+            'tunggakan_penalti' => 0,
+        ],
+        [
+            'uniqueid_namareport' => 'curr-kc-mdn-exact-100k-export',
+            'periode' => '2026-04-22',
+            'cabang1' => 'KC Madiun',
+            'unit1' => 'Unit A',
+            'nomor_rekening1' => 'LN-100K-EXPORT',
+            'tunggakan_pokok' => 50000,
+            'tunggakan_bunga' => 30000,
+            'tunggakan_penalti' => 20000,
+        ],
+    ]);
+
+    $user = User::factory()->create();
+
+    $response = $this
+        ->actingAs($user)
+        ->get('/report/dashboard-pinjaman/tunggakan-kecil/export?' . http_build_query([
+            'periode' => '2026-04-22',
+            'cabang1' => ['KC Madiun'],
+            'unit1' => ['Unit A'],
+        ]));
+
+    $response->assertOk();
+    $response->assertHeader('content-type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    expect($response->headers->get('content-disposition'))->toContain('tunggakan-kecil_20260422_KC-Madiun_Unit-A.xlsx');
+
+    $content = $response->streamedContent();
+    expect(substr($content, 0, 2))->toBe('PK');
+
+    $path = tempnam(sys_get_temp_dir(), 'small_arrears_export_') . '.xlsx';
+    file_put_contents($path, $content);
+
+    try {
+        $sheet = IOFactory::load($path)->getActiveSheet();
+        $rows = $sheet->toArray(null, true, true, true);
+    } finally {
+        @unlink($path);
+    }
+
+    expect(array_values($rows[1]))->toContain('periode');
+    expect(array_values($rows[1]))->toContain('total_tunggakan_terhitung');
+
+    $accountValues = collect($rows)->skip(1)->pluck('D')->all();
+    expect($accountValues)->toContain('LN-001');
+    expect($accountValues)->toContain('LN-100K-EXPORT');
+    expect($accountValues)->not->toContain('LN-ZERO-EXPORT');
+    expect(collect($rows)->skip(1)->pluck('C')->all())->not->toContain('Unit B');
+    expect(collect($rows)->skip(1)->pluck('B')->all())->not->toContain('KC Ngawi');
 });

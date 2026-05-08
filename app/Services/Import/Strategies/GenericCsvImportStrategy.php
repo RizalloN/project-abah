@@ -12,6 +12,8 @@ class GenericCsvImportStrategy implements ImportStrategyInterface
         'ssa_simpanan',
         'l1133',
         'lw321pn',
+        'lw321_npd',
+        'lw321_npdd',
         'lw325_ph',
         'cognos_ph',
         'cognos_recovery',

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Report;
 
 use App\Http\Controllers\Controller;
+use Illuminate\Support\Facades\DB;
 use App\Services\Reports\EdcReportService;
 use App\Services\Reports\QrisReportService;
 use App\Services\Reports\BrilinkReportService;
@@ -47,7 +48,12 @@ class DigitalPerformanceController extends Controller
             'MBDESC',
         );
 
-        return view('report.performance-qris', compact('branches', 'branchOptions'));
+        $latestPosisi = DB::table('jumlah_merchant_qris_detail')->max('POSISI');
+        if (!$latestPosisi) {
+            $latestPosisi = date('Y-m-d');
+        }
+
+        return view('report.performance-qris', compact('branches', 'branchOptions', 'latestPosisi'));
     }
 
     public function fetchQrisUkers(Request $request): JsonResponse

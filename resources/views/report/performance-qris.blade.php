@@ -362,7 +362,7 @@
             <div class="col-md-3">
                 <div class="form-group mb-0">
                     <label class="text-dark text-sm font-weight-bold mb-1">Posisi Terakhir <i class="fas fa-edit text-success ml-1"></i></label>
-                    <input type="date" id="filter_posisi" class="form-control border-success shadow-sm filter-trigger" value="{{ date('Y-m-d') }}">
+                    <input type="date" id="filter_posisi" class="form-control border-success shadow-sm filter-trigger" value="{{ $latestPosisi }}">
                 </div>
             </div>
             <div class="col-md-2">
@@ -413,13 +413,13 @@
                             </tr>
                             <tr class="bg-header-sub">
                                 <th class="lbl-curr">Hari Berjalan</th>
-                                <th>MtD</th> <th>MtD(%)</th> <th>YtD</th> <th>YoY</th> <th class="rka-col text-dark">RKA</th> <th class="rka-col text-dark">Penc(%)</th>
+                                <th class="lbl-mtd">MtD</th> <th class="lbl-mtd-pct">MtD(%)</th> <th class="lbl-ytd">YtD</th> <th class="lbl-yoy">YoY</th> <th class="rka-col text-dark">RKA</th> <th class="rka-col text-dark">Penc(%)</th>
                                 
                                 <th class="lbl-curr">Hari Berjalan</th> <th>% QRIS Prod.</th>
-                                <th>MtD</th> <th>MtD(%)</th> <th>YtD</th> <th>YoY</th> <th class="rka-col text-dark">RKA</th> <th class="rka-col text-dark">Penc(%)</th>
+                                <th class="lbl-mtd">MtD</th> <th class="lbl-mtd-pct">MtD(%)</th> <th class="lbl-ytd">YtD</th> <th class="lbl-yoy">YoY</th> <th class="rka-col text-dark">RKA</th> <th class="rka-col text-dark">Penc(%)</th>
                                 
                                 <th class="lbl-curr">Hari Berjalan</th>
-                                <th>MtD</th> <th>MtD(%)</th> <th>YoY</th> <th class="rka-col text-dark">RKA</th> <th class="rka-col text-dark">Penc(%)</th>
+                                <th class="lbl-mtd">MtD</th> <th class="lbl-mtd-pct">MtD(%)</th> <th class="lbl-yoy">YoY</th> <th class="rka-col text-dark">RKA</th> <th class="rka-col text-dark">Penc(%)</th>
                             </tr>
                         </thead>
                         <tbody id="tbody-qris"></tbody>
@@ -698,8 +698,13 @@ document.addEventListener('DOMContentLoaded', function () {
                 if(res.status === 'success') {
                     updateGroupLabel(res.group_label);
                     
-                    $('.lbl-curr').text(res.labels.curr);
-                    if(res.labels.prev_mom) { $('.lbl-prev-mom').text(res.labels.prev_mom); }
+                    if (res.labels) {
+                        $('.lbl-curr').text(res.labels.curr || 'Hari Berjalan');
+                        $('.lbl-mtd').text(res.labels.mtd || 'MtD');
+                        $('.lbl-ytd').text(res.labels.ytd || 'YtD');
+                        $('.lbl-yoy').text(res.labels.yoy || 'YoY');
+                        if (res.labels.prev_mom) { $('.lbl-prev-mom').text(res.labels.prev_mom); }
+                    }
                     if (filterPosisiRka) {
                         filterPosisiRka.value = res.labels.rka || '--------';
                     }
