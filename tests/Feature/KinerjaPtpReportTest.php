@@ -7,6 +7,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 beforeEach(function (): void {
+    useKinerjaPtpSqliteConnection();
+
     Schema::dropIfExists('lw321_npd');
     Schema::dropIfExists('lw321_npdd');
     Schema::dropIfExists('users');
@@ -26,10 +28,26 @@ beforeEach(function (): void {
 });
 
 afterEach(function (): void {
+    useKinerjaPtpSqliteConnection();
+
     Schema::dropIfExists('lw321_npd');
     Schema::dropIfExists('lw321_npdd');
     Schema::dropIfExists('users');
 });
+
+function useKinerjaPtpSqliteConnection(): void
+{
+    $path = database_path('testing-kinerja-ptp.sqlite');
+
+    if (!file_exists($path)) {
+        touch($path);
+    }
+
+    config()->set('database.default', 'sqlite');
+    config()->set('database.connections.sqlite.database', $path);
+    DB::purge('sqlite');
+    DB::setDefaultConnection('sqlite');
+}
 
 function createKinerjaPtpTable(string $tableName, string $amountColumn): void
 {
@@ -63,7 +81,7 @@ function seedKinerjaPtpRows(): void
     ]);
 
     DB::table('lw321_npdd')->insert([
-        ptpRow('npdd-1', 'Sudah', 'LUNAS', 'Lunas', 'UNIT B', 7000, 700, 0, 'lw321_npdd'),
+        ptpRow('npdd-1', 'Sudah', 'LUNAS', 'Lunas', 'UNIT B', 7000000000, 700000000, 0, 'lw321_npdd'),
     ]);
 }
 

@@ -15,6 +15,7 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
@@ -70,22 +71,38 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
         }
 
         $checks = [
-            'dashboard_pinjaman_snapshots' => fn (): int => $builder->rebuildDashboard($period, true)[$period] ?? 0,
-            'dashboard_pinjaman_chart_periodik_snapshots' => fn (): int => $builder->rebuildChartPeriodik($period, true)[$period] ?? 0,
-            'performance_rm_snapshots' => fn (): int => $builder->rebuildPerformanceRm($period, true)[$period] ?? 0,
-            'rasio_casa_debitur_snapshots' => fn (): int => $builder->rebuildRasioCasa($period, true)[$period] ?? 0,
+            'dashboard_pinjaman_snapshots' => [
+                'period_column' => 'periode',
+                'rebuild' => fn (): int => $builder->rebuildDashboard($period, true)[$period] ?? 0,
+            ],
+            'dashboard_pinjaman_chart_periodik_snapshots' => [
+                'period_column' => 'periode',
+                'rebuild' => fn (): int => $builder->rebuildChartPeriodik($period, true)[$period] ?? 0,
+            ],
+            'performance_rm_snapshots' => [
+                'period_column' => 'periode',
+                'rebuild' => fn (): int => $builder->rebuildPerformanceRm($period, true)[$period] ?? 0,
+            ],
+            'rasio_casa_debitur_snapshots' => [
+                'period_column' => 'loan_period',
+                'rebuild' => fn (): int => $builder->rebuildRasioCasa($period, true)[$period] ?? 0,
+            ],
         ];
 
         if ($this->dashboardHarianSourcesAreAvailable($period)) {
-            $checks['dashboard_harian_snapshots'] = fn (): int => $dashboardHarian->rebuild($period, true)[$period] ?? 0;
+            $checks['dashboard_harian_snapshots'] = [
+                'period_column' => 'snapshot_period',
+                'rebuild' => fn (): int => $dashboardHarian->rebuild($period, true)[$period] ?? 0,
+            ];
         }
 
-        foreach ($checks as $snapshotTable => $rebuild) {
-            $periodColumn = $snapshotTable === 'dashboard_harian_snapshots' ? 'snapshot_period'
-                : ($snapshotTable === 'rasio_casa_debitur_snapshots' ? 'loan_period' : 'periode');
-
+        $rebuiltAny = false;
+        foreach ($checks as $snapshotTable => $definition) {
+            $periodColumn = (string) $definition['period_column'];
             $before = $this->snapshotRowCount($snapshotTable, $periodColumn, $period);
-            if ($before > 0) {
+            $isStale = $before > 0 && $this->snapshotIsOlderThanDailyLoanSource($snapshotTable, $periodColumn, $period);
+
+            if ($before > 0 && !$isStale) {
                 continue;
             }
 
@@ -93,18 +110,20 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
             $startedAt = microtime(true);
 
             try {
-                $after = (int) $rebuild();
+                $after = (int) $definition['rebuild']();
                 if ($after <= 0) {
                     $after = $this->snapshotRowCount($snapshotTable, $periodColumn, $period);
                 }
 
                 ReportDataSyncService::analyzeTable($snapshotTable);
+                $rebuiltAny = $rebuiltAny || $after > 0;
 
-                Log::warning('Auto-recovered missing Daily Loan snapshot.', [
+                Log::warning($isStale ? 'Auto-refreshed stale Daily Loan snapshot.' : 'Auto-recovered missing Daily Loan snapshot.', [
                     'snapshot_table' => $snapshotTable,
                     'period' => $period,
                     'rows_before' => $before,
                     'rows_after' => $after,
+                    'stale' => $isStale,
                     'duration_ms' => (int) round((microtime(true) - $startedAt) * 1000),
                     'source' => $this->source,
                 ]);
@@ -121,6 +140,10 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
 
                 throw $e;
             }
+        }
+
+        if ($rebuiltAny) {
+            Cache::put('report_cache_version:global', (int) Cache::get('report_cache_version:global', 1) + 1, now()->addHours(24));
         }
     }
 
@@ -313,6 +336,46 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
         }
 
         return (int) DB::table($table)->where($periodColumn, $period)->count();
+    }
+
+    private function snapshotIsOlderThanDailyLoanSource(string $snapshotTable, string $periodColumn, string $period): bool
+    {
+        if (!Schema::hasTable($snapshotTable)
+            || !Schema::hasColumn($snapshotTable, $periodColumn)
+            || !Schema::hasTable('daily_loan_dinamis')) {
+            return false;
+        }
+
+        $snapshotUpdatedAt = null;
+        if (Schema::hasColumn($snapshotTable, 'updated_at')) {
+            $snapshotUpdatedAt = DB::table($snapshotTable)
+                ->where($periodColumn, $period)
+                ->max('updated_at');
+        }
+
+        if ($snapshotUpdatedAt === null) {
+            return false;
+        }
+
+        $hasUpdatedAt = Schema::hasColumn('daily_loan_dinamis', 'updated_at');
+        $hasCreatedAt = Schema::hasColumn('daily_loan_dinamis', 'created_at');
+
+        if (!$hasUpdatedAt && !$hasCreatedAt) {
+            return false;
+        }
+
+        return DB::table('daily_loan_dinamis')
+            ->where('periode', $period)
+            ->where(function ($query) use ($snapshotUpdatedAt, $hasUpdatedAt, $hasCreatedAt) {
+                if ($hasUpdatedAt) {
+                    $query->orWhere('updated_at', '>', $snapshotUpdatedAt);
+                }
+
+                if ($hasCreatedAt) {
+                    $query->orWhere('created_at', '>', $snapshotUpdatedAt);
+                }
+            })
+            ->exists();
     }
 
     private function dashboardHarianSourcesAreAvailable(string $period): bool

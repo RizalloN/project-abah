@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Report;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\SyncImportedReportJob;
 use App\Support\RkaLookupService;
 use App\Support\StrictDateParser;
 use Carbon\Carbon;
@@ -41,6 +42,7 @@ class KinerjaRmReportController extends Controller
         $selectedPeriod = $this->resolveSelectedPeriod($availablePeriods, $request->input('periode'))
             ?? $availablePeriods->first()
             ?? Carbon::now()->toDateString();
+        $this->queueDailyLoanSnapshotSyncIfNeeded($selectedPeriod, static::class . '::index');
 
         // LIMITATION FOR MIKRO SEGMENT
         $availableCabangs = $this->fetchAvailableCabangsBySegmen($selectedSegmen);
@@ -96,10 +98,13 @@ class KinerjaRmReportController extends Controller
             'selectedProductLabel' => $selectedProduct ?? 'Semua Produk',
             'yoyPeriod' => $yoyPeriod,
             'yoyLabel' => Carbon::parse($yoyPeriod)->translatedFormat('d M Y'),
+            'yoyShortLabel' => Carbon::parse($yoyPeriod)->translatedFormat('d M y'),
             'ytdPeriod' => $ytdPeriod,
             'ytdLabel' => Carbon::parse($ytdPeriod)->translatedFormat('d M Y'),
+            'ytdShortLabel' => Carbon::parse($ytdPeriod)->translatedFormat('d M y'),
             'mtdPeriod' => $mtdPeriod,
             'mtdLabel' => Carbon::parse($mtdPeriod)->translatedFormat('d M Y'),
+            'mtdShortLabel' => Carbon::parse($mtdPeriod)->translatedFormat('d M y'),
             'currentMonthLabel' => $currentDate->format('M-y'),
             'nextMonthLabel' => $nextMonth->format('M-y'),
             'rows' => $osRows['rows'],
@@ -992,10 +997,7 @@ class KinerjaRmReportController extends Controller
         }
 
         $snapshotUpdatedAt = $snapshot ? Carbon::parse($snapshot->last_updated) : Carbon::now()->subDay();
-        $sourceUpdatedAfterSnapshot = DB::table(self::SOURCE_TABLE)
-            ->where('periode', $period)
-            ->where('created_at', '>', $snapshotUpdatedAt)
-            ->exists();
+        $sourceUpdatedAfterSnapshot = $this->dailyLoanSourceUpdatedAfter($period, $snapshotUpdatedAt);
 
         if ($sourceUpdatedAfterSnapshot) {
             return true;
@@ -1029,6 +1031,68 @@ class KinerjaRmReportController extends Controller
                 $date->copy()->startOfMonth()->toDateString(),
                 $period,
             ])
+            ->exists();
+    }
+
+    private function queueDailyLoanSnapshotSyncIfNeeded(?string $period, string $source): void
+    {
+        $period = $this->normalizeDate($period);
+        if ($period === null
+            || !Schema::hasTable(self::SOURCE_TABLE)
+            || !Schema::hasTable(self::SNAPSHOT_TABLE)
+            || !DB::table(self::SOURCE_TABLE)->where('periode', $period)->exists()) {
+            return;
+        }
+
+        $snapshot = DB::table(self::SNAPSHOT_TABLE)
+            ->where('periode', $period)
+            ->selectRaw('COUNT(*) as cnt')
+            ->selectRaw(Schema::hasColumn(self::SNAPSHOT_TABLE, 'updated_at') ? 'MAX(updated_at) as last_updated' : 'NULL as last_updated')
+            ->first();
+
+        $snapshotCount = (int) ($snapshot->cnt ?? 0);
+        $lastUpdated = $snapshot?->last_updated ? Carbon::parse($snapshot->last_updated) : null;
+        $needsSync = $snapshotCount <= 0
+            || ($lastUpdated !== null && $this->dailyLoanSourceUpdatedAfter($period, $lastUpdated))
+            || $this->snapshotRealisasiLooksStale($period);
+
+        if (!$needsSync) {
+            return;
+        }
+
+        $pendingKey = 'snapshot:daily_loan:auto-sync:view:performance_rm:' . $period;
+        if (!Cache::add($pendingKey, true, now()->addMinutes(10))) {
+            return;
+        }
+
+        SyncImportedReportJob::dispatch(
+            null,
+            self::SOURCE_TABLE,
+            $period,
+            $source
+        )->onQueue((string) config('queue.report_queue', 'default'));
+    }
+
+    private function dailyLoanSourceUpdatedAfter(string $period, Carbon $snapshotUpdatedAt): bool
+    {
+        $hasUpdatedAt = Schema::hasColumn(self::SOURCE_TABLE, 'updated_at');
+        $hasCreatedAt = Schema::hasColumn(self::SOURCE_TABLE, 'created_at');
+
+        if (!$hasUpdatedAt && !$hasCreatedAt) {
+            return false;
+        }
+
+        return DB::table(self::SOURCE_TABLE)
+            ->where('periode', $period)
+            ->where(function ($query) use ($snapshotUpdatedAt, $hasUpdatedAt, $hasCreatedAt) {
+                if ($hasUpdatedAt) {
+                    $query->orWhere('updated_at', '>', $snapshotUpdatedAt);
+                }
+
+                if ($hasCreatedAt) {
+                    $query->orWhere('created_at', '>', $snapshotUpdatedAt);
+                }
+            })
             ->exists();
     }
 

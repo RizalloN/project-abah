@@ -72,7 +72,7 @@ class Lw321NpddImportStrategy implements ImportStrategyInterface
             && $this->looksLikePositionGroupHeader((string) $tailHeaders[0]);
         $tailHasPlaceholderChildren = array_slice($tailHeaderKeys, 1) === ['COL_22', 'COL_23', 'COL_24', 'COL_25', 'COL_26', 'COL_27'];
 
-        if ($tailHasParentPositionHeader && $tailHasPlaceholderChildren) {
+        if (count($normalized) >= 28 || ($tailHasParentPositionHeader && $tailHasPlaceholderChildren)) {
             foreach (['now_kol', 'now_detail', 'now_os', 'now_t_pokok', 'now_t_bunga', 'now_t_total', 'ptp'] as $offset => $header) {
                 $normalized[21 + $offset] = $header;
             }

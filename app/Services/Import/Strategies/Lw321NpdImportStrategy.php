@@ -65,13 +65,13 @@ class Lw321NpdImportStrategy implements ImportStrategyInterface
             $headers
         );
 
-        if ($this->looksLikePositionGroupHeader((string) ($normalized[17] ?? ''))) {
+        if (count($normalized) >= 28 || $this->looksLikePositionGroupHeader((string) ($normalized[17] ?? ''))) {
             foreach (['m_min_1_kol', 'm_min_1_detail', 'm_min_1_os', 'wba'] as $offset => $header) {
                 $normalized[17 + $offset] = $header;
             }
         }
 
-        if ($this->looksLikePositionGroupHeader((string) ($normalized[21] ?? ''))) {
+        if (count($normalized) >= 28 || $this->looksLikePositionGroupHeader((string) ($normalized[21] ?? ''))) {
             foreach (['now_kol', 'now_detail', 'now_os', 'now_t_pokok', 'now_t_bunga', 'now_t_total', 'ptp'] as $offset => $header) {
                 $normalized[21 + $offset] = $header;
             }

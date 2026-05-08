@@ -47,6 +47,10 @@
     $formatPercent = $formatPercent ?? fn ($value, int $decimals = 1) => number_format((float) $value, $decimals, ',', '.') . '%';
     $quadrantLabel = $quadrantLabel ?? fn ($quadrant) => in_array((int) $quadrant, [1, 2, 3, 4], true) ? 'Kuadran ' . (int) $quadrant : '-';
     $quadrantClass = $quadrantClass ?? fn ($quadrant) => in_array((int) $quadrant, [1, 2, 3, 4], true) ? 'q' . (int) $quadrant : '';
+    $yoyHeaderLabel = $yoyShortLabel ?? 'YoY';
+    $ytdHeaderLabel = $ytdShortLabel ?? 'YtD';
+    $mtdHeaderLabel = $mtdShortLabel ?? 'MtD';
+    $selectedHeaderLabel = $selectedPeriodShortLabel ?? 'POSISI';
 @endphp
 
 <div class="kinerja-report-card">
@@ -90,10 +94,10 @@
                     @endif
                 </tr>
                 <tr>
-                    <th class="sub-head" style="width: 75px;">YoY</th>
-                    <th class="sub-head" style="width: 75px;">YtD</th>
-                    <th class="sub-head" style="width: 75px;">MtD</th>
-                    <th class="sub-head" style="width: 80px;">POSISI</th>
+                    <th class="sub-head" style="width: 75px;">{{ $yoyHeaderLabel }}</th>
+                    <th class="sub-head" style="width: 75px;">{{ $ytdHeaderLabel }}</th>
+                    <th class="sub-head" style="width: 75px;">{{ $mtdHeaderLabel }}</th>
+                    <th class="sub-head" style="width: 80px;">{{ $selectedHeaderLabel }}</th>
 
                     <th class="accent-head" style="width: 70px;">YoY</th>
                     <th class="accent-head" style="width: 70px;">YtD</th>

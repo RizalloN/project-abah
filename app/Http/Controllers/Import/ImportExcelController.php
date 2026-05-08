@@ -239,6 +239,27 @@ class ImportExcelController extends Controller
         return strtolower(trim((string) ($tableName ?? $this->resolveActiveTableName()))) === 'lw321_npdd';
     }
 
+    private function forceLw321NpddPositionHeadersByIndex(array $headers): array
+    {
+        if (count($headers) < 28) {
+            return $headers;
+        }
+
+        foreach ([
+            21 => 'now_kol',
+            22 => 'now_detail',
+            23 => 'now_os',
+            24 => 'now_t_pokok',
+            25 => 'now_t_bunga',
+            26 => 'now_t_total',
+            27 => 'ptp',
+        ] as $index => $header) {
+            $headers[$index] = $header;
+        }
+
+        return $headers;
+    }
+
     private function l1133Importer(): L1133CsvImporter
     {
         return app(L1133CsvImporter::class);
@@ -2885,6 +2906,10 @@ class ImportExcelController extends Controller
     {
         if (strtolower(trim($tableName)) === 'daily_loan_dinamis') {
             $normalizedHeaders = $this->canonicalizeDailyLoanSourceHeaders($normalizedHeaders);
+        }
+
+        if ($this->isLw321NpddTable($tableName)) {
+            $normalizedHeaders = $this->forceLw321NpddPositionHeadersByIndex($normalizedHeaders);
         }
 
         if ($this->isDlyKapResegmentasiTable($tableName)) {
@@ -6856,6 +6881,20 @@ class ImportExcelController extends Controller
                 if (!isset($sourceIndexesByColumn[$candidateLower])) {
                     $sourceIndexesByColumn[$candidateLower] = (int) $sourceIndex;
                 }
+            }
+        }
+
+        if ($tableName === 'lw321_npdd' && $headerCount >= 28) {
+            foreach ([
+                'now_kol' => 21,
+                'now_detail' => 22,
+                'now_os' => 23,
+                'now_t_pokok' => 24,
+                'now_t_bunga' => 25,
+                'now_t_total' => 26,
+                'ptp' => 27,
+            ] as $column => $sourceIndex) {
+                $sourceIndexesByColumn[$column] = $sourceIndex;
             }
         }
 
@@ -10914,7 +10953,7 @@ class ImportExcelController extends Controller
         $disableInlineFallback = $tableName === 'lw325_ph';
 
         $stagedCsvPath = '';
-        $lw321NpddStagedHeaders = [];
+        $lw321VariantStagedHeaders = [];
 
         if ($this->isDlyKapResegmentasiTable($tableName)) {
             try {
@@ -10969,17 +11008,22 @@ class ImportExcelController extends Controller
                     'text' => 'Gagal menyiapkan CSV L1133: ' . $e->getMessage(),
                 ], 422);
             }
-        } elseif ($this->isLw321NpddTable($tableName) && !$this->isCsvFile($path)) {
+        } elseif (($this->isLw321NpdTable($tableName) || $this->isLw321NpddTable($tableName)) && !$this->isCsvFile($path)) {
+            $isNpd = $this->isLw321NpdTable($tableName);
+            $reportLabel = $isNpd ? 'LW321 NPD' : 'LW321 NPDD';
+
             try {
-                $stage = $this->stageLw321NpddExcelToCsv($path, null, false);
+                $stage = $isNpd
+                    ? $this->stageLw321NpdExcelToCsv($path, null, false)
+                    : $this->stageLw321NpddExcelToCsv($path, null, false);
                 $stagedCsvPath = (string) ($stage['absolute_path'] ?? '');
-                $lw321NpddStagedHeaders = array_values((array) ($stage['headers'] ?? []));
+                $lw321VariantStagedHeaders = array_values((array) ($stage['headers'] ?? []));
 
                 if ($stagedCsvPath === '' || !file_exists($stagedCsvPath)) {
-                    throw new \RuntimeException('CSV staging LW321 NPDD tidak terbentuk.');
+                    throw new \RuntimeException("CSV staging {$reportLabel} tidak terbentuk.");
                 }
             } catch (\Throwable $e) {
-                Log::error('initExcelImport: Gagal staging normalisasi LW321 NPDD', [
+                Log::error("initExcelImport: Gagal staging normalisasi {$reportLabel}", [
                     'path' => $path,
                     'exception' => $e::class,
                     'message' => $e->getMessage(),
@@ -10987,7 +11031,7 @@ class ImportExcelController extends Controller
 
                 return response()->json([
                     'status' => 'error',
-                    'text' => 'Gagal menyiapkan CSV LW321 NPDD: ' . $e->getMessage(),
+                    'text' => "Gagal menyiapkan CSV {$reportLabel}: " . $e->getMessage(),
                 ], 422);
             }
         }
@@ -11008,8 +11052,8 @@ class ImportExcelController extends Controller
         $previewMetaForHeaders = (array) session('excel_preview_meta', []);
         $initialHeaders = $this->isDlyKapResegmentasiTable($tableName)
             ? DlyKapResegmentasiCsvImporter::NORMALIZED_HEADERS
-            : ($this->isLw321NpddTable($tableName) && $lw321NpddStagedHeaders !== []
-                ? $lw321NpddStagedHeaders
+            : (($this->isLw321NpdTable($tableName) || $this->isLw321NpddTable($tableName)) && $lw321VariantStagedHeaders !== []
+                ? $lw321VariantStagedHeaders
                 : (($this->isLw321PnTable($tableName) || $this->isLw321NpdTable($tableName) || $this->isLw321NpddTable($tableName))
                 ? array_values((array) (
                     $previewMetaForHeaders['source_headers']
@@ -11018,7 +11062,7 @@ class ImportExcelController extends Controller
                 ))
                 : []));
 
-        if ($this->isLw321NpddTable($tableName) && $initialHeaders !== []) {
+        if (($this->isLw321NpdTable($tableName) || $this->isLw321NpddTable($tableName)) && $initialHeaders !== []) {
             $initialHeaders = array_values($this->resolveImportStrategy($tableName)->transformHeaders($initialHeaders));
         }
 

@@ -50,7 +50,7 @@ class EnsurePerformanceRmSnapshotJob implements ShouldQueue
             throw $e;
         } finally {
             Cache::forget('snapshot:performance_rm:auto-rebuild:pending:' . $this->period);
-            Cache::forget('kinerja_rm_periods_v2:' . (int) Cache::get('report_cache_version:global', 1));
+            Cache::forget('kinerja_rm_periods_v4:' . (int) Cache::get('report_cache_version:global', 1));
         }
     }
 }

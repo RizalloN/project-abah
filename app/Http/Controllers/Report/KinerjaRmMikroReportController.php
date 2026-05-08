@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Report;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\SyncImportedReportJob;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -13,6 +14,7 @@ use Illuminate\View\View;
 
 class KinerjaRmMikroReportController extends Controller
 {
+    private const SOURCE_TABLE = 'daily_loan_dinamis';
     private const SNAPSHOT_TABLE = 'performance_rm_snapshots';
     private const TARGET_MONTHLY_JUTA = 4000.0;
     private const WEEKLY_TARGET_JUTA = 1000.0;
@@ -59,6 +61,7 @@ class KinerjaRmMikroReportController extends Controller
     {
         $availablePeriods = $this->fetchAvailablePeriods();
         $selectedPeriod = $this->resolveSelectedPeriod($availablePeriods, $request->input('periode'));
+        $this->queueDailyLoanSnapshotSyncIfNeeded($selectedPeriod, static::class . '::index');
         $selectedRmCategory = array_key_exists((string) $request->input('kategori_rm'), self::RM_CATEGORIES)
             ? (string) $request->input('kategori_rm')
             : 'rm_mikro_kur';
@@ -339,21 +342,46 @@ class KinerjaRmMikroReportController extends Controller
 
     private function fetchAvailablePeriods(): Collection
     {
-        if (!Schema::hasTable(self::SNAPSHOT_TABLE)) {
+        return Cache::remember('kinerja_rm_mikro_periods_v1:' . $this->reportCacheVersion(), 600, function () {
+            return $this->fetchPeriodList(self::SNAPSHOT_TABLE, 'periode', function ($query): void {
+                    $query->where('segmen', 'MICRO')->where('produk', 'KUR-MIKRO');
+                })
+                ->merge($this->fetchPeriodList(self::SOURCE_TABLE, 'periode', function ($query): void {
+                    $query->where('segmen_kinerja', 'MICRO')->where('produk_kinerja', 'KURMIKRO');
+                }))
+                ->unique()
+                ->sortDesc()
+                ->values();
+        });
+    }
+
+    private function fetchPeriodList(string $table, string $column, ?callable $scope = null): Collection
+    {
+        if (!Schema::hasTable($table) || !Schema::hasColumn($table, $column)) {
             return collect();
         }
 
-        return Cache::remember('kinerja_rm_mikro_periods_v1:' . $this->reportCacheVersion(), 600, function () {
-            return DB::table(self::SNAPSHOT_TABLE)
-                ->where('segmen', 'MICRO')
-                ->where('produk', 'KUR-MIKRO')
-                ->select('periode')
-                ->distinct()
-                ->orderByDesc('periode')
-                ->pluck('periode')
-                ->map(fn ($value) => Carbon::parse($value)->toDateString())
-                ->values();
-        });
+        $query = DB::table($table)
+            ->whereNotNull($column)
+            ->select($column)
+            ->distinct()
+            ->orderByDesc($column);
+
+        if ($scope !== null) {
+            $scope($query);
+        }
+
+        return $query
+            ->pluck($column)
+            ->map(function ($value) {
+                try {
+                    return Carbon::parse($value)->toDateString();
+                } catch (\Throwable) {
+                    return null;
+                }
+            })
+            ->filter()
+            ->values();
     }
 
     private function fetchMonthEndPeriods(Carbon $selectedPeriod): Collection
@@ -822,6 +850,66 @@ class KinerjaRmMikroReportController extends Controller
     private function cacheKey(string $prefix, string $period, array $group): string
     {
         return 'kinerja_rm_mikro_' . $prefix . '_v1:' . $this->reportCacheVersion() . ':' . $period . ':' . implode(',', $group);
+    }
+
+    private function queueDailyLoanSnapshotSyncIfNeeded(?string $period, string $source): void
+    {
+        if ($period === null
+            || !Schema::hasTable(self::SOURCE_TABLE)
+            || !Schema::hasTable(self::SNAPSHOT_TABLE)
+            || !DB::table(self::SOURCE_TABLE)->where('periode', $period)->exists()) {
+            return;
+        }
+
+        $snapshot = DB::table(self::SNAPSHOT_TABLE)
+            ->where('periode', $period)
+            ->selectRaw('COUNT(*) as cnt')
+            ->selectRaw(Schema::hasColumn(self::SNAPSHOT_TABLE, 'updated_at') ? 'MAX(updated_at) as last_updated' : 'NULL as last_updated')
+            ->first();
+
+        $snapshotCount = (int) ($snapshot->cnt ?? 0);
+        $lastUpdated = $snapshot?->last_updated ? Carbon::parse($snapshot->last_updated) : null;
+        $needsSync = $snapshotCount <= 0
+            || ($lastUpdated !== null && $this->dailyLoanSourceUpdatedAfter($period, $lastUpdated));
+
+        if (!$needsSync) {
+            return;
+        }
+
+        $pendingKey = 'snapshot:daily_loan:auto-sync:view:kinerja_rm_mikro:' . $period;
+        if (!Cache::add($pendingKey, true, now()->addMinutes(10))) {
+            return;
+        }
+
+        SyncImportedReportJob::dispatch(
+            null,
+            self::SOURCE_TABLE,
+            $period,
+            $source
+        )->onQueue((string) config('queue.report_queue', 'default'));
+    }
+
+    private function dailyLoanSourceUpdatedAfter(string $period, Carbon $snapshotUpdatedAt): bool
+    {
+        $hasUpdatedAt = Schema::hasColumn(self::SOURCE_TABLE, 'updated_at');
+        $hasCreatedAt = Schema::hasColumn(self::SOURCE_TABLE, 'created_at');
+
+        if (!$hasUpdatedAt && !$hasCreatedAt) {
+            return false;
+        }
+
+        return DB::table(self::SOURCE_TABLE)
+            ->where('periode', $period)
+            ->where(function ($query) use ($snapshotUpdatedAt, $hasUpdatedAt, $hasCreatedAt) {
+                if ($hasUpdatedAt) {
+                    $query->orWhere('updated_at', '>', $snapshotUpdatedAt);
+                }
+
+                if ($hasCreatedAt) {
+                    $query->orWhere('created_at', '>', $snapshotUpdatedAt);
+                }
+            })
+            ->exists();
     }
 
     private function reportCacheVersion(): int

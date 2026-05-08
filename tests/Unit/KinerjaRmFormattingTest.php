@@ -50,8 +50,11 @@ class KinerjaRmFormattingTest extends TestCase
             'selectedPeriodShortLabel' => '23 Apr 26',
             'selectedPeriodLabel' => '23 Apr 2026',
             'yoyPeriod' => '2026-03-31',
+            'yoyShortLabel' => '31 Mar 26',
             'ytdPeriod' => '2025-12-31',
+            'ytdShortLabel' => '31 Des 25',
             'mtdPeriod' => '2026-03-31',
+            'mtdShortLabel' => '31 Mar 26',
             'showTargets' => true,
             'compact' => false,
             'rows' => [
@@ -113,6 +116,9 @@ class KinerjaRmFormattingTest extends TestCase
         $this->assertStringContainsString('1.600,0', $html);
         $this->assertStringContainsString('Kuadran 2', $html);
         $this->assertStringContainsString('quadrant-badge q2', $html);
+        $this->assertStringContainsString('31 Mar 26', $html);
+        $this->assertStringContainsString('31 Des 25', $html);
+        $this->assertStringContainsString('23 Apr 26', $html);
     }
 
     public function test_kinerjarm_history_modal_renders_million_format_for_realisasi_os(): void

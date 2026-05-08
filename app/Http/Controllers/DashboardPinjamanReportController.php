@@ -458,10 +458,13 @@ class DashboardPinjamanReportController extends Controller
 
     private function renderIndex(Request $request, string $mode)
     {
-        $periods = $this->fetchPeriods();
+        $isMatrixMode = $this->normalizeReportMode($mode) === 'matrix';
+        $periods = $isMatrixMode ? $this->fetchRecoveryReportPeriods() : $this->fetchPeriods();
 
         $requestedPeriod = $request->input('periode');
-        $selectedPeriod = $this->resolveEffectivePeriod($requestedPeriod);
+        $selectedPeriod = $isMatrixMode
+            ? $this->resolveRecoveryReportPeriod($requestedPeriod)
+            : $this->resolveEffectivePeriod($requestedPeriod);
         $comparisonPeriod = $this->resolveComparisonPeriod($selectedPeriod);
 
         $filters = [
@@ -477,7 +480,7 @@ class DashboardPinjamanReportController extends Controller
             'selectedPeriod' => $selectedPeriod,
             'comparisonPeriod' => $comparisonPeriod,
             'matrixColumns' => self::QUALITY_BUCKETS,
-            'requestedPeriod' => $requestedPeriod,
+            'requestedPeriod' => $isMatrixMode ? $selectedPeriod : $requestedPeriod,
             'selectedMode' => $this->normalizeReportMode($mode),
             'mismatchRequestedPeriod' => $request->input('mismatch_periode'),
             'mismatchSelectedPeriod' => $this->resolveEffectivePeriod($request->input('mismatch_periode')),
@@ -490,7 +493,7 @@ class DashboardPinjamanReportController extends Controller
         @set_time_limit(30);
         $this->releaseSessionLockIfNeeded();
 
-        $selectedPeriod = $this->resolveEffectivePeriod($request->input('periode'));
+        $selectedPeriod = $this->resolveRecoveryReportPeriod($request->input('periode'));
         $comparisonPeriod = $this->resolveComparisonPeriod($selectedPeriod);
         $forceRefresh = $request->boolean('refresh');
 
@@ -558,7 +561,7 @@ class DashboardPinjamanReportController extends Controller
         DB::connection()->disableQueryLog();
         $this->releaseSessionLockIfNeeded();
 
-        $selectedPeriod = $this->resolveEffectivePeriod($request->input('periode'));
+        $selectedPeriod = $this->resolveRecoveryReportPeriod($request->input('periode'));
         $comparisonPeriod = $this->resolveComparisonPeriod($selectedPeriod);
         $forceRefresh = $request->boolean('refresh');
 
@@ -609,7 +612,7 @@ class DashboardPinjamanReportController extends Controller
         DB::connection()->disableQueryLog();
         $this->releaseSessionLockIfNeeded();
 
-        $selectedPeriod = $this->resolveEffectivePeriod($request->input('periode'));
+        $selectedPeriod = $this->resolveRecoveryReportPeriod($request->input('periode'));
         $comparisonPeriod = $this->resolveComparisonPeriod($selectedPeriod);
         $beforeBucket = trim((string) $request->input('before_bucket', ''));
         $limit = max(10, min(50, (int) $request->input('limit', 25)));
@@ -652,7 +655,7 @@ class DashboardPinjamanReportController extends Controller
         DB::connection()->disableQueryLog();
         $this->releaseSessionLockIfNeeded();
 
-        $selectedPeriod = $this->resolveEffectivePeriod($request->input('periode'));
+        $selectedPeriod = $this->resolveRecoveryReportPeriod($request->input('periode'));
         $comparisonPeriod = $this->resolveComparisonPeriod($selectedPeriod);
         $beforeBucket = trim((string) $request->input('before_bucket', ''));
 
@@ -1648,6 +1651,46 @@ class DashboardPinjamanReportController extends Controller
         });
     }
 
+    private function fetchRecoveryReportPeriods(): Collection
+    {
+        $cacheKey = 'dashboard_pinjaman_recovery_periods:v1:' . $this->reportCacheVersion();
+
+        return Cache::remember($cacheKey, now()->addMinutes(10), function () {
+            $periods = collect();
+
+            if (Schema::hasTable('cognos_recovery')) {
+                $periods = $periods->merge(
+                    DB::table('cognos_recovery')
+                        ->whereNotNull('periode')
+                        ->distinct()
+                        ->pluck('periode')
+                );
+            }
+
+            if (Schema::hasTable('lw325_ph')) {
+                $periods = $periods->merge(
+                    DB::table('lw325_ph')
+                        ->whereNotNull('periode')
+                        ->distinct()
+                        ->pluck('periode')
+                );
+            }
+
+            return $periods
+                ->map(function ($periode) {
+                    try {
+                        return Carbon::parse($periode)->format('Y-m-d');
+                    } catch (Throwable) {
+                        return null;
+                    }
+                })
+                ->filter(fn (?string $periode) => $periode !== null && $this->isMonthEndPeriod($periode))
+                ->unique()
+                ->sortDesc()
+                ->values();
+        });
+    }
+
     private function resolveSmallArrearsSelectedPeriod($value, ?Collection $availablePeriods = null): ?string
     {
         $availablePeriods ??= $this->fetchPeriods();
@@ -2044,6 +2087,40 @@ class DashboardPinjamanReportController extends Controller
             });
         } catch (Throwable) {
             return null;
+        }
+    }
+
+    private function resolveRecoveryReportPeriod(?string $requestedPeriod): ?string
+    {
+        $periods = $this->fetchRecoveryReportPeriods();
+
+        if ($periods->isEmpty()) {
+            return $this->resolveEffectivePeriod($requestedPeriod);
+        }
+
+        if ($requestedPeriod) {
+            try {
+                $requested = Carbon::parse($requestedPeriod)->format('Y-m-d');
+
+                return $periods
+                    ->first(fn (string $period) => $period <= $requested)
+                    ?? $periods->last();
+            } catch (Throwable) {
+                return $periods->first();
+            }
+        }
+
+        return $periods->first();
+    }
+
+    private function isMonthEndPeriod(string $period): bool
+    {
+        try {
+            $date = Carbon::parse($period);
+
+            return $date->toDateString() === $date->copy()->endOfMonth()->toDateString();
+        } catch (Throwable) {
+            return false;
         }
     }
 

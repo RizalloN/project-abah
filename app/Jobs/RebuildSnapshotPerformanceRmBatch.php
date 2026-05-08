@@ -12,6 +12,7 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 class RebuildSnapshotPerformanceRmBatch implements ShouldQueue
@@ -50,13 +51,20 @@ class RebuildSnapshotPerformanceRmBatch implements ShouldQueue
                 'period' => $this->periodHint,
             ]);
 
-            $builder->rebuildPerformanceRm($this->periodHint, true);
+            $result = $builder->rebuildPerformanceRm($this->periodHint, true);
 
             ReportDataSyncService::analyzeTable('performance_rm_snapshots');
+
+            if ($result !== []) {
+                $cacheVersion = (int) Cache::get('report_cache_version:global', 1) + 1;
+                Cache::put('report_cache_version:global', $cacheVersion, now()->addHours(24));
+            }
 
             $duration = $startTime->diffInSeconds(now());
             Log::info('RebuildSnapshotPerformanceRmBatch: Selesai.', [
                 'period' => $this->periodHint,
+                'periods' => array_keys($result),
+                'rows' => array_sum($result),
                 'duration_seconds' => $duration,
             ]);
         } catch (\Throwable $e) {
