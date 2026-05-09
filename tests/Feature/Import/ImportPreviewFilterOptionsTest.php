@@ -9,6 +9,10 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Database\Schema\Blueprint;
 
 beforeEach(function () {
+    if (config('database.default') !== 'sqlite') {
+        test()->markTestSkipped('Test ini hanya boleh berjalan di SQLite. Bukan di MySQL production. Periksa phpunit.xml.');
+    }
+
     Schema::dropIfExists('jumlah_merchant_qris_detail');
     Schema::dropIfExists('sv_merchant');
     Schema::dropIfExists('nama_report');
