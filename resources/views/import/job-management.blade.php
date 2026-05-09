@@ -3,196 +3,160 @@
 @section('title', 'Kelola Job')
 
 @section('content')
-<div class="job-management-hero mb-4">
-    <div class="job-management-hero__glow"></div>
-    <div class="d-flex align-items-center justify-content-between flex-wrap position-relative">
-        <div class="pr-3">
-            <span class="job-management-hero__eyebrow">Manajemen Job</span>
-            <div class="job-management-hero__title"><i class="fas fa-tasks mr-2"></i> Monitor Job Import & Snapshot</div>
-            <p class="job-management-hero__text mb-0">Pantau queue import dan rebuild snapshot report dari satu halaman dengan progress realtime.</p>
-        </div>
+<div class="container-fluid pt-3 pb-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2 class="h4 font-weight-bold text-dark mb-0"><i class="fas fa-tasks text-primary mr-2"></i> Job Management</h2>
+        <span class="text-muted small">Monitor realtime queue import & snapshot.</span>
     </div>
-</div>
 
-<div class="card border-0 job-management-card" id="job-management-card"
-     data-fetch-url="{{ route('job-management.data') }}"
-     data-clear-url="{{ route('job-management.clear') }}"
-     data-bulk-delete-url="{{ route('job-management.bulk-destroy') }}"
-     data-destroy-url-template="{{ route('job-management.destroy', ['jobId' => '__JOB_ID__']) }}"
-     data-force-start-url-template="{{ route('job-management.force-start', ['jobId' => '__JOB_ID__']) }}"
-     data-force-start-snapshot-url-template="{{ route('job-management.snapshot.force-start', ['rebuildId' => '__REBUILD_ID__']) }}"
-     data-terminate-url-template="{{ route('job-management.terminate', ['jobId' => '__JOB_ID__']) }}"
-     data-force-stop-delete-url-template="{{ route('import.report-management.delete.force-stop', ['deleteId' => '__DELETE_ID__']) }}"
-     data-cancel-delete-url-template="{{ route('import.report-management.delete.cancel', ['deleteId' => '__DELETE_ID__']) }}"
-     data-destroy-queue-job-url-template="{{ route('job-management.queue.destroy', ['queueJobId' => '__QUEUE_JOB_ID__']) }}"
-     data-force-run-queue-job-url-template="{{ route('job-management.queue.force-run', ['queueJobId' => '__QUEUE_JOB_ID__']) }}"
-     data-purge-queue-jobs-url="{{ route('job-management.queue.purge') }}"
-     style="--jm-primary-color: #2563eb; --jm-primary-color-light: #eff6ff; --jm-primary-color-border: #dbeafe;">
-    <div class="card-header bg-transparent border-0 job-management-card__header">
-        <span class="job-management-card__eyebrow" style="background: var(--jm-primary-color-light); color: var(--jm-primary-color);">Kontrol Queue</span>
-        <h5 class="card-title font-weight-bold text-dark mb-1">
-            <i class="fas fa-server mr-2" style="color: var(--jm-primary-color);"></i> Status Import Queue
-        </h5>    </div>
-    <div class="card-body job-management-card__body">
-        <div class="job-management-toolbar mb-4">
-            <div class="row">
-                <div class="col-lg-4 mb-lg-0">
-                    <label class="job-management-label" for="job-filter-status">Filter Status</label>
-                    <select id="job-filter-status" class="form-control job-management-select">
-                        <option value="all">Semua Status</option>
-                        <option value="queued">Queued</option>
-                        <option value="processing">Processing</option>
-                        <option value="completed">Completed</option>
-                        <option value="terminated">Terminated</option>
-                        <option value="failed">Failed</option>
-                        <option value="failed_partial">Gagal Sebagian</option>
-                    </select>
+    <!-- Keep main wrapper and data attributes intact -->
+    <div class="card border-0 shadow-sm" style="border-radius: 12px; overflow: hidden;" id="job-management-card"
+        data-fetch-url="{{ route('job-management.data') }}"
+        data-clear-url="{{ route('job-management.clear') }}"
+        data-bulk-delete-url="{{ route('job-management.bulk-destroy') }}"
+        data-destroy-url-template="{{ route('job-management.destroy', ['jobId' => '__JOB_ID__']) }}"
+        data-force-start-url-template="{{ route('job-management.force-start', ['jobId' => '__JOB_ID__']) }}"
+        data-force-start-snapshot-url-template="{{ route('job-management.snapshot.force-start', ['rebuildId' => '__REBUILD_ID__']) }}"
+        data-terminate-url-template="{{ route('job-management.terminate', ['jobId' => '__JOB_ID__']) }}"
+        data-force-stop-delete-url-template="{{ route('import.report-management.delete.force-stop', ['deleteId' => '__DELETE_ID__']) }}"
+        data-cancel-delete-url-template="{{ route('import.report-management.delete.cancel', ['deleteId' => '__DELETE_ID__']) }}"
+        data-destroy-queue-job-url-template="{{ route('job-management.queue.destroy', ['queueJobId' => '__QUEUE_JOB_ID__']) }}"
+        data-force-run-queue-job-url-template="{{ route('job-management.queue.force-run', ['queueJobId' => '__QUEUE_JOB_ID__']) }}"
+        data-purge-queue-jobs-url="{{ route('job-management.queue.purge') }}">
+
+        <!-- Toolbar & Stats -->
+        <div class="card-header bg-white border-bottom py-3 px-4">
+            <div class="row align-items-center">
+                <div class="col-lg-5 d-flex justify-content-between pr-4 border-right">
+                    <div class="text-center">
+                        <div class="text-muted small text-uppercase font-weight-bold" style="font-size: 0.7rem;">Aktif</div>
+                        <div class="h5 mb-0 text-primary font-weight-bold" id="summary-active">0</div>
+                    </div>
+                    <div class="text-center">
+                        <div class="text-muted small text-uppercase font-weight-bold" style="font-size: 0.7rem;">Queued</div>
+                        <div class="h5 mb-0 text-warning font-weight-bold" id="summary-queued">0</div>
+                    </div>
+                    <div class="text-center">
+                        <div class="text-muted small text-uppercase font-weight-bold" style="font-size: 0.7rem;">Processing</div>
+                        <div class="h5 mb-0 text-success font-weight-bold" id="summary-processing">0</div>
+                    </div>
+                    <div class="text-center">
+                        <div class="text-muted small text-uppercase font-weight-bold" style="font-size: 0.7rem;">Hari Ini</div>
+                        <div class="h5 mb-0 text-info font-weight-bold" id="summary-today">0</div>
+                    </div>
                 </div>
-                <div class="col-lg-5 mb-lg-0 mt-3 mt-lg-0">
-                    <label class="job-management-label" for="job-filter-search">Cari Job</label>
-                    <input type="text" id="job-filter-search" class="form-control job-management-input" placeholder="Cari file, report, user, atau ID job...">
-                </div>
-                <div class="col-lg-3 mt-3 mt-lg-0">
-                    <label class="job-management-label d-block">Aksi</label>
-                    <div class="job-management-toolbar__actions">
-                        <button type="button" id="btn-job-refresh" class="btn job-management-btn job-management-btn--primary">
-                            <i class="fas fa-sync-alt mr-2"></i> Refresh
-                        </button>
-                        <button type="button" id="btn-job-clear" class="btn job-management-btn job-management-btn--danger-outline">
-                            <i class="fas fa-trash-alt mr-2"></i> Clear Jobs
-                        </button>
-                        <div class="custom-control custom-switch job-management-switch">
-                            <input type="checkbox" class="custom-control-input" id="job-auto-refresh" checked>
-                            <label class="custom-control-label" for="job-auto-refresh">Auto Refresh</label>
+                <div class="col-lg-7 pl-4">
+                    <div class="d-flex align-items-center justify-content-end flex-wrap gap-2">
+                        <select id="job-filter-status" class="form-control form-control-sm" style="width: auto; border-radius: 6px;">
+                            <option value="all">Semua Status</option>
+                            <option value="queued">Queued</option>
+                            <option value="processing">Processing</option>
+                            <option value="completed">Completed</option>
+                            <option value="terminated">Terminated</option>
+                            <option value="failed">Failed</option>
+                            <option value="failed_partial">Gagal Sebagian</option>
+                        </select>
+                        <input type="text" id="job-filter-search" class="form-control form-control-sm mx-2" placeholder="Cari job..." style="width: 180px; border-radius: 6px;">
+                        
+                        <div class="custom-control custom-checkbox mr-3 mt-1">
+                            <input type="checkbox" class="custom-control-input" id="job-filter-active-only">
+                            <label class="custom-control-label font-weight-bold text-muted" style="font-size: 0.8rem;" for="job-filter-active-only">Aktif</label>
                         </div>
+                        <div class="custom-control custom-checkbox mr-3 mt-1">
+                            <input type="checkbox" class="custom-control-input" id="job-auto-refresh" checked>
+                            <label class="custom-control-label font-weight-bold text-muted" style="font-size: 0.8rem;" for="job-auto-refresh">Auto</label>
+                        </div>
+
+                        <button type="button" id="btn-job-refresh" class="btn btn-sm btn-primary" style="border-radius: 6px;"><i class="fas fa-sync-alt"></i></button>
+                        <button type="button" id="btn-job-clear" class="btn btn-sm btn-outline-danger ml-1" style="border-radius: 6px;"><i class="fas fa-trash-alt"></i></button>
                     </div>
                 </div>
             </div>
-            <div class="job-management-toolbar__sub mt-3">
-                <div class="custom-control custom-switch job-management-switch">
-                    <input type="checkbox" class="custom-control-input" id="job-filter-active-only">
-                    <label class="custom-control-label" for="job-filter-active-only">Hanya Tampilkan Job Aktif</label>
-                </div>
-                <div class="job-management-toolbar__hint">Saat aktif, tabel hanya menampilkan job dengan status queued atau processing.</div>
-            </div>
         </div>
 
-        <div class="row mb-4">
-            <div class="col-md-3 mb-3 mb-md-0"><div class="job-management-stat"><div class="job-management-stat__icon" style="--icon-bg: #eff6ff; --icon-color: #2563eb;"><i class="fas fa-tasks"></i></div><div class="job-management-stat__body"><small>Job Aktif</small><strong id="summary-active">0</strong></div></div></div>
-            <div class="col-md-3 mb-3 mb-md-0"><div class="job-management-stat"><div class="job-management-stat__icon" style="--icon-bg: #fffbeb; --icon-color: #f59e0b;"><i class="far fa-clock"></i></div><div class="job-management-stat__body"><small>Queued</small><strong id="summary-queued">0</strong></div></div></div>
-            <div class="col-md-3 mb-3 mb-md-0"><div class="job-management-stat"><div class="job-management-stat__icon" style="--icon-bg: #ecfdf5; --icon-color: #10b981;"><i class="fas fa-cogs"></i></div><div class="job-management-stat__body"><small>Processing</small><strong id="summary-processing">0</strong></div></div></div>
-            <div class="col-md-3"><div class="job-management-stat"><div class="job-management-stat__icon" style="--icon-bg: #f0f9ff; --icon-color: #0ea5e9;"><i class="far fa-calendar-check"></i></div><div class="job-management-stat__body"><small>Dibuat Hari Ini</small><strong id="summary-today">0</strong></div></div></div>
-        </div>
+        <div class="card-body p-4 bg-light">
+            <div id="job-management-notice" class="alert alert-info d-none mb-4 shadow-sm border-0" style="border-radius: 8px;"></div>
+            <div id="job-management-queue-health" class="alert alert-warning d-none mb-4 shadow-sm border-0" style="border-radius: 8px;"></div>
 
-        <div id="job-management-notice" class="job-management-notice d-none mb-3"></div>
-        <div id="job-management-queue-health" class="job-management-notice d-none mb-3"></div>
-
-        <div class="job-management-section">
-            <div class="job-management-section__header">
-                <div>
-                    <div class="job-management-section__eyebrow" style="background: rgba(139, 92, 246, 0.1); color: #7c3aed;">Snapshot</div>
-                    <div class="job-management-section__title">Snapshot Jobs</div>
-                </div>
-                <div class="job-management-section__meta" id="snapshot-job-count-label">0 job snapshot aktif</div>
-            </div>
-            <div id="snapshot-jobs-grid" class="row">
-                <div class="col-12"><div class="job-management-empty"><i class="fas fa-clone"></i>Belum ada rebuild snapshot yang sedang antre atau berjalan.</div></div>
-            </div>
-        </div>
-
-    <div class="job-management-section">
-            <div class="job-management-section__header">
-                <div>
-                    <div class="job-management-section__eyebrow" style="background: rgba(16, 185, 129, 0.1); color: #059669;">Sedang Berjalan</div>
-                    <div class="job-management-section__title">Active Jobs</div>
-                </div>
-                <div class="job-management-section__meta" id="active-job-count-label">0 job aktif</div>
-            </div>
-            <div id="active-jobs-grid" class="row">
-                <div class="col-12"><div class="job-management-empty"><i class="fas fa-hourglass-half"></i>Belum ada job aktif.</div></div>
-            </div>
-        </div>
-
-        <div class="job-management-section">
-            <div class="job-management-section__header">
-                <div>
-                    <div class="job-management-section__eyebrow" style="background: rgba(245, 158, 11, 0.1); color: #b45309;">Queue Tabel</div>
-                    <div class="job-management-section__title">Queue Jobs (Raw)</div>
-                </div>
-                <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;">
-                    <div class="job-management-section__meta" id="raw-queue-job-count-label">0 queue job</div>
-                    <button type="button" id="btn-purge-queue-jobs" class="btn btn-sm btn-outline-danger" style="border-radius:10px;font-weight:700;font-size:.8rem;" title="Hapus semua queue job pending (non-reserved) yang diketahui">
-                        <i class="fas fa-broom mr-1"></i>Purge Pending
-                    </button>
+            <!-- Active & Snapshot Grids -->
+            <div class="row">
+                <!-- Import Jobs -->
+                <div class="col-12 mb-4">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h6 class="font-weight-bold mb-0 text-dark"><i class="fas fa-hourglass-half text-success mr-2"></i> Import Jobs Aktif</h6>
+                        <span class="badge badge-success badge-pill px-3 py-1" id="active-job-count-label">0</span>
+                    </div>
+                    <div id="active-jobs-grid" class="row"></div>
                 </div>
             </div>
-            <div class="job-management-notice job-management-notice--info" style="margin-bottom:1rem;font-size:.85rem;">
-                <i class="fas fa-info-circle mr-1"></i>
-                Menampilkan semua job dari tabel <code>jobs</code> (antrian database) yang diketahui sistem. Job <strong>Pending</strong> belum diambil worker; job <strong>Reserved</strong> sedang diproses worker. Hapus job Pending yang tidak diperlukan, atau klik <em>Purge Pending</em> untuk membersihkan semua sekaligus.
-            </div>
-            <div id="raw-queue-jobs-grid" class="row">
-                <div class="col-12"><div class="job-management-empty"><i class="fas fa-database"></i>Tidak ada queue job yang terdeteksi di tabel <code>jobs</code>.</div></div>
-            </div>
-        </div>
-
-        <div class="job-management-section">
-            <div class="job-management-section__header">
-                <div>
-                    <div class="job-management-section__eyebrow" style="background: rgba(239, 68, 68, 0.1); color: #dc2626;">Managed Delete</div>
-                    <div class="job-management-section__title">Delete Progress</div>
+            
+            <div class="row">
+                <!-- Snapshot Jobs -->
+                <div class="col-lg-6 mb-4">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h6 class="font-weight-bold mb-0 text-dark"><i class="fas fa-clone text-primary mr-2"></i> Snapshot Jobs Aktif</h6>
+                        <span class="badge badge-primary badge-pill px-3 py-1" id="snapshot-job-count-label">0</span>
+                    </div>
+                    <div id="snapshot-jobs-grid" class="row"></div>
                 </div>
-                <div class="job-management-section__meta" id="managed-delete-job-count-label">0 job delete aktif</div>
-            </div>
-            <div id="managed-delete-jobs-grid" class="row">
-                <div class="col-12"><div class="job-management-empty"><i class="fas fa-trash-alt"></i>Belum ada progress delete yang sedang antre atau berjalan.</div></div>
-            </div>
-        </div>
 
-        <div class="job-management-section" style="background: #fff;">
-            <div class="job-management-section__header">
-                <div>
-                    <div class="job-management-section__eyebrow" style="background: rgba(100, 116, 139, 0.1); color: #475569;">Riwayat</div>
-                    <div class="job-management-section__title">Recent Jobs</div>
-                </div>
-                <div class="job-management-section__meta" id="job-pagination-meta">0 job</div>
-            </div>
-
-            <div class="job-management-bulkbar">
-                <div class="form-check m-0">
-                    <input class="form-check-input" type="checkbox" id="job-select-all">
-                    <label class="form-check-label font-weight-bold" for="job-select-all">Pilih Semua di Halaman</label>
-                </div>
-                <div class="job-management-bulkbar__actions">
-                    <div id="job-selected-count" class="job-management-bulkbar__hint">0 job dipilih</div>
-                    <button type="button" id="btn-job-delete-selected" class="btn btn-outline-secondary btn-sm" disabled>
-                        <i class="fas fa-trash-alt mr-1"></i> Hapus
-                    </button>
+                <!-- Managed Delete Jobs -->
+                <div class="col-lg-6 mb-4">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h6 class="font-weight-bold mb-0 text-dark"><i class="fas fa-trash-alt text-danger mr-2"></i> Delete Jobs Aktif</h6>
+                        <span class="badge badge-danger badge-pill px-3 py-1" id="managed-delete-job-count-label">0</span>
+                    </div>
+                    <div id="managed-delete-jobs-grid" class="row"></div>
                 </div>
             </div>
 
-            <div class="job-management-table-wrap">
-                <div class="table-responsive">
-                    <table class="table table-hover mb-0 job-management-table">
-                        <thead>
-                            <tr class="job-management-table__header">
-                                <th class="text-center job-col-check"><i class="far fa-check-square"></i></th>
-                                <th>ID</th>
-                                <th>Report</th>
-                                <th>File</th>
-                                <th>Status</th>
-                                <th>Progress</th>
-                                <th>Updated</th>
-                                <th class="text-center">Aksi</th>
+            <!-- Raw Queue -->
+            <div class="mb-4">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h6 class="font-weight-bold mb-0 text-dark"><i class="fas fa-database text-warning mr-2"></i> Queue Raw</h6>
+                    <div>
+                        <span class="badge badge-warning badge-pill px-3 py-1 mr-2" id="raw-queue-job-count-label">0</span>
+                        <button type="button" id="btn-purge-queue-jobs" class="btn btn-sm py-1 btn-outline-danger" style="border-radius: 6px;"><i class="fas fa-broom mr-1"></i>Purge Pending</button>
+                    </div>
+                </div>
+                <div id="raw-queue-jobs-grid" class="row"></div>
+            </div>
+
+            <!-- History Table -->
+            <div class="card border-0 shadow-sm" style="border-radius: 12px; overflow: hidden;">
+                <div class="card-header bg-white py-3 px-4 d-flex justify-content-between align-items-center flex-wrap">
+                    <h6 class="font-weight-bold mb-0"><i class="fas fa-history text-secondary mr-2"></i> Riwayat Jobs</h6>
+                    <div class="d-flex align-items-center">
+                        <span class="text-muted small mr-3" id="job-pagination-meta">0 job</span>
+                        <div class="custom-control custom-checkbox d-inline-block">
+                            <input type="checkbox" class="custom-control-input" id="job-select-all">
+                            <label class="custom-control-label small text-muted font-weight-bold mt-1" for="job-select-all">Pilih Semua</label>
+                        </div>
+                        <span class="badge badge-secondary mx-3 px-2 py-1" id="job-selected-count">0 terpilih</span>
+                        <button type="button" id="btn-job-delete-selected" class="btn btn-sm btn-outline-danger" style="border-radius: 6px;" disabled><i class="fas fa-trash-alt"></i> Hapus</button>
+                    </div>
+                </div>
+                <div class="table-responsive bg-white">
+                    <table class="table table-hover mb-0" style="font-size: 0.85rem;">
+                        <thead class="bg-light text-muted">
+                            <tr>
+                                <th class="text-center border-top-0 border-bottom-0" style="width: 50px;"><i class="far fa-check-square"></i></th>
+                                <th class="border-top-0 border-bottom-0">ID</th>
+                                <th class="border-top-0 border-bottom-0">Report</th>
+                                <th class="border-top-0 border-bottom-0">File</th>
+                                <th class="border-top-0 border-bottom-0">Status</th>
+                                <th class="border-top-0 border-bottom-0" style="width: 200px;">Progress</th>
+                                <th class="border-top-0 border-bottom-0">Updated</th>
+                                <th class="text-center border-top-0 border-bottom-0">Aksi</th>
                             </tr>
                         </thead>
                         <tbody id="job-table-body">
-                            <tr><td colspan="8" class="text-center text-muted py-5">Memuat data job...</td></tr>
+                            <tr><td colspan="8" class="text-center text-muted py-4">Memuat data...</td></tr>
                         </tbody>
                     </table>
                 </div>
+                <div id="job-pagination" class="card-footer bg-white d-none py-3 px-4"></div>
             </div>
-
-            <div id="job-pagination" class="job-management-pagination d-none"></div>
         </div>
     </div>
 </div>
@@ -302,86 +266,42 @@ document.addEventListener('DOMContentLoaded', function () {
 
 @section('styles')
 <style>
-.job-management-hero { position: relative; overflow: hidden; border-radius: 24px; padding: 1.75rem 2rem; background: radial-gradient(circle at top right, rgba(37, 99, 235, 0.12), transparent 35%), linear-gradient(135deg, #f8fbff 0%, #eef4ff 100%); border: 1px solid rgba(37, 99, 235, 0.16); box-shadow: 0 22px 45px -32px rgba(29, 78, 216, 0.3); }
-.job-management-hero__glow { position: absolute; top: -50px; right: -50px; width: 200px; height: 200px; border-radius: 50%; background: rgba(56, 189, 248, 0.18); filter: blur(40px); }
-.job-management-hero__eyebrow { display: inline-block; margin-bottom: 0.75rem; padding: 0.4rem 0.9rem; border-radius: 999px; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #1d4ed8; background: rgba(255, 255, 255, 0.8); border: 1px solid rgba(37, 99, 235, 0.15); }
-.job-management-hero__title { color: #1e3a8a; font-size: 1.5rem; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 0.5rem; }
-.job-management-hero__text { color: #334155; font-size: 0.95rem; line-height: 1.6; max-width: 700px; }
-.job-management-hero__badge { display: inline-flex; align-items: center; padding: 0.6rem 1.25rem; border-radius: 16px; background: #ffffff; border: 1px solid rgba(226, 232, 240, 0.8); color: #334155; font-size: 0.9rem; font-weight: 600; box-shadow: 0 4px 12px -4px rgba(0, 0, 0, 0.05); }
-.job-management-card { border-radius: 26px; overflow: hidden; box-shadow: 0 28px 60px -40px rgba(15, 23, 42, 0.2) !important; background: #f8fafc; }
-.job-management-card__header { padding: 1.5rem 1.75rem 1rem; background: #ffffff; border-bottom: 1px solid #e2e8f0; }
-.job-management-card__eyebrow { display: inline-block; margin-bottom: 0.5rem; padding: 0.4rem 0.9rem; border-radius: 999px; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; }
-.job-management-card__subtitle { color: #64748b; max-width: 760px; line-height: 1.6; font-size: 0.9rem; }
-.job-management-card__body { position: relative; padding: 1.75rem; display: grid; gap: 1.5rem; }
-.job-management-toolbar { padding: 1.25rem; border-radius: 22px; background: #ffffff; border: 1px solid #e2e8f0; box-shadow: 0 10px 25px -10px rgba(15, 23, 42, 0.05); }
-.job-management-toolbar__sub { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; padding-top: 1rem; border-top: 1px solid #e2e8f0; }
-.job-management-toolbar__hint { font-size: 0.85rem; font-weight: 500; color: #64748b; }
-.job-management-label { display: block; margin-bottom: 0.75rem; color: #0f172a; font-size: 0.9rem; font-weight: 600; }
-.job-management-toolbar__actions { display: flex; align-items: center; gap: 0.75rem; min-height: 48px; flex-wrap: wrap; }
-.job-management-btn { min-height: 48px; border-radius: 14px; font-weight: 700; padding: 0 1.25rem; font-size: 0.9rem; transition: all 0.2s; display: inline-flex; align-items: center; justify-content: center; }
-.job-management-btn--primary { background: linear-gradient(135deg, #2563eb, #1d4ed8); color: #fff; border: none; box-shadow: 0 14px 24px -14px rgba(37, 99, 235, 0.5); }
-.job-management-btn--primary:hover { transform: translateY(-2px); box-shadow: 0 18px 28px -14px rgba(37, 99, 235, 0.6); color: #fff; }
-.job-management-btn--danger-outline { border: 2px solid #ef4444; color: #ef4444; background: transparent; }
-.job-management-btn--danger-outline:hover { background: #fef2f2; color: #dc2626; transform: translateY(-1px); }
-.job-management-input, .job-management-select { min-height: 48px; border-radius: 14px; border: 1px solid #d1d5db; background: #fff; font-weight: 600; color: #111827; }
-.job-management-input:focus, .job-management-select:focus { border-color: var(--jm-primary-color); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1); }
-.job-management-switch { padding-left: 2.5rem; }
-.job-management-switch .custom-control-label { font-weight: 600; color: #334155; cursor: pointer; }
-.job-management-switch .custom-control-label::before, .job-management-switch .custom-control-label::after { top: 0.15rem; left: -2.5rem; }
-.job-management-stat { display: flex; align-items: center; gap: 1rem; height: 100%; padding: 1.25rem; border-radius: 20px; background: #fff; border: 1px solid #e2e8f0; box-shadow: 0 10px 25px -10px rgba(15, 23, 42, 0.05); transition: transform 0.2s ease, box-shadow 0.2s ease; }
-.job-management-stat:hover { box-shadow: 0 20px 40px -15px rgba(15, 23, 42, 0.08); transform: translateY(-2px); }
-.job-management-stat__icon { width: 54px; height: 54px; border-radius: 16px; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; flex-shrink: 0; background: var(--icon-bg); color: var(--icon-color); }
-.job-management-stat__body small { display: block; color: #64748b; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 0.25rem; }
-.job-management-stat__body strong { display: block; color: #0f172a; font-size: 1.4rem; font-weight: 700; line-height: 1.2; }
-.job-management-notice { padding: 1rem 1.25rem; border-radius: 18px; font-size: 0.92rem; line-height: 1.65; border-left: 4px solid; }
-.job-management-notice--info { color: #1e3a8a; background: #eff6ff; border-color: #3b82f6; }
-.job-management-notice--warning { color: #92400e; background: #fffbeb; border-color: #f59e0b; }
-.job-management-notice--subtle { opacity: 0.9; }
-.job-management-section { padding: 1.5rem; border-radius: 22px; background: #f1f5f9; border: 1px solid #e2e8f0; }
-.job-management-section__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 1.25rem; }
-.job-management-section__eyebrow { font-size: 0.75rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; padding: 0.35rem 0.85rem; border-radius: 999px; }
-.job-management-section__title { font-size: 1.1rem; font-weight: 800; color: #0f172a; margin-top: 0.5rem; }
-.job-management-section__meta { font-size: 0.88rem; font-weight: 700; color: #64748b; }
-.job-management-empty { padding: 2rem; border-radius: 18px; background: #fff; border: 1px dashed #d1d5db; text-align: center; color: #64748b; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 0.75rem; }
-.job-management-bulkbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; padding: 0.8rem 1rem; border-radius: 16px; background: #f8fafc; border: 1px solid #e2e8f0; margin-bottom: 1rem; }
-.job-management-bulkbar__actions { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
-.job-management-bulkbar__hint { font-size: 0.88rem; font-weight: 600; color: #475569; }
-.job-active-card { padding: 1.25rem; height: 100%; border-radius: 20px; background: #fff; border: 1px solid #e2e8f0; box-shadow: 0 10px 25px -10px rgba(15, 23, 42, 0.05); }
-.job-active-card--snapshot { background: linear-gradient(180deg, #fdfdff 0%, #f7f9ff 100%); border-color: rgba(139, 92, 246, 0.2); }
-.job-active-card--delete { background: linear-gradient(180deg, #fffdfd 0%, #fff7f7 100%); border-color: rgba(239, 68, 68, 0.18); }
-.job-active-card__header, .job-active-card__footer { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
-.job-active-card__header { margin-bottom: 1rem; }
-.job-active-card__title { font-size: 1rem; font-weight: 700; color: #0f172a; }
-.job-active-card__sub, .job-table-secondary { font-size: 0.85rem; color: #64748b; }
-.job-active-card__message { margin-top: 0.8rem; color: #1e3a8a; font-weight: 600; line-height: 1.55; font-size: 0.9rem; }
-.job-active-card__meta { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; margin-top: 1rem; font-size: 0.82rem; font-weight: 600; color: #475569; }
-.job-active-card__footer { margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid #e2e8f0; }
-.job-active-card__hint { font-size: 0.84rem; font-weight: 500; color: #64748b; }
+/* Simplified UI CSS matching JS logic but modern */
+.job-active-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 1.25rem; height: 100%; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
+.job-active-card__header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem; }
+.job-active-card__title { font-weight: 700; color: #1e293b; font-size: 0.95rem; }
+.job-active-card__sub { font-size: 0.8rem; color: #64748b; }
+.job-active-card__body { display: flex; flex-direction: column; gap: 0.5rem; }
+.job-active-card__message { font-size: 0.85rem; color: #3b82f6; font-weight: 600; }
+.job-active-card__meta { display: flex; gap: 1rem; font-size: 0.75rem; color: #64748b; margin-top: 0.5rem; flex-wrap: wrap; }
+.job-active-card__footer { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #f1f5f9; display: flex; justify-content: space-between; align-items: center; }
+.job-active-card__hint { font-size: 0.75rem; color: #94a3b8; }
 .job-active-card__actions { display: flex; gap: 0.5rem; }
-.job-active-card__action { border-radius: 12px; font-weight: 700; font-size: 0.85rem; }
-.job-status-badge { display: inline-flex; align-items: center; justify-content: center; padding: 0.4rem 0.8rem; border-radius: 999px; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+
+.job-status-badge { display: inline-flex; padding: 0.25rem 0.75rem; border-radius: 999px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
 .job-status-badge--info { background: #eff6ff; color: #2563eb; }
 .job-status-badge--warning { background: #fffbeb; color: #d97706; }
 .job-status-badge--success { background: #f0fdf4; color: #16a34a; }
 .job-status-badge--danger { background: #fef2f2; color: #ef4444; }
 .job-status-badge--dark { background: #f1f5f9; color: #1e293b; }
 .job-status-badge--muted { background: #f1f5f9; color: #64748b; }
-.job-progress { height: 8px; border-radius: 999px; background: #e2e8f0; overflow: hidden; box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.05); }
-.job-progress__bar { height: 100%; background: linear-gradient(90deg, #3b82f6 0%, #1d4ed8 100%); transition: width 0.35s ease; }
-.job-progress__meta { display: flex; justify-content: space-between; margin-top: 0.5rem; font-size: 0.8rem; color: #475569; }
-.job-management-table-wrap { border: 1px solid #e2e8f0; border-radius: 20px; overflow: hidden; background: #fff; box-shadow: 0 10px 25px -10px rgba(15, 23, 42, 0.05); }
-.job-management-table__header th { background: #f8fafc; border-bottom: 1px solid #e2e8f0; color: #475569; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; padding: 1rem 1.25rem; }
-.job-management-table tbody td { padding: 1rem 1.25rem; border-top: 1px solid #f1f5f9; vertical-align: middle; }
-.job-col-check { width: 52px; }
-.job-table-primary { font-weight: 600; color: #0f172a; }
-.job-table-actions { display: flex; gap: 0.5rem; justify-content: center; }
-.job-table-action { border-radius: 10px; font-weight: 700; font-size: 0.8rem; }
-.job-management-pagination { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-top: 1.5rem; }
-.job-management-pagination__meta { font-size: 0.9rem; font-weight: 600; color: #475569; }
-.job-management-pagination__actions { display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap; }
-.job-page-btn { display: inline-flex; align-items: center; justify-content: center; min-width: 40px; height: 40px; padding: 0 0.8rem; border: 1px solid #d1d5db; border-radius: 12px; background: #fff; color: #334155; font-weight: 700; }
-.job-page-btn.is-active { background: linear-gradient(135deg, #2563eb, #1d4ed8); border-color: transparent; color: #fff; box-shadow: 0 10px 20px -10px rgba(37, 99, 235, 0.4); }
-.raw-queue-table-wrap { border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; background: #fff; box-shadow: 0 8px 20px -10px rgba(15, 23, 42, 0.05); }
-@media (max-width: 767.98px) { .job-management-hero, .job-management-card__header { padding-left: 1rem; padding-right: 1rem; } .job-management-card__body { padding: 1rem; } .job-management-toolbar, .job-management-section, .job-management-stat, .job-active-card { border-radius: 18px; } .job-management-toolbar__actions, .job-active-card__header, .job-active-card__footer, .job-management-section__header, .job-management-pagination { flex-direction: column; align-items: flex-start; } .job-management-btn { width: 100%; } .job-management-table thead th, .job-management-table tbody td { padding: .8rem; } .job-management-bulkbar { align-items: flex-start; } }
+
+.job-progress { height: 6px; border-radius: 999px; background: #e2e8f0; overflow: hidden; margin-top: 0.5rem; }
+.job-progress__bar { height: 100%; background: #3b82f6; transition: width 0.3s ease; }
+.job-progress__meta { display: flex; justify-content: space-between; font-size: 0.75rem; color: #64748b; margin-top: 0.25rem; }
+
+.job-table-primary { font-weight: 600; color: #1e293b; }
+.job-table-secondary { font-size: 0.8rem; color: #64748b; }
+.job-table-actions { display: flex; gap: 0.4rem; justify-content: center; }
+.job-table-action { border-radius: 6px; font-size: 0.75rem; font-weight: 600; }
+
+.job-management-empty { padding: 1.5rem; border-radius: 12px; background: #fff; border: 1px dashed #cbd5e1; text-align: center; color: #64748b; font-size: 0.85rem; font-weight: 600; }
+
+.job-management-pagination__meta { font-size: 0.85rem; color: #64748b; font-weight: 600; margin-bottom: 0.5rem; display: none; }
+.job-management-pagination__actions { display: flex; gap: 0.25rem; flex-wrap: wrap; }
+.job-page-btn { min-width: 32px; height: 32px; border-radius: 6px; border: 1px solid #e2e8f0; background: #fff; color: #475569; font-weight: 600; font-size: 0.85rem; }
+.job-page-btn.is-active { background: #2563eb; color: #fff; border-color: #2563eb; }
+
+.raw-queue-table-wrap { border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; background: #fff; }
 </style>
 @endsection

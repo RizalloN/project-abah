@@ -37,6 +37,7 @@ class ImportDataFixtureTest extends TestCase
         Schema::create('daily_loan_dinamis', function (Blueprint $table) {
             $table->string('uniqueid_namareport')->primary();
             $table->date('periode');
+            $table->string('kode_cabang1')->nullable();
             $table->string('cabang1');
             $table->decimal('baki_debet1', 18, 2)->nullable();
             $table->string('nama_debitur1')->nullable();
@@ -47,6 +48,7 @@ class ImportDataFixtureTest extends TestCase
             $filled[] = [
                 'uniqueid_namareport' => "DL-FULL-{$i}",
                 'periode' => '2026-04-30',
+                'kode_cabang1' => "649{$i}",
                 'cabang1' => 'KC Madiun',
                 'baki_debet1' => 15000000.00 * $i,
                 'nama_debitur1' => "Debitur {$i}",
@@ -58,6 +60,7 @@ class ImportDataFixtureTest extends TestCase
             $nullable[] = [
                 'uniqueid_namareport' => "DL-NULL-{$i}",
                 'periode' => '2026-04-30',
+                'kode_cabang1' => "650{$i}",
                 'cabang1' => 'KC Madiun',
                 'baki_debet1' => null,
                 'nama_debitur1' => null,

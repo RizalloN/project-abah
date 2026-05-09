@@ -340,10 +340,12 @@ class FileManagementController extends Controller
         ]);
 
         $deleted = [];
+        $failed = [];
         $skipped = [];
         $blocked = [];
         $deletedImportJobs = [];
         $activeFiles = $this->collectActiveImportFiles();
+        $activeBackupFiles = $this->collectActiveBackupFiles();
         $importProgressService = app(ImportProgressService::class);
 
         foreach ($data['paths'] as $path) {
@@ -353,34 +355,92 @@ class FileManagementController extends Controller
                 continue;
             }
 
+            $normalizedResolvedPath = strtolower(str_replace('\\', '/', $resolvedPath));
+            if (isset($activeBackupFiles[$normalizedResolvedPath])) {
+                $failed[] = [
+                    'path' => $path,
+                    'reason' => 'Backup database masih berjalan atau file masih ditulis. Tunggu proses selesai sebelum menghapus.',
+                ];
+                continue;
+            }
+
             if (isset($activeFiles[strtolower($resolvedPath)])) {
                 $blocked[] = $resolvedPath;
                 continue;
             }
 
-            if (is_file($resolvedPath)) {
-                @unlink($resolvedPath);
-                $deleted[] = $resolvedPath;
-                $jobCleanup = $importProgressService->deleteJobsForSourcePath($resolvedPath);
-                if (!empty($jobCleanup['deleted_job_ids'])) {
-                    $deletedImportJobs = array_merge($deletedImportJobs, $jobCleanup['deleted_job_ids']);
-                }
-                $this->pruneEmptyManagedParents(dirname($resolvedPath));
-                $this->clearStaleImportSessionIfMatched($resolvedPath);
+            if (!is_file($resolvedPath)) {
+                $skipped[] = $path;
                 continue;
             }
 
-            $skipped[] = $path;
+            // Verify file exists before attempting delete
+            if (!file_exists($resolvedPath)) {
+                $skipped[] = $path;
+                continue;
+            }
+
+            // Attempt to delete file with proper error handling
+            $deleteSuccess = false;
+            try {
+                $deleteSuccess = @unlink($resolvedPath);
+            } catch (\Throwable $e) {
+                \Log::warning("Failed to unlink file {$resolvedPath}: " . $e->getMessage());
+                $deleteSuccess = false;
+            }
+
+            // Verify file was actually deleted
+            if ($deleteSuccess && !file_exists($resolvedPath)) {
+                $deleted[] = $resolvedPath;
+                
+                // Clean up associated import jobs
+                try {
+                    $jobCleanup = $importProgressService->deleteJobsForSourcePath($resolvedPath);
+                    if (!empty($jobCleanup['deleted_job_ids'])) {
+                        $deletedImportJobs = array_merge($deletedImportJobs, $jobCleanup['deleted_job_ids']);
+                    }
+                } catch (\Throwable $e) {
+                    \Log::warning("Failed to cleanup import jobs for {$resolvedPath}: " . $e->getMessage());
+                }
+
+                // Prune empty parent directories
+                try {
+                    $this->pruneEmptyManagedParents(dirname($resolvedPath));
+                } catch (\Throwable $e) {
+                    \Log::warning("Failed to prune empty parents for {$resolvedPath}: " . $e->getMessage());
+                }
+
+                // Clear stale import session
+                try {
+                    $this->clearStaleImportSessionIfMatched($resolvedPath);
+                } catch (\Throwable $e) {
+                    \Log::warning("Failed to clear stale import session for {$resolvedPath}: " . $e->getMessage());
+                }
+            } else {
+                $failed[] = [
+                    'path' => $path,
+                    'reason' => $deleteSuccess ? 'File masih ada setelah delete' : $this->describeDeleteFailure($resolvedPath)
+                ];
+            }
         }
 
+        // Prepare response message
+        $uniqueDeleted = array_unique($deleted);
         $message = sprintf(
             'Berhasil menghapus %d file%s.',
-            count(array_unique($deleted)),
-            !empty($skipped) ? ' dan melewati ' . count(array_unique($skipped)) . ' item yang tidak valid' : ''
+            count($uniqueDeleted),
+            !empty($skipped) ? ' dan melewati ' . count(array_unique($skipped)) . ' item tidak valid' : ''
         );
 
+        if (!empty($failed)) {
+            $message .= sprintf(' Gagal menghapus %d file: %s', 
+                count($failed),
+                implode(', ', array_slice(array_column($failed, 'reason'), 0, 3))
+            );
+        }
+
         if (!empty($deletedImportJobs)) {
-            $message .= sprintf(' %d record import terkait ikut dibersihkan.', count(array_unique($deletedImportJobs)));
+            $message .= sprintf(' %d record import terkait dibersihkan.', count(array_unique($deletedImportJobs)));
         }
 
         if (!empty($blocked)) {
@@ -388,14 +448,19 @@ class FileManagementController extends Controller
         }
 
         if ($request->expectsJson() || $request->ajax()) {
+            $statusCode = empty($failed) ? 200 : 207; // 207 Multi-Status if partial failure
+            $status = empty($failed) ? 'success' : 'partial';
+            
             return response()->json([
-                'status' => 'success',
+                'status' => $status,
                 'message' => $message,
-                'deleted_count' => count(array_unique($deleted)),
+                'deleted_count' => count($uniqueDeleted),
                 'deleted_import_job_count' => count(array_unique($deletedImportJobs)),
+                'failed_count' => count($failed),
+                'failed_items' => $failed,
                 'skipped_count' => count(array_unique($skipped)),
                 'blocked_count' => count(array_unique($blocked)),
-            ]);
+            ], $statusCode);
         }
 
         return redirect()
@@ -582,6 +647,59 @@ class FileManagementController extends Controller
         }
 
         return $active;
+    }
+
+    private function collectActiveBackupFiles(): array
+    {
+        $runningBackup = DatabaseBackupStatusStore::latestRunning();
+        if ($runningBackup === null) {
+            return [];
+        }
+
+        $active = [];
+        $candidatePaths = [];
+
+        if (!empty($runningBackup['backup_file']) && is_string($runningBackup['backup_file'])) {
+            $candidatePaths[] = $runningBackup['backup_file'];
+            if (!str_ends_with($runningBackup['backup_file'], '.gz')) {
+                $candidatePaths[] = $runningBackup['backup_file'] . '.gz';
+            }
+        }
+
+        $file = is_array($runningBackup['file'] ?? null) ? $runningBackup['file'] : [];
+        if (!empty($file['relative_path']) && is_string($file['relative_path'])) {
+            $candidatePaths[] = storage_path('app/' . ltrim($file['relative_path'], '/\\'));
+        }
+
+        foreach (array_unique($candidatePaths) as $candidatePath) {
+            $resolved = realpath($candidatePath) ?: $candidatePath;
+            if (!is_string($resolved) || $resolved === '' || !$this->isWithinManagedRoots($resolved)) {
+                continue;
+            }
+
+            $active[strtolower(str_replace('\\', '/', $resolved))] = [
+                'backup_id' => $runningBackup['backup_id'] ?? null,
+                'status' => $runningBackup['status'] ?? null,
+            ];
+        }
+
+        return $active;
+    }
+
+    private function describeDeleteFailure(string $path): string
+    {
+        if (strncasecmp(PHP_OS_FAMILY, 'Windows', 7) === 0 && is_file($path)) {
+            try {
+                $handle = fopen($path, 'rb+');
+                if (is_resource($handle)) {
+                    fclose($handle);
+                }
+            } catch (\Throwable) {
+                return 'File sedang digunakan proses lain. Tutup proses backup/import lalu coba lagi.';
+            }
+        }
+
+        return 'Permission denied atau file locked';
     }
 
     private function resolveJobSourcePath(object $job): ?string

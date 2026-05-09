@@ -18,6 +18,7 @@ class KinerjaRmMikroReportController extends Controller
     private const SNAPSHOT_TABLE = 'performance_rm_snapshots';
     private const TARGET_MONTHLY_JUTA = 4000.0;
     private const WEEKLY_TARGET_JUTA = 1000.0;
+    private const KUR_RITEL_DESCRIPTION = 'Kredit Mikro - KUR Ritel 2015';
 
     private const REPORT_CATEGORIES = [
         'per_uker' => 'Per UKER',
@@ -31,6 +32,7 @@ class KinerjaRmMikroReportController extends Controller
     private const MANTRI_REPORT_CATEGORIES = [
         'unit_pemutus' => 'Unit per Pemutus',
         'kuadran' => 'Kuadran',
+        'produktivitas_mantri' => 'Produktivitas per Mantri',
         'pdwk_override' => 'PDWK - Override',
         'rekap_mantri' => 'Rekap Mantri',
     ];
@@ -480,9 +482,10 @@ class KinerjaRmMikroReportController extends Controller
             return ['rows' => [], 'total' => [], 'working_days' => 0];
         }
 
-        return Cache::remember('kinerja_rm_mikro_mantri_v1:' . $this->reportCacheVersion() . ':' . $period . ':' . $category, 600, function () use ($category, $period): array {
+        return Cache::remember('kinerja_rm_mikro_mantri_v2:' . $this->reportCacheVersion() . ':' . $period . ':' . $category, 600, function () use ($category, $period): array {
             return match ($category) {
                 'kuadran' => $this->mantriKuadranPayload($period),
+                'produktivitas_mantri' => $this->mantriProductivityPayload($period),
                 'pdwk_override' => $this->mantriPdwkOverridePayload($period),
                 'rekap_mantri' => $this->mantriRekapPayload($period),
                 default => $this->mantriUnitPemutusPayload($period),
@@ -568,6 +571,45 @@ class KinerjaRmMikroReportController extends Controller
             ],
             'working_days' => $workingDays,
             'message' => 'Kuadran dihitung dari realisasi bulan berjalan, tiket size, dan ratas Mantri per hari kerja.',
+        ];
+    }
+
+    private function mantriProductivityPayload(string $period): array
+    {
+        $periodStart = Carbon::parse($period)->startOfMonth()->toDateString();
+        $workingDays = $this->networkDays($periodStart, $period);
+        $rows = DB::query()
+            ->fromSub($this->mantriSourceQuery($period), 'x')
+            ->selectRaw('bc, unit, cabang, pn_pengelola')
+            ->selectRaw("COUNT(DISTINCT CASE WHEN tgl_realisasi BETWEEN ? AND ? THEN rekening END) as realisasi_deb", [$periodStart, $period])
+            ->selectRaw("SUM(CASE WHEN tgl_realisasi BETWEEN ? AND ? THEN COALESCE(plafon, 0) ELSE 0 END) as realisasi_os", [$periodStart, $period])
+            ->where('pn_pengelola', '<>', '')
+            ->groupBy('bc', 'unit', 'cabang', 'pn_pengelola')
+            ->get()
+            ->map(function ($row) use ($workingDays): array {
+                $data = $this->decorateMantriUnitRow((array) $row);
+                $realisasiJuta = ((float) $data['realisasi_os']) / 1000000;
+                $deb = (int) $data['realisasi_deb'];
+                $data['jumlah_mantri'] = 1;
+                $data['nama_mantri'] = (string) ($data['pn_pengelola'] ?? '-');
+                $data['tiket_size'] = $deb > 0 ? $realisasiJuta / $deb : 0;
+                $data['ratas_mantri_hk'] = $workingDays > 0 ? $realisasiJuta / $workingDays : 0;
+                $data['ket'] = $this->kuadranLabel($data['ratas_mantri_hk'], $data['tiket_size']);
+
+                return $data;
+            })
+            ->sortBy(fn ($row) => $this->branchSortKey($row['cabang']) . '|' . $row['unit'] . '|' . $row['nama_mantri'])
+            ->values();
+
+        return [
+            'rows' => $rows->all(),
+            'total' => [
+                'jumlah_mantri' => $rows->sum('jumlah_mantri'),
+                'realisasi_deb' => $rows->sum('realisasi_deb'),
+                'realisasi_os' => $rows->sum('realisasi_os'),
+            ],
+            'working_days' => $workingDays,
+            'message' => 'Produktivitas per Mantri dihitung dari realisasi bulan berjalan per pn_pengelola1.',
         ];
     }
 
@@ -677,6 +719,10 @@ class KinerjaRmMikroReportController extends Controller
             ->where('d.periode', $period)
             ->where('d.segmen_kinerja', 'MICRO')
             ->whereIn('d.produk_kinerja', self::MANTRI_PRODUCTS)
+            ->whereRaw(
+                "NOT (d.produk_kinerja = ? AND {$this->normalizedSql('d.description')} = ?)",
+                ['KURMIKRO', $this->normalizeToken(self::KUR_RITEL_DESCRIPTION)]
+            )
             ->selectRaw("COALESCE(NULLIF(d.branch_normalized, ''), UPPER(TRIM(COALESCE(d.branch1, '')))) as bc")
             ->selectRaw("COALESCE(NULLIF(d.unit_normalized, ''), UPPER(TRIM(COALESCE(d.unit1, '')))) as unit")
             ->selectRaw("COALESCE(NULLIF(d.cabang_normalized, ''), UPPER(TRIM(COALESCE(d.cabang1, '')))) as cabang")
@@ -785,6 +831,16 @@ class KinerjaRmMikroReportController extends Controller
         $digits = preg_replace('/\D+/', '', (string) $value) ?? '';
 
         return ltrim($digits, '0') ?: $digits;
+    }
+
+    private function normalizedSql(string $column): string
+    {
+        return "UPPER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(TRIM(COALESCE({$column}, '')), ' ', ''), '-', ''), '_', ''), '/', ''), '.', ''))";
+    }
+
+    private function normalizeToken(?string $value): string
+    {
+        return preg_replace('/[^A-Z0-9]/', '', strtoupper(trim((string) $value))) ?? '';
     }
 
     private function branchSortKey(string $branch): string

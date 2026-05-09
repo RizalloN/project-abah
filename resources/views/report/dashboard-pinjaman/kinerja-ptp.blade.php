@@ -153,6 +153,29 @@
         font-weight: 900;
     }
 
+    .ptp-success-rate-cell {
+        background:
+            linear-gradient(90deg, rgba(var(--success-rgb, 250, 204, 21), .34) 0 var(--success-rate, 0%), rgba(var(--success-rgb, 250, 204, 21), .10) var(--success-rate, 0%) 100%) !important;
+        color: #0f172a !important;
+        font-weight: 900;
+        box-shadow: inset 0 0 0 1px rgba(var(--success-rgb, 250, 204, 21), .24);
+    }
+
+    .ptp-success-rate-cell > span {
+        display: inline-block;
+        min-width: 58px;
+        padding: .08rem .35rem;
+        border-radius: 6px;
+        background: rgba(255, 255, 255, .84);
+        box-shadow: inset 0 0 0 1px rgba(var(--success-rgb, 250, 204, 21), .20);
+    }
+
+    .ptp-table tbody tr:hover td.ptp-success-rate-cell,
+    .ptp-total-row td.ptp-success-rate-cell {
+        background:
+            linear-gradient(90deg, rgba(var(--success-rgb, 250, 204, 21), .40) 0 var(--success-rate, 0%), rgba(var(--success-rgb, 250, 204, 21), .12) var(--success-rate, 0%) 100%) !important;
+    }
+
     .ptp-empty {
         padding: 2rem 1rem;
         text-align: center;
@@ -232,6 +255,32 @@
         'per_uker' => ['bo' => 'BO', 'bc' => 'BC', 'mbm' => 'MBM', 'uker' => 'UKER'],
         'per_mantri' => ['bo' => 'BO', 'mbm' => 'MBM', 'bc' => 'BC', 'uker' => 'UKER', 'mantri' => 'MANTRI'],
         default => ['bo' => 'BO', 'mbm' => 'MBM'],
+    };
+
+    $successRateStyle = static function ($value): string {
+        $rate = max(0, min(100, (float) $value));
+        $stops = [
+            ['rate' => 0, 'rgb' => [239, 68, 68]],
+            ['rate' => 50, 'rgb' => [250, 204, 21]],
+            ['rate' => 100, 'rgb' => [34, 197, 94]],
+        ];
+
+        $from = $stops[0];
+        $to = $stops[1];
+        if ($rate > 50) {
+            $from = $stops[1];
+            $to = $stops[2];
+        }
+
+        $span = max(1, $to['rate'] - $from['rate']);
+        $mix = ($rate - $from['rate']) / $span;
+        $rgb = array_map(
+            static fn ($start, $end): int => (int) round($start + (($end - $start) * $mix)),
+            $from['rgb'],
+            $to['rgb']
+        );
+
+        return '--success-rate: ' . number_format($rate, 2, '.', '') . '%; --success-rgb: ' . implode(', ', $rgb) . ';';
     };
 @endphp
 
@@ -353,7 +402,9 @@
                                     <td class="ptp-right">{{ $formatJuta($row['sudah_bayar_rupiah'] ?? 0) }}</td>
                                     <td class="ptp-right">{{ $formatCount($row['belum_bayar_rek'] ?? 0) }}</td>
                                     <td class="ptp-right">{{ $formatJuta($row['belum_bayar_rupiah'] ?? 0) }}</td>
-                                    <td class="ptp-center">{{ $formatPercent($row['success_rate'] ?? 0) }}</td>
+                                    <td class="ptp-center ptp-success-rate-cell" style="{{ $successRateStyle($row['success_rate'] ?? 0) }}">
+                                        <span>{{ $formatPercent($row['success_rate'] ?? 0) }}</span>
+                                    </td>
                                     <td class="ptp-right">{{ $formatCount($row['today_rek'] ?? 0) }}</td>
                                     <td class="ptp-right">{{ $formatJuta($row['today_rupiah'] ?? 0) }}</td>
                                 </tr>
@@ -373,7 +424,9 @@
                                 <td class="ptp-right">{{ $formatJuta($total['sudah_bayar_rupiah'] ?? 0) }}</td>
                                 <td class="ptp-right">{{ $formatCount($total['belum_bayar_rek'] ?? 0) }}</td>
                                 <td class="ptp-right">{{ $formatJuta($total['belum_bayar_rupiah'] ?? 0) }}</td>
-                                <td class="ptp-center">{{ $formatPercent($total['success_rate'] ?? 0) }}</td>
+                                <td class="ptp-center ptp-success-rate-cell" style="{{ $successRateStyle($total['success_rate'] ?? 0) }}">
+                                    <span>{{ $formatPercent($total['success_rate'] ?? 0) }}</span>
+                                </td>
                                 <td class="ptp-right">{{ $formatCount($total['today_rek'] ?? 0) }}</td>
                                 <td class="ptp-right">{{ $formatJuta($total['today_rupiah'] ?? 0) }}</td>
                             </tr>
@@ -495,6 +548,25 @@
                     .ptp-right { text-align: right !important; }
                     .ptp-center { text-align: center !important; }
                     .ptp-total-row td { background-color: #fff7d6 !important; font-weight: bold !important; }
+                    .ptp-success-rate-cell {
+                        background:
+                            linear-gradient(90deg, rgba(var(--success-rgb, 250, 204, 21), .34) 0 var(--success-rate, 0%), rgba(var(--success-rgb, 250, 204, 21), .10) var(--success-rate, 0%) 100%) !important;
+                        color: #0f172a !important;
+                        font-weight: bold !important;
+                        box-shadow: inset 0 0 0 1px rgba(var(--success-rgb, 250, 204, 21), .24);
+                    }
+                    .ptp-success-rate-cell > span {
+                        display: inline-block;
+                        min-width: 58px;
+                        padding: 2px 6px;
+                        border-radius: 6px;
+                        background: rgba(255, 255, 255, .84);
+                        box-shadow: inset 0 0 0 1px rgba(var(--success-rgb, 250, 204, 21), .20);
+                    }
+                    .ptp-total-row td.ptp-success-rate-cell {
+                        background:
+                            linear-gradient(90deg, rgba(var(--success-rgb, 250, 204, 21), .40) 0 var(--success-rate, 0%), rgba(var(--success-rgb, 250, 204, 21), .12) var(--success-rate, 0%) 100%) !important;
+                    }
                 `;
                 tempWrap.appendChild(tempStyle);
 

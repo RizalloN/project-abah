@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Jobs\Middleware\DeferSnapshotJobsDuringImport;
 use App\Support\DashboardHarianSnapshotService;
+use App\Support\SnapshotSourceSignatureService;
 use Illuminate\Bus\Batchable;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -56,6 +57,8 @@ class RebuildSnapshotHarianBatch implements ShouldQueue
 
             ReportDataSyncService::analyzeTable('dashboard_harian_snapshots');
 
+            $this->markSnapshotSignatures($result);
+
             $duration = $startTime->diffInSeconds(now());
 
             Log::info('RebuildSnapshotHarianBatch selesai', [
@@ -78,6 +81,77 @@ class RebuildSnapshotHarianBatch implements ShouldQueue
             $this->updateProgress('Gagal: ' . $e->getMessage(), 'failed');
             throw $e;
         }
+    }
+
+    /**
+     * Mark snapshot signature for every source that fed the rebuild. Dashboard
+     * Harian aggregates multiple sources; only those with rows for the period
+     * actually contributed and will be marked.
+     *
+     * @param mixed $result
+     */
+    private function markSnapshotSignatures(mixed $result): void
+    {
+        $candidates = [
+            ['source_table' => 'ssa_simpanan', 'period_column' => 'Month_Day_Year_of_Posisi'],
+            ['source_table' => 'ssa_pinjaman', 'period_column' => 'month_day_year_of_periode'],
+            ['source_table' => 'daily_loan_dinamis', 'period_column' => 'periode'],
+            ['source_table' => 'simpanan_multipn', 'period_column' => 'posisi'],
+            ['source_table' => 'lw325_ph', 'period_column' => 'periode'],
+        ];
+
+        $periods = $this->resolvePeriodsToMark($result);
+        if ($periods === []) {
+            return;
+        }
+
+        $service = app(SnapshotSourceSignatureService::class);
+
+        foreach ($periods as $period) {
+            try {
+                $service->markBuiltForApplicableSources(
+                    'dashboard_harian_snapshots',
+                    $period,
+                    $candidates,
+                    ['job' => static::class]
+                );
+            } catch (\Throwable $e) {
+                Log::debug('Gagal menandai snapshot signature setelah rebuild Dashboard Harian.', [
+                    'period' => $period,
+                    'message' => $e->getMessage(),
+                ]);
+            }
+        }
+    }
+
+    /**
+     * @param mixed $result
+     * @return array<int, string>
+     */
+    private function resolvePeriodsToMark(mixed $result): array
+    {
+        $periodHint = trim((string) $this->periodHint);
+        if ($periodHint !== '') {
+            return [$periodHint];
+        }
+
+        if (!is_array($result)) {
+            return [];
+        }
+
+        $periods = [];
+        foreach ($result as $key => $value) {
+            $period = trim((string) $key);
+            if ($period === '' || $period === 'inserted_rows') {
+                continue;
+            }
+            if ((int) (is_numeric($value) ? $value : 0) <= 0) {
+                continue;
+            }
+            $periods[] = $period;
+        }
+
+        return $periods;
     }
 
     private function makeHeartbeatCallback(): callable

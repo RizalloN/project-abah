@@ -22,6 +22,8 @@ class DashboardHarianSnapshotService
     private const HOURLY_DPK_TABLE = 'hourly_dpk';
     private const SOURCE_SIGNATURE_VERSION = 'ssa-loan-l1133-micro-overlay-v3';
     private const AUTO_SYNC_RECENT_SOURCE_HOURS = 6;
+    private const AREA_6_LABEL = 'Area 6';
+    private const ALL_UNIT_LABEL = 'Semua Unit Kerja';
     private const METRIC_COLUMNS = [
         'ph_tupok',
         'ph_lunas',
@@ -655,8 +657,8 @@ class DashboardHarianSnapshotService
 
         if (!$effectivePeriod) {
             return [
-                'kanca' => [['value' => 'all', 'label' => 'Semua Kanca']],
-                'unit_kerja' => [['value' => 'all', 'label' => 'Semua Unit Kerja']],
+                'kanca' => [['value' => 'all', 'label' => self::AREA_6_LABEL]],
+                'unit_kerja' => [['value' => 'all', 'label' => self::ALL_UNIT_LABEL]],
                 'posisi_terakhir' => $periodOptions,
                 'posisi_rka' => $monthOptions,
             ];
@@ -713,10 +715,16 @@ class DashboardHarianSnapshotService
                 ->values();
         }
 
+        $isArea6Scope = $this->isArea6KancaSelection($normalizedKanca, $kancas);
+
         $scopedUnits = $units
-            ->filter(function ($row) use ($normalizedKanca) {
+            ->filter(function ($row) use ($normalizedKanca, $isArea6Scope) {
+                if ($isArea6Scope) {
+                    return false;
+                }
+
                 if ($normalizedKanca === []) {
-                    return true;
+                    return false;
                 }
 
                 return in_array((string) data_get($row, 'kanca_value'), $normalizedKanca, true);
@@ -731,8 +739,8 @@ class DashboardHarianSnapshotService
         }
 
         return [
-            'kanca' => array_values(array_merge([['value' => 'all', 'label' => 'Semua Kanca']], $kancas->map(fn ($row) => (array) $row)->all())),
-            'unit_kerja' => array_values(array_merge([['value' => 'all', 'label' => 'Semua Unit Kerja']], $scopedUnits->map(fn ($row) => (array) $row)->all())),
+            'kanca' => array_values(array_merge([['value' => 'all', 'label' => self::AREA_6_LABEL]], $kancas->map(fn ($row) => (array) $row)->all())),
+            'unit_kerja' => array_values(array_merge([['value' => 'all', 'label' => self::ALL_UNIT_LABEL]], $scopedUnits->map(fn ($row) => (array) $row)->all())),
             'posisi_terakhir' => $periodOptions,
             'posisi_rka' => $monthOptions,
         ];
@@ -750,8 +758,8 @@ class DashboardHarianSnapshotService
                 'rows' => [],
                 'summary' => [
                     'source' => self::SNAPSHOT_TABLE,
-                    'kanca_label' => 'Semua Kanca',
-                    'unit_label' => 'Semua Unit Kerja',
+                    'kanca_label' => self::AREA_6_LABEL,
+                    'unit_label' => self::ALL_UNIT_LABEL,
                     'row_count' => 0,
                     'current_total_simpanan' => 0,
                     'current_total_os_non_commercial' => 0,
@@ -844,14 +852,38 @@ class DashboardHarianSnapshotService
             'rows' => $rows,
             'summary' => [
                 'source' => $source,
-                'kanca_label' => $this->displayFilterLabel($kancaKey, 'Semua Kanca', $selectedPeriod, 'kanca', $kancaKey, $unitKey),
-                'unit_label' => $this->displayFilterLabel($unitKey, 'Semua Unit Kerja', $selectedPeriod, 'unit_kerja', $kancaKey, $unitKey),
+                'kanca_label' => $this->displayFilterLabel($kancaKey, self::AREA_6_LABEL, $selectedPeriod, 'kanca', $kancaKey, $unitKey),
+                'unit_label' => $this->displayFilterLabel($unitKey, self::ALL_UNIT_LABEL, $selectedPeriod, 'unit_kerja', $kancaKey, $unitKey),
                 'row_count' => count($rows),
                 'current_total_simpanan' => (float) ($currentMetrics['total_simpanan'] ?? 0),
                 'current_total_os_non_commercial' => (float) ($currentMetrics['total_os_non_commercial'] ?? 0),
                 'current_casa_pct' => (float) ($currentMetrics['casa_pct'] ?? 0),
             ],
         ];
+    }
+
+    private function isArea6KancaSelection(array $normalizedKanca, Collection $kancas): bool
+    {
+        if ($normalizedKanca === []) {
+            return true;
+        }
+
+        $availableKancas = $kancas
+            ->map(fn ($row) => (string) data_get($row, 'value'))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($availableKancas === []) {
+            return false;
+        }
+
+        sort($availableKancas);
+        $selected = array_values(array_unique($normalizedKanca));
+        sort($selected);
+
+        return $selected === $availableKancas;
     }
 
     private function loadMetricsForPeriods(array $periods, array|string|null $kancaKey, array|string|null $unitKey): array
@@ -1828,9 +1860,14 @@ class DashboardHarianSnapshotService
         }
 
         $currentPhPeriod = $normalizedCurrentPeriod;
-        $previousPhPeriod = $this->resolvePreviousPhPeriod($currentPhPeriod);
+        $previousPhPeriod = $this->resolvePreviousMonthPhPeriod($currentPhPeriod);
 
-        if ($previousPhPeriod === null) {
+        if (!$this->isPreviousMonthEndPhPeriod($currentPhPeriod, $previousPhPeriod)) {
+            Log::warning('Skipping LW325 PH recovery because the comparison period is not the previous month-end.', [
+                'current_period' => $currentPhPeriod,
+                'comparison_period' => $previousPhPeriod,
+            ]);
+
             return collect();
         }
 
@@ -2804,10 +2841,6 @@ class DashboardHarianSnapshotService
 
     private function savingsSourcePeriodExists(string $period): bool
     {
-        $normalizedPeriod = $this->normalizeDate($period) ?? $period;
-        if ($this->hourlyDpkEnabled() && $this->hourlyDpkAvailable($normalizedPeriod)) {
-            return true;
-        }
         return Schema::hasTable(self::SAVINGS_TABLE) && $this->sourcePeriodExists(self::SAVINGS_TABLE, $period);
     }
 
@@ -2823,32 +2856,11 @@ class DashboardHarianSnapshotService
             : 'none';
     }
 
-    private function hourlyDpkAvailable(string $period): bool
-    {
-        return $this->hourlyDpkEnabled()
-            && Schema::hasTable(self::HOURLY_DPK_TABLE)
-            && DB::table(self::HOURLY_DPK_TABLE)
-                ->whereIn($this->sourcePeriodColumn(self::HOURLY_DPK_TABLE), $this->sourcePeriodRawCandidates(self::HOURLY_DPK_TABLE, $period))
-                ->exists();
-    }
 
-    private function hourlyDpkEnabled(): bool
-    {
-        return (bool) config('reports.dashboard_harian.use_hourly_dpk', false);
-    }
 
     private function resolveSavingsAggregates(string $period, array|string|null $kancaKey, array|string|null $unitKey): Collection
     {
-        $normalizedPeriod = $this->normalizeDate($period) ?? $period;
-        if ($this->hourlyDpkEnabled() && $this->hourlyDpkAvailable($normalizedPeriod)) {
-            return $this->fetchHourlyDpkAggregates($normalizedPeriod, $kancaKey, $unitKey);
-        }
         return $this->fetchSavingsAggregates($period, $kancaKey, $unitKey);
-    }
-
-    private function fetchHourlyDpkAggregates(string $period, array|string|null $kancaKey, array|string|null $unitKey): Collection
-    {
-        return $this->queryHourlyDpkAggregates($period, $kancaKey, $unitKey);
     }
 
     private function buildSourceMetadata(string $period): ?array
@@ -2890,14 +2902,6 @@ class DashboardHarianSnapshotService
             [$recoverySource, $recoveryPeriod, $recoveryState] = $this->sourceRecoveryState($period);
 
             $normalizedPeriod = $this->normalizeDate($period) ?? $period;
-            $hourlyDpkState = $this->hourlyDpkEnabled()
-                ? $this->sourceAggregateState(
-                    self::HOURLY_DPK_TABLE,
-                    $this->sourcePeriodColumn(self::HOURLY_DPK_TABLE),
-                    $this->sourcePeriodRawCandidates(self::HOURLY_DPK_TABLE, $period),
-                    ['saldo']
-                )
-                : ['row_count' => 0, 'disabled' => true];
 
             $signaturePayload = [
                 'version' => self::SOURCE_SIGNATURE_VERSION,
@@ -2907,7 +2911,6 @@ class DashboardHarianSnapshotService
                 'dly_kap' => $dlyKapState,
                 'l1133' => $l1133State,
                 'savings' => $savingsState,
-                'hourly_dpk' => $hourlyDpkState,
                 'recovery_source' => $recoverySource,
                 'recovery_period' => $recoveryPeriod,
                 'recovery' => $recoveryState,
@@ -2918,8 +2921,7 @@ class DashboardHarianSnapshotService
                 'source_loan_row_count' => (int) ($loanState['row_count'] ?? 0)
                     + (int) ($dlyKapState['row_count'] ?? 0)
                     + (int) ($l1133State['row_count'] ?? 0),
-                'source_savings_row_count' => (int) ($savingsState['row_count'] ?? 0)
-                    + (int) ($hourlyDpkState['row_count'] ?? 0),
+                'source_savings_row_count' => (int) ($savingsState['row_count'] ?? 0),
                 'source_recovery_row_count' => (int) ($recoveryState['row_count'] ?? 0),
                 'source_recovery_period' => $recoveryPeriod,
             ];
@@ -2934,62 +2936,7 @@ class DashboardHarianSnapshotService
         }
     }
 
-    private function queryHourlyDpkAggregates(string $period, array|string|null $kancaKey, array|string|null $unitKey): Collection
-    {
-        $segment = "UPPER(TRIM(COALESCE(h.segmen2, '')))";
-        $product = "UPPER(TRIM(COALESCE(h.produk, '')))";
-        $microSegment = "{$segment} IN ('MICRO', 'MIKRO')";
 
-        $query = DB::table(self::HOURLY_DPK_TABLE . ' as h')
-            ->whereIn('h.' . $this->sourcePeriodColumn(self::HOURLY_DPK_TABLE), $this->sourcePeriodRawCandidates(self::HOURLY_DPK_TABLE, $period))
-            ->selectRaw("TRIM(COALESCE(h.mbname, '')) as raw_kantor_cabang")
-            ->selectRaw("TRIM(COALESCE(h.mbname, '')) as raw_unit_kerja")
-            ->selectRaw("SUM(CASE WHEN {$segment} = 'RITEL' AND {$product} = 'GIRO' THEN COALESCE(h.saldo, 0) ELSE 0 END) as giro_ritel")
-            ->selectRaw("SUM(CASE WHEN {$segment} = 'RITEL' AND {$product} = 'DEPOSITO' THEN COALESCE(h.saldo, 0) ELSE 0 END) as deposito_ritel")
-            ->selectRaw("SUM(CASE WHEN {$segment} = 'RITEL' AND {$product} = 'TABUNGAN' THEN COALESCE(h.saldo, 0) ELSE 0 END) as tabungan_ritel")
-            ->selectRaw("SUM(CASE WHEN {$microSegment} AND {$product} = 'GIRO' THEN COALESCE(h.saldo, 0) ELSE 0 END) as giro_mikro")
-            ->selectRaw("SUM(CASE WHEN {$microSegment} AND {$product} = 'DEPOSITO' THEN COALESCE(h.saldo, 0) ELSE 0 END) as deposito_mikro")
-            ->selectRaw("SUM(CASE WHEN {$microSegment} AND {$product} = 'TABUNGAN' THEN COALESCE(h.saldo, 0) ELSE 0 END) as tabungan_mikro")
-            ->selectRaw("SUM(CASE WHEN {$segment} IN ('WHOLESALE', 'KORPORASI') AND {$product} = 'GIRO' THEN COALESCE(h.saldo, 0) ELSE 0 END) as giro_wholesale")
-            ->selectRaw("SUM(CASE WHEN {$segment} IN ('WHOLESALE', 'KORPORASI') AND {$product} = 'DEPOSITO' THEN COALESCE(h.saldo, 0) ELSE 0 END) as deposito_wholesale")
-            ->selectRaw("SUM(CASE WHEN {$segment} IN ('WHOLESALE', 'KORPORASI') AND {$product} = 'TABUNGAN' THEN COALESCE(h.saldo, 0) ELSE 0 END) as tabungan_wholesale")
-            ->selectRaw("SUM(COALESCE(h.saldo, 0)) as total_simpanan")
-            ->groupBy('raw_kantor_cabang', 'raw_unit_kerja');
-
-        $normalizedKanca = $this->normalizeFilterValues($kancaKey);
-        if ($normalizedKanca !== []) {
-            $kancaConditions = collect($normalizedKanca)
-                ->map(fn (string $value) => $this->buildFilterCondition('h.mbname', $value))
-                ->filter()
-                ->all();
-
-            if ($kancaConditions !== []) {
-                $query->where(function ($q) use ($kancaConditions): void {
-                    foreach ($kancaConditions as $condition) {
-                        $q->orWhereRaw($condition);
-                    }
-                });
-            }
-        }
-
-        $normalizedUnit = $this->normalizeFilterValues($unitKey);
-        if ($normalizedUnit !== []) {
-            $unitConditions = collect($normalizedUnit)
-                ->map(fn (string $value) => $this->buildFilterCondition('h.mbname', $value))
-                ->filter()
-                ->all();
-
-            if ($unitConditions !== []) {
-                $query->where(function ($q) use ($unitConditions): void {
-                    foreach ($unitConditions as $condition) {
-                        $q->orWhereRaw($condition);
-                    }
-                });
-            }
-        }
-
-        return $query->get();
-    }
 
     private function sourceAggregateState(string $table, string $periodColumn, array $periodValues, array $numericColumns = []): array
     {
@@ -3047,7 +2994,16 @@ class DashboardHarianSnapshotService
             return ['lw325_ph', null, ['row_count' => 0]];
         }
 
-        $previousPhPeriod = $this->resolvePreviousPhPeriod($normalizedPeriod);
+        $previousPhPeriod = $this->resolvePreviousMonthPhPeriod($normalizedPeriod);
+        if (!$this->isPreviousMonthEndPhPeriod($normalizedPeriod, $previousPhPeriod)) {
+            Log::warning('Skipping LW325 PH recovery metadata because the comparison period is not the previous month-end.', [
+                'current_period' => $normalizedPeriod,
+                'comparison_period' => $previousPhPeriod,
+            ]);
+
+            return ['lw325_ph', null, ['row_count' => 0, 'guard' => 'previous_month_end_required']];
+        }
+
         return [
             'lw325_ph',
             $previousPhPeriod,
@@ -3160,19 +3116,34 @@ class DashboardHarianSnapshotService
     {
         try {
             $current = Carbon::parse($period);
-            $target = $current->copy()->subMonthNoOverflow();
-            $monthStart = $target->copy()->startOfMonth()->toDateString();
-            $targetDate = $target->toDateString();
-            $monthEnd = $target->copy()->endOfMonth()->toDateString();
+            $monthEnd = $current->copy()
+                ->startOfMonth()
+                ->subDay()
+                ->toDateString();
 
             return DB::table('lw325_ph')
-                ->whereBetween('periode', [$monthStart, $targetDate])
-                ->max('periode')
-                ?: DB::table('lw325_ph')
-                    ->whereBetween('periode', [$monthStart, $monthEnd])
-                    ->max('periode');
+                ->where('periode', $monthEnd)
+                ->value('periode');
         } catch (Throwable) {
             return null;
+        }
+    }
+
+    private function isPreviousMonthEndPhPeriod(string $currentPeriod, ?string $comparisonPeriod): bool
+    {
+        if ($comparisonPeriod === null) {
+            return false;
+        }
+
+        try {
+            $expectedPreviousMonthEnd = Carbon::parse($currentPeriod)
+                ->startOfMonth()
+                ->subDay()
+                ->toDateString();
+
+            return Carbon::parse($comparisonPeriod)->toDateString() === $expectedPreviousMonthEnd;
+        } catch (Throwable) {
+            return false;
         }
     }
 
@@ -3310,6 +3281,10 @@ class DashboardHarianSnapshotService
         }
 
         $options = $this->fetchFilterOptions($period, $selectedKanca, $selectedUnit)[$group] ?? [];
+        if ($group === 'kanca' && $this->isArea6KancaSelection($normalized, collect($options)->filter(fn ($option) => ($option['value'] ?? null) !== 'all'))) {
+            return $fallback;
+        }
+
         $labels = collect($options)
             ->filter(fn ($option) => in_array((string) ($option['value'] ?? ''), $normalized, true))
             ->pluck('label')

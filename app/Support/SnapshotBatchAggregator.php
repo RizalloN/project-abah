@@ -334,7 +334,7 @@ class SnapshotBatchAggregator
     }
 
     /**
-     * Keep only the newest request per table/period/rebuild scope.
+     * Keep only the newest request per table/period scope.
      *
      * Snapshot rebuilds are period scoped, so replaying multiple queued requests
      * for the same scope only repeats the same expensive database work.
@@ -358,7 +358,7 @@ class SnapshotBatchAggregator
 
             $periodHint = trim((string) ($request['period_hint'] ?? ''));
             $rebuildId = trim((string) ($request['rebuild_id'] ?? ''));
-            $scope = $tableName . ':' . ($periodHint !== '' ? $periodHint : '__all__') . ':' . ($rebuildId !== '' ? $rebuildId : '__default__');
+            $scope = $tableName . ':' . ($periodHint !== '' ? $periodHint : '__all__');
 
             $compacted[$scope] = $request;
             $compacted[$scope]['table_name'] = $tableName;

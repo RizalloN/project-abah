@@ -30,126 +30,102 @@
      data-delete-cancel-url-template="{{ route('import.report-management.delete.cancel', ['deleteId' => '__DELETE_ID__']) }}"
      data-force-sync-url="{{ route('import.report-management.force-sync') }}"
      data-force-sync-status-url-template="{{ route('import.report-management.force-sync.status', ['syncId' => '__SYNC_ID__']) }}">
-    <div class="card-header bg-white border-0 import-upload-card__header">
-        <span class="import-upload-card__eyebrow">Seleksi & Preview</span>
-        <h5 class="card-title font-weight-bold text-dark mb-1">
+    <div class="card-header bg-transparent border-0 px-4 pt-4 pb-0">
+        <h5 class="font-weight-bold text-dark mb-0" style="font-size: 1.25rem;">
             <i class="fas fa-database text-primary mr-2"></i> Data per Grup
         </h5>
-        <p class="import-upload-card__subtitle mb-0">Pilih grup, lalu hapus data yang diperlukan.</p>
     </div>
-    <div class="card-body import-upload-card__body">
-        <div class="report-management-top-shell mb-4">
-            <div class="row report-management-top-grid">
-                <!-- Source Data Panel -->
-                <div class="col-lg-4 mb-3 mb-lg-0">
-                    <div class="report-management-field-panel h-100">
-                        <div class="report-management-field-panel__eyebrow">
-                            <i class="fas fa-database mr-1"></i> Input
-                        </div>
-                        <label class="report-management-field-panel__label" for="management-report-select">Pilih Report Utama</label>
-                        <select id="management-report-select" class="form-control select2">
-                            <option value="">-- Pilih Report --</option>
-                            @foreach($reports as $report)
-                                <option value="{{ $report->id_report }}" data-table-name="{{ $report->table_name }}">{{ $report->nama_report }} ({{ $report->table_name }})</option>
-                            @endforeach
-                        </select>
-                        <div class="report-management-rebuild-hint mt-3">Silakan pilih jenis data report yang ingin dikelola atau ditinjau datanya.</div>
-                    </div>
+    <div class="card-body p-4">
+        <!-- Control Panel (4 Columns) -->
+        <div class="row mb-4 align-items-end">
+            <!-- 1. Pilihan Report -->
+            <div class="col-lg-3 col-md-6 mb-3 mb-lg-0">
+                <div class="form-group mb-0">
+                    <label class="font-weight-bold text-dark mb-2" for="management-report-select" style="font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px;">Report Utama</label>
+                    <select id="management-report-select" class="form-control select2" style="border-radius: 12px;">
+                        <option value="">-- Pilih Report --</option>
+                        @foreach($reports as $report)
+                            <option value="{{ $report->id_report }}" data-table-name="{{ $report->table_name }}">{{ $report->nama_report }}</option>
+                        @endforeach
+                    </select>
                 </div>
+            </div>
 
-                <!-- Recovery Panel -->
-                <div class="col-lg-4 mb-3 mb-lg-0">
-                    <div class="report-management-recover-panel h-100">
-                        <div class="report-management-rebuild-panel__topline mb-2">
-                            <i class="fas fa-undo-alt mr-1"></i> Data Recovery
-                        </div>
-                        <label class="report-management-field-panel__label mb-2" for="management-backup-select">Gunakan File Backup SQL</label>
-                        <select id="management-backup-select" class="form-control">
-                            <option value="">-- Pilih Backup --</option>
+            <!-- 2. Data Recovery -->
+            <div class="col-lg-3 col-md-6 mb-3 mb-lg-0">
+                <div class="form-group mb-0">
+                    <label class="font-weight-bold text-dark mb-2" for="management-backup-select" style="font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px;">Recovery SQL</label>
+                    <div class="d-flex" style="gap: 8px;">
+                        <select id="management-backup-select" class="form-control flex-grow-1" style="border-radius: 12px; border: 1px solid #cbd5e1;">
+                            <option value="">-- File Backup --</option>
                             @foreach($backupFiles as $backup)
-                                <option value="{{ $backup['path'] }}">{{ $backup['name'] }} ({{ $backup['size_human'] }})</option>
+                                <option value="{{ $backup['path'] }}">{{ $backup['name'] }}</option>
                             @endforeach
                         </select>
-                        <div class="report-management-rebuild-hint mt-2 mb-3">Memulihkan data tabel spesifik dari file backup sistem secara parsial dan aman.</div>
-                        <button type="button" id="btn-management-recover" class="btn btn-outline-success report-management-filter-btn report-management-filter-btn--secondary mt-auto" disabled>
-                            <i class="fas fa-life-ring mr-2"></i> <span id="management-recover-label">Jalankan Recovery</span>
+                        <button type="button" id="btn-management-recover" class="btn btn-outline-success" style="border-radius: 12px; padding: 0.5rem 1rem;" title="Jalankan Recovery" disabled>
+                            <i class="fas fa-life-ring"></i>
                         </button>
                     </div>
                 </div>
+            </div>
 
-                <!-- Manual Sync Panel (NEW) -->
-                <div class="col-lg-4">
-                    <div class="report-management-rebuild-panel h-100 border-info" style="border-left: 3px solid #17a2b8;">
-                        <div class="report-management-rebuild-panel__topline mb-2">
-                            <i class="fas fa-bolt mr-1" style="color: #ffc107;"></i> Sinkronisasi Manual
-                        </div>
-                        <label class="report-management-field-panel__label mb-2">Periode (YYYY-MM-DD)</label>
-                        <input type="text" id="management-force-sync-period" class="form-control mb-3" placeholder="2026-04-26">
-                        <div class="report-management-rebuild-hint mb-3">Sinkronisasi snapshot untuk periode spesifik setelah perubahan data manual. Akan sync SEMUA snapshot types sekaligus.</div>
-                        <button type="button" id="btn-management-force-sync" class="btn btn-outline-warning report-management-filter-btn report-management-filter-btn--secondary mt-auto">
-                            <i class="fas fa-bolt mr-2"></i> <span id="management-force-sync-label">Sinkronisasi Sekarang</span>
+            <!-- 3. Sinkronisasi Manual -->
+            <div class="col-lg-3 col-md-6 mb-3 mb-md-0">
+                <div class="form-group mb-0">
+                    <label class="font-weight-bold text-dark mb-2" style="font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px;">Sync Spesifik</label>
+                    <div class="d-flex" style="gap: 8px;">
+                        <input type="text" id="management-force-sync-period" class="form-control flex-grow-1" placeholder="YYYY-MM-DD" style="border-radius: 12px; border: 1px solid #cbd5e1;">
+                        <button type="button" id="btn-management-force-sync" class="btn btn-outline-warning" style="border-radius: 12px; padding: 0.5rem 1rem;" title="Sync Sekarang">
+                            <i class="fas fa-bolt"></i>
                         </button>
                     </div>
                 </div>
+            </div>
 
-                <!-- Rebuild Panel -->
-                <div class="col-lg-4">
-                    <div class="report-management-rebuild-panel h-100">
-                        <div class="report-management-rebuild-panel__topline mb-2">
-                            <i class="fas fa-sync-alt mr-1"></i> Pembersihan
+            <!-- 4. Pembersihan / Rebuild -->
+            <div class="col-lg-3 col-md-6">
+                <div class="form-group mb-0 d-flex flex-column h-100 justify-content-end">
+                    <label class="font-weight-bold text-dark mb-2" style="font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px;">Pembaruan Penuh</label>
+                    <div class="d-flex align-items-center" style="gap: 12px; min-height: 38px;">
+                        <div class="custom-control custom-switch m-0 flex-grow-1">
+                            <input type="checkbox" class="custom-control-input" id="management-rebuild-force">
+                            <label class="custom-control-label text-dark font-weight-bold" for="management-rebuild-force" style="cursor: pointer; padding-top: 2px;">Mode Full</label>
                         </div>
-                        <div class="d-flex flex-column gap-2 mb-3">
-                            <div class="custom-control custom-switch report-management-rebuild-switch">
-                                <input type="checkbox" class="custom-control-input" id="management-rebuild-force">
-                                <label class="custom-control-label" for="management-rebuild-force">Mode Full Rebuild</label>
-                            </div>
-                            <div class="report-management-rebuild-hint">Membangun kembali seluruh snapshot dari nol untuk memastikan konsistensi data absolut.</div>
-                        </div>
-                        <button type="button" id="btn-management-rebuild" class="btn btn-outline-primary report-management-filter-btn report-management-filter-btn--secondary mt-auto">
-                            <i class="fas fa-microchip mr-2"></i> <span id="management-rebuild-label">Pembaruan Snapshot</span>
+                        <button type="button" id="btn-management-rebuild" class="btn btn-outline-primary" style="border-radius: 12px; padding: 0.5rem 1rem;" title="Pembaruan Snapshot">
+                            <i class="fas fa-sync-alt"></i>
                         </button>
                     </div>
                 </div>
             </div>
         </div>
 
-        <div class="row report-management-stat-row mb-4">
-            <div class="col-md-4 mb-3 mb-md-0 animate-reveal stagger-1">
-                <div class="report-management-stat hover-lift hover-shine">
-                    <div class="report-management-stat__icon"><i class="fas fa-file-alt"></i></div>
-                    <div class="report-management-stat__content">
-                        <small>Report Aktif</small>
-                        <strong id="management-summary-report">Belum dipilih</strong>
-                    </div>
+        <!-- Summary & Actions Bar -->
+        <div class="d-flex flex-wrap align-items-center justify-content-between p-3 mb-4" style="background: #f8fafc; border-radius: 16px; border: 1px solid #f1f5f9;">
+            <!-- Stats -->
+            <div class="d-flex flex-wrap align-items-center" style="gap: 1.5rem;">
+                <div>
+                    <small class="text-muted font-weight-bold text-uppercase" style="font-size: 0.7rem; letter-spacing: 0.5px;">Report</small>
+                    <div id="management-summary-report" class="font-weight-bold text-dark" style="font-size: 0.95rem;">-</div>
+                </div>
+                <div class="border-left d-none d-md-block" style="height: 30px; border-color: #e2e8f0 !important;"></div>
+                <div>
+                    <small class="text-muted font-weight-bold text-uppercase" style="font-size: 0.7rem; letter-spacing: 0.5px;">Grup</small>
+                    <div id="management-summary-groups" class="font-weight-bold text-info" style="font-size: 0.95rem;">0</div>
+                </div>
+                <div class="border-left d-none d-md-block" style="height: 30px; border-color: #e2e8f0 !important;"></div>
+                <div>
+                    <small class="text-muted font-weight-bold text-uppercase" style="font-size: 0.7rem; letter-spacing: 0.5px;">Baris</small>
+                    <div id="management-summary-rows" class="font-weight-bold text-success" style="font-size: 0.95rem;">0</div>
                 </div>
             </div>
-            <div class="col-md-4 mb-3 mb-md-0 animate-reveal stagger-2">
-                <div class="report-management-stat hover-lift hover-shine">
-                    <div class="report-management-stat__icon report-management-stat__icon--info"><i class="fas fa-users"></i></div>
-                    <div class="report-management-stat__content">
-                        <small>Jumlah Grup</small>
-                        <strong id="management-summary-groups">0</strong>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-4 animate-reveal stagger-3">
-                <div class="report-management-stat hover-lift hover-shine">
-                    <div class="report-management-stat__icon report-management-stat__icon--success"><i class="fas fa-table"></i></div>
-                    <div class="report-management-stat__content">
-                        <small>Grand Total Baris</small>
-                        <strong id="management-summary-rows">0</strong>
-                    </div>
-                </div>
-            </div>
-        </div>
 
-        <div class="report-management-action-bar mb-4">
-            <div class="report-management-action-bar__group">
-                <button type="button" id="btn-management-filter" class="btn btn-primary report-management-filter-btn report-management-filter-btn--primary">
-                    <i class="fas fa-filter mr-2"></i> Tampilkan Data
+            <!-- Actions -->
+            <div class="d-flex align-items-center mt-3 mt-md-0" style="gap: 8px;">
+                <button type="button" id="btn-management-filter" class="btn btn-primary" style="border-radius: 12px; font-weight: 600; padding: 0.55rem 1.25rem; box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.2);">
+                    <i class="fas fa-filter mr-2"></i> Tampilkan
                 </button>
-                <button type="button" id="btn-management-deduplicate" class="btn btn-outline-danger report-management-filter-btn report-management-filter-btn--danger" disabled>
-                    <i class="fas fa-clone mr-2"></i> Hapus Duplikat
+                <button type="button" id="btn-management-deduplicate" class="btn btn-outline-danger" style="border-radius: 12px; font-weight: 600; padding: 0.55rem 1.25rem;" disabled>
+                    <i class="fas fa-clone mr-2"></i> Deduplikasi
                 </button>
             </div>
         </div>
@@ -204,22 +180,20 @@
             </div>
         </div>
 
-        <div class="report-management-table-wrap">
-            <div class="table-responsive">
-                <table class="table table-hover mb-0 report-management-table">
-                    <thead>
-                        <tr>
-                            <th class="text-center report-management-col-check"><i class="far fa-check-square"></i></th>
-                            <th>Kanca</th>
-                            <th class="text-right">Jumlah Baris</th>
-                            <th class="text-center">Aksi</th>
-                        </tr>
-                    </thead>
-                    <tbody id="management-table-body">
-                        <tr><td colspan="4" class="text-center text-muted py-5">Pilih report lalu klik "Tampilkan Data".</td></tr>
-                    </tbody>
-                </table>
-            </div>
+        <div class="table-responsive mt-4" style="border-radius: 12px; border: 1px solid #e2e8f0;">
+            <table class="table table-hover mb-0" style="border-collapse: collapse;">
+                <thead style="background: #f8fafc;">
+                    <tr>
+                        <th class="text-center" style="width: 5%; font-weight: 600; color: #475569; border-bottom: 2px solid #e2e8f0;"><i class="far fa-check-square"></i></th>
+                        <th style="width: 45%; font-weight: 600; color: #475569; border-bottom: 2px solid #e2e8f0;">Kanca</th>
+                        <th class="text-right" style="width: 25%; font-weight: 600; color: #475569; border-bottom: 2px solid #e2e8f0;">Jumlah Baris</th>
+                        <th class="text-center" style="width: 25%; font-weight: 600; color: #475569; border-bottom: 2px solid #e2e8f0;">Aksi</th>
+                    </tr>
+                </thead>
+                <tbody id="management-table-body">
+                    <tr><td colspan="4" class="text-center text-muted py-4">Pilih report lalu klik "Tampilkan Data".</td></tr>
+                </tbody>
+            </table>
         </div>
 
         <div id="management-pagination" class="report-management-pagination d-none"></div>
@@ -254,6 +228,8 @@
         const btnManagementDeduplicate = document.getElementById('btn-management-deduplicate');
         const btnManagementRebuild = document.getElementById('btn-management-rebuild');
         const btnManagementRecover = document.getElementById('btn-management-recover');
+        const btnManagementForceSync = document.getElementById('btn-management-force-sync');
+        const managementForceSyncPeriod = document.getElementById('management-force-sync-period');
         const managementBackupSelect = document.getElementById('management-backup-select');
         const managementRebuildForce = document.getElementById('management-rebuild-force');
         const managementRecoveryProgress = document.getElementById('management-recovery-progress');
@@ -763,6 +739,116 @@
             return { status: 'warning', message: 'Rebuild snapshot masih berjalan di background.' };
         }
 
+        async function pollForceSyncStatus(statusUrl) {
+            if (!statusUrl) return null;
+
+            Swal.fire({
+                title: 'Sinkronisasi Berjalan',
+                html: `
+                    <div class="mb-3" id="force-sync-status-text">Memeriksa status...</div>
+                    <div class="progress report-management-progress" style="height: 12px;">
+                        <div id="force-sync-progress-bar" class="progress-bar report-management-progress__bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%;"></div>
+                    </div>
+                    <div class="mt-2 text-muted" id="force-sync-progress-meta" style="font-size: 0.85rem;">0% (0/6 tabel selesai)</div>
+                `,
+                allowOutsideClick: false,
+                allowEscapeKey: false,
+                showConfirmButton: false,
+                didOpen: () => {
+                    Swal.showLoading();
+                }
+            });
+
+            for (let attempt = 0; attempt < 240; attempt++) {
+                try {
+                    const response = await fetch(statusUrl, {
+                        headers: {
+                            'Accept': 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest',
+                        },
+                    });
+
+                    const state = await response.json().catch(() => ({}));
+                    const status = String(state.status || '').toLowerCase();
+                    const percent = Math.max(0, Math.min(100, Number(state.progress || 0)));
+                    
+                    const pBar = document.getElementById('force-sync-progress-bar');
+                    if (pBar) {
+                        pBar.style.width = percent + '%';
+                        if (['completed', 'failed', 'error'].includes(status)) {
+                            pBar.classList.remove('progress-bar-animated');
+                            pBar.classList.remove('progress-bar-striped');
+                            if (status === 'completed') pBar.classList.add('bg-success');
+                            if (['failed', 'error'].includes(status)) pBar.classList.add('bg-danger');
+                        }
+                    }
+
+                    const pText = document.getElementById('force-sync-status-text');
+                    if (pText && state.message) {
+                        pText.innerText = state.message;
+                    }
+
+                    const pMeta = document.getElementById('force-sync-progress-meta');
+                    if (pMeta) {
+                        pMeta.innerText = `${percent}% (${state.completed_tables || 0}/${state.total_tables || 6} tabel selesai)`;
+                    }
+
+                    if (['completed', 'failed', 'warning', 'error'].includes(status)) {
+                        return state;
+                    }
+
+                } catch (e) {
+                    console.error('Polling force sync status failed:', e);
+                }
+
+                await new Promise((resolve) => setTimeout(resolve, 1500));
+            }
+
+            return { status: 'warning', message: 'Sync masih berjalan di background setelah waktu tunggu habis.' };
+        }
+
+        async function handleForceSync() {
+            if (!managementForceSyncPeriod || !managementForceSyncPeriod.value) {
+                await Swal.fire({ icon: 'warning', title: 'Input Tidak Lengkap', text: 'Silakan isi periode (YYYY-MM-DD) terlebih dahulu.' });
+                return;
+            }
+
+            const period = managementForceSyncPeriod.value;
+            const confirmation = await Swal.fire({
+                icon: 'question',
+                title: 'Sinkronisasi Spesifik?',
+                html: `Jalankan snapshot force sync untuk periode <b>${period}</b>?`,
+                showCancelButton: true,
+                confirmButtonText: 'Ya, Sinkronisasi',
+                cancelButtonText: 'Batal',
+            });
+
+            if (!confirmation.isConfirmed) return;
+
+            const payload = await postJson(reportManagementCard.dataset.forceSyncUrl, {
+                period: period,
+            });
+
+            if (payload.status === 'error') {
+                throw new Error(payload.message || 'Gagal memulai sinkronisasi.');
+            }
+
+            if (payload.sync_id) {
+                const statusUrl = templateUrl(reportManagementCard.dataset.forceSyncStatusUrlTemplate, payload.sync_id).replace('__REBUILD_ID__', encodeURIComponent(payload.sync_id)).replace('__SYNC_ID__', encodeURIComponent(payload.sync_id));
+                const finalState = await pollForceSyncStatus(statusUrl);
+                
+                await Swal.fire({
+                    icon: ['failed', 'error'].includes(finalState?.status) ? 'error' : (finalState?.status === 'warning' ? 'warning' : 'success'),
+                    title: ['failed', 'error'].includes(finalState?.status) ? 'Sync Gagal' : (finalState?.status === 'warning' ? 'Selesai dengan Catatan' : 'Berhasil'),
+                    text: finalState?.message || 'Proses force sync selesai.',
+                });
+            } else {
+                await Swal.fire({ icon: 'success', title: 'Berhasil', text: payload.message || 'Sinkronisasi dijalankan.' });
+            }
+
+            await refreshCurrentGrid();
+        }
+
         // ✅ FIXED: Initialize button state immediately
         syncExtraActionState();
 
@@ -811,6 +897,21 @@
                     await Swal.fire({ icon: 'error', title: 'Rebuild Gagal', text: error.message || 'Terjadi kesalahan saat menjadwalkan rebuild.' });
                 } finally {
                     syncExtraActionState();
+                    btnManagementRebuild.disabled = false;
+                }
+            });
+        }
+
+        if (btnManagementForceSync) {
+            btnManagementForceSync.addEventListener('click', async function () {
+                btnManagementForceSync.disabled = true;
+                try {
+                    await handleForceSync();
+                } catch (error) {
+                    await Swal.fire({ icon: 'error', title: 'Sync Gagal', text: error.message || 'Terjadi kesalahan saat memulai sinkronisasi.' });
+                } finally {
+                    syncExtraActionState();
+                    btnManagementForceSync.disabled = false;
                 }
             });
         }

@@ -239,6 +239,31 @@ class ImportExcelController extends Controller
         return strtolower(trim((string) ($tableName ?? $this->resolveActiveTableName()))) === 'lw321_npdd';
     }
 
+    private function forceLw321NpdPositionHeadersByIndex(array $headers): array
+    {
+        if (count($headers) < 28) {
+            return $headers;
+        }
+
+        foreach ([
+            17 => 'm_min_1_kol',
+            18 => 'm_min_1_detail',
+            19 => 'm_min_1_os',
+            20 => 'wba',
+            21 => 'now_kol',
+            22 => 'now_detail',
+            23 => 'now_os',
+            24 => 'now_t_pokok',
+            25 => 'now_t_bunga',
+            26 => 'now_t_total',
+            27 => 'ptp',
+        ] as $index => $header) {
+            $headers[$index] = $header;
+        }
+
+        return $headers;
+    }
+
     private function forceLw321NpddPositionHeadersByIndex(array $headers): array
     {
         if (count($headers) < 28) {
@@ -246,6 +271,10 @@ class ImportExcelController extends Controller
         }
 
         foreach ([
+            17 => 'kol',
+            18 => 'detail',
+            19 => 'os',
+            20 => 'wba',
             21 => 'now_kol',
             22 => 'now_detail',
             23 => 'now_os',
@@ -2906,6 +2935,10 @@ class ImportExcelController extends Controller
     {
         if (strtolower(trim($tableName)) === 'daily_loan_dinamis') {
             $normalizedHeaders = $this->canonicalizeDailyLoanSourceHeaders($normalizedHeaders);
+        }
+
+        if ($this->isLw321NpdTable($tableName)) {
+            $normalizedHeaders = $this->forceLw321NpdPositionHeadersByIndex($normalizedHeaders);
         }
 
         if ($this->isLw321NpddTable($tableName)) {
@@ -6924,6 +6957,9 @@ class ImportExcelController extends Controller
 
             $sourceCol = $this->quoteSqlIdentifier('c' . $sourceIndex);
             $expression = $this->buildDirectLoadSqlExpression($rule, $sourceCol);
+            if ($tableName === 'lw321_npdd') {
+                $expression = $this->wrapLw321NpddLunasSqlExpression($dbColumnLower, $expression);
+            }
 
             $insertColumns[] = $dbColumn;
             $selectClauses[] = "{$expression} AS " . $this->quoteSqlIdentifier($dbColumn);
@@ -6935,6 +6971,21 @@ class ImportExcelController extends Controller
             'select_clauses' => $selectClauses,
             'filter_aliases' => $filterAliases,
         ];
+    }
+
+    private function wrapLw321NpddLunasSqlExpression(string $dbColumnLower, string $expression): string
+    {
+        if (!in_array($dbColumnLower, ['now_os', 'now_t_pokok', 'now_t_bunga', 'now_t_total', 'ptp'], true)) {
+            return $expression;
+        }
+
+        $lunasCondition = "UPPER(TRIM(COALESCE(`c21`, ''))) = 'LUNAS' OR UPPER(TRIM(COALESCE(`c22`, ''))) = 'LUNAS'";
+
+        if ($dbColumnLower === 'ptp') {
+            return "CASE WHEN {$lunasCondition} THEN 'LUNAS' ELSE {$expression} END";
+        }
+
+        return "CASE WHEN {$lunasCondition} THEN 0 ELSE {$expression} END";
     }
 
     private function buildDlyKapResegmentasiBulkImportSqlParts(array $context, string $stagingTable): array
@@ -10741,6 +10792,12 @@ class ImportExcelController extends Controller
 
             if ($this->isDlyKapResegmentasiTable($tableName)) {
                 $normalizedHeadersForSession = DlyKapResegmentasiCsvImporter::NORMALIZED_HEADERS;
+            }
+            if ($this->isLw321NpdTable($tableName)) {
+                $normalizedHeadersForSession = $this->forceLw321NpdPositionHeadersByIndex($normalizedHeadersForSession);
+            }
+            if ($this->isLw321NpddTable($tableName)) {
+                $normalizedHeadersForSession = $this->forceLw321NpddPositionHeadersByIndex($normalizedHeadersForSession);
             }
 
             // ── Staging Excel to CSV (jika perlu) ───────────────────────

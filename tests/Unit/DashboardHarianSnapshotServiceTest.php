@@ -3,6 +3,7 @@
 namespace Tests\Unit;
 
 use App\Support\DashboardHarianSnapshotService;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -13,6 +14,7 @@ class DashboardHarianSnapshotServiceTest extends TestCase
 {
     private string $originalDefaultConnection;
     private ?string $originalSqliteDatabase;
+    private string $originalCacheDefault;
     private string $tempDatabase;
 
     protected function setUp(): void
@@ -21,12 +23,17 @@ class DashboardHarianSnapshotServiceTest extends TestCase
 
         $this->originalDefaultConnection = (string) Config::get('database.default');
         $this->originalSqliteDatabase = Config::get('database.connections.sqlite.database');
+        $this->originalCacheDefault = (string) Config::get('cache.default');
         $this->tempDatabase = tempnam(sys_get_temp_dir(), 'abah_snapshot_test_');
 
         Config::set('database.default', 'sqlite');
         Config::set('database.connections.sqlite.database', $this->tempDatabase);
         DB::purge('sqlite');
         DB::reconnect('sqlite');
+
+        Config::set('cache.default', 'array');
+        Cache::setDefaultDriver('array');
+        Cache::flush();
     }
 
     protected function tearDown(): void
@@ -35,6 +42,8 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         Config::set('database.default', $this->originalDefaultConnection);
         Config::set('database.connections.sqlite.database', $this->originalSqliteDatabase);
         DB::purge('sqlite');
+        Config::set('cache.default', $this->originalCacheDefault);
+        Cache::setDefaultDriver($this->originalCacheDefault);
 
         if (isset($this->tempDatabase) && is_file($this->tempDatabase)) {
             unlink($this->tempDatabase);
@@ -158,6 +167,53 @@ class DashboardHarianSnapshotServiceTest extends TestCase
             "(UPPER(ss.nama_uker) LIKE '%KC%' AND UPPER(ss.nama_uker) LIKE '%MADIUN%')",
             $reflection->invoke($service, 'ss.nama_uker', 'kc-madiun-detail')
         );
+    }
+
+    public function test_filter_options_treat_all_kancas_as_area6_and_hide_units_until_scoped(): void
+    {
+        $this->createSourceMetadataTables();
+
+        DB::table('dashboard_harian_snapshots')->insert([
+            [
+                'uniqueid_dhs' => 'madiun-summary',
+                'snapshot_period' => '2026-05-06',
+                'kanca_key' => 'kc-madiun',
+                'kanca_label' => 'KC Madiun',
+                'unit_key' => 'kc-madiun',
+                'unit_label' => 'KC Madiun',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'uniqueid_dhs' => 'madiun-unit-a',
+                'snapshot_period' => '2026-05-06',
+                'kanca_key' => 'kc-madiun',
+                'kanca_label' => 'KC Madiun',
+                'unit_key' => 'unit-a',
+                'unit_label' => 'UNIT A Madiun',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'uniqueid_dhs' => 'ngawi-summary',
+                'snapshot_period' => '2026-05-06',
+                'kanca_key' => 'kc-ngawi',
+                'kanca_label' => 'KC Ngawi',
+                'unit_key' => 'kc-ngawi',
+                'unit_label' => 'KC Ngawi',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        $service = new DashboardHarianSnapshotService();
+        $area6Filters = $service->fetchFilterOptions('2026-05-06', ['KC Madiun', 'KC Ngawi'], null);
+        $madiunFilters = $service->fetchFilterOptions('2026-05-06', 'KC Madiun', null);
+
+        $this->assertSame('Area 6', $area6Filters['kanca'][0]['label']);
+        $this->assertSame([['value' => 'all', 'label' => 'Semua Unit Kerja']], $area6Filters['unit_kerja']);
+        $this->assertContains('unit-a', array_column($madiunFilters['unit_kerja'], 'value'));
+        $this->assertNotContains('kc-ngawi', array_column($madiunFilters['unit_kerja'], 'value'));
     }
 
     public function test_source_metadata_signature_changes_when_source_values_change(): void
@@ -532,30 +588,42 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         $this->assertSame(600.0, (float) $row->kur_kpp_os);
     }
 
-    public function test_lw325_recovery_source_uses_latest_ph_before_snapshot_period(): void
+    public function test_lw325_recovery_source_uses_previous_month_end_ph_before_snapshot_period(): void
     {
         $this->createSourceMetadataTables();
 
         DB::table('ssa_pinjaman')->insert([
-            'month_day_year_of_periode' => '2026-04-21',
+            'month_day_year_of_periode' => '2026-05-07',
             'baki_debet' => 1000,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
         DB::table('ssa_simpanan')->insert([
-            'Month_Day_Year_of_Posisi' => '2026-04-21',
+            'Month_Day_Year_of_Posisi' => '2026-05-07',
             'saldo' => 500,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
         DB::table('lw325_ph')->insert([
-            'periode' => '2026-04-20',
+            'periode' => '2026-04-30',
             'pokok' => 250,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
         DB::table('lw325_ph')->insert([
-            'periode' => '2026-04-21',
+            'periode' => '2026-04-29',
+            'pokok' => 777,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('lw325_ph')->insert([
+            'periode' => '2026-05-06',
+            'pokok' => 999,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('lw325_ph')->insert([
+            'periode' => '2026-05-07',
             'pokok' => 999,
             'created_at' => now(),
             'updated_at' => now(),
@@ -565,18 +633,18 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         $reflection = new \ReflectionMethod($service, 'buildSourceMetadata');
         $reflection->setAccessible(true);
 
-        $metadata = $reflection->invoke($service, '2026-04-21');
+        $metadata = $reflection->invoke($service, '2026-05-07');
 
-        $this->assertSame('2026-04-20', $metadata['source_recovery_period']);
+        $this->assertSame('2026-04-30', $metadata['source_recovery_period']);
         $this->assertSame(1, $metadata['source_recovery_row_count']);
     }
 
-    public function test_ph_recovery_uses_balance_delta_for_tupok_and_previous_segment_for_lunas(): void
+    public function test_ph_recovery_uses_previous_month_balance_delta_for_tupok_and_lunas(): void
     {
         $this->createSourceMetadataTables();
 
         DB::table('lw325_ph')->insert([
-            'periode' => '2026-04-20',
+            'periode' => '2026-04-30',
             'acctno' => 'A1',
             'kanca' => 'KC Madiun',
             'unit' => 'Unit A',
@@ -586,7 +654,17 @@ class DashboardHarianSnapshotServiceTest extends TestCase
             'updated_at' => now(),
         ]);
         DB::table('lw325_ph')->insert([
-            'periode' => '2026-04-21',
+            'periode' => '2026-05-06',
+            'acctno' => 'A1',
+            'kanca' => 'KC Madiun',
+            'unit' => 'Unit A',
+            'segmen_dashboard' => 'SMALL',
+            'pokok' => 100,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('lw325_ph')->insert([
+            'periode' => '2026-05-07',
             'acctno' => 'A1',
             'kanca' => 'KC Madiun',
             'unit' => 'Unit A',
@@ -596,7 +674,7 @@ class DashboardHarianSnapshotServiceTest extends TestCase
             'updated_at' => now(),
         ]);
         DB::table('lw325_ph')->insert([
-            'periode' => '2026-04-20',
+            'periode' => '2026-04-30',
             'acctno' => 'A2',
             'kanca' => 'KC Madiun',
             'unit' => 'Unit A',
@@ -610,7 +688,7 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         $reflection = new \ReflectionMethod($service, 'fetchPhAggregates');
         $reflection->setAccessible(true);
 
-        $rows = $reflection->invoke($service, '2026-04-21');
+        $rows = $reflection->invoke($service, '2026-05-07');
         $row = $rows->first();
 
         $this->assertNotNull($row);
@@ -619,6 +697,86 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         $this->assertSame(1000000.0, (float) $row->rec_dh_small);
         $this->assertSame(50000000.0, (float) $row->rec_dh_micro);
         $this->assertSame(51000000.0, (float) $row->rec_dh_total);
+    }
+
+    public function test_ph_recovery_does_not_fallback_to_same_month_previous_period(): void
+    {
+        $this->createSourceMetadataTables();
+
+        DB::table('lw325_ph')->insert([
+            'periode' => '2026-05-06',
+            'acctno' => 'A1',
+            'kanca' => 'KC Madiun',
+            'unit' => 'Unit A',
+            'segmen_dashboard' => 'SMALL',
+            'pokok' => 100000000,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('lw325_ph')->insert([
+            'periode' => '2026-05-07',
+            'acctno' => 'A1',
+            'kanca' => 'KC Madiun',
+            'unit' => 'Unit A',
+            'segmen_dashboard' => 'SMALL',
+            'pokok' => 99000000,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $service = new DashboardHarianSnapshotService();
+
+        $aggregates = new \ReflectionMethod($service, 'fetchPhAggregates');
+        $aggregates->setAccessible(true);
+        $rows = $aggregates->invoke($service, '2026-05-07');
+
+        $metadataBuilder = new \ReflectionMethod($service, 'buildSourceMetadata');
+        $metadataBuilder->setAccessible(true);
+        $metadata = $metadataBuilder->invoke($service, '2026-05-07');
+
+        $this->assertCount(0, $rows);
+        $this->assertNull($metadata['source_recovery_period']);
+        $this->assertSame(0, $metadata['source_recovery_row_count']);
+    }
+
+    public function test_ph_recovery_does_not_fallback_to_non_month_end_previous_month_period(): void
+    {
+        $this->createSourceMetadataTables();
+
+        DB::table('lw325_ph')->insert([
+            'periode' => '2026-04-29',
+            'acctno' => 'A1',
+            'kanca' => 'KC Madiun',
+            'unit' => 'Unit A',
+            'segmen_dashboard' => 'SMALL',
+            'pokok' => 100000000,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('lw325_ph')->insert([
+            'periode' => '2026-05-09',
+            'acctno' => 'A1',
+            'kanca' => 'KC Madiun',
+            'unit' => 'Unit A',
+            'segmen_dashboard' => 'SMALL',
+            'pokok' => 99000000,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $service = new DashboardHarianSnapshotService();
+
+        $aggregates = new \ReflectionMethod($service, 'fetchPhAggregates');
+        $aggregates->setAccessible(true);
+        $rows = $aggregates->invoke($service, '2026-05-09');
+
+        $metadataBuilder = new \ReflectionMethod($service, 'buildSourceMetadata');
+        $metadataBuilder->setAccessible(true);
+        $metadata = $metadataBuilder->invoke($service, '2026-05-09');
+
+        $this->assertCount(0, $rows);
+        $this->assertNull($metadata['source_recovery_period']);
+        $this->assertSame(0, $metadata['source_recovery_row_count']);
     }
 
     private function createSourceMetadataTables(): void
@@ -631,7 +789,9 @@ class DashboardHarianSnapshotServiceTest extends TestCase
             $table->string('uniqueid_dhs')->primary();
             $table->date('snapshot_period')->nullable();
             $table->string('kanca_key')->default('');
+            $table->string('kanca_label')->nullable();
             $table->string('unit_key')->default('');
+            $table->string('unit_label')->nullable();
             $table->integer('source_row_count')->default(0);
             $table->string('source_signature', 64)->nullable();
             $table->unsignedBigInteger('source_loan_row_count')->nullable();

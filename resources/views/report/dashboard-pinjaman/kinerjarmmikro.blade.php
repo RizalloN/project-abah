@@ -237,6 +237,8 @@
                     @include('report.dashboard-pinjaman._kinerjarmmikro_partials._table_mantri_unit_pemutus', ['rows' => $rows])
                 @elseif ($selectedReportCategory === 'kuadran')
                     @include('report.dashboard-pinjaman._kinerjarmmikro_partials._table_mantri_kuadran', ['rows' => $rows])
+                @elseif ($selectedReportCategory === 'produktivitas_mantri')
+                    @include('report.dashboard-pinjaman._kinerjarmmikro_partials._table_mantri_produktivitas', ['rows' => $rows])
                 @elseif ($selectedReportCategory === 'pdwk_override')
                     @include('report.dashboard-pinjaman._kinerjarmmikro_partials._table_mantri_pdwk', ['rows' => $rows])
                 @else

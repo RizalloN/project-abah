@@ -1,0 +1,6 @@
+﻿{
+    "status":  "failed",
+    "message":  "Backup dihentikan — mysqldump stderr pipe deadlock. Telah diperbaiki, coba backup lagi.",
+    "updated_at":  1778311673,
+    "backup_id":  "backup_69fedeb0851be"
+}

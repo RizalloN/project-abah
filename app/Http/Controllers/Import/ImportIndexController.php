@@ -473,6 +473,7 @@ class ImportIndexController extends Controller
 
             Artisan::queue('snapshot:force-sync', [
                 '--period' => $period,
+                '--sync-id' => $syncId,
             ])->onQueue('imports-high');
 
             Log::info('Force sync snapshots queued', [

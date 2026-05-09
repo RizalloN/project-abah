@@ -47,7 +47,7 @@ return [
             'max_rows' => env('IMPORT_DIRECT_LOAD_SSA_SIMPANAN_MAX_ROWS', 0),
         ],
         'hourly_dpk' => [
-            'enabled' => env('IMPORT_DIRECT_LOAD_HOURLY_DPK_ENABLED', true),
+            'enabled' => false, // DISABLED - Report no longer needed
             'max_rows' => env('IMPORT_DIRECT_LOAD_HOURLY_DPK_MAX_ROWS', 0),
         ],
         'ssa_pinjaman' => [

@@ -228,18 +228,35 @@
     .select2-container--bootstrap4, .loan-filter-control {
         display: none !important;
     }
+
+    .loan-recovery-header {
+        padding: 0.75rem 0 1rem;
+        margin-bottom: 1rem;
+        border-bottom: 1px solid #e5e7eb;
+    }
+
+    .loan-recovery-header h1 {
+        margin: 0;
+        color: #0f172a;
+        font-size: 1.35rem;
+        font-weight: 800;
+        line-height: 1.2;
+        letter-spacing: 0;
+    }
+
+    .loan-recovery-header p {
+        margin: 0.3rem 0 0;
+        color: #64748b;
+        font-size: 0.82rem;
+        font-weight: 600;
+        line-height: 1.45;
+    }
 </style>
 
 <div class="loan-dashboard pt-4 px-3">
-    <div class="loan-title-hero d-flex flex-wrap justify-content-center align-items-center">
-        <div class="loan-title-hero__wrap">
-            <div class="loan-title-hero__badge">
-                <i class="fas fa-university"></i>
-                <span>BRI Loan Movement</span>
-            </div>
-            <h1 class="loan-title-hero__title">MATRIX PERGESERAN KOLEK</h1>
-            <p class="loan-title-hero__desc">Analisis pergerakan kualitas pinjaman antar periode untuk membaca migrasi kolektibilitas secara ringkas.</p>
-        </div>
+    <div class="loan-recovery-header">
+        <h1>Report Recovery</h1>
+        <p>Matrix kolektibilitas dengan recovery dari LW325 PH: turunan pokok dan lunas.</p>
     </div>
 
     <div id="loanMatrixPanel">

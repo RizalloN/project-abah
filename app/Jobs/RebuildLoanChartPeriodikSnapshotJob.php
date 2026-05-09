@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Jobs\Middleware\DeferSnapshotJobsDuringImport;
 use App\Support\ReportDataSyncService;
 use App\Support\ReportSnapshotBuilder;
+use App\Support\SnapshotSourceSignatureService;
 use Illuminate\Bus\Batchable;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -50,9 +51,11 @@ class RebuildLoanChartPeriodikSnapshotJob implements ShouldQueue
                 'period' => $this->periodHint,
             ]);
 
-            $builder->rebuildChartPeriodik($this->periodHint, true);
+            $result = $builder->rebuildChartPeriodik($this->periodHint, true);
 
             ReportDataSyncService::analyzeTable('dashboard_pinjaman_chart_periodik_snapshots');
+
+            $this->markSnapshotSignatures($result);
 
             $duration = $startTime->diffInSeconds(now());
             Log::info('RebuildLoanChartPeriodikSnapshotJob: Selesai.', [
@@ -67,5 +70,65 @@ class RebuildLoanChartPeriodikSnapshotJob implements ShouldQueue
 
             throw $e;
         }
+    }
+
+    private function markSnapshotSignatures(mixed $result): void
+    {
+        $candidates = [
+            ['source_table' => 'daily_loan_dinamis', 'period_column' => 'periode'],
+        ];
+
+        $periods = $this->resolvePeriodsToMark($result);
+        if ($periods === []) {
+            return;
+        }
+
+        $service = app(SnapshotSourceSignatureService::class);
+
+        foreach ($periods as $period) {
+            try {
+                $service->markBuiltForApplicableSources(
+                    'dashboard_pinjaman_chart_periodik_snapshots',
+                    $period,
+                    $candidates,
+                    ['job' => static::class]
+                );
+            } catch (\Throwable $e) {
+                Log::debug('Gagal menandai snapshot signature setelah rebuild Chart Periodik.', [
+                    'period' => $period,
+                    'message' => $e->getMessage(),
+                ]);
+            }
+        }
+    }
+
+    /**
+     * @param mixed $result
+     * @return array<int, string>
+     */
+    private function resolvePeriodsToMark(mixed $result): array
+    {
+        $periodHint = trim((string) $this->periodHint);
+        if ($periodHint !== '') {
+            return [$periodHint];
+        }
+
+        if (!is_array($result)) {
+            return [];
+        }
+
+        $periods = [];
+        foreach ($result as $key => $value) {
+            $period = trim((string) $key);
+            if ($period === '' || $period === 'inserted_rows') {
+                continue;
+            }
+            if ((int) (is_numeric($value) ? $value : 0) <= 0) {
+                continue;
+            }
+            $periods[] = $period;
+        }
+
+        return $periods;
     }
 }

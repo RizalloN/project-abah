@@ -4,19 +4,20 @@
 
 @section('content')
 
-<div class="card import-template-card border-0 mb-4">
-    <div class="import-template-card__body">
+<div class="card border-0 mb-4 shadow-sm" style="border-radius: 20px; background: #ffffff;">
+    <div class="card-body p-4">
         <div class="row align-items-center">
-            <div class="col-lg-7">
-                <span class="import-template-card__eyebrow">Template Import</span>
-                <h5 class="import-template-card__title mb-1">Unduh template, isi data, lalu unggah</h5>
-                <p class="import-template-card__text mb-0">Pilih report terlebih dahulu agar format template dan validasi file tetap mengikuti kebutuhan yang tepat.</p>
+            <div class="col-lg-6 mb-3 mb-lg-0">
+                <h5 class="font-weight-bold text-dark mb-1" style="font-size: 1.15rem;">
+                    <i class="fas fa-file-download text-primary mr-2"></i> Template Import
+                </h5>
+                <p class="text-muted mb-0" style="font-size: 0.9rem;">Pilih report untuk mengunduh format template.</p>
             </div>
-            <div class="col-lg-5 mt-3 mt-lg-0">
-                <div class="import-template-actions">
-                    <div class="import-template-select">
-                        <select id="download-template-select" class="form-control select2 import-template-select__control" data-placeholder="-- Cari & Pilih Report --">
-                            <option value="">-- Cari & Pilih Report --</option>
+            <div class="col-lg-6">
+                <div class="d-flex align-items-center justify-content-lg-end gap-2" style="gap: 12px;">
+                    <div style="flex: 1; max-width: 320px;">
+                        <select id="download-template-select" class="form-control select2" data-placeholder="Cari Report">
+                            <option value="">Cari Report</option>
                             @foreach($downloadTemplates as $key => $template)
                                 <option value="{{ $key }}" data-filename="{{ $template['filename'] }}">{{ $template['label'] }}</option>
                             @endforeach
@@ -24,10 +25,11 @@
                     </div>
                     <button type="button"
                        id="btn-download-template"
-                       class="btn import-template-button disabled"
+                       class="btn btn-primary disabled"
                        aria-disabled="true"
-                       data-route-template="{{ route('import.template') }}">
-                        <i class="fas fa-file-download mr-2"></i> Unduh Template
+                       data-route-template="{{ route('import.template') }}"
+                       style="border-radius: 12px; font-weight: 600; padding: 0.55rem 1.25rem;">
+                        Unduh
                     </button>
                 </div>
             </div>
@@ -37,136 +39,132 @@
 
 <div id="download-toast-stack" class="download-toast-stack" aria-live="polite" aria-atomic="true"></div>
 
-<div class="card import-upload-card border-0 mb-4">
-    <div class="import-upload-card__header border-0">
-        <div class="d-flex align-items-center justify-content-between flex-wrap">
-            <div>
-                <span class="import-upload-card__eyebrow">Import Data</span>
-                <h5 class="card-title font-weight-bold text-dark mb-1" style="font-size: 1.25rem;">
-                    <i class="fas fa-cloud-upload-alt text-primary mr-2"></i> Upload Data Report
-                </h5>
-                <p class="import-upload-card__subtitle mb-0" style="font-size: 0.9rem;">Unggah file sesuai format report yang ditentukan.</p>
-            </div>
-        </div>
+<div class="card border-0 mb-4 shadow-sm" style="border-radius: 20px; background: #ffffff; overflow: hidden;">
+    <div class="card-header border-0 bg-transparent px-4 pt-4 pb-0">
+        <h5 class="font-weight-bold text-dark mb-0" style="font-size: 1.25rem;">
+            <i class="fas fa-cloud-upload-alt text-primary mr-2"></i> Upload Data
+        </h5>
     </div>
 
     <form id="form-import" method="POST" action="{{ route('import.upload') }}" enctype="multipart/form-data" data-prepare-preview-url="" data-upload-limits-url="{{ route('import.upload-limits') }}" data-chunked-upload="" data-chunk-init-url="" data-chunk-upload-url="" data-chunk-finalize-url="">
         @csrf
 
-        <div class="card-body import-upload-card__body">
-            <div class="import-report-summary mb-4">
-                <div class="import-report-summary__item">
-                    <span class="import-report-summary__label">Report aktif</span>
-                    <strong id="summary-report-name">Belum dipilih</strong>
+        <div class="card-body p-4">
+            <!-- Simplified Summary Bar -->
+            <div class="d-flex flex-wrap align-items-center mb-4 p-3" style="background: #f8fafc; border-radius: 16px; gap: 1.5rem; border: 1px solid #f1f5f9;">
+                <div>
+                    <small class="text-muted text-uppercase font-weight-bold" style="font-size: 0.7rem; letter-spacing: 0.5px;">Report</small>
+                    <div id="summary-report-name" class="font-weight-bold text-dark" style="font-size: 0.95rem;">-</div>
                 </div>
-                <div class="import-report-summary__item">
-                    <span class="import-report-summary__label">Format</span>
-                    <strong id="summary-upload-type">RAR</strong>
+                <div class="border-left" style="height: 30px; border-color: #e2e8f0 !important;"></div>
+                <div>
+                    <small class="text-muted text-uppercase font-weight-bold" style="font-size: 0.7rem; letter-spacing: 0.5px;">Format</small>
+                    <div id="summary-upload-type" class="font-weight-bold text-primary" style="font-size: 0.95rem;">-</div>
                 </div>
-                <div class="import-report-summary__item">
-                    <span class="import-report-summary__label">Periode</span>
-                    <strong id="summary-periode-status">Otomatis</strong>
+                <div class="border-left" style="height: 30px; border-color: #e2e8f0 !important;"></div>
+                <div>
+                    <small class="text-muted text-uppercase font-weight-bold" style="font-size: 0.7rem; letter-spacing: 0.5px;">Periode</small>
+                    <div id="summary-periode-status" class="font-weight-bold text-dark" style="font-size: 0.95rem;">Auto</div>
                 </div>
-                <div class="import-report-summary__item">
-                    <span class="import-report-summary__label">Target</span>
-                    <strong id="summary-target-table">-</strong>
-                </div>
-            </div>
-
-            <div class="form-group">
-                <label class="font-weight-bold text-dark">Pilih Report</label>
-                <select name="id_report" class="form-control select2" required>
-                    <option value="" data-name="" data-table="">-- Pilih Report --</option>
-                    @foreach($reports as $report)
-                        <option value="{{ $report->id_report }}"
-                                data-name="{{ strtolower($report->nama_report ?? '') }}"
-                                data-table="{{ strtolower($report->table_name ?? '') }}"
-                                data-import-controller="{{ $report->import_controller ?? '' }}"
-                                data-manual-periode="{{ (int) ($report->requires_manual_periode ?? 0) }}"
-                                data-manual-periode-type="{{ $report->manual_periode_type ?? '' }}"
-                                data-manual-periode-label="{{ $report->manual_periode_label ?? '' }}"
-                                data-manual-periode-help="{{ $report->manual_periode_help ?? '' }}">
-                            {{ $report->nama_report }}
-                        </option>
-                    @endforeach
-                </select>
-            </div>
-
-            <div id="form-periode" class="form-group" style="display: none;">
-                <label id="periode-label" class="font-weight-bold text-dark">
-                    <i class="fas fa-calendar-alt text-primary mr-1"></i> Periode
-                </label>
-                <input type="date" id="periode_input" name="periode" class="form-control">
-                <small id="periode-help" class="text-muted mt-2 d-block">Wajib untuk report tertentu.</small>
-            </div>
-
-            <div id="form-kanca" class="form-group" style="display: none;">
-                <label id="kanca-label" class="font-weight-bold text-dark">
-                    <i class="fas fa-building text-primary mr-1"></i> Kanca
-                </label>
-                <select id="kanca_input" name="kanca_manual" class="form-control">
-                    <option value="">-- Pilih Kanca --</option>
-                    <option value="KC Madiun">KC Madiun</option>
-                    <option value="KC Magetan">KC Magetan</option>
-                    <option value="KC Ngawi">KC Ngawi</option>
-                    <option value="KC Ponorogo">KC Ponorogo</option>
-                </select>
-                <small id="kanca-help" class="text-muted mt-2 d-block">Nilai ini akan dipakai untuk kolom `kanca` saat import RKA.</small>
-            </div>
-
-            <div id="form-rar" class="form-group">
-                <label class="font-weight-bold text-dark">Upload File (.rar)</label>
-                <div class="custom-file">
-                    <input type="file" id="file_rar" name="file" class="custom-file-input" accept=".rar" required>
-                    <label class="custom-file-label" for="file_rar">Pilih file .rar...</label>
-                </div>
-                <small class="text-muted mt-2 d-block">File akan diproses otomatis.</small>
-            </div>
-
-            <div id="form-excel" class="form-group" style="display: none;">
-                <label id="excel-label" class="font-weight-bold text-dark">
-                    <i class="fas fa-file-excel text-success mr-1"></i> Upload Excel (.xlsx, .xls)
-                </label>
-                <input type="file" id="file_excel" name="file" class="form-control" accept=".xlsx,.xls">
-                <small class="text-muted mt-2 d-block" id="excel-help">Format .xlsx dan .xls didukung.</small>
-                <small class="text-muted mt-1 d-block" id="upload-limit-hint">Format .xlsx dan .xls didukung.</small>
-            </div>
-
-            <div id="form-csv" class="form-group" style="display: none;">
-                <label id="csv-label" class="font-weight-bold text-dark">
-                    <i class="fas fa-file-csv text-info mr-1"></i> Upload CSV (.csv, .txt)
-                </label>
-                <input type="file" id="file_csv" name="file" class="form-control" accept=".csv,.txt">
-                <small id="csv-help" class="text-muted mt-2 d-block">Gunakan CSV sesuai report.</small>
-            </div>
-
-            <div id="import-dropzone" class="import-dropzone" tabindex="0" role="button" aria-label="Area upload file">
-                <div class="import-dropzone__icon">
-                    <i class="fas fa-cloud-upload-alt"></i>
-                </div>
-                <div class="import-dropzone__content">
-                    <div id="import-dropzone-title" class="import-dropzone__title">Tarik file ke sini atau klik untuk memilih</div>
-                    <div id="import-dropzone-text" class="import-dropzone__text">Input aktif akan otomatis mengikuti report yang dipilih.</div>
+                <div class="border-left" style="height: 30px; border-color: #e2e8f0 !important;"></div>
+                <div>
+                    <small class="text-muted text-uppercase font-weight-bold" style="font-size: 0.7rem; letter-spacing: 0.5px;">Target Tabel</small>
+                    <div id="summary-target-table" class="font-weight-bold text-dark" style="font-size: 0.95rem;">-</div>
                 </div>
             </div>
 
-            <div id="import-file-preview" class="import-file-preview d-none">
-                <div class="import-file-preview__icon">
-                    <i class="fas fa-file-alt"></i>
-                </div>
-                <div class="import-file-preview__body">
-                    <div id="import-file-name" class="import-file-preview__name">-</div>
-                    <div class="import-file-preview__meta">
-                        <span id="import-file-size">0 KB</span>
-                        <span id="import-file-extension">-</span>
+            <div class="row">
+                <!-- Left Column: Settings -->
+                <div class="col-lg-5 pr-lg-4 mb-4 mb-lg-0">
+                    <div class="form-group mb-4">
+                        <label class="font-weight-bold text-dark mb-2">Pilih Report</label>
+                        <select name="id_report" class="form-control select2" required>
+                            <option value="" data-name="" data-table="">-- Pilih Report --</option>
+                            @foreach($reports as $report)
+                                <option value="{{ $report->id_report }}"
+                                        data-name="{{ strtolower($report->nama_report ?? '') }}"
+                                        data-table="{{ strtolower($report->table_name ?? '') }}"
+                                        data-import-controller="{{ $report->import_controller ?? '' }}"
+                                        data-manual-periode="{{ (int) ($report->requires_manual_periode ?? 0) }}"
+                                        data-manual-periode-type="{{ $report->manual_periode_type ?? '' }}"
+                                        data-manual-periode-label="{{ $report->manual_periode_label ?? '' }}"
+                                        data-manual-periode-help="{{ $report->manual_periode_help ?? '' }}">
+                                    {{ $report->nama_report }}
+                                </option>
+                            @endforeach
+                        </select>
+                    </div>
+
+                    <div id="form-periode" class="form-group mb-4" style="display: none;">
+                        <label id="periode-label" class="font-weight-bold text-dark mb-2">Periode</label>
+                        <input type="date" id="periode_input" name="periode" class="form-control" style="border-radius: 12px; padding: 0.6rem 1rem; border: 1px solid #cbd5e1;">
+                        <small id="periode-help" class="d-none"></small>
+                    </div>
+
+                    <div id="form-kanca" class="form-group mb-0" style="display: none;">
+                        <label id="kanca-label" class="font-weight-bold text-dark mb-2">Kanca</label>
+                        <select id="kanca_input" name="kanca_manual" class="form-control" style="border-radius: 12px; border: 1px solid #cbd5e1;">
+                            <option value="">-- Pilih Kanca --</option>
+                            <option value="KC Madiun">KC Madiun</option>
+                            <option value="KC Magetan">KC Magetan</option>
+                            <option value="KC Ngawi">KC Ngawi</option>
+                            <option value="KC Ponorogo">KC Ponorogo</option>
+                        </select>
+                        <small id="kanca-help" class="d-none"></small>
                     </div>
                 </div>
-                <button type="button" id="import-file-clear" class="import-file-preview__clear">Ganti File</button>
+
+                <!-- Right Column: File Upload -->
+                <div class="col-lg-7 pl-lg-4" style="border-left: 1px dashed #e2e8f0;">
+                    <!-- Hidden native inputs kept for JS logic -->
+                    <div id="form-rar" class="form-group mb-3 d-none">
+                        <input type="file" id="file_rar" name="file" class="custom-file-input" accept=".rar" required>
+                    </div>
+                    <div id="form-excel" class="form-group mb-3" style="display: none;">
+                        <label id="excel-label" class="d-none"></label>
+                        <input type="file" id="file_excel" name="file" class="form-control d-none" accept=".xlsx,.xls">
+                        <small id="excel-help" class="d-none"></small>
+                        <small id="upload-limit-hint" class="d-none"></small>
+                    </div>
+                    <div id="form-csv" class="form-group mb-3" style="display: none;">
+                        <label id="csv-label" class="d-none"></label>
+                        <input type="file" id="file_csv" name="file" class="form-control d-none" accept=".csv,.txt">
+                        <small id="csv-help" class="d-none"></small>
+                    </div>
+
+                    <!-- Modern Dropzone area -->
+                    <div id="import-dropzone" class="import-dropzone d-flex flex-column align-items-center justify-content-center" tabindex="0" role="button" aria-label="Area upload file" style="border: 2px dashed #cbd5e1; border-radius: 20px; padding: 2.5rem 1.5rem; background: #f8fafc; cursor: pointer; transition: all 0.2s; min-height: 200px;">
+                        <div class="import-dropzone__icon mb-3" style="font-size: 2.5rem; color: #94a3b8;">
+                            <i class="fas fa-cloud-upload-alt"></i>
+                        </div>
+                        <div class="import-dropzone__content text-center">
+                            <div id="import-dropzone-title" class="import-dropzone__title font-weight-bold text-dark mb-1" style="font-size: 1.1rem;">Pilih file atau tarik ke sini</div>
+                            <div id="import-dropzone-text" class="import-dropzone__text text-muted" style="font-size: 0.9rem;">File otomatis disesuaikan dengan report</div>
+                        </div>
+                    </div>
+
+                    <div id="import-file-preview" class="import-file-preview d-none align-items-center mt-3" style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 16px; padding: 1.25rem;">
+                        <div class="import-file-preview__icon text-primary mr-3" style="font-size: 1.75rem;">
+                            <i class="fas fa-file-excel"></i>
+                        </div>
+                        <div class="import-file-preview__body flex-grow-1" style="min-width: 0;">
+                            <div id="import-file-name" class="import-file-preview__name font-weight-bold text-dark mb-1 text-truncate" style="font-size: 0.95rem;">-</div>
+                            <div class="import-file-preview__meta text-muted d-flex align-items-center gap-2" style="font-size: 0.85rem; gap: 8px;">
+                                <span id="import-file-size" class="font-weight-bold text-secondary">0 KB</span>
+                                <span id="import-file-extension" class="badge badge-light border text-uppercase">-</span>
+                            </div>
+                        </div>
+                        <button type="button" id="import-file-clear" class="btn btn-sm btn-light text-danger ml-3" style="border-radius: 10px; padding: 0.4rem 0.6rem;" title="Ganti File">
+                            <i class="fas fa-trash-alt"></i>
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
 
-        <div class="import-upload-card__footer border-0">
-            <button type="submit" id="btn-submit" class="btn btn-primary font-weight-bold import-upload-card__submit">
+        <div class="card-footer bg-transparent border-0 px-4 pb-4 pt-0 text-right">
+            <hr class="mt-0 mb-4" style="border-top: 1px solid #f1f5f9;">
+            <button type="submit" id="btn-submit" class="btn btn-primary font-weight-bold import-upload-card__submit" style="border-radius: 14px; padding: 0.75rem 2rem; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);">
                 <i class="fas fa-file-archive mr-2"></i> Upload Sekarang
             </button>
         </div>
@@ -241,25 +239,22 @@
 
 <div id="queue-monitor-container" data-status-url="{{ route('import.queue-status') }}"></div>
 
-<div class="rm-panel" id="report-management-card"
+<div class="card border-0 mb-4 shadow-sm mt-4" id="report-management-card" style="border-radius: 20px; background: #ffffff; overflow: hidden;"
      data-fetch-url="{{ route('import.report-management.data') }}"
      data-delete-url="{{ route('import.report-management.delete') }}">
-    <div class="rm-header">
-        <span class="rm-eyebrow">Kelola Report</span>
-        <h5 class="font-weight-bold text-dark mb-1" style="font-size: 1.25rem;">
+    <div class="card-header border-0 bg-transparent px-4 pt-4 pb-0">
+        <h5 class="font-weight-bold text-dark mb-0" style="font-size: 1.25rem;">
             <i class="fas fa-database text-danger mr-2"></i> Kelola Data Report
         </h5>
-        <p class="text-muted mb-0" style="font-size: 0.9rem;">Filter report lalu hapus data yang tidak diperlukan.</p>
     </div>
     
-    <div class="card-body" style="padding: 1.75rem;">
-        <!-- Baris 1: Grid Proporsional -->
-        <div class="row mb-4 align-items-stretch">
-            <div class="col-lg-8 mb-3 mb-lg-0">
-                <div class="rm-card-inner">
-                    <span class="rm-card-eyebrow rm-card-eyebrow--source">Sumber Data</span>
-                    <label class="font-weight-bold text-dark mb-2" style="font-size: 0.95rem;" for="management-report-select">Pilih Report</label>
-                    <select id="management-report-select" class="form-control select2">
+    <div class="card-body p-4">
+        <div class="row align-items-end">
+            <!-- Pilihan Report -->
+            <div class="col-lg-8 mb-4 mb-lg-0">
+                <div class="form-group mb-0">
+                    <label class="font-weight-bold text-dark mb-2" for="management-report-select" style="font-size: 0.95rem;">Pilih Report</label>
+                    <select id="management-report-select" class="form-control select2" style="border-radius: 12px;">
                         <option value="">-- Pilih Report --</option>
                         @foreach($reports as $report)
                             <option value="{{ $report->id_report }}" @if(strpos(strtolower($report->nama_report), 'simpanan multipn') !== false) selected @endif>{{ $report->nama_report }} ({{ $report->table_name }})</option>
@@ -267,97 +262,44 @@
                     </select>
                 </div>
             </div>
-            <div class="col-lg-4">
-                <div class="rm-card-inner rm-card-inner--sync">
-                    <div>
-                        <span class="rm-card-eyebrow rm-card-eyebrow--sync">Sinkronisasi Snapshot</span>
-                        <div class="custom-control custom-switch mb-1 mt-2">
-                            <input type="checkbox" class="custom-control-input" id="management-rebuild-force">
-                            <label class="custom-control-label font-weight-bold text-dark" for="management-rebuild-force" style="cursor: pointer; font-size: 0.95rem; padding-top: 2px;">Mulai dari awal</label>
-                        </div>
-                        <p class="text-muted mb-0" style="font-size: 0.85rem; line-height: 1.5;">Bangun ulang seluruh snapshot untuk semua report dengan mode penuh bila diperlukan.</p>
+
+            <!-- Sinkronisasi Snapshot -->
+            <div class="col-lg-4 pl-lg-4">
+                <div class="d-flex flex-column h-100 justify-content-end p-3" style="background: #f8fafc; border-radius: 16px; border: 1px solid #f1f5f9;">
+                    <div class="custom-control custom-switch mb-2">
+                        <input type="checkbox" class="custom-control-input" id="management-rebuild-force">
+                        <label class="custom-control-label font-weight-bold text-dark" for="management-rebuild-force" style="cursor: pointer; padding-top: 2px;">Mode Sinkronisasi Penuh</label>
                     </div>
-                    <button type="button" id="btn-management-rebuild" class="rm-btn rm-btn-secondary-outline">
+                    <button type="button" id="btn-management-rebuild" class="btn btn-outline-primary btn-block" style="border-radius: 12px; font-weight: 600;">
                         <i class="fas fa-sync-alt mr-2"></i> Refresh Snapshot
                     </button>
                 </div>
             </div>
         </div>
 
-        <!-- Baris 2: Kartu Statistik Grid -->
-        <div class="row mb-4 align-items-stretch">
-            <div class="col-md-4 mb-3 mb-md-0">
-                <div class="rm-stat-card">
-                    <div class="rm-stat-icon" style="background: rgba(37,99,235,0.1); color: #2563eb;"><i class="fas fa-file-alt"></i></div>
-                    <div class="d-flex flex-column">
-                        <small style="color: #64748b; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 0.25rem;">Report Aktif</small>
-                        <strong style="color: #0f172a; font-size: 1.1rem; font-weight: 700; line-height: 1.2;">Simpanan MultiPN</strong>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-4 mb-3 mb-md-0">
-                <div class="rm-stat-card">
-                    <div class="rm-stat-icon" style="background: rgba(14,165,233,0.1); color: #0ea5e9;"><i class="fas fa-users"></i></div>
-                    <div class="d-flex flex-column">
-                        <small style="color: #64748b; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 0.25rem;">Jumlah Grup</small>
-                        <strong style="color: #0f172a; font-size: 1.1rem; font-weight: 700; line-height: 1.2;">12</strong>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-4">
-                <div class="rm-stat-card">
-                    <div class="rm-stat-icon" style="background: rgba(16,185,129,0.1); color: #10b981;"><i class="fas fa-table"></i></div>
-                    <div class="d-flex flex-column">
-                        <small style="color: #64748b; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 0.25rem;">Grand Total Baris</small>
-                        <strong style="color: #0f172a; font-size: 1.1rem; font-weight: 700; line-height: 1.2;">7.800.927</strong>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Baris 3: Tombol Aksi yang Diselaraskan -->
-        <div class="rm-action-bar">
-            <button type="button" id="btn-management-filter" class="rm-btn rm-btn-primary">
+        <div class="d-flex flex-wrap align-items-center gap-2 mt-4 pt-3" style="gap: 12px;">
+            <button type="button" id="btn-management-filter" class="btn btn-primary" style="border-radius: 12px; font-weight: 600; padding: 0.6rem 1.5rem;">
                 <i class="fas fa-filter mr-2"></i> Tampilkan Data
             </button>
-            <button type="button" id="btn-management-deduplicate" class="rm-btn rm-btn-danger-outline">
+            <button type="button" id="btn-management-deduplicate" class="btn btn-outline-danger" style="border-radius: 12px; font-weight: 600; padding: 0.6rem 1.5rem;">
                 <i class="fas fa-clone mr-2"></i> Hapus Duplikat
             </button>
         </div>
 
-        <!-- Baris 4: Progress Block yang Terintegrasi -->
-        <div class="rm-progress">
-            <div class="d-flex justify-content-between align-items-start mb-3">
-                <div>
-                    <div style="font-size: 0.75rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #2563eb; margin-bottom: 0.25rem;">Realtime Progress</div>
-                    <div style="font-size: 1rem; font-weight: 700; color: #0f172a;">Memuat data report management...</div>
-                </div>
-                <div class="rm-progress-badge">SELESAI</div>
-            </div>
-            <div class="rm-progress-bar">
-                <div class="rm-progress-fill"></div>
-            </div>
-            <div class="d-flex justify-content-between align-items-center mb-2">
-                <div style="font-weight: 700; color: #0f172a; font-size: 0.95rem;">100%</div>
-                <div style="color: #64748b; font-size: 0.85rem; font-weight: 600;">4 / 4 tahap</div>
-            </div>
-            <div style="color: #059669; font-size: 0.9rem; font-weight: 600; margin-bottom: 0.25rem;">Data report management selesai dimuat.</div>
-            <div style="color: #64748b; font-size: 0.85rem; font-weight: 500;">12 grup, 7.800.927 baris sumber, halaman 1 siap ditampilkan.</div>
-        </div>
-
-        <div class="table-responsive mt-3 d-none">
-            <table class="table table-sm table-bordered mb-0">
-                <thead class="thead-light">
+        <!-- Hidden but existing elements so JS logic does not crash. Dummy elements removed safely. -->
+        <div class="table-responsive mt-4" style="border-radius: 12px; border: 1px solid #e2e8f0;">
+            <table class="table table-hover mb-0" style="overflow: hidden; border-collapse: collapse;">
+                <thead style="background: #f8fafc;">
                     <tr>
-                        <th style="width: 25%;">Periode</th>
-                        <th style="width: 35%;">Kanca</th>
-                        <th style="width: 20%;" class="text-right">Jumlah Baris</th>
-                        <th style="width: 20%;" class="text-center">Aksi</th>
+                        <th style="width: 25%; font-weight: 600; color: #475569; border-bottom: 2px solid #e2e8f0;">Periode</th>
+                        <th style="width: 35%; font-weight: 600; color: #475569; border-bottom: 2px solid #e2e8f0;">Kanca</th>
+                        <th style="width: 20%; font-weight: 600; color: #475569; border-bottom: 2px solid #e2e8f0;" class="text-right">Jumlah Baris</th>
+                        <th style="width: 20%; font-weight: 600; color: #475569; border-bottom: 2px solid #e2e8f0;" class="text-center">Aksi</th>
                     </tr>
                 </thead>
                 <tbody id="management-table-body">
                     <tr>
-                        <td colspan="4" class="text-center text-muted">Pilih report lalu klik Filter.</td>
+                        <td colspan="4" class="text-center text-muted py-4">Pilih report lalu klik Tampilkan Data.</td>
                     </tr>
                 </tbody>
             </table>

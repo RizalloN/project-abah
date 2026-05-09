@@ -147,4 +147,55 @@ class SnapshotBatchAggregatorTest extends TestCase
                 && $job->requests[0]['source'] === 'second';
         });
     }
+
+    public function test_flush_batch_compacts_duplicate_snapshot_requests_even_when_rebuild_ids_differ(): void
+    {
+        Cache::flush();
+        Bus::fake();
+
+        Cache::put('snapshot:batch:simpanan_multipn:2026-04-30', [
+            'batch_key' => 'simpanan_multipn:2026-04-30',
+            'table_name' => 'simpanan_multipn',
+            'period_hint' => '2026-04-30',
+            'first_requested_at' => now()->toIso8601String(),
+            'last_updated_at' => now()->toIso8601String(),
+            'request_count' => 2,
+            'requests' => [
+                [
+                    'table_name' => 'simpanan_multipn',
+                    'period_hint' => '2026-04-30',
+                    'job_id' => 10,
+                    'source' => 'first',
+                    'rebuild_id' => 'rebuild-old',
+                    'requested_at' => now()->subSecond()->toIso8601String(),
+                ],
+                [
+                    'table_name' => 'simpanan_multipn',
+                    'period_hint' => '2026-04-30',
+                    'job_id' => 11,
+                    'source' => 'second',
+                    'rebuild_id' => 'rebuild-new',
+                    'requested_at' => now()->toIso8601String(),
+                ],
+            ],
+        ], now()->addMinute());
+        Cache::put('snapshot:batch:active_keys', ['simpanan_multipn:2026-04-30'], now()->addMinute());
+
+        $importProgressService = Mockery::mock(ImportProgressService::class);
+        $importProgressService->shouldReceive('hasActiveProcessingJobs')
+            ->once()
+            ->andReturnFalse();
+        $this->app->instance(ImportProgressService::class, $importProgressService);
+
+        $result = (new SnapshotBatchAggregator())->flushBatch('simpanan_multipn:2026-04-30');
+
+        $this->assertTrue($result['flushed']);
+        $this->assertSame(1, $result['request_count']);
+        Bus::assertDispatched(ExecuteBatchedSnapshotJob::class, function (ExecuteBatchedSnapshotJob $job): bool {
+            return count($job->requests) === 1
+                && $job->requests[0]['job_id'] === 11
+                && $job->requests[0]['source'] === 'second'
+                && $job->requests[0]['rebuild_id'] === 'rebuild-new';
+        });
+    }
 }

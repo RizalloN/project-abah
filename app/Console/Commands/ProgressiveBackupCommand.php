@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Services\DatabaseBackupService;
 use App\Support\DatabaseBackupStatusStore;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 
@@ -13,12 +14,30 @@ class ProgressiveBackupCommand extends Command
     protected $signature = 'db:backup-progressive {backupId}';
     protected $description = 'Perform a database backup with progress tracking in Cache';
 
-    public function handle(DatabaseBackupService $backupService)
+    public function handle(DatabaseBackupService $backupService): void
     {
+        set_time_limit(0);
+        ini_set('memory_limit', '-1');
+
         $backupId = $this->argument('backupId');
-        $cacheKey = "backup_progress:{$backupId}";
         $config = $backupService->getDatabaseConfig();
         $database = $config['database'];
+        $logPath = storage_path("logs/database-backup-{$backupId}.log");
+
+        // Register shutdown handler so a killed PHP process still marks backup as failed
+        register_shutdown_function(function () use ($backupId, $logPath): void {
+            $status = DatabaseBackupStatusStore::get($backupId);
+            if (is_array($status) && in_array($status['status'] ?? null, ['starting', 'processing'], true)) {
+                $error = error_get_last();
+                $msg = $error ? $error['message'] : 'Proses backup dihentikan secara tidak terduga.';
+                DatabaseBackupStatusStore::put($backupId, [
+                    'status' => 'failed',
+                    'message' => $msg,
+                    'updated_at' => now()->timestamp,
+                ]);
+                Log::error("ProgressiveBackupCommand [{$backupId}] terminated unexpectedly: {$msg}");
+            }
+        });
 
         try {
             $backupDirectory = storage_path('app/private/database_backups');
@@ -26,7 +45,6 @@ class ProgressiveBackupCommand extends Command
                 File::makeDirectory($backupDirectory, 0755, true);
             }
 
-            // Normalize path separators for Windows
             $backupDirectory = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $backupDirectory);
 
             $baseName = sprintf(
@@ -35,25 +53,21 @@ class ProgressiveBackupCommand extends Command
                 now()->format('Ymd_His')
             );
 
-            // On Windows, always use .sql first, then compress post-process if gzip available
             $filename = $baseName . '.sql';
             $absolutePath = $backupDirectory . DIRECTORY_SEPARATOR . $filename;
-            $gzipPath = $this->resolveGzipPath();
 
             $this->putStatus($backupId, [
                 'status' => 'processing',
                 'progress_percent' => 2,
                 'current_table_index' => 0,
                 'total_tables' => 1,
-                'current_table' => 'Full Database (Optimized Single-Pass)',
-                'message' => 'Memulai backup database dengan single-pass optimization...',
+                'current_table' => 'Full Database (Single-Pass)',
+                'message' => 'Memulai backup database...',
                 'updated_at' => now()->timestamp,
                 'backup_file' => $absolutePath,
-                'compression_enabled' => $gzipPath !== '',
             ]);
 
-            // Single-pass optimized backup with compression
-            $this->performOptimizedBackup($backupService, $cacheKey, $absolutePath, $database);
+            $this->performOptimizedBackup($backupService, $backupId, $absolutePath, $database, $logPath);
 
             if (is_file($absolutePath . '.gz')) {
                 $absolutePath .= '.gz';
@@ -72,7 +86,7 @@ class ProgressiveBackupCommand extends Command
                     'relative_path' => 'private/database_backups/' . $actualFilename,
                     'download_url' => route('file-management.download', ['path' => 'private/database_backups/' . $actualFilename]),
                     'size' => is_file($absolutePath) ? filesize($absolutePath) : 0,
-                    'size_human' => is_file($absolutePath) ? $this->formatBytes(filesize($absolutePath)) : '0 B',
+                    'size_human' => is_file($absolutePath) ? $this->formatBytes((int) filesize($absolutePath)) : '0 B',
                 ],
             ]);
 
@@ -83,135 +97,143 @@ class ProgressiveBackupCommand extends Command
                 'message' => $e->getMessage(),
                 'updated_at' => now()->timestamp,
             ]);
-            
+
             if (isset($absolutePath) && is_file($absolutePath)) {
                 @unlink($absolutePath);
             }
         }
     }
 
-    private function performOptimizedBackup(DatabaseBackupService $backupService, string $cacheKey, string $outputPath, string $database): void
-    {
-        // Start backup process in background
-        $processInfo = $this->startBackupProcess($backupService, $outputPath);
+    private function performOptimizedBackup(
+        DatabaseBackupService $backupService,
+        string $backupId,
+        string $outputPath,
+        string $database,
+        string $logPath
+    ): void {
+        // Estimate database size in bytes for accurate progress reporting
+        $estimatedBytes = $this->estimateDatabaseBytes($database);
+
+        $processInfo = $this->startBackupProcess($backupService, $outputPath, $logPath);
 
         if (!is_resource($processInfo['process'])) {
             throw new \RuntimeException('Gagal memulai proses backup.');
         }
 
         $backupProcess = $processInfo['process'];
-        $stderrPipe = $processInfo['stderr'] ?? null;
-
-        // Monitor progress by watching output file size
-        $lastSize = 0;
-        $noProgressCount = 0;
-        $maxNoProgressIterations = 120; // ~2 minutes with 1s checks
         $loopCount = 0;
+        $lastSize = 0;
+        $noProgressSeconds = 0;
+        // Allow up to 10 minutes without file growth before considering it stalled
+        $maxStallSeconds = 600;
 
         try {
             while (true) {
                 $loopCount++;
-                if ($loopCount % 20 === 0) {
-                    $currentSize = @filesize($outputPath) ?: 0;
-                    $this->putStatusFromCacheKey($cacheKey, [
+
+                $status = proc_get_status($backupProcess);
+                if (!$status['running']) {
+                    break;
+                }
+
+                clearstatcache(true, $outputPath);
+                $currentSize = is_file($outputPath) ? (int) @filesize($outputPath) : 0;
+
+                if ($currentSize > $lastSize) {
+                    $lastSize = $currentSize;
+                    $noProgressSeconds = 0;
+                } else {
+                    $noProgressSeconds++;
+                }
+
+                // If file is not growing for maxStallSeconds, terminate mysqldump
+                if ($noProgressSeconds > $maxStallSeconds && $lastSize === 0) {
+                    @proc_terminate($backupProcess);
+                    throw new \RuntimeException(
+                        'mysqldump tidak menghasilkan output selama ' . $maxStallSeconds . ' detik. Backup dibatalkan.'
+                    );
+                }
+
+                if ($loopCount % 4 === 0) {
+                    $progress = $estimatedBytes > 0
+                        ? min(95, 2 + (int) (($currentSize / $estimatedBytes) * 93))
+                        : min(95, 2 + (int) (log(max(1, $currentSize / 1024 / 1024) + 1, 2) * 8));
+
+                    $this->putStatus($backupId, [
                         'status' => 'processing',
-                        'progress_percent' => min(95, 2 + (($currentSize % 100000) / 100000) * 93),
+                        'progress_percent' => $progress,
                         'current_table_index' => 0,
                         'total_tables' => 1,
-                        'current_table' => 'Full Database (Optimized Single-Pass)',
+                        'current_table' => 'Full Database (Single-Pass)',
                         'message' => sprintf('Mencadangkan database... (%s)', $this->formatBytes($currentSize)),
                         'updated_at' => now()->timestamp,
                         'backup_file' => $outputPath,
                     ]);
                 }
 
-                // Check process status
-                $status = proc_get_status($backupProcess);
-                if (!$status['running']) {
-                    break;
-                }
-
-                // Monitor file size for progress (every 20 iterations)
-                if (is_file($outputPath)) {
-                    $currentSize = @filesize($outputPath);
-                    if ($currentSize !== false) {
-                        $progress = min(95, 2 + (($currentSize % 100000) / 100000) * 93);
-
-                        if ($currentSize > $lastSize) {
-                            $lastSize = $currentSize;
-                            $noProgressCount = 0;
-                        } else {
-                            $noProgressCount++;
-                        }
-
-                        // Update cache with progress
-                        if ($loopCount % 20 === 0) {
-                            $this->putStatusFromCacheKey($cacheKey, [
-                                'status' => 'processing',
-                                'progress_percent' => (int) $progress,
-                                'current_table_index' => 0,
-                                'total_tables' => 1,
-                                'current_table' => 'Full Database (Optimized Single-Pass)',
-                                'message' => sprintf(
-                                    'Mencadangkan database... (%s)',
-                                    $this->formatBytes($currentSize)
-                                ),
-                                'updated_at' => now()->timestamp,
-                                'backup_file' => $outputPath,
-                            ]);
-                        }
-
-                        // If size hasn't changed for too long, don't fail - just keep waiting
-                        if ($noProgressCount > $maxNoProgressIterations) {
-                            $noProgressCount = 0; // Reset counter
-                        }
-                    }
-                }
-
-                usleep(500000); // Check every 0.5 seconds
+                sleep(1);
             }
 
-            // Wait for final output
-            $stderr = is_resource($stderrPipe) ? stream_get_contents($stderrPipe) : '';
             $exitCode = proc_close($backupProcess);
 
+            // On Windows with bypass_shell, proc_close exit code may be unreliable.
+            // Cross-check: if exit code != 0, always treat as failure.
+            // If exit code == 0 but file is suspiciously small, log a warning.
             if ($exitCode !== 0) {
-                throw new \RuntimeException('mysqldump gagal: ' . ($stderr ?: 'Unknown error'));
+                $stderr = is_file($logPath) ? (string) @file_get_contents($logPath) : '';
+                if (is_file($outputPath)) {
+                    @unlink($outputPath);
+                }
+                throw new \RuntimeException('mysqldump gagal (exit ' . $exitCode . '): ' . ($stderr ?: 'Lihat log di ' . $logPath));
             }
 
-            // Post-compression if gzip available and output is .sql (not .sql.gz)
+            // Validate the dump is not empty
+            if (!is_file($outputPath) || (int) @filesize($outputPath) === 0) {
+                throw new \RuntimeException('mysqldump selesai tetapi file backup kosong atau tidak ditemukan.');
+            }
+
+            // Post-compression if gzip available
             if (!str_ends_with($outputPath, '.gz')) {
                 $gzipPath = $this->resolveGzipPath();
                 if ($gzipPath !== '' && is_file($outputPath)) {
+                    $this->putStatus($backupId, [
+                        'status' => 'processing',
+                        'progress_percent' => 96,
+                        'current_table_index' => 0,
+                        'total_tables' => 1,
+                        'message' => sprintf('Mengompres file backup (%s)...', $this->formatBytes((int) filesize($outputPath))),
+                        'updated_at' => now()->timestamp,
+                        'backup_file' => $outputPath,
+                    ]);
+
                     try {
                         $this->compressFileWithGzip($outputPath, $gzipPath);
                     } catch (\Exception $e) {
-                        Log::warning("Gzip compression failed, leaving file uncompressed: " . $e->getMessage());
+                        Log::warning("Gzip compression failed, keeping uncompressed: " . $e->getMessage());
                     }
                 }
             }
         } finally {
-            // Cleanup pipes
-            if (is_resource($stderrPipe)) {
-                fclose($stderrPipe);
+            // Ensure process is closed if still running
+            if (is_resource($backupProcess) && ($processInfo['process'] ?? null) === $backupProcess) {
+                @proc_terminate($backupProcess);
+                @proc_close($backupProcess);
             }
         }
     }
 
-    private function startBackupProcess(DatabaseBackupService $backupService, string $outputPath): array
+    private function startBackupProcess(DatabaseBackupService $backupService, string $outputPath, string $logPath): array
     {
         $config = $backupService->getDatabaseConfig();
         $database = $config['database'];
 
-        // Build optimized single-pass command
-        $command = $this->buildOptimizedCommand($config, $database);
+        $command = $this->buildOptimizedCommand($config, $database, $outputPath);
         $environment = $this->buildEnvironment($config);
 
-        // On Windows: pipe through separate gzip process or write uncompressed
         if (strtoupper(substr(PHP_OS_FAMILY, 0, 3)) === 'WIN') {
-            return $this->startWindowsBackupProcess($command, $outputPath, $environment);
+            return $this->startWindowsBackupProcess($command, $outputPath, $environment, $logPath);
         } else {
-            return $this->startUnixBackupProcess($command, $outputPath, $environment);
+            return $this->startUnixBackupProcess($command, $outputPath, $environment, $logPath);
         }
     }
 
@@ -223,19 +245,7 @@ class ProgressiveBackupCommand extends Command
         DatabaseBackupStatusStore::put($backupId, $payload);
     }
 
-    /**
-     * @param array<string, mixed> $payload
-     */
-    private function putStatusFromCacheKey(string $cacheKey, array $payload): void
-    {
-        $backupId = str_starts_with($cacheKey, 'backup_progress:')
-            ? substr($cacheKey, strlen('backup_progress:'))
-            : $cacheKey;
-
-        $this->putStatus($backupId, $payload);
-    }
-
-    private function buildOptimizedCommand(array $config, string $database): array
+    private function buildOptimizedCommand(array $config, string $database, string $outputPath): array
     {
         $command = [
             $this->resolveDumpBinaryPath(),
@@ -248,12 +258,15 @@ class ProgressiveBackupCommand extends Command
             '--routines',
             '--triggers',
             '--events',
+            '--no-tablespaces',
+            '--net-buffer-length=16777216',
+            '--max-allowed-packet=536870912',
         ];
 
         $host = (string) ($config['host'] ?? '127.0.0.1');
         $port = (string) ($config['port'] ?? '3306');
         $socket = trim((string) ($config['unix_socket'] ?? ''));
-        
+
         if (strtoupper(substr(PHP_OS_FAMILY, 0, 3)) === 'WIN') {
             $command[] = '--protocol=TCP';
             $command[] = '--host=' . $host;
@@ -268,6 +281,14 @@ class ProgressiveBackupCommand extends Command
         }
 
         $command[] = '--user=' . (string) ($config['username'] ?? '');
+
+        // Exclude temp and staging tables
+        foreach ($this->getTempTablesToExclude($database) as $table) {
+            $command[] = '--ignore-table=' . $database . '.' . $table;
+        }
+
+        // Use --result-file for direct disk write (avoids stdout pipe buffering)
+        $command[] = '--result-file=' . $outputPath;
         $command[] = $database;
 
         return $command;
@@ -282,7 +303,7 @@ class ProgressiveBackupCommand extends Command
         return ['MYSQL_PWD' => $password];
     }
 
-    private function startWindowsBackupProcess(array $command, string $outputPath, array $environment): array
+    private function startWindowsBackupProcess(array $command, string $outputPath, array $environment, string $logPath): array
     {
         $baseEnvironment = [];
         foreach (array_merge($_ENV, $_SERVER) as $key => $value) {
@@ -294,32 +315,35 @@ class ProgressiveBackupCommand extends Command
 
         $mergedEnvironment = array_merge($baseEnvironment, $environment);
 
-        // Add --result-file directly to command for direct disk write (avoids stream_copy_to_stream blocking)
-        $command[] = '--result-file=' . $outputPath;
+        // Build command string; each arg is double-quoted for Windows CreateProcess
         $commandStr = implode(' ', array_map('escapeshellarg', $command));
 
         $descriptors = [
             0 => ['pipe', 'r'],
-            1 => ['pipe', 'w'],
-            2 => ['pipe', 'w'],
+            // mysqldump uses --result-file, stdout is minimal
+            1 => ['file', $logPath, 'ab'],
+            // CRITICAL: stderr must go to FILE, not pipe.
+            // A pipe has a 4KB buffer on Windows; if mysqldump writes > 4KB of warnings
+            // it blocks forever while PHP's monitoring loop waits for it to exit.
+            2 => ['file', $logPath, 'ab'],
         ];
 
         $process = proc_open($commandStr, $descriptors, $pipes, base_path(), $mergedEnvironment, ['bypass_shell' => true]);
         if (!is_resource($process)) {
-            throw new \RuntimeException('Gagal menjalankan mysqldump.');
+            throw new \RuntimeException('Gagal menjalankan mysqldump. Pastikan mysqldump.exe tersedia.');
         }
 
-        fclose($pipes[0]);
-        fclose($pipes[1]); // Close stdout since we're using --result-file
+        if (isset($pipes[0]) && is_resource($pipes[0])) {
+            fclose($pipes[0]);
+        }
 
-        // Return process with stderr pipe for monitoring
         return [
             'process' => $process,
-            'stderr' => $pipes[2],
+            'stderr' => null,
         ];
     }
 
-    private function startUnixBackupProcess(array $command, string $outputPath, array $environment): array
+    private function startUnixBackupProcess(array $command, string $outputPath, array $environment, string $logPath): array
     {
         $baseEnvironment = [];
         foreach (array_merge($_ENV, $_SERVER) as $key => $value) {
@@ -330,26 +354,26 @@ class ProgressiveBackupCommand extends Command
         }
 
         $mergedEnvironment = array_merge($baseEnvironment, $environment);
-
-        // Build shell command with gzip pipe
-        $commandStr = implode(' ', array_map('escapeshellarg', $command)) . ' | gzip > ' . escapeshellarg($outputPath);
+        $commandStr = implode(' ', array_map('escapeshellarg', $command));
 
         $descriptors = [
-            1 => ['pipe', 'w'],
-            2 => ['pipe', 'w'],
+            0 => ['pipe', 'r'],
+            1 => ['file', $logPath, 'ab'],
+            2 => ['file', $logPath, 'ab'],
         ];
 
         $process = proc_open($commandStr, $descriptors, $pipes, base_path(), $mergedEnvironment);
         if (!is_resource($process)) {
-            throw new \RuntimeException('Gagal menjalankan mysqldump dengan gzip.');
+            throw new \RuntimeException('Gagal menjalankan mysqldump.');
         }
 
-        fclose($pipes[1]);
+        if (isset($pipes[0]) && is_resource($pipes[0])) {
+            fclose($pipes[0]);
+        }
 
-        // Return process with stderr pipe for monitoring
         return [
             'process' => $process,
-            'stderr' => $pipes[2],
+            'stderr' => null,
         ];
     }
 
@@ -368,7 +392,9 @@ class ProgressiveBackupCommand extends Command
 
         $pipes = [];
         $process = proc_open(
-            [$gzipPath, '--best', '--force', '--stdout', $inputPath],
+            // Use compression level 4 — good balance between speed and size for large SQL files.
+            // '--best' (-9) is too slow for multi-GB SQL dumps.
+            [$gzipPath, '-4', '--force', '--stdout', $inputPath],
             $descriptors,
             $pipes,
             base_path(),
@@ -386,12 +412,57 @@ class ProgressiveBackupCommand extends Command
 
         if ($exitCode !== 0) {
             @unlink($outputPath);
-            throw new \RuntimeException("Gzip compression failed with exit code: {$exitCode}" . ($stderr !== '' ? ". {$stderr}" : ''));
+            throw new \RuntimeException("Gzip gagal (exit {$exitCode}): " . ($stderr !== '' ? $stderr : 'unknown error'));
         }
 
-        // Remove original uncompressed file
         if (is_file($outputPath) && filesize($outputPath) > 0 && is_file($inputPath)) {
             @unlink($inputPath);
+        }
+    }
+
+    /**
+     * Return temp/staging table names that should be excluded from backup.
+     * These are transient tables with no recovery value.
+     */
+    /**
+     * Return transient/staging table names to exclude from the full backup.
+     * Tables starting with tmp_ or __ (double underscore) are never needed for restore.
+     */
+    private function getTempTablesToExclude(string $database): array
+    {
+        try {
+            $tables = DB::select(
+                "SELECT table_name FROM information_schema.tables
+                 WHERE table_schema = ?
+                   AND (SUBSTRING(table_name, 1, 4) = 'tmp_'
+                     OR SUBSTRING(table_name, 1, 2) = '__')",
+                [$database]
+            );
+
+            return array_filter(
+                array_map(static fn ($t) => (string) ($t->table_name ?? $t->TABLE_NAME ?? ''), $tables),
+                static fn (string $n) => $n !== ''
+            );
+        } catch (\Throwable) {
+            return [];
+        }
+    }
+
+    /**
+     * Estimate uncompressed size of the database in bytes for progress reporting.
+     */
+    private function estimateDatabaseBytes(string $database): int
+    {
+        try {
+            $result = DB::select(
+                "SELECT SUM(data_length + index_length) AS bytes
+                 FROM information_schema.tables
+                 WHERE table_schema = ?",
+                [$database]
+            );
+            return (int) ($result[0]->bytes ?? 0);
+        } catch (\Throwable) {
+            return 0;
         }
     }
 
@@ -407,7 +478,7 @@ class ProgressiveBackupCommand extends Command
         ];
 
         foreach ($candidates as $path) {
-            if (file_exists($path) && is_executable($path)) {
+            if ($path === 'mysqldump' || (file_exists($path) && is_executable($path))) {
                 return $path;
             }
         }
@@ -418,8 +489,9 @@ class ProgressiveBackupCommand extends Command
     private function resolveGzipPath(): string
     {
         $candidates = [
-            'C:\\xampp\\php\\gzip.exe',
             'C:\\Program Files\\Git\\usr\\bin\\gzip.exe',
+            'C:\\Program Files (x86)\\Git\\usr\\bin\\gzip.exe',
+            'C:\\xampp\\php\\gzip.exe',
             'C:\\Windows\\System32\\gzip.exe',
             '/usr/bin/gzip',
             '/bin/gzip',

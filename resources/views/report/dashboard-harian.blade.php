@@ -403,6 +403,13 @@
         box-shadow: none;
     }
 
+    .daily-dropdown-toggle:disabled {
+        cursor: not-allowed;
+        color: #7b8da6;
+        background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+        box-shadow: none;
+    }
+
     .daily-filter-chevron {
         position: absolute;
         right: 0.85rem;
@@ -1345,7 +1352,7 @@
                                 <span class="daily-filter-control-icon"><i class="fas fa-building"></i></span>
                                 <div class="daily-dropdown" data-daily-dropdown="kanca">
                                     <button type="button" class="daily-dropdown-toggle" data-daily-dropdown-toggle="kanca" aria-haspopup="listbox" aria-expanded="false">
-                                        <span class="daily-dropdown-toggle-text text-truncate">Semua Kanca</span>
+                                        <span class="daily-dropdown-toggle-text text-truncate">Area 6</span>
                                         <i class="fas fa-chevron-down daily-dropdown-toggle-icon"></i>
                                     </button>
                                     <div class="daily-dropdown-menu" data-daily-dropdown-menu="kanca"></div>
@@ -1905,7 +1912,7 @@
             const totalKancaCount = kancaOptions.length;
 
             if (!normalized.length) {
-                return 'Semua Kanca';
+                return 'Area 6';
             }
 
             if (totalKancaCount > 0 && normalized.length === totalKancaCount) {
@@ -1928,6 +1935,21 @@
             return labels[0] + ', +' + (labels.length - 1) + ' KC';
         };
 
+        const isArea6KancaSelection = function (options, selectedValues) {
+            const normalized = normalizeArraySelection(selectedValues);
+            const kancaValues = (options || [])
+                .map(function (option) { return String(option.value || ''); })
+                .filter(function (value) { return value && value !== 'all'; });
+
+            if (!normalized.length) {
+                return true;
+            }
+
+            return kancaValues.length > 0
+                && normalized.length === kancaValues.length
+                && kancaValues.every(function (value) { return normalized.includes(value); });
+        };
+
         const renderKancaDropdown = function (options, selectedValues) {
             const dropdown = dropdowns.kanca;
             if (!dropdown || !dropdown.menu || !selects.kanca) {
@@ -1936,11 +1958,12 @@
 
             const normalized = normalizeArraySelection(selectedValues);
             setNativeSelectOptions(selects.kanca, options, normalized, true);
+            const area6Active = isArea6KancaSelection(options, normalized);
 
             dropdown.menu.innerHTML = (options || []).map(function (option) {
                 const value = String(option.value || 'all');
                 const isAll = value === 'all';
-                const isActive = isAll ? normalized.length === 0 : normalized.includes(value);
+                const isActive = isAll ? area6Active : (!area6Active && normalized.includes(value));
 
                 return '<button type="button" class="daily-dropdown-option ' + (isActive ? 'is-active' : '') + '" data-kanca-option="' + escapeHtml(value) + '">' +
                     '<span class="daily-dropdown-check"><i class="fas fa-check"></i></span>' +
@@ -1952,13 +1975,21 @@
         };
 
         const scopedUnitOptions = function (filters, kancaValue) {
+            const allUnitOptions = (filters.unit_kerja || []).filter(function (option) {
+                return (option.value || 'all') === 'all';
+            });
+
+            if (isArea6KancaSelection(filters.kanca || [], kancaValue)) {
+                return allUnitOptions;
+            }
+
             return (filters.unit_kerja || []).filter(function (option) {
                 if ((option.value || 'all') === 'all') {
                     return true;
                 }
 
                 if (!Array.isArray(kancaValue) || !kancaValue.length) {
-                    return true;
+                    return false;
                 }
 
                 return kancaValue.includes(String(option.kanca_value || ''));
@@ -1966,16 +1997,28 @@
         };
 
         const syncUnitSelect = function (filters, preferredUnit) {
-            const unitOptions = scopedUnitOptions(filters, getSelectedKancaValues());
+            const selectedKancaValues = getSelectedKancaValues();
+            const area6Scope = isArea6KancaSelection(filters.kanca || [], selectedKancaValues);
+            const unitOptions = scopedUnitOptions(filters, selectedKancaValues);
             const selectedUnit = unitOptions.some(function (option) {
                 return String(option.value || '') === String(preferredUnit || 'all');
             }) ? (preferredUnit || 'all') : 'all';
 
             setNativeSelectOptions(selects.unit_kerja, unitOptions, selectedUnit, false);
+            if (selects.unit_kerja) {
+                selects.unit_kerja.disabled = area6Scope;
+            }
 
             const dropdown = dropdowns.unit;
+            if (dropdown && dropdown.toggle) {
+                dropdown.toggle.disabled = area6Scope;
+                dropdown.toggle.setAttribute('aria-disabled', area6Scope ? 'true' : 'false');
+            }
+
             if (dropdown && dropdown.menu) {
-                dropdown.menu.innerHTML = unitOptions.length
+                dropdown.menu.innerHTML = area6Scope
+                    ? '<div class="daily-dropdown-empty">Tidak tersedia untuk Area 6.</div>'
+                    : unitOptions.length
                     ? unitOptions.map(function (option) {
                         const value = String(option.value || 'all');
                         const active = value === String(selectedUnit);
@@ -1991,7 +2034,7 @@
                 return String(option.value || 'all') === String(selectedUnit);
             });
 
-        updateDropdownToggleText('unit', selectedOption ? (selectedOption.label || selectedOption.value || 'Semua Unit Kerja') : 'Semua Unit Kerja');
+        updateDropdownToggleText('unit', area6Scope ? 'Tidak tersedia untuk Area 6' : (selectedOption ? (selectedOption.label || selectedOption.value || 'Semua Unit Kerja') : 'Semua Unit Kerja'));
     };
 
     const syncPosisiSelect = function (options, selectedValue) {
@@ -2423,7 +2466,7 @@
             syncPosisiSelect(filters.posisi_terakhir || [], payload.selected_period || current.posisi_terakhir);
             syncRkaSelect(filters.posisi_rka || [], payload.selected_rka_period ? payload.selected_rka_period.slice(0, 7) : current.posisi_rka);
 
-            setTextContent(scopeKanca, summary.kanca_label || 'Semua Kanca');
+            setTextContent(scopeKanca, summary.kanca_label || 'Area 6');
             setTextContent(scopeUnit, summary.unit_label || 'Semua Unit Kerja');
             setTextContent(scopePosisi, payload.selected_period_label || 'Belum ada data');
             setTextContent(scopeRka, periods.rka ? formatMonthYear(periods.rka.period) : 'Belum ada data');
@@ -2546,7 +2589,7 @@
 
         function drawExportHeader(ctx, pageNum = 1, groupLabel = '') {
             const { width, marginX, marginY } = A4_EXPORT;
-            const kancaText = scopeKanca?.textContent?.trim() || 'Semua Kanca';
+            const kancaText = scopeKanca?.textContent?.trim() || 'Area 6';
             const unitText = scopeUnit?.textContent?.trim() || 'Semua Unit';
             const posisiText = scopePosisi?.textContent?.trim() || 'Belum Ada Data';
             const rkaText = scopeRka?.textContent?.trim() || 'Belum Ada Data';
@@ -2889,9 +2932,12 @@ if (window.jQuery && captureModal) {
 
                 const value = String(option.getAttribute('data-kanca-option') || 'all');
                 let nextValues = getSelectedKancaValues();
+                const area6Active = isArea6KancaSelection(latestFilters.kanca || [], nextValues);
 
                 if (value === 'all') {
                     nextValues = [];
+                } else if (area6Active) {
+                    nextValues = [value];
                 } else if (nextValues.includes(value)) {
                     nextValues = nextValues.filter(function (item) { return item !== value; });
                 } else {

@@ -61,6 +61,10 @@ class ManagedReportManagementService
     ];
 
     private const MANAGEMENT_SCOPE_COLUMN_OVERRIDES = [
+        'daily_loan_dinamis' => [
+            'period_priority' => ['periode'],
+            'kanca_priority' => ['cabang1'],
+        ],
         'input_rekanan' => [
             'period' => ['created_at', 'updated_at'],
             'kanca' => ['perusahaan_anak', 'rekanan_level_1', 'status_nasabah'],
@@ -651,15 +655,18 @@ class ManagedReportManagementService
         $estimatedSourceRows = $this->estimateTableRows($tableName);
         $perPage = $this->resolveEffectiveManagementPerPage($perPage, $estimatedSourceRows);
         
-        // Optimize counting using indexed column and cache for 5 minutes
-        $cacheKey = "management_total_periods_{$tableName}_{$periodColumn}";
-        $totalPeriods = \Illuminate\Support\Facades\Cache::remember($cacheKey, 300, function () use ($tableName, $periodColumn) {
-            return DB::table($tableName)->distinct()->count($periodColumn);
-        });
+        $useExactPeriodCount = $estimatedSourceRows <= self::MANAGEMENT_EXACT_PERIOD_COUNT_ROW_LIMIT;
+        $totalPeriods = null;
 
-        $useExactPeriodCount = true;
-        $totalPages = max(1, (int) ceil($totalPeriods / $perPage));
-        $currentPage = min(max(1, $page), $totalPages);
+        if ($useExactPeriodCount) {
+            $cacheKey = "management_total_periods_{$tableName}_{$periodColumn}";
+            $totalPeriods = \Illuminate\Support\Facades\Cache::remember($cacheKey, 300, function () use ($tableName, $periodColumn) {
+                return DB::table($tableName)->distinct()->count($periodColumn);
+            });
+        }
+
+        $totalPages = $useExactPeriodCount ? max(1, (int) ceil((int) $totalPeriods / $perPage)) : null;
+        $currentPage = $useExactPeriodCount ? min(max(1, $page), $totalPages) : max(1, $page);
         $offset = ($currentPage - 1) * $perPage;
 
         $periodRows = $periodBaseQuery

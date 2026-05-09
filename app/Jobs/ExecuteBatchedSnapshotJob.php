@@ -180,7 +180,7 @@ class ExecuteBatchedSnapshotJob implements ShouldQueue
 
             $periodHint = trim((string) ($request['period_hint'] ?? ''));
             $rebuildId = trim((string) ($request['rebuild_id'] ?? ''));
-            $scope = $tableName . ':' . ($periodHint !== '' ? $periodHint : '__all__') . ':' . ($rebuildId !== '' ? $rebuildId : '__default__');
+            $scope = $tableName . ':' . ($periodHint !== '' ? $periodHint : '__all__');
 
             $compacted[$scope] = $request;
             $compacted[$scope]['table_name'] = $tableName;

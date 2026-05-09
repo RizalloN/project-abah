@@ -1653,7 +1653,7 @@ class DashboardPinjamanReportController extends Controller
 
     private function fetchRecoveryReportPeriods(): Collection
     {
-        $cacheKey = 'dashboard_pinjaman_recovery_periods:v1:' . $this->reportCacheVersion();
+        $cacheKey = 'dashboard_pinjaman_recovery_periods:v2:' . $this->reportCacheVersion();
 
         return Cache::remember($cacheKey, now()->addMinutes(10), function () {
             $periods = collect();
@@ -2168,12 +2168,6 @@ class DashboardPinjamanReportController extends Controller
 
         try {
             $normalizedPeriod = Carbon::parse($selectedPeriod)->format('Y-m-d');
-
-            if (Schema::hasTable('cognos_recovery')
-                && DB::table('cognos_recovery')->where('periode', $normalizedPeriod)->exists()
-            ) {
-                return false;
-            }
 
             return DB::table('lw325_ph')->where('periode', $normalizedPeriod)->exists();
         } catch (Throwable) {

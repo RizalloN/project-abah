@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Jobs\Middleware\DeferSnapshotJobsDuringImport;
 use App\Support\ReportSnapshotBuilder;
+use App\Support\SnapshotSourceSignatureService;
 use Illuminate\Bus\Batchable;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -60,6 +61,8 @@ class RebuildSnapshotDormantBatch implements ShouldQueue
 
             ReportDataSyncService::analyzeTable('rekening_dormant_snapshots');
 
+            $this->markSnapshotSignatures();
+
             $duration = $startTime->diffInSeconds(now());
 
             Log::info('RebuildSnapshotDormantBatch selesai', [
@@ -81,6 +84,30 @@ class RebuildSnapshotDormantBatch implements ShouldQueue
 
             $this->updateProgress('Gagal: ' . $e->getMessage(), 'failed');
             throw $e;
+        }
+    }
+
+    private function markSnapshotSignatures(): void
+    {
+        $period = trim((string) $this->periodHint);
+        if ($period === '') {
+            return;
+        }
+
+        try {
+            app(SnapshotSourceSignatureService::class)->markBuiltForApplicableSources(
+                'rekening_dormant_snapshots',
+                $period,
+                [
+                    ['source_table' => 'simpanan_multipn', 'period_column' => 'posisi'],
+                ],
+                ['job' => static::class]
+            );
+        } catch (\Throwable $e) {
+            Log::debug('Gagal menandai snapshot signature setelah rebuild Rekening Dormant.', [
+                'period' => $period,
+                'message' => $e->getMessage(),
+            ]);
         }
     }
 

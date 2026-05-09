@@ -129,22 +129,22 @@ class DashboardSimpananController extends Controller
             'hero' => [
                 'title' => 'A-SIX',
                 'kicker' => 'DASHBOARD AREA 6',
-                'subtitle' => 'Ringkasan simpanan dan pinjaman Area 6 ditarik langsung dari snapshot terbaru agar monitoring tetap cepat, jelas, dan profesional.',
+                'subtitle' => 'Ringkasan posisi keuangan Area 6 secara realtime.',
                 'badge' => 'A-SIX LIVE PORTFOLIO',
                 'updated_label' => $latestCombinedLabel,
                 'stats' => [
                     [
-                        'label' => 'Total Saldo',
+                        'label' => 'Total Dana (Simpanan)',
                         'value' => $this->formatCurrencyCompact($currentSummary['total_balance']),
+                        'posisi' => $currentPeriod ? $this->formatPeriodLabel($currentPeriod) : '-',
+                        'icon' => 'fas fa-piggy-bank'
                     ],
                     [
-                        'label' => 'Jumlah Rekening',
-                        'value' => $this->formatInteger($currentSummary['account_count']),
-                    ],
-                    [
-                        'label' => 'Total CIF',
-                        'value' => $this->formatInteger($currentSummary['cif_count']),
-                    ],
+                        'label' => 'Total OS (Pinjaman)',
+                        'value' => $this->formatCurrencyCompact($loanCurrentSummary['total_balance']),
+                        'posisi' => $loanCurrentPeriod ? $this->formatPeriodLabel($loanCurrentPeriod) : '-',
+                        'icon' => 'fas fa-hand-holding-usd'
+                    ]
                 ],
             ],
             'health' => [
@@ -534,9 +534,8 @@ class DashboardSimpananController extends Controller
                 'badge' => 'A-SIX OVERVIEW',
                 'updated_label' => 'Belum ada data',
                 'stats' => [
-                    ['label' => 'Total Saldo', 'value' => 'Rp0'],
-                    ['label' => 'Jumlah Rekening', 'value' => '0'],
-                    ['label' => 'Total CIF', 'value' => '0'],
+                    ['label' => 'Total Dana (Simpanan)', 'value' => 'Rp0', 'posisi' => '-', 'icon' => 'fas fa-piggy-bank'],
+                    ['label' => 'Total OS (Pinjaman)', 'value' => 'Rp0', 'posisi' => '-', 'icon' => 'fas fa-hand-holding-usd']
                 ],
             ],
             'health' => [

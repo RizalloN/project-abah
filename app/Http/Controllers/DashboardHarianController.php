@@ -20,9 +20,7 @@ class DashboardHarianController extends Controller
 
     public function index(Request $request): View
     {
-        $selectedKanca = $this->normalizeFilter($request->input('kanca'));
-        $selectedUnit = $this->normalizeFilter($request->input('unit_kerja'));
-        $selectedKanca = $this->defaultArea6KancaWhenAll($selectedKanca, $selectedUnit);
+        [$selectedKanca, $selectedUnit] = $this->resolveKeragaanFilters($request);
         $selectedPeriod = $this->dashboardHarianSnapshotService->resolveEffectivePeriod($request->input('posisi_terakhir'));
         $selectedRka = $this->dashboardHarianSnapshotService->resolveEffectiveRkaPeriod($request->input('posisi_rka'), $selectedPeriod);
         $baseUrl = rtrim($request->getSchemeAndHttpHost() . $request->getBaseUrl(), '/');
@@ -103,9 +101,7 @@ class DashboardHarianController extends Controller
 
     public function data(Request $request): JsonResponse
     {
-        $selectedKanca = $this->normalizeFilter($request->input('kanca'));
-        $selectedUnit = $this->normalizeFilter($request->input('unit_kerja'));
-        $selectedKanca = $this->defaultArea6KancaWhenAll($selectedKanca, $selectedUnit);
+        [$selectedKanca, $selectedUnit] = $this->resolveKeragaanFilters($request);
         $selectedPeriod = $this->dashboardHarianSnapshotService->resolveEffectivePeriod($request->input('posisi_terakhir'));
         $selectedRka = $this->dashboardHarianSnapshotService->resolveEffectiveRkaPeriod($request->input('posisi_rka'), $selectedPeriod);
 
@@ -312,5 +308,46 @@ class DashboardHarianController extends Controller
         }
 
         return self::AREA_6_KANCA;
+    }
+
+    private function resolveKeragaanFilters(Request $request): array
+    {
+        $selectedKanca = $this->normalizeFilter($request->input('kanca'));
+        $selectedUnit = $this->normalizeFilter($request->input('unit_kerja'));
+
+        if ($selectedKanca === null) {
+            $selectedUnit = null;
+        }
+
+        $selectedKanca = $this->defaultArea6KancaWhenAll($selectedKanca, $selectedUnit);
+
+        if ($this->isArea6KancaScope($selectedKanca)) {
+            $selectedUnit = null;
+        }
+
+        return [$selectedKanca, $selectedUnit];
+    }
+
+    private function isArea6KancaScope(array|string|null $selectedKanca): bool
+    {
+        if ($selectedKanca === null) {
+            return true;
+        }
+
+        $values = is_array($selectedKanca) ? $selectedKanca : [$selectedKanca];
+        $normalized = collect($values)
+            ->map(fn ($value) => trim((string) $value))
+            ->filter()
+            ->unique()
+            ->sort()
+            ->values()
+            ->all();
+
+        $area6 = collect(self::AREA_6_KANCA)
+            ->sort()
+            ->values()
+            ->all();
+
+        return $normalized === $area6;
     }
 }
