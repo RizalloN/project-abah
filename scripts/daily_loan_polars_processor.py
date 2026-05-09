@@ -154,7 +154,7 @@ def strip_wrapped_payload(text: str) -> str:
 
 def parse_csv_text(text: str, delimiter: str) -> list[str]:
     buffer = io.StringIO(text)
-    reader = csv.reader(buffer, delimiter=delimiter, quotechar='"', escapechar="\\", strict=False)
+    reader = csv.reader(buffer, delimiter=delimiter, quotechar='"', strict=False)
     try:
         row = next(reader)
     except StopIteration:
@@ -365,8 +365,8 @@ def sanitize_source(
         encoding="utf-8",
         newline="",
     ) as out_handle:
-        reader = csv.reader(raw_handle, delimiter=delimiter, quotechar='"', escapechar="\\", strict=False)
-        writer = csv.writer(out_handle, delimiter=delimiter, quotechar='"', escapechar="\\", lineterminator="\n")
+        reader = csv.reader(raw_handle, delimiter=delimiter, quotechar='"', strict=False)
+        writer = csv.writer(out_handle, delimiter=delimiter, quotechar='"', lineterminator="\n")
 
         for row_number, row in enumerate(reader, start=1):
             if not row or all(normalize_cell(cell) == "" for cell in row):
@@ -424,7 +424,6 @@ def read_with_polars(path: str, headers: list[str], delimiter: str):
             separator=delimiter,
             has_header=True,
             quote_char='"',
-            escapechar="\\",
             schema_overrides=schema_overrides,
             infer_schema_length=0,
             ignore_errors=False,
@@ -478,6 +477,24 @@ def write_with_polars(df, path: str, delimiter: str) -> None:
             last_error = exc
 
     raise RuntimeError(f"Gagal menulis CSV hasil Polars: {last_error}")
+
+
+def escape_backslashes_for_mysql_load_data(df):
+    import polars as pl
+
+    string_columns = [
+        column_name
+        for column_name, dtype in zip(df.columns, df.dtypes)
+        if dtype == pl.Utf8
+    ]
+
+    if not string_columns:
+        return df
+
+    return df.with_columns([
+        pl.col(column_name).str.replace_all("\\\\", "\\\\").alias(column_name)
+        for column_name in string_columns
+    ])
 
 
 def classify_daily_loan_columns(headers: list[str]) -> dict:
@@ -789,6 +806,7 @@ def stage_daily_loan(config: dict) -> None:
             skipped_total = 0
 
         send_progress(86, "Menulis CSV bersih untuk LOAD DATA...", written_rows, total_data_rows, 0)
+        df = escape_backslashes_for_mysql_load_data(df)
         write_with_polars(df, output_csv_path, delimiter)
 
         send_event(

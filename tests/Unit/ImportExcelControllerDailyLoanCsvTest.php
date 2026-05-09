@@ -268,6 +268,53 @@ class ImportExcelControllerDailyLoanCsvTest extends TestCase
         }
     }
 
+    public function test_prepare_daily_loan_direct_load_source_escapes_backslash_before_comma_for_mysql_load_data(): void
+    {
+        $headers = $this->dailyLoanHeaders();
+        $csvPath = storage_path('framework/testing/daily_loan_backslash_comma_guard.csv');
+        if (!is_dir(dirname($csvPath))) {
+            @mkdir(dirname($csvPath), 0777, true);
+        }
+
+        $row = $this->makeDailyLoanRow([
+            'PERIODE' => '2026-05-07',
+            'KODE_KANWIL1' => 'R',
+            'NOMOR_REKENING1' => '635601024706100',
+            'STATUS_REKENING1' => '1',
+            'NAMA_DEBITUR1' => 'KASMI',
+            'RATE' => '0.060000',
+            'JANGKA_WAKTU1' => '36M',
+            'PLAFON' => '25000000.00',
+            'BAKI_DEBET1' => '25000000.00',
+            'KELURAHAN_T_USAHA' => 'AN\\',
+            'KODEPOS_T_USAHA' => '63396',
+            'SEGMEN_DASHBOARD' => 'Micro',
+            'PRODUK_DASHBOARD' => 'KUR-Mikro',
+            'DIVISI_SEGMEN_DASHBOARD' => 'Micro',
+            'Textbox21' => '25000000.00',
+        ]);
+
+        file_put_contents($csvPath, implode("\n", [
+            implode(',', $headers),
+            implode(',', $row),
+        ]) . "\n");
+
+        $result = [];
+        try {
+            $result = $this->invokeMethod('prepareDailyLoanDirectLoadSource', [$csvPath, ',']);
+            $lines = file((string) $result['path'], FILE_IGNORE_NEW_LINES);
+
+            $this->assertNotFalse($lines);
+            $this->assertStringContainsString('AN\\\\', $lines[1] ?? '');
+            $this->assertStringNotContainsString('AN\\,63396,Micro', $lines[1] ?? '');
+        } finally {
+            @unlink($csvPath);
+            if (!empty($result['path'] ?? '') && file_exists((string) $result['path']) && ($result['cleanup'] ?? false)) {
+                @unlink((string) $result['path']);
+            }
+        }
+    }
+
     public function test_prepare_daily_loan_direct_load_source_skips_malformed_rows_when_normalizing(): void
     {
         $csvPath = storage_path('framework/testing/daily_loan_direct_load_malformed.csv');
@@ -347,17 +394,37 @@ class ImportExcelControllerDailyLoanCsvTest extends TestCase
         $schemaService->shouldReceive('hasTable')->with('daily_loan_dinamis')->andReturnTrue();
         $schemaService->shouldReceive('getColumnListing')->with('daily_loan_dinamis')->andReturn($this->dailyLoanHeaders());
         $schemaService->shouldReceive('hasColumn')->andReturnTrue();
-        $schemaService->shouldReceive('getColumnMetadata')->with('daily_loan_dinamis')->andReturn(
-            array_fill_keys(
-                array_map('strtolower', $this->dailyLoanHeaders()),
-                [
-                    'type' => 'varchar(255)',
-                    'base_type' => 'varchar',
-                    'max_length' => 255,
-                    'is_textual' => true,
-                ]
-            )
+        $metadata = array_fill_keys(
+            array_map('strtolower', $this->dailyLoanHeaders()),
+            [
+                'type' => 'varchar(255)',
+                'base_type' => 'varchar',
+                'max_length' => 255,
+                'precision' => null,
+                'scale' => null,
+                'is_textual' => true,
+                'is_decimal' => false,
+            ]
         );
+        $metadata['rate'] = [
+            'type' => 'decimal(20,6)',
+            'base_type' => 'decimal',
+            'max_length' => null,
+            'precision' => 20,
+            'scale' => 6,
+            'is_textual' => false,
+            'is_decimal' => true,
+        ];
+        $metadata['plafon'] = [
+            'type' => 'decimal(20,2)',
+            'base_type' => 'decimal',
+            'max_length' => null,
+            'precision' => 20,
+            'scale' => 2,
+            'is_textual' => false,
+            'is_decimal' => true,
+        ];
+        $schemaService->shouldReceive('getColumnMetadata')->with('daily_loan_dinamis')->andReturn($metadata);
         app()->instance(SchemaIntrospectionService::class, $schemaService);
 
         $csvPath = storage_path('framework/testing/daily_loan_invalid_source_for_prepared_plan.csv');
@@ -402,6 +469,14 @@ class ImportExcelControllerDailyLoanCsvTest extends TestCase
         $this->assertNotEmpty(array_filter(
             (array) ($plan['set_clauses'] ?? []),
             static fn (string $clause): bool => str_contains(strtolower($clause), '`jangka_waktu1`')
+        ));
+        $this->assertNotEmpty(array_filter(
+            (array) ($plan['set_clauses'] ?? []),
+            static fn (string $clause): bool => str_contains(strtolower($clause), '`rate`') && str_contains($clause, 'DECIMAL(24,6)')
+        ));
+        $this->assertNotEmpty(array_filter(
+            (array) ($plan['set_clauses'] ?? []),
+            static fn (string $clause): bool => str_contains(strtolower($clause), '`plafon`') && str_contains($clause, 'DECIMAL(24,2)')
         ));
     }
 

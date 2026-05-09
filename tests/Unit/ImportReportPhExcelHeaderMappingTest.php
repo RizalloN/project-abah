@@ -196,4 +196,31 @@ class ImportReportPhExcelHeaderMappingTest extends TestCase
         $this->assertSame('100.00', $mappedRow[65]);
         $this->assertSame('80.00', $mappedRow[66]);
     }
+
+    public function test_preview_state_rejects_sparse_lw325_rows(): void
+    {
+        $controller = app(ImportReportPhController::class);
+        $usablePreview = new ReflectionMethod($controller, 'hasUsablePreviewStateRows');
+        $usablePreview->setAccessible(true);
+
+        $this->assertFalse($usablePreview->invoke($controller, [[
+            '2026-05-07',
+            '4501052349107',
+            null,
+            null,
+            null,
+            null,
+            null,
+        ]]));
+
+        $this->assertTrue($usablePreview->invoke($controller, [[
+            '2026-05-07',
+            '004501049347108',
+            'KANWIL MALANG',
+            'KC Madiun',
+            'KC Madiun',
+            'POKDAKAN MAKMUR',
+            'PO76102',
+        ]]));
+    }
 }

@@ -3453,6 +3453,11 @@ class DashboardHarianSnapshotService
         };
     }
 
+    private function hourlyDpkEnabled(): bool
+    {
+        return (bool) config('reports.dashboard_harian.use_hourly_dpk', false);
+    }
+
     private function sourcePeriodRawCandidates(string $table, string $period): array
     {
         $normalizedPeriod = $this->normalizeDate($period);

@@ -887,6 +887,10 @@ class ImportReportPhController extends Controller
         $rawHeaders = array_values((array) ($previewPayload['headers'] ?? []));
         $normalizedSourceHeaders = $this->normalizeExcelHeaders($rawHeaders);
         $sourceIndexes = $this->buildSourceIndexes($normalizedSourceHeaders);
+        if (!$this->hasRequiredPreviewSourceIndexes($sourceIndexes)) {
+            return null;
+        }
+
         $previewRows = [];
         $uniqueValues = [];
 
@@ -954,6 +958,41 @@ class ImportReportPhController extends Controller
             'displayFilterMap' => $displayFilterMap,
             'previewMeta' => $previewMeta,
         ];
+    }
+
+    private function hasRequiredPreviewSourceIndexes(array $sourceIndexes): bool
+    {
+        foreach (['periode', 'acctno', 'kanwil', 'kanca', 'unit', 'nama_debitur', 'cif1'] as $column) {
+            if (!array_key_exists($column, $sourceIndexes)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private function hasUsablePreviewStateRows(array $previewRows): bool
+    {
+        foreach (array_slice($previewRows, 0, 10) as $row) {
+            $row = array_values((array) $row);
+            if ($row === []) {
+                continue;
+            }
+
+            if (
+                trim((string) ($row[0] ?? '')) !== ''
+                && trim((string) ($row[1] ?? '')) !== ''
+                && trim((string) ($row[2] ?? '')) !== ''
+                && trim((string) ($row[3] ?? '')) !== ''
+                && trim((string) ($row[4] ?? '')) !== ''
+                && trim((string) ($row[5] ?? '')) !== ''
+                && trim((string) ($row[6] ?? '')) !== ''
+            ) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public function preparePreviewStream(Request $request)
@@ -1097,6 +1136,7 @@ class ImportReportPhController extends Controller
             $previewStateKey !== ''
             && $previewPath === $relativePath
             && !empty($previewState['previewData'])
+            && $this->hasUsablePreviewStateRows((array) ($previewState['previewData'] ?? []))
             && ($previewStageCsv === '' || !file_exists($previewStageCsv))
         ) {
             session([

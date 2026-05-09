@@ -447,7 +447,6 @@ class ManagedReportBackupRecoveryService
         }
 
         DB::statement('SET SESSION foreign_key_checks = 0');
-        DB::beginTransaction();
 
         try {
             $quotedTarget = '`' . str_replace('`', '``', $targetTable) . '`';
@@ -473,7 +472,6 @@ class ManagedReportBackupRecoveryService
             // Clean up old backup
             Schema::dropIfExists($backupTable);
 
-            DB::commit();
             DB::statement('SET SESSION foreign_key_checks = 1');
 
             $this->emitProgress($progressCallback, [
@@ -484,11 +482,6 @@ class ManagedReportBackupRecoveryService
                 'progress_percent' => 80,
             ]);
         } catch (Throwable $e) {
-            try {
-                DB::rollBack();
-            } catch (Throwable) {
-                // Ignore rollback errors
-            }
             DB::statement('SET SESSION foreign_key_checks = 1');
 
             throw new RuntimeException(

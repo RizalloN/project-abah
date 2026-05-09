@@ -5985,7 +5985,7 @@ class ImportExcelController extends Controller
                     $periodHints[$normalizedPeriod ?: $periodeValue] = true;
                 }
 
-                fputcsv($outputHandle, $row, $delimiter, '"', '\\');
+                fputcsv($outputHandle, $this->escapeDailyLoanBackslashesForLoadData($row), $delimiter, '"', '\\');
                 $writtenRows++;
 
                 if ($jobId > 0 && $writtenRows % 5000 === 0) {
@@ -6088,7 +6088,7 @@ class ImportExcelController extends Controller
             fputcsv($outputHandle, $canonicalHeader, $delimiter, '"', '\\');
 
             while (($row = fgetcsv($inputHandle, 0, $delimiter)) !== false) {
-                fputcsv($outputHandle, $row, $delimiter, '"', '\\');
+                fputcsv($outputHandle, $this->escapeDailyLoanBackslashesForLoadData($row), $delimiter, '"', '\\');
             }
         } catch (\Throwable) {
             fclose($inputHandle);
@@ -6111,7 +6111,7 @@ class ImportExcelController extends Controller
         return "NULLIF(NULLIF({$trimmed}, ''), '\\\\N')";
     }
 
-    protected function buildDirectLoadDecimalExpression(string $columnExpression): string
+    protected function buildDirectLoadDecimalExpression(string $columnExpression, int $scale = 2): string
     {
         $textExpression = $this->buildDirectLoadTextExpression($columnExpression);
         $compacted = "REPLACE({$textExpression}, ' ', '')";
@@ -6120,13 +6120,16 @@ class ImportExcelController extends Controller
             . "WHEN LEFT({$compacted}, 1) = '(' AND RIGHT({$compacted}, 1) = ')' THEN CONCAT('-', SUBSTRING({$compacted}, 2, CHAR_LENGTH({$compacted}) - 2)) "
             . "WHEN RIGHT({$compacted}, 1) = '-' THEN CONCAT('-', LEFT({$compacted}, CHAR_LENGTH({$compacted}) - 1)) "
             . "ELSE {$compacted} END";
+        $scale = max(0, min(12, $scale));
+        $precision = max(24, $scale + 18);
+        $decimalType = "DECIMAL({$precision},{$scale})";
 
         return "CASE "
             . "WHEN {$signed} IS NULL THEN NULL "
-            . "WHEN {$signed} REGEXP '^-?[0-9]+(\\\\.[0-9]+)?$' THEN CAST({$signed} AS DECIMAL(24,2)) "
-            . "WHEN {$signed} REGEXP '^-?[0-9]+(,[0-9]+)?$' THEN CAST(REPLACE({$signed}, ',', '.') AS DECIMAL(24,2)) "
-            . "WHEN {$signed} REGEXP '^-?[0-9]{1,3}(,[0-9]{3})+(\\\\.[0-9]+)?$' THEN CAST(REPLACE({$signed}, ',', '') AS DECIMAL(24,2)) "
-            . "WHEN {$signed} REGEXP '^-?[0-9]{1,3}(\\\\.[0-9]{3})+(,[0-9]+)?$' THEN CAST(REPLACE(REPLACE({$signed}, '.', ''), ',', '.') AS DECIMAL(24,2)) "
+            . "WHEN {$signed} REGEXP '^-?[0-9]+(\\\\.[0-9]+)?$' THEN CAST({$signed} AS {$decimalType}) "
+            . "WHEN {$signed} REGEXP '^-?[0-9]+(,[0-9]+)?$' THEN CAST(REPLACE({$signed}, ',', '.') AS {$decimalType}) "
+            . "WHEN {$signed} REGEXP '^-?[0-9]{1,3}(,[0-9]{3})+(\\\\.[0-9]+)?$' THEN CAST(REPLACE({$signed}, ',', '') AS {$decimalType}) "
+            . "WHEN {$signed} REGEXP '^-?[0-9]{1,3}(\\\\.[0-9]{3})+(,[0-9]+)?$' THEN CAST(REPLACE(REPLACE({$signed}, '.', ''), ',', '.') AS {$decimalType}) "
             . "ELSE NULL END";
     }
 
@@ -6181,7 +6184,7 @@ class ImportExcelController extends Controller
             . "ELSE CAST({$textExpression} AS DATE) END";
     }
 
-    private function buildDirectLoadSqlExpression(array $rule, string $columnExpression): string
+    private function buildDirectLoadSqlExpression(array $rule, string $columnExpression, ?string $dbColumn = null, array $context = []): string
     {
         $sourcePreNormalized = !empty($rule['source_pre_normalized']);
 
@@ -6192,7 +6195,10 @@ class ImportExcelController extends Controller
         }
 
         if (!empty($rule['is_decimal'])) {
-            return $this->buildDirectLoadDecimalExpression($columnExpression);
+            return $this->buildDirectLoadDecimalExpression(
+                $columnExpression,
+                $this->resolveDirectLoadDecimalScale($dbColumn, $context)
+            );
         }
 
         if (!empty($rule['is_integer'])) {
@@ -6202,6 +6208,30 @@ class ImportExcelController extends Controller
         }
 
         return $this->buildDirectLoadTextExpression($columnExpression);
+    }
+
+    private function resolveDirectLoadDecimalScale(?string $dbColumn, array $context): int
+    {
+        $dbColumn = strtolower(trim((string) $dbColumn));
+        if ($dbColumn === '') {
+            return 2;
+        }
+
+        $columnMeta = $context['table_column_meta_by_lower'][$dbColumn] ?? null;
+        $scale = $columnMeta['scale'] ?? null;
+
+        return is_int($scale) && $scale >= 0 ? $scale : 2;
+    }
+
+    private function escapeDailyLoanBackslashesForLoadData(array $row): array
+    {
+        return array_map(static function ($value) {
+            if (!is_string($value) || !str_contains($value, '\\')) {
+                return $value;
+            }
+
+            return str_replace('\\', '\\\\', $value);
+        }, $row);
     }
 
     private function resolveDailyLoanRequiredSourceIndexes(array $normalizedHeaders): array
@@ -6332,7 +6362,7 @@ class ImportExcelController extends Controller
                 continue;
             }
 
-            $expression = $this->buildDirectLoadSqlExpression($rule, $variable);
+            $expression = $this->buildDirectLoadSqlExpression($rule, $variable, $dbColumn, $context);
             $expression = $this->applySqlColumnConstraints($expression, $dbColumn, $context);
             $setClauses[] = $this->quoteSqlIdentifier($dbColumn) . " = {$expression}";
         }
@@ -6481,7 +6511,7 @@ class ImportExcelController extends Controller
                 continue;
             }
 
-            $expression = $this->buildDirectLoadSqlExpression($rule, $variable);
+            $expression = $this->buildDirectLoadSqlExpression($rule, $variable, $dbColumn, $context);
             $expression = $this->applySqlColumnConstraints($expression, $dbColumn, $context);
             $setClauses[] = $this->quoteSqlIdentifier($dbColumn) . " = {$expression}";
         }
@@ -6964,7 +6994,7 @@ class ImportExcelController extends Controller
             }
 
             $sourceCol = $this->quoteSqlIdentifier('c' . $sourceIndex);
-            $expression = $this->buildDirectLoadSqlExpression($rule, $sourceCol);
+            $expression = $this->buildDirectLoadSqlExpression($rule, $sourceCol, $dbColumn, $context);
             if ($tableName === 'lw321_npdd') {
                 $expression = $this->wrapLw321NpddLunasSqlExpression($dbColumnLower, $expression);
             }

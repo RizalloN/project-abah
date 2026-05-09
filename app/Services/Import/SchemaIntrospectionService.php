@@ -76,16 +76,26 @@ class SchemaIntrospectionService
         $normalizedType = strtolower(trim($type));
         $baseType = preg_replace('/\(.*/', '', $normalizedType) ?: $normalizedType;
         $maxLength = null;
+        $precision = null;
+        $scale = null;
 
         if (preg_match('/^(?:var)?char\((\d+)\)$/', $normalizedType, $matches)) {
             $maxLength = (int) $matches[1];
+        }
+
+        if (preg_match('/^(?:decimal|numeric|double|float)\((\d+)(?:,(\d+))?\)$/', $normalizedType, $matches)) {
+            $precision = (int) $matches[1];
+            $scale = isset($matches[2]) ? (int) $matches[2] : null;
         }
 
         return [
             'type' => $normalizedType,
             'base_type' => $baseType,
             'max_length' => $maxLength,
+            'precision' => $precision,
+            'scale' => $scale,
             'is_textual' => in_array($baseType, ['char', 'varchar', 'tinytext', 'text', 'mediumtext', 'longtext'], true),
+            'is_decimal' => in_array($baseType, ['decimal', 'numeric', 'double', 'float'], true),
         ];
     }
 }
