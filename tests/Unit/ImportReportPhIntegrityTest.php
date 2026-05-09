@@ -13,6 +13,10 @@ class ImportReportPhIntegrityTest extends TestCase
     {
         parent::setUp();
 
+        if (config('database.default') !== 'sqlite') {
+            $this->markTestSkipped('Test ini hanya boleh berjalan di SQLite. Bukan di MySQL production. Periksa phpunit.xml.');
+        }
+
         Schema::dropIfExists('lw325_ph');
         Schema::create('lw325_ph', function (Blueprint $table): void {
             $table->string('uniqueid_namareport')->nullable();
