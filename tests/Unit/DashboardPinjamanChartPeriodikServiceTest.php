@@ -12,6 +12,10 @@ use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
 
 beforeEach(function () {
+    if (config('database.default') !== 'sqlite') {
+        test()->markTestSkipped('Test ini hanya boleh berjalan di SQLite. Bukan di MySQL production. Periksa phpunit.xml.');
+    }
+
     Cache::flush();
 
     Schema::dropIfExists('daily_loan_dinamis');

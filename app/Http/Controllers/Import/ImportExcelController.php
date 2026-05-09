@@ -3786,6 +3786,14 @@ class ImportExcelController extends Controller
             return;
         }
 
+        if (!preg_match('/^tmp_(excel|bulk)_csv_stage_\d+_[a-z0-9]+$/', $tableName)) {
+            Log::critical('Blocked unsafe CSV staging table drop.', [
+                'table' => $tableName,
+            ]);
+
+            return;
+        }
+
         try {
             DB::statement("DROP TABLE IF EXISTS `{$tableName}`");
         } catch (\Throwable $e) {

@@ -1,0 +1,6 @@
+{
+    "status": "failed",
+    "message": "proc_open(D:\\XAMPP\\htdocs\\project-ABAH\\storage\\logs/database-backup-backup_69fee33759d83.log): Failed to open stream: Resource temporarily unavailable",
+    "updated_at": 1778311991,
+    "backup_id": "backup_69fee33759d83"
+}

@@ -1,0 +1,11 @@
+{
+    "status": "failed",
+    "progress_percent": 2,
+    "current_table_index": 0,
+    "total_tables": 1,
+    "current_table": "Full Database (Single-Pass)",
+    "message": "Backup dihentikan karena mysqldump menunggu table metadata lock pada daily_loan_dinamis.",
+    "updated_at": 1778312412,
+    "backup_file": "D:\\XAMPP\\htdocs\\project-ABAH\\storage\\app\\private\\database_backups\\project_abah_full_20260509_143738.sql",
+    "backup_id": "backup_69fee441aeb9d"
+}

@@ -146,11 +146,12 @@ class ProgressiveBackupCommand extends Command
                     $noProgressSeconds++;
                 }
 
-                // If file is not growing for maxStallSeconds, terminate mysqldump
-                if ($noProgressSeconds > $maxStallSeconds && $lastSize === 0) {
+                // If the dump file stops growing, terminate mysqldump instead of leaving a locked partial backup.
+                if ($noProgressSeconds > $maxStallSeconds) {
                     @proc_terminate($backupProcess);
                     throw new \RuntimeException(
-                        'mysqldump tidak menghasilkan output selama ' . $maxStallSeconds . ' detik. Backup dibatalkan.'
+                        'mysqldump tidak menambah output selama ' . $maxStallSeconds . ' detik. Backup dibatalkan pada ukuran '
+                        . $this->formatBytes($lastSize) . '.'
                     );
                 }
 
@@ -180,7 +181,7 @@ class ProgressiveBackupCommand extends Command
             // Cross-check: if exit code != 0, always treat as failure.
             // If exit code == 0 but file is suspiciously small, log a warning.
             if ($exitCode !== 0) {
-                $stderr = is_file($logPath) ? (string) @file_get_contents($logPath) : '';
+                $stderr = $this->readBackupProcessLog($processInfo['stderr_log'] ?? null, $logPath);
                 if (is_file($outputPath)) {
                     @unlink($outputPath);
                 }
@@ -318,14 +319,21 @@ class ProgressiveBackupCommand extends Command
         // Build command string; each arg is double-quoted for Windows CreateProcess
         $commandStr = implode(' ', array_map('escapeshellarg', $command));
 
+        $processLogPath = $this->childProcessLogPath($logPath, 'mysqldump');
+        $processLogDirectory = dirname($processLogPath);
+        if (!is_dir($processLogDirectory)) {
+            File::makeDirectory($processLogDirectory, 0755, true);
+        }
+
         $descriptors = [
             0 => ['pipe', 'r'],
-            // mysqldump uses --result-file, stdout is minimal
-            1 => ['file', $logPath, 'ab'],
+            // mysqldump uses --result-file, stdout is minimal.
+            // Keep it away from the launcher log to avoid Windows file-lock contention.
+            1 => ['file', 'NUL', 'w'],
             // CRITICAL: stderr must go to FILE, not pipe.
             // A pipe has a 4KB buffer on Windows; if mysqldump writes > 4KB of warnings
             // it blocks forever while PHP's monitoring loop waits for it to exit.
-            2 => ['file', $logPath, 'ab'],
+            2 => ['file', $processLogPath, 'ab'],
         ];
 
         $process = proc_open($commandStr, $descriptors, $pipes, base_path(), $mergedEnvironment, ['bypass_shell' => true]);
@@ -340,6 +348,7 @@ class ProgressiveBackupCommand extends Command
         return [
             'process' => $process,
             'stderr' => null,
+            'stderr_log' => $processLogPath,
         ];
     }
 
@@ -374,7 +383,37 @@ class ProgressiveBackupCommand extends Command
         return [
             'process' => $process,
             'stderr' => null,
+            'stderr_log' => $logPath,
         ];
+    }
+
+    private function childProcessLogPath(string $logPath, string $suffix): string
+    {
+        $info = pathinfo($logPath);
+        $directory = $info['dirname'] ?? storage_path('logs');
+        $filename = $info['filename'] ?? 'database-backup';
+        $extension = ($info['extension'] ?? '') !== '' ? '.' . $info['extension'] : '';
+
+        return $directory . DIRECTORY_SEPARATOR . $filename . '-' . $suffix . $extension;
+    }
+
+    private function readBackupProcessLog(?string $processLogPath, string $mainLogPath): string
+    {
+        $paths = array_values(array_unique(array_filter([$processLogPath, $mainLogPath])));
+        $messages = [];
+
+        foreach ($paths as $path) {
+            if (!is_file($path)) {
+                continue;
+            }
+
+            $content = trim((string) @file_get_contents($path));
+            if ($content !== '') {
+                $messages[] = $content;
+            }
+        }
+
+        return trim(implode(PHP_EOL, $messages));
     }
 
     private function compressFileWithGzip(string $inputPath, string $gzipPath): void

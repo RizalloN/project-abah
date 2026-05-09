@@ -8,6 +8,10 @@ use Illuminate\Support\Facades\Schema;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 
 beforeEach(function () {
+    if (config('database.default') !== 'sqlite') {
+        test()->markTestSkipped('Test ini hanya boleh berjalan di SQLite. Bukan di MySQL production. Periksa phpunit.xml.');
+    }
+
     Schema::dropIfExists('daily_loan_dinamis');
     Schema::dropIfExists('users');
 

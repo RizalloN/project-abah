@@ -963,6 +963,14 @@ AWK;
     private function mysqlEnvironment(array $config): array
     {
         $environment = [];
+        foreach (array_merge($_ENV, $_SERVER) as $key => $value) {
+            if (!is_string($key) || $key === '' || is_array($value) || is_object($value)) {
+                continue;
+            }
+
+            $environment[$key] = (string) $value;
+        }
+
         $password = (string) ($config['password'] ?? '');
         if ($password !== '') {
             $environment['MYSQL_PWD'] = $password;
