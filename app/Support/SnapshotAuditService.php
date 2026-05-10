@@ -20,8 +20,6 @@ class SnapshotAuditService
                 'daily_loan_dinamis' => $this->auditDailyLoan($periodHint),
                 'simpanan_multipn' => $this->auditSimpanan($periodHint),
                 'ssa_simpanan' => $this->auditSsaSimpanan($periodHint),
-                'ssa_pinjaman' => $this->auditSsaPinjaman($periodHint),
-                'lw325_ph' => $this->auditLw325Ph($periodHint),
                 default => $this->auditGenericSnapshot($normalizedTable, $periodHint),
             };
         } catch (Throwable $e) {
@@ -117,80 +115,27 @@ class SnapshotAuditService
         $sourceTable = 'ssa_simpanan';
         $snapshotTable = 'ssa_simpanan_snapshots';
 
-        $sourceMetrics = $this->getSourceMetrics($sourceTable, 'periode', $periodHint, [
-            'total_saldo' => 'SUM(CAST(saldo AS DECIMAL(20,2)))',
-            'total_bunga' => 'SUM(CAST(bunga AS DECIMAL(20,2)))',
+        if (!$this->tablesAndColumnsAvailable([
+            $sourceTable => ['Month_Day_Year_of_Posisi', 'saldo'],
+            $snapshotTable => ['periode', 'total_saldo', 'record_count'],
+        ])) {
+            return $this->auditUnavailable($sourceTable, $snapshotTable, $periodHint);
+        }
+
+        $sourceMetrics = $this->getSourceMetrics($sourceTable, 'Month_Day_Year_of_Posisi', $periodHint, [
+            'total_saldo' => 'SUM(CAST(COALESCE(saldo, 0) AS DECIMAL(20,2)))',
             'record_count' => 'COUNT(*)',
         ]);
 
         $snapshotMetrics = $this->getSnapshotMetrics($snapshotTable, 'periode', $periodHint, [
-            'total_saldo' => 'SUM(CAST(total_saldo AS DECIMAL(20,2)))',
-            'total_bunga' => 'SUM(CAST(total_bunga AS DECIMAL(20,2)))',
+            'total_saldo' => 'SUM(CAST(COALESCE(total_saldo, 0) AS DECIMAL(20,2)))',
             'record_count' => 'SUM(record_count)',
         ]);
 
         return $this->compareMetrics(
             $sourceTable,
             $snapshotTable,
-            'periode',
-            'periode',
-            $sourceMetrics,
-            $snapshotMetrics,
-            $periodHint
-        );
-    }
-
-    private function auditSsaPinjaman(?string $periodHint): array
-    {
-        $sourceTable = 'ssa_pinjaman';
-        $snapshotTable = 'ssa_pinjaman_snapshots';
-
-        $sourceMetrics = $this->getSourceMetrics($sourceTable, 'periode', $periodHint, [
-            'total_os_awal' => 'SUM(CAST(os_awal AS DECIMAL(20,2)))',
-            'total_os_akhir' => 'SUM(CAST(os_akhir AS DECIMAL(20,2)))',
-            'total_bunga' => 'SUM(CAST(bunga AS DECIMAL(20,2)))',
-            'record_count' => 'COUNT(*)',
-        ]);
-
-        $snapshotMetrics = $this->getSnapshotMetrics($snapshotTable, 'periode', $periodHint, [
-            'total_os_awal' => 'SUM(CAST(total_os_awal AS DECIMAL(20,2)))',
-            'total_os_akhir' => 'SUM(CAST(total_os_akhir AS DECIMAL(20,2)))',
-            'total_bunga' => 'SUM(CAST(total_bunga AS DECIMAL(20,2)))',
-            'record_count' => 'SUM(record_count)',
-        ]);
-
-        return $this->compareMetrics(
-            $sourceTable,
-            $snapshotTable,
-            'periode',
-            'periode',
-            $sourceMetrics,
-            $snapshotMetrics,
-            $periodHint
-        );
-    }
-
-    private function auditLw325Ph(?string $periodHint): array
-    {
-        $sourceTable = 'lw325_ph';
-        $snapshotTable = 'lw325_ph_snapshots';
-
-        $sourceMetrics = $this->getSourceMetrics($sourceTable, 'periode', $periodHint, [
-            'total_outstanding' => 'SUM(CAST(outstanding AS DECIMAL(20,2)))',
-            'total_interest' => 'SUM(CAST(interest_amount AS DECIMAL(20,2)))',
-            'record_count' => 'COUNT(*)',
-        ]);
-
-        $snapshotMetrics = $this->getSnapshotMetrics($snapshotTable, 'periode', $periodHint, [
-            'total_outstanding' => 'SUM(CAST(total_outstanding AS DECIMAL(20,2)))',
-            'total_interest' => 'SUM(CAST(total_interest AS DECIMAL(20,2)))',
-            'record_count' => 'SUM(record_count)',
-        ]);
-
-        return $this->compareMetrics(
-            $sourceTable,
-            $snapshotTable,
-            'periode',
+            'Month_Day_Year_of_Posisi',
             'periode',
             $sourceMetrics,
             $snapshotMetrics,

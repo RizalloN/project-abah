@@ -24,6 +24,11 @@ class ReportSnapshotBuilderDashboardBucketTest extends TestCase
         parent::setUp();
 
         $this->originalDefaultConnection = config('database.default');
+
+        if (!filter_var(env('ALLOW_LIVE_DATABASE_TESTS', false), FILTER_VALIDATE_BOOLEAN)) {
+            $this->markTestSkipped('Live MySQL snapshot test is opt-in. Set ALLOW_LIVE_DATABASE_TESTS=true to run it.');
+        }
+
         $this->testPeriod = sprintf('2099-12-%02d', random_int(1, 28));
 
         $this->configureMysqlConnectionFromEnvironment();

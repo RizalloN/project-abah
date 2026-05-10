@@ -16,6 +16,15 @@ use Tests\TestCase;
 
 class ImportReportPhQueueTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        if (config('database.default') !== 'sqlite') {
+            $this->markTestSkipped('Test ini hanya boleh berjalan di SQLite. Bukan di MySQL production. Periksa phpunit.xml.');
+        }
+    }
+
     protected function tearDown(): void
     {
         Storage::disk('local')->delete('testing/report_ph_queue.csv');

@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Jobs\Middleware\DeferSnapshotJobsDuringImport;
 use App\Support\ReportDataSyncService;
+use Carbon\Carbon;
 use App\Support\SnapshotAuditService;
 use App\Support\SnapshotBatchAggregator;
 use Illuminate\Bus\Queueable;
@@ -121,8 +122,8 @@ class SmartPartialSnapshotRebuildJob implements ShouldQueue
             'daily_loan_dinamis' => $this->deleteDailyLoanSnapshots($periods),
             'simpanan_multipn' => $this->deleteSimpananSnapshots($periods),
             'ssa_simpanan' => $this->deleteSsaSimpananSnapshots($periods),
-            'ssa_pinjaman' => $this->deleteSsaPinjamanSnapshots($periods),
-            'lw325_ph' => $this->deleteLw325PhSnapshots($periods),
+            'ssa_pinjaman' => $this->deleteDashboardHarianSnapshots($periods),
+            'lw325_ph' => $this->deleteDashboardHarianSnapshotsForPhPeriods($periods),
             default => null,
         };
     }
@@ -172,18 +173,31 @@ class SmartPartialSnapshotRebuildJob implements ShouldQueue
             ->delete();
     }
 
-    private function deleteSsaPinjamanSnapshots(array $periods): void
+    private function deleteDashboardHarianSnapshots(array $periods): void
     {
-        DB::table('ssa_pinjaman_snapshots')
-            ->whereIn('periode', $periods)
+        DB::table('dashboard_harian_snapshots')
+            ->whereIn('snapshot_period', $periods)
             ->delete();
     }
 
-    private function deleteLw325PhSnapshots(array $periods): void
+    private function deleteDashboardHarianSnapshotsForPhPeriods(array $phPeriods): void
     {
-        DB::table('lw325_ph_snapshots')
-            ->whereIn('periode', $periods)
-            ->delete();
+        foreach ($phPeriods as $phPeriod) {
+            try {
+                $phDate = Carbon::parse($phPeriod);
+                $nextMonthStart = $phDate->copy()->addDay()->toDateString();
+                $nextMonthEnd = $phDate->copy()->addMonthNoOverflow()->endOfMonth()->toDateString();
+
+                DB::table('dashboard_harian_snapshots')
+                    ->whereBetween('snapshot_period', [$nextMonthStart, $nextMonthEnd])
+                    ->delete();
+            } catch (Throwable) {
+                Log::warning('Could not resolve next-month range for lw325_ph period, skipping invalidation.', [
+                    'ph_period' => $phPeriod,
+                ]);
+            }
+        }
     }
 
 }
+

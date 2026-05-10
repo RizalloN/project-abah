@@ -17,11 +17,13 @@ class DirectLargeFileLoadServiceTest extends TestCase
     {
         parent::setUp();
 
-        // Create test service
+        if (config('database.default') !== 'sqlite') {
+            $this->markTestSkipped('Test ini hanya boleh berjalan di SQLite. Bukan di MySQL production. Periksa phpunit.xml.');
+        }
+
         $bulkLoadService = app(MySqlBulkLoadService::class);
         $this->service = new DirectLargeFileLoadService($bulkLoadService);
 
-        // Create test table
         $this->createTestTable();
     }
 

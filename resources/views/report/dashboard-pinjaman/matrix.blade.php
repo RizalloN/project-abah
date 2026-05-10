@@ -5,6 +5,20 @@
 @section('content')
 @include('report.dashboard-pinjaman._partials._styles')
 
+@php
+    $formatMatrixPeriod = function (?string $period): string {
+        if (!$period) {
+            return '-';
+        }
+
+        try {
+            return \Carbon\Carbon::parse($period)->format('d M y');
+        } catch (\Throwable) {
+            return $period;
+        }
+    };
+@endphp
+
 <style>
     /* ── Modern Premium Selectors ── */
     .loan-filter-modern {
@@ -265,11 +279,11 @@
                 <form id="loanFilterForm" method="GET" action="{{ route('report.dashboard-pinjaman.matrix') }}">
                     <div class="loan-filter-modern animate-reveal stagger-1">
                         <div class="loan-filter-item">
-                            <label class="loan-filter-label">Periode Laporan</label>
+                            <label class="loan-filter-label">Posisi Laporan</label>
                             <div class="loan-dropdown" data-loan-dropdown="periode">
                                 <i class="fas fa-calendar-alt loan-dropdown-icon"></i>
                                 <button type="button" class="loan-dropdown-toggle" onclick="document.getElementById('loanPeriodeInput').showPicker()">
-                                    <span class="loan-dropdown-text" id="loanPeriodeDisplay">{{ $requestedPeriod ?: $selectedPeriod }}</span>
+                                    <span class="loan-dropdown-text" id="loanPeriodeDisplay">{{ $formatMatrixPeriod($requestedPeriod ?: $selectedPeriod) }}</span>
                                     <i class="fas fa-chevron-down small opacity-50"></i>
                                 </button>
                                 <input id="loanPeriodeInput" type="date" name="periode" 
@@ -339,8 +353,8 @@
 
                     <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center mb-4 pb-3 border-bottom">
                         <div class="loan-filter-meta">
-                            <span>Posisi Data: <strong id="loanActivePeriodMeta">{{ $selectedPeriod ? \Carbon\Carbon::parse($selectedPeriod)->format('d/m/Y') : '-' }}</strong></span>
-                            <span>M-1: <strong id="loanComparisonPeriodMeta">{{ $comparisonPeriod ? \Carbon\Carbon::parse($comparisonPeriod)->format('d/m/Y') : '-' }}</strong></span>
+                            <span>Posisi Data: <strong id="loanActivePeriodMeta">{{ $formatMatrixPeriod($selectedPeriod) }}</strong></span>
+                            <span>Delta MTD: <strong id="loanComparisonPeriodMeta">{{ $formatMatrixPeriod($comparisonPeriod) }}</strong></span>
                         </div>
                         <div id="loanLoadingChip" class="loan-loading-chip d-none">
                             <span class="loan-loading-dot"></span>
@@ -365,7 +379,7 @@
             <div class="card-body p-4">
                 <div class="loan-table-heading mb-4">
                     <div class="d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0 font-weight-bold text-dark"><i class="fas fa-th-large mr-2 text-muted"></i> Data Matriks Pergeseran <span id="loanMatrixPeriodBadge" class="text-primary ml-1" style="font-size: 0.9rem;">{{ \Carbon\Carbon::parse($selectedPeriod)->format('d/m/Y') }} vs {{ \Carbon\Carbon::parse($comparisonPeriod)->format('d/m/Y') }}</span></h5>
+                        <h5 class="mb-0 font-weight-bold text-dark"><i class="fas fa-th-large mr-2 text-muted"></i> Data Matriks Pergeseran <span id="loanMatrixPeriodBadge" class="text-primary ml-1" style="font-size: 0.9rem;">Posisi {{ $formatMatrixPeriod($selectedPeriod) }} | Delta MTD {{ $formatMatrixPeriod($comparisonPeriod) }}</span></h5>
                         <div class="text-right">
                              <span class="badge badge-light border text-muted px-2 py-1" style="font-size: 0.7rem;">UNIT: IDR JUTA</span>
                         </div>
@@ -392,9 +406,9 @@
                         <table class="loan-matrix">
                             <thead>
                                 <tr>
-                                    <th class="matrix-before">Kualitas M-1</th>
-                                    <th colspan="{{ count($matrixColumns) }}" class="matrix-after-group">Kualitas Current (MtD)</th>
-                                    <th rowspan="2" class="matrix-total-head">Total Movement<br><span id="loanTotalValueHeader">per Baris</span></th>
+                                    <th class="matrix-before">Kualitas Delta MTD<br><span id="loanComparisonHeadLabel">{{ $formatMatrixPeriod($comparisonPeriod) }}</span></th>
+                                    <th colspan="{{ count($matrixColumns) }}" class="matrix-after-group">Kualitas Posisi <span id="loanCurrentHeadLabel">{{ $formatMatrixPeriod($selectedPeriod) }}</span></th>
+                                    <th rowspan="2" class="matrix-total-head">Delta MTD<br><span id="loanTotalValueHeader">per Baris</span></th>
                                     <th colspan="4" class="matrix-subhead">Data Output (IDR)</th>
                                 </tr>
                                 <tr>
@@ -494,6 +508,8 @@
         const periodBadge = document.getElementById('loanMatrixPeriodBadge');
         const activePeriodMeta = document.getElementById('loanActivePeriodMeta');
         const comparisonPeriodMeta = document.getElementById('loanComparisonPeriodMeta');
+        const currentHeadLabel = document.getElementById('loanCurrentHeadLabel');
+        const comparisonHeadLabel = document.getElementById('loanComparisonHeadLabel');
         const totalValueHeader = document.getElementById('loanTotalValueHeader');
         const drillModal = document.getElementById('loanMatrixDetailModal');
         const drillSubtitle = document.getElementById('loanDrillSubtitle');
@@ -541,6 +557,22 @@
             'cabang1': cabangSelect,
             'unit1': unitSelect,
         };
+
+        function formatMatrixPeriodDate(value) {
+            if (!value) return '-';
+            const date = new Date(`${value}T00:00:00`);
+            if (Number.isNaN(date.getTime())) return value;
+
+            return date.toLocaleDateString('id-ID', {
+                day: '2-digit',
+                month: 'short',
+                year: '2-digit',
+            });
+        }
+
+        function renderPositionDeltaLabel(selectedPeriod, comparisonPeriod) {
+            return `Posisi ${formatMatrixPeriodDate(selectedPeriod)} | Delta MTD ${formatMatrixPeriodDate(comparisonPeriod)}`;
+        }
 
         function abortInFlightRequests() {
             if (activeController) activeController.abort();
@@ -685,8 +717,8 @@
             const rows = payload.rows || [];
 
             drillMeta.innerHTML = `
-                <span>Periode: ${escapeHtml(formatDate(payload.selected_period))}</span>
-                <span>M-1: ${escapeHtml(formatDate(payload.comparison_period))}</span>
+                <span>Posisi: ${escapeHtml(formatMatrixPeriodDate(payload.selected_period))}</span>
+                <span>Delta MTD: ${escapeHtml(formatMatrixPeriodDate(payload.comparison_period))}</span>
                 <span>Bucket: ${escapeHtml(payload.before_bucket)}</span>
                 <span>Ditampilkan: ${formatNumber(activeDrillRenderedCount + rows.length)}</span>
             `;
@@ -788,8 +820,10 @@
 
                 console.log('Filter options response:', payload);
 
-                activePeriodMeta.textContent = formatDate(payload.selected_period);
-                comparisonPeriodMeta.textContent = formatDate(payload.comparison_period);
+                activePeriodMeta.textContent = formatMatrixPeriodDate(payload.selected_period);
+                comparisonPeriodMeta.textContent = formatMatrixPeriodDate(payload.comparison_period);
+                if (currentHeadLabel) currentHeadLabel.textContent = formatMatrixPeriodDate(payload.selected_period);
+                if (comparisonHeadLabel) comparisonHeadLabel.textContent = formatMatrixPeriodDate(payload.comparison_period);
 
                 isRefreshingFilters = true;
                 setSelectOptions(segmenSelect, payload.segments || [], 'Semua Segmen');
@@ -837,7 +871,11 @@
 
                 renderRows(payload.matrix_rows);
                 renderFoot(payload.grand_totals, payload.grand_total_value);
-                periodBadge.textContent = `${formatDate(payload.selected_period)} vs ${formatDate(payload.comparison_period)}`;
+                periodBadge.textContent = renderPositionDeltaLabel(payload.selected_period, payload.comparison_period);
+                activePeriodMeta.textContent = formatMatrixPeriodDate(payload.selected_period);
+                comparisonPeriodMeta.textContent = formatMatrixPeriodDate(payload.comparison_period);
+                if (currentHeadLabel) currentHeadLabel.textContent = formatMatrixPeriodDate(payload.selected_period);
+                if (comparisonHeadLabel) comparisonHeadLabel.textContent = formatMatrixPeriodDate(payload.comparison_period);
                 
                 if (pushHistory) window.history.replaceState({}, '', `?${params.toString()}`);
                 updateLoadingProgress(100, 'Selesai', 'Data dimuat.');
@@ -1016,7 +1054,7 @@
             // Date Input Sync
             if (periodInput && periodDisplay) {
                 periodInput.addEventListener('change', () => {
-                    periodDisplay.textContent = periodInput.value;
+                    periodDisplay.textContent = formatMatrixPeriodDate(periodInput.value);
                 });
             }
         }

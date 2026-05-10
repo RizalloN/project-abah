@@ -11,6 +11,15 @@ use Tests\TestCase;
 
 class MySqlBulkLoadServiceTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        if (config('database.default') !== 'sqlite') {
+            $this->markTestSkipped('Test ini hanya boleh berjalan di SQLite. Bukan di MySQL production. Periksa phpunit.xml.');
+        }
+    }
+
     protected function tearDown(): void
     {
         Mockery::close();

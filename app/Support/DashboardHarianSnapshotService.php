@@ -343,13 +343,12 @@ class DashboardHarianSnapshotService
         $sharedPeriodsAsc = $sharedPeriods;
         sort($sharedPeriodsAsc);
 
-        foreach ($sharedPeriodsAsc as $sharedPeriod) {
-            if ($sharedPeriod > $normalizedPhPeriod) {
-                return [$sharedPeriod];
-            }
-        }
+        $nextMonthEnd = Carbon::parse($normalizedPhPeriod)->addMonthNoOverflow()->endOfMonth()->toDateString();
 
-        return [];
+        return array_values(array_filter(
+            $sharedPeriodsAsc,
+            fn(string $p) => $p > $normalizedPhPeriod && $p <= $nextMonthEnd
+        ));
     }
 
     public function rebuildAffectedByPhPeriod(?string $phPeriod = null, bool $force = false): array
@@ -1846,20 +1845,20 @@ class DashboardHarianSnapshotService
             return collect();
         }
 
-        $normalizedCurrentPeriod = $this->normalizeDate($period);
-        if ($normalizedCurrentPeriod === null) {
+        $normalizedSnapshotPeriod = $this->normalizeDate($period);
+        if ($normalizedSnapshotPeriod === null) {
             return collect();
         }
 
-        $hasCurrentPhPeriod = DB::table('lw325_ph')
-            ->where('periode', $normalizedCurrentPeriod)
-            ->exists();
+        $currentPhPeriod = DB::table('lw325_ph')
+            ->where('periode', '<=', $normalizedSnapshotPeriod)
+            ->orderByDesc('periode')
+            ->value('periode');
 
-        if (!$hasCurrentPhPeriod) {
+        if ($currentPhPeriod === null) {
             return collect();
         }
 
-        $currentPhPeriod = $normalizedCurrentPeriod;
         $previousPhPeriod = $this->resolvePreviousMonthPhPeriod($currentPhPeriod);
 
         if (!$this->isPreviousMonthEndPhPeriod($currentPhPeriod, $previousPhPeriod)) {
@@ -2986,18 +2985,19 @@ class DashboardHarianSnapshotService
             return ['none', null, ['row_count' => 0]];
         }
 
-        $hasCurrentPhPeriod = DB::table('lw325_ph')
-            ->where('periode', $normalizedPeriod)
-            ->exists();
+        $currentPhPeriod = DB::table('lw325_ph')
+            ->where('periode', '<=', $normalizedPeriod)
+            ->orderByDesc('periode')
+            ->value('periode');
 
-        if (!$hasCurrentPhPeriod) {
+        if ($currentPhPeriod === null) {
             return ['lw325_ph', null, ['row_count' => 0]];
         }
 
-        $previousPhPeriod = $this->resolvePreviousMonthPhPeriod($normalizedPeriod);
-        if (!$this->isPreviousMonthEndPhPeriod($normalizedPeriod, $previousPhPeriod)) {
+        $previousPhPeriod = $this->resolvePreviousMonthPhPeriod($currentPhPeriod);
+        if (!$this->isPreviousMonthEndPhPeriod($currentPhPeriod, $previousPhPeriod)) {
             Log::warning('Skipping LW325 PH recovery metadata because the comparison period is not the previous month-end.', [
-                'current_period' => $normalizedPeriod,
+                'current_period' => $currentPhPeriod,
                 'comparison_period' => $previousPhPeriod,
             ]);
 

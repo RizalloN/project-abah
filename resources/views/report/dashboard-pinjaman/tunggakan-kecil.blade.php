@@ -420,7 +420,7 @@
         </div>
     </div>
 
-    <div class="card loan-table-shell mt-5 animate-reveal">
+    <div id="smallArrearsTableCard" class="card loan-table-shell mt-5 animate-reveal d-none">
         <div class="card-body p-4">
             <div class="loan-table-heading">
                 <div>
@@ -828,6 +828,9 @@
         }
 
         async function loadData(pushHistory = false) {
+            const tableCard = document.getElementById('smallArrearsTableCard');
+            tableCard.classList.remove('d-none');
+
             const selectedBranches = getSelectedBranches();
             const selectedUnits = getEffectiveUnitSelections();
 
@@ -955,7 +958,12 @@
             renderUnitOptions(initialUnitOptions, []);
             setUnitSelectDisabled(true);
             await loadFilters();
-            await loadData(true);
+            
+            const tableCard = document.getElementById('smallArrearsTableCard');
+            tableCard.classList.add('d-none');
+            
+            // Re-sync badge to empty state period
+            updateBadge(periodInput.value, [areaAllValue], [], true);
         });
 
         document.addEventListener('click', function (event) {
@@ -973,7 +981,6 @@
         }
 
         loadFilters()
-            .then(() => loadData())
             .catch(() => renderEmptyState('Filter belum siap dimuat.', {
                 selected_period: periodInput.value,
                 effective_branches: areaBranches,

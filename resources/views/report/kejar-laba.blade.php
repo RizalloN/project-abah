@@ -43,60 +43,40 @@
 
     .kejar-laba-hero {
         position: relative;
-        isolation: isolate;
-        overflow: hidden;
-        padding: 1.45rem 1.25rem;
+        padding: 1.25rem 1.75rem;
         border-radius: 16px 16px 0 0;
-        background:
-            radial-gradient(circle at 12% 18%, rgba(255, 103, 31, 0.16), transparent 26%),
-            radial-gradient(circle at 88% 10%, rgba(59, 130, 246, 0.22), transparent 28%),
-            linear-gradient(135deg, #003b75 0%, #00529c 48%, #0f4c97 100%);
-        color: #ffffff;
-        box-shadow: 0 18px 40px -30px rgba(0, 55, 116, 0.55);
-    }
-
-    .kejar-laba-hero::before {
-        content: '';
-        position: absolute;
-        inset: 0;
-        z-index: -1;
-        background:
-            linear-gradient(120deg, rgba(255, 255, 255, 0.12), transparent 35%),
-            repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.08) 0 1px, transparent 1px 18px);
-        opacity: 0.72;
+        background: var(--surface-color);
+        border-bottom: 1px solid var(--border-color);
+        color: var(--text-main);
     }
 
     .kejar-laba-title-wrap {
-        width: min(100%, 860px);
-        text-align: center;
-        padding: 0.05rem 1rem;
+        width: 100%;
+        text-align: left;
+        padding: 0;
     }
 
     .kejar-laba-title-badge {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.45rem;
-        margin-bottom: 0.6rem;
-        padding: 0.32rem 0.72rem;
-        border-radius: 999px;
-        background: rgba(255, 255, 255, 0.12);
-        border: 1px solid rgba(255, 255, 255, 0.24);
-        color: rgba(255, 255, 255, 0.92);
-        font-size: 0.64rem;
-        font-weight: 800;
-        letter-spacing: 0.12em;
+        display: inline-block;
+        margin-bottom: 0.5rem;
+        padding: 0.25rem 0.75rem;
+        border-radius: 6px;
+        background: var(--loan-blue-soft);
+        color: var(--primary-blue-dark);
+        font-size: 0.75rem;
+        font-weight: 600;
+        letter-spacing: 0.05em;
         text-transform: uppercase;
+        border: 1px solid rgba(30, 64, 175, 0.1);
     }
 
     .kejar-laba-title {
         margin: 0;
-        font-size: clamp(1.18rem, 2.05vw, 2rem);
-        font-weight: 900;
-        color: #ffffff;
-        letter-spacing: 0.035em;
-        line-height: 1.08;
-        text-transform: uppercase;
-        text-shadow: 0 10px 26px rgba(0, 18, 50, 0.28);
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: var(--text-main);
+        letter-spacing: -0.01em;
+        line-height: 1.2;
     }
 
     .kejar-laba-title::after {
@@ -112,7 +92,7 @@
 
     .kejar-laba-subtitle {
         margin: 0.65rem auto 0;
-        color: rgba(255, 255, 255, 0.78);
+        color: var(--text-muted);
         font-size: 0.78rem;
         line-height: 1.6;
         max-width: 660px;
@@ -124,9 +104,9 @@
         top: 1.25rem;
         border-radius: 999px;
         font-weight: 800;
-        background: rgba(255, 255, 255, 0.14);
-        color: rgba(255, 255, 255, 0.92);
-        border: 1px solid rgba(255, 255, 255, 0.22);
+        background: rgba(30, 64, 175, 0.08);
+        color: var(--primary-blue-dark);
+        border: 1px solid rgba(30, 64, 175, 0.15);
     }
 
     @media (max-width: 767.98px) {
@@ -692,7 +672,7 @@
                     <span>BRI Recovery Performance</span>
                 </div>
                 <h1 class="kejar-laba-title">REPORT RECOVERY</h1>
-                <div class="kejar-laba-subtitle">Monitoring pencapaian Recovery berdasarkan data Cognos secara ringkas dan profesional.</div>
+                <div class="kejar-laba-subtitle">Monitoring pencapaian Recovery secara ringkas dan komprehensif.</div>
             </div>
             <div class="d-flex align-items-center gap-2">
                 <span class="badge px-3 py-2 kejar-laba-date-badge">
@@ -1069,3 +1049,4 @@
     </div>
 </div>
 @endsection
+

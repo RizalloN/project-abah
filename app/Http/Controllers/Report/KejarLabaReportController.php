@@ -8,6 +8,7 @@ use App\Support\RkaLookupService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\View\View;
 
 class KejarLabaReportController extends Controller
@@ -18,13 +19,21 @@ class KejarLabaReportController extends Controller
         $rkaService = app(RkaLookupService::class);
         $area6Branches = ['KC Madiun', 'KC Magetan', 'KC Ngawi', 'KC Ponorogo'];
 
-        // 1. Resolve Available Periods from cognos_recovery
-        $availablePeriods = DB::table('cognos_recovery')
+        // 1. Resolve Available Periods from cognos_recovery and lw325_ph
+        $cognosPeriods = DB::table('cognos_recovery')
             ->select('periode')
             ->distinct()
-            ->orderByDesc('periode')
-            ->pluck('periode')
-            ->map(fn($p) => Carbon::parse($p)->toDateString());
+            ->pluck('periode');
+
+        $phPeriods = Schema::hasTable('lw325_ph') 
+            ? DB::table('lw325_ph')->select('periode')->distinct()->pluck('periode') 
+            : collect();
+
+        $availablePeriods = $cognosPeriods->concat($phPeriods)
+            ->unique()
+            ->map(fn($p) => Carbon::parse($p)->toDateString())
+            ->sortDesc()
+            ->values();
 
         $requestedPeriod = $request->input('periode');
         $selectedPeriod = null;
@@ -97,15 +106,24 @@ class KejarLabaReportController extends Controller
             
             // M-1 is the end of the previous month
             $m1Period = $selectedCarbon->copy()->subMonthNoOverflow()->endOfMonth()->toDateString();
-            // Try to find the closest available snapshot for M-1
-            $m1EffectivePeriod = DB::table('cognos_recovery')
-                ->where('periode', '<=', $m1Period)
-                ->orderByDesc('periode')
-                ->value('periode');
+            // Try to find the closest available snapshot for M-1 from available periods
+            $m1EffectivePeriod = $availablePeriods->first(fn($p) => $p <= $m1Period);
 
-            // 3. Fetch Metrics from cognos_recovery
-            $currentMetrics = $this->getRecoveryMetricsFromCognos($selectedPeriod, $selectedKanca, $selectedUnit);
-            $m1Metrics = $m1EffectivePeriod ? $this->getRecoveryMetricsFromCognos($m1EffectivePeriod, $selectedKanca, $selectedUnit) : [];
+            // 3. Fetch Metrics from cognos_recovery or lw325_ph
+            $hasCognosCurrent = DB::table('cognos_recovery')->where('periode', $selectedPeriod)->exists();
+            
+            $currentMetrics = !$hasCognosCurrent && Schema::hasTable('lw325_ph')
+                ? $this->getRecoveryMetricsFromPh($selectedPeriod, $selectedKanca, $selectedUnit)
+                : $this->getRecoveryMetricsFromCognos($selectedPeriod, $selectedKanca, $selectedUnit);
+
+            $m1Metrics = [];
+            $hasCognosM1 = false;
+            if ($m1EffectivePeriod) {
+                $hasCognosM1 = DB::table('cognos_recovery')->where('periode', $m1EffectivePeriod)->exists();
+                $m1Metrics = !$hasCognosM1 && Schema::hasTable('lw325_ph')
+                    ? $this->getRecoveryMetricsFromPh($m1EffectivePeriod, $selectedKanca, $selectedUnit)
+                    : $this->getRecoveryMetricsFromCognos($m1EffectivePeriod, $selectedKanca, $selectedUnit);
+            }
             
             // 4. Handle RKA Targets
             $rkaRequested = $request->input('rka_period');
@@ -119,10 +137,18 @@ class KejarLabaReportController extends Controller
             // 5. Build Final Rows
             if ($isArea6All) {
                 $branchCodes = $this->fetchBranchOfficeCodes($area6Branches);
-                $branchCurrentMetrics = $this->getBranchOfficeRecoveryMetricsFromCognos($selectedPeriod, $area6Branches);
-                $branchM1Metrics = $m1EffectivePeriod
-                    ? $this->getBranchOfficeRecoveryMetricsFromCognos($m1EffectivePeriod, $area6Branches)
-                    : [];
+                
+                $branchCurrentMetrics = !$hasCognosCurrent && Schema::hasTable('lw325_ph')
+                    ? $this->getBranchOfficeRecoveryMetricsFromPh($selectedPeriod, $area6Branches)
+                    : $this->getBranchOfficeRecoveryMetricsFromCognos($selectedPeriod, $area6Branches);
+                
+                $branchM1Metrics = [];
+                if ($m1EffectivePeriod) {
+                    $branchM1Metrics = !$hasCognosM1 && Schema::hasTable('lw325_ph')
+                        ? $this->getBranchOfficeRecoveryMetricsFromPh($m1EffectivePeriod, $area6Branches)
+                        : $this->getBranchOfficeRecoveryMetricsFromCognos($m1EffectivePeriod, $area6Branches);
+                }
+                
                 $branchRkaByOffice = $this->fetchBranchOfficeRkaTargets($rkaMonthColumn, $rkaYear, $area6Branches);
 
                 foreach ($area6Branches as $index => $branchOffice) {
@@ -394,6 +420,176 @@ class KejarLabaReportController extends Controller
             $val = (float) $row->total_recovery;
 
             if ($seg === 'MICRO') {
+                $metrics[$key]['micro'] += $val;
+            } elseif ($seg === 'SMALL') {
+                $metrics[$key]['small'] += $val;
+            } elseif ($seg === 'CONSUMER') {
+                $metrics[$key]['consumer'] += $val;
+            }
+
+            $metrics[$key]['total'] += $val;
+        }
+
+        return $metrics;
+    }
+
+
+    private function getBranchOfficeRecoveryMetricsFromPh(string $period, array $branchOffices = []): array
+    {
+        $metrics = [];
+        foreach ($branchOffices as $branch) {
+            $metrics[$branch] = ['micro' => 0, 'small' => 0, 'consumer' => 0, 'total' => 0];
+        }
+
+        if (!Schema::hasTable('lw325_ph')) return $metrics;
+
+        // Try to get previous ph period
+        $m1Period = DB::table('lw325_ph')
+            ->where('periode', '<', $period)
+            ->orderByDesc('periode')
+            ->value('periode');
+
+        if (!$m1Period) return $metrics;
+
+        $tupokQuery = DB::table('lw325_ph as n')
+            ->join('lw325_ph as o', function ($join) use ($m1Period, $period) {
+                $join->on('n.kanwil', '=', 'o.kanwil')
+                    ->on('n.kanca', '=', 'o.kanca')
+                    ->on('n.unit', '=', 'o.unit')
+                    ->on('n.acctno', '=', 'o.acctno')
+                    ->whereRaw('n.periode = ?', [$period])
+                    ->whereRaw('o.periode = ?', [$m1Period]);
+            })
+            ->selectRaw("o.kanca")
+            ->selectRaw("o.segmen_dashboard")
+            ->selectRaw("(COALESCE(o.pokok, 0) - COALESCE(n.pokok, 0)) as amount")
+            ->selectRaw("'tupok' as type")
+            ->whereRaw('(COALESCE(o.pokok, 0) - COALESCE(n.pokok, 0)) > 0');
+
+        if (!empty($branchOffices)) {
+            $tupokQuery->whereIn('n.kanca', $branchOffices);
+        }
+
+        $lunasQuery = DB::table('lw325_ph as o')
+            ->leftJoin('lw325_ph as n', function ($join) use ($m1Period, $period) {
+                $join->on('o.kanwil', '=', 'n.kanwil')
+                    ->on('o.kanca', '=', 'n.kanca')
+                    ->on('o.unit', '=', 'n.unit')
+                    ->on('o.acctno', '=', 'n.acctno')
+                    ->whereRaw('n.periode = ?', [$period]);
+            })
+            ->selectRaw("o.kanca")
+            ->selectRaw("o.segmen_dashboard")
+            ->selectRaw("COALESCE(o.pokok, 0) as amount")
+            ->selectRaw("'lunas' as type")
+            ->where('o.periode', $m1Period)
+            ->whereNull('n.acctno');
+
+        if (!empty($branchOffices)) {
+            $lunasQuery->whereIn('o.kanca', $branchOffices);
+        }
+
+        $combined = $tupokQuery->unionAll($lunasQuery);
+
+        $results = DB::query()
+            ->fromSub($combined, 'ph')
+            ->select('kanca', 'segmen_dashboard')
+            ->selectRaw('SUM(amount) as total')
+            ->groupBy('kanca', 'segmen_dashboard')
+            ->get();
+
+        foreach ($results as $row) {
+            $key = $row->kanca;
+            if (!isset($metrics[$key])) continue;
+
+            $seg = strtoupper(trim((string)$row->segmen_dashboard));
+            $val = (float)$row->total;
+
+            if (in_array($seg, ['MICRO', 'MIKRO'])) {
+                $metrics[$key]['micro'] += $val;
+            } elseif ($seg === 'SMALL') {
+                $metrics[$key]['small'] += $val;
+            } elseif ($seg === 'CONSUMER') {
+                $metrics[$key]['consumer'] += $val;
+            }
+
+            $metrics[$key]['total'] += $val;
+        }
+
+        return $metrics;
+    }
+
+    private function getRecoveryMetricsFromPh(string $period, array $kancas = [], string $unit = 'all'): array
+    {
+        $metrics = [];
+        if (!Schema::hasTable('lw325_ph')) return $metrics;
+
+        $m1Period = DB::table('lw325_ph')
+            ->where('periode', '<', $period)
+            ->orderByDesc('periode')
+            ->value('periode');
+
+        if (!$m1Period) return $metrics;
+
+        $tupokQuery = DB::table('lw325_ph as n')
+            ->join('lw325_ph as o', function ($join) use ($m1Period, $period) {
+                $join->on('n.kanwil', '=', 'o.kanwil')
+                    ->on('n.kanca', '=', 'o.kanca')
+                    ->on('n.unit', '=', 'o.unit')
+                    ->on('n.acctno', '=', 'o.acctno')
+                    ->whereRaw('n.periode = ?', [$period])
+                    ->whereRaw('o.periode = ?', [$m1Period]);
+            })
+            ->selectRaw("o.kanca")
+            ->selectRaw("o.unit")
+            ->selectRaw("o.segmen_dashboard")
+            ->selectRaw("(COALESCE(o.pokok, 0) - COALESCE(n.pokok, 0)) as amount")
+            ->whereRaw('(COALESCE(o.pokok, 0) - COALESCE(n.pokok, 0)) > 0');
+
+        $lunasQuery = DB::table('lw325_ph as o')
+            ->leftJoin('lw325_ph as n', function ($join) use ($m1Period, $period) {
+                $join->on('o.kanwil', '=', 'n.kanwil')
+                    ->on('o.kanca', '=', 'n.kanca')
+                    ->on('o.unit', '=', 'n.unit')
+                    ->on('o.acctno', '=', 'n.acctno')
+                    ->whereRaw('n.periode = ?', [$period]);
+            })
+            ->selectRaw("o.kanca")
+            ->selectRaw("o.unit")
+            ->selectRaw("o.segmen_dashboard")
+            ->selectRaw("COALESCE(o.pokok, 0) as amount")
+            ->where('o.periode', $m1Period)
+            ->whereNull('n.acctno');
+
+        if (!empty($kancas)) {
+            $tupokQuery->whereIn('n.kanca', $kancas);
+            $lunasQuery->whereIn('o.kanca', $kancas);
+        }
+        
+        if ($unit !== 'all') {
+            $tupokQuery->where('n.unit', $unit);
+            $lunasQuery->where('o.unit', $unit);
+        }
+
+        $combined = $tupokQuery->unionAll($lunasQuery);
+
+        $results = DB::query()
+            ->fromSub($combined, 'ph')
+            ->select('kanca', 'unit', 'segmen_dashboard')
+            ->selectRaw('SUM(amount) as total')
+            ->groupBy('kanca', 'unit', 'segmen_dashboard')
+            ->get();
+
+        foreach ($results as $row) {
+            $key = $row->kanca . '|' . $row->unit;
+            if (!isset($metrics[$key])) {
+                $metrics[$key] = ['micro' => 0, 'small' => 0, 'consumer' => 0, 'total' => 0];
+            }
+
+            $seg = strtoupper(trim((string)$row->segmen_dashboard));
+            $val = (float)$row->total;
+
+            if (in_array($seg, ['MICRO', 'MIKRO'])) {
                 $metrics[$key]['micro'] += $val;
             } elseif ($seg === 'SMALL') {
                 $metrics[$key]['small'] += $val;

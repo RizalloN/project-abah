@@ -649,21 +649,29 @@
                                     <thead>
                                         <tr>
                                             <th rowspan="3" class="bg-header-main sticky-col align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER" style="min-width: 170px;">BRANCH OFFICE</th>
-                                            <th colspan="7" class="bg-header-main">TOTAL</th>
+                                            <th colspan="15" class="bg-header-main">TOTAL</th>
                                         </tr>
                                         <tr class="bg-header-sub">
-                                            <th colspan="2">Total OS</th>
-                                            <th colspan="2">Total CASA</th>
-                                            <th colspan="3">Rasio CASA/OS</th>
+                                            <th colspan="4">Total OS</th>
+                                            <th colspan="4">Total CASA</th>
+                                            <th colspan="7">Rasio CASA/OS</th>
                                         </tr>
                                         <tr class="bg-header-sub-light">
+                                            <th class="lbl-ytd-th">-</th>
+                                            <th class="lbl-m2-th">-</th>
                                             <th class="lbl-prev-th">-</th>
                                             <th class="lbl-curr-th">-</th>
+                                            <th class="lbl-ytd-th">-</th>
+                                            <th class="lbl-m2-th">-</th>
                                             <th class="lbl-prev-th">-</th>
                                             <th class="lbl-curr-th">-</th>
+                                            <th class="lbl-ytd-th">-</th>
+                                            <th class="lbl-m2-th">-</th>
                                             <th class="lbl-prev-th">-</th>
                                             <th class="lbl-curr-th">-</th>
                                             <th>MtD</th>
+                                            <th>M-2</th>
+                                            <th>YtD</th>
                                         </tr>
                                     </thead>
                                     <tbody id="tbody-total"></tbody>
@@ -681,21 +689,29 @@
                                     <thead>
                                         <tr>
                                             <th rowspan="3" class="bg-header-main sticky-col align-middle col-group-label" style="min-width: 170px;">UKER RITEL</th>
-                                            <th colspan="7" class="bg-header-main">TOTAL RITEL</th>
+                                            <th colspan="15" class="bg-header-main">TOTAL RITEL</th>
                                         </tr>
                                         <tr class="bg-header-sub">
-                                            <th colspan="2">Total OS</th>
-                                            <th colspan="2">Total CASA</th>
-                                            <th colspan="3">Rasio CASA/OS</th>
+                                            <th colspan="4">Total OS</th>
+                                            <th colspan="4">Total CASA</th>
+                                            <th colspan="7">Rasio CASA/OS</th>
                                         </tr>
                                         <tr class="bg-header-sub-light">
+                                            <th class="lbl-ytd-th">-</th>
+                                            <th class="lbl-m2-th">-</th>
                                             <th class="lbl-prev-th">-</th>
                                             <th class="lbl-curr-th">-</th>
+                                            <th class="lbl-ytd-th">-</th>
+                                            <th class="lbl-m2-th">-</th>
                                             <th class="lbl-prev-th">-</th>
                                             <th class="lbl-curr-th">-</th>
+                                            <th class="lbl-ytd-th">-</th>
+                                            <th class="lbl-m2-th">-</th>
                                             <th class="lbl-prev-th">-</th>
                                             <th class="lbl-curr-th">-</th>
                                             <th>MtD</th>
+                                            <th>M-2</th>
+                                            <th>YtD</th>
                                         </tr>
                                     </thead>
                                     <tbody id="tbody-ritel"></tbody>
@@ -713,21 +729,29 @@
                                     <thead>
                                         <tr>
                                             <th rowspan="3" class="bg-header-main sticky-col align-middle col-group-label" style="min-width: 170px;">UKER MIKRO</th>
-                                            <th colspan="7" class="bg-header-main">TOTAL MIKRO</th>
+                                            <th colspan="15" class="bg-header-main">TOTAL MIKRO</th>
                                         </tr>
                                         <tr class="bg-header-sub">
-                                            <th colspan="2">Total OS</th>
-                                            <th colspan="2">Total CASA</th>
-                                            <th colspan="3">Rasio CASA/OS</th>
+                                            <th colspan="4">Total OS</th>
+                                            <th colspan="4">Total CASA</th>
+                                            <th colspan="7">Rasio CASA/OS</th>
                                         </tr>
                                         <tr class="bg-header-sub-light">
+                                            <th class="lbl-ytd-th">-</th>
+                                            <th class="lbl-m2-th">-</th>
                                             <th class="lbl-prev-th">-</th>
                                             <th class="lbl-curr-th">-</th>
+                                            <th class="lbl-ytd-th">-</th>
+                                            <th class="lbl-m2-th">-</th>
                                             <th class="lbl-prev-th">-</th>
                                             <th class="lbl-curr-th">-</th>
+                                            <th class="lbl-ytd-th">-</th>
+                                            <th class="lbl-m2-th">-</th>
                                             <th class="lbl-prev-th">-</th>
                                             <th class="lbl-curr-th">-</th>
                                             <th>MtD</th>
+                                            <th>M-2</th>
+                                            <th>YtD</th>
                                         </tr>
                                     </thead>
                                     <tbody id="tbody-micro"></tbody>
@@ -742,32 +766,48 @@
                                 <thead>
                                     <tr>
                                         <th rowspan="3" class="bg-header-main sticky-col align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER" style="min-width: 170px;">BRANCH OFFICE</th>
-                                        <th colspan="7" class="bg-header-main">BRIGUNA</th>
-                                        <th colspan="7" class="bg-header-main" style="border-left: 2px solid rgba(255,255,255,0.4) !important;">KPR</th>
+                                        <th colspan="15" class="bg-header-main">BRIGUNA</th>
+                                        <th colspan="15" class="bg-header-main" style="border-left: 2px solid rgba(255,255,255,0.4) !important;">KPR</th>
                                     </tr>
                                     <tr class="bg-header-sub">
-                                        <th colspan="2">Total OS</th>
-                                        <th colspan="2">Total CASA</th>
-                                        <th colspan="3">Rasio CASA/OS</th>
-                                        <th colspan="2" style="border-left: 2px solid rgba(255,255,255,0.4) !important;">Total OS</th>
-                                        <th colspan="2">Total CASA</th>
-                                        <th colspan="3">Rasio CASA/OS</th>
+                                        <th colspan="4">Total OS</th>
+                                        <th colspan="4">Total CASA</th>
+                                        <th colspan="7">Rasio CASA/OS</th>
+                                        <th colspan="4" style="border-left: 2px solid rgba(255,255,255,0.4) !important;">Total OS</th>
+                                        <th colspan="4">Total CASA</th>
+                                        <th colspan="7">Rasio CASA/OS</th>
                                     </tr>
                                     <tr class="bg-header-sub-light">
+                                        <th class="lbl-ytd-th">-</th>
+                                        <th class="lbl-m2-th">-</th>
                                         <th class="lbl-prev-th">-</th>
                                         <th class="lbl-curr-th">-</th>
+                                        <th class="lbl-ytd-th">-</th>
+                                        <th class="lbl-m2-th">-</th>
                                         <th class="lbl-prev-th">-</th>
                                         <th class="lbl-curr-th">-</th>
+                                        <th class="lbl-ytd-th">-</th>
+                                        <th class="lbl-m2-th">-</th>
                                         <th class="lbl-prev-th">-</th>
                                         <th class="lbl-curr-th">-</th>
                                         <th>MtD</th>
-                                        <th class="lbl-prev-th" style="border-left: 2px solid rgba(255,255,255,0.4) !important;">-</th>
-                                        <th class="lbl-curr-th">-</th>
+                                        <th>M-2</th>
+                                        <th>YtD</th>
+                                        <th class="lbl-ytd-th" style="border-left: 2px solid rgba(255,255,255,0.4) !important;">-</th>
+                                        <th class="lbl-m2-th">-</th>
                                         <th class="lbl-prev-th">-</th>
                                         <th class="lbl-curr-th">-</th>
+                                        <th class="lbl-ytd-th">-</th>
+                                        <th class="lbl-m2-th">-</th>
+                                        <th class="lbl-prev-th">-</th>
+                                        <th class="lbl-curr-th">-</th>
+                                        <th class="lbl-ytd-th">-</th>
+                                        <th class="lbl-m2-th">-</th>
                                         <th class="lbl-prev-th">-</th>
                                         <th class="lbl-curr-th">-</th>
                                         <th>MtD</th>
+                                        <th>M-2</th>
+                                        <th>YtD</th>
                                     </tr>
                                 </thead>
                                 <tbody id="tbody-briguna-kpr"></tbody>
@@ -781,32 +821,48 @@
                                 <thead>
                                     <tr>
                                         <th rowspan="3" class="bg-header-main sticky-col align-middle col-group-label" data-default-label="BRANCH OFFICE" data-filtered-label="UKER" style="min-width: 170px;">BRANCH OFFICE</th>
-                                        <th colspan="7" class="bg-header-main">MIKRO</th>
-                                        <th colspan="7" class="bg-header-main" style="border-left: 2px solid rgba(255,255,255,0.4) !important;">SMC</th>
+                                        <th colspan="15" class="bg-header-main">MIKRO</th>
+                                        <th colspan="15" class="bg-header-main" style="border-left: 2px solid rgba(255,255,255,0.4) !important;">SMC</th>
                                     </tr>
                                     <tr class="bg-header-sub">
-                                        <th colspan="2">Total OS</th>
-                                        <th colspan="2">Total CASA</th>
-                                        <th colspan="3">Rasio CASA/OS</th>
-                                        <th colspan="2" style="border-left: 2px solid rgba(255,255,255,0.4) !important;">Total OS</th>
-                                        <th colspan="2">Total CASA</th>
-                                        <th colspan="3">Rasio CASA/OS</th>
+                                        <th colspan="4">Total OS</th>
+                                        <th colspan="4">Total CASA</th>
+                                        <th colspan="7">Rasio CASA/OS</th>
+                                        <th colspan="4" style="border-left: 2px solid rgba(255,255,255,0.4) !important;">Total OS</th>
+                                        <th colspan="4">Total CASA</th>
+                                        <th colspan="7">Rasio CASA/OS</th>
                                     </tr>
                                     <tr class="bg-header-sub-light">
+                                        <th class="lbl-ytd-th">-</th>
+                                        <th class="lbl-m2-th">-</th>
                                         <th class="lbl-prev-th">-</th>
                                         <th class="lbl-curr-th">-</th>
+                                        <th class="lbl-ytd-th">-</th>
+                                        <th class="lbl-m2-th">-</th>
                                         <th class="lbl-prev-th">-</th>
                                         <th class="lbl-curr-th">-</th>
+                                        <th class="lbl-ytd-th">-</th>
+                                        <th class="lbl-m2-th">-</th>
                                         <th class="lbl-prev-th">-</th>
                                         <th class="lbl-curr-th">-</th>
                                         <th>MtD</th>
-                                        <th class="lbl-prev-th" style="border-left: 2px solid rgba(255,255,255,0.4) !important;">-</th>
-                                        <th class="lbl-curr-th">-</th>
+                                        <th>M-2</th>
+                                        <th>YtD</th>
+                                        <th class="lbl-ytd-th" style="border-left: 2px solid rgba(255,255,255,0.4) !important;">-</th>
+                                        <th class="lbl-m2-th">-</th>
                                         <th class="lbl-prev-th">-</th>
                                         <th class="lbl-curr-th">-</th>
+                                        <th class="lbl-ytd-th">-</th>
+                                        <th class="lbl-m2-th">-</th>
+                                        <th class="lbl-prev-th">-</th>
+                                        <th class="lbl-curr-th">-</th>
+                                        <th class="lbl-ytd-th">-</th>
+                                        <th class="lbl-m2-th">-</th>
                                         <th class="lbl-prev-th">-</th>
                                         <th class="lbl-curr-th">-</th>
                                         <th>MtD</th>
+                                        <th>M-2</th>
+                                        <th>YtD</th>
                                     </tr>
                                 </thead>
                                 <tbody id="tbody-mikro-smc"></tbody>
@@ -848,21 +904,29 @@
                                 <thead>
                                     <tr>
                                         <th rowspan="3" class="bg-header-main sticky-col align-middle col-group-label" style="min-width: 170px;">RM / MANTRI</th>
-                                        <th colspan="7" class="bg-header-main">TOTAL</th>
+                                        <th colspan="15" class="bg-header-main">TOTAL</th>
                                     </tr>
                                     <tr class="bg-header-sub">
-                                        <th colspan="2">Total OS</th>
-                                        <th colspan="2">Total CASA</th>
-                                        <th colspan="3">Rasio CASA/OS</th>
+                                        <th colspan="4">Total OS</th>
+                                        <th colspan="4">Total CASA</th>
+                                        <th colspan="7">Rasio CASA/OS</th>
                                     </tr>
                                     <tr class="bg-header-sub-light">
+                                        <th class="lbl-ytd-th">-</th>
+                                        <th class="lbl-m2-th">-</th>
                                         <th class="lbl-prev-th">-</th>
                                         <th class="lbl-curr-th">-</th>
+                                        <th class="lbl-ytd-th">-</th>
+                                        <th class="lbl-m2-th">-</th>
                                         <th class="lbl-prev-th">-</th>
                                         <th class="lbl-curr-th">-</th>
+                                        <th class="lbl-ytd-th">-</th>
+                                        <th class="lbl-m2-th">-</th>
                                         <th class="lbl-prev-th">-</th>
                                         <th class="lbl-curr-th">-</th>
                                         <th>MtD</th>
+                                        <th>M-2</th>
+                                        <th>YtD</th>
                                     </tr>
                                 </thead>
                                 <tbody id="tbody-per-rm"></tbody>
@@ -1019,23 +1083,37 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function createDataCells(dt, isSeparator = false) {
         dt = dt || {};
+        const rasioYtdClass = getRatioClass(dt.rasio_ytd);
+        const rasioM2Class = getRatioClass(dt.rasio_m2);
         const rasioPrevClass = getRatioClass(dt.rasio_prev);
         const rasioCurrClass = getRatioClass(dt.rasio_curr);
         const mtdClass = getRatioClass(dt.mtd);
+        const m2Class = getRatioClass(dt.m2);
+        const ytdClass = getRatioClass(dt.ytd);
         const sepStyle = isSeparator ? 'border-left: 2px solid rgba(0,0,0,0.1) !important;' : '';
 
         return `
-            <td style="${sepStyle}">${formatNum(dt.os_prev)}</td>
+            <td style="${sepStyle}">${formatNum(dt.os_ytd)}</td>
+            <td>${formatNum(dt.os_m2)}</td>
+            <td>${formatNum(dt.os_prev)}</td>
             <td style="background-color: #f8fafc;">${formatNum(dt.os_curr)}</td>
+            <td>${formatNum(dt.casa_ytd)}</td>
+            <td>${formatNum(dt.casa_m2)}</td>
             <td>${formatNum(dt.casa_prev)}</td>
             <td style="background-color: #f8fafc;">${formatNum(dt.casa_curr)}</td>
+            <td class="${rasioYtdClass}">${formatPct(dt.rasio_ytd)}</td>
+            <td class="${rasioM2Class}">${formatPct(dt.rasio_m2)}</td>
             <td class="${rasioPrevClass}">${formatPct(dt.rasio_prev)}</td>
             <td class="font-weight-bold ${rasioCurrClass}">${formatPct(dt.rasio_curr)}</td>
             <td class="${mtdClass}">${formatMtd(dt.mtd)}</td>
+            <td class="${m2Class}">${formatMtd(dt.m2)}</td>
+            <td class="${ytdClass}">${formatMtd(dt.ytd)}</td>
         `;
     }
 
-    function updateTableLabels(prev, curr) {
+    function updateTableLabels(prev, curr, m2 = '-', ytd = '-') {
+        $('.lbl-ytd-th').text(ytd || '-');
+        $('.lbl-m2-th').text(m2 || '-');
         $('.lbl-prev-th').text(prev || '-');
         $('.lbl-curr-th').text(curr || '-');
     }
@@ -1049,16 +1127,17 @@ document.addEventListener('DOMContentLoaded', function () {
     function renderMessage(message) {
         const html = `
             <tr class="loading-row">
-                <td colspan="15" class="text-center">
+                <td colspan="31" class="text-center">
                     <div class="py-4">
                         <i class="fas fa-inbox fa-2x text-muted mb-3 d-block opacity-50"></i>
                         ${message}
                     </div>
                 </td>
             </tr>`;
-        $('#tbody-total').html(html.replace('15', '8'));
+        $('#tbody-total').html(html.replace('31', '16'));
         $('#tbody-briguna-kpr').html(html);
         $('#tbody-mikro-smc').html(html);
+        $('#tbody-per-rm').html(html.replace('31', '16'));
     }
 
     function renderSingleTableBody(tbodyId, dataList, totalData, segmentKey = 'total', isDual = false, segmentKey2 = null) {
@@ -1121,7 +1200,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function resetTableState() {
-        updateTableLabels('-', '-');
+        updateTableLabels('-', '-', '-', '-');
         updateGroupLabel('BRANCH OFFICE');
         updateBranchLabel();
         updateUkerLabel();
@@ -1173,14 +1252,14 @@ document.addEventListener('DOMContentLoaded', function () {
             const rowLabel = (res.group_label || 'BRANCH OFFICE').toUpperCase() === 'UKER' ? 'uker' : 'branch';
             const summaryLabel = rowLabel === 'uker' ? 'uker' : 'branch';
 
-            updateTableLabels(labels.prev || '-', labels.curr || '-');
+            updateTableLabels(labels.prev || '-', labels.curr || '-', labels.m2 || '-', labels.ytd || '-');
             updateGroupLabel(res.group_label);
 
             if (currentDate) {
                 filterPosisi.value = currentDate;
             }
 
-            filterMetaPeriod.innerHTML = `<i class="fas fa-clock text-primary mr-1"></i> <strong>Periode aktif:</strong> ${labels.curr || '-'} | <strong>Perbandingan:</strong> ${labels.prev || '-'}`;
+            filterMetaPeriod.innerHTML = `<i class="fas fa-clock text-primary mr-1"></i> <strong>Posisi:</strong> ${labels.curr || '-'} | <strong>YTD:</strong> ${labels.ytd || '-'} | <strong>M-2:</strong> ${labels.m2 || '-'} | <strong>Bulan lalu:</strong> ${labels.prev || '-'}`;
 
             if (!hasAnyData) {
                 const emptyMessage = res.message || `Tidak ada data untuk tanggal ${currentDate}. Coba pilih tanggal lain.`;
@@ -1340,7 +1419,7 @@ document.addEventListener('DOMContentLoaded', function () {
             const labels = res.labels || {};
 
             // Update table labels
-            updateTableLabels(labels.prev || '-', labels.curr || '-');
+            updateTableLabels(labels.prev || '-', labels.curr || '-', labels.m2 || '-', labels.ytd || '-');
 
             // Render rows untuk tab per-rm
             const tbodyPerRm = document.getElementById('tbody-per-rm');
@@ -1348,7 +1427,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
             if (dataList.length === 0) {
                 const tr = document.createElement('tr');
-                tr.innerHTML = '<td colspan="8" class="text-center text-muted">Tidak ada data untuk filter yang dipilih.</td>';
+                tr.innerHTML = '<td colspan="16" class="text-center text-muted">Tidak ada data untuk filter yang dipilih.</td>';
                 tbodyPerRm.appendChild(tr);
             } else {
                 const fragment = document.createDocumentFragment();

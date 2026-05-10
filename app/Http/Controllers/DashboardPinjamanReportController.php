@@ -32,6 +32,7 @@ class DashboardPinjamanReportController extends Controller
     private const LOAN_CABANG_UNIT_INDEX = 'idx_dld_periode_cabang_unit';
     private const PH_LOOKUP_INDEX = 'idx_lw325ph_periode_acctno_pokok';
     private const RAW_QUALITY_BUCKETS = ['L', 'LR', 'DPK 1', 'DPK 2', 'DPK 3', 'KL', 'D1', 'D2', 'M', 'NPL', 'PH', 'Pay'];
+    private const PH_RECOVERY_MIN_ACCOUNT_DISTINCT_RATIO = 0.95;
 
     private const QUALITY_BUCKETS = ['L', 'LR', 'DPK 1', 'DPK 2', 'DPK 3', 'KL', 'D1', 'D2', 'M'];
     private const HEALTHY_BUCKETS = ['L', 'LR'];
@@ -43,6 +44,8 @@ class DashboardPinjamanReportController extends Controller
     private const BEFORE_ROWS = ['New Account', 'L', 'LR', 'DPK 1', 'DPK 2', 'DPK 3', 'KL', 'D1', 'D2', 'M'];
 
     private const OUTPUT_COLUMNS = ['Turunan Pokok', 'Suplesi', 'PH', 'Lunas'];
+
+    private array $lw325RecoveryPeriodQuality = [];
     private const KOLEK_MISMATCH_RULE_LABEL = 'kolek_vs_umur_tunggakan_v2';
     private const MATRIX_MODAL_COLUMNS = [
         'pivot_before_bucket',
@@ -1281,7 +1284,14 @@ class DashboardPinjamanReportController extends Controller
         $currentPhPeriod = $this->resolveExactPhPeriod($selectedPeriod);
         $previousPhPeriod = $currentPhPeriod ? $this->resolvePreviousMonthPhPeriod($currentPhPeriod) : null;
 
-        if (!$currentPhPeriod || !$previousPhPeriod || !$comparisonPeriod) {
+        if (
+            !$currentPhPeriod
+            || !$previousPhPeriod
+            || !$comparisonPeriod
+            || !$this->isPreviousMonthEndPhPeriod($currentPhPeriod, $previousPhPeriod)
+            || !$this->hasUsableLw325RecoveryPeriod($currentPhPeriod)
+            || !$this->hasUsableLw325RecoveryPeriod($previousPhPeriod)
+        ) {
             return DB::query()
                 ->selectRaw("'New Account' as before_bucket, 'principal_reduction' as metric_type, 0 as amount_cents")
                 ->whereRaw('1 = 0');
@@ -2132,14 +2142,13 @@ class DashboardPinjamanReportController extends Controller
 
         try {
             $previousMonthEnd = Carbon::parse($selectedPeriod)
-                ->copy()
-                ->subMonthNoOverflow()
-                ->endOfMonth()
+                ->startOfMonth()
+                ->subDay()
                 ->format('Y-m-d');
 
             return DB::table('daily_loan_dinamis')
-                ->where('periode', '<=', $previousMonthEnd)
-                ->max('periode');
+                ->where('periode', $previousMonthEnd)
+                ->value('periode');
         } catch (Throwable) {
             return null;
         }
@@ -2169,7 +2178,7 @@ class DashboardPinjamanReportController extends Controller
         try {
             $normalizedPeriod = Carbon::parse($selectedPeriod)->format('Y-m-d');
 
-            return DB::table('lw325_ph')->where('periode', $normalizedPeriod)->exists();
+            return $this->hasUsableLw325RecoveryPeriod($normalizedPeriod);
         } catch (Throwable) {
             return false;
         }
@@ -2195,20 +2204,69 @@ class DashboardPinjamanReportController extends Controller
     private function resolvePreviousMonthPhPeriod(string $period): ?string
     {
         try {
-            $current = Carbon::parse($period);
-            $target = $current->copy()->subMonthNoOverflow();
-            $monthStart = $target->copy()->startOfMonth()->toDateString();
-            $targetDate = $target->toDateString();
-            $monthEnd = $target->copy()->endOfMonth()->toDateString();
+            $monthEnd = Carbon::parse($period)
+                ->startOfMonth()
+                ->subDay()
+                ->toDateString();
 
             return DB::table('lw325_ph')
-                ->whereBetween('periode', [$monthStart, $targetDate])
-                ->max('periode')
-                ?: DB::table('lw325_ph')
-                    ->whereBetween('periode', [$monthStart, $monthEnd])
-                    ->max('periode');
+                ->where('periode', $monthEnd)
+                ->value('periode');
         } catch (Throwable) {
             return null;
+        }
+    }
+
+    private function isPreviousMonthEndPhPeriod(string $currentPeriod, ?string $comparisonPeriod): bool
+    {
+        if ($comparisonPeriod === null) {
+            return false;
+        }
+
+        try {
+            $expectedPreviousMonthEnd = Carbon::parse($currentPeriod)
+                ->startOfMonth()
+                ->subDay()
+                ->toDateString();
+
+            return Carbon::parse($comparisonPeriod)->toDateString() === $expectedPreviousMonthEnd;
+        } catch (Throwable) {
+            return false;
+        }
+    }
+
+    private function hasUsableLw325RecoveryPeriod(string $period): bool
+    {
+        if (array_key_exists($period, $this->lw325RecoveryPeriodQuality)) {
+            return $this->lw325RecoveryPeriodQuality[$period];
+        }
+
+        try {
+            $stats = DB::table('lw325_ph')
+                ->where('periode', $period)
+                ->selectRaw('COUNT(*) as row_count')
+                ->selectRaw("COUNT(DISTINCT NULLIF(TRIM(COALESCE(acctno, '')), '')) as distinct_account_count")
+                ->selectRaw("
+                    SUM(CASE
+                        WHEN UPPER(TRIM(COALESCE(acctno, ''))) LIKE '%E+%'
+                            OR UPPER(TRIM(COALESCE(acctno, ''))) LIKE '%E-%'
+                            OR UPPER(TRIM(COALESCE(acctno, ''))) LIKE '%,%E%'
+                        THEN 1 ELSE 0
+                    END) as scientific_account_count
+                ")
+                ->first();
+
+            $rowCount = (int) ($stats->row_count ?? 0);
+            $distinctAccountCount = (int) ($stats->distinct_account_count ?? 0);
+            $scientificAccountCount = (int) ($stats->scientific_account_count ?? 0);
+
+            $usable = $rowCount > 0
+                && $scientificAccountCount === 0
+                && ($distinctAccountCount / max($rowCount, 1)) >= self::PH_RECOVERY_MIN_ACCOUNT_DISTINCT_RATIO;
+
+            return $this->lw325RecoveryPeriodQuality[$period] = $usable;
+        } catch (Throwable) {
+            return $this->lw325RecoveryPeriodQuality[$period] = false;
         }
     }
 

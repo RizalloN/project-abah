@@ -78,8 +78,12 @@ class RasioCasaDebiturController extends Controller
                     'status' => 'success',
                     'labels' => $this->buildLabels(null, null),
                     'effective_dates' => [
+                        'ytd' => null,
+                        'm2' => null,
                         'prev' => null,
                         'curr' => null,
+                        'casa_ytd' => null,
+                        'casa_m2' => null,
                         'casa_prev' => null,
                         'casa_curr' => null,
                     ],
@@ -99,14 +103,17 @@ class RasioCasaDebiturController extends Controller
                 return response()->json($this->buildMissingCasaPeriodPayload($currentPeriod, $isBranchFiltered));
             }
 
-            $currDate = Carbon::parse($currentPeriod);
-            $prevCandidate = $currDate->copy()->subMonthNoOverflow()->endOfMonth()->toDateString();
-            $previousPeriod = $this->resolveAvailableLoanPeriod($prevCandidate);
+            $comparisonPeriods = $this->resolveRasioComparisonPeriods($currentPeriod);
+            $previousPeriod = $comparisonPeriods['prev'];
+            $m2Period = $comparisonPeriods['m2'];
+            $ytdPeriod = $comparisonPeriods['ytd'];
 
             $forceRefresh = $request->boolean('refresh');
             $responseCacheKey = 'rasio_casa:fetch:v' . $this->reportCacheVersion() . ':' . md5(json_encode([
                 'curr' => $currentPeriod,
                 'prev' => $previousPeriod,
+                'm2' => $m2Period,
+                'ytd' => $ytdPeriod,
                 'branches' => $selectedBranches,
                 'ukers' => $selectedUkers,
             ]));
@@ -128,15 +135,23 @@ class RasioCasaDebiturController extends Controller
                 $previousSummary = $previousPeriod
                     ? $this->buildFilteredSummarySnapshot($previousPeriod, $selectedBranches, $selectedUkers, $forceRefresh)
                     : $this->emptySnapshot();
+                $m2Summary = $m2Period
+                    ? $this->buildFilteredSummarySnapshot($m2Period, $selectedBranches, $selectedUkers, $forceRefresh)
+                    : $this->emptySnapshot();
+                $ytdSummary = $ytdPeriod
+                    ? $this->buildFilteredSummarySnapshot($ytdPeriod, $selectedBranches, $selectedUkers, $forceRefresh)
+                    : $this->emptySnapshot();
 
-                $branches = $this->resolveFilteredBranches($previousSummary, $currentSummary);
+                $branches = $this->resolveFilteredBranches($previousSummary, $currentSummary, $m2Summary, $ytdSummary);
                 
                 // 1. Konsolidasi (All)
                 [$rows, $total] = $this->assembleFilteredRows(
                     $branches,
                     $previousSummary,
                     $currentSummary,
-                    'TOTAL KONSOLIDASI'
+                    'TOTAL KONSOLIDASI',
+                    $m2Summary,
+                    $ytdSummary
                 );
 
                 // 2. Ritel (KC & KCP) - Typically anything NOT containing "UNIT"
@@ -149,7 +164,9 @@ class RasioCasaDebiturController extends Controller
                     $ritelBranches,
                     $previousSummary,
                     $currentSummary,
-                    'TOTAL RITEL'
+                    'TOTAL RITEL',
+                    $m2Summary,
+                    $ytdSummary
                 );
 
                 // 3. Mikro (Unit Only) - Typically anything containing "UNIT"
@@ -162,27 +179,35 @@ class RasioCasaDebiturController extends Controller
                     $microBranches,
                     $previousSummary,
                     $currentSummary,
-                    'TOTAL MIKRO'
+                    'TOTAL MIKRO',
+                    $m2Summary,
+                    $ytdSummary
                 );
 
                 $groupLabel = 'UKER';
             } else {
                 $currentSummary = $this->buildSummarySnapshot($currentPeriod, $forceRefresh);
                 $previousSummary = $previousPeriod ? $this->buildSummarySnapshot($previousPeriod, $forceRefresh) : $this->emptySnapshot();
+                $m2Summary = $m2Period ? $this->buildSummarySnapshot($m2Period, $forceRefresh) : $this->emptySnapshot();
+                $ytdSummary = $ytdPeriod ? $this->buildSummarySnapshot($ytdPeriod, $forceRefresh) : $this->emptySnapshot();
 
-                $branches = $this->resolveDynamicBranches($previousSummary, $currentSummary);
-                [$rows, $total] = $this->assembleRows($branches, $previousSummary, $currentSummary);
+                $branches = $this->resolveDynamicBranches($previousSummary, $currentSummary, $m2Summary, $ytdSummary);
+                [$rows, $total] = $this->assembleRows($branches, $previousSummary, $currentSummary, $m2Summary, $ytdSummary);
                 $groupLabel = 'BRANCH OFFICE';
             }
 
             $payload = [
                 'status' => 'success',
-                'labels' => $this->buildLabels($previousPeriod, $currentPeriod),
+                'labels' => $this->buildLabels($previousPeriod, $currentPeriod, $m2Period, $ytdPeriod),
                 'group_label' => $groupLabel,
                 'is_branch_filtered' => $isBranchFiltered,
                 'effective_dates' => [
+                    'ytd' => $ytdPeriod,
+                    'm2' => $m2Period,
                     'prev' => $previousPeriod,
                     'curr' => $currentPeriod,
+                    'casa_ytd' => $ytdSummary['casa_date'],
+                    'casa_m2' => $m2Summary['casa_date'],
                     'casa_prev' => $previousSummary['casa_date'],
                     'casa_curr' => $currentSummary['casa_date'],
                 ],
@@ -235,8 +260,12 @@ class RasioCasaDebiturController extends Controller
                     'status' => 'success',
                     'labels' => $this->buildLabels(null, null),
                     'effective_dates' => [
+                        'ytd' => null,
+                        'm2' => null,
                         'prev' => null,
                         'curr' => null,
+                        'casa_ytd' => null,
+                        'casa_m2' => null,
                         'casa_prev' => null,
                         'casa_curr' => null,
                     ],
@@ -256,14 +285,17 @@ class RasioCasaDebiturController extends Controller
                 return response()->json($this->buildMissingCasaPeriodPayload($currentPeriod, true, 'RM / MANTRI'));
             }
 
-            $currDate = Carbon::parse($currentPeriod);
-            $prevCandidate = $currDate->copy()->subMonthNoOverflow()->endOfMonth()->toDateString();
-            $previousPeriod = $this->resolveAvailableLoanPeriod($prevCandidate);
+            $comparisonPeriods = $this->resolveRasioComparisonPeriods($currentPeriod);
+            $previousPeriod = $comparisonPeriods['prev'];
+            $m2Period = $comparisonPeriods['m2'];
+            $ytdPeriod = $comparisonPeriods['ytd'];
 
             $forceRefresh = $request->boolean('refresh');
             $responseCacheKey = 'rasio_casa_per_rm:fetch:v' . $this->reportCacheVersion() . ':' . md5(json_encode([
                 'curr' => $currentPeriod,
                 'prev' => $previousPeriod,
+                'm2' => $m2Period,
+                'ytd' => $ytdPeriod,
                 'cabang1' => $selectedBranch,
                 'unit1' => $selectedUker,
             ]));
@@ -279,22 +311,34 @@ class RasioCasaDebiturController extends Controller
             $previousSummary = $previousPeriod
                 ? $this->computeRmSnapshot($previousPeriod, $selectedBranch, $selectedUker, $forceRefresh)
                 : $this->emptySnapshot();
+            $m2Summary = $m2Period
+                ? $this->computeRmSnapshot($m2Period, $selectedBranch, $selectedUker, $forceRefresh)
+                : $this->emptySnapshot();
+            $ytdSummary = $ytdPeriod
+                ? $this->computeRmSnapshot($ytdPeriod, $selectedBranch, $selectedUker, $forceRefresh)
+                : $this->emptySnapshot();
 
             $rms = array_unique(array_merge(
                 array_keys($currentSummary['os'] ?? []),
-                array_keys($previousSummary['os'] ?? [])
+                array_keys($previousSummary['os'] ?? []),
+                array_keys($m2Summary['os'] ?? []),
+                array_keys($ytdSummary['os'] ?? [])
             ));
             sort($rms);
 
-            [$rows, $total] = $this->assembleRmRows($rms, $previousSummary, $currentSummary, "{$selectedBranch} | {$selectedUker}");
+            [$rows, $total] = $this->assembleRmRows($rms, $previousSummary, $currentSummary, "{$selectedBranch} | {$selectedUker}", $m2Summary, $ytdSummary);
 
             $payload = [
                 'status' => 'success',
-                'labels' => $this->buildLabels($previousPeriod, $currentPeriod),
+                'labels' => $this->buildLabels($previousPeriod, $currentPeriod, $m2Period, $ytdPeriod),
                 'group_label' => 'RM / MANTRI',
                 'effective_dates' => [
+                    'ytd' => $ytdPeriod,
+                    'm2' => $m2Period,
                     'prev' => $previousPeriod,
                     'curr' => $currentPeriod,
+                    'casa_ytd' => $ytdSummary['casa_date'],
+                    'casa_m2' => $m2Summary['casa_date'],
                     'casa_prev' => $previousSummary['casa_date'],
                     'casa_curr' => $currentSummary['casa_date'],
                 ],
@@ -1145,16 +1189,22 @@ class RasioCasaDebiturController extends Controller
         }
     }
 
-    private function assembleRows(array $branches, array $previousSummary, array $currentSummary): array
+    private function assembleRows(array $branches, array $previousSummary, array $currentSummary, ?array $m2Summary = null, ?array $ytdSummary = null): array
     {
+        $m2Summary ??= $this->emptySnapshot();
+        $ytdSummary ??= $this->emptySnapshot();
         $rows = [];
         $total = ['branch' => 'TOTAL AREA 6'];
 
         foreach (self::SEGMENTS as $segment) {
             $segmentKey = strtolower($segment);
             $total[$segmentKey] = [
+                'os_ytd' => 0,
+                'os_m2' => 0,
                 'os_prev' => 0,
                 'os_curr' => 0,
+                'casa_ytd' => 0,
+                'casa_m2' => 0,
                 'casa_prev' => 0,
                 'casa_curr' => 0,
             ];
@@ -1166,6 +1216,10 @@ class RasioCasaDebiturController extends Controller
 
             foreach (self::SEGMENTS as $segment) {
                 $segmentKey = strtolower($segment);
+                $ytdOs = (float) ($ytdSummary['os'][$branchKey][$segmentKey] ?? 0);
+                $ytdCasa = (float) ($ytdSummary['casa'][$branchKey][$segmentKey] ?? 0);
+                $m2Os = (float) ($m2Summary['os'][$branchKey][$segmentKey] ?? 0);
+                $m2Casa = (float) ($m2Summary['casa'][$branchKey][$segmentKey] ?? 0);
                 $prevOs = (float) ($previousSummary['os'][$branchKey][$segmentKey] ?? 0);
                 $prevCasa = (float) ($previousSummary['casa'][$branchKey][$segmentKey] ?? 0);
                 $currOs = (float) ($currentSummary['os'][$branchKey][$segmentKey] ?? 0);
@@ -1175,11 +1229,19 @@ class RasioCasaDebiturController extends Controller
                     ['os' => $prevOs, 'casa' => $prevCasa],
                     ['os' => $currOs, 'casa' => $currCasa],
                     $previousSummary['casa_date'] !== null,
-                    $currentSummary['casa_date'] !== null
+                    $currentSummary['casa_date'] !== null,
+                    ['os' => $m2Os, 'casa' => $m2Casa],
+                    ['os' => $ytdOs, 'casa' => $ytdCasa],
+                    $m2Summary['casa_date'] !== null,
+                    $ytdSummary['casa_date'] !== null
                 );
 
+                $total[$segmentKey]['os_ytd'] += $ytdOs;
+                $total[$segmentKey]['os_m2'] += $m2Os;
                 $total[$segmentKey]['os_prev'] += $prevOs;
                 $total[$segmentKey]['os_curr'] += $currOs;
+                $total[$segmentKey]['casa_ytd'] += $ytdCasa;
+                $total[$segmentKey]['casa_m2'] += $m2Casa;
                 $total[$segmentKey]['casa_prev'] += $prevCasa;
                 $total[$segmentKey]['casa_curr'] += $currCasa;
             }
@@ -1193,23 +1255,33 @@ class RasioCasaDebiturController extends Controller
                 ['os' => $total[$segmentKey]['os_prev'], 'casa' => $total[$segmentKey]['casa_prev']],
                 ['os' => $total[$segmentKey]['os_curr'], 'casa' => $total[$segmentKey]['casa_curr']],
                 $previousSummary['casa_date'] !== null,
-                $currentSummary['casa_date'] !== null
+                $currentSummary['casa_date'] !== null,
+                ['os' => $total[$segmentKey]['os_m2'], 'casa' => $total[$segmentKey]['casa_m2']],
+                ['os' => $total[$segmentKey]['os_ytd'], 'casa' => $total[$segmentKey]['casa_ytd']],
+                $m2Summary['casa_date'] !== null,
+                $ytdSummary['casa_date'] !== null
             );
         }
 
         return [$rows, $total];
     }
 
-    private function assembleFilteredRows(array $branches, array $previousSummary, array $currentSummary, string $totalLabel): array
+    private function assembleFilteredRows(array $branches, array $previousSummary, array $currentSummary, string $totalLabel, ?array $m2Summary = null, ?array $ytdSummary = null): array
     {
+        $m2Summary ??= $this->emptySnapshot();
+        $ytdSummary ??= $this->emptySnapshot();
         $rows = [];
         $total = ['branch' => $totalLabel];
 
         foreach (self::SEGMENTS as $segment) {
             $segmentKey = strtolower($segment);
             $total[$segmentKey] = [
+                'os_ytd' => 0,
+                'os_m2' => 0,
                 'os_prev' => 0,
                 'os_curr' => 0,
+                'casa_ytd' => 0,
+                'casa_m2' => 0,
                 'casa_prev' => 0,
                 'casa_curr' => 0,
             ];
@@ -1221,6 +1293,10 @@ class RasioCasaDebiturController extends Controller
 
             foreach (self::SEGMENTS as $segment) {
                 $segmentKey = strtolower($segment);
+                $ytdOs = (float) ($ytdSummary['os'][$branchKey][$segmentKey] ?? 0);
+                $ytdCasa = (float) ($ytdSummary['casa'][$branchKey][$segmentKey] ?? 0);
+                $m2Os = (float) ($m2Summary['os'][$branchKey][$segmentKey] ?? 0);
+                $m2Casa = (float) ($m2Summary['casa'][$branchKey][$segmentKey] ?? 0);
                 $prevOs = (float) ($previousSummary['os'][$branchKey][$segmentKey] ?? 0);
                 $prevCasa = (float) ($previousSummary['casa'][$branchKey][$segmentKey] ?? 0);
                 $currOs = (float) ($currentSummary['os'][$branchKey][$segmentKey] ?? 0);
@@ -1230,11 +1306,19 @@ class RasioCasaDebiturController extends Controller
                     ['os' => $prevOs, 'casa' => $prevCasa],
                     ['os' => $currOs, 'casa' => $currCasa],
                     $previousSummary['casa_date'] !== null,
-                    $currentSummary['casa_date'] !== null
+                    $currentSummary['casa_date'] !== null,
+                    ['os' => $m2Os, 'casa' => $m2Casa],
+                    ['os' => $ytdOs, 'casa' => $ytdCasa],
+                    $m2Summary['casa_date'] !== null,
+                    $ytdSummary['casa_date'] !== null
                 );
 
+                $total[$segmentKey]['os_ytd'] += $ytdOs;
+                $total[$segmentKey]['os_m2'] += $m2Os;
                 $total[$segmentKey]['os_prev'] += $prevOs;
                 $total[$segmentKey]['os_curr'] += $currOs;
+                $total[$segmentKey]['casa_ytd'] += $ytdCasa;
+                $total[$segmentKey]['casa_m2'] += $m2Casa;
                 $total[$segmentKey]['casa_prev'] += $prevCasa;
                 $total[$segmentKey]['casa_curr'] += $currCasa;
             }
@@ -1248,7 +1332,11 @@ class RasioCasaDebiturController extends Controller
                 ['os' => $total[$segmentKey]['os_prev'], 'casa' => $total[$segmentKey]['casa_prev']],
                 ['os' => $total[$segmentKey]['os_curr'], 'casa' => $total[$segmentKey]['casa_curr']],
                 $previousSummary['casa_date'] !== null,
-                $currentSummary['casa_date'] !== null
+                $currentSummary['casa_date'] !== null,
+                ['os' => $total[$segmentKey]['os_m2'], 'casa' => $total[$segmentKey]['casa_m2']],
+                ['os' => $total[$segmentKey]['os_ytd'], 'casa' => $total[$segmentKey]['casa_ytd']],
+                $m2Summary['casa_date'] !== null,
+                $ytdSummary['casa_date'] !== null
             );
         }
 
@@ -1306,8 +1394,12 @@ class RasioCasaDebiturController extends Controller
             'group_label' => $groupLabel,
             'is_branch_filtered' => $isBranchFiltered,
             'effective_dates' => [
+                'ytd' => null,
+                'm2' => null,
                 'prev' => null,
                 'curr' => $currentPeriod,
+                'casa_ytd' => null,
+                'casa_m2' => null,
                 'casa_prev' => null,
                 'casa_curr' => null,
             ],
@@ -1351,6 +1443,28 @@ class RasioCasaDebiturController extends Controller
             }
         } catch (Throwable) {
             return $this->availableLoanPeriodMemo[$cacheKey] = null;
+        }
+    }
+
+    private function resolveRasioComparisonPeriods(string $currentPeriod): array
+    {
+        try {
+            $current = Carbon::parse($currentPeriod);
+            $prevTarget = $current->copy()->startOfMonth()->subDay()->toDateString();
+            $m2Target = Carbon::parse($prevTarget)->startOfMonth()->subDay()->toDateString();
+            $ytdTarget = $current->copy()->subYearNoOverflow()->endOfYear()->toDateString();
+
+            return [
+                'prev' => $this->resolveAvailableLoanPeriod($prevTarget),
+                'm2' => $this->resolveAvailableLoanPeriod($m2Target),
+                'ytd' => $this->resolveAvailableLoanPeriod($ytdTarget),
+            ];
+        } catch (Throwable) {
+            return [
+                'prev' => null,
+                'm2' => null,
+                'ytd' => null,
+            ];
         }
     }
 
@@ -1476,9 +1590,11 @@ class RasioCasaDebiturController extends Controller
         });
     }
 
-    private function buildLabels(?string $previousPeriod, ?string $currentPeriod): array
+    private function buildLabels(?string $previousPeriod, ?string $currentPeriod, ?string $m2Period = null, ?string $ytdPeriod = null): array
     {
         return [
+            'ytd' => $this->formatShortDateLabel($ytdPeriod),
+            'm2' => $this->formatShortDateLabel($m2Period),
             'prev' => $this->formatShortDateLabel($previousPeriod),
             'curr' => $this->formatShortDateLabel($currentPeriod),
         ];
@@ -1497,7 +1613,7 @@ class RasioCasaDebiturController extends Controller
                 7 => 'Jul', 8 => 'Agu', 9 => 'Sep', 10 => 'Okt', 11 => 'Nov', 12 => 'Des',
             ];
 
-            return $parsed->format('d') . ' ' . $bulanIndo[$parsed->month] . " '" . $parsed->format('y');
+            return $parsed->format('d') . ' ' . $bulanIndo[$parsed->month] . ' ' . $parsed->format('y');
         } catch (Throwable) {
             return $date;
         }
@@ -1613,11 +1729,11 @@ class RasioCasaDebiturController extends Controller
         return $normalized === '' ? 'UNKNOWN BRANCH' : 'KC ' . $normalized;
     }
 
-    private function resolveDynamicBranches(array $previousSummary, array $currentSummary): array
+    private function resolveDynamicBranches(array $previousSummary, array $currentSummary, ?array $m2Summary = null, ?array $ytdSummary = null): array
     {
         $branchMap = [];
 
-        foreach ([$previousSummary, $currentSummary] as $dataset) {
+        foreach (array_filter([$previousSummary, $currentSummary, $m2Summary, $ytdSummary]) as $dataset) {
             foreach (($dataset['branch_labels'] ?? []) as $branchKey => $label) {
                 $normalizedKey = $this->normalizeBranchKey($branchKey);
                 if ($normalizedKey !== '') {
@@ -1637,11 +1753,11 @@ class RasioCasaDebiturController extends Controller
         return array_values($branchMap);
     }
 
-    private function resolveFilteredBranches(array $previousSummary, array $currentSummary): array
+    private function resolveFilteredBranches(array $previousSummary, array $currentSummary, ?array $m2Summary = null, ?array $ytdSummary = null): array
     {
         $branchMap = [];
 
-        foreach ([$previousSummary, $currentSummary] as $dataset) {
+        foreach (array_filter([$previousSummary, $currentSummary, $m2Summary, $ytdSummary]) as $dataset) {
             foreach (($dataset['branch_labels'] ?? []) as $branchKey => $label) {
                 $normalizedKey = strtoupper(trim((string) $branchKey));
                 $normalizedLabel = strtoupper(trim((string) ($label ?? $branchKey)));
@@ -1725,52 +1841,75 @@ class RasioCasaDebiturController extends Controller
         return $this->resolvedColumnMemo[$cacheKey] = ($map[strtolower($fallback)] ?? $fallback);
     }
 
-    private function calculateMetrics($prev, $curr, bool $prevCasaAvailable = true, bool $currCasaAvailable = true)
+    private function calculateMetrics(
+        $prev,
+        $curr,
+        bool $prevCasaAvailable = true,
+        bool $currCasaAvailable = true,
+        ?array $m2 = null,
+        ?array $ytd = null,
+        bool $m2CasaAvailable = true,
+        bool $ytdCasaAvailable = true
+    )
     {
         $osPrev = (float) ($prev['os'] ?? 0);
         $casaPrev = (float) ($prev['casa'] ?? 0);
         $osCurr = (float) ($curr['os'] ?? 0);
         $casaCurr = (float) ($curr['casa'] ?? 0);
+        $osM2 = (float) ($m2['os'] ?? 0);
+        $casaM2 = (float) ($m2['casa'] ?? 0);
+        $osYtd = (float) ($ytd['os'] ?? 0);
+        $casaYtd = (float) ($ytd['casa'] ?? 0);
+
+        $ratioYtd = $ytdCasaAvailable && $osYtd > 0 ? ($casaYtd / $osYtd) * 100 : null;
+        $ratioM2 = $m2CasaAvailable && $osM2 > 0 ? ($casaM2 / $osM2) * 100 : null;
+        $ratioPrev = $prevCasaAvailable && $osPrev > 0 ? ($casaPrev / $osPrev) * 100 : null;
+        $ratioCurr = $currCasaAvailable && $osCurr > 0 ? ($casaCurr / $osCurr) * 100 : null;
+
+        $baseMetrics = [
+            'os_ytd' => $osYtd > 0 ? $osYtd : null,
+            'casa_ytd' => $ytdCasaAvailable && $casaYtd > 0 ? $casaYtd : null,
+            'rasio_ytd' => $ratioYtd,
+            'os_m2' => $osM2 > 0 ? $osM2 : null,
+            'casa_m2' => $m2CasaAvailable && $casaM2 > 0 ? $casaM2 : null,
+            'rasio_m2' => $ratioM2,
+            'os_prev' => $osPrev > 0 ? $osPrev : null,
+            'casa_prev' => $prevCasaAvailable && $casaPrev > 0 ? $casaPrev : null,
+            'rasio_prev' => $ratioPrev,
+            'os_curr' => $osCurr > 0 ? $osCurr : null,
+            'casa_curr' => $currCasaAvailable && $casaCurr > 0 ? $casaCurr : null,
+            'rasio_curr' => $ratioCurr,
+            'mtd' => $ratioPrev !== null && $ratioCurr !== null ? ($ratioCurr - $ratioPrev) : null,
+            'm2' => $ratioM2 !== null && $ratioCurr !== null ? ($ratioCurr - $ratioM2) : null,
+            'ytd' => $ratioYtd !== null && $ratioCurr !== null ? ($ratioCurr - $ratioYtd) : null,
+        ];
 
         if (!$prevCasaAvailable || !$currCasaAvailable) {
-            $ratioPrev = $prevCasaAvailable && $osPrev > 0 ? ($casaPrev / $osPrev) * 100 : null;
-            $ratioCurr = $currCasaAvailable && $osCurr > 0 ? ($casaCurr / $osCurr) * 100 : null;
-
-            return [
-                'os_prev' => $osPrev > 0 ? $osPrev : null,
-                'casa_prev' => $prevCasaAvailable && $casaPrev > 0 ? $casaPrev : null,
-                'rasio_prev' => $ratioPrev,
-                'os_curr' => $osCurr > 0 ? $osCurr : null,
-                'casa_curr' => $currCasaAvailable && $casaCurr > 0 ? $casaCurr : null,
-                'rasio_curr' => $ratioCurr,
-                'mtd' => $ratioPrev !== null && $ratioCurr !== null ? ($ratioCurr - $ratioPrev) : null,
-            ];
+            return $baseMetrics;
         }
 
         if ($osCurr == 0.0 && $casaCurr == 0.0) {
-            return [
-                'os_prev' => $osPrev > 0 ? $osPrev : null,
-                'casa_prev' => $casaPrev > 0 ? $casaPrev : null,
-                'rasio_prev' => $osPrev > 0 ? ($casaPrev / $osPrev) * 100 : null,
+            return array_merge($baseMetrics, [
                 'os_curr' => null,
                 'casa_curr' => null,
                 'rasio_curr' => null,
                 'mtd' => null,
-            ];
+                'm2' => null,
+                'ytd' => null,
+            ]);
         }
 
-        $ratioPrev = $osPrev > 0 ? ($casaPrev / $osPrev) * 100 : 0;
-        $ratioCurr = $osCurr > 0 ? ($casaCurr / $osCurr) * 100 : 0;
+        $ratioPrevForDelta = $osPrev > 0 ? ($casaPrev / $osPrev) * 100 : 0;
+        $ratioM2ForDelta = $osM2 > 0 && $m2CasaAvailable ? ($casaM2 / $osM2) * 100 : null;
+        $ratioYtdForDelta = $osYtd > 0 && $ytdCasaAvailable ? ($casaYtd / $osYtd) * 100 : null;
+        $ratioCurrForDelta = $osCurr > 0 ? ($casaCurr / $osCurr) * 100 : 0;
 
-        return [
-            'os_prev' => $osPrev > 0 ? $osPrev : null,
-            'casa_prev' => $casaPrev > 0 ? $casaPrev : null,
-            'rasio_prev' => $osPrev > 0 ? $ratioPrev : null,
-            'os_curr' => $osCurr > 0 ? $osCurr : null,
-            'casa_curr' => $casaCurr > 0 ? $casaCurr : null,
-            'rasio_curr' => $osCurr > 0 ? $ratioCurr : null,
-            'mtd' => ($osPrev > 0 || $osCurr > 0) ? ($ratioCurr - $ratioPrev) : null,
-        ];
+        return array_merge($baseMetrics, [
+            'rasio_curr' => $osCurr > 0 ? $ratioCurrForDelta : null,
+            'mtd' => ($osPrev > 0 || $osCurr > 0) ? ($ratioCurrForDelta - $ratioPrevForDelta) : null,
+            'm2' => $ratioM2ForDelta !== null ? ($ratioCurrForDelta - $ratioM2ForDelta) : null,
+            'ytd' => $ratioYtdForDelta !== null ? ($ratioCurrForDelta - $ratioYtdForDelta) : null,
+        ]);
     }
 
     /**
@@ -1899,6 +2038,7 @@ class RasioCasaDebiturController extends Controller
 
         $identityVariants = [];
         $identityMappings = [];
+        $identityTotalOs = [];
 
         $loanRows = $loanPerCif
             ->orderBy('rm_key')
@@ -1924,12 +2064,13 @@ class RasioCasaDebiturController extends Controller
             $snapshot['os'][$rmKey]['smc'] += (float) ($row->smc_os ?? 0);
 
             $identityMappings[$identityKey][$rmKey] = [
-                'total' => ((int) ($row->has_total ?? 0)) === 1,
-                'briguna' => ((int) ($row->has_briguna ?? 0)) === 1,
-                'kpr' => ((int) ($row->has_kpr ?? 0)) === 1,
-                'mikro' => ((int) ($row->has_mikro ?? 0)) === 1,
-                'smc' => ((int) ($row->has_smc ?? 0)) === 1,
+                'total' => (float) ($row->total_os ?? 0),
+                'briguna' => (float) ($row->briguna_os ?? 0),
+                'kpr' => (float) ($row->kpr_os ?? 0),
+                'mikro' => (float) ($row->mikro_os ?? 0),
+                'smc' => (float) ($row->smc_os ?? 0),
             ];
+            $identityTotalOs[$identityKey] = ($identityTotalOs[$identityKey] ?? 0) + (float) ($row->total_os ?? 0);
 
             foreach ($this->buildIdentityVariants($identityKey) as $variant) {
                 $identityVariants[$variant] = $identityKey;
@@ -1943,7 +2084,9 @@ class RasioCasaDebiturController extends Controller
             foreach (array_chunk(array_keys($identityVariants), 2000) as $chunk) {
                 $casaQuery = DB::table('simpanan_multipn')
                     ->where('posisi', $casaDate)
-                    ->whereIn($casaKeyColumn, $chunk);
+                    ->whereIn($casaKeyColumn, $chunk)
+                    ->whereRaw('UPPER(TRIM(kantor_cabang)) LIKE ?', ['%' . $selectedBranch . '%'])
+                    ->whereRaw('UPPER(TRIM(unit_kerja)) LIKE ?', ['%' . $selectedUnit . '%']);
 
                 if ($applyCasaTypeFilter) {
                     $casaQuery->where(function ($query) {
@@ -1968,11 +2111,15 @@ class RasioCasaDebiturController extends Controller
             }
 
             foreach ($casaBalances as $identityKey => $balance) {
-                foreach (($identityMappings[$identityKey] ?? []) as $rmKey => $flags) {
-                    foreach ($flags as $segmentKey => $hasBucket) {
-                        if ($hasBucket) {
-                            $snapshot['casa'][$rmKey][$segmentKey] += $balance;
-                        }
+                $allocations = $this->allocateCasaBalanceForRm(
+                    (float) $balance,
+                    $identityMappings[$identityKey] ?? [],
+                    (float) ($identityTotalOs[$identityKey] ?? 0)
+                );
+
+                foreach ($allocations as $rmKey => $segmentBalances) {
+                    foreach ($segmentBalances as $segmentKey => $segmentBalance) {
+                        $snapshot['casa'][$rmKey][$segmentKey] += $segmentBalance;
                     }
                 }
             }
@@ -1981,19 +2128,55 @@ class RasioCasaDebiturController extends Controller
         return $snapshot;
     }
 
+    private function allocateCasaBalanceForRm(float $casaBalance, array $rmOsBySegment, float $identityTotalOs): array
+    {
+        $identityTotalOs = max($identityTotalOs, 0.0);
+        if ($casaBalance <= 0.0 || $identityTotalOs <= 0.0) {
+            return [];
+        }
+
+        $attributableCasa = min($casaBalance, $identityTotalOs);
+        $allocations = [];
+
+        foreach ($rmOsBySegment as $rmKey => $segments) {
+            $rmTotalOs = max((float) ($segments['total'] ?? 0), 0.0);
+            if ($rmTotalOs <= 0.0) {
+                continue;
+            }
+
+            $rmCasa = $attributableCasa * ($rmTotalOs / $identityTotalOs);
+            $allocations[$rmKey]['total'] = $rmCasa;
+
+            foreach (['briguna', 'kpr', 'mikro', 'smc'] as $segmentKey) {
+                $segmentOs = max((float) ($segments[$segmentKey] ?? 0), 0.0);
+                $allocations[$rmKey][$segmentKey] = $segmentOs > 0.0
+                    ? $rmCasa * ($segmentOs / $rmTotalOs)
+                    : 0.0;
+            }
+        }
+
+        return $allocations;
+    }
+
     /**
      * Assemble rows untuk display rasio CASA per RM
      */
-    private function assembleRmRows(array $rms, array $previousSummary, array $currentSummary, string $totalLabel): array
+    private function assembleRmRows(array $rms, array $previousSummary, array $currentSummary, string $totalLabel, ?array $m2Summary = null, ?array $ytdSummary = null): array
     {
+        $m2Summary ??= $this->emptySnapshot();
+        $ytdSummary ??= $this->emptySnapshot();
         $rows = [];
         $total = ['branch' => $totalLabel];
 
         foreach (self::SEGMENTS as $segment) {
             $segmentKey = strtolower($segment);
             $total[$segmentKey] = [
+                'os_ytd' => 0,
+                'os_m2' => 0,
                 'os_prev' => 0,
                 'os_curr' => 0,
+                'casa_ytd' => 0,
+                'casa_m2' => 0,
                 'casa_prev' => 0,
                 'casa_curr' => 0,
             ];
@@ -2004,6 +2187,10 @@ class RasioCasaDebiturController extends Controller
 
             foreach (self::SEGMENTS as $segment) {
                 $segmentKey = strtolower($segment);
+                $ytdOs = (float) ($ytdSummary['os'][$rmKey][$segmentKey] ?? 0);
+                $ytdCasa = (float) ($ytdSummary['casa'][$rmKey][$segmentKey] ?? 0);
+                $m2Os = (float) ($m2Summary['os'][$rmKey][$segmentKey] ?? 0);
+                $m2Casa = (float) ($m2Summary['casa'][$rmKey][$segmentKey] ?? 0);
                 $prevOs = (float) ($previousSummary['os'][$rmKey][$segmentKey] ?? 0);
                 $prevCasa = (float) ($previousSummary['casa'][$rmKey][$segmentKey] ?? 0);
                 $currOs = (float) ($currentSummary['os'][$rmKey][$segmentKey] ?? 0);
@@ -2013,11 +2200,19 @@ class RasioCasaDebiturController extends Controller
                     ['os' => $prevOs, 'casa' => $prevCasa],
                     ['os' => $currOs, 'casa' => $currCasa],
                     $previousSummary['casa_date'] !== null,
-                    $currentSummary['casa_date'] !== null
+                    $currentSummary['casa_date'] !== null,
+                    ['os' => $m2Os, 'casa' => $m2Casa],
+                    ['os' => $ytdOs, 'casa' => $ytdCasa],
+                    $m2Summary['casa_date'] !== null,
+                    $ytdSummary['casa_date'] !== null
                 );
 
+                $total[$segmentKey]['os_ytd'] += $ytdOs;
+                $total[$segmentKey]['os_m2'] += $m2Os;
                 $total[$segmentKey]['os_prev'] += $prevOs;
                 $total[$segmentKey]['os_curr'] += $currOs;
+                $total[$segmentKey]['casa_ytd'] += $ytdCasa;
+                $total[$segmentKey]['casa_m2'] += $m2Casa;
                 $total[$segmentKey]['casa_prev'] += $prevCasa;
                 $total[$segmentKey]['casa_curr'] += $currCasa;
             }
@@ -2031,7 +2226,11 @@ class RasioCasaDebiturController extends Controller
                 ['os' => $total[$segmentKey]['os_prev'], 'casa' => $total[$segmentKey]['casa_prev']],
                 ['os' => $total[$segmentKey]['os_curr'], 'casa' => $total[$segmentKey]['casa_curr']],
                 $previousSummary['casa_date'] !== null,
-                $currentSummary['casa_date'] !== null
+                $currentSummary['casa_date'] !== null,
+                ['os' => $total[$segmentKey]['os_m2'], 'casa' => $total[$segmentKey]['casa_m2']],
+                ['os' => $total[$segmentKey]['os_ytd'], 'casa' => $total[$segmentKey]['casa_ytd']],
+                $m2Summary['casa_date'] !== null,
+                $ytdSummary['casa_date'] !== null
             );
         }
 

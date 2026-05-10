@@ -15,6 +15,10 @@ class ImportCognosPhControllerTest extends TestCase
     {
         parent::setUp();
 
+        if (config('database.default') !== 'sqlite') {
+            $this->markTestSkipped('Test ini hanya boleh berjalan di SQLite. Bukan di MySQL production. Periksa phpunit.xml.');
+        }
+
         if (!Schema::hasTable('cognos_ph')) {
             Schema::create('cognos_ph', function (Blueprint $table) {
                 $table->string('uniqueid_namareport')->primary();

@@ -1,0 +1,16 @@
+{
+    "status": "completed",
+    "progress_percent": 100,
+    "current_table_index": 1,
+    "total_tables": 1,
+    "message": "Backup database selesai.",
+    "updated_at": 1778380288,
+    "file": {
+        "name": "project_abah_full_20260510_092949.sql.gz",
+        "relative_path": "private/database_backups/project_abah_full_20260510_092949.sql.gz",
+        "download_url": "https://asixdashboard.duckdns.org/file-management/download?path=private%2Fdatabase_backups%2Fproject_abah_full_20260510_092949.sql.gz",
+        "size": 963393274,
+        "size_human": "918.76 MB"
+    },
+    "backup_id": "backup_69ffed9cd5c6f"
+}
