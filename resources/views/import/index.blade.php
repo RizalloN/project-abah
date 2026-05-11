@@ -39,37 +39,43 @@
 
 <div id="download-toast-stack" class="download-toast-stack" aria-live="polite" aria-atomic="true"></div>
 
-<div class="card border-0 mb-4 shadow-sm" style="border-radius: 20px; background: #ffffff; overflow: hidden;">
-    <div class="card-header border-0 bg-transparent px-4 pt-4 pb-0">
-        <h5 class="font-weight-bold text-dark mb-0" style="font-size: 1.25rem;">
-            <i class="fas fa-cloud-upload-alt text-primary mr-2"></i> Upload Data
-        </h5>
+<div class="card border-0 mb-4 shadow-sm import-upload-card" style="border-radius: 20px; background: #ffffff; overflow: hidden;">
+    <div class="card-header border-0 bg-transparent px-4 pt-4 pb-0 import-upload-card__header">
+        <span class="import-upload-card__eyebrow">Import report</span>
+        <div class="d-flex flex-wrap align-items-start justify-content-between" style="gap: 1rem;">
+            <div>
+                <h5 class="font-weight-bold text-dark mb-1" style="font-size: 1.25rem;">
+                    <i class="fas fa-cloud-upload-alt text-primary mr-2"></i> Upload Data
+                </h5>
+                <p class="import-upload-card__subtitle mb-0">Pilih report, unggah file sesuai formatnya, lalu lanjutkan ke preview sebelum import.</p>
+            </div>
+            <div class="import-upload-card__badge">
+                <i class="fas fa-shield-alt mr-1"></i> Preview dulu
+            </div>
+        </div>
     </div>
 
     <form id="form-import" method="POST" action="{{ route('import.upload') }}" enctype="multipart/form-data" data-prepare-preview-url="" data-upload-limits-url="{{ route('import.upload-limits') }}" data-chunked-upload="" data-chunk-init-url="" data-chunk-upload-url="" data-chunk-finalize-url="">
         @csrf
 
-        <div class="card-body p-4">
+        <div class="card-body p-4 import-upload-card__body">
             <!-- Simplified Summary Bar -->
-            <div class="d-flex flex-wrap align-items-center mb-4 p-3" style="background: #f8fafc; border-radius: 16px; gap: 1.5rem; border: 1px solid #f1f5f9;">
-                <div>
-                    <small class="text-muted text-uppercase font-weight-bold" style="font-size: 0.7rem; letter-spacing: 0.5px;">Report</small>
-                    <div id="summary-report-name" class="font-weight-bold text-dark" style="font-size: 0.95rem;">-</div>
+            <div class="import-report-summary mb-4">
+                <div class="import-report-summary__item import-report-summary__item--primary">
+                    <span class="import-report-summary__label">Report dipilih</span>
+                    <strong id="summary-report-name">-</strong>
                 </div>
-                <div class="border-left" style="height: 30px; border-color: #e2e8f0 !important;"></div>
-                <div>
-                    <small class="text-muted text-uppercase font-weight-bold" style="font-size: 0.7rem; letter-spacing: 0.5px;">Format</small>
-                    <div id="summary-upload-type" class="font-weight-bold text-primary" style="font-size: 0.95rem;">-</div>
+                <div class="import-report-summary__item">
+                    <span class="import-report-summary__label">Format</span>
+                    <strong id="summary-upload-type">-</strong>
                 </div>
-                <div class="border-left" style="height: 30px; border-color: #e2e8f0 !important;"></div>
-                <div>
-                    <small class="text-muted text-uppercase font-weight-bold" style="font-size: 0.7rem; letter-spacing: 0.5px;">Periode</small>
-                    <div id="summary-periode-status" class="font-weight-bold text-dark" style="font-size: 0.95rem;">Auto</div>
+                <div class="import-report-summary__item">
+                    <span class="import-report-summary__label">Periode</span>
+                    <strong id="summary-periode-status">Auto</strong>
                 </div>
-                <div class="border-left" style="height: 30px; border-color: #e2e8f0 !important;"></div>
-                <div>
-                    <small class="text-muted text-uppercase font-weight-bold" style="font-size: 0.7rem; letter-spacing: 0.5px;">Target Tabel</small>
-                    <div id="summary-target-table" class="font-weight-bold text-dark" style="font-size: 0.95rem;">-</div>
+                <div class="import-report-summary__item">
+                    <span class="import-report-summary__label">Target tabel</span>
+                    <strong id="summary-target-table">-</strong>
                 </div>
             </div>
 
@@ -140,6 +146,11 @@
                         <div class="import-dropzone__content text-center">
                             <div id="import-dropzone-title" class="import-dropzone__title font-weight-bold text-dark mb-1" style="font-size: 1.1rem;">Pilih file atau tarik ke sini</div>
                             <div id="import-dropzone-text" class="import-dropzone__text text-muted" style="font-size: 0.9rem;">File otomatis disesuaikan dengan report</div>
+                            <div class="import-dropzone__hint">
+                                <span><i class="fas fa-file-archive mr-1"></i> RAR</span>
+                                <span><i class="fas fa-file-excel mr-1"></i> Excel</span>
+                                <span><i class="fas fa-file-csv mr-1"></i> CSV/TXT</span>
+                            </div>
                         </div>
                     </div>
 
@@ -162,7 +173,7 @@
             </div>
         </div>
 
-        <div class="card-footer bg-transparent border-0 px-4 pb-4 pt-0 text-right">
+        <div class="card-footer bg-transparent border-0 px-4 pb-4 pt-0 text-right import-upload-card__footer">
             <hr class="mt-0 mb-4" style="border-top: 1px solid #f1f5f9;">
             <button type="submit" id="btn-submit" class="btn btn-primary font-weight-bold import-upload-card__submit" style="border-radius: 14px; padding: 0.75rem 2rem; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);">
                 <i class="fas fa-file-archive mr-2"></i> Upload Sekarang
@@ -1489,6 +1500,7 @@
             const isDlyKapResegmentasi = tableName === 'dly_kap_resegmentasi';
             const isL1133 = tableName === 'l1133';
             const isLw321Pn = tableName === 'lw321pn';
+            const isIbbiz = tableName === 'ibbisniz_corp' || tableName === 'usak_ibbiz_uker';
             const usesGenericExcelFlow = importController.includes('ImportExcelController') && !isDailyLoan && !isSimpanan;
 
             formRAR.style.display = 'none';
@@ -1693,6 +1705,29 @@
                     type: 'date',
                     label: 'Tanggal Periode',
                     help: 'Wajib isi tanggal periode manual (YYYY-MM-DD) untuk Performance PIS per Produk.',
+                }));
+                configureKancaInput({ visible: false });
+                updateReportSummary();
+                updateFileSelectionUI();
+                return;
+            }
+
+            if (isIbbiz) {
+                formCsv.style.display = 'block';
+                inputCsv.disabled = false;
+                inputCsv.required = true;
+                inputCsv.setAttribute('accept', '.csv,.txt');
+                formImport.action = "{{ route('import.upload') }}";
+                formImport.dataset.preparePreviewUrl = '';
+                csvLabel.innerHTML = '<i class="fas fa-file-csv mr-1"></i> Upload File IB Biz (.csv, .txt)';
+                csvHelp.textContent = 'Pilih tanggal periode manual, lalu upload CSV IB Biz untuk preview dan import.';
+                applyButtonState('csv', '<i class="fas fa-file-csv"></i> Upload CSV');
+                configurePeriodeInput(buildManualPeriodeOptions({
+                    visible: true,
+                    required: true,
+                    type: 'date',
+                    label: 'Tanggal Periode',
+                    help: 'Wajib isi tanggal periode manual (YYYY-MM-DD) untuk IB Biz.',
                 }));
                 configureKancaInput({ visible: false });
                 updateReportSummary();
@@ -2758,6 +2793,22 @@
         line-height: 1.6;
     }
 
+    .import-upload-card__badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        padding: 0.55rem 0.8rem;
+        border-radius: 999px;
+        background: #ecfdf5;
+        border: 1px solid #bbf7d0;
+        color: #047857;
+        font-size: 0.78rem;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        white-space: nowrap;
+    }
+
     .import-upload-card__body {
         padding: 1.5rem;
     }
@@ -2773,6 +2824,13 @@
         border-radius: 16px;
         background: #f8fbff;
         border: 1px solid rgba(8, 87, 195, 0.12);
+        min-width: 0;
+    }
+
+    .import-report-summary__item--primary {
+        background: linear-gradient(180deg, #ffffff 0%, #eef6ff 100%);
+        border-color: rgba(8, 87, 195, 0.2);
+        box-shadow: inset 3px 0 0 #307fe2;
     }
 
     .import-report-summary__label {
@@ -2792,6 +2850,10 @@
         font-weight: 800;
         line-height: 1.35;
         word-break: break-word;
+    }
+
+    .import-report-summary__item--primary strong {
+        font-size: 1.02rem;
     }
 
     .import-upload-card__body .form-group label {
@@ -2857,11 +2919,12 @@
         gap: 1rem;
         margin-top: 1.15rem;
         padding: 1.1rem 1.15rem;
-        border-radius: 22px;
+        border-radius: 18px !important;
         border: 1.5px dashed rgba(8, 87, 195, 0.28);
         background: linear-gradient(180deg, #f7fbff 0%, #ffffff 100%);
         cursor: pointer;
         transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+        min-height: 210px;
     }
 
     .import-dropzone:hover,
@@ -2881,11 +2944,11 @@
     .import-dropzone__icon {
         width: 58px;
         height: 58px;
-        border-radius: 18px;
+        border-radius: 16px;
         display: grid;
         place-items: center;
-        background: linear-gradient(135deg, #053b82, #0857c3);
-        color: #71c5e8;
+        background: #eaf2ff;
+        color: #0857c3 !important;
         font-size: 1.45rem;
         flex: 0 0 auto;
     }
@@ -2902,13 +2965,34 @@
         line-height: 1.55;
     }
 
+    .import-dropzone__hint {
+        display: flex;
+        justify-content: center;
+        flex-wrap: wrap;
+        gap: 0.45rem;
+        margin-top: 0.85rem;
+    }
+
+    .import-dropzone__hint span {
+        display: inline-flex;
+        align-items: center;
+        min-height: 28px;
+        padding: 0.32rem 0.62rem;
+        border-radius: 999px;
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        color: #475569;
+        font-size: 0.78rem;
+        font-weight: 700;
+    }
+
     .import-file-preview {
         display: flex;
         align-items: center;
         gap: 0.9rem;
         margin-top: 1rem;
         padding: 0.95rem 1rem;
-        border-radius: 18px;
+        border-radius: 16px !important;
         background: #ffffff;
         border: 1px solid rgba(8, 87, 195, 0.12);
         box-shadow: 0 16px 28px -24px rgba(4, 42, 95, 0.2);

@@ -478,9 +478,12 @@
                 return;
             }
             const currentPage = Number(pagination.current_page || 1);
+            const totalPeriodsExact = pagination.total_periods_exact !== false;
             const buttons = [];
             const startPage = Math.max(1, currentPage - 2);
             const endPage = Math.min(totalPages, currentPage + 2);
+            const lastButtonTarget = totalPeriodsExact ? '' : ' data-page-target="last"';
+            const canGoLast = currentPage < totalPages || (!totalPeriodsExact && pagination.has_next);
             
             buttons.push(`<button type="button" class="report-management-page-btn" data-page="1" ${currentPage > 1 ? '' : 'disabled'} title="Halaman Pertama"><i class="fas fa-angle-double-left"></i></button>`);
             buttons.push(`<button type="button" class="report-management-page-btn" data-page="${currentPage - 1}" ${pagination.has_prev ? '' : 'disabled'} title="Halaman Sebelumnya"><i class="fas fa-chevron-left"></i></button>`);
@@ -488,7 +491,7 @@
                 buttons.push(`<button type="button" class="report-management-page-btn ${page === currentPage ? 'is-active' : ''}" data-page="${page}">${page}</button>`);
             }
             buttons.push(`<button type="button" class="report-management-page-btn" data-page="${currentPage + 1}" ${pagination.has_next ? '' : 'disabled'} title="Halaman Selanjutnya"><i class="fas fa-chevron-right"></i></button>`);
-            buttons.push(`<button type="button" class="report-management-page-btn" data-page="${totalPages}" ${currentPage < totalPages ? '' : 'disabled'} title="Halaman Terakhir"><i class="fas fa-angle-double-right"></i></button>`);
+            buttons.push(`<button type="button" class="report-management-page-btn" data-page="${totalPages}"${lastButtonTarget} ${canGoLast ? '' : 'disabled'} title="Halaman Terakhir"><i class="fas fa-angle-double-right"></i></button>`);
             
             buttons.push(`
                 <div class="report-management-page-jump ml-3 d-inline-flex align-items-center">
@@ -554,7 +557,7 @@
             return data;
         }
 
-        async function fetchManagementData(page = 1) {
+        async function fetchManagementData(page = 1, options = {}) {
             if (!managementReportSelect || !managementReportSelect.value) {
                 themedSwal({ icon: 'warning', title: 'Pilih Report', text: 'Silakan pilih report terlebih dahulu.' });
                 return;
@@ -583,6 +586,7 @@
                     id_report: managementReportSelect.value,
                     page: page,
                     per_page: managementState.perPage,
+                    page_target: options.pageTarget || undefined,
                 }, { signal: controller?.signal });
 
                 if (token !== managementState.loadToken) {
@@ -832,9 +836,10 @@
             const button = event.target.closest('.report-management-page-btn');
             if (!button || button.disabled) return;
             const targetPage = Number(button.getAttribute('data-page') || 1);
-            if (!targetPage || targetPage === managementState.currentPage) return;
+            const pageTarget = String(button.getAttribute('data-page-target') || '').trim();
+            if (!targetPage || (targetPage === managementState.currentPage && pageTarget !== 'last')) return;
             try {
-                await fetchManagementData(targetPage);
+                await fetchManagementData(targetPage, { pageTarget: pageTarget || undefined });
             } catch (error) {
                 themedSwal({ icon: 'error', title: 'Gagal Memuat Halaman', text: error.message || 'Terjadi kesalahan saat memuat halaman data.' });
             } finally {

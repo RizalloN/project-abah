@@ -248,6 +248,7 @@ class ImportIndexController extends Controller
             'max_rows' => 'nullable|integer|min:100|max:20000',
             'page' => 'nullable|integer|min:1',
             'per_page' => 'nullable|integer|min:1|max:24',
+            'page_target' => 'nullable|string|in:last',
         ]);
 
         $resolved = $this->reportManagementService()->resolveReportManagementData(
@@ -377,6 +378,7 @@ class ImportIndexController extends Controller
             'max_rows' => 'nullable|integer|min:100|max:20000',
             'page' => 'nullable|integer|min:1',
             'per_page' => 'nullable|integer|min:1|max:24',
+            'page_target' => 'nullable|string|in:last',
         ]);
 
         $resolved = $this->managedReportLoadCoordinator()->queue(

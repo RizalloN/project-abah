@@ -1323,6 +1323,9 @@
                 <h1 class="daily-panel-title">DASHBOARD KERAGAAN HARIAN</h1>
             </div>
             <div class="d-flex align-items-center gap-2">
+                <a id="exportExcelBtn" href="{{ route('dashboard.harian.export') }}" class="btn btn-sm btn-export-all">
+                    <i class="fas fa-file-excel mr-1"></i> EXPORT EXCEL
+                </a>
                 <button id="captureAllBtn" class="btn btn-sm btn-export-all">
                     <i class="fas fa-file-image mr-1"></i> EXPORT A4
                 </button>
@@ -1464,6 +1467,9 @@
                             <col style="width: var(--daily-rka-width);" class="numeric-col">
                             <col style="width: var(--daily-rka-width);" class="numeric-col">
                             <col style="width: var(--daily-rka-width);" class="numeric-col">
+                            <col style="width: var(--daily-rka-width);" class="numeric-col">
+                            <col style="width: var(--daily-rka-width);" class="numeric-col">
+                            <col style="width: var(--daily-rka-width);" class="numeric-col">
                         </colgroup>
                         <thead>
                             <tr class="group-row text-center">
@@ -1471,7 +1477,7 @@
                                 <th class="sticky-label group-label" rowspan="3">Keterangan</th>
                                 <th class="group-position" colspan="7" data-position-group-colspan>Posisi</th>
                                 <th class="group-delta" colspan="4">Delta Terhadap</th>
-                                <th class="group-rka" colspan="4">Perbandingan RKA</th>
+                                <th class="group-rka" colspan="6">Perbandingan RKA</th>
                             </tr>
                             <tr class="column-row text-center">
                                 <th class="value-col position-col" rowspan="2">
@@ -1507,10 +1513,10 @@
                                 <th class="value-col delta-col" rowspan="2">
                                     <span class="column-heading"><span class="main" data-label-delta-dtd>-</span><span class="header-subnote text-white-50">DtD</span></span>
                                 </th>
-                                <th class="value-col rka-col rka-period-cell" colspan="2">
+                                <th class="value-col rka-col rka-period-cell" colspan="3">
                                     <span class="rka-period-label" data-label-rka-period>RKA</span>
                                 </th>
-                                <th class="value-col rka-col rka-period-cell" colspan="2">
+                                <th class="value-col rka-col rka-period-cell" colspan="3">
                                     <span class="rka-period-label" data-label-rka-dec-period>RKA Des</span>
                                 </th>
                             </tr>
@@ -1519,10 +1525,16 @@
                                     <span class="rka-sub-label">Rp</span>
                                 </th>
                                 <th class="value-col rka-col">
+                                    <span class="rka-sub-label">GAP</span>
+                                </th>
+                                <th class="value-col rka-col">
                                     <span class="rka-sub-label">%</span>
                                 </th>
                                 <th class="value-col rka-col">
                                     <span class="rka-sub-label">Rp</span>
+                                </th>
+                                <th class="value-col rka-col">
+                                    <span class="rka-sub-label">GAP</span>
                                 </th>
                                 <th class="value-col rka-col">
                                     <span class="rka-sub-label">%</span>
@@ -1530,7 +1542,7 @@
                             </tr>
                         </thead>
                         <tbody id="daily-dashboard-body">
-                            <tr><td colspan="16" class="daily-empty"><i class="fas fa-spinner fa-spin mr-2"></i> Memuat data dashboard harian...</td></tr>
+                            <tr><td colspan="19" class="daily-empty"><i class="fas fa-spinner fa-spin mr-2"></i> Memuat data dashboard harian...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -1570,7 +1582,7 @@
                             <i class="fas fa-check-circle"></i>
                         </div>
                         <h4 class="font-weight-bold mb-2">Snapshot Berhasil!</h4>
-                        <p class="text-muted mb-4">Laporan A4 dalam satu file JPG telah berhasil diunduh ke perangkat Anda.</p>
+                        <p class="text-muted mb-4">Laporan A4 dalam file PNG resolusi tinggi telah berhasil diunduh ke perangkat Anda.</p>
                         <button type="button" class="btn btn-primary w-100" data-dismiss="modal">
                             Selesai
                         </button>
@@ -1592,6 +1604,7 @@
         const page = window.dailyDashboardPage || {};
         const currentPath = window.location.pathname.replace(/\/$/, '');
         const dataUrl = currentPath ? currentPath + '/data' : (page.routes ? page.routes.data : '');
+        const exportUrl = (page.routes && page.routes.export) ? page.routes.export : (currentPath ? currentPath + '/export' : '');
         const initialFilters = page.filters || {};
         const initialSelected = page.selected || {};
         const initialData = page.initialData || {};
@@ -1627,6 +1640,7 @@
         const tableWrap = document.querySelector('.daily-table-wrap');
         const mainHeader = document.querySelector('.main-header');
         const applyButton = document.getElementById('btn-apply-daily-filter');
+        const exportExcelButton = document.getElementById('exportExcelBtn');
         const selects = {
             kanca: document.getElementById('filter-kanca'),
             unit_kerja: document.getElementById('filter-unit'),
@@ -1669,6 +1683,10 @@
         const percentFormatter = new Intl.NumberFormat('id-ID', {
             minimumFractionDigits: 0,
             maximumFractionDigits: 0,
+        });
+        const rkaPercentFormatter = new Intl.NumberFormat('id-ID', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
         });
 
         const formatCurrency = function (value) {
@@ -2113,6 +2131,15 @@
             return params;
         };
 
+        if (exportExcelButton && exportUrl) {
+            exportExcelButton.addEventListener('click', function (event) {
+                event.preventDefault();
+                const params = buildQueryParams();
+                const separator = exportUrl.includes('?') ? '&' : '?';
+                window.location.href = exportUrl + (params.toString() ? separator + params.toString() : '');
+            });
+        }
+
         const zeroMetricGroup = function (target) {
             ['values', 'deltas'].forEach(function (group) {
                 Object.keys(target[group] || {}).forEach(function (metricKey) {
@@ -2175,7 +2202,7 @@
         };
 
         const formatAchievement = function (value) {
-            return percentFormatter.format(Number(value || 0)) + '%';
+            return rkaPercentFormatter.format(Number(value || 0)) + '%';
         };
 
         const computeRkaComparison = function (row) {
@@ -2329,9 +2356,9 @@
 
                 metricNames.forEach(function (metricName) {
                     rowsByKey.casa_pct[group][metricName] = safePercent(rowsByKey.total_casa[group][metricName], rowsByKey.total_simpanan[group][metricName]);
-                    rowsByKey.ldr_non_commercial[group][metricName] = safePercent(rowsByKey.total_simpanan[group][metricName], rowsByKey.total_os_non_commercial[group][metricName]);
-                    rowsByKey.ldr_ritel_non_commercial[group][metricName] = safePercent(rowsByKey.simpanan_ritel[group][metricName], rowsByKey.sme_os[group][metricName] + rowsByKey.consumer_os[group][metricName]);
-                    rowsByKey.ldr_mikro_non_commercial[group][metricName] = safePercent(rowsByKey.simpanan_mikro[group][metricName], rowsByKey.micro_os[group][metricName]);
+                    rowsByKey.ldr_non_commercial[group][metricName] = safePercent(rowsByKey.total_os_non_commercial[group][metricName], rowsByKey.total_simpanan[group][metricName]);
+                    rowsByKey.ldr_ritel_non_commercial[group][metricName] = safePercent(rowsByKey.sme_os[group][metricName] + rowsByKey.consumer_os[group][metricName], rowsByKey.simpanan_ritel[group][metricName]);
+                    rowsByKey.ldr_mikro_non_commercial[group][metricName] = safePercent(rowsByKey.micro_os[group][metricName], rowsByKey.simpanan_mikro[group][metricName]);
                 });
             });
 
@@ -2347,7 +2374,7 @@
             const rows = payload.rows || [];
             const periods = payload.comparison_periods || {};
             const hasH1 = Boolean(periods.h1 && periods.h1.period);
-            const emptyColspan = hasH1 ? 16 : 15;
+            const emptyColspan = hasH1 ? 19 : 18;
             const blockClassMap = {
                 total_simpanan: 'metric-block-simpanan',
                 total_os: 'metric-block-os',
@@ -2432,9 +2459,11 @@
                 rowCells.push('<td class="value-col delta-col ' + deltaClass(delta.mtd) + '"><span class="cell-text">' + formatValue(delta.mtd, row.type) + '</span></td>');
                 rowCells.push('<td class="value-col delta-col ' + deltaClass(delta.dtd) + '"><span class="cell-text">' + formatValue(delta.dtd, row.type) + '</span></td>');
                 rowCells.push('<td class="value-col rka-col"><span class="cell-text">' + formatValue(value.rka, row.type) + '</span></td>');
-                rowCells.push('<td class="value-col rka-col ' + deltaClass(rkaComparison.rka.delta) + '"><span class="cell-text">' + formatValue(rkaComparison.rka.delta, row.type) + '</span><span class="daily-rka-subnote">' + formatAchievement(rkaComparison.rka.achievement) + '</span></td>');
+                rowCells.push('<td class="value-col rka-col ' + deltaClass(rkaComparison.rka.delta) + '"><span class="cell-text">' + formatValue(rkaComparison.rka.delta, row.type) + '</span></td>');
+                rowCells.push('<td class="value-col rka-col ' + deltaClass(rkaComparison.rka.delta) + '"><span class="cell-text">' + formatAchievement(rkaComparison.rka.achievement) + '</span></td>');
                 rowCells.push('<td class="value-col rka-col"><span class="cell-text">' + formatValue(value.rka_dec, row.type) + '</span></td>');
-                rowCells.push('<td class="value-col rka-col ' + deltaClass(rkaComparison.rkaDec.delta) + '"><span class="cell-text">' + formatValue(rkaComparison.rkaDec.delta, row.type) + '</span><span class="daily-rka-subnote">' + formatAchievement(rkaComparison.rkaDec.achievement) + '</span></td>');
+                rowCells.push('<td class="value-col rka-col ' + deltaClass(rkaComparison.rkaDec.delta) + '"><span class="cell-text">' + formatValue(rkaComparison.rkaDec.delta, row.type) + '</span></td>');
+                rowCells.push('<td class="value-col rka-col ' + deltaClass(rkaComparison.rkaDec.delta) + '"><span class="cell-text">' + formatAchievement(rkaComparison.rkaDec.achievement) + '</span></td>');
 
                 const rowClasses = ['row-depth-' + row.depth];
                 if (blockClassMap[row.key]) {
@@ -2536,7 +2565,7 @@
                 .catch(function (error) {
                     console.error('Gagal memuat data dashboard harian.', error);
                     const hidden = positionH1Header && positionH1Header.classList.contains('position-col-hidden');
-                    body.innerHTML = '<tr><td colspan="' + (hidden ? 15 : 16) + '" class="daily-empty text-danger"><i class="fas fa-exclamation-triangle mr-2"></i>Gagal memuat data dashboard harian.</td></tr>';
+                    body.innerHTML = '<tr><td colspan="' + (hidden ? 18 : 19) + '" class="daily-empty text-danger"><i class="fas fa-exclamation-triangle mr-2"></i>Gagal memuat data dashboard harian.</td></tr>';
                 })
                 .finally(function () {
                     tableRegion.classList.remove('daily-loading');
@@ -2560,13 +2589,14 @@
         const errorMessageUI = document.getElementById('captureErrorMessage');
 
         const A4_EXPORT = {
-            width: 3840, // 4K Width
-            height: 5430, // A4 Portrait Aspect Ratio (1:1.414)
-            marginX: 180,
-            marginY: 120,
-            headerHeight: 340,
+            width: 4960,
+            height: 7016,
+            marginX: 210,
+            marginY: 140,
+            headerHeight: 360,
+            blockTitleHeight: 90,
             footerHeight: 150,
-            sectionGap: 60,
+            sectionGap: 52,
         };
 
         function waitFrame() {
@@ -2660,6 +2690,21 @@
             ctx.textAlign = 'left';
         }
 
+        function drawBlockSectionTitle(ctx, title, x, y, width) {
+            const titleHeight = A4_EXPORT.blockTitleHeight;
+
+            ctx.fillStyle = '#eff6ff';
+            ctx.fillRect(x, y, width, titleHeight - 16);
+            ctx.fillStyle = '#00529c';
+            ctx.fillRect(x, y, 16, titleHeight - 16);
+            ctx.strokeStyle = '#bfdbfe';
+            ctx.lineWidth = 3;
+            ctx.strokeRect(x, y, width, titleHeight - 16);
+            ctx.fillStyle = '#0f172a';
+            ctx.font = 'bold 38px "Inter", "Segoe UI", Arial, sans-serif';
+            drawTextEllipsis(ctx, title, x + 34, y + 45, width - 68);
+        }
+
         const captureAllDailyDashboard = async function() {
             if (window.jQuery) {
                 window.jQuery(captureModal).modal('show');
@@ -2683,14 +2728,19 @@
             try {
                 // 1. Group rows by segments (blocks)
                 const tbodyRows = Array.from(document.querySelectorAll('#daily-dashboard-body tr'));
-                const blockClasses = [
-                    'metric-block-simpanan', 'metric-block-os', 'metric-block-sml', 
-                    'metric-block-npl', 'metric-block-casa', 'metric-block-ldr', 'metric-block-recdh'
+                const blockDefinitions = [
+                    { className: 'metric-block-simpanan', label: '1. Simpanan' },
+                    { className: 'metric-block-os', label: '2. Pinjaman - Outstanding' },
+                    { className: 'metric-block-sml', label: '3. Pinjaman - SML' },
+                    { className: 'metric-block-npl', label: '4. Pinjaman - NPL' },
+                    { className: 'metric-block-casa', label: '5. Rasio CASA' },
+                    { className: 'metric-block-ldr', label: '6. Rasio LDR' },
+                    { className: 'metric-block-recdh', label: '7. Recovery DH' }
                 ];
+                const blockClasses = blockDefinitions.map(block => block.className);
 
                 const blockSegments = [];
                 let currentBlock = null;
-                const MAX_ROWS_PER_SUB_SEGMENT = 25; // More dense segments
 
                 tbodyRows.forEach(row => {
                     if (row.classList.contains('row-hidden-by-scope')) return;
@@ -2699,8 +2749,10 @@
                     const isNewBlock = blockIndex !== -1;
                     
                     if (isNewBlock || !currentBlock) {
+                        const definition = blockDefinitions[blockIndex] || { label: 'Keragaan Harian' };
                         currentBlock = { 
                             blockId: isNewBlock ? blockIndex + 1 : (currentBlock ? currentBlock.blockId : 1),
+                            label: definition.label,
                             rows: [row],
                             canvases: [] 
                         };
@@ -2716,13 +2768,17 @@
                 const originalTable = document.querySelector('.daily-table');
                 const colgroupHtml = originalTable.querySelector('colgroup').outerHTML;
                 const theadHtml = originalTable.querySelector('thead').outerHTML;
-                const tableRealWidth = Math.ceil(originalTable.scrollWidth) + 12; 
+                const tableRealWidth = Math.ceil(Math.max(originalTable.scrollWidth, originalTable.getBoundingClientRect().width)) + 12;
 
                 for (let b = 0; b < blockSegments.length; b++) {
                     const block = blockSegments[b];
                     const subGroups = [];
+                    const MAX_ROWS_PER_SUB_SEGMENT = 18;
                     for (let i = 0; i < block.rows.length; i += MAX_ROWS_PER_SUB_SEGMENT) {
                         subGroups.push(block.rows.slice(i, i + MAX_ROWS_PER_SUB_SEGMENT));
+                    }
+                    if (subGroups.length > 1 && subGroups[subGroups.length - 1].length <= 2) {
+                        subGroups[subGroups.length - 2].push(...subGroups.pop());
                     }
 
                     for (let s = 0; s < subGroups.length; s++) {
@@ -2735,6 +2791,15 @@
                         tempStyle.textContent = `
                             .daily-table { width: 100% !important; border-collapse: separate !important; border-spacing: 0 !important; }
                             .daily-table th, .daily-table td { border: 1px solid #dbe5ef !important; padding: 4px 6px !important; }
+                            .daily-table .sticky-no,
+                            .daily-table .sticky-label,
+                            .daily-table .group-no,
+                            .daily-table .group-label {
+                                position: static !important;
+                                left: auto !important;
+                                z-index: auto !important;
+                                box-shadow: none !important;
+                            }
                             .daily-table thead th { background: #004685 !important; color: #ffffff !important; font-weight: bold !important; font-size: 11px !important; }
                             .daily-table .group-position { background: #004685 !important; }
                             .daily-table .group-delta { background: #334155 !important; }
@@ -2763,7 +2828,7 @@
                         
                         await waitFrame();
                         const segmentCanvas = await html2canvas(tempWrap.querySelector('table'), {
-                            scale: 3.0, 
+                            scale: 4.0,
                             useCORS: true,
                             backgroundColor: '#ffffff',
                             logging: false,
@@ -2776,16 +2841,17 @@
                         const scaleFactor = targetWidth / segmentCanvas.width;
                         block.canvases.push({
                             canvas: segmentCanvas,
+                            title: subGroups.length > 1 ? `${block.label} (${s + 1}/${subGroups.length})` : block.label,
                             drawWidth: targetWidth,
-                            drawHeight: segmentCanvas.height * scaleFactor
+                            drawHeight: segmentCanvas.height * scaleFactor,
                         });
                     }
                 }
 
-                // 3. Compact Grouping into 2 Master Pages
+                // 3. Compact Grouping into two A4 parts
                 const masterGroups = [
-                    { label: 'SIMPANAN, OS, SML & NPL', blocks: blockSegments.filter(b => b.blockId <= 4), filename: 'Part-1_Main-Performance' },
-                    { label: 'CASA, LDR & REC DH', blocks: blockSegments.filter(b => b.blockId >= 5), filename: 'Part-2_Ratios-Recovery' }
+                    { label: 'SIMPANAN, RASIO & RECOVERY', blocks: blockSegments.filter(b => b.blockId === 1 || b.blockId >= 5), filename: 'Part-1_Simpanan-Rasio-Recovery' },
+                    { label: 'PINJAMAN: OS, SML & NPL', blocks: blockSegments.filter(b => b.blockId >= 2 && b.blockId <= 4), filename: 'Part-2_Pinjaman' }
                 ];
 
                 for (let g = 0; g < masterGroups.length; g++) {
@@ -2799,14 +2865,23 @@
                     const maxContentHeight = A4_EXPORT.height - (A4_EXPORT.marginY + A4_EXPORT.headerHeight + A4_EXPORT.footerHeight + 80);
 
                     groupCanvases.forEach(item => {
-                        const estimatedNewHeight = currentPage.totalHeight + (currentPage.items.length > 0 ? A4_EXPORT.sectionGap : 0) + item.drawHeight;
+                        item.totalHeight = item.drawHeight + A4_EXPORT.blockTitleHeight;
+                        if (item.totalHeight > maxContentHeight) {
+                            const availableTableHeight = Math.max(1, maxContentHeight - A4_EXPORT.blockTitleHeight);
+                            const fitScale = availableTableHeight / item.drawHeight;
+                            item.drawWidth *= fitScale;
+                            item.drawHeight *= fitScale;
+                            item.totalHeight = item.drawHeight + A4_EXPORT.blockTitleHeight;
+                        }
+
+                        const estimatedNewHeight = currentPage.totalHeight + (currentPage.items.length > 0 ? A4_EXPORT.sectionGap : 0) + item.totalHeight;
                         if (estimatedNewHeight > maxContentHeight && currentPage.items.length > 0) {
                             pages.push(currentPage);
-                            currentPage = { items: [item], totalHeight: item.drawHeight };
+                            currentPage = { items: [item], totalHeight: item.totalHeight };
                         } else {
                             if (currentPage.items.length > 0) currentPage.totalHeight += A4_EXPORT.sectionGap;
                             currentPage.items.push(item);
-                            currentPage.totalHeight += item.drawHeight;
+                            currentPage.totalHeight += item.totalHeight;
                         }
                     });
                     if (currentPage.items.length > 0) pages.push(currentPage);
@@ -2824,6 +2899,8 @@
 
                         let currentY = A4_EXPORT.marginY + A4_EXPORT.headerHeight;
                         pageData.items.forEach(item => {
+                            drawBlockSectionTitle(ctx, item.title || group.label, A4_EXPORT.marginX, currentY, item.drawWidth);
+                            currentY += A4_EXPORT.blockTitleHeight;
                             ctx.drawImage(item.canvas, A4_EXPORT.marginX, currentY, item.drawWidth, item.drawHeight);
                             currentY += item.drawHeight + A4_EXPORT.sectionGap;
                         });
@@ -2833,8 +2910,8 @@
                         const timestamp = new Date().toISOString().slice(0, 10);
                         const link = document.createElement('a');
                         const pageSuffix = pages.length > 1 ? `_Hal-${p + 1}` : '';
-                        link.download = `Daily-Dashboard_${group.filename}_${timestamp}${pageSuffix}.jpg`;
-                        link.href = pageCanvas.toDataURL('image/jpeg', 0.94); // Slightly lower quality for smaller file size but high res
+                        link.download = `Daily-Dashboard_${group.filename}_${timestamp}${pageSuffix}.png`;
+                        link.href = pageCanvas.toDataURL('image/png');
                         link.click();
                         await waitFrame();
                     }
@@ -2847,7 +2924,7 @@
                 console.error('Capture failed:', err);
                 progressUI.classList.add('d-none');
                 errorUI.classList.remove('d-none');
-                errorMessageUI.textContent = 'Gagal menyusun laporan 4K. Silakan coba lagi.';
+                errorMessageUI.textContent = 'Gagal menyusun laporan A4. Silakan coba lagi.';
             } finally {
                 captureBtn.disabled = false;
                 captureBtn.innerHTML = originalBtnHtml;
@@ -2871,7 +2948,7 @@ if (window.jQuery && captureModal) {
         syncPosisiSelect(initialFilters.posisi_terakhir || [], initialSelected.posisi_terakhir || '');
         syncRkaSelect(initialFilters.posisi_rka || [], initialSelected.posisi_rka || '');
 
-        body.innerHTML = '<tr><td colspan="15" class="daily-empty"><i class="fas fa-filter mr-2 text-muted"></i>Filter belum dijalankan. Pilih parameter lalu klik Terapkan Filter.</td></tr>';
+        body.innerHTML = '<tr><td colspan="19" class="daily-empty"><i class="fas fa-filter mr-2 text-muted"></i>Filter belum dijalankan. Pilih parameter lalu klik Terapkan Filter.</td></tr>';
 
         if (initialData && Object.keys(initialData).length) {
             applyPayload(initialData);

@@ -116,8 +116,8 @@ class RekeningDormantController extends Controller
                 'effective_dates' => [
                     'curr' => null,
                     'mtd' => null,
+                    'm2' => null,
                     'ytd' => null,
-                    'yoy' => null,
                 ],
                 'data' => [],
                 'branches' => [],
@@ -125,16 +125,16 @@ class RekeningDormantController extends Controller
                     'branch' => 'TOTAL AREA 6',
                     'current' => 0,
                     'mtd' => 0,
+                    'm2' => 0,
                     'ytd' => 0,
-                    'yoy' => 0,
                 ],
             ]);
         }
 
         $currDate = Carbon::parse($currentPeriod);
         $mtdPeriod = $this->resolveComparisonDormantPeriod($currDate->copy()->subMonthNoOverflow()->endOfMonth()->toDateString());
+        $m2Period = $this->resolveComparisonDormantPeriod($currDate->copy()->subMonthsNoOverflow(2)->endOfMonth()->toDateString());
         $ytdPeriod = $this->resolveComparisonDormantPeriod($currDate->copy()->subYearNoOverflow()->endOfYear()->toDateString());
-        $yoyPeriod = $this->resolveComparisonDormantPeriod($currDate->copy()->subYearNoOverflow()->endOfMonth()->toDateString());
         $requestedBranches = $this->normalizeFilterValues($request->input('kantor_cabang'));
         $requestedUnits = $this->normalizeFilterValues($request->input('unit_kerja'));
         $isBranchFiltered = !empty($requestedBranches);
@@ -163,19 +163,19 @@ class RekeningDormantController extends Controller
                 : 'TOTAL AREA 6',
             'current' => 0,
             'mtd' => 0,
+            'm2' => 0,
             'ytd' => 0,
-            'yoy' => 0,
             'mtd_base' => 0,
+            'm2_base' => 0,
             'ytd_base' => 0,
-            'yoy_base' => 0,
         ];
 
         if ($isBranchFiltered) {
             $periodCounts = $this->fetchDormantCountsByUnit(
                 $currentPeriod,
                 $mtdPeriod,
+                $m2Period,
                 $ytdPeriod,
-                $yoyPeriod,
                 $selectedBranches,
                 $selectedUnits,
                 $forceRefresh
@@ -189,37 +189,37 @@ class RekeningDormantController extends Controller
                 $unitSummary = $periodCounts[$unit] ?? [];
                 $current = (int) ($unitSummary['current'] ?? 0);
                 $mtdBase = (int) ($unitSummary['mtd_base'] ?? 0);
+                $m2Base = (int) ($unitSummary['m2_base'] ?? 0);
                 $ytdBase = (int) ($unitSummary['ytd_base'] ?? 0);
-                $yoyBase = (int) ($unitSummary['yoy_base'] ?? 0);
 
                 $row = [
                     'branch' => $unit,
                     'source_branch' => $unit,
                     'current' => $current,
                     'mtd_base' => $mtdBase,
+                    'm2_base' => $m2Base,
                     'ytd_base' => $ytdBase,
-                    'yoy_base' => $yoyBase,
                     'mtd' => $current - $mtdBase,
+                    'm2' => $current - $m2Base,
                     'ytd' => $current - $ytdBase,
-                    'yoy' => $current - $yoyBase,
                 ];
 
                 $rows[] = $row;
 
                 $totals['current'] += $row['current'];
                 $totals['mtd_base'] += $row['mtd_base'];
+                $totals['m2_base'] += $row['m2_base'];
                 $totals['ytd_base'] += $row['ytd_base'];
-                $totals['yoy_base'] += $row['yoy_base'];
                 $totals['mtd'] += $row['mtd'];
+                $totals['m2'] += $row['m2'];
                 $totals['ytd'] += $row['ytd'];
-                $totals['yoy'] += $row['yoy'];
             }
         } else {
             $periodCounts = $this->fetchDormantCountsSummary(
                 $currentPeriod,
                 $mtdPeriod,
+                $m2Period,
                 $ytdPeriod,
-                $yoyPeriod,
                 $selectedBranches,
                 $selectedUnits,
                 $forceRefresh
@@ -229,42 +229,42 @@ class RekeningDormantController extends Controller
                 $branchSummary = $periodCounts[$branch] ?? [];
                 $current = (int) ($branchSummary['current'] ?? 0);
                 $mtdBase = (int) ($branchSummary['mtd_base'] ?? 0);
+                $m2Base = (int) ($branchSummary['m2_base'] ?? 0);
                 $ytdBase = (int) ($branchSummary['ytd_base'] ?? 0);
-                $yoyBase = (int) ($branchSummary['yoy_base'] ?? 0);
 
                 $row = [
                     'branch' => $branch,
                     'source_branch' => $branch,
                     'current' => $current,
                     'mtd_base' => $mtdBase,
+                    'm2_base' => $m2Base,
                     'ytd_base' => $ytdBase,
-                    'yoy_base' => $yoyBase,
                     'mtd' => $current - $mtdBase,
+                    'm2' => $current - $m2Base,
                     'ytd' => $current - $ytdBase,
-                    'yoy' => $current - $yoyBase,
                 ];
 
                 $rows[] = $row;
 
                 $totals['current'] += $row['current'];
                 $totals['mtd_base'] += $row['mtd_base'];
+                $totals['m2_base'] += $row['m2_base'];
                 $totals['ytd_base'] += $row['ytd_base'];
-                $totals['yoy_base'] += $row['yoy_base'];
                 $totals['mtd'] += $row['mtd'];
+                $totals['m2'] += $row['m2'];
                 $totals['ytd'] += $row['ytd'];
-                $totals['yoy'] += $row['yoy'];
             }
         }
 
         return response()->json([
             'status' => 'success',
             'group_label' => $isBranchFiltered ? 'UKER' : 'BRANCH OFFICE',
-            'labels' => $this->buildLabels($currentPeriod, $mtdPeriod, $ytdPeriod, $yoyPeriod),
+            'labels' => $this->buildLabels($currentPeriod, $mtdPeriod, $m2Period, $ytdPeriod),
             'effective_dates' => [
                 'curr' => $currentPeriod,
                 'mtd' => $mtdPeriod,
+                'm2' => $m2Period,
                 'ytd' => $ytdPeriod,
-                'yoy' => $yoyPeriod,
             ],
             'data' => $rows,
             'branches' => $selectedBranches->values()->all(),
@@ -282,8 +282,8 @@ class RekeningDormantController extends Controller
                 'resolved_period' => $currentPeriod,
                 'comparison_periods' => [
                     'mtd' => $mtdPeriod,
+                    'm2' => $m2Period,
                     'ytd' => $ytdPeriod,
-                    'yoy' => $yoyPeriod,
                 ],
                 'selected_branch_count' => $selectedBranches->count(),
                 'selected_unit_count' => $selectedUnits->count(),
@@ -466,8 +466,8 @@ class RekeningDormantController extends Controller
     private function fetchDormantCountsSummary(
         string $currentPeriod,
         ?string $mtdPeriod,
+        ?string $m2Period,
         ?string $ytdPeriod,
-        ?string $yoyPeriod,
         Collection $branches,
         Collection $units,
         bool $forceRefresh = false
@@ -477,7 +477,7 @@ class RekeningDormantController extends Controller
             return [];
         }
 
-        $periods = collect([$currentPeriod, $mtdPeriod, $ytdPeriod, $yoyPeriod])->filter()->values();
+        $periods = collect([$currentPeriod, $mtdPeriod, $m2Period, $ytdPeriod])->filter()->values();
         $branchMap = $this->resolveBranchMapForPeriod($currentPeriod);
         $selectedBranchLabels = $branches->values()->all();
         $selectedRawBranches = collect($selectedBranchLabels)
@@ -496,7 +496,7 @@ class RekeningDormantController extends Controller
             }
         }
 
-        $cacheKey = 'rekening_dormant_v5_counts_summary:' . md5(json_encode([
+        $cacheKey = 'rekening_dormant_v6_counts_summary:' . md5(json_encode([
             'cache_version' => $this->reportCacheVersion(),
             'periods' => $periods->all(),
             'branches' => $selectedBranchLabels,
@@ -511,8 +511,8 @@ class RekeningDormantController extends Controller
                 $units,
                 $currentPeriod,
                 $mtdPeriod,
+                $m2Period,
                 $ytdPeriod,
-                $yoyPeriod
             ) {
                 // Use batched query for all periods at once
                 $rows = $this->dormantSnapshotQuery()
@@ -523,7 +523,7 @@ class RekeningDormantController extends Controller
                     ->groupBy('posisi', 'branch_label')
                     ->get();
 
-                return $this->formatDormantSummaryCounts($rows, 'branch_label', $currentPeriod, $mtdPeriod, $ytdPeriod, $yoyPeriod);
+                return $this->formatDormantSummaryCounts($rows, 'branch_label', $currentPeriod, $mtdPeriod, $m2Period, $ytdPeriod);
             }, $forceRefresh);
         }
 
@@ -535,8 +535,8 @@ class RekeningDormantController extends Controller
             $units,
             $currentPeriod,
             $mtdPeriod,
+            $m2Period,
             $ytdPeriod,
-            $yoyPeriod
         ) {
             // BATCH QUERY: Get all periods in one query with index hint
             $rows = DB::table(DB::raw($this->qualifyIndexedSource('simpanan_multipn', null, [self::DORMANT_SUMMARY_INDEX])))
@@ -563,22 +563,22 @@ class RekeningDormantController extends Controller
                 $counts[$branchLabel] ??= [
                     'current' => 0,
                     'mtd_base' => 0,
+                    'm2_base' => 0,
                     'ytd_base' => 0,
-                    'yoy_base' => 0,
                 ];
 
                 $count = (int) ($row->dormant_count ?? 0);
                 if ($row->posisi === $currentPeriod) $counts[$branchLabel]['current'] += $count;
                 if ($mtdPeriod && $row->posisi === $mtdPeriod) $counts[$branchLabel]['mtd_base'] += $count;
+                if ($m2Period && $row->posisi === $m2Period) $counts[$branchLabel]['m2_base'] += $count;
                 if ($ytdPeriod && $row->posisi === $ytdPeriod) $counts[$branchLabel]['ytd_base'] += $count;
-                if ($yoyPeriod && $row->posisi === $yoyPeriod) $counts[$branchLabel]['yoy_base'] += $count;
             }
 
             return $counts;
         }, $forceRefresh);
     }
 
-    private function formatDormantSummaryCounts($rows, string $groupField, string $currentPeriod, ?string $mtdPeriod, ?string $ytdPeriod, ?string $yoyPeriod): array
+    private function formatDormantSummaryCounts($rows, string $groupField, string $currentPeriod, ?string $mtdPeriod, ?string $m2Period, ?string $ytdPeriod): array
     {
         $counts = [];
         foreach ($rows as $row) {
@@ -588,15 +588,15 @@ class RekeningDormantController extends Controller
             $counts[$groupValue] ??= [
                 'current' => 0,
                 'mtd_base' => 0,
+                'm2_base' => 0,
                 'ytd_base' => 0,
-                'yoy_base' => 0,
             ];
 
             $count = (int) ($row->dormant_count ?? 0);
             if ($row->posisi === $currentPeriod) $counts[$groupValue]['current'] += $count;
             if ($mtdPeriod && $row->posisi === $mtdPeriod) $counts[$groupValue]['mtd_base'] += $count;
+            if ($m2Period && $row->posisi === $m2Period) $counts[$groupValue]['m2_base'] += $count;
             if ($ytdPeriod && $row->posisi === $ytdPeriod) $counts[$groupValue]['ytd_base'] += $count;
-            if ($yoyPeriod && $row->posisi === $yoyPeriod) $counts[$groupValue]['yoy_base'] += $count;
         }
 
         return $counts;
@@ -605,8 +605,8 @@ class RekeningDormantController extends Controller
     private function fetchDormantCountsByUnit(
         string $currentPeriod,
         ?string $mtdPeriod,
+        ?string $m2Period,
         ?string $ytdPeriod,
-        ?string $yoyPeriod,
         Collection $branches,
         Collection $units,
         bool $forceRefresh = false
@@ -616,7 +616,7 @@ class RekeningDormantController extends Controller
             return [];
         }
 
-        $periods = collect([$currentPeriod, $mtdPeriod, $ytdPeriod, $yoyPeriod])->filter()->values();
+        $periods = collect([$currentPeriod, $mtdPeriod, $m2Period, $ytdPeriod])->filter()->values();
         $branchMap = $this->resolveBranchMapForPeriod($currentPeriod);
         $selectedBranchLabels = $branches->values()->all();
         $selectedRawBranches = collect($selectedBranchLabels)
@@ -628,7 +628,7 @@ class RekeningDormantController extends Controller
             return [];
         }
 
-        $cacheKey = 'rekening_dormant_v9_counts_by_unit:' . md5(json_encode([
+        $cacheKey = 'rekening_dormant_v10_counts_by_unit:' . md5(json_encode([
             'cache_version' => $this->reportCacheVersion(),
             'periods' => $periods->all(),
             'branches' => $selectedBranchLabels,
@@ -643,8 +643,8 @@ class RekeningDormantController extends Controller
                 $units,
                 $currentPeriod,
                 $mtdPeriod,
+                $m2Period,
                 $ytdPeriod,
-                $yoyPeriod
             ) {
                 // Use batched query for all periods at once
                 $rows = $this->dormantSnapshotQuery()
@@ -657,7 +657,7 @@ class RekeningDormantController extends Controller
                     ->groupBy('posisi', 'unit_kerja')
                     ->get();
 
-                return $this->formatDormantGroupedCounts($rows, 'unit_kerja', $currentPeriod, $mtdPeriod, $ytdPeriod, $yoyPeriod);
+                return $this->formatDormantGroupedCounts($rows, 'unit_kerja', $currentPeriod, $mtdPeriod, $m2Period, $ytdPeriod);
             }, $forceRefresh);
         }
 
@@ -668,8 +668,8 @@ class RekeningDormantController extends Controller
             $units,
             $currentPeriod,
             $mtdPeriod,
+            $m2Period,
             $ytdPeriod,
-            $yoyPeriod
         ) {
             // BATCH QUERY: Get all periods in one query with index hint
             $rows = DB::table(DB::raw($this->qualifyIndexedSource('simpanan_multipn', null, [self::DORMANT_SUMMARY_INDEX])))
@@ -685,11 +685,11 @@ class RekeningDormantController extends Controller
                 ->groupBy('posisi', 'unit_kerja')
                 ->get();
 
-            return $this->formatDormantGroupedCounts($rows, 'unit_kerja', $currentPeriod, $mtdPeriod, $ytdPeriod, $yoyPeriod);
+            return $this->formatDormantGroupedCounts($rows, 'unit_kerja', $currentPeriod, $mtdPeriod, $m2Period, $ytdPeriod);
         }, $forceRefresh);
     }
 
-    private function formatDormantGroupedCounts($rows, string $groupField, string $currentPeriod, ?string $mtdPeriod, ?string $ytdPeriod, ?string $yoyPeriod): array
+    private function formatDormantGroupedCounts($rows, string $groupField, string $currentPeriod, ?string $mtdPeriod, ?string $m2Period, ?string $ytdPeriod): array
     {
         $counts = [];
 
@@ -703,8 +703,8 @@ class RekeningDormantController extends Controller
             $counts[$groupValue] ??= [
                 'current' => 0,
                 'mtd_base' => 0,
+                'm2_base' => 0,
                 'ytd_base' => 0,
-                'yoy_base' => 0,
             ];
 
             $count = (int) ($row->dormant_count ?? 0);
@@ -717,12 +717,12 @@ class RekeningDormantController extends Controller
                 $counts[$groupValue]['mtd_base'] += $count;
             }
 
-            if ($ytdPeriod && $row->posisi === $ytdPeriod) {
-                $counts[$groupValue]['ytd_base'] += $count;
+            if ($m2Period && $row->posisi === $m2Period) {
+                $counts[$groupValue]['m2_base'] += $count;
             }
 
-            if ($yoyPeriod && $row->posisi === $yoyPeriod) {
-                $counts[$groupValue]['yoy_base'] += $count;
+            if ($ytdPeriod && $row->posisi === $ytdPeriod) {
+                $counts[$groupValue]['ytd_base'] += $count;
             }
         }
 
@@ -921,13 +921,13 @@ class RekeningDormantController extends Controller
         return $query->where('snapshot_version', self::DORMANT_SNAPSHOT_VERSION);
     }
 
-    private function buildLabels(?string $currentPeriod, ?string $mtdPeriod, ?string $ytdPeriod, ?string $yoyPeriod): array
+    private function buildLabels(?string $currentPeriod, ?string $mtdPeriod, ?string $m2Period, ?string $ytdPeriod): array
     {
         return [
             'curr' => $this->formatPeriodLabel($currentPeriod),
             'mtd' => $this->formatPeriodLabel($mtdPeriod),
+            'm2' => $this->formatPeriodLabel($m2Period),
             'ytd' => $this->formatPeriodLabel($ytdPeriod),
-            'yoy' => $this->formatPeriodLabel($yoyPeriod),
         ];
     }
 
@@ -938,7 +938,7 @@ class RekeningDormantController extends Controller
         }
 
         try {
-            return Carbon::parse($date)->translatedFormat('d M Y');
+            return Carbon::parse($date)->translatedFormat('d M y');
         } catch (Throwable) {
             return $date;
         }

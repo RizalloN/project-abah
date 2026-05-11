@@ -119,6 +119,51 @@ class ManagedReportDeleteTest extends TestCase
         );
     }
 
+    public function test_report_management_data_can_jump_to_last_period_page(): void
+    {
+        Schema::create('last_page_report_fixture', function (Blueprint $table) {
+            $table->string('uniqueid_namareport')->primary();
+            $table->date('periode')->nullable();
+            $table->string('kanca')->nullable();
+        });
+
+        DB::table('nama_report')->insert([
+            'id_report' => 501,
+            'nama_report' => 'Last Page Report Fixture',
+            'table_name' => 'last_page_report_fixture',
+            'active' => 1,
+        ]);
+
+        $rows = [];
+        foreach (['2026-04-10', '2026-04-09', '2026-04-08', '2026-04-07', '2026-04-06'] as $period) {
+            $rows[] = [
+                'uniqueid_namareport' => $period . '-KC-Madiun',
+                'periode' => $period,
+                'kanca' => 'KC Madiun',
+            ];
+        }
+        DB::table('last_page_report_fixture')->insert($rows);
+
+        $controller = app(ImportIndexController::class);
+        $request = Request::create('/import/report-management/data', 'POST', [
+            'id_report' => 501,
+            'max_rows' => 100,
+            'page' => 1,
+            'per_page' => 2,
+            'page_target' => 'last',
+        ]);
+
+        $response = $controller->reportManagementData($request);
+        $payload = $response->getData(true);
+
+        $this->assertSame(200, $response->status());
+        $this->assertSame('success', $payload['status']);
+        $this->assertSame(3, $payload['pagination']['total_pages']);
+        $this->assertSame(3, $payload['pagination']['current_page']);
+        $this->assertFalse($payload['pagination']['has_next']);
+        $this->assertSame(['2026-04-06'], array_column($payload['periods'], 'period'));
+    }
+
     public function test_simpanan_delete_chunk_is_bounded_for_visible_progress(): void
     {
         $controller = app(ImportIndexController::class);
@@ -700,17 +745,17 @@ class ManagedReportDeleteTest extends TestCase
         $this->assertSame('NAMA_BRANCH', $kancaColumn);
     }
 
-    public function test_management_scope_uses_nama_kci_for_merchant_qris_reports(): void
+    public function test_management_scope_uses_mbdesc_for_qris_detail_report(): void
     {
-        Schema::create('merchant_qris', function (Blueprint $table) {
+        Schema::create('jumlah_merchant_qris_detail', function (Blueprint $table) {
             $table->string('PERIODE')->nullable();
             $table->date('POSISI')->nullable();
-            $table->string('NAMA_KCI')->nullable();
-            $table->string('NAMA_BRANCH')->nullable();
+            $table->string('MBDESC')->nullable();
+            $table->string('BRDESC')->nullable();
         });
 
-        DB::table('merchant_qris')->insert([
-            ['PERIODE' => '2026-04', 'POSISI' => '2026-04-30', 'NAMA_KCI' => 'KC Madiun', 'NAMA_BRANCH' => 'Unit Sudirman'],
+        DB::table('jumlah_merchant_qris_detail')->insert([
+            ['PERIODE' => '2026-04', 'POSISI' => '2026-04-30', 'MBDESC' => 'KC Madiun', 'BRDESC' => 'Unit Sudirman'],
         ]);
 
         $controller = app(ImportIndexController::class);
@@ -719,12 +764,12 @@ class ManagedReportDeleteTest extends TestCase
 
         [$periodColumn, $kancaColumn] = $method->invoke(
             $controller,
-            'merchant_qris',
-            Schema::getColumnListing('merchant_qris')
+            'jumlah_merchant_qris_detail',
+            Schema::getColumnListing('jumlah_merchant_qris_detail')
         );
 
         $this->assertSame('POSISI', $periodColumn);
-        $this->assertSame('NAMA_KCI', $kancaColumn);
+        $this->assertSame('MBDESC', $kancaColumn);
     }
 
     public function test_management_scope_treats_tanggal_as_period_column_and_normalizes_display_to_short_date(): void

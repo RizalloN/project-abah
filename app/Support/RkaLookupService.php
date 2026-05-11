@@ -220,6 +220,7 @@ class RkaLookupService
         $normalized = preg_replace('/^\d+\s*[\p{Pd}]+\s*/u', '', $normalized) ?? $normalized;
         $normalized = preg_replace('/^\d+\s+/u', '', $normalized) ?? $normalized;
         $normalized = preg_replace('/\s*\(([^)]*)\)\s*$/u', '', $normalized) ?? $normalized;
+        $normalized = preg_replace('/\s*[\p{Pd}]+\s*/u', ' ', $normalized) ?? $normalized;
         $normalized = preg_replace('/\s+/', ' ', $normalized) ?? $normalized;
         $normalized = trim($normalized);
 
@@ -317,7 +318,7 @@ class RkaLookupService
                 // For each region pattern, check if it matches this row's kanca_key (region)
                 foreach ($regionPatterns as $region) {
                     $regionUpper = strtoupper(trim($region));
-                    if ($regionUpper !== '' && str_contains($row['kanca_key'], $regionUpper)) {
+                    if ($regionUpper !== '' && (str_contains($row['kanca_key'], $regionUpper) || str_contains($row['uker_key'], $regionUpper))) {
                         if (!empty($normalizedUnits) && !in_array($row['uker_key'], $normalizedUnits, true)) {
                             continue;
                         }

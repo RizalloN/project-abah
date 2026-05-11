@@ -65,8 +65,6 @@ class SnapshotBatchConfig
         'jumlah_merchant_detail' => true,
         'sv_merchant' => true,
         'jumlah_merchant_qris_detail' => true,
-        'merchant_qris' => true,
-        'merchant_qris_volume' => true,
     ];
 
     /**

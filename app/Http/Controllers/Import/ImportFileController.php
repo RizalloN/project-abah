@@ -186,6 +186,65 @@ class ImportFileController extends Controller
         return strtolower((string) ($reportData->table_name ?? '')) === 'jumlah_merchant_qris_detail';
     }
 
+    private function isIbbizImportTable(string $tableName): bool
+    {
+        return in_array(strtolower(trim($tableName)), ['ibbisniz_corp', 'usak_ibbiz_uker'], true);
+    }
+
+    private function requiresManualIbbizPeriode(string $tableName): bool
+    {
+        return strtolower(trim($tableName)) === 'ibbisniz_corp';
+    }
+
+    private function normalizeManualImportPeriode(string $tableName, $value): ?string
+    {
+        if (!$this->isIbbizImportTable($tableName)) {
+            return null;
+        }
+
+        $value = trim((string) $value);
+        if ($value === '') {
+            if (!$this->requiresManualIbbizPeriode($tableName)) {
+                return null;
+            }
+
+            throw new \InvalidArgumentException('Periode wajib diisi untuk import IB Biz.');
+        }
+
+        try {
+            $normalized = StrictDateParser::normalize($value);
+        } catch (\Throwable $e) {
+            $normalized = null;
+        }
+
+        if ($normalized === null) {
+            throw new \InvalidArgumentException('Format periode IB Biz tidak valid. Gunakan tanggal YYYY-MM-DD.');
+        }
+
+        return $normalized;
+    }
+
+    private function resolveManualImportPeriodeFromRequest(Request $request, string $tableName): ?string
+    {
+        if (!$this->isIbbizImportTable($tableName)) {
+            return null;
+        }
+
+        return $this->normalizeManualImportPeriode(
+            $tableName,
+            $request->input('periode', session('generic_import_manual_periode'))
+        );
+    }
+
+    private function applyManualImportPeriode(array $rowData, string $tableName, ?string $manualPeriode): array
+    {
+        if ($this->isIbbizImportTable($tableName) && $manualPeriode !== null) {
+            $rowData['periode'] = $manualPeriode;
+        }
+
+        return $rowData;
+    }
+
     private function readCsvRecord($handle, string $delimiter)
     {
         $line = fgets($handle);
@@ -416,7 +475,7 @@ class ImportFileController extends Controller
         ], true);
     }
 
-    private function buildColumnImportBlueprint(array $selectedColumns, array $csvHeaders): array
+    private function buildColumnImportBlueprint(array $selectedColumns, array $csvHeaders, string $tableName = ''): array
     {
         $blueprint = [];
 
@@ -426,7 +485,11 @@ class ImportFileController extends Controller
             }
 
             $colName = str_replace(' ', '_', $csvHeaders[$index]);
-            $normalizedColName = $this->normalizeDailyLoanHeader($colName);
+            $normalizedColName = $this->resolveMappedImportColumnName($tableName, (int) $index, $colName);
+
+            if ($normalizedColName === null) {
+                continue;
+            }
 
             if ($normalizedColName === 'id' || $normalizedColName === 'uniqueid_namareport') {
                 continue;
@@ -437,7 +500,11 @@ class ImportFileController extends Controller
                 $type = 'period';
             } elseif ($this->isDailyLoanDateColumn($normalizedColName)) {
                 $type = 'date';
-            } elseif ($this->isDailyLoanNumericColumn($normalizedColName) || in_array(strtoupper($colName), self::NUMERIC_COLUMNS, true)) {
+            } elseif (
+                $this->isDailyLoanNumericColumn($normalizedColName)
+                || in_array($normalizedColName, ['jml_trx_sukses', 'nominal', 'fee_transaksi'], true)
+                || in_array(strtoupper($colName), self::NUMERIC_COLUMNS, true)
+            ) {
                 $type = 'numeric';
             }
 
@@ -449,6 +516,43 @@ class ImportFileController extends Controller
         }
 
         return $blueprint;
+    }
+
+    private function resolveMappedImportColumnName(string $tableName, int $index, string $header): ?string
+    {
+        $tableName = strtolower(trim($tableName));
+        $normalizedHeader = $this->normalizeImportHeaderName($header);
+
+        if ($tableName === 'ibbisniz_corp') {
+            return match ($normalizedHeader) {
+                'TEXTBOX10' => 'wilayah',
+                'TEXTBOX11' => 'cabang',
+                'TEXTBOX12' => 'uker',
+                'TEXTBOX7' => 'corporate_id',
+                'TEXTBOX13' => 'nama_perusahaan',
+                'JUMLAHTRANSAKSI', 'JUMLAH_TRANSAKSI' => 'jml_trx_sukses',
+                'NOMINAL' => 'nominal',
+                'FEE' => 'fee_transaksi',
+                default => $this->normalizeDailyLoanHeader($header),
+            };
+        }
+
+        if ($tableName === 'usak_ibbiz_uker') {
+            return match ($index) {
+                0, 1 => null,
+                2 => 'kanwil',
+                3 => 'kanca',
+                4 => 'uker',
+                5 => 'corporate_id',
+                6 => 'nama_perusahaan',
+                7 => 'status',
+                8 => 'deskripsi',
+                9 => 'referral',
+                default => $this->normalizeDailyLoanHeader($header),
+            };
+        }
+
+        return $this->normalizeDailyLoanHeader($header);
     }
 
     private function applyDailyLoanCompatibilityColumns(array $rowData): array
@@ -577,16 +681,16 @@ class ImportFileController extends Controller
             return '_SVMer';
         }
 
-        if ($tableName === 'merchant_qris') {
-            return '_MQ';
-        }
-
-        if ($tableName === 'merchant_qris_volume') {
-            return '_MQV';
-        }
-
         if ($tableName === 'brilink_web_laporan_summary_transaksi_brilink_web') {
             return '_BST';
+        }
+
+        if ($tableName === 'ibbisniz_corp') {
+            return '_IBBC';
+        }
+
+        if ($tableName === 'usak_ibbiz_uker') {
+            return '_UIBU';
         }
 
         return '_MDT';
@@ -685,6 +789,43 @@ class ImportFileController extends Controller
         return array_map(function ($val) {
             return trim(preg_replace('/[\xef\xbb\xbf]/', '', (string) $val));
         }, $data);
+    }
+
+    private function normalizeImportHeaderName(string $header): string
+    {
+        $normalized = preg_replace('/[^A-Z0-9]+/', '_', strtoupper(trim($header)));
+
+        return trim((string) $normalized, '_');
+    }
+
+    private function detectImportDateHeaderIndexes(array $headers): array
+    {
+        $posisiIndex = -1;
+        $tahunIndex = -1;
+
+        foreach ($headers as $index => $header) {
+            $normalized = $this->normalizeImportHeaderName((string) $header);
+
+            if ($posisiIndex === -1 && in_array($normalized, ['POSISI', 'TGL_POSISI', 'TANGGAL_POSISI'], true)) {
+                $posisiIndex = (int) $index;
+            }
+
+            if ($tahunIndex === -1 && $normalized === 'TAHUN') {
+                $tahunIndex = (int) $index;
+            }
+        }
+
+        return [$posisiIndex, $tahunIndex];
+    }
+
+    private function normalizeImportDateHeaderIndexes(array $headers, int $posisiIndex, int $tahunIndex): array
+    {
+        [$detectedPosisiIndex, $detectedTahunIndex] = $this->detectImportDateHeaderIndexes($headers);
+
+        return [
+            $detectedPosisiIndex !== -1 ? $detectedPosisiIndex : $posisiIndex,
+            $detectedTahunIndex !== -1 ? $detectedTahunIndex : $tahunIndex,
+        ];
     }
 
     private function cleanupImportDirectory(string $filePath): void
@@ -813,6 +954,73 @@ class ImportFileController extends Controller
         }
 
         return $result;
+    }
+
+    private function resolveIbbizBulkPeriodeValue(string $tableName, array $sourceData, ?string $manualPeriode): ?string
+    {
+        $tableName = strtolower(trim($tableName));
+
+        if ($tableName === 'ibbisniz_corp') {
+            return $manualPeriode;
+        }
+
+        if ($tableName === 'usak_ibbiz_uker') {
+            $rawPeriode = trim((string) ($sourceData[0] ?? ''));
+            if ($rawPeriode === '') {
+                return $manualPeriode;
+            }
+
+            try {
+                return StrictDateParser::normalize($rawPeriode);
+            } catch (\Throwable) {
+                return $manualPeriode;
+            }
+        }
+
+        return null;
+    }
+
+    public function applyIbbizPeriodBulkUpdate(int $jobId, string $tableName, ?string $periodCsvPath = null): int
+    {
+        $tableName = strtolower(trim($tableName));
+        if (!$this->isIbbizImportTable($tableName) || !$this->cachedSchemaHasColumn($tableName, 'periode')) {
+            return 0;
+        }
+
+        if ($periodCsvPath === null || $periodCsvPath === '') {
+            $params = Cache::get("csv_import_params_{$jobId}", []);
+            $periodCsvPath = (string) ($params['ibbiz_period_bulk_csv'] ?? Cache::get("ibbiz_period_bulk_csv:{$jobId}", ''));
+        }
+
+        if ($periodCsvPath === '' || !is_file($periodCsvPath)) {
+            return 0;
+        }
+
+        $stagingTable = null;
+
+        try {
+            $stagingTable = $this->createCsvStagingTable('tmp_file_csv_stage', $jobId, 2);
+            $this->loadCsvIntoStagingTable($periodCsvPath, $stagingTable, 2, ',', 0);
+
+            $quotedTarget = '`' . str_replace('`', '``', $tableName) . '`';
+            $quotedStage = '`' . str_replace('`', '``', $stagingTable) . '`';
+
+            return DB::affectingStatement(
+                "UPDATE {$quotedTarget} target
+                 INNER JOIN {$quotedStage} src
+                    ON target.`uniqueid_namareport` = CONVERT(src.`c0` USING utf8mb4) COLLATE utf8mb4_unicode_ci
+                 SET target.`periode` = STR_TO_DATE(NULLIF(src.`c1`, ''), '%Y-%m-%d')
+                 WHERE src.`c1` IS NOT NULL
+                   AND src.`c1` <> ''
+                   AND (target.`periode` IS NULL OR target.`periode` <> STR_TO_DATE(src.`c1`, '%Y-%m-%d'))"
+            );
+        } finally {
+            $this->dropCsvStagingTable($stagingTable);
+            if (is_file($periodCsvPath)) {
+                @unlink($periodCsvPath);
+            }
+            Cache::forget("ibbiz_period_bulk_csv:{$jobId}");
+        }
     }
 
     private function fallbackInsertFromBulkCsv(
@@ -955,6 +1163,7 @@ class ImportFileController extends Controller
         string $tableName,
         string $uniqueSuffix,
         bool $isBrilinkSummary,
+        ?string $manualPeriode,
         array $csvHeaders,
         int $posisiIndex,
         int $tahunIndex,
@@ -1040,7 +1249,7 @@ class ImportFileController extends Controller
             );
 
             // Cache blueprint outside loop for performance (avoid rebuild per row)
-            $cachedBlueprint = !$isBrilinkSummary ? ($columnBlueprint ?? $this->buildColumnImportBlueprint($selectedColumns, $csvHeaders)) : null;
+            $cachedBlueprint = !$isBrilinkSummary ? ($columnBlueprint ?? $this->buildColumnImportBlueprint($selectedColumns, $csvHeaders, $tableName)) : null;
             
             // Pre-allocate row template to reduce per-row array operations
             $rowTemplate = array_fill(0, $headerCount, null);
@@ -1176,6 +1385,7 @@ class ImportFileController extends Controller
                         continue;
                     }
 
+                    $mappedRow = $this->applyManualImportPeriode($mappedRow, $tableName, $manualPeriode);
                     $mappedRow = $this->applyImportTimestamps($mappedRow, $tableName);
                     if (!$shouldInsertRow($mappedRow)) {
                         continue;
@@ -1281,6 +1491,7 @@ class ImportFileController extends Controller
         string $tableName,
         string $uniqueSuffix,
         bool $isBrilinkSummary,
+        ?string $manualPeriode,
         array $csvHeaders,
         int $posisiIndex,
         int $tahunIndex,
@@ -1344,6 +1555,15 @@ class ImportFileController extends Controller
                     continue;
                 }
 
+                if (
+                    !$isBrilinkSummary
+                    && !empty($activeFilters)
+                    && !$this->passesActiveFiltersFast($data, $activeFilters, false, (int) $posisiIndex, (int) $tahunIndex)
+                ) {
+                    $rowCounter++;
+                    continue;
+                }
+
                 $parsedRow = $this->parseCsvRow($data, $isBrilinkSummary, $csvHeaders, $posisiIndex, $tahunIndex);
                 if ($parsedRow === null || !$this->passesActiveFilters($parsedRow, $activeFilters)) {
                     $rowCounter++;
@@ -1365,6 +1585,7 @@ class ImportFileController extends Controller
                     continue;
                 }
 
+                $mappedRow = $this->applyManualImportPeriode($mappedRow, $tableName, $manualPeriode);
                 $mappedRow = $this->applyImportTimestamps($mappedRow, $tableName);
                 if (!$shouldInsertRow($mappedRow)) {
                     $rowCounter++;
@@ -1457,10 +1678,11 @@ class ImportFileController extends Controller
         $filePath = $params['filePath'] ?? $params['file_path'] ?? null;
         $resolvedDelimiter = $params['delimiter'] ?? ',';
         $selectedColumns = $params['selectedColumns'] ?? $params['selected_columns'] ?? [];
-        $activeFilters = $params['activeFilters'] ?? $params['active_filters'] ?? $params['normalized_filters'] ?? [];
+        $activeFilters = $params['normalized_filters'] ?? $params['activeFilters'] ?? $params['active_filters'] ?? [];
         $tableName = $params['tableName'] ?? $params['table_name'] ?? '';
         $uniqueSuffix = $params['uniqueSuffix'] ?? $params['unique_suffix'] ?? '';
         $isBrilinkSummary = $params['isBrilinkSummary'] ?? $params['is_brilink_summary'] ?? false;
+        $manualPeriode = $this->normalizeManualImportPeriode($tableName, $params['manual_periode'] ?? null);
         $csvHeaders = $params['csvHeaders'] ?? $params['headers'] ?? [];
         $posisiIndex = $params['posisiIndex'] ?? $params['posisi_index'] ?? -1;
         $tahunIndex = $params['tahunIndex'] ?? $params['tahun_index'] ?? -1;
@@ -1471,8 +1693,16 @@ class ImportFileController extends Controller
             $duplicateLookup = [];
         }
 
+        if (!$isBrilinkSummary) {
+            [$posisiIndex, $tahunIndex] = $this->normalizeImportDateHeaderIndexes(
+                $csvHeaders,
+                (int) $posisiIndex,
+                (int) $tahunIndex
+            );
+        }
+
         if (!$isBrilinkSummary && empty($columnBlueprint)) {
-            $columnBlueprint = $this->buildColumnImportBlueprint($selectedColumns, $csvHeaders);
+            $columnBlueprint = $this->buildColumnImportBlueprint($selectedColumns, $csvHeaders, $tableName);
         }
 
         $bulkColumns = $this->buildBulkLoadColumnsForMappedRows($tableName, $isBrilinkSummary, $columnBlueprint);
@@ -1490,6 +1720,19 @@ class ImportFileController extends Controller
         if ($bulkHandle === false) {
             fclose($handle);
             throw new \Exception('Gagal membuat file staging CSV sementara.');
+        }
+
+        $periodBulkCsvPath = '';
+        $periodBulkHandle = null;
+        $periodRows = 0;
+        if ($this->isIbbizImportTable($tableName) && $this->cachedSchemaHasColumn($tableName, 'periode')) {
+            $periodBulkCsvPath = $this->createBulkLoadTempCsvPath($tableName . '_periode', max(0, $jobId));
+            $periodBulkHandle = @fopen($periodBulkCsvPath, 'w');
+            if ($periodBulkHandle === false) {
+                fclose($handle);
+                fclose($bulkHandle);
+                throw new \Exception('Gagal membuat file staging periode IB Biz.');
+            }
         }
 
         $rowCounter = 0;
@@ -1547,6 +1790,17 @@ class ImportFileController extends Controller
                 $bulkValues = $this->mapRowValuesForBulkLoad($mappedRow, $bulkColumns);
                 fputcsv($bulkHandle, array_map($csvFormatter, $bulkValues));
 
+                if (is_resource($periodBulkHandle)) {
+                    $bulkPeriode = $this->resolveIbbizBulkPeriodeValue($tableName, $parsedRow, $manualPeriode);
+                    if ($bulkPeriode !== null) {
+                        fputcsv($periodBulkHandle, [
+                            $mappedRow['uniqueid_namareport'] ?? null,
+                            $bulkPeriode,
+                        ]);
+                        $periodRows++;
+                    }
+                }
+
                 $rowsDone++;
                 $rowCounter++;
 
@@ -1571,6 +1825,10 @@ class ImportFileController extends Controller
 
             fclose($bulkHandle);
             $bulkHandle = null;
+            if (is_resource($periodBulkHandle)) {
+                fclose($periodBulkHandle);
+                $periodBulkHandle = null;
+            }
             fclose($handle);
             $handle = null;
 
@@ -1584,18 +1842,31 @@ class ImportFileController extends Controller
 
             $cacheStore = trim((string) config('import.cache_store', 'file'));
             $cache = $cacheStore !== '' ? Cache::store($cacheStore) : Cache::store();
-            $cache->put("csv_import_params_{$jobId}", array_merge($params, [
+            $preparedParams = array_merge($params, [
                 'tableName' => $tableName,
                 'bulkColumns' => $bulkColumns,
                 'bulk_columns' => $bulkColumns,
                 'prepared_rows' => $rowsDone,
-            ]), now()->addHours(2));
+                'ibbiz_period_bulk_csv' => $periodRows > 0 ? $periodBulkCsvPath : null,
+                'ibbiz_period_rows' => $periodRows,
+            ]);
+            $cache->put("csv_import_params_{$jobId}", $preparedParams, now()->addHours(2));
+            Cache::put("csv_import_params_{$jobId}", $preparedParams, now()->addHours(2));
+
+            if ($periodRows > 0) {
+                Cache::put("ibbiz_period_bulk_csv:{$jobId}", $periodBulkCsvPath, now()->addHours(2));
+            } elseif ($periodBulkCsvPath !== '' && file_exists($periodBulkCsvPath)) {
+                @unlink($periodBulkCsvPath);
+            }
 
             return $bulkCsvPath;
 
         } catch (\Throwable $e) {
             if (file_exists($bulkCsvPath)) {
                 @unlink($bulkCsvPath);
+            }
+            if ($periodBulkCsvPath !== '' && file_exists($periodBulkCsvPath)) {
+                @unlink($periodBulkCsvPath);
             }
             throw $e;
         } finally {
@@ -1604,6 +1875,9 @@ class ImportFileController extends Controller
             }
             if (is_resource($bulkHandle)) {
                 fclose($bulkHandle);
+            }
+            if (is_resource($periodBulkHandle)) {
+                fclose($periodBulkHandle);
             }
         }
     }
@@ -2095,13 +2369,14 @@ class ImportFileController extends Controller
 
                 if ($rowCounter === 0) {
                     $headers = $this->formatCsvHeaders($data, $isBrilinkSummary);
+                    if (!$isBrilinkSummary) {
+                        [$posisiIndex, $tahunIndex] = $this->detectImportDateHeaderIndexes($headers);
+                    } else {
+                        $posisiIndex = -1;
+                        $tahunIndex = -1;
+                    }
+
                     foreach ($headers as $i => $header) {
-                        if (stripos($header, 'posisi') !== false) {
-                            $posisiIndex = $i;
-                        }
-                        if (stripos($header, 'tahun') !== false) {
-                            $tahunIndex = $i;
-                        }
                         if (strcasecmp(trim((string) $header), 'PERIODE') === 0) {
                             $periodeIndex = $i;
                         }
@@ -2110,6 +2385,15 @@ class ImportFileController extends Controller
                         }
                     }
 
+                    $rowCounter++;
+                    continue;
+                }
+
+                if (
+                    !$isBrilinkSummary
+                    && !empty($activeFilters)
+                    && !$this->passesActiveFiltersFast($data, $activeFilters, false, $posisiIndex, $tahunIndex)
+                ) {
                     $rowCounter++;
                     continue;
                 }
@@ -2497,6 +2781,12 @@ class ImportFileController extends Controller
             ->where('id_report', (int) $request->input('id_report'))
             ->first();
         $requestedTableName = strtolower(trim((string) ($requestedReport->table_name ?? '')));
+        $manualImportPeriode = null;
+
+        if ($this->requiresManualIbbizPeriode($requestedTableName)) {
+            $request->validate(['periode' => 'required|date_format:Y-m-d']);
+            $manualImportPeriode = $this->normalizeManualImportPeriode($requestedTableName, $request->input('periode'));
+        }
 
         if (in_array($requestedTableName, ['casa_brilink_web', 'casa_brilink_edc'], true)) {
             $message = 'Report CASA BRILINK wajib diproses lewat jalur upload CASA BRILINK. Silakan pilih ulang report lalu upload file CASA.';
@@ -2546,6 +2836,7 @@ class ImportFileController extends Controller
             'import_files'     => $files,
             'active_id_report' => $request->input('id_report'),
             'import_type'      => 'default',
+            'generic_import_manual_periode' => $manualImportPeriode,
         ]);
 
         if ($extension !== 'rar' && count($files) === 1) {
@@ -2595,11 +2886,26 @@ class ImportFileController extends Controller
         $this->releaseSessionLockIfNeeded();
         $isDailyLoan = $this->isDailyLoanReport($reportData);
         $tableName = $this->resolveTableName($reportData);
+        $manualPeriode = null;
+        $manualPeriodeLabel = null;
+        $manualPeriodeInputType = 'date';
+
+        if ($this->isIbbizImportTable($tableName)) {
+            try {
+                $manualPeriode = $this->resolveManualImportPeriodeFromRequest($request, $tableName);
+            } catch (\InvalidArgumentException $e) {
+                return redirect()->route('import.index')->with('error', $e->getMessage());
+            }
+
+            session(['generic_import_manual_periode' => $manualPeriode]);
+            $manualPeriodeLabel = $manualPeriode !== null
+                ? Carbon::parse($manualPeriode)->translatedFormat('d F Y')
+                : null;
+        }
+
         $isJumlahMerchantQrisDetail = $this->isJumlahMerchantQrisDetailReport($reportData) || $tableName === 'jumlah_merchant_qris_detail';
         $disableArea6AutoFilter = $isDailyLoan || in_array($tableName, [
             'sv_merchant',
-            'merchant_qris',
-            'merchant_qris_volume',
         ], true);
 
         if ($reportData && (stripos($reportData->nama_report, 'BRILINK Web - Laporan Summary Transaksi') !== false || stripos($reportData->nama_report, 'brilink_web') !== false)) {
@@ -2675,10 +2981,7 @@ class ImportFileController extends Controller
 
                         if (!$isBrilinkSummary) {
                             // OPTIMIZATION 5: Find posisi/tahun indices once, cache them
-                            foreach ($headers as $i => $h) { 
-                                if (stripos($h, 'POSISI') !== false) { $posisiIndex = $i; }
-                                if (stripos($h, 'TAHUN') !== false) { $tahunIndex = $i; }
-                            }
+                            [$posisiIndex, $tahunIndex] = $this->detectImportDateHeaderIndexes($headers);
                         }
 
                         foreach ($headers as $i => $h) {
@@ -2893,6 +3196,9 @@ class ImportFileController extends Controller
             'prefetchFilterOptionsOnLoad' => false,
             'warmPreviewIndexOnLoad' => $shouldWarmPreviewIndexOnLoad,
             'disableFilterOptionsLocalCache' => $isJumlahMerchantQrisDetail,
+            'manualPeriode' => $manualPeriode,
+            'manualPeriodeInputType' => $manualPeriodeInputType,
+            'manualPeriodeLabel' => $manualPeriodeLabel,
         ]);
     }
 
@@ -3182,14 +3488,7 @@ class ImportFileController extends Controller
                     }
 
                     if (!$isBrilinkSummary) {
-                        foreach ($headers as $i => $header) {
-                            if (stripos((string) $header, 'POSISI') !== false) {
-                                $posisiIndex = $i;
-                            }
-                            if (stripos((string) $header, 'TAHUN') !== false) {
-                                $tahunIndex = $i;
-                            }
-                        }
+                        [$posisiIndex, $tahunIndex] = $this->detectImportDateHeaderIndexes($headers);
                     }
 
                     $rowCounter++;
@@ -3680,14 +3979,7 @@ class ImportFileController extends Controller
                 if ($rowCounter === 0) {
                     $headers = $this->formatCsvHeaders($data, $isBrilinkSummary);
                     if (!$isBrilinkSummary) {
-                        foreach ($headers as $i => $header) {
-                            if (stripos((string) $header, 'POSISI') !== false) {
-                                $posisiIndex = $i;
-                            }
-                            if (stripos((string) $header, 'TAHUN') !== false) {
-                                $tahunIndex = $i;
-                            }
-                        }
+                        [$posisiIndex, $tahunIndex] = $this->detectImportDateHeaderIndexes($headers);
                     }
 
                     $rowCounter++;
@@ -3820,14 +4112,7 @@ class ImportFileController extends Controller
                 if ($rowCounter === 0) {
                     $headers = $this->formatCsvHeaders($data, $isBrilinkSummary);
                     if (!$isBrilinkSummary) {
-                        foreach ($headers as $i => $header) {
-                            if (stripos((string) $header, 'POSISI') !== false) {
-                                $posisiIndex = $i;
-                            }
-                            if (stripos((string) $header, 'TAHUN') !== false) {
-                                $tahunIndex = $i;
-                            }
-                        }
+                        [$posisiIndex, $tahunIndex] = $this->detectImportDateHeaderIndexes($headers);
                     }
 
                     $columnDefs = [];
@@ -4087,6 +4372,16 @@ class ImportFileController extends Controller
         $tableName = $this->resolveTableName($reportData);
         $uniqueSuffix = $this->resolveUniqueSuffix($tableName);
         $duplicateLookup = [];
+        $manualImportPeriode = null;
+
+        try {
+            $manualImportPeriode = $this->resolveManualImportPeriodeFromRequest($request, $tableName);
+        } catch (\InvalidArgumentException $e) {
+            return response()->json([
+                'status' => 'error',
+                'text' => $e->getMessage(),
+            ], 422);
+        }
 
         try {
             $meta = $this->collectImportMeta(
@@ -4109,7 +4404,7 @@ class ImportFileController extends Controller
         try {
             $fileGuard = app(ImportDuplicateGuardService::class);
             $contentHash = $fileGuard->fingerprint($filePath);
-            if (!$isBrilinkSummary) {
+            if (!$isBrilinkSummary && !$this->isIbbizImportTable($tableName)) {
                 $fileGuard->assertFileNotImportedAnywhere($contentHash);
             }
         } catch (\RuntimeException $e) {
@@ -4142,6 +4437,11 @@ class ImportFileController extends Controller
             if (!empty($meta['brilink_summary_keys']) && count($duplicateLookup) === count($meta['brilink_summary_keys'])) {
                 $isDuplicate = true;
                 $duplicateText = 'Semua kombinasi <b>PERIODE + MERCHANT_CODE + OUTLET_CODE</b> pada file ini sudah ada di tabel <b class="text-uppercase">' . $tableName . '</b>.<br><br>Sistem membatalkan proses untuk mencegah data dobel.';
+            }
+        } elseif ($this->isIbbizImportTable($tableName) && $manualImportPeriode !== null) {
+            $isDuplicate = DB::table($tableName)->whereDate('periode', $manualImportPeriode)->exists();
+            if ($isDuplicate) {
+                $duplicateText = 'Data IB Biz untuk periode <b>' . e($manualImportPeriode) . '</b> sudah ada di tabel <b class="text-uppercase">' . e($tableName) . '</b>.<br><br>Sistem membatalkan proses ini.';
             }
         } elseif ($meta['sample_posisi']) {
             // BUG-03: Guard against tables that don't have a POSISI column
@@ -4192,8 +4492,9 @@ class ImportFileController extends Controller
                     'posisi_index' => $meta['posisi_index'],
                     'tahun_index' => $meta['tahun_index'],
                     'total_rows' => $meta['total_rows'],
+                    'manual_periode' => $manualImportPeriode,
                     'sample_posisi' => $meta['sample_posisi'] ?? null,
-                    'sample_periode' => $meta['sample_periode'] ?? null,
+                    'sample_periode' => $manualImportPeriode ?? ($meta['sample_periode'] ?? null),
                     'brilink_summary_keys' => $meta['brilink_summary_keys'] ?? [],
                     'duplicate_lookup' => $duplicateLookup,
                 ],
@@ -4216,8 +4517,9 @@ class ImportFileController extends Controller
             'posisi_index' => $meta['posisi_index'],
             'tahun_index' => $meta['tahun_index'],
             'total_rows' => $meta['total_rows'],
+            'manual_periode' => $manualImportPeriode,
             'sample_posisi' => $meta['sample_posisi'] ?? null,
-            'sample_periode' => $meta['sample_periode'] ?? null,
+            'sample_periode' => $manualImportPeriode ?? ($meta['sample_periode'] ?? null),
             'brilink_summary_keys' => $meta['brilink_summary_keys'] ?? [],
             'duplicate_lookup' => $duplicateLookup,
         ];
@@ -4334,7 +4636,14 @@ class ImportFileController extends Controller
                 $selectedColumns = array_map('intval', $params['selected_columns'] ?? []);
                 $activeFilters = $params['normalized_filters'] ?? [];
                 $tableName = $params['table_name'] ?? 'jumlah_merchant_detail';
-                $syncPeriod = $params['sample_posisi'] ?? $params['sample_periode'] ?? null;
+                try {
+                    $manualImportPeriode = $this->normalizeManualImportPeriode($tableName, $params['manual_periode'] ?? null);
+                } catch (\InvalidArgumentException $e) {
+                    $markJobFailed($e->getMessage());
+                    $send('error', ['message' => $e->getMessage()]);
+                    return;
+                }
+                $syncPeriod = $manualImportPeriode ?? ($params['sample_posisi'] ?? $params['sample_periode'] ?? null);
                 $uniqueSuffix = $params['unique_suffix'] ?? '_MDT';
                 $isBrilinkSummary = (bool) ($params['is_brilink_summary'] ?? false);
                 $csvHeaders = $params['headers'] ?? [];
@@ -4345,7 +4654,14 @@ class ImportFileController extends Controller
                 if (!is_array($duplicateLookup)) {
                     $duplicateLookup = [];
                 }
-                $columnBlueprint = $isBrilinkSummary ? [] : $this->buildColumnImportBlueprint($selectedColumns, $csvHeaders);
+                if (!$isBrilinkSummary) {
+                    [$posisiIndex, $tahunIndex] = $this->normalizeImportDateHeaderIndexes(
+                        $csvHeaders,
+                        $posisiIndex,
+                        $tahunIndex
+                    );
+                }
+                $columnBlueprint = $isBrilinkSummary ? [] : $this->buildColumnImportBlueprint($selectedColumns, $csvHeaders, $tableName);
                 $batchSize = $this->resolveImportBatchSize($tableName);
                 $progressStep = strtolower($tableName) === 'daily_loan_dinamis' ? 200 : 500;
 
@@ -4424,6 +4740,7 @@ class ImportFileController extends Controller
                         $tableName,
                         $uniqueSuffix,
                         $isBrilinkSummary,
+                        $manualImportPeriode,
                         $csvHeaders,
                         $posisiIndex,
                         $tahunIndex,
@@ -4506,6 +4823,7 @@ class ImportFileController extends Controller
                         'posisi_index' => $posisiIndex,
                         'tahun_index' => $tahunIndex,
                         'total_rows' => $totalRows,
+                        'manual_periode' => $manualImportPeriode,
                         'duplicate_lookup' => $duplicateLookup,
                         'column_blueprint' => $columnBlueprint,
                         'bulkColumns' => $bulkColumns,
@@ -4601,6 +4919,15 @@ class ImportFileController extends Controller
                         continue;
                     }
 
+                    if (
+                        !$isBrilinkSummary
+                        && !empty($activeFilters)
+                        && !$this->passesActiveFiltersFast($data, $activeFilters, false, $posisiIndex, $tahunIndex)
+                    ) {
+                        $rowCounter++;
+                        continue;
+                    }
+
                     $parsedRow = $this->parseCsvRow($data, $isBrilinkSummary, $csvHeaders, $posisiIndex, $tahunIndex);
                     if ($parsedRow === null || !$this->passesActiveFilters($parsedRow, $activeFilters)) {
                         $rowCounter++;
@@ -4622,6 +4949,7 @@ class ImportFileController extends Controller
                         continue;
                     }
 
+                    $mappedRow = $this->applyManualImportPeriode($mappedRow, $tableName, $manualImportPeriode);
                     $mappedRow = $this->applyImportTimestamps($mappedRow, $tableName);
 
                     if (!$shouldInsertRow($mappedRow)) {
@@ -4772,6 +5100,19 @@ class ImportFileController extends Controller
         }
 
         $tableName = $this->resolveTableName($reportData);
+        try {
+            $manualImportPeriode = $this->resolveManualImportPeriodeFromRequest($request, $tableName);
+        } catch (\InvalidArgumentException $e) {
+            $response = [
+                'status' => 'error',
+                'title' => 'Periode Wajib Diisi',
+                'text' => $e->getMessage(),
+            ];
+
+            return $request->expectsJson()
+                ? response()->json($response, 422)
+                : redirect()->route('import.index')->with('sweet_warning', $response);
+        }
 
         try {
             $this->bulkLoadService()->assertTransactionalTable($tableName, 'import CSV');
@@ -4833,12 +5174,9 @@ class ImportFileController extends Controller
                 if ($rowCounter == 0) {
                     $csvHeaders = $isBrilinkSummary ? [] : $this->formatCsvHeaders($data, false);
                     if (!$isBrilinkSummary) {
-                        foreach ($csvHeaders as $idx => $hdr) {
-                            if (stripos($hdr, 'posisi') !== false) { $posisiIndex = $idx; }
-                            if (stripos($hdr, 'tahun') !== false) { $tahunIndex = $idx; }
-                        }
+                        [$posisiIndex, $tahunIndex] = $this->detectImportDateHeaderIndexes($csvHeaders);
 
-                        $columnBlueprint = $this->buildColumnImportBlueprint($selectedColumns, $csvHeaders);
+                        $columnBlueprint = $this->buildColumnImportBlueprint($selectedColumns, $csvHeaders, $tableName);
                     }
                     
                     $rowCounter++;
@@ -4966,6 +5304,7 @@ class ImportFileController extends Controller
                     $rowData = $this->applyDailyLoanCompatibilityColumns($rowData);
                 }
                 
+                $rowData = $this->applyManualImportPeriode($rowData, $tableName, $manualImportPeriode);
                 $dataToInsert[] = $this->applyImportTimestamps($rowData, $tableName);
                 $rowCounter++;
             }
@@ -4987,7 +5326,7 @@ class ImportFileController extends Controller
         try {
             $fileGuard = app(ImportDuplicateGuardService::class);
             $contentHash = $fileGuard->fingerprint($filePath);
-            if (!$isBrilinkSummary) {
+            if (!$isBrilinkSummary && !$this->isIbbizImportTable($tableName)) {
                 $fileGuard->assertFileNotImportedAnywhere($contentHash);
             }
         } catch (\RuntimeException $e) {
@@ -5050,6 +5389,11 @@ class ImportFileController extends Controller
                 $isDuplicate = true;
                 $duplicateText = "Semua kombinasi <b>PERIODE + MERCHANT_CODE + OUTLET_CODE</b> pada file ini sudah ada di tabel <b class='text-uppercase'>$tableName</b>.<br><br>Sistem membatalkan proses ini.";
             }
+        } elseif ($this->isIbbizImportTable($tableName) && $manualImportPeriode !== null) {
+            $isDuplicate = DB::table($tableName)->whereDate('periode', $manualImportPeriode)->exists();
+            if ($isDuplicate) {
+                $duplicateText = "Data IB Biz untuk periode <b>{$manualImportPeriode}</b> sudah pernah diunggah ke tabel <b class='text-uppercase'>{$tableName}</b>.<br><br>Sistem membatalkan proses ini.";
+            }
         } elseif ($samplePosisi) {
             $isDuplicate = DB::table($tableName)->whereDate('POSISI', $samplePosisi)->exists();
             if ($isDuplicate) {
@@ -5086,6 +5430,7 @@ class ImportFileController extends Controller
                 'table_name' => $tableName,
                 'content_hash' => $contentHash,
                 'data_rows_count' => count($dataToInsert),
+                'manual_periode' => $manualImportPeriode,
             ],
             'created_at' => now(),
             'updated_at' => now(),

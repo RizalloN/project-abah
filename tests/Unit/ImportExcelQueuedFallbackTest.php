@@ -433,6 +433,63 @@ class ImportExcelQueuedFallbackTest extends TestCase
         $this->assertSame(0, $result['total_failed']);
     }
 
+    public function test_resolve_staging_target_columns_falls_back_to_schema_service(): void
+    {
+        $bulkLoadService = new class extends MySqlBulkLoadService {
+            public function getColumnListing(string $tableName): array
+            {
+                throw new \RuntimeException('bulk metadata unavailable');
+            }
+        };
+        $this->app->instance(MySqlBulkLoadService::class, $bulkLoadService);
+
+        $schemaService = Mockery::mock(SchemaIntrospectionService::class);
+        $schemaService->shouldReceive('getColumnListing')
+            ->once()
+            ->with('simpanan_multipn')
+            ->andReturn(['uniqueid_SMPN', 'posisi', 'saldo']);
+        $this->app->instance(SchemaIntrospectionService::class, $schemaService);
+
+        $controller = new class extends ImportExcelController {
+            public function exposeResolveStagingTargetColumns(string $tableName, int $jobId = 0): array
+            {
+                return $this->resolveStagingTargetColumns($tableName, $jobId);
+            }
+        };
+
+        $this->assertSame(
+            ['uniqueid_SMPN', 'posisi', 'saldo'],
+            $controller->exposeResolveStagingTargetColumns('simpanan_multipn', 19)
+        );
+    }
+
+    public function test_resolve_staging_target_columns_returns_empty_instead_of_crashing(): void
+    {
+        $bulkLoadService = new class extends MySqlBulkLoadService {
+            public function getColumnListing(string $tableName): array
+            {
+                throw new \RuntimeException('bulk metadata unavailable');
+            }
+        };
+        $this->app->instance(MySqlBulkLoadService::class, $bulkLoadService);
+
+        $schemaService = Mockery::mock(SchemaIntrospectionService::class);
+        $schemaService->shouldReceive('getColumnListing')
+            ->once()
+            ->with('simpanan_multipn')
+            ->andThrow(new \RuntimeException('schema metadata unavailable'));
+        $this->app->instance(SchemaIntrospectionService::class, $schemaService);
+
+        $controller = new class extends ImportExcelController {
+            public function exposeResolveStagingTargetColumns(string $tableName, int $jobId = 0): array
+            {
+                return $this->resolveStagingTargetColumns($tableName, $jobId);
+            }
+        };
+
+        $this->assertSame([], $controller->exposeResolveStagingTargetColumns('simpanan_multipn', 19));
+    }
+
     public function test_initialize_queued_import_job_for_execution_uses_import_job_state_service_for_ssa_pinjaman_csv(): void
     {
         $relativePath = 'testing/queued_init_ssa_pinjaman.csv';

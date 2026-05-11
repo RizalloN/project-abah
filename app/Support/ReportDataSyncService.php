@@ -68,8 +68,6 @@ class ReportDataSyncService
         'jumlah_merchant_detail',
         'sv_merchant',
         'jumlah_merchant_qris_detail',
-        'merchant_qris',
-        'merchant_qris_volume',
     ];
 
     public function __construct(

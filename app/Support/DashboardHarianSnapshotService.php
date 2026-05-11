@@ -2041,9 +2041,9 @@ class DashboardHarianSnapshotService
         $final['total_sml_pct_non_commercial'] = $this->safePercent($final['total_sml_abs_non_commercial'], $final['total_os_non_commercial']);
         $final['total_npl_pct_non_commercial'] = $this->safePercent($final['total_npl_abs_non_commercial'], $final['total_os_non_commercial']);
 
-        $final['ldr_non_commercial'] = $this->safePercent($final['total_simpanan'], $final['total_os_non_commercial']);
-        $final['ldr_ritel_non_commercial'] = $this->safePercent($final['simpanan_ritel'], $final['sme_os'] + $final['consumer_os']);
-        $final['ldr_mikro_non_commercial'] = $this->safePercent($final['simpanan_mikro'], $final['micro_os']);
+        $final['ldr_non_commercial'] = $this->safePercent($final['total_os_non_commercial'], $final['total_simpanan']);
+        $final['ldr_ritel_non_commercial'] = $this->safePercent($final['sme_os'] + $final['consumer_os'], $final['simpanan_ritel']);
+        $final['ldr_mikro_non_commercial'] = $this->safePercent($final['micro_os'], $final['simpanan_mikro']);
         $final['casa_pct'] = $this->safePercent($final['total_casa'], $final['total_simpanan']);
         $final['rec_dh_total'] = $final['rec_dh_small'] + $final['rec_dh_consumer'] + $final['rec_dh_micro'];
 

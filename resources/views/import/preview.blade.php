@@ -5,6 +5,8 @@
 @section('content')
 @php
     $filtersDisabled = !empty($filtersDisabled);
+    $previewReportTitle = $previewBannerTitle ?? $pageTitle ?? 'Preview Data Import';
+    $previewModeLabel = $filtersDisabled ? 'Import full' : 'Preview dengan filter';
 @endphp
 <div class="row">
     <div class="col-12">
@@ -14,9 +16,9 @@
         @endif
 
         @if(empty($hideDelimiterCard))
-        <div class="card card-outline card-primary mb-3">
-            <div class="card-header bg-light">
-                <h3 class="card-title font-weight-bold">
+        <div class="card border-0 shadow-sm mb-3 import-preview-settings">
+            <div class="card-header bg-white border-0">
+                <h3 class="card-title font-weight-bold mb-0">
                     <i class="fas fa-cogs text-primary"></i> Pengaturan Delimiter (Pemisah Kolom)
                 </h3>
             </div>
@@ -72,20 +74,28 @@
                 <input type="hidden" name="periode" value="{{ $manualPeriodeValue }}">
             @endif
 
-            <div class="card card-outline card-success">
-                <div class="card-header bg-light">
-                    <h3 class="card-title text-success font-weight-bold">
-                        <i class="fas fa-file-excel"></i> Table Data (Ala Excel Filter)
-                    </h3>
-                    <div class="card-tools">
-                        <button type="submit" id="btnSubmitImport" class="btn btn-sm btn-success">
-                            <i class="fas fa-database"></i> Jalankan Import ke MySQL
+            <div class="card border-0 shadow-sm import-preview-card">
+                <div class="card-header bg-white border-0 import-preview-card__header">
+                    <div class="import-preview-heading">
+                        <span class="import-preview-heading__eyebrow">{{ $previewModeLabel }}</span>
+                        <h3 class="import-preview-heading__title">
+                            <i class="fas fa-table text-success mr-2"></i>{{ $previewReportTitle }}
+                        </h3>
+                        <div class="import-preview-heading__meta">
+                            <span><i class="fas fa-columns mr-1"></i>{{ count($headers) }} kolom</span>
+                            <span><i class="fas fa-eye mr-1"></i>Preview sample</span>
+                            <span><i class="fas fa-filter mr-1"></i>{{ $filtersDisabled ? 'Filter nonaktif' : 'Filter tersedia' }}</span>
+                        </div>
+                    </div>
+                    <div class="import-preview-actions">
+                        <button type="submit" id="btnSubmitImport" class="btn btn-success font-weight-bold import-preview-submit">
+                            <i class="fas fa-database mr-1"></i> Jalankan Import ke MySQL
                         </button>
                     </div>
                 </div>
 
-                <div class="card-body p-0">
-                    <div class="alert alert-info m-3 border-0 bg-light text-dark">
+                <div class="card-body p-0 import-preview-card__body">
+                    <div class="import-preview-notice m-3">
                         @if($filtersDisabled)
                             <i class="fas fa-info-circle text-info"></i> <strong>Mode Import Full:</strong>
                             Filter dinonaktifkan untuk report ini agar proses import selalu memproses seluruh data tanpa ambiguitas.
@@ -121,8 +131,8 @@
                         </div>
                     @endif
 
-                    <div class="table-responsive" style="min-height: 450px; max-height: 600px; overflow-y: auto; overflow-x: auto;">
-                        <table class="table table-bordered table-hover m-0">
+                    <div class="table-responsive import-preview-table-shell" style="min-height: 450px; max-height: 600px; overflow-y: auto; overflow-x: auto;">
+                        <table class="table table-bordered table-hover m-0 import-preview-table">
                             <thead class="thead-light sticky-top" style="z-index: 2;">
                                 <tr>
                                     <th class="text-center align-middle bg-light" style="width: 50px;">#</th>
@@ -208,12 +218,18 @@
                                 </tr>
                             </tbody>
                         </table>
+                        <div class="preview-loading-overlay d-none" id="preview-loading-overlay" aria-live="polite">
+                            <div class="preview-loading-panel">
+                                <span class="preview-loading-spinner"></span>
+                                <span id="preview-loading-text">Menyaring preview...</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
-                <div class="card-footer bg-light">
-                    <a href="{{ $backRoute ?? route('import.select') }}" class="btn btn-secondary">
-                        <i class="fas fa-arrow-left"></i> Kembali
+                <div class="card-footer bg-white import-preview-footer">
+                    <a href="{{ $backRoute ?? route('import.select') }}" class="btn btn-outline-secondary">
+                        <i class="fas fa-arrow-left mr-1"></i> Kembali
                     </a>
                 </div>
             </div>
@@ -236,6 +252,9 @@
         const disableArea6AutoFilter = @json(!empty($disableArea6AutoFilter));
         const importFormElement = document.getElementById('importForm');
         const previewTbody = document.querySelector('.table-responsive tbody');
+        const previewShell = document.querySelector('.import-preview-table-shell');
+        const previewOverlay = document.getElementById('preview-loading-overlay');
+        const previewLoadingText = document.getElementById('preview-loading-text');
         const basePreviewTbodyHtml = previewTbody ? previewTbody.innerHTML : '';
         const filterOptionsUrl = importFormElement?.dataset.filterOptionsUrl || '';
         const warmIndexUrl = importFormElement?.dataset.warmIndexUrl || '';
@@ -593,6 +612,19 @@
             return html;
         }
 
+        function setPreviewLoading(isLoading, message = 'Menyaring preview...') {
+            if (!previewShell || !previewOverlay) {
+                return;
+            }
+
+            if (previewLoadingText) {
+                previewLoadingText.textContent = message;
+            }
+
+            previewShell.classList.toggle('is-preview-loading', Boolean(isLoading));
+            previewOverlay.classList.toggle('d-none', !isLoading);
+        }
+
         function getFilteredValues(col) {
             const state = filterState[col];
             if (!state) {
@@ -844,6 +876,7 @@
                 previewTbody.innerHTML = basePreviewTbodyHtml;
                 previewViewMode = 'sample';
             }
+            setPreviewLoading(false);
 
             let filterReqs = [];
             for (let col in activeFilters) {
@@ -914,14 +947,7 @@
 
             const requestToken = ++previewRenderToken;
             previewViewMode = 'filtered';
-            previewTbody.innerHTML = `
-                <tr>
-                    <td colspan="${headers.length + 1}" class="text-center py-5 bg-white text-muted">
-                        <i class="fas fa-spinner fa-spin fa-2x mb-3 text-primary"></i><br>
-                        <h5 class="font-weight-bold text-dark">Memuat preview hasil filter</h5>
-                        <p class="mb-0">Mengambil baris yang cocok langsung dari file sumber...</p>
-                    </td>
-                </tr>`;
+            setPreviewLoading(true, 'Mengambil baris yang cocok dari file sumber...');
 
             try {
                 const url = new URL('{{ route("import.preview.filtered-rows") }}', window.location.origin);
@@ -952,6 +978,7 @@
 
                 const rows = payload.rows || [];
                 if (!rows.length) {
+                    setPreviewLoading(false);
                     previewTbody.innerHTML = `
                         <tr>
                             <td colspan="${headers.length + 1}" class="text-center py-5 bg-white text-muted">
@@ -986,6 +1013,7 @@
                     return;
                 }
 
+                setPreviewLoading(false);
                 previewTbody.innerHTML = `
                     <tr>
                         <td colspan="${headers.length + 1}" class="text-center py-5 bg-white text-muted">
@@ -995,6 +1023,9 @@
                         </td>
                     </tr>`;
             } finally {
+                if (requestToken === previewRenderToken) {
+                    setPreviewLoading(false);
+                }
                 updateIconsColor();
             }
         }
@@ -1056,7 +1087,7 @@
             previewRefreshTimer = setTimeout(function () {
                 previewRefreshTimer = null;
                 renderFilteredPreviewTable(activeFilters);
-            }, 180);
+            }, 360);
         }
 
         function updatePreviewTableLegacy() {
@@ -2070,6 +2101,220 @@
     });
 </script>
 <style>
+    .import-preview-settings,
+    .import-preview-card {
+        border: 1px solid rgba(226, 232, 240, 0.95) !important;
+        border-radius: 8px;
+        overflow: hidden;
+        background: #ffffff;
+        box-shadow: 0 18px 36px -30px rgba(15, 23, 42, 0.28) !important;
+    }
+
+    .import-preview-settings .card-body {
+        background: #f8fafc;
+    }
+
+    .import-preview-settings .form-inline {
+        gap: 0.75rem;
+    }
+
+    .import-preview-settings .form-control {
+        min-height: 42px;
+        border-radius: 8px;
+        border-color: #dbe4f0;
+        box-shadow: none;
+    }
+
+    .import-preview-card__header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 1.2rem 1.35rem;
+        border-bottom: 1px solid #e2e8f0 !important;
+        background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%) !important;
+    }
+
+    .import-preview-heading {
+        min-width: 0;
+    }
+
+    .import-preview-heading__eyebrow {
+        display: inline-flex;
+        align-items: center;
+        min-height: 26px;
+        padding: 0.25rem 0.6rem;
+        border-radius: 999px;
+        background: #ecfdf5;
+        border: 1px solid #bbf7d0;
+        color: #047857;
+        font-size: 0.72rem;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+    }
+
+    .import-preview-heading__title {
+        margin: 0.5rem 0 0.35rem;
+        color: #0f172a;
+        font-size: 1.22rem;
+        font-weight: 800;
+        line-height: 1.3;
+        word-break: break-word;
+    }
+
+    .import-preview-heading__meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+
+    .import-preview-heading__meta span {
+        display: inline-flex;
+        align-items: center;
+        min-height: 28px;
+        padding: 0.28rem 0.55rem;
+        border-radius: 999px;
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        color: #475569;
+        font-size: 0.78rem;
+        font-weight: 700;
+    }
+
+    .import-preview-actions {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        flex: 0 0 auto;
+        margin-left: auto;
+    }
+
+    .import-preview-submit {
+        min-height: 42px;
+        border: 0;
+        border-radius: 8px;
+        padding: 0.65rem 1rem;
+        background: #047857;
+        box-shadow: 0 14px 24px -20px rgba(4, 120, 87, 0.55);
+    }
+
+    .import-preview-submit:hover,
+    .import-preview-submit:focus {
+        background: #065f46;
+        box-shadow: 0 16px 28px -20px rgba(4, 120, 87, 0.6);
+    }
+
+    .import-preview-notice {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.55rem;
+        padding: 0.85rem 1rem;
+        border-radius: 8px;
+        background: #eff6ff;
+        border: 1px solid #bfdbfe;
+        color: #1e293b;
+        line-height: 1.55;
+    }
+
+    .import-preview-table-shell {
+        position: relative;
+        border-top: 1px solid #e2e8f0;
+        background: #ffffff;
+    }
+
+    .import-preview-table-shell.is-preview-loading .import-preview-table {
+        opacity: 0.58;
+        filter: saturate(0.92);
+        transition: opacity 180ms ease, filter 180ms ease;
+    }
+
+    .preview-loading-overlay {
+        position: absolute;
+        inset: 0;
+        z-index: 5;
+        display: flex;
+        align-items: flex-start;
+        justify-content: center;
+        padding-top: 86px;
+        pointer-events: none;
+        background: rgba(248, 250, 252, 0.46);
+        backdrop-filter: blur(1.5px);
+    }
+
+    .preview-loading-panel {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.65rem;
+        min-height: 42px;
+        padding: 0.65rem 0.95rem;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.96);
+        border: 1px solid #dbeafe;
+        box-shadow: 0 18px 42px -28px rgba(15, 23, 42, 0.45);
+        color: #0f172a;
+        font-size: 0.84rem;
+        font-weight: 800;
+    }
+
+    .preview-loading-spinner {
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        border: 2px solid #bfdbfe;
+        border-top-color: #2563eb;
+        animation: previewSpin 0.72s linear infinite;
+    }
+
+    @keyframes previewSpin {
+        to { transform: rotate(360deg); }
+    }
+
+    .import-preview-table {
+        font-size: 0.88rem;
+    }
+
+    .import-preview-table thead th {
+        background: #f8fafc !important;
+        border-color: #e2e8f0 !important;
+        color: #0f172a;
+        font-size: 0.82rem;
+    }
+
+    .import-preview-table tbody td {
+        border-color: #edf2f7;
+        vertical-align: middle;
+    }
+
+    .import-preview-table .filter-btn {
+        border-radius: 8px;
+        min-width: 30px;
+        min-height: 30px;
+    }
+
+    .import-preview-table .dropdown-menu {
+        border: 1px solid #e2e8f0;
+        border-radius: 8px !important;
+    }
+
+    .import-preview-footer {
+        display: flex;
+        justify-content: space-between;
+        padding: 1rem 1.35rem;
+        border-top: 1px solid #e2e8f0;
+    }
+
+    @media (max-width: 767.98px) {
+        .import-preview-card__header {
+            flex-direction: column;
+        }
+
+        .import-preview-actions,
+        .import-preview-submit {
+            width: 100%;
+        }
+    }
+
     .swal-modern-popup {
         border: 1px solid rgba(226, 232, 240, 0.95);
         border-radius: 28px;

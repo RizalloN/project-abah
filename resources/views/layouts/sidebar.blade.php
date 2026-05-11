@@ -594,7 +594,7 @@
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a href="#" class="nav-link submenu-single-line">
+                            <a href="{{ route('report.qlola') }}" class="nav-link submenu-single-line {{ request()->routeIs('report.qlola') ? 'active' : '' }}">
                                 <i class="far fa-circle nav-icon"></i>
                                 <p>Performance Qlola</p>
                             </a>

@@ -68,6 +68,30 @@ class RekeningDormantControllerPeriodResolutionTest extends TestCase
                 'no_rekening' => 'REK-003',
                 'status' => '9',
             ],
+            [
+                'uniqueid_SMPN' => 'SMP-20260331-1',
+                'posisi' => '2026-03-31',
+                'kantor_cabang' => '00045 -- KC Madiun',
+                'unit_kerja' => 'Unit A',
+                'no_rekening' => 'REK-004',
+                'status' => '9',
+            ],
+            [
+                'uniqueid_SMPN' => 'SMP-20260228-1',
+                'posisi' => '2026-02-28',
+                'kantor_cabang' => '00045 -- KC Madiun',
+                'unit_kerja' => 'Unit A',
+                'no_rekening' => 'REK-005',
+                'status' => '9',
+            ],
+            [
+                'uniqueid_SMPN' => 'SMP-20251231-1',
+                'posisi' => '2025-12-31',
+                'kantor_cabang' => '00045 -- KC Madiun',
+                'unit_kerja' => 'Unit A',
+                'no_rekening' => 'REK-006',
+                'status' => '9',
+            ],
         ]);
 
         $controller = new RekeningDormantController();
@@ -79,7 +103,19 @@ class RekeningDormantControllerPeriodResolutionTest extends TestCase
         $payload = $response->getData(true);
 
         $this->assertSame('2026-04-24', $payload['effective_dates']['curr']);
+        $this->assertSame('2026-03-31', $payload['effective_dates']['mtd']);
+        $this->assertSame('2026-02-28', $payload['effective_dates']['m2']);
+        $this->assertSame('2025-12-31', $payload['effective_dates']['ytd']);
         $this->assertSame(1, $payload['total']['current']);
+        $this->assertSame(1, $payload['total']['mtd_base']);
+        $this->assertSame(1, $payload['total']['m2_base']);
+        $this->assertSame(1, $payload['total']['ytd_base']);
+        $this->assertArrayNotHasKey('yoy', $payload['total']);
+        $this->assertArrayNotHasKey('yoy_base', $payload['total']);
         $this->assertSame(1, $payload['data'][0]['current']);
+        $this->assertSame(1, $payload['data'][0]['m2_base']);
+        $this->assertArrayNotHasKey('yoy', $payload['data'][0]);
+        $this->assertArrayNotHasKey('yoy_base', $payload['data'][0]);
+        $this->assertSame('24 Apr 26', $payload['labels']['curr']);
     }
 }

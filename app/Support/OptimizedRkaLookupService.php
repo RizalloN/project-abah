@@ -38,9 +38,16 @@ class OptimizedRkaLookupService extends RkaLookupService
         ?int $year = null
     ): array {
         $defKey = md5(json_encode($definitions));
+        $sortedKancas = $kancas;
+        sort($sortedKancas);
+        $kancasKey = md5(json_encode($sortedKancas));
+        $sortedUnits = $units;
+        sort($sortedUnits);
+        $unitsKey = md5(json_encode($sortedUnits));
+
         return $this->withCaching(
             fn () => parent::aggregateByGroup($definitions, $monthColumn, $kancas, $units, $groupBy, $year),
-            "aggregate_by_group_{$monthColumn}_{$groupBy}_{$year}_{$defKey}"
+            "aggregate_by_group_{$monthColumn}_{$groupBy}_{$year}_{$kancasKey}_{$unitsKey}_{$defKey}"
         );
     }
 

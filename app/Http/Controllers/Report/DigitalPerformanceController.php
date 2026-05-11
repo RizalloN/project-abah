@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\DB;
 use App\Services\Reports\EdcReportService;
 use App\Services\Reports\QrisReportService;
 use App\Services\Reports\BrilinkReportService;
+use App\Services\Reports\QlolaReportService;
 use App\Services\Reports\ReportFilterService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -21,6 +22,7 @@ class DigitalPerformanceController extends Controller
         private readonly EdcReportService     $edcService,
         private readonly QrisReportService    $qrisService,
         private readonly BrilinkReportService $brilinkService,
+        private readonly QlolaReportService   $qlolaService,
         private readonly ReportFilterService  $filterService
     ) {}
 
@@ -80,6 +82,14 @@ class DigitalPerformanceController extends Controller
         return view('report.performance-brilink', compact('branches', 'branchOptions', 'branchUkerMap'));
     }
 
+    public function performanceQlola(): \Illuminate\View\View
+    {
+        $branches = ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'];
+        ['branchOptions' => $branchOptions, 'branchUkerMap' => $branchUkerMap] = $this->qlolaService->buildFilterOptions();
+
+        return view('report.performance-qlola', compact('branches', 'branchOptions', 'branchUkerMap'));
+    }
+
     // -------------------------------------------------------------------------
     // Data Endpoint (AJAX/API)
     // -------------------------------------------------------------------------
@@ -95,6 +105,8 @@ class DigitalPerformanceController extends Controller
                 => $this->qrisService->handle($request),
             $tab === 'brilink'
                 => $this->brilinkService->handle($request),
+            $tab === 'qlola'
+                => $this->qlolaService->handle($request),
             default
                 => response()->json(['status' => 'error', 'message' => "Unknown tab: {$tab}"], 422),
         };

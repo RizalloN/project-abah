@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Jobs\SyncImportedReportJob;
+use App\Http\Controllers\Import\ImportFileController;
 use App\Services\Import\ImportProgressService;
 use App\Services\Import\MySqlBulkLoadService;
 use Illuminate\Bus\Queueable;
@@ -33,7 +34,7 @@ class RunLoadDataJob implements ShouldQueue
         $this->queue = 'imports-high';
     }
 
-    public function handle(ImportProgressService $progressService, MySqlBulkLoadService $bulkLoader): void
+    public function handle(ImportProgressService $progressService, MySqlBulkLoadService $bulkLoader, ImportFileController $importController): void
     {
         try {
             $progressService->markProcessing($this->jobId, [
@@ -63,6 +64,22 @@ class RunLoadDataJob implements ShouldQueue
                 0
             );
 
+            $jobParams = Cache::get("csv_import_params_{$this->jobId}", []);
+            $periodRows = (int) ($jobParams['ibbiz_period_rows'] ?? 0);
+            if ($periodRows > 0) {
+                $progressService->cacheProgress($this->jobId, [
+                    'status' => 'processing',
+                    'percent' => 99,
+                    'message' => 'Mengisi periode IB Biz dari bulk CSV periode...',
+                ]);
+
+                $importController->applyIbbizPeriodBulkUpdate(
+                    $this->jobId,
+                    $this->tableName,
+                    (string) ($jobParams['ibbiz_period_bulk_csv'] ?? '')
+                );
+            }
+
             $progressService->markCompleted(
                 $this->jobId,
                 $totalSuccess,
@@ -84,7 +101,6 @@ class RunLoadDataJob implements ShouldQueue
                 'updated_at' => now(),
             ]);
 
-            $jobParams = Cache::get("csv_import_params_{$this->jobId}", []);
             $syncPeriod = $jobParams['syncPeriod'] ?? $jobParams['sync_period'] ?? null;
             if ($totalSuccess > 0 && !empty($syncPeriod)) {
                 try {

@@ -31,8 +31,6 @@ class ImportCleanupService
         'jumlah_merchant_detail',
         'sv_merchant',
         'jumlah_merchant_qris_detail',
-        'merchant_qris',
-        'merchant_qris_volume',
     ];
     private const IMPORT_PERIOD_COLUMNS = [
         'daily_loan_dinamis' => 'periode',

@@ -172,6 +172,13 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
         $this->assertSame(['2026-04-20', '2026-03-31', '2025-12-31'], $periods->all());
     }
 
+    public function test_kinerja_rm_main_page_no_longer_accepts_micro_segment(): void
+    {
+        $controller = new KinerjaRmReportController(Mockery::mock(RkaLookupService::class));
+
+        $this->assertSame('CONSUMER', $this->invokePrivateMethod($controller, 'resolveSelectedSegmen', ['MICRO']));
+    }
+
     public function test_kinerja_rm_rows_use_comparison_periods_and_realisasi_values(): void
     {
         DB::table('performance_rm_snapshots')->insert([
@@ -203,9 +210,69 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
         $this->assertSame(250000000.0, $item['ach_os']);
     }
 
-    private function snapshotRow(string $period, float $loanOs, int $realisasiDeb, float $realisasiOs): array
+    public function test_kinerja_rm_does_not_synthesize_quadrants_for_non_small_segments(): void
     {
-        return [
+        DB::table('performance_rm_snapshots')->insert([
+            $this->snapshotRow('2026-04-20', 1600000000, 1, 250000000),
+        ]);
+
+        $controller = new KinerjaRmReportController(Mockery::mock(RkaLookupService::class));
+
+        $result = $this->invokePrivateMethod($controller, 'fetchBranchRows', [
+            'CONSUMER',
+            '2026-04-20',
+            '2026-04-20',
+            '2026-04-20',
+            '2026-04-20',
+            null,
+            null,
+            null,
+        ]);
+
+        $this->assertNull($result['rows'][0]['rms']['RM A']['quadrant']);
+    }
+
+    public function test_kinerja_rm_small_quadrant_uses_ratas_and_lar_when_snapshot_quadrant_is_missing(): void
+    {
+        DB::table('performance_rm_snapshots')->insert([
+            $this->snapshotRow('2026-01-31', 1000000000, 1, 100000000, [
+                'segmen' => 'SMALL',
+                'produk' => 'SMALL',
+                'sml_os' => 300000000,
+            ]),
+            $this->snapshotRow('2026-02-28', 1000000000, 0, 0, [
+                'segmen' => 'SMALL',
+                'produk' => 'SMALL',
+                'sml_os' => 300000000,
+            ]),
+        ]);
+
+        $controller = new KinerjaRmReportController(Mockery::mock(RkaLookupService::class));
+
+        $result = $this->invokePrivateMethod($controller, 'fetchBranchRows', [
+            'SMALL',
+            '2026-02-28',
+            '2026-01-31',
+            '2026-01-31',
+            '2026-01-31',
+            null,
+            null,
+            null,
+        ]);
+
+        $this->assertSame(4, $result['rows'][0]['rms']['RM A']['quadrant']);
+        $this->assertSame(50000000.0, $result['rows'][0]['rms']['RM A']['items'][0]['ach_os']);
+    }
+
+    private function snapshotRow(
+        string $period,
+        float $loanOs,
+        int $realisasiDeb,
+        float $realisasiOs,
+        array $overrides = []
+    ): array
+    {
+        return array_merge([
             'periode' => $period,
             'cabang' => 'KC MADIUN',
             'unit' => 'UNIT A',
@@ -224,7 +291,7 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
             'total_deposit' => 0,
             'created_at' => now(),
             'updated_at' => now(),
-        ];
+        ], $overrides);
     }
 
     private function invokePrivateMethod(object $object, string $method, array $arguments = []): mixed

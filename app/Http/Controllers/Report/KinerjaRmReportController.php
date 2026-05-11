@@ -28,7 +28,7 @@ class KinerjaRmReportController extends Controller
         'MICRO' => ['BRIGUNA-MIKRO', 'KUPEDES', 'KUR-MIKRO', 'CASHCOLLATERAL', 'KPR', 'KUR-SMALL'],
     ];
     
-    private const AVAILABLE_SEGMENTS = ['CONSUMER', 'SMALL', 'MICRO'];
+    private const AVAILABLE_SEGMENTS = ['CONSUMER', 'SMALL'];
     private const DEFAULT_SEGMENT = 'CONSUMER';
 
     public function __construct(
@@ -44,37 +44,18 @@ class KinerjaRmReportController extends Controller
             ?? Carbon::now()->toDateString();
         $this->queueDailyLoanSnapshotSyncIfNeeded($selectedPeriod, static::class . '::index');
 
-        // LIMITATION FOR MIKRO SEGMENT
         $availableCabangs = $this->fetchAvailableCabangsBySegmen($selectedSegmen);
         $selectedCabang = $this->resolveSelectedCabang($availableCabangs, $request->input('cabang1'));
-        
-        // Force selection for MICRO if not selected
-        if ($selectedSegmen === 'MICRO' && $selectedCabang === null) {
-             $selectedCabang = $availableCabangs->first();
-        }
 
         $selectedProduct = $this->resolveSelectedProduct($request->input('produk'), $selectedSegmen);
 
         $currentDate = Carbon::parse($selectedPeriod);
-        
-        $yoyPeriod = $this->resolveClosestPeriodInMonth(
-            $availablePeriods,
-            $currentDate->copy()->subYear()
-        ) ?? $selectedPeriod;
-        
-        $ytdPeriod = $this->resolveClosestPeriod(
-            $availablePeriods,
-            $currentDate->copy()->subYear()->endOfYear()
-        ) ?? $selectedPeriod;
-        
-        $mtdPeriod = $this->resolveClosestPeriod(
-            $availablePeriods,
-            $currentDate->copy()->subMonthNoOverflow()->endOfMonth()
-        ) ?? $selectedPeriod;
+        $comparisonPeriods = $this->resolveKinerjaComparisonPeriods($availablePeriods, $selectedPeriod);
+        $realisasiPeriod = $this->resolveKinerjaRealisasiPeriod($selectedPeriod, $comparisonPeriods);
 
-        $osRows = $this->fetchBranchRows($selectedSegmen, $selectedPeriod, $yoyPeriod, $ytdPeriod, $mtdPeriod, $selectedCabang, $selectedProduct);
-        $smlRows = $this->fetchBranchRows($selectedSegmen, $selectedPeriod, $yoyPeriod, $ytdPeriod, $mtdPeriod, $selectedCabang, $selectedProduct, 'sml');
-        $nplRows = $this->fetchBranchRows($selectedSegmen, $selectedPeriod, $yoyPeriod, $ytdPeriod, $mtdPeriod, $selectedCabang, $selectedProduct, 'npl');
+        $osRows = $this->fetchBranchRows($selectedSegmen, $selectedPeriod, $comparisonPeriods, $realisasiPeriod, $selectedCabang, $selectedProduct);
+        $smlRows = $this->fetchBranchRows($selectedSegmen, $selectedPeriod, $comparisonPeriods, $realisasiPeriod, $selectedCabang, $selectedProduct, 'sml');
+        $nplRows = $this->fetchBranchRows($selectedSegmen, $selectedPeriod, $comparisonPeriods, $realisasiPeriod, $selectedCabang, $selectedProduct, 'npl');
         $nextMonth = $currentDate->copy()->addMonthNoOverflow();
 
         $productOptions = self::SEGMENT_PRODUCT_MAP[$selectedSegmen] ?? [];
@@ -96,15 +77,10 @@ class KinerjaRmReportController extends Controller
             'selectedCabangLabel' => $selectedCabang !== null ? $selectedCabang : 'Semua Cabang',
             'selectedProduct' => $selectedProduct,
             'selectedProductLabel' => $selectedProduct ?? 'Semua Produk',
-            'yoyPeriod' => $yoyPeriod,
-            'yoyLabel' => Carbon::parse($yoyPeriod)->translatedFormat('d M Y'),
-            'yoyShortLabel' => Carbon::parse($yoyPeriod)->translatedFormat('d M y'),
-            'ytdPeriod' => $ytdPeriod,
-            'ytdLabel' => Carbon::parse($ytdPeriod)->translatedFormat('d M Y'),
-            'ytdShortLabel' => Carbon::parse($ytdPeriod)->translatedFormat('d M y'),
-            'mtdPeriod' => $mtdPeriod,
-            'mtdLabel' => Carbon::parse($mtdPeriod)->translatedFormat('d M Y'),
-            'mtdShortLabel' => Carbon::parse($mtdPeriod)->translatedFormat('d M y'),
+            'comparisonColumns' => array_values($comparisonPeriods),
+            'comparisonPeriods' => $comparisonPeriods,
+            'realisasiPeriod' => $realisasiPeriod,
+            'realisasiPeriodLabel' => Carbon::parse($realisasiPeriod)->translatedFormat('d M Y'),
             'currentMonthLabel' => $currentDate->format('M-y'),
             'nextMonthLabel' => $nextMonth->format('M-y'),
             'rows' => $osRows['rows'],
@@ -315,41 +291,93 @@ class KinerjaRmReportController extends Controller
             ?? $periods->first(fn (string $period) => str_starts_with($period, $targetMonth));
     }
 
+    /**
+     * @return array<string, array{key:string,label:string,period:?string,period_label:string,short_label:string}>
+     */
+    private function resolveKinerjaComparisonPeriods(Collection $periods, string $selectedPeriod): array
+    {
+        $currentDate = Carbon::parse($selectedPeriod);
+        $definitions = [
+            'ytd' => ['label' => 'YTD', 'target' => $currentDate->copy()->subYear()->endOfYear(), 'same_month' => false],
+            'm4' => ['label' => 'M-4', 'target' => $currentDate->copy()->subMonthsNoOverflow(4)->endOfMonth(), 'same_month' => true],
+            'm3' => ['label' => 'M-3', 'target' => $currentDate->copy()->subMonthsNoOverflow(3)->endOfMonth(), 'same_month' => true],
+            'm2' => ['label' => 'M-2', 'target' => $currentDate->copy()->subMonthsNoOverflow(2)->endOfMonth(), 'same_month' => true],
+            'm1' => ['label' => 'M-1', 'target' => $currentDate->copy()->subMonthNoOverflow()->endOfMonth(), 'same_month' => true],
+        ];
+
+        $resolved = [];
+        foreach ($definitions as $key => $definition) {
+            /** @var Carbon $target */
+            $target = $definition['target'];
+            $period = $definition['same_month']
+                ? $this->resolveClosestPeriodInMonth($periods, $target)
+                : $this->resolveClosestPeriod($periods, $target);
+
+            $resolved[$key] = [
+                'key' => $key,
+                'label' => $definition['label'],
+                'period' => $period,
+                'period_label' => $period !== null ? Carbon::parse($period)->translatedFormat('d M Y') : '-',
+                'short_label' => $period !== null ? Carbon::parse($period)->translatedFormat('d M y') : '-',
+            ];
+        }
+
+        return $resolved;
+    }
+
+    private function resolveKinerjaRealisasiPeriod(string $selectedPeriod, array $comparisonPeriods): string
+    {
+        $selectedDate = Carbon::parse($selectedPeriod);
+
+        if (!$selectedDate->isLastOfMonth()) {
+            $previousMonthPeriod = $comparisonPeriods['m1']['period'] ?? null;
+
+            if ($previousMonthPeriod !== null) {
+                return $previousMonthPeriod;
+            }
+        }
+
+        return $selectedPeriod;
+    }
+
     private function fetchBranchRows(
         string $segmen,
         string $selectedPeriod,
-        string $yoyPeriod,
-        string $ytdPeriod,
-        string $mtdPeriod,
+        array $comparisonPeriods,
+        string $realisasiPeriod,
         ?string $selectedCabang = null,
         ?string $selectedProduct = null,
         ?string $qualityType = null
     ): array
     {
-            $cacheKey = 'kinerja_rm_rows_v10:' . $this->reportCacheVersion() . ':' . md5(json_encode([
+        $comparisonPeriodValues = collect($comparisonPeriods)
+            ->mapWithKeys(fn (array $period, string $key): array => [$key => $period['period'] ?? null])
+            ->all();
+        $comparisonKeys = array_keys($comparisonPeriodValues);
+        $emptyComparisonValues = array_fill_keys($comparisonKeys, 0.0);
+
+        $cacheKey = 'kinerja_rm_rows_v13:' . $this->reportCacheVersion() . ':' . md5(json_encode([
             'segmen' => $segmen,
             'selected' => $selectedPeriod,
-            'yoy' => $yoyPeriod,
-            'mtd' => $mtdPeriod,
-            'ytd' => $ytdPeriod,
+            'comparisons' => $comparisonPeriodValues,
+            'realisasi' => $realisasiPeriod,
             'cabang' => $selectedCabang,
             'produk' => $selectedProduct,
             'quality' => $qualityType,
         ]));
 
-        return Cache::remember($cacheKey, 300, function () use ($segmen, $selectedPeriod, $yoyPeriod, $mtdPeriod, $ytdPeriod, $selectedCabang, $selectedProduct, $qualityType) {
+        return Cache::remember($cacheKey, 300, function () use ($segmen, $selectedPeriod, $comparisonPeriodValues, $comparisonKeys, $emptyComparisonValues, $realisasiPeriod, $selectedCabang, $selectedProduct, $qualityType) {
             $averagePeriods = $segmen === 'SMALL'
-                ? $this->resolveAveragePeriodsInScope($selectedPeriod, $segmen, $selectedCabang, $selectedProduct)
-                : [$selectedPeriod];
+                ? $this->resolveAveragePeriodsInScope($realisasiPeriod, $segmen, $selectedCabang, $selectedProduct)
+                : [$realisasiPeriod];
             $larPeriod = $segmen === 'SMALL'
                 ? $this->resolveLatestPeriodInYearScope($selectedPeriod, $segmen, $selectedCabang, $selectedProduct)
                 : ($this->resolveLatestPeriodInScope($selectedPeriod, $segmen, $selectedCabang, $selectedProduct) ?? $selectedPeriod);
             $periods = array_values(array_unique(array_filter([
                 $selectedPeriod,
-                $yoyPeriod,
-                $ytdPeriod,
-                $mtdPeriod,
+                $realisasiPeriod,
                 $larPeriod,
+                ...array_values($comparisonPeriodValues),
                 ...$averagePeriods,
             ])));
 
@@ -377,6 +405,7 @@ class KinerjaRmReportController extends Controller
             $branches = [];
             $grandTotals = [
                 'curr' => 0.0, 'curr_deb' => 0, 'yoy' => 0.0, 'mtd' => 0.0, 'ytd' => 0.0,
+                'comparison_values' => $emptyComparisonValues,
                 'target_jg_deb' => 0, 'target_jg_os' => 0.0,
                 'ach_deb' => 0, 'ach_os' => 0.0,
                 'lar_loan_os' => 0.0, 'lar_value' => 0.0, 'lar_pct' => 0.0,
@@ -403,9 +432,11 @@ class KinerjaRmReportController extends Controller
                     'produk' => $row->produk,
                     'quadrant' => null,
                     'curr' => 0.0, 'curr_deb' => 0, 'yoy' => 0.0, 'mtd' => 0.0, 'ytd' => 0.0,
+                    'comparison_values' => $emptyComparisonValues,
                     'realisasi_deb' => 0, 'realisasi_os' => 0.0,
                     'realisasi_deb_sum' => 0.0, 'realisasi_os_sum' => 0.0,
                     'realisasi_period_count' => 0,
+                    'quadrant_realisasi_os_sum' => 0.0,
                     'lar_loan_os' => 0.0, 'lar_value' => 0.0, 'lar_pct' => 0.0,
                     'lar_has_data' => false,
                 ];
@@ -414,26 +445,6 @@ class KinerjaRmReportController extends Controller
                     $pivoted[$key]['curr'] += $val;
                     $pivoted[$key]['curr_deb'] += (int)$row->total_deb;
                     $quadrant = $row->quadrant ?? null;
-
-                    if ($quadrant === null) {
-                        $loanOs = (float) ($row->loan_os ?? 0);
-
-                        if ($loanOs > 0) {
-                            $isXPositive = (float) ($row->lancar_os ?? 0) >= (float) ($row->npl_os ?? 0);
-                            $isYPositive = (float) ($row->total_deposit ?? 0) >= $loanOs;
-
-                            if ($isXPositive && $isYPositive) {
-                                $quadrant = 2;
-                            } elseif (!$isXPositive && $isYPositive) {
-                                $quadrant = 3;
-                            } elseif (!$isXPositive && !$isYPositive) {
-                                $quadrant = 4;
-                            } else {
-                                $quadrant = 1;
-                            }
-                        }
-                    }
-
                     $pivoted[$key]['quadrant'] ??= $quadrant;
                 }
 
@@ -441,7 +452,7 @@ class KinerjaRmReportController extends Controller
                 // For other segments, use only selectedPeriod
                 $useForRealisasiAverage = $segmen === 'SMALL'
                     ? in_array($row->periode, $averagePeriods, true)
-                    : ($row->periode === $selectedPeriod);
+                    : ($row->periode === $realisasiPeriod);
 
                 $realisasiDeb = (float) ($row->realisasi_deb ?? 0);
                 $realisasiOs = (float) ($row->realisasi_os ?? 0);
@@ -453,28 +464,11 @@ class KinerjaRmReportController extends Controller
                     $pivoted[$key]['realisasi_period_count']++;
                 }
 
-                // If quadrant is still null and we're in SMALL segment, use the latest available period for quadrant
-                if ($pivoted[$key]['quadrant'] === null && $segmen === 'SMALL' && in_array($row->periode, $averagePeriods, true)) {
+                if ($segmen === 'SMALL' && in_array($row->periode, $averagePeriods, true)) {
+                    $pivoted[$key]['quadrant_realisasi_os_sum'] += $realisasiOs;
                     $quadrant = $row->quadrant ?? null;
-                    if ($quadrant === null) {
-                        $loanOs = (float) ($row->loan_os ?? 0);
-                        if ($loanOs > 0) {
-                            $isXPositive = (float) ($row->lancar_os ?? 0) >= (float) ($row->npl_os ?? 0);
-                            $isYPositive = (float) ($row->total_deposit ?? 0) >= $loanOs;
 
-                            if ($isXPositive && $isYPositive) {
-                                $quadrant = 2;
-                            } elseif (!$isXPositive && $isYPositive) {
-                                $quadrant = 3;
-                            } elseif (!$isXPositive && !$isYPositive) {
-                                $quadrant = 4;
-                            } else {
-                                $quadrant = 1;
-                            }
-                        }
-                    }
-                    // Only set if this is the latest period in scope
-                    if ($row->periode === end($averagePeriods)) {
+                    if ($quadrant !== null && $row->periode === end($averagePeriods)) {
                         $pivoted[$key]['quadrant'] = $quadrant;
                     }
                 }
@@ -493,18 +487,16 @@ class KinerjaRmReportController extends Controller
                     $pivoted[$key]['lar_has_data'] = true;
                 }
                 
-                if ($row->periode === $yoyPeriod) {
-                    $pivoted[$key]['yoy'] += $val;
-                }
-                
-                if ($row->periode === $ytdPeriod) {
-                    $pivoted[$key]['ytd'] += $val;
-                }
-                
-                if ($row->periode === $mtdPeriod) {
-                    $pivoted[$key]['mtd'] += $val;
+                foreach ($comparisonPeriodValues as $periodKey => $periodValue) {
+                    if ($periodValue !== null && $row->periode === $periodValue) {
+                        $pivoted[$key]['comparison_values'][$periodKey] += $val;
+                    }
                 }
             }
+
+            $smallQuadrantsByRm = $segmen === 'SMALL'
+                ? $this->calculateSmallQuadrantsByRm($pivoted, $selectedPeriod)
+                : [];
 
             foreach ($pivoted as $data) {
                 $cabangName = $data['cabang'];
@@ -512,6 +504,9 @@ class KinerjaRmReportController extends Controller
                 $productLabel = $this->normalizeProductLabel($data['produk'], $segmen);
 
                 if ($rmName === '' || $productLabel === null) continue;
+                $quadrant = $segmen === 'SMALL'
+                    ? ($smallQuadrantsByRm[$rmName] ?? $data['quadrant'])
+                    : $data['quadrant'];
 
                 $cabangKey = $this->normalizeCabangKey($cabangName);
                 if (!isset($branches[$cabangKey])) {
@@ -520,6 +515,7 @@ class KinerjaRmReportController extends Controller
                         'rms' => [],
                         'subtotal' => [
                             'curr' => 0.0, 'curr_deb' => 0, 'yoy' => 0.0, 'mtd' => 0.0, 'ytd' => 0.0,
+                            'comparison_values' => $emptyComparisonValues,
                             'target_jg_deb' => 0, 'target_jg_os' => 0.0,
                             'ach_deb' => 0, 'ach_os' => 0.0,
                             'lar_loan_os' => 0.0, 'lar_value' => 0.0, 'lar_pct' => 0.0,
@@ -534,7 +530,7 @@ class KinerjaRmReportController extends Controller
                         'rm' => $rmName,
                         'items' => [],
                         'rm_rowspan' => 0,
-                        'quadrant' => $data['quadrant'],
+                        'quadrant' => $quadrant,
                     ];
                 }
 
@@ -543,29 +539,39 @@ class KinerjaRmReportController extends Controller
                 $target = $this->resolveManualTargetForProduct($manualTargets, $productLabel, $nameOnly);
                 $tDeb = (int) ($target['target_jg_deb'] ?? 0);
                 $tOs = (float) ($target['target_jg_os'] ?? 0.0);
-                $achDeb = $data['realisasi_period_count'] > 0
-                    ? (int) round($data['realisasi_deb_sum'] / $data['realisasi_period_count'])
+                $realisasiDivisor = $segmen === 'SMALL'
+                    ? max(1, Carbon::parse($realisasiPeriod)->month)
+                    : $data['realisasi_period_count'];
+                $hasAchievementData = $segmen === 'SMALL' || $data['realisasi_period_count'] > 0;
+                $achDeb = $hasAchievementData
+                    ? (int) round($data['realisasi_deb_sum'] / max(1, $realisasiDivisor))
                     : null;
-                $achOs = $data['realisasi_period_count'] > 0
-                    ? ($data['realisasi_os_sum'] / $data['realisasi_period_count'])
+                $achOs = $hasAchievementData
+                    ? ($data['realisasi_os_sum'] / max(1, $realisasiDivisor))
                     : null;
+                $comparisonDeltas = [];
+                foreach ($comparisonKeys as $periodKey) {
+                    $comparisonDeltas[$periodKey] = $data['curr'] - ($data['comparison_values'][$periodKey] ?? 0.0);
+                }
 
                 $item = [
                     'segmen' => $segmen,
                     'product' => $productLabel,
                     'curr' => $data['curr'],
                     'curr_deb' => $data['curr_deb'],
-                    'yoy' => $data['yoy'],
-                    'ytd' => $data['ytd'],
-                    'mtd' => $data['mtd'],
-                    'delta_yoy' => $data['curr'] - $data['yoy'],
-                    'delta_ytd' => $data['curr'] - $data['ytd'],
-                    'delta_mtd' => $data['curr'] - $data['mtd'],
+                    'comparison_values' => $data['comparison_values'],
+                    'comparison_deltas' => $comparisonDeltas,
+                    'yoy' => $data['comparison_values']['m4'] ?? 0.0,
+                    'ytd' => $data['comparison_values']['ytd'] ?? 0.0,
+                    'mtd' => $data['comparison_values']['m1'] ?? 0.0,
+                    'delta_yoy' => $comparisonDeltas['m4'] ?? $data['curr'],
+                    'delta_ytd' => $comparisonDeltas['ytd'] ?? $data['curr'],
+                    'delta_mtd' => $comparisonDeltas['m1'] ?? $data['curr'],
                     'target_jg_deb' => $tDeb,
                     'target_jg_os' => $tOs,
                     'ach_deb' => $achDeb,
                     'ach_os' => $achOs,
-                    'ach_has_data' => $data['realisasi_period_count'] > 0,
+                    'ach_has_data' => $hasAchievementData,
                     'lar_pct' => $data['lar_has_data'] ? $data['lar_pct'] : null,
                     'lar_has_data' => $data['lar_has_data'],
                 ];
@@ -577,12 +583,15 @@ class KinerjaRmReportController extends Controller
                 // Update Branch Subtotal
                 $branches[$cabangKey]['subtotal']['curr'] += $data['curr'];
                 $branches[$cabangKey]['subtotal']['curr_deb'] += $data['curr_deb'];
-                $branches[$cabangKey]['subtotal']['yoy'] += $data['yoy'];
-                $branches[$cabangKey]['subtotal']['ytd'] += $data['ytd'];
-                $branches[$cabangKey]['subtotal']['mtd'] += $data['mtd'];
+                foreach ($comparisonKeys as $periodKey) {
+                    $branches[$cabangKey]['subtotal']['comparison_values'][$periodKey] += $data['comparison_values'][$periodKey] ?? 0.0;
+                }
+                $branches[$cabangKey]['subtotal']['yoy'] = $branches[$cabangKey]['subtotal']['comparison_values']['m4'] ?? 0.0;
+                $branches[$cabangKey]['subtotal']['ytd'] = $branches[$cabangKey]['subtotal']['comparison_values']['ytd'] ?? 0.0;
+                $branches[$cabangKey]['subtotal']['mtd'] = $branches[$cabangKey]['subtotal']['comparison_values']['m1'] ?? 0.0;
                 $branches[$cabangKey]['subtotal']['target_jg_deb'] += $tDeb;
                 $branches[$cabangKey]['subtotal']['target_jg_os'] += $tOs;
-                if ($data['realisasi_period_count'] > 0) {
+                if ($hasAchievementData) {
                     $branches[$cabangKey]['subtotal']['ach_count']++;
                     $branches[$cabangKey]['subtotal']['ach_deb'] = ($branches[$cabangKey]['subtotal']['ach_deb'] ?? 0) + (int) $achDeb;
                     $branches[$cabangKey]['subtotal']['ach_os'] = ($branches[$cabangKey]['subtotal']['ach_os'] ?? 0.0) + (float) $achOs;
@@ -596,12 +605,15 @@ class KinerjaRmReportController extends Controller
                 // Grand Totals
                 $grandTotals['curr'] += $data['curr'];
                 $grandTotals['curr_deb'] += $data['curr_deb'];
-                $grandTotals['yoy'] += $data['yoy'];
-                $grandTotals['ytd'] += $data['ytd'];
-                $grandTotals['mtd'] += $data['mtd'];
+                foreach ($comparisonKeys as $periodKey) {
+                    $grandTotals['comparison_values'][$periodKey] += $data['comparison_values'][$periodKey] ?? 0.0;
+                }
+                $grandTotals['yoy'] = $grandTotals['comparison_values']['m4'] ?? 0.0;
+                $grandTotals['ytd'] = $grandTotals['comparison_values']['ytd'] ?? 0.0;
+                $grandTotals['mtd'] = $grandTotals['comparison_values']['m1'] ?? 0.0;
                 $grandTotals['target_jg_deb'] += $tDeb;
                 $grandTotals['target_jg_os'] += $tOs;
-                if ($data['realisasi_period_count'] > 0) {
+                if ($hasAchievementData) {
                     $grandTotals['ach_count']++;
                     $grandTotals['ach_deb'] = ($grandTotals['ach_deb'] ?? 0) + (int) $achDeb;
                     $grandTotals['ach_os'] = ($grandTotals['ach_os'] ?? 0.0) + (float) $achOs;
@@ -616,9 +628,13 @@ class KinerjaRmReportController extends Controller
             foreach ($branches as $key => $branch) {
                 $branches[$key]['branch_rowspan'] += 1; // For subtotal row
                 $b_curr = $branches[$key]['subtotal']['curr'];
-                $branches[$key]['subtotal']['delta_yoy'] = $b_curr - $branches[$key]['subtotal']['yoy'];
-                $branches[$key]['subtotal']['delta_ytd'] = $b_curr - $branches[$key]['subtotal']['ytd'];
-                $branches[$key]['subtotal']['delta_mtd'] = $b_curr - $branches[$key]['subtotal']['mtd'];
+                $branches[$key]['subtotal']['comparison_deltas'] = [];
+                foreach ($comparisonKeys as $periodKey) {
+                    $branches[$key]['subtotal']['comparison_deltas'][$periodKey] = $b_curr - ($branches[$key]['subtotal']['comparison_values'][$periodKey] ?? 0.0);
+                }
+                $branches[$key]['subtotal']['delta_yoy'] = $branches[$key]['subtotal']['comparison_deltas']['m4'] ?? $b_curr;
+                $branches[$key]['subtotal']['delta_ytd'] = $branches[$key]['subtotal']['comparison_deltas']['ytd'] ?? $b_curr;
+                $branches[$key]['subtotal']['delta_mtd'] = $branches[$key]['subtotal']['comparison_deltas']['m1'] ?? $b_curr;
                 $branches[$key]['subtotal']['ach_deb'] = ($branches[$key]['subtotal']['ach_count'] ?? 0) > 0
                     ? (int) ($branches[$key]['subtotal']['ach_deb'] ?? 0)
                     : null;
@@ -641,6 +657,10 @@ class KinerjaRmReportController extends Controller
                 && (float) ($grandTotals['lar_loan_os'] ?? 0) > 0
                 ? ((($grandTotals['lar_value'] ?? 0) / $grandTotals['lar_loan_os']) * 100)
                 : null;
+            $grandTotals['comparison_deltas'] = [];
+            foreach ($comparisonKeys as $periodKey) {
+                $grandTotals['comparison_deltas'][$periodKey] = $grandTotals['curr'] - ($grandTotals['comparison_values'][$periodKey] ?? 0.0);
+            }
 
             $branches = $this->sortKinerjaRmBranches($branches, $segmen);
 
@@ -653,9 +673,11 @@ class KinerjaRmReportController extends Controller
                 'yoy' => $grandTotals['yoy'],
                 'ytd' => $grandTotals['ytd'],
                 'mtd' => $grandTotals['mtd'],
-                'delta_yoy' => $grandTotals['curr'] - $grandTotals['yoy'],
-                'delta_ytd' => $grandTotals['curr'] - $grandTotals['ytd'],
-                'delta_mtd' => $grandTotals['curr'] - $grandTotals['mtd'],
+                'comparison_values' => $grandTotals['comparison_values'],
+                'comparison_deltas' => $grandTotals['comparison_deltas'],
+                'delta_yoy' => $grandTotals['comparison_deltas']['m4'] ?? $grandTotals['curr'],
+                'delta_ytd' => $grandTotals['comparison_deltas']['ytd'] ?? $grandTotals['curr'],
+                'delta_mtd' => $grandTotals['comparison_deltas']['m1'] ?? $grandTotals['curr'],
                 'target_jg_deb' => $grandTotals['target_jg_deb'],
                 'target_jg_os' => $grandTotals['target_jg_os'],
                 'ach_deb' => $grandTotals['ach_deb'],
@@ -1340,6 +1362,67 @@ class KinerjaRmReportController extends Controller
         $quadrantValue = (int) $normalized;
 
         return in_array($quadrantValue, [1, 2, 3, 4], true) ? $quadrantValue : null;
+    }
+
+    private function calculateSmallQuadrantsByRm(array $pivoted, string $selectedPeriod): array
+    {
+        $inputs = [];
+
+        foreach ($pivoted as $data) {
+            $rmName = $this->mapRmName((string) ($data['rm'] ?? ''));
+            $productLabel = $this->normalizeProductLabel((string) ($data['produk'] ?? ''), 'SMALL');
+
+            if ($rmName === '' || $productLabel === null) {
+                continue;
+            }
+
+            $inputs[$rmName] ??= [
+                'snapshot_quadrant' => null,
+                'realisasi_os_sum' => 0.0,
+                'lar_loan_os' => 0.0,
+                'lar_value' => 0.0,
+                'lar_has_data' => false,
+            ];
+
+            $inputs[$rmName]['snapshot_quadrant'] ??= $this->normalizeQuadrant($data['quadrant'] ?? null);
+            $inputs[$rmName]['realisasi_os_sum'] += (float) ($data['quadrant_realisasi_os_sum'] ?? 0);
+            $inputs[$rmName]['lar_loan_os'] += (float) ($data['lar_loan_os'] ?? 0);
+            $inputs[$rmName]['lar_value'] += (float) ($data['lar_value'] ?? 0);
+            $inputs[$rmName]['lar_has_data'] = $inputs[$rmName]['lar_has_data'] || (bool) ($data['lar_has_data'] ?? false);
+        }
+
+        $quadrants = [];
+        $month = max(1, Carbon::parse($selectedPeriod)->month);
+
+        foreach ($inputs as $rmName => $input) {
+            if ($input['snapshot_quadrant'] !== null) {
+                $quadrants[$rmName] = $input['snapshot_quadrant'];
+                continue;
+            }
+
+            if (!$input['lar_has_data'] || (float) $input['lar_loan_os'] <= 0) {
+                continue;
+            }
+
+            $ratasOs = (float) $input['realisasi_os_sum'] / $month;
+            $larPct = ((float) $input['lar_value'] / (float) $input['lar_loan_os']) * 100;
+            $quadrants[$rmName] = $this->calculateSmallQuadrant($ratasOs, $larPct);
+        }
+
+        return $quadrants;
+    }
+
+    private function calculateSmallQuadrant(float $ratasOs, float $larPct): int
+    {
+        $isRatasA = ($ratasOs / 1000000) >= 1600;
+        $isLarA = $larPct < 17.5;
+
+        return match (true) {
+            $isRatasA && $isLarA => 1,
+            $isRatasA => 2,
+            $isLarA => 3,
+            default => 4,
+        };
     }
 
     private function formatQuadrantLabel(mixed $quadrant): string

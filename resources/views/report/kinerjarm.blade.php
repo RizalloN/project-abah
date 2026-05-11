@@ -884,6 +884,218 @@
         text-transform: uppercase;
     }
 
+    .kinerja-report-card {
+        border-radius: 10px;
+        border: 1px solid #cbd5e1;
+        box-shadow: 0 10px 24px -20px rgba(15, 23, 42, 0.35);
+    }
+
+    .kinerja-report-card__header {
+        padding: 0.7rem 0.9rem;
+        background: #ffffff;
+    }
+
+    .kinerja-table-container {
+        border-radius: 0 0 10px 10px;
+        border-color: #b7c4d4;
+    }
+
+    .kinerja-konsumer-table {
+        min-width: 1320px;
+        border-collapse: separate;
+        border-spacing: 0;
+        background: #ffffff;
+    }
+
+    .kinerja-konsumer-table--compact {
+        min-width: 1120px;
+    }
+
+    .kinerja-konsumer-table thead th {
+        height: 24px;
+        padding: 0.16rem 0.18rem !important;
+        font-size: 0.56rem;
+        letter-spacing: 0;
+        border-right: 1px solid rgba(255, 255, 255, 0.28) !important;
+    }
+
+    .kinerja-konsumer-table thead tr:nth-child(2) th {
+        top: 24px;
+        height: 28px;
+    }
+
+    .kinerja-period-head span,
+    .kinerja-period-head small {
+        display: block;
+        line-height: 1.05;
+    }
+
+    .kinerja-period-head small {
+        margin-top: 0.12rem;
+        font-size: 0.52rem;
+        font-weight: 700;
+        opacity: 0.82;
+        text-transform: none;
+    }
+
+    .kinerja-konsumer-table td {
+        padding: 0.08rem 0.18rem;
+        font-size: 0.64rem;
+        line-height: 1.15;
+        border-right: 1px solid #e2e8f0;
+        border-bottom: 1px solid #e2e8f0;
+        height: 21px;
+    }
+
+    .kinerja-konsumer-table tbody tr:hover td {
+        background: #f8fbff;
+    }
+
+    .kinerja-konsumer-table td.merged-branch-cell {
+        width: 94px;
+        font-size: 0.58rem !important;
+        line-height: 1.15;
+    }
+
+    .kinerja-konsumer-table td.merged-rm-cell {
+        width: 164px;
+        font-size: 0.62rem !important;
+        line-height: 1.15;
+    }
+
+    .loan-branch-subtotal td {
+        border-top: 1px solid #94a3b8;
+        border-bottom: 1px solid #94a3b8;
+    }
+
+    .row-grand-total td {
+        border-top: 2px solid #0f2f66;
+    }
+
+    .delta-indicator {
+        display: inline-flex;
+        align-items: center;
+        justify-content: flex-end;
+        min-width: 48px;
+        font-weight: 800;
+    }
+
+    #rmDetailModal .modal-content {
+        border-radius: 14px;
+        overflow: hidden;
+    }
+
+    .kinerja-rm-modal__header {
+        background: linear-gradient(135deg, #0f2f66, #005baa);
+        color: #ffffff;
+        border-bottom: 0;
+        padding: 1rem 1.15rem;
+    }
+
+    .kinerja-rm-modal__eyebrow {
+        margin: 0 0 0.2rem;
+        font-size: 0.68rem;
+        font-weight: 900;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        opacity: 0.78;
+    }
+
+    .kinerja-rm-modal__header .modal-title {
+        font-size: 1rem;
+        font-weight: 900;
+        letter-spacing: 0;
+    }
+
+    .kinerja-rm-modal__body {
+        padding: 1rem;
+        background: #f8fafc;
+    }
+
+    .kinerja-rm-modal__summary {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 0.65rem;
+        margin-bottom: 0.9rem;
+    }
+
+    .kinerja-rm-modal__summary > div {
+        border: 1px solid #dbe4ef;
+        border-radius: 8px;
+        background: #ffffff;
+        padding: 0.65rem 0.75rem;
+    }
+
+    .kinerja-rm-modal__summary span {
+        display: block;
+        color: #64748b;
+        font-size: 0.68rem;
+        font-weight: 800;
+        text-transform: uppercase;
+    }
+
+    .kinerja-rm-modal__summary strong {
+        display: block;
+        margin-top: 0.2rem;
+        color: #0f172a;
+        font-size: 0.95rem;
+        font-weight: 900;
+    }
+
+    .kinerja-rm-modal__table-wrap {
+        border: 1px solid #cbd5e1;
+        border-radius: 10px;
+        background: #ffffff;
+    }
+
+    .kinerja-rm-modal__table th {
+        background: #0f2f66;
+        color: #ffffff;
+        border-color: rgba(255, 255, 255, 0.18);
+        font-size: 0.68rem;
+        vertical-align: middle;
+    }
+
+    .kinerja-rm-modal__table td,
+    .kinerja-rm-modal__table tfoot td {
+        border-color: #e2e8f0;
+        font-size: 0.72rem;
+        vertical-align: middle;
+    }
+
+    .kinerja-rm-modal__table tfoot td {
+        background: #eaf2ff;
+        color: #0f2f66;
+        font-weight: 900;
+    }
+
+    .kinerja-rm-modal__grade {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 28px;
+        height: 22px;
+        border-radius: 999px;
+        font-size: 0.68rem;
+        font-weight: 900;
+    }
+
+    .kinerja-rm-modal__grade.is-good {
+        background: #dcfce7;
+        color: #15803d;
+    }
+
+    .kinerja-rm-modal__grade.is-bad {
+        background: #fee2e2;
+        color: #b91c1c;
+    }
+
+    .kinerja-rm-modal__footer {
+        background: #ffffff;
+        border-top: 1px solid #e2e8f0;
+        padding: 0.75rem 1rem;
+    }
+
     @media (max-width: 768px) {
         .kinerja-tabs-header,
         .kinerja-quality-intro,
@@ -913,6 +1125,10 @@
 
         .kinerja-table-container {
             max-height: 62vh;
+        }
+
+        .kinerja-rm-modal__summary {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
         }
     }
 </style>
@@ -988,8 +1204,8 @@
                 <div class="lux-field">
                     <label for="kinerjaCabang" class="lux-label">Unit Kerja</label>
                     <div class="lux-select-wrap">
-                        <select id="kinerjaCabang" name="cabang1" class="lux-select" @if($selectedSegmen === 'MICRO') required @endif>
-                            <option value="" @selected($selectedCabang === null) @if($selectedSegmen === 'MICRO') disabled style="display:none;" @endif>SEMUA CABANG</option>
+                        <select id="kinerjaCabang" name="cabang1" class="lux-select">
+                            <option value="" @selected($selectedCabang === null)>SEMUA CABANG</option>
                             @foreach($availableCabangs as $cabang)
                                 <option value="{{ $cabang }}" @selected($selectedCabang === $cabang)>{{ $cabang }}</option>
                             @endforeach

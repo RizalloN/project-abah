@@ -11251,7 +11251,7 @@ class ImportExcelController extends Controller
                 'unique_id_col' => $context['unique_id_col'] ?? 'uniqueid_SMPN',
                 'unique_id_prefix' => $context['unique_id_prefix'] ?? 'imp',
                 'manual_values' => (array) ($context['manual_column_values'] ?? []),
-                'target_columns' => $this->bulkLoadService()->getColumnListing($tableName),
+                'target_columns' => $this->resolveStagingTargetColumns($tableName, $jobId),
             ];
         }
 
@@ -11266,6 +11266,47 @@ class ImportExcelController extends Controller
             $jobId,
             $extraConfig
         );
+    }
+
+    protected function resolveStagingTargetColumns(string $tableName, int $jobId = 0): array
+    {
+        $tableName = trim($tableName);
+        if ($tableName === '') {
+            return [];
+        }
+
+        try {
+            $columns = $this->bulkLoadService()->getColumnListing($tableName);
+            if ($columns !== []) {
+                return array_values($columns);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Gagal membaca kolom target dari bulk-load service untuk staging import.', [
+                'job_id' => $jobId,
+                'table_name' => $tableName,
+                'message' => $e->getMessage(),
+            ]);
+        }
+
+        try {
+            $columns = $this->cachedSchemaColumnListing($tableName);
+            if ($columns !== []) {
+                return array_values($columns);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Gagal membaca kolom target dari schema cache untuk staging import.', [
+                'job_id' => $jobId,
+                'table_name' => $tableName,
+                'message' => $e->getMessage(),
+            ]);
+        }
+
+        Log::warning('Kolom target staging import kosong; proses staging dilanjutkan tanpa pembatas target_columns.', [
+            'job_id' => $jobId,
+            'table_name' => $tableName,
+        ]);
+
+        return [];
     }
 
     private function shouldDeferExcelStagingToQueue(string $tableName, string $path): bool

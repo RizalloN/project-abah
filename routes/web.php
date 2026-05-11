@@ -52,6 +52,8 @@ Route::middleware(['auth', 'release.session.lock', 'throttle:240,1'])->group(fun
         ->name('dashboard.harian.timeseries.data');
     Route::get('/dashboard-harian/data', [DashboardHarianController::class, 'data'])
         ->name('dashboard.harian.data');
+    Route::get('/dashboard-harian/export', [DashboardHarianController::class, 'exportExcel'])
+        ->name('dashboard.harian.export');
 
     Route::get('/dashboard', [DashboardSimpananController::class, 'index'])
         ->name('dashboard');
@@ -111,6 +113,7 @@ Route::middleware(['auth', 'release.session.lock', 'throttle:240,1'])->group(fun
     Route::get('/report/optimalisasi-digital/edc', [DigitalPerformanceController::class, 'performanceEdc'])->name('report.edc');
     Route::get('/report/optimalisasi-digital/qris', [DigitalPerformanceController::class, 'performanceQris'])->name('report.qris');
     Route::get('/report/optimalisasi-digital/brilink', [DigitalPerformanceController::class, 'performanceBrilink'])->name('report.brilink');
+    Route::get('/report/optimalisasi-digital/qlola', [DigitalPerformanceController::class, 'performanceQlola'])->name('report.qlola');
     Route::post('/report/data', [DigitalPerformanceController::class, 'fetchData'])->name('report.data');
     Route::post('/report/data/qris/ukers', [DigitalPerformanceController::class, 'fetchQrisUkers'])->name('report.qris.ukers');
 

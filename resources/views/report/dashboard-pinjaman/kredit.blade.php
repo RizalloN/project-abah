@@ -170,6 +170,31 @@
         border-color: var(--loan-blue);
     }
 
+    .rka-gap-stack {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 2px;
+        line-height: 1.15;
+    }
+
+    .rka-gap-stack__amount {
+        font-weight: 900;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .rka-gap-stack .pct-data-bar-wrap {
+        min-width: 58px;
+        max-width: 70px;
+        height: 14px;
+        margin: 0 auto;
+    }
+
+    .rka-gap-stack .pct-data-label {
+        font-size: 0.62rem;
+    }
+
     .btn-loan-modern-submit {
         height: 60px;
         min-width: 220px;
@@ -484,6 +509,15 @@ document.addEventListener('DOMContentLoaded', function () {
             return isReversed ? 'achieve-negative' : 'achieve-positive';
         }
         return isReversed ? 'achieve-positive' : 'achieve-negative';
+    }
+
+    function formatRkaGapCell(gapValue, pctValue, type) {
+        return `
+            <div class="rka-gap-stack">
+                <div class="rka-gap-stack__amount ${getConditionalClass(gapValue, type)}">${formatCurrency(gapValue)}</div>
+                ${formatPctBadge(pctValue, type)}
+            </div>
+        `;
     }
 
     // --- Select2 Initialization ---

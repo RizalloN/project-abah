@@ -669,7 +669,8 @@ class ExcelStagingService
         string $sourcePath,
         array $requiredHeaders,
         string $stagedCsvPath,
-        ?callable $send = null
+        ?callable $send = null,
+        ?string $progressMessage = null
     ): ?array {
         if (!$this->supportsNativeXlsxStreaming($sourcePath) || empty($requiredHeaders)) {
             return null;
@@ -791,7 +792,7 @@ class ExcelStagingService
                     }
                     $send('progress', [
                         'percent' => 38,
-                        'message' => 'Menyiapkan CSV staging GI405 Single Row... (' . number_format($processedRows, 0, ',', '.') . ' baris)',
+                        'message' => ($progressMessage ?? 'Menyiapkan CSV staging GI405 Single Row...') . ' (' . number_format($processedRows, 0, ',', '.') . ' baris)',
                         'rows_done' => $processedRows,
                         'total' => 0,
                         'speed' => 0,
@@ -1062,7 +1063,14 @@ class ExcelStagingService
             $rowValues[$columnIndex] = $this->readCellValue($reader, $cellType, $sharedStrings);
         }
 
-        return array_pad($rowValues, $headerCount, null);
+        $normalized = array_fill(0, $headerCount, null);
+        foreach ($rowValues as $index => $value) {
+            if ($index >= 0 && $index < $headerCount) {
+                $normalized[$index] = $value;
+            }
+        }
+
+        return $normalized;
     }
 
     private function consumeCellNode(\XMLReader $reader): void

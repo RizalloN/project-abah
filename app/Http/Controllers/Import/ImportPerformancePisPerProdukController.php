@@ -29,8 +29,8 @@ class ImportPerformancePisPerProdukController extends Controller
     private const INSERT_BATCH_SIZE = 1000;
     private const BULK_LOAD_TEMP_DIR = 'app/import_bulk';
     private const SAMPLE_SCAN_ROWS = 20;
-    private const PREVIEW_ROW_LIMIT = 2500;
-    private const PREVIEW_SCAN_LIMIT = 5000;
+    private const PREVIEW_ROW_LIMIT = 200;
+    private const PREVIEW_SCAN_LIMIT = 200;
     private const UNIQUE_VALUE_LIMIT = 5000;
     private const EXCEL_READ_CHUNK_SIZE = 1000;
     private const EXPECTED_HEADERS = [
@@ -220,33 +220,13 @@ class ImportPerformancePisPerProdukController extends Controller
                 if ($this->isExcelFile($absolutePath)) {
                     $send('progress', ['percent' => 18, 'message' => 'Mendeteksi header Excel Performance PIS...']);
                     $excelContext = $this->buildExcelContext($absolutePath, session('performance_pis_periode'));
-                    $send('progress', ['percent' => 35, 'message' => 'Struktur header ditemukan. Menyiapkan CSV staging...']);
-
-                    $stagedCsvPath = $this->stagingService()->createStagedCsvPath(
-                        storage_path(self::BULK_LOAD_TEMP_DIR),
-                        'performance_pis'
-                    );
-
-                    $send('progress', ['percent' => 55, 'message' => 'Mengonversi Excel ke CSV staging Performance PIS...']);
-                    $stageResult = $this->stagingService()->stageExcelToCsv(
-                        $send,
-                        $absolutePath,
-                        max(0, (int) ($excelContext['header_line'] ?? 1) - 1),
-                        array_map(fn ($value) => $this->normalizeHeader($value), (array) ($excelContext['source_headers'] ?? [])),
-                        $stagedCsvPath
-                    );
-
-                    if ($stageResult === null) {
-                        $send('error_msg', ['message' => 'Gagal membuat CSV staging dari Excel Performance PIS.']);
-                        return;
-                    }
-
                     $this->putStagedExcelState($relativePath, [
-                        'staged_csv_path' => $stageResult['staged_csv_path'],
-                        'total_rows' => (int) ($stageResult['total_rows'] ?? 0),
+                        'total_rows' => max(0, (int) ($excelContext['total_rows'] ?? 0) - (int) ($excelContext['header_line'] ?? 0)),
                         'header_index' => max(0, (int) ($excelContext['header_line'] ?? 1) - 1),
-                        'headers' => array_values((array) ($stageResult['headers'] ?? [])),
+                        'headers' => $this->compactSourceHeaders((array) ($excelContext['source_headers'] ?? [])),
+                        'preview_sample_only' => true,
                     ]);
+                    $send('progress', ['percent' => 82, 'message' => 'Struktur header valid. Preview akan memakai sampel data.']);
                 } else {
                     $send('progress', ['percent' => 45, 'message' => 'Memvalidasi struktur CSV Performance PIS...']);
                     $context = $this->buildCsvContext($absolutePath, session('performance_pis_periode'));
@@ -327,7 +307,7 @@ class ImportPerformancePisPerProdukController extends Controller
         }
 
         $formattedUniqueValues = [];
-        $uniqueValues = $this->collectPreviewUniqueValues($workingPath, $context);
+        $uniqueValues = $this->collectPreviewUniqueValuesFromRows($previewData, $context);
         foreach ($uniqueValues as $index => $valuesMap) {
             $keys = array_keys($valuesMap);
             usort($keys, 'strnatcmp');
@@ -350,7 +330,7 @@ class ImportPerformancePisPerProdukController extends Controller
             'manualPeriode' => $periodeInput,
             'manualPeriodeLabel' => Carbon::parse($periodeInput)->translatedFormat('d F Y'),
             'lockDelimiterSelector' => true,
-            'fixedDelimiterLabel' => 'CSV staging dari Excel (.xlsx)',
+            'fixedDelimiterLabel' => 'Sampling Excel/CSV Performance PIS',
         ]);
     }
 
@@ -696,11 +676,34 @@ class ImportPerformancePisPerProdukController extends Controller
 
                 $send('progress', [
                     'percent' => 5,
-                    'message' => 'Menyiapkan CSV staging dari file Excel Performance PIS...',
+                    'message' => 'Menyiapkan CSV staging dari file Performance PIS...',
                     'rows_done' => 0,
                     'total' => $totalRows,
                     'speed' => 0,
                 ]);
+
+                $fullExcelStagePath = null;
+                if ($this->isExcelFile($workingPath)) {
+                    $fullExcelStagePath = $this->stagingService()->createStagedCsvPath(
+                        storage_path(self::BULK_LOAD_TEMP_DIR),
+                        'performance_pis_import'
+                    );
+
+                    $stageResult = $this->stagePerformancePisExcelToCsv(
+                        $send,
+                        $workingPath,
+                        $context,
+                        $fullExcelStagePath
+                    );
+
+                    if ($stageResult === null) {
+                        throw new \RuntimeException('Gagal membuat CSV staging dari file Excel Performance PIS.');
+                    }
+
+                    $workingPath = $stageResult['staged_csv_path'];
+                    $context = $this->buildCsvContext($workingPath, $periode, (int) ($stageResult['total_rows'] ?? 0));
+                    $totalRows = (int) ($stageResult['total_rows'] ?? $totalRows);
+                }
 
                 $stagingResult = $this->createFilteredCsvStage($workingPath, $context, $activeFilters, $selectedColumns, $totalRows, $send);
                 $totalPreparedRows = $stagingResult['rows_done'];
@@ -775,6 +778,9 @@ class ImportPerformancePisPerProdukController extends Controller
                     }
                 } finally {
                     @unlink($stagingPath);
+                    if ($fullExcelStagePath !== null) {
+                        @unlink($fullExcelStagePath);
+                    }
                 }
 
                 DB::table('import_jobs')->where('id', $jobId)->update([
@@ -1077,6 +1083,7 @@ class ImportPerformancePisPerProdukController extends Controller
 
         $highestColumn = 'A';
         $totalRows = 0;
+        $foundDimension = false;
 
         try {
             while ($reader->read()) {
@@ -1092,13 +1099,19 @@ class ImportPerformancePisPerProdukController extends Controller
                         if (preg_match('/([A-Z]+)(\d+)/i', $endRef, $matches) === 1) {
                             $highestColumn = strtoupper($matches[1]);
                             $totalRows = (int) $matches[2];
+                            $foundDimension = true;
                         }
                     }
-                    break;
+                    if ($foundDimension) {
+                        break;
+                    }
                 }
 
-                if ($reader->localName === 'sheetData') {
-                    break;
+                if ($reader->localName === 'row') {
+                    $rowNumber = (int) ($reader->getAttribute('r') ?: 0);
+                    if ($rowNumber > $totalRows) {
+                        $totalRows = $rowNumber;
+                    }
                 }
             }
         } finally {
@@ -1247,6 +1260,36 @@ class ImportPerformancePisPerProdukController extends Controller
         });
 
         return $rows;
+    }
+
+    private function stagePerformancePisExcelToCsv(callable $send, string $absolutePath, array $excelContext, string $stagedCsvPath): ?array
+    {
+        $sourceHeaders = $this->compactSourceHeaders((array) ($excelContext['source_headers'] ?? []));
+        if (empty($sourceHeaders)) {
+            return null;
+        }
+
+        return $this->stagingService()->stageXlsxSheetWithHeadersToCsv(
+            $absolutePath,
+            $sourceHeaders,
+            $stagedCsvPath,
+            $send,
+            'Menyiapkan CSV staging Performance PIS'
+        );
+    }
+
+    private function compactSourceHeaders(array $sourceHeaders): array
+    {
+        $headers = [];
+        foreach ($sourceHeaders as $header) {
+            if ($this->normalizeHeader((string) $header) === '') {
+                continue;
+            }
+
+            $headers[] = (string) $header;
+        }
+
+        return $headers;
     }
 
     private function iterateExcelDataRows(string $path, array $context, callable $callback): void
@@ -2040,6 +2083,27 @@ class ImportPerformancePisPerProdukController extends Controller
 
             return $this->hasUniqueCollectionCapacity($uniqueValues);
         });
+
+        return $uniqueValues;
+    }
+
+    private function collectPreviewUniqueValuesFromRows(array $rows, array $context): array
+    {
+        $uniqueValues = [];
+        foreach ($context['headers'] as $index => $header) {
+            $uniqueValues[$index] = [];
+        }
+
+        foreach ($rows as $row) {
+            foreach ($row as $colIndex => $value) {
+                if (!isset($uniqueValues[$colIndex])) {
+                    continue;
+                }
+
+                $key = trim((string) ($value ?? ''));
+                $uniqueValues[$colIndex][$key] = true;
+            }
+        }
 
         return $uniqueValues;
     }

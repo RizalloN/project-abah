@@ -12,6 +12,7 @@ class MySqlBulkLoadService
 {
     private ?bool $supportsNativeBulkLoad = null;
     private array $tableEngineCache = [];
+    private array $columnListingCache = [];
     private ?DirectLargeFileLoadService $largeFileLoader = null;
     private ?\PDO $persistentPdo = null;  // OPTIMASI: Reusable PDO connection
 
@@ -76,6 +77,22 @@ class MySqlBulkLoadService
             "Operasi {$operation} diblokir karena tabel `{$tableName}` memakai engine `{$engine}` yang tidak transactional. "
             . 'Ubah tabel ke InnoDB terlebih dahulu lalu ulangi proses.'
         );
+    }
+
+    public function getColumnListing(string $tableName): array
+    {
+        $tableName = trim($tableName);
+        if ($tableName === '') {
+            return [];
+        }
+
+        if (!array_key_exists($tableName, $this->columnListingCache)) {
+            $this->columnListingCache[$tableName] = Schema::hasTable($tableName)
+                ? Schema::getColumnListing($tableName)
+                : [];
+        }
+
+        return $this->columnListingCache[$tableName];
     }
 
     public function withTableWriteLock(string $tableName, callable $callback, ?int $timeoutSeconds = null)

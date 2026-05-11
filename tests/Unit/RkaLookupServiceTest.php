@@ -3,7 +3,9 @@
 namespace Tests\Unit;
 
 use App\Support\RkaLookupService;
+use App\Support\OptimizedRkaLookupService;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -20,6 +22,7 @@ class RkaLookupServiceTest extends TestCase
 
         DB::purge('sqlite');
         DB::reconnect('sqlite');
+        Cache::flush();
 
         Schema::dropAllTables();
 
@@ -126,5 +129,74 @@ class RkaLookupServiceTest extends TestCase
         );
 
         $this->assertSame(['UNIT SLEKO MADIUN' => 10.0], $result['prod']);
+    }
+
+    public function test_grouped_rka_matches_slugged_dashboard_unit_key_to_coded_uker_name(): void
+    {
+        DB::table('rka')->insert([
+            [
+                'uniqueid_namareport' => 'rka-caruban-1',
+                'kanca' => 'KC Madiun',
+                'desc_uker' => '552-KCP Caruban',
+                'mata_anggaran' => 'A.1. DPK Retail Funding Total',
+                'may' => 194912333366.57,
+                'created_at' => '2026-05-04 07:55:29',
+                'updated_at' => '2026-05-04 07:55:29',
+            ],
+            [
+                'uniqueid_namareport' => 'rka-caruban-2',
+                'kanca' => 'KC Madiun',
+                'desc_uker' => '3883-UNIT CARUBAN MADIUN',
+                'mata_anggaran' => 'A.1. DPK Retail Funding Total',
+                'may' => 52550560092.64,
+                'created_at' => '2026-05-04 07:55:29',
+                'updated_at' => '2026-05-04 07:55:29',
+            ],
+        ]);
+
+        $service = new RkaLookupService();
+        $result = $service->aggregateByGroup(
+            ['total_simpanan' => ['mata_anggaran' => ['A.1. DPK Retail Funding Total']]],
+            'may',
+            ['KC Madiun'],
+            ['kcp-caruban'],
+            'uker',
+            2026
+        );
+
+        $this->assertSame(['KCP CARUBAN' => 194912333366.57], $result['total_simpanan']);
+    }
+
+    public function test_optimized_grouped_rka_cache_is_scoped_by_selected_branch_and_unit(): void
+    {
+        DB::table('rka')->insert([
+            [
+                'uniqueid_namareport' => 'rka-cache-1',
+                'kanca' => 'KC Madiun',
+                'desc_uker' => '552-KCP Caruban',
+                'mata_anggaran' => 'A.1. DPK Retail Funding Total',
+                'may' => 100,
+                'created_at' => '2026-05-04 07:55:29',
+                'updated_at' => '2026-05-04 07:55:29',
+            ],
+            [
+                'uniqueid_namareport' => 'rka-cache-2',
+                'kanca' => 'KC Madiun',
+                'desc_uker' => '2167-KCP Sudirman Madiun',
+                'mata_anggaran' => 'A.1. DPK Retail Funding Total',
+                'may' => 200,
+                'created_at' => '2026-05-04 07:55:29',
+                'updated_at' => '2026-05-04 07:55:29',
+            ],
+        ]);
+
+        $service = new OptimizedRkaLookupService();
+        $definitions = ['total_simpanan' => ['mata_anggaran' => ['A.1. DPK Retail Funding Total']]];
+
+        $caruban = $service->aggregateByGroup($definitions, 'may', ['KC Madiun'], ['kcp-caruban'], 'uker', 2026);
+        $sudirman = $service->aggregateByGroup($definitions, 'may', ['KC Madiun'], ['kcp-sudirman-madiun'], 'uker', 2026);
+
+        $this->assertSame(['KCP CARUBAN' => 100.0], $caruban['total_simpanan']);
+        $this->assertSame(['KCP SUDIRMAN MADIUN' => 200.0], $sudirman['total_simpanan']);
     }
 }

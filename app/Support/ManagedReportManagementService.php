@@ -80,14 +80,6 @@ class ManagedReportManagementService
             'period_priority' => ['POSISI', 'PERIODE'],
             'kanca_priority' => ['MBDESC', 'BRDESC'],
         ],
-        'merchant_qris' => [
-            'period_priority' => ['posisi', 'periode'],
-            'kanca_priority' => ['NAMA_KCI', 'nama_kci'],
-        ],
-        'merchant_qris_volume' => [
-            'period_priority' => ['posisi', 'periode'],
-            'kanca_priority' => ['NAMA_KCI', 'nama_kci'],
-        ],
         'sv_merchant' => [
             'period_priority' => ['posisi', 'periode'],
             'kanca_priority' => ['NAMA_KCI', 'nama_kci'],
@@ -209,6 +201,7 @@ class ManagedReportManagementService
         $maxRows = (int) ($options['max_rows'] ?? self::MANAGEMENT_MAX_GROUP_ROWS);
         $page = (int) ($options['page'] ?? 1);
         $perPage = (int) ($options['per_page'] ?? self::MANAGEMENT_PERIODS_PER_PAGE);
+        $pageTarget = strtolower(trim((string) ($options['page_target'] ?? '')));
 
         $this->emitProgress($progressCallback, [
             'stage' => 'grouping',
@@ -224,7 +217,8 @@ class ManagedReportManagementService
             $kancaColumn,
             $maxRows,
             $page,
-            $perPage
+            $perPage,
+            $pageTarget
         );
 
         $this->emitProgress($progressCallback, [
@@ -607,7 +601,8 @@ class ManagedReportManagementService
         ?string $kancaColumn,
         int $maxRows,
         int $page,
-        int $perPage
+        int $perPage,
+        string $pageTarget = ''
     ): array {
         if (
             $periodColumn !== null
@@ -619,12 +614,13 @@ class ManagedReportManagementService
                 $kancaColumn,
                 $maxRows,
                 $page,
-                $perPage
+                $perPage,
+                $pageTarget
             );
         }
 
         [$rows, $truncated] = $this->buildManagementRows($tableName, $periodColumn, $kancaColumn, $maxRows);
-        $paginatedPeriods = $this->paginateManagementPeriods($rows, $page, $perPage, $periodColumn !== null);
+        $paginatedPeriods = $this->paginateManagementPeriods($rows, $page, $perPage, $periodColumn !== null, $pageTarget);
         $displayedRowsTotal = array_reduce($paginatedPeriods['periods'], static function (int $carry, array $period): int {
             return $carry + (int) ($period['total_rows'] ?? 0);
         }, 0);
@@ -645,7 +641,8 @@ class ManagedReportManagementService
         ?string $kancaColumn,
         int $maxRows,
         int $page,
-        int $perPage
+        int $perPage,
+        string $pageTarget = ''
     ): array {
         $safePeriod = str_replace('`', '``', $periodColumn);
         $periodBaseQuery = DB::table($tableName)
@@ -655,18 +652,17 @@ class ManagedReportManagementService
         $estimatedSourceRows = $this->estimateTableRows($tableName);
         $perPage = $this->resolveEffectiveManagementPerPage($perPage, $estimatedSourceRows);
         
-        $useExactPeriodCount = $estimatedSourceRows <= self::MANAGEMENT_EXACT_PERIOD_COUNT_ROW_LIMIT;
+        $useExactPeriodCount = $pageTarget === 'last' || $estimatedSourceRows <= self::MANAGEMENT_EXACT_PERIOD_COUNT_ROW_LIMIT;
         $totalPeriods = null;
 
         if ($useExactPeriodCount) {
-            $cacheKey = "management_total_periods_{$tableName}_{$periodColumn}";
-            $totalPeriods = \Illuminate\Support\Facades\Cache::remember($cacheKey, 300, function () use ($tableName, $periodColumn) {
-                return DB::table($tableName)->distinct()->count($periodColumn);
-            });
+            $totalPeriods = $this->countManagementPeriods($tableName, $periodColumn, $periodBaseQuery);
         }
 
         $totalPages = $useExactPeriodCount ? max(1, (int) ceil((int) $totalPeriods / $perPage)) : null;
-        $currentPage = $useExactPeriodCount ? min(max(1, $page), $totalPages) : max(1, $page);
+        $currentPage = $useExactPeriodCount
+            ? ($pageTarget === 'last' ? $totalPages : min(max(1, $page), $totalPages))
+            : max(1, $page);
         $offset = ($currentPage - 1) * $perPage;
 
         $periodRows = $periodBaseQuery
@@ -787,6 +783,17 @@ class ManagedReportManagementService
         }
 
         return $requestedPerPage;
+    }
+
+    private function countManagementPeriods(string $tableName, string $periodColumn, $periodBaseQuery): int
+    {
+        $cacheKey = 'management_total_periods:' . md5($tableName . '|' . $periodColumn);
+
+        return (int) \Illuminate\Support\Facades\Cache::remember($cacheKey, 300, function () use ($periodBaseQuery): int {
+            return (int) DB::query()
+                ->fromSub(clone $periodBaseQuery, 'management_periods')
+                ->count();
+        });
     }
 
     private function buildManagementPagination(
@@ -1348,7 +1355,7 @@ class ManagedReportManagementService
         return preg_match('/^\d{4}-\d{2}-\d{2}$/', $formatted) === 1 ? $formatted : $defaultLabel;
     }
 
-    private function paginateManagementPeriods(array $rows, int $page, int $perPage, bool $hasPeriodColumn): array
+    private function paginateManagementPeriods(array $rows, int $page, int $perPage, bool $hasPeriodColumn, string $pageTarget = ''): array
     {
         $periods = [];
         $periodOrder = [];
@@ -1391,7 +1398,7 @@ class ManagedReportManagementService
         $totalPeriods = count($orderedPeriods);
         $perPage = max(1, $perPage);
         $totalPages = max(1, (int) ceil($totalPeriods / $perPage));
-        $currentPage = min(max(1, $page), $totalPages);
+        $currentPage = $pageTarget === 'last' ? $totalPages : min(max(1, $page), $totalPages);
         $offset = ($currentPage - 1) * $perPage;
         $currentPeriods = array_slice($orderedPeriods, $offset, $perPage);
 

@@ -101,6 +101,26 @@ class MySqlBulkLoadServiceTest extends TestCase
         $service->assertTransactionalTable('daily_loan_dinamis', 'import test');
     }
 
+    public function test_get_column_listing_returns_target_table_columns(): void
+    {
+        Schema::create('bulk_load_column_listing_test', function (Blueprint $table): void {
+            $table->increments('id');
+            $table->string('rekening')->nullable();
+            $table->decimal('saldo', 18, 2)->nullable();
+        });
+
+        try {
+            $service = new MySqlBulkLoadService();
+
+            $this->assertSame(
+                ['id', 'rekening', 'saldo'],
+                $service->getColumnListing('bulk_load_column_listing_test')
+            );
+        } finally {
+            Schema::dropIfExists('bulk_load_column_listing_test');
+        }
+    }
+
     public function test_load_csv_into_mysql_chunked_falls_back_to_php_batch_insert_when_native_bulk_is_unavailable(): void
     {
         Schema::create('bulk_load_php_fallback_test', function (Blueprint $table): void {

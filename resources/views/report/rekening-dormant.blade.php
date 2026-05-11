@@ -382,7 +382,7 @@
             <form id="dormantFilterForm" method="GET" action="{{ route('report.rekening-dormant') }}">
                 <div class="d-flex flex-wrap align-items-center justify-content-end mb-4 pb-3 border-bottom">
                     <div class="dormant-filter-meta">
-                        <span><i class="fas fa-clock text-primary mr-1"></i> Periode aktif: <strong id="dormantActivePeriodMeta">-</strong></span>
+                        <span><i class="fas fa-clock text-primary mr-1"></i> Periode terpilih: <strong id="dormantActivePeriodMeta">-</strong></span>
                         <span><i class="fas fa-history text-primary mr-1"></i> M-1: <strong id="dormantComparisonPeriodMeta">-</strong></span>
                     </div>
                 </div>
@@ -463,13 +463,13 @@
                                 <th colspan="3" class="head-group">Delta thd Posisi</th>
                             </tr>
                             <tr>
-                                <th id="dormantHeaderYoyPosition" class="head-sub">YoY</th>
-                                <th id="dormantHeaderYtdPosition" class="head-sub">YtD</th>
-                                <th id="dormantHeaderMtdPosition" class="head-sub">MtD</th>
-                                <th id="dormantHeaderCurrent" class="head-sub">Periode Terakhir</th>
-                                <th id="dormantHeaderYoy" class="head-sub">YoY</th>
-                                <th id="dormantHeaderYtd" class="head-sub">YtD</th>
-                                <th id="dormantHeaderMtd" class="head-sub">MtD</th>
+                                <th id="dormantHeaderCurrent" class="head-sub">Periode Terpilih</th>
+                                <th id="dormantHeaderMtdPosition" class="head-sub">M-1</th>
+                                <th id="dormantHeaderM2Position" class="head-sub">M-2</th>
+                                <th id="dormantHeaderYtdPosition" class="head-sub">YTD</th>
+                                <th id="dormantHeaderMtd" class="head-sub">MTD</th>
+                                <th id="dormantHeaderM2" class="head-sub">M-2</th>
+                                <th id="dormantHeaderYtd" class="head-sub">YTD</th>
                             </tr>
                         </thead>
                         <tbody id="dormantTableBody">
@@ -518,12 +518,12 @@ document.addEventListener('DOMContentLoaded', function () {
     const comparisonMeta = document.getElementById('dormantComparisonPeriodMeta');
     const badge = document.getElementById('dormantPeriodBadge');
     const currentHeader = document.getElementById('dormantHeaderCurrent');
-    const yoyPositionHeader = document.getElementById('dormantHeaderYoyPosition');
-    const ytdPositionHeader = document.getElementById('dormantHeaderYtdPosition');
     const mtdPositionHeader = document.getElementById('dormantHeaderMtdPosition');
+    const m2PositionHeader = document.getElementById('dormantHeaderM2Position');
+    const ytdPositionHeader = document.getElementById('dormantHeaderYtdPosition');
     const mtdHeader = document.getElementById('dormantHeaderMtd');
+    const m2Header = document.getElementById('dormantHeaderM2');
     const ytdHeader = document.getElementById('dormantHeaderYtd');
-    const yoyHeader = document.getElementById('dormantHeaderYoy');
 
     // ────────────────────── Config ──────────────────────
     const filtersUrl = @json(route('report.rekening-dormant.filters'));
@@ -557,7 +557,17 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function formatDate(value) {
         if (!value) return '-';
-        return new Intl.DateTimeFormat('id-ID').format(new Date(value + 'T00:00:00'));
+        const date = new Date(value + 'T00:00:00');
+        if (Number.isNaN(date.getTime())) return value;
+
+        const parts = new Intl.DateTimeFormat('id-ID', {
+            day: '2-digit',
+            month: 'short',
+            year: '2-digit',
+        }).formatToParts(date);
+        const pick = type => parts.find(part => part.type === type)?.value || '';
+
+        return [pick('day'), pick('month'), pick('year')].filter(Boolean).join(' ');
     }
 
     function formatNumber(value) {
@@ -600,13 +610,13 @@ document.addEventListener('DOMContentLoaded', function () {
         pageRows.forEach(row => {
             html += `<tr>
                 <th>${row.branch || '-'}</th>
-                <td class="metric-neutral">${formatNumber(row.yoy_base)}</td>
-                <td class="metric-neutral">${formatNumber(row.ytd_base)}</td>
-                <td class="metric-neutral">${formatNumber(row.mtd_base)}</td>
                 <td class="${cellClass(row.current, true)}">${formatNumber(row.current)}</td>
-                <td class="${cellClass(row.yoy)}">${deltaText(row.yoy)}</td>
-                <td class="${cellClass(row.ytd)}">${deltaText(row.ytd)}</td>
+                <td class="metric-neutral">${formatNumber(row.mtd_base)}</td>
+                <td class="metric-neutral">${formatNumber(row.m2_base)}</td>
+                <td class="metric-neutral">${formatNumber(row.ytd_base)}</td>
                 <td class="${cellClass(row.mtd)}">${deltaText(row.mtd)}</td>
+                <td class="${cellClass(row.m2)}">${deltaText(row.m2)}</td>
+                <td class="${cellClass(row.ytd)}">${deltaText(row.ytd)}</td>
             </tr>`;
         });
         tableBody.innerHTML = html;
@@ -698,24 +708,24 @@ document.addEventListener('DOMContentLoaded', function () {
     function renderFoot(total = {}) {
         tableFoot.innerHTML = `
             <th>Grand Total</th>
-            <td>${formatNumber(total.yoy_base ?? null)}</td>
-            <td>${formatNumber(total.ytd_base ?? null)}</td>
-            <td>${formatNumber(total.mtd_base ?? null)}</td>
             <td>${formatNumber(total.current ?? null)}</td>
-            <td>${deltaText(total.yoy ?? null)}</td>
-            <td>${deltaText(total.ytd ?? null)}</td>
+            <td>${formatNumber(total.mtd_base ?? null)}</td>
+            <td>${formatNumber(total.m2_base ?? null)}</td>
+            <td>${formatNumber(total.ytd_base ?? null)}</td>
             <td>${deltaText(total.mtd ?? null)}</td>
+            <td>${deltaText(total.m2 ?? null)}</td>
+            <td>${deltaText(total.ytd ?? null)}</td>
         `;
     }
 
     function updateHeaders(labels = {}) {
-        currentHeader.textContent = labels.curr && labels.curr !== '-' ? labels.curr : 'Periode Terakhir';
-        yoyPositionHeader.textContent = labels.yoy && labels.yoy !== '-' ? `YoY ${labels.yoy}` : 'YoY';
-        ytdPositionHeader.textContent = labels.ytd && labels.ytd !== '-' ? `YtD ${labels.ytd}` : 'YtD';
-        mtdPositionHeader.textContent = labels.mtd && labels.mtd !== '-' ? `MtD ${labels.mtd}` : 'MtD';
-        yoyHeader.textContent = labels.yoy && labels.yoy !== '-' ? `vs YoY ${labels.yoy}` : 'vs YoY';
-        ytdHeader.textContent = labels.ytd && labels.ytd !== '-' ? `vs YtD ${labels.ytd}` : 'vs YtD';
-        mtdHeader.textContent = labels.mtd && labels.mtd !== '-' ? `vs MtD ${labels.mtd}` : 'vs MtD';
+        currentHeader.textContent = labels.curr && labels.curr !== '-' ? labels.curr : 'Periode Terpilih';
+        mtdPositionHeader.textContent = labels.mtd && labels.mtd !== '-' ? labels.mtd : 'M-1';
+        m2PositionHeader.textContent = labels.m2 && labels.m2 !== '-' ? labels.m2 : 'M-2';
+        ytdPositionHeader.textContent = labels.ytd && labels.ytd !== '-' ? labels.ytd : 'YTD';
+        mtdHeader.textContent = 'MTD';
+        m2Header.textContent = 'M-2';
+        ytdHeader.textContent = 'YTD';
     }
 
     function updateGroupLabel(groupLabel) {

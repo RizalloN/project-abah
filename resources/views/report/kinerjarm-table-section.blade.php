@@ -10,10 +10,19 @@
     $grandTotalLabel = $grandTotalLabel ?? null;
     $emptyMessage = $emptyMessage ?? 'Silakan pilih parameter filter yang berbeda.';
     $tableClass = 'kinerja-konsumer-table' . ($compact ? ' kinerja-konsumer-table--compact' : '');
-    $emptyColspan = 12
-        + ($showTargetColumns ? 5 : 0)
-        + (!$showTargetColumns && $showAchievementColumns ? 2 : 0)
-        + (!$showTargetColumns && $showLarColumn ? 1 : 0);
+    $comparisonColumns = collect($comparisonColumns ?? [
+        ['key' => 'ytd', 'label' => 'YTD', 'short_label' => $ytdShortLabel ?? 'YTD'],
+        ['key' => 'm4', 'label' => 'M-4', 'short_label' => $yoyShortLabel ?? 'M-4'],
+        ['key' => 'm3', 'label' => 'M-3', 'short_label' => '-'],
+        ['key' => 'm2', 'label' => 'M-2', 'short_label' => '-'],
+        ['key' => 'm1', 'label' => 'M-1', 'short_label' => $mtdShortLabel ?? 'M-1'],
+    ])->values();
+    $comparisonCount = max(1, $comparisonColumns->count());
+    $baseColspan = 5 + $comparisonCount + 1 + $comparisonCount;
+    $emptyColspan = $baseColspan
+        + ($showTargetColumns ? 2 : 0)
+        + ($showAchievementColumns ? 2 : 0)
+        + ($showLarColumn ? 1 : 0);
     $segmentLabels = [
         'CONSUMER' => 'RM',
         'SMALL' => 'SMALL RM',
@@ -47,10 +56,9 @@
     $formatPercent = $formatPercent ?? fn ($value, int $decimals = 1) => number_format((float) $value, $decimals, ',', '.') . '%';
     $quadrantLabel = $quadrantLabel ?? fn ($quadrant) => in_array((int) $quadrant, [1, 2, 3, 4], true) ? 'Kuadran ' . (int) $quadrant : '-';
     $quadrantClass = $quadrantClass ?? fn ($quadrant) => in_array((int) $quadrant, [1, 2, 3, 4], true) ? 'q' . (int) $quadrant : '';
-    $yoyHeaderLabel = $yoyShortLabel ?? 'YoY';
-    $ytdHeaderLabel = $ytdShortLabel ?? 'YtD';
-    $mtdHeaderLabel = $mtdShortLabel ?? 'MtD';
     $selectedHeaderLabel = $selectedPeriodShortLabel ?? 'POSISI';
+    $valueFor = fn (array $row, string $key): float => (float) data_get($row, "comparison_values.{$key}", data_get($row, $key, 0));
+    $deltaFor = fn (array $row, string $key): float => (float) data_get($row, "comparison_deltas.{$key}", (float) ($row['curr'] ?? 0) - $valueFor($row, $key));
 @endphp
 
 <div class="kinerja-report-card">
@@ -77,40 +85,46 @@
             <thead>
                 <tr>
                     <th rowspan="2" class="sticky-col" style="width: 32px; left: 0;">No.</th>
-                    <th rowspan="2" class="sticky-col" style="width: 100px; left: 32px;">Kantor Cabang</th>
-                    <th rowspan="2" class="sticky-col" style="width: 150px; left: 132px;">Nama RM / Pengelola</th>
-                    <th rowspan="2" style="width: 100px;">Produk</th>
-                    <th rowspan="2" style="width: 60px;">Kuadran</th>
-                    <th colspan="4" class="sub-head">PERFORMANCE PER RM</th>
-                    <th colspan="3" class="accent-head">DELTA PERIODE</th>
+                    <th rowspan="2" class="sticky-col" style="width: 94px; left: 32px;">Cabang</th>
+                    <th rowspan="2" class="sticky-col" style="width: 164px; left: 126px;">RM / Pengelola</th>
+                    <th rowspan="2" style="width: 92px;">Produk</th>
+                    <th rowspan="2" style="width: 58px;">Kuadran</th>
+                    <th colspan="{{ $comparisonCount + 1 }}" class="sub-head">Performance</th>
+                    <th colspan="{{ $comparisonCount }}" class="accent-head">Gap vs Posisi</th>
                     @if($showTargetColumns)
-                        <th colspan="2" class="sub-head">TARGET REALISASI JG</th>
+                        <th colspan="2" class="sub-head">Target JG</th>
                     @endif
                     @if($showAchievementColumns)
-                        <th colspan="2" class="accent-head">PENCAPAIAN REALISASI JG</th>
+                        <th colspan="2" class="accent-head">Realisasi JG</th>
                     @endif
                     @if($showLarColumn)
-                        <th rowspan="2" class="accent-head" style="width: 78px;">% LAR</th>
+                        <th rowspan="2" class="accent-head" style="width: 62px;">% LAR</th>
                     @endif
                 </tr>
                 <tr>
-                    <th class="sub-head" style="width: 75px;">{{ $yoyHeaderLabel }}</th>
-                    <th class="sub-head" style="width: 75px;">{{ $ytdHeaderLabel }}</th>
-                    <th class="sub-head" style="width: 75px;">{{ $mtdHeaderLabel }}</th>
-                    <th class="sub-head" style="width: 80px;">{{ $selectedHeaderLabel }}</th>
+                    @foreach($comparisonColumns as $column)
+                        <th class="sub-head kinerja-period-head" style="width: 70px;">
+                            <span>{{ $column['label'] }}</span>
+                            <small>{{ $column['short_label'] ?? '-' }}</small>
+                        </th>
+                    @endforeach
+                    <th class="sub-head kinerja-period-head" style="width: 76px;">
+                        <span>Posisi</span>
+                        <small>{{ $selectedHeaderLabel }}</small>
+                    </th>
 
-                    <th class="accent-head" style="width: 70px;">YoY</th>
-                    <th class="accent-head" style="width: 70px;">YtD</th>
-                    <th class="accent-head" style="width: 70px;">MtD</th>
+                    @foreach($comparisonColumns as $column)
+                        <th class="accent-head" style="width: 68px;">{{ $column['label'] }}</th>
+                    @endforeach
 
                     @if($showTargetColumns)
-                        <th class="sub-head" style="width: 50px;">Deb</th>
-                        <th class="sub-head" style="width: 80px;">Rp</th>
+                        <th class="sub-head" style="width: 44px;">Deb</th>
+                        <th class="sub-head" style="width: 70px;">Rp</th>
                     @endif
 
                     @if($showAchievementColumns)
-                        <th class="accent-head" style="width: 60px;">Deb</th>
-                        <th class="accent-head" style="width: 85px;">Rp</th>
+                        <th class="accent-head" style="width: 50px;">Deb</th>
+                        <th class="accent-head" style="width: 76px;">Rp</th>
                     @endif
                 </tr>
             </thead>
@@ -120,16 +134,16 @@
                     <tr class="loan-branch-subtotal">
                         <td rowspan="{{ $branch['branch_rowspan'] }}" class="text-center-important sticky-col" style="font-weight: 800; left: 0; border-right: 1px solid var(--loan-border-strong); background: #0f2f66 !important; color: #ffffff !important;">{{ $no++ }}</td>
                         <td rowspan="{{ $branch['branch_rowspan'] }}" class="merged-branch-cell sticky-col" style="left: 32px;">{{ $branch['cabang'] }}</td>
-                        <td colspan="3" class="text-center-important sticky-col" style="letter-spacing: 0.05em; font-weight: 900; background: #0b3f86 !important; color: #e0f2fe !important; left: 132px; z-index: 20;">
+                        <td colspan="3" class="text-center-important sticky-col" style="letter-spacing: 0.03em; font-weight: 900; background: #0b3f86 !important; color: #e0f2fe !important; left: 126px; z-index: 20;">
                             TOTAL {{ $branch['cabang'] }}
                         </td>
-                        <td>{{ $formatAmount($branch['subtotal']['yoy']) }}</td>
-                        <td>{{ $formatAmount($branch['subtotal']['ytd']) }}</td>
-                        <td>{{ $formatAmount($branch['subtotal']['mtd']) }}</td>
+                        @foreach($comparisonColumns as $column)
+                            <td>{{ $formatAmount($valueFor($branch['subtotal'], $column['key'])) }}</td>
+                        @endforeach
                         <td class="highlight-curr">{{ $formatAmount($branch['subtotal']['curr']) }}</td>
-                        <td>{!! $formatSignedAmount($branch['subtotal']['delta_yoy']) !!}</td>
-                        <td>{!! $formatSignedAmount($branch['subtotal']['delta_ytd']) !!}</td>
-                        <td>{!! $formatSignedAmount($branch['subtotal']['delta_mtd']) !!}</td>
+                        @foreach($comparisonColumns as $column)
+                            <td>{!! $formatSignedAmount($deltaFor($branch['subtotal'], $column['key'])) !!}</td>
+                        @endforeach
                         @if($showTargetColumns)
                             <td class="text-center-important">{{ $branch['subtotal']['target_jg_deb'] ?: '-' }}</td>
                             <td>{{ $branch['subtotal']['target_jg_os'] > 0 ? $formatAmount($branch['subtotal']['target_jg_os']) : '-' }}</td>
@@ -159,13 +173,13 @@
                         @foreach($rmData['items'] as $item)
                             <tr>
                                 @if($isFirstRmRow)
-                                    <td rowspan="{{ $rmData['rm_rowspan'] }}" 
-                                        class="merged-rm-cell clickable-rm-row" 
-                                        data-rm-name="{{ $rmName }}" 
-                                        data-segment="{{ $selectedSegmen }}" 
+                                    <td rowspan="{{ $rmData['rm_rowspan'] }}"
+                                        class="merged-rm-cell clickable-rm-row"
+                                        data-rm-name="{{ $rmName }}"
+                                        data-segment="{{ $selectedSegmen }}"
                                         data-period="{{ $selectedPeriod }}"
                                         title="Klik untuk detail rincian"
-                                        style="cursor: pointer; transition: all 0.2s; position: relative; left: 132px;">
+                                        style="cursor: pointer; transition: all 0.2s; position: relative; left: 126px;">
                                         <div class="d-flex align-items-center">
                                             <i class="fas fa-info-circle me-1 text-primary" style="font-size: 0.65rem; opacity: 0.6;"></i>
                                             {{ $rmName }}
@@ -174,7 +188,7 @@
                                     @php $isFirstRmRow = false; @endphp
                                 @endif
 
-                                <td class="text-start-important" style="font-weight: 700; color: var(--loan-muted); padding-left: 0.5rem;">
+                                <td class="text-start-important" style="font-weight: 700; color: var(--loan-muted); padding-left: 0.45rem;">
                                     {{ $item['product'] }}
                                 </td>
                                 @if($isFirstRmRowForQuad)
@@ -189,13 +203,13 @@
                                     </td>
                                     @php $isFirstRmRowForQuad = false; @endphp
                                 @endif
-                                <td>{{ $formatAmount($item['yoy']) }}</td>
-                                <td>{{ $formatAmount($item['ytd']) }}</td>
-                                <td>{{ $formatAmount($item['mtd']) }}</td>
+                                @foreach($comparisonColumns as $column)
+                                    <td>{{ $formatAmount($valueFor($item, $column['key'])) }}</td>
+                                @endforeach
                                 <td class="highlight-curr">{{ $formatAmount($item['curr']) }}</td>
-                                <td>{!! $formatSignedAmount($item['delta_yoy']) !!}</td>
-                                <td>{!! $formatSignedAmount($item['delta_ytd']) !!}</td>
-                                <td>{!! $formatSignedAmount($item['delta_mtd']) !!}</td>
+                                @foreach($comparisonColumns as $column)
+                                    <td>{!! $formatSignedAmount($deltaFor($item, $column['key'])) !!}</td>
+                                @endforeach
                                 @if($showTargetColumns)
                                     <td class="text-center-important" style="background: rgba(8, 87, 195, 0.02); font-size: 0.7rem;">{{ $item['target_jg_deb'] ?: '' }}</td>
                                     <td style="background: rgba(8, 87, 195, 0.02);">{{ $item['target_jg_os'] > 0 ? $formatAmount($item['target_jg_os']) : '' }}</td>
@@ -230,13 +244,13 @@
                         <td colspan="5" class="text-center-important sticky-col" style="font-weight: 900; text-transform: uppercase; background: #0b1f44 !important; color: #ffffff !important; left: 0; z-index: 50;">
                             {{ $grandTotalLabel }}
                         </td>
-                        <td>{{ $formatAmount($total['yoy']) }}</td>
-                        <td>{{ $formatAmount($total['ytd']) }}</td>
-                        <td>{{ $formatAmount($total['mtd']) }}</td>
+                        @foreach($comparisonColumns as $column)
+                            <td>{{ $formatAmount($valueFor($total, $column['key'])) }}</td>
+                        @endforeach
                         <td class="highlight-curr">{{ $formatAmount($total['curr']) }}</td>
-                        <td>{!! $formatSignedAmount($total['delta_yoy'], false) !!}</td>
-                        <td>{!! $formatSignedAmount($total['delta_ytd'], false) !!}</td>
-                        <td>{!! $formatSignedAmount($total['delta_mtd'], false) !!}</td>
+                        @foreach($comparisonColumns as $column)
+                            <td>{!! $formatSignedAmount($deltaFor($total, $column['key']), false) !!}</td>
+                        @endforeach
                         @if($showTargetColumns)
                             <td class="text-center-important">{{ $total['target_jg_deb'] ?: '-' }}</td>
                             <td>{{ $total['target_jg_os'] > 0 ? $formatAmount($total['target_jg_os']) : '-' }}</td>

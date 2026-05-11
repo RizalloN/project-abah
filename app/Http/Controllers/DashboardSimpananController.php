@@ -1029,11 +1029,11 @@ class DashboardSimpananController extends Controller
     private function buildQrisPerformanceCard(): ?array
     {
         try {
-            if (!Schema::hasTable('merchant_qris') || !Schema::hasTable('merchant_qris_volume')) {
+            if (!Schema::hasTable('jumlah_merchant_qris_detail')) {
                 return null;
             }
 
-            $latestPeriod = DB::table('merchant_qris')->max(DB::raw('DATE(POSISI)'));
+            $latestPeriod = DB::table('jumlah_merchant_qris_detail')->max(DB::raw('DATE(POSISI)'));
             if (!$latestPeriod) {
                 return null;
             }
@@ -1043,56 +1043,49 @@ class DashboardSimpananController extends Controller
             $timeline = [];
 
             foreach ($periods as $period) {
-                $nominalRow = DB::table('merchant_qris')
+                $salesVolumeExpression = "COALESCE(CAST(NULLIF(REPLACE(AKUMULASI_SV_TOTAL, ',', ''), '') AS DECIMAL(20,2)), 0)";
+                $row = DB::table('jumlah_merchant_qris_detail')
                     ->whereDate('POSISI', $period)
-                    ->whereIn(DB::raw('UPPER(NAMA_KCI)'), $branches)
-                    ->selectRaw('COUNT(*) as merchant_count')
-                    ->selectRaw('COALESCE(SUM(COALESCE(NILAI, 0)), 0) as nominal')
-                    ->first();
-
-                $volumeRow = DB::table('merchant_qris_volume')
-                    ->whereDate('POSISI', $period)
-                    ->where('JENIS', 'AKUMULASI')
-                    ->whereIn(DB::raw('UPPER(NAMA_KCI)'), $branches)
-                    ->selectRaw('COUNT(*) as productive_count')
-                    ->selectRaw('COALESCE(SUM(COALESCE(MERCHANT_QRIS_VOLUME, 0)), 0) as volume')
+                    ->whereIn(DB::raw('UPPER(TRIM(MBDESC))'), $branches)
+                    ->selectRaw('COUNT(DISTINCT STOREID) as merchant_count')
+                    ->selectRaw("COUNT(DISTINCT CASE WHEN {$salesVolumeExpression} >= 50000 THEN STOREID END) as productive_count")
+                    ->selectRaw("COALESCE(SUM({$salesVolumeExpression}), 0) as volume")
                     ->first();
 
                 $timeline[] = [
                     'label' => Carbon::parse($period)->translatedFormat('d M'),
-                    'merchant_count' => (int) ($nominalRow->merchant_count ?? 0),
-                    'productive_count' => (int) ($volumeRow->productive_count ?? 0),
-                    'nominal' => (float) ($nominalRow->nominal ?? 0),
-                    'volume' => (float) ($volumeRow->volume ?? 0),
+                    'merchant_count' => (int) ($row->merchant_count ?? 0),
+                    'productive_count' => (int) ($row->productive_count ?? 0),
+                    'volume' => (float) ($row->volume ?? 0),
                     'source_updated_at' => $period,
                 ];
             }
 
-            $current = $timeline[array_key_last($timeline)] ?? ['merchant_count' => 0, 'productive_count' => 0, 'nominal' => 0, 'volume' => 0];
+            $current = $timeline[array_key_last($timeline)] ?? ['merchant_count' => 0, 'productive_count' => 0, 'volume' => 0];
             $previous = $timeline[count($timeline) - 2] ?? $current;
 
             return $this->buildDigitalCard([
                 'key' => 'qris',
                 'title' => 'Performance QRIS',
-                'subtitle' => 'Nominal transaksi, merchant aktif, dan volume akumulasi dikemas untuk pemantauan cepat.',
+                'subtitle' => 'Sales volume, merchant tercatat, dan merchant produktif dikemas untuk pemantauan cepat.',
                 'badge' => 'QRIS',
                 'badge_class' => 'badge-info',
                 'tone' => 'digital-qris',
                 'icon' => 'fas fa-qrcode',
                 'link' => route('report.qris'),
                 'link_label' => 'Buka report QRIS',
-                'current_value' => $this->formatCurrencyCompact((float) $current['nominal']),
-                'current_label' => 'Nominal Aktif',
+                'current_value' => $this->formatCurrencyCompact((float) $current['volume']),
+                'current_label' => 'Sales Volume',
                 'secondary_value' => $this->formatInteger((int) $current['merchant_count']),
                 'secondary_label' => 'Merchant Tercatat',
-                'trend_reference' => $this->formatCurrencyCompact((float) $previous['nominal']) . ' periode sebelumnya',
-                'trend_direction' => $this->percentChange((float) $current['nominal'], (float) $previous['nominal']),
-                'series' => array_column($timeline, 'nominal'),
+                'trend_reference' => $this->formatCurrencyCompact((float) $previous['volume']) . ' periode sebelumnya',
+                'trend_direction' => $this->percentChange((float) $current['volume'], (float) $previous['volume']),
+                'series' => array_column($timeline, 'volume'),
                 'series_labels' => array_column($timeline, 'label'),
                 'stats' => [
                     [
-                        'label' => 'Merchant Aktif',
-                        'value' => $this->formatInteger((int) $current['merchant_count']),
+                        'label' => 'Merchant Produktif',
+                        'value' => $this->formatInteger((int) $current['productive_count']),
                     ],
                     [
                         'label' => 'Volume Akumulasi',
