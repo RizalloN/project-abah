@@ -224,6 +224,11 @@ class ImportExcelController extends Controller
         return strtolower(trim((string) ($tableName ?? $this->resolveActiveTableName()))) === DlyKapResegmentasiCsvImporter::TABLE;
     }
 
+    private function isHourlyDpkTable(?string $tableName = null): bool
+    {
+        return strtolower(trim((string) ($tableName ?? $this->resolveActiveTableName()))) === 'hourly_dpk';
+    }
+
     private function isLw321PnTable(?string $tableName = null): bool
     {
         return strtolower(trim((string) ($tableName ?? $this->resolveActiveTableName()))) === 'lw321pn';
@@ -785,7 +790,7 @@ class ImportExcelController extends Controller
             'TOTAL_KEWAJIBAN' => 'total_kewajiban',
             'TEXTBOX21' => 'os_idr',
             'OS_IDR' => 'os_idr',
-            'MONTH_DAY_YEAR_OF_POSISI' => 'month_day_year_of_posisi',
+            'MONTH_DAY_YEAR_OF_POSISI' => 'posisi',
             'MONTH_DAY_YEAR_OF_PERIODE' => 'month_day_year_of_periode',
             'NOREKENING' => 'no_rekening',
             'NOMORREKENING' => 'no_rekening',
@@ -1132,15 +1137,15 @@ class ImportExcelController extends Controller
         return $indexedRows;
     }
 
-    private function readCsvRecord($handle, string $delimiter = ',')
+    private function readCsvRecord($handle, string $delimiter = ',', ?string $tableName = null)
     {
-        if ($this->usesSerializedCsvRepair()) {
+        if ($this->usesSerializedCsvRepair($tableName)) {
             $line = fgets($handle);
             if ($line === false) {
                 return false;
             }
 
-            return $this->normalizeCsvRow([rtrim($line, "\r\n")], $delimiter);
+            return $this->normalizeCsvRow([rtrim($line, "\r\n")], $delimiter, null, $tableName);
         }
 
         $row = fgetcsv($handle, 0, $delimiter);
@@ -1148,7 +1153,7 @@ class ImportExcelController extends Controller
             return false;
         }
 
-        return $this->normalizeCsvRow($row, $delimiter);
+        return $this->normalizeCsvRow($row, $delimiter, null, $tableName);
     }
 
     private function getDailyLoanExpectedCsvColumns(?int $expectedColumns = null): ?int
@@ -1179,12 +1184,12 @@ class ImportExcelController extends Controller
         ];
     }
 
-    private function parseDailyLoanCsvRow(array $row, string $delimiter, ?int $expectedColumns = null): array
+    private function parseDailyLoanCsvRow(array $row, string $delimiter, ?int $expectedColumns = null, ?string $tableName = null): array
     {
         $expectedColumns = $this->getDailyLoanExpectedCsvColumns($expectedColumns);
         $this->resetDailyLoanCsvParseMeta($expectedColumns);
 
-        if (!$this->usesSerializedCsvRepair()) {
+        if (!$this->usesSerializedCsvRepair($tableName)) {
             return $row;
         }
 
@@ -1444,9 +1449,9 @@ class ImportExcelController extends Controller
         return $current;
     }
 
-    private function reparseSerializedDailyLoanCsvRow(array $row, string $delimiter, ?int $expectedColumns = null): array
+    private function reparseSerializedDailyLoanCsvRow(array $row, string $delimiter, ?int $expectedColumns = null, ?string $tableName = null): array
     {
-        return $this->parseDailyLoanCsvRow($row, $delimiter, $expectedColumns);
+        return $this->parseDailyLoanCsvRow($row, $delimiter, $expectedColumns, $tableName);
     }
 
     private function normalizeQuotedCsvCellValue($value): string
@@ -2933,6 +2938,11 @@ class ImportExcelController extends Controller
 
     private function buildImportContext(string $tableName, array $normalizedHeaders, array $activeFilters = [], array $importOptions = []): array
     {
+        $normalizedTableName = strtolower(trim($tableName));
+        if ($normalizedTableName === 'hourly_dpk') {
+            $tableName = 'hourly_dpk';
+        }
+
         if (strtolower(trim($tableName)) === 'daily_loan_dinamis') {
             $normalizedHeaders = $this->canonicalizeDailyLoanSourceHeaders($normalizedHeaders);
         }
@@ -3030,6 +3040,10 @@ class ImportExcelController extends Controller
             $uniqueIdCol = $tableColumnsByLower['uniqueid_namareport'] ?? 'uniqueid_namareport';
             $suffix = '';
             $uniqueIdPrefix = 'uuid_lw321_npdd_' . str_replace('.', '', uniqid('', true));
+        } elseif ($normalizedTableName === 'hourly_dpk' && isset($tableColumnsLookup['uniqueid_namareport'])) {
+            $uniqueIdCol = $tableColumnsByLower['uniqueid_namareport'] ?? 'uniqueid_namareport';
+            $suffix = '';
+            $uniqueIdPrefix = 'uuid_hourly_dpk_' . str_replace('.', '', uniqid('', true));
         } elseif (isset($tableColumnsLookup['uniqueid_namareport'])) {
             $uniqueIdCol = $tableColumnsByLower['uniqueid_namareport'] ?? 'uniqueid_namareport';
         }
@@ -4606,16 +4620,18 @@ class ImportExcelController extends Controller
             }
 
             $expectedColumns = count($header);
-        $lineNumber = 1;
-        $skippedRows = [];
-        $skippedCount = 0;
-        $writtenRows = 0;
-        $normalizationChanged = false;
-        $periodHints = [];
-        $normalizedHeaders = array_map(
-            fn ($value) => $this->normalizeImportColumnName((string) $value),
-            $header
-        );
+            $lineNumber = 1;
+            $skippedRows = [];
+            $skippedCount = 0;
+            $duplicateCount = 0;
+            $writtenRows = 0;
+            $normalizationChanged = false;
+            $periodHints = [];
+            $duplicateFingerprints = [];
+            $normalizedHeaders = array_map(
+                fn ($value) => $this->normalizeImportColumnName((string) $value),
+                $header
+            );
 
             fputcsv($outputHandle, $header, $delimiter, '"', '\\');
 
@@ -4649,6 +4665,17 @@ class ImportExcelController extends Controller
                     $skippedRows[] = $lineNumber;
                     $skippedCount++;
                     continue;
+                }
+
+                $duplicateFingerprint = $this->buildSimpananMultiPnRowFingerprint($normalizedHeaders, $row);
+                if ($duplicateFingerprint !== '' && isset($duplicateFingerprints[$duplicateFingerprint])) {
+                    $duplicateCount++;
+                    $normalizationChanged = true;
+                    continue;
+                }
+
+                if ($duplicateFingerprint !== '') {
+                    $duplicateFingerprints[$duplicateFingerprint] = true;
                 }
 
                 $posisiValue = trim((string) ($valuesByHeader['posisi'] ?? ''));
@@ -4694,14 +4721,46 @@ class ImportExcelController extends Controller
                 $header
             )),
             'skipped_rows' => $skippedRows,
-            'skipped_count' => $skippedCount,
-            'duplicate_count' => 0,
+            'skipped_count' => $skippedCount + $duplicateCount,
+            'duplicate_count' => $duplicateCount,
             'written_rows' => $writtenRows,
-            'rewritten' => $normalizationChanged || $skippedCount > 0,
-            'total_rows' => $skippedCount + $writtenRows,
+            'rewritten' => $normalizationChanged || $skippedCount > 0 || $duplicateCount > 0,
+            'total_rows' => $skippedCount + $duplicateCount + $writtenRows,
             'balance_total_cents' => null,
             'period_hints' => array_values(array_keys($periodHints)),
         ];
+    }
+
+    private function buildSimpananMultiPnRowFingerprint(array $normalizedHeaders, array $row): string
+    {
+        $values = [];
+
+        foreach ($normalizedHeaders as $index => $header) {
+            $header = strtolower(trim((string) $header));
+            if (
+                $header === ''
+                || str_starts_with($header, 'col_')
+                || $this->isRowNumberLikeHeader($header)
+                || in_array($header, ['uniqueid_smpn', 'uniqueid_simopn', 'created_at', 'updated_at'], true)
+            ) {
+                continue;
+            }
+
+            $value = trim((string) ($row[$index] ?? ''));
+            if ($header === 'posisi') {
+                $value = StrictDateParser::normalize($value) ?? $value;
+            } elseif ($header === 'saldo_idr') {
+                $value = $this->normalizeDecimalValue($value) ?? $value;
+            }
+
+            $values[] = $header . '=' . strtoupper($value);
+        }
+
+        if ($values === []) {
+            return '';
+        }
+
+        return hash('sha256', implode('|', $values));
     }
 
     protected function prepareSimpananMultiPnDirectLoadSource(string $csvPath, ?string $delimiter = null, ?callable $send = null): array
@@ -6472,10 +6531,15 @@ class ImportExcelController extends Controller
 
         $context = $this->buildImportContext($tableName, $normalizedHeaders, [], $importOptions);
         $fieldVariables = [];
-        $setClauses = [
-            "`created_at` = NOW()",
-            "`updated_at` = NOW()",
-        ];
+        $setClauses = [];
+
+        if (isset($context['table_columns_lookup']['created_at'])) {
+            $setClauses[] = "`created_at` = NOW()";
+        }
+
+        if (isset($context['table_columns_lookup']['updated_at'])) {
+            $setClauses[] = "`updated_at` = NOW()";
+        }
 
         if (!empty($context['unique_id_col'])) {
             $uniquePadLength = max(12, strlen((string) max(1, count($normalizedHeaders))) + 8);
@@ -6534,7 +6598,18 @@ class ImportExcelController extends Controller
             $setClauses[] = $this->quoteSqlIdentifier($manualColumn) . ' = ' . $this->quoteSqlStringLiteral($manualValue);
         }
 
-        if (count($setClauses) <= (!empty($context['unique_id_col']) ? 3 : 2)) {
+        $minimumSetClauses = 0;
+        if (isset($context['table_columns_lookup']['created_at'])) {
+            $minimumSetClauses++;
+        }
+        if (isset($context['table_columns_lookup']['updated_at'])) {
+            $minimumSetClauses++;
+        }
+        if (!empty($context['unique_id_col'])) {
+            $minimumSetClauses++;
+        }
+
+        if (count($setClauses) <= $minimumSetClauses) {
             throw new \RuntimeException("Tidak ada mapping kolom {$tableName} yang bisa dipakai untuk direct import.");
         }
 
@@ -7767,15 +7842,15 @@ class ImportExcelController extends Controller
         }
     }
 
-    private function normalizeCsvRow(array $row, string $delimiter, ?int $expectedColumns = null): array
+    private function normalizeCsvRow(array $row, string $delimiter, ?int $expectedColumns = null, ?string $tableName = null): array
     {
-        if (!$this->usesSerializedCsvRepair()) {
+        if (!$this->usesSerializedCsvRepair($tableName)) {
             $this->resetDailyLoanCsvParseMeta($expectedColumns);
         }
 
-        $row = $this->reparseSerializedDailyLoanCsvRow($row, $delimiter, $expectedColumns);
+        $row = $this->reparseSerializedDailyLoanCsvRow($row, $delimiter, $expectedColumns, $tableName);
 
-        if (!$this->usesSerializedCsvRepair() && count($row) === 1 && isset($row[0]) && is_string($row[0])) {
+        if (!$this->usesSerializedCsvRepair($tableName) && count($row) === 1 && isset($row[0]) && is_string($row[0])) {
             $rawValue = trim($row[0]);
             if ($rawValue !== '' && str_contains($rawValue, $delimiter)) {
                 $expandedRow = str_getcsv($rawValue, $delimiter, '"', '\\');
@@ -8871,10 +8946,15 @@ class ImportExcelController extends Controller
         }
 
         $context['row_sequence']++;
-        $finalRow = [
-            'created_at' => $timestamp,
-            'updated_at' => $timestamp,
-        ];
+        $finalRow = [];
+
+        if (isset($context['table_columns_lookup']['created_at'])) {
+            $finalRow['created_at'] = $timestamp;
+        }
+
+        if (isset($context['table_columns_lookup']['updated_at'])) {
+            $finalRow['updated_at'] = $timestamp;
+        }
 
         if (!empty($context['unique_id_col'])) {
             // OPTIMIZED: Pop from pre-generated unique IDs instead of calling expensive unixid() per-row
@@ -8922,13 +9002,25 @@ class ImportExcelController extends Controller
             $finalRow = $this->applyDerivedRkaValues($finalRow, $context);
         }
 
-        $minimumColumns = !empty($context['unique_id_col']) ? 3 : 2;
+        $minimumColumns = 0;
+        foreach (['created_at', 'updated_at'] as $systemColumn) {
+            if (isset($context['table_columns_lookup'][$systemColumn])) {
+                $minimumColumns++;
+            }
+        }
+        if (!empty($context['unique_id_col'])) {
+            $minimumColumns++;
+        }
 
         if (($context['table_name'] ?? '') === 'simpanan_multipn' && !$this->hasRequiredSimpananMultiPnImportData($finalRow)) {
             return null;
         }
 
         if (($context['table_name'] ?? '') === 'daily_loan_dinamis' && !$this->hasRequiredDailyLoanImportData($finalRow)) {
+            return null;
+        }
+
+        if (($context['table_name'] ?? '') === 'hourly_dpk' && !$this->hasRequiredHourlyDpkImportData($finalRow)) {
             return null;
         }
 
@@ -8941,6 +9033,14 @@ class ImportExcelController extends Controller
         }
 
         return count($finalRow) > $minimumColumns ? $finalRow : null;
+    }
+
+    private function hasRequiredHourlyDpkImportData(array $row): bool
+    {
+        return !empty($row['posisi'])
+            && array_key_exists('saldo', $row)
+            && $row['saldo'] !== null
+            && trim((string) $row['saldo']) !== '';
     }
 
     private function applyDerivedRkaValues(array $finalRow, array $context): array
@@ -10840,7 +10940,9 @@ class ImportExcelController extends Controller
 
             // ── Staging Excel to CSV (jika perlu) ───────────────────────
             $stagedCsvPath = $lw321PnStagedCsvPath;
-            $mustRefreshStagedCsv = $this->isSsaSimpananTable($tableName) || $this->isSsaPinjamanTable($tableName);
+            $mustRefreshStagedCsv = $this->isSsaSimpananTable($tableName)
+                || $this->isSsaPinjamanTable($tableName)
+                || $this->isHourlyDpkTable($tableName);
 
             if (
                 $this->isDlyKapResegmentasiTable($tableName)
@@ -11624,7 +11726,7 @@ class ImportExcelController extends Controller
         }
 
         try {
-            $headers = $this->readCsvRecord($handle, $delimiter);
+            $headers = $this->readCsvRecord($handle, $delimiter, $tableName);
             if ($headers === false) {
                 return false;
             }
@@ -11684,7 +11786,7 @@ class ImportExcelController extends Controller
             // OPTIMIZED: Enable normalized value caching for this streaming session
             $this->currentStreamNormalizedValueCache = [];
 
-            while (($row = $this->readCsvRecord($handle, $delimiter)) !== false) {
+            while (($row = $this->readCsvRecord($handle, $delimiter, $tableName)) !== false) {
                 $lineNumber++;
 
                 // TERMINATION CHECK: Every 5000 rows to avoid excessive DB overhead
@@ -11963,6 +12065,7 @@ class ImportExcelController extends Controller
             'gi405_singlerow' => 'GI405 Single Row',
             'ssa_pinjaman' => 'SSA Pinjaman',
             'ssa_simpanan' => 'SSA Simpanan',
+            'hourly_dpk' => 'Hourly DPK',
             'lw325_ph' => 'LW325 - PH',
             default => 'Data',
         };

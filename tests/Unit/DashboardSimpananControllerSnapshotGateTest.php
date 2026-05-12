@@ -40,7 +40,7 @@ class DashboardSimpananControllerSnapshotGateTest extends TestCase
         });
     }
 
-    public function test_controller_does_not_dispatch_snapshot_job_before_all_area_branches_exist(): void
+    public function test_controller_dispatches_partial_snapshot_job_before_all_area_branches_exist(): void
     {
         Bus::fake();
 
@@ -57,7 +57,7 @@ class DashboardSimpananControllerSnapshotGateTest extends TestCase
         $result = $method->invoke($controller, '2026-04-30');
 
         $this->assertFalse($result);
-        Bus::assertNotDispatched(EnsureDashboardSimpananSnapshotJob::class);
+        Bus::assertDispatched(EnsureDashboardSimpananSnapshotJob::class);
     }
 
     public function test_controller_dispatches_snapshot_job_once_area_branches_are_complete(): void

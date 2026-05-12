@@ -94,12 +94,12 @@
         background: linear-gradient(125deg, #0857c3 0%, #307fe2 100%);
         border-color: rgba(8, 87, 195, 0.72);
         color: #ffffff;
-        transform: translateX(4px);
-        box-shadow: 0 14px 24px -16px rgba(4, 42, 95, 0.76);
+        transform: translateX(3px);
+        box-shadow: 0 10px 20px -12px rgba(4, 42, 95, 0.65);
     }
 
     .main-sidebar .nav-sidebar > .nav-item > .nav-link:hover .nav-icon {
-        transform: scale(1.18) translateY(-1px);
+        transform: scale(1.1) translateY(-1px);
     }
 
     .main-sidebar .nav-sidebar > .nav-item > .nav-link:hover p .right {
@@ -107,7 +107,7 @@
     }
 
     .main-sidebar .nav-sidebar > .nav-item > .nav-link:hover::after {
-        opacity: 0.72;
+        opacity: 0.6;
     }
 
     .main-sidebar .nav-sidebar > .nav-item > .nav-link:hover .nav-icon,
@@ -290,11 +290,13 @@
 
 
 
-    body.sidebar-hover-open.sidebar-mini.sidebar-collapse .main-sidebar .nav-sidebar .nav-treeview {
+    .sidebar-mini.sidebar-collapse .main-sidebar:hover .nav-sidebar .nav-treeview,
+    .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .nav-sidebar .nav-treeview {
         padding-left: 1.1rem;
     }
 
-    body.sidebar-hover-open.sidebar-mini.sidebar-collapse .main-sidebar .nav-sidebar .report-digital-treeview {
+    .sidebar-mini.sidebar-collapse .main-sidebar:hover .nav-sidebar .report-digital-treeview,
+    .sidebar-mini.sidebar-collapse .main-sidebar.sidebar-focused .nav-sidebar .report-digital-treeview {
         padding-left: 1.05rem;
     }
 

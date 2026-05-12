@@ -6,11 +6,10 @@ return [
         |--------------------------------------------------------------------------
         | Hourly DPK as Morning Savings Source
         |--------------------------------------------------------------------------
-        | Keep disabled while hourly_dpk is still being validated. When false,
-        | Dashboard Harian snapshots use ssa_simpanan for savings even if
-        | hourly_dpk rows exist for the selected period.
+        | When enabled, Dashboard Harian can use hourly_dpk as the savings
+        | source for periods that already have Hourly DPK rows.
         */
-        'use_hourly_dpk' => env('DASHBOARD_HARIAN_USE_HOURLY_DPK', false),
+        'use_hourly_dpk' => env('DASHBOARD_HARIAN_USE_HOURLY_DPK', true),
     ],
 
     'dashboard_pinjaman' => [

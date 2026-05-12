@@ -9,6 +9,18 @@
  */
 
 return [
+    /*
+    |--------------------------------------------------------------------------
+    | Generated Column Sibling Convention
+    |--------------------------------------------------------------------------
+    |
+    | Deterministic shadow-column siblings use the *_gc suffix. These columns
+    | are additive and must not replace the legacy shadow columns until a
+    | separate migration explicitly proves source/legacy/generated parity.
+    |
+    */
+    'generated_column_suffix' => '_gc',
+
     /**
      * Rule definitions: transformation logic + table application
      */

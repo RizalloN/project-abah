@@ -130,6 +130,12 @@ class ProcessShadowBackfillJob implements ShouldQueue
                         ->orWhereNull('rm_normalized')
                         ->orWhereNull('pn_pemutus_normalized')
                         ->orWhereNull('cifno_clean');
+
+                    if (\Illuminate\Support\Facades\Schema::hasColumn('daily_loan_dinamis', 'shadow_built_at')
+                        && \Illuminate\Support\Facades\Schema::hasColumn('daily_loan_dinamis', 'updated_at')) {
+                        $q->orWhereNull('shadow_built_at')
+                            ->orWhereColumn('shadow_built_at', '<', 'updated_at');
+                    }
                 })
                 ->count();
 

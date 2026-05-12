@@ -67,6 +67,11 @@ class ImportDuplicateGuardService
             'slot_columns'     => ['posisi'],
             'slot_label'       => 'posisi',
         ],
+        'hourly_dpk' => [
+            'slot_table'       => 'hourly_dpk',
+            'slot_columns'     => ['posisi'],
+            'slot_label'       => 'posisi',
+        ],
         'ssa_pinjaman' => [
             'slot_table'       => 'ssa_pinjaman',
             'slot_columns'     => ['posisi'],
@@ -330,19 +335,13 @@ class ImportDuplicateGuardService
         return self::REPORT_POLICY[$tableName] ?? null;
     }
 
-    /**
-     * Check whether the virtual column job_content_hash is available.
-     * Cached indefinitely after the first positive check.
-     */
     public function isContentHashColumnAvailable(): bool
     {
-        return Cache::rememberForever('import_guard:content_hash_col_exists', function () {
-            try {
-                return Schema::hasColumn('import_jobs', 'job_content_hash');
-            } catch (\Throwable) {
-                return false;
-            }
-        });
+        try {
+            return Schema::hasColumn('import_jobs', 'job_content_hash');
+        } catch (\Throwable) {
+            return false;
+        }
     }
 
     // ─── Private Helpers ─────────────────────────────────────────────────────

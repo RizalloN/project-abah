@@ -49,7 +49,7 @@
                 <tr>
                     <th class="text-center">Periode</th>
                     <th class="text-start">Unit Kerja / Cabang</th>
-                    <th class="text-end">Realisasi OS<br><small>Rp Juta</small></th>
+                    <th class="text-end">Realisasi OS (Rp Juta)</th>
                     <th class="text-center">Penc. Realisasi</th>
                     <th class="text-end">% LAR</th>
                     <th class="text-center">Penc. LAR</th>

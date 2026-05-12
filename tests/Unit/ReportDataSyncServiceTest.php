@@ -2,6 +2,8 @@
 
 namespace Tests\Unit;
 
+use App\Jobs\EnsureImportedSnapshotsFreshJob;
+use App\Jobs\RebuildDashboardHarianSnapshotJob;
 use App\Support\DashboardHarianSnapshotService;
 use App\Support\DashboardHarianSnapshotDirtyPeriodQueue;
 use App\Support\PartitionMaintenanceService;
@@ -10,8 +12,11 @@ use App\Support\ReportSnapshotBuilder;
 use App\Jobs\SyncImportedReportJob;
 use App\Jobs\WarmReportCacheJob;
 use Illuminate\Contracts\Cache\Lock;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Mockery;
 use Tests\TestCase;
@@ -141,8 +146,9 @@ class ReportDataSyncServiceTest extends TestCase
         Schema::shouldReceive('hasTable')->andReturnFalse();
 
         $importProgressService = Mockery::mock(\App\Services\Import\ImportProgressService::class);
-        $importProgressService->shouldReceive('hasActiveProcessingJobs')
+        $importProgressService->shouldReceive('hasActiveProcessingJobsForTable')
             ->once()
+            ->with('loan_type', 77)
             ->andReturnFalse();
         $this->app->instance(\App\Services\Import\ImportProgressService::class, $importProgressService);
 
@@ -156,7 +162,7 @@ class ReportDataSyncServiceTest extends TestCase
         $this->assertTrue(true);
     }
 
-    public function test_sync_imported_table_defers_snapshot_when_any_import_is_processing(): void
+    public function test_sync_imported_table_defers_snapshot_when_same_table_import_is_processing(): void
     {
         Bus::fake();
 
@@ -167,8 +173,9 @@ class ReportDataSyncServiceTest extends TestCase
         $service = new ReportDataSyncService($builder, $dashboardHarianSnapshotService, $partitionMaintenance, $dirtyPeriods);
 
         $importProgressService = Mockery::mock(\App\Services\Import\ImportProgressService::class);
-        $importProgressService->shouldReceive('hasActiveProcessingJobs')
+        $importProgressService->shouldReceive('hasActiveProcessingJobsForTable')
             ->once()
+            ->with('simpanan_multipn', 77)
             ->andReturnTrue();
         $this->app->instance(\App\Services\Import\ImportProgressService::class, $importProgressService);
 
@@ -204,6 +211,74 @@ class ReportDataSyncServiceTest extends TestCase
 
         Bus::assertNotDispatched(SyncImportedReportJob::class);
         Bus::assertNotDispatched(WarmReportCacheJob::class);
+    }
+
+    public function test_hourly_dpk_import_dispatches_freshness_and_dashboard_rebuild_when_fallback_loan_ready(): void
+    {
+        Bus::fake();
+        Config::set('cache.default', 'array');
+        Config::set('import.snapshot.enable_analyze_table', false);
+
+        Schema::dropIfExists('dly_kap_resegmentasi');
+        Schema::create('dly_kap_resegmentasi', function (Blueprint $table): void {
+            $table->id();
+            $table->date('periode')->nullable();
+        });
+        DB::table('dly_kap_resegmentasi')->insert(['periode' => '2026-05-11']);
+
+        $builder = Mockery::mock(ReportSnapshotBuilder::class);
+        $dashboardHarianSnapshotService = Mockery::mock(DashboardHarianSnapshotService::class);
+        $partitionMaintenance = Mockery::mock(PartitionMaintenanceService::class);
+        $dirtyPeriods = Mockery::mock(DashboardHarianSnapshotDirtyPeriodQueue::class);
+        $dirtyPeriods->shouldReceive('register')
+            ->once()
+            ->with(['2026-05-11'])
+            ->andReturnTrue();
+        $dirtyPeriods->shouldReceive('debounceSeconds')
+            ->twice()
+            ->andReturn(0);
+
+        $importProgressService = Mockery::mock(\App\Services\Import\ImportProgressService::class);
+        $importProgressService->shouldReceive('hasActiveProcessingJobsForTable')
+            ->once()
+            ->with('hourly_dpk', 77)
+            ->andReturnFalse();
+        $this->app->instance(\App\Services\Import\ImportProgressService::class, $importProgressService);
+
+        $service = new ReportDataSyncService($builder, $dashboardHarianSnapshotService, $partitionMaintenance, $dirtyPeriods);
+        $service->syncImportedTable('hourly_dpk', '2026-05-11', 77, 'unit-test');
+
+        Bus::assertDispatched(EnsureImportedSnapshotsFreshJob::class);
+        Bus::assertDispatched(RebuildDashboardHarianSnapshotJob::class);
+    }
+
+    public function test_hourly_dpk_import_waits_for_fallback_loan_before_dashboard_rebuild(): void
+    {
+        Bus::fake();
+        Config::set('cache.default', 'array');
+        Config::set('import.snapshot.enable_analyze_table', false);
+
+        Schema::dropIfExists('dly_kap_resegmentasi');
+        Schema::dropIfExists('l1133');
+
+        $builder = Mockery::mock(ReportSnapshotBuilder::class);
+        $dashboardHarianSnapshotService = Mockery::mock(DashboardHarianSnapshotService::class);
+        $partitionMaintenance = Mockery::mock(PartitionMaintenanceService::class);
+        $dirtyPeriods = Mockery::mock(DashboardHarianSnapshotDirtyPeriodQueue::class);
+        $dirtyPeriods->shouldNotReceive('register');
+
+        $importProgressService = Mockery::mock(\App\Services\Import\ImportProgressService::class);
+        $importProgressService->shouldReceive('hasActiveProcessingJobsForTable')
+            ->once()
+            ->with('hourly_dpk', 77)
+            ->andReturnFalse();
+        $this->app->instance(\App\Services\Import\ImportProgressService::class, $importProgressService);
+
+        $service = new ReportDataSyncService($builder, $dashboardHarianSnapshotService, $partitionMaintenance, $dirtyPeriods);
+        $service->syncImportedTable('hourly_dpk', '2026-05-11', 77, 'unit-test');
+
+        Bus::assertDispatched(EnsureImportedSnapshotsFreshJob::class);
+        Bus::assertNotDispatched(RebuildDashboardHarianSnapshotJob::class);
     }
 
     public function test_performance_sync_rebuilds_new_payroll_using_the_import_period_hint(): void

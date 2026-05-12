@@ -43,6 +43,26 @@ class ManagedReportManagementServiceTest extends TestCase
         $this->assertSame('kanca', $kancaColumn);
     }
 
+    public function test_dly_kap_report_management_scope_uses_branch_with_unit_extra_scope(): void
+    {
+        $service = new ManagedReportManagementService();
+        $columns = [
+            'uniqueid_dly_kap',
+            'periode',
+            'kanwil',
+            'kode_cabang',
+            'kode_unit',
+            'segmen_kategori',
+        ];
+
+        [$periodColumn, $kancaColumn] = $service->resolveManagementScopeColumns('dly_kap_resegmentasi', $columns);
+        $extraColumns = $service->resolveManagementExtraScopeColumns('dly_kap_resegmentasi', $columns);
+
+        $this->assertSame('periode', $periodColumn);
+        $this->assertSame('kode_cabang', $kancaColumn);
+        $this->assertSame(['kode_unit'], $extraColumns);
+    }
+
     public function test_cognos_ph_management_label_uses_unit_kerja_when_kanca_is_numeric_code(): void
     {
         $service = new ManagedReportManagementService();

@@ -536,6 +536,131 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         $this->assertContains('2026-05-03', $reflection->invoke($service));
     }
 
+    public function test_hourly_dpk_can_replace_ssa_simpanan_for_dly_kap_l1133_option(): void
+    {
+        $this->createSourceMetadataTables();
+
+        DB::table('hourly_dpk')->insert([
+            'uniqueid_namareport' => 'HDPK-1',
+            'posisi' => '2026-05-10',
+            'mbname' => '00045 -- KC Madiun(Konsolidasi-MB)',
+            'brname' => '00045 -- KC Madiun',
+            'segmen' => 'KORPORASI',
+            'produk' => 'GIRO',
+            'saldo' => 1000,
+        ]);
+        DB::table('l1133')->insert([
+            'periode' => '2026-05-10',
+            'kode_kanca' => '00045',
+            'nama_kanca' => 'KC Madiun',
+            'kode_uker' => '00045',
+            'nama_uker' => 'KC Madiun',
+            'jenis' => 'KUPEDES KOMERSIAL',
+            'outstanding' => 5000,
+            'dpk' => 50,
+            'npl' => 0,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $service = new DashboardHarianSnapshotService();
+        $sharedPeriods = new \ReflectionMethod($service, 'resolveSharedPeriods');
+        $sharedPeriods->setAccessible(true);
+        $metadataBuilder = new \ReflectionMethod($service, 'buildSourceMetadata');
+        $metadataBuilder->setAccessible(true);
+        $aggregateBuilder = new \ReflectionMethod($service, 'fetchSavingsAggregates');
+        $aggregateBuilder->setAccessible(true);
+
+        $this->assertContains('2026-05-10', $sharedPeriods->invoke($service));
+
+        $metadata = $metadataBuilder->invoke($service, '2026-05-10');
+        $this->assertSame(1, $metadata['source_savings_row_count']);
+
+        $payload = $aggregateBuilder->invoke($service, '2026-05-10', null, null);
+        $areaRow = $payload->first();
+
+        $this->assertNotNull($areaRow);
+        $this->assertSame(1000.0, (float) $areaRow->giro_wholesale);
+        $this->assertSame(1000.0, (float) $areaRow->total_simpanan);
+    }
+
+    public function test_ssa_simpanan_stays_primary_when_hourly_dpk_is_also_available(): void
+    {
+        $this->createSourceMetadataTables();
+
+        DB::table('ssa_simpanan')->insert([
+            'Month_Day_Year_of_Posisi' => '2026-05-10',
+            'nama_cabang' => '00045 -- KC Madiun(Konsolidasi-MB)',
+            'nama_uker' => '00045 -- KC Madiun',
+            'segmentasi' => 'RITEL',
+            'produk' => 'GIRO',
+            'saldo' => 2000,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('hourly_dpk')->insert([
+            'uniqueid_namareport' => 'HDPK-1',
+            'posisi' => '2026-05-10',
+            'mbname' => '00045 -- KC Madiun(Konsolidasi-MB)',
+            'brname' => '00045 -- KC Madiun',
+            'segmen' => 'KORPORASI',
+            'produk' => 'GIRO',
+            'saldo' => 1000,
+        ]);
+        DB::table('l1133')->insert([
+            'periode' => '2026-05-10',
+            'kode_kanca' => '00045',
+            'nama_kanca' => 'KC Madiun',
+            'kode_uker' => '00045',
+            'nama_uker' => 'KC Madiun',
+            'jenis' => 'KUPEDES KOMERSIAL',
+            'outstanding' => 5000,
+            'dpk' => 50,
+            'npl' => 0,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $service = new DashboardHarianSnapshotService();
+        $aggregateBuilder = new \ReflectionMethod($service, 'fetchSavingsAggregates');
+        $aggregateBuilder->setAccessible(true);
+
+        $payload = $aggregateBuilder->invoke($service, '2026-05-10', null, null);
+        $areaRow = $payload->first();
+
+        $this->assertNotNull($areaRow);
+        $this->assertSame(2000.0, (float) $areaRow->giro_ritel);
+        $this->assertSame(0.0, (float) $areaRow->giro_wholesale);
+        $this->assertSame(2000.0, (float) $areaRow->total_simpanan);
+    }
+
+    public function test_hourly_dpk_without_fallback_loan_is_not_a_shared_period(): void
+    {
+        $this->createSourceMetadataTables();
+
+        DB::table('hourly_dpk')->insert([
+            'uniqueid_namareport' => 'HDPK-1',
+            'posisi' => '2026-05-10',
+            'mbname' => '00045 -- KC Madiun(Konsolidasi-MB)',
+            'brname' => '00045 -- KC Madiun',
+            'segmen' => 'RITEL',
+            'produk' => 'GIRO',
+            'saldo' => 1000,
+        ]);
+        DB::table('ssa_pinjaman')->insert([
+            'month_day_year_of_periode' => '2026-05-10',
+            'baki_debet' => 5000,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $service = new DashboardHarianSnapshotService();
+        $sharedPeriods = new \ReflectionMethod($service, 'resolveSharedPeriods');
+        $sharedPeriods->setAccessible(true);
+
+        $this->assertNotContains('2026-05-10', $sharedPeriods->invoke($service));
+    }
+
     public function test_l1133_micro_aggregates_include_fully_cash_collateral_in_kupedes(): void
     {
         $this->createSourceMetadataTables();
@@ -781,7 +906,7 @@ class DashboardHarianSnapshotServiceTest extends TestCase
 
     private function createSourceMetadataTables(): void
     {
-        foreach (['dashboard_harian_snapshots', 'ssa_pinjaman', 'ssa_simpanan', 'dly_kap_resegmentasi', 'l1133', 'cognos_recovery', 'lw325_ph'] as $table) {
+        foreach (['dashboard_harian_snapshots', 'ssa_pinjaman', 'ssa_simpanan', 'hourly_dpk', 'dly_kap_resegmentasi', 'l1133', 'cognos_recovery', 'lw325_ph'] as $table) {
             Schema::dropIfExists($table);
         }
 
@@ -811,8 +936,22 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         Schema::create('ssa_simpanan', function (Blueprint $table): void {
             $table->id();
             $table->date('Month_Day_Year_of_Posisi')->nullable();
+            $table->string('nama_cabang')->nullable();
+            $table->string('nama_uker')->nullable();
+            $table->string('segmentasi')->nullable();
+            $table->string('produk')->nullable();
             $table->decimal('saldo', 20, 2)->nullable();
             $table->timestamps();
+        });
+
+        Schema::create('hourly_dpk', function (Blueprint $table): void {
+            $table->string('uniqueid_namareport')->primary();
+            $table->date('posisi')->nullable();
+            $table->string('mbname')->nullable();
+            $table->string('brname')->nullable();
+            $table->string('segmen')->nullable();
+            $table->string('produk')->nullable();
+            $table->decimal('saldo', 20, 2)->nullable();
         });
 
         Schema::create('dly_kap_resegmentasi', function (Blueprint $table): void {

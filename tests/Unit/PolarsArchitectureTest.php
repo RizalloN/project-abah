@@ -8,6 +8,7 @@ use App\Services\Import\Strategies\CognosRecoveryImportStrategy;
 use App\Services\Import\Strategies\DailyLoanImportStrategy;
 use App\Services\Import\Strategies\GenericCsvImportStrategy;
 use App\Services\Import\Strategies\Gi405RecDhImportStrategy;
+use App\Services\Import\Strategies\HourlyDpkImportStrategy;
 use App\Services\Import\Strategies\L1133ImportStrategy;
 use App\Services\Import\Strategies\Lw321NpdImportStrategy;
 use App\Services\Import\Strategies\Lw321NpddImportStrategy;
@@ -29,6 +30,7 @@ class PolarsArchitectureTest extends TestCase
         $this->assertSame(count($keys), count(array_unique($keys)), 'Factory has duplicate strategy keys: ' . implode(', ', array_diff_assoc($keys, array_unique($keys))));
         $this->assertContains('ssa_simpanan', $keys);
         $this->assertContains('ssa_pinjaman', $keys);
+        $this->assertContains('hourly_dpk', $keys);
     }
 
     public function test_each_strategy_specifies_correct_import_mode(): void
@@ -39,6 +41,7 @@ class PolarsArchitectureTest extends TestCase
             [SimpananMultiPnImportStrategy::class, 'bulk_csv_filtered', []],
             [SsaSimpananImportStrategy::class, 'bulk_csv_staging', []],
             [SsaPinjamanImportStrategy::class, 'bulk_csv_staging', []],
+            [HourlyDpkImportStrategy::class, 'bulk_csv_staging', []],
             [Gi405RecDhImportStrategy::class, 'bulk_csv_filtered', []],
             [Lw321NpdImportStrategy::class, 'bulk_csv_filtered', []],
             [Lw321NpddImportStrategy::class, 'bulk_csv_filtered', []],
@@ -87,6 +90,7 @@ class PolarsArchitectureTest extends TestCase
             [SimpananMultiPnImportStrategy::class, 'simpanan_multipn'],
             [SsaSimpananImportStrategy::class, 'ssa_simpanan'],
             [SsaPinjamanImportStrategy::class, 'ssa_pinjaman'],
+            [HourlyDpkImportStrategy::class, 'hourly_dpk'],
             [Gi405RecDhImportStrategy::class, 'gi405_singlerow'],
             [Lw325PhImportStrategy::class, 'lw325_ph'],
             [Lw321PnImportStrategy::class, 'lw321pn'],

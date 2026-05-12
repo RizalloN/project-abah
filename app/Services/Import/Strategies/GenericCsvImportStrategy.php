@@ -10,6 +10,7 @@ class GenericCsvImportStrategy implements ImportStrategyInterface
         'gi405_singlerow',
         'ssa_pinjaman',
         'ssa_simpanan',
+        'hourly_dpk',
         'l1133',
         'lw321pn',
         'lw321_npd',

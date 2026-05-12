@@ -122,6 +122,12 @@ class ManagedReportManagementService
             'kanca_priority' => ['nama_cabang'],
             'normalize_kanca_whitespace' => true,
         ],
+        'hourly_dpk' => [
+            'period_priority' => ['posisi'],
+            'kanca_priority' => ['mbname'],
+            'kanca_label_fallback_priority' => ['brname'],
+            'normalize_kanca_whitespace' => true,
+        ],
         'ssa_pinjaman' => [
             'period_priority' => ['month_day_year_of_periode', 'Month_Day_Year_of_Periode'],
             'kanca_priority' => ['nama_cabang'],
@@ -131,6 +137,11 @@ class ManagedReportManagementService
             'period_priority' => ['periode'],
             'kanca_priority' => ['kode_kanca'],
             'kanca_label_fallback_priority' => ['kanca'],
+        ],
+        'dly_kap_resegmentasi' => [
+            'period_priority' => ['periode'],
+            'kanca_priority' => ['kode_cabang'],
+            'kanca_extra_priority' => ['kode_unit'],
         ],
     ];
 
@@ -197,6 +208,7 @@ class ManagedReportManagementService
 
         $tableColumns = Schema::getColumnListing($tableName);
         [$periodColumn, $kancaColumn] = $this->resolveManagementScopeColumns($tableName, $tableColumns);
+        $extraScopeColumns = $this->resolveManagementExtraScopeColumns($tableName, $tableColumns);
 
         $maxRows = (int) ($options['max_rows'] ?? self::MANAGEMENT_MAX_GROUP_ROWS);
         $page = (int) ($options['page'] ?? 1);
@@ -215,6 +227,7 @@ class ManagedReportManagementService
             $tableName,
             $periodColumn,
             $kancaColumn,
+            $extraScopeColumns,
             $maxRows,
             $page,
             $perPage,
@@ -323,6 +336,19 @@ class ManagedReportManagementService
         }
 
         return [$periodColumn, $kancaColumn];
+    }
+
+    public function resolveManagementExtraScopeColumns(string $tableName, array $tableColumns): array
+    {
+        $override = self::MANAGEMENT_SCOPE_COLUMN_OVERRIDES[$tableName] ?? null;
+        if (!is_array($override)) {
+            return [];
+        }
+
+        return $this->resolveCandidateColumns(
+            $tableColumns,
+            (array) ($override['kanca_extra_priority'] ?? [])
+        );
     }
 
     private function resolveColumnName(array $tableColumns, array $candidates): ?string
@@ -599,6 +625,7 @@ class ManagedReportManagementService
         string $tableName,
         ?string $periodColumn,
         ?string $kancaColumn,
+        array $extraScopeColumns,
         int $maxRows,
         int $page,
         int $perPage,
@@ -612,6 +639,7 @@ class ManagedReportManagementService
                 $tableName,
                 $periodColumn,
                 $kancaColumn,
+                $extraScopeColumns,
                 $maxRows,
                 $page,
                 $perPage,
@@ -619,7 +647,7 @@ class ManagedReportManagementService
             );
         }
 
-        [$rows, $truncated] = $this->buildManagementRows($tableName, $periodColumn, $kancaColumn, $maxRows);
+        [$rows, $truncated] = $this->buildManagementRows($tableName, $periodColumn, $kancaColumn, $extraScopeColumns, $maxRows);
         $paginatedPeriods = $this->paginateManagementPeriods($rows, $page, $perPage, $periodColumn !== null, $pageTarget);
         $displayedRowsTotal = array_reduce($paginatedPeriods['periods'], static function (int $carry, array $period): int {
             return $carry + (int) ($period['total_rows'] ?? 0);
@@ -639,6 +667,7 @@ class ManagedReportManagementService
         string $tableName,
         string $periodColumn,
         ?string $kancaColumn,
+        array $extraScopeColumns,
         int $maxRows,
         int $page,
         int $perPage,
@@ -732,6 +761,12 @@ class ManagedReportManagementService
             $query->groupBy($kancaColumn);
         }
 
+        foreach (array_values($extraScopeColumns) as $index => $extraColumn) {
+            $safeExtra = str_replace('`', '``', (string) $extraColumn);
+            $selects[] = "`{$safeExtra}` as extra_value_{$index}";
+            $query->groupBy((string) $extraColumn);
+        }
+
         if ($kancaLabelFallbackColumn !== null) {
             $safeFallback = str_replace('`', '``', $kancaLabelFallbackColumn);
             $selects[] = "MIN(`{$safeFallback}`) as kanca_label_fallback_value";
@@ -752,7 +787,8 @@ class ManagedReportManagementService
             $result,
             $periodColumn,
             $kancaColumn,
-            $kancaLabelFallbackColumn
+            $kancaLabelFallbackColumn,
+            $extraScopeColumns
         );
         $periods = $this->groupCurrentManagementPeriods($rows, $periodColumn !== null);
         $displayedRowsTotal = array_reduce($periods, static function (int $carry, array $period): int {
@@ -867,14 +903,17 @@ class ManagedReportManagementService
         iterable $result,
         ?string $periodColumn,
         ?string $kancaColumn,
-        ?string $kancaLabelFallbackColumn
+        ?string $kancaLabelFallbackColumn,
+        array $extraScopeColumns = []
     ): array {
         $rows = [];
+        $extraScopeColumns = array_values($extraScopeColumns);
 
         foreach ($result as $item) {
             $periodRaw = $periodColumn !== null ? ($item->period_value ?? null) : null;
             $kancaRaw = $kancaColumn !== null ? ($item->kanca_value ?? null) : null;
             $kancaFallbackRaw = $kancaLabelFallbackColumn !== null ? ($item->kanca_label_fallback_value ?? null) : null;
+            $extraFilters = $this->buildManagementExtraFilters($tableName, $item, $extraScopeColumns);
             $normalizedPeriodFilter = $periodRaw === null || trim((string) $periodRaw) === ''
                 ? ''
                 : $this->normalizeManagementPeriodFilter($tableName, $periodRaw, $periodColumn);
@@ -884,6 +923,7 @@ class ManagedReportManagementService
             $kancaLabel = $kancaRaw === null || trim((string) $kancaRaw) === ''
                 ? ($kancaColumn !== null ? '(Blank)' : '(Semua)')
                 : $this->resolveManagementKancaLabel($tableName, (string) $kancaRaw, $kancaFallbackRaw);
+            $kancaLabel = $this->appendManagementExtraLabel($tableName, $kancaLabel, $extraFilters);
             $periodIsNull = $periodRaw === null || trim((string) $periodRaw) === '';
             $kancaIsNull = $kancaRaw === null || trim((string) $kancaRaw) === '';
             $aggregateKey = json_encode([
@@ -891,6 +931,11 @@ class ManagedReportManagementService
                 $periodIsNull ? '' : $normalizedPeriodFilter,
                 $kancaIsNull,
                 $kancaIsNull ? '' : $normalizedKancaFilter,
+                array_map(static fn (array $filter): array => [
+                    $filter['column'] ?? '',
+                    (bool) ($filter['is_null'] ?? false),
+                    $filter['value'] ?? '',
+                ], $extraFilters),
             ]);
 
             if ($aggregateKey === false || !isset($rows[$aggregateKey])) {
@@ -899,6 +944,7 @@ class ManagedReportManagementService
                     'period_label' => $periodIsNull ? ($periodColumn !== null ? '(Blank)' : '(Tanpa Periode)') : $normalizedPeriodFilter,
                     'kanca' => $kancaIsNull ? '' : $normalizedKancaFilter,
                     'kanca_label' => $kancaLabel,
+                    'extra_filters' => $extraFilters,
                     'row_count' => 0,
                     'period_is_null' => $periodIsNull,
                     'kanca_is_null' => $kancaIsNull,
@@ -934,7 +980,7 @@ class ManagedReportManagementService
             return $row;
         }, array_values($rows));
 
-        usort($rows, function (array $left, array $right): int {
+        usort($rows, function (array $left, array $right) use ($tableName): int {
             $pL = (string) ($left['period'] ?? '');
             $pR = (string) ($right['period'] ?? '');
 
@@ -944,10 +990,65 @@ class ManagedReportManagementService
             $cmp = strcmp($pR, $pL);
             if ($cmp !== 0) return $cmp;
 
+            if ($tableName === 'dly_kap_resegmentasi') {
+                return $this->compareDlyKapManagementRows($left, $right);
+            }
+
             return strcmp((string) ($left['kanca_label'] ?? ''), (string) ($right['kanca_label'] ?? ''));
         });
 
         return $rows;
+    }
+
+    private function compareDlyKapManagementRows(array $left, array $right): int
+    {
+        $branchCompare = $this->compareManagementNumericText(
+            (string) ($left['kanca'] ?? ''),
+            (string) ($right['kanca'] ?? '')
+        );
+        if ($branchCompare !== 0) {
+            return $branchCompare;
+        }
+
+        $unitCompare = $this->compareManagementNumericText(
+            $this->managementExtraFilterValue($left, 'kode_unit'),
+            $this->managementExtraFilterValue($right, 'kode_unit')
+        );
+        if ($unitCompare !== 0) {
+            return $unitCompare;
+        }
+
+        return strcmp((string) ($left['kanca_label'] ?? ''), (string) ($right['kanca_label'] ?? ''));
+    }
+
+    private function managementExtraFilterValue(array $row, string $column): string
+    {
+        foreach ((array) ($row['extra_filters'] ?? []) as $filter) {
+            if (($filter['column'] ?? null) === $column) {
+                return (string) ($filter['value'] ?? '');
+            }
+        }
+
+        return '';
+    }
+
+    private function compareManagementNumericText(string $left, string $right): int
+    {
+        $left = trim($left);
+        $right = trim($right);
+
+        if ($left === '' && $right !== '') return 1;
+        if ($left !== '' && $right === '') return -1;
+
+        if (preg_match('/^\d+$/', $left) === 1 && preg_match('/^\d+$/', $right) === 1) {
+            $leftNumber = (int) ltrim($left, '0');
+            $rightNumber = (int) ltrim($right, '0');
+            if ($leftNumber !== $rightNumber) {
+                return $leftNumber <=> $rightNumber;
+            }
+        }
+
+        return strcmp($left, $right);
     }
 
     private function estimateTableRows(string $tableName): int
@@ -968,7 +1069,13 @@ class ManagedReportManagementService
         return (int) DB::table($tableName)->count();
     }
 
-    private function buildManagementRows(string $tableName, ?string $periodColumn, ?string $kancaColumn, int $maxRows): array
+    private function buildManagementRows(
+        string $tableName,
+        ?string $periodColumn,
+        ?string $kancaColumn,
+        array $extraScopeColumns,
+        int $maxRows
+    ): array
     {
         if ($periodColumn === null && $kancaColumn === null) {
             $count = (int) DB::table($tableName)->count();
@@ -1004,6 +1111,12 @@ class ManagedReportManagementService
             $query->groupBy($kancaColumn)->orderBy($kancaColumn);
         }
 
+        foreach (array_values($extraScopeColumns) as $index => $extraColumn) {
+            $safeExtra = str_replace('`', '``', (string) $extraColumn);
+            $selects[] = "`{$safeExtra}` as extra_value_{$index}";
+            $query->groupBy((string) $extraColumn)->orderBy((string) $extraColumn);
+        }
+
         if ($kancaLabelFallbackColumn !== null) {
             $safeFallback = str_replace('`', '``', $kancaLabelFallbackColumn);
             $selects[] = "MIN(`{$safeFallback}`) as kanca_label_fallback_value";
@@ -1024,7 +1137,8 @@ class ManagedReportManagementService
             $result,
             $periodColumn,
             $kancaColumn,
-            $kancaLabelFallbackColumn
+            $kancaLabelFallbackColumn,
+            $extraScopeColumns
         );
 
         return [$rows, $truncated];
@@ -1212,6 +1326,52 @@ class ManagedReportManagementService
         }
 
         return [$rows, $truncated];
+    }
+
+    private function buildManagementExtraFilters(string $tableName, object $item, array $extraScopeColumns): array
+    {
+        $filters = [];
+
+        foreach (array_values($extraScopeColumns) as $index => $column) {
+            $column = (string) $column;
+            $rawValue = $item->{'extra_value_' . $index} ?? null;
+            $isNull = $rawValue === null || trim((string) $rawValue) === '';
+            $value = $isNull ? '' : $this->normalizeManagementKancaFilter($tableName, (string) $rawValue);
+
+            $filters[] = [
+                'column' => $column,
+                'label' => $this->formatManagementExtraColumnLabel($column),
+                'value' => $value,
+                'value_label' => $isNull ? '(Blank)' : trim((string) $rawValue),
+                'is_null' => $isNull,
+            ];
+        }
+
+        return $filters;
+    }
+
+    private function appendManagementExtraLabel(string $tableName, string $baseLabel, array $extraFilters): string
+    {
+        if ($tableName !== 'dly_kap_resegmentasi' || $extraFilters === []) {
+            return $baseLabel;
+        }
+
+        foreach ($extraFilters as $filter) {
+            if (($filter['column'] ?? null) === 'kode_unit') {
+                $unitLabel = trim((string) ($filter['value_label'] ?? $filter['value'] ?? ''));
+                return 'Cabang ' . $baseLabel . ' | Unit ' . ($unitLabel !== '' ? $unitLabel : '(Blank)');
+            }
+        }
+
+        return $baseLabel;
+    }
+
+    private function formatManagementExtraColumnLabel(string $column): string
+    {
+        $label = str_replace('_', ' ', trim($column));
+        $label = preg_replace('/\s+/', ' ', $label) ?? $label;
+
+        return ucwords($label);
     }
 
     private function resolveKancaLabelFallbackColumn(string $tableName): ?string

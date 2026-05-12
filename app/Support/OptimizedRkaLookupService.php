@@ -24,8 +24,9 @@ class OptimizedRkaLookupService extends RkaLookupService
      */
 
     private const CACHE_NAMESPACE = 'rka_lookup_optimized';
-    private const CACHE_TTL = 86400; // 24 hours
+    private const CACHE_TTL = 3600; // 1 hour (was 24h — reduces stale-cache blast radius)
     private const RKA_VERSION_KEY = 'rka_data_version';
+    private const CODE_VERSION = 'v2-unit-filter'; // bump this whenever normalization/definition logic changes
 
     private array $inMemoryCache = [];
 
@@ -96,7 +97,9 @@ class OptimizedRkaLookupService extends RkaLookupService
     public function invalidateCache(): void
     {
         $newVersion = now()->getTimestamp();
-        Cache::put(self::RKA_VERSION_KEY, $newVersion, self::CACHE_TTL);
+        // Version key must never expire — if it expires, version resets to 0 which
+        // can collide with stale entries from before the last invalidation.
+        Cache::forever(self::RKA_VERSION_KEY, $newVersion);
 
         // Clear in-memory cache as well
         $this->inMemoryCache = [];
@@ -116,7 +119,7 @@ class OptimizedRkaLookupService extends RkaLookupService
     private function withCaching(callable $callback, string $cacheKey): mixed
     {
         $version = $this->getRkaDataVersion();
-        $fullCacheKey = self::CACHE_NAMESPACE . ":{$version}:{$cacheKey}";
+        $fullCacheKey = self::CACHE_NAMESPACE . ':' . self::CODE_VERSION . ":{$version}:{$cacheKey}";
 
         // Check in-memory cache first (super fast)
         if (isset($this->inMemoryCache[$fullCacheKey])) {

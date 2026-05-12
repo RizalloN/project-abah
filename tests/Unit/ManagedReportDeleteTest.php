@@ -164,6 +164,91 @@ class ManagedReportDeleteTest extends TestCase
         $this->assertSame(['2026-04-06'], array_column($payload['periods'], 'period'));
     }
 
+    public function test_dly_kap_report_management_groups_and_deletes_by_branch_and_unit(): void
+    {
+        Schema::create('dly_kap_resegmentasi', function (Blueprint $table) {
+            $table->string('uniqueid_dly_kap')->primary();
+            $table->date('periode')->nullable();
+            $table->string('kode_cabang')->nullable();
+            $table->string('kode_unit')->nullable();
+            $table->string('segmen_kategori')->nullable();
+        });
+
+        DB::table('nama_report')->insert([
+            'id_report' => 26,
+            'nama_report' => 'DLY KAP RESEGMENTASI',
+            'table_name' => 'dly_kap_resegmentasi',
+            'active' => 1,
+        ]);
+
+        DB::table('dly_kap_resegmentasi')->insert([
+            ['uniqueid_dly_kap' => 'DLY-001-100', 'periode' => '2026-05-11', 'kode_cabang' => '001', 'kode_unit' => '100', 'segmen_kategori' => 'SMALL'],
+            ['uniqueid_dly_kap' => 'DLY-001-101', 'periode' => '2026-05-11', 'kode_cabang' => '001', 'kode_unit' => '101', 'segmen_kategori' => 'SMALL'],
+            ['uniqueid_dly_kap' => 'DLY-002-200', 'periode' => '2026-05-11', 'kode_cabang' => '002', 'kode_unit' => '200', 'segmen_kategori' => 'MEDIUM'],
+            ['uniqueid_dly_kap' => 'DLY-045-557', 'periode' => '2026-05-11', 'kode_cabang' => '45', 'kode_unit' => '557', 'segmen_kategori' => 'SMALL'],
+            ['uniqueid_dly_kap' => 'DLY-045-045', 'periode' => '2026-05-11', 'kode_cabang' => '45', 'kode_unit' => '45', 'segmen_kategori' => 'SMALL'],
+        ]);
+
+        $controller = app(ImportIndexController::class);
+        $dataResponse = $controller->reportManagementData(Request::create('/import/report-management/data', 'POST', [
+            'id_report' => 26,
+            'max_rows' => 100,
+            'page' => 1,
+            'per_page' => 8,
+        ]));
+        $dataPayload = $dataResponse->getData(true);
+
+        $this->assertSame(200, $dataResponse->status());
+        $this->assertSame('success', $dataPayload['status']);
+        $this->assertSame('kode_cabang', $dataPayload['kanca_column']);
+        $this->assertSame(5, $dataPayload['total_groups']);
+        $this->assertSame(
+            ['Cabang 45 | Unit 45', 'Cabang 45 | Unit 557'],
+            collect($dataPayload['rows'])
+                ->filter(fn (array $row): bool => ($row['kanca'] ?? null) === '45')
+                ->pluck('kanca_label')
+                ->values()
+                ->all()
+        );
+
+        $targetRow = collect($dataPayload['rows'])->first(function (array $row): bool {
+            return ($row['kanca'] ?? null) === '001'
+                && collect($row['extra_filters'] ?? [])->contains(fn (array $filter): bool => ($filter['column'] ?? null) === 'kode_unit' && ($filter['value'] ?? null) === '100');
+        });
+
+        $this->assertNotNull($targetRow);
+        $this->assertSame('Cabang 001 | Unit 100', $targetRow['kanca_label']);
+
+        $syncService = \Mockery::mock(ReportDataSyncService::class);
+        $syncService->shouldReceive('resolvePostDeleteMaintenanceMode')->with('dly_kap_resegmentasi')->andReturn('lightweight');
+        $syncService->shouldReceive('syncAfterDeleteLightweight')->once()->with('dly_kap_resegmentasi', '2026-05-11', \Mockery::type('string'))->andReturnNull();
+        app()->instance(ReportDataSyncService::class, $syncService);
+
+        $deleteResponse = $controller->deleteManagedReportRows(Request::create('/import/report-management/delete', 'POST', [
+            'id_report' => 26,
+            'scopes' => [[
+                'period_filter' => $targetRow['period'],
+                'period_label' => $targetRow['period_label'],
+                'kanca_filter' => $targetRow['kanca'],
+                'kanca_label' => $targetRow['kanca_label'],
+                'period_is_null' => false,
+                'kanca_is_null' => false,
+                'extra_filters' => $targetRow['extra_filters'],
+            ]],
+            'force' => true,
+            'hard_force' => true,
+        ]));
+        $deletePayload = $deleteResponse->getData(true);
+
+        $this->assertSame(200, $deleteResponse->status());
+        $this->assertSame('completed', $deletePayload['status']);
+        $this->assertSame(1, $deletePayload['deleted_rows']);
+        $this->assertSame(0, DB::table('dly_kap_resegmentasi')->where('kode_cabang', '001')->where('kode_unit', '100')->count());
+        $this->assertSame(1, DB::table('dly_kap_resegmentasi')->where('kode_cabang', '001')->where('kode_unit', '101')->count());
+        $this->assertSame(1, DB::table('dly_kap_resegmentasi')->where('kode_cabang', '002')->where('kode_unit', '200')->count());
+        Queue::assertNothingPushed();
+    }
+
     public function test_simpanan_delete_chunk_is_bounded_for_visible_progress(): void
     {
         $controller = app(ImportIndexController::class);

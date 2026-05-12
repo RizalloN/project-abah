@@ -31,7 +31,7 @@ class ExcelQueuedImportService
             $activeFilters = [];
         }
         $strategy = ($callbacks['resolve_import_strategy'])($tableName);
-        if (in_array(strtolower(trim($tableName)), ['lw321_npd', 'lw321_npdd'], true)) {
+        if (in_array(strtolower(trim($tableName)), ['lw321_npd', 'lw321_npdd', 'hourly_dpk'], true)) {
             $normalizedHeaders = array_values($strategy->transformHeaders($normalizedHeaders));
         }
         $relativePath = (string) ($params['file_path'] ?? '');
@@ -348,7 +348,7 @@ class ExcelQueuedImportService
                         $delimiter,
                         $params
                     ): array {
-                        $forceDirectLoad = in_array($tableName, ['simpanan_multipn', 'lw325_ph', 'ssa_simpanan', 'ssa_pinjaman', 'l1133', 'brihc', 'wilayah_mbm'], true);
+                        $forceDirectLoad = in_array($tableName, ['simpanan_multipn', 'lw325_ph', 'ssa_simpanan', 'ssa_pinjaman', 'hourly_dpk', 'l1133', 'brihc', 'wilayah_mbm'], true);
 
                         return [
                             'handled' => ($callbacks['process_staged_csv_stream'])(

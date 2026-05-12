@@ -13,7 +13,8 @@ class DeferSnapshotJobsDuringImport
     private const STUCK_IMPORT_THRESHOLD_HOURS = 4;
 
     public function __construct(
-        private readonly ?ImportProgressService $importProgressService = null
+        private readonly ?ImportProgressService $importProgressService = null,
+        private readonly ?string $sourceTable = null
     ) {
     }
 
@@ -21,7 +22,11 @@ class DeferSnapshotJobsDuringImport
     {
         $importProgressService = $this->importProgressService ?? app(ImportProgressService::class);
 
-        if ($importProgressService->hasActiveProcessingJobs()) {
+        $hasActiveImports = $this->sourceTable !== null && trim($this->sourceTable) !== ''
+            ? $importProgressService->hasActiveProcessingJobsForTable($this->sourceTable)
+            : $importProgressService->hasActiveProcessingJobs();
+
+        if ($hasActiveImports) {
             $stuckJob = $this->findStuckImportJob();
 
             if ($stuckJob !== null) {
@@ -37,6 +42,19 @@ class DeferSnapshotJobsDuringImport
                 return $next($job);
             }
 
+            $maxDeferAttempts = max(1, (int) config('import.snapshot.max_defer_attempts', 30));
+            $attempts = method_exists($job, 'attempts') ? (int) $job->attempts() : 0;
+            if ($attempts >= $maxDeferAttempts) {
+                Log::warning('Snapshot job forced after reaching max import deferrals.', [
+                    'job' => method_exists($job, 'resolveName') ? (string) $job->resolveName() : $job::class,
+                    'source_table' => $this->sourceTable,
+                    'attempts' => $attempts,
+                    'max_defer_attempts' => $maxDeferAttempts,
+                ]);
+
+                return $next($job);
+            }
+
             $delay = max(1, (int) config('import.snapshot.defer_seconds', 60));
             $jobName = method_exists($job, 'resolveName')
                 ? (string) $job->resolveName()
@@ -44,7 +62,10 @@ class DeferSnapshotJobsDuringImport
 
             Log::info('Snapshot job ditunda karena import masih berjalan.', [
                 'job' => $jobName,
+                'source_table' => $this->sourceTable,
                 'delay_seconds' => $delay,
+                'attempts' => $attempts,
+                'max_defer_attempts' => $maxDeferAttempts,
             ]);
 
             if (method_exists($job, 'release')) {

@@ -60,6 +60,7 @@ class ReportDataSyncService
         'daily_loan_dinamis',
         'simpanan_multipn',
         'ssa_simpanan',
+        'hourly_dpk',
         'ssa_pinjaman',
         'lw325_ph',
         'performance_pis_per_produk',
@@ -136,7 +137,7 @@ class ReportDataSyncService
 
         $periodHint = $this->normalizeAuditPeriodHint($periodHint);
 
-        if (!$this->isLightweightImportTable($normalizedTable) && $this->shouldDeferSnapshotSync($jobId, $deleteId, $rebuildId)) {
+        if (!$this->isLightweightImportTable($normalizedTable) && $this->shouldDeferSnapshotSync($normalizedTable, $jobId, $deleteId, $rebuildId)) {
             $this->dispatchDeferredSnapshotSync($jobId, $normalizedTable, $periodHint, $source, $deleteId, $rebuildId);
             return;
         }
@@ -150,9 +151,10 @@ class ReportDataSyncService
         }
 
         $this->refreshTableStatistics($normalizedTable, $periodHint, $jobId, $source);
+        $this->markSnapshotDirtyAfterSourceMutation($normalizedTable, $periodHint, $source ?? static::class . '::syncImportedTable');
 
         try {
-            $newVersion = $this->bumpReportCacheVersion();
+            $newVersion = $this->bumpReportCacheVersion($this->cacheScopeForTable($normalizedTable));
             $this->writeAudit($normalizedTable, $periodHint, $jobId, $source, 'cache_invalidate', 'success', [
                 'context' => ['cache_version' => $newVersion],
             ]);
@@ -171,6 +173,7 @@ class ReportDataSyncService
                 'loan_type' => $this->syncLoanType($periodHint, $jobId, $source, $deleteId),
                 'simpanan_multipn' => $this->syncSimpanan($periodHint, $jobId, $source, $deleteId),
                 'ssa_simpanan' => $this->syncSsaSimpanan($periodHint, $jobId, $source, $deleteId),
+                'hourly_dpk' => $this->syncHourlyDpk($periodHint, $jobId, $source),
                 'ssa_pinjaman' => $this->syncSsaPinjaman($periodHint, $jobId, $source, $deleteId),
                 'lw325_ph' => $this->syncReportPh($periodHint, $jobId, $source, $deleteId),
                 'performance_pis_per_produk' => $this->syncPerformanceNewPayroll($periodHint, $jobId, $source, $deleteId),
@@ -193,10 +196,10 @@ class ReportDataSyncService
         }
     }
 
-    private function shouldDeferSnapshotSync(?int $jobId, ?string $deleteId = null, ?string $rebuildId = null): bool
+    private function shouldDeferSnapshotSync(string $tableName, ?int $jobId, ?string $deleteId = null, ?string $rebuildId = null): bool
     {
         try {
-            return app(ImportProgressService::class)->hasActiveProcessingJobs();
+            return app(ImportProgressService::class)->hasActiveProcessingJobsForTable($tableName, $jobId);
         } catch (Throwable $e) {
             Log::debug('Gagal mengecek status import aktif saat sinkronisasi snapshot.', [
                 'job_id' => $jobId,
@@ -422,6 +425,12 @@ class ReportDataSyncService
                 foreach ($requiredColumns as $column) {
                     $query->orWhereNull($column);
                 }
+
+                if (Schema::hasColumn('daily_loan_dinamis', 'shadow_built_at') && Schema::hasColumn('daily_loan_dinamis', 'updated_at')) {
+                    $query
+                        ->orWhereNull('shadow_built_at')
+                        ->orWhereColumn('shadow_built_at', '<', 'updated_at');
+                }
             })
             ->count();
     }
@@ -605,6 +614,25 @@ class ReportDataSyncService
         ]);
     }
 
+    private function syncHourlyDpk(?string $periodHint, ?int $jobId, ?string $source): void
+    {
+        $this->dispatchSnapshotFreshnessCheck('hourly_dpk', $periodHint, $source);
+
+        $period = trim((string) $periodHint);
+        if ($period === '' || $this->dashboardHarianFallbackLoanSourcePeriodHasRows($period)) {
+            $this->dispatchDashboardHarianSnapshotRebuildJob($period !== '' ? $period : null);
+            Log::info('Hourly DPK imported - Dashboard Harian rebuild dispatched when loan fallback is ready.', [
+                'period' => $periodHint,
+                'job_id' => $jobId,
+            ]);
+        } else {
+            Log::info('Hourly DPK imported - waiting for DLY KAP or L1133 before Dashboard Harian rebuild.', [
+                'period' => $periodHint,
+                'job_id' => $jobId,
+            ]);
+        }
+    }
+
     /**
      * OPTIMIZED: Dispatch background job for snapshot rebuild instead of blocking
      * 
@@ -671,23 +699,27 @@ class ReportDataSyncService
             return ['both_ready' => true, 'missing' => []];
         }
 
-        try {
-            if (!$this->sourcePeriodHasRows('ssa_simpanan', 'Month_Day_Year_of_Posisi', $period)) {
-                $missing[] = 'ssa_simpanan';
-            }
-        } catch (Throwable) {
-            // Table or column not available — assume ready to avoid blocking
-        }
+        $hasSsaSavings = $this->safeSourcePeriodHasRows('ssa_simpanan', 'Month_Day_Year_of_Posisi', $period);
+        $hasHourlySavings = $this->safeSourcePeriodHasRows('hourly_dpk', 'posisi', $period);
+        $hasSsaLoan = $this->safeSourcePeriodHasRows('ssa_pinjaman', 'month_day_year_of_periode', $period);
+        $hasFallbackLoan = $this->dashboardHarianFallbackLoanSourcePeriodHasRows($period);
 
-        try {
-            if (!$this->dashboardHarianLoanSourcePeriodHasRows($period)) {
+        $bothReady = ($hasSsaSavings && ($hasSsaLoan || $hasFallbackLoan))
+            || (!$hasSsaSavings && $hasHourlySavings && $hasFallbackLoan);
+
+        if (!$bothReady) {
+            if (!$hasSsaSavings && !$hasHourlySavings) {
+                $missing[] = 'savings_source';
+            }
+
+            if ($hasHourlySavings && !$hasFallbackLoan) {
+                $missing[] = 'fallback_loan_source';
+            } elseif ($hasSsaSavings && !$hasSsaLoan && !$hasFallbackLoan) {
                 $missing[] = 'loan_source';
             }
-        } catch (Throwable) {
-            // Assume ready
         }
 
-        return ['both_ready' => $missing === [], 'missing' => $missing];
+        return ['both_ready' => $bothReady, 'missing' => $missing];
     }
 
     private function dashboardHarianLoanSourcePeriodHasRows(string $period): bool
@@ -695,6 +727,21 @@ class ReportDataSyncService
         return $this->sourcePeriodHasRows('ssa_pinjaman', 'month_day_year_of_periode', $period)
             || $this->sourcePeriodHasRows('dly_kap_resegmentasi', 'periode', $period)
             || $this->sourcePeriodHasRows('l1133', 'periode', $period);
+    }
+
+    private function dashboardHarianFallbackLoanSourcePeriodHasRows(string $period): bool
+    {
+        return $this->safeSourcePeriodHasRows('dly_kap_resegmentasi', 'periode', $period)
+            || $this->safeSourcePeriodHasRows('l1133', 'periode', $period);
+    }
+
+    private function safeSourcePeriodHasRows(string $table, string $periodColumn, string $period): bool
+    {
+        try {
+            return $this->sourcePeriodHasRows($table, $periodColumn, $period);
+        } catch (Throwable) {
+            return false;
+        }
     }
 
     private function sourcePeriodHasRows(string $table, string $periodColumn, string $period): bool
@@ -733,6 +780,32 @@ class ReportDataSyncService
         }
     }
 
+    private function markSnapshotDirtyAfterSourceMutation(string $tableName, ?string $periodHint, ?string $source): void
+    {
+        $normalizedTable = strtolower(trim($tableName));
+        $period = trim((string) $periodHint);
+
+        if ($period === '' || !in_array($normalizedTable, [
+            'daily_loan_dinamis',
+            'simpanan_multipn',
+            'ssa_simpanan',
+            'hourly_dpk',
+            'ssa_pinjaman',
+            'lw325_ph',
+        ], true)) {
+            return;
+        }
+
+        try {
+            app(SnapshotDirtyPeriodService::class)->mark($normalizedTable, $period);
+            $this->writeAudit($normalizedTable, $period, null, $source, 'snapshot_dirty_mark', 'success');
+        } catch (Throwable $e) {
+            $this->writeAudit($normalizedTable, $period, null, $source, 'snapshot_dirty_mark', 'failed', [
+                'message' => $e->getMessage(),
+            ]);
+        }
+    }
+
     private function syncDashboardHarianDuePeriodsNow(string|array|null $period): void
     {
         $periods = is_array($period) ? $period : [$period];
@@ -759,6 +832,7 @@ class ReportDataSyncService
 
         if (in_array($normalizedTable, self::POST_DELETE_SNAPSHOT_REPORTS, true)) {
             $this->refreshTableStatistics($normalizedTable, $periodHint, null, $source);
+            $this->markSnapshotDirtyAfterSourceMutation($normalizedTable, $periodHint, $source);
             $this->cleanupDerivedArtifactsAfterDelete($normalizedTable, $periodHint, $source, $deleteId);
             $this->rebuildSnapshotsAfterDelete($normalizedTable, $periodHint, $source, $deleteId);
 
@@ -782,7 +856,7 @@ class ReportDataSyncService
         $this->refreshTableStatistics($normalizedTable, $periodHint, null, $source ?? static::class . '::syncAfterDeleteLightweight');
 
         try {
-            $newVersion = $this->bumpReportCacheVersion();
+            $newVersion = $this->bumpReportCacheVersion($this->cacheScopeForTable($normalizedTable));
             $this->writeAudit($normalizedTable, $periodHint, null, $source, 'cache_invalidate_lightweight', 'success', [
                 'context' => ['cache_version' => $newVersion],
             ]);
@@ -840,6 +914,9 @@ class ReportDataSyncService
             'ssa_simpanan' => [
                 self::DASHBOARD_HARIAN_SNAPSHOT_TABLE => 'snapshot_period',
                 self::SSA_SIMPANAN_SNAPSHOT_TABLE => 'Month_Day_Year_of_Posisi',
+            ],
+            'hourly_dpk' => [
+                self::DASHBOARD_HARIAN_SNAPSHOT_TABLE => 'snapshot_period',
             ],
             'ssa_pinjaman' => [
                 self::DASHBOARD_HARIAN_SNAPSHOT_TABLE => 'snapshot_period',
@@ -962,6 +1039,7 @@ class ReportDataSyncService
             'loan_type' => $this->syncLoanType(null, null, $source, $deleteId),
             'simpanan_multipn' => $this->syncSimpanan($normalizedPeriodHint, null, $source, $deleteId),
             'ssa_simpanan' => $this->syncSsaSimpanan($normalizedPeriodHint, null, $source, $deleteId),
+            'hourly_dpk' => $this->syncHourlyDpk($normalizedPeriodHint, null, $source),
             'ssa_pinjaman' => $this->syncSsaPinjaman($normalizedPeriodHint, null, $source, $deleteId),
             'lw325_ph' => $this->syncReportPh($normalizedPeriodHint, null, $source, $deleteId),
             'performance_pis_per_produk' => $this->syncPerformanceNewPayroll($normalizedPeriodHint, null, $source, $deleteId),
@@ -1110,11 +1188,29 @@ class ReportDataSyncService
         return (int) round((microtime(true) - $startedAt) * 1000);
     }
 
-    private function bumpReportCacheVersion(): int
+    private function bumpReportCacheVersion(string $scope = 'global'): int
     {
         Cache::add(self::CACHE_VERSION_KEY, 1, now()->addDays(30));
 
-        return (int) Cache::increment(self::CACHE_VERSION_KEY);
+        $version = (int) Cache::increment(self::CACHE_VERSION_KEY);
+        $scope = strtolower(trim($scope));
+        if ($scope !== '' && $scope !== 'global') {
+            $key = 'report_cache_version:' . $scope;
+            Cache::add($key, 1, now()->addDays(30));
+            Cache::increment($key);
+        }
+
+        return $version;
+    }
+
+    private function cacheScopeForTable(string $tableName): string
+    {
+        return match (strtolower(trim($tableName))) {
+            'daily_loan_dinamis', 'ssa_pinjaman', 'lw325_ph' => 'pinjaman',
+            'simpanan_multipn', 'ssa_simpanan', 'hourly_dpk' => 'simpanan',
+            'dly_kap_resegmentasi', 'l1133' => 'harian',
+            default => 'global',
+        };
     }
 
     public function invalidateReportCaches(?string $source = null): int

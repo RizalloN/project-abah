@@ -23,6 +23,7 @@ class ImportCleanupService
     private const IMMEDIATE_SYNC_TABLES = [
         self::DAILY_LOAN_TABLE,
         'ssa_simpanan',
+        'hourly_dpk',
         'ssa_pinjaman',
         'lw325_ph',
         'performance_pis_per_produk',
@@ -37,6 +38,7 @@ class ImportCleanupService
         'simpanan_multipn' => 'posisi',
         'ssa_pinjaman' => 'month_day_year_of_periode',
         'ssa_simpanan' => 'Month_Day_Year_of_Posisi',
+        'hourly_dpk' => 'posisi',
         'lw325_ph' => 'periode',
     ];
     private const USE_BATCHING = true;

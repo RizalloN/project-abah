@@ -445,6 +445,48 @@ class ImportProgressService
         return $query->exists();
     }
 
+    public function hasActiveProcessingJobsForTable(string $tableName, ?int $exceptJobId = null): bool
+    {
+        $normalizedTable = $this->normalizeImportTableName($tableName);
+        if ($normalizedTable === '' || !Schema::hasTable('import_jobs')) {
+            return false;
+        }
+
+        if (!Schema::hasTable('nama_report')) {
+            return $this->hasActiveProcessingJobs($exceptJobId);
+        }
+
+        $hasImportJobTableName = Schema::hasColumn('import_jobs', 'table_name');
+
+        $query = DB::table('import_jobs as ij')
+            ->leftJoin('nama_report as nr', 'nr.id_report', '=', 'ij.id_report')
+            ->where('ij.status', 'processing')
+            ->where(function ($builder) use ($normalizedTable, $hasImportJobTableName): void {
+                $builder->whereRaw('LOWER(TRIM(COALESCE(nr.table_name, ""))) = ?', [$normalizedTable]);
+
+                if ($hasImportJobTableName) {
+                    $builder->orWhereRaw('LOWER(TRIM(COALESCE(ij.table_name, ""))) = ?', [$normalizedTable]);
+                }
+            });
+
+        if ($exceptJobId !== null && $exceptJobId > 0) {
+            $query->where('ij.id', '!=', $exceptJobId);
+        }
+
+        return $query->exists();
+    }
+
+    private function normalizeImportTableName(string $tableName): string
+    {
+        $normalized = strtolower(trim($tableName));
+
+        return match ($normalized) {
+            'daily_loan', 'daily loan', 'daily loan dinamis' => 'daily_loan_dinamis',
+            'simpanan multipn', 'simpanan_multi_pn' => 'simpanan_multipn',
+            default => $normalized,
+        };
+    }
+
     public function purgeStaleQueuedJobs(): int
     {
         $cutoff = now()->subMinutes(self::STALE_QUEUED_MINUTES);

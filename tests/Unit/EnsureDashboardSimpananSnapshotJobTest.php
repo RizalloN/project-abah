@@ -34,7 +34,7 @@ class EnsureDashboardSimpananSnapshotJobTest extends TestCase
         });
     }
 
-    public function test_job_does_not_register_snapshot_sync_when_area_branches_are_incomplete(): void
+    public function test_job_registers_partial_snapshot_sync_when_area_branches_are_incomplete(): void
     {
         DB::table('simpanan_multipn')->insert([
             ['posisi' => '2026-04-30', 'kantor_cabang' => 'KC Madiun'],
@@ -43,7 +43,9 @@ class EnsureDashboardSimpananSnapshotJobTest extends TestCase
         ]);
 
         $aggregator = Mockery::mock(SnapshotBatchAggregator::class);
-        $aggregator->shouldNotReceive('registerSyncRequest');
+        $aggregator->shouldReceive('registerSyncRequest')
+            ->once()
+            ->andReturn(['batched' => true]);
         $this->app->instance(SnapshotBatchAggregator::class, $aggregator);
 
         (new EnsureDashboardSimpananSnapshotJob('2026-04-30', 'unit-test'))->handle($aggregator);

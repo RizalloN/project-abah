@@ -3,7 +3,10 @@
 namespace Tests\Unit;
 
 use App\Http\Controllers\Import\ImportSimpananMultiPnCsvController;
+use App\Http\Controllers\Import\ImportIndexController;
 use App\Services\Import\ImportCleanupService;
+use App\Services\Import\ImportDuplicateGuardService;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Mockery;
 use ReflectionClass;
@@ -325,6 +328,62 @@ class ImportSimpananMultiPnCsvControllerTest extends TestCase
 
         $this->assertSame('uniqueid_SimoPN', $plan['unique_id_column'] ?? null);
         $this->assertStringContainsString('`uniqueid_SimoPN` = CONCAT(', $planSql);
+        $this->assertStringContainsString('SHA1(CONCAT_WS', $planSql);
+        $this->assertStringNotContainsString('REPLACE(UUID()', $planSql);
+    }
+
+    public function test_simpanan_job_metadata_persists_content_hash_column_for_duplicate_guard(): void
+    {
+        if (!Schema::hasTable('import_jobs')) {
+            Schema::create('import_jobs', function ($table): void {
+                $table->id();
+                $table->integer('id_report')->nullable();
+                $table->string('status')->nullable();
+                $table->string('job_content_hash')->nullable();
+                $table->text('job_context')->nullable();
+                $table->timestamps();
+            });
+        }
+
+        if (!Schema::hasColumn('import_jobs', 'job_content_hash')) {
+            $this->markTestSkipped('import_jobs.job_content_hash column is not available in this fixture.');
+        }
+
+        $jobId = DB::table('import_jobs')->insertGetId([
+            'id_report' => 9,
+            'status' => 'processing',
+            'job_content_hash' => null,
+            'job_context' => json_encode(['table_name' => 'simpanan_multipn']),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $controller = new ImportSimpananMultiPnCsvController();
+        $this->invokeMethod($controller, 'storeSimpananMultiPnJobMetadata', [$jobId, [
+            'content_hash' => str_repeat('a', 64),
+            'period_hints' => ['2025-05-31'],
+            'branch_hints' => ['00045 -- KC Madiun(Konsolidasi-MB)'],
+            'table_name' => 'simpanan_multipn',
+        ]]);
+
+        $job = DB::table('import_jobs')->where('id', $jobId)->first();
+        $context = json_decode((string) $job->job_context, true);
+
+        $this->assertSame(str_repeat('a', 64), $job->job_content_hash);
+        $this->assertSame(str_repeat('a', 64), $context['content_hash'] ?? null);
+        $this->assertSame(['2025-05-31'], $context['period_hints'] ?? []);
+    }
+
+    public function test_content_hash_column_availability_is_not_stuck_on_stale_cache(): void
+    {
+        cache()->forever('import_guard:content_hash_col_exists', false);
+
+        $this->assertSame(
+            Schema::hasColumn('import_jobs', 'job_content_hash'),
+            app(ImportDuplicateGuardService::class)->isContentHashColumnAvailable()
+        );
+
+        cache()->forget('import_guard:content_hash_col_exists');
     }
 
     public function test_direct_csv_load_plan_collects_normalized_period_hints_from_source(): void
@@ -470,6 +529,100 @@ class ImportSimpananMultiPnCsvControllerTest extends TestCase
         $this->assertSame(0, $result['duplicate_count']);
         $this->assertSame(1, $result['skipped_count']);
         $this->assertTrue((bool) ($result['normalized'] ?? false));
+    }
+
+    public function test_prepare_simpanan_direct_load_source_removes_exact_duplicate_business_rows(): void
+    {
+        $controller = new class extends ImportSimpananMultiPnCsvController {
+            protected function resolveActiveTableName(string $default = 'daily_loan_dinamis'): string
+            {
+                return 'simpanan_multipn';
+            }
+
+            protected function stageSimpananMultiPnCsvWithPolars(
+                ?callable $send,
+                string $csvPath,
+                ?string $delimiter = null,
+                array $activeFilters = [],
+                int $jobId = 0,
+                array $selectedColumns = [],
+                array $normalizedHeaders = []
+            ): ?array {
+                return null;
+            }
+        };
+
+        $csvPath = storage_path('framework/testing/simpanan_validator_duplicate_rows.csv');
+        if (!is_dir(dirname($csvPath))) {
+            @mkdir(dirname($csvPath), 0777, true);
+        }
+
+        file_put_contents($csvPath, implode("\n", [
+            'No;POSISI;CIFNO;NO_REKENING;JENIS_SIMPANAN;SALDO_IDR;STATUS',
+            '1;04-04-2026;CIF001;1234567890;TABUNGAN;1000;AKTIF',
+            '2;04/04/2026;CIF001;1234567890;TABUNGAN;1000.00;AKTIF',
+            'BROKEN,ROW,WITH,TOO,MANY,COLUMNS',
+        ]) . "\n");
+
+        $result = [];
+        try {
+            $result = $this->invokeMethod($controller, 'prepareSimpananMultiPnDirectLoadSource', [$csvPath, ';']);
+        } finally {
+            @unlink($csvPath);
+            if (!empty($result['path'] ?? '') && file_exists((string) $result['path']) && ($result['cleanup'] ?? false)) {
+                @unlink((string) $result['path']);
+            }
+        }
+
+        $this->assertSame(1, $result['written_rows']);
+        $this->assertSame(1, $result['duplicate_count']);
+        $this->assertSame(2, $result['skipped_count']);
+        $this->assertTrue((bool) ($result['normalized'] ?? false));
+    }
+
+    public function test_simpanan_load_slot_recheck_blocks_existing_period_and_branch(): void
+    {
+        if (!Schema::hasTable('simpanan_multipn')) {
+            Schema::create('simpanan_multipn', function ($table): void {
+                $table->string('uniqueid_SMPN')->primary();
+                $table->date('posisi')->nullable();
+                $table->string('kantor_cabang')->nullable();
+                $table->timestamps();
+            });
+        }
+
+        DB::table('simpanan_multipn')->delete();
+
+        DB::table('simpanan_multipn')->insert([
+            'uniqueid_SMPN' => 'existing-row',
+            'posisi' => '2026-04-04',
+            'kantor_cabang' => 'KC MADIUN',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('sudah ada di tabel simpanan_multipn');
+
+        $controller = new ImportSimpananMultiPnCsvController();
+        $this->invokeMethod($controller, 'assertSimpananMultiPnLoadSlotsEmpty', [[
+            'period_hints' => ['2026-04-04'],
+            'branch_hints' => ['KC MADIUN'],
+        ]]);
+    }
+
+    public function test_duplicate_cleanup_query_uses_window_ranked_rows(): void
+    {
+        $controller = app(ImportIndexController::class);
+
+        [$deleteSql, $periodSql] = $this->invokeMethod($controller, 'buildDuplicateCleanupQueries', ['simpanan_multipn']);
+
+        $this->assertStringContainsString('ROW_NUMBER() OVER', $deleteSql);
+        $this->assertStringContainsString('PARTITION BY s.`posisi`', $deleteSql);
+        $this->assertStringContainsString('DELETE t FROM `simpanan_multipn` t', $deleteSql);
+        $this->assertStringContainsString('t.`uniqueid_SMPN` = d.duplicate_id', $deleteSql);
+        $this->assertStringContainsString('SELECT DISTINCT period', $periodSql);
+        $this->assertStringContainsString('duplicate_rank > 1', $periodSql);
     }
 
     public function test_prepare_simpanan_direct_load_source_normalizes_blank_lines_instead_of_using_raw_path(): void

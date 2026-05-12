@@ -6,6 +6,7 @@ use App\Services\Import\Strategies\DailyLoanImportStrategy;
 use App\Services\Import\Strategies\ConfiguredExcelImportStrategy;
 use App\Services\Import\Strategies\Gi405RecDhImportStrategy;
 use App\Services\Import\Strategies\GenericCsvImportStrategy;
+use App\Services\Import\Strategies\HourlyDpkImportStrategy;
 use App\Services\Import\Strategies\L1133ImportStrategy;
 use App\Services\Import\Strategies\Lw321NpdImportStrategy;
 use App\Services\Import\Strategies\Lw321NpddImportStrategy;
@@ -77,6 +78,7 @@ class ImportStrategiesTest extends TestCase
         $this->assertFalse($strategy->supports(null, 'rka'));
         $this->assertFalse($strategy->supports(null, 'brihc'));
         $this->assertFalse($strategy->supports(null, 'wilayah_mbm'));
+        $this->assertFalse($strategy->supports(null, 'hourly_dpk'));
         $this->assertFalse($strategy->supports(null, 'l1133'));
         $this->assertFalse($strategy->supports(null, 'lw321pn'));
         $this->assertSame(['A', 'B'], $strategy->transformHeaders(['A', 'B']));
@@ -112,6 +114,33 @@ class ImportStrategiesTest extends TestCase
 
         $this->assertTrue($strategy->supports(null, 'gi405_singlerow'));
         $this->assertSame('bulk_csv_filtered', $strategy->importMode());
+    }
+
+    public function test_hourly_dpk_strategy_maps_workbook_headers_to_import_schema(): void
+    {
+        $strategy = new HourlyDpkImportStrategy();
+
+        $headers = $strategy->transformHeaders([
+            'Month, Day, Year of POSISI',
+            'MBNAME',
+            'BRNAME',
+            'SEGMEN',
+            'PRODUK',
+            'Saldo',
+        ]);
+
+        $this->assertTrue($strategy->supports(null, 'hourly_dpk'));
+        $this->assertSame('bulk_csv_staging', $strategy->importMode());
+        $this->assertSame(['posisi', 'mbname', 'brname', 'segmen', 'produk', 'saldo'], $headers);
+        $this->assertTrue($strategy->validateSchema([
+            'uniqueid_namareport',
+            'posisi',
+            'mbname',
+            'brname',
+            'segmen',
+            'produk',
+            'saldo',
+        ])['ok']);
     }
 
     public function test_l1133_strategy_registers_normalized_headers_for_bulk_csv(): void

@@ -41,7 +41,7 @@ Artisan::command('reports:sync-source {table} {--period=}', function () {
     $table = strtolower(trim((string) $this->argument('table')));
     $period = StrictDateParser::normalize((string) $this->option('period')) ?? $this->option('period');
 
-    $allowed = ['daily_loan_dinamis', 'loan_type', 'simpanan_multipn', 'ssa_simpanan', 'ssa_pinjaman', 'lw325_ph', 'performance_pis_per_produk'];
+    $allowed = ['daily_loan_dinamis', 'loan_type', 'simpanan_multipn', 'ssa_simpanan', 'hourly_dpk', 'ssa_pinjaman', 'lw325_ph', 'performance_pis_per_produk'];
     if (!in_array($table, $allowed, true)) {
         $this->error('Table tidak didukung. Pilih: ' . implode(', ', $allowed));
         return;
@@ -257,12 +257,18 @@ Artisan::command('reports:ensure-fresh-snapshots {--period=}', function () {
     $period = $period !== '' ? $period : null;
 
     app(SnapshotBatchAggregator::class)->flushDueBatches();
+    Artisan::call('reports:snapshot:drain-dirty', [
+        '--max-runtime' => 1,
+        '--period' => $period,
+    ]);
 
     EnsureImportedSnapshotsFreshJob::dispatch('daily_loan_dinamis', $period, 'schedule:reports:ensure-fresh-snapshots')
         ->onQueue('snapshots-parallel');
     EnsureImportedSnapshotsFreshJob::dispatch('simpanan_multipn', $period, 'schedule:reports:ensure-fresh-snapshots')
         ->onQueue('snapshots-parallel');
     EnsureImportedSnapshotsFreshJob::dispatch('ssa_simpanan', $period, 'schedule:reports:ensure-fresh-snapshots')
+        ->onQueue('snapshots-parallel');
+    EnsureImportedSnapshotsFreshJob::dispatch('hourly_dpk', $period, 'schedule:reports:ensure-fresh-snapshots')
         ->onQueue('snapshots-parallel');
     EnsureImportedSnapshotsFreshJob::dispatch('ssa_pinjaman', $period, 'schedule:reports:ensure-fresh-snapshots')
         ->onQueue('snapshots-parallel');
@@ -274,6 +280,10 @@ Artisan::command('reports:ensure-fresh-snapshots {--period=}', function () {
 
 Schedule::command('reports:ensure-fresh-snapshots')
     ->everyFiveMinutes()
+    ->withoutOverlapping();
+
+Schedule::command('reports:snapshot:drain-dirty --max-runtime=55')
+    ->everyMinute()
     ->withoutOverlapping();
 
 Schedule::command('reports:dashboard-harian-sync-missing')

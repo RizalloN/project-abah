@@ -116,6 +116,13 @@ class ImportIndexController extends Controller
             'identity' => 'uniqueid_dly_kap',
             'chunk_size' => 25000,
         ],
+        'hourly_dpk' => [
+            'index' => 'idx_hourly_dpk_posisi_mbname',
+            'period' => 'posisi',
+            'kanca' => 'mbname',
+            'identity' => 'uniqueid_namareport',
+            'chunk_size' => 50000,
+        ],
         'lw321pn' => [
             'index' => 'idx_lw321pn_period_kanca_uker',
             'period' => 'periode',
@@ -1043,27 +1050,11 @@ class ImportIndexController extends Controller
         if ($tableName === 'simpanan_multipn') {
             return 'posisi';
         }
+        if ($tableName === 'hourly_dpk') {
+            return 'posisi';
+        }
 
         return 'periode';
-    }
-
-    private function buildDuplicateKeepSignatureExpression(string $tableName, string $alias): string
-    {
-        $identity = $this->getDuplicateIdentityColumn($tableName);
-
-        // OPTIMIZED: Avoid expensive DATE_FORMAT on millions of rows
-        return "CONCAT(COALESCE({$alias}.`created_at`, '1000-01-01 00:00:00'), '|', COALESCE({$alias}.`{$identity}`, ''))";
-    }
-
-    /**
-     * @param array<int, string> $columns
-     */
-    private function buildNullSafeColumnJoinConditions(array $columns, string $leftAlias, string $rightAlias): string
-    {
-        return implode(' AND ', array_map(
-            static fn (string $column): string => "{$leftAlias}.`{$column}` <=> {$rightAlias}.`{$column}`",
-            $columns
-        ));
     }
 
     /**
@@ -1073,20 +1064,22 @@ class ImportIndexController extends Controller
     {
         $columns = $this->getDuplicateFingerprintColumns($tableName);
         $periodColumn = $this->getDuplicatePeriodColumn($tableName);
+        $identityColumn = $this->getDuplicateIdentityColumn($tableName);
 
-        $groupColumns = implode(', ', array_map(
+        $partitionColumns = implode(', ', array_map(
             static fn (string $column): string => "s.`{$column}`",
             $columns
         ));
-        $joinConditions = $this->buildNullSafeColumnJoinConditions($columns, 't', 'd');
-        $keepSignature = $this->buildDuplicateKeepSignatureExpression($tableName, 't');
-        $groupKeepSignature = $this->buildDuplicateKeepSignatureExpression($tableName, 's');
-        $duplicateGroupsSql = "SELECT {$groupColumns}, MIN({$groupKeepSignature}) AS keep_signature, COUNT(*) AS duplicate_count FROM `{$tableName}` s GROUP BY {$groupColumns} HAVING COUNT(*) > 1";
-        $deleteWhereClause = "{$keepSignature} <> d.keep_signature";
+
+        $rankedRowsSql = "SELECT s.`{$identityColumn}` AS duplicate_id, s.`{$periodColumn}` AS period, "
+            . "ROW_NUMBER() OVER (PARTITION BY {$partitionColumns} "
+            . "ORDER BY COALESCE(s.`created_at`, '1000-01-01 00:00:00') ASC, s.`{$identityColumn}` ASC) AS duplicate_rank "
+            . "FROM `{$tableName}` s";
+        $duplicateRowsSql = "SELECT duplicate_id, period FROM ({$rankedRowsSql}) ranked WHERE duplicate_rank > 1";
 
         return [
-            "DELETE t FROM `{$tableName}` t INNER JOIN ({$duplicateGroupsSql}) d ON {$joinConditions} WHERE {$deleteWhereClause}",
-            "SELECT DISTINCT t.`{$periodColumn}` AS period FROM `{$tableName}` t INNER JOIN ({$duplicateGroupsSql}) d ON {$joinConditions} WHERE {$deleteWhereClause}",
+            "DELETE t FROM `{$tableName}` t INNER JOIN (SELECT duplicate_id FROM ({$duplicateRowsSql}) duplicate_rows) d ON t.`{$identityColumn}` = d.duplicate_id",
+            "SELECT DISTINCT period FROM ({$duplicateRowsSql}) duplicate_rows WHERE period IS NOT NULL",
         ];
     }
 
@@ -1615,6 +1608,12 @@ class ImportIndexController extends Controller
             'scopes.*.kanca' => 'nullable|string|max:255',
             'scopes.*.kanca_filter' => 'nullable|string|max:255',
             'scopes.*.kanca_label' => 'nullable|string|max:255',
+            'scopes.*.extra_filters' => 'nullable|array|max:8',
+            'scopes.*.extra_filters.*.column' => 'nullable|string|max:100',
+            'scopes.*.extra_filters.*.value' => 'nullable|string|max:255',
+            'scopes.*.extra_filters.*.value_label' => 'nullable|string|max:255',
+            'scopes.*.extra_filters.*.label' => 'nullable|string|max:100',
+            'scopes.*.extra_filters.*.is_null' => 'nullable|boolean',
             'scopes.*.period_is_null' => 'nullable|boolean',
             'scopes.*.kanca_is_null' => 'nullable|boolean',
             'scopes.*.fallback_mode' => 'nullable|string|max:100',
@@ -3802,6 +3801,50 @@ class ImportIndexController extends Controller
         return [$query, $hasWhereClause];
     }
 
+    private function resolveManagedDeleteExtraScopeColumns(string $tableName): array
+    {
+        if (!Schema::hasTable($tableName)) {
+            return [];
+        }
+
+        return $this->reportManagementService()->resolveManagementExtraScopeColumns(
+            $tableName,
+            Schema::getColumnListing($tableName)
+        );
+    }
+
+    private function filterManagedDeleteExtraFilters(mixed $rawFilters, array $allowedColumns): array
+    {
+        $allowedLookup = array_fill_keys(array_map('strval', $allowedColumns), true);
+        $filters = [];
+
+        foreach ($this->normalizeScopeExtraFilters($rawFilters) as $filter) {
+            $column = (string) ($filter['column'] ?? '');
+            if ($column === '' || !isset($allowedLookup[$column])) {
+                continue;
+            }
+
+            $filters[] = $filter;
+        }
+
+        return $filters;
+    }
+
+    private function hasManagedDeleteExtraConstraints(array $extraFilters): bool
+    {
+        foreach ($extraFilters as $filter) {
+            if ((bool) ($filter['is_null'] ?? false)) {
+                return true;
+            }
+
+            if (($filter['value'] ?? null) !== null && $filter['value'] !== '') {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private function buildDeleteScopeQueryFromScopes(
         string $tableName,
         ?string $periodColumn,
@@ -3809,8 +3852,9 @@ class ImportIndexController extends Controller
         array $scopes
     ): array {
         $query = DB::table($tableName);
+        $extraScopeColumns = $this->resolveManagedDeleteExtraScopeColumns($tableName);
 
-        if ($periodColumn === null && $kancaColumn === null) {
+        if ($periodColumn === null && $kancaColumn === null && $extraScopeColumns === []) {
             return [$query, true];
         }
 
@@ -3830,12 +3874,17 @@ class ImportIndexController extends Controller
             $periodIsNull = (bool) ($scope['period_is_null'] ?? false);
             $kancaIsNull = (bool) ($scope['kanca_is_null'] ?? false);
             $isLw325Fallback = $this->isLw325BlankCreatedAtFallbackScope($tableName, $scope);
+            $extraFilters = $this->filterManagedDeleteExtraFilters(
+                $scope['extra_filters'] ?? [],
+                $extraScopeColumns
+            );
 
             $hasPeriodConstraint = $periodColumn !== null && ($periodIsNull || ($periodFilter !== null && $periodFilter !== ''));
             $hasKancaConstraint = $kancaColumn !== null && ($kancaIsNull || ($kancaFilter !== null && $kancaFilter !== ''));
             $hasFallbackConstraint = $isLw325Fallback && (($scope['fallback_period_filter'] ?? null) !== null && trim((string) ($scope['fallback_period_filter'] ?? '')) !== '');
+            $hasExtraConstraint = $this->hasManagedDeleteExtraConstraints($extraFilters);
 
-            if (!$hasPeriodConstraint && !$hasKancaConstraint && !$hasFallbackConstraint) {
+            if (!$hasPeriodConstraint && !$hasKancaConstraint && !$hasFallbackConstraint && !$hasExtraConstraint) {
                 continue;
             }
 
@@ -3848,6 +3897,7 @@ class ImportIndexController extends Controller
                 'fallback_period_column' => array_key_exists('fallback_period_column', $scope) ? (string) ($scope['fallback_period_column'] ?? '') : null,
                 'fallback_period_filter' => array_key_exists('fallback_period_filter', $scope) ? (string) ($scope['fallback_period_filter'] ?? '') : null,
                 'fallback_period_label' => array_key_exists('fallback_period_label', $scope) ? (string) ($scope['fallback_period_label'] ?? '') : null,
+                'extra_filters' => $extraFilters,
             ];
         }
 
@@ -3894,6 +3944,21 @@ class ImportIndexController extends Controller
                                 $applied = true;
                             } elseif (($scope['kanca_filter'] ?? null) !== null && $scope['kanca_filter'] !== '') {
                                 $innerQuery->where($kancaColumn, (string) $scope['kanca_filter']);
+                                $applied = true;
+                            }
+                        }
+
+                        foreach (($scope['extra_filters'] ?? []) as $extraFilter) {
+                            $column = trim((string) ($extraFilter['column'] ?? ''));
+                            if ($column === '') {
+                                continue;
+                            }
+
+                            if ((bool) ($extraFilter['is_null'] ?? false)) {
+                                $this->applyBlankValueConstraint($innerQuery, $column);
+                                $applied = true;
+                            } elseif (($extraFilter['value'] ?? null) !== null && $extraFilter['value'] !== '') {
+                                $innerQuery->where($column, (string) $extraFilter['value']);
                                 $applied = true;
                             }
                         }
@@ -4013,6 +4078,7 @@ class ImportIndexController extends Controller
             $fallbackPeriodColumn = array_key_exists('fallback_period_column', $scope) ? trim((string) ($scope['fallback_period_column'] ?? '')) : null;
             $fallbackPeriodFilter = array_key_exists('fallback_period_filter', $scope) ? trim((string) ($scope['fallback_period_filter'] ?? '')) : null;
             $fallbackPeriodLabel = array_key_exists('fallback_period_label', $scope) ? trim((string) ($scope['fallback_period_label'] ?? '')) : null;
+            $extraFilters = $this->normalizeScopeExtraFilters($scope['extra_filters'] ?? []);
 
             $scopeKey = json_encode([
                 $periodFilter,
@@ -4022,6 +4088,7 @@ class ImportIndexController extends Controller
                 $fallbackMode,
                 $fallbackPeriodColumn,
                 $fallbackPeriodFilter,
+                $extraFilters,
             ]);
 
             if ($scopeKey === false || isset($seen[$scopeKey])) {
@@ -4040,10 +4107,44 @@ class ImportIndexController extends Controller
                 'fallback_period_column' => $fallbackPeriodColumn,
                 'fallback_period_filter' => $fallbackPeriodFilter,
                 'fallback_period_label' => $fallbackPeriodLabel,
+                'extra_filters' => $extraFilters,
             ];
         }
 
         return $normalized;
+    }
+
+    private function normalizeScopeExtraFilters(mixed $rawFilters): array
+    {
+        if (!is_array($rawFilters)) {
+            return [];
+        }
+
+        $filters = [];
+        foreach ($rawFilters as $filter) {
+            if (!is_array($filter)) {
+                continue;
+            }
+
+            $column = trim((string) ($filter['column'] ?? ''));
+            if ($column === '') {
+                continue;
+            }
+
+            $isNull = (bool) ($filter['is_null'] ?? false);
+            $value = $isNull ? null : trim((string) ($filter['value'] ?? ''));
+            $valueLabel = trim((string) ($filter['value_label'] ?? $value ?? ''));
+
+            $filters[] = [
+                'column' => $column,
+                'value' => $value !== '' ? $value : null,
+                'value_label' => $valueLabel !== '' ? $valueLabel : null,
+                'label' => trim((string) ($filter['label'] ?? $column)),
+                'is_null' => $isNull,
+            ];
+        }
+
+        return array_values($filters);
     }
 
     private function extractDeleteScopesFromState(array $state): array
@@ -4084,6 +4185,7 @@ class ImportIndexController extends Controller
                     'fallback_period_label' => array_key_exists('fallback_period_label', $scope)
                         ? (($scope['fallback_period_label'] ?? '') !== '' ? (string) $scope['fallback_period_label'] : null)
                         : null,
+                    'extra_filters' => $this->normalizeScopeExtraFilters($scope['extra_filters'] ?? []),
                 ];
             }
         }
@@ -4119,6 +4221,7 @@ class ImportIndexController extends Controller
             'fallback_period_label' => array_key_exists('fallback_period_label', $state)
                 ? (($state['fallback_period_label'] ?? '') !== '' ? (string) $state['fallback_period_label'] : null)
                 : null,
+            'extra_filters' => $this->normalizeScopeExtraFilters($state['extra_filters'] ?? []),
         ]];
     }
 
@@ -4181,7 +4284,7 @@ class ImportIndexController extends Controller
                 : 'direct_delete';
         }
 
-        foreach ($this->buildDeleteConstraintVariants($periodColumn, $kancaColumn, $scope) as $variant) {
+        foreach ($this->buildDeleteConstraintVariants($tableName, $periodColumn, $kancaColumn, $scope) as $variant) {
             if ($this->resolveDeleteIndexHint($tableName, $periodColumn, $kancaColumn, $identityColumn, $variant) !== null) {
                 return 'indexed_batch_delete';
             }
@@ -4426,7 +4529,7 @@ class ImportIndexController extends Controller
                 }
 
                 if ($identityColumn !== null && Schema::hasColumn($tableName, $identityColumn)) {
-                    $variants = $this->buildDeleteConstraintVariants($periodColumn, $kancaColumn, $scope);
+                    $variants = $this->buildDeleteConstraintVariants($tableName, $periodColumn, $kancaColumn, $scope);
                     if (empty($variants)) {
                         return 0;
                     }
@@ -4604,7 +4707,7 @@ class ImportIndexController extends Controller
         return $deletedTotal;
     }
 
-    private function buildDeleteConstraintVariants(?string $periodColumn, ?string $kancaColumn, array $scope): array
+    private function buildDeleteConstraintVariants(string $tableName, ?string $periodColumn, ?string $kancaColumn, array $scope): array
     {
         $dimensionVariants = [];
 
@@ -4640,6 +4743,33 @@ class ImportIndexController extends Controller
 
             if (!empty($constraints)) {
                 $dimensionVariants[$dimension] = $constraints;
+            }
+        }
+
+        $extraScopeColumns = $this->resolveManagedDeleteExtraScopeColumns($tableName);
+        foreach ($this->filterManagedDeleteExtraFilters($scope['extra_filters'] ?? [], $extraScopeColumns) as $extraFilter) {
+            $column = (string) ($extraFilter['column'] ?? '');
+            if ($column === '') {
+                continue;
+            }
+
+            $constraints = [];
+            if ((bool) ($extraFilter['is_null'] ?? false)) {
+                $constraints = [
+                    ['column' => $column, 'mode' => 'null'],
+                    ['column' => $column, 'mode' => 'empty'],
+                    ['column' => $column, 'mode' => 'trim'],
+                ];
+            } elseif (($extraFilter['value'] ?? null) !== null && $extraFilter['value'] !== '') {
+                $constraints[] = [
+                    'column' => $column,
+                    'mode' => 'equal',
+                    'value' => (string) $extraFilter['value'],
+                ];
+            }
+
+            if ($constraints !== []) {
+                $dimensionVariants['extra:' . $column] = $constraints;
             }
         }
 
@@ -5312,6 +5442,15 @@ WHERE {$whereSql}
             $parts[] = 'Kanca kosong';
         } elseif (($scope['kanca_filter'] ?? null) !== null && $scope['kanca_filter'] !== '') {
             $parts[] = 'Kanca ' . (string) $scope['kanca_filter'];
+        }
+
+        foreach ($this->normalizeScopeExtraFilters($scope['extra_filters'] ?? []) as $extraFilter) {
+            $label = trim((string) ($extraFilter['label'] ?? $extraFilter['column'] ?? 'Scope tambahan'));
+            if ((bool) ($extraFilter['is_null'] ?? false)) {
+                $parts[] = $label . ' kosong';
+            } elseif (($extraFilter['value'] ?? null) !== null && $extraFilter['value'] !== '') {
+                $parts[] = $label . ' ' . (string) $extraFilter['value'];
+            }
         }
 
         return !empty($parts) ? implode(' | ', $parts) : 'scope aktif';

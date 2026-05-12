@@ -161,7 +161,7 @@ class DashboardHarianController extends Controller
     private function payload(?string $selectedPeriod, ?string $selectedRka, array|string|null $selectedKanca, array|string|null $selectedUnit): array
     {
         $cacheKey = 'dashboard_harian:payload:' . md5(json_encode([
-            'schema' => 'penc-pct-v9-rka-unit-scope-cache',
+            'schema' => 'penc-pct-v10-rka-unit-filter-fix',
             'version' => (int) Cache::get('report_cache_version:global', 1),
             'period' => $selectedPeriod,
             'rka' => $selectedRka,

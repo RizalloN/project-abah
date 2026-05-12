@@ -12,6 +12,7 @@
     $priorities = data_get($dashboard ?? [], 'priorities', []);
     $activities = data_get($dashboard ?? [], 'activities', []);
     $agenda = data_get($dashboard ?? [], 'agenda', []);
+    $dataQuality = data_get($dashboard ?? [], 'data_quality', []);
     $dashboardLogo = asset('images/a-six-logo.svg');
 
     $heroStats = is_array(data_get($hero, 'stats')) ? data_get($hero, 'stats') : [];
@@ -440,6 +441,11 @@
                         <div>
                             <h1 class="mb-0 font-weight-bold" style="font-size: 2.2rem;">{{ data_get($hero, 'title', 'A-SIX') }}</h1>
                             <div class="text-white-50 mt-1" style="font-size: 1rem;">Ringkasan Posisi Keuangan Area 6 Realtime</div>
+                            @if(data_get($dataQuality, 'snapshot_completeness') === 'partial')
+                                <span class="badge badge-warning mt-2 px-3 py-2">
+                                    Partial Data - menunggu {{ implode(', ', (array) data_get($dataQuality, 'partial_branches', [])) }}
+                                </span>
+                            @endif
                         </div>
                     </div>
                 </div>

@@ -32,7 +32,7 @@ class SimpananMultiPnSnapshotGateTest extends TestCase
         });
     }
 
-    public function test_snapshot_gate_rejects_period_until_all_four_area_branches_exist(): void
+    public function test_snapshot_gate_accepts_partial_period_and_reports_missing_branches(): void
     {
         DB::table('simpanan_multipn')->insert([
             ['posisi' => '2026-04-30', 'kantor_cabang' => 'KC Madiun'],
@@ -42,7 +42,7 @@ class SimpananMultiPnSnapshotGateTest extends TestCase
 
         $gate = app(SimpananMultiPnSnapshotGate::class);
 
-        $this->assertFalse($gate->isReady('2026-04-30'));
+        $this->assertTrue($gate->isReady('2026-04-30'));
         $this->assertEqualsCanonicalizing(['PONOROGO'], $gate->getMissingBranches('2026-04-30'));
         $this->assertEqualsCanonicalizing(['MADIUN', 'MAGETAN', 'NGAWI'], $gate->getAvailableBranches('2026-04-30'));
     }

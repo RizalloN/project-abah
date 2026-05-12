@@ -95,7 +95,7 @@ class SimpananMultiPnSnapshotGate
             $missingBranches = array_values(array_diff(self::REQUIRED_BRANCH_KEYS, $availableBranches));
 
             return [
-                'is_ready' => $missingBranches === [],
+                'is_ready' => $availableBranches !== [],
                 'available_branches' => $availableBranches,
                 'missing_branches' => $missingBranches,
             ];

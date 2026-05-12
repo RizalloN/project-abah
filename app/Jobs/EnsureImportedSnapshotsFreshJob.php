@@ -43,7 +43,7 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
         $scope = strtolower(trim($this->tableName)) . ':' . ($periodScope !== '' ? $periodScope : 'latest');
 
         return [
-            new DeferSnapshotJobsDuringImport(),
+            new DeferSnapshotJobsDuringImport(sourceTable: $this->tableName),
             (new WithoutOverlapping('snapshot:freshness:' . $scope))
                 ->releaseAfter(60)
                 ->expireAfter($this->timeout + 300),
@@ -63,6 +63,7 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
             'simpanan_multipn' => $this->ensureSimpananSnapshots($builder, $dashboardHarian, $sourceSignatures),
             'ssa_simpanan' => $this->ensureSsaSnapshots($dashboardHarian, $sourceSignatures, true),
             'ssa_pinjaman' => $this->ensureSsaSnapshots($dashboardHarian, $sourceSignatures, false),
+            'hourly_dpk' => $this->ensureHourlyDpkSnapshots($dashboardHarian, $sourceSignatures),
             'lw325_ph' => $this->ensureReportPhSnapshots($dashboardHarian, $sourceSignatures),
             default => null,
         };
@@ -84,26 +85,26 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
         $checks = [
             'dashboard_pinjaman_snapshots' => [
                 'period_column' => 'periode',
-                'rebuild' => fn (): int => $builder->rebuildDashboard($period, true)[$period] ?? 0,
+                'rebuild' => fn (): int => $builder->rebuildDashboard($period, false)[$period] ?? 0,
             ],
             'dashboard_pinjaman_chart_periodik_snapshots' => [
                 'period_column' => 'periode',
-                'rebuild' => fn (): int => $builder->rebuildChartPeriodik($period, true)[$period] ?? 0,
+                'rebuild' => fn (): int => $builder->rebuildChartPeriodik($period, false)[$period] ?? 0,
             ],
             'performance_rm_snapshots' => [
                 'period_column' => 'periode',
-                'rebuild' => fn (): int => $builder->rebuildPerformanceRm($period, true)[$period] ?? 0,
+                'rebuild' => fn (): int => $builder->rebuildPerformanceRm($period, false)[$period] ?? 0,
             ],
             'rasio_casa_debitur_snapshots' => [
                 'period_column' => 'loan_period',
-                'rebuild' => fn (): int => $builder->rebuildRasioCasa($period, true)[$period] ?? 0,
+                'rebuild' => fn (): int => $builder->rebuildRasioCasa($period, false)[$period] ?? 0,
             ],
         ];
 
         if ($this->dashboardHarianSourcesAreAvailable($period)) {
             $checks['dashboard_harian_snapshots'] = [
                 'period_column' => 'snapshot_period',
-                'rebuild' => fn (): int => $dashboardHarian->rebuild($period, true)[$period] ?? 0,
+                'rebuild' => fn (): int => $dashboardHarian->rebuild($period, false)[$period] ?? 0,
             ];
         }
 
@@ -163,7 +164,7 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
         }
 
         if ($rebuiltAny) {
-            Cache::put('report_cache_version:global', (int) Cache::get('report_cache_version:global', 1) + 1, now()->addHours(24));
+            $this->bumpReportCacheVersion('pinjaman');
         }
     }
 
@@ -194,26 +195,26 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
         $checks = [
             'dashboard_simpanan_snapshots' => [
                 'period_column' => 'snapshot_period',
-                'rebuild' => fn (): int => $builder->rebuildDashboardSimpanan($period, true)[$period] ?? 0,
+                'rebuild' => fn (): int => $builder->rebuildDashboardSimpanan($period, false)[$period] ?? 0,
             ],
             'rekening_dormant_snapshots' => [
                 'period_column' => 'posisi',
-                'rebuild' => fn (): int => $builder->rebuildRekeningDormant($period, true)[$period] ?? 0,
+                'rebuild' => fn (): int => $builder->rebuildRekeningDormant($period, false)[$period] ?? 0,
             ],
             'performance_rm_snapshots' => [
                 'period_column' => 'periode',
-                'rebuild' => fn (): int => $builder->rebuildPerformanceRm($period, true)[$period] ?? 0,
+                'rebuild' => fn (): int => $builder->rebuildPerformanceRm($period, false)[$period] ?? 0,
             ],
             'rasio_casa_debitur_snapshots' => [
                 'period_column' => 'casa_period',
-                'rebuild' => fn (): int => $builder->rebuildRasioCasa($period, true)[$period] ?? 0,
+                'rebuild' => fn (): int => $builder->rebuildRasioCasa($period, false)[$period] ?? 0,
             ],
         ];
 
         if ($this->dashboardHarianSourcesAreAvailable($period)) {
             $checks['dashboard_harian_snapshots'] = [
                 'period_column' => 'snapshot_period',
-                'rebuild' => fn (): int => $dashboardHarian->rebuild($period, true)[$period] ?? 0,
+                'rebuild' => fn (): int => $dashboardHarian->rebuild($period, false)[$period] ?? 0,
             ];
         }
 
@@ -294,7 +295,7 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
             $before = $this->snapshotRowCount('ssa_simpanan_snapshots', 'periode', $period);
             $isStale = $before > 0 && !$sourceSignatures->isFresh('ssa_simpanan', 'ssa_simpanan_snapshots', $period, $sourceMetadata);
             if ($before <= 0 || $isStale) {
-                app(SsaSimpananSnapshotBuilder::class)->rebuild($period, true);
+                app(SsaSimpananSnapshotBuilder::class)->rebuild($period, false);
                 $after = $this->snapshotRowCount('ssa_simpanan_snapshots', 'periode', $period);
                 ReportDataSyncService::analyzeTable('ssa_simpanan_snapshots');
                 $rebuiltAny = $rebuiltAny || $after > 0;
@@ -336,7 +337,7 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
             return;
         }
 
-        $after = (int) ($dashboardHarian->rebuild($period, true)[$period] ?? 0);
+        $after = (int) ($dashboardHarian->rebuild($period, false)[$period] ?? 0);
         ReportDataSyncService::analyzeTable('dashboard_harian_snapshots');
         $rebuiltAny = $rebuiltAny || $after > 0;
 
@@ -385,7 +386,7 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
             }
 
             $startedAt = microtime(true);
-            $after = (int) ($dashboardHarian->rebuild($snapshotPeriod, true)[$snapshotPeriod] ?? 0);
+            $after = (int) ($dashboardHarian->rebuild($snapshotPeriod, false)[$snapshotPeriod] ?? 0);
             ReportDataSyncService::analyzeTable('dashboard_harian_snapshots');
             $rebuiltAny = $rebuiltAny || $after > 0;
 
@@ -413,6 +414,59 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
         if ($rebuiltAny) {
             $this->bumpReportCacheVersion();
         }
+    }
+
+    private function ensureHourlyDpkSnapshots(
+        DashboardHarianSnapshotService $dashboardHarian,
+        SnapshotSourceSignatureService $sourceSignatures
+    ): void
+    {
+        $period = $this->resolvePeriod('hourly_dpk', 'posisi');
+        if ($period === null || !$this->sourceHasRows('hourly_dpk', 'posisi', $period)) {
+            return;
+        }
+
+        if (!$this->dashboardHarianSourcesAreAvailable($period)) {
+            Log::info('Dashboard Harian snapshot ditunda karena sumber Hourly DPK/loan periode belum lengkap.', [
+                'period' => $period,
+                'source_table' => 'hourly_dpk',
+                'has_hourly_dpk' => $this->sourceHasRows('hourly_dpk', 'posisi', $period),
+                'has_dly_kap' => $this->sourceHasRows('dly_kap_resegmentasi', 'periode', $period),
+                'has_l1133' => $this->sourceHasRows('l1133', 'periode', $period),
+                'source' => $this->source,
+            ]);
+
+            return;
+        }
+
+        $sourceMetadata = $sourceSignatures->capture('hourly_dpk', 'posisi', $period);
+        $before = $this->snapshotRowCount('dashboard_harian_snapshots', 'snapshot_period', $period);
+        $isStale = $before > 0 && !$sourceSignatures->isFresh('hourly_dpk', 'dashboard_harian_snapshots', $period, $sourceMetadata);
+        if ($before > 0 && !$isStale) {
+            return;
+        }
+
+        $after = (int) ($dashboardHarian->rebuild($period, false)[$period] ?? 0);
+        ReportDataSyncService::analyzeTable('dashboard_harian_snapshots');
+
+        if ($after > 0 && $sourceMetadata !== null) {
+            $sourceSignatures->markBuilt('hourly_dpk', 'dashboard_harian_snapshots', $period, $sourceMetadata, [
+                'period_column' => 'snapshot_period',
+                'rows_before' => $before,
+                'rows_after' => $after,
+                'source' => $this->source,
+            ]);
+
+            $this->bumpReportCacheVersion();
+        }
+
+        Log::warning($isStale ? 'Auto-refreshed stale Dashboard Harian snapshot after Hourly DPK import.' : 'Auto-recovered missing Dashboard Harian snapshot after Hourly DPK import.', [
+            'period' => $period,
+            'rows_before' => $before,
+            'rows_after' => $after,
+            'stale' => $isStale,
+            'source' => $this->source,
+        ]);
     }
 
     private function resolvePeriod(string $table, string $column): ?string
@@ -487,18 +541,26 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
             ->exists();
     }
 
-    private function bumpReportCacheVersion(): void
+    private function bumpReportCacheVersion(string $scope = 'global'): void
     {
-        Cache::put('report_cache_version:global', (int) Cache::get('report_cache_version:global', 1) + 1, now()->addHours(24));
+        $global = (int) Cache::get('report_cache_version:global', 1) + 1;
+        Cache::put('report_cache_version:global', $global, now()->addHours(24));
+
+        $scope = strtolower(trim($scope));
+        if ($scope !== '' && $scope !== 'global') {
+            Cache::put('report_cache_version:' . $scope, (int) Cache::get('report_cache_version:' . $scope, 1) + 1, now()->addHours(24));
+        }
     }
 
     private function dashboardHarianSourcesAreAvailable(string $period): bool
     {
-        return $this->sourceHasRows('ssa_simpanan', 'Month_Day_Year_of_Posisi', $period)
-            && (
-                $this->sourceHasRows('ssa_pinjaman', 'month_day_year_of_periode', $period)
-                || $this->sourceHasRows('dly_kap_resegmentasi', 'periode', $period)
-                || $this->sourceHasRows('l1133', 'periode', $period)
-            );
+        $hasSsaSavings = $this->sourceHasRows('ssa_simpanan', 'Month_Day_Year_of_Posisi', $period);
+        $hasHourlySavings = $this->sourceHasRows('hourly_dpk', 'posisi', $period);
+        $hasSsaLoan = $this->sourceHasRows('ssa_pinjaman', 'month_day_year_of_periode', $period);
+        $hasFallbackLoan = $this->sourceHasRows('dly_kap_resegmentasi', 'periode', $period)
+            || $this->sourceHasRows('l1133', 'periode', $period);
+
+        return ($hasSsaSavings && ($hasSsaLoan || $hasFallbackLoan))
+            || (!$hasSsaSavings && $hasHourlySavings && $hasFallbackLoan);
     }
 }

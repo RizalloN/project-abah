@@ -345,6 +345,10 @@ class DashboardSimpananController extends Controller
                     'tag' => 'Cross',
                 ],
             ],
+            'data_quality' => [
+                'snapshot_completeness' => $currentSummary['snapshot_completeness'] ?? 'complete',
+                'partial_branches' => $currentSummary['partial_branches'] ?? [],
+            ],
             'top_branches' => $topBranches->all(),
             'loan_top_branches' => $loanTopBranches->all(),
         ];
@@ -419,6 +423,8 @@ class DashboardSimpananController extends Controller
             'other_balance' => max(0, $totalBalance - (float) ($summary->tabungan_balance ?? 0) - (float) ($summary->giro_balance ?? 0)),
             'avg_balance_per_cif' => $cifCount > 0 ? $totalBalance / $cifCount : 0,
             'source_updated_at' => $summary->source_updated_at ?? null,
+            'snapshot_completeness' => 'complete',
+            'partial_branches' => [],
         ];
     }
 
@@ -773,7 +779,23 @@ class DashboardSimpananController extends Controller
             'other_balance' => $otherBalance,
             'avg_balance_per_cif' => $cifCount > 0 ? $totalBalance / $cifCount : 0,
             'source_updated_at' => $row->source_updated_at ?? null,
+            'snapshot_completeness' => (string) ($row->snapshot_completeness ?? 'complete'),
+            'partial_branches' => $this->decodePartialBranches($row->partial_branches ?? null),
         ];
+    }
+
+    private function decodePartialBranches(mixed $value): array
+    {
+        if ($value === null || trim((string) $value) === '') {
+            return [];
+        }
+
+        $decoded = json_decode((string) $value, true);
+        if (!is_array($decoded)) {
+            return [];
+        }
+
+        return array_values(array_filter($decoded, static fn ($branch): bool => is_string($branch) && trim($branch) !== ''));
     }
 
     private function queryTopBranchesFromSnapshot(string $period): ?Collection

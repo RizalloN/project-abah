@@ -9,6 +9,7 @@ use App\Services\Import\Strategies\CognosRecoveryImportStrategy;
 use App\Services\Import\Strategies\DlyKapResegmentasiImportStrategy;
 use App\Services\Import\Strategies\Gi405RecDhImportStrategy;
 use App\Services\Import\Strategies\GenericCsvImportStrategy;
+use App\Services\Import\Strategies\HourlyDpkImportStrategy;
 use App\Services\Import\Strategies\ImportStrategyInterface;
 use App\Services\Import\Strategies\L1133ImportStrategy;
 use App\Services\Import\Strategies\Lw321NpdImportStrategy;
@@ -33,6 +34,7 @@ class ImportStrategyFactory
             app(Gi405RecDhImportStrategy::class),
             app(SsaPinjamanImportStrategy::class),
             app(SsaSimpananImportStrategy::class),
+            app(HourlyDpkImportStrategy::class),
             app(L1133ImportStrategy::class),
             app(Lw321PnImportStrategy::class),
             app(Lw321NpdImportStrategy::class),

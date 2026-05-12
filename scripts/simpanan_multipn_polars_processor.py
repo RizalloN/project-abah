@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import io
 import json
 import os
@@ -193,6 +194,30 @@ def normalize_cell(value: object) -> str:
             continue
 
     return text.strip()
+
+
+def is_simpanan_row_number_header(header: str) -> bool:
+    return header.lower() in {"no", "row_num", "rownumber", "nomor_baris", "urutan"}
+
+
+def build_simpanan_row_fingerprint(headers: list[str], values: list[str]) -> str:
+    parts: list[str] = []
+    for index, header in enumerate(headers):
+        normalized_header = header.lower().strip()
+        if (
+            normalized_header == ""
+            or normalized_header.startswith("col_")
+            or is_simpanan_row_number_header(normalized_header)
+            or normalized_header in {"uniqueid_smpn", "uniqueid_simopn", "created_at", "updated_at"}
+        ):
+            continue
+
+        parts.append(f"{normalized_header}={normalize_cell(values[index] if index < len(values) else '').upper()}")
+
+    if not parts:
+        return ""
+
+    return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
 
 
 def normalize_header_name(header_name: str) -> str:
@@ -581,9 +606,30 @@ def sanitize_source_optimized(source_path: str, delimiter: str, config: dict | N
                 except (ValueError, TypeError):
                     continue
 
+        dedupe_columns = [
+            col
+            for col in df_collected.columns
+            if col.lower()
+            not in {
+                "no",
+                "row_num",
+                "rownumber",
+                "nomor_baris",
+                "urutan",
+                "uniqueid_smpn",
+                "uniqueid_simopn",
+                "created_at",
+                "updated_at",
+            }
+        ]
+        rows_before_dedupe = int(df_collected.height)
+        if dedupe_columns:
+            df_collected = df_collected.unique(subset=dedupe_columns, keep="first", maintain_order=True)
+        duplicate_skipped = max(0, rows_before_dedupe - int(df_collected.height))
+
         valid_rows = df_collected.height
         total_data_rows = total_input_rows
-        skipped_count = total_data_rows - valid_rows
+        skipped_count = max(0, total_data_rows - rows_before_dedupe)
         
         if valid_rows == 0:
             raise RuntimeError("Tidak ada data valid yang ditemukan setelah filtering Polars.")
@@ -680,7 +726,7 @@ def sanitize_source_optimized(source_path: str, delimiter: str, config: dict | N
         speed = int(valid_rows / elapsed)
         send_progress(90, "Optimasi selesai.", valid_rows, valid_rows, speed, "baris/detik", "polars")
 
-        return write_path, df_collected.columns, total_input_rows + 1, 0, skipped_count, 0, True, [], valid_rows, int(balance_total_cents), account_samples, direct_output_written, dates
+        return write_path, df_collected.columns, total_input_rows + 1, 0, skipped_count, duplicate_skipped, True, [], valid_rows, int(balance_total_cents), account_samples, direct_output_written, dates
 
     except Exception as e:
         if temp_path and os.path.exists(temp_path):
@@ -706,9 +752,11 @@ def sanitize_source(
         total_records = 0
         structural_skipped = 0
         validation_skipped = 0
+        duplicate_skipped = 0
         rewrite_needed = False
         skipped_rows: list[int] = []
         headers: list[str] = []
+        seen_fingerprints: set[str] = set()
         valid_rows = 0
         balance_total_cents = 0
         account_samples: list[dict[str, str]] = []
@@ -803,6 +851,15 @@ def sanitize_source(
                             })
                         continue
                 else:
+                    fingerprint = build_simpanan_row_fingerprint(headers, values)
+                    if fingerprint and fingerprint in seen_fingerprints:
+                        duplicate_skipped += 1
+                        rewrite_needed = True
+                        continue
+
+                    if fingerprint:
+                        seen_fingerprints.add(fingerprint)
+
                     writer.writerow(values)
                     valid_rows += 1
                     rewrite_needed = rewrite_needed or any(values[index] != normalize_cell(row[index]) for index in range(len(row)))
@@ -813,7 +870,7 @@ def sanitize_source(
         if not headers:
             raise RuntimeError("Header CSV Simpanan MultiPN tidak ditemukan.")
 
-        return temp_path, headers, total_records, structural_skipped, validation_skipped, 0, rewrite_needed, skipped_rows, valid_rows, balance_total_cents, account_samples
+        return temp_path, headers, total_records, structural_skipped, validation_skipped, duplicate_skipped, rewrite_needed, skipped_rows, valid_rows, balance_total_cents, account_samples
 
 
 def read_with_polars(path: str, headers: list[str], delimiter: str):

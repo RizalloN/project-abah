@@ -660,6 +660,10 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
         $advisoryLockName = null;
         if ($contentHash !== '') {
             try {
+                $this->storeSimpananMultiPnJobMetadata($jobId, [
+                    'content_hash' => $contentHash,
+                    'table_name' => 'simpanan_multipn',
+                ]);
                 $guard->assertFileNotImportedAnywhere($contentHash, $jobId > 0 ? $jobId : 0);
                 $advisoryLockName = $guard->acquireAdvisoryLock('simpanan_multipn', ['content' => $contentHash]);
                 Log::info('Simpanan MultiPN: Advisory lock acquired', [
@@ -694,6 +698,7 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
 
         return response()->stream(function () use ($jobId, $relativePath, $absolutePath, $totalRows, $normalizedHeaders, $selectedColumns, $activeFilters, $params, $contentHash, $advisoryLockName) {
             $streamLock = null;
+            $slotLockNames = [];
             $cleanupPaths = [];
             $usePolarsStage = !empty($activeFilters);
             $send = function (string $event, array $data) use ($jobId, $totalRows) {
@@ -841,27 +846,26 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                     'speed' => 0,
                 ]);
 
-                // Layer B: validate slot availability (posisi + kantor_cabang) before processing
-                if ($contentHash !== '') {
-                    try {
-                        $scopeHints = $this->collectSimpananMultiPnSnapshotScopes($absolutePath);
-                        $periodHints = (array) ($scopeHints['periods'] ?? []);
-                        $branchHints = (array) ($scopeHints['branches'] ?? []);
-                        if (!empty($periodHints)) {
-                            $slotGuard = app(ImportDuplicateGuardService::class);
-                            $slotValues = $slotGuard->buildSlotValues('simpanan_multipn', $periodHints, $branchHints);
-                            foreach ($slotValues as $slot) {
-                                $slotGuard->assertSlotEmpty('simpanan_multipn', $slot);
-                            }
-                            Log::info('Simpanan MultiPN: Slot availability validated', [
-                                'job_id' => $jobId,
-                                'content_hash' => $contentHash,
-                                'slots_checked' => count($slotValues),
-                            ]);
+                // Layer B: lock and validate posisi/kantor slots before expensive staging starts.
+                try {
+                    $scopeHints = $this->collectSimpananMultiPnSnapshotScopes($absolutePath);
+                    $periodHints = (array) ($scopeHints['periods'] ?? []);
+                    $branchHints = (array) ($scopeHints['branches'] ?? []);
+                    if (!empty($periodHints)) {
+                        $slotGuard = app(ImportDuplicateGuardService::class);
+                        $slotValues = $slotGuard->buildSlotValues('simpanan_multipn', $periodHints, $branchHints);
+                        foreach ($slotValues as $slot) {
+                            $slotLockNames[] = $slotGuard->acquireAdvisoryLock('simpanan_multipn', $slot);
+                            $slotGuard->assertSlotEmpty('simpanan_multipn', $slot);
                         }
-                    } catch (\RuntimeException $e) {
-                        throw new \RuntimeException('Validasi keunikan file gagal: ' . $e->getMessage());
+                        Log::info('Simpanan MultiPN: Slot availability locked and validated', [
+                            'job_id' => $jobId,
+                            'content_hash' => $contentHash,
+                            'slots_checked' => count($slotValues),
+                        ]);
                     }
+                } catch (\RuntimeException $e) {
+                    throw new \RuntimeException('Validasi keunikan file gagal: ' . $e->getMessage());
                 }
 
                 try {
@@ -1044,6 +1048,14 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                         : $this->formatSafeImportFailureMessage('Fast import CSV gagal: ', $e),
                 ]);
                 } finally {
+                    foreach (array_reverse($slotLockNames) as $slotLockName) {
+                        try {
+                            app(ImportDuplicateGuardService::class)->releaseAdvisoryLock($slotLockName);
+                        } catch (\Throwable $e) {
+                            Log::warning('Failed to release Simpanan MultiPN slot lock: ' . $e->getMessage());
+                        }
+                    }
+
                     // Release advisory lock (process-safe MySQL GET_LOCK)
                     if ($advisoryLockName !== null) {
                         try {
@@ -1575,14 +1587,11 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
         $importBatchTimestamp = now()->format('Y-m-d H:i:s');
         $importBatchToken = str_replace('-', '', Str::uuid()->toString());
         $fieldVariables = [];
+        $uniqueIdFingerprintParts = [];
         $setClauses = [
             "`created_at` = '{$importBatchTimestamp}'",
             "`updated_at` = '{$importBatchTimestamp}'",
         ];
-
-        if ($uniqueIdColumn !== null) {
-            $setClauses[] = "`{$uniqueIdColumn}` = CONCAT('SMPN_{$importBatchToken}_', REPLACE(UUID(), '-', ''), '_SMPN')";
-        }
 
         foreach ($sourceHeaders as $index => $header) {
             $header = trim((string) $header);
@@ -1603,11 +1612,21 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                 continue;
             }
 
-            $setClauses[] = match (strtolower($dbColumn)) {
-                'saldo_idr' => "`{$dbColumn}` = " . $this->buildDirectLoadDecimalExpression($variable),
-                'posisi' => "`{$dbColumn}` = " . StrictDateParser::buildMySqlCaseExpression("TRIM({$variable})"),
-                default => "`{$dbColumn}` = NULLIF(TRIM({$variable}), '')",
+            $valueExpression = match (strtolower($dbColumn)) {
+                'saldo_idr' => $this->buildDirectLoadDecimalExpression($variable),
+                'posisi' => StrictDateParser::buildMySqlCaseExpression("TRIM({$variable})"),
+                default => "NULLIF(TRIM({$variable}), '')",
             };
+
+            $setClauses[] = "`{$dbColumn}` = {$valueExpression}";
+            $uniqueIdFingerprintParts[] = "CONCAT('{$dbColumn}=', COALESCE(UPPER(CAST({$valueExpression} AS CHAR)), ''))";
+        }
+
+        if ($uniqueIdColumn !== null) {
+            $setClauses[] = "`{$uniqueIdColumn}` = " . $this->buildSimpananMultiPnDeterministicUniqueIdExpression(
+                $uniqueIdFingerprintParts,
+                $importBatchToken
+            );
         }
 
         if (count($setClauses) <= ($uniqueIdColumn !== null ? 3 : 2)) {
@@ -1644,6 +1663,20 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
         }
 
         return $plan;
+    }
+
+    private function buildSimpananMultiPnDeterministicUniqueIdExpression(array $fingerprintParts, string $fallbackToken): string
+    {
+        $fingerprintParts = array_values(array_filter(array_map(
+            static fn ($part): string => trim((string) $part),
+            $fingerprintParts
+        ), static fn (string $part): bool => $part !== ''));
+
+        if ($fingerprintParts === []) {
+            return "CONCAT('SMPN_', SHA1(CONCAT('{$fallbackToken}', UUID())), '_SMPN')";
+        }
+
+        return "CONCAT('SMPN_', SHA1(CONCAT_WS('|', " . implode(', ', $fingerprintParts) . ")), '_SMPN')";
     }
 
     private function validateSimpananMultiPnCleanSourceSample(
@@ -1718,6 +1751,8 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
         $lockWaitSeconds = max(10, (int) config('import.direct_load.table_write_lock_wait_seconds', 300));
 
         return $bulkLoadService->withTableWriteLock('simpanan_multipn', function () use ($absolutePath, $loadPlan, $beforeLoad, $send, $jobId): int {
+            $this->assertSimpananMultiPnLoadSlotsEmpty($loadPlan);
+
             $connection = config('database.default', 'mysql');
             $dbConfig = config("database.connections.{$connection}", []);
             $charset = $dbConfig['charset'] ?? 'utf8mb4';
@@ -1872,6 +1907,28 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
 
             return $affected;
         }, $lockWaitSeconds);
+    }
+
+    private function assertSimpananMultiPnLoadSlotsEmpty(array $loadPlan): void
+    {
+        $periodHints = array_values(array_unique(array_filter(array_map(
+            static fn ($value): string => trim((string) $value),
+            (array) ($loadPlan['period_hints'] ?? [])
+        ), static fn (string $value): bool => $value !== '')));
+
+        if ($periodHints === []) {
+            return;
+        }
+
+        $branchHints = array_values(array_unique(array_filter(array_map(
+            static fn ($value): string => trim((string) $value),
+            (array) ($loadPlan['branch_hints'] ?? [])
+        ), static fn (string $value): bool => $value !== '')));
+
+        $slotGuard = app(ImportDuplicateGuardService::class);
+        foreach ($slotGuard->buildSlotValues('simpanan_multipn', $periodHints, $branchHints) as $slot) {
+            $slotGuard->assertSlotEmpty('simpanan_multipn', $slot);
+        }
     }
 
     private function executeLoadDataWithSnapshotInvalidationBypassed(
@@ -2543,12 +2600,18 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                 $context['table_name'] = $tableName;
             }
 
+            $updates = [
+                'job_context' => json_encode($context, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                'updated_at' => now(),
+            ];
+
+            if ($contentHash !== '' && Schema::hasColumn('import_jobs', 'job_content_hash')) {
+                $updates['job_content_hash'] = $contentHash;
+            }
+
             DB::table('import_jobs')
                 ->where('id', $jobId)
-                ->update([
-                    'job_context' => json_encode($context, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
-                    'updated_at' => now(),
-                ]);
+                ->update($updates);
         } catch (\Throwable $e) {
             Log::warning('Failed to store Simpanan MultiPN import metadata: ' . $e->getMessage(), [
                 'job_id' => $jobId,

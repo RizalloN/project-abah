@@ -364,7 +364,7 @@ class DashboardHarianSnapshotService
 
     public function buildPeriodSnapshot(string $period, bool $force = false): int
     {
-        if (!Schema::hasTable(self::SNAPSHOT_TABLE) || !Schema::hasTable(self::LOAN_TABLE) || !Schema::hasTable(self::SAVINGS_TABLE)) {
+        if (!Schema::hasTable(self::SNAPSHOT_TABLE) || !Schema::hasTable(self::LOAN_TABLE) || !$this->hasAnySavingsSourceTable()) {
             return 0;
         }
 
@@ -400,7 +400,7 @@ class DashboardHarianSnapshotService
             }
         }
 
-        if (!$this->loanDashboardSourcePeriodExists($period) || !$this->savingsSourcePeriodExists($period)) {
+        if (!$this->dashboardHarianSourceCombinationAvailable($period)) {
             // Guard: only remove the existing snapshot on an explicit forced rebuild.
             // For auto/web-triggered rebuilds (force=false) the source may be absent because
             // an import is still in progress. Preserving stale snapshot data is safer than
@@ -1221,15 +1221,22 @@ class DashboardHarianSnapshotService
 
     private function fetchSavingsAggregates(string $period, array|string|null $kancaKey = null, array|string|null $unitKey = null): Collection
     {
-        $segment = "UPPER(TRIM(COALESCE(ss.segmentasi, '')))";
+        $table = $this->savingsSourceTableForPeriod($period);
+        $periodColumn = $this->sourcePeriodColumn($table);
+        $kancaColumn = $table === self::HOURLY_DPK_TABLE ? 'mbname' : 'nama_cabang';
+        $unitColumn = $table === self::HOURLY_DPK_TABLE ? 'brname' : 'nama_uker';
+        $segmentColumn = $table === self::HOURLY_DPK_TABLE ? 'segmen' : 'segmentasi';
+
+        $rawSegment = "UPPER(TRIM(COALESCE(ss.{$segmentColumn}, '')))";
+        $segment = "CASE WHEN {$rawSegment} = 'KORPORASI' THEN 'WHOLESALE' WHEN {$rawSegment} = 'MIKRO' THEN 'MICRO' ELSE {$rawSegment} END";
         $product = "UPPER(TRIM(COALESCE(ss.produk, '')))";
 
-        $microSegment = "{$segment} IN ('MICRO', 'MIKRO')";
+        $microSegment = "{$segment} = 'MICRO'";
 
-        $query = DB::table(self::SAVINGS_TABLE . ' as ss')
-            ->whereIn('ss.Month_Day_Year_of_Posisi', $this->sourcePeriodRawCandidates(self::SAVINGS_TABLE, $period))
-            ->selectRaw("TRIM(COALESCE(ss.nama_cabang, '')) as raw_kantor_cabang")
-            ->selectRaw("TRIM(COALESCE(ss.nama_uker, '')) as raw_unit_kerja")
+        $query = DB::table($table . ' as ss')
+            ->whereIn("ss.{$periodColumn}", $this->sourcePeriodRawCandidates($table, $period))
+            ->selectRaw("TRIM(COALESCE(ss.{$kancaColumn}, '')) as raw_kantor_cabang")
+            ->selectRaw("TRIM(COALESCE(ss.{$unitColumn}, '')) as raw_unit_kerja")
             ->selectRaw("SUM(CASE WHEN {$segment} = 'RITEL' AND {$product} = 'GIRO' THEN COALESCE(ss.saldo, 0) ELSE 0 END) as giro_ritel")
             ->selectRaw("SUM(CASE WHEN {$segment} = 'RITEL' AND {$product} = 'DEPOSITO' THEN COALESCE(ss.saldo, 0) ELSE 0 END) as deposito_ritel")
             ->selectRaw("SUM(CASE WHEN {$segment} = 'RITEL' AND {$product} = 'TABUNGAN' THEN COALESCE(ss.saldo, 0) ELSE 0 END) as tabungan_ritel")
@@ -1246,7 +1253,7 @@ class DashboardHarianSnapshotService
         if ($normalizedKanca !== []) {
             // Build WHERE clauses that match raw db values against normalized filter values
             $kancaConditions = collect($normalizedKanca)
-                ->map(fn (string $value) => $this->buildFilterCondition('ss.nama_cabang', $value))
+                ->map(fn (string $value) => $this->buildFilterCondition("ss.{$kancaColumn}", $value))
                 ->filter()
                 ->all();
             
@@ -1263,7 +1270,7 @@ class DashboardHarianSnapshotService
         if ($normalizedUnit !== []) {
             // Build WHERE clauses that match raw db values against normalized filter values
             $unitConditions = collect($normalizedUnit)
-                ->map(fn (string $value) => $this->buildFilterCondition('ss.nama_uker', $value))
+                ->map(fn (string $value) => $this->buildFilterCondition("ss.{$unitColumn}", $value))
                 ->filter()
                 ->all();
             
@@ -2594,7 +2601,10 @@ class DashboardHarianSnapshotService
             )));
         }
 
-        $shared = array_values(array_intersect($loanPeriods, $savingsPeriods));
+        $shared = array_values(array_filter(
+            array_intersect($loanPeriods, $savingsPeriods),
+            fn (string $period): bool => $this->dashboardHarianSourceCombinationAvailable($period)
+        ));
         rsort($shared);
 
         return $shared;
@@ -2637,7 +2647,7 @@ class DashboardHarianSnapshotService
 
         foreach ($candidatePeriods as $period) {
             $value = $this->normalizeDate((string) $period);
-            if ($value !== null && $this->loanDashboardSourcePeriodExists($value) && $this->savingsSourcePeriodExists($value)) {
+            if ($value !== null && $this->dashboardHarianSourceCombinationAvailable($value)) {
                 $normalized[$value] = $value;
             }
         }
@@ -2840,19 +2850,35 @@ class DashboardHarianSnapshotService
 
     private function savingsSourcePeriodExists(string $period): bool
     {
-        return Schema::hasTable(self::SAVINGS_TABLE) && $this->sourcePeriodExists(self::SAVINGS_TABLE, $period);
+        return (Schema::hasTable(self::SAVINGS_TABLE) && $this->sourcePeriodExists(self::SAVINGS_TABLE, $period))
+            || $this->hourlyDpkSourcePeriodExists($period);
+    }
+
+    private function dashboardHarianSourceCombinationAvailable(string $period): bool
+    {
+        return $this->resolveDataSourceForPeriod($period) !== 'none';
     }
 
     private function resolveDataSourceForPeriod(string $period): string
     {
         $normalizedPeriod = $this->normalizeDate($period) ?? $period;
-        if ($this->loanSourcePeriodExists($period)) {
+        $hasSsaSavings = Schema::hasTable(self::SAVINGS_TABLE) && $this->sourcePeriodExists(self::SAVINGS_TABLE, $period);
+        $hasHourlySavings = $this->hourlyDpkSourcePeriodExists($period);
+        $hasFallbackLoan = $this->dlyKapResegmentasiAvailable($normalizedPeriod) || $this->l1133Available($normalizedPeriod);
+
+        if ($this->loanSourcePeriodExists($period) && $hasSsaSavings) {
             return 'option1';
         }
 
-        return $this->dlyKapResegmentasiAvailable($normalizedPeriod) || $this->l1133Available($normalizedPeriod)
-            ? 'option2'
-            : 'none';
+        if ($hasFallbackLoan && $hasSsaSavings) {
+            return 'option2';
+        }
+
+        if ($hasFallbackLoan && $hasHourlySavings) {
+            return 'option3';
+        }
+
+        return 'none';
     }
 
 
@@ -2860,6 +2886,26 @@ class DashboardHarianSnapshotService
     private function resolveSavingsAggregates(string $period, array|string|null $kancaKey, array|string|null $unitKey): Collection
     {
         return $this->fetchSavingsAggregates($period, $kancaKey, $unitKey);
+    }
+
+    private function savingsSourceTableForPeriod(string $period): string
+    {
+        return Schema::hasTable(self::SAVINGS_TABLE) && $this->sourcePeriodExists(self::SAVINGS_TABLE, $period)
+            ? self::SAVINGS_TABLE
+            : self::HOURLY_DPK_TABLE;
+    }
+
+    private function hourlyDpkSourcePeriodExists(string $period): bool
+    {
+        return $this->hourlyDpkEnabled()
+            && Schema::hasTable(self::HOURLY_DPK_TABLE)
+            && $this->sourcePeriodExists(self::HOURLY_DPK_TABLE, $period);
+    }
+
+    private function hasAnySavingsSourceTable(): bool
+    {
+        return Schema::hasTable(self::SAVINGS_TABLE)
+            || ($this->hourlyDpkEnabled() && Schema::hasTable(self::HOURLY_DPK_TABLE));
     }
 
     private function buildSourceMetadata(string $period): ?array
@@ -2891,10 +2937,11 @@ class DashboardHarianSnapshotService
                 ['outstanding', 'dpk', 'npl']
             );
 
+            $savingsTable = $this->savingsSourceTableForPeriod($period);
             $savingsState = $this->sourceAggregateState(
-                self::SAVINGS_TABLE,
-                $this->sourcePeriodColumn(self::SAVINGS_TABLE),
-                $this->sourcePeriodRawCandidates(self::SAVINGS_TABLE, $period),
+                $savingsTable,
+                $this->sourcePeriodColumn($savingsTable),
+                $this->sourcePeriodRawCandidates($savingsTable, $period),
                 ['saldo']
             );
 
@@ -2909,6 +2956,7 @@ class DashboardHarianSnapshotService
                 'loan' => $loanState,
                 'dly_kap' => $dlyKapState,
                 'l1133' => $l1133State,
+                'savings_table' => $savingsTable,
                 'savings' => $savingsState,
                 'recovery_source' => $recoverySource,
                 'recovery_period' => $recoveryPeriod,

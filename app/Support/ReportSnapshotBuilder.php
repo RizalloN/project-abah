@@ -308,13 +308,6 @@ class ReportSnapshotBuilder
 
     private function buildDashboardPeriodSnapshot(string $period, bool $force): int
     {
-        if (!$force) {
-            $existingCount = (int) DB::table(self::DASHBOARD_SNAPSHOT_TABLE)->where('periode', $period)->count();
-            if ($existingCount > 0) {
-                return $existingCount;
-            }
-        }
-
         $bucketExpression = $this->buildDashboardBucketExpression();
         $normalizedLoanBalanceExpression = $this->buildNormalizedLoanBalanceExpression('d.baki_debet1');
         $snapshotTable = self::DASHBOARD_SNAPSHOT_TABLE;
@@ -379,13 +372,6 @@ class ReportSnapshotBuilder
     {
         if (!Schema::hasTable(self::CHART_PERIODIK_SNAPSHOT_TABLE) || !Schema::hasTable('daily_loan_dinamis') || !Schema::hasTable('loan_type')) {
             return 0;
-        }
-
-        if (!$force) {
-            $existingCount = (int) DB::table(self::CHART_PERIODIK_SNAPSHOT_TABLE)->where('periode', $period)->count();
-            if ($existingCount > 0) {
-                return $existingCount;
-            }
         }
 
         if (DB::getDriverName() !== 'mysql') {
@@ -555,16 +541,6 @@ class ReportSnapshotBuilder
             return 0;
         }
 
-        if (!$force) {
-            $existingQuery = DB::table(self::RASIO_SNAPSHOT_TABLE)->where('loan_period', $loanPeriod);
-            $existingQuery->where('casa_period', $casaDate);
-
-            $existingCount = (int) $existingQuery->count();
-            if ($existingCount > 0) {
-                return $existingCount;
-            }
-        }
-
         if ($force) {
             DB::table(self::RASIO_SNAPSHOT_TABLE)->where('loan_period', $loanPeriod)->delete();
         }
@@ -621,16 +597,6 @@ class ReportSnapshotBuilder
             }
 
             return 0;
-        }
-
-        if (!$force) {
-            $existingQuery = DB::table(self::RASIO_UKER_SNAPSHOT_TABLE)->where('loan_period', $loanPeriod);
-            $existingQuery->where('casa_period', $casaDate);
-
-            $existingCount = (int) $existingQuery->count();
-            if ($existingCount > 0) {
-                return $existingCount;
-            }
         }
 
         if (DB::getDriverName() === 'mysql') {
@@ -943,6 +909,7 @@ class ReportSnapshotBuilder
             ->selectRaw('COUNT(DISTINCT unit_kerja) as unit_count')
             ->selectRaw("COALESCE(SUM(CASE WHEN UPPER(COALESCE(jenis_simpanan, '')) LIKE 'TABUNGAN%' THEN COALESCE(saldo_idr, 0) ELSE 0 END), 0) as tabungan_balance")
             ->selectRaw("COALESCE(SUM(CASE WHEN UPPER(COALESCE(jenis_simpanan, '')) LIKE 'GIRO%' THEN COALESCE(saldo_idr, 0) ELSE 0 END), 0) as giro_balance")
+            ->selectRaw("COALESCE(SUM(CASE WHEN UPPER(COALESCE(jenis_simpanan, '')) NOT LIKE 'TABUNGAN%' AND UPPER(COALESCE(jenis_simpanan, '')) NOT LIKE 'GIRO%' THEN COALESCE(saldo_idr, 0) ELSE 0 END), 0) as other_balance")
             ->selectRaw('MAX(updated_at) as source_updated_at')
             ->first();
 
@@ -954,10 +921,10 @@ class ReportSnapshotBuilder
             return 0;
         }
 
-        $totalBalance = (float) ($summary->total_balance ?? 0);
-        $tabunganBalance = (float) ($summary->tabungan_balance ?? 0);
-        $giroBalance = (float) ($summary->giro_balance ?? 0);
-        $otherBalance = max(0, $totalBalance - $tabunganBalance - $giroBalance);
+        $totalBalance = $this->normalizeSnapshotDecimal($summary->total_balance ?? 0);
+        $tabunganBalance = $this->normalizeSnapshotDecimal($summary->tabungan_balance ?? 0);
+        $giroBalance = $this->normalizeSnapshotDecimal($summary->giro_balance ?? 0);
+        $otherBalance = $this->normalizeSnapshotDecimal($summary->other_balance ?? 0);
 
         $branchBalances = (clone $baseQuery)
             ->whereNotNull('kantor_cabang')
@@ -973,9 +940,21 @@ class ReportSnapshotBuilder
             ->values();
 
         $topBranch = $topBranches->first();
+        $simpananGate = app(SimpananMultiPnSnapshotGate::class);
+        $missingBranches = $simpananGate->getMissingBranches($period);
+        $completenessPayload = [];
+        $completenessUpdateColumns = [];
+        if (Schema::hasColumn(self::DASHBOARD_SIMPANAN_SNAPSHOT_TABLE, 'snapshot_completeness')) {
+            $completenessPayload['snapshot_completeness'] = $missingBranches === [] ? 'complete' : 'partial';
+            $completenessUpdateColumns[] = 'snapshot_completeness';
+        }
+        if (Schema::hasColumn(self::DASHBOARD_SIMPANAN_SNAPSHOT_TABLE, 'partial_branches')) {
+            $completenessPayload['partial_branches'] = $missingBranches === [] ? null : json_encode(array_values($missingBranches), JSON_UNESCAPED_UNICODE);
+            $completenessUpdateColumns[] = 'partial_branches';
+        }
 
         DB::table(self::DASHBOARD_SIMPANAN_SNAPSHOT_TABLE)->upsert([
-            [
+            array_merge([
                 'uniqueid_dss' => md5(implode('|', ['dss', $period])),
                 'snapshot_period' => $period,
                 'total_balance' => $totalBalance,
@@ -987,12 +966,12 @@ class ReportSnapshotBuilder
                 'giro_balance' => $giroBalance,
                 'other_balance' => $otherBalance,
                 'top_branch_label' => trim((string) ($topBranch->kantor_cabang ?? '')),
-                'top_branch_balance' => (float) ($topBranch->total_balance ?? 0),
+                'top_branch_balance' => $this->normalizeSnapshotDecimal($topBranch->total_balance ?? 0),
                 'source_row_count' => $sourceRowCount,
                 'source_updated_at' => $summary->source_updated_at,
                 'created_at' => now(),
                 'updated_at' => now(),
-            ],
+            ], $completenessPayload),
         ], ['uniqueid_dss'], [
             'total_balance',
             'account_count',
@@ -1006,6 +985,7 @@ class ReportSnapshotBuilder
             'top_branch_balance',
             'source_row_count',
             'source_updated_at',
+            ...$completenessUpdateColumns,
             'updated_at',
         ]);
 
@@ -1022,7 +1002,7 @@ class ReportSnapshotBuilder
                 'uniqueid_dsbs' => md5(implode('|', ['dsbs', $period, $branchLabel])),
                 'snapshot_period' => $period,
                 'kantor_cabang' => $branchLabel,
-                'total_balance' => (float) ($row->total_balance ?? 0),
+                'total_balance' => $this->normalizeSnapshotDecimal($row->total_balance ?? 0),
                 'rank_order' => $index + 1,
                 'created_at' => now(),
                 'updated_at' => now(),
@@ -1047,6 +1027,13 @@ class ReportSnapshotBuilder
         }
 
         return $sourceRowCount;
+    }
+
+    private function normalizeSnapshotDecimal(mixed $value): string
+    {
+        $normalized = trim((string) ($value ?? '0'));
+
+        return $normalized === '' ? '0' : $normalized;
     }
 
     private function dashboardSimpananSnapshotIsFresh(object $existingSnapshot, ?object $sourceMetadata): bool
@@ -1085,16 +1072,6 @@ class ReportSnapshotBuilder
     {
         if (!Schema::hasColumn(self::DORMANT_SNAPSHOT_TABLE, 'snapshot_version')) {
             return 0;
-        }
-
-        if (!$force) {
-            $existingCount = (int) DB::table(self::DORMANT_SNAPSHOT_TABLE)
-                ->where('posisi', $period)
-                ->where('snapshot_version', self::DORMANT_SNAPSHOT_VERSION)
-                ->count();
-            if ($existingCount > 0) {
-                return $existingCount;
-            }
         }
 
         $snapshotTable = self::DORMANT_SNAPSHOT_TABLE;
@@ -1200,13 +1177,6 @@ class ReportSnapshotBuilder
     {
         if (!Schema::hasTable(self::NEW_PAYROLL_SNAPSHOT_TABLE) || !Schema::hasTable('performance_pis_per_produk')) {
             return 0;
-        }
-
-        if (!$force) {
-            $existingCount = (int) DB::table(self::NEW_PAYROLL_SNAPSHOT_TABLE)->where('snapshot_posisi', $snapshotPosisi)->count();
-            if ($existingCount > 0) {
-                return $existingCount;
-            }
         }
 
         $snapshotDate = Carbon::parse($snapshotPosisi);
@@ -2183,13 +2153,6 @@ class ReportSnapshotBuilder
     {
         if (!Schema::hasTable(self::PERFORMANCE_RM_SNAPSHOT_TABLE)) {
             return 0;
-        }
-
-        if (!$force) {
-            $existingCount = (int) DB::table(self::PERFORMANCE_RM_SNAPSHOT_TABLE)->where('periode', $period)->count();
-            if ($existingCount > 0) {
-                return $existingCount;
-            }
         }
 
         DB::table(self::PERFORMANCE_RM_SNAPSHOT_TABLE)

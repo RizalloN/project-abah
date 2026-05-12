@@ -68,7 +68,7 @@ class EnsureImportedSnapshotsFreshJobTest extends TestCase
         $builder->shouldNotReceive('rebuildChartPeriodik');
         $builder->shouldReceive('rebuildPerformanceRm')
             ->once()
-            ->with('2026-05-06', true)
+            ->with('2026-05-06', false)
             ->andReturn(['2026-05-06' => 10]);
         $builder->shouldNotReceive('rebuildRasioCasa');
 
@@ -107,10 +107,10 @@ class EnsureImportedSnapshotsFreshJobTest extends TestCase
             ->update(['saldo_idr' => 2500]);
 
         $builder = Mockery::mock(ReportSnapshotBuilder::class);
-        $builder->shouldReceive('rebuildDashboardSimpanan')->once()->with('2026-05-06', true)->andReturn(['2026-05-06' => 4]);
-        $builder->shouldReceive('rebuildRekeningDormant')->once()->with('2026-05-06', true)->andReturn(['2026-05-06' => 4]);
-        $builder->shouldReceive('rebuildPerformanceRm')->once()->with('2026-05-06', true)->andReturn(['2026-05-06' => 4]);
-        $builder->shouldReceive('rebuildRasioCasa')->once()->with('2026-05-06', true)->andReturn(['2026-05-06' => 4]);
+        $builder->shouldReceive('rebuildDashboardSimpanan')->once()->with('2026-05-06', false)->andReturn(['2026-05-06' => 4]);
+        $builder->shouldReceive('rebuildRekeningDormant')->once()->with('2026-05-06', false)->andReturn(['2026-05-06' => 4]);
+        $builder->shouldReceive('rebuildPerformanceRm')->once()->with('2026-05-06', false)->andReturn(['2026-05-06' => 4]);
+        $builder->shouldReceive('rebuildRasioCasa')->once()->with('2026-05-06', false)->andReturn(['2026-05-06' => 4]);
 
         $dashboardHarian = Mockery::mock(DashboardHarianSnapshotService::class);
         $dashboardHarian->shouldNotReceive('rebuild');
@@ -142,7 +142,7 @@ class EnsureImportedSnapshotsFreshJobTest extends TestCase
         $dashboardHarian = Mockery::mock(DashboardHarianSnapshotService::class);
         $dashboardHarian->shouldReceive('rebuild')
             ->once()
-            ->with('2026-05-06', true)
+            ->with('2026-05-06', false)
             ->andReturn(['2026-05-06' => 1]);
 
         (new EnsureImportedSnapshotsFreshJob('ssa_pinjaman', '2026-05-06', 'unit-test'))
@@ -171,14 +171,14 @@ class EnsureImportedSnapshotsFreshJobTest extends TestCase
         DB::table('ssa_simpanan')->where('Month_Day_Year_of_Posisi', '2026-05-06')->update(['saldo' => 2500]);
 
         $ssaBuilder = Mockery::mock(SsaSimpananSnapshotBuilder::class);
-        $ssaBuilder->shouldReceive('rebuild')->once()->with('2026-05-06', true)->andReturn(['2026-05-06' => 1]);
+        $ssaBuilder->shouldReceive('rebuild')->once()->with('2026-05-06', false)->andReturn(['2026-05-06' => 1]);
         $this->app->instance(SsaSimpananSnapshotBuilder::class, $ssaBuilder);
 
         $builder = Mockery::mock(ReportSnapshotBuilder::class);
         $dashboardHarian = Mockery::mock(DashboardHarianSnapshotService::class);
         $dashboardHarian->shouldReceive('rebuild')
             ->once()
-            ->with('2026-05-06', true)
+            ->with('2026-05-06', false)
             ->andReturn(['2026-05-06' => 1]);
 
         (new EnsureImportedSnapshotsFreshJob('ssa_simpanan', '2026-05-06', 'unit-test'))
@@ -216,7 +216,7 @@ class EnsureImportedSnapshotsFreshJobTest extends TestCase
             ->andReturn(['2026-05-06']);
         $dashboardHarian->shouldReceive('rebuild')
             ->once()
-            ->with('2026-05-06', true)
+            ->with('2026-05-06', false)
             ->andReturn(['2026-05-06' => 1]);
 
         (new EnsureImportedSnapshotsFreshJob('lw325_ph', '2026-05-05', 'unit-test'))

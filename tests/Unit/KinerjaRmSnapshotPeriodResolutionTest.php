@@ -193,9 +193,8 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
         $result = $this->invokePrivateMethod($controller, 'fetchBranchRows', [
             'CONSUMER',
             '2026-04-20',
-            '2025-03-31',
-            '2025-12-31',
-            '2026-03-31',
+            $this->comparisonPeriods('2025-12-31', '2025-03-31', null, null, '2026-03-31'),
+            '2026-04-20',
             null,
             null,
             null,
@@ -221,8 +220,7 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
         $result = $this->invokePrivateMethod($controller, 'fetchBranchRows', [
             'CONSUMER',
             '2026-04-20',
-            '2026-04-20',
-            '2026-04-20',
+            $this->comparisonPeriods('2026-04-20', '2026-04-20', null, null, '2026-04-20'),
             '2026-04-20',
             null,
             null,
@@ -252,9 +250,8 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
         $result = $this->invokePrivateMethod($controller, 'fetchBranchRows', [
             'SMALL',
             '2026-02-28',
-            '2026-01-31',
-            '2026-01-31',
-            '2026-01-31',
+            $this->comparisonPeriods('2026-01-31', '2026-01-31', null, null, '2026-01-31'),
+            '2026-02-28',
             null,
             null,
             null,
@@ -292,6 +289,22 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ], $overrides);
+    }
+
+    private function comparisonPeriods(
+        ?string $ytd,
+        ?string $m4,
+        ?string $m3,
+        ?string $m2,
+        ?string $m1
+    ): array {
+        return [
+            'ytd' => ['key' => 'ytd', 'label' => 'YTD', 'period' => $ytd, 'short_label' => $ytd ?? '-'],
+            'm4' => ['key' => 'm4', 'label' => 'M-4', 'period' => $m4, 'short_label' => $m4 ?? '-'],
+            'm3' => ['key' => 'm3', 'label' => 'M-3', 'period' => $m3, 'short_label' => $m3 ?? '-'],
+            'm2' => ['key' => 'm2', 'label' => 'M-2', 'period' => $m2, 'short_label' => $m2 ?? '-'],
+            'm1' => ['key' => 'm1', 'label' => 'M-1', 'period' => $m1, 'short_label' => $m1 ?? '-'],
+        ];
     }
 
     private function invokePrivateMethod(object $object, string $method, array $arguments = []): mixed

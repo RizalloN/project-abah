@@ -140,11 +140,7 @@ class BackfillShadowColumnsCommand extends Command
 
         $periods = DB::table('daily_loan_dinamis')
             ->select('periode')
-            ->where(function ($q) use ($requiredColumns) {
-                foreach ($requiredColumns as $col) {
-                    $q->orWhereNull($col);
-                }
-            })
+            ->where(fn ($q) => $this->applyShadowBackfillPredicate($q, $requiredColumns))
             ->distinct()
             ->orderByDesc('periode')
             ->limit(10)
@@ -387,18 +383,11 @@ class BackfillShadowColumnsCommand extends Command
 
     private function snapshotRowIds(string $period, int $chunkSize): array
     {
+        $requiredColumns = $this->requiredDailyLoanShadowColumns();
+
         return DB::table('daily_loan_dinamis')
             ->where('periode', $period)
-            ->where(function ($q) {
-                $q->whereNull('segmen_kinerja')
-                    ->orWhereNull('produk_kinerja')
-                    ->orWhereNull('cabang_normalized')
-                    ->orWhereNull('unit_normalized')
-                    ->orWhereNull('branch_normalized')
-                    ->orWhereNull('rm_normalized')
-                    ->orWhereNull('pn_pemutus_normalized')
-                    ->orWhereNull('cifno_clean');
-            })
+            ->where(fn ($q) => $this->applyShadowBackfillPredicate($q, $requiredColumns))
             ->orderBy('uniqueid_namareport')
             ->pluck('uniqueid_namareport')
             ->toArray();
@@ -406,19 +395,46 @@ class BackfillShadowColumnsCommand extends Command
 
     private function countNullShadowColumns(string $period): int
     {
+        $requiredColumns = $this->requiredDailyLoanShadowColumns();
+
         return DB::table('daily_loan_dinamis')
             ->where('periode', $period)
-            ->where(function ($q) {
-                $q->whereNull('segmen_kinerja')
-                    ->orWhereNull('produk_kinerja')
-                    ->orWhereNull('cabang_normalized')
-                    ->orWhereNull('unit_normalized')
-                    ->orWhereNull('branch_normalized')
-                    ->orWhereNull('rm_normalized')
-                    ->orWhereNull('pn_pemutus_normalized')
-                    ->orWhereNull('cifno_clean');
-            })
+            ->where(fn ($q) => $this->applyShadowBackfillPredicate($q, $requiredColumns))
             ->count();
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function requiredDailyLoanShadowColumns(): array
+    {
+        return [
+            'segmen_kinerja',
+            'produk_kinerja',
+            'cabang_normalized',
+            'unit_normalized',
+            'branch_normalized',
+            'rm_normalized',
+            'pn_pemutus_normalized',
+            'cifno_clean',
+        ];
+    }
+
+    /**
+     * @param mixed $query
+     * @param array<int, string> $requiredColumns
+     */
+    private function applyShadowBackfillPredicate($query, array $requiredColumns): void
+    {
+        foreach ($requiredColumns as $column) {
+            $query->orWhereNull($column);
+        }
+
+        if (Schema::hasColumn('daily_loan_dinamis', 'shadow_built_at') && Schema::hasColumn('daily_loan_dinamis', 'updated_at')) {
+            $query
+                ->orWhereNull('shadow_built_at')
+                ->orWhereColumn('shadow_built_at', '<', 'updated_at');
+        }
     }
 
     private function validateCompletion(string $period): array
@@ -457,6 +473,10 @@ class BackfillShadowColumnsCommand extends Command
 
     private function processChunk(string $period, string $idList, int $retryCount, bool $dryRun): int
     {
+        $shadowBuiltAssignment = Schema::hasColumn('daily_loan_dinamis', 'shadow_built_at')
+            ? ",\n                shadow_built_at = NOW(6)"
+            : '';
+
         $sql = <<<SQL
             UPDATE daily_loan_dinamis
             SET
@@ -467,7 +487,7 @@ class BackfillShadowColumnsCommand extends Command
                 branch_normalized = UPPER(TRIM(COALESCE(branch1, ''))),
                 rm_normalized = UPPER(TRIM(COALESCE(pn_pengelola1, ''))),
                 pn_pemutus_normalized = NULLIF(TRIM(LEADING '0' FROM TRIM(SUBSTRING_INDEX(COALESCE(pn_pemutus1, ''), '-', 1))), ''),
-                cifno_clean = REGEXP_REPLACE(COALESCE(cifno, ''), '[^0-9]', '')
+                cifno_clean = REGEXP_REPLACE(COALESCE(cifno, ''), '[^0-9]', ''){$shadowBuiltAssignment}
             WHERE uniqueid_namareport IN ('{$idList}')
         SQL;
 
