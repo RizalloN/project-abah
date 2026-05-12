@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Jobs\Middleware\DeferSnapshotJobsDuringImport;
 use App\Support\DashboardHarianSnapshotService;
+use App\Support\ReportCacheVersion;
 use App\Support\ReportDataSyncService;
 use App\Support\ReportSnapshotBuilder;
 use App\Support\SnapshotSourceSignatureService;
@@ -271,7 +272,7 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
         }
 
         if ($rebuiltAny) {
-            $this->bumpReportCacheVersion();
+            $this->bumpReportCacheVersion('simpanan');
         }
     }
 
@@ -321,7 +322,7 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
             ]);
 
             if ($rebuiltAny) {
-                $this->bumpReportCacheVersion();
+                $this->bumpReportCacheVersion($includeSimpananSnapshot ? 'simpanan' : 'harian');
             }
 
             return;
@@ -331,7 +332,7 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
         $isStale = $before > 0 && !$sourceSignatures->isFresh($table, 'dashboard_harian_snapshots', $period, $sourceMetadata);
         if ($before > 0 && !$isStale) {
             if ($rebuiltAny) {
-                $this->bumpReportCacheVersion();
+                $this->bumpReportCacheVersion($includeSimpananSnapshot ? 'simpanan' : 'harian');
             }
 
             return;
@@ -360,7 +361,7 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
         ]);
 
         if ($rebuiltAny) {
-            $this->bumpReportCacheVersion();
+            $this->bumpReportCacheVersion($includeSimpananSnapshot ? 'simpanan' : 'harian');
         }
     }
 
@@ -412,7 +413,7 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
         }
 
         if ($rebuiltAny) {
-            $this->bumpReportCacheVersion();
+            $this->bumpReportCacheVersion('pinjaman');
         }
     }
 
@@ -457,7 +458,7 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
                 'source' => $this->source,
             ]);
 
-            $this->bumpReportCacheVersion();
+            $this->bumpReportCacheVersion('simpanan');
         }
 
         Log::warning($isStale ? 'Auto-refreshed stale Dashboard Harian snapshot after Hourly DPK import.' : 'Auto-recovered missing Dashboard Harian snapshot after Hourly DPK import.', [
@@ -543,13 +544,7 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
 
     private function bumpReportCacheVersion(string $scope = 'global'): void
     {
-        $global = (int) Cache::get('report_cache_version:global', 1) + 1;
-        Cache::put('report_cache_version:global', $global, now()->addHours(24));
-
-        $scope = strtolower(trim($scope));
-        if ($scope !== '' && $scope !== 'global') {
-            Cache::put('report_cache_version:' . $scope, (int) Cache::get('report_cache_version:' . $scope, 1) + 1, now()->addHours(24));
-        }
+        ReportCacheVersion::bump($scope);
     }
 
     private function dashboardHarianSourcesAreAvailable(string $period): bool

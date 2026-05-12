@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Jobs\EnsureRekeningDormantSnapshotJob;
 use App\Support\ReportIndexHintResolver;
+use App\Support\ReportCacheVersion;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Http\Request;
@@ -1089,7 +1090,7 @@ class RekeningDormantController extends Controller
 
     private function reportCacheVersion(): int
     {
-        return (int) Cache::get('report_cache_version:global', 1);
+        return ReportCacheVersion::get('simpanan');
     }
 
     private function qualifyIndexedSource(string $table, ?string $alias = null, array $preferredIndexes = []): string

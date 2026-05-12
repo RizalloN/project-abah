@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Support\ReportCacheVersion;
 use App\Support\ReportSnapshotBuilder;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
@@ -47,7 +48,7 @@ class RebuildPerformanceRmCommand extends Command
                 'duration_seconds' => now()->diffInSeconds($startTime),
             ], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT));
 
-            Cache::put('report_cache_version:global', Cache::get('report_cache_version:global', 1) + 1, now()->addHours(24));
+            ReportCacheVersion::bump('pinjaman');
             $this->info('Cache version bumped.');
 
             return self::SUCCESS;

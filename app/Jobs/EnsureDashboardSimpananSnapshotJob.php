@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Support\SnapshotBatchAggregator;
+use App\Support\ReportCacheVersion;
 use App\Support\SimpananMultiPnSnapshotGate;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -67,7 +68,7 @@ class EnsureDashboardSimpananSnapshotJob implements ShouldQueue, ShouldBeUnique
             throw $e;
         } finally {
             Cache::forget('snapshot:dashboard_simpanan:auto-rebuild:pending:' . $this->period);
-            Cache::forget('dashboard_simpanan:snapshot_exists:v' . (int) Cache::get('report_cache_version:global', 1) . ':' . $this->period);
+            Cache::forget('dashboard_simpanan:snapshot_exists:v' . ReportCacheVersion::get('simpanan') . ':' . $this->period);
         }
     }
 

@@ -6,6 +6,7 @@ use App\Jobs\EnsureDashboardSnapshotJob;
 use App\Support\DashboardHarianSnapshotService;
 use App\Support\DashboardPinjamanChartPeriodikService;
 use App\Support\ReportIndexHintResolver;
+use App\Support\ReportCacheVersion;
 use App\Support\LoanQualityBucketMapper;
 use App\Support\DashboardPinjamanKreditService;
 use Carbon\Carbon;
@@ -2767,7 +2768,7 @@ class DashboardPinjamanReportController extends Controller
 
     protected function reportCacheVersion(): int
     {
-        return (int) Cache::get('report_cache_version:global', 1);
+        return ReportCacheVersion::get('pinjaman');
     }
 
     private function resolveIdentityColumn(string $table): string

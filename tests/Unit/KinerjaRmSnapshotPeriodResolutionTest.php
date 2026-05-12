@@ -54,7 +54,8 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
             $table->timestamps();
         });
 
-        Cache::forget('report_cache_version:global');
+        Cache::forget('report_cache_version:pinjaman');
+        Cache::forget('report_cache_version:simpanan');
     }
 
     public function test_performance_rm_period_resolution_tracks_daily_loan_source_periods(): void
@@ -79,7 +80,7 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
         $this->assertSame(['2026-04-04', '2026-04-17'], $resolvedAll);
     }
 
-    public function test_kinerja_rm_cache_keys_refresh_after_global_report_cache_version_bump(): void
+    public function test_kinerja_rm_cache_keys_refresh_after_scoped_report_cache_version_bump(): void
     {
         DB::table('performance_rm_snapshots')->insert([
             [
@@ -100,7 +101,8 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
             ],
         ]);
 
-        Cache::put('report_cache_version:global', 1);
+        Cache::put('report_cache_version:pinjaman', 1);
+        Cache::put('report_cache_version:simpanan', 1);
 
         $controller = new KinerjaRmReportController(Mockery::mock(RkaLookupService::class));
 
@@ -129,7 +131,7 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
         $periodsCached = $this->invokePrivateMethod($controller, 'fetchAvailablePeriods', []);
         $this->assertSame(['2026-04-17'], $periodsCached->all());
 
-        Cache::put('report_cache_version:global', 2);
+        Cache::put('report_cache_version:pinjaman', 2);
 
         $periodsRefreshed = $this->invokePrivateMethod($controller, 'fetchAvailablePeriods', []);
         $this->assertSame(['2026-04-18', '2026-04-17'], $periodsRefreshed->all());

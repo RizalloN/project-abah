@@ -52,7 +52,6 @@ class ReportDataSyncService
     private const NEW_PAYROLL_SNAPSHOT_TABLE = 'performance_new_payroll_snapshots';
     private const PERFORMANCE_RM_SNAPSHOT_TABLE = 'performance_rm_snapshots';
     private const SSA_SIMPANAN_SNAPSHOT_TABLE = 'ssa_simpanan_snapshots';
-    private const CACHE_VERSION_KEY = 'report_cache_version:global';
     private const RASIO_REBUILD_LOCK_PREFIX = 'snapshot:rasio:rebuild:';
     private const SIMPANAN_REBUILD_LOCK_PREFIX = 'snapshot:simpanan:rebuild:';
     private const ANALYZE_THROTTLE_SECONDS = 600;
@@ -504,7 +503,7 @@ class ReportDataSyncService
             }
 
             if ($periodHint !== null && trim($periodHint) !== '') {
-                return $this->dashboardHarianSnapshotService->rebuildAffectedByPhPeriod($periodHint, true);
+                return $this->dashboardHarianSnapshotService->rebuildAffectedByPhPeriod($periodHint, false);
             }
 
             return $this->dashboardHarianSnapshotService->syncDuePeriods();
@@ -524,15 +523,15 @@ class ReportDataSyncService
     private function syncPerformanceNewPayroll(?string $periodHint, ?int $jobId, ?string $source, ?string $deleteId = null): void
     {
         $this->runSnapshotAudit('performance_pis_per_produk', $periodHint, $jobId, $source, 'snapshot_new_payroll', function () use ($periodHint, $deleteId) {
-            return $this->snapshotBuilder->rebuildPerformanceNewPayroll($periodHint, true, $this->makeHeartbeatCallback($deleteId, 'Rebuilding New Payroll snapshots...'));
+            return $this->snapshotBuilder->rebuildPerformanceNewPayroll($periodHint, false, $this->makeHeartbeatCallback($deleteId, 'Rebuilding New Payroll snapshots...'));
         });
         $this->refreshTableStatistics(self::NEW_PAYROLL_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
     }
 
     private function syncLoanType(?string $periodHint, ?int $jobId, ?string $source, ?string $deleteId = null): void
     {
-        $this->runSnapshotAudit('loan_type', $periodHint, $jobId, $source, 'snapshot_chart_periodik', function () {
-            return $this->snapshotBuilder->rebuildChartPeriodik(null, true);
+        $this->runSnapshotAudit('loan_type', $periodHint, $jobId, $source, 'snapshot_chart_periodik', function () use ($periodHint) {
+            return $this->snapshotBuilder->rebuildChartPeriodik($periodHint, false);
         });
 
         if ($this->shouldRefreshDerivedSnapshotStatistics($periodHint)) {
@@ -561,7 +560,7 @@ class ReportDataSyncService
     {
         // Priority: rebuild SSA Simpanan aggregation snapshot immediately (used by Dashboard Dana)
         $this->runSnapshotAudit('ssa_simpanan', $periodHint, $jobId, $source, 'snapshot_ssa_simpanan', function () use ($periodHint) {
-            return app(\App\Support\SsaSimpananSnapshotBuilder::class)->rebuild($periodHint, true);
+            return app(\App\Support\SsaSimpananSnapshotBuilder::class)->rebuild($periodHint, false);
         });
 
         $this->dispatchSnapshotFreshnessCheck('ssa_simpanan', $periodHint, $source);
@@ -1011,7 +1010,7 @@ class ReportDataSyncService
             }
         }
 
-        $this->bumpReportCacheVersion();
+        $this->bumpReportCacheVersion($this->cacheScopeForTable($normalizedTable));
 
         return $deleted;
     }
@@ -1190,17 +1189,7 @@ class ReportDataSyncService
 
     private function bumpReportCacheVersion(string $scope = 'global'): int
     {
-        Cache::add(self::CACHE_VERSION_KEY, 1, now()->addDays(30));
-
-        $version = (int) Cache::increment(self::CACHE_VERSION_KEY);
-        $scope = strtolower(trim($scope));
-        if ($scope !== '' && $scope !== 'global') {
-            $key = 'report_cache_version:' . $scope;
-            Cache::add($key, 1, now()->addDays(30));
-            Cache::increment($key);
-        }
-
-        return $version;
+        return ReportCacheVersion::bump($scope);
     }
 
     private function cacheScopeForTable(string $tableName): string

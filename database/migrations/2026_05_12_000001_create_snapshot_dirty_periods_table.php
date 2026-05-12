@@ -2,6 +2,7 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
@@ -53,5 +54,6 @@ return new class extends Migration
     {
         // Intentionally keep dirty-period tables on rollback so pending recovery
         // evidence is not destroyed. Trigger rollback is handled separately.
+        Log::notice('Rollback intentionally preserved snapshot dirty-period tables; purge them explicitly if this is a dev reset.');
     }
 };

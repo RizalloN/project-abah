@@ -15,6 +15,7 @@ class SnapshotDirtyPeriodServiceTest extends TestCase
 
         Schema::dropIfExists('failed_snapshot_dirty_periods');
         Schema::dropIfExists('snapshot_dirty_periods');
+        Schema::dropIfExists('report_sync_audits');
 
         Schema::create('snapshot_dirty_periods', function (Blueprint $table): void {
             $table->string('source_table', 64);
@@ -46,6 +47,21 @@ class SnapshotDirtyPeriodServiceTest extends TestCase
             $table->timestamps(6);
             $table->primary(['source_table', 'period_key', 'shard_type', 'shard_key'], 'pk_failed_sdp_test');
         });
+
+        Schema::create('report_sync_audits', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedBigInteger('import_job_id')->nullable();
+            $table->string('source')->nullable();
+            $table->string('table_name');
+            $table->date('period_hint')->nullable();
+            $table->string('action');
+            $table->string('status');
+            $table->unsignedInteger('duration_ms')->nullable();
+            $table->unsignedBigInteger('affected_rows')->nullable();
+            $table->text('message')->nullable();
+            $table->json('context')->nullable();
+            $table->timestamps();
+        });
     }
 
     public function test_mark_coalesces_dirty_period_and_claim_clear_is_token_scoped(): void
@@ -62,6 +78,12 @@ class SnapshotDirtyPeriodServiceTest extends TestCase
         $this->assertSame('2026-05-12', $claims[0]['period_key']);
         $this->assertTrue($service->clearClaim($claims[0]));
         $this->assertSame(0, $service->pendingCount());
+        $this->assertDatabaseHas('report_sync_audits', [
+            'table_name' => 'daily_loan_dinamis',
+            'period_hint' => '2026-05-12',
+            'action' => 'snapshot_dirty_clear',
+            'status' => 'success',
+        ]);
     }
 
     public function test_release_claim_moves_to_failed_after_max_attempts(): void
@@ -79,6 +101,18 @@ class SnapshotDirtyPeriodServiceTest extends TestCase
         $this->assertDatabaseHas('failed_snapshot_dirty_periods', [
             'source_table' => 'hourly_dpk',
             'period_key' => '2026-05-12',
+        ]);
+        $this->assertDatabaseHas('report_sync_audits', [
+            'table_name' => 'hourly_dpk',
+            'period_hint' => '2026-05-12',
+            'action' => 'snapshot_dirty_release',
+            'status' => 'retry',
+        ]);
+        $this->assertDatabaseHas('report_sync_audits', [
+            'table_name' => 'hourly_dpk',
+            'period_hint' => '2026-05-12',
+            'action' => 'snapshot_dirty_dead_letter',
+            'status' => 'failed',
         ]);
     }
 }

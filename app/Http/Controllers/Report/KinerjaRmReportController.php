@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Report;
 use App\Http\Controllers\Controller;
 use App\Jobs\SyncImportedReportJob;
 use App\Support\RkaLookupService;
+use App\Support\ReportCacheVersion;
 use App\Support\StrictDateParser;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -738,7 +739,7 @@ class KinerjaRmReportController extends Controller
 
     private function reportCacheVersion(): int
     {
-        return (int) Cache::get('report_cache_version:global', 1);
+        return ReportCacheVersion::composite(['pinjaman', 'simpanan']);
     }
 
     private function fetchSourceBranchRows(

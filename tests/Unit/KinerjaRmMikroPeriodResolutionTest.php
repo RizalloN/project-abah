@@ -59,7 +59,8 @@ class KinerjaRmMikroPeriodResolutionTest extends TestCase
             $table->string('produk');
         });
 
-        Cache::forget('report_cache_version:global');
+        Cache::forget('report_cache_version:pinjaman');
+        Cache::forget('report_cache_version:simpanan');
     }
 
     public function test_period_options_include_micro_kur_daily_loan_source_periods(): void

@@ -154,7 +154,7 @@ class ReportDataSyncServiceTest extends TestCase
 
         $builder->shouldReceive('rebuildChartPeriodik')
             ->once()
-            ->with(null, true)
+            ->with('2026-04-04', false)
             ->andReturn(['2026-04-04' => 1]);
 
         $service->syncImportedTable('loan_type', '2026-04-04', 77, 'unit-test');
@@ -291,7 +291,7 @@ class ReportDataSyncServiceTest extends TestCase
 
         $builder->shouldReceive('rebuildPerformanceNewPayroll')
             ->once()
-            ->with('2026-04-30', true, null)
+            ->with('2026-04-30', false, null)
             ->andReturn(['2026-04-30' => 4]);
 
         $reflection = new \ReflectionMethod($service, 'syncPerformanceNewPayroll');

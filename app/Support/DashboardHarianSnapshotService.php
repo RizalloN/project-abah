@@ -455,7 +455,7 @@ class DashboardHarianSnapshotService
 
     public function fetchPeriods(): Collection
     {
-        $version = (int) Cache::get('report_cache_version:global', 1);
+        $version = ReportCacheVersion::composite(['harian', 'pinjaman', 'simpanan']);
 
         return Cache::remember("dh:periods:v{$version}", now()->addMinutes(10), function (): Collection {
             try {
@@ -632,7 +632,7 @@ class DashboardHarianSnapshotService
 
     public function fetchFilterOptions(?string $period = null, array|string|null $selectedKanca = null, array|string|null $selectedUnit = null): array
     {
-        $version      = (int) Cache::get('report_cache_version:global', 1);
+        $version      = ReportCacheVersion::composite(['harian', 'pinjaman', 'simpanan']);
         $kancaHash    = md5(json_encode($selectedKanca));
         $unitHash     = md5(json_encode($selectedUnit));
         $periodNorm   = $period ?? 'latest';
@@ -2517,7 +2517,7 @@ class DashboardHarianSnapshotService
             $this->sharedPeriodsRequestCache = app()->runningUnitTests()
                 ? $this->computeSharedPeriods()
                 : Cache::remember(
-                    'dh:shared_periods:all:' . md5(DB::connection()->getName() . '|' . DB::connection()->getDatabaseName()) . ':v' . (int) Cache::get('report_cache_version:global', 1),
+                    'dh:shared_periods:all:' . md5(DB::connection()->getName() . '|' . DB::connection()->getDatabaseName()) . ':v' . ReportCacheVersion::composite(['harian', 'pinjaman', 'simpanan']),
                     now()->addMinutes(5),
                     fn (): array => $this->computeSharedPeriods()
                 );
@@ -3085,7 +3085,7 @@ class DashboardHarianSnapshotService
     private function bumpReportCacheVersion(): void
     {
         try {
-            Cache::put('report_cache_version:global', (int) Cache::get('report_cache_version:global', 1) + 1, now()->addHours(24));
+            ReportCacheVersion::bump('harian');
         } catch (Throwable) {
             // Cache refresh is best-effort; the snapshot rows remain the source of truth.
         }

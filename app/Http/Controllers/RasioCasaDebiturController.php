@@ -6,6 +6,7 @@ use App\Jobs\EnsureRasioCasaSnapshotJob;
 use App\Services\Import\ImportProgressService;
 use App\Support\ReportSnapshotBuilder;
 use App\Support\ReportIndexHintResolver;
+use App\Support\ReportCacheVersion;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -2239,7 +2240,7 @@ class RasioCasaDebiturController extends Controller
 
     private function reportCacheVersion(): int
     {
-        return (int) Cache::get('report_cache_version:global', 1);
+        return ReportCacheVersion::composite(['pinjaman', 'simpanan']);
     }
 
     private function qualifyIndexedSource(string $table, ?string $alias = null, array $preferredIndexes = []): string

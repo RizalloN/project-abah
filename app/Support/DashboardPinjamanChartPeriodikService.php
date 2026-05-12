@@ -750,7 +750,7 @@ class DashboardPinjamanChartPeriodikService
 
     private function reportCacheVersion(): int
     {
-        return (int) Cache::get('report_cache_version:global', 1);
+        return ReportCacheVersion::get('pinjaman');
     }
 
     private function cacheKey(string $segment, ?string $suffix = null): string

@@ -36,15 +36,15 @@ class SsaSimpananSnapshotBuilder
             return ['success' => false, 'message' => 'No period available'];
         }
 
-        if (!$force && $this->snapshotExists($period)) {
-            Log::info("SsaSimpananSnapshotBuilder: Snapshot already exists for period {$period}, skipping rebuild");
-            return ['success' => true, 'message' => 'Snapshot already exists', 'period' => $period];
-        }
-
         try {
-            $this->deleteExistingSnapshot($period);
+            if ($force) {
+                $this->deleteExistingSnapshot($period);
+            }
+
             $aggregatedData = $this->aggregateFromRaw($period);
-            $inserted = $this->insertSnapshot($period, $aggregatedData);
+            $inserted = $force
+                ? $this->insertSnapshot($period, $aggregatedData)
+                : $this->upsertSnapshot($period, $aggregatedData);
 
             $elapsed = (microtime(true) - $startTime);
             Log::info("SsaSimpananSnapshotBuilder: Rebuilt snapshot for period {$period}", [
@@ -122,6 +122,91 @@ class SsaSimpananSnapshotBuilder
         }
 
         return $inserted;
+    }
+
+    private function upsertSnapshot(string $period, array $data): int
+    {
+        if (empty($data)) {
+            $this->deleteExistingSnapshot($period);
+            return 0;
+        }
+
+        $keys = [];
+        foreach ($data as $row) {
+            $keys[] = $this->snapshotRowKey($row);
+
+            DB::table(self::SNAPSHOT_TABLE)->updateOrInsert(
+                [
+                    'periode' => $row['periode'],
+                    'Month_Day_Year_of_Posisi' => $row['Month_Day_Year_of_Posisi'],
+                    'nama_cabang' => $row['nama_cabang'],
+                    'produk' => $row['produk'],
+                    'segmentasi' => $row['segmentasi'],
+                ],
+                [
+                    'total_saldo' => $row['total_saldo'],
+                    'record_count' => $row['record_count'],
+                    'snapshot_version' => $row['snapshot_version'],
+                    'snapshot_at' => now(),
+                ]
+            );
+        }
+
+        $this->deleteStaleSnapshotRows($period, $keys);
+
+        return count($data);
+    }
+
+    /**
+     * @param array<int, string> $validKeys
+     */
+    private function deleteStaleSnapshotRows(string $period, array $validKeys): void
+    {
+        $validLookup = array_fill_keys($validKeys, true);
+        $existingRows = DB::table(self::SNAPSHOT_TABLE)
+            ->where('periode', $period)
+            ->get(['periode', 'Month_Day_Year_of_Posisi', 'nama_cabang', 'produk', 'segmentasi']);
+
+        foreach ($existingRows as $row) {
+            $key = $this->snapshotRowKey((array) $row);
+            if (isset($validLookup[$key])) {
+                continue;
+            }
+
+            $this->snapshotRowQuery((array) $row)->delete();
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private function snapshotRowKey(array $row): string
+    {
+        return implode('|', [
+            (string) ($row['periode'] ?? ''),
+            (string) ($row['Month_Day_Year_of_Posisi'] ?? ''),
+            (string) ($row['nama_cabang'] ?? ''),
+            (string) ($row['produk'] ?? ''),
+            (string) ($row['segmentasi'] ?? ''),
+        ]);
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private function snapshotRowQuery(array $row): \Illuminate\Database\Query\Builder
+    {
+        $query = DB::table(self::SNAPSHOT_TABLE);
+
+        foreach (['periode', 'Month_Day_Year_of_Posisi', 'nama_cabang', 'produk', 'segmentasi'] as $column) {
+            if (($row[$column] ?? null) === null) {
+                $query->whereNull($column);
+            } else {
+                $query->where($column, $row[$column]);
+            }
+        }
+
+        return $query;
     }
 
     /**

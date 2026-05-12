@@ -12,6 +12,7 @@ class SnapshotDirtyPeriodService
 {
     public const TABLE = 'snapshot_dirty_periods';
     public const FAILED_TABLE = 'failed_snapshot_dirty_periods';
+    private const AUDIT_TABLE = 'report_sync_audits';
     public const DEFAULT_SHARD_TYPE = 'period';
     public const DEFAULT_SHARD_KEY = '*';
     public const MAX_ATTEMPTS = 5;
@@ -171,7 +172,12 @@ class SnapshotDirtyPeriodService
             ->where('dirty_since', '<=', (string) ($claim['dirty_since_at_claim'] ?? ''))
             ->delete();
 
-        return $deleted > 0;
+        $cleared = $deleted > 0;
+        if ($cleared) {
+            $this->writeAudit($claim, 'snapshot_dirty_clear', 'success');
+        }
+
+        return $cleared;
     }
 
     /**
@@ -214,6 +220,8 @@ class SnapshotDirtyPeriodService
                 'last_error' => mb_substr($message, 0, 1000),
                 'updated_at' => now(),
             ]);
+
+        $this->writeAudit((array) $row, 'snapshot_dirty_release', 'retry', $message);
     }
 
     public function pendingCount(?string $sourceTable = null): int
@@ -265,5 +273,55 @@ class SnapshotDirtyPeriodService
             ->where('shard_type', $row->shard_type)
             ->where('shard_key', $row->shard_key)
             ->delete();
+
+        $this->writeAudit((array) $row, 'snapshot_dirty_dead_letter', 'failed', $message);
+    }
+
+    /**
+     * @param array<string, mixed> $claim
+     */
+    private function writeAudit(array $claim, string $action, string $status, ?string $message = null): void
+    {
+        if (!Schema::hasTable(self::AUDIT_TABLE)) {
+            return;
+        }
+
+        try {
+            DB::table(self::AUDIT_TABLE)->insert([
+                'import_job_id' => null,
+                'source' => static::class,
+                'table_name' => (string) ($claim['source_table'] ?? 'snapshot_dirty_periods'),
+                'period_hint' => $this->normalizeAuditPeriod((string) ($claim['period_key'] ?? '')),
+                'action' => $action,
+                'status' => $status,
+                'duration_ms' => null,
+                'affected_rows' => null,
+                'message' => $message !== null ? mb_substr($message, 0, 1000) : null,
+                'context' => json_encode([
+                    'shard_type' => (string) ($claim['shard_type'] ?? self::DEFAULT_SHARD_TYPE),
+                    'shard_key' => (string) ($claim['shard_key'] ?? self::DEFAULT_SHARD_KEY),
+                    'claim_token' => (string) ($claim['claim_token'] ?? ''),
+                    'attempts' => (int) ($claim['attempts'] ?? 0),
+                ], JSON_UNESCAPED_UNICODE),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        } catch (Throwable $e) {
+            Log::warning('Gagal menulis audit dirty-period snapshot: ' . $e->getMessage(), [
+                'action' => $action,
+                'status' => $status,
+            ]);
+        }
+    }
+
+    private function normalizeAuditPeriod(string $period): ?string
+    {
+        $period = trim($period);
+
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $period) === 1) {
+            return $period;
+        }
+
+        return null;
     }
 }

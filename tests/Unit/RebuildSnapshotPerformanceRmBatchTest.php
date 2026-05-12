@@ -21,7 +21,7 @@ class RebuildSnapshotPerformanceRmBatchTest extends TestCase
     public function test_successful_performance_rm_batch_rebuild_bumps_report_cache_version(): void
     {
         Config::set('import.snapshot.enable_analyze_table', false);
-        Cache::put('report_cache_version:global', 7, now()->addHours(24));
+        Cache::put('report_cache_version:pinjaman', 7, now()->addHours(24));
 
         $builder = Mockery::mock(ReportSnapshotBuilder::class);
         $builder->shouldReceive('rebuildPerformanceRm')
@@ -32,6 +32,6 @@ class RebuildSnapshotPerformanceRmBatchTest extends TestCase
         $job = new RebuildSnapshotPerformanceRmBatch('2026-05-06');
         $job->handle($builder);
 
-        $this->assertSame(8, (int) Cache::get('report_cache_version:global'));
+        $this->assertSame(8, (int) Cache::get('report_cache_version:pinjaman'));
     }
 }

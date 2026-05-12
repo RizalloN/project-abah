@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Support\ReportDataSyncService;
+use App\Support\ReportCacheVersion;
 use App\Support\SnapshotBatchAggregator;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -57,7 +58,7 @@ class EnsureDashboardSnapshotJob implements ShouldQueue, ShouldBeUnique
             throw $e;
         } finally {
             Cache::forget('snapshot:dashboard:auto-rebuild:pending:' . $this->period);
-            Cache::forget('dashboard_pinjaman_snapshot_exists:v' . (int) Cache::get('report_cache_version:global', 1) . ':' . $this->period);
+            Cache::forget('dashboard_pinjaman_snapshot_exists:v' . ReportCacheVersion::get('pinjaman') . ':' . $this->period);
         }
     }
 }

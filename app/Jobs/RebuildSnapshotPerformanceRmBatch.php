@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Jobs\Middleware\DeferSnapshotJobsDuringImport;
+use App\Support\ReportCacheVersion;
 use App\Support\ReportDataSyncService;
 use App\Support\ReportSnapshotBuilder;
 use App\Support\SnapshotSourceSignatureService;
@@ -59,8 +60,7 @@ class RebuildSnapshotPerformanceRmBatch implements ShouldQueue
             $this->markSnapshotSignatures($result);
 
             if ($result !== []) {
-                $cacheVersion = (int) Cache::get('report_cache_version:global', 1) + 1;
-                Cache::put('report_cache_version:global', $cacheVersion, now()->addHours(24));
+                ReportCacheVersion::bump('pinjaman');
             }
 
             $duration = $startTime->diffInSeconds(now());

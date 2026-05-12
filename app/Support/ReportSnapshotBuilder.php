@@ -2155,6 +2155,16 @@ class ReportSnapshotBuilder
             return 0;
         }
 
+        if (!$force) {
+            $rowCount = DB::getDriverName() === 'mysql'
+                ? $this->buildPerformanceRmPeriodSnapshotSqlFirstIncremental($period)
+                : $this->buildPerformanceRmPeriodSnapshotPortableIncremental($period);
+
+            $this->buildPerformanceRmCabangSnapshot($period, false);
+
+            return $rowCount;
+        }
+
         DB::table(self::PERFORMANCE_RM_SNAPSHOT_TABLE)
             ->where('periode', $period)
             ->delete();
@@ -2179,8 +2189,62 @@ class ReportSnapshotBuilder
         return $rowCount;
     }
 
-    private function buildPerformanceRmPeriodSnapshotSqlFirst(string $period): int
+    private function buildPerformanceRmPeriodSnapshotSqlFirstIncremental(string $period): int
     {
+        $tempTable = 'tmp_performance_rm_snapshots_' . str_replace('.', '_', (string) microtime(true));
+
+        DB::statement('CREATE TEMPORARY TABLE ' . $this->quoteIdentifier($tempTable) . ' LIKE ' . $this->quoteIdentifier(self::PERFORMANCE_RM_SNAPSHOT_TABLE));
+
+        try {
+            $this->buildPerformanceRmPeriodSnapshotSqlFirst($period, $tempTable);
+            $this->syncPerformanceRmSnapshotRowsFromTemp($period, $tempTable);
+        } finally {
+            DB::statement('DROP TEMPORARY TABLE IF EXISTS ' . $this->quoteIdentifier($tempTable));
+        }
+
+        return (int) DB::table(self::PERFORMANCE_RM_SNAPSHOT_TABLE)
+            ->where('periode', $period)
+            ->count();
+    }
+
+    private function buildPerformanceRmPeriodSnapshotPortableIncremental(string $period): int
+    {
+        $rows = $this->computePerformanceRmRows($period);
+        $validKeys = [];
+
+        foreach ($rows as $row) {
+            $key = $this->performanceRmSnapshotKey($row);
+            $validKeys[$key] = true;
+
+            DB::table(self::PERFORMANCE_RM_SNAPSHOT_TABLE)->updateOrInsert(
+                $this->performanceRmSnapshotIdentity($row),
+                array_diff_key($row, array_flip(['id', 'created_at']))
+            );
+        }
+
+        $existingRows = DB::table(self::PERFORMANCE_RM_SNAPSHOT_TABLE)
+            ->where('periode', $period)
+            ->get($this->performanceRmSnapshotIdentityColumns());
+
+        foreach ($existingRows as $existingRow) {
+            $row = (array) $existingRow;
+            if (isset($validKeys[$this->performanceRmSnapshotKey($row)])) {
+                continue;
+            }
+
+            DB::table(self::PERFORMANCE_RM_SNAPSHOT_TABLE)
+                ->where($this->performanceRmSnapshotIdentity($row))
+                ->delete();
+        }
+
+        return (int) DB::table(self::PERFORMANCE_RM_SNAPSHOT_TABLE)
+            ->where('periode', $period)
+            ->count();
+    }
+
+    private function buildPerformanceRmPeriodSnapshotSqlFirst(string $period, ?string $snapshotTable = null): int
+    {
+        $snapshotTable = $snapshotTable ?? self::PERFORMANCE_RM_SNAPSHOT_TABLE;
         $snapshotColumns = array_flip(Schema::getColumnListing(self::PERFORMANCE_RM_SNAPSHOT_TABLE));
         $latestSmpnPosisi = DB::table('simpanan_multipn')->max('posisi');
 
@@ -2195,13 +2259,14 @@ class ReportSnapshotBuilder
                 $segment,
                 $normalizedRules,
                 $latestSmpnPosisi !== null ? (string) $latestSmpnPosisi : null,
-                $snapshotColumns
+                $snapshotColumns,
+                $snapshotTable
             );
         }
 
-        $this->updateSmallPerformanceRmQuadrantsSqlFirst($period);
+        $this->updateSmallPerformanceRmQuadrantsSqlFirst($period, $snapshotTable);
 
-        return (int) DB::table(self::PERFORMANCE_RM_SNAPSHOT_TABLE)
+        return (int) DB::table($snapshotTable)
             ->where('periode', $period)
             ->count();
     }
@@ -2215,7 +2280,8 @@ class ReportSnapshotBuilder
         string $segment,
         array $normalizedRules,
         ?string $latestSmpnPosisi,
-        array $snapshotColumns
+        array $snapshotColumns,
+        string $snapshotTable
     ): void {
         $periodDate = Carbon::parse($period);
         $periodStart = $periodDate->copy()->startOfMonth()->toDateString();
@@ -2352,7 +2418,7 @@ class ReportSnapshotBuilder
         $selectSql = implode(",\n                ", $selects);
 
         $sql = "
-            INSERT INTO " . self::PERFORMANCE_RM_SNAPSHOT_TABLE . " ({$insertColumnsSql})
+            INSERT INTO " . $this->quoteIdentifier($snapshotTable) . " ({$insertColumnsSql})
             SELECT
                 {$selectSql}
             FROM daily_loan_dinamis d
@@ -2459,12 +2525,13 @@ class ReportSnapshotBuilder
         };
     }
 
-    private function updateSmallPerformanceRmQuadrantsSqlFirst(string $period): void
+    private function updateSmallPerformanceRmQuadrantsSqlFirst(string $period, ?string $snapshotTable = null): void
     {
         if (!Schema::hasColumn(self::PERFORMANCE_RM_SNAPSHOT_TABLE, 'quadrant')) {
             return;
         }
 
+        $snapshotTable = $this->quoteIdentifier($snapshotTable ?? self::PERFORMANCE_RM_SNAPSHOT_TABLE);
         $dateObj = Carbon::parse($period);
         $yearStart = $dateObj->copy()->startOfYear()->toDateString();
         $periodStart = $dateObj->copy()->startOfMonth()->toDateString();
@@ -2472,7 +2539,7 @@ class ReportSnapshotBuilder
 
         DB::statement(
             "
-            UPDATE " . self::PERFORMANCE_RM_SNAPSHOT_TABLE . " p
+            UPDATE {$snapshotTable} p
             INNER JOIN (
                 SELECT
                     curr.rm,
@@ -2490,7 +2557,7 @@ class ReportSnapshotBuilder
                         SUM(COALESCE(npl_os, 0)) as npl_os,
                         SUM(COALESCE(restruk_os, 0)) as restruk_os,
                         SUM(COALESCE(realisasi_os, 0)) as realisasi_os
-                    FROM " . self::PERFORMANCE_RM_SNAPSHOT_TABLE . "
+                    FROM {$snapshotTable}
                     WHERE periode = ?
                         AND segmen = 'SMALL'
                     GROUP BY rm
@@ -2499,7 +2566,7 @@ class ReportSnapshotBuilder
                     SELECT
                         rm,
                         SUM(COALESCE(realisasi_os, 0)) as history_realisasi_os
-                    FROM " . self::PERFORMANCE_RM_SNAPSHOT_TABLE . "
+                    FROM {$snapshotTable}
                     WHERE segmen = 'SMALL'
                         AND produk IN ('SMALL', 'COMMERCIAL', 'CASHCALL', 'CASHCOLLATERAL', 'CASHCOLL')
                         AND periode >= ?
@@ -2521,6 +2588,111 @@ class ReportSnapshotBuilder
         );
     }
 
+    private function syncPerformanceRmSnapshotRowsFromTemp(string $period, string $tempTable): void
+    {
+        $target = $this->quoteIdentifier(self::PERFORMANCE_RM_SNAPSHOT_TABLE);
+        $source = $this->quoteIdentifier($tempTable);
+        $identityColumns = $this->performanceRmSnapshotIdentityColumns();
+        $joinSql = $this->performanceRmSnapshotJoinSql('target', 'source', $identityColumns);
+
+        $columns = array_values(array_filter(
+            Schema::getColumnListing(self::PERFORMANCE_RM_SNAPSHOT_TABLE),
+            static fn (string $column): bool => !in_array($column, ['id', 'created_at'], true)
+        ));
+        $updatableColumns = array_values(array_filter(
+            $columns,
+            static fn (string $column): bool => !in_array($column, $identityColumns, true)
+        ));
+
+        if ($updatableColumns !== []) {
+            $assignments = implode(",\n                ", array_map(
+                fn (string $column): string => 'target.' . $this->quoteIdentifier($column) . ' = source.' . $this->quoteIdentifier($column),
+                $updatableColumns
+            ));
+
+            DB::statement("
+                UPDATE {$target} target
+                INNER JOIN {$source} source ON {$joinSql}
+                SET {$assignments}
+                WHERE target.periode = ?
+            ", [$period]);
+        }
+
+        $insertColumnsSql = implode(', ', array_map([$this, 'quoteIdentifier'], $columns));
+        $selectColumnsSql = implode(', ', array_map(fn (string $column): string => 'source.' . $this->quoteIdentifier($column), $columns));
+
+        DB::statement("
+            INSERT INTO {$target} ({$insertColumnsSql})
+            SELECT {$selectColumnsSql}
+            FROM {$source} source
+            LEFT JOIN {$target} target ON {$joinSql}
+            WHERE target.id IS NULL
+        ");
+
+        DB::statement("
+            DELETE target
+            FROM {$target} target
+            LEFT JOIN {$source} source ON {$joinSql}
+            WHERE target.periode = ?
+                AND source.periode IS NULL
+        ", [$period]);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function performanceRmSnapshotIdentityColumns(): array
+    {
+        $columns = ['periode', 'cabang', 'unit', 'rm', 'segmen', 'produk'];
+
+        if (Schema::hasColumn(self::PERFORMANCE_RM_SNAPSHOT_TABLE, 'branch_code')) {
+            array_splice($columns, 3, 0, ['branch_code']);
+        }
+
+        return $columns;
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     * @return array<string, mixed>
+     */
+    private function performanceRmSnapshotIdentity(array $row): array
+    {
+        $identity = [];
+        foreach ($this->performanceRmSnapshotIdentityColumns() as $column) {
+            $identity[$column] = $row[$column] ?? null;
+        }
+
+        return $identity;
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private function performanceRmSnapshotKey(array $row): string
+    {
+        return implode('|', array_map(
+            static fn (string $column): string => (string) ($row[$column] ?? ''),
+            $this->performanceRmSnapshotIdentityColumns()
+        ));
+    }
+
+    /**
+     * @param array<int, string> $identityColumns
+     */
+    private function performanceRmSnapshotJoinSql(string $targetAlias, string $sourceAlias, array $identityColumns): string
+    {
+        return implode(' AND ', array_map(
+            fn (string $column): string => "{$targetAlias}." . $this->quoteIdentifier($column) . " <=> {$sourceAlias}." . $this->quoteIdentifier($column),
+            $identityColumns
+        ));
+    }
+
+    private function quoteIdentifier(string $identifier): string
+    {
+        return '`' . str_replace('`', '``', $identifier) . '`';
+    }
+
     private function buildPerformanceRmCabangSnapshot(string $period, bool $force): int
     {
         if (!Schema::hasTable(self::PERFORMANCE_RM_CABANG_SNAPSHOT_TABLE)) {
@@ -2531,20 +2703,36 @@ class ReportSnapshotBuilder
             return 0;
         }
 
-        if (!$force) {
-            $existingCount = (int) DB::table(self::PERFORMANCE_RM_CABANG_SNAPSHOT_TABLE)
-                ->where('periode', $period)->count();
-            if ($existingCount > 0) {
-                return $existingCount;
-            }
+        if (DB::getDriverName() !== 'mysql') {
+            return $this->buildPerformanceRmCabangSnapshotPortable($period, $force);
         }
 
-        DB::table(self::PERFORMANCE_RM_CABANG_SNAPSHOT_TABLE)
-            ->where('periode', $period)
-            ->delete();
+        if ($force) {
+            DB::table(self::PERFORMANCE_RM_CABANG_SNAPSHOT_TABLE)
+                ->where('periode', $period)
+                ->delete();
+        }
+
+        $conflictSql = $force ? '' : "
+            ON DUPLICATE KEY UPDATE
+                loan_os = VALUES(loan_os),
+                lancar_os = VALUES(lancar_os),
+                sml_os = VALUES(sml_os),
+                npl_os = VALUES(npl_os),
+                total_deb = VALUES(total_deb),
+                lancar_deb = VALUES(lancar_deb),
+                sml_deb = VALUES(sml_deb),
+                npl_deb = VALUES(npl_deb),
+                restruk_os = VALUES(restruk_os),
+                realisasi_deb = VALUES(realisasi_deb),
+                realisasi_os = VALUES(realisasi_os),
+                total_deposit = VALUES(total_deposit),
+                plafon = VALUES(plafon),
+                updated_at = VALUES(updated_at)
+        ";
 
         DB::statement(
-            <<<'SQL'
+            "
             INSERT INTO performance_rm_cabang_snapshots (
                 periode, cabang, segmen, produk,
                 loan_os, lancar_os, sml_os, npl_os,
@@ -2576,9 +2764,118 @@ class ReportSnapshotBuilder
             FROM performance_rm_snapshots p
             WHERE p.periode = ? AND p.segmen IS NOT NULL
             GROUP BY p.periode, p.cabang, p.segmen, p.produk
-            SQL,
+            {$conflictSql}
+            ",
             [$period]
         );
+
+        if (!$force) {
+            DB::statement("
+                DELETE target
+                FROM performance_rm_cabang_snapshots target
+                LEFT JOIN (
+                    SELECT periode, cabang, segmen, produk
+                    FROM performance_rm_snapshots
+                    WHERE periode = ? AND segmen IS NOT NULL
+                    GROUP BY periode, cabang, segmen, produk
+                ) source
+                    ON source.periode = target.periode
+                    AND source.cabang <=> target.cabang
+                    AND source.segmen <=> target.segmen
+                    AND source.produk <=> target.produk
+                WHERE target.periode = ?
+                    AND source.periode IS NULL
+            ", [$period, $period]);
+        }
+
+        return (int) DB::table(self::PERFORMANCE_RM_CABANG_SNAPSHOT_TABLE)
+            ->where('periode', $period)
+            ->count();
+    }
+
+    private function buildPerformanceRmCabangSnapshotPortable(string $period, bool $force): int
+    {
+        if ($force) {
+            DB::table(self::PERFORMANCE_RM_CABANG_SNAPSHOT_TABLE)
+                ->where('periode', $period)
+                ->delete();
+        }
+
+        $rows = DB::table(self::PERFORMANCE_RM_SNAPSHOT_TABLE)
+            ->where('periode', $period)
+            ->whereNotNull('segmen')
+            ->groupBy('periode', 'cabang', 'segmen', 'produk')
+            ->select([
+                'periode',
+                'cabang',
+                'segmen',
+                'produk',
+            ])
+            ->selectRaw('SUM(COALESCE(loan_os, 0)) as loan_os')
+            ->selectRaw('SUM(COALESCE(lancar_os, 0)) as lancar_os')
+            ->selectRaw('SUM(COALESCE(sml_os, 0)) as sml_os')
+            ->selectRaw('SUM(COALESCE(npl_os, 0)) as npl_os')
+            ->selectRaw('SUM(COALESCE(total_deb, 0)) as total_deb')
+            ->selectRaw('SUM(COALESCE(lancar_deb, 0)) as lancar_deb')
+            ->selectRaw('SUM(COALESCE(sml_deb, 0)) as sml_deb')
+            ->selectRaw('SUM(COALESCE(npl_deb, 0)) as npl_deb')
+            ->selectRaw('SUM(COALESCE(restruk_os, 0)) as restruk_os')
+            ->selectRaw('SUM(COALESCE(realisasi_deb, 0)) as realisasi_deb')
+            ->selectRaw('SUM(COALESCE(realisasi_os, 0)) as realisasi_os')
+            ->selectRaw('SUM(COALESCE(total_deposit, 0)) as total_deposit')
+            ->selectRaw('SUM(COALESCE(plafon, 0)) as plafon')
+            ->get();
+
+        $validKeys = [];
+        foreach ($rows as $row) {
+            $payload = [
+                'periode' => (string) $row->periode,
+                'cabang' => (string) $row->cabang,
+                'segmen' => (string) $row->segmen,
+                'produk' => (string) $row->produk,
+                'loan_os' => (float) $row->loan_os,
+                'lancar_os' => (float) $row->lancar_os,
+                'sml_os' => (float) $row->sml_os,
+                'npl_os' => (float) $row->npl_os,
+                'total_deb' => (int) $row->total_deb,
+                'lancar_deb' => (int) $row->lancar_deb,
+                'sml_deb' => (int) $row->sml_deb,
+                'npl_deb' => (int) $row->npl_deb,
+                'restruk_os' => (float) $row->restruk_os,
+                'realisasi_deb' => (int) $row->realisasi_deb,
+                'realisasi_os' => (float) $row->realisasi_os,
+                'total_deposit' => (float) $row->total_deposit,
+                'plafon' => (float) $row->plafon,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ];
+            $identity = array_intersect_key($payload, array_flip(['periode', 'cabang', 'segmen', 'produk']));
+            $validKeys[implode('|', $identity)] = true;
+
+            DB::table(self::PERFORMANCE_RM_CABANG_SNAPSHOT_TABLE)->updateOrInsert(
+                $identity,
+                array_diff_key($payload, array_flip(['created_at']))
+            );
+        }
+
+        $existingRows = DB::table(self::PERFORMANCE_RM_CABANG_SNAPSHOT_TABLE)
+            ->where('periode', $period)
+            ->get(['periode', 'cabang', 'segmen', 'produk']);
+
+        foreach ($existingRows as $existingRow) {
+            $identity = [
+                'periode' => (string) $existingRow->periode,
+                'cabang' => (string) $existingRow->cabang,
+                'segmen' => (string) $existingRow->segmen,
+                'produk' => (string) $existingRow->produk,
+            ];
+
+            if (isset($validKeys[implode('|', $identity)])) {
+                continue;
+            }
+
+            DB::table(self::PERFORMANCE_RM_CABANG_SNAPSHOT_TABLE)->where($identity)->delete();
+        }
 
         return (int) DB::table(self::PERFORMANCE_RM_CABANG_SNAPSHOT_TABLE)
             ->where('periode', $period)
@@ -2589,7 +2886,7 @@ class ReportSnapshotBuilder
     {
         $rows = [];
         $periodStart = Carbon::parse($period)->startOfMonth()->toDateString();
-        $latestSmpnPosisi = (int) DB::table('simpanan_multipn')->max('posisi');
+        $latestSmpnPosisi = DB::table('simpanan_multipn')->max('posisi');
         $snapshotColumns = array_flip(Schema::getColumnListing(self::PERFORMANCE_RM_SNAPSHOT_TABLE));
 
         foreach (self::KINERJA_RM_SEGMENT_RULES as $segment => $rules) {
@@ -2790,7 +3087,9 @@ class ReportSnapshotBuilder
             ->selectRaw("COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? AND COALESCE(plafon, 0) > 250000000 THEN nomor_rekening1 END) as gt_250_realisasi_deb", [$periodStart, $period])
             ->selectRaw("SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? AND COALESCE(plafon, 0) > 250000000 THEN COALESCE(plafon, 0) ELSE 0 END) as gt_250_realisasi_os", [$periodStart, $period])
             // OPTIMIZATION: Use cifno_clean instead of REGEXP_REPLACE in GROUP_CONCAT (5x faster)
-            ->selectRaw("GROUP_CONCAT(DISTINCT cifno_clean SEPARATOR ',') as cifno_list")
+            ->selectRaw(DB::getDriverName() === 'sqlite'
+                ? 'GROUP_CONCAT(DISTINCT cifno_clean) as cifno_list'
+                : "GROUP_CONCAT(DISTINCT cifno_clean SEPARATOR ',') as cifno_list")
             // Use shadow columns in GROUP BY to avoid function overhead
             ->groupBy('cabang_normalized', 'unit_normalized', 'branch_normalized', 'rm_normalized', 'produk_kinerja')
             ->get();
@@ -2798,7 +3097,7 @@ class ReportSnapshotBuilder
         return $query->map(fn($row) => (array)$row)->toArray();
     }
 
-    private function fetchDepositsByNormalizedCifs(array $normalizedCifs, ?int $latestPosisi): array
+    private function fetchDepositsByNormalizedCifs(array $normalizedCifs, ?string $latestPosisi): array
     {
         // Convert normalized CIFs (already cleaned in daily_loan_dinamis.cifno_clean)
         // Note: simpanan_multipn doesn't have cifno_clean yet, so we still use REGEXP_REPLACE here
@@ -2808,7 +3107,7 @@ class ReportSnapshotBuilder
         }
 
         $deposits = DB::table('simpanan_multipn')
-            ->where('posisi', $latestPosisi ?? (int)DB::table('simpanan_multipn')->max('posisi'))
+            ->where('posisi', $latestPosisi ?? DB::table('simpanan_multipn')->max('posisi'))
             ->selectRaw("REGEXP_REPLACE(CIFNO, '[^0-9]', '') as clean_cif")
             ->selectRaw("SUM(COALESCE(saldo_idr, 0)) as total_deposit");
 

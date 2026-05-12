@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use App\Support\SimpananMultiPnSnapshotGate;
 use App\Support\DashboardDanaService;
+use App\Support\ReportCacheVersion;
 use Illuminate\Http\Request;
 use Throwable;
 
@@ -1585,6 +1586,6 @@ class DashboardSimpananController extends Controller
 
     private function reportCacheVersion(): int
     {
-        return (int) Cache::get('report_cache_version:global', 1);
+        return ReportCacheVersion::composite(['simpanan', 'pinjaman']);
     }
 }

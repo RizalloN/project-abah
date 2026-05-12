@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Support\ReportDataSyncService;
+use App\Support\ReportCacheVersion;
 use App\Support\SnapshotBatchAggregator;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -51,7 +52,7 @@ class EnsureRasioCasaSnapshotJob implements ShouldQueue
             throw $e;
         } finally {
             Cache::forget('snapshot:rasio:auto-rebuild:pending:' . $this->period);
-            Cache::forget('rasio_casa:snapshot_exists:v' . (int) Cache::get('report_cache_version:global', 1) . ':' . $this->period);
+            Cache::forget('rasio_casa:snapshot_exists:v' . ReportCacheVersion::composite(['pinjaman', 'simpanan']) . ':' . $this->period);
         }
     }
 }

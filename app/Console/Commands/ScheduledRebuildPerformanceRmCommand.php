@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Support\ReportCacheVersion;
 use App\Support\ReportSnapshotBuilder;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
@@ -48,11 +49,7 @@ class ScheduledRebuildPerformanceRmCommand extends Command
             }
 
             if (!empty($rebuilt)) {
-                Cache::put(
-                    'report_cache_version:global',
-                    Cache::get('report_cache_version:global', 1) + 1,
-                    now()->addHours(24)
-                );
+                ReportCacheVersion::bump('pinjaman');
             }
 
             $this->line(json_encode([

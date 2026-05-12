@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Support\DashboardHarianSnapshotService;
+use App\Support\ReportCacheVersion;
 use Illuminate\Contracts\View\View;
 use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Http\JsonResponse;
@@ -162,7 +163,7 @@ class DashboardHarianController extends Controller
     {
         $cacheKey = 'dashboard_harian:payload:' . md5(json_encode([
             'schema' => 'penc-pct-v10-rka-unit-filter-fix',
-            'version' => (int) Cache::get('report_cache_version:global', 1),
+            'version' => $this->reportCacheVersion(),
             'period' => $selectedPeriod,
             'rka' => $selectedRka,
             'kanca' => $selectedKanca,
@@ -185,7 +186,7 @@ class DashboardHarianController extends Controller
         $resolvedMonth = $this->resolveTimeseriesMonth($selectedMonth, $monthOptions);
 
         $cacheKey = 'dashboard_harian:timeseries:' . md5(json_encode([
-            'version' => (int) Cache::get('report_cache_version:global', 1),
+            'version' => $this->reportCacheVersion(),
             'category' => $category,
             'kanca' => $selectedKanca,
             'unit' => $selectedUnit,
@@ -225,6 +226,11 @@ class DashboardHarianController extends Controller
                 'available_months' => $monthOptions,
             ];
         });
+    }
+
+    private function reportCacheVersion(): int
+    {
+        return ReportCacheVersion::composite(['harian', 'pinjaman', 'simpanan']);
     }
 
     private function rememberDashboardPayload(string $cacheKey, callable $callback): array

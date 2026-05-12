@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Support\ReportCacheVersion;
 use App\Support\SnapshotBatchAggregator;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -50,7 +51,7 @@ class EnsurePerformanceRmSnapshotJob implements ShouldQueue
             throw $e;
         } finally {
             Cache::forget('snapshot:performance_rm:auto-rebuild:pending:' . $this->period);
-            Cache::forget('kinerja_rm_periods_v4:' . (int) Cache::get('report_cache_version:global', 1));
+            Cache::forget('kinerja_rm_periods_v4:' . ReportCacheVersion::composite(['pinjaman', 'simpanan']));
         }
     }
 }

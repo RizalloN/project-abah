@@ -47,7 +47,7 @@ class SimpananMultiPnSnapshotGate
             return;
         }
 
-        $version = (int) Cache::get('report_cache_version:global', 1);
+        $version = ReportCacheVersion::get('simpanan');
         Cache::forget('snapshot:simpanan_multipn:coverage:v' . $version . ':' . $normalizedPeriod);
     }
 
@@ -86,7 +86,7 @@ class SimpananMultiPnSnapshotGate
         }
 
         $cacheKey = 'snapshot:simpanan_multipn:coverage:v'
-            . (int) Cache::get('report_cache_version:global', 1)
+            . ReportCacheVersion::get('simpanan')
             . ':'
             . $normalizedPeriod;
 

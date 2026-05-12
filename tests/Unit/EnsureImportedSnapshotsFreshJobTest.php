@@ -61,7 +61,7 @@ class EnsureImportedSnapshotsFreshJobTest extends TestCase
         $this->markFresh('daily_loan_dinamis', 'dashboard_pinjaman_snapshots', '2026-05-06', $metadata);
         $this->markFresh('daily_loan_dinamis', 'dashboard_pinjaman_chart_periodik_snapshots', '2026-05-06', $metadata);
         $this->markFresh('daily_loan_dinamis', 'rasio_casa_debitur_snapshots', '2026-05-06', $metadata);
-        Cache::put('report_cache_version:global', 3, now()->addHours(24));
+        Cache::put('report_cache_version:pinjaman', 3, now()->addHours(24));
 
         $builder = Mockery::mock(ReportSnapshotBuilder::class);
         $builder->shouldNotReceive('rebuildDashboard');
@@ -78,7 +78,7 @@ class EnsureImportedSnapshotsFreshJobTest extends TestCase
         (new EnsureImportedSnapshotsFreshJob('daily_loan_dinamis', '2026-05-06', 'unit-test'))
             ->handle($builder, $dashboardHarian, $this->sourceSignatures);
 
-        $this->assertSame(4, (int) Cache::get('report_cache_version:global'));
+        $this->assertSame(4, (int) Cache::get('report_cache_version:pinjaman'));
         $this->assertTrue($this->sourceSignatures->isFresh(
             'daily_loan_dinamis',
             'performance_rm_snapshots',
