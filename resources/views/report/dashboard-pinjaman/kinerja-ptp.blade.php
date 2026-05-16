@@ -111,6 +111,24 @@
         background: #eef6ff;
     }
 
+    .ptp-table tbody tr.ptp-drill-row {
+        cursor: default;
+    }
+
+    .ptp-table tbody td.ptp-drill-cell {
+        cursor: zoom-in;
+    }
+
+    .ptp-table tbody tr.ptp-drill-row.is-selected td {
+        background: #e0f2fe !important;
+        box-shadow: inset 0 1px 0 rgba(8, 87, 195, .16), inset 0 -1px 0 rgba(8, 87, 195, .16);
+    }
+
+    .ptp-table tbody td.ptp-drill-cell.is-selected {
+        background: #bae6fd !important;
+        box-shadow: inset 0 0 0 2px rgba(8, 87, 195, .28);
+    }
+
     .ptp-head-blue {
         background: #082c6c;
     }
@@ -180,6 +198,93 @@
         padding: 2rem 1rem;
         text-align: center;
         color: #64748b;
+    }
+
+    .ptp-drill-modal .modal-content {
+        border: 0;
+        border-radius: 10px;
+        box-shadow: 0 24px 60px -24px rgba(15, 23, 42, .45);
+    }
+
+    .ptp-drill-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        gap: .75rem;
+        margin-bottom: .75rem;
+    }
+
+    .ptp-drill-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .45rem;
+        color: #475569;
+        font-size: .78rem;
+        font-weight: 700;
+    }
+
+    .ptp-drill-meta span {
+        padding: .2rem .45rem;
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        background: #f8fafc;
+    }
+
+    .ptp-drill-state {
+        padding: 1.25rem;
+        border: 1px dashed #cbd5e1;
+        border-radius: 8px;
+        color: #64748b;
+        text-align: center;
+        font-weight: 700;
+    }
+
+    .ptp-drill-table-wrap {
+        max-height: 62vh;
+        overflow: auto;
+        border: 1px solid #dbe3ef;
+        border-radius: 8px;
+    }
+
+    .ptp-drill-table {
+        width: 100%;
+        min-width: 1180px;
+        border-collapse: collapse;
+        font-size: .76rem;
+        white-space: nowrap;
+    }
+
+    .ptp-drill-table th,
+    .ptp-drill-table td {
+        border-right: 1px solid #e2e8f0;
+        border-bottom: 1px solid #e2e8f0;
+        padding: .38rem .5rem;
+    }
+
+    .ptp-drill-table th {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        background: #0f3c86;
+        color: #ffffff;
+        font-size: .68rem;
+        text-transform: uppercase;
+    }
+
+    .ptp-drill-table td {
+        background: #ffffff;
+        color: #0f172a;
+    }
+
+    .ptp-drill-table tbody tr:nth-child(even) td {
+        background: #fbfdff;
+    }
+
+    .ptp-drill-footer-note {
+        margin-top: .65rem;
+        color: #64748b;
+        font-size: .78rem;
+        font-weight: 700;
     }
 
     @media (max-width: 768px) {
@@ -339,7 +444,7 @@
         <div class="ptp-panel-body">
             <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
                 <div class="font-weight-bold">{{ $levels[$selectedLevel] ?? 'Kinerja per MBM' }}</div>
-                <div class="text-muted small">{{ $formatCount($rows->count()) }} baris</div>
+                <div class="text-muted small">{{ $formatCount($rows->count()) }} baris | Double click angka untuk nominatif</div>
             </div>
 
             @if ($rows->isEmpty())
@@ -383,30 +488,34 @@
                                 <th class="ptp-head-yellow">Rupiah</th>
                             </tr>
                         </thead>
-                        <tbody>
+                        <tbody id="ptpTableBody">
                             @foreach ($rows as $row)
-                                <tr>
+                                <tr class="ptp-drill-row"
+                                    @foreach (array_keys($dimensionHeaders) as $key)
+                                        data-ptp-{{ $key }}="{{ e($row[$key] ?? '-') }}"
+                                    @endforeach
+                                >
                                     @foreach (array_keys($dimensionHeaders) as $key)
                                         <td class="ptp-left">{{ $row[$key] ?? '-' }}</td>
                                     @endforeach
-                                    <td class="ptp-right">{{ $formatCount($row['total_rek'] ?? 0) }}</td>
-                                    <td class="ptp-right">{{ $formatJuta($row['total_rupiah'] ?? 0) }}</td>
-                                    <td class="ptp-right">{{ $formatJuta($row['total_runoff'] ?? 0) }}</td>
-                                    <td class="ptp-right">{{ $formatCount($row['sudah_billing_rek'] ?? 0) }}</td>
-                                    <td class="ptp-right">{{ $formatJuta($row['sudah_billing_rupiah'] ?? 0) }}</td>
-                                    <td class="ptp-right">{{ $formatJuta($row['sudah_billing_runoff'] ?? 0) }}</td>
-                                    <td class="ptp-right">{{ $formatCount($row['belum_muncul_rek'] ?? 0) }}</td>
-                                    <td class="ptp-right">{{ $formatJuta($row['belum_muncul_rupiah'] ?? 0) }}</td>
-                                    <td class="ptp-right">{{ $formatJuta($row['belum_muncul_runoff'] ?? 0) }}</td>
-                                    <td class="ptp-right">{{ $formatCount($row['sudah_bayar_rek'] ?? 0) }}</td>
-                                    <td class="ptp-right">{{ $formatJuta($row['sudah_bayar_rupiah'] ?? 0) }}</td>
-                                    <td class="ptp-right">{{ $formatCount($row['belum_bayar_rek'] ?? 0) }}</td>
-                                    <td class="ptp-right">{{ $formatJuta($row['belum_bayar_rupiah'] ?? 0) }}</td>
-                                    <td class="ptp-center ptp-success-rate-cell" style="{{ $successRateStyle($row['success_rate'] ?? 0) }}">
+                                    <td class="ptp-right ptp-drill-cell" data-ptp-metric="total_rek">{{ $formatCount($row['total_rek'] ?? 0) }}</td>
+                                    <td class="ptp-right ptp-drill-cell" data-ptp-metric="total_rupiah">{{ $formatJuta($row['total_rupiah'] ?? 0) }}</td>
+                                    <td class="ptp-right ptp-drill-cell" data-ptp-metric="total_runoff">{{ $formatJuta($row['total_runoff'] ?? 0) }}</td>
+                                    <td class="ptp-right ptp-drill-cell" data-ptp-metric="sudah_billing_rek">{{ $formatCount($row['sudah_billing_rek'] ?? 0) }}</td>
+                                    <td class="ptp-right ptp-drill-cell" data-ptp-metric="sudah_billing_rupiah">{{ $formatJuta($row['sudah_billing_rupiah'] ?? 0) }}</td>
+                                    <td class="ptp-right ptp-drill-cell" data-ptp-metric="sudah_billing_runoff">{{ $formatJuta($row['sudah_billing_runoff'] ?? 0) }}</td>
+                                    <td class="ptp-right ptp-drill-cell" data-ptp-metric="belum_muncul_rek">{{ $formatCount($row['belum_muncul_rek'] ?? 0) }}</td>
+                                    <td class="ptp-right ptp-drill-cell" data-ptp-metric="belum_muncul_rupiah">{{ $formatJuta($row['belum_muncul_rupiah'] ?? 0) }}</td>
+                                    <td class="ptp-right ptp-drill-cell" data-ptp-metric="belum_muncul_runoff">{{ $formatJuta($row['belum_muncul_runoff'] ?? 0) }}</td>
+                                    <td class="ptp-right ptp-drill-cell" data-ptp-metric="sudah_bayar_rek">{{ $formatCount($row['sudah_bayar_rek'] ?? 0) }}</td>
+                                    <td class="ptp-right ptp-drill-cell" data-ptp-metric="sudah_bayar_rupiah">{{ $formatJuta($row['sudah_bayar_rupiah'] ?? 0) }}</td>
+                                    <td class="ptp-right ptp-drill-cell" data-ptp-metric="belum_bayar_rek">{{ $formatCount($row['belum_bayar_rek'] ?? 0) }}</td>
+                                    <td class="ptp-right ptp-drill-cell" data-ptp-metric="belum_bayar_rupiah">{{ $formatJuta($row['belum_bayar_rupiah'] ?? 0) }}</td>
+                                    <td class="ptp-center ptp-success-rate-cell ptp-drill-cell" data-ptp-metric="success_rate" style="{{ $successRateStyle($row['success_rate'] ?? 0) }}">
                                         <span>{{ $formatPercent($row['success_rate'] ?? 0) }}</span>
                                     </td>
-                                    <td class="ptp-right">{{ $formatCount($row['today_rek'] ?? 0) }}</td>
-                                    <td class="ptp-right">{{ $formatJuta($row['today_rupiah'] ?? 0) }}</td>
+                                    <td class="ptp-right ptp-drill-cell" data-ptp-metric="today_rek">{{ $formatCount($row['today_rek'] ?? 0) }}</td>
+                                    <td class="ptp-right ptp-drill-cell" data-ptp-metric="today_rupiah">{{ $formatJuta($row['today_rupiah'] ?? 0) }}</td>
                                 </tr>
                             @endforeach
                             <tr class="ptp-total-row">
@@ -434,6 +543,38 @@
                     </table>
                 </div>
             @endif
+        </div>
+    </div>
+
+    <div class="modal fade ptp-drill-modal" id="ptpDetailModal" tabindex="-1" role="dialog" aria-hidden="true">
+        <div class="modal-dialog modal-xl" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div>
+                        <h5 class="modal-title font-weight-bold mb-1">Nominatif Kinerja PTP</h5>
+                        <div id="ptpDrillSubtitle" class="text-muted" style="font-size: .8rem; font-weight: 700;">-</div>
+                    </div>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Tutup">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="ptp-drill-toolbar">
+                        <div id="ptpDrillMeta" class="ptp-drill-meta"></div>
+                        <button id="ptpDrillLoadMoreButton" type="button" class="btn btn-sm btn-outline-primary d-none">
+                            <i class="fas fa-plus mr-1"></i> Muat Lagi
+                        </button>
+                    </div>
+                    <div id="ptpDrillState" class="ptp-drill-state">Double click baris untuk melihat nominatif sumber.</div>
+                    <div id="ptpDrillTableWrap" class="ptp-drill-table-wrap d-none">
+                        <table class="ptp-drill-table">
+                            <thead id="ptpDrillHead"></thead>
+                            <tbody id="ptpDrillBody"></tbody>
+                        </table>
+                    </div>
+                    <div id="ptpDrillFooterNote" class="ptp-drill-footer-note d-none"></div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -492,6 +633,203 @@
         const successUI = document.getElementById('captureSuccessUI');
         const errorMessageUI = document.getElementById('captureErrorMessage');
         const captureArea = document.getElementById('ptp-capture-area');
+        const detailUrl = @json(route('report.dashboard-pinjaman.kinerja-ptp.detail'));
+        const dimensionKeys = @json(array_keys($dimensionHeaders));
+        const tableBody = document.getElementById('ptpTableBody');
+        const detailModal = document.getElementById('ptpDetailModal');
+        const drillSubtitle = document.getElementById('ptpDrillSubtitle');
+        const drillMeta = document.getElementById('ptpDrillMeta');
+        const drillState = document.getElementById('ptpDrillState');
+        const drillTableWrap = document.getElementById('ptpDrillTableWrap');
+        const drillHead = document.getElementById('ptpDrillHead');
+        const drillBody = document.getElementById('ptpDrillBody');
+        const drillLoadMoreButton = document.getElementById('ptpDrillLoadMoreButton');
+        const drillFooterNote = document.getElementById('ptpDrillFooterNote');
+        let activeDrillController = null;
+        let activeDrillRequestId = 0;
+        let activeDrillParams = null;
+        let activeDrillRenderedCount = 0;
+
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, char => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;'
+            }[char]));
+        }
+
+        function formatPeriodDate(value) {
+            if (!value) return '-';
+            const date = new Date(`${value}T00:00:00`);
+            if (Number.isNaN(date.getTime())) return value;
+
+            return date.toLocaleDateString('id-ID', {
+                day: '2-digit',
+                month: 'short',
+                year: '2-digit',
+            });
+        }
+
+        function buildDetailParams(row, metricCell, offset = 0) {
+            const params = new URLSearchParams();
+            params.set('jenis', document.getElementById('jenis')?.value || @json($selectedReportType));
+            params.set('level', document.getElementById('level')?.value || @json($selectedLevel));
+            params.set('periode', document.getElementById('periode')?.value || @json($selectedPeriod));
+            params.set('metric', metricCell?.dataset.ptpMetric || 'total_rek');
+            params.set('offset', offset);
+            params.set('limit', 25);
+
+            dimensionKeys.forEach(key => {
+                params.set(key, row.dataset[`ptp${key.charAt(0).toUpperCase()}${key.slice(1)}`] || '-');
+            });
+
+            return params;
+        }
+
+        function showDetailModal() {
+            if (!detailModal) return;
+
+            if (detailModal.parentElement !== document.body) {
+                document.body.appendChild(detailModal);
+            }
+
+            if (window.jQuery && window.jQuery.fn.modal) {
+                window.jQuery(detailModal).modal({
+                    backdrop: true,
+                    keyboard: true,
+                    show: true,
+                });
+                return;
+            }
+
+            detailModal.classList.add('show');
+            detailModal.style.display = 'block';
+            detailModal.removeAttribute('aria-hidden');
+            document.body.classList.add('modal-open');
+        }
+
+        function setSelectedTarget(row, metricCell) {
+            tableBody?.querySelectorAll('tr.ptp-drill-row').forEach(item => item.classList.remove('is-selected'));
+            tableBody?.querySelectorAll('td.ptp-drill-cell').forEach(item => item.classList.remove('is-selected'));
+            row?.classList.add('is-selected');
+            metricCell?.classList.add('is-selected');
+        }
+
+        async function openDetail(row, metricCell, offset = 0, append = false) {
+            if (!row || !detailModal) return;
+            if (activeDrillController) activeDrillController.abort();
+            activeDrillController = new AbortController();
+            const requestId = ++activeDrillRequestId;
+            const params = append && activeDrillParams ? new URLSearchParams(activeDrillParams) : buildDetailParams(row, metricCell, offset);
+            params.set('offset', offset);
+            activeDrillParams = new URLSearchParams(params);
+            setSelectedTarget(row, metricCell);
+
+            if (!append) {
+                const label = dimensionKeys
+                    .map(key => row.dataset[`ptp${key.charAt(0).toUpperCase()}${key.slice(1)}`] || '-')
+                    .join(' | ');
+                drillSubtitle.textContent = label;
+                drillMeta.innerHTML = '';
+                drillHead.innerHTML = '';
+                drillBody.innerHTML = '';
+                activeDrillRenderedCount = 0;
+                drillTableWrap.classList.add('d-none');
+                drillFooterNote.classList.add('d-none');
+                drillLoadMoreButton.classList.add('d-none');
+                drillState.classList.remove('d-none');
+                drillState.textContent = 'Memuat nominatif sumber...';
+                showDetailModal();
+            }
+
+            drillLoadMoreButton.disabled = true;
+
+            try {
+                const response = await fetch(`${detailUrl}?${params.toString()}`, { signal: activeDrillController.signal });
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                const payload = await response.json();
+                if (requestId !== activeDrillRequestId) return;
+
+                renderDetailRows(payload, append);
+                drillLoadMoreButton.classList.toggle('d-none', !payload.has_more);
+                drillLoadMoreButton.dataset.nextOffset = payload.next_offset ?? '';
+            } catch (error) {
+                if (error.name !== 'AbortError') {
+                    drillTableWrap.classList.add('d-none');
+                    drillLoadMoreButton.classList.add('d-none');
+                    drillState.classList.remove('d-none');
+                    drillState.textContent = 'Nominatif gagal dimuat dari sumber.';
+                }
+            } finally {
+                drillLoadMoreButton.disabled = false;
+            }
+        }
+
+        function renderDetailRows(payload, append) {
+            const columns = payload.columns || [];
+            const rows = payload.rows || [];
+            const dimensionText = Object.values(payload.dimensions || {}).filter(Boolean).join(' | ');
+
+            drillMeta.innerHTML = `
+                <span>Posisi: ${escapeHtml(formatPeriodDate(payload.selected_period))}</span>
+                <span>Metrik: ${escapeHtml(payload.metric_label || payload.metric || '-')}</span>
+                <span>Filter: ${escapeHtml(dimensionText || '-')}</span>
+                <span>Ditampilkan: ${activeDrillRenderedCount + rows.length}</span>
+            `;
+
+            if (!append) {
+                drillHead.innerHTML = `<tr>${columns.map(column => `<th>${escapeHtml(column)}</th>`).join('')}</tr>`;
+                drillBody.innerHTML = '';
+            }
+
+            if (!rows.length && !append) {
+                drillTableWrap.classList.add('d-none');
+                drillState.classList.remove('d-none');
+                drillState.textContent = 'Tidak ada nominatif untuk baris ini.';
+                return;
+            }
+
+            const fragment = document.createDocumentFragment();
+            rows.forEach(row => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = columns.map(column => `<td>${escapeHtml(row[column] ?? '')}</td>`).join('');
+                fragment.appendChild(tr);
+            });
+
+            drillBody.appendChild(fragment);
+            activeDrillRenderedCount += rows.length;
+            const displayedMeta = drillMeta.querySelector('span:last-child');
+            if (displayedMeta) {
+                displayedMeta.textContent = `Ditampilkan: ${activeDrillRenderedCount}`;
+            }
+            drillState.classList.add('d-none');
+            drillTableWrap.classList.remove('d-none');
+            drillFooterNote.classList.remove('d-none');
+            drillFooterNote.textContent = 'Nominatif dimuat langsung dari tabel sumber per 25 baris agar halaman tetap ringan.';
+        }
+
+        if (tableBody && detailModal) {
+            tableBody.addEventListener('dblclick', event => {
+                const row = event.target.closest('tr.ptp-drill-row');
+                const metricCell = event.target.closest('td.ptp-drill-cell');
+                if (!row || !metricCell) return;
+                openDetail(row, metricCell);
+            });
+
+            drillLoadMoreButton?.addEventListener('click', () => {
+                const nextOffset = Number.parseInt(drillLoadMoreButton.dataset.nextOffset || '', 10);
+                const selectedRow = tableBody.querySelector('tr.ptp-drill-row.is-selected');
+                const selectedCell = tableBody.querySelector('td.ptp-drill-cell.is-selected');
+                if (selectedRow && Number.isFinite(nextOffset)) {
+                    openDetail(selectedRow, selectedCell, nextOffset, true);
+                }
+            });
+        }
 
         if (!exportBtn || !captureArea) return;
 

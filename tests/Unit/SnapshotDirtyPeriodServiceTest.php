@@ -115,4 +115,63 @@ class SnapshotDirtyPeriodServiceTest extends TestCase
             'status' => 'failed',
         ]);
     }
+
+    public function test_claim_due_recovers_stale_claim_when_worker_disappears(): void
+    {
+        $service = new SnapshotDirtyPeriodService();
+        $service->mark('lw325_ph', '2026-05-13');
+
+        $claims = $service->claimDue(1);
+        $this->assertCount(1, $claims);
+
+        \DB::table('snapshot_dirty_periods')
+            ->where('source_table', 'lw325_ph')
+            ->where('period_key', '2026-05-13')
+            ->update([
+                'claimed_at' => now()->subMinutes(30),
+                'claim_token' => 'lost-worker',
+                'dirty_since_at_claim' => now()->subMinutes(30),
+            ]);
+
+        $reclaimed = $service->claimDue(1, 'lw325_ph', '2026-05-13');
+
+        $this->assertCount(1, $reclaimed);
+        $this->assertSame('lw325_ph', $reclaimed[0]['source_table']);
+        $this->assertSame('2026-05-13', $reclaimed[0]['period_key']);
+        $this->assertNotSame('lost-worker', $reclaimed[0]['claim_token']);
+    }
+
+    public function test_mark_resets_attempts_and_clears_failed_marker_for_fresh_source_change(): void
+    {
+        $service = new SnapshotDirtyPeriodService();
+        $service->mark('ssa_pinjaman', '2026-05-13');
+
+        $claims = $service->claimDue(1);
+        $this->assertCount(1, $claims);
+        $service->releaseClaim($claims[0], 'temporary failure');
+
+        \DB::table('failed_snapshot_dirty_periods')->insert([
+            'source_table' => 'ssa_pinjaman',
+            'period_key' => '2026-05-13',
+            'shard_type' => 'period',
+            'shard_key' => '*',
+            'dirty_since' => now(),
+            'dirty_row_count' => 1,
+            'attempts' => SnapshotDirtyPeriodService::MAX_ATTEMPTS,
+            'last_error' => 'old failure',
+            'failed_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $service->mark('ssa_pinjaman', '2026-05-13');
+        $reclaimed = $service->claimDue(1, 'ssa_pinjaman', '2026-05-13');
+
+        $this->assertCount(1, $reclaimed);
+        $this->assertSame(1, $reclaimed[0]['attempts']);
+        $this->assertDatabaseMissing('failed_snapshot_dirty_periods', [
+            'source_table' => 'ssa_pinjaman',
+            'period_key' => '2026-05-13',
+        ]);
+    }
 }

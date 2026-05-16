@@ -139,7 +139,7 @@ class DashboardPinjamanReportController extends Controller
             ]);
         }
 
-        $cacheKey = 'dashboard_pinjaman_kredit_unified:v3:' . md5(json_encode([
+        $cacheKey = 'dashboard_pinjaman_kredit_unified:v4-rka-kanca-summary-fallback:' . md5(json_encode([
             'cache_version' => $this->reportCacheVersion(),
             'periode' => $selectedPeriod,
             'kategori' => $selectedCategory,
@@ -1664,30 +1664,13 @@ class DashboardPinjamanReportController extends Controller
 
     private function fetchRecoveryReportPeriods(): Collection
     {
-        $cacheKey = 'dashboard_pinjaman_recovery_periods:v2:' . $this->reportCacheVersion();
+        $cacheKey = 'dashboard_pinjaman_recovery_periods:v3:' . $this->reportCacheVersion();
 
         return Cache::remember($cacheKey, now()->addMinutes(10), function () {
-            $periods = collect();
-
-            if (Schema::hasTable('cognos_recovery')) {
-                $periods = $periods->merge(
-                    DB::table('cognos_recovery')
-                        ->whereNotNull('periode')
-                        ->distinct()
-                        ->pluck('periode')
-                );
-            }
-
-            if (Schema::hasTable('lw325_ph')) {
-                $periods = $periods->merge(
-                    DB::table('lw325_ph')
-                        ->whereNotNull('periode')
-                        ->distinct()
-                        ->pluck('periode')
-                );
-            }
-
-            return $periods
+            $periods = DB::table('daily_loan_dinamis')
+                ->whereNotNull('periode')
+                ->distinct()
+                ->pluck('periode')
                 ->map(function ($periode) {
                     try {
                         return Carbon::parse($periode)->format('Y-m-d');
@@ -1695,7 +1678,45 @@ class DashboardPinjamanReportController extends Controller
                         return null;
                     }
                 })
-                ->filter(fn (?string $periode) => $periode !== null && $this->isMonthEndPeriod($periode))
+                ->filter();
+
+            $comparisonPeriods = $periods
+                ->map(function (string $period): ?string {
+                    try {
+                        return Carbon::parse($period)->startOfMonth()->subDay()->format('Y-m-d');
+                    } catch (Throwable) {
+                        return null;
+                    }
+                })
+                ->filter()
+                ->unique()
+                ->values();
+
+            $comparisonLookup = $comparisonPeriods->isEmpty()
+                ? collect()
+                : DB::table('daily_loan_dinamis')
+                    ->whereIn('periode', $comparisonPeriods->all())
+                    ->distinct()
+                    ->pluck('periode')
+                    ->map(function ($periode) {
+                        try {
+                            return Carbon::parse($periode)->format('Y-m-d');
+                        } catch (Throwable) {
+                            return (string) $periode;
+                        }
+                    })
+                    ->flip();
+
+            return $periods
+                ->filter(function (string $period) use ($comparisonLookup): bool {
+                    try {
+                        $comparisonPeriod = Carbon::parse($period)->startOfMonth()->subDay()->format('Y-m-d');
+
+                        return $comparisonLookup->has($comparisonPeriod);
+                    } catch (Throwable) {
+                        return false;
+                    }
+                })
                 ->unique()
                 ->sortDesc()
                 ->values();

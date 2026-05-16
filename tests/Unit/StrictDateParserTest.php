@@ -26,6 +26,12 @@ class StrictDateParserTest extends TestCase
         $this->assertSame('2026-04-14', StrictDateParser::normalize('14 Apr 2026'));
     }
 
+    public function test_locale_month_names_can_be_disabled_for_scoped_imports(): void
+    {
+        $this->assertNull(StrictDateParser::normalize('14 Mei 2026', [], false));
+        $this->assertSame('2026-04-14', StrictDateParser::normalize('14 Apr 2026', [], false));
+    }
+
     public function test_it_normalizes_excel_serial_dates(): void
     {
         $serial = (string) ExcelDate::PHPToExcel(new \DateTimeImmutable('2026-04-04'));

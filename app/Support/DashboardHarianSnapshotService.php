@@ -347,7 +347,7 @@ class DashboardHarianSnapshotService
 
         return array_values(array_filter(
             $sharedPeriodsAsc,
-            fn(string $p) => $p > $normalizedPhPeriod && $p <= $nextMonthEnd
+            fn(string $p) => $p >= $normalizedPhPeriod && $p <= $nextMonthEnd
         ));
     }
 
@@ -1858,8 +1858,7 @@ class DashboardHarianSnapshotService
         }
 
         $currentPhPeriod = DB::table('lw325_ph')
-            ->where('periode', '<=', $normalizedSnapshotPeriod)
-            ->orderByDesc('periode')
+            ->where('periode', $normalizedSnapshotPeriod)
             ->value('periode');
 
         if ($currentPhPeriod === null) {
@@ -2128,19 +2127,19 @@ class DashboardHarianSnapshotService
     private function dashboardRkaMetricDefinitions(): array
     {
         return [
-            'total_simpanan' => ['mata_anggaran' => ['A.1. DPK Retail Funding Total', 'A.2. DPK Korporasi']],
-            'simpanan_ritel' => ['mata_anggaran' => ['A.1. DPK Retail Funding Total'], 'uker_contains_any' => ['KC', 'KCP']],
-            'giro_ritel' => ['mata_anggaran' => ['Giro Retail Funding Total'], 'uker_contains_any' => ['KC', 'KCP']],
-            'deposito_ritel' => ['mata_anggaran' => ['Deposito Retail Funding Total'], 'uker_contains_any' => ['KC', 'KCP']],
-            'tabungan_ritel' => ['mata_anggaran' => ['Tabungan Retail Funding Total'], 'uker_contains_any' => ['KC', 'KCP']],
+            'total_simpanan' => ['mata_anggaran' => ['A.1. DPK Retail Funding Total']],
+            'simpanan_ritel' => ['mata_anggaran' => ['A.1. DPK Retail Funding Total'], 'uker_contains_any' => ['KC', 'KCP'], 'include_kanca_summary' => true],
+            'giro_ritel' => ['mata_anggaran' => ['Giro Retail Funding Total'], 'uker_contains_any' => ['KC', 'KCP'], 'include_kanca_summary' => true],
+            'deposito_ritel' => ['mata_anggaran' => ['Deposito Retail Funding Total'], 'uker_contains_any' => ['KC', 'KCP'], 'include_kanca_summary' => true],
+            'tabungan_ritel' => ['mata_anggaran' => ['Tabungan Retail Funding Total'], 'uker_contains_any' => ['KC', 'KCP'], 'include_kanca_summary' => true],
             'simpanan_mikro' => ['mata_anggaran' => ['A.1. DPK Retail Funding Total'], 'uker_contains_any' => ['UNIT']],
             'giro_mikro' => ['mata_anggaran' => ['Giro Retail Funding Total'], 'uker_contains_any' => ['UNIT']],
             'deposito_mikro' => ['mata_anggaran' => ['Deposito Retail Funding Total'], 'uker_contains_any' => ['UNIT']],
             'tabungan_mikro' => ['mata_anggaran' => ['Tabungan Retail Funding Total'], 'uker_contains_any' => ['UNIT']],
-            'simpanan_wholesale' => ['mata_anggaran' => ['A.2. DPK Korporasi']],
+            'simpanan_wholesale' => ['mata_anggaran' => ['A.2.a. Giro Korporasi']],
             'giro_wholesale' => ['mata_anggaran' => ['A.2.a. Giro Korporasi']],
-            'deposito_wholesale' => ['mata_anggaran' => ['A.2.b. Deposito Korporasi']],
-            'tabungan_wholesale' => ['mata_anggaran' => ['A.2.c. Tabungan Korporasi']], // Use specific MA even if 0
+            'deposito_wholesale' => ['mata_anggaran' => []],
+            'tabungan_wholesale' => ['mata_anggaran' => []],
             'total_os' => ['mata_anggaran' => ['B. KREDIT TOTAL']],
             'kecil_non_cashcoll_os' => ['mata_anggaran' => ['B.2.a. Kredit Kecil Non Cash Collateral'], 'uker_contains_any' => ['KC', 'KCP']],
             'cashcoll_os' => ['mata_anggaran' => ['B.2.b. Kredit Kecil Cash Collateral'], 'uker_contains_any' => ['KC', 'KCP']],
@@ -2219,7 +2218,10 @@ class DashboardHarianSnapshotService
         $final['simpanan_ritel'] = $final['giro_ritel'] + $final['deposito_ritel'] + $final['tabungan_ritel'];
         $final['simpanan_mikro'] = $final['giro_mikro'] + $final['deposito_mikro'] + $final['tabungan_mikro'];
         $final['simpanan_wholesale'] = $final['giro_wholesale'] + $final['deposito_wholesale'] + $final['tabungan_wholesale'];
-        $final['total_simpanan'] = $final['simpanan_ritel'] + $final['simpanan_mikro'] + $final['simpanan_wholesale'];
+        $computedTotalSimpanan = $final['simpanan_ritel'] + $final['simpanan_mikro'] + $final['simpanan_wholesale'];
+        if ((float) ($final['total_simpanan'] ?? 0) <= 0) {
+            $final['total_simpanan'] = $computedTotalSimpanan;
+        }
         $final['casa_ritel'] = $final['giro_ritel'] + $final['tabungan_ritel'];
         $final['casa_mikro'] = $final['giro_mikro'] + $final['tabungan_mikro'];
         $final['total_casa'] = $final['casa_ritel'] + $final['casa_mikro'];
@@ -2308,7 +2310,20 @@ class DashboardHarianSnapshotService
     private function normalizeUnitFilterKeys(array $normalizedUnit): array
     {
         return collect($normalizedUnit)
-            ->map(fn (string $value) => $this->slugKey($value))
+            ->flatMap(function (string $value): array {
+                $slug = $this->slugKey($value);
+                $aliases = [$slug];
+
+                // Some upstream unit labels are truncated before the full region
+                // suffix (for example "... MADI" instead of "... MADIUN"). Keep
+                // current/snapshot filtering aligned with the RKA lookup aliases.
+                if (str_ends_with($slug, '-madiun')) {
+                    $aliases[] = substr($slug, 0, -2);
+                }
+
+                return $aliases;
+            })
+            ->filter()
             ->unique()
             ->values()
             ->all();
@@ -3034,8 +3049,7 @@ class DashboardHarianSnapshotService
         }
 
         $currentPhPeriod = DB::table('lw325_ph')
-            ->where('periode', '<=', $normalizedPeriod)
-            ->orderByDesc('periode')
+            ->where('periode', $normalizedPeriod)
             ->value('periode');
 
         if ($currentPhPeriod === null) {

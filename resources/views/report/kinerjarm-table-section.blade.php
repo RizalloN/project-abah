@@ -3,6 +3,9 @@
     $showTargetColumns = $showTargetColumns ?? $showTargets;
     $showAchievementColumns = $showAchievementColumns ?? $showTargets;
     $showLarColumn = $showLarColumn ?? $showTargets;
+    if (($selectedSegmen ?? '') === 'CONSUMER') {
+        $showLarColumn = false;
+    }
     $compact = $compact ?? false;
     $sectionTitle = $sectionTitle ?? 'Performance OS';
     $sectionSubtitle = $sectionSubtitle ?? null;
@@ -56,6 +59,7 @@
     $formatPercent = $formatPercent ?? fn ($value, int $decimals = 1) => number_format((float) $value, $decimals, ',', '.') . '%';
     $quadrantLabel = $quadrantLabel ?? fn ($quadrant) => in_array((int) $quadrant, [1, 2, 3, 4], true) ? 'Kuadran ' . (int) $quadrant : '-';
     $quadrantClass = $quadrantClass ?? fn ($quadrant) => in_array((int) $quadrant, [1, 2, 3, 4], true) ? 'q' . (int) $quadrant : '';
+    $achievementHeader = ($selectedSegmen ?? '') === 'CONSUMER' ? 'Surplesi Ratas' : 'Realisasi JG';
     $selectedHeaderLabel = $selectedPeriodShortLabel ?? 'POSISI';
     $valueFor = fn (array $row, string $key): float => (float) data_get($row, "comparison_values.{$key}", data_get($row, $key, 0));
     $deltaFor = fn (array $row, string $key): float => (float) data_get($row, "comparison_deltas.{$key}", (float) ($row['curr'] ?? 0) - $valueFor($row, $key));
@@ -95,7 +99,7 @@
                         <th colspan="2" class="sub-head">Target JG</th>
                     @endif
                     @if($showAchievementColumns)
-                        <th colspan="2" class="accent-head">Realisasi JG</th>
+                        <th colspan="2" class="accent-head">{{ $achievementHeader }}</th>
                     @endif
                     @if($showLarColumn)
                         <th rowspan="2" class="accent-head" style="width: 62px;">% LAR</th>
@@ -193,12 +197,14 @@
                                 </td>
                                 @if($isFirstRmRowForQuad)
                                     <td rowspan="{{ $rmData['rm_rowspan'] }}" class="text-center-important">
-                                        @if(!empty($rmData['quadrant']))
+                                        @if(($selectedSegmen ?? '') !== 'CONSUMER' && !empty($rmData['quadrant']))
                                             <div class="quadrant-badge {{ $quadrantClass($rmData['quadrant']) }}">
                                                 <span class="quadrant-label">{{ $quadrantLabel($rmData['quadrant']) }}</span>
                                             </div>
-                                        @else
+                                        @elseif(($selectedSegmen ?? '') !== 'CONSUMER')
                                             <span class="text-muted small">-</span>
+                                        @else
+                                            <span class="text-muted small"></span>
                                         @endif
                                     </td>
                                     @php $isFirstRmRowForQuad = false; @endphp

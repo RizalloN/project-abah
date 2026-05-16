@@ -38,15 +38,33 @@ class Kernel extends ConsoleKernel
                 \Illuminate\Support\Facades\Log::warning('Performance RM snapshot scheduled rebuild failed');
             });
 
+        // Drain persistent dirty snapshot periods every minute. The command self-loops
+        // for ~55 seconds per tick so consecutive ticks effectively give continuous
+        // drain coverage. Pending dirty rows from DB triggers and CRUD mutations get
+        // claimed and dispatched to snapshots-parallel for incremental rebuild,
+        // which is what makes "delete hourly_dpk then import ssa_simpanan" propagate
+        // to dashboard_harian_snapshots automatically.
+        $schedule->command('reports:snapshot:drain-dirty', ['--max-runtime=55'])
+            ->everyMinute()
+            ->withoutOverlapping(2)
+            ->runInBackground()
+            ->onFailure(function () {
+                \Illuminate\Support\Facades\Log::warning('Snapshot dirty drain failed');
+            });
+
         // Monitor queue and ensure worker is running (check every 30 seconds)
         // Note: This is a fallback; queue workers should be managed by supervisor/systemd in production
-        // Uncomment to enable automatic queue worker restart:
-        // $schedule->command('queue:ensure-running')
-        //     ->everyThirtySeconds()
-        //     ->withoutOverlapping()
-        //     ->onFailure(function () {
-        //         \Illuminate\Support\Facades\Log::warning('Queue worker monitor failed');
-        //     });
+        $schedule->command('queue:ensure-running', [
+                '--once' => true,
+                '--timeout' => 900,
+                '--memory' => 512,
+            ])
+            ->everyMinute()
+            ->withoutOverlapping(2)
+            ->runInBackground()
+            ->onFailure(function () {
+                \Illuminate\Support\Facades\Log::warning('Queue worker monitor failed');
+            });
     }
 
     /**

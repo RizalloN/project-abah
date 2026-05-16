@@ -316,7 +316,7 @@ class ReportSnapshotBuilder
             DB::table($snapshotTable)->where('periode', $period)->delete();
         }
 
-        DB::statement("
+        $this->statementWithConcurrencyRetry('dashboard period upsert', fn (): bool => DB::statement("
             INSERT INTO {$snapshotTable}
             (
                 uniqueid_dps, periode, account_number, loan_balance, quality_bucket,
@@ -346,10 +346,10 @@ class ReportSnapshotBuilder
                 cabang1 = VALUES(cabang1),
                 unit1 = VALUES(unit1),
                 updated_at = VALUES(updated_at)
-        ", [$period, $period, $period]);
+        ", [$period, $period, $period]));
 
         if (!$force) {
-            DB::statement("
+            $this->statementWithConcurrencyRetry('dashboard period prune', fn (): bool => DB::statement("
                 DELETE snap
                 FROM {$snapshotTable} snap
                 LEFT JOIN (
@@ -362,7 +362,7 @@ class ReportSnapshotBuilder
                 ) src ON src.uniqueid_dps = snap.uniqueid_dps
                 WHERE snap.periode = ?
                     AND src.uniqueid_dps IS NULL
-            ", [$period, $period, $period]);
+            ", [$period, $period, $period]));
         }
 
         return (int) DB::table(self::DASHBOARD_SNAPSHOT_TABLE)->where('periode', $period)->count();
@@ -2288,6 +2288,73 @@ class ReportSnapshotBuilder
         $kurRitelDescriptionSql = $this->buildKinerjaRmNormalizedSql('d.description');
         $kurRitelDescriptionToken = $this->normalizeKinerjaRmToken('Kredit Mikro - KUR Ritel 2015');
         $realisasiDateColumn = 'd.' . $this->resolvePerformanceRmRealisasiDateColumn();
+        $consumerPreviousPeriod = $segment === 'CONSUMER'
+            ? $this->resolvePreviousMonthPerformanceRmPeriod($period)
+            : null;
+        $hasConsumerSurplusBase = $segment === 'CONSUMER' && $consumerPreviousPeriod !== null;
+        [$ruleSql, $ruleBindings] = $this->buildKinerjaRmRuleSql($normalizedRules, 'd');
+        $canonicalProductSql = $this->buildKinerjaRmCanonicalProductSql($segment, 'd.produk_kinerja');
+        $consumerSurplusJoinSql = $hasConsumerSurplusBase
+            ? "
+            LEFT JOIN (
+                SELECT
+                    current_accounts.cabang,
+                    current_accounts.unit,
+                    current_accounts.branch_code,
+                    current_accounts.rm,
+                    current_accounts.produk,
+                    COUNT(*) as surplus_deb,
+                    SUM(current_accounts.current_plafon - previous_accounts.previous_plafon) as surplus_os
+                FROM (
+                    SELECT
+                        COALESCE(cabang_normalized, '') as cabang,
+                        COALESCE(unit_normalized, '') as unit,
+                        COALESCE(branch_normalized, '') as branch_code,
+                        COALESCE(rm_normalized, '') as rm,
+                        {$canonicalProductSql} as produk,
+                        nomor_rekening1,
+                        MAX(COALESCE(plafon, 0)) as current_plafon
+                    FROM daily_loan_dinamis d
+                    WHERE periode = ?
+                        AND ({$ruleSql})
+                        AND pn_pengelola1 IS NOT NULL
+                        AND pn_pengelola1 <> ''
+                        AND nomor_rekening1 IS NOT NULL
+                        AND nomor_rekening1 <> ''
+                    GROUP BY
+                        COALESCE(cabang_normalized, ''),
+                        COALESCE(unit_normalized, ''),
+                        COALESCE(branch_normalized, ''),
+                        COALESCE(rm_normalized, ''),
+                        {$canonicalProductSql},
+                        nomor_rekening1
+                ) current_accounts
+                INNER JOIN (
+                    SELECT
+                        nomor_rekening1,
+                        MAX(COALESCE(plafon, 0)) as previous_plafon
+                    FROM daily_loan_dinamis
+                    WHERE periode = ?
+                        AND segmen_kinerja = 'CONSUMER'
+                        AND produk_kinerja IN ('BRIGUNAKONSUMER', 'KPR')
+                        AND nomor_rekening1 IS NOT NULL
+                        AND nomor_rekening1 <> ''
+                    GROUP BY nomor_rekening1
+                ) previous_accounts ON previous_accounts.nomor_rekening1 = current_accounts.nomor_rekening1
+                WHERE current_accounts.current_plafon > previous_accounts.previous_plafon
+                GROUP BY
+                    current_accounts.cabang,
+                    current_accounts.unit,
+                    current_accounts.branch_code,
+                    current_accounts.rm,
+                    current_accounts.produk
+            ) consumer_surplus ON consumer_surplus.cabang = COALESCE(d.cabang_normalized, '')
+                AND consumer_surplus.unit = COALESCE(d.unit_normalized, '')
+                AND consumer_surplus.branch_code = COALESCE(d.branch_normalized, '')
+                AND consumer_surplus.rm = COALESCE(d.rm_normalized, '')
+                AND consumer_surplus.produk = {$canonicalProductSql}
+            "
+            : '';
         $weekRanges = [
             'w1' => [$periodDate->copy()->startOfMonth(), $periodDate->copy()->startOfMonth()->addDays(6)],
             'w2' => [$periodDate->copy()->startOfMonth()->addDays(7), $periodDate->copy()->startOfMonth()->addDays(13)],
@@ -2302,8 +2369,6 @@ class ReportSnapshotBuilder
             $weekRanges
         );
 
-        [$ruleSql, $ruleBindings] = $this->buildKinerjaRmRuleSql($normalizedRules, 'd');
-        $canonicalProductSql = $this->buildKinerjaRmCanonicalProductSql($segment, 'd.produk_kinerja');
         $groupColumns = [
             "COALESCE(d.cabang_normalized, '')",
             "COALESCE(d.unit_normalized, '')",
@@ -2362,36 +2427,40 @@ class ReportSnapshotBuilder
             'lancar_deb' => 'COUNT(DISTINCT CASE WHEN d.kol_adk1 = 1 THEN d.nomor_rekening1 END) as lancar_deb',
             'sml_deb' => 'COUNT(DISTINCT CASE WHEN d.kol_adk1 = 2 THEN d.nomor_rekening1 END) as sml_deb',
             'npl_deb' => 'COUNT(DISTINCT CASE WHEN d.kol_adk1 > 2 THEN d.nomor_rekening1 END) as npl_deb',
-            'realisasi_deb' => "COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN d.nomor_rekening1 END) as realisasi_deb",
-            'realisasi_os' => "SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN COALESCE(d.plafon, 0) ELSE 0 END) as realisasi_os",
-            'w1_realisasi_deb' => "COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN d.nomor_rekening1 END) as w1_realisasi_deb",
-            'w1_realisasi_os' => "SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN COALESCE(d.plafon, 0) ELSE 0 END) as w1_realisasi_os",
-            'w2_realisasi_deb' => "COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN d.nomor_rekening1 END) as w2_realisasi_deb",
-            'w2_realisasi_os' => "SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN COALESCE(d.plafon, 0) ELSE 0 END) as w2_realisasi_os",
-            'w3_realisasi_deb' => "COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN d.nomor_rekening1 END) as w3_realisasi_deb",
-            'w3_realisasi_os' => "SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN COALESCE(d.plafon, 0) ELSE 0 END) as w3_realisasi_os",
-            'w4_realisasi_deb' => "COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN d.nomor_rekening1 END) as w4_realisasi_deb",
-            'w4_realisasi_os' => "SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN COALESCE(d.plafon, 0) ELSE 0 END) as w4_realisasi_os",
-            'lt_250_realisasi_deb' => "COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? AND COALESCE(d.plafon, 0) < 250000000 THEN d.nomor_rekening1 END) as lt_250_realisasi_deb",
-            'lt_250_realisasi_os' => "SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? AND COALESCE(d.plafon, 0) < 250000000 THEN COALESCE(d.plafon, 0) ELSE 0 END) as lt_250_realisasi_os",
-            'gt_250_realisasi_deb' => "COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? AND COALESCE(d.plafon, 0) > 250000000 THEN d.nomor_rekening1 END) as gt_250_realisasi_deb",
-            'gt_250_realisasi_os' => "SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? AND COALESCE(d.plafon, 0) > 250000000 THEN COALESCE(d.plafon, 0) ELSE 0 END) as gt_250_realisasi_os",
+            'realisasi_deb' => $segment === 'CONSUMER'
+                ? ($hasConsumerSurplusBase ? 'COALESCE(MAX(consumer_surplus.surplus_deb), 0) as realisasi_deb' : '0 as realisasi_deb')
+                : "COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN d.nomor_rekening1 END) as realisasi_deb",
+            'realisasi_os' => $segment === 'CONSUMER'
+                ? ($hasConsumerSurplusBase ? 'COALESCE(MAX(consumer_surplus.surplus_os), 0) as realisasi_os' : '0 as realisasi_os')
+                : "SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN COALESCE(d.plafon, 0) ELSE 0 END) as realisasi_os",
+            'w1_realisasi_deb' => $segment === 'CONSUMER' ? '0 as w1_realisasi_deb' : "COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN d.nomor_rekening1 END) as w1_realisasi_deb",
+            'w1_realisasi_os' => $segment === 'CONSUMER' ? '0 as w1_realisasi_os' : "SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN COALESCE(d.plafon, 0) ELSE 0 END) as w1_realisasi_os",
+            'w2_realisasi_deb' => $segment === 'CONSUMER' ? '0 as w2_realisasi_deb' : "COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN d.nomor_rekening1 END) as w2_realisasi_deb",
+            'w2_realisasi_os' => $segment === 'CONSUMER' ? '0 as w2_realisasi_os' : "SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN COALESCE(d.plafon, 0) ELSE 0 END) as w2_realisasi_os",
+            'w3_realisasi_deb' => $segment === 'CONSUMER' ? '0 as w3_realisasi_deb' : "COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN d.nomor_rekening1 END) as w3_realisasi_deb",
+            'w3_realisasi_os' => $segment === 'CONSUMER' ? '0 as w3_realisasi_os' : "SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN COALESCE(d.plafon, 0) ELSE 0 END) as w3_realisasi_os",
+            'w4_realisasi_deb' => $segment === 'CONSUMER' ? '0 as w4_realisasi_deb' : "COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN d.nomor_rekening1 END) as w4_realisasi_deb",
+            'w4_realisasi_os' => $segment === 'CONSUMER' ? '0 as w4_realisasi_os' : "SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN COALESCE(d.plafon, 0) ELSE 0 END) as w4_realisasi_os",
+            'lt_250_realisasi_deb' => $segment === 'CONSUMER' ? '0 as lt_250_realisasi_deb' : "COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? AND COALESCE(d.plafon, 0) < 250000000 THEN d.nomor_rekening1 END) as lt_250_realisasi_deb",
+            'lt_250_realisasi_os' => $segment === 'CONSUMER' ? '0 as lt_250_realisasi_os' : "SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? AND COALESCE(d.plafon, 0) < 250000000 THEN COALESCE(d.plafon, 0) ELSE 0 END) as lt_250_realisasi_os",
+            'gt_250_realisasi_deb' => $segment === 'CONSUMER' ? '0 as gt_250_realisasi_deb' : "COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? AND COALESCE(d.plafon, 0) > 250000000 THEN d.nomor_rekening1 END) as gt_250_realisasi_deb",
+            'gt_250_realisasi_os' => $segment === 'CONSUMER' ? '0 as gt_250_realisasi_os' : "SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? AND COALESCE(d.plafon, 0) > 250000000 THEN COALESCE(d.plafon, 0) ELSE 0 END) as gt_250_realisasi_os",
         ];
         $metricBindings = [
-            'realisasi_deb' => [$periodStart, $period],
-            'realisasi_os' => [$periodStart, $period],
-            'w1_realisasi_deb' => $weekRanges['w1'],
-            'w1_realisasi_os' => $weekRanges['w1'],
-            'w2_realisasi_deb' => $weekRanges['w2'],
-            'w2_realisasi_os' => $weekRanges['w2'],
-            'w3_realisasi_deb' => $weekRanges['w3'],
-            'w3_realisasi_os' => $weekRanges['w3'],
-            'w4_realisasi_deb' => $weekRanges['w4'],
-            'w4_realisasi_os' => $weekRanges['w4'],
-            'lt_250_realisasi_deb' => [$periodStart, $period],
-            'lt_250_realisasi_os' => [$periodStart, $period],
-            'gt_250_realisasi_deb' => [$periodStart, $period],
-            'gt_250_realisasi_os' => [$periodStart, $period],
+            'realisasi_deb' => $segment === 'CONSUMER' ? [] : [$periodStart, $period],
+            'realisasi_os' => $segment === 'CONSUMER' ? [] : [$periodStart, $period],
+            'w1_realisasi_deb' => $segment === 'CONSUMER' ? [] : $weekRanges['w1'],
+            'w1_realisasi_os' => $segment === 'CONSUMER' ? [] : $weekRanges['w1'],
+            'w2_realisasi_deb' => $segment === 'CONSUMER' ? [] : $weekRanges['w2'],
+            'w2_realisasi_os' => $segment === 'CONSUMER' ? [] : $weekRanges['w2'],
+            'w3_realisasi_deb' => $segment === 'CONSUMER' ? [] : $weekRanges['w3'],
+            'w3_realisasi_os' => $segment === 'CONSUMER' ? [] : $weekRanges['w3'],
+            'w4_realisasi_deb' => $segment === 'CONSUMER' ? [] : $weekRanges['w4'],
+            'w4_realisasi_os' => $segment === 'CONSUMER' ? [] : $weekRanges['w4'],
+            'lt_250_realisasi_deb' => $segment === 'CONSUMER' ? [] : [$periodStart, $period],
+            'lt_250_realisasi_os' => $segment === 'CONSUMER' ? [] : [$periodStart, $period],
+            'gt_250_realisasi_deb' => $segment === 'CONSUMER' ? [] : [$periodStart, $period],
+            'gt_250_realisasi_os' => $segment === 'CONSUMER' ? [] : [$periodStart, $period],
         ];
 
         foreach ($metricSelects as $column => $selectSql) {
@@ -2422,6 +2491,7 @@ class ReportSnapshotBuilder
             SELECT
                 {$selectSql}
             FROM daily_loan_dinamis d
+            {$consumerSurplusJoinSql}
             {$depositJoinSql}
             WHERE d.periode = ?
                 AND ({$ruleSql})
@@ -2436,12 +2506,16 @@ class ReportSnapshotBuilder
 
         $bindings = array_merge(
             $bindings,
+            $hasConsumerSurplusBase ? [$period, ...$ruleBindings, $consumerPreviousPeriod] : [],
             $depositBindings,
             [$period],
             $ruleBindings
         );
 
-        DB::statement($sql, $bindings);
+        $this->statementWithConcurrencyRetry(
+            'performance rm segment upsert',
+            fn (): bool => DB::statement($sql, $bindings)
+        );
     }
 
     private function buildPerformanceRmDepositJoinSql(string $canonicalProductSql, string $ruleSql, ?string $latestSmpnPosisi): string
@@ -2597,11 +2671,11 @@ class ReportSnapshotBuilder
 
         $columns = array_values(array_filter(
             Schema::getColumnListing(self::PERFORMANCE_RM_SNAPSHOT_TABLE),
-            static fn (string $column): bool => !in_array($column, ['id', 'created_at'], true)
+            static fn (string $column): bool => $column !== 'id'
         ));
         $updatableColumns = array_values(array_filter(
             $columns,
-            static fn (string $column): bool => !in_array($column, $identityColumns, true)
+            static fn (string $column): bool => !in_array($column, [...$identityColumns, 'created_at'], true)
         ));
 
         if ($updatableColumns !== []) {
@@ -3094,7 +3168,163 @@ class ReportSnapshotBuilder
             ->groupBy('cabang_normalized', 'unit_normalized', 'branch_normalized', 'rm_normalized', 'produk_kinerja')
             ->get();
 
-        return $query->map(fn($row) => (array)$row)->toArray();
+        $rows = $query->map(fn($row) => (array)$row)->toArray();
+
+        return $segment === 'CONSUMER'
+            ? $this->applyConsumerPlafonSurplusMetrics($period, $rows)
+            : $rows;
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $rows
+     * @return array<int, array<string, mixed>>
+     */
+    private function applyConsumerPlafonSurplusMetrics(string $period, array $rows): array
+    {
+        $zeroColumns = [
+            'realisasi_deb',
+            'realisasi_os',
+            'w1_realisasi_deb',
+            'w1_realisasi_os',
+            'w2_realisasi_deb',
+            'w2_realisasi_os',
+            'w3_realisasi_deb',
+            'w3_realisasi_os',
+            'w4_realisasi_deb',
+            'w4_realisasi_os',
+            'lt_250_realisasi_deb',
+            'lt_250_realisasi_os',
+            'gt_250_realisasi_deb',
+            'gt_250_realisasi_os',
+        ];
+
+        foreach ($rows as &$row) {
+            foreach ($zeroColumns as $column) {
+                $row[$column] = str_ends_with($column, '_deb') ? 0 : 0.0;
+            }
+        }
+        unset($row);
+
+        if ($rows === []) {
+            return $rows;
+        }
+
+        $previousPeriod = $this->resolvePreviousMonthPerformanceRmPeriod($period);
+        if ($previousPeriod === null) {
+            return $rows;
+        }
+
+        $previousPlafon = DB::table('daily_loan_dinamis')
+            ->where('periode', $previousPeriod)
+            ->where('segmen_kinerja', 'CONSUMER')
+            ->whereIn('produk_kinerja', ['BRIGUNAKONSUMER', 'KPR'])
+            ->whereNotNull('nomor_rekening1')
+            ->where('nomor_rekening1', '<>', '')
+            ->selectRaw('nomor_rekening1, MAX(COALESCE(plafon, 0)) as plafon')
+            ->groupBy('nomor_rekening1')
+            ->pluck('plafon', 'nomor_rekening1');
+
+        if ($previousPlafon->isEmpty()) {
+            return $rows;
+        }
+
+        $accountPlafonByGroup = [];
+        DB::table('daily_loan_dinamis')
+            ->where('periode', $period)
+            ->where('segmen_kinerja', 'CONSUMER')
+            ->whereIn('produk_kinerja', ['BRIGUNAKONSUMER', 'KPR'])
+            ->whereNotNull('pn_pengelola1')
+            ->where('pn_pengelola1', '<>', '')
+            ->whereNotNull('nomor_rekening1')
+            ->where('nomor_rekening1', '<>', '')
+            ->select([
+                'cabang_normalized',
+                'unit_normalized',
+                'branch_normalized',
+                'rm_normalized',
+                'produk_kinerja',
+                'nomor_rekening1',
+                'plafon',
+            ])
+            ->orderBy('nomor_rekening1')
+            ->chunk(1000, function ($sourceRows) use (&$accountPlafonByGroup): void {
+                foreach ($sourceRows as $sourceRow) {
+                    $groupKey = $this->consumerSurplusGroupKey([
+                        'cabang' => $sourceRow->cabang_normalized,
+                        'unit' => $sourceRow->unit_normalized,
+                        'branch_code' => $sourceRow->branch_normalized,
+                        'rm' => $sourceRow->rm_normalized,
+                        'produk' => $sourceRow->produk_kinerja,
+                    ]);
+                    $account = (string) $sourceRow->nomor_rekening1;
+                    $currentPlafon = (float) ($sourceRow->plafon ?? 0);
+
+                    if (!isset($accountPlafonByGroup[$groupKey][$account]) || $currentPlafon > $accountPlafonByGroup[$groupKey][$account]) {
+                        $accountPlafonByGroup[$groupKey][$account] = $currentPlafon;
+                    }
+                }
+            });
+
+        $surplusByGroup = [];
+        foreach ($accountPlafonByGroup as $groupKey => $accounts) {
+            foreach ($accounts as $account => $currentPlafon) {
+                if (!$previousPlafon->has($account)) {
+                    continue;
+                }
+
+                $surplus = $currentPlafon - (float) $previousPlafon->get($account);
+                if ($surplus <= 0) {
+                    continue;
+                }
+
+                if (!isset($surplusByGroup[$groupKey])) {
+                    $surplusByGroup[$groupKey] = ['debitur' => 0, 'os' => 0.0];
+                }
+
+                $surplusByGroup[$groupKey]['debitur']++;
+                $surplusByGroup[$groupKey]['os'] += $surplus;
+            }
+        }
+
+        foreach ($rows as &$row) {
+            $metric = $surplusByGroup[$this->consumerSurplusGroupKey($row)] ?? null;
+            if ($metric === null) {
+                continue;
+            }
+
+            $row['realisasi_deb'] = (int) $metric['debitur'];
+            $row['realisasi_os'] = (float) $metric['os'];
+        }
+        unset($row);
+
+        return $rows;
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private function consumerSurplusGroupKey(array $row): string
+    {
+        return implode('|', [
+            (string) ($row['cabang'] ?? ''),
+            (string) ($row['unit'] ?? ''),
+            (string) ($row['branch_code'] ?? ''),
+            (string) ($row['rm'] ?? ''),
+            $this->canonicalizeKinerjaRmProduct('CONSUMER', (string) ($row['produk'] ?? '')),
+        ]);
+    }
+
+    private function resolvePreviousMonthPerformanceRmPeriod(string $period): ?string
+    {
+        $periodDate = Carbon::parse($period);
+        $previousStart = $periodDate->copy()->subMonthNoOverflow()->startOfMonth()->toDateString();
+        $previousEnd = $periodDate->copy()->subMonthNoOverflow()->endOfMonth()->toDateString();
+
+        $previousPeriod = DB::table('daily_loan_dinamis')
+            ->whereBetween('periode', [$previousStart, $previousEnd])
+            ->max('periode');
+
+        return $previousPeriod !== null ? (string) $previousPeriod : null;
     }
 
     private function fetchDepositsByNormalizedCifs(array $normalizedCifs, ?string $latestPosisi): array
@@ -3244,5 +3474,44 @@ class ReportSnapshotBuilder
         };
 
         return $map[$token] ?? strtoupper(trim($product));
+    }
+
+    /**
+     * @param callable(): bool $callback
+     */
+    private function statementWithConcurrencyRetry(string $context, callable $callback): bool
+    {
+        $attempts = 0;
+        $maxAttempts = 3;
+
+        do {
+            $attempts++;
+
+            try {
+                return $callback();
+            } catch (Throwable $e) {
+                if ($attempts >= $maxAttempts || !$this->isRetryableConcurrencyError($e)) {
+                    throw $e;
+                }
+
+                usleep(random_int(200_000, 800_000) * $attempts);
+                logger()->warning('Retrying snapshot SQL after transient lock conflict.', [
+                    'context' => $context,
+                    'attempt' => $attempts,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        } while ($attempts < $maxAttempts);
+
+        return false;
+    }
+
+    private function isRetryableConcurrencyError(Throwable $e): bool
+    {
+        $message = $e->getMessage();
+
+        return str_contains($message, 'SQLSTATE[40001]')
+            || str_contains($message, '1213 Deadlock')
+            || str_contains($message, '1205 Lock wait timeout');
     }
 }

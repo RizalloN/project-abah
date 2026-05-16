@@ -8,6 +8,7 @@ use App\Jobs\RunImportJob;
 use App\Jobs\SyncImportedReportJob;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Illuminate\Support\Carbon;
@@ -98,7 +99,10 @@ class ImportExecutionService
     private function resolveImportQueue(object $job): string
     {
         $state = $this->progressService->getJobState((int) $job->id);
-        $tableName = strtolower(trim((string) ($state['params']['table_name'] ?? '')));
+        $tableName = $this->resolveExpectedTableName($job);
+        if ($tableName === '') {
+            $tableName = strtolower(trim((string) ($state['params']['table_name'] ?? '')));
+        }
         $reportId = (int) ($job->id_report ?? 0);
 
         if ($reportId === self::DAILY_LOAN_REPORT_ID || $tableName === 'daily_loan_dinamis') {
@@ -302,6 +306,21 @@ class ImportExecutionService
         $params = (array) ($state['params'] ?? []);
         $headers = array_values((array) ($state['headers'] ?? []));
         $tableName = strtolower(trim((string) ($params['table_name'] ?? '')));
+        $mismatchMessage = $this->resolveJobStateMismatchMessage($job, $params);
+        if ($mismatchMessage !== null) {
+            Log::warning('ImportExecutionService::run() state job tidak cocok dengan record job', [
+                'job_id' => $jobId,
+                'message' => $mismatchMessage,
+                'params_table_name' => $params['table_name'] ?? null,
+                'params_file_path' => $params['file_path'] ?? null,
+                'job_file_name' => $job->file_name ?? null,
+            ]);
+            $this->progressService->cleanupQueuedImportJobRowsForJob($jobId);
+            $this->progressService->markFailed($jobId, $mismatchMessage);
+            $this->releaseDispatchMarker($jobId);
+            return;
+        }
+
         $requiresPreparedStaging = in_array($tableName, ['lw321_npd', 'lw321_npdd'], true)
             && empty($params['staged_csv_path']);
 
@@ -359,6 +378,20 @@ class ImportExecutionService
             $state = $this->progressService->getJobState($jobId);
             $params = (array) ($state['params'] ?? []);
             $headers = array_values((array) ($state['headers'] ?? []));
+            $mismatchMessage = $this->resolveJobStateMismatchMessage($job, $params);
+            if ($mismatchMessage !== null) {
+                Log::warning('ImportExecutionService::run() state job tidak cocok setelah initialization', [
+                    'job_id' => $jobId,
+                    'message' => $mismatchMessage,
+                    'params_table_name' => $params['table_name'] ?? null,
+                    'params_file_path' => $params['file_path'] ?? null,
+                    'job_file_name' => $job->file_name ?? null,
+                ]);
+                $this->progressService->cleanupQueuedImportJobRowsForJob($jobId);
+                $this->progressService->markFailed($jobId, $mismatchMessage);
+                $this->releaseDispatchMarker($jobId);
+                return;
+            }
         }
 
         if ($params === [] || $headers === []) {
@@ -590,9 +623,52 @@ class ImportExecutionService
         $this->importCache()->forget($this->dispatchedKey($jobId));
     }
 
+    private function resolveJobStateMismatchMessage(object $job, array $params): ?string
+    {
+        $jobId = (int) ($job->id ?? 0);
+        $stateJobId = (int) ($params['job_id'] ?? $jobId);
+        if ($stateJobId > 0 && $jobId > 0 && $stateJobId !== $jobId) {
+            return 'State import job tidak cocok dengan record job. Silakan ulangi import dari preview terbaru.';
+        }
+
+        $expectedTableName = $this->resolveExpectedTableName($job);
+        $stateTableName = strtolower(trim((string) ($params['table_name'] ?? '')));
+        if ($expectedTableName !== '' && $stateTableName !== '' && $expectedTableName !== $stateTableName) {
+            return 'State import job tidak cocok dengan report tujuan. Silakan ulangi import dari preview terbaru.';
+        }
+
+        $stateFileName = basename(str_replace('\\', '/', (string) ($params['file_path'] ?? '')));
+        $jobFileName = basename(str_replace('\\', '/', (string) ($job->file_name ?? '')));
+        if ($stateFileName !== '' && $jobFileName !== '' && $stateFileName !== $jobFileName) {
+            return 'State import job tidak cocok dengan file job. Silakan ulangi import dari preview terbaru.';
+        }
+
+        return null;
+    }
+
+    private function resolveExpectedTableName(object $job): string
+    {
+        $reportId = (int) ($job->id_report ?? 0);
+        if ($reportId <= 0) {
+            return '';
+        }
+
+        try {
+            return strtolower(trim((string) DB::table('nama_report')
+                ->where('id_report', $reportId)
+                ->value('table_name')));
+        } catch (\Throwable) {
+            return '';
+        }
+    }
+
     private function importCache()
     {
         $store = trim((string) config('import.cache_store', 'file'));
+
+        if ($store === '') {
+            return Cache::getFacadeRoot();
+        }
 
         return $store !== '' ? Cache::store($store) : Cache::store();
     }

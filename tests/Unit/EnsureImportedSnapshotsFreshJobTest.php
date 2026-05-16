@@ -87,6 +87,72 @@ class EnsureImportedSnapshotsFreshJobTest extends TestCase
         ));
     }
 
+    public function test_daily_loan_freshness_rebuilds_performance_rm_when_formula_version_changes(): void
+    {
+        DB::table('daily_loan_dinamis')->insert([
+            'periode' => '2026-05-06',
+            'baki_debet1' => 1000,
+            'created_at' => '2026-05-08 10:00:00',
+            'updated_at' => '2026-05-08 10:00:00',
+        ]);
+
+        foreach ([
+            'dashboard_pinjaman_snapshots' => 'periode',
+            'dashboard_pinjaman_chart_periodik_snapshots' => 'periode',
+            'performance_rm_snapshots' => 'periode',
+            'rasio_casa_debitur_snapshots' => 'loan_period',
+        ] as $snapshotTable => $periodColumn) {
+            DB::table($snapshotTable)->insert($this->snapshotRow($periodColumn, '2026-05-06', '2026-05-08 11:00:00'));
+        }
+
+        $metadata = $this->sourceSignatures->capture('daily_loan_dinamis', 'periode', '2026-05-06');
+        $this->markFresh('daily_loan_dinamis', 'dashboard_pinjaman_snapshots', '2026-05-06', $metadata);
+        $this->markFresh('daily_loan_dinamis', 'dashboard_pinjaman_chart_periodik_snapshots', '2026-05-06', $metadata);
+        $this->markFresh('daily_loan_dinamis', 'rasio_casa_debitur_snapshots', '2026-05-06', $metadata);
+
+        DB::table('snapshot_source_signatures')->insert([
+            'source_table' => 'daily_loan_dinamis',
+            'snapshot_table' => 'performance_rm_snapshots',
+            'period_key' => '2026-05-06',
+            'source_signature' => $metadata['source_signature'],
+            'source_row_count' => $metadata['source_row_count'],
+            'source_max_updated_at' => $metadata['source_max_updated_at'],
+            'built_at' => now(),
+            'context' => json_encode(['snapshot_formula_version' => 'performance-rm-v1-realisasi-date']),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->assertFalse($this->sourceSignatures->isFresh(
+            'daily_loan_dinamis',
+            'performance_rm_snapshots',
+            '2026-05-06',
+            $metadata
+        ));
+
+        $builder = Mockery::mock(ReportSnapshotBuilder::class);
+        $builder->shouldNotReceive('rebuildDashboard');
+        $builder->shouldNotReceive('rebuildChartPeriodik');
+        $builder->shouldReceive('rebuildPerformanceRm')
+            ->once()
+            ->with('2026-05-06', false)
+            ->andReturn(['2026-05-06' => 10]);
+        $builder->shouldNotReceive('rebuildRasioCasa');
+
+        $dashboardHarian = Mockery::mock(DashboardHarianSnapshotService::class);
+        $dashboardHarian->shouldNotReceive('rebuild');
+
+        (new EnsureImportedSnapshotsFreshJob('daily_loan_dinamis', '2026-05-06', 'unit-test'))
+            ->handle($builder, $dashboardHarian, $this->sourceSignatures);
+
+        $this->assertTrue($this->sourceSignatures->isFresh(
+            'daily_loan_dinamis',
+            'performance_rm_snapshots',
+            '2026-05-06',
+            $metadata
+        ));
+    }
+
     public function test_simpanan_existing_snapshots_rebuild_when_source_signature_changes(): void
     {
         $this->insertReadySimpananRows('2026-05-06', 1000);

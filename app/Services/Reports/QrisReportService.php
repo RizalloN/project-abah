@@ -138,6 +138,7 @@ class QrisReportService
             'branchFiltered' => $ctx['isQrisBranchFiltered'],
             'groupColumn' => $ctx['qrisGroupColumn'],
             'monthColumn' => $ctx['rkaMonthColumn'],
+            'rkaLookup' => 'kanca-summary-fallback-v1',
         ]));
 
         $payload = Cache::remember($cacheKey, now()->addMinutes(5), function () use ($ctx) {
@@ -226,6 +227,7 @@ class QrisReportService
             'branchFiltered' => $ctx['isQrisBranchFiltered'],
             'groupColumn' => $ctx['qrisGroupColumn'],
             'monthColumn' => $ctx['rkaMonthColumn'],
+            'rkaLookup' => 'kanca-summary-fallback-v1',
         ]));
 
         $payload = Cache::remember($cacheKey, now()->addMinutes(5), function () use ($ctx) {
@@ -342,6 +344,28 @@ class QrisReportService
             }
         }
 
+        if (!$ctx['isQrisBranchFiltered']) {
+            $this->fillMissingBranchRkaFromKancaFallback($groups, $definitions, $ctx['rkaMonthColumn'], $ctx['upperBranches']);
+        }
+
         return $groups;
+    }
+
+    private function fillMissingBranchRkaFromKancaFallback(array &$groups, array $definitions, string $monthColumn, array $branches): void
+    {
+        $fallbackGroups = $this->rkaLookup->aggregateByKancaWithSummaryFallback($definitions, $monthColumn, $branches);
+
+        foreach (array_keys($definitions) as $defKey) {
+            foreach ($branches as $branch) {
+                $branchKey = strtoupper(trim((string) $branch));
+                if ($branchKey === '') {
+                    continue;
+                }
+
+                if (abs((float) ($groups[$defKey][$branchKey] ?? 0)) <= 0.0) {
+                    $groups[$defKey][$branchKey] = (float) ($fallbackGroups[$defKey][$branchKey] ?? 0);
+                }
+            }
+        }
     }
 }

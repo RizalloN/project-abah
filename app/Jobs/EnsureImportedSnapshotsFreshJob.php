@@ -17,6 +17,7 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -80,6 +81,8 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
         if ($period === null || !$this->sourceHasRows('daily_loan_dinamis', 'periode', $period)) {
             return;
         }
+
+        $this->ensureDailyLoanShadowColumnsReady($period);
 
         $sourceMetadata = $sourceSignatures->capture('daily_loan_dinamis', 'periode', $period);
 
@@ -167,6 +170,91 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue
         if ($rebuiltAny) {
             $this->bumpReportCacheVersion('pinjaman');
         }
+    }
+
+    private function ensureDailyLoanShadowColumnsReady(string $period): void
+    {
+        $missingBefore = $this->countDailyLoanRowsMissingShadowColumns($period);
+        if ($missingBefore <= 0) {
+            return;
+        }
+
+        $exitCode = Artisan::call('shadow:backfill', [
+            '--periods' => $period,
+            '--chunk-size' => 10000,
+            '--retry-count' => 5,
+            '--skip-snapshot' => true,
+            '--no-interaction' => true,
+        ]);
+
+        $missingAfter = $this->countDailyLoanRowsMissingShadowColumns($period);
+        if ($exitCode === 0 && $missingAfter <= 0) {
+            Log::info('Daily Loan shadow columns completed before freshness rebuild.', [
+                'period' => $period,
+                'missing_before' => $missingBefore,
+                'source' => $this->source,
+            ]);
+
+            return;
+        }
+
+        $totalRows = (int) DB::table('daily_loan_dinamis')
+            ->where('periode', $period)
+            ->count();
+        $completion = $totalRows > 0 ? round((100 * ($totalRows - $missingAfter)) / $totalRows, 2) : 100.0;
+
+        throw new \RuntimeException(sprintf(
+            'Shadow column Daily Loan periode %s belum siap untuk snapshot Kinerja RM format baru (%.2f%% lengkap, sisa %s row).',
+            $period,
+            $completion,
+            number_format($missingAfter)
+        ));
+    }
+
+    private function countDailyLoanRowsMissingShadowColumns(string $period): int
+    {
+        $requiredColumns = [
+            'segmen_kinerja',
+            'produk_kinerja',
+            'cabang_normalized',
+            'unit_normalized',
+            'branch_normalized',
+            'rm_normalized',
+            'cifno_clean',
+        ];
+
+        if (!Schema::hasTable('daily_loan_dinamis')) {
+            return 0;
+        }
+
+        foreach ($requiredColumns as $column) {
+            if (!Schema::hasColumn('daily_loan_dinamis', $column)) {
+                return 0;
+            }
+        }
+
+        return (int) DB::table('daily_loan_dinamis')
+            ->where('periode', $period)
+            ->where(function ($query) use ($requiredColumns): void {
+                foreach ($requiredColumns as $column) {
+                    $query->orWhereNull($column);
+                }
+
+                if (Schema::hasColumn('daily_loan_dinamis', 'pn_pemutus_normalized')
+                    && Schema::hasColumn('daily_loan_dinamis', 'pn_pemutus1')) {
+                    $query->orWhere(function ($pnQuery): void {
+                        $pnQuery->whereNull('pn_pemutus_normalized')
+                            ->whereRaw("LENGTH(TRIM(COALESCE(pn_pemutus1, ''))) > 0");
+                    });
+                }
+
+                if (Schema::hasColumn('daily_loan_dinamis', 'shadow_built_at')
+                    && Schema::hasColumn('daily_loan_dinamis', 'updated_at')) {
+                    $query->orWhereNull('shadow_built_at')
+                        ->orWhereColumn('shadow_built_at', '<', 'updated_at');
+                }
+            })
+            ->count();
     }
 
     private function ensureSimpananSnapshots(

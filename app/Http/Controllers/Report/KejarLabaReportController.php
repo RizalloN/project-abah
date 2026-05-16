@@ -378,6 +378,22 @@ class KejarLabaReportController extends Controller
             }
         }
 
+        $fallbackGroups = $rkaService->aggregateByKancaWithSummaryFallback(
+            $rkaDefinitions,
+            $monthColumn,
+            $branchOffices,
+            $year
+        );
+
+        foreach ($branchOffices as $branchOffice) {
+            $branchKey = strtoupper(trim($branchOffice));
+            foreach (array_keys($rkaDefinitions) as $definitionKey) {
+                if (abs((float) ($results[$branchOffice][$definitionKey] ?? 0)) <= 0.0) {
+                    $results[$branchOffice][$definitionKey] = (float) ($fallbackGroups[$definitionKey][$branchKey] ?? 0);
+                }
+            }
+        }
+
         return $results;
     }
 

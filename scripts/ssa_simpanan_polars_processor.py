@@ -23,6 +23,7 @@ import tempfile
 import time
 import subprocess
 import shutil
+from datetime import datetime, timedelta
 from pathlib import Path
 
 
@@ -32,6 +33,21 @@ REQUIRED_HEADERS = {
     "nama_uker",
     "produk",
     "saldo",
+}
+
+INDONESIAN_MONTHS = {
+    "januari": "january",
+    "februari": "february",
+    "maret": "march",
+    "april": "april",
+    "mei": "may",
+    "juni": "june",
+    "juli": "july",
+    "agustus": "august",
+    "september": "september",
+    "oktober": "october",
+    "november": "november",
+    "desember": "december",
 }
 
 
@@ -156,6 +172,47 @@ def normalize_header_name(header_name: str) -> str:
     }
 
     return aliases.get(normalized, normalized.lower())
+
+
+def normalize_locale_date_text(value: str) -> str:
+    normalized = value.strip()
+    for source, target in INDONESIAN_MONTHS.items():
+        normalized = re.sub(rf"\b{source}\b", target, normalized, flags=re.IGNORECASE)
+    return normalized
+
+
+def normalize_date_value(value: object) -> str | None:
+    text = normalize_cell(value)
+    if text == "":
+        return None
+
+    if re.fullmatch(r"\d+(?:\.\d+)?", text):
+        try:
+            serial = float(text)
+        except Exception:
+            serial = -1
+        if 20000 <= serial <= 80000:
+            try:
+                return (datetime(1899, 12, 30) + timedelta(days=serial)).strftime("%Y-%m-%d")
+            except Exception:
+                return None
+
+    normalized = normalize_locale_date_text(text).replace("/", "-")
+
+    for date_format in ("%Y-%m-%d", "%d %B %Y", "%d %b %Y", "%d-%m-%Y", "%d-%m-%y"):
+        try:
+            return datetime.strptime(normalized, date_format).strftime("%Y-%m-%d")
+        except Exception:
+            continue
+
+    try:
+        from dateutil import parser as dateutil_parser
+
+        return dateutil_parser.parse(normalized, dayfirst=True, yearfirst=False).strftime("%Y-%m-%d")
+    except Exception:
+        pass
+
+    return None
 
 
 def normalize_decimal_value(value: object) -> str | None:
@@ -310,6 +367,8 @@ def sanitize_source(
 
                 if header == "saldo":
                     normalized_value = normalize_decimal_value(raw_value)
+                elif header == "month_day_year_of_posisi":
+                    normalized_value = normalize_date_value(raw_value)
                 elif header in {"tgl", "tahun"}:
                     normalized_value = normalize_integer_value(raw_value)
                 else:

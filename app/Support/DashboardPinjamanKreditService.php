@@ -187,14 +187,23 @@ class DashboardPinjamanKreditService
             'kur_kpp_npl',
         ];
 
-        $records = DB::table(self::SNAPSHOT_TABLE)
+        $query = DB::table(self::SNAPSHOT_TABLE)
             ->select($requiredColumns)
             ->whereIn('snapshot_period', $periods)
             ->whereIn('kanca_label', $branches)
             ->whereRaw('unit_label = kanca_label') // Only aggregate rows
-            ->orderBy('snapshot_period')
-            ->orderByRaw("FIELD(kanca_label, '" . implode("','", $branches) . "')")
-            ->get();
+            ->orderBy('snapshot_period');
+
+        if (in_array(DB::connection()->getDriverName(), ['mysql', 'mariadb'], true)) {
+            $query->orderByRaw("FIELD(kanca_label, '" . implode("','", array_map(
+                static fn (string $branch): string => str_replace("'", "''", $branch),
+                $branches
+            )) . "')");
+        } else {
+            $query->orderBy('kanca_label');
+        }
+
+        $records = $query->get();
 
         foreach ($records as $record) {
             $key = "{$record->snapshot_period}|{$record->kanca_label}";
@@ -314,7 +323,7 @@ class DashboardPinjamanKreditService
      */
     private function loadRkaForSegment(string $selectedPeriod, string $segment, array $branches): array
     {
-        $cacheKey = 'sme_segment_rka_v4_micro_loan_scope:' . md5($selectedPeriod . '|' . $segment . '|' . implode(',', $branches));
+        $cacheKey = 'sme_segment_rka_v5_kanca_summary_fallback:' . md5($selectedPeriod . '|' . $segment . '|' . implode(',', $branches));
 
         // Check local cache first
         if (isset($this->rkaCache[$cacheKey])) {
@@ -341,27 +350,20 @@ class DashboardPinjamanKreditService
             $categories = $this->getCategoriesForSegment($segment);
             $rkaData = [];
 
-            // Map branches - detect regional branches that are stored in desc_uker
-            $kancaFilters = [];  // Direct kanca filters (e.g., "KC PONOROGO")
-            $regionFilters = []; // Regional filters for desc_uker (e.g., "MADIUN")
-            
+            $kancaFilters = [];
+
             foreach ($branches as $branch) {
                 $normalized = $this->normalizeBranchForRka($branch);
                 if ($normalized === '') continue;
-                
-                // Detect if this is a regional branch stored in desc_uker
-                if (in_array($normalized, ['KC MADIUN', 'KC NGAWI', 'KC MAGETAN'], true)) {
-                    // These are stored in KC Ponorogo's desc_uker field
-                    $regionFilters[] = substr($normalized, 3); // Extract "MADIUN" from "KC MADIUN"
-                } else {
-                    $kancaFilters[] = $normalized;
-                }
+
+                $kancaFilters[] = $normalized;
             }
+
+            $kancaFilters = array_values(array_unique($kancaFilters));
 
             \Log::debug('RKA Branch Mapping', [
                 'original_branches' => $branches,
                 'kanca_filters' => $kancaFilters,
-                'region_filters' => $regionFilters,
                 'period' => $selectedPeriod,
                 'segment' => $segment,
             ]);
@@ -371,7 +373,6 @@ class DashboardPinjamanKreditService
                 $definitions = $this->getRkaDefinitions($segment, $type);
                 $rkaData[$type] = [];
 
-                // Load direct kanca data if any
                 if (!empty($kancaFilters)) {
                     $rkaM1 = $this->getRkaLookupService()->aggregateByGroup(
                         $definitions,
@@ -391,54 +392,46 @@ class DashboardPinjamanKreditService
                         $currentYear
                     );
 
-                    // Process direct kanca data
+                    // Some SME branches keep the loan KPI only on the KC summary
+                    // row, while others have KCP detail rows. Use detail first and
+                    // only fall back to the KC summary when the detail result is 0.
+                    $rkaM1Summary = $this->getRkaLookupService()->aggregateByGroup(
+                        $definitions,
+                        $m1Month,
+                        array_values($kancaFilters),
+                        array_values($kancaFilters),
+                        'kanca',
+                        $m1Year
+                    );
+
+                    $rkaCurrentSummary = $this->getRkaLookupService()->aggregateByGroup(
+                        $definitions,
+                        $currentMonth,
+                        array_values($kancaFilters),
+                        array_values($kancaFilters),
+                        'kanca',
+                        $currentYear
+                    );
+
                     foreach ($categories as $category) {
                         $rkaData[$type][$category] = $rkaData[$type][$category] ?? [];
                         foreach ($kancaFilters as $branchKey) {
                             $definitionKey = $this->getCategoryToDefinitionKey($segment, $category, $type);
+                            $m1Value = (float) ($rkaM1[$definitionKey][$branchKey] ?? 0);
+                            $currentValue = (float) ($rkaCurrent[$definitionKey][$branchKey] ?? 0);
+
+                            if (abs($m1Value) <= 0.00001) {
+                                $m1Value = (float) ($rkaM1Summary[$definitionKey][$branchKey] ?? 0);
+                            }
+
+                            if (abs($currentValue) <= 0.00001) {
+                                $currentValue = (float) ($rkaCurrentSummary[$definitionKey][$branchKey] ?? 0);
+                            }
+
                             $rkaData[$type][$category][$branchKey] = [
-                                'm1' => (float) ($rkaM1[$definitionKey][$branchKey] ?? 0),
-                                'current' => (float) ($rkaCurrent[$definitionKey][$branchKey] ?? 0),
+                                'm1' => $m1Value,
+                                'current' => $currentValue,
                             ];
-                        }
-                    }
-                }
-
-                // Load regional data from desc_uker if any
-                if (!empty($regionFilters)) {
-                    $rkaM1Regional = $this->getRkaLookupService()->aggregateByGroupWithRegionalFilter(
-                        $definitions,
-                        $m1Month,
-                        $regionFilters,
-                        $m1Year
-                    );
-
-                    $rkaCurrentRegional = $this->getRkaLookupService()->aggregateByGroupWithRegionalFilter(
-                        $definitions,
-                        $currentMonth,
-                        $regionFilters,
-                        $currentYear
-                    );
-
-                    // Process regional data
-                    foreach ($categories as $category) {
-                        $rkaData[$type][$category] = $rkaData[$type][$category] ?? [];
-                        foreach ($regionFilters as $region) {
-                            $branchKey = 'KC ' . $region; // Reconstruct full branch name
-                            $definitionKey = $this->getCategoryToDefinitionKey($segment, $category, $type);
-                            $rkaData[$type][$category][$branchKey] = [
-                                'm1' => (float) ($rkaM1Regional[$definitionKey][$region] ?? 0),
-                                'current' => (float) ($rkaCurrentRegional[$definitionKey][$region] ?? 0),
-                            ];
-
-                            \Log::debug("RKA Regional Data", [
-                                'region' => $region,
-                                'branch_key' => $branchKey,
-                                'category' => $category,
-                                'type' => $type,
-                                'm1' => $rkaM1Regional[$definitionKey][$region] ?? 0,
-                                'current' => $rkaCurrentRegional[$definitionKey][$region] ?? 0,
-                            ]);
                         }
                     }
                 }

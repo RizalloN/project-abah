@@ -73,7 +73,8 @@ class BackfillShadowColumnsCommand extends Command
                     $chunkSize,
                     $delay,
                     $retryCount,
-                    $queueName
+                    $queueName,
+                    $skipSnapshot
                 );
 
                 $this->info("✓ Shadow Backfill Job queued successfully");
@@ -128,7 +129,7 @@ class BackfillShadowColumnsCommand extends Command
 
         $requiredColumns = [
             'segmen_kinerja', 'produk_kinerja', 'cabang_normalized', 'unit_normalized',
-            'branch_normalized', 'rm_normalized', 'pn_pemutus_normalized', 'cifno_clean',
+            'branch_normalized', 'rm_normalized', 'cifno_clean',
         ];
 
         foreach ($requiredColumns as $col) {
@@ -415,7 +416,6 @@ class BackfillShadowColumnsCommand extends Command
             'unit_normalized',
             'branch_normalized',
             'rm_normalized',
-            'pn_pemutus_normalized',
             'cifno_clean',
         ];
     }
@@ -428,6 +428,14 @@ class BackfillShadowColumnsCommand extends Command
     {
         foreach ($requiredColumns as $column) {
             $query->orWhereNull($column);
+        }
+
+        if (Schema::hasColumn('daily_loan_dinamis', 'pn_pemutus_normalized')
+            && Schema::hasColumn('daily_loan_dinamis', 'pn_pemutus1')) {
+            $query->orWhere(function ($pnQuery): void {
+                $pnQuery->whereNull('pn_pemutus_normalized')
+                    ->whereRaw("LENGTH(TRIM(COALESCE(pn_pemutus1, ''))) > 0");
+            });
         }
 
         if (Schema::hasColumn('daily_loan_dinamis', 'shadow_built_at') && Schema::hasColumn('daily_loan_dinamis', 'updated_at')) {

@@ -4,6 +4,7 @@ namespace Tests\Unit;
 
 use App\Http\Controllers\Import\ImportExcelController;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -232,6 +233,96 @@ class ImportExcelControllerRkaManualKancaTest extends TestCase
         $this->assertSame(2026, DB::table('rka')->where('uniqueid_namareport', 'imp_testprefix_222_DLD')->value('tahun'));
         $this->assertNull(DB::table('rka')->where('uniqueid_namareport', 'imp_otherprefix_999_DLD')->value('kanca'));
         $this->assertNull(DB::table('rka')->where('uniqueid_namareport', 'imp_otherprefix_999_DLD')->value('tahun'));
+    }
+
+    public function test_rka_manual_kanca_apply_invalidates_optimized_lookup_cache(): void
+    {
+        Cache::forever('rka_data_version', 123);
+
+        $controller = new class extends ImportExcelController {
+            protected function schemaColumnsForBulkImport(string $tableName): array
+            {
+                return ['uniqueid_namareport', 'desc_kanwil', 'tahun', 'kanca', 'desc_uker', 'created_at', 'updated_at'];
+            }
+
+            protected function tableColumnMetadataForBulkImport(string $tableName): array
+            {
+                return [];
+            }
+        };
+
+        DB::table('rka')->insert([
+            'uniqueid_namareport' => 'imp_cacheprefix_111_DLD',
+            'desc_kanwil' => 'R-KANWIL MALANG',
+            'kanca' => null,
+            'desc_uker' => '3888-UNIT SLEKO MADIUN',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $method = new ReflectionMethod(ImportExcelController::class, 'applyManualColumnValuesAfterLoad');
+        $method->setAccessible(true);
+        $method->invoke($controller, 'rka', [
+            'manual_column_values' => ['kanca' => 'KC Madiun', 'tahun' => 2026],
+            'unique_id_col' => 'uniqueid_namareport',
+            'unique_id_prefix' => 'imp_cacheprefix_',
+            'table_columns_by_lower' => ['kanca' => 'kanca', 'tahun' => 'tahun'],
+        ], 1);
+
+        $this->assertNotSame(123, Cache::get('rka_data_version'));
+        $this->assertIsInt(Cache::get('rka_data_version'));
+    }
+
+    public function test_rka_manual_verification_fails_fast_and_removes_incomplete_batch(): void
+    {
+        $controller = new class extends ImportExcelController {
+            protected function schemaColumnsForBulkImport(string $tableName): array
+            {
+                return ['uniqueid_namareport', 'desc_kanwil', 'tahun', 'kanca', 'desc_uker', 'created_at', 'updated_at'];
+            }
+
+            protected function tableColumnMetadataForBulkImport(string $tableName): array
+            {
+                return [];
+            }
+        };
+
+        DB::table('rka')->insert([
+            [
+                'uniqueid_namareport' => 'imp_partialprefix_111_DLD',
+                'desc_kanwil' => 'R-KANWIL MALANG',
+                'kanca' => null,
+                'desc_uker' => '3888-UNIT SLEKO MADIUN',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'uniqueid_namareport' => 'imp_safeother_999_DLD',
+                'desc_kanwil' => 'R-KANWIL MALANG',
+                'kanca' => null,
+                'desc_uker' => 'OTHER ROW',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        $method = new ReflectionMethod(ImportExcelController::class, 'applyManualColumnValuesAfterLoad');
+        $method->setAccessible(true);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Import RKA dibatalkan');
+
+        try {
+            $method->invoke($controller, 'rka', [
+                'manual_column_values' => ['kanca' => 'KC Madiun', 'tahun' => 2026],
+                'unique_id_col' => 'uniqueid_namareport',
+                'unique_id_prefix' => 'imp_partialprefix_',
+                'table_columns_by_lower' => ['kanca' => 'kanca', 'tahun' => 'tahun'],
+            ], 2);
+        } finally {
+            $this->assertSame(0, DB::table('rka')->where('uniqueid_namareport', 'like', 'imp_partialprefix_%')->count());
+            $this->assertSame(1, DB::table('rka')->where('uniqueid_namareport', 'imp_safeother_999_DLD')->count());
+        }
     }
 
     public function test_rka_insert_rows_use_batch_prefix_on_uniqueid(): void

@@ -62,9 +62,13 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         $definitions = $reflection->invoke($service);
 
         $this->assertSame(['NPL % Total'], $definitions['total_npl_pct_non_commercial']['mata_anggaran']);
-        $this->assertSame(['A.1. DPK Retail Funding Total', 'A.2. DPK Korporasi'], $definitions['total_simpanan']['mata_anggaran']);
+        $this->assertSame(['A.1. DPK Retail Funding Total'], $definitions['total_simpanan']['mata_anggaran']);
         $this->assertSame(['KC', 'KCP'], $definitions['simpanan_ritel']['uker_contains_any']);
+        $this->assertTrue($definitions['simpanan_ritel']['include_kanca_summary']);
+        $this->assertTrue($definitions['giro_ritel']['include_kanca_summary']);
         $this->assertSame(['UNIT'], $definitions['simpanan_mikro']['uker_contains_any']);
+        $this->assertSame(['A.2.a. Giro Korporasi'], $definitions['simpanan_wholesale']['mata_anggaran']);
+        $this->assertSame([], $definitions['deposito_wholesale']['mata_anggaran']);
         $this->assertSame(['KC', 'KCP'], $definitions['kecil_non_cashcoll_os']['uker_contains_any']);
         $this->assertSame(['KC', 'KCP'], $definitions['briguna_konsumer_os']['uker_contains_any']);
         $this->assertSame(['KC', 'KCP'], $definitions['kpr_os']['uker_contains_any']);
@@ -85,7 +89,7 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         $this->assertSame(['NPL Rp KPP'], $definitions['kur_kpp_npl']['mata_anggaran']);
     }
 
-    public function test_finalize_rka_metrics_keeps_raw_total_os_value(): void
+    public function test_finalize_rka_metrics_keeps_raw_total_simpanan_and_total_os_values(): void
     {
         $service = new DashboardHarianSnapshotService();
 
@@ -124,11 +128,12 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         $this->assertSame(15.0, $result['sme_npl']);
         $this->assertSame(12.0, $result['consumer_npl']);
         $this->assertSame(47.0, $result['total_npl_abs_non_commercial']);
+        $this->assertSame(2000.0, $result['total_simpanan']);
         $this->assertSame(500.0, $result['casa_ritel']);
         $this->assertSame(300.0, $result['casa_mikro']);
         $this->assertSame(800.0, $result['total_casa']);
-        $this->assertSame(100.0, $result['casa_pct']);
-        $this->assertSame(1543.125, $result['ldr_non_commercial']);
+        $this->assertSame(40.0, $result['casa_pct']);
+        $this->assertSame(617.25, $result['ldr_non_commercial']);
         $this->assertSame(34.0, $result['ldr_ritel_non_commercial']);
         $this->assertEqualsWithDelta(6.6666666667, $result['ldr_mikro_non_commercial'], 0.0001);
     }
@@ -335,7 +340,7 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         $this->assertSame([['2026-04-21', false]], $service->builtPeriods);
     }
 
-    public function test_rebuild_affected_by_ph_period_force_rebuilds_next_shared_period_only(): void
+    public function test_rebuild_affected_by_ph_period_force_rebuilds_current_and_next_shared_period(): void
     {
         $this->createSourceMetadataTables();
 
@@ -368,9 +373,11 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         $result = $service->rebuildAffectedByPhPeriod('2026-04-20', true);
 
         $this->assertSame([
+            '2026-04-20' => 109,
             '2026-04-21' => 109,
         ], $result);
         $this->assertSame([
+            ['2026-04-20', true],
             ['2026-04-21', true],
         ], $service->builtPeriods);
     }
@@ -713,7 +720,7 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         $this->assertSame(600.0, (float) $row->kur_kpp_os);
     }
 
-    public function test_lw325_recovery_source_uses_previous_month_end_ph_before_snapshot_period(): void
+    public function test_lw325_recovery_source_uses_exact_snapshot_ph_and_previous_month_end_comparison(): void
     {
         $this->createSourceMetadataTables();
 
@@ -858,6 +865,46 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         $metadataBuilder = new \ReflectionMethod($service, 'buildSourceMetadata');
         $metadataBuilder->setAccessible(true);
         $metadata = $metadataBuilder->invoke($service, '2026-05-07');
+
+        $this->assertCount(0, $rows);
+        $this->assertNull($metadata['source_recovery_period']);
+        $this->assertSame(0, $metadata['source_recovery_row_count']);
+    }
+
+    public function test_ph_recovery_does_not_carry_latest_available_period_forward(): void
+    {
+        $this->createSourceMetadataTables();
+
+        DB::table('lw325_ph')->insert([
+            'periode' => '2026-04-30',
+            'acctno' => 'A1',
+            'kanca' => 'KC Madiun',
+            'unit' => 'Unit A',
+            'segmen_dashboard' => 'SMALL',
+            'pokok' => 100000000,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('lw325_ph')->insert([
+            'periode' => '2026-05-07',
+            'acctno' => 'A1',
+            'kanca' => 'KC Madiun',
+            'unit' => 'Unit A',
+            'segmen_dashboard' => 'SMALL',
+            'pokok' => 99000000,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $service = new DashboardHarianSnapshotService();
+
+        $aggregates = new \ReflectionMethod($service, 'fetchPhAggregates');
+        $aggregates->setAccessible(true);
+        $rows = $aggregates->invoke($service, '2026-05-11');
+
+        $metadataBuilder = new \ReflectionMethod($service, 'buildSourceMetadata');
+        $metadataBuilder->setAccessible(true);
+        $metadata = $metadataBuilder->invoke($service, '2026-05-11');
 
         $this->assertCount(0, $rows);
         $this->assertNull($metadata['source_recovery_period']);

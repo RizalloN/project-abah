@@ -465,9 +465,66 @@ class MySqlBulkLoadService
         ?callable $onProgress = null,
         ?int $totalLines = null
     ): int {
+        if (DB::connection()->getDriverName() !== 'mysql') {
+            return $this->loadCsvWithQueryBuilder($csvPath, $tableName, $columns, $onProgress, $totalLines);
+        }
+
         // Use optimized importer for 5-10x faster performance
         $importer = new OptimizedCsvImporter();
         return $importer->importCsvFast($csvPath, $tableName, $columns, $onProgress, $totalLines);
+    }
+
+    private function loadCsvWithQueryBuilder(
+        string $csvPath,
+        string $tableName,
+        array $columns,
+        ?callable $onProgress = null,
+        ?int $totalLines = null
+    ): int {
+        $handle = fopen($csvPath, 'rb');
+        if ($handle === false) {
+            throw new \RuntimeException("Cannot open CSV file: {$csvPath}");
+        }
+
+        $inserted = 0;
+        $batch = [];
+        $batchSize = 1000;
+
+        try {
+            while (($row = fgetcsv($handle)) !== false) {
+                if ($row === [null] || $row === false) {
+                    continue;
+                }
+
+                $record = [];
+                foreach ($columns as $index => $column) {
+                    $value = $row[$index] ?? null;
+                    $record[$column] = $value === '\\N' ? null : $value;
+                }
+
+                $batch[] = $record;
+                if (count($batch) >= $batchSize) {
+                    DB::table($tableName)->insert($batch);
+                    $inserted += count($batch);
+                    $batch = [];
+                    if ($onProgress !== null) {
+                        $onProgress($inserted, $totalLines ?? $inserted);
+                    }
+                }
+            }
+
+            if ($batch !== []) {
+                DB::table($tableName)->insert($batch);
+                $inserted += count($batch);
+                if ($onProgress !== null) {
+                    $onProgress($inserted, $totalLines ?? $inserted);
+                }
+            }
+        } finally {
+            fclose($handle);
+        }
+
+        return $inserted;
     }
 
 

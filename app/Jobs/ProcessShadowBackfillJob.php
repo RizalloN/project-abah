@@ -25,7 +25,8 @@ class ProcessShadowBackfillJob implements ShouldQueue
         public int $chunkSize = 50000,
         public int $sleepDelay = 0,
         public int $retryCount = 3,
-        ?string $queueName = null
+        ?string $queueName = null,
+        public bool $skipSnapshot = false
     ) {
         $this->onQueue($queueName ?: (string) config('queue.shadow_backfill_queue', 'shadow-backfill'));
     }
@@ -45,6 +46,7 @@ class ProcessShadowBackfillJob implements ShouldQueue
                 '--chunk-size' => $this->chunkSize,
                 '--delay' => $this->sleepDelay,
                 '--retry-count' => $this->retryCount,
+                '--skip-snapshot' => $this->skipSnapshot,
                 '--no-interaction' => true,
             ]);
 
@@ -57,6 +59,10 @@ class ProcessShadowBackfillJob implements ShouldQueue
 
             $completion = $this->checkCompletionStatus();
             if ($completion['overall_percentage'] >= 95.0) {
+                if (!$this->skipSnapshot) {
+                    $this->rebuildPerformanceRmSnapshots();
+                }
+
                 Log::warning("ProcessShadowBackfillJob: Partial backfill accepted (>95%); job will not be requeued", [
                     'completion' => $completion,
                 ]);
@@ -128,8 +134,15 @@ class ProcessShadowBackfillJob implements ShouldQueue
                         ->orWhereNull('unit_normalized')
                         ->orWhereNull('branch_normalized')
                         ->orWhereNull('rm_normalized')
-                        ->orWhereNull('pn_pemutus_normalized')
                         ->orWhereNull('cifno_clean');
+
+                    if (\Illuminate\Support\Facades\Schema::hasColumn('daily_loan_dinamis', 'pn_pemutus_normalized')
+                        && \Illuminate\Support\Facades\Schema::hasColumn('daily_loan_dinamis', 'pn_pemutus1')) {
+                        $q->orWhere(function ($pnQuery): void {
+                            $pnQuery->whereNull('pn_pemutus_normalized')
+                                ->whereRaw("LENGTH(TRIM(COALESCE(pn_pemutus1, ''))) > 0");
+                        });
+                    }
 
                     if (\Illuminate\Support\Facades\Schema::hasColumn('daily_loan_dinamis', 'shadow_built_at')
                         && \Illuminate\Support\Facades\Schema::hasColumn('daily_loan_dinamis', 'updated_at')) {
@@ -163,5 +176,20 @@ class ProcessShadowBackfillJob implements ShouldQueue
     private function getBackoffDelay(): int
     {
         return $this->backoff[min($this->attempts() - 1, count($this->backoff) - 1)] ?? 1800;
+    }
+
+    private function rebuildPerformanceRmSnapshots(): void
+    {
+        foreach ($this->periods as $period) {
+            $normalizedPeriod = trim((string) $period);
+            if ($normalizedPeriod === '') {
+                continue;
+            }
+
+            Artisan::call('snapshot:rebuild-rm', [
+                '--period' => $normalizedPeriod,
+                '--no-interaction' => true,
+            ]);
+        }
     }
 }

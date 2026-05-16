@@ -45,6 +45,24 @@ $snapshotWorkerCount = Get-IntSetting -Value $SnapshotWorkers -EnvName 'ABAH_SNA
 $shadowWorkerCount = Get-IntSetting -Value $ShadowWorkers -EnvName 'ABAH_SHADOW_WORKERS' -Default 2
 $queueWorkerMemory = Get-IntSetting -Value $WorkerMemory -EnvName 'ABAH_WORKER_MEMORY' -Default 512
 
+# Ensure schema is current before spawning workers. Critical for snapshot dirty-period
+# triggers (migration 2026_05_12_000002_create_dirty_marker_triggers.php) which let
+# CRUD on hourly_dpk, ssa_simpanan, etc. propagate to dashboard_harian_snapshots
+# automatically. If migrate fails we surface the error but continue so the user can
+# still bring up workers and diagnose.
+Write-Host 'Menjalankan php artisan migrate --force untuk memastikan trigger dirty-period dan schema terbaru terpasang...'
+try {
+    $migrateOutput = & php artisan migrate --force --no-interaction 2>&1
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host 'Migrate selesai. Trigger snapshot dirty-period dipastikan terpasang.'
+    } else {
+        Write-Warning ("php artisan migrate keluar dengan kode {0}. Output:`n{1}" -f $LASTEXITCODE, ($migrateOutput -join "`n"))
+        Write-Warning 'Worker tetap dijalankan, tetapi periksa migrasi sebelum mengandalkan auto-rebuild snapshot.'
+    }
+} catch {
+    Write-Warning ("Tidak dapat menjalankan php artisan migrate: {0}" -f $_.Exception.Message)
+}
+
 function Get-ProcessCommandCount {
     param([string]$Pattern)
 

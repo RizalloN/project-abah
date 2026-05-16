@@ -21,7 +21,7 @@ class ValidateShadowColumnsCommand extends Command
     protected $signature = 'shadow:validate
         {--periods= : Comma-separated periods (default: 2026-04-25,2026-04-26)}
         {--watch : Monitor with auto-refresh every 5 seconds}
-        {--verbose : Show detailed row samples}
+        {--details : Show detailed row samples}
         {--json : Output as JSON for automation}
     ';
 
@@ -34,7 +34,7 @@ class ValidateShadowColumnsCommand extends Command
         try {
             $periods = $this->getPeriods();
             $watch = (bool) $this->option('watch');
-            $verbose = (bool) $this->option('verbose');
+            $verbose = (bool) $this->option('details');
             $jsonOutput = (bool) $this->option('json');
 
             do {
@@ -98,7 +98,7 @@ class ValidateShadowColumnsCommand extends Command
 
     private function validatePeriod(string $period, bool $verbose): array
     {
-        $cacheKey = "shadow_validation:{$period}";
+        $cacheKey = "shadow_validation:v2:{$period}";
 
         if (!$this->option('watch')) {
             $cached = cache()->get($cacheKey);
@@ -146,9 +146,24 @@ class ValidateShadowColumnsCommand extends Command
             ->first();
 
         foreach ($shadowColumns as $column) {
-            $filledCount = $stats->{"filled_{$column}"};
-            $nullCount = $totalRows - $filledCount;
-            $fillPercentage = $totalRows > 0 ? (100.0 * $filledCount / $totalRows) : 100.0;
+            if ($column === 'pn_pemutus_normalized') {
+                $pnStats = DB::table('daily_loan_dinamis')
+                    ->where('periode', $period)
+                    ->selectRaw("
+                        SUM(CASE WHEN LENGTH(TRIM(COALESCE(pn_pemutus1, ''))) > 0 THEN 1 ELSE 0 END) as applicable_rows,
+                        SUM(CASE WHEN LENGTH(TRIM(COALESCE(pn_pemutus1, ''))) > 0 AND pn_pemutus_normalized IS NOT NULL THEN 1 ELSE 0 END) as filled_rows
+                    ")
+                    ->first();
+
+                $applicableRows = (int) ($pnStats->applicable_rows ?? 0);
+                $filledCount = (int) ($pnStats->filled_rows ?? 0);
+                $nullCount = max(0, $applicableRows - $filledCount);
+                $fillPercentage = $applicableRows > 0 ? (100.0 * $filledCount / $applicableRows) : 100.0;
+            } else {
+                $filledCount = $stats->{"filled_{$column}"};
+                $nullCount = $totalRows - $filledCount;
+                $fillPercentage = $totalRows > 0 ? (100.0 * $filledCount / $totalRows) : 100.0;
+            }
 
             $columnStats[$column] = [
                 'filled' => $filledCount,

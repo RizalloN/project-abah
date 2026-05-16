@@ -58,7 +58,7 @@ class ImportExcelControllerHourlyDpkTest extends TestCase
         $row = $mapMethod->invoke(
             $controller,
             [
-                'May 10, 2026',
+                '12 Mei 2026',
                 '00045 -- KC Madiun(Konsolidasi-MB)',
                 '00045 -- KC Madiun',
                 'KORPORASI',
@@ -76,11 +76,45 @@ class ImportExcelControllerHourlyDpkTest extends TestCase
         $this->assertArrayNotHasKey('updated_at', $row);
         $this->assertStringStartsWith('uuid_hourly_dpk_', $row['uniqueid_namareport']);
         $this->assertFalse(str_ends_with($row['uniqueid_namareport'], '_DLD'));
-        $this->assertSame('2026-05-10', $row['posisi']);
+        $this->assertSame('2026-05-12', $row['posisi']);
         $this->assertSame('00045 -- KC Madiun(Konsolidasi-MB)', $row['mbname']);
         $this->assertSame('00045 -- KC Madiun', $row['brname']);
         $this->assertSame('KORPORASI', $row['segmen']);
         $this->assertSame('GIRO', $row['produk']);
         $this->assertSame('13833797168.82', $row['saldo']);
+    }
+
+    public function test_indonesian_textual_dates_do_not_apply_to_other_import_tables(): void
+    {
+        $controller = new class extends ImportExcelController {
+            protected function schemaColumnsForBulkImport(string $tableName): array
+            {
+                return ['tanggal'];
+            }
+
+            protected function tableColumnMetadataForBulkImport(string $tableName): array
+            {
+                return [];
+            }
+        };
+
+        $headers = ['Tanggal'];
+
+        $contextMethod = new ReflectionMethod(ImportExcelController::class, 'buildImportContext');
+        $contextMethod->setAccessible(true);
+        $context = $contextMethod->invoke($controller, 'generic_report', $headers);
+
+        $mapMethod = new ReflectionMethod(ImportExcelController::class, 'mapExcelRowForInsert');
+        $mapMethod->setAccessible(true);
+        $row = $mapMethod->invoke(
+            $controller,
+            ['12 Mei 2026'],
+            $headers,
+            $context,
+            '2026-05-12 08:00:00'
+        );
+
+        $this->assertIsArray($row);
+        $this->assertNull($row['tanggal']);
     }
 }

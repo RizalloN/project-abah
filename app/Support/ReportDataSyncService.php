@@ -150,7 +150,12 @@ class ReportDataSyncService
         }
 
         $this->refreshTableStatistics($normalizedTable, $periodHint, $jobId, $source);
-        $this->markSnapshotDirtyAfterSourceMutation($normalizedTable, $periodHint, $source ?? static::class . '::syncImportedTable');
+        $effectiveImportSource = $source ?? static::class . '::syncImportedTable';
+        $this->markSnapshotDirtyAfterSourceMutation($normalizedTable, $periodHint, $effectiveImportSource);
+        // Composite snapshots (dashboard_harian) are built from multiple sources;
+        // a single source import must mark the composite period dirty so the
+        // drain pipeline rebuilds the shared dashboard for that period too.
+        $this->markDashboardHarianCompositeDirty($normalizedTable, $periodHint, $effectiveImportSource);
 
         try {
             $newVersion = $this->bumpReportCacheVersion($this->cacheScopeForTable($normalizedTable));
@@ -333,10 +338,14 @@ class ReportDataSyncService
                     ->count();
                 $completion = $total > 0 ? round((100 * ($total - $remaining)) / $total, 2) : 100.0;
 
-                $this->writeAudit('daily_loan_dinamis', $normalizedPeriod, $jobId, $source, 'shadow_backfill_pre_snapshot', $exitCode === 0 ? 'success' : 'failed', [
+                $ready = $exitCode === 0 && $remaining <= 0;
+
+                $this->writeAudit('daily_loan_dinamis', $normalizedPeriod, $jobId, $source, 'shadow_backfill_pre_snapshot', $ready ? 'success' : 'failed', [
                     'duration_ms' => $this->elapsedMs($startedAt),
                     'affected_rows' => max(0, $missing - $remaining),
-                    'message' => $exitCode === 0 ? null : 'Shadow backfill command returned exit code ' . $exitCode,
+                    'message' => $ready ? null : ($exitCode === 0
+                        ? 'Shadow backfill finished but required shadow columns are still incomplete.'
+                        : 'Shadow backfill command returned exit code ' . $exitCode),
                     'context' => [
                         'missing_before' => $missing,
                         'missing_after' => $remaining,
@@ -345,7 +354,7 @@ class ReportDataSyncService
                     ],
                 ]);
 
-                if ($exitCode !== 0 || $completion < 95.0) {
+                if (!$ready) {
                     throw new \RuntimeException(sprintf(
                         'Shadow column Daily Loan periode %s belum siap untuk snapshot (%.2f%% lengkap, sisa %s row).',
                         $normalizedPeriod,
@@ -408,7 +417,6 @@ class ReportDataSyncService
             'unit_normalized',
             'branch_normalized',
             'rm_normalized',
-            'pn_pemutus_normalized',
             'cifno_clean',
         ];
 
@@ -423,6 +431,14 @@ class ReportDataSyncService
             ->where(function ($query) use ($requiredColumns) {
                 foreach ($requiredColumns as $column) {
                     $query->orWhereNull($column);
+                }
+
+                if (Schema::hasColumn('daily_loan_dinamis', 'pn_pemutus_normalized')
+                    && Schema::hasColumn('daily_loan_dinamis', 'pn_pemutus1')) {
+                    $query->orWhere(function ($pnQuery): void {
+                        $pnQuery->whereNull('pn_pemutus_normalized')
+                            ->whereRaw("LENGTH(TRIM(COALESCE(pn_pemutus1, ''))) > 0");
+                    });
                 }
 
                 if (Schema::hasColumn('daily_loan_dinamis', 'shadow_built_at') && Schema::hasColumn('daily_loan_dinamis', 'updated_at')) {
@@ -854,6 +870,19 @@ class ReportDataSyncService
 
         $this->refreshTableStatistics($normalizedTable, $periodHint, null, $source ?? static::class . '::syncAfterDeleteLightweight');
 
+        $effectiveSource = $source ?? static::class . '::syncAfterDeleteLightweight';
+
+        // Managed delete suppresses @skip_snapshot_invalidation, so DB triggers do
+        // not fire for delete chunks. Mark the affected period dirty here as a
+        // fallback so the drain pipeline can rebuild downstream dashboards.
+        $this->markSnapshotDirtyAfterSourceMutation($normalizedTable, $periodHint, $effectiveSource);
+
+        // For snapshot source tables, mutating one source may invalidate
+        // dashboard_harian_snapshots which is built from a composite of sources.
+        // Mark the period dirty under the same target so the drain rebuilds it
+        // even when the mutation table itself does not own the snapshot.
+        $this->markDashboardHarianCompositeDirty($normalizedTable, $periodHint, $effectiveSource);
+
         try {
             $newVersion = $this->bumpReportCacheVersion($this->cacheScopeForTable($normalizedTable));
             $this->writeAudit($normalizedTable, $periodHint, null, $source, 'cache_invalidate_lightweight', 'success', [
@@ -867,6 +896,86 @@ class ReportDataSyncService
                 'table' => $normalizedTable,
             ]);
         }
+    }
+
+    /**
+     * Compose-source mutations (any of the daily/SSA/PH/dpk/simpanan tables) feed
+     * into dashboard_harian_snapshots which is shared. Mark that composite dirty
+     * so the drain rebuilds it even when only a single source mutated, regardless
+     * of which exact table triggered the dirty event.
+     */
+    private function markDashboardHarianCompositeDirty(string $tableName, ?string $periodHint, ?string $source): void
+    {
+        $normalizedTable = strtolower(trim($tableName));
+        $period = trim((string) $periodHint);
+
+        if ($period === '' || !in_array($normalizedTable, [
+            'daily_loan_dinamis',
+            'simpanan_multipn',
+            'ssa_simpanan',
+            'ssa_pinjaman',
+            'hourly_dpk',
+            'lw325_ph',
+        ], true)) {
+            return;
+        }
+
+        // Only mark when there is actually composite content for the period.
+        // This avoids creating phantom dirty rows for periods that never had any
+        // data in dashboard_harian's upstream sources.
+        try {
+            $hasCompositeData = $this->dashboardHarianHasSourcesFor($period);
+        } catch (Throwable $e) {
+            $hasCompositeData = true; // assume yes when we cannot tell
+        }
+
+        if (!$hasCompositeData) {
+            return;
+        }
+
+        try {
+            // Re-use the same dirty service. We use the originating table as the
+            // source_table so triggers and audits stay traceable. The drain
+            // pipeline already rebuilds dashboard_harian when any of these
+            // sources is marked dirty for the period.
+            app(SnapshotDirtyPeriodService::class)->mark($normalizedTable, $period, 'period', '*');
+            $this->writeAudit($normalizedTable, $period, null, $source, 'snapshot_dirty_mark_composite', 'success');
+        } catch (Throwable $e) {
+            $this->writeAudit($normalizedTable, $period, null, $source, 'snapshot_dirty_mark_composite', 'failed', [
+                'message' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function dashboardHarianHasSourcesFor(string $period): bool
+    {
+        $checks = [
+            'hourly_dpk' => 'posisi',
+            'ssa_simpanan' => 'Month_Day_Year_of_Posisi',
+            'ssa_pinjaman' => 'month_day_year_of_periode',
+            'lw325_ph' => 'periode',
+            'daily_loan_dinamis' => 'periode',
+            'simpanan_multipn' => 'posisi',
+        ];
+
+        foreach ($checks as $table => $column) {
+            try {
+                if (!Schema::hasTable($table) || !Schema::hasColumn($table, $column)) {
+                    continue;
+                }
+                $hasRow = DB::table($table)
+                    ->whereRaw('DATE(`' . str_replace('`', '``', $column) . '`) = ?', [$period])
+                    ->limit(1)
+                    ->exists();
+                if ($hasRow) {
+                    return true;
+                }
+            } catch (Throwable) {
+                continue;
+            }
+        }
+
+        return false;
     }
 
     public function resolvePostDeleteMaintenanceMode(string $tableName): string

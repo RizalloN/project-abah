@@ -328,7 +328,7 @@ class ManagedReportDeleteTest extends TestCase
         $this->assertFalse($initPayload['is_waiting_on_batch']);
         $this->assertSame('queued', $initPayload['batch_state']);
 
-        Cache::store('file')->put($this->managedDeleteStateCacheKey($initPayload['delete_id']), array_merge($initPayload, [
+        Cache::store()->put($this->managedDeleteStateCacheKey($initPayload['delete_id']), array_merge($initPayload, [
             'delete_id' => $initPayload['delete_id'],
             'status' => 'running',
             'stage' => 'deleting',
@@ -378,7 +378,7 @@ class ManagedReportDeleteTest extends TestCase
             $controller,
             $initPayload['delete_id'],
             $syncService,
-            Cache::store('file')->get($this->managedDeleteStateCacheKey($initPayload['delete_id']))
+            Cache::store()->get($this->managedDeleteStateCacheKey($initPayload['delete_id']))
         );
 
         $this->assertSame('running', $firstPayload['status']);
@@ -393,7 +393,7 @@ class ManagedReportDeleteTest extends TestCase
             $controller,
             $initPayload['delete_id'],
             $syncService,
-            Cache::store('file')->get($this->managedDeleteStateCacheKey($initPayload['delete_id']))
+            Cache::store()->get($this->managedDeleteStateCacheKey($initPayload['delete_id']))
         );
 
         $this->assertSame('running', $secondPayload['status']);
@@ -408,14 +408,14 @@ class ManagedReportDeleteTest extends TestCase
             $controller,
             $initPayload['delete_id'],
             $syncService,
-            Cache::store('file')->get($this->managedDeleteStateCacheKey($initPayload['delete_id']))
+            Cache::store()->get($this->managedDeleteStateCacheKey($initPayload['delete_id']))
         );
 
         $finalPayload = $advanceMethod->invoke(
             $controller,
             $initPayload['delete_id'],
             $syncService,
-            Cache::store('file')->get($this->managedDeleteStateCacheKey($initPayload['delete_id']))
+            Cache::store()->get($this->managedDeleteStateCacheKey($initPayload['delete_id']))
         );
 
         $this->assertSame('completed', $finalPayload['status']);
@@ -556,7 +556,7 @@ class ManagedReportDeleteTest extends TestCase
 
         $controller = app(ImportIndexController::class);
         $deleteId = 'delete-audit-1';
-        Cache::store('file')->put($this->managedDeleteStateCacheKey($deleteId), [
+        Cache::store()->put($this->managedDeleteStateCacheKey($deleteId), [
             'delete_id' => $deleteId,
             'status' => 'running',
             'stage' => 'deleting',
@@ -585,7 +585,7 @@ class ManagedReportDeleteTest extends TestCase
 
         $method = new \ReflectionMethod($controller, 'processDeleteChunk');
         $method->setAccessible(true);
-        $result = $method->invoke($controller, Cache::store('file')->get($this->managedDeleteStateCacheKey($deleteId)));
+        $result = $method->invoke($controller, Cache::store()->get($this->managedDeleteStateCacheKey($deleteId)));
 
         $this->assertSame(2, $result['deleted_rows']);
         $this->assertDatabaseHas('report_sync_audits', [
@@ -1032,6 +1032,61 @@ class ManagedReportDeleteTest extends TestCase
         $this->assertSame(1, DB::table('lw325_ph')->count());
         $this->assertSame(1, DB::table('lw325_ph')->where('kanca', 'KC Ponorogo')->count());
         Queue::assertNothingPushed();
+    }
+
+    public function test_lw321_micro_tables_can_use_full_table_delete_shortcut(): void
+    {
+        $controller = app(ImportIndexController::class);
+        $method = new \ReflectionMethod($controller, 'shouldUseManagedDeleteFullTableShortcut');
+        $method->setAccessible(true);
+
+        foreach (['lw321_npd', 'lw321_npdd'] as $tableName) {
+            $this->assertTrue($method->invoke($controller, [
+                'table_name' => $tableName,
+                'candidate_rows' => 25,
+                'table_total_rows' => 25,
+                'hard_force' => true,
+            ]));
+
+            $this->assertFalse($method->invoke($controller, [
+                'table_name' => $tableName,
+                'candidate_rows' => 25,
+                'table_total_rows' => 25,
+                'hard_force' => false,
+            ]));
+        }
+    }
+
+    public function test_lw321_micro_exact_branch_scope_can_use_direct_delete_without_limit(): void
+    {
+        $controller = app(ImportIndexController::class);
+        $method = new \ReflectionMethod($controller, 'shouldUseDirectDeleteWithoutLimit');
+        $method->setAccessible(true);
+
+        foreach (['lw321_npd', 'lw321_npdd'] as $tableName) {
+            $this->assertTrue($method->invoke(
+                $controller,
+                $tableName,
+                'periode',
+                'kanca',
+                [
+                    ['column' => 'periode', 'mode' => 'equal', 'value' => '2026-05-12'],
+                    ['column' => 'kanca', 'mode' => 'equal', 'value' => 'KC Madiun'],
+                ],
+                50000
+            ));
+
+            $this->assertFalse($method->invoke(
+                $controller,
+                $tableName,
+                'periode',
+                'kanca',
+                [
+                    ['column' => 'periode', 'mode' => 'equal', 'value' => '2026-05-12'],
+                ],
+                50000
+            ));
+        }
     }
 
     public function test_lw325_report_management_groups_blank_period_and_blank_kanca_by_created_at(): void
@@ -1538,7 +1593,7 @@ class ManagedReportDeleteTest extends TestCase
         ]);
 
         $deleteId = 'delete-process-fallback-1';
-        Cache::store('file')->put($this->managedDeleteStateCacheKey($deleteId), [
+        Cache::store()->put($this->managedDeleteStateCacheKey($deleteId), [
             'delete_id' => $deleteId,
             'status' => 'running',
             'stage' => 'queued',
@@ -1703,7 +1758,7 @@ class ManagedReportDeleteTest extends TestCase
     {
         $deleteId = (string) \Illuminate\Support\Str::uuid();
 
-        Cache::store('file')->put($this->managedDeleteStateCacheKey($deleteId), [
+        Cache::store()->put($this->managedDeleteStateCacheKey($deleteId), [
             'delete_id' => $deleteId,
             'status' => 'running',
             'stage' => 'deleting',
@@ -1739,7 +1794,7 @@ class ManagedReportDeleteTest extends TestCase
     {
         $deleteId = (string) \Illuminate\Support\Str::uuid();
 
-        Cache::store('file')->put($this->managedDeleteStateCacheKey($deleteId), [
+        Cache::store()->put($this->managedDeleteStateCacheKey($deleteId), [
             'delete_id' => $deleteId,
             'status' => 'failed',
             'stage' => 'failed',
@@ -1816,7 +1871,7 @@ class ManagedReportDeleteTest extends TestCase
             'payload' => 'a:2:{s:7:"jobClass";s:24:"RunManagedReportDeleteJob";s:8:"deleteId";s:36:"' . $deleteId . '";}',
         ]);
 
-        Cache::store('file')->forget($this->managedDeleteStateCacheKey($deleteId));
+        Cache::store()->forget($this->managedDeleteStateCacheKey($deleteId));
 
         $controller = app(ImportIndexController::class);
         $response = $controller->forceStopManagedReportDelete($deleteId);
@@ -1828,7 +1883,7 @@ class ManagedReportDeleteTest extends TestCase
         $this->assertSame('Delete dibatalkan aman sebelum perubahan data lanjut diproses.', $payload['message']);
         $this->assertSame(0, DB::table('jobs')->count());
 
-        $storedState = Cache::store('file')->get($this->managedDeleteStateCacheKey($deleteId));
+        $storedState = Cache::store()->get($this->managedDeleteStateCacheKey($deleteId));
         $this->assertIsArray($storedState);
         $this->assertSame('warning', $storedState['status']);
         $this->assertSame('cancelled', $storedState['stage']);

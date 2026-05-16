@@ -67,7 +67,7 @@
                         'showTargets' => true,
                         'showTargetColumns' => $selectedSegmen !== 'SMALL',
                         'showAchievementColumns' => true,
-                        'showLarColumn' => true,
+                        'showLarColumn' => $selectedSegmen !== 'CONSUMER',
                         'compact' => false,
                         'grandTotalLabel' => 'GRAND TOTAL ' . ($selectedProductLabel === 'Semua Produk' ? 'RM' : strtoupper($selectedProductLabel)),
                         'emptyMessage' => 'Silakan pilih parameter filter yang berbeda.',

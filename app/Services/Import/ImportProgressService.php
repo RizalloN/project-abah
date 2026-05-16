@@ -729,18 +729,27 @@ class ImportProgressService
         $progress = $this->importCache()->get($this->cacheKey($jobId));
         $progress = is_array($progress) ? $progress : [];
 
-        $totalRows = max(
-            0,
-            (int) ($job->total_files ?? 0),
-            (int) ($progress['total_rows'] ?? 0)
-        );
-        $success = (int) ($progress['total_success'] ?? $job->total_success ?? 0);
-        $failed = (int) ($progress['total_failed'] ?? $job->total_failed ?? 0);
-        $processed = max($success + $failed, (int) ($progress['processed_rows'] ?? 0));
-        if ($totalRows < $processed) {
-            $totalRows = $processed;
+        $isTerminal = in_array((string) $job->status, ['completed', 'failed', 'failed_partial', 'terminated'], true);
+        if ($isTerminal) {
+            $success = (int) ($job->total_success ?? 0);
+            $failed = (int) ($job->total_failed ?? 0);
+            $processed = $success + $failed;
+            $totalRows = max(0, (int) ($job->total_files ?? 0), $processed);
+            $percent = $totalRows > 0 ? (int) round(($processed / $totalRows) * 100) : 0;
+        } else {
+            $totalRows = max(
+                0,
+                (int) ($job->total_files ?? 0),
+                (int) ($progress['total_rows'] ?? 0)
+            );
+            $success = (int) ($progress['total_success'] ?? $job->total_success ?? 0);
+            $failed = (int) ($progress['total_failed'] ?? $job->total_failed ?? 0);
+            $processed = max($success + $failed, (int) ($progress['processed_rows'] ?? 0));
+            if ($totalRows < $processed) {
+                $totalRows = $processed;
+            }
+            $percent = (int) ($progress['percent'] ?? ($totalRows > 0 ? round(($processed / $totalRows) * 100) : 0));
         }
-        $percent = (int) ($progress['percent'] ?? ($totalRows > 0 ? round(($processed / $totalRows) * 100) : 0));
         $queuedAt = null;
         $queuedForSeconds = null;
         $isStaleQueue = false;
@@ -1392,6 +1401,10 @@ class ImportProgressService
     private function importCache()
     {
         $store = trim((string) config('import.cache_store', 'file'));
+
+        if ($store === '') {
+            return Cache::getFacadeRoot();
+        }
 
         return $store !== '' ? Cache::store($store) : Cache::store();
     }

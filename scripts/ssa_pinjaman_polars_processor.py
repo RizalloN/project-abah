@@ -22,6 +22,7 @@ import tempfile
 import time
 import subprocess
 import shutil
+from datetime import datetime, timedelta
 from pathlib import Path
 
 
@@ -31,6 +32,21 @@ REQUIRED_HEADERS = {
     "nama_uker",
     "produk",
     "baki_debet",
+}
+
+INDONESIAN_MONTHS = {
+    "januari": "january",
+    "februari": "february",
+    "maret": "march",
+    "april": "april",
+    "mei": "may",
+    "juni": "june",
+    "juli": "july",
+    "agustus": "august",
+    "september": "september",
+    "oktober": "october",
+    "november": "november",
+    "desember": "december",
 }
 
 
@@ -161,6 +177,47 @@ def normalize_header_name(header_name: str) -> str:
     }
 
     return aliases.get(normalized, normalized.lower())
+
+
+def normalize_locale_date_text(value: str) -> str:
+    normalized = value.strip()
+    for source, target in INDONESIAN_MONTHS.items():
+        normalized = re.sub(rf"\b{source}\b", target, normalized, flags=re.IGNORECASE)
+    return normalized
+
+
+def normalize_date_value(value: object) -> str | None:
+    text = normalize_cell(value)
+    if text == "":
+        return None
+
+    if re.fullmatch(r"\d+(?:\.\d+)?", text):
+        try:
+            serial = float(text)
+        except Exception:
+            serial = -1
+        if 20000 <= serial <= 80000:
+            try:
+                return (datetime(1899, 12, 30) + timedelta(days=serial)).strftime("%Y-%m-%d")
+            except Exception:
+                return None
+
+    normalized = normalize_locale_date_text(text).replace("/", "-")
+
+    for date_format in ("%Y-%m-%d", "%d %B %Y", "%d %b %Y", "%d-%m-%Y", "%d-%m-%y"):
+        try:
+            return datetime.strptime(normalized, date_format).strftime("%Y-%m-%d")
+        except Exception:
+            continue
+
+    try:
+        from dateutil import parser as dateutil_parser
+
+        return dateutil_parser.parse(normalized, dayfirst=True, yearfirst=False).strftime("%Y-%m-%d")
+    except Exception:
+        pass
+
+    return None
 
 
 def normalize_decimal_value(value: object) -> str | None:
@@ -352,6 +409,8 @@ def sanitize_source_optimized(source_path: str, delimiter: str, max_rows: int | 
         for col in normalized_headers:
             if col == "baki_debet":
                 expr = pl.col(col).str.strip_chars().alias(col)
+            elif col == "month_day_year_of_periode":
+                expr = pl.col(col).map_elements(normalize_date_value, return_dtype=pl.Utf8).alias(col)
             elif col in {"tgl", "tahun", "jumlah_debitur_aktif", "jumlah_rekening_aktif"}:
                 expr = pl.col(col).str.strip_chars().alias(col)
             else:
@@ -470,6 +529,8 @@ def sanitize_source(source_path: str, delimiter: str, max_rows: int | None = Non
 
                     if header == "baki_debet":
                         normalized_value = normalize_decimal_value(raw_value)
+                    elif header == "month_day_year_of_periode":
+                        normalized_value = normalize_date_value(raw_value)
                     elif header in {"tgl", "tahun", "jumlah_debitur_aktif", "jumlah_rekening_aktif"}:
                         normalized_value = normalize_integer_value(raw_value)
                     else:
@@ -520,6 +581,13 @@ def stage_trusted_csv(config: dict, source_path: str, output_csv_path: str, deli
             for column in string_columns
         ])
 
+    if "month_day_year_of_periode" in df.columns:
+        df = df.with_columns(
+            pl.col("month_day_year_of_periode")
+            .map_elements(normalize_date_value, return_dtype=pl.Utf8)
+            .alias("month_day_year_of_periode")
+        )
+
     required_mask = (
         pl.col("month_day_year_of_periode").is_not_null() & (pl.col("month_day_year_of_periode") != "")
         & pl.col("nama_cabang").is_not_null() & (pl.col("nama_cabang") != "")
@@ -545,13 +613,13 @@ def stage_trusted_csv(config: dict, source_path: str, output_csv_path: str, deli
         load_cols = [c for c in (config.get("load_columns") or list(filtered_df.columns))]
         write_with_polars_bulk(filtered_df, output_csv_path, delimiter, load_columns=load_cols)
 
-            if mode == "import":
-                db_cfg = config.get("db") or {}
-                table = config.get("table") or config.get("target_table") or ""
-                if not db_cfg or not table:
-                    send_event("error", {"message": "DB config atau nama tabel tidak disediakan untuk mode import"})
-                else:
-                    execute_mysql_load(output_csv_path, db_cfg, table, load_cols, delimiter)
+        if mode == "import":
+            db_cfg = config.get("db") or {}
+            table = config.get("table") or config.get("target_table") or ""
+            if not db_cfg or not table:
+                send_event("error", {"message": "DB config atau nama tabel tidak disediakan untuk mode import"})
+            else:
+                execute_mysql_load(output_csv_path, db_cfg, table, load_cols, delimiter)
     else:
         write_with_polars(filtered_df, output_csv_path, delimiter)
 
@@ -575,6 +643,7 @@ def stage_trusted_csv(config: dict, source_path: str, output_csv_path: str, deli
             "rewritten": False,
             "backend": "polars_fast_path",
             "periods": periods,
+            "headers": list(filtered_df.columns),
         },
     )
 
@@ -837,10 +906,10 @@ def stage_ssa_pinjaman(config: dict) -> None:
             if mode == "import":
                 db_cfg = config.get("db") or {}
                 table = config.get("table") or config.get("target_table") or ""
-            if not db_cfg or not table:
-                send_event("error", {"message": "DB config atau nama tabel tidak disediakan untuk mode import"})
-            else:
-                execute_mysql_load(output_csv_path, db_cfg, table, load_cols, delimiter)
+                if not db_cfg or not table:
+                    send_event("error", {"message": "DB config atau nama tabel tidak disediakan untuk mode import"})
+                else:
+                    execute_mysql_load(output_csv_path, db_cfg, table, load_cols, delimiter)
         else:
             send_progress(80, "Menulis CSV bersih SSA Pinjaman untuk LOAD DATA...", written_rows, total_data_rows, 0, "", "polars")
             write_with_polars(df, output_csv_path, delimiter)
@@ -865,6 +934,7 @@ def stage_ssa_pinjaman(config: dict) -> None:
                 "rewritten": bool(rewrite_needed or structural_skipped > 0 or validation_skipped > 0),
                 "backend": "polars",
                 "periods": periods,
+                "headers": list(df.columns),
             },
         )
     finally:

@@ -7,7 +7,9 @@ use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Http\Exceptions\PostTooLargeException;
 use Illuminate\Queue\MaxAttemptsExceededException;
+use Illuminate\Session\TokenMismatchException;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -72,6 +74,30 @@ return Application::configure(basePath: dirname(__DIR__))
             }
 
             return redirect()->back()->with('error', $message);
+        });
+
+        $exceptions->render(function (HttpException $e, Request $request) {
+            if ($e->getStatusCode() !== 419
+                || !$e->getPrevious() instanceof TokenMismatchException
+                || !$request->isMethod('POST')
+                || !$request->is('login')) {
+                return null;
+            }
+
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'message' => 'Sesi login sudah kedaluwarsa. Silakan muat ulang halaman login.',
+                ], 419);
+            }
+
+            if (auth()->check()) {
+                return redirect()->route('dashboard');
+            }
+
+            return redirect()
+                ->route('login')
+                ->withInput($request->only('pn', 'remember'))
+                ->with('status', 'Sesi login sudah kedaluwarsa. Silakan masuk kembali.');
         });
 
         $exceptions->render(function (MaxAttemptsExceededException $e, Request $request) {

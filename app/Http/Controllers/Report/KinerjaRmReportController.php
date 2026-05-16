@@ -111,6 +111,17 @@ class KinerjaRmReportController extends Controller
         $rm = $request->input('rm');
         $segmen = $request->input('segmen');
         $selectedPeriod = $request->input('periode');
+
+        if (strtoupper(trim((string) $segmen)) === 'CONSUMER') {
+            return view('report.kinerjarm-detail-modal', [
+                'rm' => $rm,
+                'segmen' => $segmen,
+                'details' => $this->fetchConsumerSurplusHistoryDetails((string) $rm, (string) $selectedPeriod),
+                'detailMode' => 'consumer_surplus',
+                'formatAmount' => fn ($value, int $decimals = 0) => $this->formatAmountInJuta($value, $decimals),
+                'formatPercent' => fn ($value, int $decimals = 2) => $this->formatPercent($value, $decimals),
+            ]);
+        }
         
         $year = Carbon::parse($selectedPeriod)->year;
         
@@ -171,6 +182,138 @@ class KinerjaRmReportController extends Controller
             'formatAmount' => fn ($value, int $decimals = 0) => $this->formatAmountInJuta($value, $decimals),
             'formatPercent' => fn ($value, int $decimals = 2) => $this->formatPercent($value, $decimals),
         ]);
+    }
+
+    private function fetchConsumerSurplusHistoryDetails(string $rm, string $selectedPeriod): Collection
+    {
+        if (!Schema::hasTable(self::SOURCE_TABLE)) {
+            return collect();
+        }
+
+        $selectedDate = Carbon::parse($selectedPeriod);
+        $yearStart = $selectedDate->copy()->startOfYear()->toDateString();
+        $periodEnd = $selectedDate->toDateString();
+        $rmKeys = $this->consumerRmLookupKeys($rm);
+
+        $periods = DB::table(self::SOURCE_TABLE)
+            ->whereBetween('periode', [$yearStart, $periodEnd])
+            ->whereIn('segmen_kinerja', ['CONSUMER'])
+            ->whereIn('produk_kinerja', ['BRIGUNAKONSUMER', 'KPR'])
+            ->whereIn(DB::raw('UPPER(TRIM(pn_pengelola1))'), $rmKeys)
+            ->select('periode')
+            ->distinct()
+            ->orderBy('periode')
+            ->pluck('periode')
+            ->map(fn ($period) => (string) $period)
+            ->all();
+
+        $latestByMonth = [];
+        foreach ($periods as $period) {
+            $latestByMonth[substr($period, 0, 7)] = $period;
+        }
+
+        $details = collect();
+        foreach (array_reverse(array_values($latestByMonth)) as $period) {
+            $previousPeriod = $this->resolvePreviousMonthSourcePeriod($period);
+            if ($previousPeriod === null) {
+                continue;
+            }
+
+            $details = $details->merge($this->fetchConsumerSurplusAccountDetails($rmKeys, $period, $previousPeriod));
+        }
+
+        return $details->values();
+    }
+
+    private function resolvePreviousMonthSourcePeriod(string $period): ?string
+    {
+        $periodDate = Carbon::parse($period);
+        $previousStart = $periodDate->copy()->subMonthNoOverflow()->startOfMonth()->toDateString();
+        $previousEnd = $periodDate->copy()->subMonthNoOverflow()->endOfMonth()->toDateString();
+
+        $previousPeriod = DB::table(self::SOURCE_TABLE)
+            ->whereBetween('periode', [$previousStart, $previousEnd])
+            ->max('periode');
+
+        return $previousPeriod !== null ? (string) $previousPeriod : null;
+    }
+
+    private function fetchConsumerSurplusAccountDetails(array $rmKeys, string $period, string $previousPeriod): Collection
+    {
+        $previousPlafon = DB::table(self::SOURCE_TABLE)
+            ->where('periode', $previousPeriod)
+            ->whereIn('segmen_kinerja', ['CONSUMER'])
+            ->whereIn('produk_kinerja', ['BRIGUNAKONSUMER', 'KPR'])
+            ->whereNotNull('nomor_rekening1')
+            ->where('nomor_rekening1', '<>', '')
+            ->selectRaw('nomor_rekening1, MAX(COALESCE(plafon, 0)) as plafon')
+            ->groupBy('nomor_rekening1')
+            ->pluck('plafon', 'nomor_rekening1');
+
+        if ($previousPlafon->isEmpty()) {
+            return collect();
+        }
+
+        return DB::table(self::SOURCE_TABLE)
+            ->where('periode', $period)
+            ->whereIn('segmen_kinerja', ['CONSUMER'])
+            ->whereIn('produk_kinerja', ['BRIGUNAKONSUMER', 'KPR'])
+            ->whereIn(DB::raw('UPPER(TRIM(pn_pengelola1))'), $rmKeys)
+            ->whereNotNull('nomor_rekening1')
+            ->where('nomor_rekening1', '<>', '')
+            ->select([
+                'periode',
+                'nomor_rekening1',
+                'cabang1',
+                'unit1',
+                'pn_pengelola1',
+                'produk_dashboard',
+                'produk_kinerja',
+                'plafon',
+            ])
+            ->get()
+            ->map(function ($row) use ($previousPlafon, $period, $previousPeriod) {
+                $account = (string) ($row->nomor_rekening1 ?? '');
+                if (!$previousPlafon->has($account)) {
+                    return null;
+                }
+
+                $previous = (float) $previousPlafon->get($account);
+                $current = (float) ($row->plafon ?? 0);
+                $surplus = max(0.0, $current - $previous);
+                if ($surplus <= 0.0) {
+                    return null;
+                }
+
+                return [
+                    'periode' => Carbon::parse($period)->translatedFormat('d M Y'),
+                    'periode_raw' => $period,
+                    'previous_period' => Carbon::parse($previousPeriod)->translatedFormat('d M Y'),
+                    'account' => $account,
+                    'cabang' => trim((string) ($row->cabang1 ?? '')),
+                    'unit' => trim((string) ($row->unit1 ?? '')),
+                    'produk' => $this->normalizeProductLabel((string) ($row->produk_kinerja ?? $row->produk_dashboard ?? ''), 'CONSUMER')
+                        ?? strtoupper(trim((string) ($row->produk_dashboard ?? $row->produk_kinerja ?? ''))),
+                    'previous_plafon' => $previous,
+                    'current_plafon' => $current,
+                    'surplus_plafon' => $surplus,
+                ];
+            })
+            ->filter()
+            ->sortByDesc('surplus_plafon')
+            ->values();
+    }
+
+    private function consumerRmLookupKeys(string $rm): array
+    {
+        $normalized = strtoupper(trim($rm));
+        $keys = [$normalized];
+
+        if (str_starts_with($normalized, '00385844 - GLAGAH')) {
+            $keys[] = '00385844 -';
+        }
+
+        return array_values(array_unique(array_filter($keys)));
     }
 
     private function fetchAvailablePeriods(): Collection
@@ -328,16 +471,6 @@ class KinerjaRmReportController extends Controller
 
     private function resolveKinerjaRealisasiPeriod(string $selectedPeriod, array $comparisonPeriods): string
     {
-        $selectedDate = Carbon::parse($selectedPeriod);
-
-        if (!$selectedDate->isLastOfMonth()) {
-            $previousMonthPeriod = $comparisonPeriods['m1']['period'] ?? null;
-
-            if ($previousMonthPeriod !== null) {
-                return $previousMonthPeriod;
-            }
-        }
-
         return $selectedPeriod;
     }
 
@@ -357,7 +490,7 @@ class KinerjaRmReportController extends Controller
         $comparisonKeys = array_keys($comparisonPeriodValues);
         $emptyComparisonValues = array_fill_keys($comparisonKeys, 0.0);
 
-        $cacheKey = 'kinerja_rm_rows_v13:' . $this->reportCacheVersion() . ':' . md5(json_encode([
+        $cacheKey = 'kinerja_rm_rows_v14-consumer-surplus:' . $this->reportCacheVersion() . ':' . md5(json_encode([
             'segmen' => $segmen,
             'selected' => $selectedPeriod,
             'comparisons' => $comparisonPeriodValues,

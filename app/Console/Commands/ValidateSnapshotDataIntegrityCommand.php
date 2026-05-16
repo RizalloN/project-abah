@@ -172,6 +172,9 @@ class ValidateSnapshotDataIntegrityCommand extends Command
     {
         $sourceSegments = $this->getSourceSegments($segment);
         $sourceSegmentTokens = $this->getSourceSegmentTokens($segment);
+        $consumerSurplus = strtoupper(trim($segment)) === 'CONSUMER'
+            ? $this->getConsumerSurplusAggregate($period)
+            : null;
 
         $query = DB::table('daily_loan_dinamis')
             ->where('periode', $period);
@@ -185,15 +188,19 @@ class ValidateSnapshotDataIntegrityCommand extends Command
         return $query
             ->selectRaw('SUM(COALESCE(baki_debet1, 0)) as total_loan')
             ->selectRaw('SUM(CASE WHEN kol_adk1 = 1 THEN COALESCE(baki_debet1, 0) ELSE 0 END) as total_lancar')
-            ->selectRaw('SUM(CASE WHEN tgl_realisasi BETWEEN DATE_FORMAT(?, "%Y-%m-01") AND ? THEN COALESCE(plafon, 0) ELSE 0 END) as total_real', [
-                Carbon::parse($period)->startOfMonth()->toDateString(),
-                $period,
-            ])
-            ->first() ?? (object)[
-                'total_loan' => 0,
-                'total_lancar' => 0,
-                'total_real' => 0,
-            ];
+            ->when($consumerSurplus === null, function ($query) use ($period): void {
+                $query->selectRaw('SUM(CASE WHEN tgl_realisasi BETWEEN DATE_FORMAT(?, "%Y-%m-01") AND ? THEN COALESCE(plafon, 0) ELSE 0 END) as total_real', [
+                    Carbon::parse($period)->startOfMonth()->toDateString(),
+                    $period,
+                ]);
+            }, function ($query) use ($consumerSurplus): void {
+                $query->selectRaw('? as total_real', [(float) ($consumerSurplus->total_real ?? 0)]);
+            })
+            ->first() ?? (object) [
+            'total_loan' => 0,
+            'total_lancar' => 0,
+            'total_real' => 0,
+        ];
     }
 
     private function getSourceData(string $period, string $cabang, string $unit, string $rm, string $produk, string $segment): ?object
@@ -211,10 +218,14 @@ class ValidateSnapshotDataIntegrityCommand extends Command
             ->selectRaw($isMicroKur ? 'SUM(COALESCE(plafon, 0)) as loan_os' : 'SUM(COALESCE(baki_debet1, 0)) as loan_os')
             ->selectRaw('SUM(CASE WHEN kol_adk1 = 1 THEN COALESCE(baki_debet1, 0) ELSE 0 END) as lancar_os')
             ->selectRaw('COUNT(DISTINCT nomor_rekening1) as total_deb')
-            ->selectRaw('SUM(CASE WHEN tgl_realisasi BETWEEN DATE_FORMAT(?, "%Y-%m-01") AND ? THEN COALESCE(plafon, 0) ELSE 0 END) as realisasi_os', [
-                Carbon::parse($period)->startOfMonth()->toDateString(),
-                $period,
-            ]);
+            ->when($segment !== 'CONSUMER', function ($query) use ($period): void {
+                $query->selectRaw('SUM(CASE WHEN tgl_realisasi BETWEEN DATE_FORMAT(?, "%Y-%m-01") AND ? THEN COALESCE(plafon, 0) ELSE 0 END) as realisasi_os', [
+                    Carbon::parse($period)->startOfMonth()->toDateString(),
+                    $period,
+                ]);
+            }, function ($query): void {
+                $query->selectRaw('0 as realisasi_os');
+            });
 
         if (Schema::hasColumn('daily_loan_dinamis', 'segmen_kinerja') && Schema::hasColumn('daily_loan_dinamis', 'produk_kinerja')) {
             $query->whereIn('segmen_kinerja', $sourceSegmentTokens)
@@ -234,7 +245,100 @@ class ValidateSnapshotDataIntegrityCommand extends Command
             $query->whereRaw("{$normalizedDescriptionSql} = ?", ['KREDITMIKROKURRITEL2015']);
         }
 
-        return $query->first();
+        $source = $query->first();
+        if ($source !== null && $segment === 'CONSUMER') {
+            $surplus = $this->getConsumerSurplusForScope($period, $cabang, $unit, $rm, $produk);
+            $source->realisasi_os = (float) ($surplus->total_real ?? 0);
+            $source->realisasi_deb = (int) ($surplus->total_deb ?? 0);
+        }
+
+        return $source;
+    }
+
+    private function getConsumerSurplusAggregate(string $period): object
+    {
+        return $this->buildConsumerSurplusQuery($period)?->selectRaw('COUNT(*) as total_deb, SUM(current_plafon - previous_plafon) as total_real')->first()
+            ?? (object) ['total_deb' => 0, 'total_real' => 0];
+    }
+
+    private function getConsumerSurplusForScope(string $period, string $cabang, string $unit, string $rm, string $produk): object
+    {
+        $query = $this->buildConsumerSurplusQuery($period, $cabang, $unit, $rm, $produk);
+
+        return $query?->selectRaw('COUNT(*) as total_deb, SUM(current_plafon - previous_plafon) as total_real')->first()
+            ?? (object) ['total_deb' => 0, 'total_real' => 0];
+    }
+
+    private function buildConsumerSurplusQuery(
+        string $period,
+        ?string $cabang = null,
+        ?string $unit = null,
+        ?string $rm = null,
+        ?string $produk = null
+    ): ?\Illuminate\Database\Query\Builder {
+        if (!Schema::hasColumn('daily_loan_dinamis', 'segmen_kinerja') || !Schema::hasColumn('daily_loan_dinamis', 'produk_kinerja')) {
+            return null;
+        }
+
+        $previousPeriod = $this->resolvePreviousMonthDailyLoanPeriod($period);
+        if ($previousPeriod === null) {
+            return null;
+        }
+
+        $current = DB::table('daily_loan_dinamis')
+            ->where('periode', $period)
+            ->where('segmen_kinerja', 'CONSUMER')
+            ->whereIn('produk_kinerja', ['BRIGUNAKONSUMER', 'KPR'])
+            ->whereNotNull('pn_pengelola1')
+            ->where('pn_pengelola1', '<>', '')
+            ->whereNotNull('nomor_rekening1')
+            ->where('nomor_rekening1', '<>', '')
+            ->selectRaw('nomor_rekening1, MAX(COALESCE(plafon, 0)) as current_plafon');
+
+        if ($cabang !== null) {
+            $current->whereRaw("COALESCE(NULLIF(cabang_normalized, ''), UPPER(TRIM(cabang1))) = ?", [strtoupper(trim($cabang))]);
+        }
+        if ($unit !== null) {
+            $current->whereRaw("COALESCE(NULLIF(unit_normalized, ''), UPPER(TRIM(unit1))) = ?", [strtoupper(trim($unit))]);
+        }
+        if ($rm !== null) {
+            $current->whereRaw("COALESCE(NULLIF(rm_normalized, ''), UPPER(TRIM(pn_pengelola1))) = ?", [strtoupper(trim($rm))]);
+        }
+        if ($produk !== null) {
+            $current->whereIn('produk_kinerja', $this->getSourceProductTokens($produk));
+        }
+
+        $current->groupBy('nomor_rekening1');
+
+        $previous = DB::table('daily_loan_dinamis')
+            ->where('periode', $previousPeriod)
+            ->where('segmen_kinerja', 'CONSUMER')
+            ->whereIn('produk_kinerja', ['BRIGUNAKONSUMER', 'KPR'])
+            ->whereNotNull('nomor_rekening1')
+            ->where('nomor_rekening1', '<>', '')
+            ->selectRaw('nomor_rekening1, MAX(COALESCE(plafon, 0)) as previous_plafon')
+            ->groupBy('nomor_rekening1');
+
+        return DB::query()
+            ->fromSub($current, 'cur')
+            ->joinSub($previous, 'prev', fn ($join) => $join->on('prev.nomor_rekening1', '=', 'cur.nomor_rekening1'))
+            ->whereColumn('cur.current_plafon', '>', 'prev.previous_plafon');
+    }
+
+    private function resolvePreviousMonthDailyLoanPeriod(string $period): ?string
+    {
+        $periodDate = Carbon::parse($period);
+
+        $previous = DB::table('daily_loan_dinamis')
+            ->whereBetween('periode', [
+                $periodDate->copy()->subMonthNoOverflow()->startOfMonth()->toDateString(),
+                $periodDate->copy()->subMonthNoOverflow()->endOfMonth()->toDateString(),
+            ])
+            ->where('segmen_kinerja', 'CONSUMER')
+            ->whereIn('produk_kinerja', ['BRIGUNAKONSUMER', 'KPR'])
+            ->max('periode');
+
+        return $previous !== null ? (string) $previous : null;
     }
 
     private function compareValues($snap, $source): bool

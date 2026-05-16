@@ -50,21 +50,37 @@ class EnsureQueueWorkerRunning extends Command
     {
         try {
             $queueNames = $this->queueNames($queues);
+            $now = time();
+            $retryAfter = $this->queueRetryAfterSeconds();
+            $staleReservedCutoff = $now - $retryAfter;
             $pendingQueueNames = DB::table('jobs')
                 ->whereIn('queue', $queueNames)
-                ->whereNull('reserved_at')
+                ->where('available_at', '<=', $now)
+                ->where(function ($query) use ($staleReservedCutoff): void {
+                    $query->whereNull('reserved_at')
+                        ->orWhere('reserved_at', '<=', $staleReservedCutoff);
+                })
                 ->distinct()
                 ->pluck('queue')
                 ->map(static fn ($queue): string => (string) $queue)
                 ->all();
             $pendingJobs = DB::table('jobs')
                 ->whereIn('queue', $queueNames)
-                ->whereNull('reserved_at')
+                ->where('available_at', '<=', $now)
+                ->where(function ($query) use ($staleReservedCutoff): void {
+                    $query->whereNull('reserved_at')
+                        ->orWhere('reserved_at', '<=', $staleReservedCutoff);
+                })
                 ->count();
-            $isRunning = $this->isQueueWorkerRunning(implode(',', $pendingQueueNames ?: $queueNames));
+            $staleReservedJobs = DB::table('jobs')
+                ->whereIn('queue', $queueNames)
+                ->whereNotNull('reserved_at')
+                ->where('reserved_at', '<=', $staleReservedCutoff)
+                ->count();
+            $isRunning = $this->isQueueWorkerRunning(implode(',', $pendingQueueNames ?: $queueNames), $retryAfter);
 
             if ($pendingJobs === 0) {
-                // No jobs to process, don't need worker
+                // No jobs ready to process, don't need worker.
                 return;
             }
 
@@ -77,12 +93,13 @@ class EnsureQueueWorkerRunning extends Command
 
                 Log::warning('Queue worker was not running. Automatically restarted.', [
                     'pending_jobs' => $pendingJobs,
+                    'stale_reserved_jobs' => $staleReservedJobs,
                     'queues' => $queues,
                     'timestamp' => now(),
                 ]);
             } else {
                 // Worker is running, just log the status
-                $this->line("[" . now()->toDateTimeString() . "] Queue worker running ({$pendingJobs} pending jobs)");
+                $this->line("[" . now()->toDateTimeString() . "] Queue worker running ({$pendingJobs} ready jobs)");
             }
         } catch (\Throwable $e) {
             $this->error("Error during queue check: " . $e->getMessage());
@@ -93,13 +110,16 @@ class EnsureQueueWorkerRunning extends Command
         }
     }
 
-    private function isQueueWorkerRunning(string $queues): bool
+    private function isQueueWorkerRunning(string $queues, ?int $retryAfter = null): bool
     {
-        // If a job is reserved, a worker is actively processing it.
+        // Only fresh reservations prove a worker is active. Stale reserved rows
+        // are retryable jobs and must not suppress auto-start.
         $queueNames = $this->queueNames($queues);
+        $activeReservedCutoff = time() - ($retryAfter ?? $this->queueRetryAfterSeconds());
         $reservedCount = DB::table('jobs')
             ->whereIn('queue', $queueNames)
             ->whereNotNull('reserved_at')
+            ->where('reserved_at', '>', $activeReservedCutoff)
             ->count();
         if ($reservedCount > 0) {
             return true;
@@ -121,6 +141,14 @@ class EnsureQueueWorkerRunning extends Command
         }
 
         return false;
+    }
+
+    private function queueRetryAfterSeconds(): int
+    {
+        $connection = (string) config('queue.default', 'database');
+        $retryAfter = (int) config("queue.connections.{$connection}.retry_after", 90);
+
+        return max(30, $retryAfter);
     }
 
     private function phpProcessCommandLines(): string

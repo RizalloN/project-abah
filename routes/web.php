@@ -109,6 +109,8 @@ Route::middleware(['auth', 'release.session.lock', 'throttle:240,1'])->group(fun
         ->name('report.dashboard-pinjaman.kinerjarmmikro');
     Route::get('/report/dashboard-pinjaman/kinerja-ptp', [KinerjaPtpReportController::class, 'index'])
         ->name('report.dashboard-pinjaman.kinerja-ptp');
+    Route::get('/report/dashboard-pinjaman/kinerja-ptp/detail', [KinerjaPtpReportController::class, 'detail'])
+        ->name('report.dashboard-pinjaman.kinerja-ptp.detail');
     // Digital Performance Reports (EDC, QRIS, Brilink) — dihandle oleh DigitalPerformanceController
     Route::get('/report/optimalisasi-digital/edc', [DigitalPerformanceController::class, 'performanceEdc'])->name('report.edc');
     Route::get('/report/optimalisasi-digital/qris', [DigitalPerformanceController::class, 'performanceQris'])->name('report.qris');
@@ -225,6 +227,8 @@ Route::middleware(['auth', 'role:admin', 'release.session.lock'])->group(functio
     Route::get('/import/performance-pis/preview', [ImportPerformancePisPerProdukController::class, 'preview'])->name('import.performancepis.preview');
     Route::post('/import/performance-pis/preview', [ImportPerformancePisPerProdukController::class, 'preview'])->name('import.performancepis.preview.refresh');
     Route::get('/import/performance-pis/prepare-preview', [ImportPerformancePisPerProdukController::class, 'preparePreviewStream'])->name('import.performancepis.prepare-preview');
+    Route::get('/import/performance-pis/preview/filter-options', [ImportPerformancePisPerProdukController::class, 'previewFilterOptions'])->name('import.performancepis.filter-options');
+    Route::get('/import/performance-pis/preview/filtered-rows', [ImportPerformancePisPerProdukController::class, 'previewFilteredRows'])->name('import.performancepis.filtered-rows');
     Route::post('/import/performance-pis/init', [ImportPerformancePisPerProdukController::class, 'initImport'])->name('import.performancepis.init');
     Route::get('/import/performance-pis/stream', [ImportPerformancePisPerProdukController::class, 'processImportStream'])->name('import.performancepis.stream');
     Route::post('/import/performance-pis/process', [ImportPerformancePisPerProdukController::class, 'processImport'])->name('import.performancepis.process');

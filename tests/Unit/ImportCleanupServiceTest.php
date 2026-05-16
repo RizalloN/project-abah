@@ -6,6 +6,9 @@ use App\Jobs\SyncImportedReportJob;
 use App\Services\Import\ImportCleanupService;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Database\Schema\Blueprint;
 use Tests\TestCase;
 
 class ImportCleanupServiceTest extends TestCase
@@ -88,5 +91,40 @@ class ImportCleanupServiceTest extends TestCase
         });
 
         $this->assertNull(Cache::get('snapshot:batch:lw325_ph:2026-04-27'));
+    }
+
+    public function test_dispatch_imported_job_sync_resolves_nested_daily_loan_period_context(): void
+    {
+        if (!Schema::hasTable('import_jobs')) {
+            Schema::create('import_jobs', function (Blueprint $table): void {
+                $table->id();
+                $table->unsignedBigInteger('id_report')->nullable();
+                $table->longText('job_context')->nullable();
+                $table->timestamps();
+            });
+        }
+
+        $jobId = DB::table('import_jobs')->insertGetId([
+            'id_report' => 8,
+            'job_context' => json_encode([
+                'state' => [
+                    'params' => [
+                        'table_name' => 'daily_loan_dinamis',
+                        'backend_detected_periods' => ['10052026'],
+                    ],
+                ],
+            ]),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $service = new ImportCleanupService();
+        $service->dispatchImportedJobSync((int) $jobId, null, null, 'unit-test');
+
+        Bus::assertDispatched(SyncImportedReportJob::class, function (SyncImportedReportJob $job) use ($jobId): bool {
+            return $job->jobId === (int) $jobId
+                && $job->tableName === 'daily_loan_dinamis'
+                && $job->periodHint === '2026-05-10';
+        });
     }
 }

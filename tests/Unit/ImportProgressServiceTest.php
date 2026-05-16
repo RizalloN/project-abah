@@ -117,6 +117,47 @@ class ImportProgressServiceTest extends TestCase
         }
     }
 
+    public function test_get_status_payload_uses_database_totals_for_terminal_jobs(): void
+    {
+        DB::shouldReceive('table->where->first')
+            ->once()
+            ->andReturn((object) [
+                'id' => 79,
+                'id_report' => 17,
+                'file_name' => 'stale-ssa.xlsx',
+                'folder_path' => storage_path('app/private/excel_imports'),
+                'status' => 'completed',
+                'total_files' => 0,
+                'total_success' => 0,
+                'total_failed' => 0,
+                'updated_at' => now()->subMinutes(1)->toDateTimeString(),
+            ]);
+
+        Cache::shouldReceive('get')
+            ->twice()
+            ->andReturn(
+                [
+                    'message' => 'Import selesai diproses.',
+                    'processed_rows' => 1069,
+                    'total_rows' => 1069,
+                    'total_success' => 1069,
+                    'total_failed' => 0,
+                    'percent' => 100,
+                    'updated_at' => now()->toIso8601String(),
+                ],
+                []
+            );
+
+        $payload = app(ImportProgressService::class)->getStatusPayload(79);
+
+        $this->assertSame('completed', $payload['status']);
+        $this->assertSame(0, $payload['total_rows']);
+        $this->assertSame(0, $payload['processed_rows']);
+        $this->assertSame(0, $payload['total_success']);
+        $this->assertSame(0, $payload['total_failed']);
+        $this->assertSame(0, $payload['percent']);
+    }
+
     public function test_mark_failed_removes_matching_queue_job_row(): void
     {
         Cache::shouldReceive('get')->andReturn([]);

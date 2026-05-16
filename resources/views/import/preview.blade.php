@@ -62,7 +62,7 @@
         </div>
         @endif
 
-        <form id="importForm" action="{{ $processRoute ?? route('import.process') }}" method="POST" data-init-url="{{ $initRoute ?? '' }}" data-stream-url="{{ $streamRoute ?? '' }}" data-filter-options-url="{{ $filterOptionsRoute ?? route('import.preview.filter-options') }}" data-warm-index-url="{{ $warmIndexRoute ?? route('import.preview.warm-index') }}">
+        <form id="importForm" action="{{ $processRoute ?? route('import.process') }}" method="POST" data-init-url="{{ $initRoute ?? '' }}" data-stream-url="{{ $streamRoute ?? '' }}" data-filter-options-url="{{ $filterOptionsRoute ?? route('import.preview.filter-options') }}" data-filtered-rows-url="{{ $filteredRowsRoute ?? route('import.preview.filtered-rows') }}" data-warm-index-url="{{ $warmIndexRoute ?? route('import.preview.warm-index') }}">
             @csrf
             <input type="hidden" name="file_path" value="{{ $filePath }}">
             <input type="hidden" name="delimiter" value="{{ $currentDelimiter }}">
@@ -257,10 +257,13 @@
         const previewLoadingText = document.getElementById('preview-loading-text');
         const basePreviewTbodyHtml = previewTbody ? previewTbody.innerHTML : '';
         const filterOptionsUrl = importFormElement?.dataset.filterOptionsUrl || '';
+        const filteredRowsUrl = importFormElement?.dataset.filteredRowsUrl || @json(route('import.preview.filtered-rows'));
         const warmIndexUrl = importFormElement?.dataset.warmIndexUrl || '';
         const prefetchFilterOptionsOnLoad = @json(!empty($prefetchFilterOptionsOnLoad));
         const warmPreviewIndexOnLoad = @json(!empty($warmPreviewIndexOnLoad));
         const disableFilterOptionsLocalCache = @json(!empty($disableFilterOptionsLocalCache));
+        const deferDependentFilterRefresh = @json(!empty($deferDependentFilterRefresh));
+        const initialFilterOptionsAreComplete = @json(!empty($initialFilterOptionsAreComplete));
         const filePathValue = importFormElement?.querySelector('input[name="file_path"]')?.value || '';
         const previewStateKey = importFormElement?.querySelector('input[name="preview_state_key"]')?.value || '';
         const delimiterValue = importFormElement?.querySelector('input[name="delimiter"]')?.value || 'auto';
@@ -478,9 +481,9 @@
             filterState[col] = {
                 allValues: values,
                 selectedValues: selectedValues,
-                fullOptionsLoaded: false,
+                fullOptionsLoaded: initialFilterOptionsAreComplete,
                 isLoading: false,
-                loadedSignature: '',
+                loadedSignature: initialFilterOptionsAreComplete ? '{}' : '',
                 pendingSignature: '',
                 needsRefresh: false,
             };
@@ -950,7 +953,7 @@
             setPreviewLoading(true, 'Mengambil baris yang cocok dari file sumber...');
 
             try {
-                const url = new URL('{{ route("import.preview.filtered-rows") }}', window.location.origin);
+                const url = new URL(filteredRowsUrl, window.location.origin);
                 url.searchParams.set('file_path', filePathValue);
                 url.searchParams.set('delimiter', delimiterValue);
                 url.searchParams.set('display_filter_map_json', JSON.stringify(displayFilterMap || {}));
@@ -1208,10 +1211,12 @@
             syncSelectAllCheckbox(colIndex, getFilteredValues(colIndex));
             updatePreviewTable();
 
-            // Debounce refresh dependent filters untuk menghindari multiple requests
-            debounceRender(colIndex + '_refresh', function() {
-                refreshDependentFilterOptions(colIndex);
-            }, 300);
+            if (!deferDependentFilterRefresh) {
+                // Debounce refresh dependent filters untuk menghindari multiple requests
+                debounceRender(colIndex + '_refresh', function() {
+                    refreshDependentFilterOptions(colIndex);
+                }, 300);
+            }
         });
 
         const selectAllCbs = document.querySelectorAll('.select-all-cb');
@@ -1241,10 +1246,12 @@
                 renderFilterList(colIndex);
                 updatePreviewTable();
 
-                // Debounce refresh dependent filters
-                debounceRender(colIndex + '_refresh', function() {
-                    refreshDependentFilterOptions(colIndex);
-                }, 300);
+                if (!deferDependentFilterRefresh) {
+                    // Debounce refresh dependent filters
+                    debounceRender(colIndex + '_refresh', function() {
+                        refreshDependentFilterOptions(colIndex);
+                    }, 300);
+                }
             });
         });
 

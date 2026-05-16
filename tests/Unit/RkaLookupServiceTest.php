@@ -167,6 +167,89 @@ class RkaLookupServiceTest extends TestCase
         $this->assertSame(['KCP CARUBAN' => 194912333366.57], $result['total_simpanan']);
     }
 
+    public function test_dashboard_harian_simpanan_rka_stays_scoped_for_branch_all_units_and_unit_selector(): void
+    {
+        DB::table('rka')->insert([
+            [
+                'uniqueid_namareport' => 'rka-scope-madiun-kc-a1',
+                'kanca' => 'KC Madiun',
+                'desc_uker' => '45-KC Madiun',
+                'mata_anggaran' => 'A.1. DPK Retail Funding Total',
+                'may' => 1000,
+                'created_at' => '2026-05-04 07:55:29',
+                'updated_at' => '2026-05-04 07:55:29',
+            ],
+            [
+                'uniqueid_namareport' => 'rka-scope-madiun-kcp-a1',
+                'kanca' => 'KC Madiun',
+                'desc_uker' => '2109-KCP DOLOPO',
+                'mata_anggaran' => 'A.1. DPK Retail Funding Total',
+                'may' => 200,
+                'created_at' => '2026-05-04 07:55:29',
+                'updated_at' => '2026-05-04 07:55:29',
+            ],
+            [
+                'uniqueid_namareport' => 'rka-scope-madiun-unit-a1',
+                'kanca' => 'KC Madiun',
+                'desc_uker' => '3212-UNIT DOLOPO MADIUN',
+                'mata_anggaran' => 'A.1. DPK Retail Funding Total',
+                'may' => 300,
+                'created_at' => '2026-05-04 07:55:29',
+                'updated_at' => '2026-05-04 07:55:29',
+            ],
+            [
+                'uniqueid_namareport' => 'rka-scope-madiun-giro-korp',
+                'kanca' => 'KC Madiun',
+                'desc_uker' => '45-KC Madiun',
+                'mata_anggaran' => 'A.2.a. Giro Korporasi',
+                'may' => 40,
+                'created_at' => '2026-05-04 07:55:29',
+                'updated_at' => '2026-05-04 07:55:29',
+            ],
+            [
+                'uniqueid_namareport' => 'rka-scope-madiun-dep-korp',
+                'kanca' => 'KC Madiun',
+                'desc_uker' => '45-KC Madiun',
+                'mata_anggaran' => 'A.2.b. Deposito Korporasi',
+                'may' => 5,
+                'created_at' => '2026-05-04 07:55:29',
+                'updated_at' => '2026-05-04 07:55:29',
+            ],
+            [
+                'uniqueid_namareport' => 'rka-scope-ngawi-a1',
+                'kanca' => 'KC Ngawi',
+                'desc_uker' => 'KC Ngawi',
+                'mata_anggaran' => 'A.1. DPK Retail Funding Total',
+                'may' => 999,
+                'created_at' => '2026-05-04 07:55:29',
+                'updated_at' => '2026-05-04 07:55:29',
+            ],
+        ]);
+
+        $definitions = [
+            'total_simpanan' => ['mata_anggaran' => ['A.1. DPK Retail Funding Total']],
+            'simpanan_ritel' => ['mata_anggaran' => ['A.1. DPK Retail Funding Total'], 'uker_contains_any' => ['KC', 'KCP'], 'include_kanca_summary' => true],
+            'simpanan_mikro' => ['mata_anggaran' => ['A.1. DPK Retail Funding Total'], 'uker_contains_any' => ['UNIT']],
+            'simpanan_wholesale' => ['mata_anggaran' => ['A.2.a. Giro Korporasi']],
+            'deposito_wholesale' => ['mata_anggaran' => []],
+        ];
+
+        $service = new RkaLookupService();
+        $branchAllUnits = $service->aggregateForScope($definitions, 'may', 'KC Madiun', null, 2026);
+        $kcpDolopo = $service->aggregateByGroup($definitions, 'may', ['KC Madiun'], ['kcp-dolopo'], 'uker', 2026);
+        $unitDolopo = $service->aggregateByGroup($definitions, 'may', ['KC Madiun'], ['unit-dolopo-madiun'], 'uker', 2026);
+
+        $this->assertSame(1500.0, $branchAllUnits['total_simpanan']);
+        $this->assertSame(1200.0, $branchAllUnits['simpanan_ritel']);
+        $this->assertSame(300.0, $branchAllUnits['simpanan_mikro']);
+        $this->assertSame(40.0, $branchAllUnits['simpanan_wholesale']);
+        $this->assertSame(0.0, $branchAllUnits['deposito_wholesale']);
+        $this->assertSame(['KCP DOLOPO' => 200.0], $kcpDolopo['total_simpanan']);
+        $this->assertSame(['UNIT DOLOPO MADIUN' => 300.0], $unitDolopo['total_simpanan']);
+        $this->assertSame([], $unitDolopo['simpanan_ritel']);
+        $this->assertSame(['UNIT DOLOPO MADIUN' => 300.0], $unitDolopo['simpanan_mikro']);
+    }
+
     public function test_optimized_grouped_rka_cache_is_scoped_by_selected_branch_and_unit(): void
     {
         DB::table('rka')->insert([
@@ -198,5 +281,130 @@ class RkaLookupServiceTest extends TestCase
 
         $this->assertSame(['KCP CARUBAN' => 100.0], $caruban['total_simpanan']);
         $this->assertSame(['KCP SUDIRMAN MADIUN' => 200.0], $sudirman['total_simpanan']);
+    }
+
+    public function test_grouped_rka_matches_kanca_detail_unit_key_to_kanca_summary_row(): void
+    {
+        DB::table('rka')->insert([
+            [
+                'uniqueid_namareport' => 'rka-kanca-detail-1',
+                'kanca' => 'KC Madiun',
+                'desc_uker' => '45-KC Madiun',
+                'mata_anggaran' => 'A.1. DPK Retail Funding Total',
+                'may' => 1000,
+                'created_at' => '2026-05-04 07:55:29',
+                'updated_at' => '2026-05-04 07:55:29',
+            ],
+        ]);
+
+        $service = new RkaLookupService();
+        $result = $service->aggregateByGroup(
+            ['total_simpanan' => ['mata_anggaran' => ['A.1. DPK Retail Funding Total']]],
+            'may',
+            ['KC Madiun'],
+            ['kc-madiun-detail'],
+            'uker',
+            2026
+        );
+
+        $this->assertSame(['KC MADIUN' => 1000.0], $result['total_simpanan']);
+    }
+
+    public function test_kanca_summary_fallback_only_fills_zero_branch_aggregate(): void
+    {
+        DB::table('rka')->insert([
+            [
+                'uniqueid_namareport' => 'rka-kanca-fallback-madiun-summary',
+                'kanca' => 'KC Madiun',
+                'desc_uker' => '45-KC Madiun',
+                'mata_anggaran' => 'Sample RKA Target',
+                'may' => 1000,
+                'created_at' => '2026-05-04 07:55:29',
+                'updated_at' => '2026-05-04 07:55:29',
+            ],
+            [
+                'uniqueid_namareport' => 'rka-kanca-fallback-madiun-detail',
+                'kanca' => 'KC Madiun',
+                'desc_uker' => '2109-KCP DOLOPO',
+                'mata_anggaran' => 'Sample RKA Target',
+                'may' => 250,
+                'created_at' => '2026-05-04 07:55:29',
+                'updated_at' => '2026-05-04 07:55:29',
+            ],
+            [
+                'uniqueid_namareport' => 'rka-kanca-fallback-magetan-summary',
+                'kanca' => 'KC Magetan',
+                'desc_uker' => 'KC Magetan',
+                'mata_anggaran' => 'Sample RKA Target',
+                'may' => 300,
+                'created_at' => '2026-05-04 07:55:29',
+                'updated_at' => '2026-05-04 07:55:29',
+            ],
+        ]);
+
+        $service = new RkaLookupService();
+        $result = $service->aggregateByKancaWithSummaryFallback(
+            ['sample' => ['mata_anggaran' => ['Sample RKA Target'], 'uker_contains_any' => ['KC', 'KCP']]],
+            'may',
+            ['KC Madiun', 'KC Magetan'],
+            2026
+        );
+
+        $this->assertSame(250.0, $result['sample']['KC MADIUN']);
+        $this->assertSame(300.0, $result['sample']['KC MAGETAN']);
+    }
+
+    public function test_grouped_rka_matches_unit_key_when_source_contains_punctuation(): void
+    {
+        DB::table('rka')->insert([
+            [
+                'uniqueid_namareport' => 'rka-a-yani-1',
+                'kanca' => 'KC Magetan',
+                'desc_uker' => '6363-UNIT A. YANI MAGETAN',
+                'mata_anggaran' => 'A.1. DPK Retail Funding Total',
+                'may' => 500,
+                'created_at' => '2026-05-04 07:55:29',
+                'updated_at' => '2026-05-04 07:55:29',
+            ],
+        ]);
+
+        $service = new RkaLookupService();
+        $result = $service->aggregateByGroup(
+            ['total_simpanan' => ['mata_anggaran' => ['A.1. DPK Retail Funding Total']]],
+            'may',
+            ['KC Magetan'],
+            ['unit-a-yani-magetan'],
+            'uker',
+            2026
+        );
+
+        $this->assertSame(['UNIT A YANI MAGETAN' => 500.0], $result['total_simpanan']);
+    }
+
+    public function test_grouped_rka_matches_truncated_source_unit_to_full_dashboard_unit_key(): void
+    {
+        DB::table('rka')->insert([
+            [
+                'uniqueid_namareport' => 'rka-perintis-1',
+                'kanca' => 'KC Madiun',
+                'desc_uker' => '3885-UNIT PERINTIS KEMERDEKAAN MADI',
+                'mata_anggaran' => 'A.1. DPK Retail Funding Total',
+                'may' => 750,
+                'created_at' => '2026-05-04 07:55:29',
+                'updated_at' => '2026-05-04 07:55:29',
+            ],
+        ]);
+
+        $service = new RkaLookupService();
+        $result = $service->aggregateByGroup(
+            ['total_simpanan' => ['mata_anggaran' => ['A.1. DPK Retail Funding Total']]],
+            'may',
+            ['KC Madiun'],
+            ['unit-perintis-kemerdekaan-madiun'],
+            'uker',
+            2026
+        );
+
+        $this->assertSame(['UNIT PERINTIS KEMERDEKAAN MADI' => 750.0], $result['total_simpanan']);
     }
 }

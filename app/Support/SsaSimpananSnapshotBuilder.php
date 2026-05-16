@@ -96,7 +96,7 @@ class SsaSimpananSnapshotBuilder
                 'nama_cabang' => $record->nama_cabang,
                 'produk' => $record->produk,
                 'segmentasi' => $record->segmentasi,
-                'total_saldo' => (float) $record->total_saldo,
+                'total_saldo' => (string) $record->total_saldo,
                 'record_count' => (int) $record->record_count,
                 'snapshot_version' => '1',
             ];

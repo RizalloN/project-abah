@@ -211,6 +211,18 @@ class KinerjaRmSnapshotPeriodResolutionTest extends TestCase
         $this->assertSame(250000000.0, $item['ach_os']);
     }
 
+    public function test_kinerja_rm_realisasi_period_uses_selected_daily_position(): void
+    {
+        $controller = new KinerjaRmReportController(Mockery::mock(RkaLookupService::class));
+
+        $resolved = $this->invokePrivateMethod($controller, 'resolveKinerjaRealisasiPeriod', [
+            '2026-05-15',
+            $this->comparisonPeriods('2025-12-31', '2026-01-31', '2026-02-28', '2026-03-31', '2026-04-30'),
+        ]);
+
+        $this->assertSame('2026-05-15', $resolved);
+    }
+
     public function test_kinerja_rm_does_not_synthesize_quadrants_for_non_small_segments(): void
     {
         DB::table('performance_rm_snapshots')->insert([

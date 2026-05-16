@@ -178,6 +178,7 @@ INDONESIAN_MONTHS = {
     'november': 'november',
     'desember': 'december',
 }
+LOCALE_DATE_TABLES = {'hourly_dpk', 'ssa_simpanan', 'ssa_pinjaman'}
 
 
 def canonicalize_header(header_name):
@@ -190,6 +191,10 @@ def normalize_locale_date_text(value: str) -> str:
     for source, target in INDONESIAN_MONTHS.items():
         normalized = re.sub(rf'\b{source}\b', target, normalized, flags=re.IGNORECASE)
     return normalized
+
+
+def allows_locale_date_text(table_name) -> bool:
+    return str(table_name or '').strip().lower() in LOCALE_DATE_TABLES
 
 
 def normalize_decimal_value(value):
@@ -234,7 +239,7 @@ def normalize_decimal_value(value):
         return None
 
 
-def normalize_value(header_name, value):
+def normalize_value(header_name, value, table_name=None):
     import math
     header = canonicalize_header(header_name)
 
@@ -260,7 +265,10 @@ def normalize_value(header_name, value):
             except (ValueError, OverflowError):
                 pass
             from dateutil import parser as dateutil_parser
-            normalized_date_text = normalize_locale_date_text(value_str).replace('/', '-')
+            normalized_date_text = value_str
+            if allows_locale_date_text(table_name):
+                normalized_date_text = normalize_locale_date_text(normalized_date_text)
+            normalized_date_text = normalized_date_text.replace('/', '-')
             return dateutil_parser.parse(normalized_date_text).strftime('%Y-%m-%d')
         except Exception:
             return None
@@ -463,7 +471,7 @@ def _run_process_inner(config):
 
         for filter_idx, (original_index, h_name) in enumerate(valid_headers):
             val = row_list[original_index] if original_index < len(row_list) else None
-            val = normalize_value(h_name, val)
+            val = normalize_value(h_name, val, table_name)
 
             filter_key = str(filter_idx)
             if active_filters and filter_key in active_filters:
@@ -536,6 +544,7 @@ def run_stage(config):
     header_index = int(config['header_index'])
     normalized_headers = config['normalized_headers']
     output_csv_path = config['output_csv_path']
+    table_name = config.get('table_name')
 
     if isinstance(normalized_headers, list):
         normalized_headers = {str(i): v for i, v in enumerate(normalized_headers)}
@@ -578,7 +587,7 @@ def run_stage(config):
 
             for original_index, header_name in valid_headers:
                 val = row_list[original_index] if original_index < len(row_list) else None
-                val = normalize_value(header_name, val)
+                val = normalize_value(header_name, val, table_name)
                 if val is not None and str(val).strip() != '':
                     has_value = True
                 output_row.append(r'\N' if val is None else val)

@@ -114,8 +114,10 @@ class KinerjaRmFormattingTest extends TestCase
         ])->render();
 
         $this->assertStringContainsString('1.600,0', $html);
-        $this->assertStringContainsString('Kuadran 2', $html);
-        $this->assertStringContainsString('quadrant-badge q2', $html);
+        $this->assertStringContainsString('Surplesi Ratas', $html);
+        $this->assertStringNotContainsString('Kuadran 2', $html);
+        $this->assertStringNotContainsString('quadrant-badge q2', $html);
+        $this->assertStringNotContainsString('% LAR</th>', $html);
         $this->assertStringContainsString('31 Mar 26', $html);
         $this->assertStringContainsString('31 Des 25', $html);
         $this->assertStringContainsString('23 Apr 26', $html);

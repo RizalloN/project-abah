@@ -3,9 +3,29 @@
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Models\User;
+use Illuminate\Contracts\Debug\ExceptionHandler;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Request;
+use Illuminate\Session\TokenMismatchException;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\Schema;
+
+beforeEach(function () {
+    if (!Schema::hasTable('users')) {
+        Schema::create('users', function (Blueprint $table): void {
+            $table->id();
+            $table->string('name');
+            $table->string('pn', 20)->unique();
+            $table->string('email')->nullable()->unique();
+            $table->timestamp('email_verified_at')->nullable();
+            $table->string('password');
+            $table->string('role', 20)->default('user');
+            $table->rememberToken();
+            $table->timestamps();
+        });
+    }
+});
 
 test('login screen can be rendered', function () {
     $response = app()->handle(Request::create('/login', 'GET'));
@@ -28,6 +48,51 @@ test('users can authenticate using the login screen', function () {
     $response = app(AuthenticatedSessionController::class)->store($request);
 
     expect(Auth::check())->toBeTrue();
+    expect($response->getStatusCode())->toBeIn([302, 303]);
+    expect($response->getTargetUrl())->toBe(route('dashboard'));
+});
+
+test('login preserves the intended route after session regeneration', function () {
+    $user = User::factory()->create();
+
+    $request = LoginRequest::create('/login', 'POST', [
+        'pn' => $user->pn,
+        'password' => 'password',
+    ]);
+    $request->setContainer(app());
+    $request->setRedirector(app('redirect'));
+    $request->setLaravelSession(app('session')->driver());
+    $intendedUrl = url('/intended-after-login');
+    $request->session()->put('url.intended', $intendedUrl);
+
+    $response = app(AuthenticatedSessionController::class)->store($request);
+
+    expect(Auth::check())->toBeTrue();
+    expect($response->getStatusCode())->toBeIn([302, 303]);
+    expect($response->getTargetUrl())->toBe($intendedUrl);
+});
+
+test('expired login token returns to login without page expired screen', function () {
+    $request = Request::create('/login', 'POST', [
+        'pn' => '90179583',
+        'remember' => '1',
+    ]);
+
+    $response = app(ExceptionHandler::class)->render($request, new TokenMismatchException());
+
+    expect($response->getStatusCode())->toBeIn([302, 303]);
+    expect($response->getTargetUrl())->toBe(route('login'));
+});
+
+test('expired login token after successful authentication routes to dashboard', function () {
+    $user = User::factory()->create();
+
+    Auth::login($user);
+
+    $request = Request::create('/login', 'POST');
+
+    $response = app(ExceptionHandler::class)->render($request, new TokenMismatchException());
+
     expect($response->getStatusCode())->toBeIn([302, 303]);
     expect($response->getTargetUrl())->toBe(route('dashboard'));
 });

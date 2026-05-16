@@ -3,6 +3,7 @@
 namespace Tests\Unit;
 
 use App\Http\Controllers\Import\ImportSimpananMultiPnCsvController;
+use App\Http\Controllers\Import\ImportExcelController;
 use App\Http\Controllers\Import\ImportIndexController;
 use App\Services\Import\ImportCleanupService;
 use App\Services\Import\ImportDuplicateGuardService;
@@ -490,6 +491,30 @@ class ImportSimpananMultiPnCsvControllerTest extends TestCase
 
         $this->assertSame(['2026-04-04', '2026-04-05'], $scopes['periods'] ?? []);
         $this->assertSame(['KC MADIUN', 'KC NGAWI'], $scopes['branches'] ?? []);
+    }
+
+    public function test_queued_simpanan_scope_collection_reads_full_vectorized_csv_before_direct_load(): void
+    {
+        $controller = new ImportExcelController();
+        $csvPath = storage_path('framework/testing/simpanan_full_vectorized_scope_hints.csv');
+        if (!is_dir(dirname($csvPath))) {
+            @mkdir(dirname($csvPath), 0777, true);
+        }
+
+        file_put_contents($csvPath, implode("\n", [
+            'uniqueid_SMPN,posisi,kantor_cabang,CIFNO,no_rekening,jenis_simpanan,saldo_idr,created_at,updated_at',
+            'SMPN_a,2026-05-31,KC MADIUN,A001,1001,TABUNGAN,100.00,2026-05-14 10:00:00,2026-05-14 10:00:00',
+            'SMPN_b,31/05/2026,KC MAGETAN,A002,1002,GIRO,200.00,2026-05-14 10:00:00,2026-05-14 10:00:00',
+        ]));
+
+        try {
+            $scopes = $this->invokeMethod($controller, 'collectSimpananMultiPnImportScopesFromCsv', [$csvPath, ',']);
+        } finally {
+            @unlink($csvPath);
+        }
+
+        $this->assertSame(['2026-05-31'], $scopes['periods'] ?? []);
+        $this->assertSame(['KC MADIUN', 'KC MAGETAN'], $scopes['branches'] ?? []);
     }
 
     public function test_prepare_simpanan_direct_load_source_preserves_duplicates_and_skips_malformed_rows(): void

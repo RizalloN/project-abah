@@ -148,21 +148,33 @@ class ValidatePerformanceRmSnapshotsCommand extends Command
             ->selectRaw('SUM(CASE WHEN kol_adk1 > 2 THEN COALESCE(baki_debet1, 0) ELSE 0 END) as npl_os')
             ->selectRaw("SUM(CASE WHEN kol_adk1 = 1 AND UPPER(TRIM(COALESCE(flag_restruk, ''))) = 'Y' THEN COALESCE(baki_debet1, 0) ELSE 0 END) as restruk_os")
             ->selectRaw('COUNT(DISTINCT nomor_rekening1) as total_deb')
-            ->selectRaw("COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN DATE_FORMAT(?, \"%Y-%m-01\") AND ? THEN nomor_rekening1 END) as realisasi_deb", [
-                Carbon::parse($period)->startOfMonth()->toDateString(),
-                $period,
-            ])
-            ->selectRaw("SUM(CASE WHEN {$realisasiDateColumn} BETWEEN DATE_FORMAT(?, \"%Y-%m-01\") AND ? THEN COALESCE(plafon, 0) ELSE 0 END) as realisasi_os", [
-                Carbon::parse($period)->startOfMonth()->toDateString(),
-                $period,
-            ])
+            ->when($segment !== 'CONSUMER', function ($query) use ($realisasiDateColumn, $period): void {
+                $query->selectRaw("COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN DATE_FORMAT(?, \"%Y-%m-01\") AND ? THEN nomor_rekening1 END) as realisasi_deb", [
+                    Carbon::parse($period)->startOfMonth()->toDateString(),
+                    $period,
+                ])
+                    ->selectRaw("SUM(CASE WHEN {$realisasiDateColumn} BETWEEN DATE_FORMAT(?, \"%Y-%m-01\") AND ? THEN COALESCE(plafon, 0) ELSE 0 END) as realisasi_os", [
+                        Carbon::parse($period)->startOfMonth()->toDateString(),
+                        $period,
+                    ]);
+            }, function ($query): void {
+                $query->selectRaw('0 as realisasi_deb')
+                    ->selectRaw('0 as realisasi_os');
+            })
             ;
 
         if ($isMicroKur) {
             $query->whereRaw("{$normalizedDescriptionSql} = ?", ['KREDITMIKROKURRITEL2015']);
         }
 
-        return $query->first();
+        $source = $query->first();
+        if ($source !== null && $segment === 'CONSUMER') {
+            $surplus = $this->getConsumerSurplusForScope($period, $cabang, $unit, $rm, $produk);
+            $source->realisasi_deb = (int) ($surplus->total_deb ?? 0);
+            $source->realisasi_os = (float) ($surplus->total_real ?? 0);
+        }
+
+        return $source;
     }
 
     private function compareValues(object $snapshot, ?object $sourceData, string $period): array
@@ -185,6 +197,8 @@ class ValidatePerformanceRmSnapshotsCommand extends Command
             'npl_os' => [(float)$snapshot->npl_os, (float)($sourceData->npl_os ?? 0)],
             'restruk_os' => [(float)$snapshot->restruk_os, (float)($sourceData->restruk_os ?? 0)],
             'total_deb' => [(int)$snapshot->total_deb, (int)($sourceData->total_deb ?? 0)],
+            'realisasi_deb' => [(int)$snapshot->realisasi_deb, (int)($sourceData->realisasi_deb ?? 0)],
+            'realisasi_os' => [(float)$snapshot->realisasi_os, (float)($sourceData->realisasi_os ?? 0)],
         ];
 
         foreach ($checks as $field => [$snap, $source]) {
@@ -316,5 +330,63 @@ class ValidatePerformanceRmSnapshotsCommand extends Command
             'KUR-SMALL' => ['KURSMALL'],
             default => [$product],
         };
+    }
+
+    private function getConsumerSurplusForScope(string $period, string $cabang, string $unit, string $rm, string $produk): object
+    {
+        if (!Schema::hasColumn('daily_loan_dinamis', 'segmen_kinerja') || !Schema::hasColumn('daily_loan_dinamis', 'produk_kinerja')) {
+            return (object) ['total_deb' => 0, 'total_real' => 0];
+        }
+
+        $previousPeriod = $this->resolvePreviousMonthDailyLoanPeriod($period);
+        if ($previousPeriod === null) {
+            return (object) ['total_deb' => 0, 'total_real' => 0];
+        }
+
+        $current = DB::table('daily_loan_dinamis')
+            ->where('periode', $period)
+            ->where('segmen_kinerja', 'CONSUMER')
+            ->whereIn('produk_kinerja', $this->getSourceProducts($produk))
+            ->whereRaw("COALESCE(NULLIF(cabang_normalized, ''), UPPER(TRIM(cabang1))) = ?", [strtoupper(trim($cabang))])
+            ->whereRaw("COALESCE(NULLIF(unit_normalized, ''), UPPER(TRIM(unit1))) = ?", [strtoupper(trim($unit))])
+            ->whereRaw("COALESCE(NULLIF(rm_normalized, ''), UPPER(TRIM(pn_pengelola1))) = ?", [strtoupper(trim($rm))])
+            ->whereNotNull('pn_pengelola1')
+            ->where('pn_pengelola1', '<>', '')
+            ->whereNotNull('nomor_rekening1')
+            ->where('nomor_rekening1', '<>', '')
+            ->selectRaw('nomor_rekening1, MAX(COALESCE(plafon, 0)) as current_plafon')
+            ->groupBy('nomor_rekening1');
+
+        $previous = DB::table('daily_loan_dinamis')
+            ->where('periode', $previousPeriod)
+            ->where('segmen_kinerja', 'CONSUMER')
+            ->whereIn('produk_kinerja', ['BRIGUNAKONSUMER', 'KPR'])
+            ->whereNotNull('nomor_rekening1')
+            ->where('nomor_rekening1', '<>', '')
+            ->selectRaw('nomor_rekening1, MAX(COALESCE(plafon, 0)) as previous_plafon')
+            ->groupBy('nomor_rekening1');
+
+        return DB::query()
+            ->fromSub($current, 'cur')
+            ->joinSub($previous, 'prev', fn ($join) => $join->on('prev.nomor_rekening1', '=', 'cur.nomor_rekening1'))
+            ->whereColumn('cur.current_plafon', '>', 'prev.previous_plafon')
+            ->selectRaw('COUNT(*) as total_deb, SUM(cur.current_plafon - prev.previous_plafon) as total_real')
+            ->first() ?? (object) ['total_deb' => 0, 'total_real' => 0];
+    }
+
+    private function resolvePreviousMonthDailyLoanPeriod(string $period): ?string
+    {
+        $periodDate = Carbon::parse($period);
+
+        $previous = DB::table('daily_loan_dinamis')
+            ->whereBetween('periode', [
+                $periodDate->copy()->subMonthNoOverflow()->startOfMonth()->toDateString(),
+                $periodDate->copy()->subMonthNoOverflow()->endOfMonth()->toDateString(),
+            ])
+            ->where('segmen_kinerja', 'CONSUMER')
+            ->whereIn('produk_kinerja', ['BRIGUNAKONSUMER', 'KPR'])
+            ->max('periode');
+
+        return $previous !== null ? (string) $previous : null;
     }
 }

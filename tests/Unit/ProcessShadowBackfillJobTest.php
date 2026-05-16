@@ -19,7 +19,7 @@ class ProcessShadowBackfillJobTest extends TestCase
 
     public function test_shadow_backfill_job_passes_sleep_delay_to_artisan_command(): void
     {
-        $job = new ProcessShadowBackfillJob(['2026-04-26'], 1234, 750, 5, 'shadow-custom');
+        $job = new ProcessShadowBackfillJob(['2026-04-26'], 1234, 750, 5, 'shadow-custom', true);
 
         Artisan::shouldReceive('call')
             ->once()
@@ -28,6 +28,7 @@ class ProcessShadowBackfillJobTest extends TestCase
                     && $arguments['--chunk-size'] === 1234
                     && $arguments['--delay'] === 750
                     && $arguments['--retry-count'] === 5
+                    && $arguments['--skip-snapshot'] === true
                     && $arguments['--no-interaction'] === true;
             }))
             ->andReturn(0);

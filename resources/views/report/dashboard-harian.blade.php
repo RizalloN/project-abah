@@ -2315,7 +2315,9 @@
                     rowsByKey.simpanan_ritel[group][smpanMetricName] = sumMetric(rowsByKey, ['giro_ritel', 'deposito_ritel', 'tabungan_ritel'], group, smpanMetricName);
                     rowsByKey.simpanan_mikro[group][smpanMetricName] = sumMetric(rowsByKey, ['giro_mikro', 'deposito_mikro', 'tabungan_mikro'], group, smpanMetricName);
                     rowsByKey.simpanan_wholesale[group][smpanMetricName] = sumMetric(rowsByKey, ['giro_wholesale', 'deposito_wholesale', 'tabungan_wholesale'], group, smpanMetricName);
-                    rowsByKey.total_simpanan[group][smpanMetricName] = sumMetric(rowsByKey, ['simpanan_ritel', 'simpanan_mikro', 'simpanan_wholesale'], group, smpanMetricName);
+                    if (smpanMetricName !== 'rka' && smpanMetricName !== 'rka_dec') {
+                        rowsByKey.total_simpanan[group][smpanMetricName] = sumMetric(rowsByKey, ['simpanan_ritel', 'simpanan_mikro', 'simpanan_wholesale'], group, smpanMetricName);
+                    }
                     rowsByKey.casa_ritel[group][smpanMetricName] = sumMetric(rowsByKey, ['giro_ritel', 'tabungan_ritel'], group, smpanMetricName);
                     rowsByKey.casa_mikro[group][smpanMetricName] = sumMetric(rowsByKey, ['giro_mikro', 'tabungan_mikro'], group, smpanMetricName);
                     rowsByKey.total_casa[group][smpanMetricName] = sumMetric(rowsByKey, ['casa_ritel', 'casa_mikro'], group, smpanMetricName);
@@ -2591,12 +2593,12 @@
         const A4_EXPORT = {
             width: 4960,
             height: 7016,
-            marginX: 210,
-            marginY: 140,
-            headerHeight: 360,
-            blockTitleHeight: 90,
-            footerHeight: 150,
-            sectionGap: 52,
+            marginX: 150,
+            marginY: 118,
+            headerHeight: 328,
+            blockTitleHeight: 76,
+            footerHeight: 128,
+            sectionGap: 34,
         };
 
         function waitFrame() {
@@ -2694,15 +2696,15 @@
             const titleHeight = A4_EXPORT.blockTitleHeight;
 
             ctx.fillStyle = '#eff6ff';
-            ctx.fillRect(x, y, width, titleHeight - 16);
+            ctx.fillRect(x, y, width, titleHeight - 12);
             ctx.fillStyle = '#00529c';
-            ctx.fillRect(x, y, 16, titleHeight - 16);
+            ctx.fillRect(x, y, 14, titleHeight - 12);
             ctx.strokeStyle = '#bfdbfe';
             ctx.lineWidth = 3;
-            ctx.strokeRect(x, y, width, titleHeight - 16);
+            ctx.strokeRect(x, y, width, titleHeight - 12);
             ctx.fillStyle = '#0f172a';
-            ctx.font = 'bold 38px "Inter", "Segoe UI", Arial, sans-serif';
-            drawTextEllipsis(ctx, title, x + 34, y + 45, width - 68);
+            ctx.font = 'bold 34px "Inter", "Segoe UI", Arial, sans-serif';
+            drawTextEllipsis(ctx, title, x + 30, y + 40, width - 60);
         }
 
         const captureAllDailyDashboard = async function() {
@@ -2768,12 +2770,12 @@
                 const originalTable = document.querySelector('.daily-table');
                 const colgroupHtml = originalTable.querySelector('colgroup').outerHTML;
                 const theadHtml = originalTable.querySelector('thead').outerHTML;
-                const tableRealWidth = Math.ceil(Math.max(originalTable.scrollWidth, originalTable.getBoundingClientRect().width)) + 12;
+                const tableRealWidth = Math.ceil(Math.max(originalTable.scrollWidth, originalTable.getBoundingClientRect().width)) + 80;
 
                 for (let b = 0; b < blockSegments.length; b++) {
                     const block = blockSegments[b];
                     const subGroups = [];
-                    const MAX_ROWS_PER_SUB_SEGMENT = 18;
+                    const MAX_ROWS_PER_SUB_SEGMENT = 22;
                     for (let i = 0; i < block.rows.length; i += MAX_ROWS_PER_SUB_SEGMENT) {
                         subGroups.push(block.rows.slice(i, i + MAX_ROWS_PER_SUB_SEGMENT));
                     }
@@ -2789,8 +2791,35 @@
                         
                         const tempStyle = document.createElement('style');
                         tempStyle.textContent = `
-                            .daily-table { width: 100% !important; border-collapse: separate !important; border-spacing: 0 !important; }
-                            .daily-table th, .daily-table td { border: 1px solid #dbe5ef !important; padding: 4px 6px !important; }
+                            .daily-table {
+                                width: ${tableRealWidth}px !important;
+                                min-width: ${tableRealWidth}px !important;
+                                border-collapse: separate !important;
+                                border-spacing: 0 !important;
+                                table-layout: auto !important;
+                                margin: 0 !important;
+                                background: #ffffff !important;
+                            }
+                            .daily-table th,
+                            .daily-table td {
+                                border: 1px solid #dbe5ef !important;
+                                box-sizing: border-box !important;
+                                overflow: visible !important;
+                                padding: 4px 7px !important;
+                                white-space: nowrap !important;
+                            }
+                            .daily-table tbody td {
+                                font-size: 12px !important;
+                                line-height: 1.2 !important;
+                            }
+                            .daily-table .metric-label,
+                            .daily-table .cell-text {
+                                display: inline-block !important;
+                                max-width: none !important;
+                                overflow: visible !important;
+                                text-overflow: clip !important;
+                                white-space: nowrap !important;
+                            }
                             .daily-table .sticky-no,
                             .daily-table .sticky-label,
                             .daily-table .group-no,
@@ -2801,6 +2830,8 @@
                                 box-shadow: none !important;
                             }
                             .daily-table thead th { background: #004685 !important; color: #ffffff !important; font-weight: bold !important; font-size: 11px !important; }
+                            .daily-table thead .column-heading { padding: 4px 0 !important; line-height: 1.12 !important; }
+                            .daily-table thead .header-subnote { margin-top: 3px !important; padding-top: 3px !important; font-size: 9px !important; }
                             .daily-table .group-position { background: #004685 !important; }
                             .daily-table .group-delta { background: #334155 !important; }
                             .daily-table .group-rka { background: #15803d !important; }
@@ -2827,13 +2858,18 @@
                         document.body.appendChild(tempWrap);
                         
                         await waitFrame();
+                        const captureTable = tempWrap.querySelector('table');
+                        const captureWidth = Math.ceil(Math.max(captureTable.scrollWidth, captureTable.getBoundingClientRect().width)) + 8;
+                        const captureHeight = Math.ceil(Math.max(captureTable.scrollHeight, captureTable.getBoundingClientRect().height)) + 8;
                         const segmentCanvas = await html2canvas(tempWrap.querySelector('table'), {
                             scale: 4.0,
                             useCORS: true,
                             backgroundColor: '#ffffff',
                             logging: false,
-                            width: tableRealWidth,
-                            height: tempWrap.querySelector('table').offsetHeight
+                            width: captureWidth,
+                            height: captureHeight,
+                            windowWidth: captureWidth,
+                            windowHeight: captureHeight
                         });
                         document.body.removeChild(tempWrap);
                         

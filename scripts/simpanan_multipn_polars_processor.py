@@ -220,6 +220,27 @@ def build_simpanan_row_fingerprint(headers: list[str], values: list[str]) -> str
     return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
 
 
+def build_simpanan_unique_id_from_record(record: dict[str, object], columns: list[str]) -> str:
+    parts: list[str] = []
+    for column in columns:
+        normalized_column = column.lower().strip()
+        if (
+            normalized_column == ""
+            or normalized_column.startswith("col_")
+            or is_simpanan_row_number_header(normalized_column)
+            or normalized_column in {"uniqueid_smpn", "uniqueid_simopn", "created_at", "updated_at"}
+        ):
+            continue
+
+        parts.append(f"{normalized_column}={normalize_cell(record.get(column, '')).upper()}")
+
+    digest_source = "|".join(parts)
+    if digest_source == "":
+        digest_source = repr(record)
+
+    return "SMPN_" + hashlib.sha1(digest_source.encode("utf-8")).hexdigest() + "_SMPN"
+
+
 def normalize_header_name(header_name: str) -> str:
     normalized = re.sub(r"[^A-Z0-9]+", "_", normalize_cell(header_name).upper())
     normalized = normalized.strip("_")
@@ -675,10 +696,27 @@ def sanitize_source_optimized(source_path: str, delimiter: str, config: dict | N
             ]
 
             if unique_id_col not in df_collected.columns:
-                import uuid
-                uuid_base = unique_id_prefix + "_"
-                uuids = [uuid_base + str(uuid.uuid4()) for _ in range(df_collected.height)]
-                cols_to_add.append(pl.lit(uuids).alias(unique_id_col))
+                fingerprint_columns = [
+                    col
+                    for col in df_collected.columns
+                    if col.lower().strip()
+                    not in {
+                        "no",
+                        "row_num",
+                        "rownumber",
+                        "nomor_baris",
+                        "urutan",
+                        "uniqueid_smpn",
+                        "uniqueid_simopn",
+                        "created_at",
+                        "updated_at",
+                    }
+                ]
+                deterministic_ids = [
+                    build_simpanan_unique_id_from_record(record, fingerprint_columns)
+                    for record in df_collected.select(fingerprint_columns).iter_rows(named=True)
+                ]
+                cols_to_add.append(pl.Series(unique_id_col, deterministic_ids))
 
             manual_values = config.get("manual_values", {})
             if manual_values:

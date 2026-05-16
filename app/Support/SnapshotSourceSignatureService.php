@@ -12,6 +12,9 @@ class SnapshotSourceSignatureService
     private const TABLE = 'snapshot_source_signatures';
     private const SIGNATURE_VERSION = 'snapshot-source-v1';
     private const BUCKET_SIGNATURE_VERSION = 'snapshot-source-v2-buckets';
+    private const SNAPSHOT_FORMULA_VERSIONS = [
+        'performance_rm_snapshots' => 'performance-rm-v2-consumer-plafon-net',
+    ];
 
     private const NUMERIC_COLUMNS = [
         'daily_loan_dinamis' => [
@@ -191,10 +194,21 @@ class SnapshotSourceSignatureService
             ->where('source_table', strtolower(trim($sourceTable)))
             ->where('snapshot_table', strtolower(trim($snapshotTable)))
             ->where('period_key', trim($periodKey))
-            ->first(['source_signature']);
+            ->first(['source_signature', 'context']);
 
-        return $existing !== null
-            && hash_equals(
+        if ($existing === null) {
+            return false;
+        }
+
+        $formulaVersion = $this->snapshotFormulaVersion($snapshotTable);
+        if ($formulaVersion !== null) {
+            $context = json_decode((string) ($existing->context ?? ''), true);
+            if (!is_array($context) || (string) ($context['snapshot_formula_version'] ?? '') !== $formulaVersion) {
+                return false;
+            }
+        }
+
+        return hash_equals(
                 (string) ($existing->source_signature ?? ''),
                 (string) ($sourceMetadata['source_signature'] ?? '')
             );
@@ -213,6 +227,11 @@ class SnapshotSourceSignatureService
 
         $now = now();
 
+        $formulaVersion = $this->snapshotFormulaVersion($snapshotTable);
+        if ($formulaVersion !== null) {
+            $context['snapshot_formula_version'] = $formulaVersion;
+        }
+
         DB::table(self::TABLE)->updateOrInsert(
             [
                 'source_table' => strtolower(trim($sourceTable)),
@@ -229,6 +248,11 @@ class SnapshotSourceSignatureService
                 'updated_at' => $now,
             ]
         );
+    }
+
+    private function snapshotFormulaVersion(string $snapshotTable): ?string
+    {
+        return self::SNAPSHOT_FORMULA_VERSIONS[strtolower(trim($snapshotTable))] ?? null;
     }
 
     /**

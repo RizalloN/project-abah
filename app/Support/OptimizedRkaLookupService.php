@@ -26,7 +26,7 @@ class OptimizedRkaLookupService extends RkaLookupService
     private const CACHE_NAMESPACE = 'rka_lookup_optimized';
     private const CACHE_TTL = 3600; // 1 hour (was 24h — reduces stale-cache blast radius)
     private const RKA_VERSION_KEY = 'rka_data_version';
-    private const CODE_VERSION = 'v2-unit-filter'; // bump this whenever normalization/definition logic changes
+    private const CODE_VERSION = 'v4-grouped-unit-alias-match'; // bump this whenever normalization/definition logic changes
 
     private array $inMemoryCache = [];
 

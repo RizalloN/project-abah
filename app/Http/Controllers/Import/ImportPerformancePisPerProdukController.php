@@ -84,6 +84,50 @@ class ImportPerformancePisPerProdukController extends Controller
         Cache::put($this->stageCacheKey($relativePath), $payload, now()->addHours(4));
     }
 
+    private function rememberPerformancePisPreviewStage(string $relativePath, array $excelContext, array $stageResult): void
+    {
+        $this->putStagedExcelState($relativePath, [
+            'staged_csv_path' => (string) ($stageResult['staged_csv_path'] ?? ''),
+            'total_rows' => (int) ($stageResult['total_rows'] ?? 0),
+            'header_index' => 0,
+            'headers' => array_values((array) ($stageResult['headers'] ?? $this->compactSourceHeaders((array) ($excelContext['source_headers'] ?? [])))),
+            'source_headers' => $this->compactSourceHeaders((array) ($excelContext['source_headers'] ?? [])),
+            'preview_sample_only' => false,
+        ]);
+    }
+
+    private function ensurePerformancePisPreviewStage(string $relativePath, string $absolutePath, ?string $manualPosisi = null): void
+    {
+        if (!$this->isExcelFile($absolutePath)) {
+            return;
+        }
+
+        $stageState = $this->getStagedExcelState($relativePath);
+        $stagedCsvPath = (string) ($stageState['staged_csv_path'] ?? '');
+        if ($stagedCsvPath !== '' && file_exists($stagedCsvPath)) {
+            return;
+        }
+
+        $excelContext = $this->buildExcelContext($absolutePath, $manualPosisi);
+        $stagedCsvPath = $this->stagingService()->createStagedCsvPath(
+            storage_path('app/import_preview_filters'),
+            'performance_pis_preview'
+        );
+        $stageResult = $this->stagePerformancePisExcelToCsv(
+            static function (string $event, array $payload): void {
+            },
+            $absolutePath,
+            $excelContext,
+            $stagedCsvPath
+        );
+
+        if ($stageResult === null) {
+            throw new \RuntimeException('Gagal membuat CSV staging preview Performance PIS.');
+        }
+
+        $this->rememberPerformancePisPreviewStage($relativePath, $excelContext, $stageResult);
+    }
+
     private function resolveWorkingImportPath(string $relativePath): string
     {
         $absolutePath = Storage::path($relativePath);
@@ -95,6 +139,87 @@ class ImportPerformancePisPerProdukController extends Controller
         $stagedCsvPath = (string) ($stageState['staged_csv_path'] ?? '');
 
         return ($stagedCsvPath !== '' && file_exists($stagedCsvPath)) ? $stagedCsvPath : $absolutePath;
+    }
+
+    private function resolvePreviewWorkingContext(string $filePath): array
+    {
+        $relativePath = urldecode(trim($filePath));
+        $absolutePath = file_exists($relativePath) ? $relativePath : Storage::path($relativePath);
+        if (!file_exists($absolutePath)) {
+            throw new \RuntimeException('File Performance PIS tidak ditemukan.');
+        }
+
+        $manualPosisi = session('performance_pis_periode');
+        if (!file_exists($relativePath)) {
+            $this->ensurePerformancePisPreviewStage($relativePath, $absolutePath, $manualPosisi);
+        }
+
+        $stageState = !file_exists($relativePath) ? $this->getStagedExcelState($relativePath) : [];
+        $workingPath = !file_exists($relativePath)
+            ? $this->resolveWorkingImportPath($relativePath)
+            : $absolutePath;
+        $context = $this->buildImportContext($workingPath, $manualPosisi, $stageState);
+
+        return [$workingPath, $context];
+    }
+
+    private function normalizePreviewActiveFilters(array $activeFilters, ?int $excludeColumnIndex = null): array
+    {
+        $normalized = [];
+        foreach ($activeFilters as $columnIndex => $values) {
+            $columnIndex = (int) $columnIndex;
+            if ($excludeColumnIndex !== null && $columnIndex === $excludeColumnIndex) {
+                continue;
+            }
+
+            if (!is_array($values) || $values === []) {
+                $normalized[$columnIndex] = [];
+                continue;
+            }
+
+            $cleanValues = array_values(array_unique(array_filter(array_map(
+                static fn ($value): string => trim((string) $value),
+                $values
+            ), static fn (string $value): bool => $value !== '')));
+
+            $normalized[$columnIndex] = $cleanValues;
+        }
+
+        return $normalized;
+    }
+
+    private function previewFilterOptionsCacheKey(string $workingPath, int $columnIndex, array $activeFilters): string
+    {
+        return 'performance_pis_preview_filter_options:v1:' . md5(implode('|', [
+            (string) realpath($workingPath),
+            (string) @filesize($workingPath),
+            (string) @filemtime($workingPath),
+            (string) $columnIndex,
+            md5((string) json_encode($activeFilters)),
+        ]));
+    }
+
+    private function previewUniqueValuesCacheKey(string $workingPath): string
+    {
+        return 'performance_pis_preview_unique_values:v1:' . md5(implode('|', [
+            (string) realpath($workingPath),
+            (string) @filesize($workingPath),
+            (string) @filemtime($workingPath),
+        ]));
+    }
+
+    private function collectCachedPreviewUniqueValues(string $workingPath, array $context): array
+    {
+        $cacheKey = $this->previewUniqueValuesCacheKey($workingPath);
+        $cached = Cache::get($cacheKey);
+        if (is_array($cached)) {
+            return $cached;
+        }
+
+        $uniqueValues = $this->collectPreviewUniqueValues($workingPath, $context);
+        Cache::put($cacheKey, $uniqueValues, now()->addHours(4));
+
+        return $uniqueValues;
     }
 
     private function isExcelFile(string $path): bool
@@ -220,13 +345,23 @@ class ImportPerformancePisPerProdukController extends Controller
                 if ($this->isExcelFile($absolutePath)) {
                     $send('progress', ['percent' => 18, 'message' => 'Mendeteksi header Excel Performance PIS...']);
                     $excelContext = $this->buildExcelContext($absolutePath, session('performance_pis_periode'));
-                    $this->putStagedExcelState($relativePath, [
-                        'total_rows' => max(0, (int) ($excelContext['total_rows'] ?? 0) - (int) ($excelContext['header_line'] ?? 0)),
-                        'header_index' => max(0, (int) ($excelContext['header_line'] ?? 1) - 1),
-                        'headers' => $this->compactSourceHeaders((array) ($excelContext['source_headers'] ?? [])),
-                        'preview_sample_only' => true,
-                    ]);
-                    $send('progress', ['percent' => 82, 'message' => 'Struktur header valid. Preview akan memakai sampel data.']);
+                    $stagedCsvPath = $this->stagingService()->createStagedCsvPath(
+                        storage_path('app/import_preview_filters'),
+                        'performance_pis_preview'
+                    );
+                    $stageResult = $this->stagePerformancePisExcelToCsv(
+                        $send,
+                        $absolutePath,
+                        $excelContext,
+                        $stagedCsvPath
+                    );
+
+                    if ($stageResult === null) {
+                        throw new \RuntimeException('Gagal membuat CSV staging preview Performance PIS.');
+                    }
+
+                    $this->rememberPerformancePisPreviewStage($relativePath, $excelContext, $stageResult);
+                    $send('progress', ['percent' => 82, 'message' => 'CSV staging preview siap. Filter akan membaca seluruh data sumber.']);
                 } else {
                     $send('progress', ['percent' => 45, 'message' => 'Memvalidasi struktur CSV Performance PIS...']);
                     $context = $this->buildCsvContext($absolutePath, session('performance_pis_periode'));
@@ -307,7 +442,7 @@ class ImportPerformancePisPerProdukController extends Controller
         }
 
         $formattedUniqueValues = [];
-        $uniqueValues = $this->collectPreviewUniqueValuesFromRows($previewData, $context);
+        $uniqueValues = $this->collectCachedPreviewUniqueValues($workingPath, $context);
         foreach ($uniqueValues as $index => $valuesMap) {
             $keys = array_keys($valuesMap);
             usort($keys, 'strnatcmp');
@@ -324,14 +459,135 @@ class ImportPerformancePisPerProdukController extends Controller
             'previewRoute' => route('import.performancepis.preview.refresh'),
             'initRoute' => route('import.performancepis.init'),
             'streamRoute' => route('import.performancepis.stream'),
+            'filterOptionsRoute' => route('import.performancepis.filter-options'),
+            'filteredRowsRoute' => route('import.performancepis.filtered-rows'),
             'backRoute' => route('import.index'),
             'disableArea6AutoFilter' => true,
+            'deferDependentFilterRefresh' => true,
+            'disableFilterOptionsLocalCache' => true,
+            'initialFilterOptionsAreComplete' => true,
             'detectedPosisi' => $context['posisi'] ?? $periodeInput,
             'manualPeriode' => $periodeInput,
             'manualPeriodeLabel' => Carbon::parse($periodeInput)->translatedFormat('d F Y'),
             'lockDelimiterSelector' => true,
             'fixedDelimiterLabel' => 'Sampling Excel/CSV Performance PIS',
         ]);
+    }
+
+    public function previewFilterOptions(Request $request)
+    {
+        ini_set('memory_limit', '1024M');
+        set_time_limit(0);
+
+        $request->validate([
+            'file_path' => 'required|string',
+            'column_index' => 'required|integer|min:0',
+            'active_filters_json' => 'nullable|string',
+        ]);
+
+        try {
+            [$workingPath, $context] = $this->resolvePreviewWorkingContext((string) $request->input('file_path'));
+            $columnIndex = (int) $request->input('column_index');
+            $activeFilters = $this->normalizePreviewActiveFilters(
+                json_decode((string) $request->input('active_filters_json', ''), true) ?: [],
+                $columnIndex
+            );
+
+            $cacheKey = $this->previewFilterOptionsCacheKey($workingPath, $columnIndex, $activeFilters);
+            $cached = Cache::get($cacheKey);
+            if (is_array($cached)) {
+                return response()->json([
+                    'status' => 'success',
+                    'values' => $cached,
+                    'cached' => true,
+                ]);
+            }
+
+            $valuesMap = [];
+            $this->iterateDataRows($workingPath, $context, function (array $row) use (&$valuesMap, $columnIndex, $activeFilters): bool {
+                if (!$this->passesFilters($row, $activeFilters)) {
+                    return true;
+                }
+
+                $value = trim((string) ($row[$columnIndex] ?? ''));
+                if ($value !== '') {
+                    $valuesMap[$value] = true;
+                }
+
+                return count($valuesMap) < self::UNIQUE_VALUE_LIMIT;
+            });
+
+            $values = array_keys($valuesMap);
+            usort($values, 'strnatcmp');
+            Cache::put($cacheKey, $values, now()->addHours(4));
+
+            return response()->json([
+                'status' => 'success',
+                'values' => $values,
+                'cached' => false,
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Gagal memuat opsi filter Performance PIS: ' . $e->getMessage(),
+            ], 422);
+        }
+    }
+
+    public function previewFilteredRows(Request $request)
+    {
+        ini_set('memory_limit', '1024M');
+        set_time_limit(0);
+
+        $request->validate([
+            'file_path' => 'required|string',
+            'active_filters_json' => 'nullable|string',
+            'limit' => 'nullable|integer|min:1|max:200',
+        ]);
+
+        try {
+            [$workingPath, $context] = $this->resolvePreviewWorkingContext((string) $request->input('file_path'));
+            $activeFilters = $this->normalizePreviewActiveFilters(
+                json_decode((string) $request->input('active_filters_json', ''), true) ?: []
+            );
+            $limit = (int) $request->input('limit', 100);
+
+            $rows = [];
+            $matchedCount = 0;
+            $truncated = false;
+
+            $this->iterateDataRows($workingPath, $context, function (array $row) use (&$rows, &$matchedCount, &$truncated, $activeFilters, $limit): bool {
+                if (!$this->passesFilters($row, $activeFilters)) {
+                    return true;
+                }
+
+                $matchedCount++;
+                if (count($rows) < $limit) {
+                    $rows[] = $row;
+                }
+
+                if (count($rows) >= $limit) {
+                    $truncated = true;
+                    return false;
+                }
+
+                return true;
+            });
+
+            return response()->json([
+                'status' => 'success',
+                'rows' => $rows,
+                'total_matched' => $truncated ? null : $matchedCount,
+                'returned_rows' => count($rows),
+                'truncated' => $truncated,
+                'source' => 'performance-pis',
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Gagal memuat preview hasil filter Performance PIS: ' . $e->getMessage(),
+            ], 422);
+        }
     }
 
     public function processImport(Request $request)

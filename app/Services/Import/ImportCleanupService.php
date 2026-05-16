@@ -281,7 +281,8 @@ class ImportCleanupService
 
             $context = json_decode((string) ($job->job_context ?? ''), true);
             $tableName = is_array($context)
-                ? $this->normalizeSyncScopeValue((string) ($context['table_name'] ?? ''))
+                ? ($this->normalizeSyncScopeValue((string) ($context['table_name'] ?? ''))
+                    ?? $this->normalizeSyncScopeValue((string) data_get($context, 'state.params.table_name', '')))
                 : null;
 
             if ($tableName !== null) {
@@ -330,13 +331,8 @@ class ImportCleanupService
                 return [null];
             }
 
-            $periods = $context['backend_detected_periods'] ?? $context['detected_periods'] ?? [];
-            if (!is_array($periods)) {
-                $periods = [$periods];
-            }
-
             $normalized = [];
-            foreach ($periods as $period) {
+            foreach ($this->periodHintsFromContext($context) as $period) {
                 $value = trim((string) $period);
                 if ($value !== '') {
                     $normalizedValue = $this->normalizeSnapshotPeriodHint($value) ?? $value;
@@ -348,7 +344,8 @@ class ImportCleanupService
                 return array_values($normalized);
             }
 
-            $contextTable = $this->normalizeSyncScopeValue((string) ($context['table_name'] ?? ''));
+            $contextTable = $this->normalizeSyncScopeValue((string) ($context['table_name'] ?? ''))
+                ?? $this->normalizeSyncScopeValue((string) data_get($context, 'state.params.table_name', ''));
             $resolvedTable = $tableName ?? $contextTable;
             $resolvedFromSource = $this->resolveRecentlyImportedPeriods($jobId, $resolvedTable);
 
@@ -364,6 +361,38 @@ class ImportCleanupService
 
             return $resolvedFromSource !== [] ? $resolvedFromSource : [null];
         }
+    }
+
+    /**
+     * @return array<int, mixed>
+     */
+    private function periodHintsFromContext(array $context): array
+    {
+        $candidates = [
+            $context['backend_detected_periods'] ?? null,
+            $context['detected_periods'] ?? null,
+            $context['period_hints'] ?? null,
+            $context['replace_periods'] ?? null,
+            data_get($context, 'state.params.backend_detected_periods'),
+            data_get($context, 'state.params.detected_periods'),
+            data_get($context, 'state.params.period_hints'),
+            data_get($context, 'state.params.replace_periods'),
+            data_get($context, 'state.params.manual_periode'),
+            data_get($context, 'state.params.periode'),
+        ];
+
+        $periods = [];
+        foreach ($candidates as $candidate) {
+            if ($candidate === null || $candidate === '') {
+                continue;
+            }
+
+            foreach (is_array($candidate) ? $candidate : [$candidate] as $period) {
+                $periods[] = $period;
+            }
+        }
+
+        return $periods;
     }
 
     /**

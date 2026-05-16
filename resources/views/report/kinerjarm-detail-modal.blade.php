@@ -1,6 +1,92 @@
 @php
     $formatAmount = $formatAmount ?? fn ($value, int $decimals = 1) => number_format(((float) $value) / 1000000, $decimals, ',', '.');
     $formatPercent = $formatPercent ?? fn ($value, int $decimals = 2) => number_format((float) $value, $decimals, ',', '.');
+    $detailMode = $detailMode ?? 'default';
+@endphp
+
+@if($detailMode === 'consumer_surplus')
+@php
+    $visibleDetails = collect($details ?? [])->values();
+    $totalSurplus = (float) $visibleDetails->sum(fn ($detail) => (float) ($detail['surplus_plafon'] ?? 0));
+    $totalDebitur = $visibleDetails->pluck('account')->unique()->count();
+@endphp
+
+<div class="modal-header kinerja-rm-modal__header">
+    <div>
+        <p class="kinerja-rm-modal__eyebrow">CONSUMER Surplesi Plafon Net</p>
+        <h5 class="modal-title" id="rmDetailModalLabel">{{ $rm }}</h5>
+    </div>
+    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+</div>
+<div class="modal-body kinerja-rm-modal__body">
+    <div class="kinerja-rm-modal__summary">
+        <div>
+            <span>Debitur Surplesi</span>
+            <strong>{{ number_format($totalDebitur, 0, ',', '.') }}</strong>
+        </div>
+        <div>
+            <span>Plafon Net</span>
+            <strong>{{ $formatAmount($totalSurplus) }}</strong>
+        </div>
+        <div>
+            <span>Basis</span>
+            <strong>Rekening Sama</strong>
+        </div>
+        <div>
+            <span>Periode</span>
+            <strong>Latest / Bulan</strong>
+        </div>
+    </div>
+
+    <div class="table-responsive kinerja-rm-modal__table-wrap">
+        <table class="table table-sm mb-0 kinerja-rm-modal__table">
+            <thead>
+                <tr>
+                    <th class="text-center">Posisi</th>
+                    <th class="text-center">Pembanding</th>
+                    <th class="text-start">No Rekening</th>
+                    <th class="text-start">Unit / Produk</th>
+                    <th class="text-end">Plafon Lalu</th>
+                    <th class="text-end">Plafon Kini</th>
+                    <th class="text-end">Net</th>
+                </tr>
+            </thead>
+            <tbody>
+                @forelse($visibleDetails as $detail)
+                    <tr>
+                        <td class="text-center fw-bold">{{ $detail['periode'] }}</td>
+                        <td class="text-center">{{ $detail['previous_period'] }}</td>
+                        <td class="text-start">{{ $detail['account'] }}</td>
+                        <td class="text-start">
+                            <div class="fw-semibold">{{ $detail['unit'] ?: $detail['cabang'] }}</div>
+                            <small class="text-muted">{{ $detail['produk'] }}</small>
+                        </td>
+                        <td class="text-end">{{ $formatAmount($detail['previous_plafon']) }}</td>
+                        <td class="text-end">{{ $formatAmount($detail['current_plafon']) }}</td>
+                        <td class="text-end fw-bold text-success">{{ $formatAmount($detail['surplus_plafon']) }}</td>
+                    </tr>
+                @empty
+                    <tr>
+                        <td colspan="7" class="text-center py-4 text-muted">Tidak ada surplesi plafon net untuk RM ini pada tahun berjalan.</td>
+                    </tr>
+                @endforelse
+            </tbody>
+            @if($visibleDetails->isNotEmpty())
+                <tfoot>
+                    <tr>
+                        <td colspan="6" class="text-end">TOTAL NET</td>
+                        <td class="text-end">{{ $formatAmount($totalSurplus) }}</td>
+                    </tr>
+                </tfoot>
+            @endif
+        </table>
+    </div>
+</div>
+<div class="modal-footer kinerja-rm-modal__footer">
+    <button type="button" class="btn btn-primary btn-sm" data-bs-dismiss="modal">Tutup</button>
+</div>
+@else
+@php
     $visibleDetails = collect($details ?? [])->filter(function ($detail) {
         $realisasiOs = (float) ($detail['realisasi_os'] ?? 0);
         $larValue = (float) ($detail['lar_value'] ?? 0);
@@ -100,3 +186,4 @@
 <div class="modal-footer kinerja-rm-modal__footer">
     <button type="button" class="btn btn-primary btn-sm" data-bs-dismiss="modal">Tutup</button>
 </div>
+@endif

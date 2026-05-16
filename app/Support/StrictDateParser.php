@@ -26,14 +26,16 @@ class StrictDateParser
      * Parse common import date inputs into Y-m-d without relying on Carbon::parse
      * for numeric-only or slash-delimited ambiguous values.
      */
-    public static function normalize(?string $value, array $extraFormats = []): ?string
+    public static function normalize(?string $value, array $extraFormats = [], bool $allowLocaleMonthNames = true): ?string
     {
         $value = trim((string) ($value ?? ''));
         if ($value === '') {
             return null;
         }
 
-        $value = self::normalizeLocaleDateText($value);
+        if ($allowLocaleMonthNames) {
+            $value = self::normalizeLocaleDateText($value);
+        }
 
         if (preg_match('/^\d{8}$/', $value) === 1) {
             foreach (['Ymd', 'dmY', 'mdY'] as $format) {

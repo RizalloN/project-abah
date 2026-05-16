@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Support\ReportCacheVersion;
 use App\Support\ReportSnapshotBuilder;
+use App\Support\SnapshotSourceSignatureService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -17,7 +18,10 @@ class RebuildPerformanceRmCommand extends Command
 
     protected $description = 'Rebuild Performance RM snapshots with optimized aggregation';
 
-    public function __construct(private ReportSnapshotBuilder $builder)
+    public function __construct(
+        private ReportSnapshotBuilder $builder,
+        private SnapshotSourceSignatureService $sourceSignatures
+    )
     {
         parent::__construct();
     }
@@ -50,6 +54,7 @@ class RebuildPerformanceRmCommand extends Command
 
             ReportCacheVersion::bump('pinjaman');
             $this->info('Cache version bumped.');
+            $this->markSnapshotSignatures($result, $period ?: null);
 
             return self::SUCCESS;
         } catch (Throwable $e) {
@@ -60,6 +65,28 @@ class RebuildPerformanceRmCommand extends Command
             ]);
 
             return self::FAILURE;
+        }
+    }
+
+    /**
+     * @param array<string, int> $result
+     */
+    private function markSnapshotSignatures(array $result, ?string $periodHint): void
+    {
+        $periods = $periodHint !== null && trim($periodHint) !== ''
+            ? [trim($periodHint)]
+            : array_keys(array_filter($result, static fn ($rows): bool => (int) $rows > 0));
+
+        foreach ($periods as $period) {
+            $this->sourceSignatures->markBuiltForApplicableSources(
+                'performance_rm_snapshots',
+                (string) $period,
+                [
+                    ['source_table' => 'daily_loan_dinamis', 'period_column' => 'periode'],
+                    ['source_table' => 'simpanan_multipn', 'period_column' => 'posisi'],
+                ],
+                ['command' => static::class]
+            );
         }
     }
 }

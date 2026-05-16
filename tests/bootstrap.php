@@ -21,6 +21,7 @@ $forcedTestEnvironment = [
     'DB_CONNECTION' => 'sqlite',
     'DB_DATABASE' => $testingDatabase,
     'DB_URL' => '',
+    'IMPORT_CACHE_STORE' => '',
 ];
 
 foreach ($forcedTestEnvironment as $key => $value) {

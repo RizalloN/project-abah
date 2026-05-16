@@ -12,7 +12,7 @@
         }
 
         try {
-            return \Carbon\Carbon::parse($period)->format('d M y');
+            return \Carbon\Carbon::parse($period)->locale('id')->translatedFormat('d M y');
         } catch (\Throwable) {
             return $period;
         }
@@ -282,13 +282,18 @@
                             <label class="loan-filter-label">Posisi Laporan</label>
                             <div class="loan-dropdown" data-loan-dropdown="periode">
                                 <i class="fas fa-calendar-alt loan-dropdown-icon"></i>
-                                <button type="button" class="loan-dropdown-toggle" onclick="document.getElementById('loanPeriodeInput').showPicker()">
+                                <button type="button" class="loan-dropdown-toggle" data-loan-dropdown-toggle="periode">
                                     <span class="loan-dropdown-text" id="loanPeriodeDisplay">{{ $formatMatrixPeriod($requestedPeriod ?: $selectedPeriod) }}</span>
                                     <i class="fas fa-chevron-down small opacity-50"></i>
                                 </button>
-                                <input id="loanPeriodeInput" type="date" name="periode" 
-                                    style="opacity: 0; position: absolute; width: 100%; height: 100%; top: 0; left: 0; pointer-events: none;" 
-                                    value="{{ $requestedPeriod ?: $selectedPeriod }}" max="{{ $periods->first() }}">
+                                <div class="loan-dropdown-menu" data-loan-dropdown-menu="periode"></div>
+                                <select id="loanPeriodeInput" name="periode" class="d-none loan-filter-control" data-placeholder="Pilih Periode">
+                                    @foreach($periods as $period)
+                                        <option value="{{ $period }}" @selected(($requestedPeriod ?: $selectedPeriod) === $period)>
+                                            {{ $formatMatrixPeriod($period) }}
+                                        </option>
+                                    @endforeach
+                                </select>
                             </div>
                         </div>
 
@@ -1015,6 +1020,7 @@
         // ── Modern Dropdown Sync Logic ──
         function initModernDropdowns() {
             const dropdownConfigs = [
+                { id: 'loanPeriodeInput', key: 'periode' },
                 { id: 'loanSegmenSelect', key: 'segmen' },
                 { id: 'loanProdukSelect', key: 'produk' },
                 { id: 'loanCabangSelect', key: 'cabang' },

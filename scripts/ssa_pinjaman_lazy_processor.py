@@ -37,6 +37,7 @@ import re
 import sys
 import tempfile
 import time
+from datetime import datetime, timedelta
 from pathlib import Path
 
 
@@ -46,6 +47,21 @@ REQUIRED_HEADERS = {
     "nama_uker",
     "produk",
     "baki_debet",
+}
+
+INDONESIAN_MONTHS = {
+    "januari": "january",
+    "februari": "february",
+    "maret": "march",
+    "april": "april",
+    "mei": "may",
+    "juni": "june",
+    "juli": "july",
+    "agustus": "august",
+    "september": "september",
+    "oktober": "october",
+    "november": "november",
+    "desember": "december",
 }
 
 
@@ -142,6 +158,44 @@ def normalize_header_name(header_name: str) -> str:
     return aliases.get(normalized, normalized.lower())
 
 
+def normalize_locale_date_text(value: str) -> str:
+    normalized = value.strip()
+    for source, target in INDONESIAN_MONTHS.items():
+        normalized = re.sub(rf"\b{source}\b", target, normalized, flags=re.IGNORECASE)
+    return normalized
+
+
+def normalize_date_value(value: object) -> str | None:
+    text = normalize_cell(value)
+    if text == "":
+        return None
+
+    if re.fullmatch(r"\d+(?:\.\d+)?", text):
+        try:
+            serial = float(text)
+        except Exception:
+            serial = -1
+        if 20000 <= serial <= 80000:
+            try:
+                return (datetime(1899, 12, 30) + timedelta(days=serial)).strftime("%Y-%m-%d")
+            except Exception:
+                return None
+
+    normalized = normalize_locale_date_text(text).replace("/", "-")
+    for date_format in ("%Y-%m-%d", "%d %B %Y", "%d %b %Y", "%d-%m-%Y", "%d-%m-%y"):
+        try:
+            return datetime.strptime(normalized, date_format).strftime("%Y-%m-%d")
+        except Exception:
+            continue
+
+    try:
+        from dateutil import parser as dateutil_parser
+
+        return dateutil_parser.parse(normalized, dayfirst=True, yearfirst=False).strftime("%Y-%m-%d")
+    except Exception:
+        return None
+
+
 def stage_ssa_pinjaman_lazy(config: dict) -> None:
     """
     Process SSA Pinjaman CSV using Polars lazy evaluation.
@@ -226,11 +280,19 @@ def stage_ssa_pinjaman_lazy(config: dict) -> None:
         send_progress(40, "⚡ Menambahkan transformasi string (parallel)...", 0, 0, 0, "", "polars")
 
         transformations = [
-            pl.col(col).str.strip_chars().alias(col)
+            (
+                pl.col(col).map_elements(normalize_date_value, return_dtype=pl.Utf8).alias(col)
+                if col == "month_day_year_of_periode"
+                else pl.col(col).str.strip_chars().alias(col)
+            )
             for col in headers
         ]
         
         df_lazy = df_lazy.with_columns(transformations)
+        df_lazy = df_lazy.filter(
+            pl.col("month_day_year_of_periode").is_not_null()
+            & (pl.col("month_day_year_of_periode").str.strip_chars() != "")
+        )
 
         # STEP 7: LIMIT for preview (still lazy)
         if preview_max_rows is not None:

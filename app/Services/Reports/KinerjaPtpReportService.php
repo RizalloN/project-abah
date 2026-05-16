@@ -50,6 +50,47 @@ class KinerjaPtpReportService
         ],
     ];
 
+    private const DETAIL_COLUMNS = [
+        'uniqueid_namareport',
+        'periode',
+        'billing',
+        'kanca',
+        'bc',
+        'mbm',
+        'uker',
+        'mantri',
+        'no_rekening',
+        'm_min_1_os',
+        'os',
+        'wba',
+        'now_kol',
+        'now_detail',
+        'now_os',
+        'now_t_pokok',
+        'now_t_bunga',
+        'now_t_total',
+        'ptp',
+    ];
+
+    private const METRIC_LABELS = [
+        'total_rek' => 'Total - Rek',
+        'total_rupiah' => 'Total - Rupiah',
+        'total_runoff' => 'Total - Run Off',
+        'sudah_billing_rek' => 'Sudah Muncul Billing - Rek',
+        'sudah_billing_rupiah' => 'Sudah Muncul Billing - Rupiah',
+        'sudah_billing_runoff' => 'Sudah Muncul Billing - Run Off',
+        'belum_muncul_rek' => 'Belum Muncul - Rek',
+        'belum_muncul_rupiah' => 'Belum Muncul - Rupiah',
+        'belum_muncul_runoff' => 'Belum Muncul - Run Off',
+        'sudah_bayar_rek' => 'Sudah Bayar - Rek',
+        'sudah_bayar_rupiah' => 'Sudah Bayar - Rupiah',
+        'belum_bayar_rek' => 'Belum Bayar - Rek',
+        'belum_bayar_rupiah' => 'Belum Bayar - Rupiah',
+        'success_rate' => 'Success Rate - Basis Billing Sudah Muncul',
+        'today_rek' => 'Today - Rek',
+        'today_rupiah' => 'Today - Rupiah',
+    ];
+
     public function reportTypes(): array
     {
         return collect(self::REPORT_TYPES)
@@ -140,6 +181,63 @@ class KinerjaPtpReportService
         ];
     }
 
+    public function detailPayload(string $reportType, string $level, ?string $period, array $dimensions, ?string $metric, int $limit = 25, int $offset = 0): array
+    {
+        $reportType = $this->normalizeReportType($reportType);
+        $level = $this->normalizeLevel($level);
+        $config = $this->reportConfig($reportType);
+        $table = $config['table'];
+        $metric = $this->normalizeMetric($metric);
+        $limit = max(10, min(50, $limit));
+        $offset = max(0, $offset);
+
+        if ($period === null || !Schema::hasTable($table)) {
+            return [
+                'columns' => [],
+                'rows' => collect(),
+                'metric' => $metric,
+                'metric_label' => self::METRIC_LABELS[$metric],
+                'has_more' => false,
+                'next_offset' => null,
+                'limit' => $limit,
+                'offset' => $offset,
+            ];
+        }
+
+        $columns = $this->detailColumns($table);
+        $rows = $this->detailQuery($table, $level, $period, $dimensions, $metric, $columns)
+            ->offset($offset)
+            ->limit($limit + 1)
+            ->get();
+
+        $hasMore = $rows->count() > $limit;
+
+        return [
+            'columns' => $columns,
+            'rows' => $rows->take($limit)->map(fn (object $row): array => (array) $row)->values(),
+            'metric' => $metric,
+            'metric_label' => self::METRIC_LABELS[$metric],
+            'has_more' => $hasMore,
+            'next_offset' => $hasMore ? $offset + $limit : null,
+            'limit' => $limit,
+            'offset' => $offset,
+        ];
+    }
+
+    public function groupAliases(string $level): array
+    {
+        $level = $this->normalizeLevel($level);
+
+        return array_keys(self::GROUPS[$level]);
+    }
+
+    public function normalizeMetric(?string $metric): string
+    {
+        $metric = strtolower(trim((string) $metric));
+
+        return array_key_exists($metric, self::METRIC_LABELS) ? $metric : 'total_rek';
+    }
+
     public function formatCount(mixed $value): string
     {
         return number_format((int) round((float) $value), 0, ',', '.');
@@ -210,6 +308,83 @@ class KinerjaPtpReportService
         return $query->get()
             ->map(fn (object $row): array => $this->decorateRow((array) $row))
             ->values();
+    }
+
+    private function detailQuery(string $table, string $level, string $period, array $dimensions, string $metric, array $columns)
+    {
+        $query = DB::table($table)
+            ->select($columns)
+            ->whereDate('periode', $period)
+            ->whereNotNull('uker')
+            ->whereRaw("TRIM(COALESCE(uker, '')) <> ''")
+            ->whereRaw("UPPER(TRIM(COALESCE(uker, ''))) NOT IN ('KC', 'KCP')")
+            ->whereRaw("UPPER(TRIM(COALESCE(uker, ''))) NOT LIKE 'KC %'")
+            ->whereRaw("UPPER(TRIM(COALESCE(uker, ''))) NOT LIKE 'KCP %'");
+
+        foreach (self::GROUPS[$level] as $alias => $column) {
+            $value = trim((string) ($dimensions[$alias] ?? ''));
+            $query->whereRaw("COALESCE(NULLIF(TRIM({$column}), ''), '-') = ?", [$value !== '' ? $value : '-']);
+        }
+
+        $this->applyMetricConstraint($query, $metric);
+
+        foreach (self::GROUPS[$level] as $column) {
+            $query->orderBy($column);
+        }
+
+        $identityColumn = in_array('no_rekening', $columns, true) ? 'no_rekening' : ($columns[0] ?? null);
+        if ($identityColumn !== null) {
+            $query->orderBy($identityColumn);
+        }
+
+        return $query;
+    }
+
+    private function applyMetricConstraint($query, string $metric): void
+    {
+        $billingSql = "UPPER(TRIM(COALESCE(billing, '')))";
+        $ptpSql = "UPPER(TRIM(COALESCE(ptp, '')))";
+        $nowKolSql = "UPPER(TRIM(COALESCE(now_kol, '')))";
+        $billingSudah = "{$billingSql} = 'SUDAH'";
+        $billingBelumToday = "{$billingSql} IN ('BELUM', 'TODAY')";
+        $billingSudahToday = "{$billingSql} IN ('SUDAH', 'TODAY')";
+        $billingToday = "{$billingSql} = 'TODAY'";
+        $paidCondition = "{$billingSudah} AND ({$ptpSql} IN ('TETAP', 'MEMBAIK', 'LUNAS') OR {$nowKolSql} = 'LUNAS')";
+        $unpaidCondition = "{$billingSudah} AND NOT ({$ptpSql} IN ('TETAP', 'MEMBAIK', 'LUNAS') OR {$nowKolSql} = 'LUNAS')";
+
+        match ($metric) {
+            'sudah_billing_rek',
+            'sudah_billing_rupiah',
+            'success_rate' => $query->whereRaw($billingSudah),
+
+            'sudah_billing_runoff' => $query->whereRaw($billingSudahToday),
+
+            'belum_muncul_rek',
+            'belum_muncul_rupiah' => $query->whereRaw($billingBelumToday),
+
+            'belum_muncul_runoff' => $query->whereRaw("{$billingSql} = 'BELUM'"),
+
+            'sudah_bayar_rek',
+            'sudah_bayar_rupiah' => $query->whereRaw($paidCondition),
+
+            'belum_bayar_rek',
+            'belum_bayar_rupiah' => $query->whereRaw($unpaidCondition),
+
+            'today_rek',
+            'today_rupiah' => $query->whereRaw($billingToday),
+
+            default => null,
+        };
+    }
+
+    private function detailColumns(string $table): array
+    {
+        $available = array_fill_keys(Schema::getColumnListing($table), true);
+
+        return array_values(array_filter(
+            self::DETAIL_COLUMNS,
+            fn (string $column): bool => isset($available[$column])
+        ));
     }
 
     private function decorateRow(array $row): array

@@ -160,3 +160,54 @@ it('renders the kinerja ptp view with npdd selector', function (): void {
         ->assertSee('UNIT B')
         ->assertSee('7.000');
 });
+
+it('returns realtime nominatif rows for the selected kinerja ptp aggregate row', function (): void {
+    seedKinerjaPtpRows();
+
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->getJson('/report/dashboard-pinjaman/kinerja-ptp/detail?' . http_build_query([
+            'jenis' => 'npd',
+            'level' => 'per_uker',
+            'periode' => '2026-05-06',
+            'bo' => 'KC Madiun',
+            'bc' => '3883',
+            'mbm' => 'MBM One',
+            'uker' => 'UNIT A',
+            'limit' => 3,
+        ]))
+        ->assertOk()
+        ->assertJsonPath('selected_period', '2026-05-06')
+        ->assertJsonPath('dimensions.uker', 'UNIT A')
+        ->assertJsonPath('rows.0.no_rekening', 'REK-npd-1')
+        ->assertJsonPath('rows.1.no_rekening', 'REK-npd-2')
+        ->assertJsonPath('rows.2.no_rekening', 'REK-npd-3')
+        ->assertJsonPath('rows.4.no_rekening', 'REK-npd-5')
+        ->assertJsonPath('has_more', false)
+        ->assertJsonPath('next_offset', null);
+});
+
+it('filters realtime nominatif rows by the clicked kinerja ptp metric', function (): void {
+    seedKinerjaPtpRows();
+
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->getJson('/report/dashboard-pinjaman/kinerja-ptp/detail?' . http_build_query([
+            'jenis' => 'npd',
+            'level' => 'per_uker',
+            'periode' => '2026-05-06',
+            'bo' => 'KC Madiun',
+            'bc' => '3883',
+            'mbm' => 'MBM One',
+            'uker' => 'UNIT A',
+            'metric' => 'today_rupiah',
+        ]))
+        ->assertOk()
+        ->assertJsonPath('metric', 'today_rupiah')
+        ->assertJsonPath('metric_label', 'Today - Rupiah')
+        ->assertJsonCount(1, 'rows')
+        ->assertJsonPath('rows.0.no_rekening', 'REK-npd-2')
+        ->assertJsonPath('rows.0.billing', 'Today');
+});

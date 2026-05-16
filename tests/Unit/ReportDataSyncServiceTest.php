@@ -13,6 +13,7 @@ use App\Jobs\SyncImportedReportJob;
 use App\Jobs\WarmReportCacheJob;
 use Illuminate\Contracts\Cache\Lock;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
@@ -298,6 +299,114 @@ class ReportDataSyncServiceTest extends TestCase
         $reflection->setAccessible(true);
 
         $reflection->invoke($service, '2026-04-30', 77, 'unit-test');
+
+        $this->assertTrue(true);
+    }
+
+    public function test_daily_loan_shadow_gate_fails_when_backfill_leaves_required_columns_missing(): void
+    {
+        Config::set('cache.default', 'array');
+        Cache::flush();
+
+        Schema::dropIfExists('daily_loan_dinamis');
+        Schema::create('daily_loan_dinamis', function (Blueprint $table): void {
+            $table->id();
+            $table->date('periode')->nullable();
+            $table->string('segmen_kinerja')->nullable();
+            $table->string('produk_kinerja')->nullable();
+            $table->string('cabang_normalized')->nullable();
+            $table->string('unit_normalized')->nullable();
+            $table->string('branch_normalized')->nullable();
+            $table->string('rm_normalized')->nullable();
+            $table->string('pn_pemutus_normalized')->nullable();
+            $table->string('cifno_clean')->nullable();
+            $table->timestamp('shadow_built_at')->nullable();
+            $table->timestamps();
+        });
+
+        DB::table('daily_loan_dinamis')->insert([
+            'periode' => '2026-05-10',
+            'segmen_kinerja' => null,
+            'produk_kinerja' => 'SMALL',
+            'cabang_normalized' => 'KC MADIUN',
+            'unit_normalized' => 'BRI UNIT',
+            'branch_normalized' => 'KC MADIUN',
+            'rm_normalized' => 'RM TEST',
+            'pn_pemutus_normalized' => 'PN TEST',
+            'cifno_clean' => '123',
+            'shadow_built_at' => null,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        Artisan::shouldReceive('call')
+            ->once()
+            ->with('shadow:backfill', Mockery::on(function (array $args): bool {
+                return ($args['--periods'] ?? null) === '2026-05-10'
+                    && ($args['--skip-snapshot'] ?? null) === true;
+            }))
+            ->andReturn(0);
+
+        $builder = Mockery::mock(ReportSnapshotBuilder::class);
+        $dashboardHarianSnapshotService = Mockery::mock(DashboardHarianSnapshotService::class);
+        $partitionMaintenance = Mockery::mock(PartitionMaintenanceService::class);
+        $dirtyPeriods = Mockery::mock(DashboardHarianSnapshotDirtyPeriodQueue::class);
+        $service = new ReportDataSyncService($builder, $dashboardHarianSnapshotService, $partitionMaintenance, $dirtyPeriods);
+
+        $reflection = new \ReflectionMethod($service, 'ensureDailyLoanShadowColumnsReady');
+        $reflection->setAccessible(true);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('belum siap untuk snapshot');
+
+        $reflection->invoke($service, '2026-05-10', 77, 'unit-test');
+    }
+
+    public function test_daily_loan_shadow_gate_allows_blank_pn_pemutus_source(): void
+    {
+        Schema::dropIfExists('daily_loan_dinamis');
+        Schema::create('daily_loan_dinamis', function (Blueprint $table): void {
+            $table->id();
+            $table->date('periode')->nullable();
+            $table->string('segmen_kinerja')->nullable();
+            $table->string('produk_kinerja')->nullable();
+            $table->string('cabang_normalized')->nullable();
+            $table->string('unit_normalized')->nullable();
+            $table->string('branch_normalized')->nullable();
+            $table->string('rm_normalized')->nullable();
+            $table->string('pn_pemutus1')->nullable();
+            $table->string('pn_pemutus_normalized')->nullable();
+            $table->string('cifno_clean')->nullable();
+            $table->timestamps();
+        });
+
+        DB::table('daily_loan_dinamis')->insert([
+            'periode' => '2026-05-10',
+            'segmen_kinerja' => 'SMALL',
+            'produk_kinerja' => 'KUPEDES',
+            'cabang_normalized' => 'KC MADIUN',
+            'unit_normalized' => 'BRI UNIT',
+            'branch_normalized' => 'KC MADIUN',
+            'rm_normalized' => 'RM TEST',
+            'pn_pemutus1' => '',
+            'pn_pemutus_normalized' => null,
+            'cifno_clean' => '123',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        Artisan::shouldReceive('call')->never();
+
+        $builder = Mockery::mock(ReportSnapshotBuilder::class);
+        $dashboardHarianSnapshotService = Mockery::mock(DashboardHarianSnapshotService::class);
+        $partitionMaintenance = Mockery::mock(PartitionMaintenanceService::class);
+        $dirtyPeriods = Mockery::mock(DashboardHarianSnapshotDirtyPeriodQueue::class);
+        $service = new ReportDataSyncService($builder, $dashboardHarianSnapshotService, $partitionMaintenance, $dirtyPeriods);
+
+        $reflection = new \ReflectionMethod($service, 'ensureDailyLoanShadowColumnsReady');
+        $reflection->setAccessible(true);
+
+        $reflection->invoke($service, '2026-05-10', 77, 'unit-test');
 
         $this->assertTrue(true);
     }

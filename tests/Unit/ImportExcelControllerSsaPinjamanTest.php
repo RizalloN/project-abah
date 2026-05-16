@@ -75,7 +75,7 @@ class ImportExcelControllerSsaPinjamanTest extends TestCase
         $mapMethod->setAccessible(true);
 
         $row = $mapMethod->invoke($controller, [
-            '14 April 2026',
+            '12 Mei 2026',
             '00045 -- KC Madiun (Konsolidasi-MB)',
             '00045 -- KC Madiun',
             'Kecil Komersial',
@@ -92,7 +92,7 @@ class ImportExcelControllerSsaPinjamanTest extends TestCase
         ], $headers, $context, '2026-04-20 14:00:00');
 
         $this->assertIsArray($row);
-        $this->assertSame('2026-04-14', $row['month_day_year_of_periode']);
+        $this->assertSame('2026-05-12', $row['month_day_year_of_periode']);
         $this->assertSame('SME', $row['segmen']);
         $this->assertSame('Ritel', $row['segmen_lama']);
         $this->assertSame('Medium', $row['segmen_2025']);

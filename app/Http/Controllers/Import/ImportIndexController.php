@@ -60,6 +60,8 @@ class ImportIndexController extends Controller
         'simpanan_multipn',
         'lw325_ph',
         'daily_loan_dinamis',
+        'lw321_npd',
+        'lw321_npdd',
     ];
 
     private const DELETE_INDEX_HINTS = [
@@ -5083,15 +5085,9 @@ LIMIT {$limit}
         array $constraints,
         int $limit
     ): bool {
-        if (strtolower(trim($tableName)) !== 'simpanan_multipn') {
-            return false;
-        }
-
-        if ($periodColumn === null || $limit < 1000000) {
-            return false;
-        }
-
+        $normalizedTable = strtolower(trim($tableName));
         $hasPeriodEqualityConstraint = false;
+        $hasKancaEqualityConstraint = false;
 
         foreach ($constraints as $constraint) {
             if ((string) ($constraint['mode'] ?? '') !== 'equal') {
@@ -5105,11 +5101,27 @@ LIMIT {$limit}
             }
 
             if ($kancaColumn !== null && $column === $kancaColumn) {
-                return false;
+                $hasKancaEqualityConstraint = true;
+                continue;
             }
         }
 
-        return $hasPeriodEqualityConstraint;
+        if (in_array($normalizedTable, ['lw321_npd', 'lw321_npdd'], true)) {
+            return $periodColumn !== null
+                && $kancaColumn !== null
+                && $hasPeriodEqualityConstraint
+                && $hasKancaEqualityConstraint;
+        }
+
+        if ($normalizedTable !== 'simpanan_multipn') {
+            return false;
+        }
+
+        if ($periodColumn === null || $limit < 1000000) {
+            return false;
+        }
+
+        return $hasPeriodEqualityConstraint && !$hasKancaEqualityConstraint;
     }
 
     private function deleteRowsByDirectPredicateBatch(

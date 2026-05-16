@@ -16,6 +16,7 @@ class SnapshotDirtyPeriodService
     public const DEFAULT_SHARD_TYPE = 'period';
     public const DEFAULT_SHARD_KEY = '*';
     public const MAX_ATTEMPTS = 5;
+    private const CLAIM_STALE_AFTER_SECONDS = 600;
 
     /**
      * @return array<int, array<string, mixed>>
@@ -30,6 +31,8 @@ class SnapshotDirtyPeriodService
         $token = (string) Str::uuid();
 
         return DB::transaction(function () use ($limit, $sourceTable, $period, $token): array {
+            $this->releaseStaleClaims($sourceTable, $period);
+
             $query = DB::table(self::TABLE)
                 ->whereNull('claimed_at')
                 ->where('attempts', '<', self::MAX_ATTEMPTS)
@@ -120,6 +123,8 @@ class SnapshotDirtyPeriodService
             'shard_key' => $shardKey,
         ];
 
+        $this->forgetFailedMarker($key);
+
         $dirtySinceExpression = in_array(DB::getDriverName(), ['mysql', 'mariadb'], true)
             ? DB::raw('LEAST(dirty_since, ' . DB::getPdo()->quote($now->format('Y-m-d H:i:s.u')) . ')')
             : $now;
@@ -133,6 +138,8 @@ class SnapshotDirtyPeriodService
                 'claim_token' => null,
                 'dirty_since_at_claim' => null,
                 'last_error' => null,
+                'last_attempted_at' => null,
+                'attempts' => 0,
                 'updated_at' => $now,
             ]);
 
@@ -236,6 +243,44 @@ class SnapshotDirtyPeriodService
         }
 
         return (int) $query->count();
+    }
+
+    private function releaseStaleClaims(?string $sourceTable = null, ?string $period = null): void
+    {
+        $cutoff = now()->subSeconds(self::CLAIM_STALE_AFTER_SECONDS);
+
+        $query = DB::table(self::TABLE)
+            ->whereNotNull('claimed_at')
+            ->where('claimed_at', '<=', $cutoff)
+            ->where('attempts', '<', self::MAX_ATTEMPTS);
+
+        if ($sourceTable !== null && trim($sourceTable) !== '') {
+            $query->where('source_table', strtolower(trim($sourceTable)));
+        }
+
+        if ($period !== null && trim($period) !== '') {
+            $query->where('period_key', trim($period));
+        }
+
+        $query->update([
+            'claimed_at' => null,
+            'claim_token' => null,
+            'dirty_since_at_claim' => null,
+            'last_error' => 'Released stale snapshot dirty claim for retry.',
+            'updated_at' => now(),
+        ]);
+    }
+
+    /**
+     * @param array{source_table:string, period_key:string, shard_type:string, shard_key:string} $key
+     */
+    private function forgetFailedMarker(array $key): void
+    {
+        if (!Schema::hasTable(self::FAILED_TABLE)) {
+            return;
+        }
+
+        DB::table(self::FAILED_TABLE)->where($key)->delete();
     }
 
     private function moveToFailed(object $row, string $message): void

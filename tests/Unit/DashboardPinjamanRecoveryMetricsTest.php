@@ -108,6 +108,29 @@ class DashboardPinjamanRecoveryMetricsTest extends TestCase
         $this->assertNull($method->invoke($controller, '2026-04-30'));
     }
 
+    public function test_recovery_period_options_include_daily_loan_dates_with_comparison_period(): void
+    {
+        DB::table('daily_loan_dinamis')->insert([
+            ['periode' => '2026-03-31'],
+            ['periode' => '2026-04-15'],
+            ['periode' => '2026-04-30'],
+            ['periode' => '2026-05-10'],
+            ['periode' => '2026-05-11'],
+            ['periode' => '2026-06-01'],
+        ]);
+
+        $controller = new DashboardPinjamanReportController();
+        $method = new ReflectionMethod(DashboardPinjamanReportController::class, 'fetchRecoveryReportPeriods');
+        $method->setAccessible(true);
+
+        $periods = $method->invoke($controller)->all();
+
+        $this->assertContains('2026-05-11', $periods);
+        $this->assertContains('2026-05-10', $periods);
+        $this->assertContains('2026-04-15', $periods);
+        $this->assertNotContains('2026-06-01', $periods);
+    }
+
     private function invokeShouldUseLw325RecoveryMetrics(string $period): bool
     {
         $controller = new DashboardPinjamanReportController();

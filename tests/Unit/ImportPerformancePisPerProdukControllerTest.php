@@ -5,7 +5,9 @@ namespace Tests\Unit;
 use App\Http\Controllers\Import\ImportCleanupController;
 use App\Http\Controllers\Import\ImportPerformancePisPerProdukController;
 use App\Services\Import\ImportCleanupService;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Storage;
 use Mockery;
 use ReflectionClass;
 use Tests\TestCase;
@@ -237,6 +239,102 @@ class ImportPerformancePisPerProdukControllerTest extends TestCase
 
             $this->assertContains('KC Banyuwangi', $kancaValues);
             $this->assertContains('KC Jember', $kancaValues);
+        } finally {
+            @unlink($csvPath);
+        }
+    }
+
+    public function test_performance_pis_filter_options_endpoint_scans_beyond_preview_sample(): void
+    {
+        $controller = new ImportPerformancePisPerProdukController();
+        $relativePath = 'performance_pis_imports/pnps_filter_options_test.csv';
+        $csvPath = Storage::path($relativePath);
+        if (!is_dir(dirname($csvPath))) {
+            @mkdir(dirname($csvPath), 0777, true);
+        }
+
+        $headers = $this->performancePisHeaders();
+        $rows = [implode(',', $headers)];
+        for ($i = 1; $i <= 250; $i++) {
+            $rows[] = $this->buildPerformancePisRow([
+                'no' => (string) $i,
+                'kode_kanca' => '07',
+                'kanca' => 'KC Banyuwangi',
+            ]);
+        }
+        $rows[] = $this->buildPerformancePisRow([
+            'no' => '251',
+            'kode_kanca' => '08',
+            'kanca' => 'KC Jember',
+        ]);
+
+        file_put_contents($csvPath, implode("\n", $rows) . "\n");
+        session(['performance_pis_periode' => '2026-03-31']);
+
+        try {
+            $request = Request::create('/import/performance-pis/preview/filter-options', 'GET', [
+                'file_path' => $relativePath,
+                'column_index' => array_search('kanca', $headers, true),
+                'active_filters_json' => '{}',
+            ]);
+
+            $response = $controller->previewFilterOptions($request);
+            $payload = json_decode((string) $response->getContent(), true);
+
+            $this->assertSame('success', $payload['status'] ?? null);
+            $this->assertContains('KC Banyuwangi', $payload['values'] ?? []);
+            $this->assertContains('KC Jember', $payload['values'] ?? []);
+        } finally {
+            @unlink($csvPath);
+        }
+    }
+
+    public function test_performance_pis_filtered_rows_endpoint_returns_dynamic_rows_beyond_sample(): void
+    {
+        $controller = new ImportPerformancePisPerProdukController();
+        $relativePath = 'performance_pis_imports/pnps_filtered_rows_test.csv';
+        $csvPath = Storage::path($relativePath);
+        if (!is_dir(dirname($csvPath))) {
+            @mkdir(dirname($csvPath), 0777, true);
+        }
+
+        $headers = $this->performancePisHeaders();
+        $kancaIndex = array_search('kanca', $headers, true);
+        $rows = [implode(',', $headers)];
+        for ($i = 1; $i <= 250; $i++) {
+            $rows[] = $this->buildPerformancePisRow([
+                'no' => (string) $i,
+                'kode_kanca' => '07',
+                'kanca' => 'KC Banyuwangi',
+                'nama_perusahaan' => 'PT SAMPLE BANYUWANGI',
+            ]);
+        }
+        $rows[] = $this->buildPerformancePisRow([
+            'no' => '251',
+            'kode_kanca' => '08',
+            'kanca' => 'KC Jember',
+            'nama_perusahaan' => 'PT SAMPLE JEMBER',
+        ]);
+
+        file_put_contents($csvPath, implode("\n", $rows) . "\n");
+        session(['performance_pis_periode' => '2026-03-31']);
+
+        try {
+            $request = Request::create('/import/performance-pis/preview/filtered-rows', 'GET', [
+                'file_path' => $relativePath,
+                'active_filters_json' => json_encode([
+                    $kancaIndex => ['KC Jember'],
+                ]),
+                'limit' => 100,
+            ]);
+
+            $response = $controller->previewFilteredRows($request);
+            $payload = json_decode((string) $response->getContent(), true);
+
+            $this->assertSame('success', $payload['status'] ?? null);
+            $this->assertSame(1, $payload['returned_rows'] ?? null);
+            $this->assertSame('KC Jember', $payload['rows'][0][$kancaIndex] ?? null);
+            $this->assertSame('PT SAMPLE JEMBER', $payload['rows'][0][array_search('nama_perusahaan', $headers, true)] ?? null);
         } finally {
             @unlink($csvPath);
         }

@@ -263,12 +263,6 @@ class DashboardDanaService
         $regionPatterns = ['MADIUN', 'NGAWI', 'MAGETAN', 'PONOROGO'];
         $regionalData = $service->aggregateByGroupWithRegionalFilter($definitions, $monthCol, $regionPatterns, $year);
 
-        // Map region data to standardized branch names
-        $data = [];
-        foreach ($definitions as $defKey => $_) {
-            $data[$defKey] = [];
-        }
-
         // Map regions to their corresponding KC names
         $regionMap = [
             'MADIUN' => 'KC MADIUN',
@@ -276,13 +270,30 @@ class DashboardDanaService
             'NGAWI' => 'KC NGAWI',
             'PONOROGO' => 'KC PONOROGO',
         ];
+        $branchFallbackData = $service->aggregateByKancaWithSummaryFallback(
+            $definitions,
+            $monthCol,
+            array_values($regionMap),
+            $year
+        );
+
+        // Map region data to standardized branch names, filling only missing
+        // zero values from normal kanca/summary rows already present in RKA.
+        $data = [];
+        foreach ($definitions as $defKey => $_) {
+            $data[$defKey] = [];
+        }
 
         foreach ($definitions as $defKey => $_) {
             foreach ($regionPatterns as $region) {
                 $standardizedBranchName = $regionMap[$region];
-                if (isset($regionalData[$defKey][$region])) {
-                    $data[$defKey][$standardizedBranchName] = $regionalData[$defKey][$region];
+                $value = (float) ($regionalData[$defKey][$region] ?? 0);
+
+                if (abs($value) <= 0.0) {
+                    $value = (float) ($branchFallbackData[$defKey][$standardizedBranchName] ?? 0);
                 }
+
+                $data[$defKey][$standardizedBranchName] = $value;
             }
         }
 
